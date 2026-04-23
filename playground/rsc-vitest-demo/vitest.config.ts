@@ -6,6 +6,7 @@ export default defineConfig({
   plugins: [vitestPluginRSC()],
   test: {
     restoreMocks: true,
+    isolate: false,
     browser: {
       enabled: true,
       headless: true,
