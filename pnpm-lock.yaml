@@ -251,9 +251,6 @@ importers:
       vitest:
         specifier: ^4.1.5
         version: 4.1.5(@types/node@22.16.5)(@vitest/browser-playwright@4.1.5)(@vitest/browser-preview@4.1.5)(@vitest/ui@4.1.5)(msw@2.10.4(@types/node@22.16.5)(typescript@5.8.3))(vite@8.0.9(@types/node@22.16.5)(jiti@2.4.2)(tsx@4.20.3))
-      vitest-browser-react:
-        specifier: ^1.0.0
-        version: 1.0.1(@types/react-dom@19.1.6(@types/react@19.1.8))(@types/react@19.1.8)(@vitest/browser@4.1.5(msw@2.10.4(@types/node@22.16.5)(typescript@5.8.3))(vite@8.0.9(@types/node@22.16.5)(jiti@2.4.2)(tsx@4.20.3))(vitest@4.1.5))(react-dom@19.1.1(react@19.1.1))(react@19.1.1)(vitest@4.1.5)
 
   playground/vite8-rsc-rolldown:
     dependencies:
@@ -2604,22 +2601,6 @@ packages:
       vite:
         optional: true
 
-  vitest-browser-react@1.0.1:
-    resolution: {integrity: sha512-LqiGFCdknrbMoSDWXTCTrPsED3SvdIXIgYOOZyYUNj2dkJusW2eF6NENOlBlxwq+FBQqzNK1X59b+b03pXFpAQ==}
-    engines: {node: ^18.0.0 || ^20.0.0 || >=22.0.0}
-    peerDependencies:
-      '@types/react': ^18.0.0 || ^19.0.0
-      '@types/react-dom': ^18.0.0 || ^19.0.0
-      '@vitest/browser': ^2.1.0 || ^3.0.0 || ^4.0.0-0
-      react: ^18.0.0 || ^19.0.0
-      react-dom: ^18.0.0 || ^19.0.0
-      vitest: ^2.1.0 || ^3.0.0 || ^4.0.0-0
-    peerDependenciesMeta:
-      '@types/react':
-        optional: true
-      '@types/react-dom':
-        optional: true
-
   vitest@4.1.5:
     resolution: {integrity: sha512-9Xx1v3/ih3m9hN+SbfkUyy0JAs72ap3r7joc87XL6jwF0jGg6mFBvQ1SrwaX+h8BlkX6Hz9shdd1uo6AF+ZGpg==}
     engines: {node: ^20.0.0 || ^22.0.0 || >=24.0.0}
@@ -4892,16 +4873,6 @@ snapshots:
   vitefu@1.1.3(vite@8.0.9(@types/node@22.16.5)(jiti@2.4.2)(tsx@4.20.3)):
     optionalDependencies:
       vite: 8.0.9(@types/node@22.16.5)(jiti@2.4.2)(tsx@4.20.3)
-
-  vitest-browser-react@1.0.1(@types/react-dom@19.1.6(@types/react@19.1.8))(@types/react@19.1.8)(@vitest/browser@4.1.5(msw@2.10.4(@types/node@22.16.5)(typescript@5.8.3))(vite@8.0.9(@types/node@22.16.5)(jiti@2.4.2)(tsx@4.20.3))(vitest@4.1.5))(react-dom@19.1.1(react@19.1.1))(react@19.1.1)(vitest@4.1.5):
-    dependencies:
-      '@vitest/browser': 4.1.5(msw@2.10.4(@types/node@22.16.5)(typescript@5.8.3))(vite@8.0.9(@types/node@22.16.5)(jiti@2.4.2)(tsx@4.20.3))(vitest@4.1.5)
-      react: 19.1.1
-      react-dom: 19.1.1(react@19.1.1)
-      vitest: 4.1.5(@types/node@22.16.5)(@vitest/browser-playwright@4.1.5)(@vitest/browser-preview@4.1.5)(@vitest/ui@4.1.5)(msw@2.10.4(@types/node@22.16.5)(typescript@5.8.3))(vite@8.0.9(@types/node@22.16.5)(jiti@2.4.2)(tsx@4.20.3))
-    optionalDependencies:
-      '@types/react': 19.1.8
-      '@types/react-dom': 19.1.6(@types/react@19.1.8)
 
   vitest@4.1.5(@types/node@22.16.5)(@vitest/browser-playwright@4.1.5)(@vitest/browser-preview@4.1.5)(@vitest/ui@4.1.5)(msw@2.10.4(@types/node@22.16.5)(typescript@5.8.3))(vite@8.0.9(@types/node@22.16.5)(jiti@2.4.2)(tsx@4.20.3)):
     dependencies:
