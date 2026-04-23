@@ -1,4 +1,5 @@
 import { defineConfig } from 'vitest/config'
+import { playwright } from '@vitest/browser-playwright'
 import { vitestPluginRSC } from 'vitest-plugin-rsc'
 import { vitestPluginNext } from 'vitest-plugin-rsc/nextjs/plugin'
 import react from '@vitejs/plugin-react'
@@ -11,7 +12,8 @@ export default defineConfig({
     restoreMocks: true,
     browser: {
       enabled: true,
-      provider: 'preview',
+      headless: true,
+      provider: playwright(),
       screenshotFailures: false,
       instances: [{ browser: 'chromium' }]
     },

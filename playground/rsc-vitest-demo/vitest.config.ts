@@ -1,4 +1,5 @@
 import { defineConfig } from "vitest/config";
+import { playwright } from "@vitest/browser-playwright";
 import { vitestPluginRSC } from "vitest-plugin-rsc";
 
 export default defineConfig({
@@ -7,7 +8,8 @@ export default defineConfig({
     restoreMocks: true,
     browser: {
       enabled: true,
-      provider: "preview",
+      headless: true,
+      provider: playwright(),
       screenshotFailures: false,
       instances: [{ browser: "chromium" }],
     },
