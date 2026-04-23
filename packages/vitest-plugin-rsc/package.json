@@ -37,9 +37,9 @@
     "publish": "npm publish --tag experimental"
   },
   "dependencies": {
-    "@vitejs/plugin-rsc": "0.4.16",
-    "@vitest/spy": "^3.2.4",
-    "@vitest/expect": "^3.2.4"
+    "@vitejs/plugin-rsc": "^0.5.24",
+    "@vitest/spy": "^4.1.5",
+    "@vitest/expect": "^4.1.5"
   },
   "devDependencies": {
     "@types/node": "^22.16.3",
@@ -49,6 +49,7 @@
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "tsdown": "^0.12.9",
+    "vite": "^8.0.9",
     "next": "^15.4.5"
   },
   "peerDependencies": {
