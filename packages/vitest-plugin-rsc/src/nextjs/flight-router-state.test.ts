@@ -20,6 +20,7 @@ test("parse route and url to route true", () => {
                 "id",
                 "someid",
                 "d",
+                null,
               ],
               {
                 "children": [
@@ -27,13 +28,14 @@ test("parse route and url to route true", () => {
                     "slug",
                     "someslug",
                     "d",
+                    null,
                   ],
                   {
                     "children": [
                       "__PAGE__?{"a":"1"}",
                       {},
-                      "/note/someid/someslug",
-                      "refresh",
+                      null,
+                      null,
                     ],
                   },
                 ],
@@ -42,9 +44,9 @@ test("parse route and url to route true", () => {
           },
         ],
       },
-      undefined,
-      undefined,
-      true,
+      null,
+      null,
+      16,
     ]
   `);
 });

@@ -8,11 +8,12 @@ import { RedirectBoundary } from "next/dist/client/components/redirect-boundary"
 import { getSelectedParams } from "next/dist/client/components/router-reducer/compute-changed-path";
 import { createInitialRouterState } from "next/dist/client/components/router-reducer/create-initial-router-state";
 import { useActionQueue } from "next/dist/client/components/use-action-queue";
-import {
-  type CacheNodeSeedData,
-  type FlightDataPath,
-  type FlightRouterState,
-} from "next/dist/server/app-render/types";
+import type {
+  CacheNodeSeedData,
+  FlightDataPath,
+  FlightRouterState,
+  InitialRSCPayload,
+} from "next/dist/shared/lib/app-router-types";
 import {
   AppRouterContext,
   GlobalLayoutRouterContext,
@@ -31,6 +32,10 @@ declare global {
 }
 globalThis.onNavigate = fn<(url: URL) => void>();
 
+function GlobalError() {
+  return null;
+}
+
 export const NextRouter = ({
   children,
   url = "/",
@@ -46,29 +51,25 @@ export const NextRouter = ({
   const actionQueue: AppRouterActionQueue = {
     state: createInitialRouterState({
       navigatedAt: Date.now(),
-      initialFlightData: createFlightData({
+      initialRSCPayload: createInitialRSCPayload({
+        canonicalUrl: location.pathname + location.search,
         initialTree: buildFlightRouterState(
           route,
           location.pathname,
           location.search,
         ),
-        seedData: ["", children, {}, null, false],
-        initialHead: null,
-        isPossiblyPartialHead: false,
+        renderedSearch: location.search,
+        seedData: [children, {}, null, false, null],
       }),
-      initialCanonicalUrlParts: location.pathname.split("/"),
-      initialParallelRoutes: new Map(),
+      initialFlightStreamForCache: null,
       location: location as unknown as Location,
-      couldBeIntercepted: false,
-      postponed: false,
-      prerendered: false,
     }),
     dispatch: (payload, setState) => {
       if (payload.type === "navigate") {
         globalThis.onNavigate(payload.url);
       }
     },
-    action: async (state, action) => {
+    action: (state, action) => {
       throw new Error("action not implemented");
     },
     pending: null,
@@ -78,20 +79,24 @@ export const NextRouter = ({
   return <AppRouter actionQueue={actionQueue}></AppRouter>;
 };
 
-function createFlightData(props: {
+function createInitialRSCPayload(props: {
+  canonicalUrl: string;
   initialTree: FlightRouterState;
+  renderedSearch: string;
   seedData: CacheNodeSeedData;
-  initialHead: ReactNode | null;
-  isPossiblyPartialHead: boolean;
-}): FlightDataPath {
-  return [
-    [
-      props.initialTree,
-      props.seedData,
-      props.initialHead,
-      props.isPossiblyPartialHead,
+}): InitialRSCPayload {
+  return {
+    c: props.canonicalUrl.split("/"),
+    q: props.renderedSearch,
+    i: false,
+    f: [
+      [props.initialTree, props.seedData, null, false] satisfies FlightDataPath,
     ],
-  ];
+    m: undefined,
+    G: [GlobalError, null],
+    S: false,
+    h: null,
+  };
 }
 
 export function AppRouter({
@@ -99,8 +104,14 @@ export function AppRouter({
 }: {
   actionQueue: AppRouterActionQueue;
 }) {
-  const { canonicalUrl, cache, tree, nextUrl, focusAndScrollRef } =
-    useActionQueue(actionQueue);
+  const {
+    canonicalUrl,
+    cache,
+    tree,
+    nextUrl,
+    previousNextUrl,
+    focusAndScrollRef,
+  } = useActionQueue(actionQueue);
 
   const { searchParams, pathname } = useMemo(() => {
     const url = new URL(canonicalUrl, "http://localhost");
@@ -121,15 +132,19 @@ export function AppRouter({
         <PathnameContext.Provider value={pathname}>
           <SearchParamsContext.Provider value={searchParams}>
             <GlobalLayoutRouterContext.Provider
-              value={{ tree, focusAndScrollRef, nextUrl }}
+              value={{ tree, focusAndScrollRef, nextUrl, previousNextUrl }}
             >
               <AppRouterContext.Provider value={publicAppRouterInstance}>
                 <LayoutRouterContext.Provider
                   value={{
                     parentTree: tree,
                     parentCacheNode: cache,
-                    url: canonicalUrl,
                     parentSegmentPath: null,
+                    parentParams: pathParams,
+                    parentLoadingData: null,
+                    debugNameContext: "NextRouter",
+                    url: canonicalUrl,
+                    isActive: true,
                   }}
                 >
                   <RedirectBoundary>{cache.rsc}</RedirectBoundary>

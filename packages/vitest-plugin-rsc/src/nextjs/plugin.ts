@@ -11,7 +11,10 @@ export function vitestPluginNext(): Plugin[] {
             __dirname: JSON.stringify(null),
           },
           optimizeDeps: {
-            include: ["next/dist/client/components/is-next-router-error"],
+            include: [
+              "next/dist/client/components/is-next-router-error",
+              "next/dist/client/components/navigation.react-server",
+            ],
           },
           resolve: {
             alias: {
@@ -31,14 +34,16 @@ export function vitestPluginNext(): Plugin[] {
               optimizeDeps: {
                 include: [
                   "next/link",
+                  "next/dist/client/components/navigation",
                   "next/dist/client/components/router-reducer/create-initial-router-state",
                   "next/dist/shared/lib/app-router-context.shared-runtime",
                   "next/dist/shared/lib/hooks-client-context.shared-runtime",
+                  "next/dist/shared/lib/server-inserted-html.shared-runtime",
                   "next/dist/client/components/use-action-queue",
                   "next/dist/client/components/redirect-boundary",
                   "next/dist/client/components/router-reducer/compute-changed-path",
                   "next/dist/client/components/app-router-instance",
-                  "next/dist/server/app-render/types",
+                  "next/dist/shared/lib/app-router-types",
                 ],
               },
             },
