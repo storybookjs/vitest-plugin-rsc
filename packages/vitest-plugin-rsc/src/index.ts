@@ -1,9 +1,7 @@
 import {
   type Plugin,
-  type PluginOption,
   type UserConfig,
   type ViteDevServer,
-  version as viteVersion,
 } from "vite";
 import { vitePluginRscMinimal } from "@vitejs/plugin-rsc/plugin";
 
@@ -31,26 +29,23 @@ type ReactClientWebSocketPayload = {
   };
 };
 
-function isPlugin(plugin: PluginOption): plugin is Plugin {
+function isPlugin(plugin: unknown): plugin is Plugin {
   return !!plugin && typeof plugin === "object" && "name" in plugin;
 }
 
-function flattenPluginNames(plugins: PluginOption[] | undefined): string[] {
-  const names: string[] = [];
-
+function hasPlugin(plugins: UserConfig["plugins"], pluginName: string): boolean {
   for (const plugin of plugins ?? []) {
     if (Array.isArray(plugin)) {
-      names.push(...flattenPluginNames(plugin));
+      if (hasPlugin(plugin, pluginName)) return true;
     } else if (isPlugin(plugin)) {
-      names.push(plugin.name);
+      if (plugin.name === pluginName) return true;
     }
   }
-
-  return names;
+  return false;
 }
 
 function isVitestBrowserServer(config: UserConfig): boolean {
-  return flattenPluginNames(config.plugins).includes("vitest:browser");
+  return hasPlugin(config.plugins, "vitest:browser");
 }
 
 function disableOptimizer(config: UserConfig, environmentName: string): void {
@@ -61,24 +56,6 @@ function disableOptimizer(config: UserConfig, environmentName: string): void {
   optimizeDeps.noDiscovery = true;
   optimizeDeps.include = [];
   optimizeDeps.entries = [];
-}
-
-function getReactClientOptimizerBundlerOptions() {
-  const viteMajor = Number(viteVersion.split(".")[0]);
-
-  if (viteMajor >= 8) {
-    return {
-      rolldownOptions: {
-        platform: "browser",
-      },
-    };
-  }
-
-  return {
-    esbuildOptions: {
-      platform: "browser",
-    },
-  };
 }
 
 export function vitestPluginRSC(): Plugin[] {
@@ -187,7 +164,6 @@ export function vitestPluginRSC(): Plugin[] {
                 ],
                 noDiscovery: false,
                 exclude: ["vitest-plugin-rsc", "@vitejs/plugin-rsc"],
-                ...getReactClientOptimizerBundlerOptions(),
               },
             },
           },
