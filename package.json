@@ -4,19 +4,15 @@
   "packageManager": "pnpm@10.13.1",
   "scripts": {
     "format": "prettier --write --cache .",
-    "lint": "eslint --cache .",
     "build": "pnpm -r --filter='./packages/*' run build",
     "dev": "pnpm -r --parallel --filter='./packages/*' run dev"
   },
   "devDependencies": {
-    "@eslint/js": "^9.31.0",
     "@types/node": "^22.16.3",
     "@vitejs/release-scripts": "^1.6.0",
-    "eslint": "^9.31.0",
     "prettier": "^3.6.2",
     "tsx": "^4.20.3",
     "typescript": "^5.8.3",
-    "typescript-eslint": "^8.37.0",
     "vite": "^7.0.4",
     "vitest": "^3.2.4"
   },
