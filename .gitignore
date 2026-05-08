@@ -10,8 +10,7 @@ lerna-debug.log*
 node_modules
 dist
 dist-ssr
-coverage
-playground/rsc-vitest-demo/coverage
+coverage/
 *.local
 
 # Editor directories and files

@@ -1,7 +1,7 @@
 lockfileVersion: '9.0'
 
 settings:
-  autoInstallPeers: true
+  autoInstallPeers: false
   excludeLinksFromLockfile: false
 
 importers:
@@ -19,7 +19,7 @@ importers:
         version: 0.48.0
       oxlint:
         specifier: ^1.63.0
-        version: 1.63.0(oxlint-tsgolint@0.22.1)
+        version: 1.63.0
       tsx:
         specifier: ^4.20.3
         version: 4.20.3
@@ -31,7 +31,7 @@ importers:
         version: 8.0.11(@types/node@22.16.5)(jiti@2.4.2)(tsx@4.20.3)
       vitest:
         specifier: ^4.1.5
-        version: 4.1.5(@types/node@22.16.5)(@vitest/browser-playwright@4.1.5)(@vitest/browser-preview@4.1.5)(@vitest/ui@4.1.5)(msw@2.10.4(@types/node@22.16.5)(typescript@5.8.3))(vite@8.0.11(@types/node@22.16.5)(jiti@2.4.2)(tsx@4.20.3))
+        version: 4.1.5(@types/node@22.16.5)(@vitest/browser-playwright@4.1.5)(@vitest/ui@4.1.5)(msw@2.10.4(@types/node@22.16.5)(typescript@5.8.3))(vite@8.0.11(@types/node@22.16.5)(jiti@2.4.2)(tsx@4.20.3))
 
   packages/vitest-plugin-rsc:
     dependencies:
@@ -126,7 +126,7 @@ importers:
         version: 14.6.1(@testing-library/dom@10.4.1)
       '@types/ioredis-mock':
         specifier: ^8.2.6
-        version: 8.2.6(ioredis@5.7.0)
+        version: 8.2.6
       '@types/react-dom':
         specifier: ^19.1.1
         version: 19.1.6(@types/react@19.1.8)
@@ -142,15 +142,12 @@ importers:
       '@vitest/browser-playwright':
         specifier: ^4.1.5
         version: 4.1.5(msw@2.10.4(@types/node@22.16.5)(typescript@5.8.3))(playwright@1.54.1)(vite@8.0.11(@types/node@22.16.5)(jiti@2.4.2)(tsx@4.20.3))(vitest@4.1.5)
-      '@vitest/browser-preview':
-        specifier: ^4.1.5
-        version: 4.1.5(msw@2.10.4(@types/node@22.16.5)(typescript@5.8.3))(vite@8.0.11(@types/node@22.16.5)(jiti@2.4.2)(tsx@4.20.3))(vitest@4.1.5)
       '@vitest/ui':
         specifier: ^4.1.5
         version: 4.1.5(vitest@4.1.5)
       ioredis-mock:
         specifier: 8.9.0
-        version: 8.9.0(@types/ioredis-mock@8.2.6(ioredis@5.7.0))(ioredis@5.7.0)
+        version: 8.9.0(@types/ioredis-mock@8.2.6)
       mockdate:
         specifier: ^3.0.5
         version: 3.0.5
@@ -165,7 +162,7 @@ importers:
         version: 5.1.4(typescript@5.8.3)(vite@8.0.11(@types/node@22.16.5)(jiti@2.4.2)(tsx@4.20.3))
       vitest:
         specifier: ^4.1.5
-        version: 4.1.5(@types/node@22.16.5)(@vitest/browser-playwright@4.1.5)(@vitest/browser-preview@4.1.5)(@vitest/ui@4.1.5)(msw@2.10.4(@types/node@22.16.5)(typescript@5.8.3))(vite@8.0.11(@types/node@22.16.5)(jiti@2.4.2)(tsx@4.20.3))
+        version: 4.1.5(@types/node@22.16.5)(@vitest/browser-playwright@4.1.5)(@vitest/ui@4.1.5)(msw@2.10.4(@types/node@22.16.5)(typescript@5.8.3))(vite@8.0.11(@types/node@22.16.5)(jiti@2.4.2)(tsx@4.20.3))
       vitest-plugin-rsc:
         specifier: workspace:*
         version: link:../../packages/vitest-plugin-rsc
@@ -209,9 +206,6 @@ importers:
       '@vitest/browser-playwright':
         specifier: ^4.1.5
         version: 4.1.5(msw@2.10.4(@types/node@22.16.5)(typescript@5.8.3))(playwright@1.54.1)(vite@8.0.11(@types/node@22.16.5)(jiti@2.4.2)(tsx@4.20.3))(vitest@4.1.5)
-      '@vitest/browser-preview':
-        specifier: ^4.1.5
-        version: 4.1.5(msw@2.10.4(@types/node@22.16.5)(typescript@5.8.3))(vite@8.0.11(@types/node@22.16.5)(jiti@2.4.2)(tsx@4.20.3))(vitest@4.1.5)
       '@vitest/ui':
         specifier: ^4.1.5
         version: 4.1.5(vitest@4.1.5)
@@ -229,7 +223,7 @@ importers:
         version: 8.0.11(@types/node@22.16.5)(jiti@2.4.2)(tsx@4.20.3)
       vitest:
         specifier: ^4.1.5
-        version: 4.1.5(@types/node@22.16.5)(@vitest/browser-playwright@4.1.5)(@vitest/browser-preview@4.1.5)(@vitest/ui@4.1.5)(msw@2.10.4(@types/node@22.16.5)(typescript@5.8.3))(vite@8.0.11(@types/node@22.16.5)(jiti@2.4.2)(tsx@4.20.3))
+        version: 4.1.5(@types/node@22.16.5)(@vitest/browser-playwright@4.1.5)(@vitest/ui@4.1.5)(msw@2.10.4(@types/node@22.16.5)(typescript@5.8.3))(vite@8.0.11(@types/node@22.16.5)(jiti@2.4.2)(tsx@4.20.3))
       vitest-browser-react:
         specifier: ^1.0.0
         version: 1.0.1(@types/react-dom@19.1.6(@types/react@19.1.8))(@types/react@19.1.8)(@vitest/browser@4.1.5(msw@2.10.4(@types/node@22.16.5)(typescript@5.8.3))(vite@8.0.11(@types/node@22.16.5)(jiti@2.4.2)(tsx@4.20.3))(vitest@4.1.5))(react-dom@19.1.1(react@19.1.1))(react@19.1.1)(vitest@4.1.5)
@@ -835,36 +829,6 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@oxlint-tsgolint/darwin-arm64@0.22.1':
-    resolution: {integrity: sha512-4150Lpgc1YM09GcjA6GSrra1JoPjC7aOpfywLjWEY4vW0Sd1qKzqHF1WRaiw0/qUZ40OATYdv3aRd7ipPkWQbw==}
-    cpu: [arm64]
-    os: [darwin]
-
-  '@oxlint-tsgolint/darwin-x64@0.22.1':
-    resolution: {integrity: sha512-vFWcPWYOgZs4HWcgS1EjUZg33NLcNfEYU49KGImmCfZWkflENrmBYV4HN/C0YeAPum6ZZ/goPSvQrB/cOD+NfA==}
-    cpu: [x64]
-    os: [darwin]
-
-  '@oxlint-tsgolint/linux-arm64@0.22.1':
-    resolution: {integrity: sha512-6LiUpP0Zir3+29FvBm7Y28q/dBjSHqTZ5MhG1Ckw4fGhI4cAvbcwXaKvbjx1TP7rRmBNOoq/M5xdpHjTb+GAew==}
-    cpu: [arm64]
-    os: [linux]
-
-  '@oxlint-tsgolint/linux-x64@0.22.1':
-    resolution: {integrity: sha512-fuX1hEQfpHauUbXADsfqVhRzrUrGabzGXbj5wsp2vKhV5uk/Rze8Mba9GdjFGECzvXudMGqHqxB4r6jGRdhxVA==}
-    cpu: [x64]
-    os: [linux]
-
-  '@oxlint-tsgolint/win32-arm64@0.22.1':
-    resolution: {integrity: sha512-8SZidAj+jrbZf9ZjBEYW0tiNZ+KasqB2zgW26qdiPpQSF/DzURnPmXz651IeA9YsmbVdHGIooEHUmev6QJdquA==}
-    cpu: [arm64]
-    os: [win32]
-
-  '@oxlint-tsgolint/win32-x64@0.22.1':
-    resolution: {integrity: sha512-QweSk9H5lFh5Y+WUf2Kq/OAN88V6+62ZwGhP38gqdRotI90luXSMkruFTj7Q2rYrzH4ZVNaSqx7NY8JpSfIzqg==}
-    cpu: [x64]
-    os: [win32]
-
   '@oxlint/binding-android-arm-eabi@1.63.0':
     resolution: {integrity: sha512-A9xLtQt7i0OA1PoB/meog6kikXI9CdwEp7ZwQqmgnpKn3G3b1orvTDy8CQ6T7w1HvDrgWGB78PkFKcWgibcTCg==}
     engines: {node: ^20.19.0 || >=22.12.0}
@@ -1272,11 +1236,6 @@ packages:
       playwright: '*'
       vitest: 4.1.5
 
-  '@vitest/browser-preview@4.1.5':
-    resolution: {integrity: sha512-UnUeV6/ykOOmrHjtQkOj01p+DZbJD18pNopACcEwt6NY1naL6L+caR+phpzTB6Mmgr5NL+2LDyrITGeTEmM9fQ==}
-    peerDependencies:
-      vitest: 4.1.5
-
   '@vitest/browser@4.1.5':
     resolution: {integrity: sha512-iCDGI8c4yg+xmjUg2VsygdAUSIIB4x5Rht/P68OXy1hPELKXHDkzh87lkuTcdYmemRChDkEpB426MmDjzC0ziA==}
     peerDependencies:
@@ -1385,10 +1344,6 @@ packages:
     resolution: {integrity: sha512-BSeNnyus75C4//NQ9gQt1/csTXyo/8Sb+afLAkzAptFuMsod9HFokGNudZpi/oQV73hnVK+sR+5PVRMd+Dr7YQ==}
     engines: {node: '>=12'}
 
-  cluster-key-slot@1.1.2:
-    resolution: {integrity: sha512-RMr0FhtfXemyinomL4hrWcYJxmX6deFdCxpJzhDttxgO1+bcCnkk+9drydLVDmAMG7NE6aN/fl4F7ucU/90gAA==}
-    engines: {node: '>=0.10.0'}
-
   color-convert@2.0.1:
     resolution: {integrity: sha512-RRECPsj7iu/xb5oKYcsFHSppFNnsj/52OVTRKb4zP5onXwVF3zVmmToNcOfGC+CRDpfK/U584fMg38ZHCaElKQ==}
     engines: {node: '>=7.0.0'}
@@ -1472,10 +1427,6 @@ packages:
 
   defu@6.1.4:
     resolution: {integrity: sha512-mEQCMmwJu317oSz8CwdIOdwf3xMif1ttiM8LTufzc3g6kR+9Pe236twL8j3IYT1F7GfRgGcW6MWxzZjLIkuHIg==}
-
-  denque@2.1.0:
-    resolution: {integrity: sha512-HVQE3AAb/pxF8fQAoiqpvg9i3evqug3hoiwakOyZAwJm+6vZehbkYXZ0l4JxS+I3QxM97v5aaRNhj8v5oBhekw==}
-    engines: {node: '>=0.10'}
 
   dequal@2.0.3:
     resolution: {integrity: sha512-0je+qPKHEMohvfRTCEo3CrPG6cAzAYgmzKyxRiYSSDkS6eGJdyVJm7WaYA5ECaAD9wLB2T4EEeymA5aFVcYXCA==}
@@ -1661,10 +1612,6 @@ packages:
       '@types/ioredis-mock': ^8
       ioredis: ^5
 
-  ioredis@5.7.0:
-    resolution: {integrity: sha512-NUcA93i1lukyXU+riqEyPtSEkyFq8tX90uL659J+qpCZ3rEdViB/APC58oAhIh3+bJln2hzdlZbBZsGNrlsR8g==}
-    engines: {node: '>=12.22.0'}
-
   is-arrayish@0.3.2:
     resolution: {integrity: sha512-eVRqCvVlZbuw3GrM63ovNSNAeA1K16kaR/LRY/92w0zxQ5/1YzwblUX652i4Xs9RwAGjW9d9y6X88t8OaAJfWQ==}
 
@@ -1778,12 +1725,6 @@ packages:
   lightningcss@1.32.0:
     resolution: {integrity: sha512-NXYBzinNrblfraPGyrbPoD19C1h9lfI/1mzgWYvXUTe414Gz/X1FD2XBZSZM7rRTrMA8JL3OtAaGifrIKhQ5yQ==}
     engines: {node: '>= 12.0.0'}
-
-  lodash.defaults@4.2.0:
-    resolution: {integrity: sha512-qjxPLHd3r5DnsdGacqOMU6pb/avJzdh9tFX2ymgoZE27BmjXrNy/y4LoaiTeAb+O3gL8AfpJGtqfX/ae2leYYQ==}
-
-  lodash.isarguments@3.1.0:
-    resolution: {integrity: sha512-chi4NHZlZqZD18a0imDHnZPrDeBbTtVN7GXMwuGdRH9qotxAjYs3aVLKc7zNOG9eddR5Ksd8rvFEBc9SsggPpg==}
 
   lru-cache@10.4.3:
     resolution: {integrity: sha512-JNAzZcXrCt42VGLuYz0zfAzDfAvJWW6AfYlDBQyDV5DClI2m5sAmK+OIO7s59XfsRsWHp02jAJrRadPRGTt6SQ==}
@@ -1903,10 +1844,6 @@ packages:
   oxfmt@0.48.0:
     resolution: {integrity: sha512-AVaLh+7XeGx+R1zfFV+f6VV61nT2MWVJXVUDhbTm5LBWGyNt64xAyh3NYYyjeY2WykNt9AvqSQLPHcbWquYF9g==}
     engines: {node: ^20.19.0 || >=22.12.0}
-    hasBin: true
-
-  oxlint-tsgolint@0.22.1:
-    resolution: {integrity: sha512-YUSGSLUnoolsu8gxISEDio3q1rtsCozwfOzASUn3DT2mR2EeQ93uEEnen7s+6LpF+lyTQFln1pQfqwBh/fsVEg==}
     hasBin: true
 
   oxlint@1.63.0:
@@ -2031,14 +1968,6 @@ packages:
     resolution: {integrity: sha512-gNva8/6UAe8QYepIQH/jQ2qn91Qj0B9sYjMBBs3QOB8F2CXcKgLxQaJRP76sWVRQt+QU+8fAkCbCvjjMFu7Ycw==}
     engines: {node: '>= 0.8.0'}
 
-  redis-errors@1.2.0:
-    resolution: {integrity: sha512-1qny3OExCf0UvUV/5wpYKf2YwPcOqXzkwKKSmKHiE6ZMQs5heeE/c8eXK+PNllPvmjgAbfnsbpkGZWy8cBpn9w==}
-    engines: {node: '>=4'}
-
-  redis-parser@3.0.0:
-    resolution: {integrity: sha512-DJnGAeenTdpMEH6uAJRK/uiyEIH9WVsUmoLwzudwGJUwZPp80PDBWPHXSAGNPwNvIXAbe7MSUB1zQFugFml66A==}
-    engines: {node: '>=4'}
-
   require-directory@2.1.1:
     resolution: {integrity: sha512-fGxEI7+wsG9xrvdjsrlmL22OMTTiHRwAMroiEeMgq8gzoLC/PQr7RsRDSTLUg/bZAZtF+TVIkHc6/4RIKrui+Q==}
     engines: {node: '>=0.10.0'}
@@ -2151,9 +2080,6 @@ packages:
 
   stackback@0.0.2:
     resolution: {integrity: sha512-1XMJE5fQo1jGH6Y/7ebnwPOBEkIEnT4QF32d5R1+VXdXveM0IBMJt8zfaxX1P3QhVwrYe+576+jkANtSS2mBbw==}
-
-  standard-as-callback@2.1.0:
-    resolution: {integrity: sha512-qoRRSyROncaz1z0mvYqIE4lCd9p2R90i6GxW3uZv5ucSu8tU7B5HXUP1gG8pVZsYNVaXjk8ClXHPttLyxAL48A==}
 
   statuses@2.0.2:
     resolution: {integrity: sha512-DvEy55V3DB7uknRo+4iOGT5fP1slR8wQohVdknigZPMpMstaKJQWhwiYBACJE3Ul2pTnATihhBYnRhZQHGBiRw==}
@@ -2911,24 +2837,6 @@ snapshots:
   '@oxfmt/binding-win32-x64-msvc@0.48.0':
     optional: true
 
-  '@oxlint-tsgolint/darwin-arm64@0.22.1':
-    optional: true
-
-  '@oxlint-tsgolint/darwin-x64@0.22.1':
-    optional: true
-
-  '@oxlint-tsgolint/linux-arm64@0.22.1':
-    optional: true
-
-  '@oxlint-tsgolint/linux-x64@0.22.1':
-    optional: true
-
-  '@oxlint-tsgolint/win32-arm64@0.22.1':
-    optional: true
-
-  '@oxlint-tsgolint/win32-x64@0.22.1':
-    optional: true
-
   '@oxlint/binding-android-arm-eabi@1.63.0':
     optional: true
 
@@ -3147,9 +3055,7 @@ snapshots:
 
   '@types/estree@1.0.8': {}
 
-  '@types/ioredis-mock@8.2.6(ioredis@5.7.0)':
-    dependencies:
-      ioredis: 5.7.0
+  '@types/ioredis-mock@8.2.6': {}
 
   '@types/node@22.16.5':
     dependencies:
@@ -3215,19 +3121,7 @@ snapshots:
       '@vitest/mocker': 4.1.5(msw@2.10.4(@types/node@22.16.5)(typescript@5.8.3))(vite@8.0.11(@types/node@22.16.5)(jiti@2.4.2)(tsx@4.20.3))
       playwright: 1.54.1
       tinyrainbow: 3.1.0
-      vitest: 4.1.5(@types/node@22.16.5)(@vitest/browser-playwright@4.1.5)(@vitest/browser-preview@4.1.5)(@vitest/ui@4.1.5)(msw@2.10.4(@types/node@22.16.5)(typescript@5.8.3))(vite@8.0.11(@types/node@22.16.5)(jiti@2.4.2)(tsx@4.20.3))
-    transitivePeerDependencies:
-      - bufferutil
-      - msw
-      - utf-8-validate
-      - vite
-
-  '@vitest/browser-preview@4.1.5(msw@2.10.4(@types/node@22.16.5)(typescript@5.8.3))(vite@8.0.11(@types/node@22.16.5)(jiti@2.4.2)(tsx@4.20.3))(vitest@4.1.5)':
-    dependencies:
-      '@testing-library/dom': 10.4.1
-      '@testing-library/user-event': 14.6.1(@testing-library/dom@10.4.1)
-      '@vitest/browser': 4.1.5(msw@2.10.4(@types/node@22.16.5)(typescript@5.8.3))(vite@8.0.11(@types/node@22.16.5)(jiti@2.4.2)(tsx@4.20.3))(vitest@4.1.5)
-      vitest: 4.1.5(@types/node@22.16.5)(@vitest/browser-playwright@4.1.5)(@vitest/browser-preview@4.1.5)(@vitest/ui@4.1.5)(msw@2.10.4(@types/node@22.16.5)(typescript@5.8.3))(vite@8.0.11(@types/node@22.16.5)(jiti@2.4.2)(tsx@4.20.3))
+      vitest: 4.1.5(@types/node@22.16.5)(@vitest/browser-playwright@4.1.5)(@vitest/ui@4.1.5)(msw@2.10.4(@types/node@22.16.5)(typescript@5.8.3))(vite@8.0.11(@types/node@22.16.5)(jiti@2.4.2)(tsx@4.20.3))
     transitivePeerDependencies:
       - bufferutil
       - msw
@@ -3243,7 +3137,7 @@ snapshots:
       pngjs: 7.0.0
       sirv: 3.0.2
       tinyrainbow: 3.1.0
-      vitest: 4.1.5(@types/node@22.16.5)(@vitest/browser-playwright@4.1.5)(@vitest/browser-preview@4.1.5)(@vitest/ui@4.1.5)(msw@2.10.4(@types/node@22.16.5)(typescript@5.8.3))(vite@8.0.11(@types/node@22.16.5)(jiti@2.4.2)(tsx@4.20.3))
+      vitest: 4.1.5(@types/node@22.16.5)(@vitest/browser-playwright@4.1.5)(@vitest/ui@4.1.5)(msw@2.10.4(@types/node@22.16.5)(typescript@5.8.3))(vite@8.0.11(@types/node@22.16.5)(jiti@2.4.2)(tsx@4.20.3))
       ws: 8.20.0
     transitivePeerDependencies:
       - bufferutil
@@ -3296,7 +3190,7 @@ snapshots:
       sirv: 3.0.2
       tinyglobby: 0.2.16
       tinyrainbow: 3.1.0
-      vitest: 4.1.5(@types/node@22.16.5)(@vitest/browser-playwright@4.1.5)(@vitest/browser-preview@4.1.5)(@vitest/ui@4.1.5)(msw@2.10.4(@types/node@22.16.5)(typescript@5.8.3))(vite@8.0.11(@types/node@22.16.5)(jiti@2.4.2)(tsx@4.20.3))
+      vitest: 4.1.5(@types/node@22.16.5)(@vitest/browser-playwright@4.1.5)(@vitest/ui@4.1.5)(msw@2.10.4(@types/node@22.16.5)(typescript@5.8.3))(vite@8.0.11(@types/node@22.16.5)(jiti@2.4.2)(tsx@4.20.3))
 
   '@vitest/utils@4.1.5':
     dependencies:
@@ -3375,8 +3269,6 @@ snapshots:
       string-width: 4.2.3
       strip-ansi: 6.0.1
       wrap-ansi: 7.0.0
-
-  cluster-key-slot@1.1.2: {}
 
   color-convert@2.0.1:
     dependencies:
@@ -3464,8 +3356,6 @@ snapshots:
   deepmerge@4.3.1: {}
 
   defu@6.1.4: {}
-
-  denque@2.1.0: {}
 
   dequal@2.0.3: {}
 
@@ -3646,29 +3536,14 @@ snapshots:
     dependencies:
       safer-buffer: 2.1.2
 
-  ioredis-mock@8.9.0(@types/ioredis-mock@8.2.6(ioredis@5.7.0))(ioredis@5.7.0):
+  ioredis-mock@8.9.0(@types/ioredis-mock@8.2.6):
     dependencies:
       '@ioredis/as-callback': 3.0.0
       '@ioredis/commands': 1.3.0
-      '@types/ioredis-mock': 8.2.6(ioredis@5.7.0)
+      '@types/ioredis-mock': 8.2.6
       fengari: 0.1.4
       fengari-interop: 0.1.3(fengari@0.1.4)
-      ioredis: 5.7.0
       semver: 7.7.2
-
-  ioredis@5.7.0:
-    dependencies:
-      '@ioredis/commands': 1.3.0
-      cluster-key-slot: 1.1.2
-      debug: 4.4.1
-      denque: 2.1.0
-      lodash.defaults: 4.2.0
-      lodash.isarguments: 3.1.0
-      redis-errors: 1.2.0
-      redis-parser: 3.0.0
-      standard-as-callback: 2.1.0
-    transitivePeerDependencies:
-      - supports-color
 
   is-arrayish@0.3.2:
     optional: true
@@ -3743,10 +3618,6 @@ snapshots:
       lightningcss-linux-x64-musl: 1.32.0
       lightningcss-win32-arm64-msvc: 1.32.0
       lightningcss-win32-x64-msvc: 1.32.0
-
-  lodash.defaults@4.2.0: {}
-
-  lodash.isarguments@3.1.0: {}
 
   lru-cache@10.4.3: {}
 
@@ -3878,17 +3749,7 @@ snapshots:
       '@oxfmt/binding-win32-ia32-msvc': 0.48.0
       '@oxfmt/binding-win32-x64-msvc': 0.48.0
 
-  oxlint-tsgolint@0.22.1:
-    optionalDependencies:
-      '@oxlint-tsgolint/darwin-arm64': 0.22.1
-      '@oxlint-tsgolint/darwin-x64': 0.22.1
-      '@oxlint-tsgolint/linux-arm64': 0.22.1
-      '@oxlint-tsgolint/linux-x64': 0.22.1
-      '@oxlint-tsgolint/win32-arm64': 0.22.1
-      '@oxlint-tsgolint/win32-x64': 0.22.1
-    optional: true
-
-  oxlint@1.63.0(oxlint-tsgolint@0.22.1):
+  oxlint@1.63.0:
     optionalDependencies:
       '@oxlint/binding-android-arm-eabi': 1.63.0
       '@oxlint/binding-android-arm64': 1.63.0
@@ -3909,7 +3770,6 @@ snapshots:
       '@oxlint/binding-win32-arm64-msvc': 1.63.0
       '@oxlint/binding-win32-ia32-msvc': 1.63.0
       '@oxlint/binding-win32-x64-msvc': 1.63.0
-      oxlint-tsgolint: 0.22.1
 
   package-manager-detector@1.3.0: {}
 
@@ -4010,12 +3870,6 @@ snapshots:
   readdirp@4.1.2: {}
 
   readline-sync@1.4.10: {}
-
-  redis-errors@1.2.0: {}
-
-  redis-parser@3.0.0:
-    dependencies:
-      redis-errors: 1.2.0
 
   require-directory@2.1.1: {}
 
@@ -4178,8 +4032,6 @@ snapshots:
   srvx@0.11.15: {}
 
   stackback@0.0.2: {}
-
-  standard-as-callback@2.1.0: {}
 
   statuses@2.0.2: {}
 
@@ -4347,12 +4199,12 @@ snapshots:
       '@vitest/browser': 4.1.5(msw@2.10.4(@types/node@22.16.5)(typescript@5.8.3))(vite@8.0.11(@types/node@22.16.5)(jiti@2.4.2)(tsx@4.20.3))(vitest@4.1.5)
       react: 19.1.1
       react-dom: 19.1.1(react@19.1.1)
-      vitest: 4.1.5(@types/node@22.16.5)(@vitest/browser-playwright@4.1.5)(@vitest/browser-preview@4.1.5)(@vitest/ui@4.1.5)(msw@2.10.4(@types/node@22.16.5)(typescript@5.8.3))(vite@8.0.11(@types/node@22.16.5)(jiti@2.4.2)(tsx@4.20.3))
+      vitest: 4.1.5(@types/node@22.16.5)(@vitest/browser-playwright@4.1.5)(@vitest/ui@4.1.5)(msw@2.10.4(@types/node@22.16.5)(typescript@5.8.3))(vite@8.0.11(@types/node@22.16.5)(jiti@2.4.2)(tsx@4.20.3))
     optionalDependencies:
       '@types/react': 19.1.8
       '@types/react-dom': 19.1.6(@types/react@19.1.8)
 
-  vitest@4.1.5(@types/node@22.16.5)(@vitest/browser-playwright@4.1.5)(@vitest/browser-preview@4.1.5)(@vitest/ui@4.1.5)(msw@2.10.4(@types/node@22.16.5)(typescript@5.8.3))(vite@8.0.11(@types/node@22.16.5)(jiti@2.4.2)(tsx@4.20.3)):
+  vitest@4.1.5(@types/node@22.16.5)(@vitest/browser-playwright@4.1.5)(@vitest/ui@4.1.5)(msw@2.10.4(@types/node@22.16.5)(typescript@5.8.3))(vite@8.0.11(@types/node@22.16.5)(jiti@2.4.2)(tsx@4.20.3)):
     dependencies:
       '@vitest/expect': 4.1.5
       '@vitest/mocker': 4.1.5(msw@2.10.4(@types/node@22.16.5)(typescript@5.8.3))(vite@8.0.11(@types/node@22.16.5)(jiti@2.4.2)(tsx@4.20.3))
@@ -4377,7 +4229,6 @@ snapshots:
     optionalDependencies:
       '@types/node': 22.16.5
       '@vitest/browser-playwright': 4.1.5(msw@2.10.4(@types/node@22.16.5)(typescript@5.8.3))(playwright@1.54.1)(vite@8.0.11(@types/node@22.16.5)(jiti@2.4.2)(tsx@4.20.3))(vitest@4.1.5)
-      '@vitest/browser-preview': 4.1.5(msw@2.10.4(@types/node@22.16.5)(typescript@5.8.3))(vite@8.0.11(@types/node@22.16.5)(jiti@2.4.2)(tsx@4.20.3))(vitest@4.1.5)
       '@vitest/ui': 4.1.5(vitest@4.1.5)
     transitivePeerDependencies:
       - msw
