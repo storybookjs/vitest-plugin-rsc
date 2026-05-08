@@ -1,6 +1,5 @@
 import { ESModulesEvaluator, ModuleRunner, type ModuleRunnerTransport } from "vite/module-runner";
 
-const reactClientInvokePath = "/@vite/invoke-react-client";
 const reactClientWebSocketInfoPath = "/@vite/react-client-runner-websocket";
 const reactClientWebSocketQuery = "vitest-plugin-rsc-react-client";
 const reactClientWebSocketInvokeEvent = "vitest-plugin-rsc:react-client:invoke";
@@ -17,37 +16,32 @@ type WebSocketInfo = {
   path: string;
   timeout: number;
 };
+type PendingInvoke = {
+  resolve: (result: InvokeResult) => void;
+  reject: (error: unknown) => void;
+  timeoutId: ReturnType<typeof setTimeout>;
+};
+type InvokeResultMessage = {
+  type?: string;
+  event?: string;
+  data?: {
+    id?: string;
+    result?: InvokeResult;
+  };
+};
 
 let webSocket: WebSocket | undefined;
 let webSocketPromise: Promise<WebSocket> | undefined;
 let webSocketInfoPromise: Promise<WebSocketInfo> | undefined;
-let webSocketUnavailable = false;
 let nextInvokeId = 0;
 
-const pendingInvokes = new Map<
-  string,
-  {
-    resolve: (result: InvokeResult) => void;
-    reject: (error: unknown) => void;
-    timeoutId: ReturnType<typeof setTimeout>;
-  }
->();
+const pendingInvokes = new Map<string, PendingInvoke>();
 
 const runner = new ModuleRunner(
   {
     sourcemapInterceptor: false,
     transport: {
-      invoke: async (payload) => {
-        if (!webSocketUnavailable && typeof WebSocket !== "undefined") {
-          try {
-            return await invokeReactClientOverWebSocket(payload);
-          } catch {
-            webSocketUnavailable = true;
-          }
-        }
-
-        return invokeReactClientOverHttp(payload);
-      },
+      invoke: invokeReactClient,
     },
     hmr: false,
   },
@@ -56,17 +50,7 @@ const runner = new ModuleRunner(
 
 export const importReactClient = runner.import.bind(runner);
 
-async function invokeReactClientOverHttp(payload: InvokePayload) {
-  const response = await fetch(
-    `${reactClientInvokePath}?` +
-      new URLSearchParams({
-        data: JSON.stringify(payload),
-      }),
-  );
-  return response.json() as Promise<InvokeResult>;
-}
-
-async function invokeReactClientOverWebSocket(payload: InvokePayload) {
+async function invokeReactClient(payload: InvokePayload) {
   const socket = await getReactClientWebSocket();
   const info = await getWebSocketInfo();
   const id = String(++nextInvokeId);
@@ -99,86 +83,90 @@ async function getReactClientWebSocket() {
     return webSocket;
   }
 
-  if (webSocketPromise) {
-    return webSocketPromise;
-  }
-
-  webSocketPromise = (async () => {
-    const info = await getWebSocketInfo();
-    const socket = new WebSocket(createWebSocketUrl(info), "vite-hmr");
-
-    socket.addEventListener("message", handleWebSocketMessage);
-    socket.addEventListener("close", () => {
-      if (webSocket === socket) {
-        webSocket = undefined;
-      }
-      rejectPendingInvokes(new Error("React client websocket connection closed"));
-    });
-
-    await new Promise<void>((resolve, reject) => {
-      const cleanup = () => {
-        socket.removeEventListener("open", handleOpen);
-        socket.removeEventListener("error", handleError);
-        socket.removeEventListener("close", handleClose);
-      };
-      const handleOpen = () => {
-        cleanup();
-        resolve();
-      };
-      const handleError = () => {
-        cleanup();
-        reject(new Error("React client websocket connection failed"));
-      };
-      const handleClose = () => {
-        cleanup();
-        reject(new Error("React client websocket closed before opening"));
-      };
-
-      socket.addEventListener("open", handleOpen);
-      socket.addEventListener("error", handleError);
-      socket.addEventListener("close", handleClose);
-    });
-
-    webSocket = socket;
-    return socket;
-  })().finally(() => {
+  webSocketPromise ??= openReactClientWebSocket().finally(() => {
     webSocketPromise = undefined;
   });
-
   return webSocketPromise;
 }
 
+async function openReactClientWebSocket() {
+  const info = await getWebSocketInfo();
+  const socket = new WebSocket(createWebSocketUrl(info), "vite-hmr");
+
+  socket.addEventListener("message", handleWebSocketMessage);
+  socket.addEventListener("close", () => {
+    if (webSocket === socket) {
+      webSocket = undefined;
+    }
+    rejectPendingInvokes(new Error("React client websocket connection closed"));
+  });
+
+  await waitForWebSocketOpen(socket);
+  webSocket = socket;
+  return socket;
+}
+
+function waitForWebSocketOpen(socket: WebSocket) {
+  return new Promise<void>((resolve, reject) => {
+    const cleanup = () => {
+      socket.removeEventListener("open", handleOpen);
+      socket.removeEventListener("error", handleError);
+      socket.removeEventListener("close", handleClose);
+    };
+    const handleOpen = () => {
+      cleanup();
+      resolve();
+    };
+    const handleError = () => {
+      cleanup();
+      reject(new Error("React client websocket connection failed"));
+    };
+    const handleClose = () => {
+      cleanup();
+      reject(new Error("React client websocket closed before opening"));
+    };
+
+    socket.addEventListener("open", handleOpen);
+    socket.addEventListener("error", handleError);
+    socket.addEventListener("close", handleClose);
+  });
+}
+
 function handleWebSocketMessage(event: MessageEvent) {
-  if (typeof event.data !== "string") {
-    return;
-  }
+  const result = parseInvokeResultMessage(event.data);
+  if (!result) return;
 
-  let payload:
-    | {
-        type: "custom";
-        event: string;
-        data: { id: string; result: InvokeResult };
-      }
-    | undefined;
-
-  try {
-    payload = JSON.parse(event.data);
-  } catch {
-    return;
-  }
-
-  if (payload?.type !== "custom" || payload.event !== reactClientWebSocketInvokeResultEvent) {
-    return;
-  }
-
-  const pending = pendingInvokes.get(payload.data.id);
+  const pending = pendingInvokes.get(result.id);
   if (!pending) {
     return;
   }
 
   clearTimeout(pending.timeoutId);
-  pendingInvokes.delete(payload.data.id);
-  pending.resolve(payload.data.result);
+  pendingInvokes.delete(result.id);
+  pending.resolve(result.result);
+}
+
+function parseInvokeResultMessage(raw: unknown) {
+  if (typeof raw !== "string") {
+    return undefined;
+  }
+
+  try {
+    const message = JSON.parse(raw) as InvokeResultMessage;
+    if (
+      message.type !== "custom" ||
+      message.event !== reactClientWebSocketInvokeResultEvent ||
+      typeof message.data?.id !== "string"
+    ) {
+      return undefined;
+    }
+    return {
+      id: message.data.id,
+      result: message.data.result as InvokeResult,
+    };
+  } catch {
+    return undefined;
+  }
 }
 
 function rejectPendingInvokes(error: unknown) {

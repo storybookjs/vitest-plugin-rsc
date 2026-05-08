@@ -153,14 +153,14 @@ test("note editor saves note and redirects after submitting note", async () => {
 
 ## 🛠️ How it works
 
-### Vitest plugin with 2 environments
+### Vitest plugin with two environments
 
-The implementation of `renderServer` function simply serializes the server component tree to react flight data with `renderToReadableStream` and then deserializes it back to JSX with `createFromReadableStream`:
+The `renderServer` function serializes the server component tree to React Flight data with `renderToReadableStream`, then deserializes that Flight data back to JSX with `createFromReadableStream`:
 
 ```tsx
 import { renderToReadableStream } from "@vitejs/plugin-rsc/react/rsc";
 
-// 👇 this is imported with a helper, to get the correct export conditions in the module resolution
+// imported through a helper, so Vite resolves it with the browser/client conditions
 const { createFromReadableStream } = await importReactClient("@vitejs/plugin-rsc/react/browser");
 
 // serialize
@@ -169,14 +169,14 @@ const flightStream = renderToReadableStream(<ServerComponent />);
 const jsx = await createFromReadableStream(flightStream);
 ```
 
-The vitest plugins spawns 2 environments.
+The Vitest plugin creates two Vite environments:
 
-1. The react-server environment is a `client` environment, but has the `react-server` condition applied, and the right server specific transformation to turn client components in references.
-2. A second client environment `react_client` is created that to render the client components marked with `use client`, deserialize the flight stream and to render the JSX to the dom.
+1. The RSC environment is configured as a Vite `client` consumer, but with the `react-server` condition and the server-specific transform that turns client components into references.
+2. The `react_client` environment is a normal browser/client environment. It renders components marked with `"use client"`, deserializes the Flight stream, and renders the resulting JSX into the DOM.
 
 ### Transformations
 
-The transformations of the vite plugin will make sure that for a client import in the server tree like:
+The Vite RSC transform turns a client import in the server tree like this:
 
 ```tsx
 "use client";
@@ -193,7 +193,7 @@ export function Like() {
 }
 ```
 
-Is transformed to a reference:
+That becomes a client reference:
 
 ```tsx
 import { registerClientReference } from "@vitejs/plugin-rsc/vendor/react-server-dom/server";
@@ -205,11 +205,11 @@ export const Like = registerClientReference(
 );
 ```
 
-For now I have copied over the specific transformations I needed from the RSC plugin from @hi-ogawa, as the specific stuff I needed was not included in the exports of the plugin.
+For now I have copied over the specific transformations I needed from @hi-ogawa's RSC plugin, because the pieces this plugin needs are not exported there yet.
 
 ### Vite Environment API
 
-I'm using the vite environment API, this allows to import the client modules using an import helper:
+The bridge between those two environments is Vite's Environment API. In the browser, `importReactClient` is a `ModuleRunner` import function:
 
 ```tsx
 import { ESModulesEvaluator, ModuleRunner } from "vite/module-runner";
@@ -218,15 +218,7 @@ const runner = new ModuleRunner(
   {
     sourcemapInterceptor: false,
     transport: {
-      invoke: async (payload) => {
-        const response = await fetch(
-          "/@vite/invoke-react-client?" +
-            new URLSearchParams({
-              data: JSON.stringify(payload),
-            }),
-        );
-        return response.json();
-      },
+      invoke: invokeReactClient,
     },
     hmr: false,
   },
@@ -236,24 +228,52 @@ const runner = new ModuleRunner(
 export const importReactClient = runner.import.bind(runner);
 ```
 
-And a server handler to resolve the import with the right conditions and transformations:
+When that runner needs to import something, it calls `transport.invoke(payload)`. This plugin sends that invoke over a dedicated Vite HMR websocket:
 
 ```tsx
-const plugin = {
-  configureServer(server) {
-    server.middlewares.use(async (req, res, next) => {
-      const url = new URL(req.url ?? "/", "https://any.local");
-      if (url.pathname === "/@vite/invoke-react-client") {
-        const payload = JSON.parse(url.searchParams.get("data")!);
-        const result = await server.environments["react_client"]!.hot.handleInvoke(payload);
-        res.end(JSON.stringify(result));
-        return;
-      }
-      next();
-    });
-  },
-};
+async function invokeReactClient(payload) {
+  const id = nextId();
+
+  socket.send(
+    JSON.stringify({
+      type: "custom",
+      event: "vitest-plugin-rsc:react-client:invoke",
+      data: { id, payload },
+    }),
+  );
+
+  return waitForInvokeResult(id);
+}
 ```
+
+On the Vite server, the websocket message is resolved inside the `react_client` environment. That is the key part: Vite applies the browser conditions and client transforms for this import, even though the test itself is currently rendering a server component.
+
+```tsx
+server.ws.on("connection", (socket) => {
+  socket.on("message", async (raw) => {
+    const invoke = parseWebSocketInvoke(raw);
+    if (!invoke) return;
+
+    const result = await server.environments["react_client"]!.hot.handleInvoke(invoke.payload);
+
+    socket.send(
+      JSON.stringify({
+        type: "custom",
+        event: "vitest-plugin-rsc:react-client:invoke-result",
+        data: { id: invoke.id, result },
+      }),
+    );
+  });
+});
+```
+
+So the full loop is:
+
+1. `renderServer(<ServerComponent />)` renders the server tree to a Flight stream.
+2. The Flight client calls `importReactClient(...)` when it needs browser/client modules.
+3. `importReactClient` sends Vite module-runner invokes over websocket.
+4. Vite resolves those invokes in the `react_client` environment.
+5. The browser receives the result, deserializes the Flight stream, and Testing Library renders it into the DOM.
 
 ### Direction forward
 

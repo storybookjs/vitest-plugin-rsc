@@ -1,10 +1,4 @@
-import {
-  type Plugin,
-  type PluginOption,
-  type UserConfig,
-  type ViteDevServer,
-  version as viteVersion,
-} from "vite";
+import { type Plugin, type UserConfig, type ViteDevServer } from "vite";
 import { vitePluginRscMinimal } from "@vitejs/plugin-rsc/plugin";
 
 const REACT_CLIENT_OPTIMIZE_DEPS_ENTRIES = [
@@ -13,7 +7,6 @@ const REACT_CLIENT_OPTIMIZE_DEPS_ENTRIES = [
   "components/**/*.{js,jsx,ts,tsx}",
 ];
 
-const reactClientInvokePath = "/@vite/invoke-react-client";
 const reactClientWebSocketInfoPath = "/@vite/react-client-runner-websocket";
 const reactClientWebSocketQuery = "vitest-plugin-rsc-react-client";
 const reactClientWebSocketInvokeEvent = "vitest-plugin-rsc:react-client:invoke";
@@ -21,35 +14,28 @@ const reactClientWebSocketInvokeResultEvent = "vitest-plugin-rsc:react-client:in
 type ReactClientInvokePayload = Parameters<
   ViteDevServer["environments"][string]["hot"]["handleInvoke"]
 >[0];
-type ReactClientWebSocketPayload = {
-  type: "custom";
-  event: string;
-  data: {
-    id: string;
-    payload: ReactClientInvokePayload;
-  };
+type ReactClientWebSocketInvoke = {
+  id: string;
+  payload: ReactClientInvokePayload;
 };
 
-function isPlugin(plugin: PluginOption): plugin is Plugin {
+function isPlugin(plugin: unknown): plugin is Plugin {
   return !!plugin && typeof plugin === "object" && "name" in plugin;
 }
 
-function flattenPluginNames(plugins: PluginOption[] | undefined): string[] {
-  const names: string[] = [];
-
+function hasPlugin(plugins: UserConfig["plugins"], pluginName: string): boolean {
   for (const plugin of plugins ?? []) {
     if (Array.isArray(plugin)) {
-      names.push(...flattenPluginNames(plugin));
+      if (hasPlugin(plugin, pluginName)) return true;
     } else if (isPlugin(plugin)) {
-      names.push(plugin.name);
+      if (plugin.name === pluginName) return true;
     }
   }
-
-  return names;
+  return false;
 }
 
 function isVitestBrowserServer(config: UserConfig): boolean {
-  return flattenPluginNames(config.plugins).includes("vitest:browser");
+  return hasPlugin(config.plugins, "vitest:browser");
 }
 
 function disableOptimizer(config: UserConfig, environmentName: string): void {
@@ -60,24 +46,6 @@ function disableOptimizer(config: UserConfig, environmentName: string): void {
   optimizeDeps.noDiscovery = true;
   optimizeDeps.include = [];
   optimizeDeps.entries = [];
-}
-
-function getReactClientOptimizerBundlerOptions() {
-  const viteMajor = Number(viteVersion.split(".")[0]);
-
-  if (viteMajor >= 8) {
-    return {
-      rolldownOptions: {
-        platform: "browser" as const,
-      },
-    };
-  }
-
-  return {
-    esbuildOptions: {
-      platform: "browser" as const,
-    },
-  };
 }
 
 export function vitestPluginRSC(): Plugin[] {
@@ -98,13 +66,11 @@ export function vitestPluginRSC(): Plugin[] {
           }
 
           socket.on("message", async (raw) => {
-            const payload = parseWebSocketPayload(raw);
-            if (payload?.type !== "custom" || payload.event !== reactClientWebSocketInvokeEvent) {
-              return;
-            }
+            const invoke = parseWebSocketInvoke(raw);
+            if (!invoke) return;
 
             const result = await server.environments["react_client"]!.hot.handleInvoke(
-              payload.data.payload,
+              invoke.payload,
             );
 
             socket.send(
@@ -112,7 +78,7 @@ export function vitestPluginRSC(): Plugin[] {
                 type: "custom",
                 event: reactClientWebSocketInvokeResultEvent,
                 data: {
-                  id: payload.data.id,
+                  id: invoke.id,
                   result,
                 },
               }),
@@ -120,7 +86,7 @@ export function vitestPluginRSC(): Plugin[] {
           });
         });
 
-        server.middlewares.use(async (req, res, next) => {
+        server.middlewares.use((req, res, next) => {
           const url = new URL(req.url ?? "/", "https://any.local");
           if (url.pathname === reactClientWebSocketInfoPath) {
             res.setHeader("Content-Type", "application/json");
@@ -128,12 +94,6 @@ export function vitestPluginRSC(): Plugin[] {
             return;
           }
 
-          if (url.pathname === reactClientInvokePath) {
-            const payload = JSON.parse(url.searchParams.get("data")!);
-            const result = await server.environments["react_client"]!.hot.handleInvoke(payload);
-            res.end(JSON.stringify(result));
-            return;
-          }
           next();
         });
       },
@@ -180,7 +140,6 @@ export function vitestPluginRSC(): Plugin[] {
                 ],
                 noDiscovery: false,
                 exclude: ["vitest-plugin-rsc", "@vitejs/plugin-rsc"],
-                ...getReactClientOptimizerBundlerOptions(),
               },
             },
           },
@@ -210,25 +169,32 @@ export function vitestPluginRSC(): Plugin[] {
   ];
 }
 
-function parseWebSocketPayload(raw: unknown) {
+function parseWebSocketInvoke(raw: unknown): ReactClientWebSocketInvoke | undefined {
   try {
-    const payload = JSON.parse(String(raw)) as ReactClientWebSocketPayload;
+    const message = JSON.parse(String(raw)) as {
+      type?: string;
+      event?: string;
+      data?: Partial<ReactClientWebSocketInvoke>;
+    };
     if (
-      payload?.type !== "custom" ||
-      typeof payload.event !== "string" ||
-      typeof payload.data?.id !== "string" ||
-      !payload.data.payload
+      message.type !== "custom" ||
+      message.event !== reactClientWebSocketInvokeEvent ||
+      typeof message.data?.id !== "string" ||
+      !message.data.payload
     ) {
       return undefined;
     }
-    return payload;
+    return {
+      id: message.data.id,
+      payload: message.data.payload,
+    };
   } catch {
     return undefined;
   }
 }
 
 function getReactClientWebSocketInfo(server: ViteDevServer) {
-  const hmr = typeof server.config.server.hmr === "object" ? server.config.server.hmr : undefined;
+  const hmr = getHmrOptions(server);
 
   return {
     token: server.config.webSocketToken,
@@ -241,11 +207,15 @@ function getReactClientWebSocketInfo(server: ViteDevServer) {
 }
 
 function getWebSocketPath(server: ViteDevServer) {
-  const hmr = typeof server.config.server.hmr === "object" ? server.config.server.hmr : undefined;
+  const hmr = getHmrOptions(server);
 
   if (!hmr?.path) {
     return server.config.base;
   }
 
   return `${server.config.base.replace(/\/$/, "")}/${hmr.path.replace(/^\//, "")}`;
+}
+
+function getHmrOptions(server: ViteDevServer) {
+  return typeof server.config.server.hmr === "object" ? server.config.server.hmr : undefined;
 }
