@@ -3,7 +3,6 @@ import { defineConfig } from "tsdown";
 export default defineConfig({
   entry: [
     "src/index.ts",
-    "src/setup.ts",
     "src/testing-library.tsx",
     "src/testing-library-client.tsx",
     "src/nextjs/client.tsx",
@@ -15,8 +14,11 @@ export default defineConfig({
     "src/nextjs/cache.ts",
   ],
   format: ["esm"],
-  external: [/^virtual:/, /^@vitejs\/plugin-rsc\/vendor\//, "vitest-plugin-rsc/nextjs/client"],
-  noExternal: ["js-tokens"],
+  fixedExtension: false,
+  deps: {
+    alwaysBundle: ["js-tokens"],
+    neverBundle: [/^virtual:/, /^@vitejs\/plugin-rsc\/vendor\//, "vitest-plugin-rsc/nextjs/client"],
+  },
   dts: {
     sourcemap: process.argv.slice(2).includes("--sourcemap"),
   },

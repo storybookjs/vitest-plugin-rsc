@@ -8,10 +8,10 @@ import { RedirectBoundary } from "next/dist/client/components/redirect-boundary"
 import { getSelectedParams } from "next/dist/client/components/router-reducer/compute-changed-path";
 import { createInitialRouterState } from "next/dist/client/components/router-reducer/create-initial-router-state";
 import { useActionQueue } from "next/dist/client/components/use-action-queue";
-import {
-  type CacheNodeSeedData,
-  type FlightDataPath,
-  type FlightRouterState,
+import type {
+  CacheNodeSeedData,
+  FlightDataPath,
+  FlightRouterState,
 } from "next/dist/server/app-render/types";
 import {
   AppRouterContext,

@@ -2,8 +2,8 @@ import { defineConfig } from "oxlint";
 
 export default defineConfig({
   options: {
-    typeAware: false,
-    typeCheck: false,
+    typeAware: true,
+    typeCheck: true,
   },
   plugins: [
     "typescript",

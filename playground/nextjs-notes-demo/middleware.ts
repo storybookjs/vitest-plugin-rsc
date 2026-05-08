@@ -6,7 +6,7 @@ import authMiddleware from "middleware/auth";
 import editMiddleware from "middleware/edit";
 import logoutMiddleware from "middleware/logout";
 
-function matchPathname(url, pathname) {
+function matchPathname(url: { pathname: string }, pathname: string) {
   return url.pathname.startsWith(pathname);
 }
 

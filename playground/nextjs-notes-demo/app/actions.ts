@@ -10,7 +10,7 @@ import { setNote } from "../libs/notes";
 export async function saveNote(noteId: string | null, title: string, body: string) {
   const cookieStore = await cookies();
   const userCookie = cookieStore.get(userCookieKey);
-  const user = getUser(userCookie);
+  const user = getUser(userCookie?.value);
 
   if (!noteId) {
     noteId = Date.now().toString();

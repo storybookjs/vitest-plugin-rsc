@@ -5,8 +5,15 @@ import { format, isToday } from "date-fns";
 import marked from "marked";
 import ClientSidebarNote from "./sidebar-note";
 import { load } from "cheerio";
+import type { Note } from "libs/notes";
 
-export default function NoteList({ notes, searchText }) {
+export default function NoteList({
+  notes,
+  searchText,
+}: {
+  notes: Array<Note | null | undefined>;
+  searchText: string | null;
+}) {
   if (notes.length === 0) {
     return (
       <div className="notes-empty">
@@ -30,7 +37,7 @@ export default function NoteList({ notes, searchText }) {
   );
 }
 
-function excerpts(html, length) {
+function excerpts(html: string, length: number) {
   const text = load(html)
     .text()
     .trim()
@@ -45,7 +52,7 @@ function excerpts(html, length) {
   return excerpt;
 }
 
-function SidebarNote({ note }) {
+function SidebarNote({ note }: { note: Note }) {
   const updatedAt = new Date(note.updated_at);
   const lastUpdatedAt = isToday(updatedAt)
     ? format(updatedAt, "h:mm bb")

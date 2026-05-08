@@ -4,12 +4,18 @@ import NoteEditor from "components/note-editor";
 import AuthButton from "components/auth-button";
 import { cookies } from "next/headers";
 import { getUser, userCookieKey } from "libs/session";
+import type { Note } from "libs/notes";
 
-export default async function NoteUI({ note, isEditing }) {
+type NoteUIProps = {
+  note: Partial<Note> & Pick<Note, "title" | "body">;
+  isEditing: boolean;
+};
+
+export default async function NoteUI({ note, isEditing }: NoteUIProps) {
   const cookieStore = await cookies();
   const userCookie = cookieStore.get(userCookieKey);
   const user = getUser(userCookie?.value);
-  const { id, title, body, updated_at, created_by: createdBy } = note;
+  const { id = null, title, body, updated_at, created_by: createdBy } = note;
   const updatedAt = new Date(updated_at || 0);
 
   if (isEditing) {

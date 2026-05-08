@@ -21,7 +21,7 @@
 
     /* If your code runs in the DOM: */
     "lib": ["es2024", "dom", "dom.iterable"],
-    "jsx": "preserve"
+    "jsx": "react-jsx"
   },
   "include": ["./**/*.ts", "./**/*.tsx"]
 }

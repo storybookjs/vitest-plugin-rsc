@@ -2,20 +2,20 @@ export const userCookieKey = "_un";
 export const cookieSep = "^)&_*($";
 
 const iv = encode("encryptiv");
-const password = process.env.SESSION_KEY;
+const password = process.env.SESSION_KEY ?? "";
 
 const pwUtf8 = encode(password);
 const algo = { name: "AES-GCM", iv };
 
-function encode(value) {
+function encode(value: string) {
   return new TextEncoder().encode(value);
 }
 
-function decode(value) {
+function decode(value: ArrayBuffer) {
   return new TextDecoder().decode(value);
 }
 
-function base64ToArrayBuffer(base64) {
+function base64ToArrayBuffer(base64: string) {
   const binary = atob(base64);
   const len = binary.length;
   const bytes = new Uint8Array(len);
@@ -25,7 +25,7 @@ function base64ToArrayBuffer(base64) {
   return bytes.buffer;
 }
 
-function arrayBufferToBase64(buffer) {
+function arrayBufferToBase64(buffer: ArrayBuffer) {
   const bytes = new Uint8Array(buffer);
   // @ts-ignore
   const binary = String.fromCharCode(...bytes);
@@ -34,7 +34,7 @@ function arrayBufferToBase64(buffer) {
 
 // Encrypt
 export function createEncrypt() {
-  return async function (data) {
+  return async function (data: string) {
     const pwHash = await crypto.subtle.digest("SHA-256", pwUtf8);
     const encryptKey = await crypto.subtle.importKey("raw", pwHash, algo, false, ["encrypt"]);
     const encrypted = await crypto.subtle.encrypt(algo, encryptKey, encode(data));
@@ -44,7 +44,7 @@ export function createEncrypt() {
 
 // Decrypt
 export function createDecrypt() {
-  return async function decrypt(data) {
+  return async function decrypt(data: string) {
     const pwHash = await crypto.subtle.digest("SHA-256", pwUtf8);
     const buffer = base64ToArrayBuffer(data);
     const decryptKey = await crypto.subtle.importKey("raw", pwHash, algo, false, ["decrypt"]);
@@ -54,8 +54,9 @@ export function createDecrypt() {
   };
 }
 
-export function getSession(userCookie) {
-  const none = [null, null];
+export function getSession(userCookie?: string) {
+  const none: [null, null] = [null, null];
+  if (!userCookie) return none;
   const value = decodeURIComponent(userCookie);
   if (!value) return none;
   const index = value.indexOf(cookieSep);
@@ -65,6 +66,6 @@ export function getSession(userCookie) {
   return [user, session];
 }
 
-export function getUser(userCookie) {
+export function getUser(userCookie?: string) {
   return getSession(userCookie)[0];
 }

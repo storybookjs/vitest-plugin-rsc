@@ -58,7 +58,7 @@ export default async function middleware(req: NextRequest) {
     console.error(err);
 
     return NextResponse.json(
-      { message: err.toString() },
+      { message: err instanceof Error ? err.message : String(err) },
       {
         status: 500,
       },

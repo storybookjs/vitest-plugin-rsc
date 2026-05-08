@@ -226,12 +226,7 @@ async function getResponse(event, client, requestId) {
       }
     }
 
-    try {
-      debugger;
-      return fetch(requestClone, { headers });
-    } catch (e) {
-      console.log(e);
-    }
+    return fetch(requestClone, { headers });
   }
 
   // Bypass mocking when the client is not active.

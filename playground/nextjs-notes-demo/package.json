@@ -9,7 +9,7 @@
     "test:watch": "rm -rf .vite && vitest watch"
   },
   "dependencies": {
-    "@types/node": "^22.8.7",
+    "@types/node": "^24.12.3",
     "@types/react": "^19.1.8",
     "@vercel/kv": "^3.0.0",
     "cheerio": "1.0.0",
@@ -22,25 +22,28 @@
     "react": "^19.1.1",
     "react-dom": "^19.1.1",
     "sanitize-html": "^2.13.1",
-    "typescript": "^5.8.3"
+    "typescript": "^6.0.3"
   },
   "devDependencies": {
+    "@opentelemetry/api": "^1.9.1",
     "@testing-library/dom": "^10.4.1",
     "@testing-library/user-event": "^14.6.1",
     "@types/ioredis-mock": "^8.2.6",
     "@types/react": "^19.1.1",
     "@types/react-dom": "^19.1.1",
+    "@types/sanitize-html": "^2.16.1",
     "@vitejs/plugin-react": "^6.0.1",
     "@vitejs/plugin-rsc": "^0.5.24",
-    "@vitest/browser": "^4.1.5",
-    "@vitest/browser-playwright": "^4.1.5",
-    "@vitest/ui": "^4.1.5",
+    "@vitest/browser": "5.0.0-beta.2",
+    "@vitest/browser-playwright": "5.0.0-beta.2",
+    "@vitest/ui": "5.0.0-beta.2",
     "ioredis-mock": "8.9.0",
     "mockdate": "^3.0.5",
     "msw": "^2.10.4",
+    "playwright": "^1.54.1",
     "vite": "^8.0.11",
-    "vite-tsconfig-paths": "^5.1.4",
-    "vitest": "^4.1.5",
+    "vite-tsconfig-paths": "^6.1.1",
+    "vitest": "5.0.0-beta.2",
     "vitest-plugin-rsc": "workspace:*"
   }
 }

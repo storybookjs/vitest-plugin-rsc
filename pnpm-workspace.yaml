@@ -1,3 +1,7 @@
 packages:
   - "packages/*"
   - "playground/**"
+allowBuilds:
+  esbuild: true
+  msw: true
+  sharp: true

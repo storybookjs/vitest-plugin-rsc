@@ -2,7 +2,12 @@
   "compilerOptions": {
     "forceConsistentCasingInFileNames": true,
     "jsx": "preserve",
-    "baseUrl": ".",
+    "paths": {
+      "app/*": ["./app/*"],
+      "components/*": ["./components/*"],
+      "libs/*": ["./libs/*"],
+      "middleware/*": ["./middleware/*"]
+    },
     "incremental": true,
 
     /* Base Options: */

@@ -1,9 +1,19 @@
 "use client";
 
-import { useState, useRef, useEffect, useTransition } from "react";
+import { type ReactNode, useState, useRef, useEffect, useTransition } from "react";
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
 
-export default function SidebarNote({ id, title, children, expandedChildren }) {
+export default function SidebarNote({
+  id,
+  title,
+  children,
+  expandedChildren,
+}: {
+  id: string;
+  title: string;
+  children: ReactNode;
+  expandedChildren: ReactNode;
+}) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -13,14 +23,13 @@ export default function SidebarNote({ id, title, children, expandedChildren }) {
   const isActive = id === selectedId;
 
   // Animate after title is edited
-  const itemRef = useRef(null);
+  const itemRef = useRef<HTMLDivElement>(null);
   const prevTitleRef = useRef(title);
 
   useEffect(() => {
     if (title !== prevTitleRef.current) {
       prevTitleRef.current = title;
-      // @ts-ignore
-      itemRef.current.classList.add("flash");
+      itemRef.current?.classList.add("flash");
     }
   }, [title]);
 
@@ -28,8 +37,7 @@ export default function SidebarNote({ id, title, children, expandedChildren }) {
     <div
       ref={itemRef}
       onAnimationEnd={() => {
-        // @ts-ignore
-        itemRef.current.classList.remove("flash");
+        itemRef.current?.classList.remove("flash");
       }}
       className={["sidebar-note-list-item", isExpanded ? "note-expanded" : ""].join(" ")}
     >
@@ -47,8 +55,7 @@ export default function SidebarNote({ id, title, children, expandedChildren }) {
         onClick={() => {
           // hide the sidebar
           const sidebarToggle = document.getElementById("sidebar-toggle");
-          if (sidebarToggle) {
-            // @ts-ignore
+          if (sidebarToggle instanceof HTMLInputElement) {
             sidebarToggle.checked = true;
           }
 
