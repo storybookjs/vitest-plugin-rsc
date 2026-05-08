@@ -1,19 +1,11 @@
 import { ESModulesEvaluator, ModuleRunner } from "vite/module-runner";
+import websocketConfig from "virtual:vitest-plugin-rsc/react-client-websocket-config";
+import { createReactClientWebSocketInvokeTransport } from "./react-client-websocket";
 
 const runner = new ModuleRunner(
   {
     sourcemapInterceptor: false,
-    transport: {
-      invoke: async (payload) => {
-        const response = await fetch(
-          "/@vite/invoke-react-client?" +
-            new URLSearchParams({
-              data: JSON.stringify(payload),
-            }),
-        );
-        return response.json();
-      },
-    },
+    transport: createReactClientWebSocketInvokeTransport(websocketConfig),
     hmr: false,
   },
   new ESModulesEvaluator(),

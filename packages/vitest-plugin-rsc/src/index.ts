@@ -1,7 +1,17 @@
 import { type Plugin } from "vite";
 import { vitePluginRscMinimal } from "@vitejs/plugin-rsc/plugin";
+import {
+  REACT_CLIENT_WS_CONFIG_ID,
+  REACT_CLIENT_WS_CONFIG_RESOLVED_ID,
+} from "./react-client-websocket";
+import {
+  createReactClientWebSocketConfig,
+  installReactClientWebSocketBridge,
+} from "./react-client-websocket-server";
 
 export function vitestPluginRSC(): Plugin[] {
+  let websocketConfig: string | undefined;
+
   return [
     ...vitePluginRscMinimal({
       environment: {
@@ -11,17 +21,26 @@ export function vitestPluginRSC(): Plugin[] {
     }),
     {
       name: "rsc:run-in-browser",
+      configResolved(config) {
+        websocketConfig = JSON.stringify(createReactClientWebSocketConfig(config));
+      },
       configureServer(server) {
-        server.middlewares.use(async (req, res, next) => {
-          const url = new URL(req.url ?? "/", "https://any.local");
-          if (url.pathname === "/@vite/invoke-react-client") {
-            const payload = JSON.parse(url.searchParams.get("data")!);
-            const result = await server.environments["react_client"]!.hot.handleInvoke(payload);
-            res.end(JSON.stringify(result));
-            return;
+        installReactClientWebSocketBridge(server);
+      },
+      resolveId(id) {
+        if (id === REACT_CLIENT_WS_CONFIG_ID) {
+          return REACT_CLIENT_WS_CONFIG_RESOLVED_ID;
+        }
+      },
+      load(id) {
+        if (id === REACT_CLIENT_WS_CONFIG_RESOLVED_ID) {
+          if (!websocketConfig) {
+            throw new Error(
+              "React client WebSocket config was requested before Vite config resolved.",
+            );
           }
-          next();
-        });
+          return `export default ${websocketConfig};`;
+        }
       },
       hotUpdate(ctx) {
         // TODO find out how to do HMR
