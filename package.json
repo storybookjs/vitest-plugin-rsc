@@ -15,6 +15,7 @@
     "perf:commands": "node scripts/perf/run-command-benchmarks.ts repo",
     "perf:micro": "node scripts/perf/run-vitest-bench.ts",
     "perf:epic": "node scripts/perf/run-command-benchmarks.ts epic",
+    "perf:epic:smoke": "node scripts/perf/run-command-benchmarks.ts epic --smoke --runs 1 --warmup 0 --label epic-smoke",
     "dev": "pnpm -r --parallel --filter='./packages/*' run dev"
   },
   "devDependencies": {

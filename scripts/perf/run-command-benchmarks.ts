@@ -59,6 +59,7 @@ async function main(): Promise<void> {
       "output-dir": { type: "string" },
       runs: { type: "string" },
       "show-output": { type: "boolean" },
+      smoke: { type: "boolean" },
       warmup: { type: "string" },
       workdir: { type: "string" },
     },
@@ -84,6 +85,7 @@ async function main(): Promise<void> {
           coverage: values.coverage === true || process.env.PERF_EPIC_COVERAGE === "1",
           outputDir,
           runs,
+          smoke: values.smoke === true,
           warmup,
         })
       : repoScenarios(runs, warmup);
@@ -221,8 +223,23 @@ function epicScenarios(options: {
   coverage: boolean;
   outputDir: string;
   runs: number;
+  smoke: boolean;
   warmup: number;
 }): Scenario[] {
+  if (options.smoke) {
+    return [
+      {
+        name: "epic-rsc-stack:smoke:browser-suite",
+        description: "One-sample browser project acceptance run for the real-world app.",
+        cwd: "",
+        command: ["bun", "vitest", "run", "--project=browser"],
+        prepare: ["node", "-e", "fs.rmSync('.vite',{recursive:true,force:true})"],
+        runs: options.runs,
+        warmup: 0,
+      },
+    ];
+  }
+
   const scenarios: Scenario[] = [
     {
       name: "epic-rsc-stack:cold:browser-suite",

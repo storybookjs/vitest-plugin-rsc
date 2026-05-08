@@ -97,6 +97,12 @@ Run the real-world benchmark:
 pnpm perf:epic
 ```
 
+Run a one-sample acceptance smoke check:
+
+```sh
+pnpm perf:epic:smoke
+```
+
 Or point at another checkout:
 
 ```sh
@@ -104,7 +110,7 @@ pnpm perf:epic -- --app ../epic-rsc-stack
 EPIC_RSC_STACK_PATH=../epic-rsc-stack pnpm perf:epic
 ```
 
-The epic mode runs cold and warm browser-project Vitest commands in the generated app copy and writes artifacts under `artifacts/perf/local/commands` unless `PERF_OUTPUT_DIR` is set. `epic-preparation.json` is written before timing starts, so failed acceptance runs still record the source app git SHA, generated workspace path, tarball path/hash, installed package metadata, and matching source/installed dist hashes.
+The epic mode runs cold and warm browser-project Vitest commands in the generated app copy and writes artifacts under `artifacts/perf/local/commands` unless `PERF_OUTPUT_DIR` is set. `perf:epic:smoke` uses the same setup with one `hyperfine --runs 1 --warmup 0` browser-project command, so it is the quick "does this still work against Epic Stack?" check. `epic-preparation.json` is written before timing starts, so failed acceptance runs still record the source app git SHA, generated workspace path, tarball path/hash, installed package metadata, and matching source/installed dist hashes.
 
 If the app has its coverage provider installed, include a warm coverage scenario:
 
