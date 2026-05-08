@@ -1,11 +1,5 @@
-import { type Plugin, type UserConfig, type ViteDevServer } from "vite";
+import { type Plugin, type ViteDevServer } from "vite";
 import { vitePluginRscMinimal } from "@vitejs/plugin-rsc/plugin";
-
-const REACT_CLIENT_OPTIMIZE_DEPS_ENTRIES = [
-  "src/**/*.{js,jsx,ts,tsx}",
-  "app/**/*.{js,jsx,ts,tsx}",
-  "components/**/*.{js,jsx,ts,tsx}",
-];
 
 const reactClientWebSocketInfoPath = "/@vite/react-client-runner-websocket";
 const reactClientWebSocketQuery = "vitest-plugin-rsc-react-client";
@@ -18,35 +12,6 @@ type ReactClientWebSocketInvoke = {
   id: string;
   payload: ReactClientInvokePayload;
 };
-
-function isPlugin(plugin: unknown): plugin is Plugin {
-  return !!plugin && typeof plugin === "object" && "name" in plugin;
-}
-
-function hasPlugin(plugins: UserConfig["plugins"], pluginName: string): boolean {
-  for (const plugin of plugins ?? []) {
-    if (Array.isArray(plugin)) {
-      if (hasPlugin(plugin, pluginName)) return true;
-    } else if (isPlugin(plugin)) {
-      if (plugin.name === pluginName) return true;
-    }
-  }
-  return false;
-}
-
-function isVitestBrowserServer(config: UserConfig): boolean {
-  return hasPlugin(config.plugins, "vitest:browser");
-}
-
-function disableOptimizer(config: UserConfig, environmentName: string): void {
-  const environment = (config.environments ??= {})[environmentName];
-  if (!environment) return;
-
-  const optimizeDeps = (environment.optimizeDeps ??= {});
-  optimizeDeps.noDiscovery = true;
-  optimizeDeps.include = [];
-  optimizeDeps.entries = [];
-}
 
 export function vitestPluginRSC(): Plugin[] {
   return [
@@ -138,32 +103,26 @@ export function vitestPluginRSC(): Plugin[] {
                   "react/jsx-dev-runtime",
                   "@vitejs/plugin-rsc/vendor/react-server-dom/client.browser",
                 ],
-                noDiscovery: false,
                 exclude: ["vitest-plugin-rsc", "@vitejs/plugin-rsc"],
               },
             },
           },
         };
       },
-    },
-    {
-      name: "rsc:react-client-optimizer",
-      config: {
-        order: "post",
-        handler(config) {
-          const environments = (config.environments ??= {});
-          const reactClient = (environments.react_client ??= {});
-          const optimizeDeps = (reactClient.optimizeDeps ??= {});
+      configResolved(config) {
+        const client = config.environments.client!;
+        const reactClient = config.environments.react_client!;
 
-          if (!isVitestBrowserServer(config)) {
-            disableOptimizer(config, "client");
-            disableOptimizer(config, "react_client");
-            return;
-          }
-
-          optimizeDeps.noDiscovery = false;
-          optimizeDeps.entries ??= REACT_CLIENT_OPTIMIZE_DEPS_ENTRIES;
-        },
+        // Vitest browser seeds the default client optimizer with test/setup entries.
+        // The hidden react_client runner imports client references later, so without
+        // the same scan roots Vite discovers deps mid-test and reloads the page.
+        reactClient.optimizeDeps.entries ??= client.optimizeDeps.entries;
+        reactClient.optimizeDeps.exclude = [
+          ...new Set([
+            ...(client.optimizeDeps.exclude ?? []),
+            ...(reactClient.optimizeDeps.exclude ?? []),
+          ]),
+        ];
       },
     },
   ];

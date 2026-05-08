@@ -19,3 +19,7 @@ While the package is pre-1.0, breaking changes are acceptable when intentional. 
 Official npm `latest` releases are created by Release Please after its release PR is merged. Do not add long-lived npm token publishing or publish PR commits to npm `latest`.
 
 Preview packages for PR commits are handled by `pkg.pr.new`, which publishes installable preview URLs outside the npm registry.
+
+## Testing
+
+For bigger feature work, run `pnpm test:epic` so the plugin is built, copied into `~/code/epic-rsc-stack`, and verified against that stack with `bun vitest run`.

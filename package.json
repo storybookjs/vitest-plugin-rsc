@@ -9,6 +9,8 @@
     "lint:fix": "oxlint --fix $(git ls-files)",
     "tsgo": "tsgo --build",
     "build": "pnpm -r --filter='./packages/*' run build",
+    "build:epic": "pnpm --filter vitest-plugin-rsc build && node scripts/copy-plugin-build-to-epic.ts",
+    "test:epic": "pnpm build:epic && cd \"$HOME/code/epic-rsc-stack\" && bun vitest run",
     "test": "pnpm -r --workspace-concurrency=1 --if-present run test:run",
     "perf": "pnpm perf:commands",
     "perf:ci": "pnpm perf",
