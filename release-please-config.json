@@ -1,0 +1,15 @@
+{
+  "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
+  "bootstrap-sha": "3ef78ba624c8ce1bff2af285337865442043f1ad",
+  "packages": {
+    "packages/vitest-plugin-rsc": {
+      "release-type": "node",
+      "package-name": "vitest-plugin-rsc",
+      "initial-version": "0.1.0",
+      "include-component-in-tag": false,
+      "bump-minor-pre-major": true,
+      "bump-patch-for-minor-pre-major": true,
+      "pull-request-title-pattern": "chore: release ${component} ${version}"
+    }
+  }
+}

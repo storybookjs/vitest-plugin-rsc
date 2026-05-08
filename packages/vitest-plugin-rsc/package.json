@@ -1,6 +1,6 @@
 {
   "name": "vitest-plugin-rsc",
-  "version": "0.0.0-experimental-9f1f65ef-20250807",
+  "version": "0.0.0",
   "description": "React Server Components (RSC) support for Vitest.",
   "keywords": [
     "react",
@@ -8,8 +8,17 @@
     "rsc",
     "vite"
   ],
+  "homepage": "https://github.com/storybookjs/vitest-plugin-rsc#readme",
+  "bugs": {
+    "url": "https://github.com/storybookjs/vitest-plugin-rsc/issues"
+  },
   "license": "MIT",
   "author": "Kasper Peulen",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/storybookjs/vitest-plugin-rsc.git",
+    "directory": "packages/vitest-plugin-rsc"
+  },
   "files": [
     "dist"
   ],
@@ -29,13 +38,16 @@
     ".": "./dist/index.js",
     "./*": "./dist/*.js"
   },
+  "publishConfig": {
+    "access": "public",
+    "tag": "latest"
+  },
   "scripts": {
     "test": "vitest",
     "test:run": "vitest run",
     "dev": "tsdown --sourcemap --watch src",
     "build": "tsdown",
-    "prepack": "tsdown",
-    "publish": "npm publish --tag experimental"
+    "prepack": "tsdown"
   },
   "dependencies": {
     "@vitejs/plugin-rsc": "0.5.24",
