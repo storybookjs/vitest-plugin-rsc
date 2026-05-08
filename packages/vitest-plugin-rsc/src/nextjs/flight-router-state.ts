@@ -16,15 +16,12 @@ export function buildFlightRouterState(
   const pathSegs = stripSlash(pathname).split("/").filter(Boolean);
 
   if (patternSegs.length !== pathSegs.length) {
-    throw new Error(
-      `Pattern “${routePattern}” does not match pathname “${pathname}”.`,
-    );
+    throw new Error(`Pattern “${routePattern}” does not match pathname “${pathname}”.`);
   }
 
   /* ── page-leaf creator ─────────────────────────────────────────────────── */
   const queryObj = Object.fromEntries(new URLSearchParams(search));
-  const querySuffix =
-    Object.keys(queryObj).length === 0 ? "" : `?${JSON.stringify(queryObj)}`;
+  const querySuffix = Object.keys(queryObj).length === 0 ? "" : `?${JSON.stringify(queryObj)}`;
 
   const makePageState = (fullPath: string): FlightRouterState => [
     "__PAGE__" + querySuffix,

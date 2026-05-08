@@ -1,23 +1,23 @@
-'use client'
+"use client";
 
-import { useState } from 'react'
-import NotePreview from './note-preview'
-import { useFormStatus } from 'react-dom'
-import { deleteNote, saveNote } from '../app/actions'
+import { useState } from "react";
+import NotePreview from "./note-preview";
+import { useFormStatus } from "react-dom";
+import { deleteNote, saveNote } from "../app/actions";
 
 export default function NoteEditor({
   noteId,
   initialTitle,
-  initialBody
+  initialBody,
 }: {
-  noteId: string | null
-  initialTitle: string
-  initialBody: string
+  noteId: string | null;
+  initialTitle: string;
+  initialBody: string;
 }) {
-  const { pending } = useFormStatus()
-  const [title, setTitle] = useState(initialTitle)
-  const [body, setBody] = useState(initialBody)
-  const isDraft = !noteId
+  const { pending } = useFormStatus();
+  const [title, setTitle] = useState(initialTitle);
+  const [body, setBody] = useState(initialBody);
+  const isDraft = !noteId;
 
   return (
     <div className="note-editor">
@@ -30,17 +30,13 @@ export default function NoteEditor({
           type="text"
           value={title}
           onChange={(e) => {
-            setTitle(e.target.value)
+            setTitle(e.target.value);
           }}
         />
         <label className="offscreen" htmlFor="note-body-input">
           Enter the body for your note
         </label>
-        <textarea
-          value={body}
-          id="note-body-input"
-          onChange={(e) => setBody(e.target.value)}
-        />
+        <textarea value={body} id="note-body-input" onChange={(e) => setBody(e.target.value)} />
       </form>
       <div className="note-editor-preview">
         <form className="note-editor-menu" role="menubar">
@@ -51,13 +47,7 @@ export default function NoteEditor({
             formAction={() => saveNote(noteId, title, body)}
             role="menuitem"
           >
-            <img
-              src="/checkmark.svg"
-              width="14px"
-              height="10px"
-              alt=""
-              role="presentation"
-            />
+            <img src="/checkmark.svg" width="14px" height="10px" alt="" role="presentation" />
             Done
           </button>
           {!isDraft && (
@@ -67,13 +57,7 @@ export default function NoteEditor({
               formAction={() => deleteNote(noteId)}
               role="menuitem"
             >
-              <img
-                src="/cross.svg"
-                width="10px"
-                height="10px"
-                alt=""
-                role="presentation"
-              />
+              <img src="/cross.svg" width="10px" height="10px" alt="" role="presentation" />
               Delete
             </button>
           )}
@@ -85,5 +69,5 @@ export default function NoteEditor({
         <NotePreview>{body}</NotePreview>
       </div>
     </div>
-  )
+  );
 }

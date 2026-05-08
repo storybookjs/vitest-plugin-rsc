@@ -1,14 +1,14 @@
-import NoteUI from 'components/note-ui'
+import NoteUI from "components/note-ui";
 
 export const metadata = {
   robots: {
-    index: false
-  }
-}
+    index: false,
+  },
+};
 
 export default async function Page(props: { params: Promise<{ id: string }> }) {
-  const params = await props.params
-  const note = null
+  const params = await props.params;
+  const note = null;
 
   if (note === null) {
     return (
@@ -17,8 +17,8 @@ export default async function Page(props: { params: Promise<{ id: string }> }) {
           Click a note on the left to view something! 🥺
         </span>
       </div>
-    )
+    );
   }
 
-  return <NoteUI note={note} isEditing={false} />
+  return <NoteUI note={note} isEditing={false} />;
 }

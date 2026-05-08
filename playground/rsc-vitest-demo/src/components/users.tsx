@@ -15,10 +15,7 @@ export async function Users() {
       {users.map((user) => (
         <ul key={user.id}>
           {user.name}
-          <Like
-            likesPromise={getLikes(user.id)}
-            onLike={saveToDb.bind(null, user.id)}
-          />
+          <Like likesPromise={getLikes(user.id)} onLike={saveToDb.bind(null, user.id)} />
         </ul>
       ))}
     </ul>

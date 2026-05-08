@@ -4,5 +4,4 @@ import { RequestCookiesAdapter } from "next/dist/server/web/spec-extension/adapt
 
 const headersAdapter = new HeadersAdapter({});
 export const headers = async () => headersAdapter;
-export const cookies = async () =>
-  RequestCookiesAdapter.seal(new RequestCookies(headersAdapter));
+export const cookies = async () => RequestCookiesAdapter.seal(new RequestCookies(headersAdapter));

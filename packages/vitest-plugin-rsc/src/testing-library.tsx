@@ -1,16 +1,12 @@
 import type { Container, RootOptions } from "react-dom/client";
 import type { JSXElementConstructor, ReactNode } from "react";
 import { importReactClient } from "./utilts";
-import type {
-  FetchRsc,
-  RscPayload,
-  TestingLibraryClientRoot,
-} from "./testing-library-client";
+import type { FetchRsc, RscPayload, TestingLibraryClientRoot } from "./testing-library-client";
 import * as ReactServer from "@vitejs/plugin-rsc/react/rsc";
 
-const client = await importReactClient<
-  typeof import("./testing-library-client")
->("vitest-plugin-rsc/testing-library-client");
+const client = await importReactClient<typeof import("./testing-library-client")>(
+  "vitest-plugin-rsc/testing-library-client",
+);
 
 const mountedContainers = new Set<Container>();
 const mountedRootEntries: {
@@ -63,10 +59,7 @@ export async function renderServer(
         returnValue,
       };
       const rscOptions = { temporaryReferences };
-      const stream = ReactServer.renderToReadableStream<RscPayload>(
-        rscPayload,
-        rscOptions,
-      );
+      const stream = ReactServer.renderToReadableStream<RscPayload>(rscPayload, rscOptions);
       return stream;
     };
     root = await client.createTestingLibraryClientRoot({
@@ -89,9 +82,7 @@ export async function renderServer(
       await root.rerender();
     },
     asFragment: () => {
-      return document
-        .createRange()
-        .createContextualFragment(container.innerHTML);
+      return document.createRange().createContextualFragment(container.innerHTML);
     },
   };
 }
@@ -119,9 +110,7 @@ const config: RenderConfiguration = {
 
 declare let __vite_rsc_raw_import__: (id: string) => Promise<unknown>;
 
-export function initialize(
-  customConfig: Partial<RenderConfiguration> = {},
-): void {
+export function initialize(customConfig: Partial<RenderConfiguration> = {}): void {
   Object.assign(config, customConfig);
 
   ReactServer.setRequireModule({

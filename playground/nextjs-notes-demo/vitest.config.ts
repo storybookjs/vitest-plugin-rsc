@@ -1,16 +1,14 @@
-import { defineConfig } from 'vitest/config'
-import { playwright } from '@vitest/browser-playwright'
-import { preview } from '@vitest/browser-preview'
-import { vitestPluginRSC } from 'vitest-plugin-rsc'
-import { vitestPluginNext } from 'vitest-plugin-rsc/nextjs/plugin'
-import react from '@vitejs/plugin-react'
-import tsconfigPaths from 'vite-tsconfig-paths'
+import { defineConfig } from "vitest/config";
+import { playwright } from "@vitest/browser-playwright";
+import { preview } from "@vitest/browser-preview";
+import { vitestPluginRSC } from "vitest-plugin-rsc";
+import { vitestPluginNext } from "vitest-plugin-rsc/nextjs/plugin";
+import react from "@vitejs/plugin-react";
+import tsconfigPaths from "vite-tsconfig-paths";
 
-const browserProvider = process.env.BROWSER_PROVIDER
+const browserProvider = process.env.BROWSER_PROVIDER;
 const isRunMode =
-  Boolean(process.env.CI) ||
-  process.argv.includes('run') ||
-  process.argv.includes('--run')
+  Boolean(process.env.CI) || process.argv.includes("run") || process.argv.includes("--run");
 
 export default defineConfig({
   plugins: [tsconfigPaths(), react(), vitestPluginRSC(), vitestPluginNext()],
@@ -19,19 +17,19 @@ export default defineConfig({
     restoreMocks: true,
     browser: {
       enabled: true,
-      headless: browserProvider === 'preview' ? false : isRunMode,
+      headless: browserProvider === "preview" ? false : isRunMode,
       ui: !isRunMode,
-      provider: browserProvider === 'preview' ? preview() : playwright(),
+      provider: browserProvider === "preview" ? preview() : playwright(),
       screenshotFailures: false,
-      instances: [{ browser: 'chromium' }]
+      instances: [{ browser: "chromium" }],
     },
-    setupFiles: ['./test/vitest.setup.ts']
+    setupFiles: ["./test/vitest.setup.ts"],
   },
   environments: {
     react_client: {
       optimizeDeps: {
-        include: ['marked', 'sanitize-html']
-      }
-    }
-  }
-})
+        include: ["marked", "sanitize-html"],
+      },
+    },
+  },
+});

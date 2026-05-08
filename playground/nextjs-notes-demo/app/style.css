@@ -106,10 +106,9 @@ select {
   --outline-box-shadow-contrast: 0 0 0 2px var(--navy-blue);
 
   /* Fonts */
-  --sans-serif: -apple-system, system-ui, BlinkMacSystemFont, 'Segoe UI', Roboto,
-    Ubuntu, Helvetica, sans-serif;
-  --monospace: Menlo, Consolas, Monaco, Liberation Mono, Lucida Console,
-    monospace;
+  --sans-serif:
+    -apple-system, system-ui, BlinkMacSystemFont, "Segoe UI", Roboto, Ubuntu, Helvetica, sans-serif;
+  --monospace: Menlo, Consolas, Monaco, Liberation Mono, Lucida Console, monospace;
 }
 
 html {
@@ -304,7 +303,9 @@ ul.notes-list {
 
 .sidebar {
   background: var(--white);
-  box-shadow: 0px 8px 24px rgba(0, 0, 0, 0.1), 0px 2px 2px rgba(0, 0, 0, 0.1);
+  box-shadow:
+    0px 8px 24px rgba(0, 0, 0, 0.1),
+    0px 2px 2px rgba(0, 0, 0, 0.1);
   overflow-y: scroll;
   z-index: 1000;
   flex-shrink: 0;
@@ -383,7 +384,7 @@ ul.notes-list {
   flex: 0 0 auto;
 }
 .banner:before {
-  content: 'The Next.js App Router uses React Server Components by default. ';
+  content: "The Next.js App Router uses React Server Components by default. ";
 }
 .banner a {
   color: #3aa3ff;
@@ -398,7 +399,7 @@ ul.notes-list {
 
 @media screen and (max-width: 640px) {
   .banner:before {
-    content: 'Next.js App Router using React Server Components. ';
+    content: "Next.js App Router using React Server Components. ";
   }
   .banner {
     font-size: 13px;
@@ -497,7 +498,9 @@ ul.notes-list {
   visibility: hidden;
   opacity: 0;
   cursor: default;
-  transition: visibility 0s linear 20ms, opacity 300ms;
+  transition:
+    visibility 0s linear 20ms,
+    opacity 300ms;
   outline-style: none;
 }
 .sidebar-note-toggle-expand:focus {
@@ -508,7 +511,9 @@ ul.notes-list {
 .sidebar-note-toggle-expand:focus {
   visibility: visible;
   opacity: 1;
-  transition: visibility 0s linear 0s, opacity 300ms;
+  transition:
+    visibility 0s linear 0s,
+    opacity 300ms;
 }
 
 @media (hover: hover) {
@@ -516,7 +521,9 @@ ul.notes-list {
   .sidebar-note-toggle-expand:hover {
     visibility: visible;
     opacity: 1;
-    transition: visibility 0s linear 0s, opacity 300ms;
+    transition:
+      visibility 0s linear 0s,
+      opacity 300ms;
   }
 }
 .sidebar-note-toggle-expand img {
@@ -561,7 +568,9 @@ ul.notes-list {
 }
 .note {
   background: var(--white);
-  box-shadow: 0px 4px 20px rgba(0, 0, 0, 0.1), 0px 0px 2px rgba(0, 0, 0, 0.1);
+  box-shadow:
+    0px 4px 20px rgba(0, 0, 0, 0.1),
+    0px 0px 2px rgba(0, 0, 0, 0.1);
   border-radius: 8px;
   width: calc(100% - 32px);
   height: calc(100% - 32px);
@@ -611,7 +620,9 @@ ul.notes-list {
   display: flex;
   padding: 16px;
   background: var(--white);
-  box-shadow: 0px 4px 20px rgba(0, 0, 0, 0.1), 0px 0px 2px rgba(0, 0, 0, 0.1);
+  box-shadow:
+    0px 4px 20px rgba(0, 0, 0, 0.1),
+    0px 0px 2px rgba(0, 0, 0, 0.1);
   border-radius: 8px;
   width: calc(100% - 32px);
   height: calc(100% - 32px);
@@ -767,7 +778,7 @@ ul.notes-list {
 }
 
 .skeleton::after {
-  content: 'Loading...';
+  content: "Loading...";
 }
 .skeleton {
   height: 100%;

@@ -16,10 +16,7 @@ export function vitestPluginRSC(): Plugin[] {
           const url = new URL(req.url ?? "/", "https://any.local");
           if (url.pathname === "/@vite/invoke-react-client") {
             const payload = JSON.parse(url.searchParams.get("data")!);
-            const result =
-              await server.environments["react_client"]!.hot.handleInvoke(
-                payload,
-              );
+            const result = await server.environments["react_client"]!.hot.handleInvoke(payload);
             res.end(JSON.stringify(result));
             return;
           }

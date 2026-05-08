@@ -15,11 +15,7 @@ export default defineConfig({
     "src/nextjs/cache.ts",
   ],
   format: ["esm"],
-  external: [
-    /^virtual:/,
-    /^@vitejs\/plugin-rsc\/vendor\//,
-    "vitest-plugin-rsc/nextjs/client",
-  ],
+  external: [/^virtual:/, /^@vitejs\/plugin-rsc\/vendor\//, "vitest-plugin-rsc/nextjs/client"],
   noExternal: ["js-tokens"],
   dts: {
     sourcemap: process.argv.slice(2).includes("--sourcemap"),

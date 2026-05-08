@@ -47,11 +47,7 @@ export const NextRouter = ({
     state: createInitialRouterState({
       navigatedAt: Date.now(),
       initialFlightData: createFlightData({
-        initialTree: buildFlightRouterState(
-          route,
-          location.pathname,
-          location.search,
-        ),
+        initialTree: buildFlightRouterState(route, location.pathname, location.search),
         seedData: ["", children, {}, null, false],
         initialHead: null,
         isPossiblyPartialHead: false,
@@ -84,23 +80,11 @@ function createFlightData(props: {
   initialHead: ReactNode | null;
   isPossiblyPartialHead: boolean;
 }): FlightDataPath {
-  return [
-    [
-      props.initialTree,
-      props.seedData,
-      props.initialHead,
-      props.isPossiblyPartialHead,
-    ],
-  ];
+  return [[props.initialTree, props.seedData, props.initialHead, props.isPossiblyPartialHead]];
 }
 
-export function AppRouter({
-  actionQueue,
-}: {
-  actionQueue: AppRouterActionQueue;
-}) {
-  const { canonicalUrl, cache, tree, nextUrl, focusAndScrollRef } =
-    useActionQueue(actionQueue);
+export function AppRouter({ actionQueue }: { actionQueue: AppRouterActionQueue }) {
+  const { canonicalUrl, cache, tree, nextUrl, focusAndScrollRef } = useActionQueue(actionQueue);
 
   const { searchParams, pathname } = useMemo(() => {
     const url = new URL(canonicalUrl, "http://localhost");
@@ -120,9 +104,7 @@ export function AppRouter({
       <PathParamsContext.Provider value={pathParams}>
         <PathnameContext.Provider value={pathname}>
           <SearchParamsContext.Provider value={searchParams}>
-            <GlobalLayoutRouterContext.Provider
-              value={{ tree, focusAndScrollRef, nextUrl }}
-            >
+            <GlobalLayoutRouterContext.Provider value={{ tree, focusAndScrollRef, nextUrl }}>
               <AppRouterContext.Provider value={publicAppRouterInstance}>
                 <LayoutRouterContext.Provider
                   value={{

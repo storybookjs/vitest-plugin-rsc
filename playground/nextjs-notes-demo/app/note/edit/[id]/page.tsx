@@ -1,29 +1,27 @@
-import { cookies } from 'next/headers'
-import { getUser, userCookieKey } from 'libs/session'
-import NoteUI from 'components/note-ui'
-import { getNote } from '../../../../libs/notes'
+import { cookies } from "next/headers";
+import { getUser, userCookieKey } from "libs/session";
+import NoteUI from "components/note-ui";
+import { getNote } from "../../../../libs/notes";
 
 export const metadata = {
   robots: {
-    index: false
-  }
-}
+    index: false,
+  },
+};
 
 type Note = {
-  id: string
-  created_by: string
-}
+  id: string;
+  created_by: string;
+};
 
-export default async function EditPage(props: {
-  params: Promise<{ id: string }>
-}) {
-  const params = await props.params
-  const cookieStore = await cookies()
-  const userCookie = cookieStore.get(userCookieKey)
-  const user = getUser(userCookie?.value)
+export default async function EditPage(props: { params: Promise<{ id: string }> }) {
+  const params = await props.params;
+  const cookieStore = await cookies();
+  const userCookie = cookieStore.get(userCookieKey);
+  const user = getUser(userCookie?.value);
 
-  const note = await getNote(params.id)
-  const isCreator = note?.created_by === user || true
+  const note = await getNote(params.id);
+  const isCreator = note?.created_by === user || true;
 
   if (note === null) {
     return (
@@ -32,8 +30,8 @@ export default async function EditPage(props: {
           Click a note on the left to view something! 🥺
         </span>
       </div>
-    )
+    );
   }
 
-  return <NoteUI note={note} isEditing={isCreator} />
+  return <NoteUI note={note} isEditing={isCreator} />;
 }

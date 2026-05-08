@@ -4,9 +4,7 @@ import { initialize as baseInitialize } from "../testing-library";
 
 export * from "../testing-library";
 
-export function initialize(
-  customConfig: Partial<RenderConfiguration> = {},
-): void {
+export function initialize(customConfig: Partial<RenderConfiguration> = {}): void {
   baseInitialize({
     rootOptions: {
       onCaughtError: (error) => {
@@ -25,7 +23,5 @@ export { NextRouter } from "vitest-plugin-rsc/nextjs/client";
 const expect = globalThis[Symbol.for("expect-global")];
 
 export async function expectToHaveBeenNavigatedTo(url: Partial<URL>) {
-  expect(globalThis.onNavigate).toHaveBeenCalledWith(
-    expect.objectContaining(url),
-  );
+  expect(globalThis.onNavigate).toHaveBeenCalledWith(expect.objectContaining(url));
 }

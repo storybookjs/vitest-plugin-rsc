@@ -1,8 +1,4 @@
-import {
-  changeServerCounter,
-  getServerCounter,
-  resetServerCounter,
-} from "./action.tsx";
+import { changeServerCounter, getServerCounter, resetServerCounter } from "./action.tsx";
 
 export function ServerCounter() {
   return (

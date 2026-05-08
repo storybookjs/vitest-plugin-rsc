@@ -1,24 +1,24 @@
-'use client'
+"use client";
 
-import { usePathname, useRouter } from 'next/navigation'
-import { useTransition } from 'react'
+import { usePathname, useRouter } from "next/navigation";
+import { useTransition } from "react";
 
 export default function SearchField() {
-  const { replace } = useRouter()
-  const pathname = usePathname()
-  const [isPending, startTransition] = useTransition()
+  const { replace } = useRouter();
+  const pathname = usePathname();
+  const [isPending, startTransition] = useTransition();
 
   function handleSearch(term: string) {
-    const params = new URLSearchParams(window.location.search)
+    const params = new URLSearchParams(window.location.search);
     if (term) {
-      params.set('q', term)
+      params.set("q", term);
     } else {
-      params.delete('q')
+      params.delete("q");
     }
 
     startTransition(() => {
-      replace(`${pathname}?${params.toString()}`)
-    })
+      replace(`${pathname}?${params.toString()}`);
+    });
   }
 
   return (
@@ -36,15 +36,15 @@ export default function SearchField() {
       />
       <Spinner active={isPending} />
     </div>
-  )
+  );
 }
 
 function Spinner({ active = true }) {
   return (
     <div
-      className={['spinner', active && 'spinner--active'].join(' ')}
+      className={["spinner", active && "spinner--active"].join(" ")}
       role="progressbar"
-      aria-busy={active ? 'true' : 'false'}
+      aria-busy={active ? "true" : "false"}
     />
-  )
+  );
 }

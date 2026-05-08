@@ -1,28 +1,27 @@
-import Link from 'next/link'
-import { cookies } from 'next/headers'
-import { getUser, userCookieKey } from 'libs/session'
-import { type ReactNode } from 'react'
+import Link from "next/link";
+import { cookies } from "next/headers";
+import { getUser, userCookieKey } from "libs/session";
+import { type ReactNode } from "react";
 
 export default async function AuthButton({
   children,
-  noteId
+  noteId,
 }: {
-  children: ReactNode
-  noteId: string | null
+  children: ReactNode;
+  noteId: string | null;
 }) {
-  const cookieStore = await cookies()
-  const userCookie = cookieStore.get(userCookieKey)
-  const user = getUser(userCookie?.value)
-  const isDraft = noteId == null
+  const cookieStore = await cookies();
+  const userCookie = cookieStore.get(userCookieKey);
+  const user = getUser(userCookie?.value);
+  const isDraft = noteId == null;
 
   if (user) {
     return (
-      <Link href={`/note/edit/${noteId || ''}`} className="link--unstyled">
+      <Link href={`/note/edit/${noteId || ""}`} className="link--unstyled">
         <button
-          className={[
-            'edit-button',
-            isDraft ? 'edit-button--solid' : 'edit-button--outline'
-          ].join(' ')}
+          className={["edit-button", isDraft ? "edit-button--solid" : "edit-button--outline"].join(
+            " ",
+          )}
           role="menuitem"
         >
           {children}
@@ -34,20 +33,19 @@ export default async function AuthButton({
           />
         </button>
       </Link>
-    )
+    );
   }
 
   return (
     <Link href="/auth" className="link--unstyled">
       <button
-        className={[
-          'edit-button',
-          isDraft ? 'edit-button--solid' : 'edit-button--outline'
-        ].join(' ')}
+        className={["edit-button", isDraft ? "edit-button--solid" : "edit-button--outline"].join(
+          " ",
+        )}
         role="menuitem"
       >
         Login to Add
       </button>
     </Link>
-  )
+  );
 }

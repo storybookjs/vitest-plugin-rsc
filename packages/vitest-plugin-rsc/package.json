@@ -3,14 +3,23 @@
   "version": "0.0.0-experimental-9f1f65ef-20250807",
   "description": "React Server Components (RSC) support for Vitest.",
   "keywords": [
-    "vite",
     "react",
     "react-server-components",
-    "rsc"
+    "rsc",
+    "vite"
   ],
-  "author": "Kasper Peulen",
   "license": "MIT",
+  "author": "Kasper Peulen",
+  "files": [
+    "dist"
+  ],
   "type": "module",
+  "imports": {
+    "#navigation": {
+      "react-server": "./test/navigation.react-server.ts",
+      "default": "./test/navigation.ts"
+    }
+  },
   "exports": {
     "./package.json": "./package.json",
     "./dist/nextjs/navigation": {
@@ -20,17 +29,9 @@
     ".": "./dist/index.js",
     "./*": "./dist/*.js"
   },
-  "imports": {
-    "#navigation": {
-      "react-server": "./test/navigation.react-server.ts",
-      "default": "./test/navigation.ts"
-    }
-  },
-  "files": [
-    "dist"
-  ],
   "scripts": {
     "test": "vitest",
+    "test:run": "vitest run",
     "dev": "tsdown --sourcemap --watch src",
     "build": "tsdown",
     "prepack": "tsdown",
@@ -42,21 +43,21 @@
     "@vitest/spy": "^4.1.5"
   },
   "devDependencies": {
+    "@types/estree": "^1.0.8",
     "@types/node": "^22.16.3",
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
-    "@types/estree": "^1.0.8",
+    "next": "^15.4.5",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "tsdown": "^0.12.9",
-    "next": "^15.4.5",
     "vite": "^8.0.11"
   },
   "peerDependencies": {
+    "next": "*",
     "react": "*",
     "react-dom": "*",
-    "vite": "*",
-    "next": "*"
+    "vite": "*"
   },
   "peerDependenciesMeta": {
     "next": {

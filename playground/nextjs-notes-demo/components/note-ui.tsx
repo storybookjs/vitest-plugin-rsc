@@ -1,19 +1,19 @@
-import { format } from 'date-fns'
-import NotePreview from 'components/note-preview'
-import NoteEditor from 'components/note-editor'
-import AuthButton from 'components/auth-button'
-import { cookies } from 'next/headers'
-import { getUser, userCookieKey } from 'libs/session'
+import { format } from "date-fns";
+import NotePreview from "components/note-preview";
+import NoteEditor from "components/note-editor";
+import AuthButton from "components/auth-button";
+import { cookies } from "next/headers";
+import { getUser, userCookieKey } from "libs/session";
 
 export default async function NoteUI({ note, isEditing }) {
-  const cookieStore = await cookies()
-  const userCookie = cookieStore.get(userCookieKey)
-  const user = getUser(userCookie?.value)
-  const { id, title, body, updated_at, created_by: createdBy } = note
-  const updatedAt = new Date(updated_at || 0)
+  const cookieStore = await cookies();
+  const userCookie = cookieStore.get(userCookieKey);
+  const user = getUser(userCookie?.value);
+  const { id, title, body, updated_at, created_by: createdBy } = note;
+  const updatedAt = new Date(updated_at || 0);
 
   if (isEditing) {
-    return <NoteEditor noteId={id} initialTitle={title} initialBody={body} />
+    return <NoteEditor noteId={id} initialTitle={title} initialBody={body} />;
   }
 
   return (
@@ -23,12 +23,12 @@ export default async function NoteUI({ note, isEditing }) {
         {createdBy ? (
           <div
             style={{
-              flex: '1 0 100%',
-              order: '-1',
-              marginTop: 10
+              flex: "1 0 100%",
+              order: "-1",
+              marginTop: 10,
             }}
           >
-            By{' '}
+            By{" "}
             <img
               src={`https://avatars.githubusercontent.com/${createdBy}?s=40`}
               alt="User Avatar"
@@ -36,11 +36,7 @@ export default async function NoteUI({ note, isEditing }) {
               className="avatar"
             />
             &nbsp;
-            <a
-              href={`https://github.com/${createdBy}`}
-              target="_blank"
-              rel="noopener noreferrer"
-            >
+            <a href={`https://github.com/${createdBy}`} target="_blank" rel="noopener noreferrer">
               {createdBy}
             </a>
           </div>
@@ -58,5 +54,5 @@ export default async function NoteUI({ note, isEditing }) {
       </div>
       <NotePreview>{body}</NotePreview>
     </div>
-  )
+  );
 }

@@ -8,9 +8,7 @@ export type RscPayload = {
   returnValue?: unknown;
 };
 
-export type TestingLibraryClientRoot = Awaited<
-  ReturnType<typeof createTestingLibraryClientRoot>
->;
+export type TestingLibraryClientRoot = Awaited<ReturnType<typeof createTestingLibraryClientRoot>>;
 
 export type FetchRsc = (actionRequest?: {
   id: string;
@@ -55,10 +53,7 @@ export async function createTestingLibraryClientRoot(options: {
     browserRoot = <React.StrictMode>{browserRoot}</React.StrictMode>;
   }
 
-  const reactRoot = ReactDOMClient.createRoot(
-    options.container,
-    options.config.rootOptions,
-  );
+  const reactRoot = ReactDOMClient.createRoot(options.container, options.config.rootOptions);
   reactRoot.render(browserRoot);
 
   async function rerender() {

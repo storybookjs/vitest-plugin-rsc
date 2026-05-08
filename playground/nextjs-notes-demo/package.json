@@ -4,7 +4,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "format": "prettier --write .",
+    "test": "rm -rf .vite && vitest",
+    "test:run": "rm -rf .vite && vitest run",
     "test:watch": "rm -rf .vite && vitest watch"
   },
   "dependencies": {
@@ -24,30 +25,23 @@
     "typescript": "^5.8.3"
   },
   "devDependencies": {
-    "mockdate": "^3.0.5",
+    "@testing-library/dom": "^10.4.1",
     "@testing-library/user-event": "^14.6.1",
-    "ioredis-mock": "8.9.0",
     "@types/ioredis-mock": "^8.2.6",
     "@types/react": "^19.1.1",
     "@types/react-dom": "^19.1.1",
-    "@testing-library/dom": "^10.4.1",
     "@vitejs/plugin-react": "^6.0.1",
     "@vitejs/plugin-rsc": "^0.5.24",
     "@vitest/browser": "^4.1.5",
     "@vitest/browser-playwright": "^4.1.5",
     "@vitest/browser-preview": "^4.1.5",
     "@vitest/ui": "^4.1.5",
+    "ioredis-mock": "8.9.0",
+    "mockdate": "^3.0.5",
     "msw": "^2.10.4",
     "vite": "^8.0.11",
     "vite-tsconfig-paths": "^5.1.4",
     "vitest": "^4.1.5",
     "vitest-plugin-rsc": "workspace:*"
-  },
-  "prettier": {
-    "arrowParens": "always",
-    "singleQuote": true,
-    "semi": false,
-    "tabWidth": 2,
-    "trailingComma": "none"
   }
 }

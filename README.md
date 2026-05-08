@@ -5,7 +5,6 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 ![npm](https://img.shields.io/npm/v/vitest-plugin-rsc)
 
-
 ## 📋 Requirements
 
 The plugin currently **requires Vitest’s browser mode**.
@@ -50,7 +49,7 @@ export default defineConfig({
 // src/vitest.setup.ts
 import { beforeAll, beforeEach } from "vitest";
 import { cleanup, initialize } from "vitest-plugin-rsc/testing-library";
-// or 
+// or
 import { cleanup, initialize } from "vitest-plugin-rsc/nextjs/testing-library";
 
 beforeAll(() => {
@@ -76,9 +75,7 @@ import { getLikes } from "../lib/db";
 import { msw } from "../test/msw";
 
 test("increments likes on click", async () => {
-  msw.use(
-    http.get(api("/users"), () => Response.json([{ id: 5, name: "Ada" }])),
-  );
+  msw.use(http.get(api("/users"), () => Response.json([{ id: 5, name: "Ada" }])));
 
   await renderServer(<Users />);
 
@@ -100,9 +97,9 @@ Nextjs needs some extra configuration to get working, and to provide the necessa
 The NextRouter component provides all necessary providers:
 
 ```tsx
-  <NextRouter url="/note/someid/someslug?query=1" route="/note/[id]/[slug]">
-    <NoteEditor initialTitle={title} initialBody={body} />
-  </NextRouter>
+<NextRouter url="/note/someid/someslug?query=1" route="/note/[id]/[slug]">
+  <NoteEditor initialTitle={title} initialBody={body} />
+</NextRouter>
 ```
 
 The url and route are optional, but necessary when your component uses the Link component or hooks such as:
@@ -164,9 +161,7 @@ The implementation of `renderServer` function simply serializes the server compo
 import { renderToReadableStream } from "@vitejs/plugin-rsc/react/rsc";
 
 // 👇 this is imported with a helper, to get the correct export conditions in the module resolution
-const { createFromReadableStream } = await importReactClient(
-  "@vitejs/plugin-rsc/react/browser",
-);
+const { createFromReadableStream } = await importReactClient("@vitejs/plugin-rsc/react/browser");
 
 // serialize
 const flightStream = renderToReadableStream(<ServerComponent />);
@@ -250,8 +245,7 @@ const plugin = {
       const url = new URL(req.url ?? "/", "https://any.local");
       if (url.pathname === "/@vite/invoke-react-client") {
         const payload = JSON.parse(url.searchParams.get("data")!);
-        const result =
-          await server.environments["react_client"]!.hot.handleInvoke(payload);
+        const result = await server.environments["react_client"]!.hot.handleInvoke(payload);
         res.end(JSON.stringify(result));
         return;
       }
@@ -283,11 +277,7 @@ Or mock out http endpoints (both in the backend and client):
 
 ```tsx
 test("users mock", async () => {
-  msw.use(
-    http.get(api("/users"), () =>
-      Response.json([{ id: 5, name: "some user" }]),
-    ),
-  );
+  msw.use(http.get(api("/users"), () => Response.json([{ id: 5, name: "some user" }])));
 
   await renderServer(<Users />);
 });
