@@ -16,7 +16,6 @@ export default defineConfig({
   format: ["esm"],
   fixedExtension: false,
   deps: {
-    alwaysBundle: ["js-tokens"],
     neverBundle: [/^virtual:/, /^@vitejs\/plugin-rsc\/vendor\//, "vitest-plugin-rsc/nextjs/client"],
   },
   dts: {

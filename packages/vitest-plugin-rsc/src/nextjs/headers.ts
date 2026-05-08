@@ -1,7 +1,16 @@
-import { RequestCookies } from "next/dist/compiled/@edge-runtime/cookies";
-import { HeadersAdapter } from "next/dist/server/web/spec-extension/adapters/headers";
-import { RequestCookiesAdapter } from "next/dist/server/web/spec-extension/adapters/request-cookies";
+import * as edgeCookiesModule from "next/dist/compiled/@edge-runtime/cookies/index.js";
+import * as requestCookiesModule from "next/dist/server/web/spec-extension/adapters/request-cookies.js";
 
-const headersAdapter = new HeadersAdapter({});
-export const headers = async () => headersAdapter;
-export const cookies = async () => RequestCookiesAdapter.seal(new RequestCookies(headersAdapter));
+const { RequestCookies } = edgeCookiesModule;
+const { MutableRequestCookiesAdapter } = requestCookiesModule;
+
+let headersStore = new Headers();
+let cookieStore = MutableRequestCookiesAdapter.wrap(new RequestCookies(headersStore));
+
+export const headers = async () => headersStore;
+export const cookies = async () => cookieStore;
+
+export function resetHeaders() {
+  headersStore = new Headers();
+  cookieStore = MutableRequestCookiesAdapter.wrap(new RequestCookies(headersStore));
+}

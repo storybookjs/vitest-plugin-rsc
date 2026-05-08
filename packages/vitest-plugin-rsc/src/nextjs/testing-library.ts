@@ -1,6 +1,7 @@
-import { isNextRouterError } from "next/dist/client/components/is-next-router-error";
+import { isNextRouterError } from "next/dist/client/components/is-next-router-error.js";
 import type { RenderConfiguration } from "../testing-library";
-import { initialize as baseInitialize } from "../testing-library";
+import { cleanup as baseCleanup, initialize as baseInitialize } from "../testing-library";
+import { resetHeaders } from "./headers";
 
 export * from "../testing-library";
 
@@ -18,6 +19,11 @@ export function initialize(customConfig: Partial<RenderConfiguration> = {}): voi
 }
 
 export { NextRouter } from "vitest-plugin-rsc/nextjs/client";
+
+export async function cleanup() {
+  resetHeaders();
+  await baseCleanup();
+}
 
 // @ts-ignore
 const expect = globalThis[Symbol.for("expect-global")];

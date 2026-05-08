@@ -20,7 +20,8 @@ import {
 } from "next/dist/client/components/app-router-instance";
 
 export function AppRouter({ actionQueue }: { actionQueue: AppRouterActionQueue }) {
-  const { canonicalUrl, cache, tree, nextUrl, focusAndScrollRef } = useActionQueue(actionQueue);
+  const { canonicalUrl, cache, tree, nextUrl, previousNextUrl, focusAndScrollRef } =
+    useActionQueue(actionQueue);
 
   const { searchParams, pathname } = useMemo(() => {
     const url = new URL(canonicalUrl, "http://localhost");
@@ -40,14 +41,20 @@ export function AppRouter({ actionQueue }: { actionQueue: AppRouterActionQueue }
       <PathParamsContext.Provider value={pathParams}>
         <PathnameContext.Provider value={pathname}>
           <SearchParamsContext.Provider value={searchParams}>
-            <GlobalLayoutRouterContext.Provider value={{ tree, focusAndScrollRef, nextUrl }}>
+            <GlobalLayoutRouterContext.Provider
+              value={{ tree, focusAndScrollRef, nextUrl, previousNextUrl }}
+            >
               <AppRouterContext.Provider value={publicAppRouterInstance}>
                 <LayoutRouterContext.Provider
                   value={{
                     parentTree: tree,
                     parentCacheNode: cache,
-                    url: canonicalUrl,
                     parentSegmentPath: null,
+                    parentParams: pathParams,
+                    parentLoadingData: null,
+                    debugNameContext: "NextRouter",
+                    url: canonicalUrl,
+                    isActive: true,
                   }}
                 >
                   <RedirectBoundary>{cache.rsc}</RedirectBoundary>

@@ -11,7 +11,18 @@ export function vitestPluginNext(): Plugin[] {
             __dirname: JSON.stringify(null),
           },
           optimizeDeps: {
-            include: ["next/dist/client/components/is-next-router-error"],
+            include: [
+              "next/dist/compiled/@edge-runtime/cookies/index.js",
+              "next/dist/client/components/is-next-router-error.js",
+              "next/dist/client/components/navigation.react-server.js",
+              "next/dist/server/web/spec-extension/adapters/request-cookies.js",
+              "next/dist/server/web/spec-extension/unstable-cache.js",
+              "next/dist/server/web/spec-extension/unstable-no-store.js",
+              "next/dist/server/use-cache/cache-life.js",
+              "next/dist/server/use-cache/cache-tag.js",
+              "next/dist/shared/lib/server-inserted-html.shared-runtime.js",
+            ],
+            exclude: ["next/cache", "next/headers", "next/navigation"],
           },
           resolve: {
             alias: {
@@ -31,14 +42,15 @@ export function vitestPluginNext(): Plugin[] {
               optimizeDeps: {
                 include: [
                   "next/link",
-                  "next/dist/client/components/router-reducer/create-initial-router-state",
-                  "next/dist/shared/lib/app-router-context.shared-runtime",
-                  "next/dist/shared/lib/hooks-client-context.shared-runtime",
-                  "next/dist/client/components/use-action-queue",
-                  "next/dist/client/components/redirect-boundary",
-                  "next/dist/client/components/router-reducer/compute-changed-path",
-                  "next/dist/client/components/app-router-instance",
-                  "next/dist/server/app-render/types",
+                  "next/dist/client/components/app-router-instance.js",
+                  "next/dist/client/components/navigation.js",
+                  "next/dist/client/components/redirect-boundary.js",
+                  "next/dist/client/components/router-reducer/compute-changed-path.js",
+                  "next/dist/client/components/router-reducer/create-initial-router-state.js",
+                  "next/dist/client/components/use-action-queue.js",
+                  "next/dist/shared/lib/app-router-context.shared-runtime.js",
+                  "next/dist/shared/lib/hooks-client-context.shared-runtime.js",
+                  "next/dist/shared/lib/server-inserted-html.shared-runtime.js",
                 ],
               },
             },

@@ -1,7 +1,13 @@
-import type { FlightRouterState } from "next/dist/server/app-render/types";
+import type { FlightRouterState } from "next/dist/shared/lib/app-router-types";
 
-type ParamSegment = [param: string, value: string, type: "d"];
+type ParamSegment = [
+  param: string,
+  value: string,
+  type: "d",
+  staticSiblings: readonly string[] | null,
+];
 type Segment = string | ParamSegment;
+const ROOT_LAYOUT_PREFETCH_HINT = 16;
 
 export function buildFlightRouterState(
   routePattern: string,
@@ -23,18 +29,13 @@ export function buildFlightRouterState(
   const queryObj = Object.fromEntries(new URLSearchParams(search));
   const querySuffix = Object.keys(queryObj).length === 0 ? "" : `?${JSON.stringify(queryObj)}`;
 
-  const makePageState = (fullPath: string): FlightRouterState => [
-    "__PAGE__" + querySuffix,
-    {},
-    fullPath,
-    "refresh",
-  ];
+  const makePageState = (): FlightRouterState => ["__PAGE__" + querySuffix, {}, null, null];
 
   /* ── recursive descent over segments ───────────────────────────────────── */
   const descend = (idx: number, accPath: string): FlightRouterState => {
     if (idx >= patternSegs.length) {
       // All segments consumed ⇒ we’re at the page leaf
-      return makePageState(accPath || "/" + search);
+      return makePageState();
     }
 
     const patternSeg = patternSegs[idx]!;
@@ -42,23 +43,14 @@ export function buildFlightRouterState(
     const nextAcc = `${accPath}/${pathSeg}`;
 
     const segment: Segment = isDynamic(patternSeg)
-      ? [patternSeg.slice(1, -1), pathSeg, "d"]
+      ? [patternSeg.slice(1, -1), pathSeg, "d", null]
       : patternSeg;
 
     return [segment, { children: descend(idx + 1, nextAcc) }];
   };
 
   /* ── root wrapper ──────────────────────────────────────────────────────── */
-  const childState =
-    patternSegs.length === 0
-      ? makePageState("/" + (search.startsWith("?") ? search.slice(1) : search))
-      : descend(0, "");
+  const childState = patternSegs.length === 0 ? makePageState() : descend(0, "");
 
-  return [
-    "",
-    { children: childState },
-    undefined,
-    undefined,
-    true, // ← marks root layout
-  ];
+  return ["", { children: childState }, null, null, ROOT_LAYOUT_PREFETCH_HINT];
 }
