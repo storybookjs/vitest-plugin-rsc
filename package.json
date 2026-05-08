@@ -10,6 +10,11 @@
     "tsgo": "tsgo --build",
     "build": "pnpm -r --filter='./packages/*' run build",
     "test": "pnpm -r --workspace-concurrency=1 --if-present run test:run",
+    "perf": "pnpm perf:commands",
+    "perf:ci": "pnpm perf",
+    "perf:commands": "node scripts/perf/run-command-benchmarks.ts repo",
+    "perf:micro": "node scripts/perf/run-vitest-bench.ts",
+    "perf:epic": "node scripts/perf/run-command-benchmarks.ts epic",
     "dev": "pnpm -r --parallel --filter='./packages/*' run dev"
   },
   "devDependencies": {

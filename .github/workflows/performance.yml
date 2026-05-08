@@ -1,0 +1,41 @@
+name: Performance
+
+on:
+  workflow_dispatch:
+    inputs:
+      runs:
+        description: Hyperfine measured runs per scenario
+        required: false
+        default: "3"
+  schedule:
+    - cron: "17 4 * * 1"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  repo-local:
+    name: Repo-local benchmarks
+    runs-on: ubuntu-latest
+    env:
+      PERF_HYPERFINE_RUNS: ${{ github.event.inputs.runs || '3' }}
+      PERF_OUTPUT_DIR: artifacts/perf/ci
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: sudo apt-get update && sudo apt-get install -y hyperfine
+      - run: pnpm --dir playground/rsc-vitest-demo exec playwright install --with-deps --only-shell chromium
+      - run: pnpm build
+      - run: pnpm perf:ci
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: perf-artifacts
+          path: artifacts/perf/
+          if-no-files-found: warn
