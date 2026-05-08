@@ -1,0 +1,8 @@
+{
+  "setup-worktree-unix": [
+    "mkdir -p .cursor/rules",
+    "if [ -f \"$ROOT_WORKTREE_PATH/.cursor/rules/local-context.mdc\" ]; then cp \"$ROOT_WORKTREE_PATH/.cursor/rules/local-context.mdc\" .cursor/rules/local-context.mdc; else echo \"Skipping local context rule: $ROOT_WORKTREE_PATH/.cursor/rules/local-context.mdc not found\"; fi",
+    "pnpm install",
+    "pnpm build"
+  ]
+}

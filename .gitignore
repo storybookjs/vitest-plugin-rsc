@@ -15,6 +15,7 @@ coverage/
 *.local
 
 # Editor directories and files
+.cursor/rules/local-context.mdc
 .vscode/*
 !.vscode/extensions.json
 .idea
