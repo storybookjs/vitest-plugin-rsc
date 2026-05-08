@@ -2,8 +2,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "format": "oxfmt",
-    "format:check": "oxfmt --check",
+    "format": "oxfmt $(git ls-files ':!:public/mockServiceWorker.js')",
+    "format:check": "oxfmt --check $(git ls-files ':!:public/mockServiceWorker.js')",
     "lint": "oxlint $(git ls-files)",
     "lint:ci": "oxlint --format=github $(git ls-files)",
     "lint:fix": "oxlint --fix $(git ls-files)",
