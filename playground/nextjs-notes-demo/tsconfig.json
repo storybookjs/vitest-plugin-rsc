@@ -1,16 +1,5 @@
 {
   "compilerOptions": {
-    "forceConsistentCasingInFileNames": true,
-    "jsx": "preserve",
-    "paths": {
-      "app/*": ["./app/*"],
-      "components/*": ["./components/*"],
-      "libs/*": ["./libs/*"],
-      "middleware/*": ["./middleware/*"]
-    },
-    "incremental": true,
-
-    /* Base Options: */
     "esModuleInterop": true,
     "skipLibCheck": true,
     "target": "es2022",
@@ -19,25 +8,29 @@
     "moduleDetection": "force",
     "isolatedModules": true,
     "verbatimModuleSyntax": true,
-
-    /* Strictness */
     "strict": true,
     "noUncheckedIndexedAccess": true,
     "noImplicitOverride": true,
-
-    /* If NOT transpiling with TypeScript: */
+    "noUnusedLocals": true,
     "module": "preserve",
     "noEmit": true,
-
-    /* If your code runs in the DOM: */
+    "allowImportingTsExtensions": true,
     "lib": ["es2022", "dom", "dom.iterable"],
-
+    "jsx": "react-jsx",
     "plugins": [
       {
         "name": "next"
       }
-    ]
+    ],
+    "incremental": true
   },
-  "include": ["next-env.d.ts", ".next/types/**/*.ts", "**/*.ts", "**/*.tsx"],
+  "include": [
+    "next-env.d.ts",
+    "**/*.ts",
+    "**/*.tsx",
+    ".next/types/**/*.ts",
+    ".next/dev/types/**/*.ts",
+    "**/*.mts"
+  ],
   "exclude": ["node_modules"]
 }

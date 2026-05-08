@@ -76,5 +76,6 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm --dir playground/rsc-vitest-demo exec playwright install --with-deps --only-shell chromium
+      - run: pnpm --dir playground/nextjs-notes-demo exec playwright install --with-deps --only-shell chromium
       - run: pnpm build
       - run: pnpm test

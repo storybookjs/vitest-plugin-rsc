@@ -213,6 +213,8 @@ test("validates a new note without losing entered content", async () => {
 
 That test can cover a Server Component, Client Components, a Server Action, database setup, browser state, and the final UI without starting a separate app server.
 
+The repository's `playground/nextjs-notes-demo` app is the larger reference for these patterns. It shows a Next.js App Router notes app using Better Auth, Drizzle, PGlite test databases, shadcn-style UI components, form/action tests, mocked email, and per-test seeding without requiring external infrastructure.
+
 ## Example: Drizzle + PGlite Setup
 
 PGlite is a good fit for this model because it gives you Postgres-compatible behavior inside the browser test runtime.
@@ -227,26 +229,15 @@ One pattern:
 
 ```ts
 // vitest.global-setup.ts
-import { execFileSync } from "node:child_process";
 import type { TestProject } from "vitest/node";
-
-const script = `
 import { generateDrizzleJson, generateMigration } from "drizzle-kit/api";
 import * as schema from "./db/schema";
 
-const empty = generateDrizzleJson({});
-const current = generateDrizzleJson(schema);
-const statements = await generateMigration(empty, current);
-console.log(JSON.stringify(statements));
-`;
-
-export function setup(project: TestProject) {
-  const output = execFileSync("bun", ["run", "-"], {
-    input: script,
-    encoding: "utf-8",
-  });
-
-  project.provide("testSchemaSQL", JSON.parse(output).join("\n"));
+export async function setup(project: TestProject) {
+  const empty = generateDrizzleJson({});
+  const current = generateDrizzleJson(schema);
+  const statements = await generateMigration(empty, current);
+  project.provide("testSchemaSQL", statements.join("\n"));
 }
 ```
 

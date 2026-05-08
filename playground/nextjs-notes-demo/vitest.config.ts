@@ -2,60 +2,66 @@ import { defineConfig } from "vitest/config";
 import { playwright } from "@vitest/browser-playwright";
 import { vitestPluginRSC } from "vitest-plugin-rsc";
 import { vitestPluginNext } from "vitest-plugin-rsc/nextjs/plugin";
-import react from "@vitejs/plugin-react";
-import tsconfigPaths from "vite-tsconfig-paths";
+import "#env/load-next.ts";
 
-const optimizeDepsInclude = [
-  "marked",
-  "sanitize-html",
-  "next/dist/client/components/app-router-instance",
-  "next/dist/client/components/app-router-instance.js",
-  "next/dist/client/components/redirect-boundary",
-  "next/dist/client/components/redirect-boundary.js",
-  "next/dist/client/components/router-reducer/compute-changed-path",
-  "next/dist/client/components/router-reducer/compute-changed-path.js",
-  "next/dist/client/components/router-reducer/create-initial-router-state",
-  "next/dist/client/components/router-reducer/create-initial-router-state.js",
-  "next/dist/client/components/use-action-queue",
-  "next/dist/client/components/use-action-queue.js",
-  "next/dist/shared/lib/app-router-context.shared-runtime",
-  "next/dist/shared/lib/app-router-context.shared-runtime.js",
-  "next/dist/shared/lib/hooks-client-context.shared-runtime",
-  "next/dist/shared/lib/hooks-client-context.shared-runtime.js",
-  "next/dist/client/components/is-next-router-error.js",
-];
+// Make Vitest UI trace/source clicks a no-op instead of opening Cursor.
+// oxlint-disable-next-line no-process-env
+process.env.LAUNCH_EDITOR = "/usr/bin/true";
 
 export default defineConfig({
-  plugins: [tsconfigPaths(), react(), vitestPluginRSC(), vitestPluginNext()],
+  envPrefix: ["VITE_", "CI"],
   resolve: {
+    tsconfigPaths: true,
     alias: {
-      "@opentelemetry/api": new URL(
-        "./node_modules/@opentelemetry/api/build/esm/index.js",
-        import.meta.url,
-      ).pathname,
-      "next/cache": new URL("./test/next-cache.ts", import.meta.url).pathname,
+      "vitest/suite": "@vitest/runner",
     },
-  },
-  optimizeDeps: {
-    include: optimizeDepsInclude,
+    conditions: ["test"],
   },
   test: {
-    testTimeout: 3000,
-    restoreMocks: true,
-    browser: {
-      enabled: true,
-      headless: true,
-      provider: playwright(),
-      screenshotFailures: false,
-      instances: [{ browser: "chromium" }],
+    maxWorkers: 4,
+    coverage: {
+      provider: "v8",
+      reporter: ["text", "html", "lcov"],
+      include: ["**/*.{ts,tsx}"],
+      exclude: [
+        ".next/**/*",
+        "**/*.{test,test-fixture,mock,config}.{ts,tsx}",
+        "**/*.d.ts",
+        "{db,env,scripts,test}/**/*.{ts,tsx}",
+        "lib/db{,.dev}.ts",
+        "vitest.*.{ts,tsx}",
+      ],
     },
-    setupFiles: ["./test/vitest.setup.ts"],
-  },
-  environments: {
-    react_client: {
-      optimizeDeps: {
-        include: optimizeDepsInclude,
+    projects: [
+      {
+        extends: true,
+        plugins: [vitestPluginRSC(), vitestPluginNext()],
+        test: {
+          name: "browser",
+          include: ["**/*.test.{ts,tsx}"],
+          exclude: ["**/*.node.test.{ts,tsx}", "node_modules"],
+          browser: {
+            enabled: true,
+            headless: true,
+            viewport: { width: 390, height: 844 },
+            provider: playwright(),
+            instances: [{ browser: "chromium" }],
+          },
+          isolate: false,
+          globalSetup: ["./vitest.global-setup.ts"],
+          setupFiles: ["./vitest.setup.ts"],
+        },
       },
-    },
+      {
+        extends: true,
+        test: {
+          name: "node",
+          include: ["**/*.node.test.ts"],
+          exclude: ["node_modules"],
+          environment: "node",
+          setupFiles: ["./vitest.setup.node.ts"],
+        },
+      },
+    ],
   },
 });
