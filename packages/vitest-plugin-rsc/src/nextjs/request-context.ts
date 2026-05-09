@@ -159,7 +159,9 @@ export async function createNextRequestContext({
     async completeAction() {
       // Mirrors Next's server action revalidation header decision: updateTag
       // and cookies trigger static+dynamic invalidation; refresh() only marks
-      // dynamic data stale.
+      // dynamic data stale. Next keeps this decision in the private
+      // addRevalidationHeader helper inside action-handler.ts, so we cannot
+      // import it directly.
       // https://github.com/vercel/next.js/blob/938c286bac984aa7275bb4c18aa0c154b443aa93/packages/next/src/server/app-render/action-handler.ts#L160-L210
       const isTagRevalidated = workStore.pendingRevalidatedTags.some(
         (item: { profile?: unknown }) => item.profile === undefined,

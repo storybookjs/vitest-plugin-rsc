@@ -315,7 +315,7 @@ The Next.js plugin adds aliases, optimizer config, and request context setup for
 import { vitestPluginNext } from "vitest-plugin-rsc/nextjs/plugin";
 ```
 
-Only `next/cache` is mocked. The cache APIs are process/runtime IO from the perspective of a component test, so the plugin replaces them with a deterministic in-memory implementation.
+The `next/cache` APIs run through Next.js internals with a deterministic in-memory IncrementalCache backing store. Cache storage is process/runtime IO from the perspective of a component test, so the plugin supplies that backing store while still using Next's own `refresh`, `revalidatePath`, `revalidateTag`, `updateTag`, `unstable_cache`, and patched `fetch` behavior.
 
 Other Next.js APIs run through Next's own App Router code. For example, `next/link`, `next/navigation`, and `next/headers` are resolved to the same internal Next.js modules the App Router uses, with request state supplied by the test request context created by the Next.js render helper.
 

@@ -13,7 +13,7 @@ type ServerContext = {
     root: ReactNode;
     returnValue: unknown;
     shouldRender: boolean;
-  }) => unknown;
+  }) => unknown | Promise<unknown>;
 };
 
 const client = await importReactClient<typeof import("./testing-library-client")>(
@@ -73,11 +73,11 @@ export async function renderServer(
       }
 
       if (actionRequest?.requestType === "next-action") {
-        const actionResponse = serverContext?.createActionResponse?.({
+        const actionResponse = (await serverContext?.createActionResponse?.({
           root: serverRoot,
           returnValue,
           shouldRender: actionResult?.shouldRender ?? true,
-        }) ?? {
+        })) ?? {
           a: returnValue,
           f: actionResult?.shouldRender === false ? "" : [],
           q: "",

@@ -12,8 +12,6 @@ export default defineConfig({
     "src/nextjs/testing-library.ts",
     "src/nextjs/request-context.ts",
     "src/nextjs/plugin.ts",
-    "src/nextjs/cache.ts",
-    "src/nextjs/server-reference-info.ts",
   ],
   format: ["esm"],
   fixedExtension: false,

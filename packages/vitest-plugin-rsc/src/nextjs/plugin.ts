@@ -3,6 +3,7 @@ import path from "node:path";
 import type { Alias, Plugin, UserConfig } from "vite";
 
 const supportedEdgeNativeModules = ["buffer", "events", "assert", "util"] as const;
+const virtualServerReferenceInfoId = "\0vitest-plugin-rsc:next-server-reference-info";
 
 // Vite equivalents of the Next webpack aliases we rely on. Keep these aligned
 // with Next's app-router API and React Server Components alias layers:
@@ -30,7 +31,12 @@ const reactClientOptimizeDeps = [
   "next/dist/client/components/app-router-headers.js",
   "next/dist/client/flight-data-helpers.js",
   "next/dist/client/components/use-action-queue.js",
+  "next/dist/server/app-render/create-flight-router-state-from-loader-tree.js",
+  "next/dist/server/app-render/get-short-dynamic-param-type.js",
+  "next/dist/shared/lib/segment.js",
   "next/dist/shared/lib/is-thenable.js",
+  "next/dist/shared/lib/router/utils/get-dynamic-param.js",
+  "next/dist/shared/lib/router/utils/get-segment-param.js",
   "next/dist/shared/lib/app-router-context.shared-runtime.js",
   "next/dist/shared/lib/hooks-client-context.shared-runtime.js",
   "next/dist/shared/lib/server-inserted-html.shared-runtime.js",
@@ -152,6 +158,10 @@ function tryResolveFromProject(root: string, id: string): string | undefined {
 }
 
 function createNextEdgeNativeAliases(root: string): Alias[] {
+  // Next's edge/client webpack builds polyfill these Node builtins with
+  // Next-compiled browser packages. Vite does not run that webpack layer, so
+  // resolve the same compiled packages from the user's Next installation:
+  // https://github.com/vercel/next.js/blob/938c286bac984aa7275bb4c18aa0c154b443aa93/packages/next/src/build/webpack-config.ts#L2028-L2035
   const aliases: Alias[] = [
     { find: "node:async_hooks", replacement: "vitest-plugin-rsc/async-hooks" },
     { find: "async_hooks", replacement: "vitest-plugin-rsc/async-hooks" },
@@ -214,6 +224,10 @@ function useVitestAsyncLocalStorage(root = process.cwd()): Plugin {
     name: "next-rsc-async-local-storage",
     enforce: "pre",
     async resolveId(source, importer, options) {
+      // Next imports its AsyncLocalStorage wrapper from this internal module.
+      // There is no browser AsyncLocalStorage implementation to import, and
+      // component tests run sequentially inside a worker, so we replace only
+      // that module with our sequential browser implementation.
       if (
         source !== "next/dist/server/app-render/async-local-storage.js" &&
         source !== "next/dist/server/app-render/async-local-storage" &&
@@ -235,12 +249,16 @@ function useVitestAsyncLocalStorage(root = process.cwd()): Plugin {
 }
 
 function useVitestServerReferenceInfo(root = process.cwd()): Plugin {
-  const replacement = tryResolveFromProject(root, "vitest-plugin-rsc/nextjs/server-reference-info");
+  const original = tryResolveFromProject(root, "next/dist/shared/lib/server-reference-info.js");
 
   return {
     name: "next-rsc-server-reference-info",
     enforce: "pre",
     async resolveId(source, importer, options) {
+      // Next's server-action reducer imports this helper to omit unused action
+      // arguments from hex-encoded Next action IDs. Vite RSC action IDs are not
+      // Next hex IDs, so we alias the helper and preserve all args for those
+      // IDs while copying Next's behavior for real hex IDs.
       if (
         source !== "next/dist/shared/lib/server-reference-info.js" &&
         source !== "next/dist/shared/lib/server-reference-info" &&
@@ -249,14 +267,32 @@ function useVitestServerReferenceInfo(root = process.cwd()): Plugin {
         return;
       }
 
-      if (!replacement) {
-        return this.resolve("vitest-plugin-rsc/nextjs/server-reference-info", importer, {
-          ...options,
-          skipSelf: true,
-        });
+      return virtualServerReferenceInfoId;
+    },
+    load(id) {
+      if (id !== virtualServerReferenceInfoId) return;
+      if (!original) {
+        throw new Error("Could not resolve next/dist/shared/lib/server-reference-info.js");
       }
 
-      return { id: replacement, external: false };
+      return `
+import {
+  extractInfoFromServerReferenceId as extractNextInfoFromServerReferenceId,
+  omitUnusedArgs,
+} from ${JSON.stringify(original)};
+
+export { omitUnusedArgs };
+
+export function extractInfoFromServerReferenceId(id) {
+  return /^[0-9a-fA-F]+$/.test(id)
+    ? extractNextInfoFromServerReferenceId(id)
+    : {
+        type: "server-action",
+        usedArgs: [true, true, true, true, true, true],
+        hasRestArgs: true,
+      };
+}
+`;
     },
   };
 }

@@ -1,29 +1,21 @@
 "use client";
 import { fn, type Mock } from "@vitest/spy";
-import type {
-  AppRouterActionQueue,
-  DispatchStatePromise,
+import type { AppRouterActionQueue } from "next/dist/client/components/app-router-instance.js";
+import {
+  createMutableActionQueue as createNextMutableActionQueue,
+  publicAppRouterInstance,
 } from "next/dist/client/components/app-router-instance.js";
 import { RedirectBoundary } from "next/dist/client/components/redirect-boundary.js";
 import { getSelectedParams } from "next/dist/client/components/router-reducer/compute-changed-path.js";
 import { createInitialRouterState } from "next/dist/client/components/router-reducer/create-initial-router-state.js";
 import { reducer } from "next/dist/client/components/router-reducer/router-reducer.js";
-import {
-  dispatchAppRouterAction,
-  useActionQueue,
-} from "next/dist/client/components/use-action-queue.js";
+import { useActionQueue } from "next/dist/client/components/use-action-queue.js";
 import type {
   AppRouterState,
   ReducerActions,
   ReducerState,
 } from "next/dist/client/components/router-reducer/router-reducer-types.js";
-import {
-  ACTION_HMR_REFRESH,
-  ACTION_NAVIGATE,
-  ACTION_REFRESH,
-  ACTION_RESTORE,
-  ACTION_SERVER_ACTION,
-} from "next/dist/client/components/router-reducer/router-reducer-types.js";
+import { ACTION_NAVIGATE } from "next/dist/client/components/router-reducer/router-reducer-types.js";
 import type {
   CacheNodeSeedData,
   FlightDataPath,
@@ -40,13 +32,8 @@ import {
   PathParamsContext,
   SearchParamsContext,
 } from "next/dist/shared/lib/hooks-client-context.shared-runtime.js";
-import type {
-  AppRouterInstance,
-  NavigateOptions,
-} from "next/dist/shared/lib/app-router-context.shared-runtime.js";
-import { isThenable } from "next/dist/shared/lib/is-thenable.js";
+import type { AppRouterInstance } from "next/dist/shared/lib/app-router-context.shared-runtime.js";
 import React, { type ReactNode, useMemo, useRef } from "react";
-import { buildFlightRouterState } from "./flight-router-state";
 
 // This test router is a small adapter around Next's App Router internals. Keep
 // copied control flow aligned with Next rather than growing a parallel router:
@@ -57,6 +44,7 @@ declare global {
   var onNavigate: Mock<(url: URL) => void>;
 }
 globalThis.onNavigate = fn<(url: URL) => void>();
+let actionQueue: AppRouterActionQueue | null = null;
 
 function GlobalError() {
   return null;
@@ -69,16 +57,16 @@ type NextRouterStateSnapshot = {
 export const NextRouter = ({
   children,
   url = "/",
-  route,
+  initialTree,
 }: {
   children: ReactNode;
   route?: string;
   url?: string;
+  initialTree?: FlightRouterState;
 }) => {
-  route ??= url;
   const snapshot = useMemo(
-    () => createNextRouterStateSnapshot({ children, route, url }),
-    [children, route, url],
+    () => createNextRouterStateSnapshot({ children, url, initialTree }),
+    [children, url, initialTree],
   );
   const actionQueueRef = useRef<AppRouterActionQueue | null>(null);
 
@@ -91,21 +79,24 @@ export const NextRouter = ({
 
 function createNextRouterStateSnapshot({
   children,
-  route,
   url,
+  initialTree,
 }: {
   children: ReactNode;
-  route: string;
   url: string;
+  initialTree?: FlightRouterState;
 }): NextRouterStateSnapshot {
   const location = new URL(url, "http://localhost");
+  if (!initialTree) {
+    throw new Error("NextRouter must be rendered through renderServer from vitest-plugin-rsc/nextjs.");
+  }
 
   return {
     state: createInitialRouterState({
       navigatedAt: Date.now(),
       initialRSCPayload: createInitialRSCPayload({
         canonicalUrl: location.pathname + location.search,
-        initialTree: buildFlightRouterState(route, location.pathname, location.search),
+        initialTree,
         renderedSearch: location.search,
         seedData: [children, {}, null, false, null],
       }),
@@ -121,6 +112,11 @@ function createInitialRSCPayload(props: {
   renderedSearch: string;
   seedData: CacheNodeSeedData;
 }): InitialRSCPayload {
+  // Next creates InitialRSCPayload inline inside the private app-render
+  // request pipeline; there is no exported constructor to import. Keep this
+  // payload shape bluntly aligned with getRSCPayload and feed it to Next's
+  // exported createInitialRouterState below:
+  // https://github.com/vercel/next.js/blob/938c286bac984aa7275bb4c18aa0c154b443aa93/packages/next/src/server/app-render/app-render.tsx#L2221-L2260
   return {
     c: props.canonicalUrl.split("/"),
     q: props.renderedSearch,
@@ -134,19 +130,16 @@ function createInitialRSCPayload(props: {
 }
 
 function createMutableActionQueue(initialState: AppRouterState): AppRouterActionQueue {
-  // Copied from Next's createMutableActionQueue, with the reducer hook swapped
-  // so tests can observe navigations without fetching route payloads:
+  // Reuse Next's action queue implementation. Next stores it in a private
+  // module-global singleton, so component tests reuse that queue in the browser
+  // worker and reset the mutable state before each router mount.
   // https://github.com/vercel/next.js/blob/938c286bac984aa7275bb4c18aa0c154b443aa93/packages/next/src/client/components/app-router-instance.ts#L220-L256
-  const actionQueue: AppRouterActionQueue = {
-    state: initialState,
-    dispatch: (payload: ReducerActions, setState: DispatchStatePromise) =>
-      dispatchAction(actionQueue, payload, setState),
-    action: reduceRouterAction,
-    pending: null,
-    last: null,
-    onRouterTransitionStart: null,
-  };
-
+  actionQueue ??= createNextMutableActionQueue(initialState, null);
+  actionQueue.state = initialState;
+  actionQueue.action = reduceRouterAction;
+  actionQueue.pending = null;
+  actionQueue.last = null;
+  actionQueue.needsRefresh = false;
   return actionQueue;
 }
 
@@ -159,133 +152,12 @@ function reduceRouterAction(state: AppRouterState, action: ReducerActions): Redu
   return reducer(state, action);
 }
 
-function dispatchAction(
-  actionQueue: AppRouterActionQueue,
-  payload: ReducerActions,
-  setState: DispatchStatePromise,
-) {
-  // Copied from Next's action queue dispatcher so discarded actions, refresh
-  // scheduling, and async reducer state behave like the real App Router:
-  // https://github.com/vercel/next.js/blob/938c286bac984aa7275bb4c18aa0c154b443aa93/packages/next/src/client/components/app-router-instance.ts#L71-L217
-  let resolvers: {
-    resolve: (value: ReducerState) => void;
-    reject: (reason: unknown) => void;
-  } = { resolve: setState, reject: () => {} };
-
-  if (payload.type !== ACTION_RESTORE) {
-    const deferredPromise = new Promise<AppRouterState>((resolve, reject) => {
-      resolvers = { resolve, reject };
-    });
-
-    React.startTransition(() => {
-      setState(deferredPromise);
-    });
-  }
-
-  const newAction = {
-    payload,
-    next: null,
-    resolve: resolvers.resolve,
-    reject: resolvers.reject,
-  };
-
-  if (actionQueue.pending === null) {
-    actionQueue.last = newAction;
-    runAction({ actionQueue, action: newAction, setState });
-  } else if (payload.type === ACTION_NAVIGATE || payload.type === ACTION_RESTORE) {
-    actionQueue.pending.discarded = true;
-    newAction.next = actionQueue.pending.next;
-    runAction({ actionQueue, action: newAction, setState });
-  } else {
-    if (actionQueue.last !== null) {
-      actionQueue.last.next = newAction;
-    }
-    actionQueue.last = newAction;
-  }
-}
-
-function runAction({
-  actionQueue,
-  action,
-  setState,
-}: {
-  actionQueue: AppRouterActionQueue;
-  action: NonNullable<AppRouterActionQueue["pending"]>;
-  setState: DispatchStatePromise;
-}) {
-  const prevState = actionQueue.state;
-
-  actionQueue.pending = action;
-
-  const actionResult = actionQueue.action(prevState, action.payload);
-
-  function handleResult(nextState: AppRouterState) {
-    if (action.discarded) {
-      if (action.payload.type === ACTION_SERVER_ACTION && action.payload.didRevalidate) {
-        actionQueue.needsRefresh = true;
-      }
-      runRemainingActions(actionQueue, setState);
-      return;
-    }
-
-    actionQueue.state = nextState;
-    runRemainingActions(actionQueue, setState);
-    action.resolve(nextState);
-  }
-
-  if (isThenable(actionResult)) {
-    actionResult.then(handleResult, (err) => {
-      runRemainingActions(actionQueue, setState);
-      action.reject(err);
-    });
-  } else {
-    handleResult(actionResult);
-  }
-}
-
-function runRemainingActions(actionQueue: AppRouterActionQueue, setState: DispatchStatePromise) {
-  if (actionQueue.pending !== null) {
-    actionQueue.pending = actionQueue.pending.next;
-    if (actionQueue.pending !== null) {
-      runAction({ actionQueue, action: actionQueue.pending, setState });
-    }
-  } else if (actionQueue.needsRefresh) {
-    actionQueue.needsRefresh = false;
-    actionQueue.dispatch({ type: "refresh" }, setState);
-  }
-}
-
 function createPublicAppRouterInstance(): AppRouterInstance {
   return {
-    back: () => window.history.back(),
-    forward: () => window.history.forward(),
+    ...publicAppRouterInstance,
+    // Keep prefetch inert in component tests; Next's implementation would try
+    // to fetch route payloads from an HTTP server.
     prefetch: () => {},
-    replace: (href: string, _options?: NavigateOptions) => {
-      dispatchAppRouterAction({
-        type: ACTION_NAVIGATE,
-        url: new URL(href, window.location.href),
-        isExternalUrl: false,
-        locationSearch: window.location.search,
-        navigateType: "replace",
-        scrollBehavior: 0,
-      });
-    },
-    push: (href: string, _options?: NavigateOptions) => {
-      dispatchAppRouterAction({
-        type: ACTION_NAVIGATE,
-        url: new URL(href, window.location.href),
-        isExternalUrl: false,
-        locationSearch: window.location.search,
-        navigateType: "push",
-        scrollBehavior: 0,
-      });
-    },
-    refresh: () => {
-      dispatchAppRouterAction({ type: ACTION_REFRESH });
-    },
-    hmrRefresh: () => {
-      dispatchAppRouterAction({ type: ACTION_HMR_REFRESH });
-    },
   };
 }
 
