@@ -1,7 +1,7 @@
 import type { FetchRsc } from "../testing-library-client";
 import { HttpResponse, http, passthrough } from "msw";
 
-export function mswHandlers() {
+export function serverActionHandlers() {
   return [
     http.post("*", async ({ request }) => {
       const actionId = request.headers.get("next-action");
@@ -14,7 +14,7 @@ export function mswHandlers() {
       ];
       if (!fetchRsc) {
         return HttpResponse.text(
-          "Next server actions require initialize({ serverActionsViaMsw: true }) before using mswHandlers().",
+          "Next server actions require initialize({ serverActionsViaMsw: true }) before using serverActionHandlers().",
           { status: 500 },
         );
       }

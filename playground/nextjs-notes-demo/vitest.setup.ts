@@ -1,6 +1,6 @@
 import { vi, beforeAll, beforeEach, afterEach, afterAll, inject } from "vitest";
 import { cleanup, initialize } from "vitest-plugin-rsc/nextjs/testing-library";
-import { mswHandlers } from "vitest-plugin-rsc/nextjs/msw";
+import { serverActionHandlers } from "vitest-plugin-rsc/nextjs/msw";
 import { page } from "vitest/browser";
 import { PGlite } from "@electric-sql/pglite";
 import { drizzle } from "drizzle-orm/pglite";
@@ -67,7 +67,7 @@ const TEST_NOW = "2026-05-06T00:00:00.000Z";
 
 let base: PGlite;
 let pointerResetTarget: HTMLElement | undefined;
-const worker = setupWorker(...nextCacheProbeFetchHandler, ...mswHandlers());
+const worker = setupWorker(...nextCacheProbeFetchHandler, ...serverActionHandlers());
 
 // Vitest mounts React into an existing document, so rendering RootLayout's
 // <html>/<body> tags would be invalid. Page tests use the app-local

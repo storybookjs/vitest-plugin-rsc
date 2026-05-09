@@ -326,9 +326,9 @@ For App Router server-action semantics, use MSW and opt in with `serverActionsVi
 ```ts
 import { setupWorker } from "msw/browser";
 import { initialize } from "vitest-plugin-rsc/nextjs/testing-library";
-import { mswHandlers } from "vitest-plugin-rsc/nextjs/msw";
+import { serverActionHandlers } from "vitest-plugin-rsc/nextjs/msw";
 
-const worker = setupWorker(...mswHandlers());
+const worker = setupWorker(...serverActionHandlers());
 
 beforeAll(async () => {
   await worker.start({ onUnhandledRequest: "bypass" });
