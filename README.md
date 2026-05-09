@@ -75,6 +75,30 @@ export default defineConfig({
 
 The goal is not to pretend the browser is production. The goal is to keep RSC component tests close enough to the runtime model while preserving the control that makes unit tests valuable.
 
+## AsyncLocalStorage And Runtime Boundaries
+
+The testing model is deliberately explicit about IO. Anything that talks to the outside world should be mocked or replaced with an in-memory implementation:
+
+- Use PGlite, SQLite-in-browser, or another browser-friendly in-memory database instead of a real test database.
+- Mock filesystem access with something like `memfs`.
+- Mock email, queues, object storage, network-only services, and other process or infrastructure boundaries.
+
+For non-IO code, prefer cross-platform Web Platform APIs over Node-specific APIs when that is practical. That keeps Server Component code portable across Node, edge runtimes, and the browser test runtime.
+
+`AsyncLocalStorage` is the important exception. It is not IO; it is request/context propagation. It is also a common way for server-side React code to carry auth, request, tracing, locale, tenant, and other implicit context without threading arguments through every function. Next.js request APIs depend on the same idea.
+
+Today, there is no landed Web Platform standard for this. The TC39 Async Context proposal exists, but it is still a proposal rather than a browser API. Until there is a standard browser primitive, `vitest-plugin-rsc` mocks the Node API out of the box:
+
+```ts
+import { AsyncLocalStorage } from "node:async_hooks";
+
+const requestContext = new AsyncLocalStorage<{ userId: string }>();
+```
+
+In Vitest Browser Mode, `vitestPluginRSC()` aliases both `node:async_hooks` and `async_hooks` to a small browser implementation. That lets user code import the normal Node API. For Next.js, `vitestPluginNext()` also makes that implementation available to the Next request APIs that expect AsyncLocalStorage-backed context.
+
+The mock is intentionally test-oriented. It is designed for the sequential, controlled execution model of component tests, not as a general-purpose browser replacement for every Node async hooks behavior.
+
 ## Requirements
 
 This plugin currently requires [Vitest Browser Mode](https://vitest.dev/guide/browser/).
@@ -285,18 +309,15 @@ Your app code can import `db` through an alias that points to the production ada
 
 ## Next.js Helpers
 
-The Next.js plugin adds aliases and optimizer config for App Router internals:
+The Next.js plugin adds aliases, optimizer config, and request context setup for App Router internals:
 
 ```ts
 import { vitestPluginNext } from "vitest-plugin-rsc/nextjs/plugin";
 ```
 
-It provides test-friendly versions of:
+Only `next/cache` is mocked. The cache APIs are process/runtime IO from the perspective of a component test, so the plugin replaces them with a deterministic in-memory implementation.
 
-- `next/navigation`
-- `next/headers`
-- `next/cache`
-- `next/link`
+Other Next.js APIs run through Next's own App Router code. For example, `next/link`, `next/navigation`, and `next/headers` are resolved to the same internal Next.js modules the App Router uses, with request state supplied by the test request context created by the Next.js render helper.
 
 It also exposes `NextRouter` for components that use App Router context:
 
