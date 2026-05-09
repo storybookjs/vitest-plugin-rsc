@@ -6,7 +6,14 @@ import * as ReactServer from "@vitejs/plugin-rsc/react/rsc";
 
 type ServerContext = {
   run<T>(phase: "render" | "action", callback: () => T | Promise<T>): T | Promise<T>;
-  completeAction?: () => void | Promise<void>;
+  completeAction?: () =>
+    | { shouldRender: boolean; headers?: HeadersInit }
+    | Promise<{ shouldRender: boolean; headers?: HeadersInit }>;
+  createActionResponse?: (options: {
+    root: ReactNode;
+    returnValue: unknown;
+    shouldRender: boolean;
+  }) => unknown;
 };
 
 const client = await importReactClient<typeof import("./testing-library-client")>(
@@ -47,23 +54,49 @@ export async function renderServer(
     const fetchRsc: FetchRsc = async (actionRequest) => {
       let returnValue: unknown | undefined;
       let temporaryReferences: unknown | undefined;
+      let actionResult:
+        | { shouldRender: boolean; headers?: HeadersInit }
+        | undefined;
       if (actionRequest) {
         const { id, reply } = actionRequest;
         temporaryReferences = ReactServer.createTemporaryReferenceSet();
-        const args = await ReactServer.decodeReply(reply, {
+        const args = await ReactServer.decodeReply(reply as string | FormData, {
           temporaryReferences,
         });
         const action = await ReactServer.loadServerAction(id);
         returnValue = await runServer("action", () => action.apply(null, args));
-        await serverContext?.completeAction?.();
+        actionResult = await serverContext?.completeAction?.();
       }
       let serverRoot = ui;
       if (WrapperComponent) {
         serverRoot = <WrapperComponent>{ui}</WrapperComponent>;
       }
+
+      if (actionRequest?.requestType === "next-action") {
+        const actionResponse = serverContext?.createActionResponse?.({
+          root: serverRoot,
+          returnValue,
+          shouldRender: actionResult?.shouldRender ?? true,
+        }) ?? {
+          a: returnValue,
+          f: actionResult?.shouldRender === false ? "" : [],
+          q: "",
+          i: false,
+        };
+        const stream = await runServer("render", () =>
+          ReactServer.renderToReadableStream(actionResponse, { temporaryReferences }),
+        );
+        const responseHeaders = new Headers(actionResult?.headers);
+        responseHeaders.set("content-type", "text/x-component");
+        return new Response(stream, {
+          headers: responseHeaders,
+        });
+      }
+
       const rscPayload: RscPayload = {
         root: serverRoot,
         returnValue,
+        shouldRender: actionResult?.shouldRender,
       };
       const rscOptions = { temporaryReferences };
       const stream = await runServer("render", () =>
@@ -114,11 +147,13 @@ export async function cleanup() {
 export interface RenderConfiguration {
   reactStrictMode: boolean;
   rootOptions: RootOptions;
+  serverActionCaller?: string | ((id: string, args: unknown[]) => Promise<unknown>);
 }
 
 const config: RenderConfiguration = {
   reactStrictMode: false,
   rootOptions: {},
+  serverActionCaller: undefined,
 };
 
 declare let __vite_rsc_raw_import__: (id: string) => Promise<unknown>;

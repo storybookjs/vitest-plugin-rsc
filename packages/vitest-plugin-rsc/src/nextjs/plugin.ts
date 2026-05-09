@@ -1,6 +1,18 @@
-import type { Plugin } from "vite";
+import { createRequire } from "node:module";
+import path from "node:path";
+import type { Alias, Plugin, UserConfig } from "vite";
+
+const supportedEdgeNativeModules = ["buffer", "events", "assert", "util"] as const;
+
+// Vite equivalents of the Next webpack aliases we rely on. Keep these aligned
+// with Next's app-router API and React Server Components alias layers:
+// https://github.com/vercel/next.js/blob/938c286bac984aa7275bb4c18aa0c154b443aa93/packages/next/src/build/create-compiler-aliases.ts#L203-L246
+// https://github.com/vercel/next.js/blob/938c286bac984aa7275bb4c18aa0c154b443aa93/packages/next/src/build/create-compiler-aliases.ts#L449-L477
 
 const reactClientOptimizeDeps = [
+  "node:buffer",
+  "vitest-plugin-rsc/async-local-storage",
+  "next/dist/client/app-call-server.js",
   "next/dist/client/app-dir/link",
   "next/dist/client/app-dir/link.js",
   "next/dist/client/components/navigation",
@@ -11,19 +23,38 @@ const reactClientOptimizeDeps = [
   "next/dist/client/components/redirect-boundary.js",
   "next/dist/client/components/router-reducer/compute-changed-path.js",
   "next/dist/client/components/router-reducer/create-initial-router-state.js",
+  "next/dist/client/components/router-reducer/router-reducer.js",
+  "next/dist/client/components/router-reducer/router-reducer-types.js",
+  "next/dist/client/components/router-reducer/reducers/server-action-reducer.js",
+  "next/dist/shared/lib/server-reference-info.js",
+  "next/dist/client/components/app-router-headers.js",
+  "next/dist/client/flight-data-helpers.js",
   "next/dist/client/components/use-action-queue.js",
+  "next/dist/shared/lib/is-thenable.js",
   "next/dist/shared/lib/app-router-context.shared-runtime.js",
   "next/dist/shared/lib/hooks-client-context.shared-runtime.js",
   "next/dist/shared/lib/server-inserted-html.shared-runtime.js",
 ];
 
-const clientOptimizeDeps = [
+const rscOptimizeDeps = [
+  "next/dist/compiled/@opentelemetry/api",
+  "next/cache",
   "next/headers",
   "next/dist/compiled/@edge-runtime/cookies/index.js",
   "next/dist/server/node-environment-baseline.js",
   "next/dist/server/app-render/action-async-storage.external.js",
+  "next/dist/server/app-render/async-local-storage.js",
   "next/dist/server/app-render/work-async-storage.external.js",
   "next/dist/server/app-render/work-unit-async-storage.external.js",
+  "next/dist/server/async-storage/request-store.js",
+  "next/dist/server/async-storage/work-store.js",
+  "next/dist/server/lib/incremental-cache/index.js",
+  "next/dist/server/lib/incremental-cache/file-system-cache.js",
+  "next/dist/server/lib/incremental-cache/memory-cache.external.js",
+  "next/dist/server/lib/incremental-cache/tags-manifest.external.js",
+  "next/dist/server/lib/patch-fetch.js",
+  "next/dist/server/revalidation-utils.js",
+  "next/dist/shared/lib/action-revalidation-kind.js",
   "next/dist/client/components/is-next-router-error.js",
   "next/dist/client/app-dir/link.react-server",
   "next/dist/client/app-dir/link.react-server.js",
@@ -35,12 +66,17 @@ const clientOptimizeDeps = [
   ...reactClientOptimizeDeps,
 ];
 
-function appRouterApiPlugin(environmentName: string, aliases: Record<string, string>): Plugin {
+function appRouterApiPlugin(environmentName: string, isServerOnlyLayer: boolean): Plugin {
+  let aliases: Record<string, string> = {};
+
   return {
     name: `next-rsc-app-router-api:${environmentName}`,
     enforce: "pre",
     applyToEnvironment(environment) {
       return environment.name === environmentName;
+    },
+    configResolved(config) {
+      aliases = createAppRouterApiAliasesFromNext(getProjectRoot(config), isServerOnlyLayer);
     },
     async resolveId(source, importer, options) {
       const replacement = aliases[source];
@@ -56,57 +92,310 @@ function appRouterApiPlugin(environmentName: string, aliases: Record<string, str
   };
 }
 
+function getProjectRoot(config: UserConfig): string {
+  return path.resolve(config.root ?? process.cwd());
+}
+
+function createProjectRequire(root: string): NodeJS.Require {
+  return createRequire(path.join(root, "package.json"));
+}
+
+function createAppRouterApiAliasesFromNext(
+  root: string,
+  isServerOnlyLayer: boolean,
+): Record<string, string> {
+  const appRouterEntrypoints = isServerOnlyLayer
+    ? {
+        "next/link": "next/dist/client/app-dir/link.react-server",
+        "next/link.js": "next/dist/client/app-dir/link.react-server",
+        "next/navigation": "next/dist/client/components/navigation.react-server",
+        "next/navigation.js": "next/dist/client/components/navigation.react-server",
+      }
+    : {
+        "next/link": "next/dist/client/app-dir/link",
+        "next/link.js": "next/dist/client/app-dir/link",
+        "next/navigation": "next/dist/client/components/navigation",
+        "next/navigation.js": "next/dist/client/components/navigation",
+      };
+
+  try {
+    const { createAppRouterApiAliases } = createProjectRequire(root)(
+      "next/dist/build/create-compiler-aliases.js",
+    ) as typeof import("next/dist/build/create-compiler-aliases.js");
+    const aliases = createAppRouterApiAliases(isServerOnlyLayer);
+    const result: Record<string, string> = {};
+
+    for (const [source, replacement] of Object.entries(aliases)) {
+      const match = source.match(/[/\\]next[/\\]([^/\\]+)\.js$/);
+      if (!match) continue;
+
+      result[`next/${match[1]}`] = replacement;
+      result[`next/${match[1]}.js`] = replacement;
+    }
+
+    // Next's webpack aliases target resolved `next/*.js` API files. In Vite
+    // we alias bare package IDs directly, so keep the same app-router layer
+    // but point `link` and `navigation` at the implementation modules those
+    // wrappers load.
+    return { ...result, ...appRouterEntrypoints };
+  } catch {
+    return appRouterEntrypoints;
+  }
+}
+
+function tryResolveFromProject(root: string, id: string): string | undefined {
+  try {
+    return createProjectRequire(root).resolve(id);
+  } catch {
+    return;
+  }
+}
+
+function createNextEdgeNativeAliases(root: string): Alias[] {
+  const aliases: Alias[] = [
+    { find: "node:async_hooks", replacement: "vitest-plugin-rsc/async-hooks" },
+    { find: "async_hooks", replacement: "vitest-plugin-rsc/async-hooks" },
+  ];
+
+  for (const mod of supportedEdgeNativeModules) {
+    const replacement = tryResolveFromProject(root, `next/dist/compiled/${mod}`);
+    if (!replacement) continue;
+
+    aliases.push({ find: `node:${mod}`, replacement }, { find: mod, replacement });
+  }
+
+  const processPolyfill = tryResolveFromProject(root, "next/dist/compiled/process");
+  if (processPolyfill) {
+    aliases.push({ find: "process", replacement: processPolyfill });
+  }
+
+  aliases.push({
+    find: "@opentelemetry/api",
+    replacement: "next/dist/compiled/@opentelemetry/api",
+  });
+
+  return aliases;
+}
+
+function createOptimizeDepsResolveAliases(
+  edgeNativeAliases: Alias[],
+  aliases: Record<string, string>,
+) {
+  return {
+    ...Object.fromEntries(
+      edgeNativeAliases
+        .filter((alias): alias is Alias & { find: string } => typeof alias.find === "string")
+        .map((alias) => [alias.find, alias.replacement]),
+    ),
+    ...aliases,
+  };
+}
+
+function useNextCompiledOpenTelemetryApi(root: string): Plugin {
+  const replacement = tryResolveFromProject(root, "next/dist/compiled/@opentelemetry/api");
+
+  return {
+    name: "next-rsc-edge-compiled-opentelemetry-api",
+    enforce: "pre",
+    resolveId(source) {
+      if (source !== "@opentelemetry/api" || !replacement) {
+        return;
+      }
+
+      return replacement;
+    },
+  };
+}
+
+function useVitestAsyncLocalStorage(root = process.cwd()): Plugin {
+  const replacement = tryResolveFromProject(root, "vitest-plugin-rsc/async-local-storage");
+
+  return {
+    name: "next-rsc-async-local-storage",
+    enforce: "pre",
+    async resolveId(source, importer, options) {
+      if (
+        source !== "next/dist/server/app-render/async-local-storage.js" &&
+        source !== "next/dist/server/app-render/async-local-storage" &&
+        !(source === "./async-local-storage" && importer?.includes("/next/dist/server/app-render/"))
+      ) {
+        return;
+      }
+
+      if (!replacement) {
+        return this.resolve("vitest-plugin-rsc/async-local-storage", importer, {
+          ...options,
+          skipSelf: true,
+        });
+      }
+
+      return { id: replacement, external: false };
+    },
+  };
+}
+
+function useVitestServerReferenceInfo(root = process.cwd()): Plugin {
+  const replacement = tryResolveFromProject(root, "vitest-plugin-rsc/nextjs/server-reference-info");
+
+  return {
+    name: "next-rsc-server-reference-info",
+    enforce: "pre",
+    async resolveId(source, importer, options) {
+      if (
+        source !== "next/dist/shared/lib/server-reference-info.js" &&
+        source !== "next/dist/shared/lib/server-reference-info" &&
+        !(source.endsWith("/shared/lib/server-reference-info") && importer?.includes("/next/dist/"))
+      ) {
+        return;
+      }
+
+      if (!replacement) {
+        return this.resolve("vitest-plugin-rsc/nextjs/server-reference-info", importer, {
+          ...options,
+          skipSelf: true,
+        });
+      }
+
+      return { id: replacement, external: false };
+    },
+  };
+}
+
+function provideBufferLikeNextWebpack(): Plugin {
+  return {
+    name: "next-rsc-edge-provide-buffer",
+    enforce: "pre",
+    transform(code, id) {
+      if (
+        !id.includes("/next/dist/") ||
+        id.includes("/next/dist/compiled/buffer/") ||
+        !/\bBuffer\b/.test(code)
+      ) {
+        return;
+      }
+
+      // Next's webpack compiler uses ProvidePlugin for Buffer in client and
+      // edge bundles. Vite has no direct equivalent, so apply the same import
+      // only to Next internals:
+      // https://github.com/vercel/next.js/blob/938c286bac984aa7275bb4c18aa0c154b443aa93/packages/next/src/build/webpack-config.ts#L2028-L2035
+      return {
+        code: `import { Buffer } from "node:buffer";\n${code}`,
+        map: null,
+      };
+    },
+  };
+}
+
 export function vitestPluginNext(): Plugin[] {
   return [
-    appRouterApiPlugin("client", {
-      "next/link": "next/dist/client/app-dir/link.react-server",
-      "next/navigation": "next/dist/client/components/navigation.react-server",
-    }),
-    appRouterApiPlugin("react_client", {
-      "next/link": "next/dist/client/app-dir/link",
-      "next/navigation": "next/dist/client/components/navigation",
-    }),
+    useVitestAsyncLocalStorage(),
+    useVitestServerReferenceInfo(),
+    appRouterApiPlugin("client", true),
+    appRouterApiPlugin("react_client", false),
     {
       name: "next-rsc-plugin",
-      config() {
+      config(config) {
+        const root = getProjectRoot(config);
+        const edgeNativeAliases = createNextEdgeNativeAliases(root);
+        const rscAppRouterAliases = createAppRouterApiAliasesFromNext(root, true);
+        const reactClientAppRouterAliases = createAppRouterApiAliasesFromNext(root, false);
+
         return {
           define: {
-            "process.env": JSON.stringify({}),
+            "process.env": JSON.stringify({ NEXT_RUNTIME: "edge" }),
             __dirname: JSON.stringify(null),
           },
           resolve: {
-            alias: {
-              "next/cache": "vitest-plugin-rsc/nextjs/cache",
-              "@vercel/turbopack-ecmascript-runtime/browser/dev/hmr-client/hmr-client.ts":
-                "next/dist/client/dev/noop-turbopack-hmr",
-              "react-server-dom-webpack/client":
-                "@vitejs/plugin-rsc/vendor/react-server-dom/client.edge",
+            alias: [
+              ...edgeNativeAliases,
+              {
+                find: "@vercel/turbopack-ecmascript-runtime/browser/dev/hmr-client/hmr-client.ts",
+                replacement: "next/dist/client/dev/noop-turbopack-hmr",
+              },
+            ],
+          },
+          ssr: {
+            optimizeDeps: {
+              include: rscOptimizeDeps,
+              needsInterop: ["next/cache"],
+              rolldownOptions: {
+                plugins: [
+                  useVitestAsyncLocalStorage(root),
+                  useVitestServerReferenceInfo(root),
+                  useNextCompiledOpenTelemetryApi(root),
+                ],
+                resolve: {
+                  alias: {
+                    ...createOptimizeDepsResolveAliases(edgeNativeAliases, rscAppRouterAliases),
+                    "react-server-dom-webpack/client":
+                      "@vitejs/plugin-rsc/vendor/react-server-dom/client.edge",
+                  },
+                },
+              },
             },
           },
           environments: {
             client: {
+              resolve: {
+                conditions: ["edge-light", "react-server"],
+                alias: [
+                  {
+                    find: "react-server-dom-webpack/client",
+                    replacement: "@vitejs/plugin-rsc/vendor/react-server-dom/client.edge",
+                  },
+                ],
+              },
               optimizeDeps: {
-                include: clientOptimizeDeps,
-                exclude: ["next/cache"],
+                include: rscOptimizeDeps,
+                needsInterop: ["next/cache"],
                 rolldownOptions: {
+                  plugins: [
+                    useVitestAsyncLocalStorage(root),
+                    useVitestServerReferenceInfo(root),
+                    useNextCompiledOpenTelemetryApi(root),
+                  ],
                   resolve: {
                     alias: {
-                      "next/link": "next/dist/client/app-dir/link.react-server",
-                      "next/navigation": "next/dist/client/components/navigation.react-server",
+                      ...createOptimizeDepsResolveAliases(edgeNativeAliases, rscAppRouterAliases),
+                      "react-server-dom-webpack/client":
+                        "@vitejs/plugin-rsc/vendor/react-server-dom/client.edge",
                     },
                   },
                 },
               },
             },
             react_client: {
+              resolve: {
+                conditions: ["edge-light", "browser"],
+                alias: [
+                  {
+                    find: "react-server-dom-webpack/client",
+                    replacement: "@vitejs/plugin-rsc/vendor/react-server-dom/client.browser",
+                  },
+                  {
+                    find: "react-server-dom-webpack/client.browser",
+                    replacement: "@vitejs/plugin-rsc/vendor/react-server-dom/client.browser",
+                  },
+                ],
+              },
               optimizeDeps: {
                 include: reactClientOptimizeDeps,
-                exclude: ["next/cache"],
                 rolldownOptions: {
+                  plugins: [
+                    useVitestAsyncLocalStorage(root),
+                    useVitestServerReferenceInfo(root),
+                    useNextCompiledOpenTelemetryApi(root),
+                  ],
                   resolve: {
                     alias: {
-                      "next/link": "next/dist/client/app-dir/link",
-                      "next/navigation": "next/dist/client/components/navigation",
+                      ...createOptimizeDepsResolveAliases(
+                        edgeNativeAliases,
+                        reactClientAppRouterAliases,
+                      ),
+                      "react-server-dom-webpack/client":
+                        "@vitejs/plugin-rsc/vendor/react-server-dom/client.browser",
+                      "react-server-dom-webpack/client.browser":
+                        "@vitejs/plugin-rsc/vendor/react-server-dom/client.browser",
                     },
                   },
                 },
@@ -116,5 +405,6 @@ export function vitestPluginNext(): Plugin[] {
         };
       },
     },
+    provideBufferLikeNextWebpack(),
   ];
 }

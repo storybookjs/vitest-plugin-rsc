@@ -6,14 +6,27 @@ import type { RenderConfiguration } from "./testing-library";
 export type RscPayload = {
   root: React.ReactNode;
   returnValue?: unknown;
+  shouldRender?: boolean;
 };
 
 export type TestingLibraryClientRoot = Awaited<ReturnType<typeof createTestingLibraryClientRoot>>;
 
 export type FetchRsc = (actionRequest?: {
   id: string;
-  reply: string | FormData;
-}) => Promise<ReadableStream<Uint8Array>>;
+  reply: unknown;
+  requestType?: "rsc" | "next-action";
+}) => Promise<ReadableStream<Uint8Array> | Response>;
+
+type ServerActionCaller = {
+  call: (id: string, args: unknown[]) => Promise<unknown>;
+  cleanup: () => void;
+};
+
+type ServerActionCallerModule = {
+  createServerActionCaller: (options: {
+    fetchRsc: FetchRsc;
+  }) => ServerActionCaller | Promise<ServerActionCaller>;
+};
 
 export async function createTestingLibraryClientRoot(options: {
   container: HTMLElement;
@@ -21,9 +34,10 @@ export async function createTestingLibraryClientRoot(options: {
   fetchRsc: FetchRsc;
 }) {
   let setPayload: (v: RscPayload) => void;
+  const serverActionCaller = await createServerActionCaller(options);
 
   const initialPayload = await ReactClient.createFromReadableStream<RscPayload>(
-    await options.fetchRsc(),
+    await readStream(options.fetchRsc()),
   );
 
   function BrowserRoot() {
@@ -37,13 +51,18 @@ export async function createTestingLibraryClientRoot(options: {
   }
 
   ReactClient.setServerCallback(async (id, args) => {
+    if (options.config.serverActionCaller) {
+      return serverActionCaller!.call(id, args);
+    }
     const temporaryReferences = ReactClient.createTemporaryReferenceSet();
     const reply = await ReactClient.encodeReply(args, { temporaryReferences });
     const payload = await ReactClient.createFromReadableStream<RscPayload>(
-      await options.fetchRsc({ id, reply }),
+      await readStream(options.fetchRsc({ id, reply })),
       { temporaryReferences },
     );
-    setPayload(payload);
+    if (payload.shouldRender !== false) {
+      setPayload(payload);
+    }
     return payload.returnValue;
   });
 
@@ -58,12 +77,13 @@ export async function createTestingLibraryClientRoot(options: {
 
   async function rerender() {
     const payload = await ReactClient.createFromReadableStream<RscPayload>(
-      await options.fetchRsc(),
+      await readStream(options.fetchRsc()),
     );
     setPayload(payload);
   }
 
   function unmount() {
+    serverActionCaller?.cleanup();
     reactRoot.unmount();
   }
 
@@ -71,6 +91,11 @@ export async function createTestingLibraryClientRoot(options: {
     rerender: () => act(() => rerender()),
     unmount: () => act(() => unmount()),
   };
+}
+
+async function readStream(value: Promise<ReadableStream<Uint8Array> | Response>) {
+  const response = await value;
+  return response instanceof Response ? response.body! : response;
 }
 
 declare global {
@@ -93,4 +118,34 @@ export function initialize() {
   ReactClient.setRequireModule({
     load: (id) => import(/* @vite-ignore */ id),
   });
+}
+
+async function createServerActionCaller(options: {
+  config: RenderConfiguration;
+  fetchRsc: FetchRsc;
+}): Promise<ServerActionCaller | undefined> {
+  const caller = options.config.serverActionCaller;
+  if (!caller) return;
+
+  if (typeof caller === "function") {
+    return {
+      call: caller,
+      cleanup: () => {},
+    };
+  }
+
+  const mod = (await import(/* @vite-ignore */ toBrowserModuleId(caller))) as ServerActionCallerModule;
+  return mod.createServerActionCaller({
+    fetchRsc: options.fetchRsc,
+  });
+}
+
+function toBrowserModuleId(id: string) {
+  if (id.startsWith("file://")) {
+    return `/@fs${new URL(id).pathname}`;
+  }
+  if (id.startsWith("/")) {
+    return `/@fs${id}`;
+  }
+  return `/@id/${id}`;
 }

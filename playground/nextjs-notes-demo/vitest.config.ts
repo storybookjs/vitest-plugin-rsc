@@ -47,6 +47,10 @@ export default defineConfig({
             provider: playwright(),
             instances: [{ browser: "chromium" }],
           },
+          // Browser workers each own their browser state and run in parallel.
+          // Inside one worker, test files run sequentially with `isolate: false`,
+          // so cleanup belongs in beforeEach. Do not disable file parallelism
+          // and do not switch this to isolate: true for hanging state.
           isolate: false,
           globalSetup: ["./vitest.global-setup.ts"],
           setupFiles: ["./vitest.setup.ts"],

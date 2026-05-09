@@ -1,12 +1,12 @@
-import { screen, waitFor } from "@testing-library/dom";
-import { userEvent } from "@testing-library/user-event";
-import { test } from "vitest";
+import { expect, test, vi } from "vitest";
+import { page } from "vitest/browser";
 import {
   expectToHaveBeenNavigatedTo,
   NextRouter,
   renderServer,
 } from "vitest-plugin-rsc/nextjs/testing-library";
 import { NextRouterProbe } from "./next-router-probe";
+import { resetServerRefreshProbe, ServerRefreshProbe } from "./server-refresh-probe";
 
 test("NextRouter provides app router hooks and records navigation", async () => {
   await renderServer(
@@ -15,11 +15,41 @@ test("NextRouter provides app router hooks and records navigation", async () => 
     </NextRouter>,
   );
 
-  await userEvent.click(
-    await screen.findByRole("button", {
+  await page
+    .getByRole("button", {
       name: "/note/123/hello:123:hello:test",
-    }),
+    })
+    .click();
+
+  await vi.waitFor(() => expectToHaveBeenNavigatedTo({ pathname: "/note/next" }));
+});
+
+test("server actions without refresh leave the current server tree stale", async () => {
+  resetServerRefreshProbe();
+
+  await renderServer(
+    <NextRouter url="/refresh-probe">
+      <ServerRefreshProbe shouldRefresh={false} />
+    </NextRouter>,
   );
 
-  await waitFor(() => expectToHaveBeenNavigatedTo({ pathname: "/note/next" }));
+  await expect.element(page.getByText("server count: 0")).toBeVisible();
+  await page.getByRole("button", { name: "Increment" }).click();
+
+  await expect.element(page.getByText("server count: 0")).toBeVisible();
+});
+
+test("server refresh updates the current server tree", async () => {
+  resetServerRefreshProbe();
+
+  await renderServer(
+    <NextRouter url="/refresh-probe">
+      <ServerRefreshProbe shouldRefresh />
+    </NextRouter>,
+  );
+
+  await expect.element(page.getByText("server count: 0")).toBeVisible();
+  await page.getByRole("button", { name: "Increment" }).click();
+
+  await expect.element(page.getByText("server count: 1")).toBeVisible();
 });

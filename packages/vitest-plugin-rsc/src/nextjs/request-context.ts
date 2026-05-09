@@ -1,16 +1,53 @@
+import { Buffer } from "node:buffer";
+
 type RunPhase = "render" | "action";
 
 type MaybePromise<T> = T | Promise<T>;
 
 export type NextRequestContext = {
   run<T>(phase: RunPhase, callback: () => MaybePromise<T>): MaybePromise<T>;
-  completeAction(): void;
+  completeAction(): MaybePromise<{ shouldRender: boolean; headers?: HeadersInit }>;
 };
 
 export type NextRequestContextOptions = {
   url?: string;
   headers?: Headers | Record<string, string>;
 };
+
+let NextIncrementalCache:
+  | typeof import("next/dist/server/lib/incremental-cache.js").IncrementalCache
+  | undefined;
+let nextCacheGeneration = 0;
+
+export async function resetNextRequestContextCache(): Promise<void> {
+  // Reset Next's patched fetch the same way the dev router does:
+  // https://github.com/vercel/next.js/blob/938c286bac984aa7275bb4c18aa0c154b443aa93/packages/next/src/server/lib/router-server.ts#L153-L158
+  const globalScope = globalThis as typeof globalThis & {
+    __incrementalCache?: unknown;
+    __incrementalCacheShared?: boolean;
+  };
+
+  const [{ tagsManifest }, { IncrementalCache }, patchFetchModule] = await Promise.all([
+    import("next/dist/server/lib/incremental-cache/tags-manifest.external.js"),
+    import("next/dist/server/lib/incremental-cache/index.js"),
+    import("next/dist/server/lib/patch-fetch.js"),
+  ]);
+
+  const patchedFetch = globalThis.fetch as typeof fetch & {
+    __nextPatched?: true;
+    _nextOriginalFetch?: typeof fetch;
+  };
+  if (patchedFetch.__nextPatched && patchedFetch._nextOriginalFetch) {
+    globalThis.fetch = patchedFetch._nextOriginalFetch;
+  }
+  (globalThis as Record<symbol, unknown>)[patchFetchModule.NEXT_PATCH_SYMBOL] = false;
+
+  tagsManifest.clear();
+  globalScope.__incrementalCache = undefined;
+  globalScope.__incrementalCacheShared = undefined;
+  nextCacheGeneration += 1;
+  NextIncrementalCache = IncrementalCache;
+}
 
 export async function createNextRequestContext({
   url = "/",
@@ -20,98 +57,96 @@ export async function createNextRequestContext({
     { actionAsyncStorage },
     { workAsyncStorage },
     { workUnitAsyncStorage },
-    edgeCookiesModule,
+    { createWorkStore },
+    { createRequestStoreForRender, synchronizeMutableCookies },
+    { IncrementalCache },
+    patchFetchModule,
     requestCookiesModule,
-    headersModule,
+    revalidationUtils,
+    actionRevalidationKind,
   ] = await Promise.all([
     import("next/dist/server/app-render/action-async-storage.external.js"),
     import("next/dist/server/app-render/work-async-storage.external.js"),
     import("next/dist/server/app-render/work-unit-async-storage.external.js"),
-    import("next/dist/compiled/@edge-runtime/cookies/index.js"),
+    import("next/dist/server/async-storage/work-store.js"),
+    import("next/dist/server/async-storage/request-store.js"),
+    import("next/dist/server/lib/incremental-cache/index.js"),
+    import("next/dist/server/lib/patch-fetch.js"),
     import("next/dist/server/web/spec-extension/adapters/request-cookies.js"),
-    import("next/dist/server/web/spec-extension/adapters/headers.js"),
+    import("next/dist/server/revalidation-utils.js"),
+    import("next/dist/shared/lib/action-revalidation-kind.js"),
   ]);
 
   const location = new URL(url, "http://localhost");
   const requestHeaders =
     headers instanceof Headers ? headers : new Headers(Object.entries(headers));
   const responseHeaders = new Headers();
-  const workStore = {
-    isStaticGeneration: false,
-    page: `${location.pathname === "/" ? "/index" : location.pathname}/page`,
-    route: location.pathname,
-    incrementalCache: { revalidateTag: async () => {} },
-    afterContext: {},
-    previouslyRevalidatedTags: [],
-    refreshTagsByCacheKind: new Map(),
-    shouldTrackFetchMetrics: false,
-    runInCleanSnapshot: <T>(fn: () => T) => fn(),
-    reactServerErrorsByDigest: new Map(),
-    cacheComponentsEnabled: false,
-    validationLevel: "standard",
+  const page = `${location.pathname === "/" ? "/index" : location.pathname}/page`;
+
+  // Match the App Router render setup by using Next's own work/request stores,
+  // request cookie helpers, and patched fetch:
+  // https://github.com/vercel/next.js/blob/938c286bac984aa7275bb4c18aa0c154b443aa93/packages/next/src/server/app-render/app-render.tsx#L2913-L3170
+  (globalThis as typeof globalThis & { Buffer?: typeof Buffer }).Buffer ??= Buffer;
+  patchFetchModule.patchFetch({ workAsyncStorage, workUnitAsyncStorage });
+  NextIncrementalCache = IncrementalCache;
+  ensureNextEdgeIncrementalCache(IncrementalCache);
+
+  const workStore = createWorkStore({
+    page,
+    renderOpts: {
+      supportsDynamicResponse: true,
+      cacheComponents: false,
+      cacheLifeProfiles: {
+        max: {
+          stale: 300,
+          revalidate: 900,
+          expire: 4294967294,
+        },
+      },
+      staticPageGenerationTimeout: 0,
+      validationLevel: "standard",
+      experimental: {
+        isRoutePPREnabled: false,
+        authInterrupts: false,
+        useCacheTimeout: 0,
+      },
+      waitUntil: () => {},
+      onClose: () => {},
+      onAfterTaskError: () => {},
+    },
     buildId: "vitest-plugin-rsc",
     deploymentId: "vitest-plugin-rsc",
-  };
+    previouslyRevalidatedTags: [],
+  });
+  workStore.pendingRevalidatedTags = [];
+  workStore.pendingRevalidates = {};
+  workStore.pendingRevalidateWrites = [];
 
-  const cache: {
-    headers?: Headers;
-    cookies?: unknown;
-    mutableCookies?: unknown;
-    userspaceMutableCookies?: unknown;
-  } = {};
-
-  const requestStore = {
-    type: "request",
-    phase: "render",
-    implicitTags: { tags: [], expirationsByCacheKind: new Map() },
-    url: {
+  const requestStore = createRequestStoreForRender(
+    { headers: requestHeaders } as never,
+    undefined,
+    {
       pathname: location.pathname,
       search: location.search,
     },
-    rootParams: {},
-    get headers() {
-      cache.headers ??= headersModule.HeadersAdapter.seal(
-        headersModule.HeadersAdapter.from(requestHeaders),
-      );
-      return cache.headers;
+    {},
+    { tags: [], expirationsByCacheKind: new Map() },
+    (cookies: string[]) => {
+      responseHeaders.delete("Set-Cookie");
+      for (const cookie of cookies) {
+        responseHeaders.append("Set-Cookie", cookie);
+      }
     },
-    get cookies() {
-      cache.cookies ??= requestCookiesModule.RequestCookiesAdapter.seal(
-        new edgeCookiesModule.RequestCookies(requestHeaders),
-      );
-      return cache.cookies;
+    {
+      previewModeId: "vitest-plugin-rsc",
+      previewModeSigningKey: "vitest-plugin-rsc",
+      previewModeEncryptionKey: "vitest-plugin-rsc",
     },
-    set cookies(value: unknown) {
-      cache.cookies = value;
-    },
-    get mutableCookies() {
-      cache.mutableCookies ??= requestCookiesModule.MutableRequestCookiesAdapter.wrap(
-        new edgeCookiesModule.RequestCookies(requestHeaders),
-        (cookies: string[]) => {
-          responseHeaders.delete("Set-Cookie");
-          for (const cookie of cookies) {
-            responseHeaders.append("Set-Cookie", cookie);
-          }
-        },
-      );
-      return cache.mutableCookies;
-    },
-    get userspaceMutableCookies() {
-      cache.userspaceMutableCookies ??= requestCookiesModule.createCookiesWithMutableAccessCheck(
-        requestStore as never,
-      );
-      return cache.userspaceMutableCookies;
-    },
-    draftMode: {
-      isEnabled: false,
-      enable() {},
-      disable() {},
-    },
-    renderResumeDataCache: null,
-    isHmrRefresh: false,
-    serverComponentsHmrCache: undefined,
-    fallbackParams: null,
-  };
+    false,
+    undefined,
+    null,
+    null,
+  );
 
   return {
     run(phase, callback) {
@@ -121,12 +156,94 @@ export async function createNextRequestContext({
       workUnitAsyncStorage.enterWith(requestStore as never);
       return callback();
     },
-    completeAction() {
-      requestStore.phase = "render";
-      actionAsyncStorage.enterWith({ isAction: false });
-      requestStore.cookies = requestCookiesModule.RequestCookiesAdapter.seal(
-        requestCookiesModule.responseCookiesToRequestCookies(requestStore.mutableCookies as never),
+    async completeAction() {
+      // Mirrors Next's server action revalidation header decision: updateTag
+      // and cookies trigger static+dynamic invalidation; refresh() only marks
+      // dynamic data stale.
+      // https://github.com/vercel/next.js/blob/938c286bac984aa7275bb4c18aa0c154b443aa93/packages/next/src/server/app-render/action-handler.ts#L160-L210
+      const isTagRevalidated = workStore.pendingRevalidatedTags.some(
+        (item: { profile?: unknown }) => item.profile === undefined,
       );
+      const isCookieRevalidated =
+        requestCookiesModule.getModifiedCookieValues(requestStore.mutableCookies as never).length >
+        0;
+      const revalidationKind =
+        isTagRevalidated || isCookieRevalidated
+          ? actionRevalidationKind.ActionDidRevalidateStaticAndDynamic
+          : workStore.pathWasRevalidated;
+      const shouldRender =
+        revalidationKind !== undefined &&
+        revalidationKind !== actionRevalidationKind.ActionDidNotRevalidate;
+
+      actionAsyncStorage.enterWith({ isAction: false });
+      if (shouldRender) {
+        requestStore.phase = "render";
+        synchronizeMutableCookies(requestStore);
+      }
+      // Use Next's own revalidation executor for tags, cache handlers, pending
+      // writes, and incremental cache updates.
+      // https://github.com/vercel/next.js/blob/938c286bac984aa7275bb4c18aa0c154b443aa93/packages/next/src/server/revalidation-utils.ts#L187-L212
+      await revalidationUtils.executeRevalidates(workStore as never);
+      if (!shouldRender) {
+        workStore.pathWasRevalidated = undefined;
+        workStore.pendingRevalidatedTags = [];
+      }
+
+      return {
+        shouldRender,
+        headers: shouldRender
+          ? { "x-action-revalidated": JSON.stringify(revalidationKind) }
+          : undefined,
+      };
     },
   };
+}
+
+function ensureNextEdgeIncrementalCache(
+  IncrementalCache: typeof import("next/dist/server/lib/incremental-cache.js").IncrementalCache,
+) {
+  const globalScope = globalThis as typeof globalThis & {
+    __incrementalCache?: unknown;
+    __incrementalCacheShared?: boolean;
+  };
+
+  if (globalScope.__incrementalCache) return;
+
+  // Edge requests get a global IncrementalCache in Next's web adapter. We use
+  // the same global shape so Next internals can find their cache normally:
+  // https://github.com/vercel/next.js/blob/938c286bac984aa7275bb4c18aa0c154b443aa93/packages/next/src/server/web/adapter.ts#L217-L235
+  globalScope.__incrementalCacheShared = true;
+  globalScope.__incrementalCache = createNextEdgeIncrementalCache(IncrementalCache);
+}
+
+function createNextEdgeIncrementalCache(
+  IncrementalCache:
+    | typeof import("next/dist/server/lib/incremental-cache.js").IncrementalCache
+    | undefined = NextIncrementalCache,
+) {
+  if (!IncrementalCache) {
+    throw new Error("Invariant: Next IncrementalCache was not loaded.");
+  }
+
+  return new IncrementalCache({
+    fs: {} as never,
+    dev: false,
+    requestHeaders: {},
+    minimalMode: true,
+    fetchCacheKeyPrefix: `vitest-plugin-rsc-${nextCacheGeneration}`,
+    serverDistDir: "/",
+    maxMemoryCacheSize: 50 * 1024 * 1024,
+    flushToDisk: false,
+    getPrerenderManifest: () => ({
+      version: -1,
+      routes: {},
+      dynamicRoutes: {},
+      notFoundRoutes: [],
+      preview: {
+        previewModeId: "vitest-plugin-rsc",
+        previewModeSigningKey: "vitest-plugin-rsc",
+        previewModeEncryptionKey: "vitest-plugin-rsc",
+      },
+    }),
+  });
 }
