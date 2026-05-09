@@ -27,6 +27,7 @@
     "@vitejs/plugin-rsc": "0.5.24",
     "@vitest/browser": "5.0.0-beta.2",
     "@vitest/browser-playwright": "5.0.0-beta.2",
+    "@vitest/coverage-v8": "5.0.0-beta.2",
     "@vitest/ui": "5.0.0-beta.2",
     "msw": "^2.10.4",
     "playwright": "^1.54.1",

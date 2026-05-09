@@ -29,8 +29,14 @@
       "react-server": "./dist/nextjs/navigation.react-server.js",
       "default": "./dist/nextjs/navigation.js"
     },
-    ".": "./dist/index.js",
-    "./*": "./dist/*.js"
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./*": {
+      "types": "./dist/*.d.ts",
+      "default": "./dist/*.js"
+    }
   },
   "publishConfig": {
     "access": "public",
@@ -44,11 +50,14 @@
     "prepack": "tsdown"
   },
   "dependencies": {
+    "@jridgewell/gen-mapping": "^0.3.13",
     "@vitejs/plugin-rsc": "0.5.24",
     "@vitest/expect": "5.0.0-beta.2",
-    "@vitest/spy": "5.0.0-beta.2"
+    "@vitest/spy": "5.0.0-beta.2",
+    "convert-source-map": "^2.0.0"
   },
   "devDependencies": {
+    "@types/convert-source-map": "^2.0.3",
     "@types/estree": "^1.0.8",
     "@types/node": "^24.12.3",
     "@types/react": "^19.1.8",

@@ -7,6 +7,8 @@ export default defineConfig({
     "src/testing-library-client.tsx",
     "src/nextjs/client.tsx",
     "src/nextjs/testing-library.ts",
+    "src/nextjs/async-local-storage.ts",
+    "src/nextjs/request-context.ts",
     "src/nextjs/navigation.ts",
     "src/nextjs/navigation.react-server.ts",
     "src/nextjs/plugin.ts",
