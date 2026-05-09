@@ -1,26 +1,25 @@
 import { expect, test, vi } from "vitest";
+import { page } from "vitest/browser";
 import { renderServer } from "vitest-plugin-rsc/testing-library";
 import { TestActionFromClient, TestUseActionState } from "./client.tsx";
-import { screen, waitFor } from "@testing-library/dom";
-import { userEvent } from "@testing-library/user-event";
 
 test("test use action state", async () => {
   await renderServer(<TestUseActionState />);
 
   await expect
-    .element(await screen.findByTestId("use-action-state"))
+    .element(page.getByTestId("use-action-state"))
     .toHaveTextContent("test-useActionState: 0");
 
-  await userEvent.click(await screen.findByTestId("use-action-state"));
+  await page.getByTestId("use-action-state").click();
 
   await expect
-    .element(await screen.findByTestId("use-action-state"))
+    .element(page.getByTestId("use-action-state"))
     .toHaveTextContent("test-useActionState: 1");
 
-  await userEvent.click(await screen.findByTestId("use-action-state"));
+  await page.getByTestId("use-action-state").click();
 
   await expect
-    .element(await screen.findByTestId("use-action-state"))
+    .element(page.getByTestId("use-action-state"))
     .toHaveTextContent("test-useActionState: 2");
 });
 
@@ -29,15 +28,15 @@ test("test use action state", async () => {
 
   await renderServer(<TestActionFromClient />);
 
-  await userEvent.click(await screen.findByRole("button", { name: /test-action-from-client$/ }));
+  await page.getByRole("button", { name: /test-action-from-client$/ }).click();
 
-  await waitFor(() => {
+  await vi.waitFor(() => {
     expect(console.log).toBeCalledWith("[test-action-from-client]");
   });
 
-  await userEvent.click(await screen.findByRole("button", { name: /test-action-from-client-2$/ }));
+  await page.getByRole("button", { name: /test-action-from-client-2$/ }).click();
 
-  await waitFor(() => {
+  await vi.waitFor(() => {
     expect(console.log).toBeCalledWith("[test-action-from-client-2]");
   });
 });

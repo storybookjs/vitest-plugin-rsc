@@ -1,16 +1,19 @@
-import { screen } from "@testing-library/dom";
-import { userEvent } from "@testing-library/user-event";
 import { expect, test } from "vitest";
-import { renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
+import { page } from "vitest/browser";
+import { NextRouter, renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
 
 import FlashCookieProbe from "./flash-cookie-probe";
 
 test("server actions can set cookies for the rerendered server tree", async () => {
-  await renderServer(<FlashCookieProbe />);
+  await renderServer(
+    <NextRouter url="/flash-cookie-probe">
+      <FlashCookieProbe />
+    </NextRouter>,
+  );
 
-  expect(await screen.findByText("flash: empty")).toBeVisible();
+  await expect.element(page.getByText("flash: empty")).toBeVisible();
 
-  await userEvent.click(await screen.findByRole("button", { name: "Set flash" }));
+  await page.getByRole("button", { name: "Set flash" }).click();
 
-  expect(await screen.findByText("flash: saved")).toBeVisible();
+  await expect.element(page.getByText("flash: saved")).toBeVisible();
 });

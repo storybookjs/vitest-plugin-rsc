@@ -1,12 +1,11 @@
 import { expect, test } from "vitest";
+import { page } from "vitest/browser";
 import { renderServer } from "vitest-plugin-rsc/testing-library";
 import { http } from "msw";
 import { Users } from "./users.tsx";
 import { getLikes } from "../lib/db.ts";
 import { msw } from "../test/msw.ts";
 import { api } from "../lib/api.ts";
-import { screen } from "@testing-library/dom";
-import { userEvent } from "@testing-library/user-event";
 
 test("save to db when clicked", async () => {
   msw.use(http.get(api("/users"), () => Response.json([{ id: 5, name: "some user" }])));
@@ -15,9 +14,9 @@ test("save to db when clicked", async () => {
 
   expect(await getLikes(5)).toBe(0);
 
-  await userEvent.click(await screen.findByRole("button", { name: "Toggle" }));
-  await userEvent.click(await screen.findByRole("button", { name: "Like" }));
+  await page.getByRole("button", { name: "Toggle" }).click();
+  await page.getByRole("button", { name: "Like" }).click();
 
-  expect(await screen.findByText("+1")).toBeVisible();
+  await expect.element(page.getByText("+1")).toBeVisible();
   expect(await getLikes(5)).toBe(1);
 });

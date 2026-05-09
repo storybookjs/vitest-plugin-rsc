@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { page, userEvent } from "vitest/browser";
+import { page } from "vitest/browser";
 import { signInAs } from "#test/auth.ts";
 import { renderServer } from "#test/render.tsx";
 import NewNotePage from "./page.tsx";
@@ -24,8 +24,8 @@ test("renders server validation errors and keeps old input", async () => {
   await signInAs();
   await renderServer(<NewNotePage />, { url: "/notes/new" });
 
-  await userEvent.fill(page.getByLabelText("Content"), "Keep this body");
-  await userEvent.click(page.getByRole("button", { name: "Create note" }));
+  await page.getByLabelText("Content").fill("Keep this body");
+  await page.getByRole("button", { name: "Create note" }).click();
 
   await expect.element(page.getByText("Title is required.")).toBeInTheDocument();
   await expect.element(page.getByLabelText("Title")).toHaveAttribute("aria-invalid", "true");

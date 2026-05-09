@@ -199,7 +199,7 @@ This is the shape the plugin is designed for: one focused app slice, full behavi
 
 ```tsx
 import { expect, test } from "vitest";
-import { page, userEvent } from "vitest/browser";
+import { page } from "vitest/browser";
 import { renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
 import { seed } from "drizzle-seed";
 
@@ -227,8 +227,8 @@ test("validates a new note without losing entered content", async () => {
 
   await renderServer(<NewNotePage />);
 
-  await userEvent.fill(page.getByLabelText("Content"), "Keep this body");
-  await userEvent.click(page.getByRole("button", { name: "Create note" }));
+  await page.getByLabelText("Content").fill("Keep this body");
+  await page.getByRole("button", { name: "Create note" }).click();
 
   await expect.element(page.getByText("Title is required.")).toBeInTheDocument();
   await expect.element(page.getByDisplayValue("Keep this body")).toBeInTheDocument();
