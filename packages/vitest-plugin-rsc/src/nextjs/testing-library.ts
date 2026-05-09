@@ -18,9 +18,23 @@ import {
 
 export * from "../testing-library";
 
-export function initialize(customConfig: Partial<RenderConfiguration> = {}): void {
+export type NextRenderConfiguration = Partial<RenderConfiguration> & {
+  serverActionsViaMsw?: boolean;
+};
+
+let config: NextRenderConfiguration = {
+  serverActionsViaMsw: false,
+};
+
+export function initialize(customConfig: NextRenderConfiguration = {}): void {
+  config = {
+    ...config,
+    ...customConfig,
+  };
   baseInitialize({
-    serverActionCaller: "vitest-plugin-rsc/nextjs/testing-library-client",
+    serverActionCaller: config.serverActionsViaMsw
+      ? "vitest-plugin-rsc/nextjs/testing-library-client"
+      : undefined,
     rootOptions: {
       onCaughtError: (error) => {
         if (isNextRouterError(error)) return;
@@ -28,7 +42,7 @@ export function initialize(customConfig: Partial<RenderConfiguration> = {}): voi
       },
       ...(customConfig.rootOptions ?? {}),
     },
-    ...customConfig,
+    ...config,
   });
 }
 
@@ -41,13 +55,24 @@ export async function renderServer(
   { url = "/", headers, ...options }: BaseRenderServerOptions & NextRequestContextOptions = {},
 ) {
   const serverContext = await createNextRequestContext({ url, headers });
-  const root = await withNextRouterInitialTree(ui, url);
-  return baseRenderServer(root, {
+  let routerRefreshVersion = 0;
+  return baseRenderServer(ui, {
     ...options,
     serverContext: {
-      ...serverContext,
-      createActionResponse: ({ root, returnValue, shouldRender }) =>
-        createNextActionResponse(root, returnValue, shouldRender),
+      run: serverContext.run,
+      prepareRoot: ({ root, actionRequest }) => {
+        if (!config.serverActionsViaMsw && actionRequest) {
+          routerRefreshVersion += 1;
+        }
+        return withNextRouterInitialTree(root, url, routerRefreshVersion);
+      },
+      completeAction: config.serverActionsViaMsw
+        ? serverContext.completeAction
+        : () => ({ shouldRender: true }),
+      createActionResponse: config.serverActionsViaMsw
+        ? ({ root, returnValue, shouldRender }) =>
+            createNextActionResponse(root, returnValue, shouldRender)
+        : undefined,
     },
   });
 }
@@ -83,12 +108,17 @@ async function createNextActionResponse(root: ReactNode, returnValue: unknown, s
   };
 }
 
-async function withNextRouterInitialTree(node: ReactNode, defaultUrl: string): Promise<ReactNode> {
+async function withNextRouterInitialTree(
+  node: ReactNode,
+  defaultUrl: string,
+  routerRefreshVersion: number,
+): Promise<ReactNode> {
   if (!findNextRouterElement(node)) {
     const location = new URL(defaultUrl, "http://localhost");
     return createElement(
       NextRouter,
       {
+        key: routerRefreshVersion,
         url: defaultUrl,
         route: location.pathname,
         initialTree: await buildFlightRouterStateWithNext(
@@ -101,12 +131,15 @@ async function withNextRouterInitialTree(node: ReactNode, defaultUrl: string): P
     );
   }
 
-  return injectNextRouterInitialTree(node);
+  return injectNextRouterInitialTree(node, routerRefreshVersion);
 }
 
-async function injectNextRouterInitialTree(node: ReactNode): Promise<ReactNode> {
+async function injectNextRouterInitialTree(
+  node: ReactNode,
+  routerRefreshVersion: number,
+): Promise<ReactNode> {
   if (Array.isArray(node)) {
-    return Promise.all(node.map((child) => injectNextRouterInitialTree(child)));
+    return Promise.all(node.map((child) => injectNextRouterInitialTree(child, routerRefreshVersion)));
   }
 
   if (!isValidElement(node)) return node;
@@ -121,6 +154,7 @@ async function injectNextRouterInitialTree(node: ReactNode): Promise<ReactNode> 
     const route = props.route ?? url;
     const location = new URL(url, "http://localhost");
     return cloneElement(node as ReactElement<{ initialTree?: unknown }>, {
+      key: routerRefreshVersion,
       initialTree: await buildFlightRouterStateWithNext(route, location.pathname, location.search),
     });
   }
@@ -129,7 +163,7 @@ async function injectNextRouterInitialTree(node: ReactNode): Promise<ReactNode> 
   if (!props.children) return node;
 
   return cloneElement(node as ReactElement<{ children?: ReactNode }>, {
-    children: await injectNextRouterInitialTree(props.children),
+    children: await injectNextRouterInitialTree(props.children, routerRefreshVersion),
   });
 }
 

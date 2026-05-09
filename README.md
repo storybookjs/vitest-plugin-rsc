@@ -319,6 +319,33 @@ The `next/cache` APIs run through Next.js internals with a deterministic in-memo
 
 Other Next.js APIs run through Next's own App Router code. For example, `next/link`, `next/navigation`, and `next/headers` are resolved to the same internal Next.js modules the App Router uses, with request state supplied by the test request context created by the Next.js render helper.
 
+By default, server actions are called directly in-process and the `NextRouter` is remounted with the new server tree after each action. This is the ergonomic mode for component tests, but it does not model Next's stale-by-default App Router server-action reducer.
+
+For App Router server-action semantics, use MSW and opt in with `serverActionsViaMsw`:
+
+```ts
+import { setupWorker } from "msw/browser";
+import { initialize } from "vitest-plugin-rsc/nextjs/testing-library";
+import { mswHandlers } from "vitest-plugin-rsc/nextjs/msw";
+
+const worker = setupWorker(...mswHandlers());
+
+beforeAll(async () => {
+  await worker.start({ onUnhandledRequest: "bypass" });
+  initialize({ serverActionsViaMsw: true });
+});
+
+beforeEach(() => {
+  worker.resetHandlers();
+});
+
+afterAll(() => {
+  worker.stop();
+});
+```
+
+In this mode, server actions go through Next's `callServer` and App Router reducer. The MSW handler answers the internal `next-action` POST from that reducer, so `refresh`, `revalidatePath`, `revalidateTag`, `updateTag`, cookies, redirects, and cached `fetch` behavior follow Next's machinery.
+
 It also exposes `NextRouter` for components that use App Router context:
 
 ```tsx

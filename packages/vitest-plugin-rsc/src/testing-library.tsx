@@ -6,6 +6,7 @@ import * as ReactServer from "@vitejs/plugin-rsc/react/rsc";
 
 type ServerContext = {
   run<T>(phase: "render" | "action", callback: () => T | Promise<T>): T | Promise<T>;
+  prepareRoot?: (options: { root: ReactNode; actionRequest?: Parameters<FetchRsc>[0] }) => ReactNode | Promise<ReactNode>;
   completeAction?: () =>
     | { shouldRender: boolean; headers?: HeadersInit }
     | Promise<{ shouldRender: boolean; headers?: HeadersInit }>;
@@ -71,6 +72,7 @@ export async function renderServer(
       if (WrapperComponent) {
         serverRoot = <WrapperComponent>{ui}</WrapperComponent>;
       }
+      serverRoot = (await serverContext?.prepareRoot?.({ root: serverRoot, actionRequest })) ?? serverRoot;
 
       if (actionRequest?.requestType === "next-action") {
         const actionResponse = (await serverContext?.createActionResponse?.({

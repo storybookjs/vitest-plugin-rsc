@@ -1,48 +1,17 @@
 import type { FetchRsc } from "../testing-library-client";
 
 export function createServerActionCaller({ fetchRsc }: { fetchRsc: FetchRsc }) {
-  const cleanup = installNextServerActionFetchBridge(fetchRsc);
+  const fetchRscSymbol = Symbol.for("vitest-plugin-rsc.nextjs.fetchRsc");
+  const globalScope = globalThis as typeof globalThis & Record<symbol, FetchRsc | undefined>;
+  globalScope[fetchRscSymbol] = fetchRsc;
 
   return {
     call: callNextServerAction,
-    cleanup,
-  };
-}
-
-function installNextServerActionFetchBridge(fetchRsc: FetchRsc) {
-  const originalFetch = globalThis.fetch;
-  const bridgedFetch: typeof fetch = async (input, init) => {
-    const request = input instanceof Request ? input : null;
-    const method = init?.method ?? request?.method;
-    const headers = new Headers(init?.headers ?? request?.headers);
-    const actionId = headers.get("next-action");
-
-    // Next's server-action reducer hardcodes an HTTP POST transport. The
-    // `fetchServerAction` helper is private to that reducer, so we cannot
-    // import or configure its transport directly. In browser component tests
-    // there is no Next HTTP server, so this adapts only that internal action
-    // POST back into the in-process RSC renderer while leaving normal user/MSW
-    // fetches alone:
-    // https://github.com/vercel/next.js/blob/938c286bac984aa7275bb4c18aa0c154b443aa93/packages/next/src/client/components/router-reducer/reducers/server-action-reducer.ts#L104-L180
-    if (method === "POST" && actionId) {
-      const reply = init?.body ?? (request ? await request.clone().formData() : undefined);
-      const response = await fetchRsc({ id: actionId, reply, requestType: "next-action" });
-      if (response instanceof Response) {
-        return response;
+    cleanup: () => {
+      if (globalScope[fetchRscSymbol] === fetchRsc) {
+        delete globalScope[fetchRscSymbol];
       }
-      return new Response(response, {
-        headers: { "content-type": "text/x-component" },
-      });
-    }
-
-    return originalFetch(input, init);
-  };
-  globalThis.fetch = bridgedFetch;
-
-  return () => {
-    if (globalThis.fetch === bridgedFetch) {
-      globalThis.fetch = originalFetch;
-    }
+    },
   };
 }
 
