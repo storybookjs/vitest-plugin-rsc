@@ -1,20 +1,19 @@
 import type { FetchRsc } from "../testing-library-client";
-import { HttpResponse, http, passthrough } from "msw";
+import { HttpResponse, http } from "msw";
 
-export function serverActionHandlers() {
-  return [
-    http.post("*", async ({ request }) => {
+export const serverActionHandlers = [
+  http.post(
+    ({ request }) => request.headers.has("next-action"),
+    async ({ request }) => {
       const actionId = request.headers.get("next-action");
-      if (!actionId) {
-        return passthrough();
-      }
+      if (!actionId) return;
 
       const fetchRsc = (globalThis as typeof globalThis & Record<symbol, FetchRsc | undefined>)[
         Symbol.for("vitest-plugin-rsc.nextjs.fetchRsc")
       ];
       if (!fetchRsc) {
         return HttpResponse.text(
-          "Next server actions require initialize({ serverActionsViaMsw: true }) before using serverActionHandlers().",
+          "Next server actions require initialize({ serverActionsViaMsw: true }) before using serverActionHandlers.",
           { status: 500 },
         );
       }
@@ -27,9 +26,9 @@ export function serverActionHandlers() {
       return new Response(response, {
         headers: { "content-type": "text/x-component" },
       });
-    }),
-  ];
-}
+    },
+  ),
+];
 
 async function readActionReply(request: Request) {
   const contentType = request.headers.get("content-type") ?? "";

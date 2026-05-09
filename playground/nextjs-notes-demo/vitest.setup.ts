@@ -67,7 +67,7 @@ const TEST_NOW = "2026-05-06T00:00:00.000Z";
 
 let base: PGlite;
 let pointerResetTarget: HTMLElement | undefined;
-const worker = setupWorker(...nextCacheProbeFetchHandler, ...serverActionHandlers());
+const worker = setupWorker(...nextCacheProbeFetchHandler, ...serverActionHandlers);
 
 // Vitest mounts React into an existing document, so rendering RootLayout's
 // <html>/<body> tags would be invalid. Page tests use the app-local

@@ -328,7 +328,10 @@ import { setupWorker } from "msw/browser";
 import { initialize } from "vitest-plugin-rsc/nextjs/testing-library";
 import { serverActionHandlers } from "vitest-plugin-rsc/nextjs/msw";
 
-const worker = setupWorker(...serverActionHandlers());
+const worker = setupWorker(
+  // Add your app's MSW handlers first.
+  ...serverActionHandlers,
+);
 
 beforeAll(async () => {
   await worker.start({ onUnhandledRequest: "bypass" });
