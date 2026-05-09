@@ -1,0 +1,31 @@
+{
+  "name": "nextjs-no-msw-demo",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "vitest",
+    "test:run": "vitest run"
+  },
+  "dependencies": {
+    "next": "16.2.4",
+    "react": "19.2.4",
+    "react-dom": "19.2.4"
+  },
+  "devDependencies": {
+    "@types/node": "^20",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "@vitejs/plugin-react": "^6.0.1",
+    "@vitejs/plugin-rsc": "^0.5.24",
+    "@vitest/browser": "5.0.0-beta.2",
+    "@vitest/browser-playwright": "5.0.0-beta.2",
+    "playwright": "^1.59.1",
+    "typescript": "^6",
+    "vite": "^8.0.10",
+    "vitest": "5.0.0-beta.2",
+    "vitest-plugin-rsc": "workspace:*"
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}
