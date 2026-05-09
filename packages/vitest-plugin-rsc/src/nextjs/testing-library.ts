@@ -1,3 +1,4 @@
+import "next/dist/server/node-environment-baseline";
 import { isNextRouterError } from "next/dist/client/components/is-next-router-error.js";
 import type { ReactNode } from "react";
 import type { RenderConfiguration } from "../testing-library";

@@ -3,16 +3,14 @@ import { defineConfig } from "tsdown";
 export default defineConfig({
   entry: [
     "src/index.ts",
+    "src/async-local-storage.ts",
+    "src/async-hooks.ts",
     "src/testing-library.tsx",
     "src/testing-library-client.tsx",
     "src/nextjs/client.tsx",
     "src/nextjs/testing-library.ts",
-    "src/nextjs/async-local-storage.ts",
     "src/nextjs/request-context.ts",
-    "src/nextjs/navigation.ts",
-    "src/nextjs/navigation.react-server.ts",
     "src/nextjs/plugin.ts",
-    "src/nextjs/headers.ts",
     "src/nextjs/cache.ts",
   ],
   format: ["esm"],

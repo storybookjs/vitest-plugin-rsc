@@ -1,7 +1,5 @@
 type RunCallback<R, TArgs extends unknown[]> = (...args: TArgs) => R;
 
-const instances = new Set<SequentialAsyncLocalStorage<unknown>>();
-
 function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
   return (
     typeof value === "object" &&
@@ -25,14 +23,10 @@ function withFinally<R>(result: R & PromiseLike<unknown>, onFinally: () => void)
 }
 
 export class SequentialAsyncLocalStorage<Store> {
-  stack: Store[] = [];
-
-  constructor() {
-    instances.add(this as SequentialAsyncLocalStorage<unknown>);
-  }
+  #currentStore: Store | undefined;
 
   getStore(): Store | undefined {
-    return this.stack.at(-1);
+    return this.#currentStore;
   }
 
   run<R, TArgs extends unknown[]>(
@@ -40,101 +34,63 @@ export class SequentialAsyncLocalStorage<Store> {
     callback: RunCallback<R, TArgs>,
     ...args: TArgs
   ): R {
-    this.stack.push(store);
+    const previousStore = this.#currentStore;
+    this.#currentStore = store;
 
     let result: R;
     try {
       result = callback(...args);
     } catch (error) {
-      this.stack.pop();
+      this.#currentStore = previousStore;
       throw error;
     }
 
     if (isPromiseLike(result)) {
       return withFinally(result, () => {
-        this.stack.pop();
+        this.#currentStore = previousStore;
       });
     }
 
-    this.stack.pop();
+    this.#currentStore = previousStore;
     return result;
   }
 
   exit<R, TArgs extends unknown[]>(callback: RunCallback<R, TArgs>, ...args: TArgs): R {
-    const previousStack = this.stack;
-    this.stack = [];
+    const previousStore = this.#currentStore;
+    this.#currentStore = undefined;
 
     let result: R;
     try {
       result = callback(...args);
     } catch (error) {
-      this.stack = previousStack;
+      this.#currentStore = previousStore;
       throw error;
     }
 
     if (isPromiseLike(result)) {
       return withFinally(result, () => {
-        this.stack = previousStack;
+        this.#currentStore = previousStore;
       });
     }
 
-    this.stack = previousStack;
+    this.#currentStore = previousStore;
     return result;
   }
 
   enterWith(store: Store): void {
-    if (this.stack.length === 0) {
-      this.stack.push(store);
-      return;
-    }
-
-    this.stack[this.stack.length - 1] = store;
+    this.#currentStore = store;
   }
 
   disable(): void {
-    this.stack = [];
+    this.#currentStore = undefined;
   }
 
   static bind<T extends (...args: unknown[]) => unknown>(fn: T): T {
-    const runInSnapshot = SequentialAsyncLocalStorage.snapshot();
-    return ((...args: Parameters<T>) => runInSnapshot(fn, ...args)) as T;
+    return fn;
   }
 
   static snapshot(): <R, TArgs extends unknown[]>(fn: RunCallback<R, TArgs>, ...args: TArgs) => R {
-    const snapshot = new Map(
-      [...instances].map((instance) => [instance, instance.stack.slice()] as const),
-    );
-
-    return <R, TArgs extends unknown[]>(fn: RunCallback<R, TArgs>, ...args: TArgs): R => {
-      const previous = new Map(
-        [...instances].map((instance) => [instance, instance.stack.slice()] as const),
-      );
-
-      for (const [instance, stack] of snapshot) {
-        instance.stack = stack.slice();
-      }
-
-      let result: R;
-      try {
-        result = fn(...args);
-      } catch (error) {
-        restoreStacks(previous);
-        throw error;
-      }
-
-      if (isPromiseLike(result)) {
-        return withFinally(result, () => restoreStacks(previous));
-      }
-
-      restoreStacks(previous);
-      return result as R;
-    };
-  }
-}
-
-function restoreStacks(snapshot: Map<SequentialAsyncLocalStorage<unknown>, unknown[]>): void {
-  for (const [instance, stack] of snapshot) {
-    instance.stack = stack;
+    return (fn, ...args) => fn(...args);
   }
 }
 

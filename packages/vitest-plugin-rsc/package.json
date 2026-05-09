@@ -25,10 +25,6 @@
   "type": "module",
   "exports": {
     "./package.json": "./package.json",
-    "./dist/nextjs/navigation": {
-      "react-server": "./dist/nextjs/navigation.react-server.js",
-      "default": "./dist/nextjs/navigation.js"
-    },
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"

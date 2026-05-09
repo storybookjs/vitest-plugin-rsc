@@ -136,6 +136,12 @@ export function vitestPluginRSC(): Plugin[] {
       },
       config() {
         return {
+          resolve: {
+            alias: {
+              "node:async_hooks": "vitest-plugin-rsc/async-hooks",
+              async_hooks: "vitest-plugin-rsc/async-hooks",
+            },
+          },
           environments: {
             client: {
               keepProcessEnv: false,
