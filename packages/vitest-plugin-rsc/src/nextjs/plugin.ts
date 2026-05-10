@@ -16,6 +16,8 @@ const reactClientOptimizeDeps = [
   "next/dist/client/app-call-server.js",
   "next/dist/client/route-params.js",
   "next/dist/client/components/app-router.js",
+  "next/dist/client/components/layout-router.js",
+  "next/dist/client/components/render-from-template-context.js",
   "next/dist/client/app-dir/link",
   "next/dist/client/app-dir/link.js",
   "next/dist/client/components/navigation",

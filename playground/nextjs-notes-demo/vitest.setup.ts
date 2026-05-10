@@ -69,14 +69,7 @@ let base: PGlite;
 let pointerResetTarget: HTMLElement | undefined;
 const worker = setupWorker(...nextCacheProbeFetchHandler, ...nextRscRequestHandlers);
 
-// Vitest mounts React into an existing document, so rendering RootLayout's
-// <html>/<body> tags would be invalid. Page tests use the app-local
-// renderServer helper and keep the matching document-level defaults here.
-function applyDocumentDefaults() {
-  document.documentElement.lang = "en";
-  document.documentElement.className = "antialiased";
-  document.documentElement.style.colorScheme = "";
-  document.body.className = "";
+function resetThemeStorage() {
   localStorage.removeItem("theme");
 }
 
@@ -124,7 +117,7 @@ beforeEach(async () => {
   await cleanup();
   setCurrentUser(null);
   deleteFlashCookies();
-  applyDocumentDefaults();
+  resetThemeStorage();
   const clone = await base.clone();
   if (!(clone instanceof PGlite)) {
     throw new TypeError("Expected PGlite.clone() to return a PGlite instance");

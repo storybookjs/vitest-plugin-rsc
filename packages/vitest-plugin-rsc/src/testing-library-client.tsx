@@ -1,5 +1,6 @@
 import * as React from "react";
 import * as ReactDOMClient from "react-dom/client";
+import * as ReactDOMServer from "react-dom/server.browser";
 import * as ReactClient from "@vitejs/plugin-rsc/react/browser";
 import type { RenderConfiguration } from "./testing-library";
 
@@ -35,6 +36,8 @@ type ServerActionCallerModule = {
     fetchRsc: FetchRsc;
   }) => ServerActionCaller | Promise<ServerActionCaller>;
 };
+
+const insertedDocumentHeadNodes = new WeakSet<ChildNode>();
 
 export async function createTestingLibraryClientRoot(options: {
   container: HTMLElement;
@@ -80,8 +83,7 @@ export async function createTestingLibraryClientRoot(options: {
     browserRoot = <React.StrictMode>{browserRoot}</React.StrictMode>;
   }
 
-  const reactRoot = ReactDOMClient.createRoot(options.container, options.config.rootOptions);
-  reactRoot.render(browserRoot);
+  const reactRoot = await hydrateRoot(browserRoot, options.container, options.config.rootOptions);
 
   async function rerender() {
     const payload = await ReactClient.createFromReadableStream<RscPayload>(
@@ -99,6 +101,121 @@ export async function createTestingLibraryClientRoot(options: {
     rerender: () => act(() => rerender()),
     unmount: () => act(() => unmount()),
   };
+}
+
+async function hydrateRoot(
+  browserRoot: React.ReactNode,
+  container: HTMLElement,
+  rootOptions: ReactDOMClient.RootOptions,
+) {
+  const ssrStream = await ReactDOMServer.renderToReadableStream(browserRoot);
+  const html = await new Response(ssrStream).text();
+  if (isDocumentHtml(html)) {
+    const { preservedHeadNodes, scripts } = applyDocumentHtml(html);
+    activateScripts(scripts);
+    let root: ReactDOMClient.Root | undefined;
+    await act(() => {
+      root = ReactDOMClient.hydrateRoot(document, browserRoot, rootOptions);
+    });
+    document.head.append(...preservedHeadNodes);
+    return root!;
+  }
+
+  container.innerHTML = html;
+  activateScripts([container]);
+  let root: ReactDOMClient.Root | undefined;
+  await act(() => {
+    root = ReactDOMClient.hydrateRoot(container, browserRoot, rootOptions);
+  });
+  return root!;
+}
+
+function isDocumentHtml(html: string) {
+  return /^(?:\s*<!doctype[^>]*>\s*)?<html(?:\s|>)/i.test(html);
+}
+
+function applyDocumentHtml(html: string) {
+  const parsed = new DOMParser().parseFromString(`<!doctype html>${html}`, "text/html");
+  const existingHeadNodes = Array.from(document.head.childNodes);
+  const nextHeadNodes = Array.from(parsed.head.childNodes).map((node) =>
+    document.importNode(node, true),
+  );
+  const nextBodyNodes = Array.from(parsed.body.childNodes).map((node) =>
+    document.importNode(node, true),
+  );
+  const preservedHeadNodes = existingHeadNodes.filter(
+    (node) =>
+      !insertedDocumentHeadNodes.has(node) &&
+      !nextHeadNodes.some((nextNode) => isSameHeadNode(node, nextNode)),
+  );
+
+  syncAttributes(document.documentElement, parsed.documentElement);
+  syncAttributes(document.head, parsed.head);
+  syncAttributes(document.body, parsed.body);
+  for (const node of nextHeadNodes) {
+    insertedDocumentHeadNodes.add(node);
+  }
+  document.head.replaceChildren(...nextHeadNodes);
+  document.body.replaceChildren(...nextBodyNodes);
+  return { preservedHeadNodes, scripts: [...nextHeadNodes, ...nextBodyNodes] };
+}
+
+function activateScripts(nodes: ChildNode[]) {
+  for (const node of nodes) {
+    const scripts =
+      node instanceof HTMLScriptElement
+        ? [node]
+        : node instanceof Element
+          ? Array.from(node.querySelectorAll("script"))
+          : [];
+
+    for (const script of scripts) {
+      const executable = document.createElement("script");
+      for (const { name, value } of Array.from(script.attributes)) {
+        executable.setAttribute(name, value);
+      }
+      executable.textContent = script.textContent;
+      script.replaceWith(executable);
+    }
+  }
+}
+
+function syncAttributes(target: Element, source: Element) {
+  for (const { name } of Array.from(target.attributes)) {
+    target.removeAttribute(name);
+  }
+  for (const { name, value } of Array.from(source.attributes)) {
+    target.setAttribute(name, value);
+  }
+}
+
+function isSameHeadNode(a: ChildNode, b: ChildNode) {
+  if (!(a instanceof Element) || !(b instanceof Element)) return false;
+  const aKey = getHeadNodeKey(a);
+  return aKey !== "" && aKey === getHeadNodeKey(b);
+}
+
+function getHeadNodeKey(node: Element) {
+  const tagName = node.tagName.toLowerCase();
+  if (tagName === "title") return "title";
+  if (tagName === "meta") {
+    const key =
+      node.getAttribute("charset") ??
+      node.getAttribute("name") ??
+      node.getAttribute("property") ??
+      node.getAttribute("http-equiv");
+    return key ? `${tagName}:${key}` : "";
+  }
+  if (tagName === "link") {
+    const rel = node.getAttribute("rel");
+    const href = node.getAttribute("href");
+    return rel && href ? `${tagName}:${rel}:${href}` : "";
+  }
+  if (tagName === "script") {
+    const src = node.getAttribute("src");
+    return src ? `${tagName}:${src}` : "";
+  }
+  return "";
 }
 
 async function readStream(value: Promise<ReadableStream<Uint8Array> | Response>) {

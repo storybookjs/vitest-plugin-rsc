@@ -6,6 +6,8 @@ import type {
   GlobalErrorState,
 } from "next/dist/client/components/app-router-instance.js";
 import { createMutableActionQueue as createNextMutableActionQueue } from "next/dist/client/components/app-router-instance.js";
+import LayoutRouter from "next/dist/client/components/layout-router.js";
+import RenderFromTemplateContext from "next/dist/client/components/render-from-template-context.js";
 import { createInitialRouterState } from "next/dist/client/components/router-reducer/create-initial-router-state.js";
 import { reducer } from "next/dist/client/components/router-reducer/router-reducer.js";
 import type {
@@ -18,9 +20,20 @@ import type {
   CacheNodeSeedData,
   FlightDataPath,
   FlightRouterState,
+  FlightSegmentPath,
   InitialRSCPayload,
 } from "next/dist/shared/lib/app-router-types";
-import React, { type ReactNode, useMemo, useRef } from "react";
+import React, {
+  Children,
+  cloneElement,
+  createElement,
+  Fragment,
+  isValidElement,
+  type ReactElement,
+  type ReactNode,
+  useMemo,
+  useRef,
+} from "react";
 
 // This test router is a small adapter around Next's App Router internals. Keep
 // copied control flow aligned with Next rather than growing a parallel router:
@@ -106,7 +119,9 @@ function createNextRouterStateSnapshot({
         canonicalUrl: location.pathname + location.search,
         initialTree,
         renderedSearch: location.search,
-        seedData: [children, {}, null, false, null],
+        seedData: isDocumentRoot(children)
+          ? createDocumentSeedData(children, initialTree)
+          : [children, {}, null, false, null],
       }),
       initialFlightStreamForCache: null,
       location: location as unknown as Location,
@@ -135,6 +150,99 @@ function createInitialRSCPayload(props: {
     S: false,
     h: null,
   };
+}
+
+function isDocumentRoot(children: ReactNode) {
+  return isValidElement(children) && children.type === "html";
+}
+
+function createDocumentSeedData(
+  children: ReactNode,
+  initialTree: FlightRouterState,
+): CacheNodeSeedData {
+  if (!isValidElement(children)) {
+    throw new Error("NextRouter document mode expects a single root layout element.");
+  }
+  const root = children as ReactElement<{ children?: ReactNode }>;
+
+  return [
+    createDocumentRoot(root, createParallelRouteProps(initialTree).children),
+    createParallelRouteSeedData(getDocumentBodyChildren(root), initialTree),
+    null,
+    false,
+    null,
+  ];
+}
+
+function createDocumentRoot(root: ReactElement<{ children?: ReactNode }>, children: ReactNode) {
+  return cloneElement(root, {
+    children: Children.map(root.props.children, (child) => {
+      if (isValidElement(child) && child.type === "body") {
+        return cloneElement(child as ReactElement<{ children?: ReactNode }>, { children });
+      }
+      return child;
+    }),
+  });
+}
+
+function getDocumentBodyChildren(root: ReactElement<{ children?: ReactNode }>) {
+  const body = Children.toArray(root.props.children).find(
+    (child) => isValidElement(child) && child.type === "body",
+  );
+  return isValidElement(body) ? body.props.children : root.props.children;
+}
+
+function createParallelRouteSeedData(
+  leaf: ReactNode,
+  tree: FlightRouterState,
+): Record<string, CacheNodeSeedData | null> {
+  return Object.fromEntries(
+    Object.entries(tree[1]).map(([parallelRouteKey, childTree]) => [
+      parallelRouteKey,
+      createSeedDataForTree(leaf, childTree),
+    ]),
+  );
+}
+
+function createSeedDataForTree(leaf: ReactNode, tree: FlightRouterState): CacheNodeSeedData {
+  const parallelRouteSeedData = createParallelRouteSeedData(leaf, tree);
+  const parallelRouteProps = createParallelRouteProps(tree);
+
+  return [
+    Object.keys(tree[1]).length === 0 ? (
+      leaf
+    ) : (
+      <Fragment key={createRouterCacheKey(tree[0])}>{parallelRouteProps.children}</Fragment>
+    ),
+    parallelRouteSeedData,
+    null,
+    false,
+    null,
+  ];
+}
+
+function createParallelRouteProps(tree: FlightRouterState): Record<string, ReactNode> {
+  return Object.fromEntries(
+    Object.keys(tree[1]).map((parallelRouterKey) => [
+      parallelRouterKey,
+      createElement(LayoutRouter, {
+        parallelRouterKey,
+        error: undefined,
+        errorStyles: undefined,
+        errorScripts: undefined,
+        template: createElement(RenderFromTemplateContext),
+        templateStyles: undefined,
+        templateScripts: undefined,
+        notFound: undefined,
+        forbidden: undefined,
+        unauthorized: undefined,
+      }),
+    ]),
+  );
+}
+
+function createRouterCacheKey(segment: FlightSegmentPath[number]) {
+  return Array.isArray(segment) ? segment.join("|") : segment;
 }
 
 function createMutableActionQueue(initialState: AppRouterState): AppRouterActionQueue {

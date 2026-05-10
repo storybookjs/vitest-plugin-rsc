@@ -1,6 +1,10 @@
 import { expect, test } from "vitest";
 import { eq } from "drizzle-orm";
 import { page } from "vitest/browser";
+import {
+  renderServer as renderNextServer,
+  NextRouter,
+} from "vitest-plugin-rsc/nextjs/testing-library";
 import { db } from "#lib/db.ts";
 import { notes } from "#db/schema.ts";
 import { applyScenario, scenarioUsers } from "#lib/db.scenarios.ts";
@@ -16,6 +20,44 @@ async function renderNotesPage() {
 test("renders Notes heading", async () => {
   await renderNotesPage();
   await expect.element(page.getByRole("heading", { name: "Notes" })).toBeInTheDocument();
+});
+
+test("renders through the root document layout", async () => {
+  await renderNotesPage();
+
+  expect(document.documentElement.lang).toBe("en");
+  expect(document.documentElement.className).toContain("font-geist-sans");
+  expect(document.documentElement.className).toContain("font-geist-mono");
+  expect(document.title).toBe("Notes Demo");
+  expect(document.head.querySelector('meta[name="application-name"]')?.getAttribute("content")).toBe(
+    "Notes Demo",
+  );
+  expect(document.head.querySelector('meta[name="theme-color"]')?.getAttribute("content")).toBe(
+    "#fbfaf7",
+  );
+  expect(document.body.querySelector('script[type="module"]')).toBeNull();
+  await expect.element(page.getByRole("banner")).toBeInTheDocument();
+});
+
+test("hydrates a subtree without owning the document", async () => {
+  document.title = "Vitest subtree sentinel";
+  const sentinel = document.createElement("meta");
+  sentinel.name = "subtree-sentinel";
+  sentinel.content = "preserved";
+  document.head.appendChild(sentinel);
+
+  await renderNextServer(
+    <NextRouter route="/notes" url="/notes">
+      <main>Subtree hydration path</main>
+    </NextRouter>,
+    { url: "/notes" },
+  );
+
+  await expect.element(page.getByText("Subtree hydration path")).toBeInTheDocument();
+  expect(document.title).toBe("Vitest subtree sentinel");
+  expect(document.head.querySelector('meta[name="subtree-sentinel"]')?.getAttribute("content")).toBe(
+    "preserved",
+  );
 });
 
 test("shows empty state when no notes exist", async () => {

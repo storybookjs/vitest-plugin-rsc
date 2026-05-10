@@ -43,6 +43,7 @@ export default defineConfig({
           browser: {
             enabled: true,
             headless: true,
+            testerHtmlPath: "./vitest.tester.html",
             viewport: { width: 390, height: 844 },
             provider: playwright(),
             instances: [{ browser: "chromium" }],
