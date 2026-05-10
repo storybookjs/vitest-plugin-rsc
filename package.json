@@ -1,0 +1,43 @@
+{
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "format": "oxfmt $(git ls-files ':!:public/mockServiceWorker.js')",
+    "format:check": "oxfmt --check $(git ls-files ':!:public/mockServiceWorker.js')",
+    "lint": "oxlint $(git ls-files)",
+    "lint:ci": "oxlint --format=github $(git ls-files)",
+    "lint:fix": "oxlint --fix $(git ls-files)",
+    "tsgo": "tsgo --build",
+    "build": "pnpm -r --filter='./packages/*' run build",
+    "build:epic": "pnpm --filter vitest-plugin-rsc build && node scripts/copy-plugin-build-to-epic.ts",
+    "test:epic": "pnpm build:epic && cd \"$HOME/code/epic-rsc-stack\" && bun vitest run",
+    "test": "pnpm -r --workspace-concurrency=1 --if-present run test:run",
+    "perf": "pnpm perf:commands",
+    "perf:ci": "pnpm perf",
+    "perf:commands": "node scripts/perf/run-command-benchmarks.ts repo",
+    "perf:micro": "node scripts/perf/run-vitest-bench.ts",
+    "perf:epic": "node scripts/perf/run-command-benchmarks.ts epic",
+    "perf:epic:smoke": "node scripts/perf/run-command-benchmarks.ts epic --smoke --runs 1 --warmup 0 --label epic-smoke",
+    "dev": "pnpm -r --parallel --filter='./packages/*' run dev"
+  },
+  "devDependencies": {
+    "@types/node": "^24.12.3",
+    "@typescript/native-preview": "^7.0.0-dev.20260508.1",
+    "oxfmt": "^0.48.0",
+    "oxlint": "^1.63.0",
+    "oxlint-tsgolint": "^0.22.1",
+    "tsx": "^4.20.3",
+    "typescript": "^6.0.3",
+    "vite": "^8.0.11",
+    "vitest": "5.0.0-beta.2"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "packageManager": "pnpm@11.0.8",
+  "msw": {
+    "workerDirectory": [
+      "public"
+    ]
+  }
+}
