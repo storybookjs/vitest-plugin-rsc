@@ -321,21 +321,21 @@ Other Next.js APIs run through Next's own App Router code. For example, `next/li
 
 By default, server actions are called directly in-process and the `NextRouter` is remounted with the new server tree after each action. This is the ergonomic mode for component tests, but it does not model Next's stale-by-default App Router server-action reducer.
 
-For App Router server-action semantics, use MSW and opt in with `serverActionsViaMsw`:
+For App Router RSC request semantics, use MSW and opt in with `nextRscRequestsViaMsw`:
 
 ```ts
 import { setupWorker } from "msw/browser";
 import { initialize } from "vitest-plugin-rsc/nextjs/testing-library";
-import { serverActionHandlers } from "vitest-plugin-rsc/nextjs/msw";
+import { nextRscRequestHandlers } from "vitest-plugin-rsc/nextjs/msw";
 
 const worker = setupWorker(
   // Add your app's MSW handlers first.
-  ...serverActionHandlers,
+  ...nextRscRequestHandlers,
 );
 
 beforeAll(async () => {
   await worker.start({ onUnhandledRequest: "bypass" });
-  initialize({ serverActionsViaMsw: true });
+  initialize({ nextRscRequestsViaMsw: true });
 });
 
 beforeEach(() => {
@@ -347,7 +347,7 @@ afterAll(() => {
 });
 ```
 
-In this mode, server actions go through Next's `callServer` and App Router reducer. The MSW handler answers the internal `next-action` POST from that reducer, so `refresh`, `revalidatePath`, `revalidateTag`, `updateTag`, cookies, redirects, and cached `fetch` behavior follow Next's machinery.
+In this mode, server actions go through Next's `callServer` and App Router reducer. The MSW handlers answer the internal `next-action` POST and RSC GET refresh/navigation requests, so `refresh`, `revalidatePath`, `revalidateTag`, `updateTag`, cookies, redirects, and cached `fetch` behavior follow Next's machinery.
 
 It also exposes `NextRouter` for components that use App Router context:
 

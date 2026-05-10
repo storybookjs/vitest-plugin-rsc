@@ -1,7 +1,7 @@
 import type { FetchRsc } from "../testing-library-client";
 import { HttpResponse, http } from "msw";
 
-export const serverActionHandlers = [
+export const nextRscRequestHandlers = [
   http.post(
     ({ request }) => request.headers.has("next-action"),
     async ({ request }) => {
@@ -13,7 +13,7 @@ export const serverActionHandlers = [
       ];
       if (!fetchRsc) {
         return HttpResponse.text(
-          "Next server actions require initialize({ serverActionsViaMsw: true }) before using serverActionHandlers.",
+          "Next server actions require initialize({ nextRscRequestsViaMsw: true }) before using nextRscRequestHandlers.",
           { status: 500 },
         );
       }
@@ -36,7 +36,7 @@ export const serverActionHandlers = [
       ];
       if (!fetchRsc) {
         return HttpResponse.text(
-          "Next route refresh requests require initialize({ serverActionsViaMsw: true }) before using serverActionHandlers.",
+          "Next RSC requests require initialize({ nextRscRequestsViaMsw: true }) before using nextRscRequestHandlers.",
           { status: 500 },
         );
       }
