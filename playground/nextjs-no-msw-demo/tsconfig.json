@@ -12,7 +12,7 @@
     "resolveJsonModule": true,
     "isolatedModules": true,
     "jsx": "react-jsx",
-    "types": ["vitest", "@vitest/browser/providers/playwright"]
+    "types": ["vitest"]
   },
   "include": ["**/*.ts", "**/*.tsx"]
 }

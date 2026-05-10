@@ -14,9 +14,10 @@ export type NextRequestContextOptions = {
   headers?: Headers | Record<string, string>;
 };
 
-let NextIncrementalCache:
-  | typeof import("next/dist/server/lib/incremental-cache.js").IncrementalCache
-  | undefined;
+type NextIncrementalCacheConstructor =
+  typeof import("next/dist/server/lib/incremental-cache/index.js").IncrementalCache;
+
+let NextIncrementalCache: NextIncrementalCacheConstructor | undefined;
 let nextCacheGeneration = 0;
 
 export async function resetNextRequestContextCache(): Promise<void> {
@@ -103,19 +104,15 @@ export async function createNextRequestContext({
           expire: 4294967294,
         },
       },
-      staticPageGenerationTimeout: 0,
-      validationLevel: "standard",
       experimental: {
         isRoutePPREnabled: false,
         authInterrupts: false,
-        useCacheTimeout: 0,
       },
       waitUntil: () => {},
       onClose: () => {},
       onAfterTaskError: () => {},
     },
     buildId: "vitest-plugin-rsc",
-    deploymentId: "vitest-plugin-rsc",
     previouslyRevalidatedTags: [],
   });
   workStore.pendingRevalidatedTags = [];
@@ -163,7 +160,7 @@ export async function createNextRequestContext({
       // addRevalidationHeader helper inside action-handler.ts, so we cannot
       // import it directly.
       // https://github.com/vercel/next.js/blob/938c286bac984aa7275bb4c18aa0c154b443aa93/packages/next/src/server/app-render/action-handler.ts#L160-L210
-      const isTagRevalidated = workStore.pendingRevalidatedTags.some(
+      const isTagRevalidated = (workStore.pendingRevalidatedTags ?? []).some(
         (item: { profile?: unknown }) => item.profile === undefined,
       );
       const isCookieRevalidated =
@@ -201,9 +198,7 @@ export async function createNextRequestContext({
   };
 }
 
-function ensureNextEdgeIncrementalCache(
-  IncrementalCache: typeof import("next/dist/server/lib/incremental-cache.js").IncrementalCache,
-) {
+function ensureNextEdgeIncrementalCache(IncrementalCache: NextIncrementalCacheConstructor) {
   const globalScope = globalThis as typeof globalThis & {
     __incrementalCache?: unknown;
     __incrementalCacheShared?: boolean;
@@ -219,9 +214,7 @@ function ensureNextEdgeIncrementalCache(
 }
 
 function createNextEdgeIncrementalCache(
-  IncrementalCache:
-    | typeof import("next/dist/server/lib/incremental-cache.js").IncrementalCache
-    | undefined = NextIncrementalCache,
+  IncrementalCache: NextIncrementalCacheConstructor | undefined = NextIncrementalCache,
 ) {
   if (!IncrementalCache) {
     throw new Error("Invariant: Next IncrementalCache was not loaded.");
@@ -237,7 +230,7 @@ function createNextEdgeIncrementalCache(
     maxMemoryCacheSize: 50 * 1024 * 1024,
     flushToDisk: false,
     getPrerenderManifest: () => ({
-      version: -1,
+      version: 4,
       routes: {},
       dynamicRoutes: {},
       notFoundRoutes: [],

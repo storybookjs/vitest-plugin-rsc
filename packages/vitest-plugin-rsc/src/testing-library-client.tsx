@@ -11,11 +11,19 @@ export type RscPayload = {
 
 export type TestingLibraryClientRoot = Awaited<ReturnType<typeof createTestingLibraryClientRoot>>;
 
-export type FetchRsc = (actionRequest?: {
-  id: string;
-  reply: unknown;
-  requestType?: "rsc" | "next-action";
-}) => Promise<ReadableStream<Uint8Array> | Response>;
+export type FetchRsc = (
+  request?:
+    | {
+        id: string;
+        reply: unknown;
+        requestType?: "rsc" | "next-action";
+      }
+    | {
+        requestType: "next-route";
+        url: string;
+        routerState?: string | null;
+      },
+) => Promise<ReadableStream<Uint8Array> | Response>;
 
 type ServerActionCaller = {
   call: (id: string, args: unknown[]) => Promise<unknown>;
@@ -134,7 +142,9 @@ async function createServerActionCaller(options: {
     };
   }
 
-  const mod = (await import(/* @vite-ignore */ toBrowserModuleId(caller))) as ServerActionCallerModule;
+  const mod = (await import(
+    /* @vite-ignore */ toBrowserModuleId(caller)
+  )) as ServerActionCallerModule;
   return mod.createServerActionCaller({
     fetchRsc: options.fetchRsc,
   });

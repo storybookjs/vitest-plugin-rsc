@@ -8,8 +8,10 @@ import {
 import { RedirectBoundary } from "next/dist/client/components/redirect-boundary.js";
 import { getSelectedParams } from "next/dist/client/components/router-reducer/compute-changed-path.js";
 import { createInitialRouterState } from "next/dist/client/components/router-reducer/create-initial-router-state.js";
+import { isDeferredRsc } from "next/dist/client/components/router-reducer/ppr-navigations.js";
 import { reducer } from "next/dist/client/components/router-reducer/router-reducer.js";
 import { useActionQueue } from "next/dist/client/components/use-action-queue.js";
+import { unresolvedThenable } from "next/dist/client/components/unresolved-thenable.js";
 import type {
   AppRouterState,
   ReducerActions,
@@ -33,7 +35,7 @@ import {
   SearchParamsContext,
 } from "next/dist/shared/lib/hooks-client-context.shared-runtime.js";
 import type { AppRouterInstance } from "next/dist/shared/lib/app-router-context.shared-runtime.js";
-import React, { type ReactNode, useMemo, useRef } from "react";
+import React, { type ReactNode, use, useDeferredValue, useMemo, useRef } from "react";
 
 // This test router is a small adapter around Next's App Router internals. Keep
 // copied control flow aligned with Next rather than growing a parallel router:
@@ -69,10 +71,20 @@ export const NextRouter = ({
     [children, url, initialTree],
   );
   const actionQueueRef = useRef<AppRouterActionQueue | null>(null);
+  const snapshotRef = useRef<NextRouterStateSnapshot | null>(null);
+  const snapshotVersionRef = useRef(0);
 
-  actionQueueRef.current ??= createMutableActionQueue(snapshot.state);
+  if (snapshotRef.current !== snapshot) {
+    actionQueueRef.current = createMutableActionQueue(snapshot.state);
+    snapshotRef.current = snapshot;
+    snapshotVersionRef.current += 1;
+  }
+  const currentActionQueue = actionQueueRef.current;
+  if (!currentActionQueue) {
+    throw new Error("Invariant: NextRouter action queue was not initialized.");
+  }
 
-  return <AppRouter actionQueue={actionQueueRef.current}></AppRouter>;
+  return <AppRouter key={snapshotVersionRef.current} actionQueue={currentActionQueue}></AppRouter>;
 };
 
 (NextRouter as unknown as { $$vitestPluginRscNextRouter: true }).$$vitestPluginRscNextRouter = true;
@@ -88,7 +100,9 @@ function createNextRouterStateSnapshot({
 }): NextRouterStateSnapshot {
   const location = new URL(url, "http://localhost");
   if (!initialTree) {
-    throw new Error("NextRouter must be rendered through renderServer from vitest-plugin-rsc/nextjs.");
+    throw new Error(
+      "NextRouter must be rendered through renderServer from vitest-plugin-rsc/nextjs.",
+    );
   }
 
   return {
@@ -204,7 +218,11 @@ export function AppRouter({ actionQueue }: { actionQueue: AppRouterActionQueue }
                     isActive: true,
                   }}
                 >
-                  <RedirectBoundary>{cache.rsc}</RedirectBoundary>
+                  <React.Suspense fallback={null}>
+                    <RedirectBoundary>
+                      <RootRsc cacheNode={cache} />
+                    </RedirectBoundary>
+                  </React.Suspense>
                 </LayoutRouterContext.Provider>
               </AppRouterContext.Provider>
             </GlobalLayoutRouterContext.Provider>
@@ -213,4 +231,27 @@ export function AppRouter({ actionQueue }: { actionQueue: AppRouterActionQueue }
       </PathParamsContext.Provider>
     </>
   );
+}
+
+function RootRsc({ cacheNode }: { cacheNode: AppRouterState["cache"] }) {
+  // Mirrors the RSC value handling in Next's layout-router. Refresh
+  // navigations put a DeferredRsc on the cache node; rendering it raw leaves
+  // the transition stuck on the stale UI.
+  // https://github.com/vercel/next.js/blob/938c286bac984aa7275bb4c18aa0c154b443aa93/packages/next/src/client/components/layout-router.tsx#L428-L456
+  const resolvedPrefetchRsc =
+    cacheNode.prefetchRsc !== null ? cacheNode.prefetchRsc : cacheNode.rsc;
+  const rsc = useDeferredValue(cacheNode.rsc, resolvedPrefetchRsc);
+
+  if (isDeferredRsc(rsc)) {
+    const unwrappedRsc = use(rsc);
+    if (unwrappedRsc === null) {
+      use(unresolvedThenable) as never;
+    }
+    return unwrappedRsc;
+  }
+
+  if (rsc === null) {
+    use(unresolvedThenable) as never;
+  }
+  return rsc;
 }

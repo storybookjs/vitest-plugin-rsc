@@ -6,7 +6,7 @@ import { UserAsyncStorageServer } from "./server";
 test("user-defined AsyncLocalStorage is available during RSC module evaluation", async () => {
   await renderServer(<UserAsyncStorageServer />);
 
-  await expect.element(page.getByTestId("user-async-storage")).toHaveTextContent(
-    "user-defined-async-storage",
-  );
+  await expect
+    .element(page.getByTestId("user-async-storage"))
+    .toHaveTextContent("user-defined-async-storage");
 });

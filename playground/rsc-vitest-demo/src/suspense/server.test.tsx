@@ -8,7 +8,5 @@ test("suspense", async () => {
 
   await expect.element(page.getByTestId("suspense")).toHaveTextContent("suspense-fallback");
 
-  await expect
-    .element(page.getByTestId("suspense"))
-    .toHaveTextContent("suspense-resolved");
+  await expect.element(page.getByTestId("suspense")).toHaveTextContent("suspense-resolved");
 });

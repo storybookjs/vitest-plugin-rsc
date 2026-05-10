@@ -8,9 +8,7 @@ test("use action state with jsx", async () => {
 
   await page.getByRole("button").click();
 
-  await expect
-    .element(page.getByTestId("use-action-state-jsx"))
-    .toHaveTextContent(/\(ok\)/);
+  await expect.element(page.getByTestId("use-action-state-jsx")).toHaveTextContent(/\(ok\)/);
 
   await page.getByRole("button").click();
 

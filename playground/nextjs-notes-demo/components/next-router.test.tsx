@@ -5,6 +5,7 @@ import {
   NextRouter,
   renderServer,
 } from "vitest-plugin-rsc/nextjs/testing-library";
+import { ClientRefreshProbe } from "./client-refresh-probe";
 import { NextRouterProbe } from "./next-router-probe";
 import { resetServerRefreshProbe, ServerRefreshProbe } from "./server-refresh-probe";
 
@@ -51,5 +52,23 @@ test("server refresh updates the current server tree", async () => {
   await expect.element(page.getByText("server count: 0")).toBeVisible();
   await page.getByRole("button", { name: "Increment" }).click();
 
+  await expect.element(page.getByText("server count: 1")).toBeVisible();
+});
+
+test("client router.refresh updates the current server tree", async () => {
+  resetServerRefreshProbe();
+
+  await renderServer(
+    <NextRouter url="/refresh-probe">
+      <ServerRefreshProbe shouldRefresh={false} />
+      <ClientRefreshProbe />
+    </NextRouter>,
+  );
+
+  await expect.element(page.getByText("server count: 0")).toBeVisible();
+  await page.getByRole("button", { name: "Increment" }).click();
+  await expect.element(page.getByText("server count: 0")).toBeVisible();
+
+  await page.getByRole("button", { name: "Refresh router" }).click();
   await expect.element(page.getByText("server count: 1")).toBeVisible();
 });

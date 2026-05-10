@@ -8,5 +8,7 @@ test("client error boundary catches server errors", async () => {
   await page.getByRole("button", { name: "test-server-action-error" }).click();
   await expect.element(page.getByText(/ErrorBoundary caught/)).toBeVisible();
   await page.getByRole("button", { name: "reset-error" }).click();
-  await expect.element(page.getByRole("button", { name: "test-server-action-error" })).toBeVisible();
+  await expect
+    .element(page.getByRole("button", { name: "test-server-action-error" }))
+    .toBeVisible();
 });

@@ -14,6 +14,7 @@ const reactClientOptimizeDeps = [
   "node:buffer",
   "vitest-plugin-rsc/async-local-storage",
   "next/dist/client/app-call-server.js",
+  "next/dist/client/route-params.js",
   "next/dist/client/app-dir/link",
   "next/dist/client/app-dir/link.js",
   "next/dist/client/components/navigation",
@@ -24,9 +25,11 @@ const reactClientOptimizeDeps = [
   "next/dist/client/components/redirect-boundary.js",
   "next/dist/client/components/router-reducer/compute-changed-path.js",
   "next/dist/client/components/router-reducer/create-initial-router-state.js",
+  "next/dist/client/components/router-reducer/ppr-navigations.js",
   "next/dist/client/components/router-reducer/router-reducer.js",
   "next/dist/client/components/router-reducer/router-reducer-types.js",
   "next/dist/client/components/router-reducer/reducers/server-action-reducer.js",
+  "next/dist/client/components/unresolved-thenable.js",
   "next/dist/shared/lib/server-reference-info.js",
   "next/dist/client/components/app-router-headers.js",
   "next/dist/client/flight-data-helpers.js",
@@ -98,7 +101,7 @@ function appRouterApiPlugin(environmentName: string, isServerOnlyLayer: boolean)
   };
 }
 
-function getProjectRoot(config: UserConfig): string {
+function getProjectRoot(config: { root?: string }): string {
   return path.resolve(config.root ?? process.cwd());
 }
 

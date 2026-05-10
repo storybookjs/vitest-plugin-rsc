@@ -6,7 +6,10 @@ import * as ReactServer from "@vitejs/plugin-rsc/react/rsc";
 
 type ServerContext = {
   run<T>(phase: "render" | "action", callback: () => T | Promise<T>): T | Promise<T>;
-  prepareRoot?: (options: { root: ReactNode; actionRequest?: Parameters<FetchRsc>[0] }) => ReactNode | Promise<ReactNode>;
+  prepareRoot?: (options: {
+    root: ReactNode;
+    actionRequest?: Parameters<FetchRsc>[0];
+  }) => ReactNode | Promise<ReactNode>;
   completeAction?: () =>
     | { shouldRender: boolean; headers?: HeadersInit }
     | Promise<{ shouldRender: boolean; headers?: HeadersInit }>;
@@ -14,6 +17,10 @@ type ServerContext = {
     root: ReactNode;
     returnValue: unknown;
     shouldRender: boolean;
+  }) => unknown | Promise<unknown>;
+  createRouteResponse?: (options: {
+    root: ReactNode;
+    request: Extract<NonNullable<Parameters<FetchRsc>[0]>, { requestType: "next-route" }>;
   }) => unknown | Promise<unknown>;
 };
 
@@ -55,10 +62,8 @@ export async function renderServer(
     const fetchRsc: FetchRsc = async (actionRequest) => {
       let returnValue: unknown | undefined;
       let temporaryReferences: unknown | undefined;
-      let actionResult:
-        | { shouldRender: boolean; headers?: HeadersInit }
-        | undefined;
-      if (actionRequest) {
+      let actionResult: { shouldRender: boolean; headers?: HeadersInit } | undefined;
+      if (actionRequest && "id" in actionRequest) {
         const { id, reply } = actionRequest;
         temporaryReferences = ReactServer.createTemporaryReferenceSet();
         const args = await ReactServer.decodeReply(reply as string | FormData, {
@@ -72,7 +77,8 @@ export async function renderServer(
       if (WrapperComponent) {
         serverRoot = <WrapperComponent>{ui}</WrapperComponent>;
       }
-      serverRoot = (await serverContext?.prepareRoot?.({ root: serverRoot, actionRequest })) ?? serverRoot;
+      serverRoot =
+        (await serverContext?.prepareRoot?.({ root: serverRoot, actionRequest })) ?? serverRoot;
 
       if (actionRequest?.requestType === "next-action") {
         const actionResponse = (await serverContext?.createActionResponse?.({
@@ -92,6 +98,19 @@ export async function renderServer(
         responseHeaders.set("content-type", "text/x-component");
         return new Response(stream, {
           headers: responseHeaders,
+        });
+      }
+
+      if (actionRequest?.requestType === "next-route") {
+        const routeResponse = await serverContext?.createRouteResponse?.({
+          root: serverRoot,
+          request: actionRequest,
+        });
+        const stream = await runServer("render", () =>
+          ReactServer.renderToReadableStream(routeResponse),
+        );
+        return new Response(stream, {
+          headers: { "content-type": "text/x-component" },
         });
       }
 
