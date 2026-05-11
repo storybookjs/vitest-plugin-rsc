@@ -1,6 +1,6 @@
 import type { Container, RootOptions } from "react-dom/client";
 import type { JSXElementConstructor, ReactNode } from "react";
-import { importReactClient } from "./utilts";
+import { importReactClient, importReactSsr } from "./utilts";
 import type { FetchRsc, RscPayload, TestingLibraryClientRoot } from "./testing-library-client";
 import * as ReactServer from "@vitejs/plugin-rsc/react/rsc";
 
@@ -26,6 +26,9 @@ type ServerContext = {
 
 const client = await importReactClient<typeof import("./testing-library-client")>(
   "vitest-plugin-rsc/testing-library-client",
+);
+const ssr = await importReactSsr<typeof import("./testing-library-ssr")>(
+  "vitest-plugin-rsc/testing-library-ssr",
 );
 
 const mountedContainers = new Set<Container>();
@@ -56,7 +59,9 @@ export async function renderServer(
   rerender: (ui: ReactNode) => Promise<void>;
   asFragment: () => DocumentFragment;
 }> {
-  container ??= hydrateDocument ? document.body : baseElement.appendChild(document.createElement("div"));
+  container ??= hydrateDocument
+    ? document.body
+    : baseElement.appendChild(document.createElement("div"));
 
   let root: TestingLibraryClientRoot;
 
@@ -127,11 +132,17 @@ export async function renderServer(
       );
       return stream;
     };
+    const initialStream = hydrateDocument ? await readStream(fetchRsc()) : undefined;
+    const [ssrStream, clientStream] = initialStream?.tee() ?? [];
+    const documentHtml = ssrStream ? await ssr.renderToHtml(ssrStream) : undefined;
+
     root = await client.createTestingLibraryClientRoot({
       container,
       config,
       fetchRsc,
       hydrateDocument,
+      initialStream: clientStream,
+      documentHtml,
     });
     mountedRootEntries.push({ container, root });
     mountedContainers.add(container);
@@ -188,5 +199,11 @@ export function initialize(customConfig: Partial<RenderConfiguration> = {}): voi
   ReactServer.setRequireModule({
     load: (id) => __vite_rsc_raw_import__(id),
   });
+  ssr.initialize();
   client.initialize();
+}
+
+async function readStream(value: Promise<ReadableStream<Uint8Array> | Response>) {
+  const response = await value;
+  return response instanceof Response ? response.body! : response;
 }

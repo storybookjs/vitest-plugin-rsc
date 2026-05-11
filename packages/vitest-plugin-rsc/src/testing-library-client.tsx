@@ -1,6 +1,5 @@
 import * as React from "react";
 import * as ReactDOMClient from "react-dom/client";
-import * as ReactDOMServer from "react-dom/server.browser";
 import * as ReactClient from "@vitejs/plugin-rsc/react/browser";
 import type { RenderConfiguration } from "./testing-library";
 
@@ -37,17 +36,21 @@ type ServerActionCallerModule = {
   }) => ServerActionCaller | Promise<ServerActionCaller>;
 };
 
+const pendingClientReferenceLoads = new Set<Promise<unknown>>();
+
 export async function createTestingLibraryClientRoot(options: {
   container: HTMLElement;
   config: RenderConfiguration;
   fetchRsc: FetchRsc;
   hydrateDocument?: boolean;
+  initialStream?: ReadableStream<Uint8Array>;
+  documentHtml?: string;
 }) {
   let setPayload: (v: RscPayload) => void;
   const serverActionCaller = await createServerActionCaller(options);
 
   const initialPayload = await ReactClient.createFromReadableStream<RscPayload>(
-    await readStream(options.fetchRsc()),
+    options.initialStream ?? (await readStream(options.fetchRsc())),
   );
 
   function BrowserRoot() {
@@ -83,7 +86,7 @@ export async function createTestingLibraryClientRoot(options: {
   }
 
   const reactRoot = options.hydrateDocument
-    ? await hydrateDocumentRoot(browserRoot, options.config.rootOptions)
+    ? await hydrateDocumentRoot(browserRoot, options.documentHtml, options.config.rootOptions)
     : await createRoot(options.container, browserRoot, options.config.rootOptions);
 
   async function rerender() {
@@ -106,14 +109,17 @@ export async function createTestingLibraryClientRoot(options: {
 
 async function hydrateDocumentRoot(
   browserRoot: React.ReactNode,
+  documentHtml: string | undefined,
   rootOptions: ReactDOMClient.RootOptions,
 ) {
-  const ssrStream = await ReactDOMServer.renderToReadableStream(browserRoot);
-  const html = await new Response(ssrStream).text();
-  applyDocumentHtml(html);
+  if (!documentHtml) {
+    throw new Error("hydrateDocument requires a document HTML snapshot.");
+  }
+  applyDocumentHtml(documentHtml);
   let reactRoot: ReactDOMClient.Root | undefined;
   await act(async () => {
     reactRoot = ReactDOMClient.hydrateRoot(document, browserRoot, rootOptions);
+    await waitForClientReferenceLoads();
   });
   return reactRoot!;
 }
@@ -127,6 +133,7 @@ async function createRoot(
   await act(async () => {
     reactRoot = ReactDOMClient.createRoot(container, rootOptions);
     reactRoot.render(browserRoot);
+    await waitForClientReferenceLoads();
   });
   return reactRoot!;
 }
@@ -135,6 +142,9 @@ function applyDocumentHtml(html: string) {
   const parsed = new DOMParser().parseFromString(`<!doctype html>${html}`, "text/html");
 
   syncAttributes(document.documentElement, parsed.documentElement);
+  document.head.replaceChildren(
+    ...Array.from(parsed.head.childNodes).map((node) => document.importNode(node, true)),
+  );
   syncAttributes(document.body, parsed.body);
   document.body.replaceChildren(
     ...Array.from(parsed.body.childNodes).map((node) => document.importNode(node, true)),
@@ -150,24 +160,12 @@ function syncAttributes(target: Element, source: Element) {
   }
 }
 
-const reactSameRealmRendererWarning =
-  "Detected multiple renderers concurrently rendering the same context provider. This is currently unsupported.";
-
-const didSuppressReactSameRealmRendererWarning = Symbol.for(
-  "vitest-plugin-rsc:suppress-react-same-realm-renderer-warning",
-);
-
-function suppressReactSameRealmRendererWarning() {
-  const globalState = globalThis as typeof globalThis &
-    Record<typeof didSuppressReactSameRealmRendererWarning, boolean | undefined>;
-  if (globalState[didSuppressReactSameRealmRendererWarning]) return;
-  globalState[didSuppressReactSameRealmRendererWarning] = true;
-
-  const originalError = console.error;
-  console.error = (...args: unknown[]) => {
-    if (args[0] === reactSameRealmRendererWarning) return;
-    originalError(...args);
-  };
+async function waitForClientReferenceLoads() {
+  // RSC deserialization starts client-reference imports before React hydrates.
+  // Keeping those imports inside the act scope lets their hydration pings flush deterministically.
+  while (pendingClientReferenceLoads.size > 0) {
+    await Promise.allSettled(pendingClientReferenceLoads);
+  }
 }
 
 async function readStream(value: Promise<ReadableStream<Uint8Array> | Response>) {
@@ -192,9 +190,16 @@ async function act<T>(callback: () => T | Promise<T>) {
 }
 
 export function initialize() {
-  suppressReactSameRealmRendererWarning();
   ReactClient.setRequireModule({
-    load: (id) => import(/* @vite-ignore */ id),
+    load: (id) => {
+      const mod = import(/* @vite-ignore */ id);
+      pendingClientReferenceLoads.add(mod);
+      mod.then(
+        () => pendingClientReferenceLoads.delete(mod),
+        () => pendingClientReferenceLoads.delete(mod),
+      );
+      return mod;
+    },
   });
 }
 

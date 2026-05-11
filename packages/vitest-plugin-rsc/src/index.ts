@@ -15,6 +15,7 @@ const REACT_CLIENT_OPTIMIZE_DEPS_ENTRIES = [
 ];
 
 const reactClientInvokePath = "/@vite/invoke-react-client";
+const reactSsrInvokePath = "/@vite/invoke-react-ssr";
 const reactClientWebSocketInfoPath = "/@vite/react-client-runner-websocket";
 const reactClientWebSocketQuery = "vitest-plugin-rsc-react-client";
 const reactClientWebSocketInvokeEvent = "vitest-plugin-rsc:react-client:invoke";
@@ -82,6 +83,7 @@ export function vitestPluginRSC(): Plugin[] {
     ...vitePluginRscMinimal({
       environment: {
         browser: "react_client",
+        ssr: "react_ssr",
         rsc: "client",
       },
     }),
@@ -127,6 +129,13 @@ export function vitestPluginRSC(): Plugin[] {
           if (url.pathname === reactClientInvokePath) {
             const payload = JSON.parse(url.searchParams.get("data")!);
             const result = await server.environments["react_client"]!.hot.handleInvoke(payload);
+            res.end(JSON.stringify(result));
+            return;
+          }
+
+          if (url.pathname === reactSsrInvokePath) {
+            const payload = JSON.parse(url.searchParams.get("data")!);
+            const result = await server.environments["react_ssr"]!.hot.handleInvoke(payload);
             res.end(JSON.stringify(result));
             return;
           }
@@ -190,12 +199,38 @@ export function vitestPluginRSC(): Plugin[] {
                 ...getReactClientOptimizerBundlerOptions(),
               },
             },
+            react_ssr: {
+              consumer: "client",
+              keepProcessEnv: false,
+              resolve: {
+                conditions: ["browser"],
+                dedupe: ["react", "react-dom"],
+              },
+              dev: {
+                moduleRunnerTransform: true,
+                preTransformRequests: true,
+              },
+              optimizeDeps: {
+                include: [
+                  "react",
+                  "react-dom",
+                  "react-dom/server.browser",
+                  "react/jsx-runtime",
+                  "react/jsx-dev-runtime",
+                  "@vitejs/plugin-rsc/vendor/react-server-dom/client.edge",
+                ],
+                noDiscovery: false,
+                exclude: ["vitest-plugin-rsc", "@vitejs/plugin-rsc"],
+                ...getReactClientOptimizerBundlerOptions(),
+              },
+            },
           },
         };
       },
       configResolved(config) {
         const client = config.environments.client!;
         const reactClient = config.environments.react_client!;
+        const reactSsr = config.environments.react_ssr!;
 
         // Vitest browser seeds the default client optimizer with test/setup entries.
         // The hidden react_client runner imports client references later, so without
@@ -205,6 +240,13 @@ export function vitestPluginRSC(): Plugin[] {
           ...new Set([
             ...(client.optimizeDeps.exclude ?? []),
             ...(reactClient.optimizeDeps.exclude ?? []),
+          ]),
+        ];
+        reactSsr.optimizeDeps.entries ??= client.optimizeDeps.entries;
+        reactSsr.optimizeDeps.exclude = [
+          ...new Set([
+            ...(client.optimizeDeps.exclude ?? []),
+            ...(reactSsr.optimizeDeps.exclude ?? []),
           ]),
         ];
       },
@@ -217,16 +259,21 @@ export function vitestPluginRSC(): Plugin[] {
         handler(config) {
           const environments = (config.environments ??= {});
           const reactClient = (environments.react_client ??= {});
+          const reactSsr = (environments.react_ssr ??= {});
           const optimizeDeps = (reactClient.optimizeDeps ??= {});
+          const ssrOptimizeDeps = (reactSsr.optimizeDeps ??= {});
 
           if (!isVitestBrowserServer(config)) {
             disableOptimizer(config, "client");
             disableOptimizer(config, "react_client");
+            disableOptimizer(config, "react_ssr");
             return;
           }
 
           optimizeDeps.noDiscovery = false;
           optimizeDeps.entries ??= REACT_CLIENT_OPTIMIZE_DEPS_ENTRIES;
+          ssrOptimizeDeps.noDiscovery = false;
+          ssrOptimizeDeps.entries ??= REACT_CLIENT_OPTIMIZE_DEPS_ENTRIES;
         },
       },
     },

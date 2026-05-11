@@ -1,6 +1,7 @@
 import { ESModulesEvaluator, ModuleRunner, type ModuleRunnerTransport } from "vite/module-runner";
 
 const reactClientInvokePath = "/@vite/invoke-react-client";
+const reactSsrInvokePath = "/@vite/invoke-react-ssr";
 const reactClientCoverageModulePath = "/@vite/react-client-coverage-module";
 const reactClientWebSocketInfoPath = "/@vite/react-client-runner-websocket";
 const reactClientWebSocketQuery = "vitest-plugin-rsc-react-client";
@@ -55,8 +56,19 @@ const runner = new ModuleRunner(
   },
   new ESModulesEvaluator(),
 );
+const ssrRunner = new ModuleRunner(
+  {
+    sourcemapInterceptor: false,
+    transport: {
+      invoke: invokeReactSsr,
+    },
+    hmr: false,
+  },
+  new ESModulesEvaluator(),
+);
 
 export const importReactClient = runner.import.bind(runner);
+export const importReactSsr = ssrRunner.import.bind(ssrRunner);
 
 async function invokeReactClient(payload: InvokePayload) {
   if (!webSocketUnavailable && typeof WebSocket !== "undefined") {
@@ -73,6 +85,16 @@ async function invokeReactClient(payload: InvokePayload) {
 async function invokeReactClientOverHttp(payload: InvokePayload) {
   const response = await fetch(
     `${reactClientInvokePath}?` +
+      new URLSearchParams({
+        data: JSON.stringify(payload),
+      }),
+  );
+  return response.json() as Promise<InvokeResult>;
+}
+
+async function invokeReactSsr(payload: InvokePayload) {
+  const response = await fetch(
+    `${reactSsrInvokePath}?` +
       new URLSearchParams({
         data: JSON.stringify(payload),
       }),

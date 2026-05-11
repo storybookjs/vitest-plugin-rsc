@@ -336,6 +336,7 @@ export function vitestPluginNext(): Plugin[] {
     useVitestServerReferenceInfo(),
     appRouterApiPlugin("client", true),
     appRouterApiPlugin("react_client", false),
+    appRouterApiPlugin("react_ssr", false),
     {
       name: "next-rsc-plugin",
       config(config) {
@@ -440,6 +441,37 @@ export function vitestPluginNext(): Plugin[] {
                         "@vitejs/plugin-rsc/vendor/react-server-dom/client.browser",
                       "react-server-dom-webpack/client.browser":
                         "@vitejs/plugin-rsc/vendor/react-server-dom/client.browser",
+                    },
+                  },
+                },
+              },
+            },
+            react_ssr: {
+              resolve: {
+                conditions: ["edge-light", "browser"],
+                alias: [
+                  {
+                    find: "react-server-dom-webpack/client",
+                    replacement: "@vitejs/plugin-rsc/vendor/react-server-dom/client.edge",
+                  },
+                ],
+              },
+              optimizeDeps: {
+                include: reactClientOptimizeDeps,
+                rolldownOptions: {
+                  plugins: [
+                    useVitestAsyncLocalStorage(root),
+                    useVitestServerReferenceInfo(root),
+                    useNextCompiledOpenTelemetryApi(root),
+                  ],
+                  resolve: {
+                    alias: {
+                      ...createOptimizeDepsResolveAliases(
+                        edgeNativeAliases,
+                        reactClientAppRouterAliases,
+                      ),
+                      "react-server-dom-webpack/client":
+                        "@vitejs/plugin-rsc/vendor/react-server-dom/client.edge",
                     },
                   },
                 },

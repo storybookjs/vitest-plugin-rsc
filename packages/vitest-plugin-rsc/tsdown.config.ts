@@ -7,6 +7,7 @@ export default defineConfig({
     "src/async-hooks.ts",
     "src/testing-library.tsx",
     "src/testing-library-client.tsx",
+    "src/testing-library-ssr.tsx",
     "src/nextjs/client.tsx",
     "src/nextjs/testing-library-client.ts",
     "src/nextjs/testing-library.ts",

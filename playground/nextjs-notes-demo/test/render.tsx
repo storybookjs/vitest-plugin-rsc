@@ -18,9 +18,7 @@ export async function renderServer(
 ) {
   return baseRenderServer(
     <NextRouter document route={route} url={url}>
-      <RootLayout>
-        {ui}
-      </RootLayout>
+      <RootLayout>{ui}</RootLayout>
     </NextRouter>,
     {
       ...options,

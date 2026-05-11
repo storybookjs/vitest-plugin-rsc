@@ -26,9 +26,9 @@ test("renders through the root document layout", async () => {
   expect(document.documentElement.className).toContain("font-geist-sans");
   expect(document.documentElement.className).toContain("font-geist-mono");
   expect(document.title).toBe("Notes Demo");
-  expect(document.head.querySelector('meta[name="application-name"]')?.getAttribute("content")).toBe(
-    "Notes Demo",
-  );
+  expect(
+    document.head.querySelector('meta[name="application-name"]')?.getAttribute("content"),
+  ).toBe("Notes Demo");
   expect(document.head.querySelector('meta[name="theme-color"]')?.getAttribute("content")).toBe(
     "#fbfaf7",
   );

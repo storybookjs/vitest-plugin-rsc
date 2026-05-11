@@ -37,7 +37,7 @@ let initialHead: DocumentHeadSnapshot | undefined;
 
 type DocumentHeadSnapshot = {
   attributes: { name: string; value: string }[];
-  childNodes: ChildNode[];
+  childNodes: Node[];
 };
 
 export function initialize(customConfig: NextRenderConfiguration = {}): void {
