@@ -209,6 +209,98 @@ function createOptimizeDepsResolveAliases(
   };
 }
 
+type NextReactLayer = "rsc" | "ssr" | "app-pages-browser";
+
+function createNextVendoredReactAliases(
+  root: string,
+  options: {
+    layer: NextReactLayer;
+    isBrowser: boolean;
+    isEdgeServer: boolean;
+  },
+): Record<string, string> {
+  try {
+    // Reuse Next's own layer-specific React aliases instead of maintaining a
+    // parallel table:
+    // https://github.com/vercel/next.js/blob/938c286bac984aa7275bb4c18aa0c154b443aa93/packages/next/src/build/create-compiler-aliases.ts#L304-L509
+    const { createVendoredReactAliases } = createProjectRequire(root)(
+      "next/dist/build/create-compiler-aliases.js",
+    ) as typeof import("next/dist/build/create-compiler-aliases.js");
+    const aliases = createVendoredReactAliases("", {
+      ...options,
+      reactProductionProfiling: false,
+    });
+    const result: Record<string, string> = {};
+
+    for (const [source, replacement] of Object.entries(aliases)) {
+      // Vite RSC relies on @vitejs/plugin-rsc's vendored RSDW protocol helpers.
+      // We still use Next's React/ReactDOM aliases from the same table.
+      if (source.startsWith("react-server-dom-webpack/")) continue;
+      result[source.endsWith("$") ? source.slice(0, -1) : source] = replacement;
+    }
+
+    return result;
+  } catch {
+    return {};
+  }
+}
+
+function createNextVendoredReactOptimizeDeps(
+  root: string,
+  options: {
+    layer: NextReactLayer;
+    isBrowser: boolean;
+    isEdgeServer: boolean;
+  },
+): string[] {
+  return [
+    ...new Set(
+      Object.values(createNextVendoredReactAliases(root, options))
+        .filter(
+          (id) =>
+            id.startsWith("next/dist/compiled/react") ||
+            id.startsWith("next/dist/compiled/react-dom") ||
+            id.startsWith("next/dist/build/webpack/alias/react-dom-server"),
+        )
+        .filter((id) => tryResolveFromProject(root, id)),
+    ),
+  ];
+}
+
+function useNextVendoredReactAliases(
+  environmentName: string,
+  options: {
+    layer: NextReactLayer;
+    isBrowser: boolean;
+    isEdgeServer: boolean;
+  },
+  initialRoot = process.cwd(),
+): Plugin {
+  let root = initialRoot;
+  let aliases = createNextVendoredReactAliases(root, options);
+
+  return {
+    name: `next-rsc-vendored-react:${environmentName}`,
+    enforce: "pre",
+    applyToEnvironment(environment) {
+      return environment.name === environmentName;
+    },
+    configResolved(config) {
+      root = getProjectRoot(config);
+      aliases = createNextVendoredReactAliases(root, options);
+    },
+    async resolveId(source, importer, resolveOptions) {
+      const replacement = aliases[source];
+      if (!replacement) return;
+
+      return this.resolve(replacement, importer, {
+        ...resolveOptions,
+        skipSelf: true,
+      });
+    },
+  };
+}
+
 function useNextCompiledOpenTelemetryApi(root: string): Plugin {
   const replacement = tryResolveFromProject(root, "next/dist/compiled/@opentelemetry/api");
 
@@ -334,16 +426,46 @@ export function vitestPluginNext(): Plugin[] {
   return [
     useVitestAsyncLocalStorage(),
     useVitestServerReferenceInfo(),
+    useNextVendoredReactAliases("client", {
+      layer: "rsc",
+      isBrowser: false,
+      isEdgeServer: true,
+    }),
+    useNextVendoredReactAliases("react_client", {
+      layer: "app-pages-browser",
+      isBrowser: true,
+      isEdgeServer: false,
+    }),
+    useNextVendoredReactAliases("react_ssr", {
+      layer: "ssr",
+      isBrowser: false,
+      isEdgeServer: true,
+    }),
     appRouterApiPlugin("client", true),
     appRouterApiPlugin("react_client", false),
     appRouterApiPlugin("react_ssr", false),
     {
       name: "next-rsc-plugin",
       config(config) {
-        const root = getProjectRoot(config);
-        const edgeNativeAliases = createNextEdgeNativeAliases(root);
-        const rscAppRouterAliases = createAppRouterApiAliasesFromNext(root, true);
-        const reactClientAppRouterAliases = createAppRouterApiAliasesFromNext(root, false);
+        const projectRoot = getProjectRoot(config);
+        const edgeNativeAliases = createNextEdgeNativeAliases(projectRoot);
+        const rscAppRouterAliases = createAppRouterApiAliasesFromNext(projectRoot, true);
+        const reactClientAppRouterAliases = createAppRouterApiAliasesFromNext(projectRoot, false);
+        const rscVendoredReactDeps = createNextVendoredReactOptimizeDeps(projectRoot, {
+          layer: "rsc",
+          isBrowser: false,
+          isEdgeServer: true,
+        });
+        const reactClientVendoredReactDeps = createNextVendoredReactOptimizeDeps(projectRoot, {
+          layer: "app-pages-browser",
+          isBrowser: true,
+          isEdgeServer: false,
+        });
+        const reactSsrVendoredReactDeps = createNextVendoredReactOptimizeDeps(projectRoot, {
+          layer: "ssr",
+          isBrowser: false,
+          isEdgeServer: true,
+        });
 
         return {
           define: {
@@ -359,26 +481,6 @@ export function vitestPluginNext(): Plugin[] {
               },
             ],
           },
-          ssr: {
-            optimizeDeps: {
-              include: rscOptimizeDeps,
-              needsInterop: ["next/cache"],
-              rolldownOptions: {
-                plugins: [
-                  useVitestAsyncLocalStorage(root),
-                  useVitestServerReferenceInfo(root),
-                  useNextCompiledOpenTelemetryApi(root),
-                ],
-                resolve: {
-                  alias: {
-                    ...createOptimizeDepsResolveAliases(edgeNativeAliases, rscAppRouterAliases),
-                    "react-server-dom-webpack/client":
-                      "@vitejs/plugin-rsc/vendor/react-server-dom/client.edge",
-                  },
-                },
-              },
-            },
-          },
           environments: {
             client: {
               resolve: {
@@ -391,13 +493,22 @@ export function vitestPluginNext(): Plugin[] {
                 ],
               },
               optimizeDeps: {
-                include: rscOptimizeDeps,
+                include: [...rscOptimizeDeps, ...rscVendoredReactDeps],
                 needsInterop: ["next/cache"],
                 rolldownOptions: {
                   plugins: [
-                    useVitestAsyncLocalStorage(root),
-                    useVitestServerReferenceInfo(root),
-                    useNextCompiledOpenTelemetryApi(root),
+                    useVitestAsyncLocalStorage(projectRoot),
+                    useVitestServerReferenceInfo(projectRoot),
+                    useNextVendoredReactAliases(
+                      "client",
+                      {
+                        layer: "rsc",
+                        isBrowser: false,
+                        isEdgeServer: true,
+                      },
+                      projectRoot,
+                    ),
+                    useNextCompiledOpenTelemetryApi(projectRoot),
                   ],
                   resolve: {
                     alias: {
@@ -424,12 +535,21 @@ export function vitestPluginNext(): Plugin[] {
                 ],
               },
               optimizeDeps: {
-                include: reactClientOptimizeDeps,
+                include: [...reactClientOptimizeDeps, ...reactClientVendoredReactDeps],
                 rolldownOptions: {
                   plugins: [
-                    useVitestAsyncLocalStorage(root),
-                    useVitestServerReferenceInfo(root),
-                    useNextCompiledOpenTelemetryApi(root),
+                    useVitestAsyncLocalStorage(projectRoot),
+                    useVitestServerReferenceInfo(projectRoot),
+                    useNextVendoredReactAliases(
+                      "react_client",
+                      {
+                        layer: "app-pages-browser",
+                        isBrowser: true,
+                        isEdgeServer: false,
+                      },
+                      projectRoot,
+                    ),
+                    useNextCompiledOpenTelemetryApi(projectRoot),
                   ],
                   resolve: {
                     alias: {
@@ -457,12 +577,21 @@ export function vitestPluginNext(): Plugin[] {
                 ],
               },
               optimizeDeps: {
-                include: reactClientOptimizeDeps,
+                include: [...reactClientOptimizeDeps, ...reactSsrVendoredReactDeps],
                 rolldownOptions: {
                   plugins: [
-                    useVitestAsyncLocalStorage(root),
-                    useVitestServerReferenceInfo(root),
-                    useNextCompiledOpenTelemetryApi(root),
+                    useVitestAsyncLocalStorage(projectRoot),
+                    useVitestServerReferenceInfo(projectRoot),
+                    useNextVendoredReactAliases(
+                      "react_ssr",
+                      {
+                        layer: "ssr",
+                        isBrowser: false,
+                        isEdgeServer: true,
+                      },
+                      projectRoot,
+                    ),
+                    useNextCompiledOpenTelemetryApi(projectRoot),
                   ],
                   resolve: {
                     alias: {

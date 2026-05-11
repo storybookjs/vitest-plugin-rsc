@@ -33,12 +33,19 @@ export type NextRenderConfiguration = Partial<RenderConfiguration> & {
 let config: NextRenderConfiguration = {
   nextRscRequestsViaMsw: false,
 };
+let initialHead: DocumentHeadSnapshot | undefined;
+
+type DocumentHeadSnapshot = {
+  attributes: { name: string; value: string }[];
+  childNodes: Node[];
+};
 
 export function initialize(customConfig: NextRenderConfiguration = {}): void {
   config = {
     ...config,
     ...customConfig,
   };
+  initialHead ??= snapshotDocumentHead();
   baseInitialize({
     serverActionCaller: config.nextRscRequestsViaMsw
       ? "vitest-plugin-rsc/nextjs/testing-library-client"
@@ -141,7 +148,35 @@ async function injectNextRouterInitialTree(node: ReactNode): Promise<ReactNode> 
 
 export async function cleanup() {
   await baseCleanup();
+  restoreInitialDocumentHead();
+  resetDocumentBody();
   await resetNextRequestContextCache();
+}
+
+function resetDocumentBody() {
+  for (const { name } of Array.from(document.body.attributes)) {
+    document.body.removeAttribute(name);
+  }
+  document.body.replaceChildren();
+}
+
+function snapshotDocumentHead(): DocumentHeadSnapshot {
+  return {
+    attributes: Array.from(document.head.attributes).map(({ name, value }) => ({ name, value })),
+    childNodes: Array.from(document.head.childNodes).map((node) => node.cloneNode(true)),
+  };
+}
+
+function restoreInitialDocumentHead() {
+  if (!initialHead) return;
+
+  for (const { name } of Array.from(document.head.attributes)) {
+    document.head.removeAttribute(name);
+  }
+  for (const { name, value } of initialHead.attributes) {
+    document.head.setAttribute(name, value);
+  }
+  document.head.replaceChildren(...initialHead.childNodes.map((node) => node.cloneNode(true)));
 }
 
 // @ts-ignore

@@ -49,9 +49,11 @@ export default defineConfig({
             instances: [{ browser: "chromium" }],
           },
           // Browser workers each own their browser state and run in parallel.
-          // Inside one worker, test files run sequentially with `isolate: false`,
-          // so cleanup belongs in beforeEach. Do not disable file parallelism
-          // and do not switch this to isolate: true for hanging state.
+          // They don't affect each other, browser iframes don't share state!
+          // Inside one worker, test files run sequentially with `isolate: false`.
+          // Don't remove isolate: false, the problem is not that things happen in parralel.
+          // The problem is that you forget to cleanup hanging state in beforeEach 
+          // Do not disable file parallelism and do not switch this to isolate: true for hanging state.
           isolate: false,
           globalSetup: ["./vitest.global-setup.ts"],
           setupFiles: ["./vitest.setup.ts"],
