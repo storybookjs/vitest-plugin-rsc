@@ -99,6 +99,9 @@ export async function createTestingLibraryClientRoot(options: {
   function unmount() {
     serverActionCaller?.cleanup();
     reactRoot.unmount();
+    if (options.hydrateDocument) {
+      resetReactDocumentExpandos();
+    }
   }
 
   return {
@@ -157,6 +160,16 @@ function syncAttributes(target: Element, source: Element) {
   }
   for (const { name, value } of Array.from(source.attributes)) {
     target.setAttribute(name, value);
+  }
+}
+
+function resetReactDocumentExpandos() {
+  for (const key of Object.keys(document)) {
+    if (/^_+react/.test(key)) {
+      // Whole-document tests reuse the Document object across roots. React
+      // leaves root-scoped expando markers there, so clear them with the root.
+      delete (document as unknown as Record<string, unknown>)[key];
+    }
   }
 }
 
