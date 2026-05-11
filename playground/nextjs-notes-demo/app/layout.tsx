@@ -124,6 +124,15 @@ export default function RootLayout({
       className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       suppressHydrationWarning
     >
+      <head>
+        <title>{APP_NAME}</title>
+        <meta
+          name="description"
+          content="A database-backed notes app for React Server Components tests."
+        />
+        <meta name="application-name" content={APP_NAME} />
+        <meta name="theme-color" content="#fbfaf7" />
+      </head>
       <body>
         <AppShell>{children}</AppShell>
       </body>
