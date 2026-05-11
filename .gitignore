@@ -15,10 +15,6 @@ artifacts/perf/
 *.tsbuildinfo
 *.local
 
-# Coverage reports
-coverage
-*.lcov
-
 # Editor directories and files
 .cursor/rules/local-context.mdc
 .vscode/*

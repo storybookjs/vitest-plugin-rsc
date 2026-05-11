@@ -4,11 +4,6 @@ import { importReactClient } from "./utilts";
 import type { FetchRsc, RscPayload, TestingLibraryClientRoot } from "./testing-library-client";
 import * as ReactServer from "@vitejs/plugin-rsc/react/rsc";
 
-type ServerContext = {
-  run<T>(phase: "render" | "action", callback: () => T | Promise<T>): T | Promise<T>;
-  completeAction?: () => void | Promise<void>;
-};
-
 const client = await importReactClient<typeof import("./testing-library-client")>(
   "vitest-plugin-rsc/testing-library-client",
 );
@@ -25,12 +20,10 @@ export async function renderServer(
     container,
     baseElement = document.body,
     wrapper: WrapperComponent,
-    serverContext,
   }: {
     container?: HTMLElement;
     baseElement?: HTMLElement;
     wrapper?: JSXElementConstructor<{ children: ReactNode }>;
-    serverContext?: ServerContext;
   } = {},
 ): Promise<{
   container: HTMLElement;
@@ -54,8 +47,7 @@ export async function renderServer(
           temporaryReferences,
         });
         const action = await ReactServer.loadServerAction(id);
-        returnValue = await runServer("action", () => action.apply(null, args));
-        await serverContext?.completeAction?.();
+        returnValue = await action.apply(null, args);
       }
       let serverRoot = ui;
       if (WrapperComponent) {
@@ -66,9 +58,7 @@ export async function renderServer(
         returnValue,
       };
       const rscOptions = { temporaryReferences };
-      const stream = await runServer("render", () =>
-        ReactServer.renderToReadableStream<RscPayload>(rscPayload, rscOptions),
-      );
+      const stream = ReactServer.renderToReadableStream<RscPayload>(rscPayload, rscOptions);
       return stream;
     };
     root = await client.createTestingLibraryClientRoot({
@@ -94,10 +84,6 @@ export async function renderServer(
       return document.createRange().createContextualFragment(container.innerHTML);
     },
   };
-
-  function runServer<T>(phase: "render" | "action", callback: () => T | Promise<T>) {
-    return serverContext ? serverContext.run(phase, callback) : callback();
-  }
 }
 
 export async function cleanup() {

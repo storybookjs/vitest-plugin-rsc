@@ -22,7 +22,6 @@ export async function renderServer(
     </NextRouter>,
     {
       ...options,
-      url,
       wrapper: Wrapper,
     },
   );

@@ -1,20 +1,6 @@
-import {
-  type Plugin,
-  type PluginOption,
-  type UserConfig,
-  type ViteDevServer,
-  version as viteVersion,
-} from "vite";
+import { type Plugin, type ViteDevServer } from "vite";
 import { vitePluginRscMinimal } from "@vitejs/plugin-rsc/plugin";
-import { createReactClientCoveragePlugin } from "./coverage";
 
-const REACT_CLIENT_OPTIMIZE_DEPS_ENTRIES = [
-  "src/**/*.{js,jsx,ts,tsx}",
-  "app/**/*.{js,jsx,ts,tsx}",
-  "components/**/*.{js,jsx,ts,tsx}",
-];
-
-const reactClientInvokePath = "/@vite/invoke-react-client";
 const reactClientWebSocketInfoPath = "/@vite/react-client-runner-websocket";
 const reactClientWebSocketQuery = "vitest-plugin-rsc-react-client";
 const reactClientWebSocketInvokeEvent = "vitest-plugin-rsc:react-client:invoke";
@@ -26,56 +12,6 @@ type ReactClientWebSocketInvoke = {
   id: string;
   payload: ReactClientInvokePayload;
 };
-
-function isPlugin(plugin: PluginOption): plugin is Plugin {
-  return !!plugin && typeof plugin === "object" && "name" in plugin;
-}
-
-function flattenPluginNames(plugins: PluginOption[] | undefined): string[] {
-  const names: string[] = [];
-
-  for (const plugin of plugins ?? []) {
-    if (Array.isArray(plugin)) {
-      names.push(...flattenPluginNames(plugin));
-    } else if (isPlugin(plugin)) {
-      names.push(plugin.name);
-    }
-  }
-
-  return names;
-}
-
-function isVitestBrowserServer(config: UserConfig): boolean {
-  return flattenPluginNames(config.plugins).includes("vitest:browser");
-}
-
-function disableOptimizer(config: UserConfig, environmentName: string): void {
-  const environment = (config.environments ??= {})[environmentName];
-  if (!environment) return;
-
-  const optimizeDeps = (environment.optimizeDeps ??= {});
-  optimizeDeps.noDiscovery = true;
-  optimizeDeps.include = [];
-  optimizeDeps.entries = [];
-}
-
-function getReactClientOptimizerBundlerOptions() {
-  const viteMajor = Number(viteVersion.split(".")[0]);
-
-  if (viteMajor >= 8) {
-    return {
-      rolldownOptions: {
-        platform: "browser" as const,
-      },
-    };
-  }
-
-  return {
-    esbuildOptions: {
-      platform: "browser" as const,
-    },
-  };
-}
 
 export function vitestPluginRSC(): Plugin[] {
   return [
@@ -115,19 +51,11 @@ export function vitestPluginRSC(): Plugin[] {
           });
         });
 
-        server.middlewares.use(async (req, res, next) => {
+        server.middlewares.use((req, res, next) => {
           const url = new URL(req.url ?? "/", "https://any.local");
-
           if (url.pathname === reactClientWebSocketInfoPath) {
             res.setHeader("Content-Type", "application/json");
             res.end(JSON.stringify(getReactClientWebSocketInfo(server)));
-            return;
-          }
-
-          if (url.pathname === reactClientInvokePath) {
-            const payload = JSON.parse(url.searchParams.get("data")!);
-            const result = await server.environments["react_client"]!.hot.handleInvoke(payload);
-            res.end(JSON.stringify(result));
             return;
           }
 
@@ -178,9 +106,7 @@ export function vitestPluginRSC(): Plugin[] {
                   "react/jsx-dev-runtime",
                   "@vitejs/plugin-rsc/vendor/react-server-dom/client.browser",
                 ],
-                noDiscovery: false,
                 exclude: ["vitest-plugin-rsc", "@vitejs/plugin-rsc"],
-                ...getReactClientOptimizerBundlerOptions(),
               },
             },
           },
@@ -200,27 +126,6 @@ export function vitestPluginRSC(): Plugin[] {
             ...(reactClient.optimizeDeps.exclude ?? []),
           ]),
         ];
-      },
-    },
-    createReactClientCoveragePlugin(),
-    {
-      name: "rsc:react-client-optimizer",
-      config: {
-        order: "post",
-        handler(config) {
-          const environments = (config.environments ??= {});
-          const reactClient = (environments.react_client ??= {});
-          const optimizeDeps = (reactClient.optimizeDeps ??= {});
-
-          if (!isVitestBrowserServer(config)) {
-            disableOptimizer(config, "client");
-            disableOptimizer(config, "react_client");
-            return;
-          }
-
-          optimizeDeps.noDiscovery = false;
-          optimizeDeps.entries ??= REACT_CLIENT_OPTIMIZE_DEPS_ENTRIES;
-        },
       },
     },
   ];
