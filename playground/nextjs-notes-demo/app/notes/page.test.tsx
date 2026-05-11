@@ -1,6 +1,7 @@
 import { expect, test } from "vitest";
 import { eq } from "drizzle-orm";
 import { page } from "vitest/browser";
+import { cleanup } from "vitest-plugin-rsc/nextjs/testing-library";
 import { db } from "#lib/db.ts";
 import { notes } from "#db/schema.ts";
 import { applyScenario, scenarioUsers } from "#lib/db.scenarios.ts";
@@ -33,6 +34,23 @@ test("renders through the root document layout", async () => {
   );
   expect(document.body.querySelector('script[type="module"]')).toBeNull();
   await expect.element(page.getByRole("banner")).toBeInTheDocument();
+});
+
+test("cleanup restores the initial iframe head", async () => {
+  const initialTitle = document.title;
+  const initialApplicationName = document.head
+    .querySelector('meta[name="application-name"]')
+    ?.getAttribute("content");
+
+  await renderNotesPage();
+  expect(document.title).toBe("Notes Demo");
+
+  await cleanup();
+
+  expect(document.title).toBe(initialTitle);
+  expect(
+    document.head.querySelector('meta[name="application-name"]')?.getAttribute("content"),
+  ).toBe(initialApplicationName);
 });
 
 test("shows empty state when no notes exist", async () => {
