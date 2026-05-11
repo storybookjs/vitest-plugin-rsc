@@ -86,6 +86,7 @@ async function withNextRouterInitialTree(node: ReactNode, defaultUrl: string): P
     const location = new URL(defaultUrl, "http://localhost");
     const Router = NextRouter as (props: {
       children?: ReactNode;
+      document?: boolean;
       route?: string;
       url?: string;
       initialTree?: FlightRouterState;
@@ -140,7 +141,15 @@ async function injectNextRouterInitialTree(node: ReactNode): Promise<ReactNode> 
 
 export async function cleanup() {
   await baseCleanup();
+  resetDocumentBody();
   await resetNextRequestContextCache();
+}
+
+function resetDocumentBody() {
+  for (const { name } of Array.from(document.body.attributes)) {
+    document.body.removeAttribute(name);
+  }
+  document.body.replaceChildren();
 }
 
 // @ts-ignore

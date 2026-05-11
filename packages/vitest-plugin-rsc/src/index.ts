@@ -180,6 +180,7 @@ export function vitestPluginRSC(): Plugin[] {
                   "react",
                   "react-dom",
                   "react-dom/client",
+                  "react-dom/server.browser",
                   "react/jsx-runtime",
                   "react/jsx-dev-runtime",
                   "@vitejs/plugin-rsc/vendor/react-server-dom/client.browser",

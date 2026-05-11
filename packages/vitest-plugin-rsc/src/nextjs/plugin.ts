@@ -13,6 +13,7 @@ const virtualServerReferenceInfoId = "\0vitest-plugin-rsc:next-server-reference-
 const reactClientOptimizeDeps = [
   "node:buffer",
   "vitest-plugin-rsc/async-local-storage",
+  "react-dom/server.browser",
   "next/dist/client/app-call-server.js",
   "next/dist/client/route-params.js",
   "next/dist/client/components/app-router.js",

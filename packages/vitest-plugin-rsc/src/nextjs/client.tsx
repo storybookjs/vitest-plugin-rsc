@@ -24,7 +24,6 @@ import type {
   InitialRSCPayload,
 } from "next/dist/shared/lib/app-router-types";
 import React, {
-  Children,
   cloneElement,
   createElement,
   Fragment,
@@ -58,16 +57,18 @@ type NextRouterStateSnapshot = {
 export const NextRouter = ({
   children,
   url = "/",
+  document = false,
   initialTree,
 }: {
   children: ReactNode;
+  document?: boolean;
   route?: string;
   url?: string;
   initialTree?: FlightRouterState;
 }) => {
   const snapshot = useMemo(
-    () => createNextRouterStateSnapshot({ children, url, initialTree }),
-    [children, url, initialTree],
+    () => createNextRouterStateSnapshot({ children, url, document, initialTree }),
+    [children, url, document, initialTree],
   );
   const actionQueueRef = useRef<AppRouterActionQueue | null>(null);
   const snapshotRef = useRef<NextRouterStateSnapshot | null>(null);
@@ -99,10 +100,12 @@ export const NextRouter = ({
 function createNextRouterStateSnapshot({
   children,
   url,
+  document,
   initialTree,
 }: {
   children: ReactNode;
   url: string;
+  document: boolean;
   initialTree?: FlightRouterState;
 }): NextRouterStateSnapshot {
   const location = new URL(url, "http://localhost");
@@ -119,7 +122,7 @@ function createNextRouterStateSnapshot({
         canonicalUrl: location.pathname + location.search,
         initialTree,
         renderedSearch: location.search,
-        seedData: isDocumentRoot(children)
+        seedData: document
           ? createDocumentSeedData(children, initialTree)
           : [children, {}, null, false, null],
       }),
@@ -152,10 +155,6 @@ function createInitialRSCPayload(props: {
   };
 }
 
-function isDocumentRoot(children: ReactNode) {
-  return isValidElement(children) && children.type === "html";
-}
-
 function createDocumentSeedData(
   children: ReactNode,
   initialTree: FlightRouterState,
@@ -166,30 +165,14 @@ function createDocumentSeedData(
   const root = children as ReactElement<{ children?: ReactNode }>;
 
   return [
-    createDocumentRoot(root, createParallelRouteProps(initialTree).children),
-    createParallelRouteSeedData(getDocumentBodyChildren(root), initialTree),
+    cloneElement(root, {
+      children: createParallelRouteProps(initialTree).children,
+    }),
+    createParallelRouteSeedData(root.props.children, initialTree),
     null,
     false,
     null,
   ];
-}
-
-function createDocumentRoot(root: ReactElement<{ children?: ReactNode }>, children: ReactNode) {
-  return cloneElement(root, {
-    children: Children.map(root.props.children, (child) => {
-      if (isValidElement(child) && child.type === "body") {
-        return cloneElement(child as ReactElement<{ children?: ReactNode }>, { children });
-      }
-      return child;
-    }),
-  });
-}
-
-function getDocumentBodyChildren(root: ReactElement<{ children?: ReactNode }>) {
-  const body = Children.toArray(root.props.children).find(
-    (child) => isValidElement(child) && child.type === "body",
-  );
-  return isValidElement(body) ? body.props.children : root.props.children;
 }
 
 function createParallelRouteSeedData(

@@ -41,11 +41,13 @@ export async function renderServer(
     baseElement = document.body,
     wrapper: WrapperComponent,
     serverContext,
+    hydrateDocument = false,
   }: {
     container?: HTMLElement;
     baseElement?: HTMLElement;
     wrapper?: JSXElementConstructor<{ children: ReactNode }>;
     serverContext?: ServerContext;
+    hydrateDocument?: boolean;
   } = {},
 ): Promise<{
   container: HTMLElement;
@@ -54,7 +56,7 @@ export async function renderServer(
   rerender: (ui: ReactNode) => Promise<void>;
   asFragment: () => DocumentFragment;
 }> {
-  container ??= baseElement.appendChild(document.createElement("div"));
+  container ??= hydrateDocument ? document.body : baseElement.appendChild(document.createElement("div"));
 
   let root: TestingLibraryClientRoot;
 
@@ -129,6 +131,7 @@ export async function renderServer(
       container,
       config,
       fetchRsc,
+      hydrateDocument,
     });
     mountedRootEntries.push({ container, root });
     mountedContainers.add(container);

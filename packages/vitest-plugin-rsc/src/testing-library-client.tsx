@@ -37,12 +37,11 @@ type ServerActionCallerModule = {
   }) => ServerActionCaller | Promise<ServerActionCaller>;
 };
 
-const insertedDocumentHeadNodes = new WeakSet<ChildNode>();
-
 export async function createTestingLibraryClientRoot(options: {
   container: HTMLElement;
   config: RenderConfiguration;
   fetchRsc: FetchRsc;
+  hydrateDocument?: boolean;
 }) {
   let setPayload: (v: RscPayload) => void;
   const serverActionCaller = await createServerActionCaller(options);
@@ -83,7 +82,9 @@ export async function createTestingLibraryClientRoot(options: {
     browserRoot = <React.StrictMode>{browserRoot}</React.StrictMode>;
   }
 
-  const reactRoot = await hydrateRoot(browserRoot, options.container, options.config.rootOptions);
+  const reactRoot = options.hydrateDocument
+    ? await hydrateDocumentRoot(browserRoot, options.config.rootOptions)
+    : await createRoot(options.container, browserRoot, options.config.rootOptions);
 
   async function rerender() {
     const payload = await ReactClient.createFromReadableStream<RscPayload>(
@@ -103,81 +104,41 @@ export async function createTestingLibraryClientRoot(options: {
   };
 }
 
-async function hydrateRoot(
+async function hydrateDocumentRoot(
   browserRoot: React.ReactNode,
-  container: HTMLElement,
   rootOptions: ReactDOMClient.RootOptions,
 ) {
   const ssrStream = await ReactDOMServer.renderToReadableStream(browserRoot);
   const html = await new Response(ssrStream).text();
-  if (isDocumentHtml(html)) {
-    const { preservedHeadNodes, scripts } = applyDocumentHtml(html);
-    activateScripts(scripts);
-    let root: ReactDOMClient.Root | undefined;
-    await act(() => {
-      root = ReactDOMClient.hydrateRoot(document, browserRoot, rootOptions);
-    });
-    document.head.append(...preservedHeadNodes);
-    return root!;
-  }
-
-  container.innerHTML = html;
-  activateScripts([container]);
-  let root: ReactDOMClient.Root | undefined;
-  await act(() => {
-    root = ReactDOMClient.hydrateRoot(container, browserRoot, rootOptions);
+  applyDocumentHtml(html);
+  let reactRoot: ReactDOMClient.Root | undefined;
+  await act(async () => {
+    reactRoot = ReactDOMClient.hydrateRoot(document, browserRoot, rootOptions);
   });
-  return root!;
+  return reactRoot!;
 }
 
-function isDocumentHtml(html: string) {
-  return /^(?:\s*<!doctype[^>]*>\s*)?<html(?:\s|>)/i.test(html);
+async function createRoot(
+  container: HTMLElement,
+  browserRoot: React.ReactNode,
+  rootOptions: ReactDOMClient.RootOptions,
+) {
+  let reactRoot: ReactDOMClient.Root | undefined;
+  await act(async () => {
+    reactRoot = ReactDOMClient.createRoot(container, rootOptions);
+    reactRoot.render(browserRoot);
+  });
+  return reactRoot!;
 }
 
 function applyDocumentHtml(html: string) {
   const parsed = new DOMParser().parseFromString(`<!doctype html>${html}`, "text/html");
-  const existingHeadNodes = Array.from(document.head.childNodes);
-  const nextHeadNodes = Array.from(parsed.head.childNodes).map((node) =>
-    document.importNode(node, true),
-  );
-  const nextBodyNodes = Array.from(parsed.body.childNodes).map((node) =>
-    document.importNode(node, true),
-  );
-  const preservedHeadNodes = existingHeadNodes.filter(
-    (node) =>
-      !insertedDocumentHeadNodes.has(node) &&
-      !nextHeadNodes.some((nextNode) => isSameHeadNode(node, nextNode)),
-  );
 
   syncAttributes(document.documentElement, parsed.documentElement);
-  syncAttributes(document.head, parsed.head);
   syncAttributes(document.body, parsed.body);
-  for (const node of nextHeadNodes) {
-    insertedDocumentHeadNodes.add(node);
-  }
-  document.head.replaceChildren(...nextHeadNodes);
-  document.body.replaceChildren(...nextBodyNodes);
-  return { preservedHeadNodes, scripts: [...nextHeadNodes, ...nextBodyNodes] };
-}
-
-function activateScripts(nodes: ChildNode[]) {
-  for (const node of nodes) {
-    const scripts =
-      node instanceof HTMLScriptElement
-        ? [node]
-        : node instanceof Element
-          ? Array.from(node.querySelectorAll("script"))
-          : [];
-
-    for (const script of scripts) {
-      const executable = document.createElement("script");
-      for (const { name, value } of Array.from(script.attributes)) {
-        executable.setAttribute(name, value);
-      }
-      executable.textContent = script.textContent;
-      script.replaceWith(executable);
-    }
-  }
+  document.body.replaceChildren(
+    ...Array.from(parsed.body.childNodes).map((node) => document.importNode(node, true)),
+  );
 }
 
 function syncAttributes(target: Element, source: Element) {
@@ -189,33 +150,24 @@ function syncAttributes(target: Element, source: Element) {
   }
 }
 
-function isSameHeadNode(a: ChildNode, b: ChildNode) {
-  if (!(a instanceof Element) || !(b instanceof Element)) return false;
-  const aKey = getHeadNodeKey(a);
-  return aKey !== "" && aKey === getHeadNodeKey(b);
-}
+const reactSameRealmRendererWarning =
+  "Detected multiple renderers concurrently rendering the same context provider. This is currently unsupported.";
 
-function getHeadNodeKey(node: Element) {
-  const tagName = node.tagName.toLowerCase();
-  if (tagName === "title") return "title";
-  if (tagName === "meta") {
-    const key =
-      node.getAttribute("charset") ??
-      node.getAttribute("name") ??
-      node.getAttribute("property") ??
-      node.getAttribute("http-equiv");
-    return key ? `${tagName}:${key}` : "";
-  }
-  if (tagName === "link") {
-    const rel = node.getAttribute("rel");
-    const href = node.getAttribute("href");
-    return rel && href ? `${tagName}:${rel}:${href}` : "";
-  }
-  if (tagName === "script") {
-    const src = node.getAttribute("src");
-    return src ? `${tagName}:${src}` : "";
-  }
-  return "";
+const didSuppressReactSameRealmRendererWarning = Symbol.for(
+  "vitest-plugin-rsc:suppress-react-same-realm-renderer-warning",
+);
+
+function suppressReactSameRealmRendererWarning() {
+  const globalState = globalThis as typeof globalThis &
+    Record<typeof didSuppressReactSameRealmRendererWarning, boolean | undefined>;
+  if (globalState[didSuppressReactSameRealmRendererWarning]) return;
+  globalState[didSuppressReactSameRealmRendererWarning] = true;
+
+  const originalError = console.error;
+  console.error = (...args: unknown[]) => {
+    if (args[0] === reactSameRealmRendererWarning) return;
+    originalError(...args);
+  };
 }
 
 async function readStream(value: Promise<ReadableStream<Uint8Array> | Response>) {
@@ -240,6 +192,7 @@ async function act<T>(callback: () => T | Promise<T>) {
 }
 
 export function initialize() {
+  suppressReactSameRealmRendererWarning();
   ReactClient.setRequireModule({
     load: (id) => import(/* @vite-ignore */ id),
   });

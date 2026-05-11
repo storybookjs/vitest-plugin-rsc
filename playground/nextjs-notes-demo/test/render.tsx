@@ -17,7 +17,7 @@ export async function renderServer(
   }: RenderServerOptions & { route?: string; url?: string } = {},
 ) {
   return baseRenderServer(
-    <NextRouter route={route} url={url}>
+    <NextRouter document route={route} url={url}>
       <RootLayout>
         {ui}
       </RootLayout>
@@ -25,6 +25,7 @@ export async function renderServer(
     {
       ...options,
       url,
+      hydrateDocument: true,
       wrapper: Wrapper,
     },
   );
