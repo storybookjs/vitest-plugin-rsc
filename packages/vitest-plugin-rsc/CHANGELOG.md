@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.1.2](https://github.com/storybookjs/vitest-plugin-rsc/compare/v0.1.1...v0.1.2) (2026-05-12)
+
+
+### Features
+
+* add React client coverage support ([df198d9](https://github.com/storybookjs/vitest-plugin-rsc/commit/df198d91d2bc202afb3d84ac7e2124d00aece9d2))
+* support Next async context in browser tests ([a9913e5](https://github.com/storybookjs/vitest-plugin-rsc/commit/a9913e5bb8f94adc5293478e1ba05d5e1d8ed4d9))
+
+
+### Bug Fixes
+
+* stabilize async context tests ([86b00e6](https://github.com/storybookjs/vitest-plugin-rsc/commit/86b00e6b6a7c49bd55a550ae6ae656ced4187d6a))
+
 ## [0.1.1](https://github.com/storybookjs/vitest-plugin-rsc/compare/v0.1.0...v0.1.1) (2026-05-08)
 
 ### Features
