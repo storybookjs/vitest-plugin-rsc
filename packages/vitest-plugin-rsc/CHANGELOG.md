@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.2.0](https://github.com/storybookjs/vitest-plugin-rsc/compare/v0.1.2...v0.2.0) (2026-05-12)
+
+
+### ⚠ BREAKING CHANGES
+
+* removes the legacy vitest-plugin-rsc/nextjs/cache, vitest-plugin-rsc/nextjs/headers, and vitest-plugin-rsc/nextjs/navigation shim subpaths. Import the corresponding public Next.js modules directly.
+
+### Features
+
+* support Next request runtime transport ([e8bd31f](https://github.com/storybookjs/vitest-plugin-rsc/commit/e8bd31f22a5b53bfd0f26604a13aa1a9e9bc9c29))
+
 ## [0.1.2](https://github.com/storybookjs/vitest-plugin-rsc/compare/v0.1.1...v0.1.2) (2026-05-12)
 
 ### Features
