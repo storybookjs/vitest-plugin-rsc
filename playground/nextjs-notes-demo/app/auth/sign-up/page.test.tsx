@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { page, userEvent } from "vitest/browser";
+import { page } from "vitest/browser";
 import { renderServer } from "#test/render.tsx";
 import SignUpPage from "./page.tsx";
 
@@ -25,8 +25,8 @@ test("renders the email-only sign-up form", async () => {
 test("renders an inline error when the email is invalid", async () => {
   await renderServer(<SignUpPage searchParams={Promise.resolve({})} />, { url: "/auth/sign-up" });
 
-  await userEvent.fill(page.getByLabelText("Email"), "not-an-email");
-  await userEvent.click(page.getByRole("button", { name: "Create account" }));
+  await page.getByLabelText("Email").fill("not-an-email");
+  await page.getByRole("button", { name: "Create account" }).click();
 
   await expect.element(page.getByText("Enter a valid email address.")).toBeInTheDocument();
   await expect.element(page.getByLabelText("Email")).toHaveAttribute("aria-invalid", "true");

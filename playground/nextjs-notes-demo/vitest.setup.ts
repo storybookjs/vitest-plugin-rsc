@@ -1,12 +1,15 @@
-import { vi, beforeAll, beforeEach, afterEach, inject } from "vitest";
+import { vi, beforeAll, beforeEach, afterEach, afterAll, inject } from "vitest";
 import { cleanup, initialize } from "vitest-plugin-rsc/nextjs/testing-library";
+import { nextRscRequestHandlers } from "vitest-plugin-rsc/nextjs/msw";
 import { page } from "vitest/browser";
 import { PGlite } from "@electric-sql/pglite";
 import { drizzle } from "drizzle-orm/pglite";
+import { setupWorker } from "msw/browser";
 import * as schema from "#db/schema.ts";
 import * as authSessionModule from "#lib/auth-session.ts";
 import * as dbModule from "#lib/db.ts";
 import * as flashCookieModule from "#lib/flash-cookie.ts";
+import { nextCacheProbeFetchHandler } from "#components/next-cache-msw.ts";
 import "#app/globals.css";
 import "@fontsource-variable/geist";
 import "@fontsource-variable/geist-mono";
@@ -64,6 +67,7 @@ const TEST_NOW = "2026-05-06T00:00:00.000Z";
 
 let base: PGlite;
 let pointerResetTarget: HTMLElement | undefined;
+const worker = setupWorker(...nextCacheProbeFetchHandler, ...nextRscRequestHandlers);
 
 // Vitest mounts React into an existing document, so rendering RootLayout's
 // <html>/<body> tags would be invalid. Page tests use the app-local
@@ -105,12 +109,18 @@ async function resetInteractiveState() {
 }
 
 beforeAll(async () => {
-  initialize();
+  await worker.start({
+    onUnhandledRequest: "bypass",
+    quiet: true,
+    serviceWorker: { url: "/mockServiceWorker.js" },
+  });
+  initialize({ nextRscRequestsViaMsw: true });
   base = await PGlite.create("memory://");
   await base.exec(inject("testSchemaSQL"));
 });
 
 beforeEach(async () => {
+  worker.resetHandlers();
   await cleanup();
   setCurrentUser(null);
   deleteFlashCookies();
@@ -132,4 +142,8 @@ afterEach(async () => {
   await resetInteractiveState();
   changeTheme("light");
   await page.viewport(MOBILE_VIEWPORT.width, MOBILE_VIEWPORT.height);
+});
+
+afterAll(() => {
+  worker.stop();
 });

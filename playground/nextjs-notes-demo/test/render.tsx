@@ -1,8 +1,5 @@
 import type { ReactNode } from "react";
-import {
-  renderServer as baseRenderServer,
-  NextRouter,
-} from "vitest-plugin-rsc/nextjs/testing-library";
+import { renderServer as baseRenderServer } from "vitest-plugin-rsc/nextjs/testing-library";
 import { AppShell } from "#app/layout.tsx";
 
 type RenderServerOptions = NonNullable<Parameters<typeof baseRenderServer>[1]>;
@@ -16,13 +13,15 @@ export async function renderServer(
     ...options
   }: RenderServerOptions & { route?: string; url?: string } = {},
 ) {
-  return baseRenderServer(
-    <NextRouter route={route} url={url}>
-      <AppShell>{ui}</AppShell>
-    </NextRouter>,
-    {
-      ...options,
-      wrapper: Wrapper,
-    },
-  );
+  function AppWrapper({ children }: { children: ReactNode }) {
+    const content = <AppShell>{children}</AppShell>;
+    return Wrapper ? <Wrapper>{content}</Wrapper> : content;
+  }
+
+  return baseRenderServer(ui, {
+    ...options,
+    route,
+    url,
+    wrapper: AppWrapper,
+  });
 }

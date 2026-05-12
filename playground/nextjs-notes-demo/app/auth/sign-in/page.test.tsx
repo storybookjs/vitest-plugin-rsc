@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { page, userEvent } from "vitest/browser";
+import { page } from "vitest/browser";
 import { renderServer } from "#test/render.tsx";
 import SignInPage from "./page.tsx";
 
@@ -44,8 +44,8 @@ test("shows the magic link error banner", async () => {
 test("renders an inline error when the email is invalid", async () => {
   await renderServer(<SignInPage searchParams={Promise.resolve({})} />, { url: "/auth/sign-in" });
 
-  await userEvent.fill(page.getByLabelText("Email"), "not-an-email");
-  await userEvent.click(page.getByRole("button", { name: "Continue with email" }));
+  await page.getByLabelText("Email").fill("not-an-email");
+  await page.getByRole("button", { name: "Continue with email" }).click();
 
   await expect.element(page.getByText("Enter a valid email address.")).toBeInTheDocument();
   await expect.element(page.getByLabelText("Email")).toHaveAttribute("aria-invalid", "true");

@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 import { eq } from "drizzle-orm";
-import { page, userEvent } from "vitest/browser";
+import { page } from "vitest/browser";
 import { db } from "#lib/db.ts";
 import { notes } from "#db/schema.ts";
 import { applyScenario, scenarioUsers } from "#lib/db.scenarios.ts";
@@ -96,7 +96,7 @@ test("favorite toggle updates stored favorite state", async () => {
 
   const toggle = page.getByRole("button", { name: "Favorite note" });
   await expect.element(toggle).toBeInTheDocument();
-  await userEvent.click(toggle);
+  await toggle.click();
 
   await expect
     .poll(async () => {

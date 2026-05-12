@@ -31,7 +31,7 @@
     "@better-auth/passkey": "^1.6.9",
     "@electric-sql/pglite": "^0.4.4",
     "@neondatabase/serverless": "^1.1.0",
-    "@next/env": "^16.2.4",
+    "@next/env": "^16.2.6",
     "@t3-oss/env-core": "^0.13.11",
     "@t3-oss/env-nextjs": "^0.13.11",
     "better-auth": "^1.6.9",

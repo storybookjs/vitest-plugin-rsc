@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { page, userEvent } from "vitest/browser";
+import { page } from "vitest/browser";
 import { db } from "#lib/db.ts";
 import { notes } from "#db/schema.ts";
 import { signInAs, testUser } from "#test/auth.ts";
@@ -46,9 +46,9 @@ test("renders server validation errors and keeps attempted edits", async () => {
     url: `/notes/${noteId}/edit`,
   });
 
-  await userEvent.clear(page.getByLabelText("Title"));
-  await userEvent.fill(page.getByLabelText("Content"), "Changed body");
-  await userEvent.click(page.getByRole("button", { name: "Save changes" }));
+  await page.getByLabelText("Title").fill("");
+  await page.getByLabelText("Content").fill("Changed body");
+  await page.getByRole("button", { name: "Save changes" }).click();
 
   await expect.element(page.getByText("Title is required.")).toBeInTheDocument();
   await expect.element(page.getByLabelText("Title")).toHaveAttribute("aria-invalid", "true");

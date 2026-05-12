@@ -12,6 +12,9 @@ dist
 dist-ssr
 coverage/
 artifacts/perf/
+.vitest/
+**/.vitest/
+**/__screenshots__/
 *.tsbuildinfo
 *.local
 
