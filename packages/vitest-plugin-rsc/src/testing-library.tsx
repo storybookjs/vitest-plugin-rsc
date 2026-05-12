@@ -1,5 +1,6 @@
 import type { Container, RootOptions } from "react-dom/client";
 import type { JSXElementConstructor, ReactNode } from "react";
+import { resetAsyncLocalStorage } from "./async-local-storage";
 import { importReactClient } from "./utilts";
 import type { FetchRsc, RscPayload, TestingLibraryClientRoot } from "./testing-library-client";
 import * as ReactServer from "@vitejs/plugin-rsc/react/rsc";
@@ -87,14 +88,21 @@ export async function renderServer(
 }
 
 export async function cleanup() {
-  for (const { root, container } of mountedRootEntries) {
-    await root.unmount();
-    if (container.parentNode === document.body) {
-      document.body.removeChild(container);
+  try {
+    for (const { root, container } of mountedRootEntries) {
+      await root.unmount();
+      if (container.parentNode === document.body) {
+        document.body.removeChild(container);
+      }
     }
+  } finally {
+    mountedRootEntries.length = 0;
+    mountedContainers.clear();
+    // The browser async context shim is process-global inside the worker.
+    // Always reset it during cleanup so failed/unmounted renders cannot leak
+    // request state into the next sequential test.
+    resetAsyncLocalStorage();
   }
-  mountedRootEntries.length = 0;
-  mountedContainers.clear();
 }
 
 export interface RenderConfiguration {

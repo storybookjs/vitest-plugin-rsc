@@ -1,9 +1,13 @@
 import type { Plugin } from "vite";
+import type { VitestPluginContext } from "vitest/node";
 
 export function vitestPluginNext(): Plugin[] {
   return [
     {
       name: "next-rsc-plugin",
+      configureVitest(context: VitestPluginContext) {
+        context.vitest.config.setupFiles.unshift("vitest-plugin-rsc/nextjs/setup");
+      },
       config() {
         return {
           define: {
@@ -15,6 +19,8 @@ export function vitestPluginNext(): Plugin[] {
               "next/dist/compiled/@edge-runtime/cookies/index.js",
               "next/dist/client/components/is-next-router-error.js",
               "next/dist/client/components/navigation.react-server.js",
+              "next/dist/server/node-environment-baseline.js",
+              "next/dist/server/app-render/async-local-storage.js",
               "next/dist/server/web/spec-extension/adapters/request-cookies.js",
               "next/dist/shared/lib/server-inserted-html.shared-runtime.js",
             ],

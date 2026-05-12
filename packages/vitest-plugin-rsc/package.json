@@ -44,29 +44,36 @@
     "prepack": "tsdown"
   },
   "dependencies": {
-    "@vitejs/plugin-rsc": "0.5.24",
+    "@jridgewell/gen-mapping": "^0.3.13",
+    "@vitejs/plugin-rsc": "0.5.26",
     "@vitest/expect": "5.0.0-beta.2",
-    "@vitest/spy": "5.0.0-beta.2"
+    "@vitest/spy": "5.0.0-beta.2",
+    "convert-source-map": "^2.0.0"
   },
   "devDependencies": {
-    "@types/estree": "^1.0.8",
+    "@types/estree": "^1.0.9",
     "@types/node": "^24.12.3",
-    "@types/react": "^19.1.8",
-    "@types/react-dom": "^19.1.6",
-    "next": "16.2.4",
-    "react": "^19.1.0",
-    "react-dom": "^19.1.0",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "msw": "^2.14.5",
+    "next": "16.2.6",
+    "react": "19.2.6",
+    "react-dom": "19.2.6",
     "rolldown": "^1.0.0",
     "tsdown": "^0.22.0",
     "vite": "^8.0.11"
   },
   "peerDependencies": {
+    "msw": "^2",
     "next": "*",
     "react": "*",
     "react-dom": "*",
     "vite": "*"
   },
   "peerDependenciesMeta": {
+    "msw": {
+      "optional": true
+    },
     "next": {
       "optional": true
     }

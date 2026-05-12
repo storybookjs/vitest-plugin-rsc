@@ -3,9 +3,11 @@ import { defineConfig } from "tsdown";
 export default defineConfig({
   entry: [
     "src/index.ts",
+    "src/async-hooks.ts",
     "src/testing-library.tsx",
     "src/testing-library-client.tsx",
     "src/nextjs/client.tsx",
+    "src/nextjs/setup.ts",
     "src/nextjs/testing-library.ts",
     "src/nextjs/navigation.ts",
     "src/nextjs/navigation.react-server.ts",
