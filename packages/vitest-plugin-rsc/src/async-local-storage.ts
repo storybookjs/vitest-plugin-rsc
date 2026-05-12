@@ -33,8 +33,8 @@ function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
   );
 }
 
-function withFinally<R>(result: R & PromiseLike<unknown>, onFinally: () => void): R {
-  return result.then(
+function withFinally<R>(result: R, onFinally: () => void): R {
+  return (result as PromiseLike<unknown>).then(
     (value) => {
       onFinally();
       return value;
@@ -48,7 +48,9 @@ function withFinally<R>(result: R & PromiseLike<unknown>, onFinally: () => void)
 
 export class SequentialAsyncLocalStorage<Store> {
   getStore(): Store | undefined {
-    return currentFrame.stores.get(this as SequentialAsyncLocalStorage<unknown>) as Store | undefined;
+    return currentFrame.stores.get(this as SequentialAsyncLocalStorage<unknown>) as
+      | Store
+      | undefined;
   }
 
   run<R, TArgs extends unknown[]>(
@@ -123,14 +125,11 @@ export class SequentialAsyncLocalStorage<Store> {
     return ((...args: Parameters<T>) => runInSnapshot(fn, ...args)) as T;
   }
 
-  static snapshot(): <R, TArgs extends unknown[]>(
-    fn: RunCallback<R, TArgs>,
-    ...args: TArgs
-  ) => R {
+  static snapshot(): <R, TArgs extends unknown[]>(fn: RunCallback<R, TArgs>, ...args: TArgs) => R {
     const snapshot = SequentialAsyncLocalStorage.#snapshotStores();
     const snapshotGeneration = resetGeneration;
 
-    return (fn, ...args) => {
+    return <R, TArgs extends unknown[]>(fn: RunCallback<R, TArgs>, ...args: TArgs): R => {
       // Snapshots captured before test cleanup are ignored so delayed callbacks
       // from one test cannot re-enter the previous test's request context.
       if (snapshotGeneration !== resetGeneration) return fn(...args);
@@ -188,7 +187,10 @@ export function resetAsyncLocalStorage(): void {
   currentFrame = rootFrame;
 }
 
-function createFrame(parent: AsyncContextFrame | undefined, stores: StoreValues): AsyncContextFrame {
+function createFrame(
+  parent: AsyncContextFrame | undefined,
+  stores: StoreValues,
+): AsyncContextFrame {
   return {
     stores: new Map(stores),
     parent,

@@ -1,21 +1,18 @@
 import { expect, test } from "vitest";
+import { page } from "vitest/browser";
 import { renderServer } from "vitest-plugin-rsc/testing-library";
 import { TestActionStateServer } from "./server.tsx";
-import { screen } from "@testing-library/dom";
-import { userEvent } from "@testing-library/user-event";
 
 test("use action state with jsx", async () => {
   await renderServer(<TestActionStateServer />);
 
-  await userEvent.click(await screen.findByRole("button"));
+  await page.getByRole("button").click();
+
+  await expect.element(page.getByTestId("use-action-state-jsx")).toHaveTextContent(/\(ok\)/);
+
+  await page.getByRole("button").click();
 
   await expect
-    .element(await screen.findByTestId("use-action-state-jsx"))
-    .toHaveTextContent(/\(ok\)/);
-
-  await userEvent.click(await screen.findByRole("button"));
-
-  await expect
-    .element(await screen.findByTestId("use-action-state-jsx"))
+    .element(page.getByTestId("use-action-state-jsx"))
     .toHaveTextContent(/\(ok\).*\(ok\)/);
 });

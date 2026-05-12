@@ -1,8 +1,7 @@
 /// <reference types="vite/client" />
 
-import { screen } from "@testing-library/dom";
-import { userEvent } from "@testing-library/user-event";
-import { bench, describe } from "vitest";
+import { bench, describe, expect } from "vitest";
+import { page } from "vitest/browser";
 import { renderServer, cleanup } from "vitest-plugin-rsc/testing-library";
 import { ServerCounter } from "../action/server.tsx";
 import { ClientCounter } from "../client-counter/client.tsx";
@@ -20,7 +19,7 @@ describe("RSC render helpers", () => {
     async () => {
       await withCleanup(async () => {
         await renderServer(<ServerCounter />);
-        await screen.findByRole("button", { name: "server-counter: 0" });
+        await expect.element(page.getByRole("button", { name: "server-counter: 0" })).toBeVisible();
       });
     },
     options,
@@ -31,8 +30,8 @@ describe("RSC render helpers", () => {
     async () => {
       await withCleanup(async () => {
         await renderServer(<ClientCounter />);
-        await userEvent.click(await screen.findByRole("button", { name: "client-counter: 0" }));
-        await screen.findByRole("button", { name: "client-counter: 1" });
+        await page.getByRole("button", { name: "client-counter: 0" }).click();
+        await expect.element(page.getByRole("button", { name: "client-counter: 1" })).toBeVisible();
       });
     },
     options,

@@ -20,12 +20,8 @@ test("user-defined AsyncLocalStorage is available across the server component tr
     () => renderServer(<UserAsyncStorageServer />),
   );
 
-  await expect
-    .element(page.getByTestId("current-user-name"))
-    .toHaveTextContent("Ada Lovelace");
-  await expect
-    .element(page.getByTestId("current-user-role"))
-    .toHaveTextContent("admin");
+  await expect.element(page.getByTestId("current-user-name")).toHaveTextContent("Ada Lovelace");
+  await expect.element(page.getByTestId("current-user-role")).toHaveTextContent("admin");
 });
 
 test("enterWith provider makes user context available to server descendants", async () => {

@@ -1,3 +1,6 @@
+/// <reference types="vitest/config" />
+
+import { fileURLToPath } from "node:url";
 import type { Plugin } from "vite";
 import type { VitestPluginContext } from "vitest/node";
 
@@ -6,7 +9,9 @@ export function vitestPluginNext(): Plugin[] {
     {
       name: "next-rsc-plugin",
       configureVitest(context: VitestPluginContext) {
-        context.vitest.config.setupFiles.unshift("vitest-plugin-rsc/nextjs/setup");
+        context.project.config.setupFiles.unshift(
+          fileURLToPath(new URL("./setup.js", import.meta.url)),
+        );
       },
       config() {
         return {

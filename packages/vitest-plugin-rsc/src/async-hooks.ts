@@ -1,8 +1,6 @@
 import { SequentialAsyncLocalStorage } from "./async-local-storage";
 
-export {
-  SequentialAsyncLocalStorage as AsyncLocalStorage,
-} from "./async-local-storage";
+export { SequentialAsyncLocalStorage as AsyncLocalStorage } from "./async-local-storage";
 
 type RunCallback<R, TArgs extends unknown[]> = (...args: TArgs) => R;
 
@@ -34,7 +32,11 @@ export class AsyncResource {
 
   bind<T extends RunCallback<unknown, unknown[]>, This = unknown>(fn: T, thisArg?: This): T {
     return ((...args: Parameters<T>) =>
-      this.runInAsyncScope(fn as (this: This, ...args: Parameters<T>) => ReturnType<T>, thisArg, ...args)) as T;
+      this.runInAsyncScope(
+        fn as (this: This, ...args: Parameters<T>) => ReturnType<T>,
+        thisArg,
+        ...args,
+      )) as T;
   }
 
   asyncId(): number {

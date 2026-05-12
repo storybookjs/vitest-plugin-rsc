@@ -85,9 +85,7 @@ test("captures a snapshot across instances", () => {
   const first = new AsyncLocalStorage<string>();
   const second = new AsyncLocalStorage<number>();
 
-  const runInSnapshot = first.run("first", () =>
-    second.run(2, () => AsyncLocalStorage.snapshot()),
-  );
+  const runInSnapshot = first.run("first", () => second.run(2, () => AsyncLocalStorage.snapshot()));
 
   first.enterWith("outside");
   second.enterWith(3);
@@ -101,9 +99,7 @@ test("captures a snapshot across instances", () => {
 
 test("binds a callback to the current snapshot", () => {
   const storage = new AsyncLocalStorage<string>();
-  const bound = storage.run("inside", () =>
-    AsyncLocalStorage.bind(() => storage.getStore()),
-  );
+  const bound = storage.run("inside", () => AsyncLocalStorage.bind(() => storage.getStore()));
 
   storage.enterWith("outside");
 
