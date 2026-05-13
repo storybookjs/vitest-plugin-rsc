@@ -8,7 +8,7 @@
 [![Node](https://img.shields.io/badge/node-%3E%3D24-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
 [![pnpm](https://img.shields.io/badge/pnpm-11-F69220?logo=pnpm&logoColor=white)](https://pnpm.io/)
 
-`vitest-plugin-rsc` runs the RSC side of your component test in Vitest Browser Mode. The Server Component still goes through the RSC transform and Flight serialization, but it executes in the same browser test runtime as your assertions.
+Render a Server Component, run a Server Action, and assert the rerendered UI — all from a single Vitest test. Under the hood, the Server Component still goes through the real RSC transform and Flight serialization; it just executes in the same browser test runtime as your assertions.
 
 That unlocks a kind of test unit tests and E2E tests can't easily reach:
 
@@ -37,38 +37,46 @@ Pick one piece of the app — a wishlist carousel, a notes form, a settings pane
 
 ## Why This Exists
 
-Most RSC tests fall into an awkward gap:
+Most RSC tests fall into an awkward gap that the React Testing Library community has [tracked since 2023](https://github.com/testing-library/react-testing-library/issues/1209):
 
 - A unit test gives you control over data, mocks, time, and module state, but it usually does not cross the RSC boundary.
 - An end-to-end test crosses the real app boundary, but the server is a black box. Seeding state, mocking IO, faking clocks, and covering edge cases all need external setup.
 
 `vitest-plugin-rsc` gives you a middle shape: **full-stack behavior for one piece of the app — a component, a flow, or a full `page.tsx` — with white-box test control**.
 
-Your assertions can stay user-facing:
+It's also the shape that unlocks AI coding agents. Agents do dramatically better when wrapped in a self-healing loop with fast unit tests — edit, run tests, repair, repeat — and RSC has been the hardest React surface to put in that loop. This plugin closes the gap.
 
-```ts
-await expect.element(page.getByText("Title is required.")).toBeInTheDocument();
-```
+Your assertions stay user-facing and your setup stays direct — all in one test:
 
-But your setup can stay direct:
+```tsx
+test("archive a note", async () => {
+  // seed DB
+  await signInAs(testUser);
+  await db.insert(notes).values({ ownerId: testUser.id, title: "Inbox triage" });
 
-```ts
-await signInAs(testUser);
-await db.insert(notes).values({ ownerId: testUser.id, title: "Inbox triage" });
-vi.setSystemTime(new Date("2026-05-06T00:00:00.000Z"));
-localStorage.setItem("theme", "dark");
+  // RSC -> pixels
+  await renderServer(<NotesPage />, { url: "/notes" });
+  await expect.element(page.getByText("Inbox triage")).toBeVisible();
+
+  // action -> DB -> pixels
+  await page.getByRole("button", { name: "Archive Inbox triage" }).click();
+  await expect.element(page.getByText("Inbox triage")).not.toBeInTheDocument();
+});
 ```
 
 ## What You Get
 
+- **Self-healing agent loop**: AI coding agents edit, run tests, repair, repeat. Colocated Vitest tests + module-graph reruns keep each cycle a few seconds.
 - **Real RSC path**: Server render, Flight payload, Client Component hydration, Server Action, rerendered UI.
 - **Focused scope**: Test a route's `page.tsx`, a single component, a form, or a flow without booting the whole deployed app.
 - **White-box inputs**: Seed the database, set auth/session state, mock IO, fake clocks, set cookies/headers, and control browser state.
-- **Black-box output**: Assert what the user sees and does in a real browser through `vitest/browser`.
-- **Fast inner loop**: Vitest watch mode reruns related tests from the module graph.
-- **Code coverage**: Line, branch, and function coverage for the slice under test.
-- **No deployed infra**: Use in-memory infrastructure like PGlite instead of spinning up a preview server and database for every test state.
-- **Fast state swaps**: Flip role, theme, viewport, feature flag, locale, or database state in milliseconds.
+- **Black-box output**: Assert what the user sees and does in a real browser via `vitest/browser` — full-fidelity Playwright locators (`getByRole`, `getByText`, etc.) and `expect.element` matchers.
+- **Fast inner loop**: Vitest watch mode reruns just the test files affected by your edit, via the module graph.
+- **Diff-scoped runs**: `vitest --changed [ref]` runs only the test files affected by your git diff, via the module graph — locally or in PR CI.
+- **Code coverage**: First-class V8 or Istanbul coverage for your RSC code, via Vitest's coverage provider.
+- **No deployed infra**: Use in-memory infrastructure like PGlite instead of spinning up a preview server and database.
+- **Real isolation**: Each test gets a fresh DB clone, fresh cookies, fresh module mocks, and a fresh DOM. Matching this in E2E means a new server or database per test — usually impractical.
+- **Run every variant**: Validation errors, user roles, locales, feature-flag combinations, loading/empty/error states, and time-dependent UI — all controllable from one test, in milliseconds.
 
 ## Requirements
 
@@ -222,11 +230,11 @@ Out of the box the plugin shims the Node built-ins that server code most commonl
 - `vitestPluginRSC()` shims `node:async_hooks`.
 - `vitestPluginNext()` also shims `node:buffer`, `node:events`, `node:assert`, `node:util`, and `node:os`, using Next's own pre-compiled browser-safe versions.
 
-For things that genuinely don't belong in a browser, swap in an in-memory, browser-friendly implementation:
+A fast unit test doesn't touch real databases, real filesystems, or the real network — those make tests slow, flaky, and order-dependent. Standard practice for any server-side unit test is to keep all IO inside the test runtime. These are common choices for that pattern; the same picks work whether your test runs in Node or in this plugin's browser runtime:
 
-- **Database**: [PGlite](https://pglite.dev/) for Postgres, [sql.js](https://github.com/sql-js/sql.js) for SQLite.
-- **File system**: [`memfs` via Vitest](https://vitest.dev/guide/mocking/file-system).
-- **HTTP**: [MSW in Vitest browser mode](https://mswjs.io/docs/recipes/vitest-browser-mode).
+- **Database**: an in-memory implementation like [PGlite](https://pglite.dev/) for Postgres or [sql.js](https://github.com/sql-js/sql.js) for SQLite.
+- **File system**: an in-memory implementation like [`memfs` via Vitest](https://vitest.dev/guide/mocking/file-system).
+- **HTTP**: a request interceptor like [MSW in Vitest browser mode](https://mswjs.io/docs/recipes/vitest-browser-mode), which catches outbound calls before they leave the test runtime.
 
 When you have a choice, prefer the server APIs that already overlap between edge runtimes, Node, and the browser:
 
