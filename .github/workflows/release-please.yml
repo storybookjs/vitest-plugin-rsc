@@ -24,6 +24,7 @@ jobs:
       - id: release
         uses: googleapis/release-please-action@v4
         with:
+          token: ${{ secrets.PAT_STORYBOOK_BOT }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
 
