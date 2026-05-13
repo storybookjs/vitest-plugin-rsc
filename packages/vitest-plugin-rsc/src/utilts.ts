@@ -122,12 +122,15 @@ function withBrowserSourceUrl(code: string, sourceUrl: string) {
 }
 
 async function recordEvaluatedModule(file: string, code: string) {
-  await fetch(reactClientCoverageModulePath, {
-    method: "POST",
-    headers: {
-      "content-type": "application/json",
-    },
-    body: JSON.stringify({ file, code }),
+  await new Promise<void>((resolve, reject) => {
+    const request = new XMLHttpRequest();
+    request.open("POST", reactClientCoverageModulePath);
+    request.setRequestHeader("content-type", "application/json");
+    request.addEventListener("load", () => resolve());
+    request.addEventListener("error", () =>
+      reject(new Error("Failed to record React client coverage module")),
+    );
+    request.send(JSON.stringify({ file, code }));
   });
 }
 
