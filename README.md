@@ -232,7 +232,7 @@ afterAll(() => {
 
 ### 4. Browser-Compatible Server Code
 
-The plugin runs server code inside the browser test runtime. That sounds wrong, but the surface is closer than it looks: edge runtimes like Vercel Edge and Cloudflare Workers also lack most of the Node API, and frameworks like Next.js already target those runtimes. Server code written for the edge usually runs in the browser too.
+The plugin runs server code inside the browser test runtime. That sounds wrong, but the surface is closer than it looks: edge runtimes like Vercel Edge and Cloudflare Workers also lack most of the Node API, and frameworks like Next.js already target those runtimes. Server code written for the edge can usually run in the browser too.
 
 The plugin shims the Node built-ins server code most often reaches for, the same way Next does for its edge runtime:
 
