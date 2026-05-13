@@ -324,7 +324,8 @@ async function createNextRouterInitialTree(
 
 export async function cleanup() {
   try {
-    for (const { container } of [...mountedRootEntries]) {
+    const rootEntries = Array.from(mountedRootEntries);
+    for (const { container } of rootEntries) {
       await unmountRoot(container, true);
     }
   } finally {
