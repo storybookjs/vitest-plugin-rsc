@@ -10,20 +10,39 @@
 
 `vitest-plugin-rsc` runs the RSC side of your component test in Vitest Browser Mode. The Server Component still goes through the RSC transform and Flight serialization, but it executes in the same browser test runtime as your assertions.
 
-That is a test-runtime choice, not a production recommendation. It unlocks a test shape that is hard to get from either unit tests or E2E tests alone:
+That unlocks a kind of test unit tests and E2E tests can't easily reach:
 
-**DB -> RSC -> browser -> action -> DB -> pixels. One slice at a time.**
+**DB -> RSC -> pixels -> actions -> DB -> pixels. One slice at a time.**
 
-Pick one piece of the app, such as a wishlist button, notes form, account menu, or settings panel. Seed exactly the state that slice needs, render the Server Component, interact with the hydrated UI in a real browser, run Server Actions, and assert the rerendered result.
+Pick one piece of the app — a wishlist carousel, a notes form, a settings panel, or a full `page.tsx` route. Seed exactly the state that piece needs, render it, interact with the hydrated UI in a real browser, run Server Actions, and assert the rerendered result.
+
+## Table Of Contents
+
+- [Why This Exists](#why-this-exists)
+- [What You Get](#what-you-get)
+- [Requirements](#requirements)
+- [Quick Start](#quick-start)
+  - [Install](#1-install)
+  - [Register The Plugin](#2-register-the-plugin)
+  - [Boot The Runtime](#3-boot-the-runtime)
+  - [Browser-Compatible Server Code](#4-browser-compatible-server-code)
+- [Example: Server Action Form](#example-server-action-form)
+- [Example: Drizzle + PGlite Setup](#example-drizzle--pglite-setup)
+- [Next.js App Router Helpers](#nextjs-app-router-helpers)
+  - [Router Hooks And Links](#router-hooks-and-links)
+  - [Request Headers And Cookies](#request-headers-and-cookies)
+  - [Cache And Revalidation](#cache-and-revalidation)
+- [Playgrounds](#playgrounds)
+- [Architecture](#architecture)
 
 ## Why This Exists
 
 Most RSC tests fall into an awkward gap:
 
 - A unit test gives you control over data, mocks, time, and module state, but it usually does not cross the RSC boundary.
-- An end-to-end test crosses the real app boundary, but the server is a black box. Seeding state, mocking IO, faking clocks, and covering edge cases all need external setup machinery.
+- An end-to-end test crosses the real app boundary, but the server is a black box. Seeding state, mocking IO, faking clocks, and covering edge cases all need external setup.
 
-`vitest-plugin-rsc` gives you a middle shape: **full-stack behavior for one vertical slice, with white-box test control**.
+`vitest-plugin-rsc` gives you a middle shape: **full-stack behavior for one piece of the app — a component, a flow, or a full `page.tsx` — with white-box test control**.
 
 Your assertions can stay user-facing:
 
@@ -35,7 +54,7 @@ But your setup can stay direct:
 
 ```ts
 await signInAs(testUser);
-await seed(db, { notes: schema.notes }, { count: 3, seed: 2025 });
+await db.insert(notes).values({ ownerId: testUser.id, title: "Inbox triage" });
 vi.setSystemTime(new Date("2026-05-06T00:00:00.000Z"));
 localStorage.setItem("theme", "dark");
 ```
@@ -43,54 +62,45 @@ localStorage.setItem("theme", "dark");
 ## What You Get
 
 - **Real RSC path**: Server render, Flight payload, Client Component hydration, Server Action, rerendered UI.
-- **Slice-level scope**: Test one component, page, form, or flow without booting the whole deployed app.
+- **Focused scope**: Test a route's `page.tsx`, a single component, a form, or a flow without booting the whole deployed app.
 - **White-box inputs**: Seed the database, set auth/session state, mock IO, fake clocks, set cookies/headers, and control browser state.
 - **Black-box output**: Assert what the user sees and does in a real browser through `vitest/browser`.
 - **Fast inner loop**: Vitest watch mode reruns related tests from the module graph.
-- **Real coverage**: Line, branch, and function coverage for the slice under test.
-- **No deployed infra**: Use in-memory infrastructure like PGlite instead of preview servers and preview databases for every state.
-- **Cheap state matrices**: Role, theme, viewport, feature flag, locale, and database state can be flipped in milliseconds.
-
-## Browser-Compatible Server Code
-
-This plugin leans into the overlap between modern server code, edge runtimes, Node, and the browser. RSC code often already uses Web Platform APIs:
-
-- Web Streams API instead of `node:stream`
-- `Uint8Array` instead of direct `Buffer` coupling
-- Web Crypto API instead of `node:crypto`
-- `Blob` and `File` for binary data
-- `fetch`, `Request`, `Response`, `Headers`, `URL`, and `FormData` for HTTP/data primitives
-
-When a dependency still expects Node globals like `Buffer`, use Vite's normal polyfill story:
-
-```ts
-import { nodePolyfills } from "vite-plugin-node-polyfills";
-import { defineConfig } from "vitest/config";
-import { vitestPluginRSC } from "vitest-plugin-rsc";
-
-export default defineConfig({
-  plugins: [nodePolyfills(), vitestPluginRSC()],
-});
-```
-
-The goal is not to pretend the browser is production. The goal is to keep RSC component tests close enough to the runtime model while preserving the control that makes unit tests valuable.
+- **Code coverage**: Line, branch, and function coverage for the slice under test.
+- **No deployed infra**: Use in-memory infrastructure like PGlite instead of spinning up a preview server and database for every test state.
+- **Fast state swaps**: Flip role, theme, viewport, feature flag, locale, or database state in milliseconds.
 
 ## Requirements
 
-This plugin currently requires [Vitest Browser Mode](https://vitest.dev/guide/browser/).
+This plugin requires [Vitest Browser Mode](https://vitest.dev/guide/browser/).
 
 ## Quick Start
 
 ### 1. Install
 
+Pick the command for your package manager:
+
 ```bash
-npm install -D vitest-plugin-rsc
+# pnpm
 pnpm add -D vitest-plugin-rsc
+```
+
+```bash
+# npm
+npm install -D vitest-plugin-rsc
+```
+
+```bash
+# yarn
 yarn add -D vitest-plugin-rsc
+```
+
+```bash
+# bun
 bun add -D vitest-plugin-rsc
 ```
 
-For browser mode with Playwright:
+The examples below use Playwright as the Vitest browser provider. Install it (or any other provider) to run them:
 
 ```bash
 pnpm add -D @vitest/browser-playwright playwright
@@ -154,9 +164,14 @@ beforeEach(async () => {
 });
 ```
 
-For Next.js, choose one of these setup shapes.
+For Next.js, pick the setup that matches what you want to test:
 
-Without MSW, Server Actions are called directly inside the RSC test runtime. This is enough for simple action-and-rerender tests, and the action still runs inside the Next request context:
+| Setup       | Use when                                                                 | Action transport    |
+| ----------- | ------------------------------------------------------------------------ | ------------------- |
+| Without MSW | Simple action-and-rerender tests                                         | Direct (in-process) |
+| With MSW    | Tests that care about `next/cache`, router refreshes, or request headers | Real `POST` via MSW |
+
+Without MSW, Server Actions are called directly inside the RSC test runtime. The action still runs inside the Next request context, which is enough for simple action-and-rerender tests:
 
 ```ts
 // src/vitest.setup.ts
@@ -170,7 +185,7 @@ beforeEach(async () => {
 });
 ```
 
-With MSW, client-side RSC fetches and Server Action POSTs go through a request-shaped transport. This exercises the Next-style action response, route response, router refresh, and cache revalidation header path. Use this setup for closest-to-Next behavior, especially for `next/cache`, navigation refreshes, or tests that care about the actual RSC/action request boundary:
+With MSW, client-side RSC fetches and Server Action POSTs travel as real HTTP requests through MSW. This exercises the Next-style action response, route response, router refresh, and cache revalidation header path:
 
 ```ts
 // src/vitest.setup.ts
@@ -198,63 +213,172 @@ afterAll(() => {
 });
 ```
 
+### 4. Browser-Compatible Server Code
+
+This plugin runs RSC code in the browser as if the browser were a server. That works better than it might sound: edge runtimes like Vercel Edge and Cloudflare Workers also lack the full Node.js API, and frameworks like Next.js are already designed to run on those edges. Server code that targets the edge tends to be browser-friendly too.
+
+Out of the box the plugin shims the Node built-ins that server code most commonly reaches for, the same way Next does for its edge runtime:
+
+- `vitestPluginRSC()` shims `node:async_hooks`.
+- `vitestPluginNext()` also shims `node:buffer`, `node:events`, `node:assert`, `node:util`, and `node:os`, using Next's own pre-compiled browser-safe versions.
+
+For things that genuinely don't belong in a browser, swap in an in-memory, browser-friendly implementation:
+
+- **Database**: [PGlite](https://pglite.dev/) for Postgres, [sql.js](https://github.com/sql-js/sql.js) for SQLite.
+- **File system**: [`memfs` via Vitest](https://vitest.dev/guide/mocking/file-system).
+- **HTTP**: [MSW in Vitest browser mode](https://mswjs.io/docs/recipes/vitest-browser-mode).
+
+When you have a choice, prefer the server APIs that already overlap between edge runtimes, Node, and the browser:
+
+- Web Streams API instead of `node:stream`
+- `Uint8Array` instead of direct `Buffer` coupling
+- Web Crypto API instead of `node:crypto`
+- `Blob` and `File` for binary data
+- `fetch`, `Request`, `Response`, `Headers`, `URL`, and `FormData` for HTTP/data primitives
+
+If a dependency still imports a Node core module or global that isn't shimmed, drop in [`vite-plugin-node-polyfills`](https://github.com/davidmyersdev/vite-plugin-node-polyfills). It covers all of Node's core modules (including `node:` protocol imports) and optionally globals like `Buffer`, `process`, and `global`. See its [README](https://github.com/davidmyersdev/vite-plugin-node-polyfills#readme) for the full `include` / `exclude` / `globals` / `overrides` options:
+
+```ts
+import { nodePolyfills } from "vite-plugin-node-polyfills";
+import { defineConfig } from "vitest/config";
+import { vitestPluginRSC } from "vitest-plugin-rsc";
+
+export default defineConfig({
+  plugins: [nodePolyfills(), vitestPluginRSC()],
+});
+```
+
 ## Example: Server Action Form
 
-This is the shape the plugin is designed for: one focused app slice, full behavior path, direct setup.
+This is the kind of test the plugin is designed for — here a full `page.tsx` route, but the same pattern works for any component, form, or flow.
+
+The page being tested is a Server Component with a Server Action. On validation errors, the action writes the error to a cookie and calls `refresh()`. The form stays mounted across the rerender so the typed content survives, and the next render reads the cookie to display the message:
 
 ```tsx
-import { expect, test } from "vitest";
-import { page, userEvent } from "vitest/browser";
-import { renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
-import { seed } from "drizzle-seed";
+// app/notes/new/page.tsx
+import { refresh } from "next/cache";
+import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
 
-import * as schema from "#db/schema";
-import { db } from "#lib/db.mock";
-import { signInAs, testUser } from "#test/auth";
-import NewNotePage from "./page";
+import { notes } from "#db/schema.ts";
+import { requireUser } from "#lib/auth-session.ts";
+import { db } from "#lib/db.ts";
+
+export default async function NewNotePage() {
+  const user = await requireUser();
+  const error = (await cookies()).get("note-error")?.value;
+
+  return (
+    <form
+      action={async (formData) => {
+        "use server";
+
+        const title = String(formData.get("title") ?? "").trim();
+        const content = String(formData.get("content") ?? "");
+
+        if (!title) {
+          (await cookies()).set("note-error", "Title is required.");
+          refresh();
+          return;
+        }
+
+        await db.insert(notes).values({ ownerId: user.id, title, content });
+        redirect("/notes");
+      }}
+    >
+      <label htmlFor="title">Title</label>
+      <input id="title" name="title" />
+      {error && <p>{error}</p>}
+
+      <label htmlFor="content">Content</label>
+      <textarea id="content" name="content" />
+
+      <button>Create note</button>
+    </form>
+  );
+}
+```
+
+The test seeds both server-side state (auth, database) and browser-side state (`localStorage`), renders the page, interacts with the form, and asserts the rerendered UI:
+
+```tsx
+import { expect, test, vi } from "vitest";
+import { page } from "vitest/browser";
+import { renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
+
+import { db } from "#lib/db.ts";
+import { notes } from "#db/schema.ts";
+import { signInAs, testUser } from "#test/auth.ts";
+import NewNotePage from "./page.tsx";
+
+vi.mock("#lib/db.ts");
 
 test("validates a new note without losing entered content", async () => {
   await signInAs(testUser);
   localStorage.setItem("theme", "dark");
 
-  await seed(db, { notes: schema.notes }, { count: 3, seed: 2025 }).refine((f) => ({
-    notes: {
-      columns: {
-        ownerId: f.valuesFromArray({ values: [testUser.id] }),
-        title: f.valuesFromArray({
-          values: ["Inbox triage", "Release plan", "Bug bash"],
-          isUnique: true,
-        }),
-        content: f.loremIpsum({ sentencesCount: 2 }),
-      },
-    },
-  }));
+  await db.insert(notes).values({
+    ownerId: testUser.id,
+    title: "Inbox triage",
+    content: "Existing note body",
+  });
 
   await renderServer(<NewNotePage />, { url: "/notes/new" });
 
-  await userEvent.fill(page.getByLabelText("Content"), "Keep this body");
-  await userEvent.click(page.getByRole("button", { name: "Create note" }));
+  await page.getByLabelText("Content").fill("Keep this body");
+  await page.getByRole("button", { name: "Create note" }).click();
 
   await expect.element(page.getByText("Title is required.")).toBeInTheDocument();
   await expect.element(page.getByDisplayValue("Keep this body")).toBeInTheDocument();
 });
 ```
 
-That test can cover a Server Component, Client Components, a Server Action, database setup, browser state, and the final UI without starting a separate app server.
+That single test sets up:
 
-The repository's `playground/nextjs-notes-demo` app is the larger reference for these patterns. It shows a Next.js App Router notes app using Better Auth, Drizzle, PGlite test databases, shadcn-style UI components, form/action tests, mocked email, and per-test seeding without requiring external infrastructure.
+- **Server-side state**: the signed-in user (`signInAs`) and a seeded database row (`db.insert`)
+- **Browser-side state**: a client-side preference written to `localStorage`
+
+then renders a Server Component, runs a Server Action, and asserts against the rerendered UI — all in one place, with no app server to boot. Mixing server and browser state in the same setup is something a pure unit test cannot reach and a full E2E test can only do through the real UI.
+
+`vi.mock("#lib/db.ts")` replaces the production database adapter with the Vitest `__mocks__` version next to it (`lib/__mocks__/db.ts`). The mock exposes a `db` reference and a `resetDb` helper that the setup file points at a fresh PGlite clone per test. See the [Drizzle + PGlite Setup](#example-drizzle--pglite-setup) section below for the wiring.
 
 ## Example: Drizzle + PGlite Setup
 
 PGlite is a good fit for this model because it gives you Postgres-compatible behavior inside the browser test runtime.
 
-One pattern:
+The pattern uses two files next to each other:
 
-1. Generate SQL from the current Drizzle schema in global setup.
-2. Create a migrated in-memory PGlite base database in `beforeAll`.
-3. Clone that base database in `beforeEach`.
-4. Wrap each clone with `drizzle-orm/pglite`.
-5. Seed rows directly in the test.
+- `lib/db.ts` — the production database adapter your app code imports.
+- `lib/__mocks__/db.ts` — the test stand-in that `vi.mock` swaps in. Exposes `db` plus a `resetDb` setter so the setup file can point it at a fresh PGlite clone per test.
+
+```ts
+// lib/db.ts
+import { drizzle } from "drizzle-orm/neon-serverless";
+import * as schema from "#db/schema.ts";
+
+export const db = drizzle({
+  connection: process.env.DATABASE_URL!,
+  schema,
+});
+```
+
+```ts
+// lib/__mocks__/db.ts
+import type { db as ProductionDb } from "#lib/db.ts";
+
+export let db: typeof ProductionDb;
+
+export function resetDb(value: typeof ProductionDb) {
+  db = value;
+}
+```
+
+The setup file then:
+
+1. Generates SQL from the current Drizzle schema in global setup.
+2. Creates a migrated in-memory PGlite base database in `beforeAll`.
+3. Clones that base database in `beforeEach` so each test starts from a clean migrated state.
+4. Wraps each clone with `drizzle-orm/pglite` and hands it to `resetDb`.
 
 ```ts
 // vitest.global-setup.ts
@@ -271,14 +395,18 @@ export async function setup(project: TestProject) {
 ```
 
 ```ts
-// src/vitest.setup.ts
+// vitest.setup.ts
 import { PGlite } from "@electric-sql/pglite";
 import { drizzle } from "drizzle-orm/pglite";
 import { beforeAll, beforeEach, inject, vi } from "vitest";
 import { cleanup, initialize } from "vitest-plugin-rsc/nextjs/testing-library";
 
-import * as schema from "#db/schema";
-import { reset } from "#lib/db.mock";
+import * as schema from "#db/schema.ts";
+import * as dbModule from "#lib/db.ts";
+
+vi.mock("#lib/db.ts");
+
+const { resetDb } = dbModule as typeof import("#lib/__mocks__/db.ts");
 
 let base: PGlite;
 
@@ -293,24 +421,13 @@ beforeEach(async () => {
   await cleanup();
 
   const clone = await base.clone();
-  reset(drizzle(clone, { schema }));
+  resetDb(drizzle(clone, { schema }));
 
   vi.setSystemTime(new Date("2026-05-06T00:00:00.000Z"));
 });
 ```
 
-```ts
-// src/lib/db.mock.ts
-import type { DB } from "./db.types";
-
-export let db: DB;
-
-export function reset(value: DB) {
-  db = value;
-}
-```
-
-Your app code can import `db` through an alias that points to the production adapter normally and to `db.mock.ts` in tests.
+App code keeps importing `db` from `#lib/db.ts`. `vi.mock("#lib/db.ts")` automatically substitutes the `__mocks__` version next to it, and `resetDb` swaps in a fresh PGlite-backed Drizzle instance per test. Tests then seed rows with the same `db.insert(...)` calls they would use in production code.
 
 ## Next.js App Router Helpers
 
@@ -320,12 +437,12 @@ The Next.js plugin adds aliases, request context, cache context, router state, a
 import { vitestPluginNext } from "vitest-plugin-rsc/nextjs/plugin";
 ```
 
-The intent is that component tests use the same public App Router imports your app uses. The plugin wires those entrypoints to Next's own App Router internals where possible, and fills in the test request, router, cache, and Server Action runtime around them:
+Component tests use the same public App Router imports your app uses. The plugin wires those entrypoints to Next's own App Router internals where possible, and fills in the test request, router, cache, and Server Action runtime around them:
 
-- `next/link`
+- `next/link`: real `<Link>` rendering and navigation through the test router
 - `next/navigation`: router hooks, selected-layout segment hooks, `redirect`, `notFound`, and the rest of the public App Router navigation exports resolved through Next's own aliases
 - `next/headers`: `headers()` and `cookies()` in Server Components and Server Actions
-- `next/cache`: `refresh`, `revalidatePath`, `revalidateTag`, `updateTag`, and patched tagged `fetch` cache behavior. `unstable_cache` is covered for existing apps, but the examples below prefer the stable tagged `fetch` API.
+- `next/cache`: `refresh`, `revalidatePath`, `revalidateTag`, `updateTag`, and patched `fetch` behavior for tag-based caching. `unstable_cache` is covered for existing apps, but the examples below prefer the stable tagged `fetch` API.
 
 So the examples below are not a separate testing API. They are normal Next.js code paths running inside a focused Vitest Browser Mode component test.
 
@@ -337,7 +454,7 @@ Many tests can omit routing options:
 await renderServer(<CreateNoteForm />);
 ```
 
-Pass `url` when the component needs location-aware behavior, such as `usePathname`, `useSearchParams`, `next/link`, navigation assertions, request URL-dependent code, or cache invalidation against the current path. For dynamic routes, also pass the App Router route pattern with `route` so Next can derive params and selected segments from the URL:
+Pass `url` when the component needs location-aware behavior — `usePathname`, `useSearchParams`, the selected-segment hooks, `next/link`, navigation assertions, request URL-dependent code, or cache invalidation against the current path. For dynamic routes, also pass the App Router route pattern with `route` so Next can derive params and selected segments from the URL:
 
 ```tsx
 import { expect, test, vi } from "vitest";
@@ -358,6 +475,7 @@ test("reads router state and records navigation", async () => {
   await expect.element(page.getByText("pathname: /notes/123")).toBeVisible();
   await expect.element(page.getByText("note id: 123")).toBeVisible();
   await expect.element(page.getByText("tab: activity")).toBeVisible();
+  await expect.element(page.getByText("segments: notes/123")).toBeVisible();
 
   await page.getByRole("button", { name: "Go to notes" }).click();
   await vi.waitFor(() => expectToHaveBeenNavigatedTo({ pathname: "/notes" }));
@@ -383,19 +501,27 @@ For example, a client component can use normal Next APIs:
 "use client";
 
 import Link from "next/link";
-import { useParams, usePathname, useRouter, useSearchParams } from "next/navigation";
+import {
+  useParams,
+  usePathname,
+  useRouter,
+  useSearchParams,
+  useSelectedLayoutSegments,
+} from "next/navigation";
 
 export function NoteToolbar() {
   const router = useRouter();
   const pathname = usePathname();
   const params = useParams<{ id: string }>();
   const searchParams = useSearchParams();
+  const segments = useSelectedLayoutSegments();
 
   return (
     <>
       <p>pathname: {pathname}</p>
       <p>note id: {params.id}</p>
       <p>tab: {searchParams.get("tab")}</p>
+      <p>segments: {segments.join("/")}</p>
       <button onClick={() => router.push("/notes")}>Go to notes</button>
       <Link href={{ pathname: "/notes/new", query: { from: params.id } }}>New note</Link>
     </>
@@ -459,7 +585,7 @@ export async function FlashProbe() {
 
 ### Cache And Revalidation
 
-Server Components can use tagged cached `fetch` calls, and Server Actions can refresh the current tree or invalidate those tags:
+Server Components can use tagged cached `fetch` calls, and Server Actions can refresh the current tree or invalidate those tags. The cross-network `fetch` is normally intercepted by MSW in tests — see [`playground/nextjs-notes-demo`](playground/nextjs-notes-demo) for a worked setup.
 
 ```tsx
 import { refresh, revalidatePath, revalidateTag, updateTag } from "next/cache";
@@ -523,17 +649,33 @@ export async function NotesPanel() {
 }
 ```
 
-The test still reads like a browser test:
+The test still reads like a unit test. After clicking the action button, `updateTag("notes")` invalidates the cached fetch, the panel re-renders with the new count, and the assertion just sees the updated UI:
 
 ```tsx
-await renderServer(<NotesPanel />, { url: "/notes" });
+import { expect, test } from "vitest";
+import { page } from "vitest/browser";
+import { renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
 
-await expect.element(page.getByText("notes: 0")).toBeVisible();
-await page.getByRole("button", { name: "Create note" }).click();
-await expect.element(page.getByText("notes: 1")).toBeVisible();
+import { NotesPanel } from "./notes-panel";
+
+test("creating a note invalidates the notes cache", async () => {
+  await renderServer(<NotesPanel />, { url: "/notes" });
+
+  await expect.element(page.getByText("notes: 0")).toBeVisible();
+  await page.getByRole("button", { name: "Create note" }).click();
+  await expect.element(page.getByText("notes: 1")).toBeVisible();
+});
 ```
 
-## How It Works
+## Playgrounds
+
+This repository ships three reference apps under `playground/`:
+
+- `playground/rsc-vitest-demo` — a minimal non-Next RSC app. Use this as the smallest end-to-end example of `vitest-plugin-rsc` on its own.
+- `playground/nextjs-no-msw-demo` — a Next.js App Router setup that calls Server Actions directly inside the test runtime. Use this when you want the simplest Next setup.
+- `playground/nextjs-notes-demo` — a fuller Next.js App Router notes app with Better Auth, Drizzle, PGlite test databases, shadcn/ui, MSW-routed Server Actions, mocked email, and per-test seeding. This is the larger reference for the patterns in this README.
+
+## Architecture
 
 `renderServer` runs the same React Server Components protocol your app uses in production:
 
@@ -542,107 +684,6 @@ await expect.element(page.getByText("notes: 1")).toBeVisible();
 3. Resolve any Client Component references.
 4. Render the final React tree into the browser DOM.
 
-The transport is the only unusual part. In production, the browser fetches the Flight stream from a server endpoint. In this plugin, the stream is passed between Vite environments inside the Vitest browser runtime.
+The transport is the only unusual part. In production, the browser fetches the Flight stream from a server endpoint. In this plugin, the stream is passed between two Vite environments (`client` for RSC, `react_client` for the browser) inside the Vitest browser runtime, bridged over a dedicated Vite websocket so React can resolve Client Component references with browser conditions.
 
-The plugin creates those two environments:
-
-1. `client` is the RSC environment. It uses the `react-server` condition and the RSC transform, so Server Components render correctly and `"use client"` modules become references.
-2. `react_client` is the browser/client environment. It loads Client Components with browser conditions and renders the deserialized tree into the DOM.
-
-At the center is the same serialize/deserialize pair React uses for RSC:
-
-```tsx
-import { renderToReadableStream } from "@vitejs/plugin-rsc/react/rsc";
-
-// Imported through a helper, so Vite resolves it in react_client.
-const { createFromReadableStream } = await importReactClient("@vitejs/plugin-rsc/react/browser");
-
-const flightStream = renderToReadableStream(<ServerComponent />);
-const jsx = await createFromReadableStream(flightStream);
-```
-
-When the RSC transform sees a Client Component:
-
-```tsx
-"use client";
-import { useState } from "react";
-
-export function Like() {
-  const [count, setCount] = useState(0);
-  return <button onClick={() => setCount(count + 1)}>Like {count}</button>;
-}
-```
-
-it does not execute that component in the RSC environment. It turns the export into a client reference:
-
-```tsx
-import { registerClientReference } from "@vitejs/plugin-rsc/vendor/react-server-dom/server";
-
-export const Like = registerClientReference(
-  /* fallback */,
-  "file:///my-app/components/like.tsx",
-  "Like",
-);
-```
-
-Later, when React reads the Flight stream, it asks for that reference. `importReactClient` is a Vite `ModuleRunner` import function:
-
-```tsx
-const runner = new ModuleRunner({
-  transport: {
-    invoke: invokeReactClient,
-  },
-});
-
-export const importReactClient = runner.import.bind(runner);
-```
-
-When the runner needs a module, it calls `transport.invoke(payload)`. This plugin forwards that invoke over a dedicated Vite websocket:
-
-```tsx
-async function invokeReactClient(payload) {
-  const id = nextId();
-
-  socket.send(
-    JSON.stringify({
-      type: "custom",
-      event: "vitest-plugin-rsc:react-client:invoke",
-      data: { id, payload },
-    }),
-  );
-
-  return waitForInvokeResult(id);
-}
-```
-
-On the Vite server, the websocket message is handled by `react_client`:
-
-```tsx
-server.ws.on("connection", (socket) => {
-  socket.on("message", async (raw) => {
-    const invoke = parseWebSocketInvoke(raw);
-    if (!invoke) return;
-
-    const result = await server.environments["react_client"]!.hot.handleInvoke(invoke.payload);
-
-    socket.send(
-      JSON.stringify({
-        type: "custom",
-        event: "vitest-plugin-rsc:react-client:invoke-result",
-        data: { id: invoke.id, result },
-      }),
-    );
-  });
-});
-```
-
-That is the key bridge. The test is rendering a Server Component, but when React needs a Client Component, Vite resolves it with the browser/client conditions it would have in the app.
-
-So the full loop is:
-
-1. `renderServer(<ServerComponent />)` renders the server tree to a Flight stream.
-2. The Flight client calls `importReactClient(...)` when it needs browser/client modules.
-3. `importReactClient` sends Vite ModuleRunner invokes over websocket.
-4. Vite resolves those invokes in the `react_client` environment.
-5. The browser receives the result, deserializes the Flight stream, and Testing Library renders it into the DOM.
-6. Browser interactions can call Server Actions, fetch a new Flight payload, and rerender.
+For the full walkthrough — the two-environment setup, client reference registration, the Module Runner bridge, and the end-to-end flow — see [docs/architecture.md](docs/architecture.md).
