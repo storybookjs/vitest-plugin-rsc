@@ -1,12 +1,19 @@
 import { ESModulesEvaluator, ModuleRunner, type ModuleRunnerTransport } from "vite/module-runner";
 
+const reactClientCoverageModulePath = "/@vite/react-client-coverage-module";
 const reactClientWebSocketInfoPath = "/@vite/react-client-runner-websocket";
 const reactClientWebSocketQuery = "vitest-plugin-rsc-react-client";
+const reactClientCoverageQuery = "vitest-plugin-rsc-react-client-coverage";
 const reactClientWebSocketInvokeEvent = "vitest-plugin-rsc:react-client:invoke";
 const reactClientWebSocketInvokeResultEvent = "vitest-plugin-rsc:react-client:invoke-result";
+const sourceUrlRE = /\/\/# sourceURL=[^\n\r]*/;
 
 type InvokePayload = Parameters<NonNullable<ModuleRunnerTransport["invoke"]>>[0];
 type InvokeResult = Awaited<ReturnType<NonNullable<ModuleRunnerTransport["invoke"]>>>;
+type ViteFetchResult = {
+  code: string;
+  file: string;
+};
 
 type WebSocketInfo = {
   token: string;
@@ -51,6 +58,91 @@ const runner = new ModuleRunner(
 export const importReactClient = runner.import.bind(runner);
 
 async function invokeReactClient(payload: InvokePayload) {
+  return await withReactClientCoverage(await invokeReactClientOverWebSocket(payload));
+}
+
+async function withReactClientCoverage(result: InvokeResult) {
+  if (
+    !isCoverageEnabled() ||
+    !isInvokeSuccess(result) ||
+    !isViteFetchResult(result.result) ||
+    isNodeModuleFile(result.result.file)
+  ) {
+    return result;
+  }
+
+  // Vitest's V8 coverage runs in the Browser Mode worker, while client
+  // components are evaluated by this separate react_client ModuleRunner.
+  const sourceUrl = toBrowserCoverageFileUrl(result.result.file);
+  const code = withBrowserSourceUrl(result.result.code, sourceUrl);
+
+  await recordEvaluatedModule(result.result.file, code);
+
+  return {
+    ...result,
+    result: {
+      ...result.result,
+      code,
+    },
+  };
+}
+
+function isInvokeSuccess(result: InvokeResult): result is { result: unknown } {
+  return typeof result === "object" && result !== null && "result" in result;
+}
+
+function isCoverageEnabled() {
+  const worker = globalThis as typeof globalThis & {
+    __vitest_worker__?: { config?: { coverage?: { enabled?: boolean } } };
+  };
+
+  return Boolean(worker.__vitest_worker__?.config?.coverage?.enabled);
+}
+
+function isViteFetchResult(value: unknown): value is ViteFetchResult {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "code" in value &&
+    "file" in value &&
+    typeof value.code === "string" &&
+    typeof value.file === "string"
+  );
+}
+
+function isNodeModuleFile(file: string) {
+  return file.replace(/\\/g, "/").includes("/node_modules/");
+}
+
+function withBrowserSourceUrl(code: string, sourceUrl: string) {
+  const sourceUrlComment = `//# sourceURL=${sourceUrl}`;
+  return sourceUrlRE.test(code)
+    ? code.replace(sourceUrlRE, sourceUrlComment)
+    : `${code}\n${sourceUrlComment}`;
+}
+
+async function recordEvaluatedModule(file: string, code: string) {
+  await fetch(reactClientCoverageModulePath, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({ file, code }),
+  });
+}
+
+function toBrowserCoverageFileUrl(file: string) {
+  const path = file.replace(/\\/g, "/");
+  const encodedPath = encodeURI(path).replace(/\?/g, "%3F").replace(/#/g, "%23");
+  const url = new URL(
+    `/@fs${encodedPath.startsWith("/") ? "" : "/"}${encodedPath}`,
+    window.location.origin,
+  );
+  url.searchParams.set(reactClientCoverageQuery, "1");
+  return url.href;
+}
+
+async function invokeReactClientOverWebSocket(payload: InvokePayload) {
   const socket = await getReactClientWebSocket();
   const info = await getWebSocketInfo();
   const id = String(++nextInvokeId);

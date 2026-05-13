@@ -38,6 +38,9 @@ importers:
 
   packages/vitest-plugin-rsc:
     dependencies:
+      '@jridgewell/gen-mapping':
+        specifier: ^0.3.13
+        version: 0.3.13
       '@vitejs/plugin-rsc':
         specifier: 0.5.26
         version: 0.5.26(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(vite@8.0.11(@types/node@24.12.3)(esbuild@0.27.7)(jiti@2.7.0)(tsx@4.21.0))
@@ -47,7 +50,13 @@ importers:
       '@vitest/spy':
         specifier: 5.0.0-beta.2
         version: 5.0.0-beta.2
+      convert-source-map:
+        specifier: ^2.0.0
+        version: 2.0.0
     devDependencies:
+      '@types/convert-source-map':
+        specifier: ^2.0.3
+        version: 2.0.3
       '@types/estree':
         specifier: ^1.0.9
         version: 1.0.9
@@ -248,6 +257,9 @@ importers:
       '@vitest/browser-playwright':
         specifier: 5.0.0-beta.2
         version: 5.0.0-beta.2(msw@2.14.5(@types/node@24.12.3)(typescript@6.0.3))(playwright@1.59.1)(vite@8.0.11(@types/node@24.12.3)(esbuild@0.27.7)(jiti@2.7.0)(tsx@4.21.0))(vitest@5.0.0-beta.2)
+      '@vitest/coverage-v8':
+        specifier: 5.0.0-beta.2
+        version: 5.0.0-beta.2(@vitest/browser@5.0.0-beta.2)(vitest@5.0.0-beta.2)
       '@vitest/ui':
         specifier: 5.0.0-beta.2
         version: 5.0.0-beta.2(vitest@5.0.0-beta.2)
@@ -1369,6 +1381,9 @@ packages:
   '@jridgewell/gen-mapping@0.3.12':
     resolution: {integrity: sha512-OuLGC46TjB5BbN1dH8JULVVZY4WTdkF7tV9Ys6wLL1rubZnCMstOhNHueU5bLCrnRuDhKPDM4g6sw4Bel5Gzqg==}
 
+  '@jridgewell/gen-mapping@0.3.13':
+    resolution: {integrity: sha512-2kkt/7niJ6MgEPxF0bYdQ6etZaA+fQvDcLKckhy1yIQOzaoKjBBjSj63/aLVjYE3qhRt5dvM+uUyfCg6UKCBbA==}
+
   '@jridgewell/remapping@2.3.5':
     resolution: {integrity: sha512-LI9u/+laYG4Ds1TDKSJW2YPrIlcVYOwi2fUC6xB43lueCjgxV4lffOCZCtYFiH6TNOX+tQKXx97T4IKHbhyHEQ==}
 
@@ -2208,6 +2223,9 @@ packages:
 
   '@types/chai@5.2.2':
     resolution: {integrity: sha512-8kB30R7Hwqf40JPiKhVzodJs2Qc1ZJ5zuT3uzw5Hq/dhNCl3G3l83jfpdI1e20BP348+fV7VIL/+FxaXkqBmWg==}
+
+  '@types/convert-source-map@2.0.3':
+    resolution: {integrity: sha512-ag0BfJLZf6CQz8VIuRIEYQ5Ggwk/82uvTQf27RcpyDNbY0Vw49LIPqAxk5tqYfrCs9xDaIMvl4aj7ZopnYL8bA==}
 
   '@types/cookie@0.6.0':
     resolution: {integrity: sha512-4Kh9a6B2bQciAhf7FSuMRRkUWecJgJu9nPnx3yzpsfXX/c50REIqpHY4C82bXP90qrLtXtkDxTZosYO3UpOwlA==}
@@ -5280,6 +5298,11 @@ snapshots:
       '@jridgewell/sourcemap-codec': 1.5.5
       '@jridgewell/trace-mapping': 0.3.29
 
+  '@jridgewell/gen-mapping@0.3.13':
+    dependencies:
+      '@jridgewell/sourcemap-codec': 1.5.5
+      '@jridgewell/trace-mapping': 0.3.31
+
   '@jridgewell/remapping@2.3.5':
     dependencies:
       '@jridgewell/gen-mapping': 0.3.12
@@ -5883,6 +5906,8 @@ snapshots:
   '@types/chai@5.2.2':
     dependencies:
       '@types/deep-eql': 4.0.2
+
+  '@types/convert-source-map@2.0.3': {}
 
   '@types/cookie@0.6.0': {}
 

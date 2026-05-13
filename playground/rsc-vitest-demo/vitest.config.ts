@@ -5,6 +5,12 @@ import { vitestPluginRSC } from "vitest-plugin-rsc";
 export default defineConfig({
   plugins: [vitestPluginRSC()],
   test: {
+    coverage: {
+      provider: "v8",
+      reporter: ["text", "html", "lcov"],
+      include: ["src/**/*.{ts,tsx}"],
+      exclude: ["src/**/*.test.{ts,tsx}", "src/vitest.setup.ts"],
+    },
     restoreMocks: true,
     browser: {
       enabled: true,

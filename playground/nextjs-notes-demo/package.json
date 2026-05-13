@@ -66,6 +66,7 @@
     "@vitejs/plugin-rsc": "0.5.26",
     "@vitest/browser": "5.0.0-beta.2",
     "@vitest/browser-playwright": "5.0.0-beta.2",
+    "@vitest/coverage-v8": "5.0.0-beta.2",
     "@vitest/ui": "5.0.0-beta.2",
     "babel-plugin-react-compiler": "1.0.0",
     "drizzle-kit": "^0.31.10",
