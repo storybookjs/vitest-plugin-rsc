@@ -84,13 +84,10 @@ export default async function SignUpPage({
         </CardHeader>
         <CardContent className="flex flex-col gap-5 px-6">
           {sent === "magic-link" && (
-            <p
-              role="status"
-              className="flex items-start gap-2.5 rounded-2xl border border-brand/30 bg-brand/10 px-4 py-3 text-sm text-brand-foreground"
-            >
+            <output className="flex items-start gap-2.5 rounded-2xl border border-brand/30 bg-brand/10 px-4 py-3 text-sm text-brand-foreground">
               <MailIcon className="mt-0.5 size-4 shrink-0 text-brand" />
               <span>Check your inbox for the link to finish creating your account.</span>
-            </p>
+            </output>
           )}
           {errorMessage && (
             <p
