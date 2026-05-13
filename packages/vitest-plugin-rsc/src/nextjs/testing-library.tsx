@@ -3,7 +3,10 @@ import {
   NEXT_ACTION_NOT_FOUND_HEADER,
   RSC_CONTENT_TYPE_HEADER,
 } from "next/dist/client/components/app-router-headers.js";
-import { getRedirectTypeFromError, getURLFromRedirectError } from "next/dist/client/components/redirect.js";
+import {
+  getRedirectTypeFromError,
+  getURLFromRedirectError,
+} from "next/dist/client/components/redirect.js";
 import { isRedirectError } from "next/dist/client/components/redirect-error.js";
 import { RedirectStatusCode } from "next/dist/client/components/redirect-status-code.js";
 import {

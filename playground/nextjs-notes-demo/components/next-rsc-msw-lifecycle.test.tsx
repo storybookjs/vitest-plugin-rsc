@@ -1,7 +1,4 @@
-import {
-  ACTION_HEADER,
-  RSC_HEADER,
-} from "next/dist/client/components/app-router-headers.js";
+import { ACTION_HEADER, RSC_HEADER } from "next/dist/client/components/app-router-headers.js";
 import { expect, test } from "vitest";
 import { cleanup, renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
 
