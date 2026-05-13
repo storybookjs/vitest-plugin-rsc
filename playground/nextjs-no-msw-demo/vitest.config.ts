@@ -8,6 +8,14 @@ export default defineConfig({
   resolve: {
     conditions: ["test"],
   },
+  optimizeDeps: {
+    include: [
+      "next/dist/client/components/http-access-fallback/http-access-fallback.js",
+      "next/dist/client/components/redirect-error.js",
+      "next/dist/client/components/redirect-status-code.js",
+      "next/dist/client/components/redirect.js",
+    ],
+  },
   test: {
     browser: {
       enabled: true,
