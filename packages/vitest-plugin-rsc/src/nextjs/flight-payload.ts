@@ -14,6 +14,7 @@ export async function createNextRouteResponse(
   root: ReactNode,
   url: string,
   routerState?: string | null,
+  couldBeIntercepted = false,
 ): Promise<NavigationFlightResponse> {
   const location = urlToUrlWithoutFlightMarker(new URL(url));
   const rootFlightData = await createRootNavigationFlightData(root, {
@@ -21,7 +22,7 @@ export async function createNextRouteResponse(
     routerState,
   });
   if (!rootFlightData) {
-    return { f: [], q: location.search, i: false, S: false, h: null };
+    return { f: [], q: location.search, i: couldBeIntercepted, S: false, h: null };
   }
 
   // Begin copy: Next.js NavigationFlightResponse payload shape
@@ -33,7 +34,7 @@ export async function createNextRouteResponse(
     b: "",
     f: [rootFlightData],
     q: location.search,
-    i: false,
+    i: couldBeIntercepted,
     S: false,
     h: null,
   };
@@ -45,13 +46,20 @@ export async function createNextActionResponse(
   root: ReactNode,
   returnValue: unknown,
   shouldRender: boolean,
+  routerState?: string | null,
+  couldBeIntercepted = false,
 ): Promise<ActionFlightResponse> {
   const actionResult = Promise.resolve(returnValue);
   if (!shouldRender) {
     // Begin copy: Next.js ActionFlightResponse skipped page rendering shape
     // Source: https://github.com/vercel/next.js/blob/4588a7354283f97e2124e3d82f55733ca4eb9373/packages/next/src/server/app-render/app-render.tsx#L641-L645
     // Source: https://github.com/vercel/next.js/blob/4588a7354283f97e2124e3d82f55733ca4eb9373/packages/next/src/server/app-render/app-render.tsx#L749-L758
-    const response: ActionFlightResponse = { a: actionResult, f: "", q: "", i: false };
+    const response: ActionFlightResponse = {
+      a: actionResult,
+      f: "",
+      q: "",
+      i: couldBeIntercepted,
+    };
     // End copy
     return response;
   }
@@ -59,12 +67,20 @@ export async function createNextActionResponse(
   const nextRouter = findNextRouterElement(root);
   const props = nextRouter?.props as NextRouterElementProps | undefined;
   const location = new URL(props?.url ?? "/", "http://localhost");
-  const rootFlightData = await createRootNavigationFlightData(root, { url: location });
+  const rootFlightData = await createRootNavigationFlightData(root, {
+    url: location,
+    routerState,
+  });
   if (!rootFlightData) {
     // Begin copy: Next.js ActionFlightResponse empty Flight data shape
     // Source: https://github.com/vercel/next.js/blob/4588a7354283f97e2124e3d82f55733ca4eb9373/packages/next/src/server/app-render/app-render.tsx#L641-L645
     // Source: https://github.com/vercel/next.js/blob/4588a7354283f97e2124e3d82f55733ca4eb9373/packages/next/src/server/app-render/app-render.tsx#L749-L758
-    const response: ActionFlightResponse = { a: actionResult, f: "", q: location.search, i: false };
+    const response: ActionFlightResponse = {
+      a: actionResult,
+      f: "",
+      q: location.search,
+      i: couldBeIntercepted,
+    };
     // End copy
     return response;
   }
@@ -77,7 +93,7 @@ export async function createNextActionResponse(
     a: actionResult,
     f: [rootFlightData],
     q: location.search,
-    i: false,
+    i: couldBeIntercepted,
   };
   // End copy
   return response;

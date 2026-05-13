@@ -5,7 +5,11 @@ import type {
   AppRouterActionQueue,
   GlobalErrorState,
 } from "next/dist/client/components/app-router-instance.js";
-import { createMutableActionQueue as createNextMutableActionQueue } from "next/dist/client/components/app-router-instance.js";
+import {
+  createMutableActionQueue as createNextMutableActionQueue,
+  publicAppRouterInstance,
+} from "next/dist/client/components/app-router-instance.js";
+import { createHrefFromUrl } from "next/dist/client/components/router-reducer/create-href-from-url.js";
 import { createInitialRouterState } from "next/dist/client/components/router-reducer/create-initial-router-state.js";
 import { reducer } from "next/dist/client/components/router-reducer/router-reducer.js";
 import type {
@@ -109,7 +113,7 @@ function createNextRouterStateSnapshot({
     state: createInitialRouterState({
       navigatedAt: Date.now(),
       initialRSCPayload: createInitialRSCPayload({
-        canonicalUrl: location.pathname + location.search,
+        canonicalUrl: createHrefFromUrl(location, false),
         initialTree,
         renderedSearch: location.search,
         seedData: initialSeedData,
@@ -171,8 +175,15 @@ function ensureNextWindowGlobal() {
   if (typeof window === "undefined") return;
 
   // Begin copy: Next.js window.next app-router global
-  // Source: https://github.com/vercel/next.js/blob/4588a7354283f97e2124e3d82f55733ca4eb9373/packages/next/src/client/components/app-router.tsx#L202-L208
+  // Source: https://github.com/vercel/next.js/blob/ee6e79b1/packages/next/src/client/app-bootstrap.ts#L13-L16
+  // Source: https://github.com/vercel/next.js/blob/ee6e79b1/packages/next/src/client/components/app-router-instance.ts#L505-L508
   // Adaptation: component tests do not run Next's app-index bootstrap.
-  (window as typeof window & { next?: object }).next ??= {};
+  const next = ((
+    window as typeof window & {
+      next?: { appDir?: true; router?: typeof publicAppRouterInstance };
+    }
+  ).next ??= {});
+  next.appDir ??= true;
+  next.router ??= publicAppRouterInstance;
   // End copy
 }

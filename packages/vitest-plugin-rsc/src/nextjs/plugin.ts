@@ -249,9 +249,40 @@ function provideBufferLikeNextWebpack(): Plugin {
   };
 }
 
+function treatNextInternalsAsServerInRsc(): Plugin {
+  return {
+    name: "next-rsc-server-window-checks",
+    enforce: "pre",
+    applyToEnvironment(environment) {
+      return environment.name === "client";
+    },
+    transform(code, id) {
+      if (!isNextInternalModule(id) || !/\btypeof\s+window\b/.test(code)) return;
+
+      const nextCode = rewriteTypeofWindowChecks(code);
+      if (nextCode === code) return;
+
+      return { code: nextCode, map: null };
+    },
+  };
+}
+
+function isNextInternalModule(id: string) {
+  return (
+    /[/\\]next[/\\]dist[/\\]/.test(id) &&
+    !/[/\\]next[/\\]dist[/\\]compiled[/\\]/.test(id) &&
+    !/[/\\]node_modules[/\\]\.vite[/\\]/.test(id)
+  );
+}
+
+function rewriteTypeofWindowChecks(code: string) {
+  return code.replace(/\btypeof\s+window\b(?!\s*[.[\]])/g, '"undefined"');
+}
+
 export function vitestPluginNext(): Plugin[] {
   return [
     useVitestServerReferenceInfo(),
+    treatNextInternalsAsServerInRsc(),
     appRouterApiPlugin("client", true),
     appRouterApiPlugin("react_client", false),
     {
@@ -332,6 +363,7 @@ export function vitestPluginNext(): Plugin[] {
                   "next/dist/client/components/navigation.react-server.js",
                   "next/dist/client/components/redirect-boundary.js",
                   "next/dist/client/components/router-reducer/compute-changed-path.js",
+                  "next/dist/client/components/router-reducer/create-href-from-url.js",
                   "next/dist/client/components/router-reducer/create-initial-router-state.js",
                   "next/dist/client/components/router-reducer/ppr-navigations.js",
                   "next/dist/client/components/router-reducer/router-reducer.js",
@@ -359,6 +391,7 @@ export function vitestPluginNext(): Plugin[] {
                 rolldownOptions: {
                   plugins: [
                     useVitestServerReferenceInfo(root),
+                    treatNextInternalsAsServerInRsc(),
                     useNextCompiledOpenTelemetryApi(root),
                   ],
                   resolve: {
@@ -401,6 +434,7 @@ export function vitestPluginNext(): Plugin[] {
                   "next/dist/client/components/navigation.react-server.js",
                   "next/dist/client/components/redirect-boundary.js",
                   "next/dist/client/components/router-reducer/compute-changed-path.js",
+                  "next/dist/client/components/router-reducer/create-href-from-url.js",
                   "next/dist/client/components/router-reducer/create-initial-router-state.js",
                   "next/dist/client/components/router-reducer/ppr-navigations.js",
                   "next/dist/client/components/router-reducer/router-reducer.js",

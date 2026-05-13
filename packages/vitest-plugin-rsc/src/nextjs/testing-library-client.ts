@@ -1,8 +1,29 @@
-import type { FetchRsc } from "../testing-library-client";
+import type { ServerActionCaller } from "../testing-library-client";
 
-export function createServerActionCaller({ fetchRsc }: { fetchRsc: FetchRsc }) {
+export type NextActionRequest = {
+  id: string;
+  reply: string | FormData;
+  requestType: "next-action";
+  routerState?: string | null;
+  nextUrl?: string | null;
+};
+
+export type NextRouteRequest = {
+  requestType: "next-route";
+  url: string;
+  routerState?: string | null;
+  nextUrl?: string | null;
+};
+
+export type FetchNextRsc = (request: NextActionRequest | NextRouteRequest) => Promise<Response>;
+
+export function createServerActionCaller({
+  fetchRsc,
+}: {
+  fetchRsc: FetchNextRsc;
+}): ServerActionCaller {
   const fetchRscSymbol = Symbol.for("vitest-plugin-rsc.nextjs.fetchRsc");
-  const globalScope = globalThis as typeof globalThis & Record<symbol, FetchRsc | undefined>;
+  const globalScope = globalThis as typeof globalThis & Record<symbol, FetchNextRsc | undefined>;
   globalScope[fetchRscSymbol] = fetchRsc;
 
   return {

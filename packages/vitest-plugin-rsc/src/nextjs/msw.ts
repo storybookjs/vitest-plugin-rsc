@@ -1,20 +1,20 @@
-import type { FetchRsc } from "../testing-library-client";
+import type { FetchNextRsc } from "./testing-library-client";
 import {
-  ACTION_HEADER,
+  NEXT_URL,
   NEXT_ROUTER_STATE_TREE_HEADER,
-  RSC_CONTENT_TYPE_HEADER,
   RSC_HEADER,
 } from "next/dist/client/components/app-router-headers.js";
+import { getServerActionRequestMetadata } from "next/dist/server/lib/server-action-request-meta.js";
 import { HttpResponse, http } from "msw";
 
 export const nextRscRequestHandlers = [
   http.post(
-    ({ request }) => request.headers.has(ACTION_HEADER),
+    ({ request }) => getNextActionRequestMetadata(request).isFetchAction,
     async ({ request }) => {
-      const actionId = request.headers.get(ACTION_HEADER);
+      const { actionId } = getNextActionRequestMetadata(request);
       if (!actionId) return;
 
-      const fetchRsc = (globalThis as typeof globalThis & Record<symbol, FetchRsc | undefined>)[
+      const fetchRsc = (globalThis as typeof globalThis & Record<symbol, FetchNextRsc | undefined>)[
         Symbol.for("vitest-plugin-rsc.nextjs.fetchRsc")
       ];
       if (!fetchRsc) {
@@ -25,19 +25,19 @@ export const nextRscRequestHandlers = [
       }
 
       const reply = await readActionReply(request);
-      const response = await fetchRsc({ id: actionId, reply, requestType: "next-action" });
-      if (response instanceof Response) {
-        return response;
-      }
-      return new Response(response, {
-        headers: { "content-type": RSC_CONTENT_TYPE_HEADER },
+      return fetchRsc({
+        id: actionId,
+        reply,
+        requestType: "next-action",
+        routerState: request.headers.get(NEXT_ROUTER_STATE_TREE_HEADER),
+        nextUrl: request.headers.get(NEXT_URL),
       });
     },
   ),
   http.get(
     ({ request }) => request.headers.has(RSC_HEADER),
     async ({ request }) => {
-      const fetchRsc = (globalThis as typeof globalThis & Record<symbol, FetchRsc | undefined>)[
+      const fetchRsc = (globalThis as typeof globalThis & Record<symbol, FetchNextRsc | undefined>)[
         Symbol.for("vitest-plugin-rsc.nextjs.fetchRsc")
       ];
       if (!fetchRsc) {
@@ -47,20 +47,21 @@ export const nextRscRequestHandlers = [
         );
       }
 
-      const response = await fetchRsc({
+      return fetchRsc({
         requestType: "next-route",
         url: request.url,
         routerState: request.headers.get(NEXT_ROUTER_STATE_TREE_HEADER),
-      });
-      if (response instanceof Response) {
-        return response;
-      }
-      return new Response(response, {
-        headers: { "content-type": RSC_CONTENT_TYPE_HEADER },
+        nextUrl: request.headers.get(NEXT_URL),
       });
     },
   ),
 ];
+
+function getNextActionRequestMetadata(request: Request) {
+  return getServerActionRequestMetadata(
+    request as Parameters<typeof getServerActionRequestMetadata>[0],
+  );
+}
 
 async function readActionReply(request: Request) {
   const contentType = request.headers.get("content-type") ?? "";

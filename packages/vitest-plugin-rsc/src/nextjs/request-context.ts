@@ -28,13 +28,15 @@ import { NEXT_PATCH_SYMBOL, patchFetch } from "next/dist/server/lib/patch-fetch.
 import { executeRevalidates } from "next/dist/server/revalidation-utils.js";
 import { getModifiedCookieValues } from "next/dist/server/web/spec-extension/adapters/request-cookies.js";
 
-type RunPhase = "render" | "action";
+type RunPhase = "render" | "action" | "action-render";
 
 type MaybePromise<T> = T | Promise<T>;
 
 export type NextRequestContext = {
   run<T>(phase: RunPhase, callback: () => MaybePromise<T>): MaybePromise<T>;
-  completeAction(): MaybePromise<{ shouldRender: boolean; headers?: HeadersInit }>;
+  completeAction(options?: {
+    forceRender?: boolean;
+  }): MaybePromise<{ shouldRender: boolean; headers?: HeadersInit }>;
 };
 
 export type NextRequestContextOptions = {
@@ -153,19 +155,19 @@ export async function createNextRequestContext({
       // Source: https://github.com/vercel/next.js/blob/4588a7354283f97e2124e3d82f55733ca4eb9373/packages/next/src/server/app-render/action-handler.ts#L729-L731
       // Adaptation: the generic test harness chooses the phase for render vs
       // action callbacks.
-      requestStore.phase = phase;
+      requestStore.phase = phase === "action-render" ? "render" : phase;
       // Next uses nested `.run(...)` calls here. Our browser AsyncLocalStorage
       // shim currently closes a `.run(...)` frame once the direct callback
       // result settles, while React's RSC stream can continue rendering later
       // during stream consumption. Keep the request stores ambient for the
       // mounted test root and rely on test cleanup to reset the global shim.
       workAsyncStorage.enterWith(workStore as never);
-      actionAsyncStorage.enterWith({ isAction: phase === "action" });
+      actionAsyncStorage.enterWith({ isAction: phase !== "render" });
       workUnitAsyncStorage.enterWith(requestStore as never);
       // End copy
       return callback();
     },
-    async completeAction() {
+    async completeAction(options: { forceRender?: boolean } = {}) {
       const headers = new Headers(responseHeaders);
       addRevalidationHeader(headers, {
         workStore,
@@ -176,10 +178,10 @@ export async function createNextRequestContext({
       // Adaptation: the action already ran in the caller, so this copies only
       // the render/skip decision and render-phase preparation.
       const skipPageRendering =
-        workStore.pathWasRevalidated === undefined ||
-        workStore.pathWasRevalidated === ActionDidNotRevalidate;
+        !options.forceRender &&
+        (workStore.pathWasRevalidated === undefined ||
+          workStore.pathWasRevalidated === ActionDidNotRevalidate);
 
-      actionAsyncStorage.enterWith({ isAction: false });
       if (!skipPageRendering) {
         requestStore.phase = "render";
         synchronizeMutableCookies(requestStore);

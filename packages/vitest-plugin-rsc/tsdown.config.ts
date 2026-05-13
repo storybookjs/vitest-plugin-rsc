@@ -9,7 +9,7 @@ export default defineConfig({
     "src/testing-library-client.tsx",
     "src/nextjs/client.tsx",
     "src/nextjs/testing-library-client.ts",
-    "src/nextjs/testing-library.ts",
+    "src/nextjs/testing-library.tsx",
     "src/nextjs/msw.ts",
     "src/nextjs/os-browser.ts",
     "src/nextjs/request-context.ts",
