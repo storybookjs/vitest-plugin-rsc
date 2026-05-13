@@ -8,13 +8,13 @@
 [![Node](https://img.shields.io/badge/node-%3E%3D24-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
 [![pnpm](https://img.shields.io/badge/pnpm-11-F69220?logo=pnpm&logoColor=white)](https://pnpm.io/)
 
-Render a Server Component, run a Server Action, and assert the rerendered UI — all from a single Vitest test. Under the hood, the Server Component still goes through the real RSC transform and Flight serialization; it just executes in the same browser test runtime as your assertions.
+Render a Server Component, run a Server Action, and assert the rerendered UI from one Vitest test. The Server Component goes through the RSC transform and Flight serialization; it just runs in the same browser process as your assertions.
 
-That unlocks a kind of test unit tests and E2E tests can't easily reach:
+Unit tests and E2E tests don't easily cover this path:
 
-**DB -> RSC -> pixels -> actions -> DB -> pixels. One slice at a time.**
+**DB → RSC → pixels → action → DB → pixels.**
 
-Pick one piece of the app — a wishlist carousel, a notes form, a settings panel, or a full `page.tsx` route. Seed exactly the state that piece needs, render it, interact with the hydrated UI in a real browser, run Server Actions, and assert the rerendered result.
+The target can be a single component (a form, a panel, a carousel) or a full `page.tsx` route. You seed the state that piece needs, render it, interact with the hydrated UI in the browser, run Server Actions, and assert the rerendered result.
 
 ## Table Of Contents
 
@@ -39,16 +39,14 @@ Pick one piece of the app — a wishlist carousel, a notes form, a settings pane
 
 ## Why This Exists
 
-Most RSC tests fall into an awkward gap that the React Testing Library community has [tracked since 2023](https://github.com/testing-library/react-testing-library/issues/1209):
+Most RSC tests fall into a gap the React Testing Library community has [tracked since 2023](https://github.com/testing-library/react-testing-library/issues/1209):
 
-- A unit test gives you control over data, mocks, time, and module state, but it usually does not cross the RSC boundary.
-- An end-to-end test crosses the real app boundary, but the server is a black box. Seeding state, mocking IO, faking clocks, and covering edge cases all need external setup.
+- Unit tests give you control over data, mocks, time, and module state, but they usually don't cross the RSC boundary.
+- E2E tests cross the app boundary, but the server is a black box. Seeding state, mocking IO, faking clocks, and covering edge cases all need external setup.
 
-`vitest-plugin-rsc` gives you a middle shape: **full-stack behavior for one piece of the app — a component, a flow, or a full `page.tsx` — with white-box test control**.
+`vitest-plugin-rsc` sits in between. A single component, form, or `page.tsx` runs through the full RSC pipeline — server render, Flight, Client Component hydration, Server Action, rerender — with white-box control over the inputs and assertions on the rendered DOM.
 
-It's also the shape that unlocks AI coding agents. Agents do dramatically better when wrapped in a self-healing loop with fast unit tests — edit, run tests, repair, repeat — and RSC has been the hardest React surface to put in that loop. This plugin closes the gap.
-
-Your assertions stay user-facing and your setup stays direct — all in one test:
+Your assertions stay user-facing and your setup stays direct:
 
 ```tsx
 test("archive a note", async () => {
@@ -66,19 +64,21 @@ test("archive a note", async () => {
 });
 ```
 
+Agents do dramatically better when wrapped in a self-healing loop with fast unit tests — edit, run tests, repair, repeat — and RSC has been the hardest React surface to put in that loop.
+
 ## What You Get
 
-- **Self-healing agent loop**: AI coding agents edit, run tests, repair, repeat. Colocated Vitest tests + module-graph reruns keep each cycle a few seconds.
-- **Real RSC path**: Server render, Flight payload, Client Component hydration, Server Action, rerendered UI.
+- **Self-healing agent loop**: AI coding agents edit, run tests, repair, repeat. Colocated Vitest tests and module-graph reruns keep each cycle a few seconds.
+- **Production RSC path**: Server render, Flight payload, Client Component hydration, Server Action, rerendered UI.
 - **Focused scope**: Test a route's `page.tsx`, a single component, a form, or a flow without booting the whole deployed app.
 - **White-box inputs**: Seed the database, set auth/session state, mock IO, fake clocks, set cookies/headers, and control browser state.
-- **Black-box output**: Assert what the user sees and does in a real browser via `vitest/browser` — full-fidelity Playwright locators (`getByRole`, `getByText`, etc.) and `expect.element` matchers.
-- **Fast inner loop**: Vitest watch mode reruns just the test files affected by your edit, via the module graph.
+- **Black-box output**: Assert what the user sees and does via `vitest/browser` — Playwright locators (`getByRole`, `getByText`, etc.) and `expect.element` matchers.
+- **Fast watch mode**: Vitest reruns just the test files affected by your edit, via the module graph.
 - **Diff-scoped runs**: `vitest --changed [ref]` runs only the test files affected by your git diff, via the module graph — locally or in PR CI.
-- **Code coverage**: First-class V8 or Istanbul coverage for your RSC code, via Vitest's coverage provider.
+- **Code coverage**: V8 or Istanbul coverage for your RSC code, via Vitest's coverage provider.
 - **No deployed infra**: Use in-memory infrastructure like PGlite instead of spinning up a preview server and database.
-- **Real isolation**: Each test gets a fresh DB clone, fresh cookies, fresh module mocks, and a fresh DOM. Matching this in E2E means a new server or database per test — usually impractical.
-- **Run every variant**: Validation errors, user roles, locales, feature-flag combinations, loading/empty/error states, and time-dependent UI — all controllable from one test, in milliseconds.
+- **Per-test isolation**: Each test gets its own DB clone, cookies, module mocks, and DOM. Matching this in E2E means a new server or database per test — usually impractical.
+- **Run every variant**: Validation errors, user roles, locales, feature-flag combinations, loading/empty/error states, and time-dependent UI — fast variations of one test.
 
 ## Requirements
 
@@ -86,16 +86,7 @@ This plugin requires [Vitest Browser Mode](https://vitest.dev/guide/browser/).
 
 ## Next.js Version Support
 
-The base `vitestPluginRSC()` runtime is framework-agnostic. The `vitest-plugin-rsc/nextjs/*` helpers depend on Next.js App Router internals, so support is tracked in CI against moving Next.js install targets.
-
-| Next.js target | Status        | Verification                                  |
-| -------------- | ------------- | --------------------------------------------- |
-| `latest`       | Supported     | Compatibility matrix installs and tests in CI |
-| `16.1`         | Supported     | Compatibility matrix installs and tests in CI |
-| `16.0`         | Supported     | Compatibility matrix installs and tests in CI |
-| `canary`       | Early warning | Compatibility matrix installs and tests in CI |
-
-The compatibility workflow installs `next@canary`, `next@latest`, `next@16.1`, and `next@16.0`, then builds the plugin and runs the package-level Next tests plus the Next.js playgrounds. `latest` follows the current stable release automatically; `canary` gives us early signal when a private App Router internal changes.
+The base `vitestPluginRSC()` runtime is framework-agnostic. The `vitest-plugin-rsc/nextjs/*` helpers depend on Next.js App Router internals, so a compatibility workflow installs four targets in CI: `next@latest` (current stable, follows new releases automatically), `next@16.1` and `next@16.0` (pinned previous-stable lines as a safety net), and `next@canary` (early warning when a private App Router internal changes). For each target, CI builds the plugin and runs the package-level Next tests plus the Next.js playgrounds.
 
 ## Quick Start
 
@@ -123,7 +114,7 @@ yarn add -D vitest-plugin-rsc
 bun add -D vitest-plugin-rsc
 ```
 
-The examples below use Playwright as the Vitest browser provider. Install it (or any other provider) to run them:
+The examples below use Playwright as the Vitest browser provider; install it (or another Vitest browser provider):
 
 ```bash
 pnpm add -D @vitest/browser-playwright playwright
@@ -198,10 +189,12 @@ Without MSW, Server Actions are called directly inside the RSC test runtime. The
 
 ```ts
 // src/vitest.setup.ts
-import { beforeEach } from "vitest";
+import { beforeAll, beforeEach } from "vitest";
 import { cleanup, initialize } from "vitest-plugin-rsc/nextjs/testing-library";
 
-initialize();
+beforeAll(() => {
+  initialize();
+});
 
 beforeEach(async () => {
   await cleanup();
@@ -238,14 +231,14 @@ afterAll(() => {
 
 ### 4. Browser-Compatible Server Code
 
-This plugin runs RSC code in the browser as if the browser were a server. That works better than it might sound: edge runtimes like Vercel Edge and Cloudflare Workers also lack the full Node.js API, and frameworks like Next.js are already designed to run on those edges. Server code that targets the edge tends to be browser-friendly too.
+The plugin runs server code inside the browser test runtime. That sounds wrong, but the surface is closer than it looks: edge runtimes like Vercel Edge and Cloudflare Workers also lack most of the Node API, and frameworks like Next.js already target those runtimes. Server code written for the edge usually runs in the browser too.
 
-Out of the box the plugin shims the Node built-ins that server code most commonly reaches for, the same way Next does for its edge runtime:
+The plugin shims the Node built-ins server code most often reaches for, the same way Next does for its edge runtime:
 
 - `vitestPluginRSC()` shims `node:async_hooks`.
 - `vitestPluginNext()` also shims `node:buffer`, `node:events`, `node:assert`, `node:util`, and `node:os`, using Next's own pre-compiled browser-safe versions.
 
-A fast unit test doesn't touch real databases, real filesystems, or the real network — those make tests slow, flaky, and order-dependent. Standard practice for any server-side unit test is to keep all IO inside the test runtime. These are common choices for that pattern; the same picks work whether your test runs in Node or in this plugin's browser runtime:
+A fast unit test shouldn't touch the real database, filesystem, or network — those make tests slow and flaky. Standard practice is to keep IO inside the test runtime; the same picks work whether the test runs in Node or in this plugin's browser runtime:
 
 - **Database**: an in-memory implementation like [PGlite](https://pglite.dev/) for Postgres or [sql.js](https://github.com/sql-js/sql.js) for SQLite.
 - **File system**: an in-memory implementation like [`memfs` via Vitest](https://vitest.dev/guide/mocking/file-system).
@@ -273,13 +266,13 @@ export default defineConfig({
 
 ## Test Concurrency
 
-[`test.concurrent`](https://vitest.dev/api/#test-concurrent) is not supported for tests that read `AsyncLocalStorage` — including any test that touches Next.js App Router internals (`headers()`, `cookies()`, `next/cache`, Server Actions, etc.). The plugin's `AsyncLocalStorage` shim is sequential by design, so concurrent tests would leak context across each other. Sequential tests within a file are fine; test files run in parallel as usual.
+[`test.concurrent`](https://vitest.dev/api/#test-concurrent) doesn't work for tests that read `AsyncLocalStorage`, which includes anything that touches Next.js App Router internals (`headers()`, `cookies()`, `next/cache`, Server Actions). The plugin's `AsyncLocalStorage` shim is sequential, so concurrent tests would leak context between each other. Sequential tests within a file are fine; test files still run in parallel.
 
 ## Example: Server Action Form
 
-This is the kind of test the plugin is designed for — here a full `page.tsx` route, but the same pattern works for any component, form, or flow.
+A full `page.tsx` route here; the same pattern works for any component, form, or flow.
 
-The page being tested is a Server Component with a Server Action. On validation errors, the action writes the error to a cookie and calls `refresh()`. The form stays mounted across the rerender so the typed content survives, and the next render reads the cookie to display the message:
+The page is a Server Component with a Server Action. On a validation error, the action writes the message to a cookie and calls `refresh()`.
 
 ```tsx
 // app/notes/new/page.tsx
@@ -365,15 +358,15 @@ That single test sets up:
 - **Server-side state**: the signed-in user (`signInAs`) and a seeded database row (`db.insert`)
 - **Browser-side state**: a client-side preference written to `localStorage`
 
-then renders a Server Component, runs a Server Action, and asserts against the rerendered UI — all in one place, with no app server to boot. Mixing server and browser state in the same setup is something a pure unit test cannot reach and a full E2E test can only do through the real UI.
+Setting server and browser state in the same setup is something a pure unit test cannot reach and a full E2E test can only do through the real UI.
 
-`vi.mock("#lib/db.ts")` replaces the production database adapter with the Vitest `__mocks__` version next to it (`lib/__mocks__/db.ts`). The mock exposes a `db` reference and a `resetDb` helper that the setup file points at a fresh PGlite clone per test. See the [Drizzle + PGlite Setup](#example-drizzle--pglite-setup) section below for the wiring.
+`vi.mock("#lib/db.ts")` replaces the production database adapter with the Vitest `__mocks__` version next to it (`lib/__mocks__/db.ts`). The mock exposes a `db` reference and a `resetDb` helper that the setup file points at a fresh PGlite clone per test. See [Drizzle + PGlite Setup](#example-drizzle--pglite-setup) below for the wiring.
 
 ## Example: Drizzle + PGlite Setup
 
-PGlite is a good fit for this model because it gives you Postgres-compatible behavior inside the browser test runtime.
+PGlite runs Postgres in-process, so it works inside the browser test runtime.
 
-The pattern uses two files next to each other:
+Two files sit next to each other:
 
 - `lib/db.ts` — the production database adapter your app code imports.
 - `lib/__mocks__/db.ts` — the test stand-in that `vi.mock` swaps in. Exposes `db` plus a `resetDb` setter so the setup file can point it at a fresh PGlite clone per test.
@@ -464,14 +457,14 @@ The Next.js plugin adds aliases, request context, cache context, router state, a
 import { vitestPluginNext } from "vitest-plugin-rsc/nextjs/plugin";
 ```
 
-Component tests use the same public App Router imports your app uses. The plugin wires those entrypoints to Next's own App Router internals where possible, and fills in the test request, router, cache, and Server Action runtime around them:
+Tests use the same public App Router imports your app uses. The plugin wires those entrypoints to Next's own App Router internals and fills in the test request, router, cache, and Server Action runtime around them:
 
-- `next/link`: real `<Link>` rendering and navigation through the test router
-- `next/navigation`: router hooks, selected-layout segment hooks, `redirect`, `notFound`, and the rest of the public App Router navigation exports resolved through Next's own aliases
-- `next/headers`: `headers()` and `cookies()` in Server Components and Server Actions
-- `next/cache`: `refresh`, `revalidatePath`, `revalidateTag`, `updateTag`, and patched `fetch` behavior for tag-based caching. `unstable_cache` is covered for existing apps, but the examples below prefer the stable tagged `fetch` API.
+- `next/link`: `<Link>` rendering and navigation through the test router.
+- `next/navigation`: router hooks, selected-layout segment hooks, `redirect`, `notFound`, and the rest of the public App Router navigation exports.
+- `next/headers`: `headers()` and `cookies()` in Server Components and Server Actions.
+- `next/cache`: `refresh`, `revalidatePath`, `revalidateTag`, `updateTag`, and patched `fetch` behavior for tag-based caching. `unstable_cache` works too, but the examples below use the tagged `fetch` API.
 
-So the examples below are not a separate testing API. They are normal Next.js code paths running inside a focused Vitest Browser Mode component test.
+The examples below aren't a separate testing API. They're normal Next.js code paths running inside a Vitest Browser Mode test.
 
 ### Router Hooks And Links
 
@@ -558,7 +551,7 @@ export function NoteToolbar() {
 
 ### Request Headers And Cookies
 
-Pass request headers into `renderServer`. Inside Server Components and Server Actions, use Next's real `headers()` and `cookies()` APIs:
+Pass request headers into `renderServer`. Inside Server Components and Server Actions, use Next's `headers()` and `cookies()` APIs as you normally would:
 
 ```tsx
 import { expect, test } from "vitest";
@@ -612,7 +605,7 @@ export async function FlashProbe() {
 
 ### Cache And Revalidation
 
-Server Components can use tagged cached `fetch` calls, and Server Actions can refresh the current tree or invalidate those tags. The cross-network `fetch` is normally intercepted by MSW in tests — see [`playground/nextjs-notes-demo`](playground/nextjs-notes-demo) for a worked setup.
+Server Components can use tagged cached `fetch` calls, and Server Actions can refresh the current tree or invalidate those tags. The outbound `fetch` is normally intercepted by MSW in tests — see [`playground/nextjs-notes-demo`](playground/nextjs-notes-demo) for a worked setup.
 
 ```tsx
 import { refresh, revalidatePath, revalidateTag, updateTag } from "next/cache";
@@ -676,7 +669,7 @@ export async function NotesPanel() {
 }
 ```
 
-The test still reads like a unit test. After clicking the action button, `updateTag("notes")` invalidates the cached fetch, the panel re-renders with the new count, and the assertion just sees the updated UI:
+The test still looks like a unit test. After the click, `updateTag("notes")` invalidates the cached fetch, the panel re-renders, and the assertion sees the new count:
 
 ```tsx
 import { expect, test } from "vitest";
