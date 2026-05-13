@@ -22,7 +22,7 @@ jobs:
       tag_name: ${{ steps.release.outputs['packages/vitest-plugin-rsc--tag_name'] }}
     steps:
       - id: release
-        uses: googleapis/release-please-action@v4
+        uses: googleapis/release-please-action@v5
         with:
           token: ${{ secrets.PAT_STORYBOOK_BOT }}
           config-file: release-please-config.json
