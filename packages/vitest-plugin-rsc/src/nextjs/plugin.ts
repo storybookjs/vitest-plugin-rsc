@@ -153,6 +153,17 @@ function createOptimizeDepsResolveAliases(
   };
 }
 
+function createReactServerDomWebpackAliases(root: string) {
+  return {
+    browser:
+      tryResolveFromProject(root, "@vitejs/plugin-rsc/vendor/react-server-dom/client.browser") ??
+      "@vitejs/plugin-rsc/vendor/react-server-dom/client.browser",
+    edge:
+      tryResolveFromProject(root, "@vitejs/plugin-rsc/vendor/react-server-dom/client.edge") ??
+      "@vitejs/plugin-rsc/vendor/react-server-dom/client.edge",
+  };
+}
+
 function useNextCompiledOpenTelemetryApi(root: string): Plugin {
   const replacement = tryResolveFromProject(root, "next/dist/compiled/@opentelemetry/api");
 
@@ -292,6 +303,7 @@ export function vitestPluginNext(): Plugin[] {
         const edgeNativeAliases = createNextEdgeNativeAliases(root);
         const rscAppRouterAliases = createAppRouterApiAliasesFromNext(root, true);
         const reactClientAppRouterAliases = createAppRouterApiAliasesFromNext(root, false);
+        const reactServerDomWebpackAliases = createReactServerDomWebpackAliases(root);
 
         return {
           define: {
@@ -314,7 +326,7 @@ export function vitestPluginNext(): Plugin[] {
                 alias: [
                   {
                     find: "react-server-dom-webpack/client",
-                    replacement: "@vitejs/plugin-rsc/vendor/react-server-dom/client.edge",
+                    replacement: reactServerDomWebpackAliases.edge,
                   },
                 ],
               },
@@ -400,8 +412,7 @@ export function vitestPluginNext(): Plugin[] {
                   resolve: {
                     alias: {
                       ...createOptimizeDepsResolveAliases(edgeNativeAliases, rscAppRouterAliases),
-                      "react-server-dom-webpack/client":
-                        "@vitejs/plugin-rsc/vendor/react-server-dom/client.edge",
+                      "react-server-dom-webpack/client": reactServerDomWebpackAliases.edge,
                     },
                   },
                 },
@@ -413,11 +424,11 @@ export function vitestPluginNext(): Plugin[] {
                 alias: [
                   {
                     find: "react-server-dom-webpack/client",
-                    replacement: "@vitejs/plugin-rsc/vendor/react-server-dom/client.browser",
+                    replacement: reactServerDomWebpackAliases.browser,
                   },
                   {
                     find: "react-server-dom-webpack/client.browser",
-                    replacement: "@vitejs/plugin-rsc/vendor/react-server-dom/client.browser",
+                    replacement: reactServerDomWebpackAliases.browser,
                   },
                 ],
               },
@@ -475,10 +486,9 @@ export function vitestPluginNext(): Plugin[] {
                         edgeNativeAliases,
                         reactClientAppRouterAliases,
                       ),
-                      "react-server-dom-webpack/client":
-                        "@vitejs/plugin-rsc/vendor/react-server-dom/client.browser",
+                      "react-server-dom-webpack/client": reactServerDomWebpackAliases.browser,
                       "react-server-dom-webpack/client.browser":
-                        "@vitejs/plugin-rsc/vendor/react-server-dom/client.browser",
+                        reactServerDomWebpackAliases.browser,
                     },
                   },
                 },

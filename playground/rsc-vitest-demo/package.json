@@ -19,7 +19,7 @@
     "vitest-plugin-rsc": "workspace:*"
   },
   "devDependencies": {
-    "@types/node": "^24.12.3",
+    "@types/node": "^24.12.4",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^6.0.1",
@@ -28,10 +28,10 @@
     "@vitest/browser-playwright": "5.0.0-beta.2",
     "@vitest/coverage-v8": "5.0.0-beta.2",
     "@vitest/ui": "5.0.0-beta.2",
-    "msw": "^2.14.5",
-    "playwright": "^1.59.1",
+    "msw": "^2.14.6",
+    "playwright": "^1.60.0",
     "typescript": "^6.0.3",
-    "vite": "^8.0.11",
+    "vite": "^8.0.12",
     "vitest": "5.0.0-beta.2"
   },
   "msw": {

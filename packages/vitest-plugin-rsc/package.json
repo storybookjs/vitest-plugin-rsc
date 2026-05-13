@@ -55,16 +55,16 @@
   "devDependencies": {
     "@types/convert-source-map": "^2.0.3",
     "@types/estree": "^1.0.9",
-    "@types/node": "^24.12.3",
+    "@types/node": "^24.12.4",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
-    "msw": "^2.14.5",
-    "next": "16.2.6",
-    "react": "19.2.6",
-    "react-dom": "19.2.6",
+    "msw": "^2.14.6",
+    "next": "^16.2.6",
+    "react": "^19.2.6",
+    "react-dom": "^19.2.6",
     "rolldown": "^1.0.0",
     "tsdown": "^0.22.0",
-    "vite": "^8.0.11"
+    "vite": "^8.0.12"
   },
   "peerDependencies": {
     "msw": "^2",
