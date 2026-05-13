@@ -8,13 +8,13 @@
 [![Node](https://img.shields.io/badge/node-%3E%3D24-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
 [![pnpm](https://img.shields.io/badge/pnpm-11-F69220?logo=pnpm&logoColor=white)](https://pnpm.io/)
 
-Render a Server Component, run a Server Action, and assert the rerendered UI from one Vitest test. The Server Component goes through the RSC transform and Flight serialization; it just runs in the same browser process as your assertions.
+`vitest-plugin-rsc` runs the RSC side of your component test in Vitest Browser Mode. The Server Component still goes through the RSC transform and Flight serialization, but it executes in the same browser test runtime as your assertions.
 
-Unit tests and E2E tests don't easily cover this path:
+That unlocks a kind of test unit tests and E2E tests can't easily reach:
 
-**DB → RSC → pixels → action → DB → pixels.**
+**DB → RSC → pixels → actions → DB → pixels. One slice at a time.**
 
-The target can be a single component (a form, a panel, a carousel) or a full `page.tsx` route. You seed the state that piece needs, render it, interact with the hydrated UI in the browser, run Server Actions, and assert the rerendered result.
+Pick one piece of the app — a wishlist carousel, a notes form, a settings panel, or a full `page.tsx` route. Seed exactly the state that piece needs, render it, interact with the hydrated UI in a real browser, run Server Actions, and assert the rerendered result.
 
 ## Table Of Contents
 
@@ -39,12 +39,15 @@ The target can be a single component (a form, a panel, a carousel) or a full `pa
 
 ## Why This Exists
 
-Most RSC tests fall into a gap the React Testing Library community has [tracked since 2023](https://github.com/testing-library/react-testing-library/issues/1209):
+Covering every state with only E2E is usually impractical. E2E runs are slow because each test has to drive the UI into the state you want to assert against, hard to parallelize because tests share infrastructure, and flaky because they aren't isolated. Validation errors, user roles, locales, feature flags, loading/empty/error states, time-dependent UI — most of those variants just get skipped. That coverage belongs at the base of the test pyramid.
 
-- Unit tests give you control over data, mocks, time, and module state, but they usually don't cross the RSC boundary.
-- E2E tests cross the app boundary, but the server is a black box. Seeding state, mocking IO, faking clocks, and covering edge cases all need external setup.
+<p align="center">
+  <img src="docs/assets/test-pyramid.svg" alt="Test pyramid: a small Playwright E2E layer above a wider Vitest unit, component, and integration layer" width="760" />
+</p>
 
-`vitest-plugin-rsc` sits in between. A single component, form, or `page.tsx` runs through the full RSC pipeline — server render, Flight, Client Component hydration, Server Action, rerender — with white-box control over the inputs and assertions on the rendered DOM.
+For React Server Components, that base has been missing. Rendering Server Components inside a unit-style test process has been [an open problem since 2023](https://github.com/testing-library/react-testing-library/issues/1209), so the whole RSC pipeline got pushed up to E2E — exactly where broad variant coverage doesn't fit.
+
+`vitest-plugin-rsc` fills the missing base. A single component, form, or `page.tsx` runs through the full RSC pipeline — server render, Flight, Client Component hydration, Server Action, rerender — with white-box control over the inputs and assertions on the rendered DOM.
 
 Your assertions stay user-facing and your setup stays direct:
 
@@ -68,7 +71,6 @@ Agents do dramatically better when wrapped in a self-healing loop with fast unit
 
 ## What You Get
 
-- **Self-healing agent loop**: AI coding agents edit, run tests, repair, repeat. Colocated Vitest tests and module-graph reruns keep each cycle a few seconds.
 - **Production RSC path**: Server render, Flight payload, Client Component hydration, Server Action, rerendered UI.
 - **Focused scope**: Test a route's `page.tsx`, a single component, a form, or a flow without booting the whole deployed app.
 - **White-box inputs**: Seed the database, set auth/session state, mock IO, fake clocks, set cookies/headers, and control browser state.
@@ -78,7 +80,6 @@ Agents do dramatically better when wrapped in a self-healing loop with fast unit
 - **Code coverage**: V8 or Istanbul coverage for your RSC code, via Vitest's coverage provider.
 - **No deployed infra**: Use in-memory infrastructure like PGlite instead of spinning up a preview server and database.
 - **Per-test isolation**: Each test gets its own DB clone, cookies, module mocks, and DOM. Matching this in E2E means a new server or database per test — usually impractical.
-- **Run every variant**: Validation errors, user roles, locales, feature-flag combinations, loading/empty/error states, and time-dependent UI — fast variations of one test.
 
 ## Requirements
 
