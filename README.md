@@ -87,7 +87,14 @@ This plugin requires [Vitest Browser Mode](https://vitest.dev/guide/browser/).
 
 ## Next.js Version Support
 
-The base `vitestPluginRSC()` runtime is framework-agnostic. The `vitest-plugin-rsc/nextjs/*` helpers depend on Next.js App Router internals, so a compatibility workflow installs four targets in CI: `next@latest` (current stable, follows new releases automatically), `next@16.1` and `next@16.0` (pinned previous-stable lines as a safety net), and `next@canary` (early warning when a private App Router internal changes). For each target, CI builds the plugin and runs the package-level Next tests plus the Next.js playgrounds.
+The base `vitestPluginRSC()` runtime is framework-agnostic. The `vitest-plugin-rsc/nextjs/*` helpers depend on Next.js App Router internals, so CI tests them against multiple Next.js targets:
+
+- `next@latest`: current stable, following new releases automatically.
+- `next@16.1`: pinned previous-stable line.
+- `next@16.0`: older pinned stable line.
+- `next@canary`: early warning when a private App Router internal changes.
+
+For each target, CI builds the plugin and runs the package-level Next tests plus the Next.js playgrounds.
 
 ## Quick Start
 
