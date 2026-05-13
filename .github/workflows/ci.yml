@@ -79,3 +79,33 @@ jobs:
       - run: pnpm --dir playground/nextjs-notes-demo exec playwright install --with-deps --only-shell chromium
       - run: pnpm build
       - run: pnpm test
+
+  next-compat:
+    name: Next.js ${{ matrix.next-version }} Compatibility
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        next-version: ["canary", "latest", "16.1", "16.0"]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Install Next.js ${{ matrix.next-version }}
+        env:
+          NEXT_VERSION: ${{ matrix.next-version }}
+        run: |
+          pnpm --filter vitest-plugin-rsc add -D "next@${NEXT_VERSION}"
+          pnpm --filter nextjs-no-msw-demo add "next@${NEXT_VERSION}"
+          pnpm --filter nextjs-notes-demo add "next@${NEXT_VERSION}" "@next/env@${NEXT_VERSION}"
+      - run: pnpm --dir playground/nextjs-notes-demo exec playwright install --with-deps --only-shell chromium
+      - run: pnpm build
+      - name: Test Next.js surfaces
+        run: |
+          pnpm --filter vitest-plugin-rsc run test:run
+          pnpm --filter nextjs-no-msw-demo run test:run
+          pnpm --filter nextjs-notes-demo run test:run

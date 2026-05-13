@@ -1,6 +1,6 @@
 import { Buffer } from "node:buffer";
 import "next/dist/server/node-environment-baseline";
-import { NEXT_ACTION_REVALIDATED_HEADER } from "next/dist/client/components/app-router-headers.js";
+import * as NextAppRouterHeaders from "next/dist/client/components/app-router-headers.js";
 import { actionAsyncStorage } from "next/dist/server/app-render/action-async-storage.external.js";
 import {
   workAsyncStorage,
@@ -10,11 +10,6 @@ import {
   workUnitAsyncStorage,
   type RequestStore,
 } from "next/dist/server/app-render/work-unit-async-storage.external.js";
-import {
-  ActionDidNotRevalidate,
-  ActionDidRevalidateStaticAndDynamic,
-  type ActionRevalidationKind,
-} from "next/dist/shared/lib/action-revalidation-kind.js";
 import {
   createRequestStoreForRender,
   synchronizeMutableCookies,
@@ -31,6 +26,17 @@ import { getModifiedCookieValues } from "next/dist/server/web/spec-extension/ada
 type RunPhase = "render" | "action" | "action-render";
 
 type MaybePromise<T> = T | Promise<T>;
+type ActionRevalidationKind = 0 | 1 | 2;
+
+const ActionDidNotRevalidate = 0 satisfies ActionRevalidationKind;
+const ActionDidRevalidateStaticAndDynamic = 1 satisfies ActionRevalidationKind;
+const ActionDidRevalidateDynamicOnly = 2 satisfies ActionRevalidationKind;
+const appRouterHeaders = NextAppRouterHeaders as typeof NextAppRouterHeaders & {
+  NEXT_ACTION_REVALIDATED_HEADER?: string;
+};
+const NEXT_ACTION_REVALIDATED_HEADER =
+  appRouterHeaders.NEXT_ACTION_REVALIDATED_HEADER ?? "x-action-revalidated";
+const usesActionRevalidationKindHeader = Boolean(appRouterHeaders.NEXT_ACTION_REVALIDATED_HEADER);
 
 export type NextRequestContext = {
   run<T>(phase: RunPhase, callback: () => MaybePromise<T>): MaybePromise<T>;
@@ -177,10 +183,9 @@ export async function createNextRequestContext({
       // Source: https://github.com/vercel/next.js/blob/4588a7354283f97e2124e3d82f55733ca4eb9373/packages/next/src/server/app-render/action-handler.ts#L1287-L1340
       // Adaptation: the action already ran in the caller, so this copies only
       // the render/skip decision and render-phase preparation.
+      const pathRevalidationKind = getActionRevalidationKind(workStore.pathWasRevalidated);
       const skipPageRendering =
-        !options.forceRender &&
-        (workStore.pathWasRevalidated === undefined ||
-          workStore.pathWasRevalidated === ActionDidNotRevalidate);
+        !options.forceRender && pathRevalidationKind === ActionDidNotRevalidate;
 
       if (!skipPageRendering) {
         requestStore.phase = "render";
@@ -247,6 +252,23 @@ function addRevalidationHeader(
     ? 1
     : 0;
   const isCookieRevalidated = getModifiedCookieValues(requestStore.mutableCookies).length ? 1 : 0;
+  const pathRevalidationKind = getActionRevalidationKind(workStore.pathWasRevalidated);
+
+  // Version split:
+  // - Next 16.0.x has no `action-revalidation-kind` module or
+  //   `NEXT_ACTION_REVALIDATED_HEADER` export. Its client expects the older
+  //   tuple header: [revalidatedPaths, didRevalidateTag, didRevalidateCookie].
+  // - Next 16.1.x and 16.2.x use the scalar ActionRevalidationKind header.
+  if (!usesActionRevalidationKindHeader) {
+    if (isTagRevalidated || isCookieRevalidated) {
+      headers.set(
+        NEXT_ACTION_REVALIDATED_HEADER,
+        JSON.stringify([[], isTagRevalidated, isCookieRevalidated]),
+      );
+    }
+    return;
+  }
+
   // First check if a tag, cookie, or path was revalidated.
   if (isTagRevalidated || isCookieRevalidated) {
     headers.set(
@@ -255,15 +277,25 @@ function addRevalidationHeader(
     );
   } else if (
     // Check for refresh() actions. This will invalidate only the dynamic data.
-    workStore.pathWasRevalidated !== undefined &&
-    workStore.pathWasRevalidated !== ActionDidNotRevalidate
+    pathRevalidationKind !== ActionDidNotRevalidate
   ) {
-    headers.set(
-      NEXT_ACTION_REVALIDATED_HEADER,
-      JSON.stringify(workStore.pathWasRevalidated satisfies ActionRevalidationKind),
-    );
+    headers.set(NEXT_ACTION_REVALIDATED_HEADER, JSON.stringify(pathRevalidationKind));
   }
   // End copy
+}
+
+function getActionRevalidationKind(value: unknown): ActionRevalidationKind {
+  if (value === ActionDidRevalidateStaticAndDynamic || value === ActionDidRevalidateDynamicOnly) {
+    return value;
+  }
+
+  // Next 16.0.x used a boolean `pathWasRevalidated`; Next 16.1.x and 16.2.x
+  // use ActionRevalidationKind numbers.
+  if (value === true) {
+    return ActionDidRevalidateStaticAndDynamic;
+  }
+
+  return ActionDidNotRevalidate;
 }
 
 function ensureNextEdgeIncrementalCache(IncrementalCache: NextIncrementalCacheConstructor) {

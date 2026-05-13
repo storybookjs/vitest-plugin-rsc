@@ -86,15 +86,16 @@ This plugin requires [Vitest Browser Mode](https://vitest.dev/guide/browser/).
 
 ## Next.js Version Support
 
-The base `vitestPluginRSC()` runtime is framework-agnostic. The `vitest-plugin-rsc/nextjs/*` helpers depend on Next.js App Router internals, so Next.js support is tracked in CI against the latest patch release in each supported minor line.
+The base `vitestPluginRSC()` runtime is framework-agnostic. The `vitest-plugin-rsc/nextjs/*` helpers depend on Next.js App Router internals, so support is tracked in CI against moving Next.js install targets.
 
-| Next.js line | Status    | CI coverage                  |
-| ------------ | --------- | ---------------------------- |
-| `16.0.x`     | Supported | Compatibility matrix install |
-| `16.1.x`     | Supported | Compatibility matrix install |
-| `16.2.x`     | Supported | Compatibility matrix install |
+| Next.js target | Status        | Verification                                  |
+| -------------- | ------------- | --------------------------------------------- |
+| `latest`       | Supported     | Compatibility matrix installs and tests in CI |
+| `16.1`         | Supported     | Compatibility matrix installs and tests in CI |
+| `16.0`         | Supported     | Compatibility matrix installs and tests in CI |
+| `canary`       | Early warning | Compatibility matrix installs and tests in CI |
 
-The compatibility workflow installs `next@16.0.x`, `next@16.1.x`, and `next@16.2.x` during CI, then builds the plugin and runs the package-level Next tests plus the Next.js playgrounds.
+The compatibility workflow installs `next@canary`, `next@latest`, `next@16.1`, and `next@16.0`, then builds the plugin and runs the package-level Next tests plus the Next.js playgrounds. `latest` follows the current stable release automatically; `canary` gives us early signal when a private App Router internal changes.
 
 ## Quick Start
 

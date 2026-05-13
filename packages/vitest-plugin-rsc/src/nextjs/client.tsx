@@ -38,6 +38,20 @@ globalThis.onNavigate = fn<(url: URL) => void>();
 let actionQueue: AppRouterActionQueue | null = null;
 const globalErrorState: GlobalErrorState = [GlobalError, null];
 
+// Next 16.0.x and 16.1.x render the dev HotReload wrapper inside AppRouter and
+// require a defined websocket so `useWebSocketPing` can send HMR pings. Component
+// tests do not run Next's app-index bootstrap, so provide a no-op open socket.
+// Next 16.2.x also accepts this prop, though the rest of the router bootstrap
+// path no longer crashes when it is absent.
+const webSocket = {
+  readyState: WebSocket.OPEN,
+  OPEN: WebSocket.OPEN,
+  send: () => {},
+  addEventListener: () => {},
+  removeEventListener: () => {},
+  close: () => {},
+} as unknown as WebSocket;
+
 function GlobalError() {
   return null;
 }
@@ -84,6 +98,7 @@ export const NextRouter = ({
       key={snapshotVersionRef.current}
       actionQueue={currentActionQueue}
       globalErrorState={globalErrorState}
+      webSocket={webSocket}
     />
   );
 };
@@ -109,18 +124,36 @@ function createNextRouterStateSnapshot({
     );
   }
 
+  const initialRSCPayload = createInitialRSCPayload({
+    canonicalUrl: createHrefFromUrl(location, false),
+    initialTree,
+    renderedSearch: location.search,
+    seedData: initialSeedData,
+  });
+  const initialRouterStateOptions = {
+    navigatedAt: Date.now(),
+    initialRSCPayload,
+    initialFlightStreamForCache: null,
+    // Version split:
+    // - Next 16.0.x and 16.1.x initialize the client router from split fields:
+    //   `initialCanonicalUrlParts`, `initialRenderedSearch`, and
+    //   `initialFlightData`.
+    // - Next 16.0.x also requires `initialParallelRoutes`; later 16.x versions
+    //   ignore it because the segment cache hydration path replaced that field.
+    // - Next 16.2.x initializes from the consolidated `initialRSCPayload` plus
+    //   `initialFlightStreamForCache`.
+    //
+    // Supplying both shapes keeps this test router compatible across the
+    // supported Next 16 minor lines; each Next version ignores the extra fields.
+    initialCanonicalUrlParts: initialRSCPayload.c,
+    initialRenderedSearch: initialRSCPayload.q,
+    initialFlightData: initialRSCPayload.f,
+    initialParallelRoutes: new Map(),
+    location: location as unknown as Location,
+  } as Parameters<typeof createInitialRouterState>[0] & Record<string, unknown>;
+
   return {
-    state: createInitialRouterState({
-      navigatedAt: Date.now(),
-      initialRSCPayload: createInitialRSCPayload({
-        canonicalUrl: createHrefFromUrl(location, false),
-        initialTree,
-        renderedSearch: location.search,
-        seedData: initialSeedData,
-      }),
-      initialFlightStreamForCache: null,
-      location: location as unknown as Location,
-    }),
+    state: createInitialRouterState(initialRouterStateOptions),
   };
 }
 

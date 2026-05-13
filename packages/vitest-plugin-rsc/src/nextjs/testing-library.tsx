@@ -335,8 +335,17 @@ export async function cleanup() {
     mountedRootEntries.length = 0;
     mountedContainers.clear();
     await baseCleanup();
+    resetNavigationSpy();
     await resetNextRequestContextCache();
   }
+}
+
+type NavigationSpy = {
+  mockClear: () => void;
+};
+
+function resetNavigationSpy() {
+  (globalThis as typeof globalThis & { onNavigate?: NavigationSpy }).onNavigate?.mockClear();
 }
 
 // @ts-ignore

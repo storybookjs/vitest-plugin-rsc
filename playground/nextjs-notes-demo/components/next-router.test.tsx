@@ -1,6 +1,7 @@
 import { expect, test, vi } from "vitest";
 import { page } from "vitest/browser";
 import {
+  cleanup,
   expectToHaveBeenNavigatedTo,
   renderServer,
 } from "vitest-plugin-rsc/nextjs/testing-library";
@@ -118,6 +119,20 @@ test("renderServer records push and replace navigations", async () => {
   await page.getByRole("button", { name: "Replace route" }).click();
 
   await vi.waitFor(() => expectToHaveBeenNavigatedTo({ pathname: "/note/replaced" }));
+});
+
+test("cleanup clears recorded navigations", async () => {
+  await renderServer(<NextRouterProbe />, {
+    url: "/note/123/hello?q=test",
+    route: "/note/[id]/[slug]",
+  });
+
+  await page.getByRole("button", { name: "Push route" }).click();
+  await vi.waitFor(() => expectToHaveBeenNavigatedTo({ pathname: "/note/next" }));
+
+  await cleanup();
+
+  await expect(expectToHaveBeenNavigatedTo({ pathname: "/note/next" })).rejects.toThrow();
 });
 
 test("renderServer exposes catch-all params and selected segments", async () => {
