@@ -1,6 +1,6 @@
 /// <reference types="node" />
 
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -26,19 +26,6 @@ export async function writeJson(filePath: string, value: unknown): Promise<void>
 
 export function sanitizeName(name: string): string {
   return name.replaceAll(/[^a-zA-Z0-9._-]+/g, "-").replaceAll(/^-|-$/g, "");
-}
-
-export async function readPackageJson(packageRoot: string): Promise<Record<string, unknown>> {
-  return JSON.parse(await readFile(path.join(packageRoot, "package.json"), "utf8"));
-}
-
-export async function detectPackageRunner(packageRoot: string): Promise<"bun" | "pnpm" | "npm"> {
-  const packageJson = await readPackageJson(packageRoot);
-  const packageManager = String(packageJson.packageManager ?? "");
-
-  if (packageManager.startsWith("bun@")) return "bun";
-  if (packageManager.startsWith("pnpm@")) return "pnpm";
-  return "npm";
 }
 
 export function numberOption(value: string | undefined, fallback: number): number {

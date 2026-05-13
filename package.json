@@ -9,15 +9,11 @@
     "lint:fix": "oxlint --fix $(git ls-files)",
     "tsgo": "tsgo --build",
     "build": "pnpm -r --filter='./packages/*' run build",
-    "build:epic": "pnpm --filter vitest-plugin-rsc build && node scripts/copy-plugin-build-to-epic.ts",
-    "test:epic": "pnpm build:epic && cd \"$HOME/code/epic-rsc-stack\" && bun vitest run",
     "test": "pnpm -r --workspace-concurrency=1 --if-present run test:run",
     "perf": "pnpm perf:commands",
     "perf:ci": "pnpm perf",
-    "perf:commands": "node scripts/perf/run-command-benchmarks.ts repo",
+    "perf:commands": "node scripts/perf/run-command-benchmarks.ts",
     "perf:micro": "node scripts/perf/run-vitest-bench.ts",
-    "perf:epic": "node scripts/perf/run-command-benchmarks.ts epic",
-    "perf:epic:smoke": "node scripts/perf/run-command-benchmarks.ts epic --smoke --runs 1 --warmup 0 --label epic-smoke",
     "dev": "pnpm -r --parallel --filter='./packages/*' run dev"
   },
   "devDependencies": {

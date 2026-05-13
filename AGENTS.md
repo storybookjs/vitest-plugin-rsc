@@ -24,4 +24,4 @@ Preview packages for PR commits are handled by `pkg.pr.new`, which publishes ins
 
 ## Testing
 
-For bigger feature work, run `pnpm test:epic` so the plugin is built, copied into `~/code/epic-rsc-stack`, and verified against that stack with `bun vitest run`.
+For bigger feature work, run the full Next.js notes demo suite (`pnpm --dir playground/nextjs-notes-demo exec vitest run`) before merging. It is the in-tree acceptance app and covers the realistic combinations of routing, cookies, cache, Server Actions, and MSW-routed transport.

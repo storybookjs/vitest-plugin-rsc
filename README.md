@@ -21,11 +21,13 @@ Pick one piece of the app — a wishlist carousel, a notes form, a settings pane
 - [Why This Exists](#why-this-exists)
 - [What You Get](#what-you-get)
 - [Requirements](#requirements)
+- [Next.js Version Support](#nextjs-version-support)
 - [Quick Start](#quick-start)
   - [Install](#1-install)
   - [Register The Plugin](#2-register-the-plugin)
   - [Boot The Runtime](#3-boot-the-runtime)
   - [Browser-Compatible Server Code](#4-browser-compatible-server-code)
+- [Test Concurrency](#test-concurrency)
 - [Example: Server Action Form](#example-server-action-form)
 - [Example: Drizzle + PGlite Setup](#example-drizzle--pglite-setup)
 - [Next.js App Router Helpers](#nextjs-app-router-helpers)
@@ -81,6 +83,18 @@ test("archive a note", async () => {
 ## Requirements
 
 This plugin requires [Vitest Browser Mode](https://vitest.dev/guide/browser/).
+
+## Next.js Version Support
+
+The base `vitestPluginRSC()` runtime is framework-agnostic. The `vitest-plugin-rsc/nextjs/*` helpers depend on Next.js App Router internals, so Next.js support is tracked in CI against the latest patch release in each supported minor line.
+
+| Next.js line | Status    | CI coverage                  |
+| ------------ | --------- | ---------------------------- |
+| `16.0.x`     | Supported | Compatibility matrix install |
+| `16.1.x`     | Supported | Compatibility matrix install |
+| `16.2.x`     | Supported | Compatibility matrix install |
+
+The compatibility workflow installs `next@16.0.x`, `next@16.1.x`, and `next@16.2.x` during CI, then builds the plugin and runs the package-level Next tests plus the Next.js playgrounds.
 
 ## Quick Start
 
@@ -255,6 +269,10 @@ export default defineConfig({
   plugins: [nodePolyfills(), vitestPluginRSC()],
 });
 ```
+
+## Test Concurrency
+
+[`test.concurrent`](https://vitest.dev/api/#test-concurrent) is not supported for tests that read `AsyncLocalStorage` — including any test that touches Next.js App Router internals (`headers()`, `cookies()`, `next/cache`, Server Actions, etc.). The plugin's `AsyncLocalStorage` shim is sequential by design, so concurrent tests would leak context across each other. Sequential tests within a file are fine; test files run in parallel as usual.
 
 ## Example: Server Action Form
 
