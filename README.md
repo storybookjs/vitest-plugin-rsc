@@ -93,32 +93,14 @@ The base `vitestPluginRSC()` runtime is framework-agnostic. The `vitest-plugin-r
 
 ### 1. Install
 
-Pick the command for your package manager:
-
 ```bash
-# pnpm
-pnpm add -D vitest-plugin-rsc
-```
-
-```bash
-# npm
 npm install -D vitest-plugin-rsc
-```
-
-```bash
-# yarn
-yarn add -D vitest-plugin-rsc
-```
-
-```bash
-# bun
-bun add -D vitest-plugin-rsc
 ```
 
 The examples below use Playwright as the Vitest browser provider; install it (or another Vitest browser provider):
 
 ```bash
-pnpm add -D @vitest/browser-playwright playwright
+npm install -D @vitest/browser-playwright playwright
 ```
 
 ### 2. Register The Plugin
