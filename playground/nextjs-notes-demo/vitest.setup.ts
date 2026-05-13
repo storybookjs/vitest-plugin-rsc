@@ -1,4 +1,4 @@
-import { vi, beforeAll, beforeEach, afterEach, afterAll, inject } from "vitest";
+import { vi, beforeEach, afterEach, afterAll, inject } from "vitest";
 import { cleanup, initialize } from "vitest-plugin-rsc/nextjs/testing-library";
 import { nextRscRequestHandlers } from "vitest-plugin-rsc/nextjs/msw";
 import { page } from "vitest/browser";
@@ -67,6 +67,7 @@ const TEST_NOW = "2026-05-06T00:00:00.000Z";
 
 let base: PGlite;
 let pointerResetTarget: HTMLElement | undefined;
+let setupPromise: Promise<void> | undefined;
 const worker = setupWorker(...nextCacheProbeFetchHandler, ...nextRscRequestHandlers);
 
 // Vitest mounts React into an existing document, so rendering RootLayout's
@@ -108,7 +109,7 @@ async function resetInteractiveState() {
   await page.elementLocator(pointerResetTarget).hover();
 }
 
-beforeAll(async () => {
+async function setupTestEnvironment() {
   await worker.start({
     onUnhandledRequest: "bypass",
     quiet: true,
@@ -117,9 +118,12 @@ beforeAll(async () => {
   initialize({ nextRscRequestsViaMsw: true });
   base = await PGlite.create("memory://");
   await base.exec(inject("testSchemaSQL"));
-});
+}
 
 beforeEach(async () => {
+  setupPromise ??= setupTestEnvironment();
+  await setupPromise;
+
   worker.resetHandlers();
   await cleanup();
   setCurrentUser(null);
@@ -144,6 +148,9 @@ afterEach(async () => {
   await page.viewport(MOBILE_VIEWPORT.width, MOBILE_VIEWPORT.height);
 });
 
-afterAll(() => {
-  worker.stop();
+afterAll(async () => {
+  if (setupPromise) {
+    await setupPromise;
+    worker.stop();
+  }
 });
