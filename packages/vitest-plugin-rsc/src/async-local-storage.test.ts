@@ -1,5 +1,9 @@
 import { expect, test } from "vitest";
-import { resetAsyncLocalStorage } from "./async-local-storage";
+import {
+  createAsyncLocalStorage,
+  executeAsync,
+  resetAsyncLocalStorage,
+} from "./async-local-storage";
 import {
   AsyncLocalStorage,
   AsyncResource,
@@ -18,6 +22,22 @@ function deferred<T>() {
   return { promise, resolve };
 }
 
+async function preserveAsyncLocalStorage<T>(value: T | PromiseLike<T>): Promise<T> {
+  const [awaitable, restore] = executeAsync(() => value);
+  const result = await awaitable;
+  restore();
+  return result;
+}
+
+async function preserveAsyncLocalStorageCallback<T>(
+  callback: () => T | PromiseLike<T>,
+): Promise<T> {
+  const [awaitable, restore] = executeAsync(async () => callback());
+  const result = await awaitable;
+  restore();
+  return result;
+}
+
 test("scopes a store to the run callback", () => {
   const storage = new AsyncLocalStorage<string>();
 
@@ -27,15 +47,31 @@ test("scopes a store to the run callback", () => {
   expect(storage.getStore()).toBeUndefined();
 });
 
-test("keeps a store until the returned promise settles", async () => {
+test("keeps a store across a transformed await", async () => {
   const storage = new AsyncLocalStorage<string>();
 
   const result = await storage.run("inside", async () => {
-    await Promise.resolve();
+    await preserveAsyncLocalStorage(Promise.resolve());
     return storage.getStore();
   });
 
   expect(result).toBe("inside");
+  expect(storage.getStore()).toBeUndefined();
+});
+
+test("leaves a store while a transformed await is pending", async () => {
+  const storage = new AsyncLocalStorage<string>();
+  const pending = deferred<string>();
+
+  const result = storage.run("inside", async () => {
+    const value = await preserveAsyncLocalStorage(pending.promise);
+    return [value, storage.getStore()];
+  });
+
+  expect(storage.getStore()).toBeUndefined();
+
+  pending.resolve("done");
+  await expect(result).resolves.toEqual(["done", "inside"]);
   expect(storage.getStore()).toBeUndefined();
 });
 
@@ -64,20 +100,45 @@ test("does not preserve context for async work that is not returned", async () =
   expect(scheduledStore).toBeUndefined();
 });
 
-test("does not restore stale frames when overlapping runs settle out of order", async () => {
+test("keeps overlapping transformed runs isolated when they settle out of order", async () => {
   const storage = new AsyncLocalStorage<string>();
   const first = deferred<string>();
   const second = deferred<string>();
 
-  const firstResult = storage.run("first", () => first.promise);
-  const secondResult = storage.run("second", () => second.promise);
+  const firstResult = storage.run("first", async () => {
+    await preserveAsyncLocalStorage(first.promise);
+    return storage.getStore();
+  });
+  const secondResult = storage.run("second", async () => {
+    await preserveAsyncLocalStorage(second.promise);
+    return storage.getStore();
+  });
+
+  expect(storage.getStore()).toBeUndefined();
 
   first.resolve("first done");
-  await expect(firstResult).resolves.toBe("first done");
-  expect(storage.getStore()).toBe("second");
+  await expect(firstResult).resolves.toBe("first");
+  expect(storage.getStore()).toBeUndefined();
 
   second.resolve("second done");
-  await expect(secondResult).resolves.toBe("second done");
+  await expect(secondResult).resolves.toBe("second");
+  expect(storage.getStore()).toBeUndefined();
+});
+
+test("restores the original frame after nested transformed async calls", async () => {
+  const storage = new AsyncLocalStorage<string>();
+
+  async function inner() {
+    await preserveAsyncLocalStorageCallback(() => Promise.resolve());
+    return storage.getStore();
+  }
+
+  async function outer() {
+    const innerStore = await preserveAsyncLocalStorageCallback(() => inner());
+    return [innerStore, storage.getStore()];
+  }
+
+  await expect(storage.run("inside", outer)).resolves.toEqual(["inside", "inside"]);
   expect(storage.getStore()).toBeUndefined();
 });
 
@@ -105,6 +166,148 @@ test("binds a callback to the current snapshot", () => {
 
   expect(bound()).toBe("inside");
   expect(storage.getStore()).toBe("outside");
+});
+
+test("reuses createAsyncLocalStorage keys for duplicate module callsites", () => {
+  const createStorageFromSameCallsite = () => createAsyncLocalStorage<string>();
+  const first = createStorageFromSameCallsite();
+  const second = createStorageFromSameCallsite();
+
+  const result = first.run("inside", () => second.getStore());
+
+  expect(result).toBe("inside");
+  expect(second.getStore()).toBeUndefined();
+});
+
+test("keeps a stream result in context until it is consumed", async () => {
+  const storage = new AsyncLocalStorage<string>();
+  const seenStores: (string | undefined)[] = [];
+
+  const stream = storage.run(
+    "inside",
+    () =>
+      new ReadableStream<string>({
+        pull(controller) {
+          seenStores.push(storage.getStore());
+          controller.enqueue("chunk");
+          controller.close();
+        },
+      }),
+  );
+
+  expect(storage.getStore()).toBe("inside");
+
+  const reader = stream.getReader();
+  await expect(reader.read()).resolves.toEqual({ done: false, value: "chunk" });
+  expect((await reader.read()).done).toBe(true);
+  expect(seenStores).toEqual(["inside"]);
+  expect(storage.getStore()).toBeUndefined();
+});
+
+test("does not leave an active stream frame during a transformed await", async () => {
+  const storage = new AsyncLocalStorage<string>();
+
+  const stream = storage.run(
+    "inside",
+    () =>
+      new ReadableStream<string>({
+        pull(controller) {
+          controller.enqueue("chunk");
+          controller.close();
+        },
+      }),
+  );
+
+  await preserveAsyncLocalStorage(Promise.resolve());
+  expect(storage.getStore()).toBe("inside");
+
+  const reader = stream.getReader();
+  await expect(reader.read()).resolves.toEqual({ done: false, value: "chunk" });
+  expect((await reader.read()).done).toBe(true);
+  expect(storage.getStore()).toBeUndefined();
+});
+
+test("keeps a promised stream result in context until it is consumed", async () => {
+  const storage = new AsyncLocalStorage<string>();
+  const seenStores: (string | undefined)[] = [];
+
+  const stream = await storage.run("inside", async () => {
+    await preserveAsyncLocalStorage(Promise.resolve());
+    return new ReadableStream<string>({
+      pull(controller) {
+        seenStores.push(storage.getStore());
+        controller.enqueue("chunk");
+        controller.close();
+      },
+    });
+  });
+
+  expect(storage.getStore()).toBe("inside");
+
+  const reader = stream.getReader();
+  await expect(reader.read()).resolves.toEqual({ done: false, value: "chunk" });
+  expect((await reader.read()).done).toBe(true);
+  expect(seenStores).toEqual(["inside"]);
+  expect(storage.getStore()).toBeUndefined();
+});
+
+test("keeps nested run stores inside a stream result", async () => {
+  const first = new AsyncLocalStorage<string>();
+  const second = new AsyncLocalStorage<number>();
+  const seenStores: Array<[string | undefined, number | undefined]> = [];
+
+  const stream = first.run("first", () =>
+    second.run(
+      2,
+      () =>
+        new ReadableStream<string>({
+          pull(controller) {
+            seenStores.push([first.getStore(), second.getStore()]);
+            controller.enqueue("chunk");
+            controller.close();
+          },
+        }),
+    ),
+  );
+
+  expect(first.getStore()).toBe("first");
+  expect(second.getStore()).toBe(2);
+
+  const reader = stream.getReader();
+  await expect(reader.read()).resolves.toEqual({ done: false, value: "chunk" });
+  expect((await reader.read()).done).toBe(true);
+  expect(seenStores).toEqual([["first", 2]]);
+  expect(first.getStore()).toBeUndefined();
+  expect(second.getStore()).toBeUndefined();
+});
+
+test("keeps nested run stores inside a promised stream result", async () => {
+  const first = new AsyncLocalStorage<string>();
+  const second = new AsyncLocalStorage<number>();
+  const seenStores: Array<[string | undefined, number | undefined]> = [];
+
+  const stream = await first.run("first", () =>
+    second.run(2, async () => {
+      await preserveAsyncLocalStorage(Promise.resolve());
+      return new ReadableStream<string>({
+        pull(controller) {
+          seenStores.push([first.getStore(), second.getStore()]);
+          controller.enqueue("chunk");
+          controller.close();
+        },
+      });
+    }),
+  );
+
+  expect(first.getStore()).toBe("first");
+  expect(second.getStore()).toBe(2);
+
+  const reader = stream.getReader();
+  await expect(reader.read()).resolves.toEqual({ done: false, value: "chunk" });
+  expect((await reader.read()).done).toBe(true);
+  expect(seenStores).toEqual([["first", 2]]);
+  expect(first.getStore()).toBeUndefined();
+  expect(second.getStore()).toBeUndefined();
 });
 
 test("resets all stores", () => {

@@ -1,6 +1,7 @@
 import { type Plugin, type ViteDevServer } from "vite";
 import { vitePluginRscMinimal } from "@vitejs/plugin-rsc/plugin";
 import { createReactClientCoveragePlugin } from "./coverage";
+import { createAsyncLocalStorageTransformPlugin } from "./async-local-storage-transform";
 
 const reactClientWebSocketInfoPath = "/@vite/react-client-runner-websocket";
 const reactClientWebSocketQuery = "vitest-plugin-rsc-react-client";
@@ -135,6 +136,7 @@ export function vitestPluginRSC(): Plugin[] {
         ];
       },
     },
+    createAsyncLocalStorageTransformPlugin(),
     createReactClientCoveragePlugin(),
   ];
 }

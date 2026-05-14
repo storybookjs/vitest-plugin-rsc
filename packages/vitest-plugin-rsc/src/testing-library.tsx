@@ -1,6 +1,6 @@
 import type { Container, RootOptions } from "react-dom/client";
 import type { JSXElementConstructor, ReactNode } from "react";
-import { resetAsyncLocalStorage } from "./async-local-storage";
+import { bindSnapshot, resetAsyncLocalStorage } from "./async-local-storage";
 import { importReactClient } from "./utilts";
 import type { FetchRsc, RscPayload, TestingLibraryClientRoot } from "./testing-library-client";
 import * as ReactServer from "@vitejs/plugin-rsc/react/rsc";
@@ -38,7 +38,7 @@ export async function renderServer(
   let root: TestingLibraryClientRoot;
 
   if (!mountedContainers.has(container)) {
-    const fetchRsc: FetchRsc = async (actionRequest) => {
+    const fetchRsc: FetchRsc = bindSnapshot(async (actionRequest) => {
       let returnValue: unknown | undefined;
       let temporaryReferences: unknown | undefined;
       if (actionRequest) {
@@ -61,7 +61,7 @@ export async function renderServer(
       const rscOptions = { temporaryReferences };
       const stream = ReactServer.renderToReadableStream<RscPayload>(rscPayload, rscOptions);
       return stream;
-    };
+    });
     root = await client.createTestingLibraryClientRoot({
       container,
       config,

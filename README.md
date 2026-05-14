@@ -27,7 +27,6 @@ Pick one piece of the app — a wishlist carousel, a notes form, a settings pane
   - [Register The Plugin](#2-register-the-plugin)
   - [Boot The Runtime](#3-boot-the-runtime)
   - [Browser-Compatible Server Code](#4-browser-compatible-server-code)
-- [Test Concurrency](#test-concurrency)
 - [Example: Server Action Form](#example-server-action-form)
 - [Example: Drizzle + PGlite Setup](#example-drizzle--pglite-setup)
 - [Next.js App Router Helpers](#nextjs-app-router-helpers)
@@ -253,10 +252,6 @@ export default defineConfig({
   plugins: [nodePolyfills(), vitestPluginRSC()],
 });
 ```
-
-## Test Concurrency
-
-[`test.concurrent`](https://vitest.dev/api/#test-concurrent) doesn't work for tests that read `AsyncLocalStorage`, which includes anything that touches Next.js App Router internals (`headers()`, `cookies()`, `next/cache`, Server Actions). The plugin's `AsyncLocalStorage` shim is sequential, so concurrent tests would leak context between each other. Sequential tests within a file are fine; test files still run in parallel.
 
 ## Example: Server Action Form
 

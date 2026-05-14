@@ -22,6 +22,7 @@ import {
   type RenderConfiguration,
 } from "../testing-library";
 import type { FetchRsc, RscPayload, TestingLibraryClientRoot } from "../testing-library-client";
+import { bindSnapshot, createSnapshot } from "../async-local-storage";
 import { importReactClient } from "../utilts";
 import * as ReactServer from "@vitejs/plugin-rsc/react/rsc";
 import { NextRouter } from "vitest-plugin-rsc/nextjs/client";
@@ -101,6 +102,7 @@ export async function renderServer(
   rerender: (ui: ReactNode) => Promise<void>;
   asFragment: () => DocumentFragment;
 }> {
+  const runInRenderSnapshot = createSnapshot();
   container ??= baseElement.appendChild(document.createElement("div"));
 
   let root: TestingLibraryClientRoot;
@@ -122,7 +124,7 @@ export async function renderServer(
       return createNextRouterInitialTree(serverRoot, requestUrl, requestRoute);
     }
 
-    const fetchRsc: FetchRsc = async (actionRequest) => {
+    const fetchRsc: FetchRsc = bindSnapshot(async (actionRequest) => {
       let returnValue: unknown | undefined;
       let temporaryReferences: unknown | undefined;
       if (actionRequest) {
@@ -132,19 +134,24 @@ export async function renderServer(
           temporaryReferences,
         });
         const action = await ReactServer.loadServerAction(id);
-        returnValue = await requestContext.run("action", () => action.apply(null, args));
+        returnValue = await runInRenderSnapshot(() =>
+          requestContext.run("action", () => action.apply(null, args)),
+        );
       }
       const rscPayload: RscPayload = {
         root: await prepareServerRoot(),
         returnValue,
       };
       const rscOptions = { temporaryReferences };
-      return requestContext.run(actionRequest ? "action-render" : "render", () =>
-        ReactServer.renderToReadableStream<RscPayload>(rscPayload, rscOptions),
+      const stream = runInRenderSnapshot(() =>
+        requestContext.run(actionRequest ? "action-render" : "render", () =>
+          ReactServer.renderToReadableStream<RscPayload>(rscPayload, rscOptions),
+        ),
       );
-    };
+      return stream;
+    });
 
-    const fetchNextRsc: FetchNextRsc = async (request) => {
+    const fetchNextRsc: FetchNextRsc = bindSnapshot(async (request) => {
       if (request.requestType === "next-action") {
         let returnValue: unknown | undefined;
         const temporaryReferences = ReactServer.createTemporaryReferenceSet();
@@ -160,7 +167,9 @@ export async function renderServer(
         }
         const args = await ReactServer.decodeReply(request.reply, { temporaryReferences });
         try {
-          returnValue = await requestContext.run("action", () => action.apply(null, args));
+          returnValue = await runInRenderSnapshot(() =>
+            requestContext.run("action", () => action.apply(null, args)),
+          );
         } catch (error) {
           if (isRedirectError(error)) {
             const actionResult = await requestContext.completeAction({ forceRender: true });
@@ -186,9 +195,11 @@ export async function renderServer(
               true,
               request.routerState,
             );
-            const stream = await requestContext.run("action-render", () =>
-              ReactServer.renderToReadableStream(actionResponse, { temporaryReferences }),
-            );
+            const stream = runInRenderSnapshot(() =>
+              requestContext.run("action-render", () =>
+                ReactServer.renderToReadableStream(actionResponse, { temporaryReferences }),
+              ),
+            ) as ReadableStream<Uint8Array>;
             const responseHeaders = new Headers(actionResult.headers);
             responseHeaders.set("content-type", RSC_CONTENT_TYPE_HEADER);
             return new Response(stream, {
@@ -204,9 +215,11 @@ export async function renderServer(
           actionResult.shouldRender,
           request.routerState,
         );
-        const stream = await requestContext.run("action-render", () =>
-          ReactServer.renderToReadableStream(actionResponse, { temporaryReferences }),
-        );
+        const stream = runInRenderSnapshot(() =>
+          requestContext.run("action-render", () =>
+            ReactServer.renderToReadableStream(actionResponse, { temporaryReferences }),
+          ),
+        ) as ReadableStream<Uint8Array>;
         const responseHeaders = new Headers(actionResult.headers);
         responseHeaders.set("content-type", RSC_CONTENT_TYPE_HEADER);
         return new Response(stream, {
@@ -220,13 +233,13 @@ export async function renderServer(
         request.url,
         request.routerState,
       );
-      const stream = await requestContext.run("render", () =>
-        ReactServer.renderToReadableStream(routeResponse),
-      );
+      const stream = runInRenderSnapshot(() =>
+        requestContext.run("render", () => ReactServer.renderToReadableStream(routeResponse)),
+      ) as ReadableStream<Uint8Array>;
       return new Response(stream, {
         headers: { "content-type": RSC_CONTENT_TYPE_HEADER },
       });
-    };
+    });
 
     const serverActionCaller = config.nextRscRequestsViaMsw
       ? nextClient.createServerActionCaller({ fetchRsc: fetchNextRsc })

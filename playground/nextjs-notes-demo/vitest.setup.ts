@@ -68,7 +68,10 @@ const TEST_NOW = "2026-05-06T00:00:00.000Z";
 let base: PGlite;
 let currentDbClient: PGlite | undefined;
 let pointerResetTarget: HTMLElement | undefined;
-const worker = setupWorker(...nextCacheProbeFetchHandler, ...nextRscRequestHandlers);
+const worker = setupWorker(
+  ...nextCacheProbeFetchHandler,
+  ...(nextRscRequestHandlers as unknown as Parameters<typeof setupWorker>),
+);
 
 // Vitest mounts React into an existing document. Route tests intentionally let
 // the plugin render RootLayout's <html>/<body> tags into that mount so the

@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import type { Alias, Plugin, UserConfig } from "vite";
 
 const supportedEdgeNativeModules = ["buffer", "events", "assert", "util"] as const;
+const nextAsyncLocalStorageReplacementId = "vitest-plugin-rsc/async-local-storage";
 // Begin copy: Next.js ACTION_ID_EXPECTED_LENGTH
 // Source: https://github.com/vercel/next.js/blob/4588a7354283f97e2124e3d82f55733ca4eb9373/packages/next/src/server/app-render/action-handler.ts#L1372-L1375
 const ACTION_ID_EXPECTED_LENGTH = 42;
@@ -142,6 +143,7 @@ function createNextEdgeNativeAliases(root: string): Alias[] {
 function createOptimizeDepsResolveAliases(
   edgeNativeAliases: Alias[],
   aliases: Record<string, string>,
+  nextAsyncLocalStorageAliases: Record<string, string>,
 ) {
   return {
     ...Object.fromEntries(
@@ -149,7 +151,15 @@ function createOptimizeDepsResolveAliases(
         .filter((alias): alias is Alias & { find: string } => typeof alias.find === "string")
         .map((alias) => [alias.find, alias.replacement]),
     ),
+    ...nextAsyncLocalStorageAliases,
     ...aliases,
+  };
+}
+
+function createNextAsyncLocalStorageAliases(replacement: string): Record<string, string> {
+  return {
+    "next/dist/server/app-render/async-local-storage": replacement,
+    "next/dist/server/app-render/async-local-storage.js": replacement,
   };
 }
 
@@ -178,6 +188,37 @@ function useNextCompiledOpenTelemetryApi(root: string): Plugin {
       return replacement;
     },
   };
+}
+
+function useVitestAsyncLocalStorageForNext(root = process.cwd()): Plugin {
+  const replacement =
+    tryResolveFromProject(root, nextAsyncLocalStorageReplacementId) ??
+    nextAsyncLocalStorageReplacementId;
+  const aliases = createNextAsyncLocalStorageAliases(replacement);
+
+  return {
+    name: "next-rsc-async-local-storage",
+    enforce: "pre",
+    async resolveId(source, importer, options) {
+      const resolvedReplacement =
+        aliases[source] ??
+        (isNextAppRenderAsyncLocalStorageImport(source, importer) ? replacement : undefined);
+
+      if (!resolvedReplacement) return;
+
+      return this.resolve(resolvedReplacement, importer, {
+        ...options,
+        skipSelf: true,
+      });
+    },
+  };
+}
+
+function isNextAppRenderAsyncLocalStorageImport(source: string, importer?: string) {
+  return (
+    (source === "./async-local-storage" || source === "./async-local-storage.js") &&
+    Boolean(importer && /[/\\]next[/\\]dist[/\\]server[/\\]app-render[/\\]/.test(importer))
+  );
 }
 
 function useVitestServerReferenceInfo(root = process.cwd()): Plugin {
@@ -292,6 +333,7 @@ function rewriteTypeofWindowChecks(code: string) {
 
 export function vitestPluginNext(): Plugin[] {
   return [
+    useVitestAsyncLocalStorageForNext(),
     useVitestServerReferenceInfo(),
     treatNextInternalsAsServerInRsc(),
     appRouterApiPlugin("client", true),
@@ -304,6 +346,10 @@ export function vitestPluginNext(): Plugin[] {
         const rscAppRouterAliases = createAppRouterApiAliasesFromNext(root, true);
         const reactClientAppRouterAliases = createAppRouterApiAliasesFromNext(root, false);
         const reactServerDomWebpackAliases = createReactServerDomWebpackAliases(root);
+        const nextAsyncLocalStorageAliases = createNextAsyncLocalStorageAliases(
+          tryResolveFromProject(root, nextAsyncLocalStorageReplacementId) ??
+            nextAsyncLocalStorageReplacementId,
+        );
 
         return {
           define: {
@@ -313,6 +359,10 @@ export function vitestPluginNext(): Plugin[] {
           resolve: {
             alias: [
               ...edgeNativeAliases,
+              ...Object.entries(nextAsyncLocalStorageAliases).map(([find, replacement]) => ({
+                find,
+                replacement,
+              })),
               {
                 find: "@vercel/turbopack-ecmascript-runtime/browser/dev/hmr-client/hmr-client.ts",
                 replacement: "next/dist/client/dev/noop-turbopack-hmr",
@@ -338,7 +388,6 @@ export function vitestPluginNext(): Plugin[] {
                   "next/dist/compiled/@edge-runtime/cookies/index.js",
                   "next/dist/server/node-environment-baseline.js",
                   "next/dist/server/app-render/action-async-storage.external.js",
-                  "next/dist/server/app-render/async-local-storage.js",
                   "next/dist/server/app-render/work-async-storage.external.js",
                   "next/dist/server/app-render/work-unit-async-storage.external.js",
                   "next/dist/server/async-storage/request-store.js",
@@ -405,13 +454,18 @@ export function vitestPluginNext(): Plugin[] {
                 needsInterop: ["next/cache"],
                 rolldownOptions: {
                   plugins: [
+                    useVitestAsyncLocalStorageForNext(root),
                     useVitestServerReferenceInfo(root),
                     treatNextInternalsAsServerInRsc(),
                     useNextCompiledOpenTelemetryApi(root),
                   ],
                   resolve: {
                     alias: {
-                      ...createOptimizeDepsResolveAliases(edgeNativeAliases, rscAppRouterAliases),
+                      ...createOptimizeDepsResolveAliases(
+                        edgeNativeAliases,
+                        rscAppRouterAliases,
+                        nextAsyncLocalStorageAliases,
+                      ),
                       "react-server-dom-webpack/client": reactServerDomWebpackAliases.edge,
                     },
                   },
@@ -477,6 +531,7 @@ export function vitestPluginNext(): Plugin[] {
                 ],
                 rolldownOptions: {
                   plugins: [
+                    useVitestAsyncLocalStorageForNext(root),
                     useVitestServerReferenceInfo(root),
                     useNextCompiledOpenTelemetryApi(root),
                   ],
@@ -485,6 +540,7 @@ export function vitestPluginNext(): Plugin[] {
                       ...createOptimizeDepsResolveAliases(
                         edgeNativeAliases,
                         reactClientAppRouterAliases,
+                        nextAsyncLocalStorageAliases,
                       ),
                       "react-server-dom-webpack/client": reactServerDomWebpackAliases.browser,
                       "react-server-dom-webpack/client.browser":
