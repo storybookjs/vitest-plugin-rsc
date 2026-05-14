@@ -6,6 +6,7 @@ test("notes demo renders Next app-router API aliases and compiler surfaces", asy
   await renderServer({ url: "/next-apis" });
 
   await expect.element(page.getByRole("heading", { name: "Next APIs" })).toBeVisible();
+  await expect.element(page.getByText("Connection scope ready")).toBeVisible();
   await expect
     .element(page.getByRole("link", { name: "Notes link" }))
     .toHaveAttribute("href", "/notes");
@@ -21,6 +22,14 @@ test("notes demo renders Next app-router API aliases and compiler surfaces", asy
   await expect.element(image).toHaveAttribute("src", "/vitest-rsc.png");
   await expect.element(image).toHaveAttribute("width", "48");
   await expect.element(image).toHaveAttribute("height", "24");
+
+  const staticImage = page.getByRole("img", { name: "Imported static logo" });
+  await expect.element(staticImage).toBeVisible();
+  await expect.element(staticImage).toHaveAttribute("width", "32");
+  await expect.element(staticImage).toHaveAttribute("height", "16");
+  expect(
+    document.querySelector<HTMLImageElement>('img[alt="Imported static logo"]')?.src,
+  ).toContain("/_next/static/media/static-logo.");
 
   expect(document.querySelector("#next-api-script")?.textContent).toBe(
     'window.__nextApiScript = "loaded";',

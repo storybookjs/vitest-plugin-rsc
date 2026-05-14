@@ -18,6 +18,7 @@ test("headers and cookies follow the documented request API methods", async () =
   await expect.element(page.getByText("flash: initial")).toBeVisible();
   await expect.element(page.getByText("flash values: initial")).toBeVisible();
   await expect.element(page.getByText("has flash: true")).toBeVisible();
+  await expect.element(page.getByText("draft mode: false")).toBeVisible();
 
   await page.getByRole("button", { name: "Set flash" }).click();
 

@@ -1,7 +1,7 @@
 import { expect, test } from "vitest";
 import { page } from "vitest/browser";
 import { cleanup, renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
-import { NextCacheProbe, resetNextCacheProbe } from "./next-cache-probe";
+import { NextCacheProbe, NextNoStoreProbe, resetNextCacheProbe } from "./next-cache-probe";
 
 test("server refresh rerenders without invalidating cached data", async () => {
   await renderNextCacheProbe();
@@ -49,6 +49,12 @@ test("no-store fetches bypass the Next fetch cache", async () => {
   await expect
     .element(page.getByText("no-store fetch duplicate: default no-store fetch 4"))
     .toBeVisible();
+});
+
+test("unstable_noStore is available in a request render scope", async () => {
+  await renderServer(<NextNoStoreProbe />, { url: "/next-no-store-probe" });
+
+  await expect.element(page.getByText("unstable noStore called")).toBeVisible();
 });
 
 test("server actions without refresh or invalidation do not rerender the current tree", async () => {

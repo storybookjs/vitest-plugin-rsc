@@ -1,8 +1,9 @@
-import { cookies, headers } from "next/headers";
+import { cookies, draftMode, headers } from "next/headers";
 
 export default async function FlashCookieProbe() {
   const cookieStore = await cookies();
   const headersList = await headers();
+  const draft = await draftMode();
   const flash = cookieStore.get("flash")?.value || "empty";
   const flashValues = cookieStore
     .getAll("flash")
@@ -16,6 +17,7 @@ export default async function FlashCookieProbe() {
       <p>flash: {flash}</p>
       <p>flash values: {flashValues.join(",") || "empty"}</p>
       <p>has flash: {String(cookieStore.has("flash"))}</p>
+      <p>draft mode: {String(draft.isEnabled)}</p>
       <form
         action={async () => {
           "use server";

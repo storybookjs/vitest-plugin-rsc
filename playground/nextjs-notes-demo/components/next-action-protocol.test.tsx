@@ -46,6 +46,20 @@ test("default action redirects use Next's push redirect type", async () => {
   );
 });
 
+test("permanent action redirects use Next's action redirect protocol", async () => {
+  await renderServer(<NextActionProtocolProbe />, { url: "/action-protocol" });
+
+  const request = await captureActionRequest(() =>
+    page.getByRole("button", { name: "Capture permanent redirect action" }).click(),
+  );
+  const response = await replayActionRequest(request);
+
+  expect(response.status).toBe(303);
+  expect(response.headers.get("x-action-redirect")).toBe(
+    "/action-protocol-permanent-target?from=action;replace",
+  );
+});
+
 test("thrown action errors use Next's rejected Flight payload with status 500", async () => {
   await renderServer(<NextActionProtocolProbe />, { url: "/action-protocol" });
 
