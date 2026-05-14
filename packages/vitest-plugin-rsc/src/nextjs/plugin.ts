@@ -2,6 +2,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Alias, Plugin, UserConfig } from "vite";
 import { useNextAppRenderCompatibility } from "./app-render-compat-plugin";
+import { useNextImageClientReference } from "./image-plugin";
 import { useNextMetadataImageLoader } from "./metadata-image-loader-plugin";
 import { createProjectRequire, getProjectRoot, tryResolveFromProject } from "./plugin-utils";
 import { useNextRouteManifest } from "./route-manifest-plugin";
@@ -143,6 +144,33 @@ const nextRouteUtilityOptimizeDeps = [
   "next/dist/shared/lib/router/utils/route-matcher.js",
   "next/dist/shared/lib/router/utils/route-regex.js",
 ] as const;
+
+const nextImageOptimizeDeps = [
+  "next/dist/client/image-component.js",
+  "next/dist/client/use-merged-ref.js",
+  "next/dist/shared/lib/get-img-props.js",
+  "next/dist/shared/lib/head.js",
+  "next/dist/shared/lib/head-manager-context.shared-runtime.js",
+  "next/dist/shared/lib/image-config.js",
+  "next/dist/shared/lib/image-config-context.shared-runtime.js",
+  "next/dist/shared/lib/image-external.js",
+  "next/dist/shared/lib/image-loader.js",
+  "next/dist/shared/lib/router-context.shared-runtime.js",
+] as const;
+
+type NextImageConfig = {
+  deviceSizes: number[];
+  imageSizes: number[];
+  qualities?: number[];
+  path: string;
+  loader: string;
+  dangerouslyAllowSVG: boolean;
+  unoptimized?: boolean;
+  domains?: string[];
+  remotePatterns?: unknown[];
+  localPatterns?: unknown[];
+  output?: string;
+};
 
 // Vite equivalents of the Next webpack aliases we rely on. Keep these aligned
 // with Next's app-router API and React Server Components alias layers:
@@ -294,6 +322,37 @@ function createReactServerDomWebpackAliases(root: string) {
     serverEdge:
       tryResolveFromProject(root, "@vitejs/plugin-rsc/vendor/react-server-dom/server.edge") ??
       "@vitejs/plugin-rsc/vendor/react-server-dom/server.edge",
+  };
+}
+
+function createNextImageConfig(root: string): NextImageConfig | undefined {
+  try {
+    const projectRequire = createProjectRequire(root);
+    const { imageConfigDefault } = projectRequire(
+      "next/dist/shared/lib/image-config.js",
+    ) as typeof import("next/dist/shared/lib/image-config.js");
+    return pickNextImageConfig(imageConfigDefault);
+  } catch {
+    return;
+  }
+}
+
+function pickNextImageConfig(config: NextImageConfig): NextImageConfig {
+  // Mirrors Next's DefineEnv image config shape. Next includes the validation
+  // fields during dev; Vitest runs against dev-like browser modules, so expose
+  // them here too.
+  return {
+    deviceSizes: config.deviceSizes,
+    imageSizes: config.imageSizes,
+    qualities: config.qualities,
+    path: config.path,
+    loader: config.loader,
+    dangerouslyAllowSVG: config.dangerouslyAllowSVG,
+    unoptimized: config.unoptimized,
+    domains: config.domains,
+    remotePatterns: config.remotePatterns,
+    localPatterns: config.localPatterns,
+    output: config.output,
   };
 }
 
@@ -606,6 +665,7 @@ export function vitestPluginNext(): Plugin[] {
     useNextEntryBase(),
     useNextEntryBaseClientReferences(),
     ...useNextAppRenderCompatibility(),
+    useNextImageClientReference(),
     useNextMetadataImageLoader(),
     useNextRouteManifest(),
     appRouterApiPlugin("client", true),
@@ -619,6 +679,7 @@ export function vitestPluginNext(): Plugin[] {
         const rscAppRouterAliases = createAppRouterApiAliasesFromNext(root, true);
         const reactClientAppRouterAliases = createAppRouterApiAliasesFromNext(root, false);
         const reactServerDomWebpackAliases = createReactServerDomWebpackAliases(root);
+        const nextImageConfig = createNextImageConfig(root);
         const nextOptionalAppRenderDeps = filterResolvableOptimizeDeps(
           root,
           nextOptionalAppRenderOptimizeDeps,
@@ -633,6 +694,9 @@ export function vitestPluginNext(): Plugin[] {
             "process.env.__NEXT_CLIENT_ROUTER_STATIC_STALETIME": JSON.stringify("300"),
             "process.env.__NEXT_CLIENT_SEGMENT_CACHE": JSON.stringify(true),
             "process.env.__NEXT_DYNAMIC_ON_HOVER": JSON.stringify(false),
+            ...(nextImageConfig
+              ? { "process.env.__NEXT_IMAGE_OPTS": JSON.stringify(nextImageConfig) }
+              : {}),
             global: "globalThis",
             __dirname: JSON.stringify(null),
           },
@@ -679,6 +743,7 @@ export function vitestPluginNext(): Plugin[] {
                     treatNextInternalsAsServerInRsc(),
                     useNextEntryBaseClientReferences(),
                     ...useNextAppRenderCompatibility(root),
+                    useNextImageClientReference(),
                     useNextCompiledOpenTelemetryApi(root),
                   ],
                   resolve: {
@@ -712,6 +777,7 @@ export function vitestPluginNext(): Plugin[] {
                   ...nextClientRouterOptimizeDeps,
                   ...nextClientNavigationOptimizeDeps,
                   ...nextEntryBaseClientReferenceOptimizeDeps,
+                  ...nextImageOptimizeDeps,
                 ],
                 rolldownOptions: {
                   plugins: [
@@ -752,6 +818,7 @@ export function vitestPluginNext(): Plugin[] {
                   ...nextClientRouterOptimizeDeps,
                   ...nextClientNavigationOptimizeDeps,
                   ...nextEntryBaseClientReferenceOptimizeDeps,
+                  ...nextImageOptimizeDeps,
                   "react-dom/server.browser",
                 ],
                 rolldownOptions: {
