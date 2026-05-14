@@ -78,6 +78,12 @@ const nextAppRouterClientApiOptimizeDeps = [
   "next/dist/client/app-dir/form.js",
   "next/dist/client/app-dir/link",
   "next/dist/client/app-dir/link.js",
+  "next/dist/client/request-idle-callback",
+  "next/dist/client/request-idle-callback.js",
+  "next/dist/client/script",
+  "next/dist/client/script.js",
+  "next/dist/client/set-attributes-from-props",
+  "next/dist/client/set-attributes-from-props.js",
   "next/dist/client/components/links",
   "next/dist/client/components/links.js",
   "next/dist/client/components/segment-cache/types",
@@ -818,6 +824,7 @@ export function vitestPluginNext(): Plugin[] {
                 rolldownOptions: {
                   plugins: [
                     useVitestServerReferenceInfo(root),
+                    useNextLinkClientReference(),
                     useNextCompiledOpenTelemetryApi(root),
                   ],
                   resolve: {
@@ -862,6 +869,7 @@ export function vitestPluginNext(): Plugin[] {
                 rolldownOptions: {
                   plugins: [
                     useVitestServerReferenceInfo(root),
+                    useNextLinkClientReference(),
                     useNextCompiledOpenTelemetryApi(root),
                   ],
                   resolve: {

@@ -22,5 +22,8 @@ test("notes demo renders Next app-router API aliases and compiler surfaces", asy
   await expect.element(image).toHaveAttribute("width", "48");
   await expect.element(image).toHaveAttribute("height", "24");
 
+  expect(document.querySelector("#next-api-script")?.textContent).toBe(
+    'window.__nextApiScript = "loaded";',
+  );
   expect(document.title).not.toBe("Ignored by App Router head");
 });

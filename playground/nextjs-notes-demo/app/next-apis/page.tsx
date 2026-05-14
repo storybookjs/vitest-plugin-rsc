@@ -3,6 +3,7 @@ import Form from "next/form";
 import Head from "next/head";
 import Image from "next/image";
 import Link from "next/link";
+import Script from "next/script";
 import { ClientNavigationProbe } from "./client-navigation-probe";
 
 const LazyPanel = dynamic(() => import("./lazy-panel"));
@@ -27,6 +28,9 @@ export default function NextApisPage() {
         unoptimized
         width={48}
       />
+      <Script id="next-api-script" strategy="afterInteractive">
+        {`window.__nextApiScript = "loaded";`}
+      </Script>
       <LazyPanel />
       <ClientNavigationProbe />
     </main>
