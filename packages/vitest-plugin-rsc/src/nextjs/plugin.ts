@@ -852,7 +852,6 @@ export function vitestPluginNext(): Plugin[] {
             "process.env.__NEXT_CLIENT_ROUTER_STATIC_STALETIME": JSON.stringify("300"),
             "process.env.__NEXT_CLIENT_SEGMENT_CACHE": JSON.stringify(true),
             "process.env.__NEXT_DYNAMIC_ON_HOVER": JSON.stringify(false),
-            "process.env": JSON.stringify({ NEXT_RUNTIME: "edge" }),
             global: "globalThis",
             __dirname: JSON.stringify(null),
           },
