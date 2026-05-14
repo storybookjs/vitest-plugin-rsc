@@ -892,8 +892,6 @@ export function vitestPluginNext(): Plugin[] {
                   ...nextBuiltinErrorOptimizeDeps,
                   ...nextRouteUtilityOptimizeDeps,
                 ],
-                needsInterop: ["next/cache"],
-                exclude: ["next/dist/server/app-render/entry-base.js"],
                 rolldownOptions: {
                   plugins: [
                     useVitestServerReferenceInfo(root),
