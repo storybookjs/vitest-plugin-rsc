@@ -63,8 +63,6 @@ const nextClientNavigationOptimizeDeps = [
 const nextAppRouterApiOptimizeDeps = [
   "next/dist/api/app-dynamic",
   "next/dist/api/app-dynamic.js",
-  "next/dist/api/error.react-server",
-  "next/dist/api/error.react-server.js",
   "next/dist/client/components/noop-head",
   "next/dist/client/components/noop-head.js",
   "next/dist/shared/lib/app-dynamic",
@@ -74,8 +72,6 @@ const nextAppRouterApiOptimizeDeps = [
 ] as const;
 
 const nextAppRouterClientApiOptimizeDeps = [
-  "next/dist/api/error",
-  "next/dist/api/error.js",
   "next/dist/client/add-base-path",
   "next/dist/client/add-base-path.js",
   "next/dist/client/app-dir/form",

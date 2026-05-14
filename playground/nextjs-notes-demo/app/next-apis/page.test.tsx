@@ -6,17 +6,15 @@ test("notes demo renders Next app-router API aliases and compiler surfaces", asy
   await renderServer({ url: "/next-apis" });
 
   await expect.element(page.getByRole("heading", { name: "Next APIs" })).toBeVisible();
-  await expect.element(page.getByRole("link", { name: "Notes link" })).toHaveAttribute(
-    "href",
-    "/notes",
-  );
-  await expect.element(page.getByRole("textbox", { name: "Search notes" })).toHaveValue(
-    "next-form",
-  );
+  await expect
+    .element(page.getByRole("link", { name: "Notes link" }))
+    .toHaveAttribute("href", "/notes");
+  await expect
+    .element(page.getByRole("textbox", { name: "Search notes" }))
+    .toHaveValue("next-form");
   await expect.element(page.getByRole("button", { name: "Search" })).toBeVisible();
   await expect.element(page.getByText("Dynamic panel loaded")).toBeVisible();
   await expect.element(page.getByText("Pathname: /next-apis")).toBeVisible();
-  await expect.element(page.getByText("Error API: function")).toBeVisible();
 
   const image = page.getByRole("img", { name: "Next API image" });
   await expect.element(image).toBeVisible();

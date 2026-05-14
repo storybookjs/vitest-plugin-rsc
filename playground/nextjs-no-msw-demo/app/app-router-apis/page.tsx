@@ -1,5 +1,4 @@
 import dynamic from "next/dynamic";
-import { unstable_catchError as catchError } from "next/error";
 import Form from "next/form";
 import Head from "next/head";
 import Link from "next/link";
@@ -21,7 +20,6 @@ export default function AppRouterApisPage() {
       </Form>
       <LazyMessage />
       <ClientNavigationProbe />
-      <p>Error API: {typeof catchError}</p>
     </>
   );
 }
