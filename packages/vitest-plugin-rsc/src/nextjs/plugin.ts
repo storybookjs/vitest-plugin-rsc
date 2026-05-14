@@ -2,6 +2,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Alias, Plugin, UserConfig } from "vite";
 import { useNextAppRenderCompatibility } from "./app-render-compat-plugin";
+import { useNextFontLoader } from "./font-loader-plugin";
 import { useNextImageClientReference } from "./image-plugin";
 import { useNextMetadataImageLoader } from "./metadata-image-loader-plugin";
 import { createProjectRequire, getProjectRoot, tryResolveFromProject } from "./plugin-utils";
@@ -665,6 +666,7 @@ export function vitestPluginNext(): Plugin[] {
     useNextEntryBase(),
     useNextEntryBaseClientReferences(),
     ...useNextAppRenderCompatibility(),
+    useNextFontLoader(),
     useNextImageClientReference(),
     useNextMetadataImageLoader(),
     useNextRouteManifest(),

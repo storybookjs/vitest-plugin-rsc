@@ -276,6 +276,7 @@ export async function renderServer(
         initialStream,
         documentHtml,
       });
+      injectNextFontStyles();
     } catch (error) {
       serverActionCaller?.cleanup();
       throw error;
@@ -653,6 +654,22 @@ function restoreAttributes(element: Element, attributes: [string, string][]) {
   }
   for (const [name, value] of attributes) {
     element.setAttribute(name, value);
+  }
+}
+
+function injectNextFontStyles() {
+  const fontStyles = (globalThis as typeof globalThis & Record<symbol, Map<string, string>>)[
+    Symbol.for("vitest-plugin-rsc.nextjs.fontStyles")
+  ];
+  if (!fontStyles) return;
+
+  for (const [id, css] of fontStyles) {
+    if (document.getElementById(id)) continue;
+
+    const style = document.createElement("style");
+    style.id = id;
+    style.textContent = css;
+    document.head.appendChild(style);
   }
 }
 
