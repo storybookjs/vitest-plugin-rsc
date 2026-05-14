@@ -8,6 +8,7 @@ import { useNextImageClientReference } from "./image-plugin";
 import { useNextMetadataImageLoader } from "./metadata-image-loader-plugin";
 import { createProjectRequire, getProjectRoot, tryResolveFromProject } from "./plugin-utils";
 import { useNextRouteManifest } from "./route-manifest-plugin";
+import { useNextSwcTransform } from "./swc-transform-plugin";
 
 const supportedEdgeNativeModules = ["buffer", "events", "assert", "util"] as const;
 const virtualServerReferenceInfoId = "\0vitest-plugin-rsc:next-server-reference-info";
@@ -700,6 +701,7 @@ export function vitestPluginNext(): Plugin[] {
     useNextEntryBaseClientReferences(),
     ...useNextAppRenderCompatibility(),
     useNextLinkClientReference(),
+    useNextSwcTransform(),
     useNextFontLoader(),
     useNextImageClientReference(),
     useNextMetadataImageLoader(),
