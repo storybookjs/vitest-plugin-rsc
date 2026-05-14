@@ -27,6 +27,27 @@ test("uses Next SWC to rewrite exported next/font calls", async () => {
   expect(code).toContain("export { geist }");
 });
 
+test("uses Next SWC to rewrite default-exported next/font/local calls", async () => {
+  const code = await transformWithNextSwc(
+    `
+      import localFont from "next/font/local";
+
+      const localSans = localFont({
+        src: "./fixtures/local-sans.woff2",
+        variable: "--font-local-sans",
+      });
+
+      export default localSans;
+    `,
+    "app/next-apis/swc-local-font-fixture.tsx",
+  );
+
+  expect(code).toContain("next/font/local/target.css?");
+  expect(code).toContain('"path":"app/next-apis/swc-local-font-fixture.tsx"');
+  expect(code).toContain('"variableName":"localSans"');
+  expect(code).toContain("export default localSans");
+});
+
 test("uses Next SWC to add next/dynamic loadable metadata", async () => {
   const code = await transformWithNextSwc(
     `

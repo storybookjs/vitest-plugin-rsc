@@ -11,8 +11,12 @@ test("aliases React packages through Next's vendored React for app-router enviro
   const config = await resolveNextPluginConfig();
 
   const rscAliases = getEnvironmentAliases(config, "client");
-  expect(findAlias(rscAliases, "react")).toContain(
-    "next/dist/compiled/react/react.react-server",
+  expect(findAlias(rscAliases, "react")).toContain("next/dist/compiled/react/react.react-server");
+  expect(findAlias(rscAliases, "react/compiler-runtime")).toContain(
+    "next/dist/compiled/react/compiler-runtime",
+  );
+  expect(findAlias(rscAliases, "react/jsx-dev-runtime")).toContain(
+    "next/dist/compiled/react/jsx-dev-runtime.react-server",
   );
   expect(findAlias(rscAliases, "react/jsx-runtime")).toContain(
     "next/dist/compiled/react/jsx-runtime.react-server",
@@ -20,14 +24,35 @@ test("aliases React packages through Next's vendored React for app-router enviro
   expect(findAlias(rscAliases, "react-dom")).toContain(
     "next/dist/compiled/react-dom/react-dom.react-server",
   );
+  expect(findAlias(rscAliases, "react-dom/server")).toContain(
+    "next/dist/build/webpack/alias/react-dom-server",
+  );
+  expect(findAlias(rscAliases, "react-dom/static")).toContain(
+    "next/dist/compiled/react-dom/static.edge",
+  );
   expect(findAlias(rscAliases, "react-server-dom-webpack/server")).toBe(
     "@vitejs/plugin-rsc/vendor/react-server-dom/server.edge",
   );
 
   const browserAliases = getEnvironmentAliases(config, "react_client");
   expect(findAlias(browserAliases, "react")).toContain("next/dist/compiled/react/index.js");
+  expect(findAlias(browserAliases, "react/compiler-runtime")).toContain(
+    "next/dist/compiled/react/compiler-runtime",
+  );
+  expect(findAlias(browserAliases, "react/jsx-dev-runtime")).toContain(
+    "next/dist/compiled/react/jsx-dev-runtime",
+  );
+  expect(findAlias(browserAliases, "react/jsx-runtime")).toContain(
+    "next/dist/compiled/react/jsx-runtime",
+  );
   expect(findAlias(browserAliases, "react-dom/client")).toContain(
     "next/dist/compiled/react-dom/client",
+  );
+  expect(findAlias(browserAliases, "react-dom/server")).toContain(
+    "next/dist/compiled/react-dom/server.browser",
+  );
+  expect(findAlias(browserAliases, "react-dom/static")).toContain(
+    "next/dist/compiled/react-dom/static.browser",
   );
   expect(findAlias(browserAliases, "react-server-dom-webpack/client")).toContain(
     "@vitejs/plugin-rsc",

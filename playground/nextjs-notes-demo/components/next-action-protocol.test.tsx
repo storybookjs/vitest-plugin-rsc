@@ -60,6 +60,20 @@ test("permanent action redirects use Next's action redirect protocol", async () 
   );
 });
 
+test("unstable_rethrow preserves Next router errors in server actions", async () => {
+  await renderServer(<NextActionProtocolProbe />, { url: "/action-protocol" });
+
+  const request = await captureActionRequest(() =>
+    page.getByRole("button", { name: "Capture rethrow redirect action" }).click(),
+  );
+  const response = await replayActionRequest(request);
+
+  expect(response.status).toBe(303);
+  expect(response.headers.get("x-action-redirect")).toBe(
+    "/action-protocol-rethrow-target?from=action;push",
+  );
+});
+
 test("thrown action errors use Next's rejected Flight payload with status 500", async () => {
   await renderServer(<NextActionProtocolProbe />, { url: "/action-protocol" });
 

@@ -1,4 +1,4 @@
-import { notFound, permanentRedirect, redirect } from "next/navigation";
+import { notFound, permanentRedirect, redirect, unstable_rethrow } from "next/navigation";
 import { NextActionProtocolClient } from "./next-action-protocol-client";
 
 export function NextActionProtocolProbe() {
@@ -20,6 +20,17 @@ export function NextActionProtocolProbe() {
     permanentRedirect("/action-protocol-permanent-target?from=action");
   }
 
+  async function rethrowRedirectAction() {
+    "use server";
+
+    try {
+      redirect("/action-protocol-rethrow-target?from=action");
+    } catch (error) {
+      unstable_rethrow(error);
+      throw new Error("redirect was not rethrown");
+    }
+  }
+
   async function throwAction() {
     "use server";
 
@@ -37,6 +48,7 @@ export function NextActionProtocolProbe() {
       defaultRedirectAction={defaultRedirectAction}
       notFoundAction={notFoundAction}
       permanentRedirectAction={permanentRedirectAction}
+      rethrowRedirectAction={rethrowRedirectAction}
       redirectAction={redirectAction}
       throwAction={throwAction}
     />
