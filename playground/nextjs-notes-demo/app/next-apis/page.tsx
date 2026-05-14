@@ -4,17 +4,22 @@ import Head from "next/head";
 import Image from "next/image";
 import Link from "next/link";
 import Script from "next/script";
+import { connection } from "next/server";
 import { ClientNavigationProbe } from "./client-navigation-probe";
+import staticLogo from "./fixtures/static-logo.svg";
 
 const LazyPanel = dynamic(() => import("./lazy-panel"));
 
-export default function NextApisPage() {
+export default async function NextApisPage() {
+  await connection();
+
   return (
     <main>
       <Head>
         <title>Ignored by App Router head</title>
       </Head>
       <h1>Next APIs</h1>
+      <p>Connection scope ready</p>
       <Link href="/notes">Notes link</Link>
       <Form action="/notes">
         <input aria-label="Search notes" name="q" defaultValue="next-form" />
@@ -28,6 +33,7 @@ export default function NextApisPage() {
         unoptimized
         width={48}
       />
+      <Image alt="Imported static logo" priority src={staticLogo} unoptimized />
       <Script id="next-api-script" strategy="afterInteractive">
         {`window.__nextApiScript = "loaded";`}
       </Script>

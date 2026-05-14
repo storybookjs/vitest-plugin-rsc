@@ -7,11 +7,13 @@ type ServerAction = () => Promise<unknown>;
 export function NextActionProtocolClient({
   defaultRedirectAction,
   notFoundAction,
+  permanentRedirectAction,
   redirectAction,
   throwAction,
 }: {
   defaultRedirectAction: ServerAction;
   notFoundAction: ServerAction;
+  permanentRedirectAction: ServerAction;
   redirectAction: ServerAction;
   throwAction: ServerAction;
 }) {
@@ -33,6 +35,9 @@ export function NextActionProtocolClient({
         Capture default redirect action
       </button>
       <button onClick={() => run("redirect", redirectAction)}>Capture redirect action</button>
+      <button onClick={() => run("permanent redirect", permanentRedirectAction)}>
+        Capture permanent redirect action
+      </button>
       <button onClick={() => run("not-found", notFoundAction)}>Capture not-found action</button>
       <button onClick={() => run("throw", throwAction)}>Capture throw action</button>
     </div>

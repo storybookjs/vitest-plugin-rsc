@@ -1,4 +1,11 @@
-import { refresh, revalidatePath, revalidateTag, unstable_cache, updateTag } from "next/cache";
+import {
+  refresh,
+  revalidatePath,
+  revalidateTag,
+  unstable_cache,
+  unstable_noStore,
+  updateTag,
+} from "next/cache";
 import {
   nextCacheProbeFetchUrl,
   nextCacheProbeNoStoreFetchUrl,
@@ -28,6 +35,11 @@ export function resetNextCacheProbe(label = "default") {
   actionWriteVersion = 0;
   cacheLabel = label;
   resetNextCacheProbeFetch(label);
+}
+
+export function NextNoStoreProbe() {
+  unstable_noStore();
+  return <p>unstable noStore called</p>;
 }
 
 export async function NextCacheProbe() {

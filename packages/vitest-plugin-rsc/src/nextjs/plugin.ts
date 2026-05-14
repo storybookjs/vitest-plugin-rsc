@@ -118,6 +118,7 @@ const nextRscServerOptimizeDeps = [
   "next/dist/compiled/@opentelemetry/api",
   "next/cache",
   "next/headers",
+  "next/server",
   "next/dist/compiled/@edge-runtime/cookies/index.js",
   "next/dist/server/node-environment-baseline.js",
   "next/dist/server/app-render/app-render.js",
@@ -205,6 +206,66 @@ type NextImageConfig = {
   remotePatterns?: unknown[];
   localPatterns?: unknown[];
   output?: string;
+};
+
+type NextCompilerAliasesModule = {
+  createVendoredReactAliases(
+    bundledReactChannel: "" | "-experimental",
+    options: {
+      layer: string;
+      isBrowser: boolean;
+      isEdgeServer: boolean;
+      reactProductionProfiling: boolean;
+    },
+  ): Record<string, string | string[]>;
+};
+
+type NextLoadConfig = (phase: string, dir: string) => Promise<LoadedNextConfig>;
+
+type NextConfigModule = {
+  default?: NextLoadConfig;
+} & NextLoadConfig;
+
+type LoadedNextConfig = {
+  distDir?: string;
+  experimental?: {
+    allowDevelopmentBuild?: boolean;
+    appNavFailHandling?: boolean;
+    fetchCacheKeyPrefix?: string;
+  };
+};
+
+type NextConstantsModule = {
+  PHASE_DEVELOPMENT_SERVER: string;
+  PHASE_PRODUCTION_BUILD: string;
+  PHASE_TEST: string;
+};
+
+type NextDefineEnvModule = {
+  getDefineEnv(options: {
+    isTurbopack: boolean;
+    config: LoadedNextConfig;
+    dev: boolean;
+    distDir: string;
+    projectPath: string;
+    fetchCacheKeyPrefix: string | undefined;
+    hasRewrites: boolean;
+    isClient: boolean;
+    isEdgeServer: boolean;
+    isNodeServer: boolean;
+    clientRouterFilters: undefined;
+    middlewareMatchers: undefined;
+    rewrites: {
+      beforeFiles: unknown[];
+      afterFiles: unknown[];
+      fallback: unknown[];
+    };
+  }): Record<string, unknown>;
+};
+
+type NextDefineEnvs = {
+  edge: Record<string, string>;
+  browser: Record<string, string>;
 };
 
 // Vite equivalents of the Next webpack aliases we rely on. Keep these aligned
@@ -335,6 +396,7 @@ function createNextEdgeNativeAliases(root: string): Alias[] {
 function createOptimizeDepsResolveAliases(
   edgeNativeAliases: Alias[],
   aliases: Record<string, string>,
+  extraAliases: Alias[] = [],
 ) {
   return {
     ...Object.fromEntries(
@@ -342,8 +404,67 @@ function createOptimizeDepsResolveAliases(
         .filter((alias): alias is Alias & { find: string } => typeof alias.find === "string")
         .map((alias) => [alias.find, alias.replacement]),
     ),
+    ...Object.fromEntries(
+      extraAliases
+        .filter((alias): alias is Alias & { find: string } => typeof alias.find === "string")
+        .map((alias) => [alias.find, alias.replacement]),
+    ),
     ...aliases,
   };
+}
+
+function createNextVendoredReactAliases({
+  root,
+  layer,
+  isBrowser,
+  isEdgeServer,
+}: {
+  root: string;
+  layer: "rsc" | "app-pages-browser";
+  isBrowser: boolean;
+  isEdgeServer: boolean;
+}): Alias[] {
+  try {
+    const { createVendoredReactAliases } = createProjectRequire(root)(
+      "next/dist/build/create-compiler-aliases.js",
+    ) as NextCompilerAliasesModule;
+    const aliases = createVendoredReactAliases("", {
+      layer,
+      isBrowser,
+      isEdgeServer,
+      reactProductionProfiling: false,
+    });
+
+    return Object.entries(aliases)
+      .flatMap(([source, replacement]): Alias[] => {
+        if (Array.isArray(replacement) || !isReactPackageAlias(source)) return [];
+
+        const find = source.endsWith("$") ? source.slice(0, -1) : source;
+        return [
+          {
+            find,
+            replacement: tryResolveFromProject(root, replacement) ?? replacement,
+          },
+        ];
+      })
+      .sort((a, b) => String(b.find).length - String(a.find).length);
+  } catch {
+    return [];
+  }
+}
+
+function isReactPackageAlias(source: string) {
+  const find = source.endsWith("$") ? source.slice(0, -1) : source;
+  return (
+    find === "react" ||
+    find.startsWith("react/") ||
+    find === "react-dom" ||
+    find.startsWith("react-dom/") ||
+    find === "next/dist/compiled/react" ||
+    find.startsWith("next/dist/compiled/react/") ||
+    find === "next/dist/compiled/react-dom" ||
+    find.startsWith("next/dist/compiled/react-dom/")
+  );
 }
 
 function createReactServerDomWebpackAliases(root: string) {
@@ -388,6 +509,111 @@ function pickNextImageConfig(config: NextImageConfig): NextImageConfig {
     remotePatterns: config.remotePatterns,
     localPatterns: config.localPatterns,
     output: config.output,
+  };
+}
+
+async function createNextDefineEnvs(
+  root: string,
+  mode: string,
+  nextImageConfig: NextImageConfig | undefined,
+): Promise<NextDefineEnvs> {
+  try {
+    const projectRequire = createProjectRequire(root);
+    const loadConfigModule = projectRequire("next/dist/server/config.js") as NextConfigModule;
+    const constants = projectRequire("next/dist/shared/lib/constants.js") as NextConstantsModule;
+    const { getDefineEnv } = projectRequire("next/dist/build/define-env.js") as NextDefineEnvModule;
+    const loadConfig = loadConfigModule.default ?? loadConfigModule;
+    const phase =
+      mode === "production"
+        ? constants.PHASE_PRODUCTION_BUILD
+        : process.env.NODE_ENV === "test"
+          ? constants.PHASE_TEST
+          : constants.PHASE_DEVELOPMENT_SERVER;
+    const dev = phase !== constants.PHASE_PRODUCTION_BUILD;
+    const nextConfig = await loadConfig(phase, root);
+    const baseOptions = {
+      isTurbopack: false,
+      config: nextConfig,
+      dev,
+      distDir: nextConfig.distDir ?? ".next",
+      projectPath: root,
+      fetchCacheKeyPrefix: nextConfig.experimental?.fetchCacheKeyPrefix,
+      hasRewrites: false,
+      clientRouterFilters: undefined,
+      middlewareMatchers: undefined,
+      rewrites: { beforeFiles: [], afterFiles: [], fallback: [] },
+    } satisfies Omit<
+      Parameters<NextDefineEnvModule["getDefineEnv"]>[0],
+      "isClient" | "isEdgeServer" | "isNodeServer"
+    >;
+
+    return {
+      edge: normalizeNextTestDefineEnv(
+        getDefineEnv({
+          ...baseOptions,
+          isClient: false,
+          isEdgeServer: true,
+          isNodeServer: false,
+        }),
+        "edge",
+      ),
+      browser: normalizeNextTestDefineEnv(
+        getDefineEnv({
+          ...baseOptions,
+          isClient: true,
+          isEdgeServer: false,
+          isNodeServer: false,
+        }),
+        "",
+      ),
+    };
+  } catch {
+    return createFallbackNextDefineEnvs(nextImageConfig);
+  }
+}
+
+function normalizeNextTestDefineEnv(defineEnv: Record<string, unknown>, nextRuntime: string) {
+  const serializableDefineEnv = Object.fromEntries(
+    Object.entries(defineEnv).flatMap(([key, value]) => {
+      if (value === undefined) return [];
+      return [[key, typeof value === "string" ? value : JSON.stringify(value)]];
+    }),
+  );
+
+  return {
+    ...serializableDefineEnv,
+    "process.env.NEXT_RUNTIME": JSON.stringify(nextRuntime),
+    "process.env.__NEXT_DEV_SERVER": JSON.stringify(""),
+  };
+}
+
+function createFallbackNextDefineEnvs(
+  nextImageConfig: NextImageConfig | undefined,
+): NextDefineEnvs {
+  const common = {
+    "process.env.__NEXT_APP_NAV_FAIL_HANDLING": JSON.stringify(false),
+    "process.env.__NEXT_CACHE_COMPONENTS": JSON.stringify(false),
+    "process.env.__NEXT_CLIENT_ROUTER_DYNAMIC_STALETIME": JSON.stringify("0"),
+    "process.env.__NEXT_CLIENT_ROUTER_STATIC_STALETIME": JSON.stringify("300"),
+    "process.env.__NEXT_CLIENT_SEGMENT_CACHE": JSON.stringify(true),
+    "process.env.__NEXT_DEV_SERVER": JSON.stringify(""),
+    "process.env.__NEXT_DYNAMIC_ON_HOVER": JSON.stringify(false),
+    ...(nextImageConfig
+      ? { "process.env.__NEXT_IMAGE_OPTS": JSON.stringify(nextImageConfig) }
+      : {}),
+  };
+
+  return {
+    edge: {
+      ...common,
+      "process.env.NEXT_RUNTIME": JSON.stringify("edge"),
+      "process.browser": JSON.stringify(false),
+    },
+    browser: {
+      ...common,
+      "process.env.NEXT_RUNTIME": JSON.stringify(""),
+      "process.browser": JSON.stringify(true),
+    },
   };
 }
 
@@ -677,6 +903,21 @@ function treatNextInternalsAsServerInRsc(): Plugin {
   };
 }
 
+function disableNextDevServerRuntime(): Plugin {
+  return {
+    name: "next-rsc-disable-next-dev-server-runtime",
+    enforce: "pre",
+    transform(code, id) {
+      if (!isNextInternalModule(id)) return;
+
+      const nextCode = rewriteNextDevServerChecks(code);
+      if (nextCode === code) return;
+
+      return { code: nextCode, map: null };
+    },
+  };
+}
+
 function isNextInternalModule(id: string) {
   return (
     /[/\\]next[/\\]dist[/\\]/.test(id) &&
@@ -693,10 +934,15 @@ function rewriteNextRuntimeChecks(code: string) {
   return code.replace(/\bprocess\.env\.NEXT_RUNTIME\b/g, '"edge"');
 }
 
+function rewriteNextDevServerChecks(code: string) {
+  return code.replace(/\bprocess\.env\.__NEXT_DEV_SERVER\b/g, "false");
+}
+
 export function vitestPluginNext(): Plugin[] {
   return [
     useVitestServerReferenceInfo(),
     treatNextInternalsAsServerInRsc(),
+    disableNextDevServerRuntime(),
     useNextEntryBase(),
     useNextEntryBaseClientReferences(),
     ...useNextAppRenderCompatibility(),
@@ -711,30 +957,33 @@ export function vitestPluginNext(): Plugin[] {
     appRouterApiPlugin("react_ssr", false),
     {
       name: "next-rsc-plugin",
-      config(config) {
+      async config(config, env) {
         const root = getProjectRoot(config);
         const edgeNativeAliases = createNextEdgeNativeAliases(root);
         const rscAppRouterAliases = createAppRouterApiAliasesFromNext(root, true);
         const reactClientAppRouterAliases = createAppRouterApiAliasesFromNext(root, false);
         const reactServerDomWebpackAliases = createReactServerDomWebpackAliases(root);
+        const rscReactAliases = createNextVendoredReactAliases({
+          root,
+          layer: "rsc",
+          isBrowser: false,
+          isEdgeServer: true,
+        });
+        const browserReactAliases = createNextVendoredReactAliases({
+          root,
+          layer: "app-pages-browser",
+          isBrowser: true,
+          isEdgeServer: false,
+        });
         const nextImageConfig = createNextImageConfig(root);
         const nextOptionalAppRenderDeps = filterResolvableOptimizeDeps(
           root,
           nextOptionalAppRenderOptimizeDeps,
         );
+        const nextDefineEnvs = await createNextDefineEnvs(root, env.mode, nextImageConfig);
 
         return {
           define: {
-            "process.env.NEXT_RUNTIME": JSON.stringify("edge"),
-            "process.env.__NEXT_APP_NAV_FAIL_HANDLING": JSON.stringify(false),
-            "process.env.__NEXT_CACHE_COMPONENTS": JSON.stringify(false),
-            "process.env.__NEXT_CLIENT_ROUTER_DYNAMIC_STALETIME": JSON.stringify("0"),
-            "process.env.__NEXT_CLIENT_ROUTER_STATIC_STALETIME": JSON.stringify("300"),
-            "process.env.__NEXT_CLIENT_SEGMENT_CACHE": JSON.stringify(true),
-            "process.env.__NEXT_DYNAMIC_ON_HOVER": JSON.stringify(false),
-            ...(nextImageConfig
-              ? { "process.env.__NEXT_IMAGE_OPTS": JSON.stringify(nextImageConfig) }
-              : {}),
             global: "globalThis",
             __dirname: JSON.stringify(null),
           },
@@ -749,12 +998,17 @@ export function vitestPluginNext(): Plugin[] {
           },
           optimizeDeps: {
             include: [...nextAppRouterApiOptimizeDeps],
+            rolldownOptions: {
+              plugins: [disableNextDevServerRuntime()],
+            },
           },
           environments: {
             client: {
+              define: nextDefineEnvs.edge,
               resolve: {
                 conditions: ["edge-light", "react-server"],
                 alias: [
+                  ...rscReactAliases,
                   {
                     find: "react-server-dom-webpack/client",
                     replacement: reactServerDomWebpackAliases.edge,
@@ -779,9 +1033,13 @@ export function vitestPluginNext(): Plugin[] {
                   ...nextRouteUtilityOptimizeDeps,
                 ],
                 rolldownOptions: {
+                  transform: {
+                    define: nextDefineEnvs.edge,
+                  },
                   plugins: [
                     useVitestServerReferenceInfo(root),
                     treatNextInternalsAsServerInRsc(),
+                    disableNextDevServerRuntime(),
                     useNextEntryBaseClientReferences(),
                     ...useNextAppRenderCompatibility(root),
                     useNextLinkClientReference(),
@@ -790,7 +1048,11 @@ export function vitestPluginNext(): Plugin[] {
                   ],
                   resolve: {
                     alias: {
-                      ...createOptimizeDepsResolveAliases(edgeNativeAliases, rscAppRouterAliases),
+                      ...createOptimizeDepsResolveAliases(
+                        edgeNativeAliases,
+                        rscAppRouterAliases,
+                        rscReactAliases,
+                      ),
                       "react-server-dom-webpack/client": reactServerDomWebpackAliases.edge,
                       "react-server-dom-webpack/server": reactServerDomWebpackAliases.serverEdge,
                       "react-server-dom-webpack/static": reactServerDomWebpackAliases.serverEdge,
@@ -800,9 +1062,11 @@ export function vitestPluginNext(): Plugin[] {
               },
             },
             react_client: {
+              define: nextDefineEnvs.browser,
               resolve: {
                 conditions: ["edge-light", "browser"],
                 alias: [
+                  ...browserReactAliases,
                   {
                     find: "react-server-dom-webpack/client",
                     replacement: reactServerDomWebpackAliases.browser,
@@ -824,8 +1088,12 @@ export function vitestPluginNext(): Plugin[] {
                   ...nextImageOptimizeDeps,
                 ],
                 rolldownOptions: {
+                  transform: {
+                    define: nextDefineEnvs.browser,
+                  },
                   plugins: [
                     useVitestServerReferenceInfo(root),
+                    disableNextDevServerRuntime(),
                     useNextLinkClientReference(),
                     useNextCompiledOpenTelemetryApi(root),
                   ],
@@ -834,6 +1102,7 @@ export function vitestPluginNext(): Plugin[] {
                       ...createOptimizeDepsResolveAliases(
                         edgeNativeAliases,
                         reactClientAppRouterAliases,
+                        browserReactAliases,
                       ),
                       "react-server-dom-webpack/client": reactServerDomWebpackAliases.browser,
                       "react-server-dom-webpack/client.browser":
@@ -844,9 +1113,11 @@ export function vitestPluginNext(): Plugin[] {
               },
             },
             react_ssr: {
+              define: nextDefineEnvs.browser,
               resolve: {
                 conditions: ["edge-light", "browser"],
                 alias: [
+                  ...browserReactAliases,
                   {
                     find: "react-server-dom-webpack/client",
                     replacement: reactServerDomWebpackAliases.edge,
@@ -869,8 +1140,12 @@ export function vitestPluginNext(): Plugin[] {
                   "react-dom/server.browser",
                 ],
                 rolldownOptions: {
+                  transform: {
+                    define: nextDefineEnvs.browser,
+                  },
                   plugins: [
                     useVitestServerReferenceInfo(root),
+                    disableNextDevServerRuntime(),
                     useNextLinkClientReference(),
                     useNextCompiledOpenTelemetryApi(root),
                   ],
@@ -879,6 +1154,7 @@ export function vitestPluginNext(): Plugin[] {
                       ...createOptimizeDepsResolveAliases(
                         edgeNativeAliases,
                         reactClientAppRouterAliases,
+                        browserReactAliases,
                       ),
                       "react-server-dom-webpack/client": reactServerDomWebpackAliases.edge,
                       "react-server-dom-webpack/client.browser": reactServerDomWebpackAliases.edge,
