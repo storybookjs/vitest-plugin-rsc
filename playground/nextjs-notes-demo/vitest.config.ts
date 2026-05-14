@@ -30,7 +30,6 @@ export default defineConfig({
       "next/dist/client/components/redirect.js",
       "next/dist/client/components/router-reducer/create-href-from-url.js",
       "next/dist/server/lib/server-action-request-meta.js",
-      "next/font/google",
       ...appShellOptimizeDeps,
     ],
   },
