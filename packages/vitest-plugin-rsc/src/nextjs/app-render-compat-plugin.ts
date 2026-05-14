@@ -29,9 +29,13 @@ function useNextAppRouterComponentStub(): Plugin {
     resolveId(source, importer) {
       if (
         importer &&
-        isNextAppRenderModule(importer) &&
+        isNextAppRouterComponentImporter(importer) &&
         (source === "../../client/components/app-router" ||
-          source === "../../client/components/app-router.js")
+          source === "../../client/components/app-router.js" ||
+          source === "../../app-router" ||
+          source === "../../app-router.js" ||
+          source === "../app-router" ||
+          source === "../app-router.js")
       ) {
         return virtualNextAppRouterComponentStubId;
       }
@@ -45,6 +49,19 @@ function useNextAppRouterComponentStub(): Plugin {
 
       return `
 import { createElement } from "react";
+
+export function createEmptyCacheNode() {
+  return {
+    lazyData: null,
+    rsc: null,
+    prefetchRsc: null,
+    head: null,
+    prefetchHead: null,
+    parallelRoutes: new Map(),
+    loading: null,
+    navigatedAt: -1,
+  };
+}
 
 export default function AppRouter() {
   return createElement("vitest-next-app-router-stub");
@@ -183,6 +200,13 @@ function useNextServerOnlyAlias(root: string): Plugin {
 
 function isNextAppRenderModule(id: string) {
   return /[/\\]next[/\\]dist[/\\]server[/\\]app-render[/\\]app-render\.js(?:\?|$)/.test(id);
+}
+
+function isNextAppRouterComponentImporter(id: string) {
+  return (
+    isNextAppRenderModule(id) ||
+    /[/\\]next[/\\]dist[/\\]client[/\\]components[/\\].+\.js(?:\?|$)/.test(id)
+  );
 }
 
 function isNextAppRenderServerModule(id: string) {
