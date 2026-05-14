@@ -7,16 +7,18 @@ test("next/font generates browser-visible CSS for visual tests", async () => {
 
   await expect.element(page.getByRole("heading", { name: "Next font route" })).toBeVisible();
   await expect.element(page.getByText("font-family: Geist Mono")).toBeVisible();
-  await expect.element(page.getByText("Local font rendered")).toBeVisible();
+  await expect.element(page.getByText("Local font rendered", { exact: true })).toBeVisible();
+  await expect.element(page.getByText("Exported Google font rendered")).toBeVisible();
+  await expect.element(page.getByText("Exported local font rendered")).toBeVisible();
 
   const fontScope = document.querySelector<HTMLElement>('[data-testid="font-scope"]');
-  expect(fontScope?.className).toContain("__next_font_variable_");
-  expect(getComputedStyle(fontScope!).getPropertyValue("--font-geist-sans")).toContain("Geist");
-  expect(getComputedStyle(fontScope!).getPropertyValue("--font-geist-mono")).toContain(
-    "Geist Mono",
+  expect(fontScope?.className).toContain("__variable_");
+  expect(fontScope?.className.match(/__variable_/g)?.length).toBe(5);
+  expect(document.querySelector('[data-testid="google-style-family"]')?.textContent).toContain(
+    "Geist",
   );
-  expect(getComputedStyle(fontScope!).getPropertyValue("--font-local-geist")).toContain(
-    "localGeist",
+  expect(document.querySelector('[data-testid="local-style-family"]')?.textContent).toContain(
+    "exportedLocalFont",
   );
 
   const fontCss = Array.from(document.head.querySelectorAll("style"))
@@ -25,5 +27,11 @@ test("next/font generates browser-visible CSS for visual tests", async () => {
   expect(fontCss).toContain("@font-face");
   expect(fontCss).toContain("data:font/woff2");
   expect(fontCss).toContain("font-display: swap");
-  expect(fontCss).toContain("--font-local-geist: localGeist");
+  expect(fontCss).toContain("--font-geist-sans:");
+  expect(fontCss).toContain("--font-geist-mono:");
+  expect(fontCss).toContain("--font-local-geist: 'localGeist");
+  expect(fontCss).toContain("--font-exported-google:");
+  expect(fontCss).toContain("size-adjust:");
+  expect(fontCss).toContain("ascent-override:");
+  expect(fontCss).toContain("--font-exported-local: 'exportedLocalFont");
 });
