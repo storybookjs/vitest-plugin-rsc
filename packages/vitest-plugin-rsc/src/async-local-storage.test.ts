@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { executeAsync, resetAsyncLocalStorage } from "./async-local-storage";
+import { createAsyncLocalStorage, executeAsync, resetAsyncLocalStorage } from "./async-local-storage";
 import {
   AsyncLocalStorage,
   AsyncResource,
@@ -138,6 +138,17 @@ test("binds a callback to the current snapshot", () => {
   expect(storage.getStore()).toBe("outside");
 });
 
+test("reuses createAsyncLocalStorage keys for duplicate module callsites", () => {
+  const createStorageFromSameCallsite = () => createAsyncLocalStorage<string>();
+  const first = createStorageFromSameCallsite();
+  const second = createStorageFromSameCallsite();
+
+  const result = first.run("inside", () => second.getStore());
+
+  expect(result).toBe("inside");
+  expect(second.getStore()).toBeUndefined();
+});
+
 test("keeps a stream result in context until it is consumed", async () => {
   const storage = new AsyncLocalStorage<string>();
   const seenStores: (string | undefined)[] = [];
@@ -160,6 +171,29 @@ test("keeps a stream result in context until it is consumed", async () => {
   await expect(reader.read()).resolves.toEqual({ done: false, value: "chunk" });
   expect((await reader.read()).done).toBe(true);
   expect(seenStores).toEqual(["inside"]);
+  expect(storage.getStore()).toBeUndefined();
+});
+
+test("does not leave an active stream frame during a transformed await", async () => {
+  const storage = new AsyncLocalStorage<string>();
+
+  const stream = storage.run(
+    "inside",
+    () =>
+      new ReadableStream<string>({
+        pull(controller) {
+          controller.enqueue("chunk");
+          controller.close();
+        },
+      }),
+  );
+
+  await preserveAsyncLocalStorage(Promise.resolve());
+  expect(storage.getStore()).toBe("inside");
+
+  const reader = stream.getReader();
+  await expect(reader.read()).resolves.toEqual({ done: false, value: "chunk" });
+  expect((await reader.read()).done).toBe(true);
   expect(storage.getStore()).toBeUndefined();
 });
 

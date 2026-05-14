@@ -1,13 +1,15 @@
 import { executeAsync as executeUnctxAsync } from "unctx";
 
 type RunCallback<R, TArgs extends unknown[]> = (...args: TArgs) => R;
-type StoreValues = Map<SequentialAsyncLocalStorage<unknown>, unknown>;
+type StoreKey = symbol | SequentialAsyncLocalStorage<unknown>;
+type StoreValues = Map<StoreKey, unknown>;
 type AsyncContextRestore = () => void;
 type AsyncContextLeave = () => AsyncContextRestore | undefined;
 type AsyncContextFrame = {
   stores: StoreValues;
   parent: AsyncContextFrame | undefined;
   active: boolean;
+  persistent: boolean;
   generation: number;
 };
 type AsyncContextState = {
@@ -51,10 +53,14 @@ function isContextBoundReadableStream(stream: ReadableStream<unknown>): boolean 
 }
 
 export class SequentialAsyncLocalStorage<Store> {
+  readonly #storeKey: StoreKey;
+
+  constructor(storeKey?: StoreKey) {
+    this.#storeKey = storeKey ?? (this as SequentialAsyncLocalStorage<unknown>);
+  }
+
   getStore(): Store | undefined {
-    return asyncContextState.currentFrame.stores.get(
-      this as SequentialAsyncLocalStorage<unknown>,
-    ) as Store | undefined;
+    return asyncContextState.currentFrame.stores.get(this.#storeKey) as Store | undefined;
   }
 
   run<R, TArgs extends unknown[]>(
@@ -64,14 +70,14 @@ export class SequentialAsyncLocalStorage<Store> {
   ): R {
     const previousFrame = asyncContextState.currentFrame;
     const frame = createFrame(previousFrame, previousFrame.stores);
-    frame.stores.set(this as SequentialAsyncLocalStorage<unknown>, store);
+    frame.stores.set(this.#storeKey, store);
     return runInFrame(frame, callback, args);
   }
 
   exit<R, TArgs extends unknown[]>(callback: RunCallback<R, TArgs>, ...args: TArgs): R {
     const previousFrame = asyncContextState.currentFrame;
     const frame = createFrame(previousFrame, previousFrame.stores);
-    frame.stores.delete(this as SequentialAsyncLocalStorage<unknown>);
+    frame.stores.delete(this.#storeKey);
     return runInFrame(frame, callback, args);
   }
 
@@ -82,7 +88,7 @@ export class SequentialAsyncLocalStorage<Store> {
       asyncContextState.currentFrame,
       asyncContextState.currentFrame.stores,
     );
-    frame.stores.set(this as SequentialAsyncLocalStorage<unknown>, store);
+    frame.stores.set(this.#storeKey, store);
     registerFrame(frame);
     asyncContextState.currentFrame = frame;
   }
@@ -93,7 +99,7 @@ export class SequentialAsyncLocalStorage<Store> {
       asyncContextState.currentFrame,
       asyncContextState.currentFrame.stores,
     );
-    frame.stores.delete(this as SequentialAsyncLocalStorage<unknown>);
+    frame.stores.delete(this.#storeKey);
     registerFrame(frame);
     asyncContextState.currentFrame = frame;
   }
@@ -123,7 +129,7 @@ export class SequentialAsyncLocalStorage<Store> {
 }
 
 export function createAsyncLocalStorage<Store>(): SequentialAsyncLocalStorage<Store> {
-  return new SequentialAsyncLocalStorage<Store>();
+  return new SequentialAsyncLocalStorage<Store>(getCreateAsyncLocalStorageKey());
 }
 
 export function bindSnapshot<T>(fn: T): T {
@@ -190,7 +196,9 @@ function runInFrame<R, TArgs extends unknown[]>(
       return result;
     }
 
+    frame.persistent = true;
     return withStreamLifecycle(result, () => {
+      frame.persistent = false;
       unregister();
       closeFrame(frame);
     }) as R;
@@ -220,8 +228,12 @@ function withAsyncResultLifecycle<R>(
           return value;
         }
 
+        frame.persistent = true;
         asyncContextState.currentFrame = frame;
-        return withStreamLifecycle(value, onFinally);
+        return withStreamLifecycle(value, () => {
+          frame.persistent = false;
+          onFinally();
+        });
       }
 
       onFinally();
@@ -312,6 +324,7 @@ function createFrame(
     stores: new Map(stores),
     parent,
     active: true,
+    persistent: false,
     generation: asyncContextState.resetGeneration,
   };
 }
@@ -321,6 +334,7 @@ function createRootFrame(generation: number): AsyncContextFrame {
     stores: new Map(),
     parent: undefined,
     active: true,
+    persistent: false,
     generation,
   };
 }
@@ -344,6 +358,7 @@ function suspendFrame(frame: AsyncContextFrame): void {
 function leaveFrame(frame: AsyncContextFrame): AsyncContextRestore | undefined {
   if (
     frame.generation !== asyncContextState.resetGeneration ||
+    frame.persistent ||
     !frame.active ||
     asyncContextState.currentFrame !== frame
   ) {
@@ -383,6 +398,52 @@ function getAsyncContextState(): AsyncContextState {
   }
 
   return globalScope.__vitest_plugin_rsc_async_context__;
+}
+
+function getCreateAsyncLocalStorageKey(): symbol {
+  const callsite = getCreateAsyncLocalStorageCallsite();
+  if (!callsite) return Symbol("vitest-plugin-rsc.async-local-storage");
+
+  const registry = getCreateAsyncLocalStorageKeyRegistry();
+  let key = registry.get(callsite);
+  if (!key) {
+    key = Symbol(callsite);
+    registry.set(callsite, key);
+  }
+
+  return key;
+}
+
+function getCreateAsyncLocalStorageCallsite(): string | undefined {
+  const stack = new Error().stack;
+  if (!stack) return;
+
+  for (const rawLine of stack.split("\n").slice(1)) {
+    const line = rawLine.trim();
+    if (
+      line.includes("getCreateAsyncLocalStorageCallsite") ||
+      line.includes("getCreateAsyncLocalStorageKey") ||
+      line.includes("createAsyncLocalStorage") ||
+      line.includes("vitest-plugin-rsc/async-local-storage") ||
+      /[/\\]async-local-storage-[^/\\]+\.js/.test(line)
+    ) {
+      continue;
+    }
+
+    return normalizeStorageCallsite(line);
+  }
+}
+
+function normalizeStorageCallsite(callsite: string): string {
+  return callsite.replace(/\?[^:)]+/g, "");
+}
+
+function getCreateAsyncLocalStorageKeyRegistry(): Map<string, symbol> {
+  const globalScope = globalThis as typeof globalThis & {
+    __vitest_plugin_rsc_async_storage_keys__?: Map<string, symbol>;
+  };
+
+  return (globalScope.__vitest_plugin_rsc_async_storage_keys__ ??= new Map());
 }
 
 function getUnctxAsyncHandlers(): Set<AsyncContextLeave> {
