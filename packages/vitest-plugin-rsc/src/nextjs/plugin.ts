@@ -823,8 +823,6 @@ function rewriteNextRuntimeChecks(code: string) {
 
 export function vitestPluginNext(): Plugin[] {
   return [
-    useVitestServerReferenceInfo(),
-    treatNextInternalsAsServerInRsc(),
     useNextEntryBase(),
     useNextEntryBaseClientReferences(),
     useNextMetadataImageLoader(),
