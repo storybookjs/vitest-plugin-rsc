@@ -11,6 +11,9 @@ process.env.LAUNCH_EDITOR = "/usr/bin/true";
 // oxlint-disable-next-line no-process-env
 const maxWorkers = process.env.CI ? undefined : 4;
 
+// oxlint-disable-next-line no-process-env
+const browserApiPort = Number(process.env.VITEST_BROWSER_API_PORT ?? 64124);
+
 export default defineConfig({
   envPrefix: ["VITE_", "CI"],
   resolve: {
@@ -22,6 +25,7 @@ export default defineConfig({
   },
   optimizeDeps: {
     include: [
+      "vitest-plugin-rsc > unctx",
       "next/dist/client/components/http-access-fallback/http-access-fallback.js",
       "next/dist/client/components/redirect-error.js",
       "next/dist/client/components/redirect-status-code.js",
@@ -54,6 +58,7 @@ export default defineConfig({
           include: ["**/*.test.{ts,tsx}"],
           exclude: ["**/*.node.test.{ts,tsx}", "node_modules"],
           browser: {
+            api: browserApiPort,
             enabled: true,
             headless: true,
             viewport: { width: 390, height: 844 },
