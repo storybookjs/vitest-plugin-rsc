@@ -162,16 +162,12 @@ export async function createNextRequestContext({
       // Adaptation: the generic test harness chooses the phase for render vs
       // action callbacks.
       requestStore.phase = phase === "action-render" ? "render" : phase;
-      // Next uses nested `.run(...)` calls here. Our browser AsyncLocalStorage
-      // shim currently closes a `.run(...)` frame once the direct callback
-      // result settles, while React's RSC stream can continue rendering later
-      // during stream consumption. Keep the request stores ambient for the
-      // mounted test root and rely on test cleanup to reset the global shim.
-      workAsyncStorage.enterWith(workStore as never);
-      actionAsyncStorage.enterWith({ isAction: phase !== "render" });
-      workUnitAsyncStorage.enterWith(requestStore as never);
+      return workAsyncStorage.run(workStore as never, () =>
+        actionAsyncStorage.run({ isAction: phase !== "render" }, () =>
+          workUnitAsyncStorage.run(requestStore as never, callback),
+        ),
+      );
       // End copy
-      return callback();
     },
     async completeAction(options: { forceRender?: boolean } = {}) {
       const headers = new Headers(responseHeaders);
