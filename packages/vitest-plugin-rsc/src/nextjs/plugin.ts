@@ -823,8 +823,15 @@ function rewriteNextRuntimeChecks(code: string) {
 
 export function vitestPluginNext(): Plugin[] {
   return [
+    useVitestServerReferenceInfo(),
+    treatNextInternalsAsServerInRsc(),
     useNextEntryBase(),
     useNextEntryBaseClientReferences(),
+    useNextAppRouterServerStub(),
+    useNextAppRenderReactDomServer(),
+    useNextServerInsertedHtmlStub(),
+    useNextImageConfigContextStub(),
+    useNextServerOnlyStub(),
     useNextMetadataImageLoader(),
     useNextRouteManifest(),
     appRouterApiPlugin("client", true),
