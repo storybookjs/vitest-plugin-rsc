@@ -7,8 +7,13 @@ test("renderServer resolves a parallel route default slot in notes demo", async 
 
   expect(container).toBe(document.body);
   expect(document.documentElement.lang).toBe("en");
-  expect(document.documentElement.className).toContain("font-geist-sans");
-  expect(document.documentElement.className).toContain("font-geist-mono");
+  expect(document.documentElement.className).toContain("__variable_");
+  expect(
+    getComputedStyle(document.documentElement).getPropertyValue("--font-geist-sans"),
+  ).toContain("Geist");
+  expect(
+    getComputedStyle(document.documentElement).getPropertyValue("--font-geist-mono"),
+  ).toContain("Geist Mono");
   expect(document.body.querySelector("html")).toBeNull();
   expect(document.body.querySelector("body")).toBeNull();
   await expect.element(page.getByTestId("notes-route-patterns-layout")).toBeVisible();
