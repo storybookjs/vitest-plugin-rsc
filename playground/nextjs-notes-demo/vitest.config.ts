@@ -8,6 +8,9 @@ import "#env/load-next.ts";
 // oxlint-disable-next-line no-process-env
 process.env.LAUNCH_EDITOR = "/usr/bin/true";
 
+// oxlint-disable-next-line no-process-env
+const maxWorkers = process.env.CI ? undefined : 4;
+
 export default defineConfig({
   envPrefix: ["VITE_", "CI"],
   resolve: {
@@ -28,7 +31,7 @@ export default defineConfig({
     ],
   },
   test: {
-    maxWorkers: 4,
+    maxWorkers,
     coverage: {
       provider: "v8",
       reporter: ["text", "html", "lcov"],
