@@ -436,78 +436,17 @@ function useNextEntryBase(): Plugin {
 	import * as hooksServerContext from "next/dist/client/components/hooks-server-context.js";
 import {
   createPrerenderSearchParamsForClientPage,
-  createServerSearchParamsForServerPage as createNextServerSearchParamsForServerPage,
+  createServerSearchParamsForServerPage,
 } from "next/dist/server/request/search-params.js";
 import {
   createPrerenderParamsForClientSegment,
-  createServerParamsForServerSegment as createNextServerParamsForServerSegment,
+  createServerParamsForServerSegment,
 } from "next/dist/server/request/params.js";
 import { Postpone } from "next/dist/server/app-render/rsc/postpone.js";
 import { preconnect, preloadFont, preloadStyle } from "next/dist/server/app-render/rsc/preloads.js";
 
 function SegmentViewNode({ children }) {
   return children;
-}
-
-function isCacheWorkUnitStore() {
-  const store = workUnitAsyncStorage.getStore();
-  return store?.type === "cache" || store?.type === "private-cache" || store?.type === "unstable-cache";
-}
-
-function isCacheContextInvariant(error, helperName) {
-  return (
-    error instanceof Error &&
-    error.message ===
-      "Invariant: " + helperName + " should not be called in cache contexts. This is a bug in Next.js."
-  );
-}
-
-function createServerParamsForServerSegment(
-  underlyingParams,
-  optionalCatchAllParamName,
-  varyParamsAccumulator,
-  isRuntimePrefetchable
-) {
-  if (isCacheWorkUnitStore()) {
-    return Promise.resolve(underlyingParams);
-  }
-
-  try {
-    return createNextServerParamsForServerSegment(
-      underlyingParams,
-      optionalCatchAllParamName,
-      varyParamsAccumulator,
-      isRuntimePrefetchable
-    );
-  } catch (error) {
-    if (isCacheContextInvariant(error, "createServerParamsForServerSegment")) {
-      return Promise.resolve(underlyingParams);
-    }
-    throw error;
-  }
-}
-
-function createServerSearchParamsForServerPage(
-  underlyingSearchParams,
-  varyParamsAccumulator,
-  isRuntimePrefetchable
-) {
-  if (isCacheWorkUnitStore()) {
-    return Promise.resolve(underlyingSearchParams);
-  }
-
-  try {
-    return createNextServerSearchParamsForServerPage(
-      underlyingSearchParams,
-      varyParamsAccumulator,
-      isRuntimePrefetchable
-    );
-  } catch (error) {
-    if (isCacheContextInvariant(error, "createServerSearchParamsForServerPage")) {
-      return Promise.resolve(underlyingSearchParams);
-    }
-    throw error;
-  }
 }
 
 export {
