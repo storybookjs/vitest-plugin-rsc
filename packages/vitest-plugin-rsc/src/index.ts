@@ -4,6 +4,7 @@ import { vitePluginRscMinimal } from "@vitejs/plugin-rsc/plugin";
 import { createReactClientCoveragePlugin } from "./coverage";
 
 const reactClientWebSocketInfoPath = "/@vite/react-client-runner-websocket";
+const reactSsrInvokePath = "/@vite/invoke-react-ssr";
 const reactClientWebSocketQuery = "vitest-plugin-rsc-react-client";
 const reactClientWebSocketInvokeEvent = "vitest-plugin-rsc:react-client:invoke";
 const reactClientWebSocketInvokeResultEvent = "vitest-plugin-rsc:react-client:invoke-result";
@@ -21,6 +22,7 @@ export function vitestPluginRSC(): Plugin[] {
     ...vitePluginRscMinimal({
       environment: {
         browser: "react_client",
+        ssr: "react_ssr",
         rsc: "client",
       },
     }),
@@ -54,11 +56,18 @@ export function vitestPluginRSC(): Plugin[] {
           });
         });
 
-        server.middlewares.use((req, res, next) => {
+        server.middlewares.use(async (req, res, next) => {
           const url = new URL(req.url ?? "/", "https://any.local");
           if (url.pathname === reactClientWebSocketInfoPath) {
             res.setHeader("Content-Type", "application/json");
             res.end(JSON.stringify(getReactClientWebSocketInfo(server)));
+            return;
+          }
+
+          if (url.pathname === reactSsrInvokePath) {
+            const payload = JSON.parse(url.searchParams.get("data")!);
+            const result = await server.environments["react_ssr"]!.hot.handleInvoke(payload);
+            res.end(JSON.stringify(result));
             return;
           }
 
@@ -111,9 +120,33 @@ export function vitestPluginRSC(): Plugin[] {
                   "react",
                   "react-dom",
                   "react-dom/client",
+                  "react-dom/server.browser",
                   "react/jsx-runtime",
                   "react/jsx-dev-runtime",
                   "@vitejs/plugin-rsc/vendor/react-server-dom/client.browser",
+                ],
+                exclude: ["vitest-plugin-rsc", "@vitejs/plugin-rsc"],
+              },
+            },
+            react_ssr: {
+              consumer: "client",
+              keepProcessEnv: false,
+              resolve: {
+                conditions: ["browser"],
+                dedupe: ["react", "react-dom"],
+              },
+              dev: {
+                moduleRunnerTransform: true,
+                preTransformRequests: true,
+              },
+              optimizeDeps: {
+                include: [
+                  "react",
+                  "react-dom",
+                  "react-dom/server.browser",
+                  "react/jsx-runtime",
+                  "react/jsx-dev-runtime",
+                  "@vitejs/plugin-rsc/vendor/react-server-dom/client.edge",
                 ],
                 exclude: ["vitest-plugin-rsc", "@vitejs/plugin-rsc"],
               },
@@ -124,6 +157,7 @@ export function vitestPluginRSC(): Plugin[] {
       configResolved(config) {
         const client = config.environments.client!;
         const reactClient = config.environments.react_client!;
+        const reactSsr = config.environments.react_ssr!;
 
         // Vitest browser seeds the default client optimizer with test/setup entries.
         // The hidden react_client runner imports client references later, so without
@@ -133,6 +167,19 @@ export function vitestPluginRSC(): Plugin[] {
           ...new Set([
             ...(client.optimizeDeps.exclude ?? []),
             ...(reactClient.optimizeDeps.exclude ?? []),
+          ]),
+        ];
+        reactSsr.optimizeDeps.entries ??= client.optimizeDeps.entries;
+        reactSsr.optimizeDeps.include = [
+          ...new Set([
+            ...(reactClient.optimizeDeps.include ?? []),
+            ...(reactSsr.optimizeDeps.include ?? []),
+          ]),
+        ];
+        reactSsr.optimizeDeps.exclude = [
+          ...new Set([
+            ...(client.optimizeDeps.exclude ?? []),
+            ...(reactSsr.optimizeDeps.exclude ?? []),
           ]),
         ];
       },

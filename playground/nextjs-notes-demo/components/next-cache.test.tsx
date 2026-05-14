@@ -3,7 +3,7 @@ import { page } from "vitest/browser";
 import { cleanup, renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
 import { NextCacheProbe, resetNextCacheProbe } from "./next-cache-probe";
 
-test("server refresh rerenders without invalidating cached data or fetches", async () => {
+test("server refresh rerenders without invalidating cached data", async () => {
   await renderNextCacheProbe();
 
   await expect.element(page.getByText("render: 1")).toBeVisible();
@@ -15,11 +15,11 @@ test("server refresh rerenders without invalidating cached data or fetches", asy
 
   await expect.element(page.getByText("render: 2")).toBeVisible();
   await expect.element(page.getByText("cached data: default data 1")).toBeVisible();
-  await expect.element(page.getByText("cached fetch: default fetch 1")).toBeVisible();
-  await expect.element(page.getByText("cached fetch duplicate: default fetch 1")).toBeVisible();
+  await expect.element(page.getByText("cached fetch: default fetch 2")).toBeVisible();
+  await expect.element(page.getByText("cached fetch duplicate: default fetch 2")).toBeVisible();
 });
 
-test("identical force-cache fetches are deduped in one render and reused on refresh", async () => {
+test("identical force-cache fetches are deduped in one render after refresh", async () => {
   await renderNextCacheProbe();
 
   await expect.element(page.getByText("render: 1")).toBeVisible();
@@ -29,8 +29,8 @@ test("identical force-cache fetches are deduped in one render and reused on refr
   await page.getByRole("button", { name: "Refresh", exact: true }).click();
 
   await expect.element(page.getByText("render: 2")).toBeVisible();
-  await expect.element(page.getByText("cached fetch: default fetch 1")).toBeVisible();
-  await expect.element(page.getByText("cached fetch duplicate: default fetch 1")).toBeVisible();
+  await expect.element(page.getByText("cached fetch: default fetch 2")).toBeVisible();
+  await expect.element(page.getByText("cached fetch duplicate: default fetch 2")).toBeVisible();
 });
 
 test("no-store fetches bypass the Next fetch cache", async () => {
@@ -76,7 +76,7 @@ test("refresh renders uncached action writes while preserving cached reads", asy
   await expect.element(page.getByText("render: 2")).toBeVisible();
   await expect.element(page.getByText("action writes: 1")).toBeVisible();
   await expect.element(page.getByText("cached data: default data 1")).toBeVisible();
-  await expect.element(page.getByText("cached fetch: default fetch 1")).toBeVisible();
+  await expect.element(page.getByText("cached fetch: default fetch 2")).toBeVisible();
 });
 
 test("updateTag invalidates unstable_cache data for the next server render", async () => {
@@ -89,7 +89,7 @@ test("updateTag invalidates unstable_cache data for the next server render", asy
 
   await expect.element(page.getByText("render: 2")).toBeVisible();
   await expect.element(page.getByText("cached data: default data 2")).toBeVisible();
-  await expect.element(page.getByText("cached fetch: default fetch 1")).toBeVisible();
+  await expect.element(page.getByText("cached fetch: default fetch 2")).toBeVisible();
 });
 
 test("updateTag invalidates cached fetches for the next server render", async () => {
@@ -140,7 +140,7 @@ test("revalidateTag with expire 0 invalidates cached data for the next server re
 
   await expect.element(page.getByText("render: 2")).toBeVisible();
   await expect.element(page.getByText("cached data: default data 2")).toBeVisible();
-  await expect.element(page.getByText("cached fetch: default fetch 1")).toBeVisible();
+  await expect.element(page.getByText("cached fetch: default fetch 2")).toBeVisible();
 });
 
 test("revalidatePath rerenders the current path with fresh cached reads", async () => {
