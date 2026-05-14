@@ -21,6 +21,21 @@ test("notes demo renders Next app-router API aliases and compiler surfaces", asy
   await expect.element(page.getByRole("button", { name: "Search" })).toBeVisible();
   await expect.element(page.getByText("Dynamic panel loaded")).toBeVisible();
   await expect.element(page.getByText("Pathname: /next-apis")).toBeVisible();
+  await expect.element(page.getByText("Client error boundary ready")).toBeVisible();
+  await expect.element(page.getByText("Web vitals hook ready")).toBeVisible();
+
+  const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+  try {
+    await page.getByRole("button", { name: "Trigger client error" }).click();
+    await expect
+      .element(page.getByText("Client error caught: next error boundary boom"))
+      .toBeVisible();
+    await page.getByRole("button", { name: "Recover client error" }).click();
+  } finally {
+    consoleError.mockRestore();
+  }
+
+  await expect.element(page.getByText("Client error boundary ready")).toBeVisible();
 
   const image = page.getByRole("img", { name: "Next API image" });
   await expect.element(image).toBeVisible();

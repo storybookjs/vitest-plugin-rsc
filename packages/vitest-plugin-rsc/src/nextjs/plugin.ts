@@ -64,12 +64,23 @@ const nextClientNavigationOptimizeDeps = [
 const nextAppRouterApiOptimizeDeps = [
   "next/dist/api/app-dynamic",
   "next/dist/api/app-dynamic.js",
+  "next/dist/api/error",
+  "next/dist/api/error.js",
+  "next/dist/client/components/catch-error",
+  "next/dist/client/components/catch-error.js",
   "next/dist/client/components/noop-head",
   "next/dist/client/components/noop-head.js",
+  "next/dist/client/web-vitals",
+  "next/dist/client/web-vitals.js",
+  "next/dist/compiled/web-vitals",
   "next/dist/shared/lib/app-dynamic",
   "next/dist/shared/lib/app-dynamic.js",
   "next/dist/shared/lib/lazy-dynamic/loadable",
   "next/dist/shared/lib/lazy-dynamic/loadable.js",
+  "next/error",
+  "next/error.js",
+  "next/web-vitals",
+  "next/web-vitals.js",
 ] as const;
 
 const nextAppRouterClientApiOptimizeDeps = [

@@ -6,8 +6,10 @@ import Link from "next/link";
 import Script from "next/script";
 import { connection } from "next/server";
 import { AfterProbe } from "./after-probe";
+import { ClientErrorProbe } from "./client-error-probe";
 import { ClientNavigationProbe } from "./client-navigation-probe";
 import staticLogo from "./fixtures/static-logo.svg";
+import { WebVitalsProbe } from "./web-vitals-probe";
 
 const LazyPanel = dynamic(() => import("./lazy-panel"));
 
@@ -41,6 +43,8 @@ export default async function NextApisPage() {
       </Script>
       <LazyPanel />
       <ClientNavigationProbe />
+      <ClientErrorProbe />
+      <WebVitalsProbe />
     </main>
   );
 }
