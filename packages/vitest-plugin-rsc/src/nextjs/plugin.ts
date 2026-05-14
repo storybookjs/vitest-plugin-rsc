@@ -2,6 +2,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Alias, Plugin, UserConfig } from "vite";
 import { useNextAppRenderCompatibility } from "./app-render-compat-plugin";
+import { useNextLinkClientReference } from "./client-reference-plugin";
 import { useNextFontLoader } from "./font-loader-plugin";
 import { useNextImageClientReference } from "./image-plugin";
 import { useNextMetadataImageLoader } from "./metadata-image-loader-plugin";
@@ -57,6 +58,36 @@ const nextClientRouterOptimizeDeps = [
 const nextClientNavigationOptimizeDeps = [
   "next/dist/client/components/navigation",
   "next/dist/client/components/navigation.js",
+] as const;
+
+const nextAppRouterApiOptimizeDeps = [
+  "next/dist/api/app-dynamic",
+  "next/dist/api/app-dynamic.js",
+  "next/dist/api/error.react-server",
+  "next/dist/api/error.react-server.js",
+  "next/dist/client/components/noop-head",
+  "next/dist/client/components/noop-head.js",
+  "next/dist/shared/lib/app-dynamic",
+  "next/dist/shared/lib/app-dynamic.js",
+  "next/dist/shared/lib/lazy-dynamic/loadable",
+  "next/dist/shared/lib/lazy-dynamic/loadable.js",
+] as const;
+
+const nextAppRouterClientApiOptimizeDeps = [
+  "next/dist/api/error",
+  "next/dist/api/error.js",
+  "next/dist/client/add-base-path",
+  "next/dist/client/add-base-path.js",
+  "next/dist/client/app-dir/form",
+  "next/dist/client/app-dir/form.js",
+  "next/dist/client/app-dir/link",
+  "next/dist/client/app-dir/link.js",
+  "next/dist/client/components/links",
+  "next/dist/client/components/links.js",
+  "next/dist/client/components/segment-cache/types",
+  "next/dist/client/components/segment-cache/types.js",
+  "next/dist/client/form-shared",
+  "next/dist/client/form-shared.js",
 ] as const;
 
 const nextRscClientUtilityOptimizeDeps = [
@@ -666,6 +697,7 @@ export function vitestPluginNext(): Plugin[] {
     useNextEntryBase(),
     useNextEntryBaseClientReferences(),
     ...useNextAppRenderCompatibility(),
+    useNextLinkClientReference(),
     useNextFontLoader(),
     useNextImageClientReference(),
     useNextMetadataImageLoader(),
@@ -711,6 +743,9 @@ export function vitestPluginNext(): Plugin[] {
               },
             ],
           },
+          optimizeDeps: {
+            include: [...nextAppRouterApiOptimizeDeps],
+          },
           environments: {
             client: {
               resolve: {
@@ -745,6 +780,7 @@ export function vitestPluginNext(): Plugin[] {
                     treatNextInternalsAsServerInRsc(),
                     useNextEntryBaseClientReferences(),
                     ...useNextAppRenderCompatibility(root),
+                    useNextLinkClientReference(),
                     useNextImageClientReference(),
                     useNextCompiledOpenTelemetryApi(root),
                   ],
@@ -778,6 +814,8 @@ export function vitestPluginNext(): Plugin[] {
                   ...nextBrowserRuntimeOptimizeDeps,
                   ...nextClientRouterOptimizeDeps,
                   ...nextClientNavigationOptimizeDeps,
+                  ...nextAppRouterApiOptimizeDeps,
+                  ...nextAppRouterClientApiOptimizeDeps,
                   ...nextEntryBaseClientReferenceOptimizeDeps,
                   ...nextImageOptimizeDeps,
                 ],
@@ -819,6 +857,8 @@ export function vitestPluginNext(): Plugin[] {
                   ...nextBrowserRuntimeOptimizeDeps,
                   ...nextClientRouterOptimizeDeps,
                   ...nextClientNavigationOptimizeDeps,
+                  ...nextAppRouterApiOptimizeDeps,
+                  ...nextAppRouterClientApiOptimizeDeps,
                   ...nextEntryBaseClientReferenceOptimizeDeps,
                   ...nextImageOptimizeDeps,
                   "react-dom/server.browser",

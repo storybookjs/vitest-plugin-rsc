@@ -118,7 +118,9 @@ function transformNextFontImports(code: string, importer: string): string | unde
 
   if (imports.length === 0) return;
 
-  const importsByLocalName = new Map(imports.map((fontImport) => [fontImport.localName, fontImport]));
+  const importsByLocalName = new Map(
+    imports.map((fontImport) => [fontImport.localName, fontImport]),
+  );
   const generatedImports: string[] = [];
 
   const callPattern = /\b(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*([A-Za-z_$][\w$]*)\s*\(/g;
@@ -162,7 +164,9 @@ function transformNextFontImports(code: string, importer: string): string | unde
   let transformed = code;
   for (const replacement of sortedReplacements) {
     transformed =
-      transformed.slice(0, replacement.start) + replacement.text + transformed.slice(replacement.end);
+      transformed.slice(0, replacement.start) +
+      replacement.text +
+      transformed.slice(replacement.end);
   }
 
   const insertAt = findDirectivePrologueEnd(transformed);
@@ -232,13 +236,187 @@ function parseFontRequest(id: string): FontRequest {
 
 function evaluateFontCallArgs(args: string, importer: string): unknown[] {
   try {
-    return Function(`"use strict"; return [${args}];`)() as unknown[];
+    const parser = new StaticValueParser(args);
+    const parsedArgs = parser.parseArguments();
+    parser.assertEnd();
+    return parsedArgs;
   } catch (error) {
     throw new Error(
       `Could not evaluate static next/font call in ${normalizePath(importer)}: ${
         error instanceof Error ? error.message : String(error)
       }`,
     );
+  }
+}
+
+class StaticValueParser {
+  private index = 0;
+
+  constructor(private readonly input: string) {}
+
+  parseArguments(): unknown[] {
+    const values: unknown[] = [];
+    this.skipWhitespace();
+    if (this.isEnd()) return values;
+
+    while (!this.isEnd()) {
+      values.push(this.parseValue());
+      this.skipWhitespace();
+      if (!this.consume(",")) break;
+      this.skipWhitespace();
+      if (this.isEnd()) break;
+    }
+
+    return values;
+  }
+
+  assertEnd() {
+    this.skipWhitespace();
+    if (!this.isEnd()) {
+      throw new Error(`Unexpected token ${JSON.stringify(this.peek())}`);
+    }
+  }
+
+  private parseValue(): unknown {
+    this.skipWhitespace();
+    const char = this.peek();
+
+    if (char === "{") return this.parseObject();
+    if (char === "[") return this.parseArray();
+    if (char === '"' || char === "'") return this.parseString();
+    if (char === "-" || /\d/.test(char)) return this.parseNumber();
+    if (this.consumeKeyword("true")) return true;
+    if (this.consumeKeyword("false")) return false;
+    if (this.consumeKeyword("null")) return null;
+
+    throw new Error(`Unsupported static value at ${this.index}`);
+  }
+
+  private parseObject() {
+    const value: Record<string, unknown> = {};
+    this.expect("{");
+    this.skipWhitespace();
+
+    while (!this.consume("}")) {
+      const key = this.parseObjectKey();
+      this.skipWhitespace();
+      this.expect(":");
+      value[key] = this.parseValue();
+      this.skipWhitespace();
+      if (!this.consume(",")) {
+        this.expect("}");
+        break;
+      }
+      this.skipWhitespace();
+    }
+
+    return value;
+  }
+
+  private parseArray() {
+    const value: unknown[] = [];
+    this.expect("[");
+    this.skipWhitespace();
+
+    while (!this.consume("]")) {
+      value.push(this.parseValue());
+      this.skipWhitespace();
+      if (!this.consume(",")) {
+        this.expect("]");
+        break;
+      }
+      this.skipWhitespace();
+    }
+
+    return value;
+  }
+
+  private parseObjectKey() {
+    const char = this.peek();
+    if (char === '"' || char === "'") {
+      return this.parseString();
+    }
+
+    const match = /^[A-Za-z_$][\w$-]*/.exec(this.input.slice(this.index));
+    if (!match?.[0]) {
+      throw new Error(`Expected object key at ${this.index}`);
+    }
+
+    this.index += match[0].length;
+    return match[0];
+  }
+
+  private parseString() {
+    const quote = this.peek();
+    this.index++;
+    let value = "";
+
+    while (!this.isEnd()) {
+      const char = this.peek();
+      this.index++;
+
+      if (char === quote) return value;
+      if (char === "\\") {
+        const escaped = this.peek();
+        this.index++;
+        value += escaped;
+      } else {
+        value += char;
+      }
+    }
+
+    throw new Error("Unterminated string");
+  }
+
+  private parseNumber() {
+    const match = /^-?\d+(?:\.\d+)?/.exec(this.input.slice(this.index));
+    if (!match?.[0]) {
+      throw new Error(`Expected number at ${this.index}`);
+    }
+
+    this.index += match[0].length;
+    return Number(match[0]);
+  }
+
+  private consumeKeyword(keyword: string) {
+    if (
+      this.input.startsWith(keyword, this.index) &&
+      !/[\w$-]/.test(this.input[this.index + keyword.length] ?? "")
+    ) {
+      this.index += keyword.length;
+      return true;
+    }
+
+    return false;
+  }
+
+  private consume(token: string) {
+    if (this.input.startsWith(token, this.index)) {
+      this.index += token.length;
+      return true;
+    }
+
+    return false;
+  }
+
+  private expect(token: string) {
+    if (!this.consume(token)) {
+      throw new Error(`Expected ${JSON.stringify(token)} at ${this.index}`);
+    }
+  }
+
+  private skipWhitespace() {
+    while (/\s/.test(this.peek())) {
+      this.index++;
+    }
+  }
+
+  private peek() {
+    return this.input[this.index] ?? "";
+  }
+
+  private isEnd() {
+    return this.index >= this.input.length;
   }
 }
 
