@@ -1,6 +1,7 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Alias, Plugin, UserConfig } from "vite";
+import { useNextAppRenderCompatibility } from "./app-render-compat-plugin";
 import { useNextMetadataImageLoader } from "./metadata-image-loader-plugin";
 import { createProjectRequire, getProjectRoot, tryResolveFromProject } from "./plugin-utils";
 import { useNextRouteManifest } from "./route-manifest-plugin";
@@ -12,11 +13,6 @@ const virtualNextEntryBaseClientReferencePrefix =
   "\0vitest-plugin-rsc:next-entry-base-client-reference:";
 const virtualNextEntryBaseClientReferencePublicPrefix =
   "virtual:vitest-plugin-rsc/next-entry-base-client-reference/";
-const virtualNextAppRouterServerStubId = "\0vitest-plugin-rsc:next-app-router-server-stub";
-const virtualNextAppRouterInstanceServerStubId =
-  "\0vitest-plugin-rsc:next-app-router-instance-server-stub";
-const virtualNextServerInsertedHtmlStubId = "\0vitest-plugin-rsc:next-server-inserted-html-stub";
-const virtualNextImageConfigContextStubId = "\0vitest-plugin-rsc:next-image-config-context-stub";
 
 const nextBrowserRuntimeOptimizeDeps = [
   "node:buffer",
@@ -522,228 +518,6 @@ function useNextEntryBaseClientReferences(): Plugin {
   };
 }
 
-function useNextAppRouterServerStub(): Plugin {
-  return {
-    name: "next-rsc-app-router-server-stub",
-    enforce: "pre",
-    applyToEnvironment(environment) {
-      return environment.name === "client";
-    },
-    resolveId(source, importer) {
-      if (
-        importer &&
-        isNextAppRenderModule(importer) &&
-        (source === "../../client/components/app-router" ||
-          source === "../../client/components/app-router.js")
-      ) {
-        return virtualNextAppRouterServerStubId;
-      }
-
-      if (
-        importer &&
-        isNextAppRenderModule(importer) &&
-        (source === "../../client/components/app-router-instance" ||
-          source === "../../client/components/app-router-instance.js")
-      ) {
-        return virtualNextAppRouterInstanceServerStubId;
-      }
-
-      if (source === virtualNextAppRouterServerStubId) {
-        return source;
-      }
-
-      if (source === virtualNextAppRouterInstanceServerStubId) {
-        return source;
-      }
-    },
-    load(id) {
-      if (id === virtualNextAppRouterInstanceServerStubId) {
-        return `
-export function createMutableActionQueue(initialState) {
-  return {
-    state: initialState,
-    dispatch() {},
-    action() {
-      return initialState;
-    },
-    pending: null,
-    last: null,
-    onRouterTransitionStart: null,
-  };
-}
-
-export function dispatchNavigateAction() {}
-export function dispatchTraverseAction() {}
-export function getCurrentAppRouterState() {
-  return null;
-}
-
-export const publicAppRouterInstance = {
-  back() {},
-  forward() {},
-  prefetch() {},
-  push() {},
-  replace() {},
-  refresh() {},
-  hmrRefresh() {},
-};
-`;
-      }
-
-      if (id !== virtualNextAppRouterServerStubId) return;
-
-      return `
-import { createElement } from "react";
-
-export default function AppRouter() {
-  return createElement("vitest-next-app-router-stub");
-}
-`;
-    },
-  };
-}
-
-function useNextAppRenderReactDomServer(root = process.cwd()): Plugin {
-  let reactDomServer = tryResolveFromProject(
-    root,
-    "next/dist/build/webpack/alias/react-dom-server",
-  );
-  let reactDomStatic = tryResolveFromProject(root, "react-dom/static.edge");
-
-  return {
-    name: "next-rsc-app-render-react-dom-server",
-    enforce: "pre",
-    applyToEnvironment(environment) {
-      return environment.name === "client";
-    },
-    configResolved(config) {
-      const projectRoot = getProjectRoot(config);
-      reactDomServer = tryResolveFromProject(
-        projectRoot,
-        "next/dist/build/webpack/alias/react-dom-server",
-      );
-      reactDomStatic = tryResolveFromProject(projectRoot, "react-dom/static.edge");
-    },
-    resolveId(source, importer) {
-      if (!importer || !isNextAppRenderServerModule(importer)) return;
-
-      if (source === "react-dom/server" && reactDomServer) {
-        return reactDomServer;
-      }
-
-      if (source === "react-dom/static" && reactDomStatic) {
-        return reactDomStatic;
-      }
-    },
-  };
-}
-
-function useNextServerInsertedHtmlStub(): Plugin {
-  return {
-    name: "next-rsc-server-inserted-html-stub",
-    enforce: "pre",
-    applyToEnvironment(environment) {
-      return environment.name === "client";
-    },
-    resolveId(source, importer) {
-      if (
-        importer &&
-        /[/\\]next[/\\]dist[/\\]server[/\\]app-render[/\\]server-inserted-html\.js(?:\?|$)/.test(
-          importer,
-        ) &&
-        (source === "../../shared/lib/server-inserted-html.shared-runtime" ||
-          source === "../../shared/lib/server-inserted-html.shared-runtime.js")
-      ) {
-        return virtualNextServerInsertedHtmlStubId;
-      }
-
-      if (source === virtualNextServerInsertedHtmlStubId) {
-        return source;
-      }
-    },
-    load(id) {
-      if (id !== virtualNextServerInsertedHtmlStubId) return;
-
-      return `
-export const ServerInsertedHTMLContext = {
-  Provider({ children }) {
-    return children;
-  },
-};
-
-export function useServerInsertedHTML(callback) {
-}
-`;
-    },
-  };
-}
-
-function useNextImageConfigContextStub(): Plugin {
-  return {
-    name: "next-rsc-image-config-context-stub",
-    enforce: "pre",
-    applyToEnvironment(environment) {
-      return environment.name === "client";
-    },
-    resolveId(source, importer) {
-      if (
-        importer &&
-        isNextAppRenderModule(importer) &&
-        (source === "../../shared/lib/image-config-context.shared-runtime" ||
-          source === "../../shared/lib/image-config-context.shared-runtime.js")
-      ) {
-        return virtualNextImageConfigContextStubId;
-      }
-
-      if (source === virtualNextImageConfigContextStubId) {
-        return source;
-      }
-    },
-    load(id) {
-      if (id !== virtualNextImageConfigContextStubId) return;
-
-      return `
-export const ImageConfigContext = {
-  Provider({ children }) {
-    return children;
-  },
-};
-`;
-    },
-  };
-}
-
-function useNextServerOnlyAlias(root = process.cwd()): Plugin {
-  let replacement = tryResolveFromProject(root, "next/dist/compiled/server-only/empty");
-
-  return {
-    name: "next-rsc-server-only-alias",
-    enforce: "pre",
-    applyToEnvironment(environment) {
-      return environment.name === "client";
-    },
-    configResolved(config) {
-      replacement = tryResolveFromProject(
-        getProjectRoot(config),
-        "next/dist/compiled/server-only/empty",
-      );
-    },
-    resolveId(source) {
-      if (source === "server-only" && replacement) {
-        return replacement;
-      }
-    },
-  };
-}
-
-function isNextAppRenderModule(id: string) {
-  return /[/\\]next[/\\]dist[/\\]server[/\\]app-render[/\\]app-render\.js(?:\?|$)/.test(id);
-}
-
-function isNextAppRenderServerModule(id: string) {
-  return /[/\\]next[/\\]dist[/\\]server[/\\]app-render[/\\].+\.js(?:\?|$)/.test(id);
-}
-
 function isNextEntryBaseModule(id: string) {
   return /[/\\]next[/\\]dist[/\\]server[/\\]app-render[/\\]entry-base\.js(?:\?|$)/.test(id);
 }
@@ -831,11 +605,7 @@ export function vitestPluginNext(): Plugin[] {
     treatNextInternalsAsServerInRsc(),
     useNextEntryBase(),
     useNextEntryBaseClientReferences(),
-    useNextAppRouterServerStub(),
-    useNextAppRenderReactDomServer(),
-    useNextServerInsertedHtmlStub(),
-    useNextImageConfigContextStub(),
-    useNextServerOnlyAlias(),
+    ...useNextAppRenderCompatibility(),
     useNextMetadataImageLoader(),
     useNextRouteManifest(),
     appRouterApiPlugin("client", true),
@@ -908,11 +678,7 @@ export function vitestPluginNext(): Plugin[] {
                     useVitestServerReferenceInfo(root),
                     treatNextInternalsAsServerInRsc(),
                     useNextEntryBaseClientReferences(),
-                    useNextAppRouterServerStub(),
-                    useNextAppRenderReactDomServer(root),
-                    useNextServerInsertedHtmlStub(),
-                    useNextImageConfigContextStub(),
-                    useNextServerOnlyAlias(root),
+                    ...useNextAppRenderCompatibility(root),
                     useNextCompiledOpenTelemetryApi(root),
                   ],
                   resolve: {
