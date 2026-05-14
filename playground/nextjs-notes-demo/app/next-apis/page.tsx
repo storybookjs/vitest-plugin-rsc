@@ -1,5 +1,4 @@
 import dynamic from "next/dynamic";
-import { unstable_catchError as catchError } from "next/error";
 import Form from "next/form";
 import Head from "next/head";
 import Image from "next/image";
@@ -30,7 +29,6 @@ export default function NextApisPage() {
       />
       <LazyPanel />
       <ClientNavigationProbe />
-      <p>Error API: {typeof catchError}</p>
     </main>
   );
 }
