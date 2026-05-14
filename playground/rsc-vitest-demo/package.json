@@ -7,9 +7,9 @@
     "build": "tsc -b && vite build",
     "check": "tsc -b",
     "preview": "vite preview",
-    "test": "rm -rf .vite && vitest",
-    "test:run": "rm -rf .vite && vitest run",
-    "test:coverage": "rm -rf .vite && vitest run --coverage",
+    "test": "vitest",
+    "test:run": "vitest run",
+    "test:coverage": "vitest run --coverage",
     "test:watch": "vitest watch"
   },
   "dependencies": {
