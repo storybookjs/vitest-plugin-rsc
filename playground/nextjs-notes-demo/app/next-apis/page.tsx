@@ -3,6 +3,7 @@ import Form from "next/form";
 import Head from "next/head";
 import Image from "next/image";
 import Link from "next/link";
+import * as rootParams from "next/root-params";
 import Script from "next/script";
 import { connection } from "next/server";
 import { AfterProbe } from "./after-probe";
@@ -15,6 +16,7 @@ const LazyPanel = dynamic(() => import("./lazy-panel"));
 
 export default async function NextApisPage() {
   await connection();
+  const rootParamNames = Object.keys(rootParams).join(", ") || "none";
 
   return (
     <main>
@@ -23,6 +25,7 @@ export default async function NextApisPage() {
       </Head>
       <h1>Next APIs</h1>
       <p>Connection scope ready</p>
+      <p>Root params available: {rootParamNames}</p>
       <AfterProbe />
       <Link href="/notes">Notes link</Link>
       <Form action="/notes">

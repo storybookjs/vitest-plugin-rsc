@@ -17,6 +17,7 @@ const virtualNextEntryBaseClientReferencePrefix =
   "\0vitest-plugin-rsc:next-entry-base-client-reference:";
 const virtualNextEntryBaseClientReferencePublicPrefix =
   "virtual:vitest-plugin-rsc/next-entry-base-client-reference/";
+const virtualNextRootParamsId = "\0vitest-plugin-rsc:next-root-params";
 
 const nextBrowserRuntimeOptimizeDeps = [
   "node:buffer",
@@ -82,6 +83,8 @@ const nextAppRouterApiOptimizeDeps = [
   "next/web-vitals",
   "next/web-vitals.js",
 ] as const;
+
+const nextRootParamsOptimizeDepsExclude = ["next/root-params", "next/root-params.js"] as const;
 
 const nextAppRouterClientApiOptimizeDeps = [
   "next/dist/client/add-base-path",
@@ -158,6 +161,7 @@ const nextRscServerOptimizeDeps = [
   "next/dist/server/request/draft-mode.js",
   "next/dist/server/request/headers.js",
   "next/dist/server/request/params.js",
+  "next/dist/server/request/root-params.js",
   "next/dist/server/request/search-params.js",
   "next/dist/server/web/spec-extension/adapters/headers.js",
   "next/dist/server/web/spec-extension/adapters/request-cookies.js",
@@ -238,11 +242,14 @@ type NextConfigModule = {
 } & NextLoadConfig;
 
 type LoadedNextConfig = {
+  cacheComponents?: boolean;
   distDir?: string;
+  pageExtensions?: string[];
   experimental?: {
     allowDevelopmentBuild?: boolean;
     appNavFailHandling?: boolean;
     fetchCacheKeyPrefix?: string;
+    rootParams?: boolean;
   };
 };
 
@@ -272,6 +279,25 @@ type NextDefineEnvModule = {
       fallback: unknown[];
     };
   }): Record<string, unknown>;
+};
+
+type NextRootParamsLoaderContext = {
+  getOptions(): {
+    appDir: string;
+    pageExtensions: string[];
+  };
+  addContextDependency(directory: string): void;
+};
+
+type NextRootParamsLoaderModule = {
+  default?: (this: NextRootParamsLoaderContext) => Promise<string> | string;
+} & ((this: NextRootParamsLoaderContext) => Promise<string> | string);
+
+type NextFindPagesDirModule = {
+  findPagesDir(dir: string): {
+    appDir?: string;
+    pagesDir?: string;
+  };
 };
 
 type NextDefineEnvs = {
@@ -308,6 +334,108 @@ function appRouterApiPlugin(environmentName: string, isServerOnlyLayer: boolean)
       });
     },
   };
+}
+
+function useNextRootParams(environmentName: string, isServerOnlyLayer: boolean): Plugin {
+  let root = "";
+  let mode = "test";
+  let resolvedNextRootParamsId: string | undefined;
+  let rootParamsModule: Promise<string> | undefined;
+
+  return {
+    name: `next-rsc-root-params:${environmentName}`,
+    enforce: "pre",
+    applyToEnvironment(environment) {
+      return environment.name === environmentName;
+    },
+    configResolved(config) {
+      root = getProjectRoot(config);
+      mode = config.mode;
+      resolvedNextRootParamsId = tryResolveFromProject(root, "next/root-params");
+    },
+    resolveId(source) {
+      const [id] = source.split("?", 1);
+      if (
+        id === "next/root-params" ||
+        id === "next/root-params.js" ||
+        id === resolvedNextRootParamsId
+      ) {
+        return virtualNextRootParamsId;
+      }
+    },
+    async load(id) {
+      if (id !== virtualNextRootParamsId) {
+        return;
+      }
+
+      rootParamsModule ??= createNextRootParamsModule({
+        isServerOnlyLayer,
+        mode,
+        root,
+      });
+      return rootParamsModule;
+    },
+  };
+}
+
+async function createNextRootParamsModule({
+  isServerOnlyLayer,
+  mode,
+  root,
+}: {
+  isServerOnlyLayer: boolean;
+  mode: string;
+  root: string;
+}) {
+  if (!isServerOnlyLayer) {
+    return createNextInvalidImportModule(
+      "'next/root-params' cannot be imported from a Client Component module. It should only be used from a Server Component.",
+    );
+  }
+
+  const { nextConfig } = await loadNextConfigForMode(root, mode);
+  const isRootParamsEnabled =
+    nextConfig.experimental?.rootParams ?? nextConfig.cacheComponents ?? false;
+
+  if (!isRootParamsEnabled) {
+    return createNextInvalidImportModule(
+      "'next/root-params' can only be imported when `experimental.rootParams` is enabled.",
+    );
+  }
+
+  const appDir = findNextAppDir(root);
+  if (!appDir) {
+    return createNextInvalidImportModule(
+      "'next/root-params' can only be used with the App Directory.",
+    );
+  }
+
+  const projectRequire = createProjectRequire(root);
+  const loaderModule = projectRequire(
+    "next/dist/build/webpack/loaders/next-root-params-loader.js",
+  ) as NextRootParamsLoaderModule;
+  const rootParamsLoader = loaderModule.default ?? loaderModule;
+  const pageExtensions = nextConfig.pageExtensions ?? ["tsx", "ts", "jsx", "js"];
+
+  return rootParamsLoader.call({
+    addContextDependency: () => {},
+    getOptions: () => ({ appDir, pageExtensions }),
+  });
+}
+
+function createNextInvalidImportModule(message: string) {
+  return `throw new Error(${JSON.stringify(message)});\nexport {};`;
+}
+
+function findNextAppDir(root: string) {
+  try {
+    const { findPagesDir } = createProjectRequire(root)(
+      "next/dist/lib/find-pages-dir.js",
+    ) as NextFindPagesDirModule;
+    return findPagesDir(root).appDir;
+  } catch {
+    return;
+  }
 }
 
 function filterResolvableOptimizeDeps(root: string, deps: readonly string[]): string[] {
@@ -530,18 +658,9 @@ async function createNextDefineEnvs(
 ): Promise<NextDefineEnvs> {
   try {
     const projectRequire = createProjectRequire(root);
-    const loadConfigModule = projectRequire("next/dist/server/config.js") as NextConfigModule;
-    const constants = projectRequire("next/dist/shared/lib/constants.js") as NextConstantsModule;
     const { getDefineEnv } = projectRequire("next/dist/build/define-env.js") as NextDefineEnvModule;
-    const loadConfig = loadConfigModule.default ?? loadConfigModule;
-    const phase =
-      mode === "production"
-        ? constants.PHASE_PRODUCTION_BUILD
-        : process.env.NODE_ENV === "test"
-          ? constants.PHASE_TEST
-          : constants.PHASE_DEVELOPMENT_SERVER;
+    const { constants, nextConfig, phase } = await loadNextConfigForMode(root, mode);
     const dev = phase !== constants.PHASE_PRODUCTION_BUILD;
-    const nextConfig = await loadConfig(phase, root);
     const baseOptions = {
       isTurbopack: false,
       config: nextConfig,
@@ -581,6 +700,22 @@ async function createNextDefineEnvs(
   } catch {
     return createFallbackNextDefineEnvs(nextImageConfig);
   }
+}
+
+async function loadNextConfigForMode(root: string, mode: string) {
+  const projectRequire = createProjectRequire(root);
+  const loadConfigModule = projectRequire("next/dist/server/config.js") as NextConfigModule;
+  const constants = projectRequire("next/dist/shared/lib/constants.js") as NextConstantsModule;
+  const loadConfig = loadConfigModule.default ?? loadConfigModule;
+  const phase =
+    mode === "production"
+      ? constants.PHASE_PRODUCTION_BUILD
+      : process.env.NODE_ENV === "test"
+        ? constants.PHASE_TEST
+        : constants.PHASE_DEVELOPMENT_SERVER;
+  const nextConfig = await loadConfig(phase, root);
+
+  return { constants, nextConfig, phase };
 }
 
 function normalizeNextTestDefineEnv(defineEnv: Record<string, unknown>, nextRuntime: string) {
@@ -963,6 +1098,9 @@ export function vitestPluginNext(): Plugin[] {
     useNextImageClientReference(),
     useNextMetadataImageLoader(),
     useNextRouteManifest(),
+    useNextRootParams("client", true),
+    useNextRootParams("react_client", false),
+    useNextRootParams("react_ssr", false),
     appRouterApiPlugin("client", true),
     appRouterApiPlugin("react_client", false),
     appRouterApiPlugin("react_ssr", false),
@@ -1009,6 +1147,7 @@ export function vitestPluginNext(): Plugin[] {
           },
           optimizeDeps: {
             include: [...nextAppRouterApiOptimizeDeps],
+            exclude: [...nextRootParamsOptimizeDepsExclude],
             rolldownOptions: {
               plugins: [disableNextDevServerRuntime()],
             },
@@ -1035,6 +1174,7 @@ export function vitestPluginNext(): Plugin[] {
                 ],
               },
               optimizeDeps: {
+                exclude: [...nextRootParamsOptimizeDepsExclude],
                 include: [
                   ...nextRscServerOptimizeDeps,
                   ...nextOptionalAppRenderDeps,
@@ -1089,6 +1229,7 @@ export function vitestPluginNext(): Plugin[] {
                 ],
               },
               optimizeDeps: {
+                exclude: [...nextRootParamsOptimizeDepsExclude],
                 include: [
                   ...nextBrowserRuntimeOptimizeDeps,
                   ...nextClientRouterOptimizeDeps,
@@ -1140,6 +1281,7 @@ export function vitestPluginNext(): Plugin[] {
                 ],
               },
               optimizeDeps: {
+                exclude: [...nextRootParamsOptimizeDepsExclude],
                 include: [
                   ...nextBrowserRuntimeOptimizeDeps,
                   ...nextClientRouterOptimizeDeps,

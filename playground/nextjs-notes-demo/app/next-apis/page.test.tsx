@@ -10,6 +10,7 @@ test("notes demo renders Next app-router API aliases and compiler surfaces", asy
 
   await expect.element(page.getByRole("heading", { name: "Next APIs" })).toBeVisible();
   await expect.element(page.getByText("Connection scope ready")).toBeVisible();
+  await expect.element(page.getByText("Root params available: none")).toBeVisible();
   await expect.element(page.getByText("After task scheduled")).toBeVisible();
   await vi.waitFor(() => expect(getAfterProbeRuns()).toBe(1));
   await expect

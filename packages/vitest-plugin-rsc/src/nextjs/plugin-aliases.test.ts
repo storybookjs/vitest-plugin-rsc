@@ -72,10 +72,31 @@ test("aliases React packages through Next's vendored React for app-router enviro
   expect(browserDefine["process.browser"]).toBe("true");
 });
 
+test("replaces next/root-params through Next's root params loader", async () => {
+  const plugin = findNextPlugin("next-rsc-root-params:client");
+  const configResolved = getHookHandler(plugin.configResolved);
+  const resolveId = getHookHandler(plugin.resolveId);
+  const load = getHookHandler(plugin.load);
+  const previousCwd = process.cwd();
+
+  process.chdir(fixtureRoot);
+  try {
+    await configResolved.call({} as never, { root: fixtureRoot, mode: "test" } as never);
+
+    expect(await resolveId.call({} as never, "next/root-params", undefined, {} as never)).toBe(
+      "\0vitest-plugin-rsc:next-root-params",
+    );
+    expect(await load.call({} as never, "\0vitest-plugin-rsc:next-root-params", {} as never)).toBe(
+      "export {}",
+    );
+  } finally {
+    process.chdir(previousCwd);
+  }
+});
+
 async function resolveNextPluginConfig(): Promise<UserConfig> {
   const previousCwd = process.cwd();
-  const plugin = vitestPluginNext().find((candidate) => candidate.name === "next-rsc-plugin");
-  if (!plugin) throw new Error("Could not find next-rsc-plugin.");
+  const plugin = findNextPlugin("next-rsc-plugin");
 
   const config = getHookHandler(plugin.config);
   process.chdir(fixtureRoot);
@@ -88,6 +109,12 @@ async function resolveNextPluginConfig(): Promise<UserConfig> {
   } finally {
     process.chdir(previousCwd);
   }
+}
+
+function findNextPlugin(name: string): Plugin {
+  const plugin = vitestPluginNext().find((candidate) => candidate.name === name);
+  if (!plugin) throw new Error(`Could not find ${name}.`);
+  return plugin;
 }
 
 function findAlias(aliases: Alias[], find: string) {

@@ -6,6 +6,7 @@ const nextConfig: NextConfig = {
   reactCompiler: true,
   experimental: {
     authInterrupts: true,
+    rootParams: true,
   },
   serverExternalPackages: ["@electric-sql/pglite", "drizzle-kit"],
 };
