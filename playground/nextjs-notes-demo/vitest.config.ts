@@ -8,6 +8,8 @@ import "#env/load-next.ts";
 // oxlint-disable-next-line no-process-env
 process.env.LAUNCH_EDITOR = "/usr/bin/true";
 
+const appShellOptimizeDeps = ["@base-ui/react/menu", "next-themes", "react-transition-progress"];
+
 export default defineConfig({
   envPrefix: ["VITE_", "CI"],
   resolve: {
@@ -25,10 +27,24 @@ export default defineConfig({
       "next/dist/client/components/redirect.js",
       "next/dist/client/components/router-reducer/create-href-from-url.js",
       "next/dist/server/lib/server-action-request-meta.js",
+      "next/font/google",
+      ...appShellOptimizeDeps,
     ],
   },
+  environments: {
+    client: {
+      optimizeDeps: {
+        include: ["next/dist/lib/metadata/get-metadata-route", ...appShellOptimizeDeps],
+      },
+    },
+    react_client: {
+      optimizeDeps: {
+        include: appShellOptimizeDeps,
+      },
+    },
+  },
   test: {
-    maxWorkers: 4,
+    maxWorkers: process.env.CI ? 1 : 4,
     coverage: {
       provider: "v8",
       reporter: ["text", "html", "lcov"],
@@ -58,9 +74,9 @@ export default defineConfig({
             instances: [{ browser: "chromium" }],
           },
           // Browser workers each own their browser state and run in parallel.
-          // Inside one worker, test files run sequentially with `isolate: false`,
-          // so cleanup belongs in beforeEach. Do not disable file parallelism
-          // and do not switch this to isolate: true for hanging state.
+          // Whole-document Next route hydration is heavier on CI, so the top-level
+          // maxWorkers setting serializes browser files there while keeping local
+          // runs parallel. Inside one worker, cleanup belongs in beforeEach.
           isolate: false,
           globalSetup: ["./vitest.global-setup.ts"],
           setupFiles: ["./vitest.setup.ts"],

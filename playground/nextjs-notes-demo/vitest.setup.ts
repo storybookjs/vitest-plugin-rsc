@@ -66,12 +66,14 @@ const MOBILE_VIEWPORT = { width: 390, height: 844 } as const;
 const TEST_NOW = "2026-05-06T00:00:00.000Z";
 
 let base: PGlite;
+let currentDbClient: PGlite | undefined;
 let pointerResetTarget: HTMLElement | undefined;
 const worker = setupWorker(...nextCacheProbeFetchHandler, ...nextRscRequestHandlers);
 
-// Vitest mounts React into an existing document, so rendering RootLayout's
-// <html>/<body> tags would be invalid. Page tests use the app-local
-// renderServer helper and keep the matching document-level defaults here.
+// Vitest mounts React into an existing document. Route tests intentionally let
+// the plugin render RootLayout's <html>/<body> tags into that mount so the
+// route tree matches Next's app-render output; keep matching document defaults
+// here for assertions that read document-level state.
 function applyDocumentDefaults() {
   document.documentElement.lang = "en";
   document.documentElement.className = "antialiased";
@@ -108,6 +110,13 @@ async function resetInteractiveState() {
   await page.elementLocator(pointerResetTarget).hover();
 }
 
+async function closeCurrentDbClient() {
+  if (currentDbClient && !currentDbClient.closed) {
+    await currentDbClient.close();
+  }
+  currentDbClient = undefined;
+}
+
 beforeAll(async () => {
   await worker.start({
     onUnhandledRequest: "bypass",
@@ -122,6 +131,7 @@ beforeAll(async () => {
 beforeEach(async () => {
   worker.resetHandlers();
   await cleanup();
+  await closeCurrentDbClient();
   setCurrentUser(null);
   deleteFlashCookies();
   applyDocumentDefaults();
@@ -129,6 +139,7 @@ beforeEach(async () => {
   if (!(clone instanceof PGlite)) {
     throw new TypeError("Expected PGlite.clone() to return a PGlite instance");
   }
+  currentDbClient = clone;
   resetDb(drizzle(clone, { schema }));
 
   vi.setSystemTime(new Date(TEST_NOW));
@@ -144,6 +155,9 @@ afterEach(async () => {
   await page.viewport(MOBILE_VIEWPORT.width, MOBILE_VIEWPORT.height);
 });
 
-afterAll(() => {
+afterAll(async () => {
+  await cleanup();
+  await closeCurrentDbClient();
+  await base.close();
   worker.stop();
 });

@@ -4,6 +4,7 @@ export type NextActionRequest = {
   id: string;
   reply: string | FormData;
   requestType: "next-action";
+  url: string;
   routerState?: string | null;
   nextUrl?: string | null;
 };

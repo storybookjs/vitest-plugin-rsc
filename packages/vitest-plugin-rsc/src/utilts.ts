@@ -1,6 +1,7 @@
 import { ESModulesEvaluator, ModuleRunner, type ModuleRunnerTransport } from "vite/module-runner";
 
 const reactClientCoverageModulePath = "/@vite/react-client-coverage-module";
+const reactSsrInvokePath = "/@vite/invoke-react-ssr";
 const reactClientWebSocketInfoPath = "/@vite/react-client-runner-websocket";
 const reactClientWebSocketQuery = "vitest-plugin-rsc-react-client";
 const reactClientCoverageQuery = "vitest-plugin-rsc-react-client-coverage";
@@ -54,11 +55,32 @@ const runner = new ModuleRunner(
   },
   new ESModulesEvaluator(),
 );
+const ssrRunner = new ModuleRunner(
+  {
+    sourcemapInterceptor: false,
+    transport: {
+      invoke: invokeReactSsr,
+    },
+    hmr: false,
+  },
+  new ESModulesEvaluator(),
+);
 
 export const importReactClient = runner.import.bind(runner);
+export const importReactSsr = ssrRunner.import.bind(ssrRunner);
 
 async function invokeReactClient(payload: InvokePayload) {
   return await withReactClientCoverage(await invokeReactClientOverWebSocket(payload));
+}
+
+async function invokeReactSsr(payload: InvokePayload) {
+  const response = await fetch(
+    `${reactSsrInvokePath}?` +
+      new URLSearchParams({
+        data: JSON.stringify(payload),
+      }),
+  );
+  return response.json() as Promise<InvokeResult>;
 }
 
 async function withReactClientCoverage(result: InvokeResult) {
