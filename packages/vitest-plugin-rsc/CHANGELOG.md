@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.2.1](https://github.com/storybookjs/vitest-plugin-rsc/compare/v0.2.0...v0.2.1) (2026-05-14)
+
+
+### Features
+
+* add React client coverage bridge ([2bac6c1](https://github.com/storybookjs/vitest-plugin-rsc/commit/2bac6c19b3f98451b869feeb02423e0fcb0c223c))
+
+
+### Bug Fixes
+
+* align Next testing transport with App Router protocol ([6d7384c](https://github.com/storybookjs/vitest-plugin-rsc/commit/6d7384c9e35de3f8975c15bd30bf761aa7246f95))
+* avoid patched fetch when recording coverage ([798aa6d](https://github.com/storybookjs/vitest-plugin-rsc/commit/798aa6dc0ffc5f864293ca5d3049c68e324c5993))
+* harden Next.js compatibility coverage ([f055c40](https://github.com/storybookjs/vitest-plugin-rsc/commit/f055c4087d9368e0b0e2fb9b8a8af62b6944ba8b))
+* prebundle Next testing dependencies ([1d2b7d0](https://github.com/storybookjs/vitest-plugin-rsc/commit/1d2b7d051593792b1a337b580f90512894c65b85))
+* satisfy cleanup lint rule ([a9dec7f](https://github.com/storybookjs/vitest-plugin-rsc/commit/a9dec7f59301528c2d923cd356304aaaa37ddb24))
+
 ## [0.2.0](https://github.com/storybookjs/vitest-plugin-rsc/compare/v0.1.2...v0.2.0) (2026-05-12)
 
 
