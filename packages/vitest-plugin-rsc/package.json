@@ -46,11 +46,14 @@
     "prepack": "tsdown"
   },
   "dependencies": {
+    "@babel/parser": "^7.29.3",
     "@jridgewell/gen-mapping": "^0.3.13",
     "@vitejs/plugin-rsc": "0.5.26",
     "@vitest/expect": "5.0.0-beta.2",
     "@vitest/spy": "5.0.0-beta.2",
-    "convert-source-map": "^2.0.0"
+    "convert-source-map": "^2.0.0",
+    "magic-string": "^0.30.21",
+    "unctx": "^2.5.0"
   },
   "devDependencies": {
     "@types/convert-source-map": "^2.0.3",
