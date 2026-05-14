@@ -1,7 +1,7 @@
 import dynamic from "next/dynamic";
 import Form from "next/form";
 import Head from "next/head";
-import Image from "next/image";
+import Image, { getImageProps } from "next/image";
 import Link from "next/link";
 import * as rootParams from "next/root-params";
 import Script from "next/script";
@@ -17,6 +17,13 @@ const LazyPanel = dynamic(() => import("./lazy-panel"));
 export default async function NextApisPage() {
   await connection();
   const rootParamNames = Object.keys(rootParams).join(", ") || "none";
+  const { props: imageProps } = getImageProps({
+    alt: "Next getImageProps image",
+    height: 8,
+    src: "/vitest-rsc.png",
+    unoptimized: true,
+    width: 16,
+  });
 
   return (
     <main>
@@ -41,6 +48,7 @@ export default async function NextApisPage() {
         width={48}
       />
       <Image alt="Imported static logo" priority src={staticLogo} unoptimized />
+      <img {...imageProps} alt={imageProps.alt} />
       <Script id="next-api-script" strategy="afterInteractive">
         {`window.__nextApiScript = "loaded";`}
       </Script>

@@ -3,6 +3,7 @@ import path from "node:path";
 import type { Plugin } from "vite";
 import { createProjectRequire, getProjectRoot } from "./plugin-utils";
 
+const virtualNextImageId = "virtual:vitest-plugin-rsc/next-image";
 const virtualNextImageClientReferenceId = "virtual:vitest-plugin-rsc/next-image-client-reference";
 const virtualNextStaticImagePrefix = "\0vitest-plugin-rsc:next-static-image:";
 const staticImageFilePattern = /\.(?:png|jpg|jpeg|gif|webp|avif|ico|bmp|svg)$/i;
@@ -19,10 +20,10 @@ export function useNextImageClientReference(): Plugin {
     },
     async resolveId(source, importer, options) {
       if (source === "next/image" || source === "next/image.js") {
-        return virtualNextImageClientReferenceId;
+        return virtualNextImageId;
       }
 
-      if (source === virtualNextImageClientReferenceId) {
+      if (source === virtualNextImageId || source === virtualNextImageClientReferenceId) {
         return source;
       }
 
@@ -52,11 +53,38 @@ export function useNextImageClientReference(): Plugin {
         return loadNextStaticImage(root, imagePath);
       }
 
+      if (id === virtualNextImageId) {
+        return `import ImageDefault, { Image } from ${JSON.stringify(virtualNextImageClientReferenceId)};
+import { getImgProps } from "next/dist/shared/lib/get-img-props.js";
+import defaultLoader from "next/dist/shared/lib/image-loader.js";
+
+export { Image };
+export default ImageDefault;
+
+// Begin copy: Next.js next/image getImageProps implementation
+// Source: https://github.com/vercel/next.js/blob/4588a7354283f97e2124e3d82f55733ca4eb9373/packages/next/src/shared/lib/image-external.tsx#L17-L38
+// Adaptation: keep the callable helper in the RSC graph while Image itself
+// remains a client reference.
+export function getImageProps(imgProps) {
+  const { props } = getImgProps(imgProps, {
+    defaultLoader,
+    imgConf: process.env.__NEXT_IMAGE_OPTS,
+  });
+  for (const [key, value] of Object.entries(props)) {
+    if (value === undefined) {
+      delete props[key];
+    }
+  }
+  return { props };
+}
+// End copy
+`;
+      }
+
       if (id !== virtualNextImageClientReferenceId) return;
 
       return `"use client";
 export { Image as default, Image } from "next/dist/client/image-component.js";
-export { getImageProps } from "next/dist/shared/lib/image-external.js";
 `;
     },
   };
