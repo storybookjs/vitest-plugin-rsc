@@ -220,7 +220,7 @@ function collectDefaultFontImports(
     const localName = match[1];
     if (!localName) continue;
 
-    imports.push({ kind, importedName: "default", localName });
+    imports.push({ kind, importedName: kind === "local" ? "" : "default", localName });
     replacements.push({ start: match.index, end: match.index + match[0].length, text: "" });
   }
 }

@@ -3,6 +3,7 @@ import type { Plugin } from "vite";
 const virtualNextLinkReactServerId = "virtual:vitest-plugin-rsc/next-link-react-server";
 const virtualNextLinkClientReferenceId = "virtual:vitest-plugin-rsc/next-link-client-reference";
 const virtualNextFormClientReferenceId = "virtual:vitest-plugin-rsc/next-form-client-reference";
+const virtualNextScriptClientReferenceId = "virtual:vitest-plugin-rsc/next-script-client-reference";
 
 export function useNextLinkClientReference(): Plugin {
   return {
@@ -33,6 +34,10 @@ export function useNextLinkClientReference(): Plugin {
         return virtualNextFormClientReferenceId;
       }
 
+      if (source === "next/script" || source === "next/script.js") {
+        return virtualNextScriptClientReferenceId;
+      }
+
       if (stripQuery(source) === virtualNextLinkReactServerId) {
         return virtualNextLinkReactServerId;
       }
@@ -45,7 +50,15 @@ export function useNextLinkClientReference(): Plugin {
         return virtualNextFormClientReferenceId;
       }
 
-      if (source === virtualNextLinkReactServerId || source === virtualNextFormClientReferenceId) {
+      if (stripQuery(source) === virtualNextScriptClientReferenceId) {
+        return virtualNextScriptClientReferenceId;
+      }
+
+      if (
+        source === virtualNextLinkReactServerId ||
+        source === virtualNextFormClientReferenceId ||
+        source === virtualNextScriptClientReferenceId
+      ) {
         return source;
       }
     },
@@ -87,6 +100,16 @@ export { default, useLinkStatus } from "next/dist/client/app-dir/link.js";
       if (id === virtualNextFormClientReferenceId) {
         return `"use client";
 export { default } from "next/dist/client/app-dir/form.js";
+`;
+      }
+
+      if (id === virtualNextScriptClientReferenceId) {
+        return `"use client";
+export {
+  default,
+  handleClientScriptLoad,
+  initScriptLoader,
+} from "next/dist/client/script.js";
 `;
       }
     },

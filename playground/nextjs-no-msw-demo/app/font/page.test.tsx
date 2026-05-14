@@ -7,6 +7,7 @@ test("next/font generates browser-visible CSS for visual tests", async () => {
 
   await expect.element(page.getByRole("heading", { name: "Next font route" })).toBeVisible();
   await expect.element(page.getByText("font-family: Geist Mono")).toBeVisible();
+  await expect.element(page.getByText("Local font rendered")).toBeVisible();
 
   const fontScope = document.querySelector<HTMLElement>('[data-testid="font-scope"]');
   expect(fontScope?.className).toContain("__next_font_variable_");
@@ -14,10 +15,15 @@ test("next/font generates browser-visible CSS for visual tests", async () => {
   expect(getComputedStyle(fontScope!).getPropertyValue("--font-geist-mono")).toContain(
     "Geist Mono",
   );
+  expect(getComputedStyle(fontScope!).getPropertyValue("--font-local-geist")).toContain(
+    "localGeist",
+  );
 
   const fontCss = Array.from(document.head.querySelectorAll("style"))
     .map((style) => style.textContent ?? "")
     .join("\n");
   expect(fontCss).toContain("@font-face");
   expect(fontCss).toContain("data:font/woff2");
+  expect(fontCss).toContain("font-display: swap");
+  expect(fontCss).toContain("--font-local-geist: localGeist");
 });
