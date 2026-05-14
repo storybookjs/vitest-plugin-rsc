@@ -761,6 +761,31 @@ function createNextEntryBaseClientReferenceModule(reference: NextEntryBaseClient
   }
 }
 
+function provideBufferLikeNextWebpack(): Plugin {
+  return {
+    name: "next-rsc-edge-provide-buffer",
+    enforce: "pre",
+    transform(code, id) {
+      if (
+        !id.includes("/next/dist/") ||
+        id.includes("/next/dist/compiled/buffer/") ||
+        !/\bBuffer\b/.test(code)
+      ) {
+        return;
+      }
+
+      // Next's webpack compiler uses ProvidePlugin for Buffer in client and
+      // edge bundles. Vite has no direct equivalent, so apply the same import
+      // only to Next internals:
+      // https://github.com/vercel/next.js/blob/4588a7354283f97e2124e3d82f55733ca4eb9373/packages/next/src/build/webpack-config.ts#L2028-L2035
+      return {
+        code: `import { Buffer } from "node:buffer";\n${code}`,
+        map: null,
+      };
+    },
+  };
+}
+
 function treatNextInternalsAsServerInRsc(): Plugin {
   return {
     name: "next-rsc-server-next-internals",
@@ -974,5 +999,6 @@ export function vitestPluginNext(): Plugin[] {
         };
       },
     },
+    provideBufferLikeNextWebpack(),
   ];
 }
