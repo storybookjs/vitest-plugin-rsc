@@ -1,12 +1,17 @@
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 import { page } from "vitest/browser";
 import { renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
+import { getAfterProbeRuns, resetAfterProbe } from "./after-probe";
 
 test("notes demo renders Next app-router API aliases and compiler surfaces", async () => {
+  resetAfterProbe();
+
   await renderServer({ url: "/next-apis" });
 
   await expect.element(page.getByRole("heading", { name: "Next APIs" })).toBeVisible();
   await expect.element(page.getByText("Connection scope ready")).toBeVisible();
+  await expect.element(page.getByText("After task scheduled")).toBeVisible();
+  await vi.waitFor(() => expect(getAfterProbeRuns()).toBe(1));
   await expect
     .element(page.getByRole("link", { name: "Notes link" }))
     .toHaveAttribute("href", "/notes");

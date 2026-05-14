@@ -5,6 +5,7 @@ import Image from "next/image";
 import Link from "next/link";
 import Script from "next/script";
 import { connection } from "next/server";
+import { AfterProbe } from "./after-probe";
 import { ClientNavigationProbe } from "./client-navigation-probe";
 import staticLogo from "./fixtures/static-logo.svg";
 
@@ -20,6 +21,7 @@ export default async function NextApisPage() {
       </Head>
       <h1>Next APIs</h1>
       <p>Connection scope ready</p>
+      <AfterProbe />
       <Link href="/notes">Notes link</Link>
       <Form action="/notes">
         <input aria-label="Search notes" name="q" defaultValue="next-form" />

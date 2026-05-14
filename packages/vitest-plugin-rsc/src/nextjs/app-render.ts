@@ -10,6 +10,7 @@ import { renderToHTMLOrFlight } from "next/dist/server/app-render/app-render.js"
 import { WebNextRequest, WebNextResponse } from "next/dist/server/base-http/web.js";
 import type { RenderOpts } from "next/dist/server/app-render/types.js";
 import { defaultConfig } from "next/dist/server/config-shared.js";
+import { createSnapshot } from "next/dist/server/app-render/async-local-storage.js";
 import { IncrementalCache } from "next/dist/server/lib/incremental-cache/index.js";
 import { tagsManifest } from "next/dist/server/lib/incremental-cache/tags-manifest.external.js";
 import { NEXT_PATCH_SYMBOL } from "next/dist/server/lib/patch-fetch.js";
@@ -200,13 +201,14 @@ async function renderNextRouteResult({
     page,
     loaderTree,
   });
+  const lifecycle = createRequestLifecycle();
   const resolvedComponentMod = {
     ...((componentMod ?? (await import("next/dist/server/app-render/entry-base.js"))) as object),
     renderToReadableStream: renderToReadableStreamWithViteRsc,
     routeModule,
   } as NextAppRenderComponentMod;
   const renderOpts = {
-    ...createNextRenderOpts(manifests),
+    ...createNextRenderOpts(manifests, lifecycle),
     ComponentMod: resolvedComponentMod,
     routeModule,
     page: renderPage,
@@ -231,10 +233,16 @@ async function renderNextRouteResult({
   )) as RenderResult;
 
   const headers = createResponseHeaders(res, result);
-  return new Response((result as unknown as { readable: ReadableStream<Uint8Array> }).readable, {
-    status: result.metadata.statusCode ?? res.statusCode ?? 200,
-    headers,
-  });
+  return new Response(
+    closeStreamOnCompletion(
+      (result as unknown as { readable: ReadableStream<Uint8Array> }).readable,
+      lifecycle.close,
+    ),
+    {
+      status: result.metadata.statusCode ?? res.statusCode ?? 200,
+      headers,
+    },
+  );
 }
 
 function createAppRenderRequest(url: string, init: RequestInit): Request {
@@ -415,7 +423,88 @@ function ensureNextAppRenderGlobals() {
   ensureNextEdgeIncrementalCache(IncrementalCache);
 }
 
-function createNextRenderOpts(manifests: NextRenderManifests): RenderOpts {
+type RequestLifecycle = {
+  waitUntil(promise: Promise<unknown>): void;
+  onClose(callback: () => void): void;
+  onAfterTaskError(error: unknown): void;
+  close(): void;
+};
+
+function createRequestLifecycle(): RequestLifecycle {
+  const closeCallbacks = new Set<() => void>();
+  const waitUntilPromises = new Set<Promise<unknown>>();
+  let closed = false;
+
+  const lifecycle: RequestLifecycle = {
+    waitUntil(promise) {
+      let tracked: Promise<unknown>;
+      tracked = Promise.resolve(promise)
+        .catch((error) => lifecycle.onAfterTaskError(error))
+        .finally(() => waitUntilPromises.delete(tracked));
+      waitUntilPromises.add(tracked);
+    },
+    onClose(callback) {
+      const runInSnapshot = createSnapshot();
+      const boundCallback = () => {
+        void runInSnapshot(() => {
+          callback();
+          // The browser AsyncLocalStorage shim intentionally does not patch
+          // Promise continuations. Next's AfterContext resumes from
+          // `onClose(resolve)`, so keep the captured work store alive through
+          // that first continuation.
+          return Promise.resolve();
+        });
+      };
+      if (closed) {
+        boundCallback();
+        return;
+      }
+
+      closeCallbacks.add(boundCallback);
+    },
+    onAfterTaskError(error) {
+      console.error(error);
+    },
+    close() {
+      if (closed) return;
+
+      closed = true;
+      const callbacks = Array.from(closeCallbacks);
+      closeCallbacks.clear();
+      for (const callback of callbacks) {
+        callback();
+      }
+    },
+  };
+
+  return lifecycle;
+}
+
+function closeStreamOnCompletion<T>(readable: ReadableStream<T>, close: () => void) {
+  const reader = readable.getReader();
+
+  return new ReadableStream<T>({
+    async pull(controller) {
+      const result = await reader.read();
+      if (result.done) {
+        close();
+        controller.close();
+        return;
+      }
+
+      controller.enqueue(result.value);
+    },
+    async cancel(reason) {
+      close();
+      await reader.cancel(reason);
+    },
+  });
+}
+
+function createNextRenderOpts(
+  manifests: NextRenderManifests,
+  lifecycle: RequestLifecycle,
+): RenderOpts {
   // Begin copy: Next.js app-render RenderOpts fields used by app-render
   // Source: https://github.com/vercel/next.js/blob/4588a7354283f97e2124e3d82f55733ca4eb9373/packages/next/src/server/app-render/types.ts
   // Source: https://github.com/vercel/next.js/blob/4588a7354283f97e2124e3d82f55733ca4eb9373/packages/next/src/server/base-server.ts#L2522-L2570
@@ -431,9 +520,9 @@ function createNextRenderOpts(manifests: NextRenderManifests): RenderOpts {
       isRoutePPREnabled: false,
       authInterrupts: false,
     },
-    waitUntil: () => {},
-    onClose: () => {},
-    onAfterTaskError: () => {},
+    waitUntil: lifecycle.waitUntil,
+    onClose: lifecycle.onClose,
+    onAfterTaskError: lifecycle.onAfterTaskError,
   } as unknown as RenderOpts;
   // End copy
 }
