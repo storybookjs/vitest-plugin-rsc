@@ -17,7 +17,6 @@ const virtualNextAppRouterInstanceServerStubId =
   "\0vitest-plugin-rsc:next-app-router-instance-server-stub";
 const virtualNextServerInsertedHtmlStubId = "\0vitest-plugin-rsc:next-server-inserted-html-stub";
 const virtualNextImageConfigContextStubId = "\0vitest-plugin-rsc:next-image-config-context-stub";
-const virtualNextServerOnlyStubId = "\0vitest-plugin-rsc:next-server-only-stub";
 
 const nextBrowserRuntimeOptimizeDeps = [
   "node:buffer",
@@ -605,7 +604,10 @@ export default function AppRouter() {
 }
 
 function useNextAppRenderReactDomServer(root = process.cwd()): Plugin {
-  let reactDomServer = tryResolveFromProject(root, "react-dom/server.edge");
+  let reactDomServer = tryResolveFromProject(
+    root,
+    "next/dist/build/webpack/alias/react-dom-server",
+  );
   let reactDomStatic = tryResolveFromProject(root, "react-dom/static.edge");
 
   return {
@@ -616,7 +618,10 @@ function useNextAppRenderReactDomServer(root = process.cwd()): Plugin {
     },
     configResolved(config) {
       const projectRoot = getProjectRoot(config);
-      reactDomServer = tryResolveFromProject(projectRoot, "react-dom/server.edge");
+      reactDomServer = tryResolveFromProject(
+        projectRoot,
+        "next/dist/build/webpack/alias/react-dom-server",
+      );
       reactDomStatic = tryResolveFromProject(projectRoot, "react-dom/static.edge");
     },
     resolveId(source, importer) {
@@ -708,26 +713,25 @@ export const ImageConfigContext = {
   };
 }
 
-function useNextServerOnlyStub(): Plugin {
+function useNextServerOnlyAlias(root = process.cwd()): Plugin {
+  let replacement = tryResolveFromProject(root, "next/dist/compiled/server-only/empty");
+
   return {
-    name: "next-rsc-server-only-stub",
+    name: "next-rsc-server-only-alias",
     enforce: "pre",
     applyToEnvironment(environment) {
       return environment.name === "client";
     },
-    resolveId(source) {
-      if (source === "server-only") {
-        return virtualNextServerOnlyStubId;
-      }
-
-      if (source === virtualNextServerOnlyStubId) {
-        return source;
-      }
+    configResolved(config) {
+      replacement = tryResolveFromProject(
+        getProjectRoot(config),
+        "next/dist/compiled/server-only/empty",
+      );
     },
-    load(id) {
-      if (id !== virtualNextServerOnlyStubId) return;
-
-      return "export {};\n";
+    resolveId(source) {
+      if (source === "server-only" && replacement) {
+        return replacement;
+      }
     },
   };
 }
@@ -831,7 +835,7 @@ export function vitestPluginNext(): Plugin[] {
     useNextAppRenderReactDomServer(),
     useNextServerInsertedHtmlStub(),
     useNextImageConfigContextStub(),
-    useNextServerOnlyStub(),
+    useNextServerOnlyAlias(),
     useNextMetadataImageLoader(),
     useNextRouteManifest(),
     appRouterApiPlugin("client", true),
@@ -908,7 +912,7 @@ export function vitestPluginNext(): Plugin[] {
                     useNextAppRenderReactDomServer(root),
                     useNextServerInsertedHtmlStub(),
                     useNextImageConfigContextStub(),
-                    useNextServerOnlyStub(),
+                    useNextServerOnlyAlias(root),
                     useNextCompiledOpenTelemetryApi(root),
                   ],
                   resolve: {
