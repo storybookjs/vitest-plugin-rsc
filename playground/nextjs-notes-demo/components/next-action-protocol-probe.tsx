@@ -1,4 +1,11 @@
-import { notFound, permanentRedirect, redirect, unstable_rethrow } from "next/navigation";
+import {
+  forbidden,
+  notFound,
+  permanentRedirect,
+  redirect,
+  unauthorized,
+  unstable_rethrow,
+} from "next/navigation";
 import { NextActionProtocolClient } from "./next-action-protocol-client";
 
 export function NextActionProtocolProbe() {
@@ -43,14 +50,28 @@ export function NextActionProtocolProbe() {
     notFound();
   }
 
+  async function forbiddenAction() {
+    "use server";
+
+    forbidden();
+  }
+
+  async function unauthorizedAction() {
+    "use server";
+
+    unauthorized();
+  }
+
   return (
     <NextActionProtocolClient
       defaultRedirectAction={defaultRedirectAction}
+      forbiddenAction={forbiddenAction}
       notFoundAction={notFoundAction}
       permanentRedirectAction={permanentRedirectAction}
       rethrowRedirectAction={rethrowRedirectAction}
       redirectAction={redirectAction}
       throwAction={throwAction}
+      unauthorizedAction={unauthorizedAction}
     />
   );
 }

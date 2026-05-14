@@ -518,13 +518,17 @@ function createNextRenderOpts(
     cacheLifeProfiles: defaultConfig.cacheLife,
     experimental: {
       isRoutePPREnabled: false,
-      authInterrupts: false,
+      authInterrupts: isNextDefineFlagEnabled(process.env.__NEXT_EXPERIMENTAL_AUTH_INTERRUPTS),
     },
     waitUntil: lifecycle.waitUntil,
     onClose: lifecycle.onClose,
     onAfterTaskError: lifecycle.onAfterTaskError,
   } as unknown as RenderOpts;
   // End copy
+}
+
+function isNextDefineFlagEnabled(value: unknown) {
+  return value === true || value === "true" || value === "1";
 }
 
 async function setNextRenderManifests(manifests: NextRenderManifests): Promise<void> {

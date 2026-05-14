@@ -63,6 +63,7 @@ test("aliases React packages through Next's vendored React for app-router enviro
 
   const rscDefine = getEnvironmentDefine(config, "client");
   expect(rscDefine["process.env.NEXT_RUNTIME"]).toBe('"edge"');
+  expect(rscDefine["process.env.__NEXT_EXPERIMENTAL_AUTH_INTERRUPTS"]).toBe("true");
   expect(rscDefine["process.env.__NEXT_BUNDLER"]).toBe('"Webpack"');
   expect(rscDefine["process.env.__NEXT_DEV_SERVER"]).toBe('""');
 

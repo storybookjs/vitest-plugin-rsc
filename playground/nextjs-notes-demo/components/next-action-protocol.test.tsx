@@ -98,6 +98,28 @@ test("HTTP access fallback action errors keep their status and Flight payload", 
   expect(response.headers.get("content-type")).toContain(RSC_CONTENT_TYPE_HEADER);
 });
 
+test("auth interrupt actions keep their status and Flight payload", async () => {
+  await renderServer(<NextActionProtocolProbe />, { url: "/action-protocol" });
+
+  const forbiddenRequest = await captureActionRequest(() =>
+    page.getByRole("button", { name: "Capture forbidden action" }).click(),
+  );
+  const forbiddenResponse = await ignoreExpectedConsoleError(() =>
+    replayActionRequest(forbiddenRequest),
+  );
+  expect(forbiddenResponse.status).toBe(403);
+  expect(forbiddenResponse.headers.get("content-type")).toContain(RSC_CONTENT_TYPE_HEADER);
+
+  const unauthorizedRequest = await captureActionRequest(() =>
+    page.getByRole("button", { name: "Capture unauthorized action" }).click(),
+  );
+  const unauthorizedResponse = await ignoreExpectedConsoleError(() =>
+    replayActionRequest(unauthorizedRequest),
+  );
+  expect(unauthorizedResponse.status).toBe(401);
+  expect(unauthorizedResponse.headers.get("content-type")).toContain(RSC_CONTENT_TYPE_HEADER);
+});
+
 test("missing action ids use Next's action-not-found response protocol", async () => {
   await renderServer(<NextActionProtocolProbe />, { url: "/action-protocol" });
 
