@@ -44,12 +44,23 @@ function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
   );
 }
 
+function isCatchable(value: unknown): value is PromiseLike<unknown> & {
+  catch: (onRejected: (error: unknown) => never) => PromiseLike<unknown>;
+} {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    "catch" in value &&
+    typeof value.catch === "function"
+  );
+}
+
 function isReadableStreamLike(value: unknown): value is ReadableStream<unknown> {
   return typeof ReadableStream !== "undefined" && value instanceof ReadableStream;
 }
 
 function isContextBoundReadableStream(stream: ReadableStream<unknown>): boolean {
-  return Boolean((stream as Record<symbol, unknown>)[contextBoundReadableStream]);
+  return Boolean((stream as unknown as Record<symbol, unknown>)[contextBoundReadableStream]);
 }
 
 export class SequentialAsyncLocalStorage<Store> {
@@ -151,7 +162,23 @@ export function withAsyncLocalStorageContext<T extends (...args: unknown[]) => u
   return fn;
 }
 
-export const executeAsync = executeUnctxAsync as <T>(callback: () => T) => [T, AsyncContextRestore];
+export function executeAsync<T>(callback: () => T): [T, AsyncContextRestore] {
+  const frame = asyncContextState.currentFrame;
+  const result = callback();
+  const restore = leaveCurrentAsyncContext(frame);
+
+  if (isCatchable(result)) {
+    return [
+      result.catch((error) => {
+        restore();
+        throw error;
+      }) as T,
+      restore,
+    ];
+  }
+
+  return [result, restore];
+}
 
 export function resetAsyncLocalStorage(): void {
   // Test cleanup must call this to drop request-local state that may be left
@@ -368,6 +395,17 @@ function leaveFrame(frame: AsyncContextFrame): AsyncContextRestore | undefined {
   suspendFrame(frame);
 
   return () => {
+    if (frame.generation !== asyncContextState.resetGeneration || !frame.active) return;
+
+    asyncContextState.currentFrame = frame;
+  };
+}
+
+function leaveCurrentAsyncContext(frame: AsyncContextFrame): AsyncContextRestore {
+  const [, restoreUnctx] = executeUnctxAsync(async () => undefined);
+
+  return () => {
+    restoreUnctx();
     if (frame.generation !== asyncContextState.resetGeneration || !frame.active) return;
 
     asyncContextState.currentFrame = frame;

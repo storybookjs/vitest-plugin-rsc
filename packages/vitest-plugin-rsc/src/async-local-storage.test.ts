@@ -1,5 +1,9 @@
 import { expect, test } from "vitest";
-import { createAsyncLocalStorage, executeAsync, resetAsyncLocalStorage } from "./async-local-storage";
+import {
+  createAsyncLocalStorage,
+  executeAsync,
+  resetAsyncLocalStorage,
+} from "./async-local-storage";
 import {
   AsyncLocalStorage,
   AsyncResource,
@@ -20,6 +24,15 @@ function deferred<T>() {
 
 async function preserveAsyncLocalStorage<T>(value: T | PromiseLike<T>): Promise<T> {
   const [awaitable, restore] = executeAsync(() => value);
+  const result = await awaitable;
+  restore();
+  return result;
+}
+
+async function preserveAsyncLocalStorageCallback<T>(
+  callback: () => T | PromiseLike<T>,
+): Promise<T> {
+  const [awaitable, restore] = executeAsync(async () => callback());
   const result = await awaitable;
   restore();
   return result;
@@ -109,6 +122,23 @@ test("keeps overlapping transformed runs isolated when they settle out of order"
 
   second.resolve("second done");
   await expect(secondResult).resolves.toBe("second");
+  expect(storage.getStore()).toBeUndefined();
+});
+
+test("restores the original frame after nested transformed async calls", async () => {
+  const storage = new AsyncLocalStorage<string>();
+
+  async function inner() {
+    await preserveAsyncLocalStorageCallback(() => Promise.resolve());
+    return storage.getStore();
+  }
+
+  async function outer() {
+    const innerStore = await preserveAsyncLocalStorageCallback(() => inner());
+    return [innerStore, storage.getStore()];
+  }
+
+  await expect(storage.run("inside", outer)).resolves.toEqual(["inside", "inside"]);
   expect(storage.getStore()).toBeUndefined();
 });
 

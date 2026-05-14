@@ -115,7 +115,11 @@ function transformAsyncFunctionBody(s: MagicString, body: AstNode): boolean {
   });
 
   if (transformed && typeof body.start === "number") {
-    s.appendLeft(body.start + 1, `let ${tempName}, ${restoreName};`);
+    const insertionIndex = getBlockBodyInsertionIndex(body);
+    s.appendLeft(
+      insertionIndex,
+      `${insertionIndex === body.start + 1 ? "" : "\n"}let ${tempName}, ${restoreName};`,
+    );
   }
 
   return transformed;
@@ -129,20 +133,23 @@ function injectAwaitRestore(
   grandparent: AstNode | undefined,
 ): void {
   const nodeStart = node.start!;
-  const nodeEnd = node.end!;
   const argumentStart = argument.start!;
   const argumentEnd = argument.end!;
   const isStatement = parent?.type === "ExpressionStatement";
   const needsLeadingSemicolon = isStatement && !isSingleStatementBody(parent, grandparent);
 
   s.remove(nodeStart, argumentStart);
-  s.remove(nodeEnd, argumentEnd);
-  s.appendLeft(argumentStart, needsLeadingSemicolon ? `;(${tempName}=` : `(${tempName}=`);
+  s.appendLeft(
+    argumentStart,
+    needsLeadingSemicolon
+      ? `;([${tempName},${restoreName}]=${executeAsyncName}(async()=>`
+      : `([${tempName},${restoreName}]=${executeAsyncName}(async()=>`,
+  );
   s.appendRight(
     argumentEnd,
     isStatement
-      ? `,[${tempName},${restoreName}]=${executeAsyncName}(()=>${tempName}),await ${tempName},${restoreName}());`
-      : `,[${tempName},${restoreName}]=${executeAsyncName}(()=>${tempName}),${tempName}=await ${tempName},${restoreName}(),${tempName})`,
+      ? `),await ${tempName},${restoreName}());`
+      : `),${tempName}=await ${tempName},${restoreName}(),${tempName})`,
   );
 }
 
@@ -183,6 +190,27 @@ function getImportInsertionIndex(ast: AstNode): number {
 
   let index = 0;
   for (const node of body) {
+    if (!isDirectiveStatement(node)) break;
+    index = typeof node.end === "number" ? node.end : index;
+  }
+
+  return index;
+}
+
+function getBlockBodyInsertionIndex(body: AstNode): number {
+  const directives = body.directives;
+  if (Array.isArray(directives) && directives.length > 0) {
+    const lastDirective = directives[directives.length - 1];
+    if (isAstNode(lastDirective) && typeof lastDirective.end === "number") {
+      return lastDirective.end;
+    }
+  }
+
+  const statements = body.body;
+  if (!Array.isArray(statements)) return (body.start ?? 0) + 1;
+
+  let index = (body.start ?? 0) + 1;
+  for (const node of statements) {
     if (!isDirectiveStatement(node)) break;
     index = typeof node.end === "number" ? node.end : index;
   }

@@ -199,7 +199,7 @@ export async function renderServer(
               requestContext.run("action-render", () =>
                 ReactServer.renderToReadableStream(actionResponse, { temporaryReferences }),
               ),
-            );
+            ) as ReadableStream<Uint8Array>;
             const responseHeaders = new Headers(actionResult.headers);
             responseHeaders.set("content-type", RSC_CONTENT_TYPE_HEADER);
             return new Response(stream, {
@@ -219,7 +219,7 @@ export async function renderServer(
           requestContext.run("action-render", () =>
             ReactServer.renderToReadableStream(actionResponse, { temporaryReferences }),
           ),
-        );
+        ) as ReadableStream<Uint8Array>;
         const responseHeaders = new Headers(actionResult.headers);
         responseHeaders.set("content-type", RSC_CONTENT_TYPE_HEADER);
         return new Response(stream, {
@@ -235,7 +235,7 @@ export async function renderServer(
       );
       const stream = runInRenderSnapshot(() =>
         requestContext.run("render", () => ReactServer.renderToReadableStream(routeResponse)),
-      );
+      ) as ReadableStream<Uint8Array>;
       return new Response(stream, {
         headers: { "content-type": RSC_CONTENT_TYPE_HEADER },
       });

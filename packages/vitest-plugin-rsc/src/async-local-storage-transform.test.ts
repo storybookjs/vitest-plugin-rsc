@@ -68,6 +68,20 @@ export async function load() {
   expectParseable(output!);
 });
 
+test("keeps function directives before injected locals", () => {
+  const output = transform(`
+export async function action() {
+  "use server";
+  await save();
+}
+`);
+
+  expect(output).toBeDefined();
+  expect(output).toContain(`"use server";\nlet __vitestPluginRscTemp`);
+  expect(output).toContain("__vitestPluginRscExecuteAsync(async()=>save())");
+  expectParseable(output!);
+});
+
 test("does not inject an empty statement before single-statement loop bodies", () => {
   const output = transform(`
 export async function visitAll(items: string[]) {
