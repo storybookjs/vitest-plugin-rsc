@@ -61,9 +61,7 @@ export function useNextSwcTransform(): Plugin {
 
 function isUserSourceFile(id: string) {
   return (
-    /\.(?:[cm]?[jt]sx?)($|\?)/.test(id) &&
-    !id.includes("/node_modules/") &&
-    !id.includes("/.vite/")
+    /\.(?:[cm]?[jt]sx?)($|\?)/.test(id) && !id.includes("/node_modules/") && !id.includes("/.vite/")
   );
 }
 
