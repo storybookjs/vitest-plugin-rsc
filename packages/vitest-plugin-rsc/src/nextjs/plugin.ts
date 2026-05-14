@@ -8,7 +8,6 @@ import { useNextRouteManifest } from "./route-manifest-plugin";
 const supportedEdgeNativeModules = ["buffer", "events", "assert", "util"] as const;
 const virtualServerReferenceInfoId = "\0vitest-plugin-rsc:next-server-reference-info";
 const virtualNextEntryBaseId = "\0vitest-plugin-rsc:next-entry-base";
-const virtualNextEntryBasePublicId = "virtual:vitest-plugin-rsc/next-entry-base";
 const virtualNextEntryBaseClientReferencePrefix =
   "\0vitest-plugin-rsc:next-entry-base-client-reference:";
 const virtualNextEntryBaseClientReferencePublicPrefix =
@@ -402,8 +401,7 @@ function useNextEntryBase(): Plugin {
     resolveId(source) {
       if (
         source === "next/dist/server/app-render/entry-base" ||
-        source === "next/dist/server/app-render/entry-base.js" ||
-        source === virtualNextEntryBasePublicId
+        source === "next/dist/server/app-render/entry-base.js"
       ) {
         return virtualNextEntryBaseId;
       }
