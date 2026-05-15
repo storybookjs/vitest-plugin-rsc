@@ -219,7 +219,7 @@ Current state:
 - Notes-demo coverage proves Next's dynamic API guard for public `"use cache"` scopes by asserting the real `cookies()`-, `headers()`-, and `connection()`-inside-cache errors.
 - Package coverage proves the Vite `"use cache"` hoist stays disabled when the loaded Next config does not set `cacheComponents: true`, rejects cached components with `children` before silently using the wrong call shape, verifies the Next app-render manifest proxy contract for client-reference records, cache wrapper `$$cache=` module IDs, module mapping exports, and the builtin global-error virtual stub, and proves `cacheHandlers`, `cacheMaxMemorySize`, project root, and dist dir are exposed to the app-render runtime from loaded Next config.
 
-Missing before claiming support:
+Current support boundaries:
 
 - Explicitly unsupported for now: cached components with `children`. Next's runtime expects the encrypted `boundArgsLength` call shape produced by its SWC/server-actions transform; the current Vite RSC hoist cannot produce that shape without moving RSC ownership away from `@vitejs/plugin-rsc`. The adapter now throws a transform error instead of silently caching the wrong key. Support requires either invoking the real Next transform in a way that does not fight Vite RSC, or an upstream Vite RSC hoist extension for encrypted bound arguments.
 - Done for the current wrapper path: concurrent cold `Promise.all` calls to the same `"use cache"` function run through Next's `use-cache-wrapper`/default handler path. The exact cold-fill count is Next-version-dependent: supported stable/latest releases may run two cold fills, while canary may coalesce to one. The contract here is that both concurrent call sites resolve consistently and the final read count matches the rendered values. Sequential duplicate reads still hit the cache.
@@ -452,14 +452,14 @@ P0: reduce document fallback and manifest magic.
 
 - Done: isolate the inline Flight parser as a copied/adapted block from Next app-index. The Vitest adapter extracts the same `self.__next_f.push(...)` segment tuples from rendered document HTML and rebuilds the React Flight stream for hydration.
 - Done for access-fallback/redirect detection: inspect only React Flight rows, extract structured or encoded control-flow digests from those rows, then use Next's real `isHTTPAccessFallbackError`, `getAccessFallbackHTTPStatus`, and redirect helpers instead of broad document-wide `NEXT_HTTP_ERROR_FALLBACK` string matching.
-- Keep expanding notes-demo coverage for route-level fallbacks and document hydration. Done: route-level notFound, global-error, and error boundary document hydration.
+- Done for current route-level fallback coverage: notes-demo tests cover route-level notFound, global-error, and error boundary document hydration. Deeper document hydration/error recovery cases stay in the Future Promotion Matrix.
 - Done for the current client-reference and server action proxy contract: proxy manifests stay necessary because Vite RSC owns the actual client/server references while Next app-render expects webpack-shaped records. Package tests cover the client-reference record shape, `$$cache=` id normalization, module mapping exports, invalid-key behavior, builtin global-error virtual stub mapping, and server action manifest worker records for page and route layers.
 - Preserve Vitest harness scripts through plugin-level tester HTML/head merging. Done for the current document hydration path: a notes-demo browser test proves the plugin-level merge keeps Vitest runtime scripts while applying Next title/meta output.
 
 P0: prove or remove Buffer/process/runtime patches.
 
 - Keep `process.env.NEXT_RUNTIME = "edge"` for RSC. That is required for edge App Router fidelity.
-- Prefer define/env/alias configuration over source rewrites.
+- Policy: prefer define/env/alias configuration over source rewrites when a real Next/Vite entrypoint can preserve behavior.
 - Keep the Buffer ProvidePlugin-style import because Next webpack does this for edge/client bundles.
 - Done for the current Buffer patch: package coverage points at the Next app-render stream helper behavior that passes a `Uint8Array` needle through the browser Buffer polyfill and proves the patch normalizes it.
 - Done for the current source-rewrite shims: package coverage proves the `NEXT_RUNTIME`/`typeof window` rewrite is limited to installed Next internals in the RSC environment and that `__NEXT_DEV_SERVER` rewriting stays Next-internal-only. Replacing or narrowing these rewrites with optimizer defines/conditions remains the exit path when a real Next/Vite entrypoint can preserve behavior.
@@ -479,7 +479,7 @@ P1: handle Next config fidelity.
 - Done for the first render path: same-origin redirects and rewrites are applied in Next request order in `renderServer({ url })`, including not letting `afterFiles` rewrites shadow exact app routes.
 - Done for the first response-header path: `renderServer({ url })` exposes `headers` and applies matching `next.config` header routes for same-origin page renders.
 - Middleware/proxy, external rewrites, and locale/basePath edge cases are explicit future request-pipeline work, not current browser-mode `renderServer` claims.
-- Add plugin options for an explicit Next project root or config path only when real projects need more than the Vite root.
+- Explicitly deferred: plugin options for a separate Next project root or config path should be added only when real projects need more than the Vite root.
 
 P1: decide route-handler and middleware/proxy scope.
 
@@ -490,8 +490,8 @@ P1: reduce broad source rewrites.
 
 - Done: audited `treatNextInternalsAsServerInRsc`, `disableNextDevServerRuntime`, and Buffer/runtime patches for the current supported Next 16.x range.
 - Done for the current audit: broad rewrites are scoped to installed Next internals in the RSC environment with focused package coverage. Replace them with defines, aliases, conditions, or targeted adapters only when a real Next/Vite entrypoint can preserve behavior.
-- Keep only rewrites that have a failing regression test and an upstream behavior note.
-- Remove demo-app `optimizeDeps.include` workarounds for ESM app-shell dependencies. Keep explicit prebundling scoped to CJS dependencies, Next internals, or packages with a targeted optimizer regression, and fix missing hidden-runner scan roots in the plugin instead of the app.
+- Policy: keep only rewrites that have a failing regression test and an upstream behavior note.
+- Done for the current demo-app optimizer cleanup: ESM app-shell `optimizeDeps.include` workarounds are not used; explicit prebundling is scoped to Next internals and app-source scan roots/warmup live in the plugin instead of the demo app.
 - Done for the current optimizer-policy regression: hidden `react_client` and `react_ssr` runners inherit visible client scan entries and are warmed by the base plugin, while demo configs list only targeted Next internals rather than broad ESM app-shell dependencies.
 
 P2: decide explicit non-goals.
