@@ -20,6 +20,12 @@ type NextRouteManifestBuildEntry = {
   pageFile: string;
 };
 
+type NextRouteHandlerManifestBuildEntry = {
+  route: string;
+  appPath: string;
+  routeFile: string;
+};
+
 type NextRouteStaticInfo = {
   runtime?: string;
   maxDuration?: number;
@@ -85,12 +91,18 @@ export function useNextRouteManifest(): Plugin {
       }
 
       if (id === virtualNextRouteManifestId) {
-        const entries = await scanNextAppRoutes(root, mode);
+        const [entries, routeHandlers] = await Promise.all([
+          scanNextAppRoutes(root, mode),
+          scanNextAppRouteHandlers(root, mode),
+        ]);
         for (const entry of entries) {
           this.addWatchFile(entry.pageFile);
         }
+        for (const entry of routeHandlers) {
+          this.addWatchFile(entry.routeFile);
+        }
 
-        return generateNextRouteManifest(entries);
+        return generateNextRouteManifest(entries, routeHandlers);
       }
     },
   };
@@ -164,7 +176,54 @@ async function scanNextAppRoutes(
   return Array.from(sortPageObjects(entries, (entry) => entry.route));
 }
 
-function generateNextRouteManifest(entries: NextRouteManifestBuildEntry[]) {
+async function scanNextAppRouteHandlers(
+  root: string,
+  mode: string,
+): Promise<NextRouteHandlerManifestBuildEntry[]> {
+  const requireFromProject = createProjectRequire(root);
+  const projectConfig = await loadNextProjectConfig(root, mode);
+  const appDir = projectConfig.appDir;
+  if (!appDir) return [];
+
+  // Begin copy: Next.js dev app-route route matcher setup
+  // Source: https://github.com/vercel/next.js/blob/4588a7354283f97e2124e3d82f55733ca4eb9373/packages/next/src/server/route-matcher-providers/dev/dev-app-route-route-matcher-provider.ts#L16-L146
+  // Source: https://github.com/vercel/next.js/blob/4588a7354283f97e2124e3d82f55733ca4eb9373/packages/next/src/server/route-matcher-providers/dev/helpers/file-reader/default-file-reader.ts#L12-L42
+  // Adaptation: Vitest only records these routes so page rendering can reject
+  // route handler URLs explicitly until route handlers get their own helper.
+  const { DevAppRouteRouteMatcherProvider } = requireFromProject(
+    "next/dist/server/route-matcher-providers/dev/dev-app-route-route-matcher-provider.js",
+  ) as typeof import("next/dist/server/route-matcher-providers/dev/dev-app-route-route-matcher-provider.js");
+  const { DefaultFileReader } = requireFromProject(
+    "next/dist/server/route-matcher-providers/dev/helpers/file-reader/default-file-reader.js",
+  ) as typeof import("next/dist/server/route-matcher-providers/dev/helpers/file-reader/default-file-reader.js");
+  const { sortPageObjects } = requireFromProject(
+    "next/dist/shared/lib/router/utils/sortable-routes.js",
+  ) as typeof import("next/dist/shared/lib/router/utils/sortable-routes.js");
+
+  const provider = new DevAppRouteRouteMatcherProvider(
+    appDir,
+    projectConfig.pageExtensions,
+    new DefaultFileReader({
+      ignorePartFilter: (part: string) => part === "node_modules" || part.startsWith("."),
+    }),
+    false,
+  );
+  const matchers = await provider.matchers();
+  // End copy
+
+  const entries = matchers.map((matcher) => ({
+    route: matcher.definition.pathname,
+    appPath: matcher.definition.page,
+    routeFile: matcher.definition.filename,
+  }));
+
+  return Array.from(sortPageObjects(entries, (entry) => entry.route));
+}
+
+function generateNextRouteManifest(
+  entries: NextRouteManifestBuildEntry[],
+  routeHandlers: NextRouteHandlerManifestBuildEntry[],
+) {
   const imports = entries
     .map((entry, index) => {
       const params = new URLSearchParams({ pageFile: entry.pageFile });
@@ -183,7 +242,17 @@ function generateNextRouteManifest(entries: NextRouteManifestBuildEntry[]) {
     )
     .join(",")}]`;
 
-  return `${imports}\nexport const nextRouteManifest = ${manifest};\n`;
+  const routeHandlerManifest = `[${routeHandlers
+    .map(
+      (entry) => `{
+        route: ${JSON.stringify(entry.route)},
+        appPath: ${JSON.stringify(entry.appPath)},
+        routeFile: ${JSON.stringify(entry.routeFile)},
+      }`,
+    )
+    .join(",")}]`;
+
+  return `${imports}\nexport const nextRouteManifest = ${manifest};\nexport const nextRouteHandlerManifest = ${routeHandlerManifest};\n`;
 }
 
 async function generateNextRouteTreeModule(

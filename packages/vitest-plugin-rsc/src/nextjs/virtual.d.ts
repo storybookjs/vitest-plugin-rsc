@@ -7,4 +7,9 @@ declare module "virtual:vitest-plugin-rsc/next-routes" {
     pageFile: string;
     loaderTree: LoaderTree;
   }[];
+  export const nextRouteHandlerManifest: {
+    route: string;
+    appPath: string;
+    routeFile: string;
+  }[];
 }

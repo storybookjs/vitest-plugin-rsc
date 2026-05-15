@@ -46,6 +46,17 @@ type NextRouteManifestEntry = {
   loaderTree: LoaderTree;
 };
 
+type NextRouteHandlerManifestEntry = {
+  route: string;
+  appPath: string;
+  routeFile: string;
+};
+
+type NextRouteManifest = {
+  pages: NextRouteManifestEntry[];
+  routeHandlers: NextRouteHandlerManifestEntry[];
+};
+
 type NextRuntimeConfiguration = RenderConfiguration & {
   nextRscRequestsViaMsw: boolean;
 };
@@ -154,8 +165,8 @@ export async function renderServer(
   const routeManifest = explicitUrl ? await loadNextRouteManifest() : undefined;
   const routeEntry = routeManifest
     ? routeOnly
-      ? resolveNextRoute(routeManifest, route, location.pathname)
-      : tryResolveDirectRenderRoute(routeManifest, route, location.pathname)
+      ? resolveNextRoute(routeManifest.pages, routeManifest.routeHandlers, route, location.pathname)
+      : tryResolveDirectRenderRoute(routeManifest.pages, route, location.pathname)
     : undefined;
   const hydrateDocument = Boolean(routeEntry);
   container ??= hydrateDocument
@@ -168,7 +179,7 @@ export async function renderServer(
     const requestRoute = routeEntry?.route ?? route ?? location.pathname;
     const routeSource: NextRenderSource | undefined = routeEntry
       ? routeOnly
-        ? { kind: "route", manifest: routeManifest!, wrapper: WrapperComponent }
+        ? { kind: "route", manifest: routeManifest!.pages, wrapper: WrapperComponent }
         : undefined
       : undefined;
     const getServerRoot = () => {
@@ -183,7 +194,7 @@ export async function renderServer(
       ({
         kind: "node",
         getNode: getServerRoot,
-        manifest: route && !routeEntry ? undefined : routeManifest,
+        manifest: route && !routeEntry ? undefined : routeManifest?.pages,
         replacementRoute: routeEntry?.route,
         fallbackRoute: requestRoute,
       } satisfies NextRenderSource);
@@ -720,7 +731,7 @@ function resolveAppRenderEntry(
   const location = new URL(url, "http://localhost");
 
   if (source.kind === "route") {
-    const entry = resolveNextRoute(source.manifest, undefined, location.pathname);
+    const entry = resolveNextRoute(source.manifest, [], undefined, location.pathname);
     return source.wrapper
       ? {
           ...entry,
@@ -791,18 +802,30 @@ function createAppPageFromRoutePattern(routePattern: string) {
 }
 
 async function loadNextRouteManifest() {
-  const { nextRouteManifest } = await import("virtual:vitest-plugin-rsc/next-routes");
-  return nextRouteManifest as NextRouteManifestEntry[];
+  const { nextRouteManifest, nextRouteHandlerManifest } =
+    await import("virtual:vitest-plugin-rsc/next-routes");
+  return {
+    pages: nextRouteManifest as NextRouteManifestEntry[],
+    routeHandlers: nextRouteHandlerManifest as NextRouteHandlerManifestEntry[],
+  } satisfies NextRouteManifest;
 }
 
 function resolveNextRoute(
   nextRouteManifest: NextRouteManifestEntry[],
+  nextRouteHandlerManifest: NextRouteHandlerManifestEntry[],
   route: string | undefined,
   pathname: string,
 ) {
   const entry = tryResolveNextRoute(nextRouteManifest, route, pathname);
 
   if (!entry) {
+    const routeHandler = tryResolveNextRouteHandler(nextRouteHandlerManifest, route, pathname);
+    if (routeHandler) {
+      throw new Error(
+        `renderServer({ url: "${pathname}" }) matched Next route handler "${routeHandler.appPath}" at ${routeHandler.routeFile}. Route handlers are not page render targets yet; import the route handler directly or use a future route-handler testing helper.`,
+      );
+    }
+
     const routeHint = route ? ` route "${route}"` : ` URL "${pathname}"`;
     throw new Error(`No Next app route found for${routeHint}.`);
   }
@@ -819,6 +842,17 @@ function tryResolveNextRoute(
     ? (nextRouteManifest.find((candidate) => candidate.route === route) ??
         nextRouteManifest.find((candidate) => matchRoutePattern(candidate.route, pathname)))
     : nextRouteManifest.find((candidate) => matchRoutePattern(candidate.route, pathname));
+}
+
+function tryResolveNextRouteHandler(
+  nextRouteHandlerManifest: NextRouteHandlerManifestEntry[],
+  route: string | undefined,
+  pathname: string,
+) {
+  return route
+    ? (nextRouteHandlerManifest.find((candidate) => candidate.route === route) ??
+        nextRouteHandlerManifest.find((candidate) => matchRoutePattern(candidate.route, pathname)))
+    : nextRouteHandlerManifest.find((candidate) => matchRoutePattern(candidate.route, pathname));
 }
 
 function tryResolveDirectRenderRoute(

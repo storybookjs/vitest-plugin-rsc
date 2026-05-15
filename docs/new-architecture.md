@@ -357,6 +357,7 @@ Notes demo acceptance coverage includes realistic combinations of:
 - `next/link`, `next/form`, `next/script`, `next/image`, `getImageProps`, `next/dynamic`, `next/head` ignored by App Router, and client error boundaries.
 - Cookies, headers, draft mode, cache, Server Actions, redirects, refresh, and MSW-routed RSC/action transport.
 - Next `after()` request lifecycle behavior, including nested `waitUntil` work scheduled by an after task.
+- Route handler URLs are detected through Next's app-route matcher and reported as unsupported `renderServer({ url })` targets instead of being treated as missing pages.
 
 This is useful coverage, but it is not full Next.js API coverage. It is still centered around the notes demo and a small number of focused unit tests.
 
@@ -469,7 +470,7 @@ P2: decide explicit non-goals.
 8. Feed rewrites, redirects, and headers from real Next config into define/render options, or document them as explicitly out of scope.
 9. Add latest/canary Next compatibility jobs or scripts that exercise the focused unit suite and notes demo smoke tests.
 10. Add a plugin-level test that whole-document Next rendering preserves Vitest harness scripts while applying Next head/meta/title output.
-11. Add a route-handler decision test: either prove `route.ts` execution through Next route module code or assert a clear unsupported error.
+11. Done for the current scope: `renderServer({ url })` detects `route.ts` handlers through Next's app-route matcher and throws a clear unsupported-target error. Future support should execute them through Next route module/request code, not a local handler runner.
 12. Add coverage that `renderServer(<ReactNode />)` uses the fake-route/app-render path and that `renderServer({ url })` can replace the matched page entry without bypassing Next's loader tree.
 13. Add route-only `renderServer({ url })` coverage for important existing notes demo pages that still render direct components with manual props.
 14. Add coverage for App Router page exports: `metadata`, `generateMetadata`, `viewport`, `generateViewport`, `generateStaticParams`, `dynamic`, `dynamicParams`, `revalidate`, `fetchCache`, `runtime`, `preferredRegion`, and `maxDuration`.
