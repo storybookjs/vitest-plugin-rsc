@@ -1,10 +1,9 @@
 import { expect, test } from "vitest";
 import { page } from "vitest/browser";
-import { renderServer } from "#test/render.tsx";
-import SignUpPage from "./page.tsx";
+import { renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
 
 test("renders the email-only sign-up form", async () => {
-  await renderServer(<SignUpPage searchParams={Promise.resolve({})} />, { url: "/auth/sign-up" });
+  await renderServer({ url: "/auth/sign-up" });
 
   await expect
     .element(page.getByRole("heading", { level: 1, name: "Welcome" }))
@@ -23,7 +22,7 @@ test("renders the email-only sign-up form", async () => {
 });
 
 test("renders an inline error when the email is invalid", async () => {
-  await renderServer(<SignUpPage searchParams={Promise.resolve({})} />, { url: "/auth/sign-up" });
+  await renderServer({ url: "/auth/sign-up" });
 
   await page.getByLabelText("Email").fill("not-an-email");
   await page.getByRole("button", { name: "Create account" }).click();
@@ -34,9 +33,7 @@ test("renders an inline error when the email is invalid", async () => {
 });
 
 test("shows the magic link sent confirmation banner", async () => {
-  await renderServer(<SignUpPage searchParams={Promise.resolve({ sent: "magic-link" })} />, {
-    url: "/auth/sign-up?sent=magic-link",
-  });
+  await renderServer({ url: "/auth/sign-up?sent=magic-link" });
 
   await expect
     .element(page.getByText("Check your inbox for the link to finish creating your account."))
