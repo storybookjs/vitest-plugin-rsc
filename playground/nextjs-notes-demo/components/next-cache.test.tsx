@@ -102,6 +102,16 @@ test("use cache functions are hoisted into Next cache components runtime", async
     .element(page.getByText(/use cache concurrent second: generation \d+ concurrent read [12]/))
     .toBeVisible();
   expect(getConcurrentUseCacheReadCount()).toMatch(/^[12]$/);
+  await expect
+    .element(page.getByText(/use cache closure first: generation \d+ same closure read 1/))
+    .toBeVisible();
+  await expect
+    .element(page.getByText(/use cache closure second: generation \d+ same closure read 1/))
+    .toBeVisible();
+  await expect
+    .element(page.getByText(/use cache closure different: generation \d+ different closure read 2/))
+    .toBeVisible();
+  await expect.element(page.getByText("use cache closure reads: 2")).toBeVisible();
   await expect.element(page.getByText("use cache private cookie: private-value")).toBeVisible();
 });
 
