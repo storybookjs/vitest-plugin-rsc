@@ -1,4 +1,3 @@
-import { Buffer } from "node:buffer";
 import fs from "node:fs";
 import path from "node:path";
 import type { Plugin } from "vite";
@@ -197,11 +196,13 @@ async function generateNextRouteTreeModule(
 
   const projectConfig = await loadNextProjectConfig(root, mode);
   const staticInfo = await loadNextRouteStaticInfo(root, projectConfig, entry);
+  const requireFromProject = createProjectRequire(root);
   const watchFiles = new Set<string>([entry.pageFile]);
-  const loader = createProjectRequire(root)(
-    "next/dist/build/webpack/loaders/next-app-loader/index.js",
-  ) as {
+  const loader = requireFromProject("next/dist/build/webpack/loaders/next-app-loader/index.js") as {
     default: (this: NextAppLoaderContext) => Promise<string>;
+  };
+  const { encodeToBase64 } = requireFromProject("next/dist/build/webpack/loaders/utils.js") as {
+    encodeToBase64(value: object): string;
   };
   // Begin copy: Next.js next-app-loader option shape
   // Source: https://github.com/vercel/next.js/blob/4588a7354283f97e2124e3d82f55733ca4eb9373/packages/next/src/build/entries.ts#L584-L615
@@ -225,9 +226,7 @@ async function generateNextRouteTreeModule(
     isDev: projectConfig.isDev,
     basePath: projectConfig.basePath,
     nextConfigOutput: projectConfig.nextConfig.output,
-    middlewareConfig: Buffer.from(
-      JSON.stringify(staticInfo.middleware ?? { matchers: [] }),
-    ).toString("base64"),
+    middlewareConfig: encodeToBase64((staticInfo.middleware ?? { matchers: [] }) as object),
     isGlobalNotFoundEnabled,
   };
   // End copy
