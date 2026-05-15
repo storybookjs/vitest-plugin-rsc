@@ -192,9 +192,9 @@ async function generateNextRouteTreeModule(
   entry: NextRouteManifestBuildEntry,
   entries: NextRouteManifestBuildEntry[],
 ) {
-  assertRootLayoutExists(entry);
-
   const projectConfig = await loadNextProjectConfig(root, mode);
+  assertRootLayoutExists(entry, projectConfig.pageExtensions);
+
   const staticInfo = await loadNextRouteStaticInfo(root, projectConfig, entry);
   const requireFromProject = createProjectRequire(root);
   const watchFiles = new Set<string>([entry.pageFile]);
@@ -322,10 +322,10 @@ function isModuleResolutionError(error: unknown) {
   );
 }
 
-function assertRootLayoutExists(entry: NextRouteManifestBuildEntry) {
+function assertRootLayoutExists(entry: NextRouteManifestBuildEntry, pageExtensions: string[]) {
   let currentDir = path.dirname(entry.pageFile);
   while (currentDir.startsWith(entry.appDir)) {
-    if (findAppFile(currentDir, "layout")) return;
+    if (findAppFile(currentDir, "layout", pageExtensions)) return;
     if (currentDir === entry.appDir) break;
     currentDir = path.dirname(currentDir);
   }
@@ -335,9 +335,11 @@ function assertRootLayoutExists(entry: NextRouteManifestBuildEntry) {
   );
 }
 
-function findAppFile(dir: string, basename: string) {
-  const extensions = [".tsx", ".ts", ".jsx", ".js", ".mdx"];
-  return extensions.find((ext) => fs.existsSync(path.join(dir, `${basename}${ext}`)));
+function findAppFile(dir: string, basename: string, pageExtensions: string[]) {
+  return pageExtensions.find((extension) => {
+    const extensionWithDot = extension.startsWith(".") ? extension : `.${extension}`;
+    return fs.existsSync(path.join(dir, `${basename}${extensionWithDot}`));
+  });
 }
 
 function extractNextLoaderTreeModule(generated: string) {
