@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.2.2](https://github.com/storybookjs/vitest-plugin-rsc/compare/v0.2.1...v0.2.2) (2026-05-15)
+
+
+### Bug Fixes
+
+* harden browser api port probing ([cd19924](https://github.com/storybookjs/vitest-plugin-rsc/commit/cd19924f9214799fc7112fa2d15f0d55ef3cc658))
+* stabilize Vitest browser websocket fallback ([92b7ea9](https://github.com/storybookjs/vitest-plugin-rsc/commit/92b7ea94d5f43fb5cab7485222b837b2af366d9d))
+
 ## [0.2.1](https://github.com/storybookjs/vitest-plugin-rsc/compare/v0.2.0...v0.2.1) (2026-05-14)
 
 
