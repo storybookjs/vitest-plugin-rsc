@@ -32,6 +32,8 @@ Before editing, committing, rebasing, or pushing, verify the working directory, 
 
 For this Next fidelity effort, the architecture backlog lives in `docs/new-architecture.md`. Keep that file updated when adding, completing, or intentionally dropping a Next.js fidelity task.
 
+Treat that backlog as prioritized, not flat. Work on P0 items before expanding scope; only pick P1/P2 work when the related P0 foundation is done or explicitly deferred.
+
 ## Next.js Integration Guidelines
 
 This package should behave like Next.js where users observe Next.js behavior, but it should not grow a parallel Next.js implementation. The goal is less glue over time: prefer deleting local adapters when the same behavior can be delegated to Next, React, Vite, Vitest, or `@vitejs/plugin-rsc`.
@@ -64,7 +66,7 @@ The Storybook Next.js Vite plugin is useful precedent for loading Next config, e
 
 Do not replace `@vitejs/plugin-rsc` with Next's webpack or Turbopack RSC bundling layer. Vite RSC owns the Vite module graph, `"use client"` handling, client references, server references, and browser/server transport. Next integration code should feed real Next runtime behavior into that layer, not generate webpack manifests, webpack layers, or a second RSC graph.
 
-Webpack/Turbopack compiler files are valid sources of truth. If a Next feature's real implementation lives in a webpack loader, Turbopack transform/helper, or shared compiler file, prefer importing and invoking that real code when it works. Isolate it behind a Vite adapter, document why that compiler path is needed, and add a regression test proving the user-visible Next behavior. Do not build a second webpack/Turbopack RSC graph just to reuse those pieces.
+Webpack/Turbopack compiler files are valid sources of truth. If a Next feature's real implementation lives in a webpack loader, Turbopack transform/helper, or shared compiler file, prefer importing and invoking that real code when it works. Isolate it behind a Vite adapter, document why that compiler path is needed, and add a regression test proving the user-visible Next behavior. Do not build a second webpack/Turbopack RSC graph, layer graph, manifest graph, or runtime just to reuse those pieces.
 
 Use Next's transform layer for source-level Next features instead of regex transforms. Do not enable Next's RSC or Server Action transforms globally unless there is a specific test proving it does not conflict with `@vitejs/plugin-rsc`.
 

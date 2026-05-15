@@ -3,7 +3,9 @@
 Status: 2026-05-15
 Scope: App Router support in `vitest-plugin-rsc/nextjs`, based on the current `codex/next-fidelity-transforms-pr36` worktree.
 
-This document is intentionally stricter than the current implementation. It records what is already done, where we still rely on adapters or shims, and what has to change before we can honestly call the plugin high fidelity for the important Next.js App Router APIs.
+This document is intentionally stricter than the current implementation. It records what is already done, where we still rely on adapters or shims, and what has to change before we can honestly call specific Next.js App Router features high fidelity.
+
+This is a backlog, not a claim of full fidelity and not a mandate to implement everything at once. Execution should stay narrow: finish P0 items before broadening feature scope, and treat P1/P2 items as explicitly ordered follow-up work.
 
 ## Goal
 
@@ -12,8 +14,8 @@ The Next.js adapter should let browser-mode Vitest RSC tests run through real Ne
 The target architecture is:
 
 1. Use installed Next.js internals directly when there is a usable JS entrypoint.
-2. Invoke real Next webpack loaders, Turbopack transform/compiler code, or SWC transforms when those are the implementation layer Next itself uses.
-3. Copy the smallest upstream block only when no importable entrypoint exists, and mark it with `// begin copy`, `// end copy`, upstream source links, and adaptation notes.
+2. Invoke real Next webpack loaders, Turbopack transform/compiler code, or SWC transforms when those are the implementation layer Next itself uses and can be isolated behind a narrow Vite adapter.
+3. Copy the smallest upstream block only when no importable entrypoint exists, and mark it with `// Begin copy`, `// End copy`, upstream source links, and adaptation notes.
 4. Keep local behavior as the last resort, with tests that explain the required Next behavior.
 5. Keep `@vitejs/plugin-rsc` responsible for the RSC graph, `use client`, `use server`, client references, server references, and action transport.
 6. Keep both `renderServer({ url })` and `renderServer(<ReactNode />)` on a route-shaped path through Next app-render. Direct React nodes should be presented to Next as a synthetic app route, not rendered through a separate local router.
@@ -177,6 +179,8 @@ It deliberately sets `serverComponents: false`. That is correct for now because 
 Remaining weakness: Next's own webpack SWC loader force-transpiles files containing `next/font`, `next/dynamic`, `use server`, `use client`, or `use cache`. We intentionally do less. That should stay true for RSC directives, but we still need a deliberate decision and tests for `use cache` and other Next 16 cache-component compiler features.
 
 The Turbopack/Rust sources are also useful, especially for understanding the real compiler contracts. The important parts found so far are `next-custom-transforms` for font imports, RSC directive validation, server actions, and `use cache`, plus `next-core` import-map/font code for Turbopack's equivalent runtime wiring. We should use those sources to guide behavior and import/invoke their exposed JS/N-API surfaces when practical, but not hand-port large Rust transforms into this plugin.
+
+Review guard: Turbopack code is a source of truth for compiler behavior, not permission to reimplement Turbopack in Vite. Do not introduce a Turbopack module graph, layer graph, RSC manifest graph, or bundler runtime. Any Turbopack-derived behavior must stay inside a small adapter with a user-visible regression test.
 
 ### Cache Components and `use cache`
 
@@ -375,6 +379,8 @@ Add focused tests in `playground/nextjs-notes-demo` before claiming more fidelit
 - Adapter/runtime behavior: streaming boundaries, Suspense/loading fallback behavior, partial-prerendering/PPR scope, dynamic IO/cache-components scope, and adapter entrypoint assumptions.
 
 ## Highest Priority Fixes
+
+This section is deliberately prioritized. Do not treat the missing coverage matrix as a flat task list. P0 items are the current execution gate; P1 items should follow only after the relevant P0 foundation is stable or explicitly deferred; P2 items are non-goals or support decisions until promoted.
 
 P0: keep removing glue around real Next entrypoints.
 
