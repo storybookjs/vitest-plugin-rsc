@@ -48,6 +48,9 @@ test("notes demo renders Next app-router API aliases and compiler surfaces", asy
   await expect.element(image).toHaveAttribute("src", "/vitest-rsc.png");
   await expect.element(image).toHaveAttribute("width", "48");
   await expect.element(image).toHaveAttribute("height", "24");
+  expect(
+    document.querySelector('link[rel="preload"][as="image"][href="/vitest-rsc.png"]'),
+  ).not.toBeNull();
 
   const staticImage = page.getByRole("img", { name: "Imported static logo" });
   await expect.element(staticImage).toBeVisible();
