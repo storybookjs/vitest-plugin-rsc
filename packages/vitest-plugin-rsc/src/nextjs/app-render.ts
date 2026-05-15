@@ -26,6 +26,7 @@ import { getRouteRegex } from "next/dist/shared/lib/router/utils/route-regex.js"
 import * as ReactServer from "@vitejs/plugin-rsc/react/rsc";
 import { patchBufferIndexOfUint8ArrayNeedle } from "./buffer-compat";
 import {
+  createNextServerActionManifest,
   createViteRscClientModulesProxy,
   createViteRscModuleMappingProxy,
 } from "./app-render-manifest";
@@ -768,11 +769,10 @@ async function importLegacyActionUtils(): Promise<
   }
 }
 
-// Begin copy: Next.js client/server action manifest shapes
+// Begin copy: Next.js client reference manifest shape
 // Source: https://github.com/vercel/next.js/blob/4588a7354283f97e2124e3d82f55733ca4eb9373/packages/next/src/build/webpack/plugins/flight-manifest-plugin.ts
-// Source: https://github.com/vercel/next.js/blob/4588a7354283f97e2124e3d82f55733ca4eb9373/packages/next/src/build/webpack/plugins/flight-client-entry-plugin.ts
-// Adaptation: Vite RSC owns client references and action module loading, so
-// these manifests are minimal lookup shims for Next app-render.
+// Adaptation: Vite RSC owns client references, so these manifests are minimal
+// lookup shims for Next app-render.
 const emptyClientReferenceManifest = {
   moduleLoading: { prefix: "", crossOrigin: null },
   clientModules: createViteRscClientModulesProxy(),
@@ -818,56 +818,6 @@ const emptyServerActionsManifest = {
   node: {},
   edge: {},
 } as never;
-
-function createNextServerActionManifest(actionId: string, page: string) {
-  const [filename, exportedName] = actionId.split("#");
-  const worker = {
-    moduleId: actionId,
-    async: true as const,
-  };
-  const actionEntry = {
-    exportedName,
-    filename,
-    workers: createServerActionWorkers(page, worker),
-  };
-
-  return {
-    encryptionKey: "",
-    node: {
-      [actionId]: actionEntry,
-    },
-    edge: {
-      [actionId]: actionEntry,
-    },
-  } as never;
-}
-
-function createServerActionWorkers(
-  page: string,
-  worker: {
-    moduleId: string;
-    async: true;
-  },
-) {
-  const workerPage = page.startsWith("app") ? page : `app${page}`;
-  const routeWorkerPage = workerPage.replace(/\/(?:page|route)$/, "");
-
-  return new Proxy(
-    {
-      [workerPage]: worker,
-      [routeWorkerPage]: worker,
-    },
-    {
-      get(target, key) {
-        if (typeof key !== "string") {
-          return Reflect.get(target, key);
-        }
-        return Reflect.get(target, key) ?? worker;
-      },
-    },
-  );
-}
-// End copy
 
 function createRouteParams(routePattern: string, pathname: string) {
   return (getRouteMatcher(getRouteRegex(normalizeRoutePattern(routePattern)))(pathname) ||

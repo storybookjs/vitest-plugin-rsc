@@ -31,6 +31,60 @@ export function createViteRscModuleMappingProxy() {
   );
 }
 
+// Begin copy: Next.js server action manifest shape
+// Source: https://github.com/vercel/next.js/blob/4588a7354283f97e2124e3d82f55733ca4eb9373/packages/next/src/build/webpack/plugins/flight-client-entry-plugin.ts
+// Adaptation: Vite RSC owns action module loading, so this is a minimal worker
+// lookup shim for Next app-render/action handling.
+export function createNextServerActionManifest(actionId: string, page: string) {
+  const [filename, exportedName] = actionId.split("#");
+  const worker = {
+    moduleId: actionId,
+    async: true as const,
+  };
+  const actionEntry = {
+    exportedName,
+    filename,
+    workers: createServerActionWorkers(page, worker),
+  };
+
+  return {
+    encryptionKey: "",
+    node: {
+      [actionId]: actionEntry,
+    },
+    edge: {
+      [actionId]: actionEntry,
+    },
+  } as never;
+}
+
+function createServerActionWorkers(
+  page: string,
+  worker: {
+    moduleId: string;
+    async: true;
+  },
+) {
+  const workerPage = page.startsWith("app") ? page : `app${page}`;
+  const routeWorkerPage = workerPage.replace(/\/(?:page|route)$/, "");
+
+  return new Proxy(
+    {
+      [workerPage]: worker,
+      [routeWorkerPage]: worker,
+    },
+    {
+      get(target, key) {
+        if (typeof key !== "string") {
+          return Reflect.get(target, key);
+        }
+        return Reflect.get(target, key) ?? worker;
+      },
+    },
+  );
+}
+// End copy
+
 function createViteRscModuleExportsProxy(id: string) {
   return new Proxy(
     {},

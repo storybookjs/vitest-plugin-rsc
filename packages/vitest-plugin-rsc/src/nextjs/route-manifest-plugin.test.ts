@@ -2,7 +2,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, test } from "vitest";
 import { loadNextProjectConfig } from "./config";
-import { loadNextRouteStaticInfo } from "./route-manifest-plugin";
+import { loadNextRouteStaticInfo, useNextRouteManifest } from "./route-manifest-plugin";
 
 const fixtureRoot = fileURLToPath(
   new URL("../../../../playground/nextjs-notes-demo/", import.meta.url),
@@ -32,3 +32,44 @@ test("collects route segment config through Next static info", async () => {
     process.chdir(previousCwd);
   }
 });
+
+test("extracts a Vite loader tree module from the real Next app loader output", async () => {
+  const plugin = useNextRouteManifest();
+  const configResolved = getHookHandler(plugin.configResolved);
+  const resolveId = getHookHandler(plugin.resolveId);
+  const load = getHookHandler(plugin.load);
+  const pageFile = path.join(fixtureRoot, "app/route-patterns/defaulted/page.tsx");
+  const params = new URLSearchParams({ pageFile });
+
+  await configResolved.call({} as never, { root: fixtureRoot, mode: "test" } as never);
+
+  const resolved = (await resolveId.call(
+    {} as never,
+    `virtual:vitest-plugin-rsc/next-route-tree?${params}`,
+    undefined,
+    {} as never,
+  )) as string;
+  const watchedFiles: string[] = [];
+  const code = (await load.call(
+    {
+      addWatchFile: (file: string) => watchedFiles.push(file),
+    } as never,
+    resolved,
+    {} as never,
+  )) as string;
+
+  expect(watchedFiles).toContain(pageFile);
+  expect(code).toContain("export const loaderTree =");
+  expect(code).toContain("() => import(");
+  expect(code).toContain("/@fs/");
+  expect(code).toContain("route-patterns/defaulted/page.tsx");
+  expect(code).not.toContain("const __next_app_require__");
+  expect(code).not.toContain("const __next_app_load_chunk__");
+});
+
+function getHookHandler<T extends (...args: never[]) => unknown>(
+  hook: T | { handler: T } | undefined,
+): T {
+  if (!hook) throw new Error("Expected Vite hook to be defined.");
+  return typeof hook === "function" ? hook : hook.handler;
+}
