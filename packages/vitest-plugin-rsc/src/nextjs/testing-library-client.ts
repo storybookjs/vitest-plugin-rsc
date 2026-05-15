@@ -16,7 +16,14 @@ export type NextRouteRequest = {
   nextUrl?: string | null;
 };
 
-export type FetchNextRsc = (request: NextActionRequest | NextRouteRequest) => Promise<Response>;
+export type NextAppRouteRequest = {
+  requestType: "next-app-route";
+  request: Request;
+};
+
+export type FetchNextRsc = (
+  request: NextActionRequest | NextRouteRequest | NextAppRouteRequest,
+) => Promise<Response | undefined>;
 
 export function createServerActionCaller({
   fetchRsc,

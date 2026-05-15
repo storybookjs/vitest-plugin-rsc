@@ -21,6 +21,7 @@ declare module "virtual:vitest-plugin-rsc/next-routes" {
     route: string;
     appPath: string;
     routeFile: string;
+    load: () => Promise<Record<string, unknown>>;
   }[];
   export const nextCustomRoutes: {
     headers: NextCustomRoute[];

@@ -29,7 +29,9 @@ import {
 } from "./app-render";
 import { getNextFontManifestForRender } from "./font-manifest";
 import { getNextHttpAccessFallbackStatus, isNextHttpAccessFallbackError } from "./flight-payload";
+import { invokeNextRouteHandler } from "./app-route";
 import {
+  matchNextRoutePatternParams,
   matchNextRoutePattern,
   resolveRedirectUrl,
   resolveNextCustomRequestUrl,
@@ -55,6 +57,7 @@ type NextRouteHandlerManifestEntry = {
   route: string;
   appPath: string;
   routeFile: string;
+  load: () => Promise<Record<string, unknown>>;
 };
 
 type NextRouteManifest = {
@@ -279,6 +282,21 @@ export async function renderServer(
     };
 
     const fetchNextRsc: FetchNextRsc = async (request) => {
+      if (request.requestType === "next-app-route") {
+        if (!routeManifest) return;
+        const routeHandler = resolveNextRouteHandlerRequest(routeManifest, request.request.url);
+        if (!routeHandler) return;
+
+        return invokeNextRouteHandler({
+          getUserland: routeHandler.load,
+          route: routeHandler.route,
+          appPath: routeHandler.appPath,
+          url: request.request.url,
+          request: request.request,
+          params: routeHandler.params,
+        });
+      }
+
       const appRenderEntry = resolveAppRenderEntry(renderSource, request.url, requestRoute);
       const stubMetadata = shouldUseDirectMetadataStub(renderSource, appRenderEntry);
 
@@ -899,6 +917,14 @@ function tryResolveNextRouteHandler(
     ? (nextRouteHandlerManifest.find((candidate) => candidate.route === route) ??
         nextRouteHandlerManifest.find((candidate) => matchRoutePattern(candidate.route, pathname)))
     : nextRouteHandlerManifest.find((candidate) => matchRoutePattern(candidate.route, pathname));
+}
+
+function resolveNextRouteHandlerRequest(routeManifest: NextRouteManifest, url: string) {
+  const pathname = new URL(url, "http://localhost").pathname;
+  for (const entry of routeManifest.routeHandlers) {
+    const params = matchNextRoutePatternParams(entry.route, pathname);
+    if (params) return { ...entry, params };
+  }
 }
 
 function tryResolveDirectRenderRoute(

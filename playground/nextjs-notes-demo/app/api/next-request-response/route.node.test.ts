@@ -11,6 +11,7 @@ test("route handlers can use documented NextRequest, NextResponse, cookies, next
     new Request("http://localhost/api/next-request-response?q=docs", {
       headers: {
         cookie: "demo=request-cookie",
+        "x-route-input": "node-request",
         "user-agent":
           "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
       },
@@ -23,6 +24,7 @@ test("route handlers can use documented NextRequest, NextResponse, cookies, next
     pathname: "/api/next-request-response",
     query: "docs",
     requestCookie: "request-cookie",
+    requestHeader: "node-request",
     userAgentBrowser: "Chrome",
   });
   expect(response.cookies.get("route-demo")?.value).toBe("ok");

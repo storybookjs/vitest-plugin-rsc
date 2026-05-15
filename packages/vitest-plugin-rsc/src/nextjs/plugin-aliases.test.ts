@@ -272,6 +272,31 @@ test("proxies Next entry-base client imports as RSC client references", async ()
   expect(browserCode).toContain("next/dist/client/components/layout-router.js");
 });
 
+test("keeps Next app-route shared modules as an RSC client boundary", async () => {
+  const plugin = findNextPlugin("next-rsc-app-route-shared-modules-boundary");
+  const resolveId = getHookHandler(plugin.resolveId);
+  const load = getHookHandler(plugin.load);
+  const routeModuleFile = path.join(
+    fixtureRoot,
+    "node_modules/next/dist/server/route-modules/app-route/module.js",
+  );
+
+  const resolved = (await resolveId.call(
+    {} as never,
+    "./shared-modules",
+    routeModuleFile,
+    {} as never,
+  )) as string;
+  const code = (await load.call({} as never, resolved, {} as never)) as string;
+
+  expect(resolved).toBe("\0vitest-plugin-rsc:next-app-route-shared-modules-reference");
+  expect(code).toBe(
+    'export * as appRouterContext from "next/dist/shared/lib/app-router-context.shared-runtime.js";\n',
+  );
+  expect(code).not.toContain("registerClientReference");
+  expect(code).not.toContain("createClientReference");
+});
+
 test("proxies Next entry-base client imports with comment-wrapped CJS exports", async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "vitest-plugin-rsc-next-"));
   try {
@@ -352,6 +377,41 @@ test("optimizes real Next entry-base with client-reference proxies in the RSC en
     );
     expect(code).toContain("vitest-plugin-rsc:next-entry-base-client-reference:");
     expect(code).not.toContain("node_modules/next/dist/client/components/layout-router.js");
+  } finally {
+    await server?.close();
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("optimizes real Next app-route module without inlining app-router client contexts", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "vitest-plugin-rsc-next-app-route-"));
+  const cacheDir = path.join(root, ".vite");
+  let server: ViteDevServer | undefined;
+
+  try {
+    fs.writeFileSync(path.join(root, "package.json"), "{}");
+    fs.symlinkSync(path.join(fixtureRoot, "node_modules"), path.join(root, "node_modules"), "dir");
+
+    server = await createServer({
+      root,
+      cacheDir,
+      configFile: false,
+      envFile: false,
+      server: { middlewareMode: true },
+      plugins: [vitestPluginRSC(), vitestPluginNext()],
+    });
+
+    await warmOptimizers(server, ["client"]);
+
+    const appRouteChunk = findOptimizedChunk(
+      cacheDir,
+      "next_dist_server_route-modules_app-route_module__compiled__js.js",
+    );
+    const code = fs.readFileSync(appRouteChunk, "utf8");
+
+    expect(code).toContain("vitest-plugin-rsc:next-app-route-shared-modules-reference");
+    expect(code).not.toContain("AppRouterContext = _react.default.createContext");
+    expect(code).not.toContain("LayoutRouterContext = _react.default.createContext");
   } finally {
     await server?.close();
     fs.rmSync(root, { recursive: true, force: true });

@@ -164,23 +164,27 @@ The base RSC plugin now copies `optimizeDeps.entries` from the visible `client` 
 
 Remaining weakness: `treatNextInternalsAsServerInRsc` rewrites `process.env.NEXT_RUNTIME` and `typeof window` inside Next internals. Package coverage now locks the current scope to installed `next/dist` internals, proves the `NEXT_RUNTIME`/`typeof window` rewrite is RSC-environment-only, and proves the `__NEXT_DEV_SERVER` compat rewrite does not touch user or non-Next modules. This may be necessary for the Vite optimized chunks, but it is still a code rewrite hack. The next step is to reduce it to a smaller proven module set, or replace it with environment/condition/define configuration.
 
-### Entry-base Client References
+### CJS Client Boundaries
 
 `next/dist/server/app-render/entry-base.js` is now imported as the real installed Next module. We no longer build a local `entry-base` export-surface adapter.
 
-The remaining adapter is `next-rsc-entry-base-client-references`. It exists because Next's server-layer `entry-base` is CJS and re-exports client components through relative `require()` calls. Next webpack/Turbopack layer metadata keeps those imports as client references. Vite/Rolldown dep optimization would otherwise inline the CJS `"use client"` modules into the RSC optimized chunk, causing client modules such as `app-router-context.shared-runtime` to execute with React Server aliases.
+The remaining adapters exist because some Next server-layer modules are CJS and reach client modules through relative `require()` calls. Next webpack/Turbopack layer metadata keeps those imports as client references. Vite/Rolldown dep optimization would otherwise inline the CJS `"use client"` modules into the RSC optimized chunk, causing client modules such as `app-router-context.shared-runtime` to execute with React Server aliases.
 
-This adapter should stay narrow:
+These adapters should stay narrow:
 
 - keep the real Next `entry-base`;
 - intercept only imports from that `entry-base` module;
 - derive the proxied modules from the installed Next files by resolving `entry-base` imports and checking their real `"use client"` directive;
 - return `registerClientReference` proxies in the RSC environment;
 - return real Next client modules in browser/SSR environments.
+- keep the real Next app-route module;
+- intercept only the app-route `./shared-modules` CJS boundary;
+- re-export from Next's real `app-router-context.shared-runtime.js` module instead of hand-writing client-reference exports.
 
 Done:
 
 - Package coverage warms the real RSC dependency optimizer for a project-rooted Next install, imports `next/dist/server/app-render/entry-base.js`, and asserts the optimized chunk contains `registerClientReference` proxies instead of inlined Next client component modules.
+- Package coverage warms the real RSC dependency optimizer for `next/dist/server/route-modules/app-route/module.compiled.js` and asserts the optimized chunk preserves the app-route shared-modules boundary instead of inlining `React.createContext` client context code.
 - The optimizer plugin receives the configured Next project root explicitly, so root Vitest runs and standalone Vite servers do not rely on `process.cwd()` to resolve installed `next/dist/...` client modules.
 
 Exit path: upstream `@vitejs/plugin-rsc` could preserve CJS `"use client"` dependency boundaries during RSC dep optimization by externalizing/proxying those modules instead of inlining them into the server optimized chunk. The issue draft in `docs/upstream-rsc-cjs-client-boundary.md` records the minimal CommonJS repro, expected behavior, local workaround, and deletion criteria for this adapter. If that lands upstream, delete this Next-specific adapter or reduce it to any remaining Next-only layer metadata cases.
@@ -366,9 +370,9 @@ Scoped limitations and explicit non-goals:
 
 - The full `next/navigation` hook matrix is not claimed. The current surface covers route-render behavior used by the notes demo and the focused client navigation probe; broader hook-by-hook assertions are future promotion items.
 - Full encrypted `boundArgsLength` support for cached components with `children` is explicitly unsupported until it can be delegated to Next's transform output or upstream Vite RSC without taking RSC graph ownership away from `@vitejs/plugin-rsc`. Deeper fetch-cache semantics are future expansion beyond the current force-cache/no-store/tag/revalidate/refresh coverage.
-- Middleware/proxy-adjacent `next/server` behavior is not an execution surface in browser-mode `renderServer`. Direct route-handler imports cover `NextRequest`, `NextResponse`, `userAgent`, `ImageResponse`, methods, params, streaming, cookies, redirects, and rewrites.
+- Middleware/proxy-adjacent `next/server` behavior is not an execution surface in browser-mode `renderServer`. Route-handler browser fetches are routed through MSW into Next's real `AppRouteRouteModule.handle()` path; direct route-handler imports remain useful focused coverage for `NextRequest`, `NextResponse`, `userAgent`, `ImageResponse`, methods, params, streaming, cookies, redirects, and rewrites.
 - Deeper document hydration and error recovery cases are future promotion items. The current supported matrix covers route redirects, route notFound/forbidden/unauthorized/error/global-error, action redirects, action HTTP fallback/auth interrupts, `unstable_rethrow` in actions, direct route-handler redirects/rewrites, and `next/error` client boundaries.
-- Route Handlers are not first-class `renderServer({ url })` targets. The page renderer detects app route handlers, including metadata route endpoints, and reports them as unsupported until a dedicated helper can invoke Next route modules/request code.
+- Route Handlers are not first-class `renderServer({ url })` targets. The page renderer detects app route handlers, including metadata route endpoints, and reports them as unsupported. Browser `fetch()` requests to app route handlers are intercepted by MSW and invoked through Next route modules.
 
 ## Test Coverage We Have
 
@@ -390,7 +394,7 @@ Notes demo acceptance coverage includes realistic combinations of:
 - `next/link`, `next/form`, `next/script`, `next/image`, `getImageProps`, `next/dynamic`, `next/head` ignored by App Router, `next/error`, `next/web-vitals`, and client error boundaries.
 - Cookies, headers, draft mode, cache, Server Actions, redirects, `unstable_rethrow`, refresh, and MSW-routed RSC/action transport.
 - Next `after()` request lifecycle behavior, including nested `waitUntil` work scheduled by an after task.
-- Route handler URLs are detected through Next's app-route matcher and reported as unsupported `renderServer({ url })` targets instead of being treated as missing pages.
+- Route handler URLs are detected through Next's app-route matcher and reported as unsupported `renderServer({ url })` targets instead of being treated as missing pages. Browser `fetch()` to a route handler is covered through the MSW request path and Next's `AppRouteRouteModule.handle()`.
 
 This is useful coverage, but it is not full Next.js API coverage. It is still centered around the notes demo and a small number of focused unit tests.
 
@@ -401,7 +405,7 @@ These items are not claimed by the current browser-mode adapter and are not open
 - `next/font`: exported declarations, default export, shared font definition module, Google variable font, Google non-variable weights/styles, local single file, local multi-file, `className`, `variable`, `style.fontFamily`, `style.fontWeight`, `style.fontStyle`, fallback fonts, `adjustFontFallback`, `declarations`, browser CSS injection, build asset output, and route-scoped preload behavior.
 - `next/image`: static png/jpeg/webp/avif/svg imports, `placeholder="blur"`, `fill`, `sizes`, `priority`/`preload`, remote URL config, custom loader, default loader URL generation, `unoptimized`, invalid prop errors, and image config from `next.config`.
 - App route convention promotion candidates: intercepting routes, nested parallel route collision cases, static/dynamic params edge cases, and behavioral assertions for segment config beyond the current `dynamic`, `dynamicParams`, `revalidate`, `fetchCache`, `runtime`, `preferredRegion`, and `maxDuration` static-info coverage. `mdx-components`, `instrumentation`, and `instrumentation-client` are explicit unsupported decisions below.
-- Route Handlers: direct-import coverage exists for `GET`, `POST`, `PUT`, `PATCH`, `DELETE`, `HEAD`, `OPTIONS`, `NextRequest`, `NextResponse`, cookies, redirects, rewrites, streaming, params, `nextUrl`, and `userAgent`. `renderServer({ url })` still intentionally reports route handlers as unsupported render targets until a Next route-module/request helper is designed.
+- Route Handlers: browser `fetch()` coverage now goes through MSW and Next's `AppRouteRouteModule.handle()` for an app route. Direct-import coverage still exists for `GET`, `POST`, `PUT`, `PATCH`, `DELETE`, `HEAD`, `OPTIONS`, `NextRequest`, `NextResponse`, cookies, redirects, rewrites, streaming, params, `nextUrl`, and `userAgent`. `renderServer({ url })` still intentionally reports route handlers as unsupported render targets.
 - `next/navigation`: all hooks and control-flow functions in both route-render and direct-node modes.
 - `next/cache`: encrypted `boundArgsLength` call-shape support, deeper `fetch` cache semantics, and full cache manifest/module mapping contracts. Cached components with `children` are explicitly unsupported until the encrypted bound-args shape can be delegated to Next or upstream Vite RSC; custom cache handlers and configured cache memory size are wired from `next.config`; the transform-level disabled flag is covered: `"use cache"` directives are left untouched unless `cacheComponents: true` is loaded from Next config, and the current Vite hoist path is covered for closure-bound cached functions plus cache wrapper `$$cache=` manifest proxy decoding.
 - `next/server`: `NextRequest`, `NextResponse`, `userAgent`, `ImageResponse`, direct route handler methods, streaming, cookies, redirects, rewrites, and params are covered for the current scope.
@@ -483,7 +487,7 @@ P1: handle Next config fidelity.
 
 P1: decide route-handler and middleware/proxy scope.
 
-- Done for the current route-handler decision: `renderServer({ url })` does not execute `route.ts`; it detects app-route matches through Next's matcher and throws an unsupported-target error. Route handlers are covered through direct imports for documented method/request/response behavior until a dedicated helper can invoke Next route modules.
+- Done for the current route-handler decision: `renderServer({ url })` does not execute `route.ts`; it detects app-route matches through Next's matcher and throws an unsupported-target error. Browser `fetch()` requests are intercepted by MSW and executed through Next's `AppRouteRouteModule.handle()` so request stores, route params, and response behavior come from Next's route module instead of a local handler runner.
 - Middleware/proxy execution is a future request-pipeline feature. It is not a setup-time concern for the current page renderer and should not be approximated locally.
 
 P1: reduce broad source rewrites.
@@ -517,12 +521,12 @@ P2: decide explicit non-goals.
 8. Done for config loading/defines/render opts and first render-path behavior: feed rewrites, redirects, headers, basePath, trailingSlash, image config, assetPrefix, cache components, and cache life from real Next config; apply same-origin rewrites and redirects before app route matching; expose matching `next.config` response headers from `renderServer({ url })`. Middleware/proxy, external rewrites, and locale/basePath edge cases are explicit future request-pipeline work.
 9. Done: CI runs latest, canary, and supported stable Next compatibility jobs across the focused unit suite plus no-MSW and notes-demo browser/node surfaces, using an explicit non-default Vitest API port for the browser runner.
 10. Done: add a browser-level regression for the plugin document merge proving whole-document Next rendering preserves Vitest harness scripts while applying Next head/meta/title output.
-11. Done for the current scope: `renderServer({ url })` detects `route.ts` handlers through Next's app-route matcher and throws a clear unsupported-target error. Future support should execute them through Next route module/request code, not a local handler runner.
+11. Done for the current scope: `renderServer({ url })` detects `route.ts` handlers through Next's app-route matcher and throws a clear unsupported-target error. Browser `fetch()` route-handler requests execute through Next route module/request code, not a local handler runner.
 12. Done: coverage proves `renderServer(<ReactNode />)` uses a private fake-route/app-render path without document hydration, and `renderServer(<ReactNode />, { url })` can replace the matched page entry while preserving Next loader-tree layouts, params, and metadata.
 13. Done for important existing notes-demo pages: route-only `renderServer({ url })` coverage exists for notes list/detail/new/edit, auth sign-in/sign-up, profile, route actions, Next APIs, grouped/defaulted/template/selected/dynamic/catch-all route patterns, and route conventions. Remaining direct-component tests are focused probes or synthetic routes rather than replacements for app pages with manual props.
 14. Done for App Router page exports in the current scope: `metadata`, `generateMetadata`, `viewport`, `generateViewport`, `generateStaticParams`, and first segment config smoke coverage for `dynamic`, `dynamicParams`, `revalidate`, `fetchCache`, `runtime`, `preferredRegion`, and `maxDuration`. Deeper param/static path interactions and behavioral assertions for segment config are future promotion items.
 15. Done for metadata route coverage in the current scope: package coverage invokes Next's real metadata image loader for a static `opengraph-image` file with basePath, segment, dimensions, content type, `.alt.txt` metadata, static `icon`, static `apple-icon`, and dynamic `.tsx` metadata image export discovery. Notes-demo covers direct exports for `robots`, `sitemap`, `generateSitemaps`, `manifest`, generated `opengraph-image`, and generated `twitter-image`; browser route coverage exercises dynamic metadata image loading through app render and asserts metadata route HTTP endpoints are reported as unsupported route-handler targets instead of page renders.
-16. Done for the current direct route-handler scope: `next/server` coverage includes `userAgent`, `ImageResponse`, `NextRequest`, `NextResponse`, route handler methods, params, streaming, redirects, rewrites, and cookie mutation semantics. Future support should add a dedicated route-handler helper that invokes Next route modules instead of requiring direct imports.
+16. Done for the current route-handler scope: `next/server` coverage includes `userAgent`, `ImageResponse`, `NextRequest`, `NextResponse`, route handler methods, params, streaming, redirects, rewrites, and cookie mutation semantics. Browser `fetch()` coverage invokes route handlers through Next route modules; focused direct imports remain for API-level assertions that do not need the browser request path.
 17. Done for error/control-flow coverage in the current scope: render redirects/permanent redirects, `next.config` redirects, route notFound/forbidden/unauthorized/error/global-error, action redirects, action notFound/forbidden/unauthorized, `unstable_rethrow` in server actions, direct route-handler redirects/rewrites, and `next/error` client boundaries. Redirect coverage asserts target content, redirect-hit markers, and the App Router client navigation spy for form/Server Action redirects. `unstable_rethrow` outside actions and deeper document hydration/error recovery cases are future promotion items.
 18. Done as explicit unsupported decisions for the current browser-mode adapter: `instrumentation.ts` and `instrumentation-client.ts` need Next startup lifecycle hooks that Vitest does not run, and `mdx-components.tsx` needs an MDX compiler path delegated from the project rather than a local compiler in this plugin.
 19. Done for the current browser-mode adapter scope: a Suspense regression documents that `renderServer` resolves final Flight content and does not emulate timing-accurate streaming fallback visibility. PPR and production adapter output remain explicit non-goals until a test-runtime equivalent is designed.

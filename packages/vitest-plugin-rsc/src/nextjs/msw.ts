@@ -5,7 +5,7 @@ import {
   RSC_HEADER,
 } from "next/dist/client/components/app-router-headers.js";
 import { getServerActionRequestMetadata } from "next/dist/server/lib/server-action-request-meta.js";
-import { HttpResponse, http } from "msw";
+import { HttpResponse, http, passthrough } from "msw";
 
 export const nextRscRequestHandlers = [
   http.post(
@@ -54,6 +54,23 @@ export const nextRscRequestHandlers = [
         routerState: request.headers.get(NEXT_ROUTER_STATE_TREE_HEADER),
         nextUrl: request.headers.get(NEXT_URL),
       });
+    },
+  ),
+  http.all(
+    ({ request }) =>
+      !request.headers.has(RSC_HEADER) && !getNextActionRequestMetadata(request).isFetchAction,
+    async ({ request }) => {
+      const fetchRsc = (globalThis as typeof globalThis & Record<symbol, FetchNextRsc | undefined>)[
+        Symbol.for("vitest-plugin-rsc.nextjs.fetchRsc")
+      ];
+      if (!fetchRsc) return passthrough();
+
+      return (
+        (await fetchRsc({
+          requestType: "next-app-route",
+          request,
+        })) ?? passthrough()
+      );
     },
   ),
 ];

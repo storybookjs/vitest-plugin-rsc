@@ -5,6 +5,7 @@ export async function GET(request: NextRequest) {
     pathname: request.nextUrl.pathname,
     query: request.nextUrl.searchParams.get("q"),
     requestCookie: request.cookies.get("demo")?.value ?? null,
+    requestHeader: request.headers.get("x-route-input"),
     userAgentBrowser: userAgent(request).browser.name ?? "unknown",
   });
 

@@ -71,9 +71,13 @@ export function resolveNextCustomResponseHeaders(
 }
 
 export function matchNextRoutePattern(routePattern: string, pathname: string) {
+  return Boolean(matchNextRoutePatternParams(routePattern, pathname));
+}
+
+export function matchNextRoutePatternParams(routePattern: string, pathname: string) {
   try {
     const normalizedRoutePattern = normalizeRoutePattern(routePattern);
-    return Boolean(getRouteMatcher(getRouteRegex(normalizedRoutePattern))(pathname));
+    return getRouteMatcher(getRouteRegex(normalizedRoutePattern))(pathname);
   } catch {
     return false;
   }

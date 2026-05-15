@@ -250,6 +250,7 @@ function generateNextRouteManifest(
         route: ${JSON.stringify(entry.route)},
         appPath: ${JSON.stringify(entry.appPath)},
         routeFile: ${JSON.stringify(entry.routeFile)},
+        load: () => import(${JSON.stringify(toViteImportSource(entry.routeFile))}),
       }`,
     )
     .join(",")}]`;

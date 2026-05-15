@@ -36,6 +36,8 @@ const virtualNextBuiltinGlobalErrorStubPublicId =
   "virtual:vitest-plugin-rsc/next-builtin-global-error-stub";
 const virtualNextBuiltinGlobalErrorStubId = `\0${virtualNextBuiltinGlobalErrorStubPublicId}`;
 const virtualNextRootParamsId = "\0vitest-plugin-rsc:next-root-params";
+const virtualNextAppRouteSharedModulesReferenceId =
+  "\0vitest-plugin-rsc:next-app-route-shared-modules-reference";
 const virtualNextCacheHandlersPublicId = "virtual:vitest-plugin-rsc/next-cache-handlers";
 const virtualNextCacheHandlersId = `\0${virtualNextCacheHandlersPublicId}`;
 const virtualNextUseCacheRuntimeId = "\0vitest-plugin-rsc:next-use-cache-runtime";
@@ -122,6 +124,11 @@ const nextAppRouterApiOptimizeDeps = [
 ] as const;
 
 const nextRootParamsOptimizeDepsExclude = ["next/root-params", "next/root-params.js"] as const;
+const nextRscClientBoundaryOptimizeDepsExclude = [
+  ...nextRootParamsOptimizeDepsExclude,
+  "next/dist/shared/lib/app-router-context.shared-runtime",
+  "next/dist/shared/lib/app-router-context.shared-runtime.js",
+] as const;
 
 // Begin copy: Next.js default cacheLife profiles
 // Source: https://github.com/vercel/next.js/blob/4588a7354283f97e2124e3d82f55733ca4eb9373/packages/next/src/server/config-shared.ts
@@ -201,6 +208,7 @@ const nextRscServerOptimizeDeps = [
   "next/dist/server/app-render/async-local-storage.js",
   "next/dist/server/app-render/work-async-storage.external.js",
   "next/dist/server/app-render/work-unit-async-storage.external.js",
+  "next/dist/server/route-modules/app-route/module.compiled.js",
   "next/dist/server/base-http/web.js",
   "next/dist/server/render-result.js",
   "next/dist/server/async-storage/request-store.js",
@@ -228,6 +236,8 @@ const nextRscServerOptimizeDeps = [
   "next/dist/server/request/search-params.js",
   "next/dist/server/web/spec-extension/adapters/headers.js",
   "next/dist/server/web/spec-extension/adapters/request-cookies.js",
+  "next/dist/server/web/spec-extension/request.js",
+  "next/dist/server/web/get-edge-preview-props.js",
   "next/dist/shared/lib/router/utils/parse-relative-url.js",
   "next/dist/shared/lib/get-img-props.js",
   "next/dist/shared/lib/image-config.js",
@@ -403,6 +413,40 @@ function useNextRootParams(environmentName: string, isServerOnlyLayer: boolean):
       return rootParamsModule;
     },
   };
+}
+
+function useNextAppRouteSharedModulesBoundary(): Plugin {
+  return {
+    name: "next-rsc-app-route-shared-modules-boundary",
+    enforce: "pre",
+    applyToEnvironment(environment) {
+      return environment.name === "client";
+    },
+    resolveId(source, importer) {
+      if (
+        importer &&
+        isNextAppRouteModule(importer) &&
+        (source === "./shared-modules" || source === "./shared-modules.js")
+      ) {
+        return virtualNextAppRouteSharedModulesReferenceId;
+      }
+
+      if (source === virtualNextAppRouteSharedModulesReferenceId) {
+        return source;
+      }
+    },
+    load(id) {
+      if (id !== virtualNextAppRouteSharedModulesReferenceId) return;
+
+      return `export * as appRouterContext from "next/dist/shared/lib/app-router-context.shared-runtime.js";\n`;
+    },
+  };
+}
+
+function isNextAppRouteModule(id: string) {
+  return /[/\\]next[/\\]dist[/\\]server[/\\]route-modules[/\\]app-route[/\\]module\.js(?:\?|$)/.test(
+    id,
+  );
 }
 
 async function createNextRootParamsModule({
@@ -1554,6 +1598,7 @@ export function vitestPluginNext(): Plugin[] {
     useNextBuiltinGlobalErrorStub(),
     useNextEntryBaseClientReferences(),
     ...useNextAppRenderCompatibility(),
+    useNextAppRouteSharedModulesBoundary(),
     useNextCacheHandlers(),
     useNextLinkClientReference(),
     useNextSwcTransform(),
@@ -1683,7 +1728,7 @@ export function vitestPluginNext(): Plugin[] {
                 ],
               },
               optimizeDeps: {
-                exclude: [...nextRootParamsOptimizeDepsExclude],
+                exclude: [...nextRscClientBoundaryOptimizeDepsExclude],
                 entries: nextSourceOptimizerEntries,
                 include: [
                   ...nextRscServerDeps,
@@ -1701,6 +1746,7 @@ export function vitestPluginNext(): Plugin[] {
                     useVitestServerReferenceInfo(root),
                     treatNextInternalsAsServerInRsc(),
                     disableNextDevServerRuntime(),
+                    useNextAppRouteSharedModulesBoundary(),
                     useNextReactDomServerAlias(root),
                     useNextEntryBaseClientReferences(root),
                     ...useNextAppRenderCompatibility(root),

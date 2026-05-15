@@ -23,7 +23,7 @@ The weak spot is where the adapter builds a local request/render runtime around 
 
 - `testing-library.tsx` owns custom request routing, redirect/rewrite following, route target selection, document fallback hydration, and Testing Library orchestration;
 - `app-render.ts` owns direct `renderToHTMLOrFlight` invocation, render opts construction, fake manifests, lifecycle hooks, and Vite RSC stream substitution;
-- route handlers are discovered but not invoked through the adapter request path;
+- route handlers are now invoked through the browser/MSW request path, but not as first-class `renderServer({ url })` targets;
 - several helpers encode Next request/render semantics locally instead of delegating them to Next route modules or upstream routing helpers.
 
 That means the problem is not "this PR reinvented all of Next". The problem is narrower: the local glue is concentrated in a few large files, and some of it should eventually become a real request adapter around Next route modules.
@@ -49,6 +49,7 @@ The target architecture should have explicit layers:
 4. `app-route-invoker`
    - Invokes route handlers through `AppRouteRouteModule.handle()`.
    - Replaces direct test imports of route handlers for fidelity tests where the user-visible behavior depends on Next's production route module stores.
+   - Keeps the CJS `"use client"` boundary visible for Next app-route shared modules so `@vitejs/plugin-rsc` can transform the real `app-router-context.shared-runtime.js` module instead of this plugin hand-writing app-router context exports.
 
 5. `test-hydration`
    - Owns Testing Library DOM/hydration integration only.
@@ -129,7 +130,9 @@ This would be a real fidelity improvement because Next's route module owns:
 - invalid response handling;
 - `NextResponse.next()` and rewrite errors in app route handlers.
 
-Critical check: this helper should replace at least one direct route-handler test. If tests still call `GET(request)` manually for all meaningful coverage, the helper is not buying enough.
+Current status: browser `fetch()` to an app route now goes through MSW, `fetchRsc`, the route manifest, and `AppRouteRouteModule.handle()`. Direct route-handler tests remain only for focused `next/server` API coverage where a browser request path is not the point.
+
+Critical check: keep expanding route-handler coverage through the MSW/request path when the behavior depends on Next request stores, params, method handling, or response propagation. Do not add app-local mocks for behavior the route module can own.
 
 ### 4. Move Page Invocation Toward `AppPageRouteModule`
 
