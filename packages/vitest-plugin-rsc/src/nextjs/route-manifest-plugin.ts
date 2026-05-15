@@ -2,11 +2,7 @@ import { Buffer } from "node:buffer";
 import fs from "node:fs";
 import path from "node:path";
 import type { Plugin } from "vite";
-import {
-  getNextTsconfigPath,
-  loadNextProjectConfig,
-  type NextProjectConfig,
-} from "./config";
+import { getNextTsconfigPath, loadNextProjectConfig, type NextProjectConfig } from "./config";
 import { createProjectRequire, getProjectRoot, normalizePath } from "./plugin-utils";
 
 const virtualNextRouteManifestId = "\0vitest-plugin-rsc:next-route-manifest";
@@ -23,6 +19,13 @@ type NextRouteManifestBuildEntry = {
   appPaths: readonly string[];
   allNormalizedAppPaths: readonly string[];
   pageFile: string;
+};
+
+type NextRouteStaticInfo = {
+  runtime?: string;
+  maxDuration?: number;
+  preferredRegion?: string | string[];
+  middleware?: unknown;
 };
 
 export function useNextRouteManifest(): Plugin {
@@ -193,6 +196,7 @@ async function generateNextRouteTreeModule(
   assertRootLayoutExists(entry);
 
   const projectConfig = await loadNextProjectConfig(root, mode);
+  const staticInfo = await loadNextRouteStaticInfo(root, projectConfig, entry);
   const watchFiles = new Set<string>([entry.pageFile]);
   const loader = createProjectRequire(root)(
     "next/dist/build/webpack/loaders/next-app-loader/index.js",
@@ -204,6 +208,8 @@ async function generateNextRouteTreeModule(
   // Source: https://github.com/vercel/next.js/blob/4588a7354283f97e2124e3d82f55733ca4eb9373/packages/next/src/build/webpack/loaders/next-app-loader/index.ts#L92-L127
   // Adaptation: Vite invokes the loader in-process to get the real loader tree
   // while replacing webpack's module graph with Vite virtual modules.
+  const isGlobalNotFoundEnabled: true | undefined =
+    projectConfig.nextConfig.experimental?.globalNotFound === true ? true : undefined;
   const options = {
     name: `app${entry.appPath}`,
     page: entry.appPath,
@@ -211,7 +217,7 @@ async function generateNextRouteTreeModule(
     appDir: entry.appDir,
     appPaths: entry.appPaths,
     allNormalizedAppPaths: entry.allNormalizedAppPaths,
-    preferredRegion: undefined,
+    preferredRegion: staticInfo.preferredRegion,
     pageExtensions: projectConfig.pageExtensions,
     assetPrefix: projectConfig.assetPrefix,
     rootDir: root,
@@ -219,10 +225,10 @@ async function generateNextRouteTreeModule(
     isDev: projectConfig.isDev,
     basePath: projectConfig.basePath,
     nextConfigOutput: projectConfig.nextConfig.output,
-    middlewareConfig: Buffer.from(JSON.stringify({ matchers: [] })).toString("base64"),
-    isGlobalNotFoundEnabled: projectConfig.nextConfig.experimental?.globalNotFound
-      ? true
-      : undefined,
+    middlewareConfig: Buffer.from(
+      JSON.stringify(staticInfo.middleware ?? { matchers: [] }),
+    ).toString("base64"),
+    isGlobalNotFoundEnabled,
   };
   // End copy
   const context: NextAppLoaderContext = {
@@ -250,7 +256,7 @@ type NextAppLoaderContext = {
     appDir: string;
     appPaths: readonly string[];
     allNormalizedAppPaths: readonly string[];
-    preferredRegion: undefined;
+    preferredRegion: string | string[] | undefined;
     pageExtensions: string[];
     assetPrefix: string;
     rootDir: string;
@@ -266,6 +272,56 @@ type NextAppLoaderContext = {
   _compilation: undefined;
   addMissingDependency(file: string): void;
 };
+
+export async function loadNextRouteStaticInfo(
+  root: string,
+  projectConfig: NextProjectConfig,
+  entry: NextRouteManifestBuildEntry,
+): Promise<NextRouteStaticInfo> {
+  const getStaticInfoIncludingLayouts = loadNextStaticInfoCollector(root);
+  if (!getStaticInfoIncludingLayouts) return {};
+
+  return await getStaticInfoIncludingLayouts({
+    isInsideAppDir: true,
+    pageExtensions: projectConfig.pageExtensions,
+    pageFilePath: entry.pageFile,
+    appDir: projectConfig.appDir,
+    config: projectConfig.nextConfig,
+    isDev: projectConfig.isDev,
+    page: entry.appPath,
+  });
+}
+
+function loadNextStaticInfoCollector(root: string) {
+  try {
+    const { getStaticInfoIncludingLayouts } = createProjectRequire(root)(
+      "next/dist/build/get-static-info-including-layouts.js",
+    ) as {
+      getStaticInfoIncludingLayouts(options: {
+        isInsideAppDir: boolean;
+        pageExtensions: string[];
+        pageFilePath: string;
+        appDir: string | undefined;
+        config: NextProjectConfig["nextConfig"];
+        isDev: boolean;
+        page: string;
+      }): Promise<NextRouteStaticInfo>;
+    };
+    return getStaticInfoIncludingLayouts;
+  } catch (error) {
+    if (!isModuleResolutionError(error)) throw error;
+    return undefined;
+  }
+}
+
+function isModuleResolutionError(error: unknown) {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    (error as { code?: unknown }).code === "MODULE_NOT_FOUND"
+  );
+}
 
 function assertRootLayoutExists(entry: NextRouteManifestBuildEntry) {
   let currentDir = path.dirname(entry.pageFile);
