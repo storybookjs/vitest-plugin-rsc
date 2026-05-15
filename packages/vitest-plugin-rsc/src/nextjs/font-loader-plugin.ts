@@ -3,7 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import type { Plugin, ResolvedConfig } from "vite";
 import { loadNextProjectConfig } from "./config";
-import { createProjectRequire, getProjectRoot } from "./plugin-utils";
+import { createProjectRequire, getProjectRoot, normalizePath } from "./plugin-utils";
 
 const virtualNextFontPrefix = "virtual:vitest-plugin-rsc/next-font/";
 const fontAssetPlaceholderPrefix = "__vitest_plugin_rsc_next_font_asset__";
@@ -121,6 +121,11 @@ export function useNextFontLoader(): Plugin {
       const emitAsset = this.emitFile?.bind(this);
       const addWatchFile = this.addWatchFile?.bind(this) ?? (() => {});
       const emittedAssets = new Map<string, string>();
+      const manifestFiles: Array<{
+        fontFile: string;
+        preload: boolean;
+        isUsingSizeAdjust: boolean;
+      }> = [];
       const result = await loader({
         functionName: request.functionName,
         variableName: request.variableName,
@@ -136,6 +141,11 @@ export function useNextFontLoader(): Plugin {
             { context: root, content: source },
           );
           const nextUrl = `${projectConfig.assetPrefix}/_next/${interpolatedName}`;
+          manifestFiles.push({
+            fontFile: interpolatedName,
+            preload,
+            isUsingSizeAdjust,
+          });
 
           if (command === "build") {
             if (!emitAsset) {
@@ -171,6 +181,8 @@ export function useNextFontLoader(): Plugin {
         projectRequire,
         result,
         request.data,
+        [...getNextFontManifestKeys(root, request.importer)],
+        manifestFiles,
         emittedAssets,
       );
       return cssModule;
@@ -191,6 +203,8 @@ async function createFontCssModule(
   projectRequire: ReturnType<typeof createProjectRequire>,
   result: NextFontLoaderResult,
   data: unknown[],
+  manifestKeys: string[],
+  manifestFiles: Array<{ fontFile: string; preload: boolean; isUsingSizeAdjust: boolean }>,
   emittedAssets = new Map<string, string>(),
 ) {
   const postcss = projectRequire("postcss") as (plugins: unknown[]) => {
@@ -237,6 +251,23 @@ const css = ${createCssExpression(css, emittedAssets)};
 const id = ${JSON.stringify(`vitest-plugin-rsc-next-font-${styleHash}`)};
 const fontStyles = globalThis[Symbol.for("vitest-plugin-rsc.nextjs.fontStyles")] ??= new Map();
 fontStyles.set(id, css);
+const fontManifest = globalThis[Symbol.for("vitest-plugin-rsc.nextjs.fontManifest")] ??= {
+  pages: {},
+  app: {},
+  appUsingSizeAdjust: false,
+  pagesUsingSizeAdjust: false,
+};
+fontManifest.appUsingSizeAdjust ||= ${JSON.stringify(
+    manifestFiles.some((file) => file.isUsingSizeAdjust),
+  )};
+for (const key of ${JSON.stringify(manifestKeys)}) {
+  const fontFiles = fontManifest.app[key] ??= [];
+  for (const file of ${JSON.stringify(
+    manifestFiles.filter((file) => file.preload).map((file) => file.fontFile),
+  )}) {
+    if (!fontFiles.includes(file)) fontFiles.push(file);
+  }
+}
 if (typeof document !== "undefined" && !document.getElementById(id)) {
   const style = document.createElement("style");
   style.id = id;
@@ -331,4 +362,27 @@ function getFontOption(data: unknown[], key: string) {
 
   const value = (options as Record<string, unknown>)[key];
   return typeof value === "string" ? value : undefined;
+}
+
+function getNextFontManifestKeys(root: string, importer: string) {
+  const keys = new Set<string>();
+  const withoutExtension = stripExtension(importer);
+  const normalizedFile = normalizePath(withoutExtension);
+  keys.add(normalizedFile);
+  keys.add(`/@fs/${normalizedFile.replace(/^\//, "")}`);
+
+  const relative = normalizePath(path.relative(root, withoutExtension));
+  if (relative && !relative.startsWith("..") && !path.isAbsolute(relative)) {
+    keys.add(relative);
+    keys.add(`/${relative}`);
+    if (relative.startsWith("app/")) {
+      keys.add(`private-next-app-dir/${relative.slice("app/".length)}`);
+    }
+  }
+
+  return keys;
+}
+
+function stripExtension(file: string) {
+  return file.replace(/\.[^./\\]+$/, "");
 }

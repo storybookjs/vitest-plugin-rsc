@@ -153,6 +153,11 @@ const nextRscClientUtilityOptimizeDeps = [
   "next/dist/shared/lib/server-reference-info.js",
 ] as const;
 
+const nextTestingLibraryOptimizeDeps = [
+  "next/dist/server/app-render/get-preloadable-fonts.js",
+  "next/dist/shared/lib/encode-uri-path.js",
+] as const;
+
 const nextEntryBaseClientReferenceOptimizeDeps = [
   "next/dist/client/components/client-page.js",
   "next/dist/client/components/client-segment.js",
@@ -1339,7 +1344,7 @@ export function vitestPluginNext(): Plugin[] {
             ],
           },
           optimizeDeps: {
-            include: [...nextAppRouterApiOptimizeDeps],
+            include: [...nextAppRouterApiOptimizeDeps, ...nextTestingLibraryOptimizeDeps],
             exclude: [...nextRootParamsOptimizeDepsExclude],
             entries: nextSourceOptimizerEntries,
             rolldownOptions: {

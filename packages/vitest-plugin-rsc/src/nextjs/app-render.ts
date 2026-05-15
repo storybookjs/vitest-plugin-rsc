@@ -30,6 +30,7 @@ import { getRouteMatcher } from "next/dist/shared/lib/router/utils/route-matcher
 import { getRouteRegex } from "next/dist/shared/lib/router/utils/route-regex.js";
 import * as ReactServer from "@vitejs/plugin-rsc/react/rsc";
 import { patchBufferIndexOfUint8ArrayNeedle } from "./buffer-compat";
+import { getNextFontManifestForRender } from "./font-manifest";
 
 type NextIncrementalCacheConstructor =
   typeof import("next/dist/server/lib/incremental-cache/index.js").IncrementalCache;
@@ -607,6 +608,7 @@ function createNextRenderOpts(
     basePath: readNextDefineString(process.env.__NEXT_BASE_PATH, defaultConfig.basePath),
     supportsDynamicResponse: true,
     buildManifest: emptyBuildManifest,
+    nextFontManifest: getNextFontManifestForRender(),
     crossOrigin: undefined,
     clientReferenceManifest: manifests.clientReferenceManifest,
     serverActionsManifest: manifests.serverActionsManifest,

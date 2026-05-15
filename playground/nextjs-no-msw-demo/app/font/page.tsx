@@ -18,19 +18,30 @@ const localGeist = localFont({
   display: "swap",
 });
 
+const localMulti = localFont({
+  src: [
+    { path: "./fixtures/geist-latin.woff2", weight: "400", style: "normal" },
+    { path: "./fixtures/geist-latin.woff2", weight: "700", style: "italic" },
+  ],
+  variable: "--font-local-multi",
+  declarations: [{ prop: "font-feature-settings", value: '"kern"' }],
+});
+
 export default function FontPage() {
   return (
     <section
-      className={`${geistSans.variable} ${geistMono.variable} ${localGeist.variable} ${exportedGoogleFont.variable} ${exportedLocalFont.variable}`}
+      className={`${geistSans.variable} ${geistMono.variable} ${localGeist.variable} ${localMulti.variable} ${exportedGoogleFont.variable} ${exportedLocalFont.variable}`}
       data-testid="font-scope"
     >
       <h1 className={geistSans.className}>Next font route</h1>
       <code className={geistMono.className}>font-family: Geist Mono</code>
       <p className={localGeist.className}>Local font rendered</p>
+      <p className={localMulti.className}>Local multi font rendered</p>
       <p className={exportedGoogleFont.className}>Exported Google font rendered</p>
       <p className={exportedLocalFont.className}>Exported local font rendered</p>
       <p data-testid="google-style-family">{exportedGoogleFont.style.fontFamily}</p>
       <p data-testid="local-style-family">{exportedLocalFont.style.fontFamily}</p>
+      <p data-testid="local-multi-style-family">{localMulti.style.fontFamily}</p>
     </section>
   );
 }
