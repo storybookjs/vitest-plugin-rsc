@@ -95,6 +95,13 @@ test("use cache functions are hoisted into Next cache components runtime", async
     .element(page.getByText(/use cache life second: generation \d+ cache life read 1/))
     .toBeVisible();
   await expect.element(page.getByText("use cache life reads: 1")).toBeVisible();
+  await expect
+    .element(page.getByText(/use cache concurrent first: generation \d+ concurrent read 2/))
+    .toBeVisible();
+  await expect
+    .element(page.getByText(/use cache concurrent second: generation \d+ concurrent read 2/))
+    .toBeVisible();
+  await expect.element(page.getByText("use cache concurrent reads: 2")).toBeVisible();
   await expect.element(page.getByText("use cache private cookie: private-value")).toBeVisible();
 });
 
