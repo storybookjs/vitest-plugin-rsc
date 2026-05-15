@@ -18,6 +18,7 @@ const nextConfig: NextConfig = {
       },
     ];
   },
+  cacheComponents: true,
   images: {
     path: "/custom-next-image",
   },

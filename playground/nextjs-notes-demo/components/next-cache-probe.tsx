@@ -1,4 +1,5 @@
 import {
+  cacheTag,
   refresh,
   revalidatePath,
   revalidateTag,
@@ -20,6 +21,8 @@ let dataVersion = 0;
 let renderVersion = 0;
 let actionWriteVersion = 0;
 let cacheLabel = "default";
+let useCacheGeneration = 0;
+let useCacheReads = 0;
 
 const readCachedData = unstable_cache(
   async () => {
@@ -35,6 +38,8 @@ export function resetNextCacheProbe(label = "default") {
   renderVersion = 0;
   actionWriteVersion = 0;
   cacheLabel = label;
+  useCacheGeneration += 1;
+  useCacheReads = 0;
   resetNextCacheProbeFetch(label);
 }
 
@@ -49,6 +54,27 @@ export function NextCacheHandlerProbe() {
     .join(", ");
 
   return <p>cache handlers: {kinds || "none"}</p>;
+}
+
+export async function NextUseCacheProbe() {
+  const first = await readUseCacheValue(useCacheGeneration);
+  const second = await readUseCacheValue(useCacheGeneration);
+
+  return (
+    <section>
+      <p>use cache first: {first}</p>
+      <p>use cache second: {second}</p>
+      <p>use cache reads: {useCacheReads}</p>
+    </section>
+  );
+}
+
+async function readUseCacheValue(generation: number) {
+  "use cache";
+
+  cacheTag(`next-use-cache-probe:${generation}`);
+  useCacheReads += 1;
+  return `generation ${generation} read ${useCacheReads}`;
 }
 
 export async function NextCacheProbe() {

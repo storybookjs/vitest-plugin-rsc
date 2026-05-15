@@ -5,6 +5,7 @@ import {
   NextCacheHandlerProbe,
   NextCacheProbe,
   NextNoStoreProbe,
+  NextUseCacheProbe,
   resetNextCacheProbe,
 } from "./next-cache-probe";
 
@@ -66,6 +67,16 @@ test("app-render initializes Next cache handlers", async () => {
   await renderServer(<NextCacheHandlerProbe />, { url: "/next-cache-handler-probe" });
 
   await expect.element(page.getByText("cache handlers: default, remote")).toBeVisible();
+});
+
+test("use cache functions are hoisted into Next cache components runtime", async () => {
+  resetNextCacheProbe();
+
+  await renderServer(<NextUseCacheProbe />, { url: "/next-use-cache-probe" });
+
+  await expect.element(page.getByText(/use cache first: generation \d+ read 1/)).toBeVisible();
+  await expect.element(page.getByText(/use cache second: generation \d+ read 1/)).toBeVisible();
+  await expect.element(page.getByText("use cache reads: 1")).toBeVisible();
 });
 
 test("server actions without refresh or invalidation do not rerender the current tree", async () => {

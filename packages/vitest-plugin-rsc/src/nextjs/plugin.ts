@@ -1,7 +1,9 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { transformHoistInlineDirective } from "@vitejs/plugin-rsc/transforms";
 import type { Alias, Plugin, UserConfig } from "vite";
+import { parseAstAsync } from "vite";
 import { useNextAppRenderCompatibility } from "./app-render-compat-plugin";
 import { useNextLinkClientReference } from "./client-reference-plugin";
 import {
@@ -32,6 +34,8 @@ const virtualNextBuiltinGlobalErrorStubPublicId =
   "virtual:vitest-plugin-rsc/next-builtin-global-error-stub";
 const virtualNextBuiltinGlobalErrorStubId = `\0${virtualNextBuiltinGlobalErrorStubPublicId}`;
 const virtualNextRootParamsId = "\0vitest-plugin-rsc:next-root-params";
+const virtualNextUseCacheRuntimeId = "\0vitest-plugin-rsc:next-use-cache-runtime";
+const virtualNextUseCacheRuntimePublicId = "virtual:vitest-plugin-rsc/next-use-cache-runtime";
 export const nextTesterHtmlPath = fileURLToPath(new URL("./tester.html", import.meta.url));
 
 type VitestBrowserConfig = {
@@ -186,6 +190,7 @@ const nextRscServerOptimizeDeps = [
   "next/dist/server/lib/patch-fetch.js",
   "next/dist/server/revalidation-utils.js",
   "next/dist/server/use-cache/handlers.js",
+  "next/dist/server/use-cache/use-cache-wrapper.js",
   "next/dist/client/components/is-next-router-error.js",
   "next/dist/client/app-dir/link.react-server",
   "next/dist/client/app-dir/link.react-server.js",
@@ -1144,6 +1149,84 @@ export default function GlobalError() {
   };
 }
 
+function useNextUseCacheTransform(): Plugin {
+  let root = process.cwd();
+  let mode = "test";
+  let enabledPromise: Promise<boolean> | undefined;
+
+  return {
+    name: "next-rsc-use-cache-transform",
+    enforce: "pre",
+    configResolved(config) {
+      root = getProjectRoot(config);
+      mode = config.mode;
+      enabledPromise = undefined;
+    },
+    resolveId(source) {
+      if (source === virtualNextUseCacheRuntimePublicId) {
+        return virtualNextUseCacheRuntimeId;
+      }
+    },
+    load(id) {
+      if (id !== virtualNextUseCacheRuntimeId) return;
+
+      return `import { cache as __next_use_cache } from "next/dist/server/use-cache/use-cache-wrapper.js";
+
+export function __next_rsc_use_cache(kind, id, originalFn) {
+  return async (...args) => __next_use_cache(kind, id, 0, originalFn, args);
+}
+`;
+    },
+    async transform(code, id) {
+      if (
+        !code.includes("use cache") ||
+        !isUserSourceFile(id) ||
+        isTestSourceFile(id) ||
+        this.environment.name !== "client"
+      ) {
+        return;
+      }
+
+      enabledPromise ??= loadNextProjectConfig(root, mode).then(
+        (projectConfig) => projectConfig.nextConfig.cacheComponents === true,
+      );
+      if (!(await enabledPromise)) return;
+
+      const ast = await parseAstAsync(code, { lang: getParserLanguage(id) }, id);
+      const result = transformHoistInlineDirective(code, ast as never, {
+        runtime: (value, name, meta) => {
+          const kind = getNextUseCacheKind(meta.directiveMatch[1]);
+          return `__next_rsc_use_cache(${JSON.stringify(kind)}, ${JSON.stringify(
+            createNextUseCacheFunctionId(root, id, name),
+          )}, ${value})`;
+        },
+        directive: /^use cache(?:: ([\w-]+))?$/,
+        rejectNonAsyncFunction: true,
+        noExport: true,
+      });
+      if (!result.output.hasChanged()) return;
+
+      result.output.prepend(
+        `import { __next_rsc_use_cache } from ${JSON.stringify(virtualNextUseCacheRuntimePublicId)};\n`,
+      );
+      return {
+        code: result.output.toString(),
+        map: result.output.generateMap({ hires: "boundary" }),
+      };
+    },
+  };
+}
+
+function getNextUseCacheKind(kind: string | undefined) {
+  return kind ?? "default";
+}
+
+function createNextUseCacheFunctionId(root: string, id: string, name: string) {
+  const file = id.replace(/\?.*$/, "");
+  const relative = path.isAbsolute(file) ? normalizePath(path.relative(root, file)) : file;
+  return `${relative}#${name}`;
+}
+
 function isNextInternalModule(id: string) {
   return (
     /[/\\]next[/\\]dist[/\\]/.test(id) &&
@@ -1164,6 +1247,24 @@ function rewriteNextDevServerChecks(code: string) {
   return code.replace(/\bprocess\.env\.__NEXT_DEV_SERVER\b/g, "false");
 }
 
+function isUserSourceFile(id: string) {
+  return (
+    /\.(?:[cm]?[jt]sx?)($|\?)/.test(id) && !id.includes("/node_modules/") && !id.includes("/.vite/")
+  );
+}
+
+function isTestSourceFile(id: string) {
+  return /(?:^|[/\\])[^/\\]+\.(?:test|spec)\.[cm]?[jt]sx?(?:$|\?)/.test(id);
+}
+
+function getParserLanguage(id: string) {
+  const file = id.replace(/\?.*$/, "");
+  if (file.endsWith(".tsx")) return "tsx";
+  if (file.endsWith(".ts") || file.endsWith(".mts") || file.endsWith(".cts")) return "ts";
+  if (file.endsWith(".jsx")) return "jsx";
+  return "js";
+}
+
 export function vitestPluginNext(): Plugin[] {
   return [
     useVitestServerReferenceInfo(),
@@ -1175,6 +1276,7 @@ export function vitestPluginNext(): Plugin[] {
     ...useNextAppRenderCompatibility(),
     useNextLinkClientReference(),
     useNextSwcTransform(),
+    useNextUseCacheTransform(),
     useNextFontLoader(),
     useNextImageClientReference(),
     useNextMetadataImageLoader(),

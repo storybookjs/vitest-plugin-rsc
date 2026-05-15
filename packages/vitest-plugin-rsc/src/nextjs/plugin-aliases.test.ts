@@ -235,6 +235,32 @@ test("does not proxy Next entry-base server imports as client references", async
   ).toBeUndefined();
 });
 
+test("hoists use cache directives to Next's cache wrapper when cacheComponents is enabled", async () => {
+  const plugin = findNextPlugin("next-rsc-use-cache-transform");
+  const configResolved = getHookHandler(plugin.configResolved);
+  const transform = getHookHandler(plugin.transform);
+
+  await configResolved.call({} as never, { root: fixtureRoot, mode: "test" } as never);
+
+  const result = (await transform.call(
+    { environment: { name: "client" } } as never,
+    `
+      export async function readCachedValue() {
+        "use cache";
+        return "cached";
+      }
+    `,
+    path.join(fixtureRoot, "app/next-apis/use-cache-fixture.ts"),
+  )) as { code: string };
+
+  expect(result.code).toContain("virtual:vitest-plugin-rsc/next-use-cache-runtime");
+  expect(result.code).toContain("__next_rsc_use_cache(");
+  expect(result.code).toContain('"default"');
+  expect(result.code).toContain("app/next-apis/use-cache-fixture.ts#$$hoist_0_readCachedValue");
+  expect(result.code).toContain("export const readCachedValue");
+  expect(result.code).toContain("async function $$hoist_0_readCachedValue()");
+});
+
 async function resolveNextPluginConfig(userConfig: UserConfig = {}): Promise<UserConfig> {
   const previousCwd = process.cwd();
   const plugin = findNextPlugin("next-rsc-plugin");
