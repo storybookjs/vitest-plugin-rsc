@@ -26,6 +26,7 @@ import * as ReactServer from "@vitejs/plugin-rsc/react/rsc";
 type NextIncrementalCacheConstructor =
   typeof import("next/dist/server/lib/incremental-cache/index.js").IncrementalCache;
 
+export type NextInitialRscPayload = InitialRSCPayload;
 export type NextNavigationFlightPayload = Partial<InitialRSCPayload> & Pick<InitialRSCPayload, "f">;
 
 type NextRenderManifests = {
@@ -47,6 +48,7 @@ const emptyBuildManifest = {
 
 let NextIncrementalCache: NextIncrementalCacheConstructor | undefined;
 let nextCacheGeneration = 0;
+const patchedBufferIndexOfSymbol = Symbol.for("vitest-plugin-rsc.nextjs.patchedBufferIndexOf");
 
 export async function renderNextRouteFlightResponse({
   loaderTree,
@@ -111,7 +113,7 @@ export async function renderNextRouteHtmlResponse({
   const requestHeaders = headers instanceof Headers ? new Headers(headers) : new Headers(headers);
   const manifests = {
     page,
-    clientReferenceManifest: emptyClientReferenceManifest,
+    clientReferenceManifest: htmlClientReferenceManifest,
     serverActionsManifest: emptyServerActionsManifest,
   } satisfies NextRenderManifests;
   await setNextRenderManifests(manifests);
@@ -138,11 +140,23 @@ export async function renderNextRouteInitialPayload(options: {
   componentMod?: NextEntryBaseComponentMod;
 }): Promise<NextNavigationFlightPayload> {
   const response = await renderNextRouteFlightResponse(options);
+  if (response.status >= 400) {
+    await response.body?.cancel();
+    throw new Error(`NEXT_HTTP_ERROR_FALLBACK;${response.status}`);
+  }
+
   if (!response.body) {
     throw new Error("Next app-render did not return an RSC response body.");
   }
 
-  return ReactServer.createFromReadableStream<NextNavigationFlightPayload>(response.body);
+  const [inspectionStream, payloadStream] = response.body.tee();
+  const flightPayloadText = await readReadableStreamText(inspectionStream);
+  if (isNextDocumentFallbackPayloadText(flightPayloadText)) {
+    await payloadStream.cancel();
+    throw new Error("NEXT_HTTP_ERROR_FALLBACK;404");
+  }
+
+  return ReactServer.createFromReadableStream<NextNavigationFlightPayload>(payloadStream);
 }
 
 export async function renderNextRouteActionResponse({
@@ -464,11 +478,45 @@ function ensureNextAppRenderGlobals() {
   };
 
   globalScope.Buffer ??= Buffer;
+  patchBufferIndexOfUint8ArrayNeedle(globalScope.Buffer);
   globalScope.process ??= { env: {} } as NodeJS.Process;
   globalScope.process.env ??= {};
   globalScope.process.env["NEXT_RUNTIME"] ??= "edge";
   NextIncrementalCache = IncrementalCache;
   ensureNextEdgeIncrementalCache(IncrementalCache);
+}
+
+function patchBufferIndexOfUint8ArrayNeedle(BufferCtor: typeof Buffer) {
+  const prototype = BufferCtor.prototype as Buffer & {
+    [patchedBufferIndexOfSymbol]?: true;
+  };
+  if (prototype[patchedBufferIndexOfSymbol]) return;
+
+  type BufferIndexOfImplementation = (
+    this: Buffer,
+    value: string | number | Uint8Array,
+    byteOffset?: number | BufferEncoding,
+    encoding?: BufferEncoding,
+  ) => number;
+
+  const originalIndexOf = prototype.indexOf as BufferIndexOfImplementation;
+  const patchedIndexOf: BufferIndexOfImplementation = function patchedIndexOf(
+    value,
+    byteOffset,
+    encoding,
+  ) {
+    const normalizedValue =
+      value instanceof Uint8Array && !BufferCtor.isBuffer(value)
+        ? BufferCtor.from(value.buffer, value.byteOffset, value.byteLength)
+        : value;
+    return originalIndexOf.call(this, normalizedValue, byteOffset, encoding);
+  };
+  Object.defineProperty(prototype, "indexOf", {
+    configurable: true,
+    writable: true,
+    value: patchedIndexOf,
+  });
+  prototype[patchedBufferIndexOfSymbol] = true;
 }
 
 type RequestLifecycle = {
@@ -522,7 +570,9 @@ function createRequestLifecycle(): RequestLifecycle {
       for (const callback of callbacks) {
         callback();
       }
-      await Promise.allSettled(waitUntilPromises);
+      while (waitUntilPromises.size > 0) {
+        await Promise.allSettled(waitUntilPromises);
+      }
     },
   };
 
@@ -698,6 +748,17 @@ const emptyClientReferenceManifest = {
   entryJSFiles: {},
 } as never;
 
+const htmlClientReferenceManifest = {
+  moduleLoading: { prefix: "", crossOrigin: null },
+  clientModules: createViteRscClientModulesProxy(),
+  rscModuleMapping: createViteRscModuleMappingProxy(),
+  edgeRscModuleMapping: createViteRscModuleMappingProxy(),
+  ssrModuleMapping: createViteRscModuleMappingProxy(),
+  edgeSSRModuleMapping: createViteRscModuleMappingProxy(),
+  entryCSSFiles: {},
+  entryJSFiles: {},
+} as never;
+
 function createViteRscClientModulesProxy() {
   return new Proxy(
     {},
@@ -709,7 +770,7 @@ function createViteRscClientModulesProxy() {
         if (!id || !name) return;
 
         return {
-          id,
+          id: normalizeViteRscManifestModuleId(id),
           name,
           chunks: [],
           async: true,
@@ -717,6 +778,72 @@ function createViteRscClientModulesProxy() {
       },
     },
   );
+}
+
+function createViteRscModuleMappingProxy() {
+  return new Proxy(
+    {},
+    {
+      get(_target, id) {
+        if (typeof id !== "string") return;
+        return createViteRscModuleExportsProxy(id);
+      },
+    },
+  );
+}
+
+function createViteRscModuleExportsProxy(id: string) {
+  return new Proxy(
+    {},
+    {
+      get(_target, name) {
+        if (typeof name !== "string") return;
+        return {
+          id: normalizeViteRscManifestModuleId(id),
+          name,
+          chunks: [],
+          async: true,
+        };
+      },
+    },
+  );
+}
+
+function normalizeViteRscManifestModuleId(id: string) {
+  const withoutCacheTag = id.split("$$cache=")[0]!;
+  if (isNextBuiltinGlobalErrorModuleId(withoutCacheTag)) {
+    return "/@id/__x00__virtual:vitest-plugin-rsc/next-builtin-global-error-stub";
+  }
+  return withoutCacheTag;
+}
+
+function isNextBuiltinGlobalErrorModuleId(id: string) {
+  return (
+    id.includes("next_dist_client_components_builtin_global-error") ||
+    id.includes("next/dist/client/components/builtin/global-error")
+  );
+}
+
+function isNextDocumentFallbackPayloadText(text: string) {
+  return text.includes('"digest":"NEXT_HTTP_ERROR_FALLBACK;404"');
+}
+
+async function readReadableStreamText(stream: ReadableStream<Uint8Array>) {
+  const decoder = new TextDecoder();
+  const reader = stream.getReader();
+  let text = "";
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      text += decoder.decode(value, { stream: true });
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  return text + decoder.decode();
 }
 
 const emptyServerActionsManifest = {

@@ -3,7 +3,7 @@ import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import type { Alias, Plugin, UserConfig } from "vite";
 import { expect, test } from "vitest";
-import { vitestPluginNext } from "./plugin";
+import { nextTesterHtmlPath, vitestPluginNext } from "./plugin";
 
 const fixtureRoot = fileURLToPath(
   new URL("../../../../playground/nextjs-notes-demo/", import.meta.url),
@@ -74,6 +74,36 @@ test("aliases React packages through Next's vendored React for app-router enviro
   expect(browserDefine["process.browser"]).toBe("true");
 });
 
+test("sets the Next tester HTML in Vitest browser projects by default", async () => {
+  const config = await resolveNextPluginConfig();
+
+  expect(getBrowserTesterHtmlPath(config)).toBe(nextTesterHtmlPath);
+});
+
+test("does not replace a user-provided Vitest browser tester HTML", async () => {
+  const config = await resolveNextPluginConfig({
+    test: {
+      browser: {
+        testerHtmlPath: "/custom/tester.html",
+      },
+    },
+  } as UserConfig);
+
+  expect(getBrowserTesterHtmlPath(config)).toBeUndefined();
+});
+
+test("does not replace user-provided Vitest browser instance tester HTML", async () => {
+  const config = await resolveNextPluginConfig({
+    test: {
+      browser: {
+        instances: [{ testerHtmlPath: "/custom/chromium.html" }],
+      },
+    },
+  } as UserConfig);
+
+  expect(getBrowserTesterHtmlPath(config)).toBeUndefined();
+});
+
 test("replaces next/root-params through Next's root params loader", async () => {
   const plugin = findNextPlugin("next-rsc-root-params:client");
   const configResolved = getHookHandler(plugin.configResolved);
@@ -108,7 +138,7 @@ test("keeps the Next entry-base adapter aligned with Next's export surface", asy
   expect(parseEntryBaseExports(code)).toEqual(parseRealNextEntryBaseExports());
 });
 
-async function resolveNextPluginConfig(): Promise<UserConfig> {
+async function resolveNextPluginConfig(userConfig: UserConfig = {}): Promise<UserConfig> {
   const previousCwd = process.cwd();
   const plugin = findNextPlugin("next-rsc-plugin");
 
@@ -117,7 +147,7 @@ async function resolveNextPluginConfig(): Promise<UserConfig> {
   try {
     return (await config.call(
       {} as never,
-      { root: fixtureRoot } as never,
+      { root: fixtureRoot, ...userConfig } as never,
       { command: "serve", mode: "test", isPreview: false, isSsrBuild: false } as never,
     )) as UserConfig;
   } finally {
@@ -144,6 +174,11 @@ function getEnvironmentAliases(config: UserConfig, environment: string): Alias[]
 
 function getEnvironmentDefine(config: UserConfig, environment: string): Record<string, string> {
   return (config.environments?.[environment]?.define ?? {}) as Record<string, string>;
+}
+
+function getBrowserTesterHtmlPath(config: UserConfig): string | undefined {
+  return (config as { test?: { browser?: { testerHtmlPath?: string } } }).test?.browser
+    ?.testerHtmlPath;
 }
 
 function getHookHandler<T extends (...args: never[]) => unknown>(

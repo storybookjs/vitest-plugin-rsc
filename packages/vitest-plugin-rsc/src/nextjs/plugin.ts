@@ -17,7 +17,25 @@ const virtualNextEntryBaseClientReferencePrefix =
   "\0vitest-plugin-rsc:next-entry-base-client-reference:";
 const virtualNextEntryBaseClientReferencePublicPrefix =
   "virtual:vitest-plugin-rsc/next-entry-base-client-reference/";
+const virtualNextBuiltinGlobalErrorStubPublicId =
+  "virtual:vitest-plugin-rsc/next-builtin-global-error-stub";
+const virtualNextBuiltinGlobalErrorStubId = `\0${virtualNextBuiltinGlobalErrorStubPublicId}`;
 const virtualNextRootParamsId = "\0vitest-plugin-rsc:next-root-params";
+export const nextTesterHtmlPath = fileURLToPath(new URL("./tester.html", import.meta.url));
+
+type VitestBrowserConfig = {
+  enabled?: boolean;
+  testerHtmlPath?: string;
+  instances?: Array<{
+    testerHtmlPath?: string;
+  }>;
+};
+
+type VitestUserConfig = UserConfig & {
+  test?: {
+    browser?: false | VitestBrowserConfig;
+  };
+};
 
 const nextBrowserRuntimeOptimizeDeps = [
   "node:buffer",
@@ -700,18 +718,28 @@ function useNextCompiledOpenTelemetryApi(root: string): Plugin {
   };
 }
 
-function useNextReactDomServerAlias(root = process.cwd()): Plugin {
-  const reactDomServerAlias = tryResolveFromProject(
-    root,
-    "next/dist/build/webpack/alias/react-dom-server.js",
-  );
-  const appRenderSsrAliases = createNextAppRenderSsrAliases(root);
+function useNextReactDomServerAlias(initialRoot = process.cwd()): Plugin {
+  let reactDomServerAlias: string | undefined;
+  let appRenderSsrAliases: Record<string, string> = {};
+
+  function refreshAliases(root: string) {
+    reactDomServerAlias = tryResolveFromProject(
+      root,
+      "next/dist/build/webpack/alias/react-dom-server.js",
+    );
+    appRenderSsrAliases = createNextAppRenderSsrAliases(root);
+  }
+
+  refreshAliases(initialRoot);
 
   return {
     name: "next-rsc-react-dom-server-alias",
     enforce: "pre",
     applyToEnvironment(environment) {
       return environment.name === "client";
+    },
+    configResolved(config) {
+      refreshAliases(getProjectRoot(config));
     },
     resolveId(source, importer) {
       if (isNextAppRenderSsrImporter(importer)) {
@@ -1039,6 +1067,7 @@ function provideBufferLikeNextWebpack(): Plugin {
       if (
         !id.includes("/next/dist/") ||
         id.includes("/next/dist/compiled/buffer/") ||
+        id.includes("/next/dist/server/stream-utils/uint8array-helpers") ||
         !/\bBuffer\b/.test(code)
       ) {
         return;
@@ -1090,6 +1119,25 @@ function disableNextDevServerRuntime(): Plugin {
   };
 }
 
+function useNextBuiltinGlobalErrorStub(): Plugin {
+  return {
+    name: "next-rsc-builtin-global-error-stub",
+    enforce: "pre",
+    resolveId(source) {
+      if (source !== virtualNextBuiltinGlobalErrorStubPublicId) return;
+      return virtualNextBuiltinGlobalErrorStubId;
+    },
+    load(id) {
+      if (id !== virtualNextBuiltinGlobalErrorStubId) return;
+      return `"use client";
+export default function GlobalError() {
+  return null;
+}
+`;
+    },
+  };
+}
+
 function isNextInternalModule(id: string) {
   return (
     /[/\\]next[/\\]dist[/\\]/.test(id) &&
@@ -1116,6 +1164,7 @@ export function vitestPluginNext(): Plugin[] {
     treatNextInternalsAsServerInRsc(),
     disableNextDevServerRuntime(),
     useNextReactDomServerAlias(),
+    useNextBuiltinGlobalErrorStub(),
     useNextEntryBase(),
     useNextEntryBaseClientReferences(),
     ...useNextAppRenderCompatibility(),
@@ -1159,6 +1208,7 @@ export function vitestPluginNext(): Plugin[] {
         const nextDefineEnvs = await createNextDefineEnvs(root, env.mode, nextImageConfig);
 
         return {
+          ...createNextTesterHtmlConfig(config),
           define: {
             global: "globalThis",
             __dirname: JSON.stringify(null),
@@ -1350,4 +1400,26 @@ export function vitestPluginNext(): Plugin[] {
     },
     provideBufferLikeNextWebpack(),
   ];
+}
+
+function createNextTesterHtmlConfig(config: UserConfig): UserConfig {
+  const browser = (config as VitestUserConfig).test?.browser;
+  if (browser === false || hasTesterHtmlPath(browser)) {
+    return {};
+  }
+
+  return {
+    test: {
+      browser: {
+        testerHtmlPath: nextTesterHtmlPath,
+      },
+    },
+  } as UserConfig;
+}
+
+function hasTesterHtmlPath(browser: VitestBrowserConfig | undefined): boolean {
+  return (
+    typeof browser?.testerHtmlPath === "string" ||
+    browser?.instances?.some((instance) => typeof instance.testerHtmlPath === "string") === true
+  );
 }

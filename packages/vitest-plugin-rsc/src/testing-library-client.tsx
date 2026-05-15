@@ -21,6 +21,8 @@ export type ServerActionCaller = {
 };
 
 const pendingClientReferenceLoads = new Set<Promise<unknown>>();
+const preserveHeadAttribute = "data-vitest-plugin-rsc-preserve";
+let preservedTesterHeadNodes: ChildNode[] | undefined;
 
 export async function createTestingLibraryClientRoot(options: {
   container: HTMLElement;
@@ -39,8 +41,16 @@ export async function createTestingLibraryClientRoot(options: {
     applyDocumentHtml(options.documentHtml);
     return {
       rerender: async () => {},
-      unmount: async () => resetReactDocumentExpandos(),
+      unmount: async () => {
+        options.serverActionCaller?.cleanup();
+        resetReactDocumentExpandos();
+      },
     };
+  }
+
+  if (options.documentHtml && !options.hydrateDocument) {
+    resetReactDocumentExpandos();
+    applyDocumentHtml(options.documentHtml);
   }
 
   const initialPayload = await ReactClient.createFromReadableStream<RscPayload>(
@@ -142,15 +152,54 @@ function applyDocumentHtml(html: string | undefined) {
   }
 
   const parsed = new DOMParser().parseFromString(`<!doctype html>${html}`, "text/html");
+  const preservedHeadNodes = getPreservedTesterHeadNodes();
 
   syncAttributes(document.documentElement, parsed.documentElement);
   document.head.replaceChildren(
-    ...Array.from(parsed.head.childNodes).map((node) => document.importNode(node, true)),
+    ...preservedHeadNodes,
+    ...cloneDocumentNodes(parsed.head.childNodes),
   );
   syncAttributes(document.body, parsed.body);
-  document.body.replaceChildren(
-    ...Array.from(parsed.body.childNodes).map((node) => document.importNode(node, true)),
+  document.body.replaceChildren(...cloneDocumentNodes(parsed.body.childNodes));
+}
+
+function getPreservedTesterHeadNodes(): ChildNode[] {
+  if (!preservedTesterHeadNodes) {
+    preservedTesterHeadNodes = Array.from(document.head.childNodes).filter(isTesterHeadNode);
+  }
+  return preservedTesterHeadNodes;
+}
+
+function isTesterHeadNode(node: ChildNode): boolean {
+  if (!(node instanceof Element)) return false;
+  if (node.hasAttribute(preserveHeadAttribute)) return true;
+
+  const tagName = node.tagName.toLowerCase();
+  if (tagName === "script") {
+    return isVitestRuntimeUrl(node.getAttribute("src"));
+  }
+  if (tagName === "link" && node.getAttribute("rel") === "modulepreload") {
+    return isVitestRuntimeUrl(node.getAttribute("href"));
+  }
+
+  return false;
+}
+
+function isVitestRuntimeUrl(value: string | null): boolean {
+  return (
+    value !== null &&
+    (value.startsWith("/@fs/") ||
+      value.startsWith("/@vite/") ||
+      value.includes("/__vitest__/") ||
+      value.includes("/__vitest_test__/") ||
+      value.includes("/assets/"))
   );
+}
+
+function cloneDocumentNodes(nodes: NodeListOf<ChildNode>): ChildNode[] {
+  // Scripts parsed through DOMParser are inert when imported, but they still
+  // need to stay in the tree when the hydrated React tree contains them.
+  return Array.from(nodes).map((node) => document.importNode(node, true));
 }
 
 function syncAttributes(target: Element, source: Element) {

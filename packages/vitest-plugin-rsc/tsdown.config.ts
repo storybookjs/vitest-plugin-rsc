@@ -20,6 +20,7 @@ export default defineConfig({
   deps: {
     neverBundle: [/^virtual:/, /^@vitejs\/plugin-rsc\/vendor\//, "vitest-plugin-rsc/nextjs/client"],
   },
+  copy: [{ from: "src/nextjs/tester.html", to: "dist/nextjs" }],
   dts: {
     sourcemap: process.argv.slice(2).includes("--sourcemap"),
   },

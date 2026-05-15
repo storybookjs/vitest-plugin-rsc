@@ -53,21 +53,24 @@ function GlobalError() {
 
 type NextRouterStateSnapshot = {
   state: AppRouterState;
+  globalErrorState: GlobalErrorState;
 };
 
 export const NextRouter = ({
   route,
   url = "/",
   initialFlightPayload,
+  initialRSCPayload,
 }: {
   children?: ReactNode;
   route?: string;
   url?: string;
   initialFlightPayload?: InitialFlightPayload;
+  initialRSCPayload?: InitialRSCPayload;
 }) => {
   const snapshot = useMemo(
-    () => createNextRouterStateSnapshot({ route, url, initialFlightPayload }),
-    [route, url, initialFlightPayload],
+    () => createNextRouterStateSnapshot({ route, url, initialFlightPayload, initialRSCPayload }),
+    [route, url, initialFlightPayload, initialRSCPayload],
   );
   const actionQueueRef = useRef<AppRouterActionQueue | null>(null);
   const snapshotRef = useRef<NextRouterStateSnapshot | null>(null);
@@ -84,12 +87,12 @@ export const NextRouter = ({
   }
 
   return (
-    <NextAppRouter
-      key={snapshotVersionRef.current}
-      actionQueue={currentActionQueue}
-      globalErrorState={globalErrorState}
-      webSocket={webSocket}
-    />
+      <NextAppRouter
+        key={snapshotVersionRef.current}
+        actionQueue={currentActionQueue}
+        globalErrorState={snapshot.globalErrorState}
+        webSocket={webSocket}
+      />
   );
 };
 
@@ -97,24 +100,28 @@ function createNextRouterStateSnapshot({
   route,
   url,
   initialFlightPayload,
+  initialRSCPayload: providedInitialRSCPayload,
 }: {
   route?: string;
   url: string;
   initialFlightPayload?: InitialFlightPayload;
+  initialRSCPayload?: InitialRSCPayload;
 }): NextRouterStateSnapshot {
   const location = new URL(url, "http://localhost");
-  if (!initialFlightPayload) {
+  if (!initialFlightPayload && !providedInitialRSCPayload) {
     const routeHint = route ? ` for route "${route}"` : "";
     throw new Error(
       `NextRouter${routeHint} must be rendered through renderServer from vitest-plugin-rsc/nextjs.`,
     );
   }
 
-  const initialRSCPayload = createInitialRSCPayload({
-    canonicalUrl: createHrefFromUrl(location, false),
-    renderedSearch: initialFlightPayload.q ?? location.search,
-    flightPayload: initialFlightPayload,
-  });
+  const initialRSCPayload =
+    providedInitialRSCPayload ??
+    createInitialRSCPayload({
+      canonicalUrl: createHrefFromUrl(location, false),
+      renderedSearch: initialFlightPayload!.q ?? location.search,
+      flightPayload: initialFlightPayload!,
+    });
   const initialRouterStateOptions = {
     navigatedAt: Date.now(),
     initialRSCPayload,
@@ -139,6 +146,7 @@ function createNextRouterStateSnapshot({
 
   return {
     state: createInitialRouterState(initialRouterStateOptions),
+    globalErrorState: initialRSCPayload.G ?? globalErrorState,
   };
 }
 

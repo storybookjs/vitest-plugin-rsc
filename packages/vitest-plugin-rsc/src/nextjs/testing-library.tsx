@@ -24,6 +24,7 @@ import {
   renderNextRouteHtmlResponse,
   renderNextRouteInitialPayload,
   resetNextAppRenderCache,
+  type NextInitialRscPayload,
   type NextNavigationFlightPayload,
 } from "./app-render";
 import type { FetchNextRsc } from "./testing-library-client";
@@ -63,7 +64,8 @@ const mountedRootEntries: {
 const NextRouterForRender = NextRouter as unknown as JSXElementConstructor<{
   route?: string;
   url?: string;
-  initialFlightPayload: NextNavigationFlightPayload;
+  initialFlightPayload?: NextNavigationFlightPayload;
+  initialRSCPayload?: NextInitialRscPayload;
 }>;
 
 let config: NextRuntimeConfiguration = {
@@ -182,25 +184,30 @@ export async function renderServer(
         fallbackRoute: requestRoute,
       } satisfies NextRenderSource);
 
-    async function prepareServerRoot(): Promise<ReactNode> {
+    async function prepareServerRoot(
+      initialRSCPayload?: NextInitialRscPayload,
+    ): Promise<ReactNode> {
       const appRenderEntry = resolveAppRenderEntry(renderSource, requestUrl, requestRoute);
-      const componentMod = shouldUseDirectMetadataStub(renderSource, appRenderEntry)
-        ? await createNextDirectComponentMod()
-        : undefined;
-      const initialFlightPayload = await renderNextRouteInitialPayload({
-        loaderTree: appRenderEntry.loaderTree,
-        route: appRenderEntry.route,
-        page: appRenderEntry.appPath,
-        url: requestUrl,
-        headers,
-        componentMod,
-      });
+      const initialFlightPayload =
+        initialRSCPayload === undefined
+          ? await renderNextRouteInitialPayload({
+              loaderTree: appRenderEntry.loaderTree,
+              route: appRenderEntry.route,
+              page: appRenderEntry.appPath,
+              url: requestUrl,
+              headers,
+              componentMod: shouldUseDirectMetadataStub(renderSource, appRenderEntry)
+                ? await createNextDirectComponentMod()
+                : undefined,
+            })
+          : undefined;
 
       return (
         <NextRouterForRender
           url={requestUrl}
           route={appRenderEntry.route}
           initialFlightPayload={initialFlightPayload}
+          initialRSCPayload={initialRSCPayload}
         />
       );
     }
@@ -262,19 +269,69 @@ export async function renderServer(
       let initialStream: ReadableStream<Uint8Array> | undefined;
       let documentHtml: string | undefined;
       let documentOnly = false;
+      let hydrateClientRoot = hydrateDocument;
+      const renderServerRootForHydration = async (serverRoot: ReactNode) => {
+        const rscPayload: RscPayload = { root: serverRoot };
+        const rscStream = ReactServer.renderToReadableStream<RscPayload>(rscPayload);
+        const [ssrStream, clientStream] = rscStream.tee();
+        return {
+          documentHtml: await ssr.renderToHtml(ssrStream),
+          initialStream: clientStream,
+          hydrateDocument: true,
+          documentOnly: false,
+        };
+      };
+      const renderNextDocumentClientFallback = async () => {
+        const appRenderEntry = resolveAppRenderEntry(renderSource, requestUrl, requestRoute);
+        const routeNotFoundNode = await loadDeepestNotFoundNode(appRenderEntry.loaderTree);
+        if (routeNotFoundNode) {
+          return renderServerRootForHydration(routeNotFoundNode);
+        }
+
+        const documentHtml = await renderNextDocumentHtml(renderSource, requestUrl, requestRoute, {
+          headers,
+        });
+        const initialRSCPayload = await createNextDocumentInitialPayload(documentHtml);
+        const accessFallbackNode = findInitialAccessFallbackNode(initialRSCPayload);
+        if (accessFallbackNode) {
+          return renderServerRootForHydration(accessFallbackNode);
+        }
+        applyInitialAccessFallback(initialRSCPayload);
+        const rscPayload: RscPayload = {
+          root: await prepareServerRoot(initialRSCPayload),
+        };
+
+        return {
+          documentHtml,
+          initialStream: ReactServer.renderToReadableStream<RscPayload>(rscPayload),
+          hydrateDocument: false,
+          documentOnly: false,
+        };
+      };
+
       if (hydrateDocument) {
         shouldRestoreDocument = true;
         try {
           initialStream = await fetchRsc();
-          const [ssrStream, clientStream] = initialStream.tee();
-          initialStream = clientStream;
-          documentHtml = await ssr.renderToHtml(ssrStream);
-          if (isBlankDocumentHtml(documentHtml)) {
-            documentHtml = await renderNextDocumentHtml(renderSource, requestUrl, requestRoute, {
-              headers,
-            });
-            documentOnly = true;
-            initialStream = undefined;
+          const [inspectionStream, renderStream] = initialStream.tee();
+          const flightPayloadText = await readReadableStreamText(inspectionStream);
+          if (isNextDocumentFallbackPayloadText(flightPayloadText)) {
+            const fallbackRender = await renderNextDocumentClientFallback();
+            documentHtml = fallbackRender.documentHtml;
+            initialStream = fallbackRender.initialStream;
+            hydrateClientRoot = fallbackRender.hydrateDocument;
+            documentOnly = fallbackRender.documentOnly;
+          } else {
+            const [ssrStream, clientStream] = renderStream.tee();
+            initialStream = clientStream;
+            documentHtml = await ssr.renderToHtml(ssrStream);
+            if (isBlankDocumentHtml(documentHtml)) {
+              const fallbackRender = await renderNextDocumentClientFallback();
+              documentHtml = fallbackRender.documentHtml;
+              initialStream = fallbackRender.initialStream;
+              hydrateClientRoot = fallbackRender.hydrateDocument;
+              documentOnly = fallbackRender.documentOnly;
+            }
           }
         } catch (error) {
           if (
@@ -284,24 +341,45 @@ export async function renderServer(
             throw error;
           }
 
-          documentHtml = await renderNextDocumentHtml(renderSource, requestUrl, requestRoute, {
-            headers,
-          });
-          documentOnly = true;
-          initialStream = undefined;
+          const fallbackRender = await renderNextDocumentClientFallback();
+          documentHtml = fallbackRender.documentHtml;
+          initialStream = fallbackRender.initialStream;
+          hydrateClientRoot = fallbackRender.hydrateDocument;
+          documentOnly = fallbackRender.documentOnly;
         }
       }
 
-      root = await client.createTestingLibraryClientRoot({
+      const clientRootOptions = {
         container,
         config: toBaseConfig(),
         fetchRsc,
         serverActionCaller,
-        hydrateDocument,
+        hydrateDocument: hydrateClientRoot,
         documentOnly,
         initialStream,
         documentHtml,
-      });
+      };
+
+      try {
+        root = await client.createTestingLibraryClientRoot(clientRootOptions);
+      } catch (error) {
+        if (
+          !hydrateDocument ||
+          documentOnly ||
+          (!isNextHttpAccessFallbackError(error) && !isNextBuiltinGlobalErrorReferenceError(error))
+        ) {
+          throw error;
+        }
+
+        const fallbackRender = await renderNextDocumentClientFallback();
+        root = await client.createTestingLibraryClientRoot({
+          ...clientRootOptions,
+          hydrateDocument: fallbackRender.hydrateDocument,
+          documentOnly: fallbackRender.documentOnly,
+          initialStream: fallbackRender.initialStream,
+          documentHtml: fallbackRender.documentHtml,
+        });
+      }
       injectNextFontStyles();
     } catch (error) {
       serverActionCaller?.cleanup();
@@ -331,8 +409,8 @@ function isNextHttpAccessFallbackError(error: unknown) {
   const message = getErrorMessage(error);
   return (
     isHTTPAccessFallbackError(error) ||
-    message.startsWith("NEXT_HTTP_ERROR_FALLBACK;") ||
-    message.includes("NEXT_HTTP_ERROR_FALLBACK;")
+    message.startsWith("NEXT_HTTP_ERROR_FALLBACK") ||
+    message.includes("NEXT_HTTP_ERROR_FALLBACK")
   );
 }
 
@@ -344,8 +422,30 @@ function isNextBuiltinGlobalErrorReferenceError(error: unknown) {
   return getErrorMessage(error).includes("next_dist_client_components_builtin_global-error");
 }
 
+function isNextDocumentFallbackPayloadText(text: string) {
+  return text.includes('"digest":"NEXT_HTTP_ERROR_FALLBACK;404"');
+}
+
 function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
+}
+
+async function readReadableStreamText(stream: ReadableStream<Uint8Array>) {
+  const decoder = new TextDecoder();
+  const reader = stream.getReader();
+  let text = "";
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      text += decoder.decode(value, { stream: true });
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  return text + decoder.decode();
 }
 
 async function renderNextDocumentHtml(
@@ -367,6 +467,215 @@ async function renderNextDocumentHtml(
     componentMod,
   });
   return response.text();
+}
+
+async function createNextDocumentInitialPayload(html: string) {
+  return ReactServer.createFromReadableStream<NextInitialRscPayload>(
+    createNextDocumentFlightStream(html),
+  );
+}
+
+type NextFlightSegment =
+  | [isBootStrap: 0]
+  | [isNotBootstrap: 1, responsePartial: string]
+  | [isFormState: 2, formState: unknown]
+  | [isBinary: 3, responseBase64Partial: string];
+
+function createNextDocumentFlightStream(html: string) {
+  const chunks = collectNextDocumentFlightChunks(html);
+  return new ReadableStream<Uint8Array>({
+    start(controller) {
+      for (const chunk of chunks) {
+        controller.enqueue(chunk);
+      }
+      controller.close();
+    },
+  });
+}
+
+function collectNextDocumentFlightChunks(html: string) {
+  const parsed = new DOMParser().parseFromString(`<!doctype html>${html}`, "text/html");
+  const encoder = new TextEncoder();
+  const chunks: Uint8Array[] = [];
+  let sawBootstrap = false;
+
+  for (const script of Array.from(parsed.scripts)) {
+    const text = script.textContent ?? "";
+    if (!text.includes("__next_f") || !text.includes(".push(")) continue;
+
+    const segment = parseNextFlightSegmentScript(text);
+    if (!segment) continue;
+
+    if (segment[0] === 0) {
+      sawBootstrap = true;
+    } else if (segment[0] === 1) {
+      if (!sawBootstrap) throw new Error("Unexpected Next Flight data before bootstrap.");
+      chunks.push(encoder.encode(segment[1]));
+    } else if (segment[0] === 3) {
+      if (!sawBootstrap) throw new Error("Unexpected Next Flight data before bootstrap.");
+      chunks.push(decodeBase64Chunk(segment[1]));
+    }
+  }
+
+  if (!sawBootstrap) {
+    throw new Error("Next document HTML did not include inline Flight bootstrap data.");
+  }
+
+  return chunks;
+}
+
+function parseNextFlightSegmentScript(text: string): NextFlightSegment | undefined {
+  const pushIndex = text.indexOf(".push(");
+  if (pushIndex === -1) return;
+
+  const start = pushIndex + ".push(".length;
+  const end = text.lastIndexOf(")");
+  if (end <= start) return;
+
+  const segment = JSON.parse(text.slice(start, end).trim().replace(/;$/, "")) as NextFlightSegment;
+  if (!Array.isArray(segment)) return;
+  return segment;
+}
+
+function decodeBase64Chunk(value: string) {
+  const binary = atob(value);
+  const chunk = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index++) {
+    chunk[index] = binary.charCodeAt(index);
+  }
+  return chunk;
+}
+
+function applyInitialAccessFallback(payload: NextInitialRscPayload) {
+  for (const flightDataPath of payload.f) {
+    const seedData = flightDataPath[flightDataPath.length - 3] as
+      | NextCacheNodeSeedData
+      | null
+      | undefined;
+    replaceAccessFallbackSeedData(seedData);
+  }
+}
+
+function findInitialAccessFallbackNode(payload: NextInitialRscPayload) {
+  for (const flightDataPath of payload.f) {
+    const seedData = flightDataPath[flightDataPath.length - 3] as
+      | NextCacheNodeSeedData
+      | null
+      | undefined;
+    const found = findNotFoundNode(seedData?.[0]);
+    if (found) return found;
+  }
+}
+
+type NextCacheNodeSeedData = [
+  node: ReactNode | null,
+  parallelRoutes: Record<string, NextCacheNodeSeedData | null>,
+  loading: null,
+  isPartial: boolean,
+  varyParams: unknown,
+];
+
+function replaceAccessFallbackSeedData(
+  seedData: NextCacheNodeSeedData | null | undefined,
+  inheritedNotFound?: ReactNode,
+) {
+  if (!seedData) return;
+
+  const node = seedData[0];
+  const notFound = findNotFoundNode(node) ?? inheritedNotFound;
+  if (notFound && isAccessFallbackSeedNode(seedData)) {
+    seedData[0] = notFound;
+  }
+
+  for (const child of Object.values(seedData[1])) {
+    replaceAccessFallbackSeedData(child, notFound);
+  }
+}
+
+function isAccessFallbackSeedNode(seedData: NextCacheNodeSeedData) {
+  return containsAccessFallback(seedData[0]) || isLeafLazySeedNode(seedData);
+}
+
+function isLeafLazySeedNode(seedData: NextCacheNodeSeedData) {
+  return Object.keys(seedData[1]).length === 0 && containsThenable(seedData[0]);
+}
+
+function findNotFoundNode(value: unknown): ReactNode | undefined {
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      const found = findNotFoundNode(item);
+      if (found) return found;
+    }
+    return;
+  }
+
+  if (!isValidElement(value)) return;
+
+  const props = value.props as { children?: unknown; notFound?: unknown };
+  const child = findNotFoundNode(props.children);
+  if (child) return child;
+
+  if (Array.isArray(props.notFound) && props.notFound[0]) {
+    return props.notFound[0] as ReactNode;
+  }
+}
+
+function containsAccessFallback(value: unknown): boolean {
+  if (isNextHttpAccessFallbackError(value)) return true;
+  if (isRejectedAccessFallbackThenable(value)) return true;
+
+  if (Array.isArray(value)) {
+    return value.some((item) => containsAccessFallback(item));
+  }
+
+  if (isValidElement(value)) {
+    return containsAccessFallback((value.props as { children?: unknown }).children);
+  }
+
+  return false;
+}
+
+function containsThenable(value: unknown): boolean {
+  if (isThenable(value)) return true;
+
+  if (Array.isArray(value)) {
+    return value.some((item) => containsThenable(item));
+  }
+
+  if (isValidElement(value)) {
+    return containsThenable((value.props as { children?: unknown }).children);
+  }
+
+  return false;
+}
+
+function isThenable(value: unknown): value is Promise<unknown> {
+  return (
+    (typeof value === "object" || typeof value === "function") &&
+    value !== null &&
+    "then" in value &&
+    typeof (value as { then?: unknown }).then === "function"
+  );
+}
+
+function isRejectedAccessFallbackThenable(value: unknown) {
+  if (typeof value !== "object" || value === null) return false;
+
+  const candidate = value as {
+    status?: unknown;
+    reason?: unknown;
+    _reason?: unknown;
+    value?: unknown;
+    _value?: unknown;
+  };
+  if (candidate.status !== "rejected") return false;
+
+  return (
+    isNextHttpAccessFallbackError(candidate.reason) ||
+    isNextHttpAccessFallbackError(candidate._reason) ||
+    isNextHttpAccessFallbackError(candidate.value) ||
+    isNextHttpAccessFallbackError(candidate._value)
+  );
 }
 
 async function unmountRoot(container: Container, removeContainer: boolean) {
@@ -604,6 +913,26 @@ function wrapRootLayoutLoaderTree(
   ];
 
   return [segment, parallelRoutes, { ...modules, layout: wrappedLayout }, metadata] as LoaderTree;
+}
+
+async function loadDeepestNotFoundNode(loaderTree: LoaderTree): Promise<ReactNode | undefined> {
+  const notFoundModule = findDeepestNotFoundModule(loaderTree);
+  if (!notFoundModule) return;
+
+  const mod = await notFoundModule[0]();
+  const NotFound = mod.default as JSXElementConstructor<Record<string, never>> | undefined;
+  return NotFound ? createElement(NotFound) : undefined;
+}
+
+function findDeepestNotFoundModule(loaderTree: LoaderTree): LoaderTreeModule | undefined {
+  const [, parallelRoutes, modules] = loaderTree;
+
+  for (const childTree of Object.values(parallelRoutes)) {
+    const child = findDeepestNotFoundModule(childTree as LoaderTree);
+    if (child) return child;
+  }
+
+  return (modules as Record<string, LoaderTreeModule | undefined>)["not-found"];
 }
 
 function replacePageModule(

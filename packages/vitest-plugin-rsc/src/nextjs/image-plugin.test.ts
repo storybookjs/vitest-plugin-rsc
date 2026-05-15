@@ -1,3 +1,4 @@
+import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, test } from "vitest";
 import { useNextImageClientReference } from "./image-plugin";
@@ -34,6 +35,57 @@ test("keeps next/image getImageProps callable in the RSC graph", async () => {
   );
   expect(imageClientReference).toContain('"use client"');
   expect(imageClientReference).not.toContain("getImageProps");
+});
+
+test("emits imported static images through Next's image loader in build mode", async () => {
+  const plugin = useNextImageClientReference();
+  const configResolved = getHookHandler(plugin.configResolved);
+  const resolveId = getHookHandler(plugin.resolveId);
+  const load = getHookHandler(plugin.load);
+  const imagePath = path.join(fixtureRoot, "app/next-apis/fixtures/static-logo.svg");
+  const emittedAssets: Array<{ fileName: string; source: Buffer }> = [];
+  const watchedFiles: string[] = [];
+  const previousCwd = process.cwd();
+
+  process.chdir(fixtureRoot);
+  try {
+    await configResolved.call(
+      {} as never,
+      { root: fixtureRoot, mode: "test", command: "build" } as never,
+    );
+
+    const resolved = await resolveId.call(
+      {
+        resolve: async () => ({ id: imagePath }),
+      } as never,
+      "./fixtures/static-logo.svg",
+      path.join(fixtureRoot, "app/next-apis/page.tsx"),
+      {} as never,
+    );
+
+    expect(resolved).toBe(`\0vitest-plugin-rsc:next-static-image:${encodeURIComponent(imagePath)}`);
+
+    const code = (await load.call(
+      {
+        addWatchFile: (file: string) => watchedFiles.push(file),
+        emitFile: (asset: { type: "asset"; fileName: string; source: Buffer }) => {
+          emittedAssets.push({ fileName: asset.fileName, source: asset.source });
+          return "static-logo-reference";
+        },
+      } as never,
+      resolved as string,
+      {} as never,
+    )) as string;
+
+    expect(watchedFiles).toEqual([imagePath]);
+    expect(emittedAssets).toHaveLength(1);
+    expect(emittedAssets[0]!.fileName).toMatch(/^_next\/static\/media\/static-logo\..+\.svg$/);
+    expect(emittedAssets[0]!.source.toString()).toContain("static logo");
+    expect(code).toContain("import.meta.ROLLUP_FILE_URL_static-logo-reference");
+    expect(code).not.toContain("/_next/static/media/static-logo.");
+  } finally {
+    process.chdir(previousCwd);
+  }
 });
 
 function getHookHandler<T extends (...args: never[]) => unknown>(
