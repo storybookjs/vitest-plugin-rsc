@@ -85,6 +85,7 @@ export default defineConfig({
           include: ["**/*.test.{ts,tsx}"],
           exclude: ["**/*.node.test.{ts,tsx}", "node_modules"],
           browser: {
+            traceView: true,
             enabled: true,
             headless: true,
             viewport: { width: 390, height: 844 },
