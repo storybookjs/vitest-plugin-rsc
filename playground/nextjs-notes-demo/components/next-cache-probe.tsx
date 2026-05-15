@@ -27,6 +27,7 @@ let useCacheGeneration = 0;
 let useCacheReads = 0;
 let remoteUseCacheReads = 0;
 let cacheLifeReads = 0;
+let concurrentUseCacheReads = 0;
 
 const readCachedData = unstable_cache(
   async () => {
@@ -46,6 +47,7 @@ export function resetNextCacheProbe(label = "default") {
   useCacheReads = 0;
   remoteUseCacheReads = 0;
   cacheLifeReads = 0;
+  concurrentUseCacheReads = 0;
   resetNextCacheProbeFetch(label);
 }
 
@@ -69,6 +71,10 @@ export async function NextUseCacheProbe() {
   const remoteSecond = await readRemoteUseCacheValue(useCacheGeneration);
   const cacheLifeFirst = await readCacheLifeValue(useCacheGeneration);
   const cacheLifeSecond = await readCacheLifeValue(useCacheGeneration);
+  const [concurrentFirst, concurrentSecond] = await Promise.all([
+    readConcurrentUseCacheValue(useCacheGeneration),
+    readConcurrentUseCacheValue(useCacheGeneration),
+  ]);
   const privateValue = await readPrivateUseCacheCookie();
 
   return (
@@ -82,6 +88,9 @@ export async function NextUseCacheProbe() {
       <p>use cache life first: {cacheLifeFirst}</p>
       <p>use cache life second: {cacheLifeSecond}</p>
       <p>use cache life reads: {cacheLifeReads}</p>
+      <p>use cache concurrent first: {concurrentFirst}</p>
+      <p>use cache concurrent second: {concurrentSecond}</p>
+      <p>use cache concurrent reads: {concurrentUseCacheReads}</p>
       <p>use cache private cookie: {privateValue}</p>
     </section>
   );
@@ -113,6 +122,14 @@ async function readCacheLifeValue(generation: number) {
   cacheLife("notes-demo-fast");
   cacheLifeReads += 1;
   return `generation ${generation} cache life read ${cacheLifeReads}`;
+}
+
+async function readConcurrentUseCacheValue(generation: number) {
+  "use cache";
+
+  concurrentUseCacheReads += 1;
+  await Promise.resolve();
+  return `generation ${generation} concurrent read ${concurrentUseCacheReads}`;
 }
 
 async function readPrivateUseCacheCookie() {
