@@ -300,7 +300,7 @@ Done:
 
 Remaining weakness:
 
-- The plugin extracts only the `const tree = ...` block out of `next-app-loader` output and rewrites imports for Vite. This is a pragmatic adapter, but still string extraction. It needs tests that lock it against current Next loader output and should be replaced with a smaller imported helper if Next ever exposes one.
+- The plugin extracts only the `const tree = ...` block out of `next-app-loader` output and rewrites imports for Vite. This is a pragmatic adapter, but still string extraction. Package coverage now locks this against current Next loader output by invoking the real app loader and asserting the extracted Vite module shape. It should still be replaced with a smaller imported helper if Next ever exposes one.
 - Coverage is missing or thin for `loading`, intercepting routes, nested parallel routes, route groups with collisions, default-null behavior, and proxy/middleware interactions.
 - Route manifest generation is still page-focused. If `route.ts` handlers become render targets, they should run through Next route module/request code, not through a local route-handler runner.
 
@@ -453,7 +453,7 @@ P0: reduce document fallback and manifest magic.
 - Done: isolate the inline Flight parser as a copied/adapted block from Next app-index. The Vitest adapter extracts the same `self.__next_f.push(...)` segment tuples from rendered document HTML and rebuilds the React Flight stream for hydration.
 - Done for access-fallback/redirect detection: inspect only React Flight rows, extract structured or encoded control-flow digests from those rows, then use Next's real `isHTTPAccessFallbackError`, `getAccessFallbackHTTPStatus`, and redirect helpers instead of broad document-wide `NEXT_HTTP_ERROR_FALLBACK` string matching.
 - Keep expanding notes-demo coverage for route-level fallbacks and document hydration. Done: route-level notFound, global-error, and error boundary document hydration.
-- Done for the current client-reference proxy contract: proxy manifests stay necessary because Vite RSC owns the actual client/server references while Next app-render expects webpack-shaped records. Package tests cover the record shape, `$$cache=` id normalization, module mapping exports, invalid-key behavior, and builtin global-error virtual stub mapping. Still needed: direct server action manifest worker/layer-shape coverage.
+- Done for the current client-reference and server action proxy contract: proxy manifests stay necessary because Vite RSC owns the actual client/server references while Next app-render expects webpack-shaped records. Package tests cover the client-reference record shape, `$$cache=` id normalization, module mapping exports, invalid-key behavior, builtin global-error virtual stub mapping, and server action manifest worker records for page and route layers.
 - Preserve Vitest harness scripts through plugin-level tester HTML/head merging. Done for the current document hydration path: a notes-demo browser test proves the plugin-level merge keeps Vitest runtime scripts while applying Next title/meta output.
 
 P0: prove or remove Buffer/process/runtime patches.

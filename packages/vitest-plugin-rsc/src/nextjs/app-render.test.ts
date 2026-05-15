@@ -1,6 +1,7 @@
 import { Buffer } from "node:buffer";
 import { expect, test } from "vitest";
 import {
+  createNextServerActionManifest,
   createViteRscClientModulesProxy,
   createViteRscModuleMappingProxy,
 } from "./app-render-manifest";
@@ -123,4 +124,48 @@ test("maps Next builtin global-error manifest records to the Vite virtual stub",
   expect(
     moduleMapping["/node_modules/next/dist/client/components/builtin/global-error.js"]?.default,
   ).toEqual(expected);
+});
+
+test("creates Next server action manifest worker records for page and route layers", () => {
+  const actionId = "/app/actions.ts#saveNote";
+  const manifest = createNextServerActionManifest(actionId, "/notes/page") as {
+    edge: Record<
+      string,
+      {
+        exportedName: string | undefined;
+        filename: string | undefined;
+        workers: Record<string, { moduleId: string; async: true }>;
+      }
+    >;
+    node: Record<
+      string,
+      {
+        exportedName: string | undefined;
+        filename: string | undefined;
+        workers: Record<string, { moduleId: string; async: true }>;
+      }
+    >;
+  };
+
+  const expectedActionEntry = {
+    exportedName: "saveNote",
+    filename: "/app/actions.ts",
+    workers: expect.objectContaining({
+      "app/notes": {
+        async: true,
+        moduleId: actionId,
+      },
+      "app/notes/page": {
+        async: true,
+        moduleId: actionId,
+      },
+    }),
+  };
+
+  expect(manifest.node[actionId]).toEqual(expectedActionEntry);
+  expect(manifest.edge[actionId]).toEqual(expectedActionEntry);
+  expect(manifest.edge[actionId]?.workers["app/notes/new/page"]).toEqual({
+    async: true,
+    moduleId: actionId,
+  });
 });
