@@ -18,10 +18,11 @@ import type { RenderOpts } from "next/dist/server/app-render/types.js";
 import { defaultConfig } from "next/dist/server/config-shared.js";
 import { createSnapshot } from "next/dist/server/app-render/async-local-storage.js";
 import { IncrementalCache } from "next/dist/server/lib/incremental-cache/index.js";
+import type { CacheHandler } from "next/dist/server/lib/cache-handlers/types.js";
 import { tagsManifest } from "next/dist/server/lib/incremental-cache/tags-manifest.external.js";
 import { NEXT_PATCH_SYMBOL } from "next/dist/server/lib/patch-fetch.js";
 import { addRequestMeta } from "next/dist/server/request-meta.js";
-import { initializeCacheHandlers } from "next/dist/server/use-cache/handlers.js";
+import { initializeCacheHandlers, setCacheHandler } from "next/dist/server/use-cache/handlers.js";
 import type { LoaderTree } from "next/dist/server/lib/app-dir-module.js";
 import type RenderResult from "next/dist/server/render-result.js";
 import type { InitialRSCPayload } from "next/dist/shared/lib/app-router-types";
@@ -68,6 +69,7 @@ const emptyBuildManifest = {
 
 let NextIncrementalCache: NextIncrementalCacheConstructor | undefined;
 let nextCacheGeneration = 0;
+let nextCacheHandlersPromise: Promise<void> | undefined;
 
 export async function renderNextRouteFlightResponse({
   loaderTree,
@@ -278,7 +280,7 @@ async function renderNextRouteResult({
   componentMod?: NextEntryBaseComponentMod;
   manifests: NextRenderManifests;
 }) {
-  ensureNextAppRenderGlobals();
+  await ensureNextAppRenderGlobals();
   const req = new WebNextRequest(request as never);
   const res = new WebNextResponse();
   const renderPage = normalizeAppPath(page);
@@ -370,6 +372,8 @@ export async function resetNextAppRenderCache(): Promise<void> {
   globalScope.__incrementalCacheShared = undefined;
   nextCacheGeneration += 1;
   NextIncrementalCache = IncrementalCache;
+  nextCacheHandlersPromise = undefined;
+  resetNextCacheHandlerGlobals();
 }
 
 async function loadNextServerAction(id: string) {
@@ -495,7 +499,7 @@ function createRouteModule({
   // End copy
 }
 
-function ensureNextAppRenderGlobals() {
+async function ensureNextAppRenderGlobals() {
   const globalScope = globalThis as typeof globalThis & {
     Buffer?: typeof Buffer;
     process?: NodeJS.Process;
@@ -507,8 +511,29 @@ function ensureNextAppRenderGlobals() {
   globalScope.process.env ??= {};
   globalScope.process.env["NEXT_RUNTIME"] ??= "edge";
   NextIncrementalCache = IncrementalCache;
-  initializeCacheHandlers(Number(defaultConfig.cacheMaxMemorySize ?? 50 * 1024 * 1024));
+  nextCacheHandlersPromise ??= initializeNextCacheHandlers();
+  await nextCacheHandlersPromise;
   ensureNextEdgeIncrementalCache(IncrementalCache);
+}
+
+async function initializeNextCacheHandlers() {
+  const cacheMaxMemorySize = readNextDefineNumber(
+    process.env.__NEXT_CACHE_MAX_MEMORY_SIZE,
+    defaultConfig.cacheMaxMemorySize ?? 50 * 1024 * 1024,
+  );
+  initializeCacheHandlers(cacheMaxMemorySize);
+
+  const cacheHandlers = readNextDefineObject(process.env.__NEXT_CACHE_HANDLERS);
+  if (!cacheHandlers) return;
+
+  const { nextCacheHandlers } = await import("virtual:vitest-plugin-rsc/next-cache-handlers");
+
+  for (const [kind, handler] of Object.entries(cacheHandlers)) {
+    if (typeof handler !== "string" || handler.length === 0) continue;
+
+    const cacheHandler = nextCacheHandlers[kind];
+    if (cacheHandler) setCacheHandler(kind, cacheHandler as CacheHandler);
+  }
 }
 
 type RequestLifecycle = {
@@ -637,6 +662,14 @@ function isNextDefineFlagEnabled(value: unknown) {
   return value === true || value === "true" || value === "1";
 }
 
+function readNextDefineNumber(value: unknown, fallback: number) {
+  if (typeof value === "number") return value;
+  if (typeof value !== "string" || value.length === 0) return fallback;
+
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
 function readNextDefineString(value: unknown, fallback: string) {
   return typeof value === "string" ? value : fallback;
 }
@@ -654,6 +687,12 @@ function readNextDefineObject(value: unknown): Record<string, unknown> | undefin
   } catch {
     return;
   }
+}
+
+function resetNextCacheHandlerGlobals() {
+  const globalScope = globalThis as Record<symbol, unknown>;
+  delete globalScope[Symbol.for("@next/cache-handlers-map")];
+  delete globalScope[Symbol.for("@next/cache-handlers-set")];
 }
 
 async function setNextRenderManifests(manifests: NextRenderManifests): Promise<void> {
@@ -969,7 +1008,10 @@ function createNextEdgeIncrementalCache(
     minimalMode: true,
     fetchCacheKeyPrefix: `vitest-plugin-rsc-${nextCacheGeneration}`,
     serverDistDir: "/",
-    maxMemoryCacheSize: 50 * 1024 * 1024,
+    maxMemoryCacheSize: readNextDefineNumber(
+      process.env.__NEXT_CACHE_MAX_MEMORY_SIZE,
+      defaultConfig.cacheMaxMemorySize ?? 50 * 1024 * 1024,
+    ),
     flushToDisk: false,
     getPrerenderManifest: () => ({
       version: 4,
