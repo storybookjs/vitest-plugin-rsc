@@ -63,25 +63,12 @@ export default defineConfig({
   },
   test: {
     maxWorkers,
-    coverage: {
-      provider: "v8",
-      reporter: ["text", "html", "lcov"],
-      include: ["**/*.{ts,tsx}"],
-      exclude: [
-        ".next/**/*",
-        "**/*.{test,test-fixture,mock,config}.{ts,tsx}",
-        "**/*.d.ts",
-        "{db,env,scripts,test}/**/*.{ts,tsx}",
-        "lib/db{,.dev}.ts",
-        "vitest.*.{ts,tsx}",
-      ],
-    },
     projects: [
       {
         extends: true,
         plugins: [vitestPluginRSC(), vitestPluginNext()],
         test: {
-          name: "browser",
+          name: "nextjs-notes-demo-browser",
           include: ["**/*.test.{ts,tsx}"],
           exclude: ["**/*.node.test.{ts,tsx}", "node_modules"],
           browser: {
@@ -104,7 +91,7 @@ export default defineConfig({
       {
         extends: true,
         test: {
-          name: "node",
+          name: "nextjs-notes-demo-node",
           include: ["**/*.node.test.ts"],
           exclude: ["node_modules"],
           environment: "node",

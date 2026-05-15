@@ -17,5 +17,5 @@ SCENARIO=notes-many pnpm dev
 ```bash
 pnpm dev
 pnpm build
-pnpm test:run
+pnpm --dir ../.. test --project nextjs-notes-demo-browser --project nextjs-notes-demo-node
 ```

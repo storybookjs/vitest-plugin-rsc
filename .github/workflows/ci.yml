@@ -78,7 +78,7 @@ jobs:
       - run: pnpm --dir playground/rsc-vitest-demo exec playwright install --with-deps --only-shell chromium
       - run: pnpm --dir playground/nextjs-notes-demo exec playwright install --with-deps --only-shell chromium
       - run: pnpm build
-      - run: pnpm --dir playground/rsc-vitest-demo run test:run
+      - run: pnpm test:run --project rsc-vitest-demo
 
   next-compat:
     name: Next.js ${{ matrix.next-version }} Compatibility
@@ -106,6 +106,8 @@ jobs:
       - run: pnpm build
       - name: Test Next.js surfaces
         run: |
-          pnpm --filter vitest-plugin-rsc run test:run
-          pnpm --filter nextjs-no-msw-demo run test:run
-          pnpm --filter nextjs-notes-demo run test:run
+          pnpm test:run \
+            --project vitest-plugin-rsc \
+            --project nextjs-no-msw-demo \
+            --project nextjs-notes-demo-browser \
+            --project nextjs-notes-demo-node

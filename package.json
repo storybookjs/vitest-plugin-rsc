@@ -9,7 +9,9 @@
     "lint:fix": "oxlint --fix $(git ls-files)",
     "tsgo": "tsgo --build",
     "build": "pnpm -r --filter='./packages/*' run build",
-    "test": "pnpm -r --workspace-concurrency=1 --if-present run test:run",
+    "test": "pnpm build && vitest run",
+    "test:run": "vitest run",
+    "test:watch": "vitest",
     "perf": "pnpm perf:commands",
     "perf:ci": "pnpm perf",
     "perf:commands": "node scripts/perf/run-command-benchmarks.ts",
@@ -20,15 +22,20 @@
   "devDependencies": {
     "@types/node": "^24.12.4",
     "@typescript/native-preview": "7.0.0-dev.20260512.1",
+    "@vitest/browser": "5.0.0-beta.2",
+    "@vitest/browser-playwright": "5.0.0-beta.2",
+    "@vitest/coverage-v8": "5.0.0-beta.2",
     "husky": "^9.1.7",
     "lint-staged": "^17.0.4",
     "oxfmt": "^0.49.0",
     "oxlint": "^1.64.0",
     "oxlint-tsgolint": "^0.22.1",
+    "playwright": "^1.60.0",
     "tsx": "^4.21.0",
     "typescript": "^6.0.3",
     "vite": "^8.0.12",
-    "vitest": "5.0.0-beta.2"
+    "vitest": "5.0.0-beta.2",
+    "vitest-plugin-rsc": "workspace:*"
   },
   "lint-staged": {
     "*": [
