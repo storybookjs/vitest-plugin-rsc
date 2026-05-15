@@ -17,7 +17,7 @@
     "start": "next start",
     "test": "vitest",
     "test:run": "vitest run",
-    "test:update": "vitest run --project=browser --update",
+    "test:update": "vitest run --project=nextjs-notes-demo-browser --update",
     "test:report": "vitest run --reporter=html",
     "test:coverage": "vitest run --coverage",
     "test:ui": "vitest --ui",
