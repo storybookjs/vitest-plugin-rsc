@@ -6,8 +6,10 @@ import {
 } from "next/dist/client/components/http-access-fallback/http-access-fallback.js";
 import { isNextRouterError } from "next/dist/client/components/is-next-router-error.js";
 import { getRedirectStatus, modifyRouteRegex } from "next/dist/lib/redirect-status.js";
+import { getPreloadableFonts } from "next/dist/server/app-render/get-preloadable-fonts.js";
 import type { LoaderTree } from "next/dist/server/lib/app-dir-module.js";
 import { normalizeAppPath } from "next/dist/shared/lib/router/utils/app-paths.js";
+import { encodeURIPath } from "next/dist/shared/lib/encode-uri-path.js";
 import { formatUrl } from "next/dist/shared/lib/router/utils/format-url.js";
 import { getPathMatch } from "next/dist/shared/lib/router/utils/path-match.js";
 import {
@@ -39,6 +41,7 @@ import {
   type NextInitialRscPayload,
   type NextNavigationFlightPayload,
 } from "./app-render";
+import { getNextFontManifestForRender } from "./font-manifest";
 import type { FetchNextRsc } from "./testing-library-client";
 
 export * from "../testing-library";
@@ -465,6 +468,11 @@ export async function renderServer(
         });
       }
       injectNextFontStyles();
+      if (hydrateDocument) {
+        injectNextFontPreloadLinks(
+          resolveAppRenderEntry(renderSource, activeRequestUrl, requestRoute).loaderTree,
+        );
+      }
     } catch (error) {
       serverActionCaller?.cleanup();
       throw error;
@@ -1397,6 +1405,54 @@ function injectNextFontStyles() {
     style.textContent = css;
     document.head.appendChild(style);
   }
+}
+
+function injectNextFontPreloadLinks(loaderTree: LoaderTree) {
+  const manifest = getNextFontManifestForRender();
+  const injectedFontPreloadTags = new Set<string>();
+
+  for (const filePath of collectLoaderTreeFilePaths(loaderTree)) {
+    const preloadedFonts = getPreloadableFonts(manifest, filePath, injectedFontPreloadTags);
+    if (!preloadedFonts?.length) continue;
+
+    for (const fontFile of preloadedFonts) {
+      const href = `${readNextAssetPrefix()}/_next/${encodeURIPath(fontFile)}`;
+      if (document.head.querySelector(`link[rel="preload"][as="font"][href="${href}"]`)) {
+        continue;
+      }
+
+      const link = document.createElement("link");
+      link.rel = "preload";
+      link.as = "font";
+      link.href = href;
+      link.type = getFontPreloadType(fontFile);
+      document.head.appendChild(link);
+    }
+  }
+}
+
+function collectLoaderTreeFilePaths(loaderTree: LoaderTree, filePaths = new Set<string>()) {
+  const [, parallelRoutes, modules] = loaderTree;
+
+  for (const moduleValue of Object.values(modules)) {
+    if (Array.isArray(moduleValue) && typeof moduleValue[1] === "string") {
+      filePaths.add(moduleValue[1]);
+    }
+  }
+  for (const child of Object.values(parallelRoutes)) {
+    collectLoaderTreeFilePaths(child as LoaderTree, filePaths);
+  }
+
+  return filePaths;
+}
+
+function readNextAssetPrefix() {
+  return typeof process.env.__NEXT_ASSET_PREFIX === "string" ? process.env.__NEXT_ASSET_PREFIX : "";
+}
+
+function getFontPreloadType(fontFile: string) {
+  const ext = /\.(woff|woff2|eot|ttf|otf)$/.exec(fontFile)?.[1];
+  return ext ? `font/${ext}` : "";
 }
 
 type NavigationSpy = {
