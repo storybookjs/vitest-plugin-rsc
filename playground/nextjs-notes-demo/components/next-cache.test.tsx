@@ -7,6 +7,7 @@ import {
   NextCacheProbe,
   NextNoStoreProbe,
   NextUseCacheDynamicApiProbe,
+  NextUseCacheDynamicConnectionProbe,
   NextUseCacheDynamicHeadersProbe,
   NextUseCacheProbe,
   resetNextCacheProbe,
@@ -150,6 +151,18 @@ test("public use cache scopes reject request headers", async () => {
     {
       headers: { "x-next-public-cache": "public-value" },
       url: "/next-use-cache-dynamic-headers-probe",
+    },
+  );
+});
+
+test("public use cache scopes reject connection", async () => {
+  resetNextCacheProbe();
+
+  await expectPublicUseCacheDynamicApiError(
+    <NextUseCacheDynamicConnectionProbe />,
+    /connection\(\).*use cache/i,
+    {
+      url: "/next-use-cache-dynamic-connection-probe",
     },
   );
 });

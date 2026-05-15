@@ -9,6 +9,7 @@ import {
   updateTag,
 } from "next/cache";
 import { cookies, headers } from "next/headers";
+import { connection } from "next/server";
 import { getCacheHandlerEntries } from "next/dist/server/use-cache/handlers.js";
 import {
   nextCacheProbeFetchUrl,
@@ -124,6 +125,11 @@ export async function NextUseCacheDynamicHeadersProbe() {
   return <p>public use cache header: {value}</p>;
 }
 
+export async function NextUseCacheDynamicConnectionProbe() {
+  await readPublicUseCacheConnection();
+  return <p>public use cache connection: allowed</p>;
+}
+
 async function readUseCacheValue(generation: number) {
   "use cache";
 
@@ -197,6 +203,12 @@ async function readPublicUseCacheHeader() {
 
   const headersStore = await headers();
   return headersStore.get("x-next-public-cache") ?? "missing";
+}
+
+async function readPublicUseCacheConnection() {
+  "use cache";
+
+  await connection();
 }
 
 export async function NextCacheProbe() {
