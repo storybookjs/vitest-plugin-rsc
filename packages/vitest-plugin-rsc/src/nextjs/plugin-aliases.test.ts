@@ -440,6 +440,28 @@ test("binds closure values for hoisted use cache directives", async () => {
   expect(result.code).toContain(".bind(null, prefix)");
 });
 
+test("rejects cached components with children until Next bound args are supported", async () => {
+  const plugin = findNextPlugin("next-rsc-use-cache-transform");
+  const configResolved = getHookHandler(plugin.configResolved);
+  const transform = getHookHandler(plugin.transform);
+
+  await configResolved.call({} as never, { root: fixtureRoot, mode: "test" } as never);
+
+  await expect(
+    transform.call(
+      { environment: { name: "client" } } as never,
+      `
+        export async function CachedBox({ children }: { children: React.ReactNode }) {
+          "use cache";
+
+          return <section>{children}</section>;
+        }
+      `,
+      path.join(fixtureRoot, "app/next-apis/use-cache-component-fixture.tsx"),
+    ),
+  ).rejects.toThrow(/cached components with children.*boundArgsLength/i);
+});
+
 test("does not hoist use cache directives when cacheComponents is disabled", async () => {
   const plugin = findNextPlugin("next-rsc-use-cache-transform");
   const configResolved = getHookHandler(plugin.configResolved);
