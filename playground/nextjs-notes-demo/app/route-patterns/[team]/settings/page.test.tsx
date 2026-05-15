@@ -1,6 +1,11 @@
 import { expect, test } from "vitest";
 import { page } from "vitest/browser";
 import { renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
+import { generateStaticParams } from "./page";
+
+test("dynamic app routes expose generateStaticParams", () => {
+  expect(generateStaticParams()).toEqual([{ team: "acme" }, { team: "beta" }]);
+});
 
 test("renderServer replaces the matched dynamic page inside the notes demo layouts", async () => {
   const { nextRouteManifest } = await import("virtual:vitest-plugin-rsc/next-routes");
