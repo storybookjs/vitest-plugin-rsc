@@ -342,7 +342,7 @@ Done:
 
 Remaining weakness:
 
-- Document fallback parsing is still custom. It parses inline `self.__next_f.push(...)` scripts, detects `NEXT_HTTP_ERROR_FALLBACK` by string search, and patches fallback seed data. That is a fragile part of the adapter.
+- Document fallback parsing is still an adapter because Vitest receives already-rendered document HTML instead of executing Next's app-index bootstrap in a real Next document. It now mirrors the `self.__next_f.push(...)` segment shape from Next app-index, parses only React Flight error rows for fallback/redirect digests, and patches fallback seed data through a narrow helper. The remaining fragility is the fallback seed-data patch, not broad digest string matching.
 - The no-op WebSocket for Next dev HotReload is a version-compat shim. It should stay isolated and covered by a targeted test.
 - Whole-document hydration must preserve Vitest's browser harness scripts while applying Next's head/body output. Done for the current tester HTML/head merge: notes-demo route hydration asserts preserved Vitest runtime scripts while applying Next title and metadata.
 - HTML responses are not required for every render. They are only needed where full document/head/error-fallback fidelity matters. The plugin should hydrate through its own controlled React/Vitest path, parse Next Flight bootstrap data without executing arbitrary Next inline scripts, and keep Vitest's harness scripts alive.
@@ -450,8 +450,8 @@ P0: design Cache Components support before expanding it.
 
 P0: reduce document fallback and manifest magic.
 
-- Isolate the inline Flight parser as a copied/adapted block from Next app-index if possible.
-- Replace broad string matching for `NEXT_HTTP_ERROR_FALLBACK` with Next helpers where they exist.
+- Done: isolate the inline Flight parser as a copied/adapted block from Next app-index. The Vitest adapter extracts the same `self.__next_f.push(...)` segment tuples from rendered document HTML and rebuilds the React Flight stream for hydration.
+- Done for access-fallback/redirect detection: inspect only React Flight rows, extract structured or encoded control-flow digests from those rows, then use Next's real `isHTTPAccessFallbackError`, `getAccessFallbackHTTPStatus`, and redirect helpers instead of broad document-wide `NEXT_HTTP_ERROR_FALLBACK` string matching.
 - Keep expanding notes-demo coverage for route-level fallbacks and document hydration. Done: route-level notFound, global-error, and error boundary document hydration.
 - Document why proxy manifests are necessary when Vite RSC owns references, and test the exact proxy contract.
 - Preserve Vitest harness scripts through plugin-level tester HTML/head merging. Done for the current document hydration path: a notes-demo browser test proves the plugin-level merge keeps Vitest runtime scripts while applying Next title/meta output.

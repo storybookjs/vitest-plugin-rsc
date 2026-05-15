@@ -6,12 +6,6 @@ import {
   RSC_CONTENT_TYPE_HEADER,
   RSC_HEADER,
 } from "next/dist/client/components/app-router-headers.js";
-import {
-  getAccessFallbackHTTPStatus,
-  isHTTPAccessFallbackError,
-} from "next/dist/client/components/http-access-fallback/http-access-fallback.js";
-import { getURLFromRedirectError } from "next/dist/client/components/redirect.js";
-import { isRedirectError } from "next/dist/client/components/redirect-error.js";
 import { renderToHTMLOrFlight } from "next/dist/server/app-render/app-render.js";
 import { WebNextRequest, WebNextResponse } from "next/dist/server/base-http/web.js";
 import type { RenderOpts } from "next/dist/server/app-render/types.js";
@@ -35,6 +29,11 @@ import {
   createViteRscClientModulesProxy,
   createViteRscModuleMappingProxy,
 } from "./app-render-manifest";
+import {
+  createNextHttpAccessFallbackError,
+  getNextHttpAccessFallbackStatus,
+  getNextRedirectUrlFromFlightPayloadText,
+} from "./flight-payload";
 import { getNextFontManifestForRender } from "./font-manifest";
 
 type NextIncrementalCacheConstructor =
@@ -167,7 +166,7 @@ export async function renderNextRouteInitialPayload(options: {
   const response = await renderNextRouteFlightResponse(options);
   if (response.status >= 400) {
     await response.body?.cancel();
-    throw new Error(`NEXT_HTTP_ERROR_FALLBACK;${response.status}`);
+    throw createNextHttpAccessFallbackError(response.status);
   }
 
   if (!response.body) {
@@ -176,9 +175,10 @@ export async function renderNextRouteInitialPayload(options: {
 
   const [inspectionStream, payloadStream] = response.body.tee();
   const flightPayloadText = await readReadableStreamText(inspectionStream);
-  if (isNextDocumentFallbackPayloadText(flightPayloadText)) {
+  const accessFallbackStatus = getNextHttpAccessFallbackStatus(flightPayloadText);
+  if (accessFallbackStatus !== undefined) {
     await payloadStream.cancel();
-    throw new Error("NEXT_HTTP_ERROR_FALLBACK;404");
+    throw createNextHttpAccessFallbackError(accessFallbackStatus);
   }
   const redirectUrl = getNextRedirectUrlFromFlightPayloadText(flightPayloadText);
   if (redirectUrl) {
@@ -794,42 +794,6 @@ const htmlClientReferenceManifest = {
   entryCSSFiles: {},
   entryJSFiles: {},
 } as never;
-
-function isNextDocumentFallbackPayloadText(text: string) {
-  return getNextDigestErrorsFromFlightPayloadText(text).some(
-    (error) => isHTTPAccessFallbackError(error) && getAccessFallbackHTTPStatus(error) === 404,
-  );
-}
-
-function getNextRedirectUrlFromFlightPayloadText(text: string) {
-  for (const error of getNextDigestErrorsFromFlightPayloadText(text)) {
-    if (isRedirectError(error)) {
-      const redirectUrl = getURLFromRedirectError(error);
-      if (redirectUrl) return redirectUrl;
-    }
-  }
-}
-
-function getNextDigestErrorsFromFlightPayloadText(text: string) {
-  const errors: Array<Error & { digest: string }> = [];
-
-  for (const match of text.matchAll(/"digest":"((?:\\.|[^"\\])*)"/g)) {
-    const encodedDigest = match[1];
-    if (!encodedDigest) continue;
-
-    try {
-      const digest = JSON.parse(`"${encodedDigest}"`);
-      if (typeof digest === "string") {
-        errors.push(Object.assign(new Error(digest), { digest }));
-      }
-    } catch {
-      // Ignore unrelated strings in the RSC wire payload. Next's own helpers
-      // below decide which parsed digests are route control-flow errors.
-    }
-  }
-
-  return errors;
-}
 
 async function readReadableStreamText(stream: ReadableStream<Uint8Array>) {
   const decoder = new TextDecoder();
