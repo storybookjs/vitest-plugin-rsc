@@ -8,20 +8,29 @@ test("normalizes Uint8Array needles for Next app-render stream helpers", () => {
   const prototype = Buffer.prototype as Buffer & {
     [patchedBufferIndexOfSymbol]?: true;
   };
-  const originalIndexOf = prototype.indexOf;
+  const originalIndexOf = prototype.indexOf as (
+    this: Buffer,
+    value: string | number | Uint8Array,
+    byteOffset?: number | BufferEncoding,
+    encoding?: BufferEncoding,
+  ) => number;
   let sawNormalizedNeedle = false;
 
   Object.defineProperty(prototype, "indexOf", {
     configurable: true,
     writable: true,
-    value(value: string | number | Uint8Array, byteOffset?: number | BufferEncoding) {
+    value(
+      value: string | number | Uint8Array,
+      byteOffset?: number | BufferEncoding,
+      encoding?: BufferEncoding,
+    ) {
       if (value instanceof Uint8Array && !Buffer.isBuffer(value)) {
         throw new TypeError("Buffer polyfill does not support Uint8Array needles");
       }
       if (Buffer.isBuffer(value)) {
         sawNormalizedNeedle = true;
       }
-      return originalIndexOf.call(this, value, byteOffset);
+      return originalIndexOf.call(this, value, byteOffset, encoding);
     },
   });
   delete prototype[patchedBufferIndexOfSymbol];
