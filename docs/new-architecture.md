@@ -280,7 +280,7 @@ Done:
 
 Remaining weakness:
 
-- We need coverage for `icon`, `apple-icon`, `favicon`, `opengraph-image`, `twitter-image`, generated image metadata, `robots`, `sitemap`, and `manifest` conventions.
+- Package coverage now proves the Vite adapter invokes Next's real `next-metadata-image-loader` for static metadata image files, including segment/basePath URL generation, content type, dimensions, and `.alt.txt` metadata. Still needed: notes-demo coverage for `icon`, `apple-icon`, `favicon`, `opengraph-image`, `twitter-image`, generated image metadata, `robots`, `sitemap`, and `manifest` conventions as user-visible routes.
 
 ### Routes and Loader Trees
 
@@ -521,7 +521,7 @@ P2: decide explicit non-goals.
 12. Done: coverage proves `renderServer(<ReactNode />)` uses a private fake-route/app-render path without document hydration, and `renderServer(<ReactNode />, { url })` can replace the matched page entry while preserving Next loader-tree layouts, params, and metadata.
 13. Add route-only `renderServer({ url })` coverage for important existing notes demo pages that still render direct components with manual props.
 14. Add coverage for App Router page exports. Done for `metadata`, `generateMetadata`, `viewport`, `generateViewport`, `generateStaticParams`, and first segment config smoke coverage for `dynamic`, `dynamicParams`, `revalidate`, `fetchCache`, `runtime`, `preferredRegion`, and `maxDuration`. Still needed: deeper param/static path interactions and behavior assertions for those segment configs beyond metadata/static-info collection.
-15. Add metadata route coverage for `generateImageMetadata`, `generateSitemaps`, static metadata files, `robots`, `sitemap`, `manifest`, `opengraph-image`, `twitter-image`, `icon`, `apple-icon`, and `favicon`.
+15. Add metadata route coverage for `generateImageMetadata`, `generateSitemaps`, static metadata files, `robots`, `sitemap`, `manifest`, `opengraph-image`, `twitter-image`, `icon`, `apple-icon`, and `favicon`. Done for the current loader-adapter layer: package coverage invokes Next's real metadata image loader for a static `opengraph-image` file with basePath, segment, dimensions, content type, and `.alt.txt` metadata. Still needed: notes-demo user-visible metadata route coverage and generated metadata-image routes.
 16. Done for the current direct route-handler scope: `next/server` coverage includes `userAgent`, `ImageResponse`, `NextRequest`, `NextResponse`, route handler methods, params, streaming, redirects, rewrites, and cookie mutation semantics. Future support should add a dedicated route-handler helper that invokes Next route modules instead of requiring direct imports.
 17. Add error/control-flow coverage. Done for render redirects/permanent redirects, `next.config` redirects, route notFound/forbidden/unauthorized/error/global-error, action redirects, action notFound/forbidden/unauthorized, `unstable_rethrow` in server actions, and `next/error` client boundaries. Redirect coverage must assert target content, redirect-hit markers, and the App Router client navigation spy for form/Server Action redirects. Still needed: route handler control flow, `unstable_rethrow` outside actions, and deeper document hydration/error recovery cases.
 18. Decide support for `instrumentation.ts`, `instrumentation-client.ts`, and `mdx-components.tsx`; add tests or explicit unsupported errors.
