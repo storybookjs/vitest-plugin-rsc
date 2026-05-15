@@ -12,7 +12,7 @@ test("notes demo renders Next app-router API aliases and compiler surfaces", asy
   await expect.element(page.getByText("Connection scope ready")).toBeVisible();
   await expect.element(page.getByText("Root params available: none")).toBeVisible();
   await expect.element(page.getByText("After task scheduled")).toBeVisible();
-  await vi.waitFor(() => expect(getAfterProbeRuns()).toBe(1));
+  expect(getAfterProbeRuns()).toBe(1);
   await expect
     .element(page.getByRole("link", { name: "Notes link" }))
     .toHaveAttribute("href", "/notes");
@@ -48,9 +48,13 @@ test("notes demo renders Next app-router API aliases and compiler surfaces", asy
   await expect.element(staticImage).toBeVisible();
   await expect.element(staticImage).toHaveAttribute("width", "32");
   await expect.element(staticImage).toHaveAttribute("height", "16");
-  expect(
-    document.querySelector<HTMLImageElement>('img[alt="Imported static logo"]')?.src,
-  ).toContain("/_next/static/media/static-logo.");
+  const staticImageSrc = document.querySelector<HTMLImageElement>(
+    'img[alt="Imported static logo"]',
+  )?.src;
+  expect(staticImageSrc).toContain("static-logo.");
+  const staticImageResponse = await fetch(staticImageSrc!);
+  expect(staticImageResponse.ok).toBe(true);
+  expect(await staticImageResponse.text()).toContain("static logo");
 
   const imagePropsImage = page.getByRole("img", { name: "Next getImageProps image" });
   await expect.element(imagePropsImage).toBeVisible();

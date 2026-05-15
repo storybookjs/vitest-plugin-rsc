@@ -2,11 +2,7 @@ import { fileURLToPath } from "node:url";
 import type { Alias, Plugin, UserConfig } from "vite";
 import { useNextAppRenderCompatibility } from "./app-render-compat-plugin";
 import { useNextLinkClientReference } from "./client-reference-plugin";
-import {
-  loadNextProjectConfig,
-  type NextConfigLike,
-  type NextImageConfig,
-} from "./config";
+import { loadNextProjectConfig, type NextConfigLike, type NextImageConfig } from "./config";
 import { useNextFontLoader } from "./font-loader-plugin";
 import { useNextImageClientReference } from "./image-plugin";
 import { useNextMetadataImageLoader } from "./metadata-image-loader-plugin";
@@ -704,6 +700,86 @@ function useNextCompiledOpenTelemetryApi(root: string): Plugin {
   };
 }
 
+function useNextReactDomServerAlias(root = process.cwd()): Plugin {
+  const reactDomServerAlias = tryResolveFromProject(
+    root,
+    "next/dist/build/webpack/alias/react-dom-server.js",
+  );
+  const appRenderSsrAliases = createNextAppRenderSsrAliases(root);
+
+  return {
+    name: "next-rsc-react-dom-server-alias",
+    enforce: "pre",
+    applyToEnvironment(environment) {
+      return environment.name === "client";
+    },
+    resolveId(source, importer) {
+      if (isNextAppRenderSsrImporter(importer)) {
+        const replacement = appRenderSsrAliases[source];
+        if (replacement) return replacement;
+      }
+
+      if (
+        reactDomServerAlias &&
+        (source === "react-dom/server" ||
+          source === "react-dom/server.js" ||
+          source === "react-dom/server.edge" ||
+          source === "react-dom/server.edge.js")
+      ) {
+        return reactDomServerAlias;
+      }
+
+      if (!isReactDomServerImporter(importer)) return;
+
+      return appRenderSsrAliases[source];
+    },
+  };
+}
+
+function createNextAppRenderSsrAliases(root: string) {
+  const entries = {
+    react: "next/dist/compiled/react",
+    "react/jsx-runtime": "next/dist/compiled/react/jsx-runtime",
+    "react/jsx-dev-runtime": "next/dist/compiled/react/jsx-dev-runtime",
+    "react-dom": "next/dist/compiled/react-dom",
+    "react-dom/server": "next/dist/build/webpack/alias/react-dom-server.js",
+    "react-dom/server.edge": "next/dist/build/webpack/alias/react-dom-server.js",
+    "react-dom/static": "next/dist/compiled/react-dom/static.edge",
+    "react-dom/static.edge": "next/dist/compiled/react-dom/static.edge",
+    "next/dist/compiled/react": "next/dist/compiled/react",
+    "next/dist/compiled/react/jsx-runtime": "next/dist/compiled/react/jsx-runtime",
+    "next/dist/compiled/react/jsx-dev-runtime": "next/dist/compiled/react/jsx-dev-runtime",
+    "next/dist/compiled/react-dom": "next/dist/compiled/react-dom",
+    "next/dist/compiled/react-dom/static.edge": "next/dist/compiled/react-dom/static.edge",
+  };
+
+  return Object.fromEntries(
+    Object.entries(entries).flatMap(([source, replacement]) => {
+      const resolved = tryResolveFromProject(root, replacement);
+      return resolved ? [[source, resolved]] : [];
+    }),
+  );
+}
+
+function isNextAppRenderSsrImporter(importer: string | undefined) {
+  return Boolean(
+    importer &&
+    /[/\\]next[/\\]dist[/\\](?:server[/\\](?:app-render|stream-utils)|lib[/\\]metadata)[/\\]/.test(
+      importer,
+    ) &&
+    !/[/\\]next[/\\]dist[/\\]server[/\\]app-render[/\\]entry-base\.js(?:\?|$)/.test(importer),
+  );
+}
+
+function isReactDomServerImporter(importer: string | undefined) {
+  return Boolean(
+    importer &&
+    /[/\\](?:react-dom-server|react-dom[/\\](?:cjs[/\\])?react-dom-server|react-dom[/\\](?:cjs[/\\])?server\.)/.test(
+      importer,
+    ),
+  );
+}
+
 function useVitestServerReferenceInfo(root = process.cwd()): Plugin {
   const original = tryResolveFromProject(root, "next/dist/shared/lib/server-reference-info.js");
 
@@ -802,9 +878,9 @@ function useNextEntryBase(): Plugin {
 	// Begin copy: Next.js app-render entry-base export surface
 	// Source: next/dist/server/app-render/entry-base.js export surface in the
 	// project Next.js version.
-	// Adaptation: Vite RSC provides the React Flight server implementation and
-	// client references, while the remaining exports keep Next app-render using
-	// its normal component-tree glue.
+	// Adaptation: real Next entry-base eagerly imports client components before
+	// Vite RSC can wrap them as client references, so this adapter keeps those
+	// client imports explicit while delegating the rest to real Next modules.
 	import { captureOwnerStack, createElement, Fragment } from "react";
 	import {
 	  createTemporaryReferenceSet,
@@ -871,6 +947,7 @@ export {
 	  preconnect,
 	  preloadFont,
 	  preloadStyle,
+	  prerender,
 	  renderToReadableStream,
 	  taintObjectReference,
 	  workAsyncStorage,
@@ -887,6 +964,9 @@ export {
 	    workAsyncStorage,
 	    workUnitAsyncStorage,
 	  });
+	}
+	async function prerender(model, clientModules, options) {
+	  return { prelude: await renderToReadableStream(model, clientModules, options) };
 	}
 	// End copy
 	`;
@@ -1035,6 +1115,7 @@ export function vitestPluginNext(): Plugin[] {
     useVitestServerReferenceInfo(),
     treatNextInternalsAsServerInRsc(),
     disableNextDevServerRuntime(),
+    useNextReactDomServerAlias(),
     useNextEntryBase(),
     useNextEntryBaseClientReferences(),
     ...useNextAppRenderCompatibility(),
@@ -1137,6 +1218,7 @@ export function vitestPluginNext(): Plugin[] {
                     useVitestServerReferenceInfo(root),
                     treatNextInternalsAsServerInRsc(),
                     disableNextDevServerRuntime(),
+                    useNextReactDomServerAlias(root),
                     useNextEntryBaseClientReferences(),
                     ...useNextAppRenderCompatibility(root),
                     useNextLinkClientReference(),

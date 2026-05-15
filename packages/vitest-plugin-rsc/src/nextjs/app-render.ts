@@ -34,6 +34,17 @@ type NextRenderManifests = {
   serverActionsManifest: unknown;
 };
 
+const emptyBuildManifest = {
+  devFiles: [],
+  polyfillFiles: [],
+  lowPriorityFiles: [],
+  rootMainFiles: ["static/chunks/vitest-plugin-rsc-next-bootstrap.js"],
+  rootMainFilesTree: {},
+  pages: {
+    "/_app": [],
+  },
+};
+
 let NextIncrementalCache: NextIncrementalCacheConstructor | undefined;
 let nextCacheGeneration = 0;
 
@@ -61,6 +72,43 @@ export async function renderNextRouteFlightResponse({
     requestHeaders.set(NEXT_ROUTER_STATE_TREE_HEADER, routerState);
   }
 
+  const manifests = {
+    page,
+    clientReferenceManifest: emptyClientReferenceManifest,
+    serverActionsManifest: emptyServerActionsManifest,
+  } satisfies NextRenderManifests;
+  await setNextRenderManifests(manifests);
+
+  return renderNextRouteResult({
+    loaderTree,
+    route,
+    page,
+    location,
+    request: createAppRenderRequest(location.href, {
+      headers: requestHeaders,
+    }),
+    componentMod,
+    manifests,
+  });
+}
+
+export async function renderNextRouteHtmlResponse({
+  loaderTree,
+  route,
+  page,
+  url,
+  headers,
+  componentMod,
+}: {
+  loaderTree: LoaderTree;
+  route: string;
+  page: string;
+  url: string;
+  headers?: Headers | Record<string, string>;
+  componentMod?: NextEntryBaseComponentMod;
+}): Promise<Response> {
+  const location = new URL(url, "http://localhost");
+  const requestHeaders = headers instanceof Headers ? new Headers(headers) : new Headers(headers);
   const manifests = {
     page,
     clientReferenceManifest: emptyClientReferenceManifest,
@@ -427,7 +475,7 @@ type RequestLifecycle = {
   waitUntil(promise: Promise<unknown>): void;
   onClose(callback: () => void): void;
   onAfterTaskError(error: unknown): void;
-  close(): void;
+  close(): Promise<void>;
 };
 
 function createRequestLifecycle(): RequestLifecycle {
@@ -465,7 +513,7 @@ function createRequestLifecycle(): RequestLifecycle {
     onAfterTaskError(error) {
       console.error(error);
     },
-    close() {
+    async close() {
       if (closed) return;
 
       closed = true;
@@ -474,20 +522,21 @@ function createRequestLifecycle(): RequestLifecycle {
       for (const callback of callbacks) {
         callback();
       }
+      await Promise.allSettled(waitUntilPromises);
     },
   };
 
   return lifecycle;
 }
 
-function closeStreamOnCompletion<T>(readable: ReadableStream<T>, close: () => void) {
+function closeStreamOnCompletion<T>(readable: ReadableStream<T>, close: () => Promise<void>) {
   const reader = readable.getReader();
 
   return new ReadableStream<T>({
     async pull(controller) {
       const result = await reader.read();
       if (result.done) {
-        close();
+        await close();
         controller.close();
         return;
       }
@@ -495,8 +544,11 @@ function closeStreamOnCompletion<T>(readable: ReadableStream<T>, close: () => vo
       controller.enqueue(result.value);
     },
     async cancel(reason) {
-      close();
-      await reader.cancel(reason);
+      try {
+        await close();
+      } finally {
+        await reader.cancel(reason);
+      }
     },
   });
 }
@@ -513,8 +565,11 @@ function createNextRenderOpts(
   return {
     basePath: readNextDefineString(process.env.__NEXT_BASE_PATH, defaultConfig.basePath),
     supportsDynamicResponse: true,
+    buildManifest: emptyBuildManifest,
+    crossOrigin: undefined,
     clientReferenceManifest: manifests.clientReferenceManifest,
     serverActionsManifest: manifests.serverActionsManifest,
+    subresourceIntegrityManifest: undefined,
     images: {
       ...defaultConfig.images,
       ...readNextDefineObject(process.env.__NEXT_IMAGE_OPTS),

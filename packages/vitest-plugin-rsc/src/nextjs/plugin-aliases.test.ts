@@ -1,3 +1,5 @@
+import fs from "node:fs";
+import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import type { Alias, Plugin, UserConfig } from "vite";
 import { expect, test } from "vitest";
@@ -94,6 +96,18 @@ test("replaces next/root-params through Next's root params loader", async () => 
   }
 });
 
+test("keeps the Next entry-base adapter aligned with Next's export surface", async () => {
+  const plugin = findNextPlugin("next-rsc-entry-base");
+  const load = getHookHandler(plugin.load);
+  const code = (await load.call(
+    {} as never,
+    "\0vitest-plugin-rsc:next-entry-base",
+    {} as never,
+  )) as string;
+
+  expect(parseEntryBaseExports(code)).toEqual(parseRealNextEntryBaseExports());
+});
+
 async function resolveNextPluginConfig(): Promise<UserConfig> {
   const previousCwd = process.cwd();
   const plugin = findNextPlugin("next-rsc-plugin");
@@ -137,4 +151,29 @@ function getHookHandler<T extends (...args: never[]) => unknown>(
 ): T {
   if (!hook) throw new Error("Expected Vite hook to be defined.");
   return typeof hook === "function" ? hook : hook.handler;
+}
+
+function parseEntryBaseExports(code: string) {
+  const exportBlocks = [...code.matchAll(/export\s*\{([\s\S]*?)\};/g)]
+    .flatMap((match) => match[1]!.split(","))
+    .map((name) => name.trim())
+    .filter(Boolean);
+  const exportDeclarations = [...code.matchAll(/export\s+(?:const|function)\s+([A-Za-z0-9_$]+)/g)]
+    .map((match) => match[1]!)
+    .filter(Boolean);
+
+  return [...new Set([...exportBlocks, ...exportDeclarations])].sort();
+}
+
+function parseRealNextEntryBaseExports() {
+  const projectRequire = createRequire(new URL("package.json", `file://${fixtureRoot}/`));
+  const entryBasePath = projectRequire.resolve("next/dist/server/app-render/entry-base.js");
+  const source = fs.readFileSync(entryBasePath, "utf8");
+  const exportShape = source.match(/0 && \(module\.exports = \{([\s\S]*?)\}\);/)?.[1];
+
+  if (!exportShape) {
+    throw new Error("Could not find Next entry-base export shape.");
+  }
+
+  return [...exportShape.matchAll(/^\s*([A-Za-z0-9_$]+):/gm)].map((match) => match[1]!).sort();
 }

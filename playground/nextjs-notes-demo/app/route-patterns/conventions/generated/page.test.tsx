@@ -15,7 +15,5 @@ test("renderServer resolves generated metadata and segment config exports", asyn
   expect(document.querySelector('meta[name="theme-color"]')?.getAttribute("content")).toBe(
     "#123456",
   );
-  expect(document.querySelector('meta[name="color-scheme"]')?.getAttribute("content")).toBe(
-    "dark",
-  );
+  expect(document.querySelector('meta[name="color-scheme"]')?.getAttribute("content")).toBe("dark");
 });

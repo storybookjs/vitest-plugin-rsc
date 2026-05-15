@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import type { Plugin } from "vite";
+import type { Plugin, ResolvedConfig } from "vite";
 import { loadNextProjectConfig } from "./config";
 import { createProjectRequire, getProjectRoot } from "./plugin-utils";
 
@@ -13,6 +13,8 @@ const cssImporterPattern = /\.(?:css|scss|sass|less|styl)(?:$|\?)/;
 export function useNextImageClientReference(): Plugin {
   let root = process.cwd();
   let mode = "test";
+  let command: ResolvedConfig["command"] = "serve";
+  const devStaticAssets = new Map<string, { contentType: string; source: Buffer }>();
 
   return {
     name: "next-rsc-image-client-reference",
@@ -20,6 +22,25 @@ export function useNextImageClientReference(): Plugin {
     configResolved(config) {
       root = getProjectRoot(config);
       mode = config.mode;
+      command = config.command;
+    },
+    configureServer(server) {
+      server.middlewares.use((req, res, next) => {
+        if (!req.url) {
+          next();
+          return;
+        }
+
+        const asset = devStaticAssets.get(new URL(req.url, "http://localhost").pathname);
+        if (!asset) {
+          next();
+          return;
+        }
+
+        res.statusCode = 200;
+        res.setHeader("Content-Type", asset.contentType);
+        res.end(asset.source);
+      });
     },
     async resolveId(source, importer, options) {
       if (source === "next/image" || source === "next/image.js") {
@@ -53,7 +74,18 @@ export function useNextImageClientReference(): Plugin {
       if (id.startsWith(virtualNextStaticImagePrefix)) {
         const imagePath = decodeURIComponent(id.slice(virtualNextStaticImagePrefix.length));
         this.addWatchFile(imagePath);
-        return loadNextStaticImage(root, mode, imagePath);
+        return loadNextStaticImage(root, mode, imagePath, {
+          emitAsset:
+            command === "build"
+              ? (fileName, source) => this.emitFile({ type: "asset", fileName, source })
+              : undefined,
+          registerDevAsset(url, source) {
+            devStaticAssets.set(new URL(url, "http://localhost").pathname, {
+              contentType: getImageContentType(imagePath),
+              source,
+            });
+          },
+        });
       }
 
       if (id === virtualNextImageId) {
@@ -115,7 +147,15 @@ type NextTraceSpan = {
   traceFn<T>(fn: () => T): T;
 };
 
-async function loadNextStaticImage(root: string, mode: string, imagePath: string) {
+async function loadNextStaticImage(
+  root: string,
+  mode: string,
+  imagePath: string,
+  assets: {
+    emitAsset?: (fileName: string, source: Buffer) => string;
+    registerDevAsset(url: string, source: Buffer): void;
+  },
+) {
   const projectConfig = await loadNextProjectConfig(root, mode);
   const loaderModule = createProjectRequire(root)(
     "next/dist/build/webpack/loaders/next-image-loader/index.js",
@@ -125,7 +165,8 @@ async function loadNextStaticImage(root: string, mode: string, imagePath: string
     throw new Error("Could not load Next image loader");
   }
 
-  return loader.call(
+  const emittedAssets = new Map<string, string>();
+  const code = await loader.call(
     {
       currentTraceSpan: createNoopTraceSpan(),
       getOptions: () => ({
@@ -137,10 +178,59 @@ async function loadNextStaticImage(root: string, mode: string, imagePath: string
       rootContext: root,
       resourcePath: imagePath,
       context: path.dirname(imagePath),
-      emitFile() {},
+      emitFile(name, content) {
+        const nextUrl = `${projectConfig.assetPrefix}${projectConfig.basePath}/_next${name}`;
+
+        if (!assets.emitAsset) {
+          assets.registerDevAsset(nextUrl, content);
+          return;
+        }
+
+        const fileName = path.posix.join("_next", name.replace(/^\/+/, ""));
+        emittedAssets.set(nextUrl, assets.emitAsset(fileName, content));
+      },
     },
     await fs.promises.readFile(imagePath),
   );
+
+  return rewriteNextImageAssetUrls(code, emittedAssets);
+}
+
+function rewriteNextImageAssetUrls(code: string, emittedAssets: Map<string, string>) {
+  let rewritten = code;
+
+  for (const [nextUrl, referenceId] of emittedAssets) {
+    rewritten = rewritten.replaceAll(
+      JSON.stringify(nextUrl),
+      `import.meta.ROLLUP_FILE_URL_${referenceId}`,
+    );
+  }
+
+  return rewritten;
+}
+
+function getImageContentType(filePath: string) {
+  switch (path.extname(filePath).toLowerCase()) {
+    case ".svg":
+      return "image/svg+xml";
+    case ".png":
+      return "image/png";
+    case ".jpg":
+    case ".jpeg":
+      return "image/jpeg";
+    case ".gif":
+      return "image/gif";
+    case ".webp":
+      return "image/webp";
+    case ".avif":
+      return "image/avif";
+    case ".ico":
+      return "image/x-icon";
+    case ".bmp":
+      return "image/bmp";
+    default:
+      return "application/octet-stream";
+  }
 }
 
 function createNoopTraceSpan(): NextTraceSpan {

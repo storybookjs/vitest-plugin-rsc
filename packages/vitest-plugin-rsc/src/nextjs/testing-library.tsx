@@ -1,4 +1,5 @@
 import "next/dist/server/node-environment-baseline";
+import { isHTTPAccessFallbackError } from "next/dist/client/components/http-access-fallback/http-access-fallback.js";
 import { isNextRouterError } from "next/dist/client/components/is-next-router-error.js";
 import type { LoaderTree } from "next/dist/server/lib/app-dir-module.js";
 import { normalizeAppPath } from "next/dist/shared/lib/router/utils/app-paths.js";
@@ -20,6 +21,7 @@ import {
   createNextDirectComponentMod,
   renderNextRouteActionResponse,
   renderNextRouteFlightResponse,
+  renderNextRouteHtmlResponse,
   renderNextRouteInitialPayload,
   resetNextAppRenderCache,
   type NextNavigationFlightPayload,
@@ -259,12 +261,35 @@ export async function renderServer(
     try {
       let initialStream: ReadableStream<Uint8Array> | undefined;
       let documentHtml: string | undefined;
+      let documentOnly = false;
       if (hydrateDocument) {
         shouldRestoreDocument = true;
-        initialStream = await fetchRsc();
-        const [ssrStream, clientStream] = initialStream.tee();
-        initialStream = clientStream;
-        documentHtml = await ssr.renderToHtml(ssrStream);
+        try {
+          initialStream = await fetchRsc();
+          const [ssrStream, clientStream] = initialStream.tee();
+          initialStream = clientStream;
+          documentHtml = await ssr.renderToHtml(ssrStream);
+          if (isBlankDocumentHtml(documentHtml)) {
+            documentHtml = await renderNextDocumentHtml(renderSource, requestUrl, requestRoute, {
+              headers,
+            });
+            documentOnly = true;
+            initialStream = undefined;
+          }
+        } catch (error) {
+          if (
+            !isNextHttpAccessFallbackError(error) &&
+            !isNextBuiltinGlobalErrorReferenceError(error)
+          ) {
+            throw error;
+          }
+
+          documentHtml = await renderNextDocumentHtml(renderSource, requestUrl, requestRoute, {
+            headers,
+          });
+          documentOnly = true;
+          initialStream = undefined;
+        }
       }
 
       root = await client.createTestingLibraryClientRoot({
@@ -273,6 +298,7 @@ export async function renderServer(
         fetchRsc,
         serverActionCaller,
         hydrateDocument,
+        documentOnly,
         initialStream,
         documentHtml,
       });
@@ -299,6 +325,48 @@ export async function renderServer(
       return document.createRange().createContextualFragment(container.innerHTML);
     },
   };
+}
+
+function isNextHttpAccessFallbackError(error: unknown) {
+  const message = getErrorMessage(error);
+  return (
+    isHTTPAccessFallbackError(error) ||
+    message.startsWith("NEXT_HTTP_ERROR_FALLBACK;") ||
+    message.includes("NEXT_HTTP_ERROR_FALLBACK;")
+  );
+}
+
+function isBlankDocumentHtml(html: string | undefined) {
+  return !html?.trim();
+}
+
+function isNextBuiltinGlobalErrorReferenceError(error: unknown) {
+  return getErrorMessage(error).includes("next_dist_client_components_builtin_global-error");
+}
+
+function getErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : String(error);
+}
+
+async function renderNextDocumentHtml(
+  source: NextRenderSource,
+  url: string,
+  requestRoute: string,
+  options: { headers?: Headers | Record<string, string> },
+) {
+  const appRenderEntry = resolveAppRenderEntry(source, url, requestRoute);
+  const componentMod = shouldUseDirectMetadataStub(source, appRenderEntry)
+    ? await createNextDirectComponentMod()
+    : undefined;
+  const response = await renderNextRouteHtmlResponse({
+    loaderTree: appRenderEntry.loaderTree,
+    route: appRenderEntry.route,
+    page: appRenderEntry.appPath,
+    url,
+    headers: options.headers,
+    componentMod,
+  });
+  return response.text();
 }
 
 async function unmountRoot(container: Container, removeContainer: boolean) {
@@ -545,9 +613,7 @@ function replacePageModule(
 ): { loaderTree: LoaderTree; replaced: boolean } {
   const [segment, parallelRoutes, modules, metadata] = loaderTree;
   let replaced = modules.page?.[1] === pageFile;
-  const nextModules = replaced
-    ? { ...modules, page: createPageModule(modules.page) }
-    : modules;
+  const nextModules = replaced ? { ...modules, page: createPageModule(modules.page) } : modules;
   const nextParallelRoutes: Record<string, LoaderTree> = {};
 
   for (const [key, childTree] of Object.entries(parallelRoutes)) {

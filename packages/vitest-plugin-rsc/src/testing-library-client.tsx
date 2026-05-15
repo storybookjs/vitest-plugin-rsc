@@ -28,10 +28,20 @@ export async function createTestingLibraryClientRoot(options: {
   fetchRsc: FetchRsc;
   serverActionCaller?: ServerActionCaller;
   hydrateDocument?: boolean;
+  documentOnly?: boolean;
   initialStream?: ReadableStream<Uint8Array>;
   documentHtml?: string;
 }) {
   let setPayload: (v: RscPayload) => void;
+
+  if (options.documentOnly) {
+    resetReactDocumentExpandos();
+    applyDocumentHtml(options.documentHtml);
+    return {
+      rerender: async () => {},
+      unmount: async () => resetReactDocumentExpandos(),
+    };
+  }
 
   const initialPayload = await ReactClient.createFromReadableStream<RscPayload>(
     options.initialStream ?? (await options.fetchRsc()),
@@ -126,7 +136,11 @@ async function createRoot(
   return reactRoot!;
 }
 
-function applyDocumentHtml(html: string) {
+function applyDocumentHtml(html: string | undefined) {
+  if (!html) {
+    throw new Error("hydrateDocument requires a document HTML snapshot.");
+  }
+
   const parsed = new DOMParser().parseFromString(`<!doctype html>${html}`, "text/html");
 
   syncAttributes(document.documentElement, parsed.documentElement);

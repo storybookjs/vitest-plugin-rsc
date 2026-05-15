@@ -11,7 +11,8 @@ export function getAfterProbeRuns() {
 }
 
 export function AfterProbe() {
-  after(() => {
+  after(async () => {
+    await new Promise((resolve) => setTimeout(resolve, 0));
     afterRuns += 1;
   });
 
