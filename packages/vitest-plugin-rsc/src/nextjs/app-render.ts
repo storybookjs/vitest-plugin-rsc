@@ -11,6 +11,7 @@ import {
   isHTTPAccessFallbackError,
 } from "next/dist/client/components/http-access-fallback/http-access-fallback.js";
 import { getURLFromRedirectError } from "next/dist/client/components/redirect.js";
+import { isRedirectError } from "next/dist/client/components/redirect-error.js";
 import { renderToHTMLOrFlight } from "next/dist/server/app-render/app-render.js";
 import { WebNextRequest, WebNextResponse } from "next/dist/server/base-http/web.js";
 import type { RenderOpts } from "next/dist/server/app-render/types.js";
@@ -20,6 +21,7 @@ import { IncrementalCache } from "next/dist/server/lib/incremental-cache/index.j
 import { tagsManifest } from "next/dist/server/lib/incremental-cache/tags-manifest.external.js";
 import { NEXT_PATCH_SYMBOL } from "next/dist/server/lib/patch-fetch.js";
 import { addRequestMeta } from "next/dist/server/request-meta.js";
+import { initializeCacheHandlers } from "next/dist/server/use-cache/handlers.js";
 import type { LoaderTree } from "next/dist/server/lib/app-dir-module.js";
 import type RenderResult from "next/dist/server/render-result.js";
 import type { InitialRSCPayload } from "next/dist/shared/lib/app-router-types";
@@ -42,9 +44,7 @@ export class NextAppRenderRedirectError extends Error {
   }
 }
 
-export function isNextAppRenderRedirectError(
-  error: unknown,
-): error is NextAppRenderRedirectError {
+export function isNextAppRenderRedirectError(error: unknown): error is NextAppRenderRedirectError {
   return error instanceof NextAppRenderRedirectError;
 }
 
@@ -506,6 +506,7 @@ function ensureNextAppRenderGlobals() {
   globalScope.process.env ??= {};
   globalScope.process.env["NEXT_RUNTIME"] ??= "edge";
   NextIncrementalCache = IncrementalCache;
+  initializeCacheHandlers(Number(defaultConfig.cacheMaxMemorySize ?? 50 * 1024 * 1024));
   ensureNextEdgeIncrementalCache(IncrementalCache);
 }
 
@@ -822,8 +823,10 @@ function isNextDocumentFallbackPayloadText(text: string) {
 
 function getNextRedirectUrlFromFlightPayloadText(text: string) {
   for (const error of getNextDigestErrorsFromFlightPayloadText(text)) {
-    const redirectUrl = getURLFromRedirectError(error);
-    if (redirectUrl) return redirectUrl;
+    if (isRedirectError(error)) {
+      const redirectUrl = getURLFromRedirectError(error);
+      if (redirectUrl) return redirectUrl;
+    }
   }
 }
 

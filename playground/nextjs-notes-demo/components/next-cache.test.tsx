@@ -1,7 +1,12 @@
 import { expect, test } from "vitest";
 import { page } from "vitest/browser";
 import { cleanup, renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
-import { NextCacheProbe, NextNoStoreProbe, resetNextCacheProbe } from "./next-cache-probe";
+import {
+  NextCacheHandlerProbe,
+  NextCacheProbe,
+  NextNoStoreProbe,
+  resetNextCacheProbe,
+} from "./next-cache-probe";
 
 test("server refresh rerenders without invalidating cached data", async () => {
   await renderNextCacheProbe();
@@ -55,6 +60,12 @@ test("unstable_noStore is available in a request render scope", async () => {
   await renderServer(<NextNoStoreProbe />, { url: "/next-no-store-probe" });
 
   await expect.element(page.getByText("unstable noStore called")).toBeVisible();
+});
+
+test("app-render initializes Next cache handlers", async () => {
+  await renderServer(<NextCacheHandlerProbe />, { url: "/next-cache-handler-probe" });
+
+  await expect.element(page.getByText("cache handlers: default, remote")).toBeVisible();
 });
 
 test("server actions without refresh or invalidation do not rerender the current tree", async () => {

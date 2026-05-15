@@ -6,6 +6,7 @@ import {
   unstable_noStore,
   updateTag,
 } from "next/cache";
+import { getCacheHandlerEntries } from "next/dist/server/use-cache/handlers.js";
 import {
   nextCacheProbeFetchUrl,
   nextCacheProbeNoStoreFetchUrl,
@@ -40,6 +41,14 @@ export function resetNextCacheProbe(label = "default") {
 export function NextNoStoreProbe() {
   unstable_noStore();
   return <p>unstable noStore called</p>;
+}
+
+export function NextCacheHandlerProbe() {
+  const kinds = Array.from(getCacheHandlerEntries() ?? [])
+    .map(([kind]) => kind)
+    .join(", ");
+
+  return <p>cache handlers: {kinds || "none"}</p>;
 }
 
 export async function NextCacheProbe() {
