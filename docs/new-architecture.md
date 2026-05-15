@@ -360,7 +360,7 @@ Add focused tests in `playground/nextjs-notes-demo` before claiming more fidelit
 
 - `next/font`: exported declarations, default export, shared font definition module, Google variable font, Google non-variable weights/styles, local single file, local multi-file, `className`, `variable`, `style.fontFamily`, `style.fontWeight`, `style.fontStyle`, fallback fonts, `adjustFontFallback`, `declarations`, browser CSS injection, build asset output, and route-scoped preload behavior.
 - `next/image`: static png/jpeg/webp/avif/svg imports, `placeholder="blur"`, `fill`, `sizes`, `priority`/`preload`, remote URL config, custom loader, default loader URL generation, `unoptimized`, invalid prop errors, and image config from `next.config`.
-- App route conventions: `loading`, `error`, `global-error`, `not-found`, `forbidden`, `unauthorized`, `default`, `template`, route groups, parallel routes, intercepting routes, metadata files, `metadata`, `generateMetadata`, `viewport`, `generateViewport`, `generateImageMetadata`, `generateSitemaps`, static/dynamic params, `mdx-components`, `instrumentation`, `instrumentation-client`, and route segment config exports such as `dynamic`, `dynamicParams`, `revalidate`, `fetchCache`, `runtime`, `preferredRegion`, and `maxDuration`.
+- App route conventions: `loading`, `error`, `global-error`, `not-found`, `forbidden`, `unauthorized`, `default`, `template`, route groups, parallel routes, intercepting routes, metadata files, `metadata`, `generateMetadata`, `viewport`, `generateViewport`, `generateStaticParams`, `generateImageMetadata`, `generateSitemaps`, static/dynamic params, `mdx-components`, `instrumentation`, `instrumentation-client`, and route segment config exports such as `dynamic`, `dynamicParams`, `revalidate`, `fetchCache`, `runtime`, `preferredRegion`, and `maxDuration`.
 - Route Handlers: `GET`, `POST`, `PUT`, `PATCH`, `DELETE`, `HEAD`, `OPTIONS`, `NextRequest`, `NextResponse`, cookies, redirects, streaming, params, and route segment config.
 - `next/navigation`: all hooks and control-flow functions in both route-render and direct-node modes.
 - `next/cache`: cache invalidation, tags, `unstable_cache`, no-store, `connection`, `after`, cache components, `fetch` cache semantics, and `use cache` directives.
@@ -464,13 +464,14 @@ P2: decide explicit non-goals.
 11. Add a plugin-level test that whole-document Next rendering preserves Vitest harness scripts while applying Next head/meta/title output.
 12. Add a route-handler decision test: either prove `route.ts` execution through Next route module code or assert a clear unsupported error.
 13. Add coverage that `renderServer(<ReactNode />)` uses the fake-route/app-render path and that `renderServer({ url })` can replace the matched page entry without bypassing Next's loader tree.
-14. Add coverage for App Router page exports: `metadata`, `generateMetadata`, `viewport`, `generateViewport`, `dynamic`, `dynamicParams`, `revalidate`, `fetchCache`, `runtime`, `preferredRegion`, and `maxDuration`.
-15. Add metadata route coverage for `generateImageMetadata`, `generateSitemaps`, static metadata files, `robots`, `sitemap`, `manifest`, `opengraph-image`, `twitter-image`, `icon`, `apple-icon`, and `favicon`.
-16. Add `next/server` coverage for `userAgent`, `ImageResponse`, route handler streaming, redirects, rewrites, and cookie mutation semantics.
-17. Add error/control-flow coverage for `unstable_rethrow`, `catchError`, and thrown control-flow errors across render, action, route handler, and hydration paths.
-18. Decide support for `instrumentation.ts`, `instrumentation-client.ts`, and `mdx-components.tsx`; add tests or explicit unsupported errors.
-19. Decide PPR/adapter-runtime scope and add streaming/Suspense fallback tests that document what the browser-mode test adapter does and does not emulate.
-20. Add coverage for `useLinkStatus`, `useReportWebVitals`, `next/error`, and `next/web-vitals` in the browser/client graph.
+14. Add route-only `renderServer({ url })` coverage for important existing notes demo pages that still render direct components with manual props, especially `/notes`, `/notes/[id]`, `/notes/new`, auth pages, and profile.
+15. Add coverage for App Router page exports: `metadata`, `generateMetadata`, `viewport`, `generateViewport`, `generateStaticParams`, `dynamic`, `dynamicParams`, `revalidate`, `fetchCache`, `runtime`, `preferredRegion`, and `maxDuration`.
+16. Add metadata route coverage for `generateImageMetadata`, `generateSitemaps`, static metadata files, `robots`, `sitemap`, `manifest`, `opengraph-image`, `twitter-image`, `icon`, `apple-icon`, and `favicon`.
+17. Add `next/server` coverage for `userAgent`, `ImageResponse`, route handler streaming, redirects, rewrites, and cookie mutation semantics.
+18. Add error/control-flow coverage for `unstable_rethrow`, `catchError`, and thrown control-flow errors across render, action, route handler, and hydration paths.
+19. Decide support for `instrumentation.ts`, `instrumentation-client.ts`, and `mdx-components.tsx`; add tests or explicit unsupported errors.
+20. Decide PPR/adapter-runtime scope and add streaming/Suspense fallback tests that document what the browser-mode test adapter does and does not emulate.
+21. Add coverage for `useLinkStatus`, `useReportWebVitals`, `next/error`, and `next/web-vitals` in the browser/client graph.
 
 ## Review Checklist For Future Work
 
