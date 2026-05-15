@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { expect, test, vi } from "vitest";
 import { page } from "vitest/browser";
 import { cleanup, renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
@@ -6,6 +7,7 @@ import {
   NextCacheProbe,
   NextNoStoreProbe,
   NextUseCacheDynamicApiProbe,
+  NextUseCacheDynamicHeadersProbe,
   NextUseCacheProbe,
   resetNextCacheProbe,
 } from "./next-cache-probe";
@@ -129,23 +131,48 @@ test("use cache functions are hoisted into Next cache components runtime", async
 test("public use cache scopes reject request dynamic APIs", async () => {
   resetNextCacheProbe();
 
+  await expectPublicUseCacheDynamicApiError(
+    <NextUseCacheDynamicApiProbe />,
+    /cookies\(\).*use cache/i,
+    {
+      headers: { cookie: "next-public-cache=public-value" },
+      url: "/next-use-cache-dynamic-api-probe",
+    },
+  );
+});
+
+test("public use cache scopes reject request headers", async () => {
+  resetNextCacheProbe();
+
+  await expectPublicUseCacheDynamicApiError(
+    <NextUseCacheDynamicHeadersProbe />,
+    /headers\(\).*use cache/i,
+    {
+      headers: { "x-next-public-cache": "public-value" },
+      url: "/next-use-cache-dynamic-headers-probe",
+    },
+  );
+});
+
+async function expectPublicUseCacheDynamicApiError(
+  ui: ReactNode,
+  expected: RegExp,
+  options: Parameters<typeof renderServer>[1],
+) {
   const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
   const consoleLog = vi.spyOn(console, "log").mockImplementation(() => {});
   try {
-    await renderServer(<NextUseCacheDynamicApiProbe />, {
-      headers: { cookie: "next-public-cache=public-value" },
-      url: "/next-use-cache-dynamic-api-probe",
-    });
+    await renderServer(ui, options);
 
     const messages = [...consoleError.mock.calls, ...consoleLog.mock.calls].map((args) =>
       args.map(String).join(" "),
     );
-    expect(messages.some((message) => /cookies\(\).*use cache/i.test(message))).toBe(true);
+    expect(messages.some((message) => expected.test(message))).toBe(true);
   } finally {
     consoleError.mockRestore();
     consoleLog.mockRestore();
   }
-});
+}
 
 test("server actions without refresh or invalidation do not rerender the current tree", async () => {
   await renderNextCacheProbe();

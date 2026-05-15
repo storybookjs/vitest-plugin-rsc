@@ -1,5 +1,9 @@
 import { Buffer } from "node:buffer";
 import { expect, test } from "vitest";
+import {
+  createViteRscClientModulesProxy,
+  createViteRscModuleMappingProxy,
+} from "./app-render-manifest";
 import { patchBufferIndexOfUint8ArrayNeedle } from "./buffer-compat";
 
 const patchedBufferIndexOfSymbol = Symbol.for("vitest-plugin-rsc.nextjs.patchedBufferIndexOf");
@@ -51,4 +55,25 @@ test("normalizes Uint8Array needles for Next app-render stream helpers", () => {
     });
     delete prototype[patchedBufferIndexOfSymbol];
   }
+});
+
+test("normalizes Vite RSC cache wrapper module ids in Next manifest proxies", () => {
+  const clientModules = createViteRscClientModulesProxy() as Record<string, unknown>;
+  const moduleMapping = createViteRscModuleMappingProxy() as Record<
+    string,
+    Record<string, unknown>
+  >;
+
+  expect(clientModules["/src/client-card.tsx$$cache=abc123#ClientCard"]).toEqual({
+    id: "/src/client-card.tsx",
+    name: "ClientCard",
+    chunks: [],
+    async: true,
+  });
+  expect(moduleMapping["/src/client-card.tsx$$cache=abc123"]?.ClientCard).toEqual({
+    id: "/src/client-card.tsx",
+    name: "ClientCard",
+    chunks: [],
+    async: true,
+  });
 });

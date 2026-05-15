@@ -1324,6 +1324,7 @@ export function __next_rsc_use_cache(kind, id, originalFn) {
       if (!(await enabledPromise)) return;
 
       const ast = await parseAstAsync(code, { lang: getParserLanguage(id) }, id);
+      assertSupportedNextUseCacheFunctions(ast, id);
       const result = transformHoistInlineDirective(code, ast as never, {
         runtime: (value, name, meta) => {
           const kind = getNextUseCacheKind(meta.directiveMatch[1]);
@@ -1346,6 +1347,115 @@ export function __next_rsc_use_cache(kind, id, originalFn) {
       };
     },
   };
+}
+
+function assertSupportedNextUseCacheFunctions(ast: unknown, id: string) {
+  walkAst(ast, (node) => {
+    if (!isFunctionWithBlock(node) || !hasNextUseCacheDirective(node)) return;
+    if (!hasChildrenParameter(node) || !containsJsx(node.body)) return;
+
+    const file = normalizePath(id.replace(/\?.*$/, ""));
+    throw new Error(
+      `Next cached components with children are not supported yet in ${file}. ` +
+        `The current Vite RSC hoist cannot produce Next's encrypted boundArgsLength call shape; ` +
+        `move children outside the "use cache" boundary or avoid cached components with children.`,
+    );
+  });
+}
+
+type AstNode = {
+  type?: string;
+  body?: unknown;
+  params?: unknown[];
+  properties?: unknown[];
+  argument?: unknown;
+  key?: unknown;
+  name?: string;
+  expression?: unknown;
+  value?: unknown;
+};
+
+function isFunctionWithBlock(node: AstNode): node is AstNode & {
+  body: { type: "BlockStatement"; body: AstNode[] };
+  params: AstNode[];
+} {
+  return (
+    (node.type === "FunctionDeclaration" ||
+      node.type === "FunctionExpression" ||
+      node.type === "ArrowFunctionExpression") &&
+    isAstNode(node.body) &&
+    node.body.type === "BlockStatement" &&
+    Array.isArray(node.body.body) &&
+    Array.isArray(node.params)
+  );
+}
+
+function hasNextUseCacheDirective(node: { body: { body: AstNode[] } }) {
+  return node.body.body.some((statement) => {
+    if (
+      statement.type !== "ExpressionStatement" ||
+      !isAstNode(statement.expression) ||
+      statement.expression.type !== "Literal" ||
+      typeof statement.expression.value !== "string"
+    ) {
+      return false;
+    }
+
+    return /^use cache(?:: [\w-]+)?$/.test(statement.expression.value);
+  });
+}
+
+function hasChildrenParameter(node: { params: AstNode[] }) {
+  return node.params.some(hasChildrenBinding);
+}
+
+function hasChildrenBinding(node: AstNode): boolean {
+  if (node.type === "Identifier") return node.name === "children";
+  if (node.type !== "ObjectPattern" || !Array.isArray(node.properties)) return false;
+
+  return node.properties.some((property) => {
+    if (!isAstNode(property)) return false;
+    if (property.type === "RestElement" && isAstNode(property.argument)) {
+      return hasChildrenBinding(property.argument);
+    }
+    if (property.type !== "Property" && property.type !== "ObjectProperty") return false;
+    if (isChildrenPropertyKey(property.key)) return true;
+    return isAstNode(property.value) && hasChildrenBinding(property.value);
+  });
+}
+
+function isChildrenPropertyKey(key: unknown) {
+  return (
+    (isAstNode(key) && key.type === "Identifier" && key.name === "children") ||
+    (isAstNode(key) && key.type === "Literal" && key.value === "children")
+  );
+}
+
+function containsJsx(node: unknown) {
+  let found = false;
+  walkAst(node, (candidate) => {
+    if (candidate.type === "JSXElement" || candidate.type === "JSXFragment") {
+      found = true;
+    }
+  });
+  return found;
+}
+
+function walkAst(node: unknown, visit: (node: AstNode) => void) {
+  if (!isAstNode(node)) return;
+  visit(node);
+
+  for (const value of Object.values(node)) {
+    if (Array.isArray(value)) {
+      for (const item of value) walkAst(item, visit);
+    } else {
+      walkAst(value, visit);
+    }
+  }
+}
+
+function isAstNode(value: unknown): value is AstNode {
+  return typeof value === "object" && value !== null && "type" in value;
 }
 
 function getNextUseCacheKind(kind: string | undefined) {

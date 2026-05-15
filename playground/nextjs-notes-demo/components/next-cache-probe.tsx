@@ -8,7 +8,7 @@ import {
   unstable_noStore,
   updateTag,
 } from "next/cache";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { getCacheHandlerEntries } from "next/dist/server/use-cache/handlers.js";
 import {
   nextCacheProbeFetchUrl,
@@ -119,6 +119,11 @@ export async function NextUseCacheDynamicApiProbe() {
   return <p>public use cache cookie: {value}</p>;
 }
 
+export async function NextUseCacheDynamicHeadersProbe() {
+  const value = await readPublicUseCacheHeader();
+  return <p>public use cache header: {value}</p>;
+}
+
 async function readUseCacheValue(generation: number) {
   "use cache";
 
@@ -185,6 +190,13 @@ async function readPublicUseCacheCookie() {
 
   const cookieStore = await cookies();
   return cookieStore.get("next-public-cache")?.value ?? "missing";
+}
+
+async function readPublicUseCacheHeader() {
+  "use cache";
+
+  const headersStore = await headers();
+  return headersStore.get("x-next-public-cache") ?? "missing";
 }
 
 export async function NextCacheProbe() {
