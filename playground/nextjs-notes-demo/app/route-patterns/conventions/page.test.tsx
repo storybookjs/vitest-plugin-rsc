@@ -1,5 +1,6 @@
 import { expect, test, vi } from "vitest";
 import { page } from "vitest/browser";
+import type { LoaderTree } from "next/dist/server/lib/app-dir-module.js";
 import { renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
 
 test("renderServer resolves page metadata through Next route conventions", async () => {
@@ -7,6 +8,14 @@ test("renderServer resolves page metadata through Next route conventions", async
 
   await expect.element(page.getByRole("heading", { name: "Route conventions" })).toBeVisible();
   expect(document.title).toBe("Route convention metadata");
+});
+
+test("Next loader tree includes route-level loading conventions", async () => {
+  const { nextRouteManifest } = await import("virtual:vitest-plugin-rsc/next-routes");
+  const entry = nextRouteManifest.find((route) => route.route === "/route-patterns/conventions");
+
+  expect(entry).toBeDefined();
+  expect(hasLoaderTreeModule(entry!.loaderTree, "loading")).toBe(true);
 });
 
 test("renderServer resolves route-level not-found conventions through Next", async () => {
@@ -85,4 +94,10 @@ async function ignoreExpectedConsoleErrors<T>(messages: string[], callback: () =
     spy.mockRestore();
     logSpy.mockRestore();
   }
+}
+
+function hasLoaderTreeModule(loaderTree: LoaderTree, moduleName: string): boolean {
+  if (moduleName in loaderTree[2]) return true;
+
+  return Object.values(loaderTree[1]).some((child) => hasLoaderTreeModule(child, moduleName));
 }
