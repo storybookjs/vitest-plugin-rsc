@@ -87,6 +87,11 @@ export async function NextUseCacheProbe() {
   );
 }
 
+export async function NextUseCacheDynamicApiProbe() {
+  const value = await readPublicUseCacheCookie();
+  return <p>public use cache cookie: {value}</p>;
+}
+
 async function readUseCacheValue(generation: number) {
   "use cache";
 
@@ -115,6 +120,13 @@ async function readPrivateUseCacheCookie() {
 
   const cookieStore = await cookies();
   return cookieStore.get("next-private-cache")?.value ?? "missing";
+}
+
+async function readPublicUseCacheCookie() {
+  "use cache";
+
+  const cookieStore = await cookies();
+  return cookieStore.get("next-public-cache")?.value ?? "missing";
 }
 
 export async function NextCacheProbe() {

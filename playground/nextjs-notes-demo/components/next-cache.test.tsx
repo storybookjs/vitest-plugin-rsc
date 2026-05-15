@@ -1,10 +1,11 @@
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 import { page } from "vitest/browser";
 import { cleanup, renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
 import {
   NextCacheHandlerProbe,
   NextCacheProbe,
   NextNoStoreProbe,
+  NextUseCacheDynamicApiProbe,
   NextUseCacheProbe,
   resetNextCacheProbe,
 } from "./next-cache-probe";
@@ -95,6 +96,27 @@ test("use cache functions are hoisted into Next cache components runtime", async
     .toBeVisible();
   await expect.element(page.getByText("use cache life reads: 1")).toBeVisible();
   await expect.element(page.getByText("use cache private cookie: private-value")).toBeVisible();
+});
+
+test("public use cache scopes reject request dynamic APIs", async () => {
+  resetNextCacheProbe();
+
+  const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+  const consoleLog = vi.spyOn(console, "log").mockImplementation(() => {});
+  try {
+    await renderServer(<NextUseCacheDynamicApiProbe />, {
+      headers: { cookie: "next-public-cache=public-value" },
+      url: "/next-use-cache-dynamic-api-probe",
+    });
+
+    const messages = [...consoleError.mock.calls, ...consoleLog.mock.calls].map((args) =>
+      args.map(String).join(" "),
+    );
+    expect(messages.some((message) => /cookies\(\).*use cache/i.test(message))).toBe(true);
+  } finally {
+    consoleError.mockRestore();
+    consoleLog.mockRestore();
+  }
 });
 
 test("server actions without refresh or invalidation do not rerender the current tree", async () => {
