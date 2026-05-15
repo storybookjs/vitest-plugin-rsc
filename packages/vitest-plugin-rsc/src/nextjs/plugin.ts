@@ -376,9 +376,16 @@ async function createNextRootParamsModule({
   }
 
   const projectRequire = createProjectRequire(root);
-  const loaderModule = projectRequire(
-    "next/dist/build/webpack/loaders/next-root-params-loader.js",
-  ) as NextRootParamsLoaderModule;
+  let loaderModule: NextRootParamsLoaderModule;
+  try {
+    loaderModule = projectRequire(
+      "next/dist/build/webpack/loaders/next-root-params-loader.js",
+    ) as NextRootParamsLoaderModule;
+  } catch {
+    return createNextInvalidImportModule(
+      "'next/root-params' is not supported by this Next.js version.",
+    );
+  }
   const rootParamsLoader = loaderModule.default ?? loaderModule;
   const pageExtensions = projectConfig.pageExtensions;
 
