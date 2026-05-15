@@ -884,6 +884,14 @@ const nextEntryBaseClientReferenceImports: Record<string, NextEntryBaseClientRef
   "../../next-devtools/userspace/app/segment-explorer-node.js": "segment-explorer-node",
 };
 
+// Next's app-render entry-base is a server-layer CJS module that re-exports
+// client components via relative require() calls. Next's webpack/Turbopack
+// layer metadata keeps those imports as client references. Vite/Rolldown dep
+// optimization otherwise inlines the CJS "use client" modules into the RSC
+// optimized chunk, so they execute with React Server aliases. Keep the real
+// Next entry-base module, but intercept only these entry-base imports so the
+// RSC graph receives client references and the browser/SSR graphs load the
+// real Next client modules.
 function useNextEntryBaseClientReferences(): Plugin {
   return {
     name: "next-rsc-entry-base-client-references",
