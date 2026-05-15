@@ -1193,6 +1193,12 @@ function treatNextInternalsAsServerInRsc(): Plugin {
     transform(code, id) {
       if (!isNextInternalModule(id)) return;
 
+      // Next compiles server-layer internals with server/edge constants. The
+      // Vite RSC environment also defines these values, but Next internals can
+      // enter dep-optimizer chunks before Vite's normal define pass has removed
+      // browser branches. Keep this source rewrite isolated to installed
+      // Next internals in the RSC runner until it can be replaced by optimizer
+      // define/condition configuration.
       let nextCode = rewriteNextRuntimeChecks(code);
       nextCode = rewriteTypeofWindowChecks(nextCode);
       if (nextCode === code) return;

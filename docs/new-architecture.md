@@ -162,7 +162,7 @@ It also aliases React Server DOM webpack imports to `@vitejs/plugin-rsc`'s vendo
 
 The base RSC plugin now copies `optimizeDeps.entries` from the visible `client` environment into the hidden `react_client` and `react_ssr` runners and warms those optimizers for Vitest browser servers. The Next plugin contributes `app/**` and `src/app/**` as source scan entries when those directories exist. Keep that behavior as a requirement: those hidden module runners import client references after Vitest's initial browser bootstrap, and without shared scan roots plus warmup Vite can discover dependencies mid-test and reload the page. Do not reintroduce notes-demo-only `appShellOptimizeDeps` lists for ESM UI libraries.
 
-Remaining weakness: `treatNextInternalsAsServerInRsc` rewrites `process.env.NEXT_RUNTIME` and `typeof window` inside Next internals. This may be necessary for the Vite optimized chunks, but it is still a code rewrite hack. The next step is to reduce it to the smallest proven set, or replace it with environment/condition/define configuration.
+Remaining weakness: `treatNextInternalsAsServerInRsc` rewrites `process.env.NEXT_RUNTIME` and `typeof window` inside Next internals. Package coverage now locks the current scope to installed `next/dist` internals, proves the `NEXT_RUNTIME`/`typeof window` rewrite is RSC-environment-only, and proves the `__NEXT_DEV_SERVER` compat rewrite does not touch user or non-Next modules. This may be necessary for the Vite optimized chunks, but it is still a code rewrite hack. The next step is to reduce it to a smaller proven module set, or replace it with environment/condition/define configuration.
 
 ### Entry-base Client References
 
@@ -462,6 +462,7 @@ P0: prove or remove Buffer/process/runtime patches.
 - Prefer define/env/alias configuration over source rewrites.
 - Keep the Buffer ProvidePlugin-style import because Next webpack does this for edge/client bundles.
 - Do not keep the `Buffer.prototype.indexOf` patch without a targeted regression test and a note pointing to the Next code path that needs it.
+- Done for the current source-rewrite shims: package coverage proves the `NEXT_RUNTIME`/`typeof window` rewrite is limited to installed Next internals in the RSC environment and that `__NEXT_DEV_SERVER` rewriting stays Next-internal-only. Still needed: replace or narrow these rewrites with optimizer defines/conditions where possible.
 
 P1: broaden API and convention coverage.
 
@@ -491,6 +492,7 @@ P1: reduce broad source rewrites.
 - Replace broad rewrites with defines, aliases, conditions, or targeted adapters where possible.
 - Keep only rewrites that have a failing regression test and an upstream behavior note.
 - Remove demo-app `optimizeDeps.include` workarounds for ESM app-shell dependencies. Keep explicit prebundling scoped to CJS dependencies, Next internals, or packages with a targeted optimizer regression, and fix missing hidden-runner scan roots in the plugin instead of the app.
+- Done for the current optimizer-policy regression: hidden `react_client` and `react_ssr` runners inherit visible client scan entries and are warmed by the base plugin, while demo configs list only targeted Next internals rather than broad ESM app-shell dependencies.
 
 P2: decide explicit non-goals.
 
