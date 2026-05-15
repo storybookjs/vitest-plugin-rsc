@@ -34,6 +34,7 @@ Official docs checked:
 - Functions: <https://nextjs.org/docs/app/api-reference/functions>
 - Route Handlers: <https://nextjs.org/docs/app/getting-started/route-handlers>
 - Adapter entrypoints: <https://nextjs.org/docs/app/api-reference/adapters/invoking-entrypoints>
+- Adapter PPR/runtime integration docs in the local Next docs tree.
 - Image config: <https://nextjs.org/docs/app/api-reference/config/next-config-js/images>
 
 Local source clones checked:
@@ -329,7 +330,9 @@ Covered or partially covered:
 Not honestly complete yet:
 
 - Full `next/navigation` hook matrix: `useParams`, `useSearchParams`, `usePathname`, `useRouter`, `useSelectedLayoutSegment(s)`, `redirect`, `permanentRedirect`, `notFound`, `forbidden`, `unauthorized`.
-- Full `next/cache` matrix: `revalidatePath`, `revalidateTag`, `updateTag`, `cacheLife`, `cacheTag`, `unstable_cache`, `unstable_noStore`, `connection`, `after`, `refresh`, cache-components and `use cache` variants.
+- Full `next/cache` and request lifecycle matrix: `revalidatePath`, `revalidateTag`, `updateTag`, `cacheLife`, `cacheTag`, `unstable_cache`, `unstable_noStore`, `connection`, `after`, `refresh`, `fetch` cache semantics, cache-components, and `use cache` variants.
+- Full `next/server` matrix: `NextRequest`, `NextResponse`, `userAgent`, `ImageResponse`, route handler streaming, cookies, redirects, rewrites, and middleware/proxy-adjacent behavior.
+- Full error/control-flow matrix: `unstable_rethrow`, `catchError`, thrown redirects/notFound/forbidden/unauthorized across RSC render, action responses, route handlers, and document hydration.
 - Route Handlers as first-class render targets. The docs make `route.ts` a major App Router surface; we currently test some `NextRequest`/`NextResponse` behavior, but the route rendering helper is page-oriented.
 
 ## Test Coverage We Have
@@ -357,16 +360,19 @@ Add tests before claiming more fidelity:
 
 - `next/font`: exported declarations, default export, shared font definition module, Google variable font, Google non-variable weights/styles, local single file, local multi-file, `className`, `variable`, `style.fontFamily`, `style.fontWeight`, `style.fontStyle`, fallback fonts, `adjustFontFallback`, `declarations`, browser CSS injection, build asset output, and route-scoped preload behavior.
 - `next/image`: static png/jpeg/webp/avif/svg imports, `placeholder="blur"`, `fill`, `sizes`, `priority`/`preload`, remote URL config, custom loader, default loader URL generation, `unoptimized`, invalid prop errors, and image config from `next.config`.
-- App route conventions: `loading`, `error`, `global-error`, `not-found`, `forbidden`, `unauthorized`, `default`, `template`, route groups, parallel routes, intercepting routes, metadata files, `metadata`, `generateMetadata`, `viewport`, `generateViewport`, static/dynamic params, and route segment config exports such as `dynamic`, `dynamicParams`, `revalidate`, `fetchCache`, `runtime`, `preferredRegion`, and `maxDuration`.
+- App route conventions: `loading`, `error`, `global-error`, `not-found`, `forbidden`, `unauthorized`, `default`, `template`, route groups, parallel routes, intercepting routes, metadata files, `metadata`, `generateMetadata`, `viewport`, `generateViewport`, `generateImageMetadata`, `generateSitemaps`, static/dynamic params, `mdx-components`, `instrumentation`, `instrumentation-client`, and route segment config exports such as `dynamic`, `dynamicParams`, `revalidate`, `fetchCache`, `runtime`, `preferredRegion`, and `maxDuration`.
 - Route Handlers: `GET`, `POST`, `PUT`, `PATCH`, `DELETE`, `HEAD`, `OPTIONS`, `NextRequest`, `NextResponse`, cookies, redirects, streaming, params, and route segment config.
 - `next/navigation`: all hooks and control-flow functions in both route-render and direct-node modes.
-- `next/cache`: cache invalidation, tags, `unstable_cache`, no-store, `connection`, `after`, cache components, and `use cache` directives.
+- `next/cache`: cache invalidation, tags, `unstable_cache`, no-store, `connection`, `after`, cache components, `fetch` cache semantics, and `use cache` directives.
+- `next/server`: `NextRequest`, `NextResponse`, `userAgent`, `ImageResponse`, route handler streaming, cookies, redirects, and rewrite behavior.
+- Client hooks and diagnostics: `useLinkStatus`, `useReportWebVitals`, `next/error`, `next/web-vitals`, `unstable_rethrow`, and `catchError`.
 - `next.config`: rewrites, redirects, headers, basePath, trailingSlash, assetPrefix, image config, env, transpilePackages, modularizeImports, optimizePackageImports, compiler options, typed routes where applicable, and root params.
 - Browser hydration: document fallback, route-level notFound, global-error, action redirects, form progressive enhancement, refresh, and navigation state after action responses.
 - Entry-base and RSC optimizer boundary: direct import of real `next/dist/server/app-render/entry-base.js`, CommonJS `"use client"` dependency preservation, devtools segment explorer references, no direct execution of client modules under React Server aliases, and an upstream `@vitejs/plugin-rsc` repro.
 - Manifest contracts: `clientModules`, `ssrModuleMapping`, `edgeSSRModuleMapping`, `rscModuleMapping`, `edgeRscModuleMapping`, server action manifest workers, layer shape, and cache wrapper decode paths.
 - Test harness stability: custom tester HTML, preserved Vitest scripts, whole-document React expando cleanup, server action caller cleanup, and non-default Vitest API ports.
 - Version compatibility: supported stable Next, latest stable Next, canary Next, and optional-internal fallbacks for missing loaders such as `next-root-params-loader`.
+- Adapter/runtime behavior: streaming boundaries, Suspense/loading fallback behavior, partial-prerendering/PPR scope, dynamic IO/cache-components scope, and adapter entrypoint assumptions.
 
 ## Highest Priority Fixes
 
@@ -413,6 +419,7 @@ P1: broaden API and convention coverage.
 - Add small fixture routes instead of using only the notes demo flows.
 - Keep the notes demo as the in-tree acceptance app, not the only specification.
 - Prefer the notes demo for realistic App Router state, request stores, cookies, cache, actions, and MSW-routed transport.
+- Keep a visible gap list for App Router docs features that are intentionally unsupported, especially instrumentation, proxy/middleware, route handlers, PPR, image optimization, and Node runtime parity.
 
 P1: handle Next config fidelity.
 
@@ -437,6 +444,8 @@ P2: decide explicit non-goals.
 - Pages Router is currently not the architectural target.
 - `next/legacy/image` is not covered.
 - Middleware/proxy is not covered as an execution surface.
+- `instrumentation.ts`, `instrumentation-client.ts`, and `mdx-components.tsx` need an explicit support decision before being claimed.
+- PPR/production adapter output behavior is not covered until we design a test-runtime equivalent.
 - Node.js runtime parity is not the default browser-mode target. The edge-shaped App Router runtime is the pragmatic default unless we design a separate Node test mode.
 - Production Next build output is not the same as this test adapter. When we mimic build-only behavior, tests must state the exact compatibility goal.
 
@@ -456,6 +465,12 @@ P2: decide explicit non-goals.
 12. Add a route-handler decision test: either prove `route.ts` execution through Next route module code or assert a clear unsupported error.
 13. Add coverage that `renderServer(<ReactNode />)` uses the fake-route/app-render path and that `renderServer({ url })` can replace the matched page entry without bypassing Next's loader tree.
 14. Add coverage for App Router page exports: `metadata`, `generateMetadata`, `viewport`, `generateViewport`, `dynamic`, `dynamicParams`, `revalidate`, `fetchCache`, `runtime`, `preferredRegion`, and `maxDuration`.
+15. Add metadata route coverage for `generateImageMetadata`, `generateSitemaps`, static metadata files, `robots`, `sitemap`, `manifest`, `opengraph-image`, `twitter-image`, `icon`, `apple-icon`, and `favicon`.
+16. Add `next/server` coverage for `userAgent`, `ImageResponse`, route handler streaming, redirects, rewrites, and cookie mutation semantics.
+17. Add error/control-flow coverage for `unstable_rethrow`, `catchError`, and thrown control-flow errors across render, action, route handler, and hydration paths.
+18. Decide support for `instrumentation.ts`, `instrumentation-client.ts`, and `mdx-components.tsx`; add tests or explicit unsupported errors.
+19. Decide PPR/adapter-runtime scope and add streaming/Suspense fallback tests that document what the browser-mode test adapter does and does not emulate.
+20. Add coverage for `useLinkStatus`, `useReportWebVitals`, `next/error`, and `next/web-vitals` in the browser/client graph.
 
 ## Review Checklist For Future Work
 
