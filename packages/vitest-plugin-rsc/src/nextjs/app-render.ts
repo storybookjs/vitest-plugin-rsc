@@ -22,6 +22,7 @@ import { normalizeAppPath } from "next/dist/shared/lib/router/utils/app-paths.js
 import { getRouteMatcher } from "next/dist/shared/lib/router/utils/route-matcher.js";
 import { getRouteRegex } from "next/dist/shared/lib/router/utils/route-regex.js";
 import * as ReactServer from "@vitejs/plugin-rsc/react/rsc";
+import { patchBufferIndexOfUint8ArrayNeedle } from "./buffer-compat";
 
 type NextIncrementalCacheConstructor =
   typeof import("next/dist/server/lib/incremental-cache/index.js").IncrementalCache;
@@ -48,7 +49,6 @@ const emptyBuildManifest = {
 
 let NextIncrementalCache: NextIncrementalCacheConstructor | undefined;
 let nextCacheGeneration = 0;
-const patchedBufferIndexOfSymbol = Symbol.for("vitest-plugin-rsc.nextjs.patchedBufferIndexOf");
 
 export async function renderNextRouteFlightResponse({
   loaderTree,
@@ -484,39 +484,6 @@ function ensureNextAppRenderGlobals() {
   globalScope.process.env["NEXT_RUNTIME"] ??= "edge";
   NextIncrementalCache = IncrementalCache;
   ensureNextEdgeIncrementalCache(IncrementalCache);
-}
-
-function patchBufferIndexOfUint8ArrayNeedle(BufferCtor: typeof Buffer) {
-  const prototype = BufferCtor.prototype as Buffer & {
-    [patchedBufferIndexOfSymbol]?: true;
-  };
-  if (prototype[patchedBufferIndexOfSymbol]) return;
-
-  type BufferIndexOfImplementation = (
-    this: Buffer,
-    value: string | number | Uint8Array,
-    byteOffset?: number | BufferEncoding,
-    encoding?: BufferEncoding,
-  ) => number;
-
-  const originalIndexOf = prototype.indexOf as BufferIndexOfImplementation;
-  const patchedIndexOf: BufferIndexOfImplementation = function patchedIndexOf(
-    value,
-    byteOffset,
-    encoding,
-  ) {
-    const normalizedValue =
-      value instanceof Uint8Array && !BufferCtor.isBuffer(value)
-        ? BufferCtor.from(value.buffer, value.byteOffset, value.byteLength)
-        : value;
-    return originalIndexOf.call(this, normalizedValue, byteOffset, encoding);
-  };
-  Object.defineProperty(prototype, "indexOf", {
-    configurable: true,
-    writable: true,
-    value: patchedIndexOf,
-  });
-  prototype[patchedBufferIndexOfSymbol] = true;
 }
 
 type RequestLifecycle = {
