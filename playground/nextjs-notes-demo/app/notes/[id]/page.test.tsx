@@ -1,4 +1,5 @@
-import { expect, test } from "vitest";
+import { eq } from "drizzle-orm";
+import { expect, test, vi } from "vitest";
 import { page } from "vitest/browser";
 import { db } from "#lib/db.ts";
 import { notes } from "#db/schema.ts";
@@ -87,4 +88,25 @@ test("renders the favorite badge for favorited notes", async () => {
   await expect
     .element(page.getByRole("button", { name: "Unfavorite note" }))
     .toHaveAttribute("aria-pressed", "true");
+});
+
+test("delete note action redirects to the notes route", async () => {
+  await signInAs();
+  await db.insert(notes).values({
+    id: noteId,
+    ownerId: testUser.id,
+    title: "Delete redirect target",
+    content: "This note should be removed by the action.",
+    updatedAt,
+  });
+
+  await renderServer({ url: `/notes/${noteId}` });
+  await page.getByRole("button", { name: "Delete" }).click();
+
+  await vi.waitFor(async () => {
+    const deletedNotes = await db.select().from(notes).where(eq(notes.id, noteId));
+    expect(deletedNotes).toHaveLength(0);
+  });
+  await expect.element(page.getByRole("heading", { level: 1, name: "Notes" })).toBeInTheDocument();
+  await expect.element(page.getByText("No notes yet")).toBeInTheDocument();
 });
