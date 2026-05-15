@@ -352,7 +352,7 @@ Notes demo acceptance coverage includes realistic combinations of:
 
 - App routes and layouts.
 - Dynamic route replacement.
-- Route groups, catch-all, optional catch-all, templates, parallel default slots, selected layout segments, metadata, generated metadata, and not-found.
+- Route groups, catch-all, optional catch-all, templates, parallel default slots, selected layout segments, metadata, generated metadata, not-found, forbidden, and unauthorized.
 - Route-only `renderServer({ url })` coverage for `/notes`, `/notes/new`, `/notes/[id]`, `/notes/[id]/edit`, auth pages, and `/profile` so Next resolves the page module, params, search params, and loader tree itself.
 - `next/link`, `next/form`, `next/script`, `next/image`, `getImageProps`, `next/dynamic`, `next/head` ignored by App Router, and client error boundaries.
 - Cookies, headers, draft mode, cache, Server Actions, redirects, refresh, and MSW-routed RSC/action transport.
@@ -461,7 +461,7 @@ P2: decide explicit non-goals.
 
 1. Add a focused test that imports the real `next/dist/server/app-render/entry-base.js` in the RSC environment and proves the optimized chunk contains client-reference proxies, not inlined client modules.
 2. Draft an upstream `@vitejs/plugin-rsc` issue or failing fixture for CommonJS `"use client"` modules required from server dependencies during RSC dependency optimization.
-3. Add notes-demo tests for `loading.tsx`, `error.tsx`, `global-error.tsx`, `forbidden.tsx`, and `unauthorized.tsx`.
+3. Add notes-demo tests for `loading.tsx`, `error.tsx`, and `global-error.tsx`. Done: `forbidden.tsx` and `unauthorized.tsx` render through the same loader-tree access-fallback path as `not-found.tsx`.
 4. Replace or justify the `Buffer.prototype.indexOf` patch with a minimal regression test pointing at the Next code path that needs it.
 5. Extend static image tests for dev serving, build emission, SVG policy, blur placeholder behavior, and image config loaded from `next.config`.
 6. Start next/font asset/preload work: emitted font files, CSS module contract, route-scoped preload metadata, and browser-visible `className`, `variable`, and `style` assertions.

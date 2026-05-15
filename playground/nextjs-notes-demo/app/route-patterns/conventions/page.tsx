@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { notFound } from "next/navigation";
+import { forbidden, notFound, unauthorized } from "next/navigation";
 
 export const metadata: Metadata = {
   title: "Route convention metadata",
@@ -12,6 +12,8 @@ export default async function ConventionPage({
 }) {
   const { mode } = await searchParams;
   if (mode === "not-found") notFound();
+  if (mode === "forbidden") forbidden();
+  if (mode === "unauthorized") unauthorized();
 
   return (
     <main>

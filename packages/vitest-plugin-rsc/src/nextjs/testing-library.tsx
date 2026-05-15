@@ -1,5 +1,9 @@
 import "next/dist/server/node-environment-baseline";
-import { isHTTPAccessFallbackError } from "next/dist/client/components/http-access-fallback/http-access-fallback.js";
+import {
+  getAccessFallbackErrorTypeByStatus,
+  getAccessFallbackHTTPStatus,
+  isHTTPAccessFallbackError,
+} from "next/dist/client/components/http-access-fallback/http-access-fallback.js";
 import { isNextRouterError } from "next/dist/client/components/is-next-router-error.js";
 import type { LoaderTree } from "next/dist/server/lib/app-dir-module.js";
 import { normalizeAppPath } from "next/dist/shared/lib/router/utils/app-paths.js";
@@ -281,20 +285,23 @@ export async function renderServer(
           documentOnly: false,
         };
       };
-      const renderNextDocumentClientFallback = async () => {
+      const renderNextDocumentClientFallback = async (status?: number) => {
         const appRenderEntry = resolveAppRenderEntry(renderSource, requestUrl, requestRoute);
-        const routeNotFoundNode = await loadDeepestNotFoundNode(appRenderEntry.loaderTree);
-        if (routeNotFoundNode) {
-          return renderServerRootForHydration(routeNotFoundNode);
+        const accessFallbackNode = await loadDeepestAccessFallbackNode(
+          appRenderEntry.loaderTree,
+          status,
+        );
+        if (accessFallbackNode) {
+          return renderServerRootForHydration(accessFallbackNode);
         }
 
         const documentHtml = await renderNextDocumentHtml(renderSource, requestUrl, requestRoute, {
           headers,
         });
         const initialRSCPayload = await createNextDocumentInitialPayload(documentHtml);
-        const accessFallbackNode = findInitialAccessFallbackNode(initialRSCPayload);
-        if (accessFallbackNode) {
-          return renderServerRootForHydration(accessFallbackNode);
+        const initialAccessFallbackNode = findInitialAccessFallbackNode(initialRSCPayload);
+        if (initialAccessFallbackNode) {
+          return renderServerRootForHydration(initialAccessFallbackNode);
         }
         applyInitialAccessFallback(initialRSCPayload);
         const rscPayload: RscPayload = {
@@ -315,8 +322,9 @@ export async function renderServer(
           initialStream = await fetchRsc();
           const [inspectionStream, renderStream] = initialStream.tee();
           const flightPayloadText = await readReadableStreamText(inspectionStream);
-          if (isNextDocumentFallbackPayloadText(flightPayloadText)) {
-            const fallbackRender = await renderNextDocumentClientFallback();
+          const accessFallbackStatus = getNextHttpAccessFallbackStatus(flightPayloadText);
+          if (accessFallbackStatus) {
+            const fallbackRender = await renderNextDocumentClientFallback(accessFallbackStatus);
             documentHtml = fallbackRender.documentHtml;
             initialStream = fallbackRender.initialStream;
             hydrateClientRoot = fallbackRender.hydrateDocument;
@@ -334,14 +342,12 @@ export async function renderServer(
             }
           }
         } catch (error) {
-          if (
-            !isNextHttpAccessFallbackError(error) &&
-            !isNextBuiltinGlobalErrorReferenceError(error)
-          ) {
+          const accessFallbackStatus = getNextHttpAccessFallbackStatus(error);
+          if (!accessFallbackStatus && !isNextBuiltinGlobalErrorReferenceError(error)) {
             throw error;
           }
 
-          const fallbackRender = await renderNextDocumentClientFallback();
+          const fallbackRender = await renderNextDocumentClientFallback(accessFallbackStatus);
           documentHtml = fallbackRender.documentHtml;
           initialStream = fallbackRender.initialStream;
           hydrateClientRoot = fallbackRender.hydrateDocument;
@@ -366,12 +372,15 @@ export async function renderServer(
         if (
           !hydrateDocument ||
           documentOnly ||
-          (!isNextHttpAccessFallbackError(error) && !isNextBuiltinGlobalErrorReferenceError(error))
+          (!getNextHttpAccessFallbackStatus(error) &&
+            !isNextBuiltinGlobalErrorReferenceError(error))
         ) {
           throw error;
         }
 
-        const fallbackRender = await renderNextDocumentClientFallback();
+        const fallbackRender = await renderNextDocumentClientFallback(
+          getNextHttpAccessFallbackStatus(error),
+        );
         root = await client.createTestingLibraryClientRoot({
           ...clientRootOptions,
           hydrateDocument: fallbackRender.hydrateDocument,
@@ -406,12 +415,20 @@ export async function renderServer(
 }
 
 function isNextHttpAccessFallbackError(error: unknown) {
-  const message = getErrorMessage(error);
-  return (
-    isHTTPAccessFallbackError(error) ||
-    message.startsWith("NEXT_HTTP_ERROR_FALLBACK") ||
-    message.includes("NEXT_HTTP_ERROR_FALLBACK")
-  );
+  return getNextHttpAccessFallbackStatus(error) !== undefined;
+}
+
+function getNextHttpAccessFallbackStatus(errorOrText: unknown) {
+  if (isHTTPAccessFallbackError(errorOrText)) {
+    return getAccessFallbackHTTPStatus(errorOrText);
+  }
+
+  const message = getErrorMessage(errorOrText);
+  const match = /NEXT_HTTP_ERROR_FALLBACK;(\d+)/.exec(message);
+  if (!match) return;
+
+  const status = Number(match[1]);
+  return getAccessFallbackErrorTypeByStatus(status) ? status : undefined;
 }
 
 function isBlankDocumentHtml(html: string | undefined) {
@@ -420,10 +437,6 @@ function isBlankDocumentHtml(html: string | undefined) {
 
 function isNextBuiltinGlobalErrorReferenceError(error: unknown) {
   return getErrorMessage(error).includes("next_dist_client_components_builtin_global-error");
-}
-
-function isNextDocumentFallbackPayloadText(text: string) {
-  return text.includes('"digest":"NEXT_HTTP_ERROR_FALLBACK;404"');
 }
 
 function getErrorMessage(error: unknown) {
@@ -915,24 +928,33 @@ function wrapRootLayoutLoaderTree(
   return [segment, parallelRoutes, { ...modules, layout: wrappedLayout }, metadata] as LoaderTree;
 }
 
-async function loadDeepestNotFoundNode(loaderTree: LoaderTree): Promise<ReactNode | undefined> {
-  const notFoundModule = findDeepestNotFoundModule(loaderTree);
-  if (!notFoundModule) return;
+async function loadDeepestAccessFallbackNode(
+  loaderTree: LoaderTree,
+  status = 404,
+): Promise<ReactNode | undefined> {
+  const moduleName = getAccessFallbackErrorTypeByStatus(status);
+  if (!moduleName) return;
 
-  const mod = await notFoundModule[0]();
-  const NotFound = mod.default as JSXElementConstructor<Record<string, never>> | undefined;
-  return NotFound ? createElement(NotFound) : undefined;
+  const fallbackModule = findDeepestAccessFallbackModule(loaderTree, moduleName);
+  if (!fallbackModule) return;
+
+  const mod = await fallbackModule[0]();
+  const Fallback = mod.default as JSXElementConstructor<Record<string, never>> | undefined;
+  return Fallback ? createElement(Fallback) : undefined;
 }
 
-function findDeepestNotFoundModule(loaderTree: LoaderTree): LoaderTreeModule | undefined {
+function findDeepestAccessFallbackModule(
+  loaderTree: LoaderTree,
+  moduleName: "not-found" | "forbidden" | "unauthorized",
+): LoaderTreeModule | undefined {
   const [, parallelRoutes, modules] = loaderTree;
 
   for (const childTree of Object.values(parallelRoutes)) {
-    const child = findDeepestNotFoundModule(childTree as LoaderTree);
+    const child = findDeepestAccessFallbackModule(childTree as LoaderTree, moduleName);
     if (child) return child;
   }
 
-  return (modules as Record<string, LoaderTreeModule | undefined>)["not-found"];
+  return (modules as Record<string, LoaderTreeModule | undefined>)[moduleName];
 }
 
 function replacePageModule(
