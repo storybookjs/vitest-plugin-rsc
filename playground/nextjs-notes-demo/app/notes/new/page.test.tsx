@@ -47,6 +47,7 @@ test("create note action redirects to the created note route", async () => {
     expect(note).toBeDefined();
     return note;
   });
+  if (!createdNote) throw new Error("Expected create note action to insert a note.");
 
   await expect
     .element(page.getByRole("heading", { level: 1, name: "Redirected note" }))

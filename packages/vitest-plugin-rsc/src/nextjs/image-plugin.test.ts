@@ -117,7 +117,7 @@ test("serves imported static images through Next's image loader in dev mode", as
       {} as never,
       { root: tempRoot, mode: "test", command: "serve" } as never,
     );
-    configureServer.call(
+    await configureServer.call(
       {} as never,
       {
         middlewares: {
