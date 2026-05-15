@@ -171,12 +171,31 @@ async function resolveBrowserApiPort(
   port: number,
   host: ViteDevServer["config"]["server"]["host"],
 ) {
-  const listenHost = typeof host === "string" ? host : undefined;
+  const listenHost = resolveViteListenHost(host);
   try {
     return await listenOnAvailablePort(port, listenHost);
-  } catch {
+  } catch (error) {
+    if (!isAddressInUse(error)) {
+      throw error;
+    }
     return await listenOnAvailablePort(0, listenHost);
   }
+}
+
+function resolveViteListenHost(host: ViteDevServer["config"]["server"]["host"]) {
+  if (host === undefined || host === false) {
+    return "localhost";
+  }
+  if (host === true) {
+    return undefined;
+  }
+  return host;
+}
+
+function isAddressInUse(error: unknown): boolean {
+  return (
+    typeof error === "object" && error !== null && "code" in error && error.code === "EADDRINUSE"
+  );
 }
 
 function listenOnAvailablePort(port: number, host: string | undefined) {

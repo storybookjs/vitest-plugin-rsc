@@ -12,7 +12,7 @@ afterEach(async () => {
 });
 
 test("moves the Vitest browser API server before Vite falls back from an occupied port", async () => {
-  const occupiedPort = await occupyPort();
+  const occupiedPort = await occupyPort("localhost");
   const server = createViteServer([browserPlugin], { port: occupiedPort });
 
   await configureServer.call({} as never, server);
@@ -33,6 +33,18 @@ test.each([
   expect(server.config.server.port).toBe(occupiedPort);
 });
 
+test("does not hide non-port listen failures", async () => {
+  const server = createViteServer([browserPlugin], {
+    port: 0,
+    host: "invalid.invalid",
+  });
+
+  await expect(configureServer.call({} as never, server)).rejects.toMatchObject({
+    code: "ENOTFOUND",
+  });
+  expect(server.config.server.port).toBe(0);
+});
+
 function getPlugin(name: string): Plugin {
   const plugin = vitestPluginRSC().find((candidate) => candidate.name === name);
   if (!plugin) throw new Error(`Could not find ${name}.`);
@@ -48,18 +60,22 @@ function getHookHandler<T extends (...args: never[]) => unknown>(
 
 function createViteServer(
   plugins: Array<{ name: string }>,
-  server: { port: number; strictPort?: boolean },
+  server: {
+    port: number;
+    strictPort?: boolean;
+    host?: ViteDevServer["config"]["server"]["host"];
+  },
 ): ViteDevServer {
   return {
     config: { plugins, server },
   } as unknown as ViteDevServer;
 }
 
-function occupyPort() {
+function occupyPort(host?: string) {
   return new Promise<number>((resolve, reject) => {
     const server = createServer();
     server.once("error", reject);
-    server.listen(0, () => {
+    server.listen({ port: 0, host }, () => {
       servers.push(server);
       resolve((server.address() as { port: number }).port);
     });
