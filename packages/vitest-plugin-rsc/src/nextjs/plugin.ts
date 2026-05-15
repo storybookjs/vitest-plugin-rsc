@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import type { Alias, Plugin, UserConfig } from "vite";
 import { useNextAppRenderCompatibility } from "./app-render-compat-plugin";
@@ -884,6 +885,45 @@ const nextEntryBaseClientReferenceImports: Record<string, NextEntryBaseClientRef
   "../../next-devtools/userspace/app/segment-explorer-node.js": "segment-explorer-node",
 };
 
+const nextEntryBaseClientReferenceModules: Record<
+  NextEntryBaseClientReferenceName,
+  { moduleId: string; fallbackExports: string[] }
+> = {
+  "boundary-components": {
+    moduleId: "next/dist/lib/framework/boundary-components.js",
+    fallbackExports: [
+      "MetadataBoundary",
+      "OutletBoundary",
+      "RootLayoutBoundary",
+      "ViewportBoundary",
+    ],
+  },
+  "client-page": {
+    moduleId: "next/dist/client/components/client-page.js",
+    fallbackExports: ["ClientPageRoot"],
+  },
+  "client-segment": {
+    moduleId: "next/dist/client/components/client-segment.js",
+    fallbackExports: ["ClientSegmentRoot"],
+  },
+  "error-boundary": {
+    moduleId: "next/dist/client/components/http-access-fallback/error-boundary.js",
+    fallbackExports: ["HTTPAccessFallbackBoundary"],
+  },
+  "layout-router": {
+    moduleId: "next/dist/client/components/layout-router.js",
+    fallbackExports: ["default", "LoadingBoundaryProvider"],
+  },
+  "render-from-template-context": {
+    moduleId: "next/dist/client/components/render-from-template-context.js",
+    fallbackExports: ["default"],
+  },
+  "segment-explorer-node": {
+    moduleId: "next/dist/next-devtools/userspace/app/segment-explorer-node.js",
+    fallbackExports: ["SegmentViewNode", "SegmentViewStateNode"],
+  },
+};
+
 // Next's app-render entry-base is a server-layer CJS module that re-exports
 // client components via relative require() calls. Next's webpack/Turbopack
 // layer metadata keeps those imports as client references. Vite/Rolldown dep
@@ -895,10 +935,15 @@ const nextEntryBaseClientReferenceImports: Record<string, NextEntryBaseClientRef
 // be to preserve CJS "use client" dependency boundaries during RSC dep
 // optimization: externalize/proxy those modules instead of inlining them into
 // the server optimized chunk, then register the proxy with registerClientReference.
-function useNextEntryBaseClientReferences(): Plugin {
+function useNextEntryBaseClientReferences(initialRoot = process.cwd()): Plugin {
+  let root = initialRoot;
+
   return {
     name: "next-rsc-entry-base-client-references",
     enforce: "pre",
+    configResolved(config) {
+      root = getProjectRoot(config);
+    },
     resolveId(source, importer) {
       if (source.startsWith(virtualNextEntryBaseClientReferencePrefix)) {
         return source;
@@ -927,10 +972,10 @@ function useNextEntryBaseClientReferences(): Plugin {
         virtualNextEntryBaseClientReferencePrefix.length,
       ) as NextEntryBaseClientReferenceName;
       if (!this.environment || this.environment.name === "client") {
-        return createNextEntryBaseServerClientReferenceModule(reference);
+        return createNextEntryBaseServerClientReferenceModule(root, reference);
       }
 
-      return createNextEntryBaseClientReferenceModule(reference);
+      return createNextEntryBaseClientReferenceModule(root, reference);
     },
   };
 }
@@ -939,30 +984,22 @@ function isNextEntryBaseModule(id: string) {
   return /[/\\]next[/\\]dist[/\\]server[/\\]app-render[/\\]entry-base\.js(?:\?|$)/.test(id);
 }
 
-function createNextEntryBaseClientReferenceModule(reference: NextEntryBaseClientReferenceName) {
-  switch (reference) {
-    case "boundary-components":
-      return `"use client";\nexport { MetadataBoundary, OutletBoundary, RootLayoutBoundary, ViewportBoundary } from "next/dist/lib/framework/boundary-components.js";\n`;
-    case "client-page":
-      return `"use client";\nexport { ClientPageRoot } from "next/dist/client/components/client-page.js";\n`;
-    case "client-segment":
-      return `"use client";\nexport { ClientSegmentRoot } from "next/dist/client/components/client-segment.js";\n`;
-    case "error-boundary":
-      return `"use client";\nexport { HTTPAccessFallbackBoundary } from "next/dist/client/components/http-access-fallback/error-boundary.js";\n`;
-    case "layout-router":
-      return `"use client";\nexport { default, LoadingBoundaryProvider } from "next/dist/client/components/layout-router.js";\n`;
-    case "render-from-template-context":
-      return `"use client";\nexport { default } from "next/dist/client/components/render-from-template-context.js";\n`;
-    case "segment-explorer-node":
-      return `"use client";\nexport { SegmentViewNode, SegmentViewStateNode } from "next/dist/next-devtools/userspace/app/segment-explorer-node.js";\n`;
-  }
+function createNextEntryBaseClientReferenceModule(
+  root: string,
+  reference: NextEntryBaseClientReferenceName,
+) {
+  const { moduleId } = nextEntryBaseClientReferenceModules[reference];
+  const exports = getNextEntryBaseClientReferenceExports(root, reference).join(", ");
+
+  return `"use client";\nexport { ${exports} } from ${JSON.stringify(moduleId)};\n`;
 }
 
 function createNextEntryBaseServerClientReferenceModule(
+  root: string,
   reference: NextEntryBaseClientReferenceName,
 ) {
   const id = `/@id/__x00__${virtualNextEntryBaseClientReferencePrefix.slice(1)}${reference}`;
-  const exports = getNextEntryBaseClientReferenceExports(reference);
+  const exports = getNextEntryBaseClientReferenceExports(root, reference);
   const namedExports = exports
     .filter((name) => name !== "default")
     .map((name) => `export const ${name} = createClientReference(${JSON.stringify(name)});`)
@@ -989,23 +1026,43 @@ ${namedExports}
 `;
 }
 
-function getNextEntryBaseClientReferenceExports(reference: NextEntryBaseClientReferenceName) {
-  switch (reference) {
-    case "boundary-components":
-      return ["MetadataBoundary", "OutletBoundary", "RootLayoutBoundary", "ViewportBoundary"];
-    case "client-page":
-      return ["ClientPageRoot"];
-    case "client-segment":
-      return ["ClientSegmentRoot"];
-    case "error-boundary":
-      return ["HTTPAccessFallbackBoundary"];
-    case "layout-router":
-      return ["default", "LoadingBoundaryProvider"];
-    case "render-from-template-context":
-      return ["default"];
-    case "segment-explorer-node":
-      return ["SegmentViewNode", "SegmentViewStateNode"];
+function getNextEntryBaseClientReferenceExports(
+  root: string,
+  reference: NextEntryBaseClientReferenceName,
+) {
+  const { moduleId, fallbackExports } = nextEntryBaseClientReferenceModules[reference];
+  const moduleFile = tryResolveFromProject(root, moduleId);
+  if (!moduleFile) return fallbackExports;
+
+  try {
+    return readNextCommonJsExports(moduleFile) ?? fallbackExports;
+  } catch {
+    return fallbackExports;
   }
+}
+
+function readNextCommonJsExports(file: string) {
+  const code = fs.readFileSync(file, "utf8");
+  const names: string[] = [];
+  const seen = new Set<string>();
+  const addName = (name: string) => {
+    if (name === "__esModule" || seen.has(name)) return;
+    seen.add(name);
+    names.push(name);
+  };
+
+  const exportMarker = /0 && \(module\.exports = \{([\s\S]*?)\}\);/.exec(code);
+  if (exportMarker) {
+    for (const match of exportMarker[1]!.matchAll(/^\s*([A-Za-z_$][\w$]*|default):/gm)) {
+      addName(match[1]!);
+    }
+  }
+
+  for (const match of code.matchAll(/Object\.defineProperty\(exports,\s*["']([^"']+)["']/g)) {
+    addName(match[1]!);
+  }
+
+  return names.length > 0 ? names : undefined;
 }
 
 function provideBufferLikeNextWebpack(): Plugin {

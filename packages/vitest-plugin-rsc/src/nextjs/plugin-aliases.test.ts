@@ -158,8 +158,12 @@ test("proxies Next entry-base client imports as RSC client references", async ()
 
 test("proxies Next entry-base devtools client imports as RSC client references", async () => {
   const plugin = findNextPlugin("next-rsc-entry-base-client-references");
+  const configResolved = getHookHandler(plugin.configResolved);
   const resolveId = getHookHandler(plugin.resolveId);
   const load = getHookHandler(plugin.load);
+
+  await configResolved.call({} as never, { root: fixtureRoot } as never);
+
   const resolved = (await resolveId.call(
     {} as never,
     "../../next-devtools/userspace/app/segment-explorer-node",
@@ -181,6 +185,9 @@ test("proxies Next entry-base devtools client imports as RSC client references",
   );
   expect(serverCode).toContain(
     'export const SegmentViewStateNode = createClientReference("SegmentViewStateNode");',
+  );
+  expect(serverCode).toContain(
+    'export const SegmentBoundaryTriggerNode = createClientReference("SegmentBoundaryTriggerNode");',
   );
   expect(browserCode).toContain('"use client"');
   expect(browserCode).toContain("next/dist/next-devtools/userspace/app/segment-explorer-node.js");
