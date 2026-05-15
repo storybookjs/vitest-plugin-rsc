@@ -244,7 +244,7 @@ Done:
 
 Remaining weakness:
 
-- The CSS selector bridge is now selector-aware: it runs Next's `postcss-next-font` output through PostCSS and renames only the exact `.className`/`.variable` rules to the generated class names. The remaining custom part is manual browser style injection because Vite RSC imports the font module as JavaScript instead of handing it to Next's webpack CSS-module chain.
+- The CSS selector bridge is now selector-aware: it runs Next's `postcss-next-font` output through PostCSS and renames only the exact `.className`/`.variable` rules to the generated class names. Manual browser style injection is an explicit Vite bridge because Vite RSC imports the font module as JavaScript and no Vite-native CSS-module path currently preserves Next's default export object, font manifest side effect, Rollup asset URL replacement, and RSC import shape together.
 - It now records a Next-like App Router font manifest for Vite-rendered modules and uses Next's own `getPreloadableFonts` helper to materialize browser-mode preload links, but this is still a Vite bridge around Next's manifest contract rather than the webpack `NextFontManifestPlugin` itself.
 - Runtime coverage still needs deeper CSS module contract cleanup if we can delegate more of Next's webpack css-loader metadata path without reintroducing a parallel bundler.
 
@@ -414,7 +414,7 @@ Add focused tests in `playground/nextjs-notes-demo` before claiming more fidelit
 - Test harness stability: root Vitest project definitions, process-level coverage config, custom tester HTML, preserved Vitest scripts during whole-document hydration, whole-document React expando cleanup, server action caller cleanup, and non-default Vitest API ports.
 - Optimizer stability: hidden `react_client`/`react_ssr` scan roots match the visible browser client scan roots, Next app source files are scanned up front, hidden optimizers are warmed before test execution, ESM app dependencies are not manually listed in demo `optimizeDeps.include`, and only CJS/Next-internal deps are explicitly prebundled unless backed by a focused regression.
 - Version compatibility: supported stable Next, latest stable Next, canary Next, and optional-internal fallbacks for missing loaders such as `next-root-params-loader`.
-- Adapter/runtime behavior: streaming boundaries, Suspense/loading fallback behavior, partial-prerendering/PPR scope, dynamic IO/cache-components scope, and adapter entrypoint assumptions.
+- Adapter/runtime behavior: browser-mode `renderServer` now documents that it resolves final Suspense content from the consumed Flight payload rather than exposing timing-accurate streaming fallbacks. Streaming boundaries, `loading.tsx` timing, partial-prerendering/PPR scope, dynamic IO/cache-components scope, and adapter entrypoint assumptions remain future design work.
 
 ## Highest Priority Fixes
 
@@ -432,11 +432,11 @@ P0: make `next/font` closer to Next.
 
 - Keep Next SWC. That part is right.
 - Keep Next compiled loaders and `postcss-next-font`. That part is right.
-- Replace the custom CSS module/global style injection shape with a more faithful Vite bridge for Next's loader output.
+- Keep manual browser style injection as the current explicit Vite bridge for Next's loader output. A future replacement should use a Vite-native CSS module path only if it preserves Next's default export object, route-scoped font manifest side effect, Rollup asset URL replacement, and RSC JavaScript import shape.
 - Done for the current asset surface: stop using data URL font files as final behavior; build emits Vite assets under Next-style static media names and dev serves the same URL shape.
 - Done for the current preload surface: font virtual modules preserve enough metadata for a Next-like App Router font manifest, and no-MSW browser coverage asserts route-scoped preload links for `/_next/static/media/*.p.woff2`.
 - Done for the current CSS-module bridge: selector renaming is PostCSS-rule-based instead of broad string replacement, and no-MSW coverage includes non-variable Google weights/styles.
-- Next remaining step: replace or narrow the manual global style injection shape if a Vite-native CSS module path can preserve Next's loader export contract.
+- Done for the current style bridge decision: no-MSW browser coverage proves the manual injection path produces visible CSS and fetchable Next static-media font URLs; package coverage proves build asset URL replacement. This remains a named adapter, not a claim that Vite is running Next's webpack CSS-module chain.
 
 P0: design Cache Components support before expanding it.
 
@@ -446,7 +446,7 @@ P0: design Cache Components support before expanding it.
 - Done for the transform gate: package coverage proves `"use cache"` directives are not hoisted when `cacheComponents` is disabled.
 - Done for the current manifest proxy path: cache wrapper `$$cache=` module IDs are normalized through the Vite RSC manifest proxies that Next app-render reads.
 - Explicitly unsupported: cached components with `children` and the encrypted `boundArgsLength` call shape until this can use real Next transform output or an upstream Vite RSC extension without creating a second RSC graph.
-- Still needed: deeper fetch cache semantics.
+- First-slice fetch cache semantics are covered in P0 through force-cache dedupe, no-store bypass, tag invalidation, and refresh behavior. Deeper fetch-cache behavior is now tracked as P1 expansion because it requires a broader request/cache matrix rather than a foundation blocker.
 
 P0: reduce document fallback and manifest magic.
 
@@ -501,7 +501,9 @@ P2: decide explicit non-goals.
 - `next/legacy/image` is not covered.
 - Middleware/proxy is not covered as an execution surface.
 - `instrumentation.ts`, `instrumentation-client.ts`, and `mdx-components.tsx` need an explicit support decision before being claimed.
-- PPR/production adapter output behavior is not covered until we design a test-runtime equivalent.
+- PPR/production adapter output behavior is an explicit non-goal for browser-mode `renderServer` until we design a test-runtime equivalent. The current adapter consumes Flight and asserts final UI, not progressive PPR timing.
+- `instrumentation.ts` and `instrumentation-client.ts` are unsupported in this browser-mode adapter because they belong to Next server/client startup lifecycles that Vitest does not run. Support would need a lifecycle hook design, not implicit route rendering.
+- `mdx-components.tsx` is unsupported until the project opts into an MDX compiler path that this plugin can delegate to. The adapter should not add a local MDX compiler.
 - Node.js runtime parity is not the default browser-mode target. The edge-shaped App Router runtime is the pragmatic default unless we design a separate Node test mode.
 - Production Next build output is not the same as this test adapter. When we mimic build-only behavior, tests must state the exact compatibility goal.
 
@@ -512,8 +514,8 @@ P2: decide explicit non-goals.
 3. Add notes-demo tests for route conventions. Done: `loading.tsx`, `error.tsx`, root `global-error.tsx`, `forbidden.tsx`, and `unauthorized.tsx`.
 4. Justify the `Buffer.prototype.indexOf` patch with a minimal regression test pointing at the Next stream-utils path that needs it. Done.
 5. Extend static image tests for dev serving, build emission, SVG policy, blur placeholder behavior, and image config loaded from `next.config`. Done for the current static image adapter surface.
-6. Continue next/font asset/preload work. Done for the current asset/preload/CSS-module bridge surface: emitted font files, dev serving, browser-visible `className`/`variable` CSS, no data URL final behavior, local multi-file coverage, declarations/fallback metrics, non-variable Google weights/styles, route-scoped preload metadata, and selector-aware `.className`/`.variable` renaming. Still needed: a better replacement for manual browser style injection if Vite can preserve Next's loader export contract through a CSS module path.
-7. Done for the first cache-components slice: notes demo runs with `cacheComponents: true`, Vite RSC hoists async `use cache` functions, leaves `"use cache"` unhoisted when `cacheComponents` is disabled, covers closure-bound cached functions in the current Vite hoist path, wires custom `cacheHandlers` and `cacheMaxMemorySize`, rejects cached components with `children` until encrypted bound args can be delegated safely, normalizes cache wrapper `$$cache=` module IDs through the manifest proxy, covers public-cache dynamic API guards for `cookies()`, `headers()`, and `connection()`, and runtime goes through Next's `use-cache-wrapper` and cache handlers. Still needed: deeper fetch cache semantics.
+6. Continue next/font asset/preload work. Done for the current asset/preload/CSS-module bridge surface: emitted font files, dev serving, browser-visible `className`/`variable` CSS, no data URL final behavior, local multi-file coverage, declarations/fallback metrics, non-variable Google weights/styles, route-scoped preload metadata, selector-aware `.className`/`.variable` renaming, and an explicit decision to keep manual browser style injection as the current Vite bridge until a CSS-module path can preserve Next's export and manifest contract.
+7. Done for the first cache-components slice: notes demo runs with `cacheComponents: true`, Vite RSC hoists async `use cache` functions, leaves `"use cache"` unhoisted when `cacheComponents` is disabled, covers closure-bound cached functions in the current Vite hoist path, wires custom `cacheHandlers` and `cacheMaxMemorySize`, rejects cached components with `children` until encrypted bound args can be delegated safely, normalizes cache wrapper `$$cache=` module IDs through the manifest proxy, covers public-cache dynamic API guards for `cookies()`, `headers()`, and `connection()`, and runtime goes through Next's `use-cache-wrapper` and cache handlers. Deeper fetch cache semantics are P1 expansion.
 8. Done for config loading/defines/render opts and first render-path behavior: feed rewrites, redirects, headers, basePath, trailingSlash, image config, assetPrefix, cache components, and cache life from real Next config; apply same-origin rewrites and redirects before app route matching. Still needed: response headers and a higher-level request pipeline for middleware/proxy, external rewrites, and locale/basePath edge cases.
 9. Done: CI runs latest, canary, and supported stable Next compatibility jobs across the focused unit suite plus no-MSW and notes-demo browser/node surfaces, using an explicit non-default Vitest API port for the browser runner.
 10. Done: add a browser-level regression for the plugin document merge proving whole-document Next rendering preserves Vitest harness scripts while applying Next head/meta/title output.
@@ -524,8 +526,8 @@ P2: decide explicit non-goals.
 15. Add metadata route coverage for `generateImageMetadata`, `generateSitemaps`, static metadata files, `robots`, `sitemap`, `manifest`, `opengraph-image`, `twitter-image`, `icon`, `apple-icon`, and `favicon`. Done for the current loader-adapter layer: package coverage invokes Next's real metadata image loader for a static `opengraph-image` file with basePath, segment, dimensions, content type, and `.alt.txt` metadata. Still needed: notes-demo user-visible metadata route coverage and generated metadata-image routes.
 16. Done for the current direct route-handler scope: `next/server` coverage includes `userAgent`, `ImageResponse`, `NextRequest`, `NextResponse`, route handler methods, params, streaming, redirects, rewrites, and cookie mutation semantics. Future support should add a dedicated route-handler helper that invokes Next route modules instead of requiring direct imports.
 17. Add error/control-flow coverage. Done for render redirects/permanent redirects, `next.config` redirects, route notFound/forbidden/unauthorized/error/global-error, action redirects, action notFound/forbidden/unauthorized, `unstable_rethrow` in server actions, and `next/error` client boundaries. Redirect coverage must assert target content, redirect-hit markers, and the App Router client navigation spy for form/Server Action redirects. Still needed: route handler control flow, `unstable_rethrow` outside actions, and deeper document hydration/error recovery cases.
-18. Decide support for `instrumentation.ts`, `instrumentation-client.ts`, and `mdx-components.tsx`; add tests or explicit unsupported errors.
-19. Decide PPR/adapter-runtime scope and add streaming/Suspense fallback tests that document what the browser-mode test adapter does and does not emulate.
+18. Done as explicit unsupported decisions for the current browser-mode adapter: `instrumentation.ts` and `instrumentation-client.ts` need Next startup lifecycle hooks that Vitest does not run, and `mdx-components.tsx` needs an MDX compiler path delegated from the project rather than a local compiler in this plugin.
+19. Done for the current browser-mode adapter scope: a Suspense regression documents that `renderServer` resolves final Flight content and does not emulate timing-accurate streaming fallback visibility. PPR and production adapter output remain explicit non-goals until a test-runtime equivalent is designed.
 20. Add browser/client graph diagnostics coverage. Done for basic `useReportWebVitals`, `next/error`/`unstable_catchError`, `next/web-vitals` import/runtime smoke, and `useLinkStatus` inside a real Next `<Link>` provider. Still needed: deeper metric/error recovery assertions.
 
 ## Review Checklist For Future Work
