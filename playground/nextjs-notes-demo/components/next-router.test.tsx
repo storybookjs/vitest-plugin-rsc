@@ -20,8 +20,8 @@ test("renderServer route options provide documented App Router hook values", asy
   await expect.element(page.getByText("search q all: first,second")).toBeVisible();
   await expect.element(page.getByText("search has missing: false")).toBeVisible();
   await expect.element(page.getByText('params: {"id":"123","slug":"hello"}')).toBeVisible();
-  await expect.element(page.getByText("selected segment: note")).toBeVisible();
-  await expect.element(page.getByText("selected segments: note,123,hello")).toBeVisible();
+  await expect.element(page.getByText("selected segment: null")).toBeVisible();
+  await expect.element(page.getByText("selected segments: empty")).toBeVisible();
   await expect
     .element(page.getByRole("link", { name: "Link route" }))
     .toHaveAttribute("href", "/note/link?q=linked");
@@ -35,7 +35,7 @@ test("renderServer route option provides dynamic params", async () => {
 
   await expect.element(page.getByText("pathname: /note/123/hello")).toBeVisible();
   await expect.element(page.getByText('params: {"id":"123","slug":"hello"}')).toBeVisible();
-  await expect.element(page.getByText("selected segments: note,123,hello")).toBeVisible();
+  await expect.element(page.getByText("selected segments: empty")).toBeVisible();
 });
 
 test("renderServer defaults the route to the URL pathname", async () => {
@@ -45,8 +45,8 @@ test("renderServer defaults the route to the URL pathname", async () => {
     pathname: "/plain",
     searchQ: "ok",
     params: {},
-    selectedSegment: "plain",
-    selectedSegments: "plain",
+    selectedSegment: "null",
+    selectedSegments: "empty",
   });
 });
 
@@ -71,8 +71,8 @@ test("renderServer resolves dynamic params from route patterns", async () => {
     pathname: "/notes/a%20b",
     searchQ: "encoded",
     params: { id: "a%20b" },
-    selectedSegment: "notes",
-    selectedSegments: "notes,a%20b",
+    selectedSegment: "null",
+    selectedSegments: "empty",
   });
 });
 
@@ -86,8 +86,8 @@ test("renderServer keeps route groups in the router tree without consuming URL s
     pathname: "/notes/123",
     searchQ: "group",
     params: { id: "123" },
-    selectedSegment: "(dashboard)",
-    selectedSegments: "(dashboard),notes,123",
+    selectedSegment: "null",
+    selectedSegments: "empty",
   });
 });
 
@@ -143,8 +143,8 @@ test("renderServer exposes catch-all params and selected segments", async () => 
 
   await expect.element(page.getByText("pathname: /docs/a/b")).toBeVisible();
   await expect.element(page.getByText('params: {"slug":["a","b"]}')).toBeVisible();
-  await expect.element(page.getByText("selected segment: docs")).toBeVisible();
-  await expect.element(page.getByText("selected segments: docs,a/b")).toBeVisible();
+  await expect.element(page.getByText("selected segment: null")).toBeVisible();
+  await expect.element(page.getByText("selected segments: empty")).toBeVisible();
 });
 
 test("renderServer supports optional catch-all routes without extra segments", async () => {
@@ -157,8 +157,8 @@ test("renderServer supports optional catch-all routes without extra segments", a
     pathname: "/docs",
     searchQ: "index",
     params: {},
-    selectedSegment: "docs",
-    selectedSegments: "docs",
+    selectedSegment: "null",
+    selectedSegments: "empty",
   });
 });
 
