@@ -1160,6 +1160,9 @@ function injectNextFontStyles() {
 
 type NavigationSpy = {
   mockClear: () => void;
+  mock?: {
+    calls: unknown[][];
+  };
 };
 
 function resetNavigationSpy() {
@@ -1170,5 +1173,34 @@ function resetNavigationSpy() {
 const expect = globalThis[Symbol.for("expect-global")];
 
 export async function expectToHaveBeenNavigatedTo(url: Partial<URL>) {
-  expect(globalThis.onNavigate).toHaveBeenCalledWith(expect.objectContaining(url));
+  const calls = (globalThis as typeof globalThis & { onNavigate?: NavigationSpy }).onNavigate?.mock
+    ?.calls;
+  if (!calls) {
+    expect(globalThis.onNavigate).toHaveBeenCalledWith(expect.objectContaining(url));
+    return;
+  }
+
+  const navigations = calls.map(([navigation]) => toNavigationUrl(navigation)?.href ?? String(navigation));
+  expect(
+    calls.some(([navigation]) => {
+      const actualUrl = toNavigationUrl(navigation);
+      if (!actualUrl) return false;
+
+      return Object.entries(url).every(([key, expectedValue]) => {
+        return actualUrl[key as keyof URL] === expectedValue;
+      });
+    }),
+    `Expected navigation matching ${JSON.stringify(url)}. Actual navigations: ${navigations.join(", ")}`,
+  ).toBe(true);
+}
+
+function toNavigationUrl(value: unknown): URL | undefined {
+  if (value instanceof URL) return value;
+  if (typeof value !== "string") return;
+
+  try {
+    return new URL(value, location.href);
+  } catch {
+    return;
+  }
 }

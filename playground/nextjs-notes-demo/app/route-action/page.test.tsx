@@ -14,3 +14,16 @@ test("renderServer route actions are handled through Next app-render", async () 
   await page.getByRole("button", { name: "Increment route action" }).click();
   await expect.element(page.getByText("server count: 1")).toBeVisible();
 });
+
+test("renderServer route action redirects render the target route", async () => {
+  resetRouteActionState();
+
+  await renderServer({ url: "/route-action" });
+
+  await page.getByRole("button", { name: "Redirect route action" }).click();
+
+  await expect.element(page.getByRole("heading", { name: "Route conventions" })).toBeVisible();
+  await expect
+    .element(page.getByText("The conventions page rendered through the Next app route tree."))
+    .toBeVisible();
+});

@@ -2,7 +2,13 @@
 
 import { useState, useTransition } from "react";
 
-export function RouteActionClient({ increment }: { increment: () => Promise<number> }) {
+export function RouteActionClient({
+  increment,
+  redirectToConventions,
+}: {
+  increment: () => Promise<number>;
+  redirectToConventions: () => Promise<void>;
+}) {
   const [count, setCount] = useState(0);
   const [isPending, startTransition] = useTransition();
 
@@ -18,6 +24,16 @@ export function RouteActionClient({ increment }: { increment: () => Promise<numb
         }}
       >
         Increment route action
+      </button>
+      <button
+        disabled={isPending}
+        onClick={() => {
+          startTransition(async () => {
+            await redirectToConventions();
+          });
+        }}
+      >
+        Redirect route action
       </button>
     </>
   );
