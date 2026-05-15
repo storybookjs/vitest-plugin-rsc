@@ -10,7 +10,7 @@ import { vitestPluginNext } from "vitest-plugin-rsc/nextjs/plugin";
 process.env.LAUNCH_EDITOR = "/usr/bin/true";
 
 // oxlint-disable-next-line no-process-env
-const maxWorkers = process.env.CI ? undefined : 4;
+const maxWorkers = process.env.CI ? 1 : 4;
 
 const root = (path: string) => fileURLToPath(new URL(path, import.meta.url));
 const nextNotesRoot = root("./playground/nextjs-notes-demo/");
@@ -136,10 +136,9 @@ export default defineConfig({
             provider: playwright(),
             instances: [{ browser: "chromium" }],
           },
-          // Browser workers each own their browser state and run in parallel.
-          // Inside one worker, test files run sequentially with `isolate: false`,
-          // so cleanup belongs in beforeEach. Do not disable file parallelism
-          // and do not switch this to isolate: true for hanging state.
+          // Browser workers each own their browser state and run in parallel
+          // locally. CI runs them serially to avoid GitHub Linux hangs in the
+          // stable Next compatibility matrix; cleanup still belongs in beforeEach.
           isolate: false,
           globalSetup: ["./vitest.global-setup.ts"],
           setupFiles: ["./vitest.setup.ts"],

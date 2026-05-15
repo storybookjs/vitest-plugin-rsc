@@ -9,7 +9,7 @@ import "#env/load-next.ts";
 process.env.LAUNCH_EDITOR = "/usr/bin/true";
 
 // oxlint-disable-next-line no-process-env
-const maxWorkers = process.env.CI ? undefined : 4;
+const maxWorkers = process.env.CI ? 1 : 4;
 
 export default defineConfig({
   envPrefix: ["VITE_", "CI"],
@@ -55,10 +55,10 @@ export default defineConfig({
             provider: playwright(),
             instances: [{ browser: "chromium" }],
           },
-          // Browser workers each own their browser state and run in parallel.
-          // Whole-document Next route hydration is heavier on CI, so the top-level
-          // maxWorkers setting serializes browser files there while keeping local
-          // runs parallel. Inside one worker, cleanup belongs in beforeEach.
+          // Browser workers each own their browser state and run in parallel
+          // locally. Whole-document Next route hydration is heavier on CI, so
+          // the top-level maxWorkers setting serializes browser files there.
+          // Inside one worker, cleanup belongs in beforeEach.
           isolate: false,
           globalSetup: ["./vitest.global-setup.ts"],
           setupFiles: ["./vitest.setup.ts"],
