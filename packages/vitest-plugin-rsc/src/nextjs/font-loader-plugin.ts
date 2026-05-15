@@ -208,7 +208,16 @@ async function createFontCssModule(
   emittedAssets = new Map<string, string>(),
 ) {
   const postcss = projectRequire("postcss") as (plugins: unknown[]) => {
-    process(css: string, options: { from?: string }): Promise<{ css: string }>;
+    process(
+      css: string,
+      options: { from?: string },
+    ): Promise<{
+      css: string;
+      root?: {
+        walkRules(callback: (rule: { selector: string }) => void): void;
+        toString(): string;
+      };
+    }>;
   };
   const postcssNextFontModule = projectRequire(
     "next/dist/build/webpack/loaders/next-font-loader/postcss-next-font.js",
@@ -240,9 +249,7 @@ async function createFontCssModule(
   ]).process(result.css, { from: undefined });
   const className = `__className_${fontFamilyHash}`;
   const variableClassName = variable ? `__variable_${fontFamilyHash}` : "";
-  const css = processed.css
-    .replaceAll(".className", `.${className}`)
-    .replaceAll(".variable", `.${variableClassName}`);
+  const css = renameFontCssModuleSelectors(processed, className, variableClassName);
   const styleHash = loaderUtils.getHashDigest(Buffer.from(css), "sha1", "hex", 6);
   const style = fontExports.find((fontExport) => fontExport.name === "style")?.value ?? {};
 
@@ -281,6 +288,30 @@ const font = {
 };
 export default font;
 `;
+}
+
+function renameFontCssModuleSelectors(
+  processed: {
+    css: string;
+    root?: {
+      walkRules(callback: (rule: { selector: string }) => void): void;
+      toString(): string;
+    };
+  },
+  className: string,
+  variableClassName: string,
+) {
+  if (!processed.root) return processed.css;
+
+  processed.root.walkRules((rule) => {
+    if (rule.selector === ".className") {
+      rule.selector = `.${className}`;
+    } else if (rule.selector === ".variable") {
+      rule.selector = `.${variableClassName}`;
+    }
+  });
+
+  return processed.root.toString();
 }
 
 function createCssExpression(css: string, emittedAssets: Map<string, string>) {

@@ -46,6 +46,8 @@ test("emits next/font local files as build assets", async () => {
     expect(emittedAssets[0]!.source.length).toBeGreaterThan(0);
     expect(code).toContain("import.meta.ROLLUP_FILE_URL_font-reference");
     expect(code).toContain("__className_");
+    expect(code).not.toContain(".className");
+    expect(code).not.toContain(".variable");
     expect(code).not.toContain("data:font");
     expect(code).not.toContain("__vitest_plugin_rsc_next_font_asset__");
   } finally {

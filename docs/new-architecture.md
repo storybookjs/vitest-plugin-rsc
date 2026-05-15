@@ -240,13 +240,13 @@ Done:
 - Uses Next's real `postcss-next-font` behavior for fallback metrics, class rules, variable rules, and `style` export data.
 - Emits font bytes through Vite assets in build mode using Next-style `_next/static/media/[hash][.p].woff2` paths.
 - Serves dev font URLs through Vite middleware at the same Next static media URL shape.
-- Notes-demo and no-MSW coverage asserts browser-visible font CSS, `className`/`variable` output, local multi-file font declarations, fallback metrics, fetchable `/_next/static/media/*.p.woff2` assets, and route-scoped preload links produced from a Next-like font manifest.
+- Notes-demo and no-MSW coverage asserts browser-visible font CSS, `className`/`variable` output, local multi-file font declarations, non-variable Google weights/styles, fallback metrics, fetchable `/_next/static/media/*.p.woff2` assets, and route-scoped preload links produced from a Next-like font manifest.
 
 Remaining weakness:
 
-- It still creates a custom Vite CSS module shape by string replacement and manual style injection.
+- The CSS selector bridge is now selector-aware: it runs Next's `postcss-next-font` output through PostCSS and renames only the exact `.className`/`.variable` rules to the generated class names. The remaining custom part is manual browser style injection because Vite RSC imports the font module as JavaScript instead of handing it to Next's webpack CSS-module chain.
 - It now records a Next-like App Router font manifest for Vite-rendered modules and uses Next's own `getPreloadableFonts` helper to materialize browser-mode preload links, but this is still a Vite bridge around Next's manifest contract rather than the webpack `NextFontManifestPlugin` itself.
-- Runtime coverage still needs non-variable Google weights/styles and deeper CSS module contract cleanup.
+- Runtime coverage still needs deeper CSS module contract cleanup if we can delegate more of Next's webpack css-loader metadata path without reintroducing a parallel bundler.
 
 This is the most important feature gap. The better direction is to copy/import more of `next-font-loader`'s loader result contract and bridge it to Vite CSS/assets with the smallest possible adapter, not invent a parallel font module.
 
@@ -435,7 +435,8 @@ P0: make `next/font` closer to Next.
 - Replace the custom CSS module/global style injection shape with a more faithful Vite bridge for Next's loader output.
 - Done for the current asset surface: stop using data URL font files as final behavior; build emits Vite assets under Next-style static media names and dev serves the same URL shape.
 - Done for the current preload surface: font virtual modules preserve enough metadata for a Next-like App Router font manifest, and no-MSW browser coverage asserts route-scoped preload links for `/_next/static/media/*.p.woff2`.
-- Next remaining step: replace or narrow the custom CSS module/global style injection shape.
+- Done for the current CSS-module bridge: selector renaming is PostCSS-rule-based instead of broad string replacement, and no-MSW coverage includes non-variable Google weights/styles.
+- Next remaining step: replace or narrow the manual global style injection shape if a Vite-native CSS module path can preserve Next's loader export contract.
 
 P0: design Cache Components support before expanding it.
 
@@ -508,7 +509,7 @@ P2: decide explicit non-goals.
 3. Add notes-demo tests for route conventions. Done: `loading.tsx`, `error.tsx`, root `global-error.tsx`, `forbidden.tsx`, and `unauthorized.tsx`.
 4. Justify the `Buffer.prototype.indexOf` patch with a minimal regression test pointing at the Next stream-utils path that needs it. Done.
 5. Extend static image tests for dev serving, build emission, SVG policy, blur placeholder behavior, and image config loaded from `next.config`. Done for the current static image adapter surface.
-6. Continue next/font asset/preload work. Done for the current asset/preload surface: emitted font files, dev serving, browser-visible `className`/`variable` CSS, no data URL final behavior, local multi-file coverage, declarations/fallback metrics, and route-scoped preload metadata. Still needed: CSS module contract cleanup and non-variable Google weights/styles.
+6. Continue next/font asset/preload work. Done for the current asset/preload/CSS-module bridge surface: emitted font files, dev serving, browser-visible `className`/`variable` CSS, no data URL final behavior, local multi-file coverage, declarations/fallback metrics, non-variable Google weights/styles, route-scoped preload metadata, and selector-aware `.className`/`.variable` renaming. Still needed: a better replacement for manual browser style injection if Vite can preserve Next's loader export contract through a CSS module path.
 7. Done for the first cache-components slice: notes demo runs with `cacheComponents: true`, Vite RSC hoists async `use cache` functions, leaves `"use cache"` unhoisted when `cacheComponents` is disabled, covers closure-bound cached functions in the current Vite hoist path, wires custom `cacheHandlers` and `cacheMaxMemorySize`, rejects cached components with `children` until encrypted bound args can be delegated safely, normalizes cache wrapper `$$cache=` module IDs through the manifest proxy, and runtime goes through Next's `use-cache-wrapper` and cache handlers. Still needed: more dynamic-API negative tests beyond `cookies()`/`headers()` and deeper fetch cache semantics.
 8. Done for config loading/defines/render opts and first render-path behavior: feed rewrites, redirects, headers, basePath, trailingSlash, image config, assetPrefix, cache components, and cache life from real Next config; apply same-origin rewrites and redirects before app route matching. Still needed: response headers and a higher-level request pipeline for middleware/proxy, external rewrites, and locale/basePath edge cases.
 9. Done: CI runs latest, canary, and supported stable Next compatibility jobs across the focused unit suite plus no-MSW and notes-demo browser/node surfaces, using an explicit non-default Vitest API port for the browser runner.
