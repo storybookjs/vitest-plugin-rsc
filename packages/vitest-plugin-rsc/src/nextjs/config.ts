@@ -1,4 +1,3 @@
-import path from "node:path";
 import { createProjectRequire } from "./plugin-utils";
 
 export type NextImageConfig = {
@@ -28,6 +27,9 @@ export type NextConfigLike = {
   output?: string;
   pageExtensions?: string[];
   trailingSlash?: boolean;
+  typescript?: {
+    tsconfigPath?: string;
+  };
   experimental?: {
     allowDevelopmentBuild?: boolean;
     appNavFailHandling?: boolean;
@@ -87,6 +89,7 @@ export type NextProjectConfig = {
   distDir: string;
   assetPrefix: string;
   basePath: string;
+  tsconfigPath: string | undefined;
   nextImageConfig: NextImageConfig | undefined;
 };
 
@@ -138,6 +141,7 @@ async function loadNextProjectConfigUncached(
     distDir: nextConfig.distDir ?? ".next",
     assetPrefix: nextConfig.assetPrefix ?? "",
     basePath: nextConfig.basePath ?? "",
+    tsconfigPath: nextConfig.typescript?.tsconfigPath,
     nextImageConfig: pickNextImageConfig(
       nextConfig.images ?? loadNextDefaultImageConfig(root),
       nextConfig.output,
@@ -198,8 +202,4 @@ export function pickNextImageConfig(
     localPatterns: config.localPatterns,
     output: output ?? config.output,
   };
-}
-
-export function getNextTsconfigPath(root: string) {
-  return path.join(root, "tsconfig.json");
 }

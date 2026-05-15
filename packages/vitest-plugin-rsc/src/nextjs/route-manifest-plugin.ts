@@ -2,7 +2,7 @@ import { Buffer } from "node:buffer";
 import fs from "node:fs";
 import path from "node:path";
 import type { Plugin } from "vite";
-import { getNextTsconfigPath, loadNextProjectConfig, type NextProjectConfig } from "./config";
+import { loadNextProjectConfig, type NextProjectConfig } from "./config";
 import { createProjectRequire, getProjectRoot, normalizePath } from "./plugin-utils";
 
 const virtualNextRouteManifestId = "\0vitest-plugin-rsc:next-route-manifest";
@@ -221,7 +221,7 @@ async function generateNextRouteTreeModule(
     pageExtensions: projectConfig.pageExtensions,
     assetPrefix: projectConfig.assetPrefix,
     rootDir: root,
-    tsconfigPath: getNextTsconfigPath(root),
+    tsconfigPath: projectConfig.tsconfigPath,
     isDev: projectConfig.isDev,
     basePath: projectConfig.basePath,
     nextConfigOutput: projectConfig.nextConfig.output,
@@ -260,7 +260,7 @@ type NextAppLoaderContext = {
     pageExtensions: string[];
     assetPrefix: string;
     rootDir: string;
-    tsconfigPath: string;
+    tsconfigPath: string | undefined;
     isDev: boolean;
     basePath: string;
     nextConfigOutput: NextProjectConfig["nextConfig"]["output"];
