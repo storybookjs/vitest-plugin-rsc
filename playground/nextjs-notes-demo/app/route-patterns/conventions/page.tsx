@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { forbidden, notFound, redirect, unauthorized } from "next/navigation";
+import { forbidden, notFound, permanentRedirect, redirect, unauthorized } from "next/navigation";
 
 export const metadata: Metadata = {
   title: "Route convention metadata",
@@ -15,6 +15,9 @@ export default async function ConventionPage({
   if (mode === "forbidden") forbidden();
   if (mode === "unauthorized") unauthorized();
   if (mode === "redirect") redirect("/route-patterns/conventions?from=render-redirect");
+  if (mode === "permanent-redirect") {
+    permanentRedirect("/route-patterns/conventions?from=render-permanent-redirect");
+  }
   if (mode === "error") throw new Error("segment convention failure");
 
   return (

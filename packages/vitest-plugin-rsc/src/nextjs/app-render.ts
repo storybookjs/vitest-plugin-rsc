@@ -6,6 +6,11 @@ import {
   RSC_CONTENT_TYPE_HEADER,
   RSC_HEADER,
 } from "next/dist/client/components/app-router-headers.js";
+import {
+  getAccessFallbackHTTPStatus,
+  isHTTPAccessFallbackError,
+} from "next/dist/client/components/http-access-fallback/http-access-fallback.js";
+import { getURLFromRedirectError } from "next/dist/client/components/redirect.js";
 import { renderToHTMLOrFlight } from "next/dist/server/app-render/app-render.js";
 import { WebNextRequest, WebNextResponse } from "next/dist/server/base-http/web.js";
 import type { RenderOpts } from "next/dist/server/app-render/types.js";
@@ -810,12 +815,37 @@ function isNextBuiltinGlobalErrorModuleId(id: string) {
 }
 
 function isNextDocumentFallbackPayloadText(text: string) {
-  return text.includes('"digest":"NEXT_HTTP_ERROR_FALLBACK;404"');
+  return getNextDigestErrorsFromFlightPayloadText(text).some(
+    (error) => isHTTPAccessFallbackError(error) && getAccessFallbackHTTPStatus(error) === 404,
+  );
 }
 
 function getNextRedirectUrlFromFlightPayloadText(text: string) {
-  const match = /NEXT_REDIRECT;(?:push|replace);(.+?);30[78];/.exec(text);
-  return match?.[1]?.replaceAll("\\/", "/").replaceAll("\\u0026", "&");
+  for (const error of getNextDigestErrorsFromFlightPayloadText(text)) {
+    const redirectUrl = getURLFromRedirectError(error);
+    if (redirectUrl) return redirectUrl;
+  }
+}
+
+function getNextDigestErrorsFromFlightPayloadText(text: string) {
+  const errors: Array<Error & { digest: string }> = [];
+
+  for (const match of text.matchAll(/"digest":"((?:\\.|[^"\\])*)"/g)) {
+    const encodedDigest = match[1];
+    if (!encodedDigest) continue;
+
+    try {
+      const digest = JSON.parse(`"${encodedDigest}"`);
+      if (typeof digest === "string") {
+        errors.push(Object.assign(new Error(digest), { digest }));
+      }
+    } catch {
+      // Ignore unrelated strings in the RSC wire payload. Next's own helpers
+      // below decide which parsed digests are route control-flow errors.
+    }
+  }
+
+  return errors;
 }
 
 async function readReadableStreamText(stream: ReadableStream<Uint8Array>) {
