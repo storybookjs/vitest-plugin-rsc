@@ -14,6 +14,7 @@ export default async function ConventionPage({
   if (mode === "not-found") notFound();
   if (mode === "forbidden") forbidden();
   if (mode === "unauthorized") unauthorized();
+  if (mode === "error") throw new Error("segment convention failure");
 
   return (
     <main>

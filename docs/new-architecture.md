@@ -266,11 +266,12 @@ Done:
 - Metadata and generated metadata.
 - Segment static info via `get-static-info-including-layouts`.
 - Route-level `not-found` in the notes demo.
+- Route-level `forbidden`, `unauthorized`, `error`, and root `global-error` conventions in the notes demo.
 
 Remaining weakness:
 
 - The plugin extracts only the `const tree = ...` block out of `next-app-loader` output and rewrites imports for Vite. This is a pragmatic adapter, but still string extraction. It needs tests that lock it against current Next loader output and should be replaced with a smaller imported helper if Next ever exposes one.
-- Coverage is missing or thin for `loading`, `error`, `global-error`, `forbidden`, `unauthorized`, intercepting routes, nested parallel routes, route groups with collisions, default-null behavior, and proxy/middleware interactions.
+- Coverage is missing or thin for `loading`, intercepting routes, nested parallel routes, route groups with collisions, default-null behavior, and proxy/middleware interactions.
 - Route manifest generation is still page-focused. If `route.ts` handlers become render targets, they should run through Next route module/request code, not through a local route-handler runner.
 
 ### App Render and Request Stores
@@ -411,7 +412,7 @@ P0: reduce document fallback and manifest magic.
 
 - Isolate the inline Flight parser as a copied/adapted block from Next app-index if possible.
 - Replace broad string matching for `NEXT_HTTP_ERROR_FALLBACK` with Next helpers where they exist.
-- Add tests for route-level notFound, global-error, and error boundary document hydration.
+- Keep expanding notes-demo coverage for route-level fallbacks and document hydration. Done: route-level notFound, global-error, and error boundary document hydration.
 - Document why proxy manifests are necessary when Vite RSC owns references, and test the exact proxy contract.
 - Preserve Vitest harness scripts through plugin-level tester HTML/head merging. Do not solve this in the notes demo app.
 
@@ -462,7 +463,7 @@ P2: decide explicit non-goals.
 
 1. Add a focused test that imports the real `next/dist/server/app-render/entry-base.js` in the RSC environment and proves the optimized chunk contains client-reference proxies, not inlined client modules.
 2. Draft an upstream `@vitejs/plugin-rsc` issue or failing fixture for CommonJS `"use client"` modules required from server dependencies during RSC dependency optimization.
-3. Add notes-demo tests for `loading.tsx`, `error.tsx`, and `global-error.tsx`. Done: `forbidden.tsx` and `unauthorized.tsx` render through the same loader-tree access-fallback path as `not-found.tsx`.
+3. Add notes-demo tests for route conventions. Done: `error.tsx`, root `global-error.tsx`, `forbidden.tsx`, and `unauthorized.tsx`. Still pending: `loading.tsx`.
 4. Replace or justify the `Buffer.prototype.indexOf` patch with a minimal regression test pointing at the Next code path that needs it.
 5. Extend static image tests for dev serving, build emission, SVG policy, blur placeholder behavior, and image config loaded from `next.config`.
 6. Start next/font asset/preload work: emitted font files, CSS module contract, route-scoped preload metadata, and browser-visible `className`, `variable`, and `style` assertions.

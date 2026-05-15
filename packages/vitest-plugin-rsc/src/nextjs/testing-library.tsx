@@ -298,23 +298,27 @@ export async function renderServer(
       };
       const renderNextDocumentClientFallback = async (status?: number) => {
         const appRenderEntry = resolveAppRenderEntry(renderSource, requestUrl, requestRoute);
-        const accessFallbackNode = await loadDeepestAccessFallbackNode(
-          appRenderEntry.loaderTree,
-          status,
-        );
-        if (accessFallbackNode) {
-          return renderServerRootForHydration(accessFallbackNode);
+        if (status !== undefined) {
+          const accessFallbackNode = await loadDeepestAccessFallbackNode(
+            appRenderEntry.loaderTree,
+            status,
+          );
+          if (accessFallbackNode) {
+            return renderServerRootForHydration(accessFallbackNode);
+          }
         }
 
         const documentHtml = await renderNextDocumentHtml(renderSource, requestUrl, requestRoute, {
           headers,
         });
         const initialRSCPayload = await createNextDocumentInitialPayload(documentHtml);
-        const initialAccessFallbackNode = findInitialAccessFallbackNode(initialRSCPayload);
-        if (initialAccessFallbackNode) {
-          return renderServerRootForHydration(initialAccessFallbackNode);
+        if (status !== undefined) {
+          const initialAccessFallbackNode = findInitialAccessFallbackNode(initialRSCPayload);
+          if (initialAccessFallbackNode) {
+            return renderServerRootForHydration(initialAccessFallbackNode);
+          }
+          applyInitialAccessFallback(initialRSCPayload);
         }
-        applyInitialAccessFallback(initialRSCPayload);
         const rscPayload: RscPayload = {
           root: await prepareServerRoot(initialRSCPayload),
         };
@@ -322,7 +326,7 @@ export async function renderServer(
         return {
           documentHtml,
           initialStream: ReactServer.renderToReadableStream<RscPayload>(rscPayload),
-          hydrateDocument: false,
+          hydrateDocument: status === undefined,
           documentOnly: false,
         };
       };
@@ -354,7 +358,13 @@ export async function renderServer(
           }
         } catch (error) {
           const accessFallbackStatus = getNextHttpAccessFallbackStatus(error);
-          if (!accessFallbackStatus && !isNextBuiltinGlobalErrorReferenceError(error)) {
+          if (
+            accessFallbackStatus === undefined &&
+            !isNextBuiltinGlobalErrorReferenceError(error) &&
+            !hasNextErrorBoundary(
+              resolveAppRenderEntry(renderSource, requestUrl, requestRoute).loaderTree,
+            )
+          ) {
             throw error;
           }
 
@@ -383,8 +393,11 @@ export async function renderServer(
         if (
           !hydrateDocument ||
           documentOnly ||
-          (!getNextHttpAccessFallbackStatus(error) &&
-            !isNextBuiltinGlobalErrorReferenceError(error))
+          (getNextHttpAccessFallbackStatus(error) === undefined &&
+            !isNextBuiltinGlobalErrorReferenceError(error) &&
+            !hasNextErrorBoundary(
+              resolveAppRenderEntry(renderSource, requestUrl, requestRoute).loaderTree,
+            ))
         ) {
           throw error;
         }
@@ -964,7 +977,7 @@ function wrapRootLayoutLoaderTree(
 
 async function loadDeepestAccessFallbackNode(
   loaderTree: LoaderTree,
-  status = 404,
+  status: number,
 ): Promise<ReactNode | undefined> {
   const moduleName = getAccessFallbackErrorTypeByStatus(status);
   if (!moduleName) return;
@@ -989,6 +1002,16 @@ function findDeepestAccessFallbackModule(
   }
 
   return (modules as Record<string, LoaderTreeModule | undefined>)[moduleName];
+}
+
+function hasNextErrorBoundary(loaderTree: LoaderTree): boolean {
+  const [, parallelRoutes, modules] = loaderTree;
+  const moduleMap = modules as Record<string, LoaderTreeModule | undefined>;
+  if (moduleMap.error || moduleMap["global-error"]) return true;
+
+  return Object.values(parallelRoutes).some((childTree) =>
+    hasNextErrorBoundary(childTree as LoaderTree),
+  );
 }
 
 function replacePageModule(
