@@ -23,6 +23,10 @@ test("notes demo renders Next app-router API aliases and compiler surfaces", asy
   await expect.element(page.getByRole("button", { name: "Search" })).toBeVisible();
   await expect.element(page.getByText("Dynamic panel loaded")).toBeVisible();
   await expect.element(page.getByText("Pathname: /next-apis")).toBeVisible();
+  await expect.element(page.getByText("Link pending: false")).toBeVisible();
+  await expect
+    .element(page.getByRole("link", { name: /Notes status link/ }))
+    .toHaveAttribute("href", "/notes");
   await expect.element(page.getByText("Client error boundary ready")).toBeVisible();
   await expect.element(page.getByText("Web vitals hook ready")).toBeVisible();
 
