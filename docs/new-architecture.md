@@ -353,6 +353,7 @@ Notes demo acceptance coverage includes realistic combinations of:
 - App routes and layouts.
 - Dynamic route replacement.
 - Route groups, catch-all, optional catch-all, templates, parallel default slots, selected layout segments, metadata, generated metadata, and not-found.
+- Route-only `renderServer({ url })` coverage for `/notes` so Next resolves the page module and loader tree itself.
 - `next/link`, `next/form`, `next/script`, `next/image`, `getImageProps`, `next/dynamic`, `next/head` ignored by App Router, and client error boundaries.
 - Cookies, headers, draft mode, cache, Server Actions, redirects, refresh, and MSW-routed RSC/action transport.
 - Next `after()` request lifecycle behavior, including nested `waitUntil` work scheduled by an after task.
@@ -470,7 +471,7 @@ P2: decide explicit non-goals.
 10. Add a plugin-level test that whole-document Next rendering preserves Vitest harness scripts while applying Next head/meta/title output.
 11. Add a route-handler decision test: either prove `route.ts` execution through Next route module code or assert a clear unsupported error.
 12. Add coverage that `renderServer(<ReactNode />)` uses the fake-route/app-render path and that `renderServer({ url })` can replace the matched page entry without bypassing Next's loader tree.
-13. Add route-only `renderServer({ url })` coverage for important existing notes demo pages that still render direct components with manual props, especially `/notes`, `/notes/[id]`, `/notes/new`, auth pages, and profile.
+13. Add route-only `renderServer({ url })` coverage for important existing notes demo pages that still render direct components with manual props, especially `/notes/[id]`, `/notes/new`, auth pages, and profile.
 14. Add coverage for App Router page exports: `metadata`, `generateMetadata`, `viewport`, `generateViewport`, `generateStaticParams`, `dynamic`, `dynamicParams`, `revalidate`, `fetchCache`, `runtime`, `preferredRegion`, and `maxDuration`.
 15. Add metadata route coverage for `generateImageMetadata`, `generateSitemaps`, static metadata files, `robots`, `sitemap`, `manifest`, `opengraph-image`, `twitter-image`, `icon`, `apple-icon`, and `favicon`.
 16. Add `next/server` coverage for `userAgent`, `ImageResponse`, route handler streaming, redirects, rewrites, and cookie mutation semantics.
