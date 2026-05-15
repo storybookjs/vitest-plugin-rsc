@@ -192,6 +192,7 @@ function parseEntryBaseExports(code: string) {
   const exportBlocks = [...code.matchAll(/export\s*\{([\s\S]*?)\};/g)]
     .flatMap((match) => match[1]!.split(","))
     .map((name) => name.trim())
+    .map((name) => name.match(/\s+as\s+([A-Za-z0-9_$]+)$/)?.[1] ?? name)
     .filter(Boolean);
   const exportDeclarations = [...code.matchAll(/export\s+(?:const|function)\s+([A-Za-z0-9_$]+)/g)]
     .map((match) => match[1]!)
