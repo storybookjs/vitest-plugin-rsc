@@ -9,12 +9,13 @@ test("next/font generates browser-visible CSS for visual tests", async () => {
   await expect.element(page.getByText("font-family: Geist Mono")).toBeVisible();
   await expect.element(page.getByText("Local font rendered", { exact: true })).toBeVisible();
   await expect.element(page.getByText("Local multi font rendered")).toBeVisible();
+  await expect.element(page.getByText("Google weighted font rendered")).toBeVisible();
   await expect.element(page.getByText("Exported Google font rendered")).toBeVisible();
   await expect.element(page.getByText("Exported local font rendered")).toBeVisible();
 
   const fontScope = document.querySelector<HTMLElement>('[data-testid="font-scope"]');
   expect(fontScope?.className).toContain("__variable_");
-  expect(fontScope?.className.match(/__variable_/g)?.length).toBe(6);
+  expect(fontScope?.className.match(/__variable_/g)?.length).toBe(7);
   expect(document.querySelector('[data-testid="google-style-family"]')?.textContent).toContain(
     "Geist",
   );
@@ -23,6 +24,12 @@ test("next/font generates browser-visible CSS for visual tests", async () => {
   );
   expect(document.querySelector('[data-testid="local-multi-style-family"]')?.textContent).toContain(
     "localMulti",
+  );
+  expect(document.querySelector('[data-testid="google-weighted-style-weight"]')?.textContent).toBe(
+    "none",
+  );
+  expect(document.querySelector('[data-testid="google-weighted-style-style"]')?.textContent).toBe(
+    "none",
   );
 
   const fontCss = Array.from(document.head.querySelectorAll("style"))
@@ -35,10 +42,12 @@ test("next/font generates browser-visible CSS for visual tests", async () => {
   expect(fontCss).toContain("font-display: swap");
   expect(fontCss).toContain("--font-geist-sans:");
   expect(fontCss).toContain("--font-geist-mono:");
+  expect(fontCss).toContain("--font-roboto-weighted:");
   expect(fontCss).toContain("--font-local-geist: 'localGeist");
   expect(fontCss).toContain("--font-local-multi: 'localMulti");
   expect(fontCss).toContain('font-feature-settings: "kern";');
   expect(fontCss).toContain("font-weight: 400;");
+  expect(fontCss).toContain("font-weight: 700;");
   expect(fontCss).toContain("font-style: italic;");
   expect(fontCss).toContain("--font-exported-google:");
   expect(fontCss).toContain("size-adjust:");
