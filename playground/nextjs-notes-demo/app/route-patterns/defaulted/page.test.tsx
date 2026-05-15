@@ -7,6 +7,9 @@ test("renderServer resolves a parallel route default slot in notes demo", async 
 
   expect(container).toBe(document.body);
   expect(document.documentElement.lang).toBe("en");
+  expect(document.querySelector('meta[name="theme-color"]')?.getAttribute("content")).toBe(
+    "#654321",
+  );
   expect(document.documentElement.className).toContain("__variable_");
   expect(
     getComputedStyle(document.documentElement).getPropertyValue("--font-geist-sans"),
