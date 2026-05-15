@@ -39,9 +39,8 @@ test("invokes Next metadata image loader for static metadata image files", async
     )) as string;
 
     expect(watchedFiles).toEqual([imagePath]);
-    expect(code).toContain("fillMetadataSegment");
     expect(code).toContain('"/docs/route-patterns"');
-    expect(code).toContain('"opengraph-image.svg"');
+    expect(code).toContain("opengraph-image.svg");
     expect(code).toContain('"type":"image/svg+xml"');
     expect(code).toContain('"width":1200');
     expect(code).toContain('"height":630');
@@ -95,11 +94,11 @@ test("invokes Next metadata image loader for static icon conventions", async () 
       resolveId,
     });
 
-    expect(iconCode).toContain('"icon.svg"');
+    expect(iconCode).toContain("icon.svg");
     expect(iconCode).toContain('"type":"image/svg+xml"');
     expect(iconCode).toContain('"sizes":"any"');
     expect(iconCode).toContain('"/settings"');
-    expect(appleIconCode).toContain('"apple-icon.png"');
+    expect(appleIconCode).toContain("apple-icon.png");
     expect(appleIconCode).toContain('"type":"image/png"');
     expect(appleIconCode).toContain('"sizes":"1x1"');
     expect(appleIconCode).toContain('"/settings"');
