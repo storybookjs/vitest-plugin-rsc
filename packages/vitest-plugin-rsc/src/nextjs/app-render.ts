@@ -295,11 +295,16 @@ async function renderNextRouteResult({
     loaderTree,
   });
   const lifecycle = createRequestLifecycle();
+  const entryBaseComponentMod = (componentMod ??
+    (await import("next/dist/server/app-render/entry-base.js"))) as NextEntryBaseComponentMod;
+  const globalErrorComponent =
+    entryBaseComponentMod.GlobalError ?? (await loadGlobalErrorComponent(loaderTree));
   const resolvedComponentMod = {
-    ...((componentMod ?? (await import("next/dist/server/app-render/entry-base.js"))) as object),
+    ...(entryBaseComponentMod as object),
+    GlobalError: globalErrorComponent ?? DefaultGlobalError,
     renderToReadableStream: renderToReadableStreamWithViteRsc,
     routeModule,
-  } as NextAppRenderComponentMod;
+  } as unknown as NextAppRenderComponentMod;
   const renderOpts = {
     ...createNextRenderOpts(manifests, lifecycle),
     ComponentMod: resolvedComponentMod,
@@ -474,6 +479,42 @@ type NextAppRenderComponentMod = typeof import("next/dist/server/app-render/entr
 
 type NextEntryBaseComponentMod = typeof import("next/dist/server/app-render/entry-base.js") &
   Record<string, unknown>;
+
+type LoaderTreeModule = [() => Promise<Record<string, unknown>>, string];
+
+async function loadGlobalErrorComponent(loaderTree: LoaderTree): Promise<unknown> {
+  const globalErrorModule = findLoaderTreeModule(loaderTree, "global-error");
+  if (!globalErrorModule) return;
+
+  const mod = await globalErrorModule[0]();
+  return interopDefault(mod);
+}
+
+function findLoaderTreeModule(
+  loaderTree: LoaderTree,
+  moduleName: string,
+): LoaderTreeModule | undefined {
+  const [, parallelRoutes, modules] = loaderTree as unknown as [
+    unknown,
+    Record<string, LoaderTree>,
+    Record<string, LoaderTreeModule | undefined>,
+  ];
+  const moduleEntry = modules[moduleName];
+  if (moduleEntry) return moduleEntry;
+
+  for (const childTree of Object.values(parallelRoutes)) {
+    const childModule = findLoaderTreeModule(childTree, moduleName);
+    if (childModule) return childModule;
+  }
+}
+
+function interopDefault(mod: Record<string, unknown>) {
+  return mod.default ?? mod;
+}
+
+function DefaultGlobalError() {
+  return null;
+}
 
 function createRouteModule({
   route,

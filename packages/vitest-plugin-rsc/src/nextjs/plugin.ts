@@ -1593,6 +1593,48 @@ export function vitestPluginNext(): Plugin[] {
           root,
           nextOptionalAppRenderOptimizeDeps,
         );
+        const nextAppRouterApiDeps = filterResolvableOptimizeDeps(
+          root,
+          nextAppRouterApiOptimizeDeps,
+        );
+        const nextTestingLibraryDeps = filterResolvableOptimizeDeps(
+          root,
+          nextTestingLibraryOptimizeDeps,
+        );
+        const nextRscServerDeps = filterResolvableOptimizeDeps(root, nextRscServerOptimizeDeps);
+        const nextBrowserRuntimeDeps = filterResolvableOptimizeDeps(
+          root,
+          nextBrowserRuntimeOptimizeDeps,
+        );
+        const nextRscClientUtilityDeps = filterResolvableOptimizeDeps(
+          root,
+          nextRscClientUtilityOptimizeDeps,
+        );
+        const nextBuiltinErrorDeps = filterResolvableOptimizeDeps(
+          root,
+          nextBuiltinErrorOptimizeDeps,
+        );
+        const nextRouteUtilityDeps = filterResolvableOptimizeDeps(
+          root,
+          nextRouteUtilityOptimizeDeps,
+        );
+        const nextClientRouterDeps = filterResolvableOptimizeDeps(
+          root,
+          nextClientRouterOptimizeDeps,
+        );
+        const nextClientNavigationDeps = filterResolvableOptimizeDeps(
+          root,
+          nextClientNavigationOptimizeDeps,
+        );
+        const nextAppRouterClientApiDeps = filterResolvableOptimizeDeps(
+          root,
+          nextAppRouterClientApiOptimizeDeps,
+        );
+        const nextEntryBaseClientReferenceDeps = filterResolvableOptimizeDeps(
+          root,
+          nextEntryBaseClientReferenceOptimizeDeps,
+        );
+        const nextImageDeps = filterResolvableOptimizeDeps(root, nextImageOptimizeDeps);
         const nextDefineEnvs = await createNextDefineEnvs(root, env.mode, nextImageConfig);
         const nextSourceOptimizerEntries = createNextSourceOptimizerEntries(root);
 
@@ -1612,7 +1654,7 @@ export function vitestPluginNext(): Plugin[] {
             ],
           },
           optimizeDeps: {
-            include: [...nextAppRouterApiOptimizeDeps, ...nextTestingLibraryOptimizeDeps],
+            include: [...nextAppRouterApiDeps, ...nextTestingLibraryDeps],
             exclude: [...nextRootParamsOptimizeDepsExclude],
             entries: nextSourceOptimizerEntries,
             rolldownOptions: {
@@ -1644,12 +1686,12 @@ export function vitestPluginNext(): Plugin[] {
                 exclude: [...nextRootParamsOptimizeDepsExclude],
                 entries: nextSourceOptimizerEntries,
                 include: [
-                  ...nextRscServerOptimizeDeps,
+                  ...nextRscServerDeps,
                   ...nextOptionalAppRenderDeps,
-                  ...nextBrowserRuntimeOptimizeDeps,
-                  ...nextRscClientUtilityOptimizeDeps,
-                  ...nextBuiltinErrorOptimizeDeps,
-                  ...nextRouteUtilityOptimizeDeps,
+                  ...nextBrowserRuntimeDeps,
+                  ...nextRscClientUtilityDeps,
+                  ...nextBuiltinErrorDeps,
+                  ...nextRouteUtilityDeps,
                 ],
                 rolldownOptions: {
                   transform: {
@@ -1702,13 +1744,13 @@ export function vitestPluginNext(): Plugin[] {
                 exclude: [...nextRootParamsOptimizeDepsExclude],
                 entries: nextSourceOptimizerEntries,
                 include: [
-                  ...nextBrowserRuntimeOptimizeDeps,
-                  ...nextClientRouterOptimizeDeps,
-                  ...nextClientNavigationOptimizeDeps,
-                  ...nextAppRouterApiOptimizeDeps,
-                  ...nextAppRouterClientApiOptimizeDeps,
-                  ...nextEntryBaseClientReferenceOptimizeDeps,
-                  ...nextImageOptimizeDeps,
+                  ...nextBrowserRuntimeDeps,
+                  ...nextClientRouterDeps,
+                  ...nextClientNavigationDeps,
+                  ...nextAppRouterApiDeps,
+                  ...nextAppRouterClientApiDeps,
+                  ...nextEntryBaseClientReferenceDeps,
+                  ...nextImageDeps,
                 ],
                 rolldownOptions: {
                   transform: {
@@ -1755,13 +1797,13 @@ export function vitestPluginNext(): Plugin[] {
                 exclude: [...nextRootParamsOptimizeDepsExclude],
                 entries: nextSourceOptimizerEntries,
                 include: [
-                  ...nextBrowserRuntimeOptimizeDeps,
-                  ...nextClientRouterOptimizeDeps,
-                  ...nextClientNavigationOptimizeDeps,
-                  ...nextAppRouterApiOptimizeDeps,
-                  ...nextAppRouterClientApiOptimizeDeps,
-                  ...nextEntryBaseClientReferenceOptimizeDeps,
-                  ...nextImageOptimizeDeps,
+                  ...nextBrowserRuntimeDeps,
+                  ...nextClientRouterDeps,
+                  ...nextClientNavigationDeps,
+                  ...nextAppRouterApiDeps,
+                  ...nextAppRouterClientApiDeps,
+                  ...nextEntryBaseClientReferenceDeps,
+                  ...nextImageDeps,
                   "react-dom/server.browser",
                 ],
                 rolldownOptions: {

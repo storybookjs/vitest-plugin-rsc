@@ -1,10 +1,21 @@
 "use client";
 
-import { useCallback, useState } from "react";
-import { unstable_catchError, type ErrorInfo } from "next/error";
+import { useCallback, useState, type ComponentType, type ReactNode } from "react";
+import * as nextError from "next/error";
 
 type ErrorBoundaryProps = {
   onRecover: () => void;
+};
+
+type ErrorInfo = {
+  error: Error;
+  reset: () => void;
+};
+
+type NextErrorModule = {
+  unstable_catchError?: (
+    fallback: typeof ClientErrorFallback,
+  ) => ComponentType<ErrorBoundaryProps & { children: ReactNode }>;
 };
 
 function ClientErrorFallback({ onRecover }: ErrorBoundaryProps, errorInfo: ErrorInfo) {
@@ -24,7 +35,10 @@ function ClientErrorFallback({ onRecover }: ErrorBoundaryProps, errorInfo: Error
   );
 }
 
-const ClientErrorBoundary = unstable_catchError(ClientErrorFallback);
+const unstableCatchError = (nextError as NextErrorModule).unstable_catchError;
+const ClientErrorBoundary =
+  typeof unstableCatchError === "function" ? unstableCatchError(ClientErrorFallback) : undefined;
+export const supportsNextUnstableCatchError = Boolean(ClientErrorBoundary);
 
 function ThrowWhenActive({ active }: { active: boolean }) {
   if (active) {
@@ -37,6 +51,10 @@ function ThrowWhenActive({ active }: { active: boolean }) {
 export function ClientErrorProbe() {
   const [active, setActive] = useState(false);
   const recover = useCallback(() => setActive(false), []);
+
+  if (!ClientErrorBoundary) {
+    return <p>Client error boundary API unavailable in this Next version</p>;
+  }
 
   return (
     <ClientErrorBoundary onRecover={recover}>

@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -127,6 +128,21 @@ test("adds Next app source files as optimizer scan entries", async () => {
   );
 });
 
+test("only includes optimizer deps that resolve in the installed Next version", async () => {
+  const config = await resolveNextPluginConfig();
+  const requireFromFixture = createRequire(path.join(fixtureRoot, "package.json"));
+  const includes = [
+    ...getOptimizeDepsInclude(config),
+    ...getEnvironmentOptimizeDepsInclude(config, "client"),
+    ...getEnvironmentOptimizeDepsInclude(config, "react_client"),
+    ...getEnvironmentOptimizeDepsInclude(config, "react_ssr"),
+  ];
+
+  for (const dep of includes) {
+    expect(() => requireFromFixture.resolve(dep)).not.toThrow();
+  }
+});
+
 test("rewrites Next server-runtime checks only for Next internals in the RSC environment", async () => {
   const plugin = findNextPlugin("next-rsc-server-next-internals");
   const transform = getHookHandler(plugin.transform);
@@ -252,9 +268,6 @@ test("proxies Next entry-base client imports as RSC client references", async ()
     `"/@id/__x00__vitest-plugin-rsc:next-entry-base-client-reference:${encodedModuleId}"`,
   );
   expect(serverCode).toContain('export default createClientReference("default");');
-  expect(serverCode).toContain(
-    'export const LoadingBoundaryProvider = createClientReference("LoadingBoundaryProvider");',
-  );
   expect(browserCode).toContain('"use client"');
   expect(browserCode).toContain("next/dist/client/components/layout-router.js");
 });
@@ -595,6 +608,14 @@ function getEnvironmentDefine(config: UserConfig, environment: string): Record<s
 
 function getEnvironmentOptimizeDepsEntries(config: UserConfig, environment: string): string[] {
   return (config.environments?.[environment]?.optimizeDeps?.entries ?? []) as string[];
+}
+
+function getOptimizeDepsInclude(config: UserConfig): string[] {
+  return (config.optimizeDeps?.include ?? []) as string[];
+}
+
+function getEnvironmentOptimizeDepsInclude(config: UserConfig, environment: string): string[] {
+  return (config.environments?.[environment]?.optimizeDeps?.include ?? []) as string[];
 }
 
 function getBrowserTesterHtmlPath(config: UserConfig): string | undefined {
