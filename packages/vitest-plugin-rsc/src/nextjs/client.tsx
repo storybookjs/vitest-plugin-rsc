@@ -35,10 +35,9 @@ let actionQueue: AppRouterActionQueue | null = null;
 const globalErrorState: GlobalErrorState = [GlobalError, null];
 
 // Next 16.0.x and 16.1.x render the dev HotReload wrapper inside AppRouter and
-// require a defined websocket so `useWebSocketPing` can send HMR pings. Component
-// tests do not run Next's app-index bootstrap, so provide a no-op open socket.
-// Next 16.2.x also accepts this prop, though the rest of the router bootstrap
-// path no longer crashes when it is absent.
+// require the websocket/static-indicator state that app-index normally creates.
+// Component tests do not run Next's app-index bootstrap, so provide no-op dev
+// state that matches that bootstrap shape.
 const webSocket = {
   readyState: WebSocket.OPEN,
   OPEN: WebSocket.OPEN,
@@ -47,6 +46,7 @@ const webSocket = {
   removeEventListener: () => {},
   close: () => {},
 } as unknown as WebSocket;
+const staticIndicatorState = { pathname: null, appIsrManifest: null };
 
 type InitialFlightPayload = Partial<InitialRSCPayload> & Pick<InitialRSCPayload, "f">;
 
@@ -95,6 +95,7 @@ export const NextRouter = ({
       actionQueue={currentActionQueue}
       globalErrorState={snapshot.globalErrorState}
       webSocket={webSocket}
+      staticIndicatorState={staticIndicatorState}
     />
   );
 };

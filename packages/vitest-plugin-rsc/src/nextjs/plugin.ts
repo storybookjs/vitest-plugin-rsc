@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { transformHoistInlineDirective } from "@vitejs/plugin-rsc/transforms";
+import { defaultConfig } from "next/dist/server/config-shared.js";
 import type { Alias, Plugin, UserConfig } from "vite";
 import { parseAstAsync } from "vite";
 import { useNextAppRenderCompatibility } from "./app-render-compat-plugin";
@@ -121,6 +122,23 @@ const nextAppRouterApiOptimizeDeps = [
 ] as const;
 
 const nextRootParamsOptimizeDepsExclude = ["next/root-params", "next/root-params.js"] as const;
+
+// Begin copy: Next.js default cacheLife profiles
+// Source: https://github.com/vercel/next.js/blob/4588a7354283f97e2124e3d82f55733ca4eb9373/packages/next/src/server/config-shared.ts
+// Adaptation: Next 16.0.x/16.1.x can expose cache components without a
+// populated defaultConfig.cacheLife in this test adapter path. Keep the minimum
+// default profile table so use-cache-wrapper always receives the required
+// "default" profile, then layer project config on top.
+const fallbackNextCacheLifeProfiles = {
+  default: { stale: undefined, revalidate: 900, expire: 4294967294 },
+  seconds: { stale: 30, revalidate: 1, expire: 60 },
+  minutes: { stale: 300, revalidate: 60, expire: 3600 },
+  hours: { stale: 300, revalidate: 3600, expire: 86400 },
+  days: { stale: 300, revalidate: 86400, expire: 604800 },
+  weeks: { stale: 300, revalidate: 604800, expire: 2592000 },
+  max: { stale: 300, revalidate: 2592000, expire: 31536000 },
+} as const;
+// End copy
 
 const nextAppRouterClientApiOptimizeDeps = [
   "next/dist/client/add-base-path",
@@ -749,12 +767,27 @@ async function createNextDefineEnvs(
 function createNextRuntimeConfigDefines(root: string, distDir: string, nextConfig: NextConfigLike) {
   return {
     "process.env.__NEXT_CACHE_HANDLERS": JSON.stringify(nextConfig.cacheHandlers ?? {}),
+    "process.env.__NEXT_CACHE_LIFE": JSON.stringify(createNextCacheLifeProfiles(nextConfig)),
     "process.env.__NEXT_CACHE_MAX_MEMORY_SIZE": JSON.stringify(
       nextConfig.cacheMaxMemorySize ?? null,
     ),
     "process.env.__NEXT_DIST_DIR": JSON.stringify(distDir),
     "process.env.__NEXT_PROJECT_ROOT": JSON.stringify(root),
   };
+}
+
+function createNextCacheLifeProfiles(nextConfig: NextConfigLike) {
+  return {
+    ...fallbackNextCacheLifeProfiles,
+    ...readObject(defaultConfig.cacheLife),
+    ...readObject(nextConfig.cacheLife),
+  };
+}
+
+function readObject(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : {};
 }
 
 function hasNextRewrites(rewrites: NextCustomRoutes["rewrites"]) {

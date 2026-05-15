@@ -91,6 +91,12 @@ test("aliases React packages through Next's vendored React for app-router enviro
   expect(JSON.parse(rscDefine["process.env.__NEXT_CACHE_HANDLERS"]!)).toEqual({
     "notes-custom": expect.stringContaining("cache-handler.mjs"),
   });
+  expect(JSON.parse(rscDefine["process.env.__NEXT_CACHE_LIFE"]!)).toEqual(
+    expect.objectContaining({
+      default: expect.objectContaining({ revalidate: 900, expire: 4294967294 }),
+      "notes-demo-fast": { stale: 1, revalidate: 1, expire: 60 },
+    }),
+  );
   expect(rscDefine["process.env.__NEXT_PROJECT_ROOT"]).toBe(
     JSON.stringify(path.resolve(fixtureRoot)),
   );
