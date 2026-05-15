@@ -8,14 +8,14 @@ import OpenGraphImage, {
   size as openGraphSize,
 } from "./opengraph-image";
 import robots from "./robots";
-import sitemap from "./sitemap";
+import sitemap, { generateSitemaps } from "./sitemap";
 import TwitterImage, {
   alt as twitterAlt,
   generateImageMetadata as generateTwitterImageMetadata,
   size as twitterSize,
 } from "./twitter-image";
 
-test("metadata route exports cover robots, sitemap, and manifest conventions", () => {
+test("metadata route exports cover robots, sitemap, and manifest conventions", async () => {
   expect(robots()).toEqual({
     rules: [
       {
@@ -26,12 +26,21 @@ test("metadata route exports cover robots, sitemap, and manifest conventions", (
     ],
     sitemap: "https://notes.example.test/sitemap.xml",
   });
-  expect(sitemap()).toEqual([
+  expect(generateSitemaps()).toEqual([{ id: "notes" }, { id: "archive" }]);
+  expect(await sitemap()).toEqual([
     {
       changeFrequency: "daily",
       lastModified: new Date("2026-05-15T00:00:00.000Z"),
       priority: 0.8,
       url: "https://notes.example.test/notes",
+    },
+  ]);
+  expect(await sitemap({ id: Promise.resolve("archive") })).toEqual([
+    {
+      changeFrequency: "daily",
+      lastModified: new Date("2026-05-15T00:00:00.000Z"),
+      priority: 0.8,
+      url: "https://notes.example.test/notes/archive",
     },
   ]);
   expect(manifest()).toEqual(
