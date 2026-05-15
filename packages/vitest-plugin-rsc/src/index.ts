@@ -17,6 +17,7 @@ type ReactClientWebSocketInvoke = {
 
 export function vitestPluginRSC(): Plugin[] {
   return [
+    createViteClientWebSocketPlugin(),
     ...vitePluginRscMinimal({
       environment: {
         browser: "react_client",
@@ -184,6 +185,55 @@ export function vitestPluginRSC(): Plugin[] {
     },
     createReactClientCoveragePlugin(),
   ];
+}
+
+function createViteClientWebSocketPlugin(): Plugin {
+  let isVitestBrowserServer = false;
+
+  return {
+    name: "rsc:vite-client-websocket",
+    configResolved(config) {
+      isVitestBrowserServer = config.plugins.some(
+        (plugin) => plugin.name === "vitest:browser:config",
+      );
+    },
+    transform(code, id) {
+      if (!isVitestBrowserServer || !isViteClientEntry(id)) return;
+
+      const patched = patchViteClientWebSocket(code);
+      if (patched === code) {
+        this.warn("Could not patch Vite client websocket host. The Vite client shape changed.");
+        return;
+      }
+
+      return patched;
+    },
+  };
+}
+
+function patchViteClientWebSocket(code: string): string {
+  return code
+    .replace(
+      /const serverHost = __SERVER_HOST__;?/,
+      "const serverHost = `${location.host}${__BASE__ || '/'}`;",
+    )
+    .replace(
+      /const socketHost = `\$\{__HMR_HOSTNAME__ \|\| importMetaUrl\.hostname\}:\$\{\s*hmrPort \|\| importMetaUrl\.port\s*\}\$\{__HMR_BASE__\}`;?/,
+      "const socketHost = `${location.host}${__HMR_BASE__}`;",
+    )
+    .replace(
+      /const directSocketHost = __HMR_DIRECT_TARGET__;?/,
+      "const directSocketHost = socketHost;",
+    );
+}
+
+function isViteClientEntry(id: string): boolean {
+  const cleanId = id.split("?")[0]!.replaceAll("\\", "/");
+  return (
+    cleanId.endsWith("/vite/dist/client/client.mjs") ||
+    cleanId.endsWith("/vite/dist/client/client.js") ||
+    cleanId.endsWith("/vite/src/client/client.ts")
+  );
 }
 
 function parseWebSocketInvoke(raw: unknown): ReactClientWebSocketInvoke | undefined {
