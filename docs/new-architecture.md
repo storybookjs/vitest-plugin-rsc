@@ -214,16 +214,17 @@ Current state:
 - `next/root-params` is gated by `experimental.rootParams` or `cacheComponents`.
 - The notes demo runs with `cacheComponents: true`.
 - A Vite RSC transform hoists async `"use cache"` functions and wraps them with `next/dist/server/use-cache/use-cache-wrapper.js#cache`.
-- Notes-demo coverage proves default `"use cache"` entries, `"use cache: remote"`, `"use cache: private"` request cookie access, `cacheTag`, a custom `cacheLife()` profile from `next.config`, and the current Next cold-fill behavior for concurrent identical `"use cache"` calls.
+- Notes-demo coverage proves default `"use cache"` entries, `"use cache: remote"`, `"use cache: private"` request cookie access, `cacheTag`, a custom `cacheLife()` profile from `next.config`, and version-tolerant behavior for concurrent identical `"use cache"` calls. Current supported Next versions may either run two cold fills or coalesce them, but both concurrent call sites must agree with the final read count.
 - Notes-demo coverage proves Next's dynamic API guard for public `"use cache"` scopes by asserting the real `cookies()`-inside-cache error.
+- Package coverage proves the Vite `"use cache"` hoist stays disabled when the loaded Next config does not set `cacheComponents: true`.
 
 Missing before claiming support:
 
 - Wire custom `cacheHandlers` and `cacheMaxMemorySize` from `next.config`.
 - Verify cached components with children, closure-bound cache functions, and `boundArgsLength` handling. A local probe showed the current wrapper evaluates a cached component with distinct JSX children twice, so this needs the real Next transform call shape or an upstream Vite RSC hoist extension before it can be claimed.
-- Done for the current wrapper path: concurrent cold `Promise.all` calls to the same `"use cache"` function do not coalesce before the first cache handler write, matching the observed Next `use-cache-wrapper`/default handler path. Sequential duplicate reads still hit the cache.
+- Done for the current wrapper path: concurrent cold `Promise.all` calls to the same `"use cache"` function run through Next's `use-cache-wrapper`/default handler path. The exact cold-fill count is Next-version-dependent: supported stable/latest releases may run two cold fills, while canary may coalesce to one. The contract here is that both concurrent call sites resolve consistently and the final read count matches the rendered values. Sequential duplicate reads still hit the cache.
 - Expand the client reference manifest shim to cover the module mappings Next cache wrappers decode against.
-- Add negative tests for dynamic APIs inside public cache scopes and flag-disabled behavior.
+- Add more negative tests for dynamic APIs inside public cache scopes.
 
 Preferred direction: let `@vitejs/plugin-rsc` own directive hoisting/reference mechanics, but use Next's cache runtime semantics where the wrapper/cache handler behavior is Next-specific. Do not let Next SWC partially own RSC directives unless tests prove it does not conflict with Vite RSC.
 
@@ -401,7 +402,7 @@ Add focused tests in `playground/nextjs-notes-demo` before claiming more fidelit
 - App route conventions still missing or thin: intercepting routes, nested parallel routes, metadata files, `generateStaticParams`, `generateImageMetadata`, `generateSitemaps`, static/dynamic params edge cases, `mdx-components`, `instrumentation`, `instrumentation-client`, and route segment config behavior beyond the current `dynamic`, `dynamicParams`, `revalidate`, `fetchCache`, `runtime`, `preferredRegion`, and `maxDuration` smoke coverage.
 - Route Handlers: `GET`, `POST`, `PUT`, `PATCH`, `DELETE`, `HEAD`, `OPTIONS`, `NextRequest`, `NextResponse`, cookies, redirects, streaming, params, and route segment config.
 - `next/navigation`: all hooks and control-flow functions in both route-render and direct-node modes.
-- `next/cache`: custom cache handlers, configured cache memory size, disabled-flag behavior, concurrent in-flight coalescing, cache-components with children/bound args, deeper `fetch` cache semantics, and cache manifest/module mapping contracts.
+- `next/cache`: custom cache handlers, configured cache memory size, cache-components with children/bound args, deeper `fetch` cache semantics, and cache manifest/module mapping contracts. The transform-level disabled flag is covered: `"use cache"` directives are left untouched unless `cacheComponents: true` is loaded from Next config.
 - `next/server`: `NextRequest`, `NextResponse`, `userAgent`, `ImageResponse`, route handler streaming, cookies, redirects, and rewrite behavior.
 - Client hooks and diagnostics: `useLinkStatus`, deeper `useReportWebVitals` metric assertions, deeper `next/error` recovery/diagnostics, route-level `unstable_rethrow`/`unstable_catchError` cases beyond the current client/action coverage.
 - `next.config`: rewrites, redirects, headers, basePath, trailingSlash, assetPrefix, image config, env, transpilePackages, modularizeImports, optimizePackageImports, compiler options, typed routes where applicable, and root params.
@@ -439,8 +440,9 @@ P0: design Cache Components support before expanding it.
 
 - Done for the first boundary: Vite RSC owns `use cache` hoisting/reference mechanics, and Next's `use-cache-wrapper` plus cache handlers own runtime semantics.
 - Done for the first runtime slice: initialize Next cache handlers where available instead of inventing a local cache runtime.
-- Done for notes-demo basics: `cacheComponents: true`, cached async functions, `cacheLife`, `cacheTag`, default cache, remote cache, private cache request cookie access, public-cache `cookies()` errors, cold concurrent behavior, sequential duplicate cache hits, and cache invalidation through `updateTag`, `revalidateTag`, and `revalidatePath`.
-- Still needed: cached components with children, closure-bound cache functions, more dynamic API guard coverage, disabled flag behavior, custom `cacheHandlers`, configured cache memory size, and cache manifest/module mapping coverage.
+- Done for notes-demo basics: `cacheComponents: true`, cached async functions, `cacheLife`, `cacheTag`, default cache, remote cache, private cache request cookie access, public-cache `cookies()` errors, version-tolerant cold concurrent behavior, sequential duplicate cache hits, and cache invalidation through `updateTag`, `revalidateTag`, and `revalidatePath`.
+- Done for the transform gate: package coverage proves `"use cache"` directives are not hoisted when `cacheComponents` is disabled.
+- Still needed: cached components with children, closure-bound cache functions, more dynamic API guard coverage, custom `cacheHandlers`, configured cache memory size, and cache manifest/module mapping coverage.
 - Do not claim support until the cache manifest/module mapping path is tested.
 
 P0: reduce document fallback and manifest magic.
@@ -505,7 +507,7 @@ P2: decide explicit non-goals.
 4. Justify the `Buffer.prototype.indexOf` patch with a minimal regression test pointing at the Next stream-utils path that needs it. Done.
 5. Extend static image tests for dev serving, build emission, SVG policy, blur placeholder behavior, and image config loaded from `next.config`. Done for the current static image adapter surface.
 6. Continue next/font asset/preload work. Done for the current asset/preload surface: emitted font files, dev serving, browser-visible `className`/`variable` CSS, no data URL final behavior, local multi-file coverage, declarations/fallback metrics, and route-scoped preload metadata. Still needed: CSS module contract cleanup and non-variable Google weights/styles.
-7. Done for the first cache-components slice: notes demo runs with `cacheComponents: true`, Vite RSC hoists async `use cache` functions, and runtime goes through Next's `use-cache-wrapper` and cache handlers. Still needed: cached components with children, bound args, custom handlers, negative tests, and manifest mapping coverage.
+7. Done for the first cache-components slice: notes demo runs with `cacheComponents: true`, Vite RSC hoists async `use cache` functions, leaves `"use cache"` unhoisted when `cacheComponents` is disabled, and runtime goes through Next's `use-cache-wrapper` and cache handlers. Still needed: cached components with children, bound args, custom handlers, more dynamic-API negative tests, and manifest mapping coverage.
 8. Done for config loading/defines/render opts and first render-path behavior: feed rewrites, redirects, headers, basePath, trailingSlash, image config, assetPrefix, cache components, and cache life from real Next config; apply same-origin rewrites and redirects before app route matching. Still needed: response headers and a higher-level request pipeline for middleware/proxy, external rewrites, and locale/basePath edge cases.
 9. Done: CI runs latest, canary, and supported stable Next compatibility jobs across the focused unit suite plus no-MSW and notes-demo browser/node surfaces, using an explicit non-default Vitest API port for the browser runner.
 10. Done: add a browser-level regression for the plugin document merge proving whole-document Next rendering preserves Vitest harness scripts while applying Next head/meta/title output.
