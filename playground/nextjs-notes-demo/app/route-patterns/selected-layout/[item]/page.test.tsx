@@ -8,6 +8,10 @@ test("renderServer exposes selected layout segments in a real notes route layout
   });
 
   expect(container).toBe(document.body);
+  expect(document.title).toBe("Selected layout metadata");
+  expect(document.querySelector('meta[name="description"]')?.getAttribute("content")).toBe(
+    "Metadata exported by a nested route layout.",
+  );
   await expect.element(page.getByTestId("notes-route-patterns-layout")).toBeVisible();
   await expect.element(page.getByText("layout selected segment: alpha")).toBeVisible();
   await expect.element(page.getByText("layout selected segments: alpha")).toBeVisible();
