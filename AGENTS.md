@@ -80,9 +80,9 @@ When copying code from Next.js, wrap it in clear copy markers and include the up
 // End copy
 ```
 
-Tests should cover framework features, not just demo behavior. Add focused unit coverage for each supported Next API or convention touched by the plugin, and keep the notes demo suite as acceptance coverage for realistic combinations. Do not add app-local mocks to make the notes demo pass when the plugin can provide the behavior for every user.
+Tests should cover framework features, not just demo behavior. Every supported Next API, route convention, page export, or runtime behavior touched by the plugin should have a focused test in `playground/nextjs-notes-demo`. Package-level unit tests in `packages/vitest-plugin-rsc/src/nextjs` are still useful for plugin internals, transforms, aliases, and loader adapters, but they do not replace notes-demo coverage for user-visible Next behavior. Do not add app-local mocks to make the notes demo pass when the plugin can provide the behavior for every user.
 
-For Next.js integration work, rebuild before running tests that consume package output. Use non-default Vitest API ports, for example `--api 52643`, to avoid colliding with other local runs. Prefer the notes demo for acceptance coverage over no-MSW fixtures unless the behavior specifically requires a smaller fixture.
+For Next.js integration work, rebuild before running tests that consume package output. Use non-default Vitest API ports, for example `--api 52643`, to avoid colliding with other local runs. Put tests in the notes demo by default. Use no-MSW fixtures only when the behavior specifically requires proving the no-MSW transport path.
 
 Before merging Next.js integration changes, check that:
 
@@ -92,4 +92,4 @@ Before merging Next.js integration changes, check that:
 - glue is being removed or narrowed where real Next/Vite/Vitest/RSC code can own the behavior;
 - every shim names the upstream Next/Vite/Vitest behavior it mirrors;
 - every copied block has source links and an adaptation note;
-- every important Next API or convention touched by the change has focused unit coverage.
+- every important Next API or convention touched by the change has focused notes-demo coverage.

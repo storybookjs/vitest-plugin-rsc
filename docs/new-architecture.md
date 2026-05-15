@@ -356,7 +356,7 @@ This is useful coverage, but it is not full Next.js API coverage. It is still ce
 
 ## Missing Coverage Matrix
 
-Add tests before claiming more fidelity:
+Add focused tests in `playground/nextjs-notes-demo` before claiming more fidelity. Package-level tests are useful for transforms, aliases, loader adapters, and manifest shims, but user-visible Next.js behavior should be proven in the notes demo unless the feature specifically belongs to the no-MSW transport path.
 
 - `next/font`: exported declarations, default export, shared font definition module, Google variable font, Google non-variable weights/styles, local single file, local multi-file, `className`, `variable`, `style.fontFamily`, `style.fontWeight`, `style.fontStyle`, fallback fonts, `adjustFontFallback`, `declarations`, browser CSS injection, build asset output, and route-scoped preload behavior.
 - `next/image`: static png/jpeg/webp/avif/svg imports, `placeholder="blur"`, `fill`, `sizes`, `priority`/`preload`, remote URL config, custom loader, default loader URL generation, `unoptimized`, invalid prop errors, and image config from `next.config`.
@@ -415,8 +415,8 @@ P0: prove or remove Buffer/process/runtime patches.
 
 P1: broaden API and convention coverage.
 
-- Add focused unit tests for each official App Router component/function/convention we claim.
-- Add small fixture routes instead of using only the notes demo flows.
+- Add focused notes-demo tests for each official App Router component/function/convention we claim.
+- Add small notes-demo fixture routes instead of relying only on broad demo flows.
 - Keep the notes demo as the in-tree acceptance app, not the only specification.
 - Prefer the notes demo for realistic App Router state, request stores, cookies, cache, actions, and MSW-routed transport.
 - Keep a visible gap list for App Router docs features that are intentionally unsupported, especially instrumentation, proxy/middleware, route handlers, PPR, image optimization, and Node runtime parity.
@@ -481,7 +481,7 @@ Before merging a Next.js fidelity change, ask:
 3. If not, is the copied block minimal, source-linked, and adapted only at the Vite boundary?
 4. Does it leave `@vitejs/plugin-rsc` in charge of RSC directives and references?
 5. Does it work outside the notes demo fixture?
-6. Is there a unit test for the exact Next API or file convention being claimed?
+6. Is there a focused notes-demo test for the exact Next API or file convention being claimed?
 7. Is every remaining shim named as a shim with a reason and an exit path?
 8. Does the change reduce local glue, or does it clearly explain why the remaining glue is unavoidable?
 
