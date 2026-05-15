@@ -89,10 +89,11 @@ test("renderServer applies next.config rewrites before resolving app routes", as
 });
 
 test("renderServer does not let next.config afterFiles rewrites shadow app routes", async () => {
-  await renderServer({ url: "/next-apis" });
+  const result = await renderServer({ url: "/next-apis" });
 
   await expect.element(page.getByRole("heading", { name: "Next APIs" })).toBeVisible();
   expect(page.getByText("Redirect source: after-files-shadow").query()).toBeNull();
+  expect(result.headers.get("x-next-config-header")).toBe("notes-demo");
 });
 
 test("renderServer follows next.config redirects before resolving app routes", async () => {

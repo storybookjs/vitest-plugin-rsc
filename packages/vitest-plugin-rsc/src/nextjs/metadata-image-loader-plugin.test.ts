@@ -108,6 +108,55 @@ test("invokes Next metadata image loader for static icon conventions", async () 
   }
 });
 
+test("provides Next loader module exports for dynamic metadata image routes", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "vitest-plugin-rsc-metadata-dynamic-image-"));
+  const appDir = path.join(root, "app");
+  const imagePath = path.join(appDir, "opengraph-image.tsx");
+  const plugin = useNextMetadataImageLoader();
+  const configResolved = getHookHandler(plugin.configResolved);
+  const resolveId = getHookHandler(plugin.resolveId);
+  const load = getHookHandler(plugin.load);
+
+  try {
+    fs.mkdirSync(appDir, { recursive: true });
+    fs.writeFileSync(
+      path.join(root, "package.json"),
+      JSON.stringify({ dependencies: { next: "*" } }),
+    );
+    fs.writeFileSync(
+      imagePath,
+      `export const alt = "Dynamic image";
+export const size = { width: 1200, height: 630 };
+export function generateImageMetadata() {
+  return [{ id: "notes", alt, size, contentType: "image/png" }];
+}
+export default function OpenGraphImage() {
+  return new Response("image");
+}
+`,
+    );
+
+    await configResolved.call({} as never, { root } as never);
+
+    const code = await loadMetadataImageModule({
+      load,
+      request: [
+        "next-metadata-image-loader?type=openGraph&segment=/notes&pageExtensions=tsx&basePath=",
+        `${imagePath}?__next_metadata__`,
+      ].join("!"),
+      resolveId,
+    });
+
+    expect(code).toContain("generateImageMetadata");
+    expect(code).toContain("alt: _alt");
+    expect(code).toContain("size: _size");
+    expect(code).toContain('"/notes"');
+    expect(code).toContain("?__next_metadata_image_meta__");
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 async function loadMetadataImageModule({
   load,
   request,

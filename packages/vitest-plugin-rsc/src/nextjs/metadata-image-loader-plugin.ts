@@ -44,6 +44,9 @@ export function useNextMetadataImageLoader(): Plugin {
       return loader.default.call(
         {
           getOptions: () => options,
+          loadModule(_request, callback) {
+            void loadNextMetadataImageModule(root, resourcePath, callback);
+          },
           resourcePath,
           resourceQuery,
           rootContext: root,
@@ -58,6 +61,15 @@ export function useNextMetadataImageLoader(): Plugin {
 
 type NextMetadataImageLoaderContext = {
   getOptions(): NextMetadataImageLoaderOptions;
+  loadModule(
+    request: string,
+    callback: (
+      error: Error | null,
+      source?: string,
+      sourceMap?: unknown,
+      module?: NextMetadataImageModule,
+    ) => void,
+  ): void;
   resourcePath: string;
   resourceQuery: string;
   rootContext: string;
@@ -71,6 +83,45 @@ type NextMetadataImageLoaderOptions = {
   pageExtensions: string[];
   basePath: string;
 };
+
+type NextMetadataImageModule = {
+  dependencies: NextMetadataImageExportDependency[];
+};
+
+type NextMetadataImageExportDependency = {
+  constructor: { name: "HarmonyExportSpecifierDependency" };
+  name: string;
+};
+
+async function loadNextMetadataImageModule(
+  root: string,
+  resourcePath: string,
+  callback: Parameters<NextMetadataImageLoaderContext["loadModule"]>[1],
+) {
+  try {
+    callback(null, "", null, await createNextMetadataImageModule(root, resourcePath));
+  } catch (error) {
+    callback(error as Error);
+  }
+}
+
+async function createNextMetadataImageModule(
+  root: string,
+  resourcePath: string,
+): Promise<NextMetadataImageModule> {
+  const { getModuleNamedExports } = createProjectRequire(root)("next/dist/build/swc") as {
+    getModuleNamedExports(resourcePath: string): Promise<string[]> | string[];
+  };
+  const exportNames = await getModuleNamedExports(resourcePath);
+  return {
+    dependencies: exportNames
+      .filter((name) => name !== "default")
+      .map((name) => ({
+        constructor: { name: "HarmonyExportSpecifierDependency" },
+        name,
+      })),
+  };
+}
 
 function parseNextMetadataImageLoaderRequest(request: string) {
   const [loaderRequest, resourceRequest] = splitOnce(request, "!");
