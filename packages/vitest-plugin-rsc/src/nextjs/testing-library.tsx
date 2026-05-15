@@ -23,6 +23,7 @@ import * as ReactServer from "@vitejs/plugin-rsc/react/rsc";
 import { NextRouter } from "vitest-plugin-rsc/nextjs/client";
 import {
   createNextDirectComponentMod,
+  isNextAppRenderRedirectError,
   renderNextRouteActionResponse,
   renderNextRouteFlightResponse,
   renderNextRouteHtmlResponse,
@@ -198,33 +199,47 @@ export async function renderServer(
         replacementRoute: routeEntry?.route,
         fallbackRoute: requestRoute,
       } satisfies NextRenderSource);
+    let activeRequestUrl = requestUrl;
 
     async function prepareServerRoot(
       initialRSCPayload?: NextInitialRscPayload,
     ): Promise<ReactNode> {
-      const appRenderEntry = resolveAppRenderEntry(renderSource, requestUrl, requestRoute);
-      const initialFlightPayload =
-        initialRSCPayload === undefined
-          ? await renderNextRouteInitialPayload({
-              loaderTree: appRenderEntry.loaderTree,
-              route: appRenderEntry.route,
-              page: appRenderEntry.appPath,
-              url: requestUrl,
-              headers,
-              componentMod: shouldUseDirectMetadataStub(renderSource, appRenderEntry)
-                ? await createNextDirectComponentMod()
-                : undefined,
-            })
-          : undefined;
+      let renderUrl = activeRequestUrl;
+      for (let redirectCount = 0; redirectCount < 5; redirectCount++) {
+        const appRenderEntry = resolveAppRenderEntry(renderSource, renderUrl, requestRoute);
+        try {
+          const initialFlightPayload =
+            initialRSCPayload === undefined
+              ? await renderNextRouteInitialPayload({
+                  loaderTree: appRenderEntry.loaderTree,
+                  route: appRenderEntry.route,
+                  page: appRenderEntry.appPath,
+                  url: renderUrl,
+                  headers,
+                  componentMod: shouldUseDirectMetadataStub(renderSource, appRenderEntry)
+                    ? await createNextDirectComponentMod()
+                    : undefined,
+                })
+              : undefined;
+          activeRequestUrl = renderUrl;
 
-      return (
-        <NextRouterForRender
-          url={requestUrl}
-          route={appRenderEntry.route}
-          initialFlightPayload={initialFlightPayload}
-          initialRSCPayload={initialRSCPayload}
-        />
-      );
+          return (
+            <NextRouterForRender
+              url={renderUrl}
+              route={appRenderEntry.route}
+              initialFlightPayload={initialFlightPayload}
+              initialRSCPayload={initialRSCPayload}
+            />
+          );
+        } catch (error) {
+          if (initialRSCPayload !== undefined || !isNextAppRenderRedirectError(error)) {
+            throw error;
+          }
+          renderUrl = resolveRedirectUrl(error.url, renderUrl);
+        }
+      }
+
+      throw new Error(`renderServer exceeded the Next redirect limit for ${activeRequestUrl}.`);
     }
 
     const fetchRsc: FetchRsc = async (actionRequest) => {
@@ -297,7 +312,7 @@ export async function renderServer(
         };
       };
       const renderNextDocumentClientFallback = async (status?: number) => {
-        const appRenderEntry = resolveAppRenderEntry(renderSource, requestUrl, requestRoute);
+        const appRenderEntry = resolveAppRenderEntry(renderSource, activeRequestUrl, requestRoute);
         if (status !== undefined) {
           const accessFallbackNode = await loadDeepestAccessFallbackNode(
             appRenderEntry.loaderTree,
@@ -308,9 +323,14 @@ export async function renderServer(
           }
         }
 
-        const documentHtml = await renderNextDocumentHtml(renderSource, requestUrl, requestRoute, {
-          headers,
-        });
+        const documentHtml = await renderNextDocumentHtml(
+          renderSource,
+          activeRequestUrl,
+          requestRoute,
+          {
+            headers,
+          },
+        );
         const initialRSCPayload = await createNextDocumentInitialPayload(documentHtml);
         if (status !== undefined) {
           const initialAccessFallbackNode = findInitialAccessFallbackNode(initialRSCPayload);
@@ -362,7 +382,7 @@ export async function renderServer(
             accessFallbackStatus === undefined &&
             !isNextBuiltinGlobalErrorReferenceError(error) &&
             !hasNextErrorBoundary(
-              resolveAppRenderEntry(renderSource, requestUrl, requestRoute).loaderTree,
+              resolveAppRenderEntry(renderSource, activeRequestUrl, requestRoute).loaderTree,
             )
           ) {
             throw error;
@@ -396,7 +416,7 @@ export async function renderServer(
           (getNextHttpAccessFallbackStatus(error) === undefined &&
             !isNextBuiltinGlobalErrorReferenceError(error) &&
             !hasNextErrorBoundary(
-              resolveAppRenderEntry(renderSource, requestUrl, requestRoute).loaderTree,
+              resolveAppRenderEntry(renderSource, activeRequestUrl, requestRoute).loaderTree,
             ))
         ) {
           throw error;
@@ -894,6 +914,16 @@ function assertRoutePatternMatchesPath(routePattern: string, pathname: string) {
   if (matchRoutePattern(routePattern, pathname)) return;
 
   throw new Error(`Pattern "${routePattern}" does not match pathname "${pathname}".`);
+}
+
+function resolveRedirectUrl(redirectUrl: string, baseUrl: string) {
+  const base = new URL(baseUrl, "http://localhost");
+  const target = new URL(redirectUrl, base);
+  if (target.origin !== base.origin) {
+    throw new Error(`renderServer cannot follow external Next redirect "${target.href}".`);
+  }
+
+  return `${target.pathname}${target.search}${target.hash}`;
 }
 
 function normalizeRoutePattern(routePattern: string) {

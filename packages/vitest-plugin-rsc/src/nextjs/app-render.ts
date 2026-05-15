@@ -30,6 +30,19 @@ type NextIncrementalCacheConstructor =
 export type NextInitialRscPayload = InitialRSCPayload;
 export type NextNavigationFlightPayload = Partial<InitialRSCPayload> & Pick<InitialRSCPayload, "f">;
 
+export class NextAppRenderRedirectError extends Error {
+  constructor(public readonly url: string) {
+    super(`NEXT_REDIRECT;${url}`);
+    this.name = "NextAppRenderRedirectError";
+  }
+}
+
+export function isNextAppRenderRedirectError(
+  error: unknown,
+): error is NextAppRenderRedirectError {
+  return error instanceof NextAppRenderRedirectError;
+}
+
 type NextRenderManifests = {
   page: string;
   clientReferenceManifest: unknown;
@@ -154,6 +167,11 @@ export async function renderNextRouteInitialPayload(options: {
   if (isNextDocumentFallbackPayloadText(flightPayloadText)) {
     await payloadStream.cancel();
     throw new Error("NEXT_HTTP_ERROR_FALLBACK;404");
+  }
+  const redirectUrl = getNextRedirectUrlFromFlightPayloadText(flightPayloadText);
+  if (redirectUrl) {
+    await payloadStream.cancel();
+    throw new NextAppRenderRedirectError(redirectUrl);
   }
 
   return ReactServer.createFromReadableStream<NextNavigationFlightPayload>(payloadStream);
@@ -793,6 +811,11 @@ function isNextBuiltinGlobalErrorModuleId(id: string) {
 
 function isNextDocumentFallbackPayloadText(text: string) {
   return text.includes('"digest":"NEXT_HTTP_ERROR_FALLBACK;404"');
+}
+
+function getNextRedirectUrlFromFlightPayloadText(text: string) {
+  const match = /NEXT_REDIRECT;(?:push|replace);(.+?);30[78];/.exec(text);
+  return match?.[1]?.replaceAll("\\/", "/").replaceAll("\\u0026", "&");
 }
 
 async function readReadableStreamText(stream: ReadableStream<Uint8Array>) {
