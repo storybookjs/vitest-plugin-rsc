@@ -76,3 +76,17 @@ test("notes demo renders Next app-router API aliases and compiler surfaces", asy
   );
   expect(document.title).not.toBe("Ignored by App Router head");
 });
+
+test("renderServer applies next.config rewrites before resolving app routes", async () => {
+  await renderServer({ url: "/next-config-rewrite" });
+
+  await expect.element(page.getByRole("heading", { name: "Next APIs" })).toBeVisible();
+  await expect.element(page.getByText("Connection scope ready")).toBeVisible();
+});
+
+test("renderServer follows next.config redirects before resolving app routes", async () => {
+  await renderServer({ url: "/next-config-redirect" });
+
+  await expect.element(page.getByRole("heading", { name: "Next APIs" })).toBeVisible();
+  await expect.element(page.getByText("Connection scope ready")).toBeVisible();
+});

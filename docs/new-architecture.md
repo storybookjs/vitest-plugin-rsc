@@ -141,8 +141,9 @@ Done:
 - Custom routes are loaded through `next/dist/lib/load-custom-routes.js`.
 - `getDefineEnv` receives the real rewrites object and `hasRewrites` flag.
 - Render opts read base path, trailing slash, asset prefix, image config, cache components, and cache life defines.
+- `renderServer({ url })` applies same-origin `next.config` redirects and rewrites before resolving the app route, using Next route matching and destination helpers.
 
-Remaining weakness: custom routes are not yet executed as a Next request pipeline. `renderServer({ url })` still resolves app pages directly from the route manifest, so `next.config` rewrites, redirects, and headers are visible to Next modules through defines but are not applied before route matching or response creation.
+Remaining weakness: this is still not the full Next request pipeline. `next.config` response headers are loaded but not exposed because `renderServer` does not return a response object yet. Middleware/proxy, external rewrites, locale/basePath edge cases, and custom-route response metadata still need a higher-level request adapter.
 
 ### Aliases and Runtime Polyfills
 
@@ -451,7 +452,8 @@ P1: handle Next config fidelity.
 
 - Done: stop passing empty rewrites/`hasRewrites: false` unconditionally.
 - Done for config loading/defines/render opts: rewrites, redirects, headers, basePath, trailingSlash, image config, assetPrefix, cache components, and cache life.
-- Still needed: execute rewrites, redirects, and headers through a Next-equivalent request pipeline before route matching/response creation.
+- Done for the first render path: same-origin rewrites and redirects are applied before app route matching in `renderServer({ url })`.
+- Still needed: expose/apply response headers and move toward a higher-level Next-equivalent request pipeline for middleware/proxy, external rewrites, and locale/basePath edge cases.
 - Add plugin options for an explicit Next project root or config path only when real projects need more than the Vite root.
 
 P1: decide route-handler and middleware/proxy scope.
@@ -485,7 +487,7 @@ P2: decide explicit non-goals.
 5. Extend static image tests for dev serving, build emission, SVG policy, blur placeholder behavior, and image config loaded from `next.config`. Done for the current static image adapter surface.
 6. Continue next/font asset/preload work. Done for the current asset surface: emitted font files, dev serving, browser-visible `className`/`variable` CSS, and no data URL final behavior. Still needed: CSS module contract cleanup, local multi-file coverage, declarations/fallback metrics, and route-scoped preload metadata.
 7. Done for the first cache-components slice: notes demo runs with `cacheComponents: true`, Vite RSC hoists async `use cache` functions, and runtime goes through Next's `use-cache-wrapper` and cache handlers. Still needed: cached components with children, bound args, custom handlers, negative tests, and manifest mapping coverage.
-8. Done for config loading/defines/render opts: feed rewrites, redirects, headers, basePath, trailingSlash, image config, assetPrefix, cache components, and cache life from real Next config. Still needed: execute custom routes through a Next-equivalent request pipeline.
+8. Done for config loading/defines/render opts and first render-path behavior: feed rewrites, redirects, headers, basePath, trailingSlash, image config, assetPrefix, cache components, and cache life from real Next config; apply same-origin rewrites and redirects before app route matching. Still needed: response headers and a higher-level request pipeline for middleware/proxy, external rewrites, and locale/basePath edge cases.
 9. Add latest/canary Next compatibility jobs or scripts that exercise the focused unit suite and notes demo smoke tests.
 10. Add a plugin-level test that whole-document Next rendering preserves Vitest harness scripts while applying Next head/meta/title output.
 11. Done for the current scope: `renderServer({ url })` detects `route.ts` handlers through Next's app-route matcher and throws a clear unsupported-target error. Future support should execute them through Next route module/request code, not a local handler runner.

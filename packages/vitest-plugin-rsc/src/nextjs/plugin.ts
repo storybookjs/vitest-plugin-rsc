@@ -232,8 +232,12 @@ const nextBuiltinErrorOptimizeDeps = [
 ] as const;
 
 const nextRouteUtilityOptimizeDeps = [
+  "next/dist/lib/redirect-status.js",
   "next/dist/shared/lib/segment.js",
   "next/dist/shared/lib/router/utils/app-paths.js",
+  "next/dist/shared/lib/router/utils/format-url.js",
+  "next/dist/shared/lib/router/utils/path-match.js",
+  "next/dist/shared/lib/router/utils/prepare-destination.js",
   "next/dist/shared/lib/router/utils/route-matcher.js",
   "next/dist/shared/lib/router/utils/route-regex.js",
 ] as const;

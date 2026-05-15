@@ -91,9 +91,10 @@ export function useNextRouteManifest(): Plugin {
       }
 
       if (id === virtualNextRouteManifestId) {
-        const [entries, routeHandlers] = await Promise.all([
+        const [entries, routeHandlers, projectConfig] = await Promise.all([
           scanNextAppRoutes(root, mode),
           scanNextAppRouteHandlers(root, mode),
+          loadNextProjectConfig(root, mode),
         ]);
         for (const entry of entries) {
           this.addWatchFile(entry.pageFile);
@@ -102,7 +103,7 @@ export function useNextRouteManifest(): Plugin {
           this.addWatchFile(entry.routeFile);
         }
 
-        return generateNextRouteManifest(entries, routeHandlers);
+        return generateNextRouteManifest(entries, routeHandlers, projectConfig);
       }
     },
   };
@@ -223,6 +224,7 @@ async function scanNextAppRouteHandlers(
 function generateNextRouteManifest(
   entries: NextRouteManifestBuildEntry[],
   routeHandlers: NextRouteHandlerManifestBuildEntry[],
+  projectConfig: NextProjectConfig,
 ) {
   const imports = entries
     .map((entry, index) => {
@@ -252,7 +254,7 @@ function generateNextRouteManifest(
     )
     .join(",")}]`;
 
-  return `${imports}\nexport const nextRouteManifest = ${manifest};\nexport const nextRouteHandlerManifest = ${routeHandlerManifest};\n`;
+  return `${imports}\nexport const nextRouteManifest = ${manifest};\nexport const nextRouteHandlerManifest = ${routeHandlerManifest};\nexport const nextCustomRoutes = ${JSON.stringify(projectConfig.customRoutes)};\n`;
 }
 
 async function generateNextRouteTreeModule(
