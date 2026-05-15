@@ -20,6 +20,7 @@ test("renderServer replaces the matched dynamic page inside the notes demo layou
   await expect.element(page.getByTestId("notes-route-patterns-layout")).toBeVisible();
   await expect.element(page.getByLabelText("notes team layout acme")).toBeVisible();
   await expect.element(page.getByTestId("notes-team-layout-param")).toHaveTextContent("acme");
+  expect(document.title).toBe("acme settings metadata");
   await expect
     .element(page.getByRole("heading", { name: "Replacement notes team settings" }))
     .toBeVisible();

@@ -357,23 +357,32 @@ function replaceRoutePageWithNode(
   entry: NextRouteManifestEntry,
   node: ReactNode,
 ): NextRouteManifestEntry {
-  const pageModule: LoaderTreeModule = [
-    async () => ({
-      default: function VitestNextRoutePageReplacement() {
-        return node;
-      },
-    }),
-    "vitest-plugin-rsc/page-replacement",
-  ];
+  const createReplacement = (originalPageModule: LoaderTreeModule | undefined) =>
+    createPageReplacementModule(originalPageModule, node);
 
-  const replacement = replacePageModule(entry.loaderTree, entry.pageFile, pageModule);
+  const replacement = replacePageModule(entry.loaderTree, entry.pageFile, createReplacement);
 
   return {
     ...entry,
     loaderTree: replacement.replaced
       ? replacement.loaderTree
-      : replaceFirstPageModule(entry.loaderTree, pageModule).loaderTree,
+      : replaceFirstPageModule(entry.loaderTree, createReplacement).loaderTree,
   };
+}
+
+function createPageReplacementModule(
+  originalPageModule: LoaderTreeModule | undefined,
+  node: ReactNode,
+): LoaderTreeModule {
+  return [
+    async () => ({
+      ...(originalPageModule ? await originalPageModule[0]() : {}),
+      default: function VitestNextRoutePageReplacement() {
+        return node;
+      },
+    }),
+    originalPageModule?.[1] ?? "vitest-plugin-rsc/page-replacement",
+  ];
 }
 
 function createDirectNodeRouteEntry(route: string, node: ReactNode): NextRouteManifestEntry {
@@ -532,15 +541,17 @@ function wrapRootLayoutLoaderTree(
 function replacePageModule(
   loaderTree: LoaderTree,
   pageFile: string,
-  pageModule: LoaderTreeModule,
+  createPageModule: (originalPageModule: LoaderTreeModule | undefined) => LoaderTreeModule,
 ): { loaderTree: LoaderTree; replaced: boolean } {
   const [segment, parallelRoutes, modules, metadata] = loaderTree;
   let replaced = modules.page?.[1] === pageFile;
-  const nextModules = replaced ? { ...modules, page: pageModule } : modules;
+  const nextModules = replaced
+    ? { ...modules, page: createPageModule(modules.page) }
+    : modules;
   const nextParallelRoutes: Record<string, LoaderTree> = {};
 
   for (const [key, childTree] of Object.entries(parallelRoutes)) {
-    const child = replacePageModule(childTree as LoaderTree, pageFile, pageModule);
+    const child = replacePageModule(childTree as LoaderTree, pageFile, createPageModule);
     nextParallelRoutes[key] = child.loaderTree;
     replaced ||= child.replaced;
   }
@@ -553,7 +564,7 @@ function replacePageModule(
 
 function replaceFirstPageModule(
   loaderTree: LoaderTree,
-  pageModule: LoaderTreeModule,
+  createPageModule: (originalPageModule: LoaderTreeModule | undefined) => LoaderTreeModule,
 ): { loaderTree: LoaderTree; replaced: boolean } {
   const [segment, parallelRoutes, modules, metadata] = loaderTree;
   if (modules.page) {
@@ -561,7 +572,7 @@ function replaceFirstPageModule(
       loaderTree: [
         segment,
         parallelRoutes,
-        { ...modules, page: pageModule },
+        { ...modules, page: createPageModule(modules.page) },
         metadata,
       ] as LoaderTree,
       replaced: true,
@@ -577,7 +588,7 @@ function replaceFirstPageModule(
       continue;
     }
 
-    const child = replaceFirstPageModule(childTree as LoaderTree, pageModule);
+    const child = replaceFirstPageModule(childTree as LoaderTree, createPageModule);
     nextParallelRoutes[key] = child.loaderTree;
     replaced = child.replaced;
   }
