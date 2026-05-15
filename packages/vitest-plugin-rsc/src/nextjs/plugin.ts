@@ -1387,7 +1387,7 @@ export function vitestPluginNext(): Plugin[] {
                     treatNextInternalsAsServerInRsc(),
                     disableNextDevServerRuntime(),
                     useNextReactDomServerAlias(root),
-                    useNextEntryBaseClientReferences(),
+                    useNextEntryBaseClientReferences(root),
                     ...useNextAppRenderCompatibility(root),
                     useNextLinkClientReference(),
                     useNextImageClientReference(),

@@ -2,8 +2,9 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import type { Alias, Plugin, UserConfig } from "vite";
+import { createServer, type Alias, type Plugin, type UserConfig, type ViteDevServer } from "vite";
 import { expect, test } from "vitest";
+import { vitestPluginRSC } from "../index";
 import { nextTesterHtmlPath, vitestPluginNext } from "./plugin";
 
 const fixtureRoot = fileURLToPath(
@@ -248,6 +249,43 @@ function CommentedExport() {}
   }
 });
 
+test("optimizes real Next entry-base with client-reference proxies in the RSC environment", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "vitest-plugin-rsc-next-optimizer-"));
+  const cacheDir = path.join(root, ".vite");
+  let server: ViteDevServer | undefined;
+
+  try {
+    fs.writeFileSync(path.join(root, "package.json"), "{}");
+    fs.symlinkSync(path.join(fixtureRoot, "node_modules"), path.join(root, "node_modules"), "dir");
+
+    server = await createServer({
+      root,
+      cacheDir,
+      configFile: false,
+      envFile: false,
+      server: { middlewareMode: true },
+      plugins: [vitestPluginRSC(), vitestPluginNext()],
+    });
+
+    await warmOptimizers(server, ["client", "react_client", "react_ssr"]);
+
+    const entryBaseChunk = findOptimizedChunk(
+      cacheDir,
+      "next_dist_server_app-render_entry-base__js.js",
+    );
+    const code = fs.readFileSync(entryBaseChunk, "utf8");
+
+    expect(code).toContain(
+      'import { registerClientReference } from "@vitejs/plugin-rsc/react/rsc"',
+    );
+    expect(code).toContain("vitest-plugin-rsc:next-entry-base-client-reference:");
+    expect(code).not.toContain("node_modules/next/dist/client/components/layout-router.js");
+  } finally {
+    await server?.close();
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("proxies Next entry-base devtools client imports as RSC client references", async () => {
   const plugin = findNextPlugin("next-rsc-entry-base-client-references");
   const configResolved = getHookHandler(plugin.configResolved);
@@ -432,6 +470,46 @@ function getEnvironmentOptimizeDepsEntries(config: UserConfig, environment: stri
 function getBrowserTesterHtmlPath(config: UserConfig): string | undefined {
   return (config as { test?: { browser?: { testerHtmlPath?: string } } }).test?.browser
     ?.testerHtmlPath;
+}
+
+async function warmOptimizers(server: ViteDevServer, environmentNames: string[]) {
+  await Promise.all(
+    environmentNames.map((environmentName) => warmOptimizer(server, environmentName)),
+  );
+}
+
+async function warmOptimizer(server: ViteDevServer, environmentName: string) {
+  const optimizer = server.environments[environmentName]?.depsOptimizer;
+  if (!optimizer) throw new Error("Expected client deps optimizer.");
+
+  await optimizer.init();
+  if (optimizer.scanProcessing) {
+    await optimizer.scanProcessing;
+  }
+  optimizer.run();
+  await Promise.allSettled(
+    optimizer.metadata.depInfoList.flatMap((dep) => (dep.processing ? [dep.processing] : [])),
+  );
+}
+
+function findOptimizedChunk(cacheDir: string, basename: string): string {
+  const matches: string[] = [];
+  collectFiles(cacheDir, matches, basename);
+  if (matches.length !== 1) {
+    throw new Error(`Expected one optimized ${basename} chunk, found ${matches.length}.`);
+  }
+  return matches[0]!;
+}
+
+function collectFiles(directory: string, matches: string[], basename: string) {
+  for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+    const file = path.join(directory, entry.name);
+    if (entry.isDirectory()) {
+      collectFiles(file, matches, basename);
+    } else if (entry.name === basename) {
+      matches.push(file);
+    }
+  }
 }
 
 function getHookHandler<T extends (...args: never[]) => unknown>(

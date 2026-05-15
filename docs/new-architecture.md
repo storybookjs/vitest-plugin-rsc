@@ -178,6 +178,11 @@ This adapter should stay narrow:
 - return `registerClientReference` proxies in the RSC environment;
 - return real Next client modules in browser/SSR environments.
 
+Done:
+
+- Package coverage warms the real RSC dependency optimizer for a project-rooted Next install, imports `next/dist/server/app-render/entry-base.js`, and asserts the optimized chunk contains `registerClientReference` proxies instead of inlined Next client component modules.
+- The optimizer plugin receives the configured Next project root explicitly, so root Vitest runs and standalone Vite servers do not rely on `process.cwd()` to resolve installed `next/dist/...` client modules.
+
 Exit path: upstream `@vitejs/plugin-rsc` could preserve CJS `"use client"` dependency boundaries during RSC dep optimization by externalizing/proxying those modules instead of inlining them into the server optimized chunk. If that lands, delete this Next-specific adapter or reduce it to any remaining Next-only layer metadata cases.
 
 ### Next SWC
@@ -493,7 +498,7 @@ P2: decide explicit non-goals.
 
 ## Concrete Task Backlog
 
-1. Add a focused test that imports the real `next/dist/server/app-render/entry-base.js` in the RSC environment and proves the optimized chunk contains client-reference proxies, not inlined client modules.
+1. Done: add a focused package test that warms the RSC optimizer, imports the real `next/dist/server/app-render/entry-base.js`, and proves the optimized chunk contains client-reference proxies, not inlined client modules.
 2. Draft an upstream `@vitejs/plugin-rsc` issue or failing fixture for CommonJS `"use client"` modules required from server dependencies during RSC dependency optimization.
 3. Add notes-demo tests for route conventions. Done: `loading.tsx`, `error.tsx`, root `global-error.tsx`, `forbidden.tsx`, and `unauthorized.tsx`.
 4. Justify the `Buffer.prototype.indexOf` patch with a minimal regression test pointing at the Next stream-utils path that needs it. Done.
@@ -501,7 +506,7 @@ P2: decide explicit non-goals.
 6. Continue next/font asset/preload work. Done for the current asset surface: emitted font files, dev serving, browser-visible `className`/`variable` CSS, and no data URL final behavior. Still needed: CSS module contract cleanup, local multi-file coverage, declarations/fallback metrics, and route-scoped preload metadata.
 7. Done for the first cache-components slice: notes demo runs with `cacheComponents: true`, Vite RSC hoists async `use cache` functions, and runtime goes through Next's `use-cache-wrapper` and cache handlers. Still needed: cached components with children, bound args, custom handlers, negative tests, and manifest mapping coverage.
 8. Done for config loading/defines/render opts and first render-path behavior: feed rewrites, redirects, headers, basePath, trailingSlash, image config, assetPrefix, cache components, and cache life from real Next config; apply same-origin rewrites and redirects before app route matching. Still needed: response headers and a higher-level request pipeline for middleware/proxy, external rewrites, and locale/basePath edge cases.
-9. Add latest/canary Next compatibility jobs or scripts that exercise the focused unit suite and notes demo smoke tests.
+9. Done: CI runs latest, canary, and supported stable Next compatibility jobs across the focused unit suite plus no-MSW and notes-demo browser/node surfaces, using an explicit non-default Vitest API port for the browser runner.
 10. Done: add a browser-level regression for the plugin document merge proving whole-document Next rendering preserves Vitest harness scripts while applying Next head/meta/title output.
 11. Done for the current scope: `renderServer({ url })` detects `route.ts` handlers through Next's app-route matcher and throws a clear unsupported-target error. Future support should execute them through Next route module/request code, not a local handler runner.
 12. Add coverage that `renderServer(<ReactNode />)` uses the fake-route/app-render path and that `renderServer({ url })` can replace the matched page entry without bypassing Next's loader tree.

@@ -110,4 +110,5 @@ jobs:
             --project vitest-plugin-rsc \
             --project nextjs-no-msw-demo \
             --project nextjs-notes-demo-browser \
-            --project nextjs-notes-demo-node
+            --project nextjs-notes-demo-node \
+            --api 52643
