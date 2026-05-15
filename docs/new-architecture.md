@@ -16,6 +16,7 @@ The target architecture is:
 3. Copy the smallest upstream block only when no importable entrypoint exists, and mark it with `// begin copy`, `// end copy`, upstream source links, and adaptation notes.
 4. Keep local behavior as the last resort, with tests that explain the required Next behavior.
 5. Keep `@vitejs/plugin-rsc` responsible for the RSC graph, `use client`, `use server`, client references, server references, and action transport.
+6. Keep both `renderServer({ url })` and `renderServer(<ReactNode />)` on a route-shaped path through Next app-render. Direct React nodes should be presented to Next as a synthetic app route, not rendered through a separate local router.
 
 The current implementation is much closer to that goal than the original notes-demo shims, but it is not complete. The biggest remaining risk is not route rendering. It is the amount of compatibility code around fonts, document fallback hydration, fake manifests, and Next runtime globals.
 
@@ -301,12 +302,15 @@ Done:
 - Preserves Next global error payload data.
 - Supports document hydration through a custom tester HTML.
 - Supports MSW-routed Next RSC/action fetches through `nextRscRequestHandlers`.
+- Direct React node renders are treated as private fake routes so the initial payload still comes from Next app-render.
 
 Remaining weakness:
 
 - Document fallback parsing is still custom. It parses inline `self.__next_f.push(...)` scripts, detects `NEXT_HTTP_ERROR_FALLBACK` by string search, and patches fallback seed data. That is a fragile part of the adapter.
 - The no-op WebSocket for Next dev HotReload is a version-compat shim. It should stay isolated and covered by a targeted test.
 - Whole-document hydration must preserve Vitest's browser harness scripts while applying Next's head/body output. This belongs in the plugin-level tester HTML/head merge, not in the notes demo app.
+- HTML responses are not required for every render. They are only needed where full document/head/error-fallback fidelity matters. The plugin should hydrate through its own controlled React/Vitest path, parse Next Flight bootstrap data without executing arbitrary Next inline scripts, and keep Vitest's harness scripts alive.
+- Do not reintroduce `router-element.ts` or a user-visible local router element. The user-facing route path should go through `NextAppRouter`.
 
 ### App Router API Modules
 
@@ -353,7 +357,7 @@ Add tests before claiming more fidelity:
 
 - `next/font`: exported declarations, default export, shared font definition module, Google variable font, Google non-variable weights/styles, local single file, local multi-file, `className`, `variable`, `style.fontFamily`, `style.fontWeight`, `style.fontStyle`, fallback fonts, `adjustFontFallback`, `declarations`, browser CSS injection, build asset output, and route-scoped preload behavior.
 - `next/image`: static png/jpeg/webp/avif/svg imports, `placeholder="blur"`, `fill`, `sizes`, `priority`/`preload`, remote URL config, custom loader, default loader URL generation, `unoptimized`, invalid prop errors, and image config from `next.config`.
-- App route conventions: `loading`, `error`, `global-error`, `not-found`, `forbidden`, `unauthorized`, `default`, `template`, route groups, parallel routes, intercepting routes, metadata files, generated metadata, route segment config, and static/dynamic params.
+- App route conventions: `loading`, `error`, `global-error`, `not-found`, `forbidden`, `unauthorized`, `default`, `template`, route groups, parallel routes, intercepting routes, metadata files, `metadata`, `generateMetadata`, `viewport`, `generateViewport`, static/dynamic params, and route segment config exports such as `dynamic`, `dynamicParams`, `revalidate`, `fetchCache`, `runtime`, `preferredRegion`, and `maxDuration`.
 - Route Handlers: `GET`, `POST`, `PUT`, `PATCH`, `DELETE`, `HEAD`, `OPTIONS`, `NextRequest`, `NextResponse`, cookies, redirects, streaming, params, and route segment config.
 - `next/navigation`: all hooks and control-flow functions in both route-render and direct-node modes.
 - `next/cache`: cache invalidation, tags, `unstable_cache`, no-store, `connection`, `after`, cache components, and `use cache` directives.
@@ -372,6 +376,7 @@ P0: keep removing glue around real Next entrypoints.
 - Centralize every `next/dist/...` internal path behind a helper that can feature/version-gate optional internals.
 - Add compatibility coverage for the supported Next range, latest stable Next, and canary Next.
 - Track an upstream `@vitejs/plugin-rsc` issue or fixture for CommonJS `"use client"` dependencies hidden behind RSC dep optimization, using the `entry-base` failure as the repro.
+- Explicitly avoid rebuilding the old `request-context`, `component-tree`, `flight-router-state`, and `router-element` layers. If a feature seems to require them again, first look for a higher Next route module, loader, app-render, or app-index entrypoint.
 
 P0: make `next/font` closer to Next.
 
@@ -449,6 +454,8 @@ P2: decide explicit non-goals.
 10. Add latest/canary Next compatibility jobs or scripts that exercise the focused unit suite and notes demo smoke tests.
 11. Add a plugin-level test that whole-document Next rendering preserves Vitest harness scripts while applying Next head/meta/title output.
 12. Add a route-handler decision test: either prove `route.ts` execution through Next route module code or assert a clear unsupported error.
+13. Add coverage that `renderServer(<ReactNode />)` uses the fake-route/app-render path and that `renderServer({ url })` can replace the matched page entry without bypassing Next's loader tree.
+14. Add coverage for App Router page exports: `metadata`, `generateMetadata`, `viewport`, `generateViewport`, `dynamic`, `dynamicParams`, `revalidate`, `fetchCache`, `runtime`, `preferredRegion`, and `maxDuration`.
 
 ## Review Checklist For Future Work
 

@@ -26,6 +26,12 @@ Preview packages for PR commits are handled by `pkg.pr.new`, which publishes ins
 
 For bigger feature work, run the full Next.js notes demo suite (`pnpm --dir playground/nextjs-notes-demo exec vitest run`) before merging. It is the in-tree acceptance app and covers the realistic combinations of routing, cookies, cache, Server Actions, and MSW-routed transport.
 
+## Worktree Safety
+
+Before editing, committing, rebasing, or pushing, verify the working directory, branch, and status with `pwd`, `git branch --show-current`, and `git status --short --branch`. If the user names a specific branch or PR worktree, use only that branch/worktree for the task. Stop instead of editing when the current branch does not match the requested work.
+
+For this Next fidelity effort, the architecture backlog lives in `docs/new-architecture.md`. Keep that file updated when adding, completing, or intentionally dropping a Next.js fidelity task.
+
 ## Next.js Integration Guidelines
 
 This package should behave like Next.js where users observe Next.js behavior, but it should not grow a parallel Next.js implementation. The goal is less glue over time: prefer deleting local adapters when the same behavior can be delegated to Next, React, Vite, Vitest, or `@vitejs/plugin-rsc`.
