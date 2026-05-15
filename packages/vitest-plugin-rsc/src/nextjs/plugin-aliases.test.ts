@@ -65,8 +65,14 @@ test("aliases React packages through Next's vendored React for app-router enviro
   const rscDefine = getEnvironmentDefine(config, "client");
   expect(rscDefine["process.env.NEXT_RUNTIME"]).toBe('"edge"');
   expect(rscDefine["process.env.__NEXT_EXPERIMENTAL_AUTH_INTERRUPTS"]).toBe("true");
+  expect(rscDefine["process.env.__NEXT_HAS_REWRITES"]).toBe("true");
   expect(rscDefine["process.env.__NEXT_BUNDLER"]).toBe('"Webpack"');
   expect(rscDefine["process.env.__NEXT_DEV_SERVER"]).toBe('""');
+  const rewritesDefine = rscDefine["process.env.__NEXT_REWRITES"];
+  expect(rewritesDefine).toBeDefined();
+  expect(JSON.parse(rewritesDefine!)).toMatchObject({
+    afterFiles: [{ source: "/next-config-rewrite", destination: "/next-apis" }],
+  });
 
   const browserDefine = getEnvironmentDefine(config, "react_client");
   expect(browserDefine["process.env.NEXT_RUNTIME"]).toBe('""');

@@ -56,6 +56,24 @@ type NextConfigModule = {
   default?: NextLoadConfig;
 } & NextLoadConfig;
 
+export type NextCustomRoute = Record<string, unknown>;
+
+export type NextCustomRoutes = {
+  headers: NextCustomRoute[];
+  redirects: NextCustomRoute[];
+  rewrites: {
+    beforeFiles: NextCustomRoute[];
+    afterFiles: NextCustomRoute[];
+    fallback: NextCustomRoute[];
+  };
+};
+
+type NextLoadCustomRoutes = (config: NextConfigLike) => Promise<NextCustomRoutes>;
+
+type NextLoadCustomRoutesModule = {
+  default?: NextLoadCustomRoutes;
+} & NextLoadCustomRoutes;
+
 type NextConstantsModule = {
   PHASE_DEVELOPMENT_SERVER: string;
   PHASE_PRODUCTION_BUILD: string;
@@ -81,6 +99,7 @@ export type NextProjectConfig = {
   phase: string;
   isDev: boolean;
   nextConfig: NextConfigLike;
+  customRoutes: NextCustomRoutes;
   loadedJsConfig: LoadedJsConfig;
   appDir?: string;
   pagesDir?: string;
@@ -115,6 +134,9 @@ async function loadNextProjectConfigUncached(
   const loadJsConfigModule = projectRequire(
     "next/dist/build/load-jsconfig.js",
   ) as NextLoadJsConfigModule;
+  const loadCustomRoutesModule = projectRequire(
+    "next/dist/lib/load-custom-routes.js",
+  ) as NextLoadCustomRoutesModule;
   const { findPagesDir } = projectRequire(
     "next/dist/lib/find-pages-dir.js",
   ) as NextFindPagesDirModule;
@@ -123,10 +145,12 @@ async function loadNextProjectConfigUncached(
   ) as NextBuildUtilsModule;
 
   const loadConfig = loadConfigModule.default ?? loadConfigModule;
+  const loadCustomRoutes = loadCustomRoutesModule.default ?? loadCustomRoutesModule;
   const loadJsConfig = loadJsConfigModule.default ?? loadJsConfigModule;
   const phase = getNextPhase(constants, mode);
   const isDev = phase !== constants.PHASE_PRODUCTION_BUILD;
   const nextConfig = await loadConfig(phase, root);
+  const customRoutes = await loadCustomRoutes(nextConfig);
   const loadedJsConfig = await loadJsConfig(root, nextConfig);
   const directories = findNextDirectories(root, findPagesDir);
 
@@ -135,6 +159,7 @@ async function loadNextProjectConfigUncached(
     phase,
     isDev,
     nextConfig,
+    customRoutes,
     loadedJsConfig,
     supportedBrowsers: getSupportedBrowsers(root, isDev),
     pageExtensions: nextConfig.pageExtensions ?? ["tsx", "ts", "jsx", "js"],

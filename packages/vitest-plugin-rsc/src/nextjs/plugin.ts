@@ -4,7 +4,12 @@ import { fileURLToPath } from "node:url";
 import type { Alias, Plugin, UserConfig } from "vite";
 import { useNextAppRenderCompatibility } from "./app-render-compat-plugin";
 import { useNextLinkClientReference } from "./client-reference-plugin";
-import { loadNextProjectConfig, type NextConfigLike, type NextImageConfig } from "./config";
+import {
+  loadNextProjectConfig,
+  type NextConfigLike,
+  type NextCustomRoutes,
+  type NextImageConfig,
+} from "./config";
 import { useNextFontLoader } from "./font-loader-plugin";
 import { useNextImageClientReference } from "./image-plugin";
 import { useNextMetadataImageLoader } from "./metadata-image-loader-plugin";
@@ -630,10 +635,10 @@ async function createNextDefineEnvs(
       distDir: projectConfig.distDir,
       projectPath: root,
       fetchCacheKeyPrefix: nextConfig.experimental?.fetchCacheKeyPrefix,
-      hasRewrites: false,
+      hasRewrites: hasNextRewrites(projectConfig.customRoutes.rewrites),
       clientRouterFilters: undefined,
       middlewareMatchers: undefined,
-      rewrites: { beforeFiles: [], afterFiles: [], fallback: [] },
+      rewrites: projectConfig.customRoutes.rewrites,
     } satisfies Omit<
       Parameters<NextDefineEnvModule["getDefineEnv"]>[0],
       "isClient" | "isEdgeServer" | "isNodeServer"
@@ -662,6 +667,14 @@ async function createNextDefineEnvs(
   } catch {
     return createFallbackNextDefineEnvs(nextImageConfig);
   }
+}
+
+function hasNextRewrites(rewrites: NextCustomRoutes["rewrites"]) {
+  return (
+    rewrites.beforeFiles.length > 0 ||
+    rewrites.afterFiles.length > 0 ||
+    rewrites.fallback.length > 0
+  );
 }
 
 function normalizeNextTestDefineEnv(defineEnv: Record<string, unknown>, nextRuntime: string) {
