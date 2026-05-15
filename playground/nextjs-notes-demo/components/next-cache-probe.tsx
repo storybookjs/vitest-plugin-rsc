@@ -28,6 +28,7 @@ let useCacheReads = 0;
 let remoteUseCacheReads = 0;
 let cacheLifeReads = 0;
 let concurrentUseCacheReads = 0;
+let closureUseCacheReads = 0;
 
 const readCachedData = unstable_cache(
   async () => {
@@ -48,6 +49,7 @@ export function resetNextCacheProbe(label = "default") {
   remoteUseCacheReads = 0;
   cacheLifeReads = 0;
   concurrentUseCacheReads = 0;
+  closureUseCacheReads = 0;
   resetNextCacheProbeFetch(label);
 }
 
@@ -75,6 +77,7 @@ export async function NextUseCacheProbe() {
     readConcurrentUseCacheValue(useCacheGeneration),
     readConcurrentUseCacheValue(useCacheGeneration),
   ]);
+  const closureValues = await readClosureBoundUseCacheValues(useCacheGeneration);
   const privateValue = await readPrivateUseCacheCookie();
 
   return (
@@ -91,6 +94,10 @@ export async function NextUseCacheProbe() {
       <p>use cache concurrent first: {concurrentFirst}</p>
       <p>use cache concurrent second: {concurrentSecond}</p>
       <p>use cache concurrent reads: {concurrentUseCacheReads}</p>
+      <p>use cache closure first: {closureValues.first}</p>
+      <p>use cache closure second: {closureValues.second}</p>
+      <p>use cache closure different: {closureValues.different}</p>
+      <p>use cache closure reads: {closureUseCacheReads}</p>
       <p>use cache private cookie: {privateValue}</p>
     </section>
   );
@@ -130,6 +137,22 @@ async function readConcurrentUseCacheValue(generation: number) {
   concurrentUseCacheReads += 1;
   await Promise.resolve();
   return `generation ${generation} concurrent read ${concurrentUseCacheReads}`;
+}
+
+async function readClosureBoundUseCacheValues(generation: number) {
+  const scope = `generation ${generation}`;
+
+  async function readClosureValue(label: string) {
+    "use cache";
+
+    closureUseCacheReads += 1;
+    return `${scope} ${label} closure read ${closureUseCacheReads}`;
+  }
+
+  const first = await readClosureValue("same");
+  const second = await readClosureValue("same");
+  const different = await readClosureValue("different");
+  return { first, second, different };
 }
 
 async function readPrivateUseCacheCookie() {

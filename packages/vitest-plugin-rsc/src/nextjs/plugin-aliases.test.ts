@@ -404,6 +404,34 @@ test("preserves Next use cache directive kinds", async () => {
   expect(result.code).toContain("use-cache-kind-fixture.ts#$$hoist_1_readPrivateValue");
 });
 
+test("binds closure values for hoisted use cache directives", async () => {
+  const plugin = findNextPlugin("next-rsc-use-cache-transform");
+  const configResolved = getHookHandler(plugin.configResolved);
+  const transform = getHookHandler(plugin.transform);
+
+  await configResolved.call({} as never, { root: fixtureRoot, mode: "test" } as never);
+
+  const result = (await transform.call(
+    { environment: { name: "client" } } as never,
+    `
+      export async function readCachedValue(prefix: string) {
+        async function inner(suffix: string) {
+          "use cache";
+          return prefix + ":" + suffix;
+        }
+
+        return inner("value");
+      }
+    `,
+    path.join(fixtureRoot, "app/next-apis/use-cache-closure-fixture.ts"),
+  )) as { code: string };
+
+  expect(result.code).toContain("__next_rsc_use_cache(");
+  expect(result.code).toContain("app/next-apis/use-cache-closure-fixture.ts#$$hoist_0_inner");
+  expect(result.code).toContain("async function $$hoist_0_inner(prefix, suffix: string)");
+  expect(result.code).toContain(".bind(null, prefix)");
+});
+
 test("does not hoist use cache directives when cacheComponents is disabled", async () => {
   const plugin = findNextPlugin("next-rsc-use-cache-transform");
   const configResolved = getHookHandler(plugin.configResolved);
