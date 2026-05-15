@@ -261,6 +261,35 @@ test("hoists use cache directives to Next's cache wrapper when cacheComponents i
   expect(result.code).toContain("async function $$hoist_0_readCachedValue()");
 });
 
+test("preserves Next use cache directive kinds", async () => {
+  const plugin = findNextPlugin("next-rsc-use-cache-transform");
+  const configResolved = getHookHandler(plugin.configResolved);
+  const transform = getHookHandler(plugin.transform);
+
+  await configResolved.call({} as never, { root: fixtureRoot, mode: "test" } as never);
+
+  const result = (await transform.call(
+    { environment: { name: "client" } } as never,
+    `
+      export async function readRemoteValue() {
+        "use cache: remote";
+        return "remote";
+      }
+
+      export async function readPrivateValue() {
+        "use cache: private";
+        return "private";
+      }
+    `,
+    path.join(fixtureRoot, "app/next-apis/use-cache-kind-fixture.ts"),
+  )) as { code: string };
+
+  expect(result.code).toContain('"remote"');
+  expect(result.code).toContain('"private"');
+  expect(result.code).toContain("use-cache-kind-fixture.ts#$$hoist_0_readRemoteValue");
+  expect(result.code).toContain("use-cache-kind-fixture.ts#$$hoist_1_readPrivateValue");
+});
+
 async function resolveNextPluginConfig(userConfig: UserConfig = {}): Promise<UserConfig> {
   const previousCwd = process.cwd();
   const plugin = findNextPlugin("next-rsc-plugin");

@@ -136,7 +136,13 @@ We are not running webpack. We do invoke selected Next webpack loader functions 
 
 `packages/vitest-plugin-rsc/src/nextjs/plugin.ts` calls `next/dist/build/define-env.js#getDefineEnv` for the RSC and browser environments. This is the right direction. `process.env.NEXT_RUNTIME = "edge"` in the RSC environment is intentional because the plugin is imitating an edge App Router render path.
 
-Remaining weakness: we still pass simplified routing options such as `hasRewrites: false` and empty `rewrites`. That means Next config fidelity is incomplete for rewrites, redirects, headers, basePath/trailingSlash combinations, i18n, assetPrefix, and some adapter/runtime fields.
+Done:
+
+- Custom routes are loaded through `next/dist/lib/load-custom-routes.js`.
+- `getDefineEnv` receives the real rewrites object and `hasRewrites` flag.
+- Render opts read base path, trailing slash, asset prefix, image config, cache components, and cache life defines.
+
+Remaining weakness: custom routes are not yet executed as a Next request pipeline. `renderServer({ url })` still resolves app pages directly from the route manifest, so `next.config` rewrites, redirects, and headers are visible to Next modules through defines but are not applied before route matching or response creation.
 
 ### Aliases and Runtime Polyfills
 
@@ -177,7 +183,7 @@ It currently runs only when source contains `next/font` or `next/dynamic`. This 
 
 It deliberately sets `serverComponents: false`. That is correct for now because Vite RSC owns `use client` and `use server`.
 
-Remaining weakness: Next's own webpack SWC loader force-transpiles files containing `next/font`, `next/dynamic`, `use server`, `use client`, or `use cache`. We intentionally do less. That should stay true for RSC directives, but we still need a deliberate decision and tests for `use cache` and other Next 16 cache-component compiler features.
+Remaining weakness: Next's own webpack SWC loader force-transpiles files containing `next/font`, `next/dynamic`, `use server`, `use client`, or `use cache`. We intentionally do less. That should stay true for RSC directives. For `use cache`, the current direction is a separate Vite RSC hoist adapter that calls Next's runtime wrapper instead of enabling Next's SWC RSC/server-action transforms globally.
 
 The Turbopack/Rust sources are also useful, especially for understanding the real compiler contracts. The important parts found so far are `next-custom-transforms` for font imports, RSC directive validation, server actions, and `use cache`, plus `next-core` import-map/font code for Turbopack's equivalent runtime wiring. We should use those sources to guide behavior and import/invoke their exposed JS/N-API surfaces when practical, but not hand-port large Rust transforms into this plugin.
 
@@ -190,14 +196,18 @@ Review guard: Turbopack code is a source of truth for compiler behavior, not per
 Current state:
 
 - `createNextRenderOpts` reads `__NEXT_CACHE_COMPONENTS` and cache life defines.
+- `ensureNextAppRenderGlobals` initializes Next's cache handlers through `next/dist/server/use-cache/handlers.js`.
 - Next SWC receives `isCacheComponents`, `cacheHandlers`, `useCacheEnabled`, and `taintEnabled` options.
 - `next/root-params` is gated by `experimental.rootParams` or `cacheComponents`.
+- The notes demo runs with `cacheComponents: true`.
+- A Vite RSC transform hoists async `"use cache"` functions and wraps them with `next/dist/server/use-cache/use-cache-wrapper.js#cache`.
+- Notes-demo coverage proves default `"use cache"` entries, `"use cache: remote"`, `"use cache: private"` request cookie access, `cacheTag`, and a custom `cacheLife()` profile from `next.config`.
 
 Missing before claiming support:
 
-- Initialize Next cache handlers through `next/dist/server/use-cache/handlers` when available.
-- Wire custom `cacheHandlers`, `cacheLife`, and `cacheMaxMemorySize` from `next.config`.
-- Verify `use cache`, `use cache: private`, and `use cache: remote` behavior with Vite RSC references.
+- Wire custom `cacheHandlers` and `cacheMaxMemorySize` from `next.config`.
+- Verify cached components with children, closure-bound cache functions, and `boundArgsLength` handling.
+- Verify concurrent in-flight coalescing. The first supported path proves sequential cache hits; concurrent `Promise.all` behavior still needs source-level investigation.
 - Expand the client reference manifest shim to cover the module mappings Next cache wrappers decode against.
 - Add negative tests for dynamic APIs inside public cache scopes and flag-disabled behavior.
 
@@ -408,9 +418,10 @@ P0: make `next/font` closer to Next.
 
 P0: design Cache Components support before expanding it.
 
-- Decide the boundary between Vite RSC `use cache` hoisting/reference mechanics and Next `cacheComponents` runtime semantics.
-- Initialize Next cache handlers where available instead of inventing a local cache runtime.
-- Add notes-demo tests for `cacheComponents: true`, cached async functions, cached components with children, `cacheLife`, `cacheTag`, private cache, dynamic API errors, and disabled flag behavior.
+- Done for the first boundary: Vite RSC owns `use cache` hoisting/reference mechanics, and Next's `use-cache-wrapper` plus cache handlers own runtime semantics.
+- Done for the first runtime slice: initialize Next cache handlers where available instead of inventing a local cache runtime.
+- Done for notes-demo basics: `cacheComponents: true`, cached async functions, `cacheLife`, `cacheTag`, default cache, remote cache, and private cache request cookie access.
+- Still needed: cached components with children, closure-bound cache functions, dynamic API errors, disabled flag behavior, custom `cacheHandlers`, and cache manifest/module mapping coverage.
 - Do not claim support until the cache manifest/module mapping path is tested.
 
 P0: reduce document fallback and manifest magic.
@@ -438,8 +449,9 @@ P1: broaden API and convention coverage.
 
 P1: handle Next config fidelity.
 
-- Stop passing empty rewrites/`hasRewrites: false` unconditionally.
-- Load and feed Next rewrites, redirects, headers, basePath, trailingSlash, image config, assetPrefix, and cache config into define env and render opts where Next expects them.
+- Done: stop passing empty rewrites/`hasRewrites: false` unconditionally.
+- Done for config loading/defines/render opts: rewrites, redirects, headers, basePath, trailingSlash, image config, assetPrefix, cache components, and cache life.
+- Still needed: execute rewrites, redirects, and headers through a Next-equivalent request pipeline before route matching/response creation.
 - Add plugin options for an explicit Next project root or config path only when real projects need more than the Vite root.
 
 P1: decide route-handler and middleware/proxy scope.
@@ -472,8 +484,8 @@ P2: decide explicit non-goals.
 4. Justify the `Buffer.prototype.indexOf` patch with a minimal regression test pointing at the Next stream-utils path that needs it. Done.
 5. Extend static image tests for dev serving, build emission, SVG policy, blur placeholder behavior, and image config loaded from `next.config`. Done for the current static image adapter surface.
 6. Continue next/font asset/preload work. Done for the current asset surface: emitted font files, dev serving, browser-visible `className`/`variable` CSS, and no data URL final behavior. Still needed: CSS module contract cleanup, local multi-file coverage, declarations/fallback metrics, and route-scoped preload metadata.
-7. Add a `cacheComponents: true` fixture route and decide the `use cache` transform/runtime boundary before implementing cache handlers.
-8. Feed rewrites, redirects, and headers from real Next config into define/render options, or document them as explicitly out of scope.
+7. Done for the first cache-components slice: notes demo runs with `cacheComponents: true`, Vite RSC hoists async `use cache` functions, and runtime goes through Next's `use-cache-wrapper` and cache handlers. Still needed: cached components with children, bound args, custom handlers, negative tests, and manifest mapping coverage.
+8. Done for config loading/defines/render opts: feed rewrites, redirects, headers, basePath, trailingSlash, image config, assetPrefix, cache components, and cache life from real Next config. Still needed: execute custom routes through a Next-equivalent request pipeline.
 9. Add latest/canary Next compatibility jobs or scripts that exercise the focused unit suite and notes demo smoke tests.
 10. Add a plugin-level test that whole-document Next rendering preserves Vitest harness scripts while applying Next head/meta/title output.
 11. Done for the current scope: `renderServer({ url })` detects `route.ts` handlers through Next's app-route matcher and throws a clear unsupported-target error. Future support should execute them through Next route module/request code, not a local handler runner.

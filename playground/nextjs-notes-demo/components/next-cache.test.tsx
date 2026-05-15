@@ -72,11 +72,29 @@ test("app-render initializes Next cache handlers", async () => {
 test("use cache functions are hoisted into Next cache components runtime", async () => {
   resetNextCacheProbe();
 
-  await renderServer(<NextUseCacheProbe />, { url: "/next-use-cache-probe" });
+  await renderServer(<NextUseCacheProbe />, {
+    headers: { cookie: "next-private-cache=private-value" },
+    url: "/next-use-cache-probe",
+  });
 
   await expect.element(page.getByText(/use cache first: generation \d+ read 1/)).toBeVisible();
   await expect.element(page.getByText(/use cache second: generation \d+ read 1/)).toBeVisible();
   await expect.element(page.getByText("use cache reads: 1")).toBeVisible();
+  await expect
+    .element(page.getByText(/use cache remote first: generation \d+ remote read 1/))
+    .toBeVisible();
+  await expect
+    .element(page.getByText(/use cache remote second: generation \d+ remote read 1/))
+    .toBeVisible();
+  await expect.element(page.getByText("use cache remote reads: 1")).toBeVisible();
+  await expect
+    .element(page.getByText(/use cache life first: generation \d+ cache life read 1/))
+    .toBeVisible();
+  await expect
+    .element(page.getByText(/use cache life second: generation \d+ cache life read 1/))
+    .toBeVisible();
+  await expect.element(page.getByText("use cache life reads: 1")).toBeVisible();
+  await expect.element(page.getByText("use cache private cookie: private-value")).toBeVisible();
 });
 
 test("server actions without refresh or invalidation do not rerender the current tree", async () => {

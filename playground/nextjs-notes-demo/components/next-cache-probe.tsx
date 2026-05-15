@@ -1,4 +1,5 @@
 import {
+  cacheLife,
   cacheTag,
   refresh,
   revalidatePath,
@@ -7,6 +8,7 @@ import {
   unstable_noStore,
   updateTag,
 } from "next/cache";
+import { cookies } from "next/headers";
 import { getCacheHandlerEntries } from "next/dist/server/use-cache/handlers.js";
 import {
   nextCacheProbeFetchUrl,
@@ -23,6 +25,8 @@ let actionWriteVersion = 0;
 let cacheLabel = "default";
 let useCacheGeneration = 0;
 let useCacheReads = 0;
+let remoteUseCacheReads = 0;
+let cacheLifeReads = 0;
 
 const readCachedData = unstable_cache(
   async () => {
@@ -40,6 +44,8 @@ export function resetNextCacheProbe(label = "default") {
   cacheLabel = label;
   useCacheGeneration += 1;
   useCacheReads = 0;
+  remoteUseCacheReads = 0;
+  cacheLifeReads = 0;
   resetNextCacheProbeFetch(label);
 }
 
@@ -59,12 +65,24 @@ export function NextCacheHandlerProbe() {
 export async function NextUseCacheProbe() {
   const first = await readUseCacheValue(useCacheGeneration);
   const second = await readUseCacheValue(useCacheGeneration);
+  const remoteFirst = await readRemoteUseCacheValue(useCacheGeneration);
+  const remoteSecond = await readRemoteUseCacheValue(useCacheGeneration);
+  const cacheLifeFirst = await readCacheLifeValue(useCacheGeneration);
+  const cacheLifeSecond = await readCacheLifeValue(useCacheGeneration);
+  const privateValue = await readPrivateUseCacheCookie();
 
   return (
     <section>
       <p>use cache first: {first}</p>
       <p>use cache second: {second}</p>
       <p>use cache reads: {useCacheReads}</p>
+      <p>use cache remote first: {remoteFirst}</p>
+      <p>use cache remote second: {remoteSecond}</p>
+      <p>use cache remote reads: {remoteUseCacheReads}</p>
+      <p>use cache life first: {cacheLifeFirst}</p>
+      <p>use cache life second: {cacheLifeSecond}</p>
+      <p>use cache life reads: {cacheLifeReads}</p>
+      <p>use cache private cookie: {privateValue}</p>
     </section>
   );
 }
@@ -75,6 +93,28 @@ async function readUseCacheValue(generation: number) {
   cacheTag(`next-use-cache-probe:${generation}`);
   useCacheReads += 1;
   return `generation ${generation} read ${useCacheReads}`;
+}
+
+async function readRemoteUseCacheValue(generation: number) {
+  "use cache: remote";
+
+  remoteUseCacheReads += 1;
+  return `generation ${generation} remote read ${remoteUseCacheReads}`;
+}
+
+async function readCacheLifeValue(generation: number) {
+  "use cache";
+
+  cacheLife("notes-demo-fast");
+  cacheLifeReads += 1;
+  return `generation ${generation} cache life read ${cacheLifeReads}`;
+}
+
+async function readPrivateUseCacheCookie() {
+  "use cache: private";
+
+  const cookieStore = await cookies();
+  return cookieStore.get("next-private-cache")?.value ?? "missing";
 }
 
 export async function NextCacheProbe() {

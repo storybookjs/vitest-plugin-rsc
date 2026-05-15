@@ -19,6 +19,13 @@ const nextConfig: NextConfig = {
     ];
   },
   cacheComponents: true,
+  cacheLife: {
+    "notes-demo-fast": {
+      stale: 1,
+      revalidate: 1,
+      expire: 60,
+    },
+  },
   images: {
     path: "/custom-next-image",
   },
