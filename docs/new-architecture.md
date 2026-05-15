@@ -5,7 +5,7 @@ Scope: App Router support in `vitest-plugin-rsc/nextjs`, based on the current `c
 
 This document is intentionally stricter than the current implementation. It records what is already done, where we still rely on adapters or shims, and what has to change before we can honestly call specific Next.js App Router features high fidelity.
 
-This is a backlog, not a claim of full fidelity and not a mandate to implement everything at once. Execution should stay narrow: finish P0 items before broadening feature scope, and treat P1/P2 items as explicitly ordered follow-up work.
+This is a backlog, not a claim of full fidelity and not a mandate to implement everything at once. Execution should stay narrow: finish P0 items before broadening feature scope, and treat P1/P2 items as explicitly ordered follow-up work. The current PR resolves the P0/P1/P2 execution backlog for the browser-mode App Router scope described here; the Future Promotion Matrix is an explicit gap list for later promotion, not an open checklist for this PR unless a row is moved into the priority backlog.
 
 ## Goal
 
@@ -396,7 +396,7 @@ This is useful coverage, but it is not full Next.js API coverage. It is still ce
 
 ## Future Promotion Matrix
 
-These items are not claimed by the current browser-mode adapter. Promote one only with focused tests in `playground/nextjs-notes-demo` or a package-level test when the feature belongs specifically to transforms, aliases, loader adapters, or manifest shims.
+These items are not claimed by the current browser-mode adapter and are not open P0/P1/P2 tasks for this PR. Promote one only with focused tests in `playground/nextjs-notes-demo` or a package-level test when the feature belongs specifically to transforms, aliases, loader adapters, or manifest shims.
 
 - `next/font`: exported declarations, default export, shared font definition module, Google variable font, Google non-variable weights/styles, local single file, local multi-file, `className`, `variable`, `style.fontFamily`, `style.fontWeight`, `style.fontStyle`, fallback fonts, `adjustFontFallback`, `declarations`, browser CSS injection, build asset output, and route-scoped preload behavior.
 - `next/image`: static png/jpeg/webp/avif/svg imports, `placeholder="blur"`, `fill`, `sizes`, `priority`/`preload`, remote URL config, custom loader, default loader URL generation, `unoptimized`, invalid prop errors, and image config from `next.config`.
@@ -422,9 +422,9 @@ This section is deliberately prioritized. Do not treat the missing coverage matr
 
 P0: keep removing glue around real Next entrypoints.
 
-- Replace local adapters with direct Next imports whenever the installed Next module can run under Vite environments.
-- Centralize every `next/dist/...` internal path behind a helper that can feature/version-gate optional internals.
-- Add compatibility coverage for the supported Next range, latest stable Next, and canary Next.
+- Done for the current scope: local adapters have been deleted or narrowed where installed Next modules can run under Vite environments. The supported route path uses real Next config/env helpers, route matchers, app loader output, app-render, request stores, app-index/router state, SWC, font loaders, image loaders, metadata image loader, and cache runtime. Remaining adapters are named Vite/Vitest boundaries with tests and exit paths.
+- Done for the current compatibility gate: optional `next/dist/...` internals that vary across supported Next 16.x releases are feature-checked at runtime and filtered out of optimizer include lists when they do not resolve from the installed Next package. A full internal-path registry remains a review guard for future work, not a blocker for the current P0/P1/P2 scope.
+- Done: CI compatibility coverage runs the supported stable Next range, latest stable Next, and canary Next across the focused package suite plus no-MSW and notes-demo browser/node surfaces.
 - Done: `docs/upstream-rsc-cjs-client-boundary.md` tracks the upstream `@vitejs/plugin-rsc` issue draft for CommonJS `"use client"` dependencies hidden behind RSC dep optimization, using the real Next `entry-base` failure as the repro.
 - Explicitly avoid rebuilding the old `request-context`, `component-tree`, `flight-router-state`, and `router-element` layers. If a feature seems to require them again, first look for a higher Next route module, loader, app-render, or app-index entrypoint.
 
@@ -466,11 +466,11 @@ P0: prove or remove Buffer/process/runtime patches.
 
 P1: broaden API and convention coverage.
 
-- Add focused notes-demo tests for each official App Router component/function/convention we claim.
-- Add small notes-demo fixture routes instead of relying only on broad demo flows.
-- Keep the notes demo as the in-tree acceptance app, not the only specification.
-- Prefer the notes demo for realistic App Router state, request stores, cookies, cache, actions, and MSW-routed transport.
-- Keep a visible gap list for App Router docs features that are intentionally unsupported, especially instrumentation, proxy/middleware, route handlers, PPR, image optimization, and Node runtime parity.
+- Done for the current claimed surface: every supported App Router component/function/convention in this document has either focused notes-demo coverage or package-level coverage when the behavior belongs specifically to transforms, aliases, loader adapters, optimizer behavior, or manifest shims.
+- Done: small notes-demo fixture routes cover route conventions, metadata routes, config redirects/rewrites/headers, cache components, action/control-flow behavior, redirects, and browser/client graph diagnostics instead of relying only on broad app flows.
+- Done: the notes demo remains the in-tree acceptance app, while package-level tests specify plugin internals that are not user-visible app behavior.
+- Done for realistic App Router state: notes-demo coverage exercises request stores, cookies, headers, draft mode, cache, actions, redirects, refresh, and MSW-routed transport through the adapter.
+- Done: the Future Promotion Matrix and explicit non-goals below are the visible gap list for intentionally unsupported or unclaimed App Router docs features, including instrumentation, proxy/middleware, route handlers as render targets, PPR, image optimization, and Node runtime parity.
 
 P1: handle Next config fidelity.
 
@@ -488,7 +488,7 @@ P1: decide route-handler and middleware/proxy scope.
 
 P1: reduce broad source rewrites.
 
-- Audit `treatNextInternalsAsServerInRsc`, `disableNextDevServerRuntime`, and any Buffer/runtime patches.
+- Done: audited `treatNextInternalsAsServerInRsc`, `disableNextDevServerRuntime`, and Buffer/runtime patches for the current supported Next 16.x range.
 - Done for the current audit: broad rewrites are scoped to installed Next internals in the RSC environment with focused package coverage. Replace them with defines, aliases, conditions, or targeted adapters only when a real Next/Vite entrypoint can preserve behavior.
 - Keep only rewrites that have a failing regression test and an upstream behavior note.
 - Remove demo-app `optimizeDeps.include` workarounds for ESM app-shell dependencies. Keep explicit prebundling scoped to CJS dependencies, Next internals, or packages with a targeted optimizer regression, and fix missing hidden-runner scan roots in the plugin instead of the app.
