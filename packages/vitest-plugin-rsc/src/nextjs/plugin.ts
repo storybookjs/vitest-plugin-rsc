@@ -176,6 +176,8 @@ const nextRscServerOptimizeDeps = [
   "next/dist/client/components/hooks-server-context.js",
   "next/dist/server/app-render/rsc/postpone.js",
   "next/dist/server/app-render/rsc/preloads.js",
+  "next/dist/server/app-render/rsc/taint.js",
+  "next/dist/server/app-render/collect-segment-data.js",
   "next/dist/lib/metadata/metadata.js",
   "next/dist/lib/metadata/get-metadata-route",
   "next/dist/lib/metadata/get-metadata-route.js",
@@ -791,22 +793,30 @@ function useNextEntryBase(): Plugin {
 
       return `
 	// Begin copy: Next.js app-render entry-base export surface
-	// Source: https://github.com/vercel/next.js/blob/4588a7354283f97e2124e3d82f55733ca4eb9373/packages/next/src/server/app-render/entry-base.ts#L1-L98
+	// Source: next/dist/server/app-render/entry-base.js export surface in the
+	// project Next.js version.
 	// Adaptation: Vite RSC provides the React Flight server implementation and
 	// client references, while the remaining exports keep Next app-render using
 	// its normal component-tree glue.
-	import { createElement, Fragment } from "react";
-	import { renderToReadableStream } from "@vitejs/plugin-rsc/vendor/react-server-dom/server.edge";
+	import { captureOwnerStack, createElement, Fragment } from "react";
+	import {
+	  createTemporaryReferenceSet,
+	  decodeAction,
+	  decodeFormState,
+	  decodeReply,
+	  renderToReadableStream,
+	} from "@vitejs/plugin-rsc/vendor/react-server-dom/server.edge";
 	import LayoutRouter, { LoadingBoundaryProvider } from ${JSON.stringify(clientReference("layout-router"))};
 	import RenderFromTemplateContext from ${JSON.stringify(clientReference("render-from-template-context"))};
 	import { ClientPageRoot } from ${JSON.stringify(clientReference("client-page"))};
 	import { ClientSegmentRoot } from ${JSON.stringify(clientReference("client-segment"))};
 	import { HTTPAccessFallbackBoundary } from ${JSON.stringify(clientReference("error-boundary"))};
 	import { RootLayoutBoundary } from ${JSON.stringify(clientReference("boundary-components"))};
-	import { patchFetch as patchNextFetch } from "next/dist/server/lib/patch-fetch.js";
 	import { actionAsyncStorage } from "next/dist/server/app-render/action-async-storage.external.js";
 	import { workAsyncStorage } from "next/dist/server/app-render/work-async-storage.external.js";
 	import { workUnitAsyncStorage } from "next/dist/server/app-render/work-unit-async-storage.external.js";
+	import { collectPrefetchHints, collectSegmentData } from "next/dist/server/app-render/collect-segment-data.js";
+	import { patchFetch as patchNextFetch } from "next/dist/server/lib/patch-fetch.js";
 	import { createMetadataComponents } from "next/dist/lib/metadata/metadata.js";
 	import * as hooksServerContext from "next/dist/client/components/hooks-server-context.js";
 import {
@@ -819,6 +829,7 @@ import {
 } from "next/dist/server/request/params.js";
 import { Postpone } from "next/dist/server/app-render/rsc/postpone.js";
 import { preconnect, preloadFont, preloadStyle } from "next/dist/server/app-render/rsc/preloads.js";
+import { taintObjectReference } from "next/dist/server/app-render/rsc/taint.js";
 
 function SegmentViewNode({ children }) {
   return children;
@@ -829,6 +840,7 @@ export {
   ClientSegmentRoot,
   Fragment,
   HTTPAccessFallbackBoundary,
+  InstantValidation,
   LayoutRouter,
   LoadingBoundaryProvider,
   Postpone,
@@ -836,22 +848,33 @@ export {
   RootLayoutBoundary,
   SegmentViewNode,
 	  actionAsyncStorage,
+	  captureOwnerStack,
+	  collectPrefetchHints,
+	  collectSegmentData,
 	  createElement,
 	  createMetadataComponents,
 	  createPrerenderParamsForClientSegment,
   createPrerenderSearchParamsForClientPage,
   createServerParamsForServerSegment,
 	  createServerSearchParamsForServerPage,
+	  createTemporaryReferenceSet,
+	  decodeAction,
+	  decodeFormState,
+	  decodeReply,
 	  preconnect,
 	  preloadFont,
 	  preloadStyle,
 	  renderToReadableStream,
+	  taintObjectReference,
 	  workAsyncStorage,
 	  workUnitAsyncStorage,
 	};
 
 	export const SegmentViewStateNode = SegmentViewNode;
 	export const serverHooks = hooksServerContext;
+	function InstantValidation() {
+	  return undefined;
+	}
 	export function patchFetch() {
 	  return patchNextFetch({
 	    workAsyncStorage,
