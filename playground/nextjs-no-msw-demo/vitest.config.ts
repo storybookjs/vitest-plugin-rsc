@@ -1,14 +1,9 @@
-import { fileURLToPath } from "node:url";
 import { playwright } from "@vitest/browser-playwright";
-import { defineProject } from "vitest/config";
+import { defineConfig } from "vitest/config";
 import { vitestPluginRSC } from "vitest-plugin-rsc";
 import { vitestPluginNext } from "vitest-plugin-rsc/nextjs/plugin";
 
-// oxlint-disable-next-line no-process-env
-const maxWorkers = process.env.CI ? undefined : 4;
-
-export default defineProject({
-  root: fileURLToPath(new URL(".", import.meta.url)),
+export default defineConfig({
   plugins: [vitestPluginRSC(), vitestPluginNext()],
   resolve: {
     conditions: ["test"],
@@ -22,10 +17,6 @@ export default defineProject({
     ],
   },
   test: {
-    name: "nextjs-no-msw-demo",
-    include: ["**/*.test.{ts,tsx}"],
-    exclude: ["node_modules"],
-    maxWorkers,
     browser: {
       enabled: true,
       headless: true,

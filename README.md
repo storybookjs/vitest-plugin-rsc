@@ -689,7 +689,7 @@ All Vitest suites are registered as root projects, so the full repository runs f
 
 ```bash
 pnpm test
-pnpm test -- --project nextjs-notes-demo-browser --project nextjs-notes-demo-node
+pnpm test --project nextjs-notes-demo-browser --project nextjs-notes-demo-node
 ```
 
 ## Architecture

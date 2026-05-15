@@ -26,4 +26,6 @@ Preview packages for PR commits are handled by `pkg.pr.new`, which publishes ins
 
 Vitest projects that import `vitest-plugin-rsc` use the package exports, so build the package before running Vitest directly. From the root, prefer `pnpm test`, which runs `pnpm build` before the root Vitest project suite. If you intentionally bypass the script with `pnpm test:run`, run `pnpm build` first.
 
-For bigger feature work, run the full Next.js notes demo suite from the root (`pnpm test -- --project nextjs-notes-demo-browser --project nextjs-notes-demo-node`) before merging. It is the in-tree acceptance app and covers the realistic combinations of routing, cookies, cache, Server Actions, and MSW-routed transport.
+Keep Vitest project definitions and coverage settings in the root `vitest.config.ts`. Vitest coverage is process-level config, so do not add `coverage` blocks to individual project configs.
+
+For bigger feature work, run the full Next.js notes demo suite from the root (`pnpm test --project nextjs-notes-demo-browser --project nextjs-notes-demo-node`) before merging. It is the in-tree acceptance app and covers the realistic combinations of routing, cookies, cache, Server Actions, and MSW-routed transport.
