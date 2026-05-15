@@ -35,9 +35,7 @@ test("renderServer resolves permanent page redirects through Next", async () => 
   await renderServer({ url: "/route-patterns/conventions?mode=permanent-redirect" });
 
   await expect.element(page.getByRole("heading", { name: "Route conventions" })).toBeVisible();
-  await expect
-    .element(page.getByText("Redirect source: render-permanent-redirect"))
-    .toBeVisible();
+  await expect.element(page.getByText("Redirect source: render-permanent-redirect")).toBeVisible();
 });
 
 test("renderServer resolves route-level forbidden conventions through Next", async () => {

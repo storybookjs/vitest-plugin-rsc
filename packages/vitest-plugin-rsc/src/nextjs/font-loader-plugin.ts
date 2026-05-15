@@ -95,8 +95,17 @@ export function useNextFontLoader(): Plugin {
       const projectRequire = createProjectRequire(root);
       const projectConfig = await loadNextProjectConfig(root, mode);
       const loaderUtils = projectRequire("next/dist/compiled/loader-utils3") as {
-        interpolateName(context: unknown, name: string, options: { context: string; content: Buffer }): string;
-        getHashDigest(buffer: Buffer, hashType: string, digestType: string, maxLength: number): string;
+        interpolateName(
+          context: unknown,
+          name: string,
+          options: { context: string; content: Buffer },
+        ): string;
+        getHashDigest(
+          buffer: Buffer,
+          hashType: string,
+          digestType: string,
+          maxLength: number,
+        ): string;
       };
       const loaderModule = projectRequire(
         request.kind === "google"

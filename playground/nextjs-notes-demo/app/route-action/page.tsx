@@ -24,10 +24,7 @@ export default function RouteActionPage() {
   return (
     <>
       <h1>Route action</h1>
-      <RouteActionClient
-        increment={increment}
-        redirectToConventions={redirectToConventions}
-      />
+      <RouteActionClient increment={increment} redirectToConventions={redirectToConventions} />
     </>
   );
 }

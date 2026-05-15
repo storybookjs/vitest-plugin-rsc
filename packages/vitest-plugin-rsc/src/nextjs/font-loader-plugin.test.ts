@@ -21,7 +21,12 @@ test("emits next/font local files as build assets", async () => {
   try {
     await configResolved.call({} as never, { root, mode: "test", command: "build" } as never);
 
-    const resolved = await resolveId.call({} as never, createLocalFontRequest(), undefined, {} as never);
+    const resolved = await resolveId.call(
+      {} as never,
+      createLocalFontRequest(),
+      undefined,
+      {} as never,
+    );
     const code = (await load.call(
       {
         addWatchFile: (file: string) => watchedFiles.push(file),
@@ -122,7 +127,10 @@ function createTempFontFixture(options: { nextConfig?: string } = {}) {
   const fontPath = path.join(appDir, "geist-latin.woff2");
   fs.mkdirSync(appDir, { recursive: true });
   fs.writeFileSync(path.join(root, "package.json"), "{}");
-  fs.writeFileSync(path.join(appDir, "page.tsx"), "export default function Page() { return null; }\n");
+  fs.writeFileSync(
+    path.join(appDir, "page.tsx"),
+    "export default function Page() { return null; }\n",
+  );
   fs.copyFileSync(sourceFontPath, fontPath);
   if (options.nextConfig) {
     fs.writeFileSync(path.join(root, "next.config.js"), options.nextConfig);

@@ -1068,7 +1068,9 @@ function readNextCommonJsExports(file: string) {
     }
   }
 
-  for (const match of code.matchAll(/Object\.defineProperty\(exports,\s*["']([^"']+)["']/g)) {
+  for (const match of code.matchAll(
+    /Object\.defineProperty\(exports,\s*(?:\/\*[\s\S]*?\*\/\s*)*["']([^"']+)["']/g,
+  )) {
     addName(match[1]!);
   }
 
