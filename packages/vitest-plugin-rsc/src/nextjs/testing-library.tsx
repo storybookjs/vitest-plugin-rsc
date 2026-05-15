@@ -172,6 +172,7 @@ export async function renderServer(
 ): Promise<{
   container: HTMLElement;
   baseElement: HTMLElement;
+  headers: Headers;
   unmount: () => Promise<void>;
   rerender: (ui: ReactNode) => Promise<void>;
   asFragment: () => DocumentFragment;
@@ -194,6 +195,13 @@ export async function renderServer(
   const initialRequestUrl = routeManifest
     ? resolveNextCustomRequestUrl(routeManifest, requestUrl, headers)
     : requestUrl;
+  const responseHeaders = routeManifest
+    ? resolveNextCustomResponseHeaders(
+        routeManifest.customRoutes.headers,
+        initialRequestUrl,
+        headers,
+      )
+    : new Headers();
   const location = new URL(initialRequestUrl, "http://localhost");
   const routeEntry = routeManifest
     ? routeOnly
@@ -483,6 +491,7 @@ export async function renderServer(
   return {
     container,
     baseElement,
+    headers: responseHeaders,
     unmount: () => unmountRoot(container, false),
     rerender: async (newUi) => {
       ui = newUi;
@@ -967,6 +976,31 @@ function resolveNextCustomRequestUrl(
   return resolveNextCustomRewrite(routeManifest, customRoutes.rewrites, requestUrl, headers);
 }
 
+function resolveNextCustomResponseHeaders(
+  headerRoutes: NextCustomRoute[],
+  requestUrl: string,
+  headers: Headers | Record<string, string> | undefined,
+) {
+  const responseHeaders = new Headers();
+  for (const headerRoute of headerRoutes) {
+    const match = matchNextCustomRoute("header", headerRoute, requestUrl, headers);
+    if (!match) continue;
+
+    for (const header of headerRoute.headers ?? []) {
+      responseHeaders.set(header.key, interpolateNextCustomRouteValue(header.value, match.params));
+    }
+  }
+  return responseHeaders;
+}
+
+function interpolateNextCustomRouteValue(value: string, params: Record<string, string | string[]>) {
+  return value.replace(/:([A-Za-z0-9_]+)/g, (token, key: string) => {
+    const param = params[key];
+    if (param === undefined) return token;
+    return Array.isArray(param) ? param.join("/") : param;
+  });
+}
+
 function resolveNextCustomRedirect(
   redirects: NextCustomRoute[],
   requestUrl: string,
@@ -1076,7 +1110,7 @@ function resolveNextCustomRewriteRoute(
 }
 
 function matchNextCustomRoute(
-  type: "redirect" | "rewrite",
+  type: "header" | "redirect" | "rewrite",
   route: NextCustomRoute,
   requestUrl: string,
   headers: Headers | Record<string, string> | undefined,
