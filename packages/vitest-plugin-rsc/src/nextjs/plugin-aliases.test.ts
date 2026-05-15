@@ -404,6 +404,27 @@ test("preserves Next use cache directive kinds", async () => {
   expect(result.code).toContain("use-cache-kind-fixture.ts#$$hoist_1_readPrivateValue");
 });
 
+test("does not hoist use cache directives when cacheComponents is disabled", async () => {
+  const plugin = findNextPlugin("next-rsc-use-cache-transform");
+  const configResolved = getHookHandler(plugin.configResolved);
+  const transform = getHookHandler(plugin.transform);
+
+  await configResolved.call({} as never, { root: noMswFixtureRoot, mode: "test" } as never);
+
+  const result = await transform.call(
+    { environment: { name: "client" } } as never,
+    `
+      export async function readCachedValue() {
+        "use cache";
+        return "cached";
+      }
+    `,
+    path.join(noMswFixtureRoot, "app/use-cache-disabled-fixture.ts"),
+  );
+
+  expect(result).toBeUndefined();
+});
+
 test("does not hoist use cache files from another Next project root", async () => {
   const plugin = findNextPlugin("next-rsc-use-cache-transform");
   const configResolved = getHookHandler(plugin.configResolved);
