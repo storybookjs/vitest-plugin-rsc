@@ -1,7 +1,7 @@
 import { expect, test } from "vitest";
 import { page } from "vitest/browser";
 import { createAsyncLocalStorage } from "next/dist/server/app-render/async-local-storage.js";
-import { renderServer } from "#test/render.tsx";
+import { renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
 
 const nextAsyncStorage = createAsyncLocalStorage<{ route: string }>();
 
