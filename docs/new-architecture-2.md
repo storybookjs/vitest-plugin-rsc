@@ -4,9 +4,11 @@ Status: 2026-05-16
 Branch: `codex/next-architecture-less-glue`
 Base: `1b4acdc docs: clarify completed architecture scope`
 
-This document is the working plan for reducing adapter glue on top of the current Next fidelity PR. The goal is not to rewrite the PR for its own sake. Every step has to remove, isolate, or replace local behavior with a real Next, Vite, Vitest, React, or `@vitejs/plugin-rsc` responsibility.
+This document is the working plan for reducing custom Next.js logic on top of the current Next fidelity PR. The goal is not to rewrite the PR for its own sake. Every step has to remove, isolate, or replace local behavior with a real Next, Vite, Vitest, React, or `@vitejs/plugin-rsc` responsibility.
 
 The first rule for this branch: stay critical. A refactor only counts as progress when it makes the next deletion or delegation easier. Moving code to another file is not enough unless it creates a clear boundary that can be tested or replaced.
+
+The second rule: do not focus on optimizer mechanics in this effort. Optimizer warmup may still be necessary for Vite, but it is not the architecture target here. This branch should focus on deleting custom Next request/render logic and keeping only the bridge code required to stay an in-process Vitest plugin that uses Vite RSC.
 
 ## Current Assessment
 
@@ -22,7 +24,7 @@ The weak spot is where the adapter builds a local request/render runtime around 
 - `testing-library.tsx` owns custom request routing, redirect/rewrite following, route target selection, document fallback hydration, and Testing Library orchestration;
 - `app-render.ts` owns direct `renderToHTMLOrFlight` invocation, render opts construction, fake manifests, lifecycle hooks, and Vite RSC stream substitution;
 - route handlers are discovered but not invoked through the adapter request path;
-- optimizer warmup still scans broad `app/**` and `src/app/**` source globs.
+- several helpers encode Next request/render semantics locally instead of delegating them to Next route modules or upstream routing helpers.
 
 That means the problem is not "this PR reinvented all of Next". The problem is narrower: the local glue is concentrated in a few large files, and some of it should eventually become a real request adapter around Next route modules.
 
@@ -143,18 +145,6 @@ This is more invasive than route handlers. Do it only after the request-routing 
 
 Critical check: if the new path still requires the same hand-built `RenderOpts`, fake manifests, and lifecycle hooks, it may not be materially better. The win has to be that the Next route module owns more of the call shape.
 
-### 5. Revisit Optimizer Entries
-
-The current `app/**/*` and `src/app/**/*` optimizer scan entries are understandable because dynamic imports are too late for Vite's dep optimizer. But as architecture, broad app-source globs are a workaround.
-
-Better target:
-
-- derive optimizer warmup from Next route discovery, not raw source globs;
-- ideally generate route-entry imports from the route manifest so Vite sees the same graph Next discovered;
-- avoid demo-local `optimizeDeps.include` lists for ESM app shell dependencies.
-
-Critical check: Vite's optimizer `entries` are filesystem/glob based and filter through `fs.existsSync`, so a pure virtual module entry is probably not enough. Do not land a virtual-entry change unless a test proves Vite actually scans it.
-
 ## Non-Goals
 
 Do not replace `@vitejs/plugin-rsc` with Next webpack or Turbopack RSC bundling. That would create two RSC graphs and is the wrong direction.
@@ -164,6 +154,20 @@ Do not port large chunks of Next server/router code by hand. If an upstream func
 Do not make `testing-library.tsx` the dumping ground for new Next semantics. It should become thinner over time.
 
 Do not call a refactor "less glue" if the same behavior just moved behind a different name without a deletion path.
+
+Do not spend this branch on optimizer entry rewrites. They may be revisited separately, but they are not custom Next semantics and they should not distract from deleting request/render logic.
+
+## Glue That Is Allowed To Remain
+
+Some adapter code is not wheel reinvention. It is the cost of this package's shape:
+
+- Vite virtual modules that let Next loader output import user app files through Vite.
+- Manifest bridges from Vite RSC client/server references into the shapes Next app-render expects.
+- Thin request conversion between Web `Request`, Next request objects, and Testing Library APIs.
+- Hydration handoff from Next Flight/HTML output into Vitest browser tests.
+- Small version guards around installed `next/dist/...` internals.
+
+These should stay small and boring. They should not contain framework decisions such as route matching policy, HTTP method semantics, dynamic API behavior, redirect rules, cache behavior, or route handler execution rules. Those belong to Next.
 
 ## Commit Policy For This Branch
 
