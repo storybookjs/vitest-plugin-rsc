@@ -891,7 +891,10 @@ const nextEntryBaseClientReferenceImports: Record<string, NextEntryBaseClientRef
 // optimized chunk, so they execute with React Server aliases. Keep the real
 // Next entry-base module, but intercept only these entry-base imports so the
 // RSC graph receives client references and the browser/SSR graphs load the
-// real Next client modules.
+// real Next client modules. A generic upstream fix in @vitejs/plugin-rsc would
+// be to preserve CJS "use client" dependency boundaries during RSC dep
+// optimization: externalize/proxy those modules instead of inlining them into
+// the server optimized chunk, then register the proxy with registerClientReference.
 function useNextEntryBaseClientReferences(): Plugin {
   return {
     name: "next-rsc-entry-base-client-references",
