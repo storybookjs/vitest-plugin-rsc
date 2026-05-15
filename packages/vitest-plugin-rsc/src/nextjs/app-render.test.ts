@@ -77,3 +77,50 @@ test("normalizes Vite RSC cache wrapper module ids in Next manifest proxies", ()
     async: true,
   });
 });
+
+test("returns Next client-reference records from manifest proxies", () => {
+  const clientModules = createViteRscClientModulesProxy() as Record<PropertyKey, unknown>;
+  const moduleMapping = createViteRscModuleMappingProxy() as Record<
+    PropertyKey,
+    Record<PropertyKey, unknown> | undefined
+  >;
+
+  expect(clientModules["/src/client-card.tsx#default"]).toEqual({
+    id: "/src/client-card.tsx",
+    name: "default",
+    chunks: [],
+    async: true,
+  });
+  expect(moduleMapping["/src/client-card.tsx"]?.default).toEqual({
+    id: "/src/client-card.tsx",
+    name: "default",
+    chunks: [],
+    async: true,
+  });
+  expect(clientModules["/src/client-card.tsx"]).toBeUndefined();
+  expect(clientModules[Symbol.iterator]).toBeUndefined();
+  expect(moduleMapping[Symbol.iterator]).toBeUndefined();
+});
+
+test("maps Next builtin global-error manifest records to the Vite virtual stub", () => {
+  const clientModules = createViteRscClientModulesProxy() as Record<string, unknown>;
+  const moduleMapping = createViteRscModuleMappingProxy() as Record<
+    string,
+    Record<string, unknown>
+  >;
+  const expected = {
+    id: "/@id/__x00__virtual:vitest-plugin-rsc/next-builtin-global-error-stub",
+    name: "default",
+    chunks: [],
+    async: true,
+  };
+
+  expect(
+    clientModules[
+      "/node_modules/.vite/deps/next_dist_client_components_builtin_global-error.js#default"
+    ],
+  ).toEqual(expected);
+  expect(
+    moduleMapping["/node_modules/next/dist/client/components/builtin/global-error.js"]?.default,
+  ).toEqual(expected);
+});
