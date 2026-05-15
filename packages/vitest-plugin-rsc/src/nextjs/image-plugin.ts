@@ -179,7 +179,7 @@ async function loadNextStaticImage(
       resourcePath: imagePath,
       context: path.dirname(imagePath),
       emitFile(name, content) {
-        const nextUrl = `${projectConfig.assetPrefix}${projectConfig.basePath}/_next${name}`;
+        const nextUrl = `${projectConfig.assetPrefix}/_next${name}`;
 
         if (!assets.emitAsset) {
           assets.registerDevAsset(nextUrl, content);
