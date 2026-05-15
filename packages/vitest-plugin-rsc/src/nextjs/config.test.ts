@@ -13,14 +13,20 @@ test("loads custom routes from the real Next config loader", async () => {
   try {
     const projectConfig = await loadNextProjectConfig(fixtureRoot, "test");
 
-    expect(projectConfig.customRoutes.rewrites.afterFiles).toMatchObject([
-      { source: "/next-config-rewrite", destination: "/next-apis" },
-    ]);
+    expect(projectConfig.customRoutes.rewrites.afterFiles).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ source: "/next-config-rewrite", destination: "/next-apis" }),
+        expect.objectContaining({
+          source: "/next-apis",
+          destination: "/route-patterns/conventions?from=after-files-shadow",
+        }),
+      ]),
+    );
     expect(projectConfig.customRoutes.redirects).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           source: "/next-config-redirect",
-          destination: "/next-apis",
+          destination: "/next-apis?from=config-redirect",
           permanent: false,
         }),
       ]),

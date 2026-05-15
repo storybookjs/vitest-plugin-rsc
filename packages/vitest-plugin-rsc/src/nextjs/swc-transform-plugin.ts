@@ -1,7 +1,7 @@
 import path from "node:path";
 import type { Plugin } from "vite";
 import { loadNextProjectConfig, type LoadedJsConfig, type NextConfigLike } from "./config";
-import { createProjectRequire, getProjectRoot, normalizePath } from "./plugin-utils";
+import { createProjectRequire, getProjectRoot, isProjectFile, normalizePath } from "./plugin-utils";
 
 type NextSwc = {
   loadBindings(): Promise<unknown>;
@@ -70,7 +70,12 @@ export function useNextSwcTransform(): Plugin {
       contextPromise = undefined;
     },
     async transform(code, id) {
-      if (!isUserSourceFile(id) || !hasSupportedNextSwcTransformTrigger(code)) return;
+      if (
+        !isUserSourceFile(id) ||
+        !isProjectFile(root, id) ||
+        !hasSupportedNextSwcTransformTrigger(code)
+      )
+        return;
 
       const filename = id.replace(/\?.*$/, "");
       contextPromise ??= createNextSwcTransformContext(root, mode);

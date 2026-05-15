@@ -11,24 +11,6 @@ process.env.LAUNCH_EDITOR = "/usr/bin/true";
 // oxlint-disable-next-line no-process-env
 const maxWorkers = process.env.CI ? undefined : 4;
 
-const appShellOptimizeDeps = [
-  "@base-ui/react/button",
-  "@base-ui/react/input",
-  "@base-ui/react/menu",
-  "@base-ui/react/separator",
-  "@better-auth/passkey/client",
-  "better-auth/react",
-  "class-variance-authority",
-  "clsx",
-  "lucide-react",
-  "next-themes",
-  "react-transition-progress",
-  "react-transition-progress/next",
-  "tailwind-merge",
-  "zod",
-  "zod-form-data",
-];
-
 export default defineConfig({
   envPrefix: ["VITE_", "CI"],
   resolve: {
@@ -46,18 +28,12 @@ export default defineConfig({
       "next/dist/client/components/redirect.js",
       "next/dist/client/components/router-reducer/create-href-from-url.js",
       "next/dist/server/lib/server-action-request-meta.js",
-      ...appShellOptimizeDeps,
     ],
   },
   environments: {
     client: {
       optimizeDeps: {
-        include: ["next/dist/lib/metadata/get-metadata-route", ...appShellOptimizeDeps],
-      },
-    },
-    react_client: {
-      optimizeDeps: {
-        include: appShellOptimizeDeps,
+        include: ["next/dist/lib/metadata/get-metadata-route"],
       },
     },
   },

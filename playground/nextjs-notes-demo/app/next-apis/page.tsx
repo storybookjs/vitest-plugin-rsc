@@ -14,8 +14,13 @@ import { WebVitalsProbe } from "./web-vitals-probe";
 
 const LazyPanel = dynamic(() => import("./lazy-panel"));
 
-export default async function NextApisPage() {
+export default async function NextApisPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ from?: string }>;
+}) {
   await connection();
+  const { from } = await searchParams;
   const rootParamNames = Object.keys(rootParams).join(", ") || "none";
   const { props: imageProps } = getImageProps({
     alt: "Next getImageProps image",
@@ -38,6 +43,7 @@ export default async function NextApisPage() {
       </Head>
       <h1>Next APIs</h1>
       <p>Connection scope ready</p>
+      {from ? <p>Next APIs redirect source: {from}</p> : null}
       <p>Root params available: {rootParamNames}</p>
       <AfterProbe />
       <Link href="/notes">Notes link</Link>

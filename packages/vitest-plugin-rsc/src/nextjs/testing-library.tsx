@@ -192,7 +192,7 @@ export async function renderServer(
   const explicitUrl = routeOnly || url !== undefined;
   const routeManifest = explicitUrl ? await loadNextRouteManifest() : undefined;
   const initialRequestUrl = routeManifest
-    ? resolveNextCustomRequestUrl(routeManifest.customRoutes, requestUrl, headers)
+    ? resolveNextCustomRequestUrl(routeManifest, requestUrl, headers)
     : requestUrl;
   const location = new URL(initialRequestUrl, "http://localhost");
   const routeEntry = routeManifest
@@ -959,16 +959,17 @@ function resolveRedirectUrl(redirectUrl: string, baseUrl: string) {
 }
 
 function resolveNextCustomRequestUrl(
-  customRoutes: NextCustomRoutes,
+  routeManifest: NextRouteManifest,
   requestUrl: string,
   headers: Headers | Record<string, string> | undefined,
 ) {
+  const customRoutes = routeManifest.customRoutes;
   const redirect = resolveNextCustomRedirect(customRoutes.redirects, requestUrl, headers);
   if (redirect) {
     return resolveRedirectUrl(redirect, requestUrl);
   }
 
-  return resolveNextCustomRewrite(customRoutes.rewrites, requestUrl, headers) ?? requestUrl;
+  return resolveNextCustomRewrite(routeManifest, customRoutes.rewrites, requestUrl, headers);
 }
 
 function resolveNextCustomRedirect(
@@ -996,6 +997,7 @@ function resolveNextCustomRedirect(
 }
 
 function resolveNextCustomRewrite(
+  routeManifest: NextRouteManifest,
   rewrites: NextCustomRoutes["rewrites"],
   requestUrl: string,
   headers: Headers | Record<string, string> | undefined,
@@ -1006,9 +1008,17 @@ function resolveNextCustomRewrite(
     rewrittenUrl = resolveNextCustomRewriteRoute(rewrite, rewrittenUrl, headers) ?? rewrittenUrl;
   }
 
+  if (hasNextStaticRouteMatch(routeManifest, rewrittenUrl)) {
+    return rewrittenUrl;
+  }
+
   for (const rewrite of rewrites.afterFiles) {
     const nextUrl = resolveNextCustomRewriteRoute(rewrite, rewrittenUrl, headers);
     if (nextUrl) return nextUrl;
+  }
+
+  if (hasNextRouteMatch(routeManifest, rewrittenUrl)) {
+    return rewrittenUrl;
   }
 
   for (const rewrite of rewrites.fallback) {
@@ -1016,7 +1026,33 @@ function resolveNextCustomRewrite(
     if (nextUrl) return nextUrl;
   }
 
-  return rewrittenUrl === requestUrl ? undefined : rewrittenUrl;
+  return rewrittenUrl;
+}
+
+function hasNextStaticRouteMatch(routeManifest: NextRouteManifest, requestUrl: string) {
+  const pathname = new URL(requestUrl, "http://localhost").pathname;
+  return (
+    routeManifest.pages.some((entry) => isNextStaticRouteMatch(entry.route, pathname)) ||
+    routeManifest.routeHandlers.some((entry) => isNextStaticRouteMatch(entry.route, pathname))
+  );
+}
+
+function isNextStaticRouteMatch(routePattern: string, pathname: string) {
+  if (routePattern.includes("[")) return false;
+  return normalizeStaticPathname(routePattern) === normalizeStaticPathname(pathname);
+}
+
+function normalizeStaticPathname(value: string) {
+  const withLeadingSlash = value.startsWith("/") ? value : `/${value}`;
+  return withLeadingSlash === "/" ? "/" : withLeadingSlash.replace(/\/$/, "");
+}
+
+function hasNextRouteMatch(routeManifest: NextRouteManifest, requestUrl: string) {
+  const pathname = new URL(requestUrl, "http://localhost").pathname;
+  return (
+    routeManifest.pages.some((entry) => matchRoutePattern(entry.route, pathname)) ||
+    routeManifest.routeHandlers.some((entry) => matchRoutePattern(entry.route, pathname))
+  );
 }
 
 function resolveNextCustomRewriteRoute(

@@ -4,7 +4,10 @@ import { page } from "vitest/browser";
 import { db } from "#lib/db.ts";
 import { notes } from "#db/schema.ts";
 import { signInAs, testUser } from "#test/auth.ts";
-import { renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
+import {
+  expectToHaveBeenNavigatedTo,
+  renderServer,
+} from "vitest-plugin-rsc/nextjs/testing-library";
 
 const noteId = "00000000-0000-4000-8000-000000000001";
 const databaseGeneratedNoteId = "70458a4b-ecef-4a2a-00e1-53f5b00c951e";
@@ -107,6 +110,7 @@ test("delete note action redirects to the notes route", async () => {
     const deletedNotes = await db.select().from(notes).where(eq(notes.id, noteId));
     expect(deletedNotes).toHaveLength(0);
   });
+  await vi.waitFor(() => expectToHaveBeenNavigatedTo({ pathname: "/notes" }));
   await expect.element(page.getByRole("heading", { level: 1, name: "Notes" })).toBeInTheDocument();
   await expect.element(page.getByText("No notes yet")).toBeInTheDocument();
 });

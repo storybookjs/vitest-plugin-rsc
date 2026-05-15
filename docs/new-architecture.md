@@ -103,6 +103,8 @@ Vitest owns the test harness:
 - DOM setup, cleanup, and Testing Library integration.
 - Optional MSW routing for browser fetches.
 
+Root `vitest.config.ts` is the canonical place for workspace project definitions and coverage config. Demo-level configs can stay useful for local app development, but repository CI and fidelity acceptance should use the root project names so package tests run through package exports and coverage stays process-level instead of being duplicated per project. Because root runs can include multiple Next apps in one Vitest process, Next adapter transforms must scope user-source work to their configured project root, and demo Next configs must load without relying on `process.cwd()` being the app root.
+
 Consequence: Next SWC must stay narrow. It is good for source-level compiler features such as `next/font`, `next/dynamic`, styled-jsx/compiler options, modularized imports, and `next/server` CJS optimization. It must not globally enable Next `serverComponents` or `serverActions` transforms until we have a separate design that proves it does not fight the Vite RSC graph.
 
 ## Runtime Shape
@@ -128,6 +130,8 @@ Next app source
 
 We are not running webpack. We do invoke selected Next webpack loader functions in-process because those loaders are where Next's JS implementation lives.
 
+Optimizer policy: hidden Vite environments such as `react_client` and `react_ssr` must inherit the browser/client optimizer scan roots from the visible Vitest browser environment, and Next app source files must be optimizer scan entries for the Next app-router environments. The hidden RSC runners must also start their optimizer scan before test execution so their first module-runner invocation does not discover app-shell dependencies mid-test. That is plugin infrastructure, not demo-app configuration. Demo apps must not paper over late dependency discovery by adding broad app-shell ESM dependencies to `optimizeDeps.include`; only CJS packages, Next internals, and dependencies with a targeted optimizer regression should be explicitly prebundled. If an ESM app dependency needs manual inclusion to stop mid-test reloads, treat that as a plugin optimizer-entries/warmup bug.
+
 ## What Is Implemented
 
 ### Config and Env
@@ -141,7 +145,8 @@ Done:
 - Custom routes are loaded through `next/dist/lib/load-custom-routes.js`.
 - `getDefineEnv` receives the real rewrites object and `hasRewrites` flag.
 - Render opts read base path, trailing slash, asset prefix, image config, cache components, and cache life defines.
-- `renderServer({ url })` applies same-origin `next.config` redirects and rewrites before resolving the app route, using Next route matching and destination helpers.
+- `renderServer({ url })` applies same-origin `next.config` redirects and rewrites in Next request order: redirects, `beforeFiles`, exact app route matches, `afterFiles`, dynamic app route matches, then `fallback`.
+- Redirects are a fidelity contract, not just an error-free render path. Tests must prove the redirect branch was hit by asserting target-route content plus an observable redirected marker, such as a preserved `from=` query value, for page redirects, permanent redirects, Server Action redirects, and same-origin `next.config` redirects. Form and Server Action redirects must dispatch a client-side App Router navigation through the hydrated React tree; they must not fall back to a hard document reload that leaves Vitest on a white page after the test.
 
 Remaining weakness: this is still not the full Next request pipeline. `next.config` response headers are loaded but not exposed because `renderServer` does not return a response object yet. Middleware/proxy, external rewrites, locale/basePath edge cases, and custom-route response metadata still need a higher-level request adapter.
 
@@ -154,6 +159,8 @@ The plugin imports Next's compiler alias helpers where possible:
 - Next compiled packages for edge-compatible `buffer`, `events`, `assert`, `util`, `process`, and OpenTelemetry.
 
 It also aliases React Server DOM webpack imports to `@vitejs/plugin-rsc`'s vendor copies so the Vite RSC graph stays in charge.
+
+The base RSC plugin now copies `optimizeDeps.entries` from the visible `client` environment into the hidden `react_client` and `react_ssr` runners and warms those optimizers for Vitest browser servers. The Next plugin contributes `app/**` and `src/app/**` as source scan entries when those directories exist. Keep that behavior as a requirement: those hidden module runners import client references after Vitest's initial browser bootstrap, and without shared scan roots plus warmup Vite can discover dependencies mid-test and reload the page. Do not reintroduce notes-demo-only `appShellOptimizeDeps` lists for ESM UI libraries.
 
 Remaining weakness: `treatNextInternalsAsServerInRsc` rewrites `process.env.NEXT_RUNTIME` and `typeof window` inside Next internals. This may be necessary for the Vite optimized chunks, but it is still a code rewrite hack. The next step is to reduce it to the smallest proven set, or replace it with environment/condition/define configuration.
 
@@ -394,9 +401,11 @@ Add focused tests in `playground/nextjs-notes-demo` before claiming more fidelit
 - Client hooks and diagnostics: `useLinkStatus`, deeper `useReportWebVitals` metric assertions, deeper `next/error` recovery/diagnostics, route-level `unstable_rethrow`/`unstable_catchError` cases beyond the current client/action coverage.
 - `next.config`: rewrites, redirects, headers, basePath, trailingSlash, assetPrefix, image config, env, transpilePackages, modularizeImports, optimizePackageImports, compiler options, typed routes where applicable, and root params.
 - Browser hydration: document fallback, route-level notFound, global-error, action redirects, form progressive enhancement, refresh, and navigation state after action responses.
+- Redirect control flow: render redirects, permanent redirects, Server Action redirects, and `next.config` redirects must assert that the redirected target rendered and that a redirect-specific marker survived into the target route. Form/Server Action redirects must additionally assert the client navigation spy so regressions to hard document redirects fail.
 - Entry-base and RSC optimizer boundary: direct import of real `next/dist/server/app-render/entry-base.js`, CommonJS `"use client"` dependency preservation, devtools segment explorer references, no direct execution of client modules under React Server aliases, and an upstream `@vitejs/plugin-rsc` repro.
 - Manifest contracts: `clientModules`, `ssrModuleMapping`, `edgeSSRModuleMapping`, `rscModuleMapping`, `edgeRscModuleMapping`, server action manifest workers, layer shape, and cache wrapper decode paths.
-- Test harness stability: custom tester HTML, preserved Vitest scripts, whole-document React expando cleanup, server action caller cleanup, and non-default Vitest API ports.
+- Test harness stability: root Vitest project definitions, process-level coverage config, custom tester HTML, preserved Vitest scripts, whole-document React expando cleanup, server action caller cleanup, and non-default Vitest API ports.
+- Optimizer stability: hidden `react_client`/`react_ssr` scan roots match the visible browser client scan roots, Next app source files are scanned up front, hidden optimizers are warmed before test execution, ESM app dependencies are not manually listed in demo `optimizeDeps.include`, and only CJS/Next-internal deps are explicitly prebundled unless backed by a focused regression.
 - Version compatibility: supported stable Next, latest stable Next, canary Next, and optional-internal fallbacks for missing loaders such as `next-root-params-loader`.
 - Adapter/runtime behavior: streaming boundaries, Suspense/loading fallback behavior, partial-prerendering/PPR scope, dynamic IO/cache-components scope, and adapter entrypoint assumptions.
 
@@ -455,7 +464,7 @@ P1: handle Next config fidelity.
 
 - Done: stop passing empty rewrites/`hasRewrites: false` unconditionally.
 - Done for config loading/defines/render opts: rewrites, redirects, headers, basePath, trailingSlash, image config, assetPrefix, cache components, and cache life.
-- Done for the first render path: same-origin rewrites and redirects are applied before app route matching in `renderServer({ url })`.
+- Done for the first render path: same-origin redirects and rewrites are applied in Next request order in `renderServer({ url })`, including not letting `afterFiles` rewrites shadow exact app routes.
 - Still needed: expose/apply response headers and move toward a higher-level Next-equivalent request pipeline for middleware/proxy, external rewrites, and locale/basePath edge cases.
 - Add plugin options for an explicit Next project root or config path only when real projects need more than the Vite root.
 
@@ -470,6 +479,7 @@ P1: reduce broad source rewrites.
 - Audit `treatNextInternalsAsServerInRsc`, `disableNextDevServerRuntime`, and any Buffer/runtime patches.
 - Replace broad rewrites with defines, aliases, conditions, or targeted adapters where possible.
 - Keep only rewrites that have a failing regression test and an upstream behavior note.
+- Remove demo-app `optimizeDeps.include` workarounds for ESM app-shell dependencies. Keep explicit prebundling scoped to CJS dependencies, Next internals, or packages with a targeted optimizer regression, and fix missing hidden-runner scan roots in the plugin instead of the app.
 
 P2: decide explicit non-goals.
 
@@ -499,7 +509,7 @@ P2: decide explicit non-goals.
 14. Add coverage for App Router page exports. Done for `metadata`, `generateMetadata`, `generateViewport`, and first segment config smoke coverage for `dynamic`, `dynamicParams`, `revalidate`, `fetchCache`, `runtime`, `preferredRegion`, and `maxDuration`. Still needed: `viewport`, `generateStaticParams`, param/static path interactions, and behavior assertions for those segment configs beyond metadata/static-info collection.
 15. Add metadata route coverage for `generateImageMetadata`, `generateSitemaps`, static metadata files, `robots`, `sitemap`, `manifest`, `opengraph-image`, `twitter-image`, `icon`, `apple-icon`, and `favicon`.
 16. Add `next/server` coverage for `userAgent`, `ImageResponse`, route handler streaming, redirects, rewrites, and cookie mutation semantics.
-17. Add error/control-flow coverage. Done for render redirects/permanent redirects, route notFound/forbidden/unauthorized/error/global-error, action redirects, action notFound/forbidden/unauthorized, `unstable_rethrow` in server actions, and `next/error` client boundaries. Still needed: route handler control flow, `unstable_rethrow` outside actions, and deeper document hydration/error recovery cases.
+17. Add error/control-flow coverage. Done for render redirects/permanent redirects, `next.config` redirects, route notFound/forbidden/unauthorized/error/global-error, action redirects, action notFound/forbidden/unauthorized, `unstable_rethrow` in server actions, and `next/error` client boundaries. Redirect coverage must assert target content, redirect-hit markers, and the App Router client navigation spy for form/Server Action redirects. Still needed: route handler control flow, `unstable_rethrow` outside actions, and deeper document hydration/error recovery cases.
 18. Decide support for `instrumentation.ts`, `instrumentation-client.ts`, and `mdx-components.tsx`; add tests or explicit unsupported errors.
 19. Decide PPR/adapter-runtime scope and add streaming/Suspense fallback tests that document what the browser-mode test adapter does and does not emulate.
 20. Add browser/client graph diagnostics coverage. Done for basic `useReportWebVitals`, `next/error`/`unstable_catchError`, and `next/web-vitals` import/runtime smoke. Still needed: `useLinkStatus` and deeper metric/error recovery assertions.
@@ -516,5 +526,7 @@ Before merging a Next.js fidelity change, ask:
 6. Is there a focused notes-demo test for the exact Next API or file convention being claimed?
 7. Is every remaining shim named as a shim with a reason and an exit path?
 8. Does the change reduce local glue, or does it clearly explain why the remaining glue is unavoidable?
+9. Does optimizer configuration avoid demo-specific ESM app-shell include lists, relying instead on shared hidden-runner scan roots plus targeted CJS/Next-internal prebundling?
+10. For redirects, does the test prove the redirect was actually hit by checking a redirect-specific marker on the rendered target route, and do form/Server Action redirects prove they used client-side App Router navigation instead of a hard document reload?
 
 The current direction is good, but the merge bar should be: fewer local approximations, more Next imports, more targeted tests, and no broad claim of full Next.js fidelity until the missing matrix above is materially covered.

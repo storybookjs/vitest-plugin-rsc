@@ -7,6 +7,9 @@ import { nextTesterHtmlPath, vitestPluginNext } from "./plugin";
 const fixtureRoot = fileURLToPath(
   new URL("../../../../playground/nextjs-notes-demo/", import.meta.url),
 );
+const noMswFixtureRoot = fileURLToPath(
+  new URL("../../../../playground/nextjs-no-msw-demo/", import.meta.url),
+);
 
 test("aliases React packages through Next's vendored React for app-router environments", async () => {
   const config = await resolveNextPluginConfig();
@@ -70,9 +73,17 @@ test("aliases React packages through Next's vendored React for app-router enviro
   expect(rscDefine["process.env.__NEXT_DEV_SERVER"]).toBe('""');
   const rewritesDefine = rscDefine["process.env.__NEXT_REWRITES"];
   expect(rewritesDefine).toBeDefined();
-  expect(JSON.parse(rewritesDefine!)).toMatchObject({
-    afterFiles: [{ source: "/next-config-rewrite", destination: "/next-apis" }],
-  });
+  expect(JSON.parse(rewritesDefine!)).toEqual(
+    expect.objectContaining({
+      afterFiles: expect.arrayContaining([
+        expect.objectContaining({ source: "/next-config-rewrite", destination: "/next-apis" }),
+        expect.objectContaining({
+          source: "/next-apis",
+          destination: "/route-patterns/conventions?from=after-files-shadow",
+        }),
+      ]),
+    }),
+  );
 
   const browserDefine = getEnvironmentDefine(config, "react_client");
   expect(browserDefine["process.env.NEXT_RUNTIME"]).toBe('""');
@@ -83,6 +94,20 @@ test("sets the Next tester HTML in Vitest browser projects by default", async ()
   const config = await resolveNextPluginConfig();
 
   expect(getBrowserTesterHtmlPath(config)).toBe(nextTesterHtmlPath);
+});
+
+test("adds Next app source files as optimizer scan entries", async () => {
+  const config = await resolveNextPluginConfig();
+
+  expect(getEnvironmentOptimizeDepsEntries(config, "client")).toContain(
+    "app/**/*.{js,jsx,ts,tsx,md,mdx}",
+  );
+  expect(getEnvironmentOptimizeDepsEntries(config, "react_client")).toContain(
+    "app/**/*.{js,jsx,ts,tsx,md,mdx}",
+  );
+  expect(getEnvironmentOptimizeDepsEntries(config, "react_ssr")).toContain(
+    "app/**/*.{js,jsx,ts,tsx,md,mdx}",
+  );
 });
 
 test("does not replace a user-provided Vitest browser tester HTML", async () => {
@@ -290,6 +315,27 @@ test("preserves Next use cache directive kinds", async () => {
   expect(result.code).toContain("use-cache-kind-fixture.ts#$$hoist_1_readPrivateValue");
 });
 
+test("does not hoist use cache files from another Next project root", async () => {
+  const plugin = findNextPlugin("next-rsc-use-cache-transform");
+  const configResolved = getHookHandler(plugin.configResolved);
+  const transform = getHookHandler(plugin.transform);
+
+  await configResolved.call({} as never, { root: noMswFixtureRoot, mode: "test" } as never);
+
+  const result = await transform.call(
+    { environment: { name: "client" } } as never,
+    `
+      export async function readCachedValue() {
+        "use cache";
+        return "cached";
+      }
+    `,
+    path.join(fixtureRoot, "components/next-cache-probe.tsx"),
+  );
+
+  expect(result).toBeUndefined();
+});
+
 async function resolveNextPluginConfig(userConfig: UserConfig = {}): Promise<UserConfig> {
   const previousCwd = process.cwd();
   const plugin = findNextPlugin("next-rsc-plugin");
@@ -326,6 +372,10 @@ function getEnvironmentAliases(config: UserConfig, environment: string): Alias[]
 
 function getEnvironmentDefine(config: UserConfig, environment: string): Record<string, string> {
   return (config.environments?.[environment]?.define ?? {}) as Record<string, string>;
+}
+
+function getEnvironmentOptimizeDepsEntries(config: UserConfig, environment: string): string[] {
+  return (config.environments?.[environment]?.optimizeDeps?.entries ?? []) as string[];
 }
 
 function getBrowserTesterHtmlPath(config: UserConfig): string | undefined {

@@ -29,6 +29,8 @@ export function vitestPluginRSC(): Plugin[] {
     {
       name: "rsc:run-in-browser",
       configureServer(server) {
+        const optimizerWarmup = warmRscEnvironmentOptimizers(server);
+
         server.ws.on("connection", (socket, req) => {
           const url = new URL(req.url ?? "/", "https://any.local");
           if (url.searchParams.get(reactClientWebSocketQuery) !== "1") {
@@ -73,6 +75,10 @@ export function vitestPluginRSC(): Plugin[] {
 
           next();
         });
+
+        return async () => {
+          await optimizerWarmup;
+        };
       },
       config() {
         return {
@@ -186,6 +192,35 @@ export function vitestPluginRSC(): Plugin[] {
     },
     createReactClientCoveragePlugin(),
   ];
+}
+
+async function warmRscEnvironmentOptimizers(server: ViteDevServer) {
+  if (!isVitestBrowserServer(server)) return;
+
+  await Promise.all(
+    ["client", "react_client", "react_ssr"].map(async (environmentName) => {
+      const optimizer = server.environments[environmentName]?.depsOptimizer;
+      if (!optimizer) return;
+
+      await optimizer.init();
+      const scanProcessing = optimizer.scanProcessing;
+      if (!scanProcessing) return;
+
+      await scanProcessing;
+      optimizer.run();
+      await waitForDepsOptimizerProcessing(optimizer);
+    }),
+  );
+}
+
+async function waitForDepsOptimizerProcessing(
+  optimizer: NonNullable<ViteDevServer["environments"][string]["depsOptimizer"]>,
+) {
+  const processing = optimizer.metadata.depInfoList.flatMap((dep) =>
+    dep.processing ? [dep.processing] : [],
+  );
+
+  await Promise.allSettled(processing);
 }
 
 function createBrowserApiPortPlugin(): Plugin {

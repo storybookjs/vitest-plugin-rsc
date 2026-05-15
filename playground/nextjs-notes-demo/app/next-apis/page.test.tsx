@@ -84,9 +84,17 @@ test("renderServer applies next.config rewrites before resolving app routes", as
   await expect.element(page.getByText("Connection scope ready")).toBeVisible();
 });
 
+test("renderServer does not let next.config afterFiles rewrites shadow app routes", async () => {
+  await renderServer({ url: "/next-apis" });
+
+  await expect.element(page.getByRole("heading", { name: "Next APIs" })).toBeVisible();
+  expect(page.getByText("Redirect source: after-files-shadow").query()).toBeNull();
+});
+
 test("renderServer follows next.config redirects before resolving app routes", async () => {
   await renderServer({ url: "/next-config-redirect" });
 
   await expect.element(page.getByRole("heading", { name: "Next APIs" })).toBeVisible();
   await expect.element(page.getByText("Connection scope ready")).toBeVisible();
+  await expect.element(page.getByText("Next APIs redirect source: config-redirect")).toBeVisible();
 });

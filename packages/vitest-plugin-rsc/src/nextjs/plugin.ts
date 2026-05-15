@@ -18,6 +18,7 @@ import { useNextMetadataImageLoader } from "./metadata-image-loader-plugin";
 import {
   createProjectRequire,
   getProjectRoot,
+  isProjectFile,
   normalizePath,
   tryResolveFromProject,
 } from "./plugin-utils";
@@ -1185,6 +1186,7 @@ export function __next_rsc_use_cache(kind, id, originalFn) {
       if (
         !code.includes("use cache") ||
         !isUserSourceFile(id) ||
+        !isProjectFile(root, id) ||
         isTestSourceFile(id) ||
         this.environment.name !== "client"
       ) {
@@ -1317,6 +1319,7 @@ export function vitestPluginNext(): Plugin[] {
           nextOptionalAppRenderOptimizeDeps,
         );
         const nextDefineEnvs = await createNextDefineEnvs(root, env.mode, nextImageConfig);
+        const nextSourceOptimizerEntries = createNextSourceOptimizerEntries(root);
 
         return {
           ...createNextTesterHtmlConfig(config),
@@ -1336,6 +1339,7 @@ export function vitestPluginNext(): Plugin[] {
           optimizeDeps: {
             include: [...nextAppRouterApiOptimizeDeps],
             exclude: [...nextRootParamsOptimizeDepsExclude],
+            entries: nextSourceOptimizerEntries,
             rolldownOptions: {
               plugins: [disableNextDevServerRuntime()],
             },
@@ -1363,6 +1367,7 @@ export function vitestPluginNext(): Plugin[] {
               },
               optimizeDeps: {
                 exclude: [...nextRootParamsOptimizeDepsExclude],
+                entries: nextSourceOptimizerEntries,
                 include: [
                   ...nextRscServerOptimizeDeps,
                   ...nextOptionalAppRenderDeps,
@@ -1419,6 +1424,7 @@ export function vitestPluginNext(): Plugin[] {
               },
               optimizeDeps: {
                 exclude: [...nextRootParamsOptimizeDepsExclude],
+                entries: nextSourceOptimizerEntries,
                 include: [
                   ...nextBrowserRuntimeOptimizeDeps,
                   ...nextClientRouterOptimizeDeps,
@@ -1471,6 +1477,7 @@ export function vitestPluginNext(): Plugin[] {
               },
               optimizeDeps: {
                 exclude: [...nextRootParamsOptimizeDepsExclude],
+                entries: nextSourceOptimizerEntries,
                 include: [
                   ...nextBrowserRuntimeOptimizeDeps,
                   ...nextClientRouterOptimizeDeps,
@@ -1511,6 +1518,17 @@ export function vitestPluginNext(): Plugin[] {
     },
     provideBufferLikeNextWebpack(),
   ];
+}
+
+function createNextSourceOptimizerEntries(root: string): string[] {
+  const candidates: [directory: string, pattern: string][] = [
+    ["app", "app/**/*.{js,jsx,ts,tsx,md,mdx}"],
+    ["src/app", "src/app/**/*.{js,jsx,ts,tsx,md,mdx}"],
+  ];
+
+  return candidates.flatMap(([directory, pattern]) =>
+    fs.existsSync(path.join(root, directory)) ? [pattern] : [],
+  );
 }
 
 function createNextTesterHtmlConfig(config: UserConfig): UserConfig {

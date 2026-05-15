@@ -17,6 +17,14 @@ export function tryResolveFromProject(root: string, id: string): string | undefi
   }
 }
 
+export function isProjectFile(root: string, id: string): boolean {
+  const file = id.replace(/\?.*$/, "");
+  if (!path.isAbsolute(file)) return false;
+
+  const relative = path.relative(root, file);
+  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
+}
+
 export function splitOnce(value: string, separator: string): [string, string?] {
   const index = value.indexOf(separator);
   if (index < 0) return [value];
