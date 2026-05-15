@@ -35,6 +35,8 @@ const virtualNextBuiltinGlobalErrorStubPublicId =
   "virtual:vitest-plugin-rsc/next-builtin-global-error-stub";
 const virtualNextBuiltinGlobalErrorStubId = `\0${virtualNextBuiltinGlobalErrorStubPublicId}`;
 const virtualNextRootParamsId = "\0vitest-plugin-rsc:next-root-params";
+const virtualNextCacheHandlersPublicId = "virtual:vitest-plugin-rsc/next-cache-handlers";
+const virtualNextCacheHandlersId = `\0${virtualNextCacheHandlersPublicId}`;
 const virtualNextUseCacheRuntimeId = "\0vitest-plugin-rsc:next-use-cache-runtime";
 const virtualNextUseCacheRuntimePublicId = "virtual:vitest-plugin-rsc/next-use-cache-runtime";
 export const nextTesterHtmlPath = fileURLToPath(new URL("./tester.html", import.meta.url));
@@ -442,6 +444,58 @@ function createNextInvalidImportModule(message: string) {
   return `throw new Error(${JSON.stringify(message)});\nexport {};`;
 }
 
+function useNextCacheHandlers(initialRoot = process.cwd()): Plugin {
+  let root = initialRoot;
+  let mode = "test";
+  let cacheHandlersModule: Promise<string> | undefined;
+
+  return {
+    name: "next-rsc-cache-handlers",
+    enforce: "pre",
+    applyToEnvironment(environment) {
+      return environment.name === "client";
+    },
+    configResolved(config) {
+      root = getProjectRoot(config);
+      mode = config.mode;
+      cacheHandlersModule = undefined;
+    },
+    resolveId(source) {
+      if (source === virtualNextCacheHandlersPublicId) {
+        return virtualNextCacheHandlersId;
+      }
+    },
+    load(id) {
+      if (id !== virtualNextCacheHandlersId) return;
+
+      cacheHandlersModule ??= createNextCacheHandlersModule(root, mode);
+      return cacheHandlersModule;
+    },
+  };
+}
+
+async function createNextCacheHandlersModule(root: string, mode: string) {
+  const { nextConfig, distDir } = await loadNextProjectConfig(root, mode);
+  const cacheHandlers = Object.entries(nextConfig.cacheHandlers ?? {}).filter(
+    (entry): entry is [string, string] => typeof entry[1] === "string" && entry[1].length > 0,
+  );
+
+  if (cacheHandlers.length === 0) {
+    return "export const nextCacheHandlers = {};\n";
+  }
+
+  const imports: string[] = [];
+  const entries: string[] = [];
+  for (const [index, [kind, handler]] of cacheHandlers.entries()) {
+    const binding = `cacheHandler_${index}`;
+    const handlerPath = path.isAbsolute(handler) ? handler : path.join(root, distDir, handler);
+    imports.push(`import ${binding} from ${JSON.stringify(normalizePath(handlerPath))};`);
+    entries.push(`${JSON.stringify(kind)}: ${binding}`);
+  }
+
+  return `${imports.join("\n")}\nexport const nextCacheHandlers = { ${entries.join(", ")} };\n`;
+}
+
 function filterResolvableOptimizeDeps(root: string, deps: readonly string[]): string[] {
   const projectRequire = createProjectRequire(root);
   return deps.filter((dep) => {
@@ -662,28 +716,45 @@ async function createNextDefineEnvs(
     >;
 
     return {
-      edge: normalizeNextTestDefineEnv(
-        getDefineEnv({
-          ...baseOptions,
-          isClient: false,
-          isEdgeServer: true,
-          isNodeServer: false,
-        }),
-        "edge",
-      ),
-      browser: normalizeNextTestDefineEnv(
-        getDefineEnv({
-          ...baseOptions,
-          isClient: true,
-          isEdgeServer: false,
-          isNodeServer: false,
-        }),
-        "",
-      ),
+      edge: {
+        ...normalizeNextTestDefineEnv(
+          getDefineEnv({
+            ...baseOptions,
+            isClient: false,
+            isEdgeServer: true,
+            isNodeServer: false,
+          }),
+          "edge",
+        ),
+        ...createNextRuntimeConfigDefines(root, projectConfig.distDir, nextConfig),
+      },
+      browser: {
+        ...normalizeNextTestDefineEnv(
+          getDefineEnv({
+            ...baseOptions,
+            isClient: true,
+            isEdgeServer: false,
+            isNodeServer: false,
+          }),
+          "",
+        ),
+        ...createNextRuntimeConfigDefines(root, projectConfig.distDir, nextConfig),
+      },
     };
   } catch {
     return createFallbackNextDefineEnvs(nextImageConfig);
   }
+}
+
+function createNextRuntimeConfigDefines(root: string, distDir: string, nextConfig: NextConfigLike) {
+  return {
+    "process.env.__NEXT_CACHE_HANDLERS": JSON.stringify(nextConfig.cacheHandlers ?? {}),
+    "process.env.__NEXT_CACHE_MAX_MEMORY_SIZE": JSON.stringify(
+      nextConfig.cacheMaxMemorySize ?? null,
+    ),
+    "process.env.__NEXT_DIST_DIR": JSON.stringify(distDir),
+    "process.env.__NEXT_PROJECT_ROOT": JSON.stringify(root),
+  };
 }
 
 function hasNextRewrites(rewrites: NextCustomRoutes["rewrites"]) {
@@ -715,11 +786,15 @@ function createFallbackNextDefineEnvs(
   const common = {
     "process.env.__NEXT_APP_NAV_FAIL_HANDLING": JSON.stringify(false),
     "process.env.__NEXT_CACHE_COMPONENTS": JSON.stringify(false),
+    "process.env.__NEXT_CACHE_HANDLERS": JSON.stringify({}),
+    "process.env.__NEXT_CACHE_MAX_MEMORY_SIZE": JSON.stringify(null),
     "process.env.__NEXT_CLIENT_ROUTER_DYNAMIC_STALETIME": JSON.stringify("0"),
     "process.env.__NEXT_CLIENT_ROUTER_STATIC_STALETIME": JSON.stringify("300"),
     "process.env.__NEXT_CLIENT_SEGMENT_CACHE": JSON.stringify(true),
     "process.env.__NEXT_DEV_SERVER": JSON.stringify(""),
+    "process.env.__NEXT_DIST_DIR": JSON.stringify(".next"),
     "process.env.__NEXT_DYNAMIC_ON_HOVER": JSON.stringify(false),
+    "process.env.__NEXT_PROJECT_ROOT": JSON.stringify(""),
     ...(nextImageConfig
       ? { "process.env.__NEXT_IMAGE_OPTS": JSON.stringify(nextImageConfig) }
       : {}),
@@ -1183,9 +1258,52 @@ function useNextUseCacheTransform(): Plugin {
       if (id !== virtualNextUseCacheRuntimeId) return;
 
       return `import { cache as __next_use_cache } from "next/dist/server/use-cache/use-cache-wrapper.js";
+import { defaultConfig as __next_default_config } from "next/dist/server/config-shared.js";
+import { initializeCacheHandlers as __next_initialize_cache_handlers, setCacheHandler as __next_set_cache_handler } from "next/dist/server/use-cache/handlers.js";
+import { nextCacheHandlers as __next_cache_handlers } from ${JSON.stringify(virtualNextCacheHandlersPublicId)};
+
+let __next_cache_handlers_promise;
+
+function __next_read_define_number(value, fallback) {
+  if (typeof value === "number") return value;
+  if (typeof value !== "string" || value.length === 0) return fallback;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function __next_read_define_object(value) {
+  if (!value) return {};
+  if (typeof value === "object") return value;
+  if (typeof value !== "string") return {};
+  try {
+    const parsed = JSON.parse(value);
+    return typeof parsed === "object" && parsed !== null ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+async function __next_ensure_cache_handlers() {
+  __next_initialize_cache_handlers(
+    __next_read_define_number(
+      process.env.__NEXT_CACHE_MAX_MEMORY_SIZE,
+      __next_default_config.cacheMaxMemorySize ?? 50 * 1024 * 1024,
+    ),
+  );
+  const configuredCacheHandlers = __next_read_define_object(process.env.__NEXT_CACHE_HANDLERS);
+  for (const [kind, handlerPath] of Object.entries(configuredCacheHandlers)) {
+    if (typeof handlerPath !== "string" || handlerPath.length === 0) continue;
+    const cacheHandler = __next_cache_handlers[kind];
+    if (cacheHandler) __next_set_cache_handler(kind, cacheHandler);
+  }
+}
 
 export function __next_rsc_use_cache(kind, id, originalFn) {
-  return async (...args) => __next_use_cache(kind, id, 0, originalFn, args);
+  return async (...args) => {
+    __next_cache_handlers_promise ??= __next_ensure_cache_handlers();
+    await __next_cache_handlers_promise;
+    return __next_use_cache(kind, id, 0, originalFn, args);
+  };
 }
 `;
     },
@@ -1287,6 +1405,7 @@ export function vitestPluginNext(): Plugin[] {
     useNextBuiltinGlobalErrorStub(),
     useNextEntryBaseClientReferences(),
     ...useNextAppRenderCompatibility(),
+    useNextCacheHandlers(),
     useNextLinkClientReference(),
     useNextSwcTransform(),
     useNextUseCacheTransform(),
@@ -1394,6 +1513,7 @@ export function vitestPluginNext(): Plugin[] {
                     useNextReactDomServerAlias(root),
                     useNextEntryBaseClientReferences(root),
                     ...useNextAppRenderCompatibility(root),
+                    useNextCacheHandlers(root),
                     useNextLinkClientReference(),
                     useNextImageClientReference(),
                     useNextCompiledOpenTelemetryApi(root),

@@ -15,6 +15,7 @@ import {
   nextCacheProbeNoStoreFetchUrl,
   resetNextCacheProbeFetch,
 } from "./next-cache-msw";
+import { getNotesCacheHandlerEvents, resetNotesCacheHandlerEvents } from "../cache-handler.mjs";
 
 const dataTag = "next-cache-probe:data";
 const fetchTag = "next-cache-probe:fetch";
@@ -29,6 +30,7 @@ let remoteUseCacheReads = 0;
 let cacheLifeReads = 0;
 let concurrentUseCacheReads = 0;
 let closureUseCacheReads = 0;
+let customUseCacheReads = 0;
 
 const readCachedData = unstable_cache(
   async () => {
@@ -50,6 +52,8 @@ export function resetNextCacheProbe(label = "default") {
   cacheLifeReads = 0;
   concurrentUseCacheReads = 0;
   closureUseCacheReads = 0;
+  customUseCacheReads = 0;
+  resetNotesCacheHandlerEvents();
   resetNextCacheProbeFetch(label);
 }
 
@@ -78,6 +82,9 @@ export async function NextUseCacheProbe() {
     readConcurrentUseCacheValue(useCacheGeneration),
   ]);
   const closureValues = await readClosureBoundUseCacheValues(useCacheGeneration);
+  const customFirst = await readCustomUseCacheValue(useCacheGeneration);
+  const customSecond = await readCustomUseCacheValue(useCacheGeneration);
+  const customHandlerEvents = getNotesCacheHandlerEvents().join(", ");
   const privateValue = await readPrivateUseCacheCookie();
 
   return (
@@ -98,6 +105,10 @@ export async function NextUseCacheProbe() {
       <p>use cache closure second: {closureValues.second}</p>
       <p>use cache closure different: {closureValues.different}</p>
       <p>use cache closure reads: {closureUseCacheReads}</p>
+      <p>use cache custom first: {customFirst}</p>
+      <p>use cache custom second: {customSecond}</p>
+      <p>use cache custom reads: {customUseCacheReads}</p>
+      <p>use cache custom handler events: {customHandlerEvents}</p>
       <p>use cache private cookie: {privateValue}</p>
     </section>
   );
@@ -153,6 +164,13 @@ async function readClosureBoundUseCacheValues(generation: number) {
   const second = await readClosureValue("same");
   const different = await readClosureValue("different");
   return { first, second, different };
+}
+
+async function readCustomUseCacheValue(generation: number) {
+  "use cache: notes-custom";
+
+  customUseCacheReads += 1;
+  return `generation ${generation} custom read ${customUseCacheReads}`;
 }
 
 async function readPrivateUseCacheCookie() {

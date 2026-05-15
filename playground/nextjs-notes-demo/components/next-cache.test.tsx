@@ -67,7 +67,9 @@ test("unstable_noStore is available in a request render scope", async () => {
 test("app-render initializes Next cache handlers", async () => {
   await renderServer(<NextCacheHandlerProbe />, { url: "/next-cache-handler-probe" });
 
-  await expect.element(page.getByText("cache handlers: default, remote")).toBeVisible();
+  await expect
+    .element(page.getByText("cache handlers: default, remote, notes-custom"))
+    .toBeVisible();
 });
 
 test("use cache functions are hoisted into Next cache components runtime", async () => {
@@ -112,6 +114,15 @@ test("use cache functions are hoisted into Next cache components runtime", async
     .element(page.getByText(/use cache closure different: generation \d+ different closure read 2/))
     .toBeVisible();
   await expect.element(page.getByText("use cache closure reads: 2")).toBeVisible();
+  await expect
+    .element(page.getByText(/use cache custom first: generation \d+ custom read 1/))
+    .toBeVisible();
+  await expect
+    .element(page.getByText(/use cache custom second: generation \d+ custom read 1/))
+    .toBeVisible();
+  await expect.element(page.getByText("use cache custom reads: 1")).toBeVisible();
+  expect(getCustomCacheHandlerEvents()).toContain("get");
+  expect(getCustomCacheHandlerEvents()).toContain("set");
   await expect.element(page.getByText("use cache private cookie: private-value")).toBeVisible();
 });
 
@@ -282,4 +293,11 @@ function getConcurrentUseCacheReadCount() {
   expect(second).toBe(first);
   expect(reads).toBe(first);
   return reads;
+}
+
+function getCustomCacheHandlerEvents() {
+  const text = document.body.textContent ?? "";
+  const events = text.match(/use cache custom handler events: ([\w, ]+)/)?.[1];
+  expect(events).toBeDefined();
+  return events ?? "";
 }

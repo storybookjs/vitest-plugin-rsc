@@ -18,8 +18,9 @@ export type NextConfigLike = {
   assetPrefix?: string;
   basePath?: string;
   cacheComponents?: boolean;
-  cacheHandlers?: unknown;
+  cacheHandlers?: Record<string, string | undefined>;
   cacheLife?: unknown;
+  cacheMaxMemorySize?: number;
   compiler?: unknown;
   distDir?: string;
   images?: NextImageConfig;

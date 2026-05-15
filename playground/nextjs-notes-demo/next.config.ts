@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import { fileURLToPath } from "node:url";
 
 const nextConfig: NextConfig = {
   typescript: { ignoreBuildErrors: true },
@@ -37,6 +38,10 @@ const nextConfig: NextConfig = {
       expire: 60,
     },
   },
+  cacheHandlers: {
+    "notes-custom": fileURLToPath(new URL("./cache-handler.mjs", import.meta.url)),
+  },
+  cacheMaxMemorySize: 50 * 1024 * 1024,
   images: {
     path: "/custom-next-image",
   },

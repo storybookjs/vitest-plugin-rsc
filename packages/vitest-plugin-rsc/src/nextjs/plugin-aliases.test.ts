@@ -87,6 +87,14 @@ test("aliases React packages through Next's vendored React for app-router enviro
       ]),
     }),
   );
+  expect(rscDefine["process.env.__NEXT_CACHE_MAX_MEMORY_SIZE"]).toBe("52428800");
+  expect(JSON.parse(rscDefine["process.env.__NEXT_CACHE_HANDLERS"]!)).toEqual({
+    "notes-custom": expect.stringContaining("cache-handler.mjs"),
+  });
+  expect(rscDefine["process.env.__NEXT_PROJECT_ROOT"]).toBe(
+    JSON.stringify(path.resolve(fixtureRoot)),
+  );
+  expect(rscDefine["process.env.__NEXT_DIST_DIR"]).toBe(JSON.stringify(".next"));
 
   const browserDefine = getEnvironmentDefine(config, "react_client");
   expect(browserDefine["process.env.NEXT_RUNTIME"]).toBe('""');
