@@ -1,9 +1,5 @@
 import "next/dist/server/node-environment-baseline";
-import {
-  getAccessFallbackErrorTypeByStatus,
-  getAccessFallbackHTTPStatus,
-  isHTTPAccessFallbackError,
-} from "next/dist/client/components/http-access-fallback/http-access-fallback.js";
+import { getAccessFallbackErrorTypeByStatus } from "next/dist/client/components/http-access-fallback/http-access-fallback.js";
 import { isNextRouterError } from "next/dist/client/components/is-next-router-error.js";
 import { getRedirectStatus, modifyRouteRegex } from "next/dist/lib/redirect-status.js";
 import { getPreloadableFonts } from "next/dist/server/app-render/get-preloadable-fonts.js";
@@ -42,6 +38,7 @@ import {
   type NextNavigationFlightPayload,
 } from "./app-render";
 import { getNextFontManifestForRender } from "./font-manifest";
+import { getNextHttpAccessFallbackStatus, isNextHttpAccessFallbackError } from "./flight-payload";
 import type { FetchNextRsc } from "./testing-library-client";
 
 export * from "../testing-library";
@@ -497,23 +494,6 @@ export async function renderServer(
   };
 }
 
-function isNextHttpAccessFallbackError(error: unknown) {
-  return getNextHttpAccessFallbackStatus(error) !== undefined;
-}
-
-function getNextHttpAccessFallbackStatus(errorOrText: unknown) {
-  if (isHTTPAccessFallbackError(errorOrText)) {
-    return getAccessFallbackHTTPStatus(errorOrText);
-  }
-
-  const message = getErrorMessage(errorOrText);
-  const match = /NEXT_HTTP_ERROR_FALLBACK;(\d+)/.exec(message);
-  if (!match) return;
-
-  const status = Number(match[1]);
-  return getAccessFallbackErrorTypeByStatus(status) ? status : undefined;
-}
-
 function isBlankDocumentHtml(html: string | undefined) {
   return !html?.trim();
 }
@@ -571,6 +551,12 @@ async function createNextDocumentInitialPayload(html: string) {
   );
 }
 
+// Begin copy: Next.js inline Flight bootstrap parser shape
+// Source: https://github.com/vercel/next.js/blob/4588a7354283f97e2124e3d82f55733ca4eb9373/packages/next/src/client/app-index.tsx#L58-L115
+// Adaptation: Next app-index consumes `self.__next_f.push(...)` calls as they
+// execute in the browser. Vitest already has rendered document HTML, so this
+// extracts the same segment tuples from inline scripts and rebuilds the
+// ReadableStream that React Flight expects for document hydration.
 type NextFlightSegment =
   | [isBootStrap: 0]
   | [isNotBootstrap: 1, responsePartial: string]
@@ -641,6 +627,7 @@ function decodeBase64Chunk(value: string) {
   }
   return chunk;
 }
+// End copy
 
 function applyInitialAccessFallback(payload: NextInitialRscPayload) {
   for (const flightDataPath of payload.f) {
