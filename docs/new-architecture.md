@@ -212,12 +212,15 @@ Done:
 - Uses Next SWC for the AST transform.
 - Uses Next's real compiled font loaders.
 - Uses Next's real `postcss-next-font` behavior for fallback metrics, class rules, variable rules, and `style` export data.
+- Emits font bytes through Vite assets in build mode using Next-style `_next/static/media/[hash][.p].woff2` paths.
+- Serves dev font URLs through Vite middleware at the same Next static media URL shape.
+- Notes-demo coverage asserts browser-visible font CSS, `className`/`variable` output, and fetchable `/_next/static/media/*.p.woff2` assets.
 
 Remaining weakness:
 
 - It still creates a custom Vite CSS module shape by string replacement and manual style injection.
-- It emits font files as data URLs in `emitFontFile`, so it does not match Next's static media path or font manifest/preload behavior.
-- Runtime coverage is thin. Current unit coverage checks the SWC rewrite, not all browser-visible font outcomes.
+- It does not build a Next font manifest yet, so route-scoped preload link behavior is not equivalent.
+- Runtime coverage still needs local multi-file fonts, declarations, fallback metrics, non-variable Google weights/styles, and route-scoped preload assertions.
 
 This is the most important feature gap. The better direction is to copy/import more of `next-font-loader`'s loader result contract and bridge it to Vite CSS/assets with the smallest possible adapter, not invent a parallel font module.
 
@@ -400,7 +403,8 @@ P0: make `next/font` closer to Next.
 - Keep Next SWC. That part is right.
 - Keep Next compiled loaders and `postcss-next-font`. That part is right.
 - Replace the custom CSS module/global style injection shape with a more faithful Vite bridge for Next's loader output.
-- Stop using data URL font files as the final behavior unless this is explicitly documented as a test-only fallback. Build output should emit assets closer to Next's static media path and preserve enough metadata for route-scoped preload tests.
+- Done for the current asset surface: stop using data URL font files as final behavior; build emits Vite assets under Next-style static media names and dev serves the same URL shape.
+- Next remaining step: preserve enough metadata for a Next-like font manifest and route-scoped preload tests.
 
 P0: design Cache Components support before expanding it.
 
@@ -467,7 +471,7 @@ P2: decide explicit non-goals.
 3. Add notes-demo tests for route conventions. Done: `loading.tsx`, `error.tsx`, root `global-error.tsx`, `forbidden.tsx`, and `unauthorized.tsx`.
 4. Justify the `Buffer.prototype.indexOf` patch with a minimal regression test pointing at the Next stream-utils path that needs it. Done.
 5. Extend static image tests for dev serving, build emission, SVG policy, blur placeholder behavior, and image config loaded from `next.config`. Done for the current static image adapter surface.
-6. Start next/font asset/preload work: emitted font files, CSS module contract, route-scoped preload metadata, and browser-visible `className`, `variable`, and `style` assertions.
+6. Continue next/font asset/preload work. Done for the current asset surface: emitted font files, dev serving, browser-visible `className`/`variable` CSS, and no data URL final behavior. Still needed: CSS module contract cleanup, local multi-file coverage, declarations/fallback metrics, and route-scoped preload metadata.
 7. Add a `cacheComponents: true` fixture route and decide the `use cache` transform/runtime boundary before implementing cache handlers.
 8. Feed rewrites, redirects, and headers from real Next config into define/render options, or document them as explicitly out of scope.
 9. Add latest/canary Next compatibility jobs or scripts that exercise the focused unit suite and notes demo smoke tests.
