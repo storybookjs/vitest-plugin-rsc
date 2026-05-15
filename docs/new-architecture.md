@@ -183,7 +183,7 @@ Done:
 - Package coverage warms the real RSC dependency optimizer for a project-rooted Next install, imports `next/dist/server/app-render/entry-base.js`, and asserts the optimized chunk contains `registerClientReference` proxies instead of inlined Next client component modules.
 - The optimizer plugin receives the configured Next project root explicitly, so root Vitest runs and standalone Vite servers do not rely on `process.cwd()` to resolve installed `next/dist/...` client modules.
 
-Exit path: upstream `@vitejs/plugin-rsc` could preserve CJS `"use client"` dependency boundaries during RSC dep optimization by externalizing/proxying those modules instead of inlining them into the server optimized chunk. If that lands, delete this Next-specific adapter or reduce it to any remaining Next-only layer metadata cases.
+Exit path: upstream `@vitejs/plugin-rsc` could preserve CJS `"use client"` dependency boundaries during RSC dep optimization by externalizing/proxying those modules instead of inlining them into the server optimized chunk. The issue draft in `docs/upstream-rsc-cjs-client-boundary.md` records the minimal CommonJS repro, expected behavior, local workaround, and deletion criteria for this adapter. If that lands upstream, delete this Next-specific adapter or reduce it to any remaining Next-only layer metadata cases.
 
 ### Next SWC
 
@@ -423,7 +423,7 @@ P0: keep removing glue around real Next entrypoints.
 - Replace local adapters with direct Next imports whenever the installed Next module can run under Vite environments.
 - Centralize every `next/dist/...` internal path behind a helper that can feature/version-gate optional internals.
 - Add compatibility coverage for the supported Next range, latest stable Next, and canary Next.
-- Track an upstream `@vitejs/plugin-rsc` issue or fixture for CommonJS `"use client"` dependencies hidden behind RSC dep optimization, using the `entry-base` failure as the repro.
+- Done: `docs/upstream-rsc-cjs-client-boundary.md` tracks the upstream `@vitejs/plugin-rsc` issue draft for CommonJS `"use client"` dependencies hidden behind RSC dep optimization, using the real Next `entry-base` failure as the repro.
 - Explicitly avoid rebuilding the old `request-context`, `component-tree`, `flight-router-state`, and `router-element` layers. If a feature seems to require them again, first look for a higher Next route module, loader, app-render, or app-index entrypoint.
 
 P0: make `next/font` closer to Next.
@@ -499,7 +499,7 @@ P2: decide explicit non-goals.
 ## Concrete Task Backlog
 
 1. Done: add a focused package test that warms the RSC optimizer, imports the real `next/dist/server/app-render/entry-base.js`, and proves the optimized chunk contains client-reference proxies, not inlined client modules.
-2. Draft an upstream `@vitejs/plugin-rsc` issue or failing fixture for CommonJS `"use client"` modules required from server dependencies during RSC dependency optimization.
+2. Done: draft an upstream `@vitejs/plugin-rsc` issue for CommonJS `"use client"` modules required from server dependencies during RSC dependency optimization in `docs/upstream-rsc-cjs-client-boundary.md`.
 3. Add notes-demo tests for route conventions. Done: `loading.tsx`, `error.tsx`, root `global-error.tsx`, `forbidden.tsx`, and `unauthorized.tsx`.
 4. Justify the `Buffer.prototype.indexOf` patch with a minimal regression test pointing at the Next stream-utils path that needs it. Done.
 5. Extend static image tests for dev serving, build emission, SVG policy, blur placeholder behavior, and image config loaded from `next.config`. Done for the current static image adapter surface.
