@@ -63,6 +63,14 @@ test("notes demo renders Next app-router API aliases and compiler surfaces", asy
   await expect.element(imagePropsImage).toHaveAttribute("width", "16");
   await expect.element(imagePropsImage).toHaveAttribute("height", "8");
 
+  const configuredImagePropsImage = page.getByRole("img", {
+    name: "Configured optimized image",
+  });
+  await expect.element(configuredImagePropsImage).toBeVisible();
+  const configuredImageSrc = configuredImagePropsImage.element().getAttribute("src") ?? "";
+  expect(configuredImageSrc).toContain("/custom-next-image?");
+  expect(configuredImageSrc).toContain("url=%2Fvitest-rsc.png");
+
   expect(document.querySelector("#next-api-script")?.textContent).toBe(
     'window.__nextApiScript = "loaded";',
   );

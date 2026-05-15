@@ -11,7 +11,23 @@ process.env.LAUNCH_EDITOR = "/usr/bin/true";
 // oxlint-disable-next-line no-process-env
 const maxWorkers = process.env.CI ? undefined : 4;
 
-const appShellOptimizeDeps = ["@base-ui/react/menu", "next-themes", "react-transition-progress"];
+const appShellOptimizeDeps = [
+  "@base-ui/react/button",
+  "@base-ui/react/input",
+  "@base-ui/react/menu",
+  "@base-ui/react/separator",
+  "@better-auth/passkey/client",
+  "better-auth/react",
+  "class-variance-authority",
+  "clsx",
+  "lucide-react",
+  "next-themes",
+  "react-transition-progress",
+  "react-transition-progress/next",
+  "tailwind-merge",
+  "zod",
+  "zod-form-data",
+];
 
 export default defineConfig({
   envPrefix: ["VITE_", "CI"],

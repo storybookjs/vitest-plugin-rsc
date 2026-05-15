@@ -7,6 +7,8 @@ import { useNextImageClientReference } from "./image-plugin";
 const fixtureRoot = fileURLToPath(
   new URL("../../../../playground/nextjs-notes-demo/", import.meta.url),
 );
+const tinyPngBase64 =
+  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=";
 
 test("keeps next/image getImageProps callable in the RSC graph", async () => {
   const plugin = useNextImageClientReference();
@@ -27,6 +29,8 @@ test("keeps next/image getImageProps callable in the RSC graph", async () => {
   );
   expect(imageModule).toContain("export function getImageProps");
   expect(imageModule).toContain("getImgProps");
+  expect(imageModule).toContain('typeof defaultLoaderModule.default === "function"');
+  expect(imageModule).toContain('typeof defaultLoaderModule.default?.default === "function"');
   expect(imageModule).not.toContain('"use client"');
 
   const imageClientReference = await load.call(
@@ -86,6 +90,103 @@ test("emits imported static images through Next's image loader in build mode", a
     expect(code).not.toContain("/_next/static/media/static-logo.");
   } finally {
     process.chdir(previousCwd);
+  }
+});
+
+test("emits build blur placeholders through Next's image loader", async () => {
+  const tempRoot = fs.mkdtempSync(path.join(process.cwd(), ".tmp-next-image-blur-"));
+  const appDir = path.join(tempRoot, "app");
+  const imagePath = path.join(appDir, "tiny.png");
+  fs.mkdirSync(appDir, { recursive: true });
+  fs.writeFileSync(path.join(tempRoot, "package.json"), "{}");
+  fs.writeFileSync(imagePath, Buffer.from(tinyPngBase64, "base64"));
+
+  const plugin = useNextImageClientReference();
+  const configResolved = getHookHandler(plugin.configResolved);
+  const resolveId = getHookHandler(plugin.resolveId);
+  const load = getHookHandler(plugin.load);
+  const emittedAssets: Array<{ fileName: string; source: Buffer }> = [];
+
+  try {
+    await configResolved.call(
+      {} as never,
+      { root: tempRoot, mode: "test", command: "build" } as never,
+    );
+
+    const resolved = await resolveId.call(
+      {
+        resolve: async () => ({ id: imagePath }),
+      } as never,
+      "./tiny.png",
+      path.join(appDir, "page.tsx"),
+      {} as never,
+    );
+    const code = (await load.call(
+      {
+        addWatchFile: () => {},
+        emitFile: (asset: { type: "asset"; fileName: string; source: Buffer }) => {
+          emittedAssets.push({ fileName: asset.fileName, source: asset.source });
+          return "tiny-reference";
+        },
+      } as never,
+      resolved as string,
+      {} as never,
+    )) as string;
+
+    expect(emittedAssets).toHaveLength(1);
+    expect(code).toContain('blurDataURL":"data:image/png;base64,');
+    expect(code).toContain('blurWidth":8');
+    expect(code).toContain('blurHeight":8');
+    expect(code).not.toContain("/_next/image?url=");
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("uses dev blur placeholder URLs from Next's image loader in serve mode", async () => {
+  const tempRoot = fs.mkdtempSync(path.join(process.cwd(), ".tmp-next-image-dev-blur-"));
+  const appDir = path.join(tempRoot, "app");
+  const imagePath = path.join(appDir, "tiny.png");
+  fs.mkdirSync(appDir, { recursive: true });
+  fs.writeFileSync(path.join(tempRoot, "package.json"), "{}");
+  fs.writeFileSync(
+    path.join(tempRoot, "next.config.js"),
+    "module.exports = { basePath: '/base' };\n",
+  );
+  fs.writeFileSync(imagePath, Buffer.from(tinyPngBase64, "base64"));
+
+  const plugin = useNextImageClientReference();
+  const configResolved = getHookHandler(plugin.configResolved);
+  const resolveId = getHookHandler(plugin.resolveId);
+  const load = getHookHandler(plugin.load);
+
+  try {
+    await configResolved.call(
+      {} as never,
+      { root: tempRoot, mode: "test", command: "serve" } as never,
+    );
+
+    const resolved = await resolveId.call(
+      {
+        resolve: async () => ({ id: imagePath }),
+      } as never,
+      "./tiny.png",
+      path.join(appDir, "page.tsx"),
+      {} as never,
+    );
+    const code = (await load.call(
+      {
+        addWatchFile: () => {},
+      } as never,
+      resolved as string,
+      {} as never,
+    )) as string;
+
+    expect(code).toContain('blurDataURL":"/base/_next/image?url=');
+    expect(code).toContain("&w=8&q=70");
+    expect(code).not.toContain('blurDataURL":"data:image/png;base64,');
+  } finally {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
   }
 });
 

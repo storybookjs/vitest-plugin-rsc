@@ -75,6 +75,7 @@ export function useNextImageClientReference(): Plugin {
         const imagePath = decodeURIComponent(id.slice(virtualNextStaticImagePrefix.length));
         this.addWatchFile(imagePath);
         return loadNextStaticImage(root, mode, imagePath, {
+          isDev: command !== "build",
           emitAsset:
             command === "build"
               ? (fileName, source) => this.emitFile({ type: "asset", fileName, source })
@@ -91,7 +92,14 @@ export function useNextImageClientReference(): Plugin {
       if (id === virtualNextImageId) {
         return `import ImageDefault, { Image } from ${JSON.stringify(virtualNextImageClientReferenceId)};
 import { getImgProps } from "next/dist/shared/lib/get-img-props.js";
-import defaultLoader from "next/dist/shared/lib/image-loader.js";
+import * as defaultLoaderModule from "next/dist/shared/lib/image-loader.js";
+
+const defaultLoader =
+  typeof defaultLoaderModule.default === "function"
+    ? defaultLoaderModule.default
+    : typeof defaultLoaderModule.default?.default === "function"
+      ? defaultLoaderModule.default.default
+      : defaultLoaderModule;
 
 export { Image };
 export default ImageDefault;
@@ -129,7 +137,7 @@ type NextImageLoaderContext = {
   currentTraceSpan: NextTraceSpan;
   getOptions(): {
     compilerType: "client";
-    isDev: true;
+    isDev: boolean;
     assetPrefix: string;
     basePath: string;
   };
@@ -152,6 +160,7 @@ async function loadNextStaticImage(
   mode: string,
   imagePath: string,
   assets: {
+    isDev: boolean;
     emitAsset?: (fileName: string, source: Buffer) => string;
     registerDevAsset(url: string, source: Buffer): void;
   },
@@ -171,7 +180,7 @@ async function loadNextStaticImage(
       currentTraceSpan: createNoopTraceSpan(),
       getOptions: () => ({
         compilerType: "client",
-        isDev: true,
+        isDev: assets.isDev,
         assetPrefix: projectConfig.assetPrefix,
         basePath: projectConfig.basePath,
       }),

@@ -24,6 +24,12 @@ export default async function NextApisPage() {
     unoptimized: true,
     width: 16,
   });
+  const { props: optimizedImageProps } = getImageProps({
+    alt: "Configured optimized image",
+    height: 12,
+    src: "/vitest-rsc.png",
+    width: 12,
+  });
 
   return (
     <main>
@@ -49,6 +55,7 @@ export default async function NextApisPage() {
       />
       <Image alt="Imported static logo" priority src={staticLogo} unoptimized />
       <img {...imageProps} alt={imageProps.alt} />
+      <img {...optimizedImageProps} alt={optimizedImageProps.alt} />
       <Script id="next-api-script" strategy="afterInteractive">
         {`window.__nextApiScript = "loaded";`}
       </Script>
