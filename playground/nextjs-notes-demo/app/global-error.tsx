@@ -2,7 +2,7 @@
 
 export default function GlobalError({ error }: { error: Error & { digest?: string } }) {
   return (
-    <html>
+    <html lang="en">
       <body>
         <main>
           <h1>Global route error boundary</h1>

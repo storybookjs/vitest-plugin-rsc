@@ -1,3 +1,4 @@
+import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Alias, Plugin, UserConfig } from "vite";
 import { expect, test } from "vitest";
@@ -126,12 +127,21 @@ test("replaces next/root-params through Next's root params loader", async () => 
 
 test("proxies Next entry-base client imports as RSC client references", async () => {
   const plugin = findNextPlugin("next-rsc-entry-base-client-references");
+  const configResolved = getHookHandler(plugin.configResolved);
   const resolveId = getHookHandler(plugin.resolveId);
   const load = getHookHandler(plugin.load);
+  const entryBaseFile = path.join(
+    fixtureRoot,
+    "node_modules/next/dist/server/app-render/entry-base.js",
+  );
+  const encodedModuleId = encodeURIComponent("next/dist/client/components/layout-router.js");
+
+  await configResolved.call({} as never, { root: fixtureRoot } as never);
+
   const resolved = (await resolveId.call(
     {} as never,
     "../../client/components/layout-router",
-    "/repo/node_modules/next/dist/server/app-render/entry-base.js",
+    entryBaseFile,
     {} as never,
   )) as string;
   const serverCode = (await load.call({} as never, resolved, {} as never)) as string;
@@ -141,12 +151,12 @@ test("proxies Next entry-base client imports as RSC client references", async ()
     {} as never,
   )) as string;
 
-  expect(resolved).toBe("\0vitest-plugin-rsc:next-entry-base-client-reference:layout-router");
+  expect(resolved).toBe(`\0vitest-plugin-rsc:next-entry-base-client-reference:${encodedModuleId}`);
   expect(serverCode).toContain(
     'import { registerClientReference } from "@vitejs/plugin-rsc/react/rsc"',
   );
   expect(serverCode).toContain(
-    '"/@id/__x00__vitest-plugin-rsc:next-entry-base-client-reference:layout-router"',
+    `"/@id/__x00__vitest-plugin-rsc:next-entry-base-client-reference:${encodedModuleId}"`,
   );
   expect(serverCode).toContain('export default createClientReference("default");');
   expect(serverCode).toContain(
@@ -161,13 +171,20 @@ test("proxies Next entry-base devtools client imports as RSC client references",
   const configResolved = getHookHandler(plugin.configResolved);
   const resolveId = getHookHandler(plugin.resolveId);
   const load = getHookHandler(plugin.load);
+  const entryBaseFile = path.join(
+    fixtureRoot,
+    "node_modules/next/dist/server/app-render/entry-base.js",
+  );
+  const encodedModuleId = encodeURIComponent(
+    "next/dist/next-devtools/userspace/app/segment-explorer-node.js",
+  );
 
   await configResolved.call({} as never, { root: fixtureRoot } as never);
 
   const resolved = (await resolveId.call(
     {} as never,
     "../../next-devtools/userspace/app/segment-explorer-node",
-    "/repo/node_modules/next/dist/server/app-render/entry-base.js",
+    entryBaseFile,
     {} as never,
   )) as string;
   const serverCode = (await load.call({} as never, resolved, {} as never)) as string;
@@ -177,9 +194,7 @@ test("proxies Next entry-base devtools client imports as RSC client references",
     {} as never,
   )) as string;
 
-  expect(resolved).toBe(
-    "\0vitest-plugin-rsc:next-entry-base-client-reference:segment-explorer-node",
-  );
+  expect(resolved).toBe(`\0vitest-plugin-rsc:next-entry-base-client-reference:${encodedModuleId}`);
   expect(serverCode).toContain(
     'export const SegmentViewNode = createClientReference("SegmentViewNode");',
   );
@@ -191,6 +206,27 @@ test("proxies Next entry-base devtools client imports as RSC client references",
   );
   expect(browserCode).toContain('"use client"');
   expect(browserCode).toContain("next/dist/next-devtools/userspace/app/segment-explorer-node.js");
+});
+
+test("does not proxy Next entry-base server imports as client references", async () => {
+  const plugin = findNextPlugin("next-rsc-entry-base-client-references");
+  const configResolved = getHookHandler(plugin.configResolved);
+  const resolveId = getHookHandler(plugin.resolveId);
+  const entryBaseFile = path.join(
+    fixtureRoot,
+    "node_modules/next/dist/server/app-render/entry-base.js",
+  );
+
+  await configResolved.call({} as never, { root: fixtureRoot } as never);
+
+  expect(
+    await resolveId.call(
+      {} as never,
+      "../app-render/work-async-storage.external",
+      entryBaseFile,
+      {} as never,
+    ),
+  ).toBeUndefined();
 });
 
 async function resolveNextPluginConfig(userConfig: UserConfig = {}): Promise<UserConfig> {

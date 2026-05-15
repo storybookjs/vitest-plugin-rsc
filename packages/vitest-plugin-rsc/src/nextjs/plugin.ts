@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Alias, Plugin, UserConfig } from "vite";
 import { useNextAppRenderCompatibility } from "./app-render-compat-plugin";
@@ -7,7 +8,12 @@ import { loadNextProjectConfig, type NextConfigLike, type NextImageConfig } from
 import { useNextFontLoader } from "./font-loader-plugin";
 import { useNextImageClientReference } from "./image-plugin";
 import { useNextMetadataImageLoader } from "./metadata-image-loader-plugin";
-import { createProjectRequire, getProjectRoot, tryResolveFromProject } from "./plugin-utils";
+import {
+  createProjectRequire,
+  getProjectRoot,
+  normalizePath,
+  tryResolveFromProject,
+} from "./plugin-utils";
 import { useNextRouteManifest } from "./route-manifest-plugin";
 import { useNextSwcTransform } from "./swc-transform-plugin";
 
@@ -859,71 +865,6 @@ export function extractInfoFromServerReferenceId(id) {
   };
 }
 
-type NextEntryBaseClientReferenceName =
-  | "boundary-components"
-  | "client-page"
-  | "client-segment"
-  | "error-boundary"
-  | "layout-router"
-  | "render-from-template-context"
-  | "segment-explorer-node";
-
-const nextEntryBaseClientReferenceImports: Record<string, NextEntryBaseClientReferenceName> = {
-  "../../client/components/client-page": "client-page",
-  "../../client/components/client-page.js": "client-page",
-  "../../client/components/client-segment": "client-segment",
-  "../../client/components/client-segment.js": "client-segment",
-  "../../client/components/http-access-fallback/error-boundary": "error-boundary",
-  "../../client/components/http-access-fallback/error-boundary.js": "error-boundary",
-  "../../client/components/layout-router": "layout-router",
-  "../../client/components/layout-router.js": "layout-router",
-  "../../client/components/render-from-template-context": "render-from-template-context",
-  "../../client/components/render-from-template-context.js": "render-from-template-context",
-  "../../lib/framework/boundary-components": "boundary-components",
-  "../../lib/framework/boundary-components.js": "boundary-components",
-  "../../next-devtools/userspace/app/segment-explorer-node": "segment-explorer-node",
-  "../../next-devtools/userspace/app/segment-explorer-node.js": "segment-explorer-node",
-};
-
-const nextEntryBaseClientReferenceModules: Record<
-  NextEntryBaseClientReferenceName,
-  { moduleId: string; fallbackExports: string[] }
-> = {
-  "boundary-components": {
-    moduleId: "next/dist/lib/framework/boundary-components.js",
-    fallbackExports: [
-      "MetadataBoundary",
-      "OutletBoundary",
-      "RootLayoutBoundary",
-      "ViewportBoundary",
-    ],
-  },
-  "client-page": {
-    moduleId: "next/dist/client/components/client-page.js",
-    fallbackExports: ["ClientPageRoot"],
-  },
-  "client-segment": {
-    moduleId: "next/dist/client/components/client-segment.js",
-    fallbackExports: ["ClientSegmentRoot"],
-  },
-  "error-boundary": {
-    moduleId: "next/dist/client/components/http-access-fallback/error-boundary.js",
-    fallbackExports: ["HTTPAccessFallbackBoundary"],
-  },
-  "layout-router": {
-    moduleId: "next/dist/client/components/layout-router.js",
-    fallbackExports: ["default", "LoadingBoundaryProvider"],
-  },
-  "render-from-template-context": {
-    moduleId: "next/dist/client/components/render-from-template-context.js",
-    fallbackExports: ["default"],
-  },
-  "segment-explorer-node": {
-    moduleId: "next/dist/next-devtools/userspace/app/segment-explorer-node.js",
-    fallbackExports: ["SegmentViewNode", "SegmentViewStateNode"],
-  },
-};
-
 // Next's app-render entry-base is a server-layer CJS module that re-exports
 // client components via relative require() calls. Next's webpack/Turbopack
 // layer metadata keeps those imports as client references. Vite/Rolldown dep
@@ -949,33 +890,31 @@ function useNextEntryBaseClientReferences(initialRoot = process.cwd()): Plugin {
         return source;
       }
       if (source.startsWith(virtualNextEntryBaseClientReferencePublicPrefix)) {
-        const reference = source.slice(
-          virtualNextEntryBaseClientReferencePublicPrefix.length,
-        ) as NextEntryBaseClientReferenceName;
-        return `${virtualNextEntryBaseClientReferencePrefix}${reference}`;
+        const moduleId = source.slice(virtualNextEntryBaseClientReferencePublicPrefix.length);
+        return `${virtualNextEntryBaseClientReferencePrefix}${encodeURIComponent(moduleId)}`;
       }
       if (!importer || !isNextEntryBaseModule(importer)) {
         return;
       }
 
-      const reference = nextEntryBaseClientReferenceImports[source];
-      if (!reference) {
+      const moduleId = resolveNextEntryBaseClientReferenceModuleId(root, source, importer);
+      if (!moduleId) {
         return;
       }
 
-      return `${virtualNextEntryBaseClientReferencePrefix}${reference}`;
+      return `${virtualNextEntryBaseClientReferencePrefix}${encodeURIComponent(moduleId)}`;
     },
     load(id) {
       if (!id.startsWith(virtualNextEntryBaseClientReferencePrefix)) return;
 
-      const reference = id.slice(
-        virtualNextEntryBaseClientReferencePrefix.length,
-      ) as NextEntryBaseClientReferenceName;
+      const moduleId = decodeURIComponent(
+        id.slice(virtualNextEntryBaseClientReferencePrefix.length),
+      );
       if (!this.environment || this.environment.name === "client") {
-        return createNextEntryBaseServerClientReferenceModule(root, reference);
+        return createNextEntryBaseServerClientReferenceModule(root, moduleId);
       }
 
-      return createNextEntryBaseClientReferenceModule(root, reference);
+      return createNextEntryBaseClientReferenceModule(root, moduleId);
     },
   };
 }
@@ -984,22 +923,16 @@ function isNextEntryBaseModule(id: string) {
   return /[/\\]next[/\\]dist[/\\]server[/\\]app-render[/\\]entry-base\.js(?:\?|$)/.test(id);
 }
 
-function createNextEntryBaseClientReferenceModule(
-  root: string,
-  reference: NextEntryBaseClientReferenceName,
-) {
-  const { moduleId } = nextEntryBaseClientReferenceModules[reference];
-  const exports = getNextEntryBaseClientReferenceExports(root, reference).join(", ");
+function createNextEntryBaseClientReferenceModule(root: string, moduleId: string) {
+  const exports = getNextEntryBaseClientReferenceExports(root, moduleId).join(", ");
 
   return `"use client";\nexport { ${exports} } from ${JSON.stringify(moduleId)};\n`;
 }
 
-function createNextEntryBaseServerClientReferenceModule(
-  root: string,
-  reference: NextEntryBaseClientReferenceName,
-) {
-  const id = `/@id/__x00__${virtualNextEntryBaseClientReferencePrefix.slice(1)}${reference}`;
-  const exports = getNextEntryBaseClientReferenceExports(root, reference);
+function createNextEntryBaseServerClientReferenceModule(root: string, moduleId: string) {
+  const encodedModuleId = encodeURIComponent(moduleId);
+  const id = `/@id/__x00__${virtualNextEntryBaseClientReferencePrefix.slice(1)}${encodedModuleId}`;
+  const exports = getNextEntryBaseClientReferenceExports(root, moduleId);
   const namedExports = exports
     .filter((name) => name !== "default")
     .map((name) => `export const ${name} = createClientReference(${JSON.stringify(name)});`)
@@ -1026,18 +959,70 @@ ${namedExports}
 `;
 }
 
-function getNextEntryBaseClientReferenceExports(
-  root: string,
-  reference: NextEntryBaseClientReferenceName,
-) {
-  const { moduleId, fallbackExports } = nextEntryBaseClientReferenceModules[reference];
+function getNextEntryBaseClientReferenceExports(root: string, moduleId: string) {
   const moduleFile = tryResolveFromProject(root, moduleId);
-  if (!moduleFile) return fallbackExports;
+  if (!moduleFile) {
+    throw new Error(`Could not resolve ${moduleId} for Next entry-base client reference.`);
+  }
 
   try {
-    return readNextCommonJsExports(moduleFile) ?? fallbackExports;
+    const exports = readNextCommonJsExports(moduleFile) ?? [];
+    if (exports.length === 0) {
+      throw new Error(`No CommonJS exports found in ${moduleId}.`);
+    }
+    return exports;
+  } catch (error) {
+    throw new Error(`Could not read exports from ${moduleId}.`, { cause: error });
+  }
+}
+
+function resolveNextEntryBaseClientReferenceModuleId(
+  root: string,
+  source: string,
+  importer: string,
+) {
+  const importerFile = importer.split("?")[0];
+  if (!importerFile) return;
+
+  const moduleFile = resolveNextEntryBaseImport(source, importerFile);
+  if (!moduleFile || !isNextClientModuleFile(moduleFile)) return;
+
+  return createNextDistModuleId(root, moduleFile);
+}
+
+function resolveNextEntryBaseImport(source: string, importerFile: string) {
+  if (!source.startsWith(".")) return;
+
+  const resolved = path.resolve(path.dirname(importerFile), source);
+  for (const file of [resolved, `${resolved}.js`, path.join(resolved, "index.js")]) {
+    if (fs.existsSync(file)) return file;
+  }
+}
+
+function isNextClientModuleFile(file: string) {
+  try {
+    return hasUseClientDirective(fs.readFileSync(file, "utf8"));
   } catch {
-    return fallbackExports;
+    return false;
+  }
+}
+
+function hasUseClientDirective(code: string) {
+  return /^\s*(?:["']use client["'];?)/.test(code);
+}
+
+function createNextDistModuleId(root: string, file: string) {
+  const nextDistDir = path.dirname(tryResolveFromProject(root, "next/package.json") ?? "");
+  const distDir = path.join(nextDistDir, "dist");
+  const relative = path.relative(distDir, file);
+  if (!relative.startsWith("..") && !path.isAbsolute(relative)) {
+    return `next/dist/${normalizePath(relative)}`;
+  }
+
+  const marker = `${path.sep}node_modules${path.sep}next${path.sep}dist${path.sep}`;
+  const markerIndex = file.lastIndexOf(marker);
+  if (markerIndex >= 0) {
+    return `next/dist/${normalizePath(file.slice(markerIndex + marker.length))}`;
   }
 }
 

@@ -160,6 +160,7 @@ This adapter should stay narrow:
 
 - keep the real Next `entry-base`;
 - intercept only imports from that `entry-base` module;
+- derive the proxied modules from the installed Next files by resolving `entry-base` imports and checking their real `"use client"` directive;
 - return `registerClientReference` proxies in the RSC environment;
 - return real Next client modules in browser/SSR environments.
 
