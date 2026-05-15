@@ -27,21 +27,30 @@ test("notes demo renders Next app-router API aliases and compiler surfaces", asy
   await expect
     .element(page.getByRole("link", { name: /Notes status link/ }))
     .toHaveAttribute("href", "/notes");
-  await expect.element(page.getByText("Client error boundary ready")).toBeVisible();
+  const unavailableClientErrorBoundary = page.getByText(
+    "Client error boundary API unavailable in this Next version",
+  );
+  if (unavailableClientErrorBoundary.query()) {
+    await expect.element(unavailableClientErrorBoundary).toBeVisible();
+  } else {
+    await expect.element(page.getByText("Client error boundary ready")).toBeVisible();
+  }
   await expect.element(page.getByText("Web vitals hook ready")).toBeVisible();
 
-  const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
-  try {
-    await page.getByRole("button", { name: "Trigger client error" }).click();
-    await expect
-      .element(page.getByText("Client error caught: next error boundary boom"))
-      .toBeVisible();
-    await page.getByRole("button", { name: "Recover client error" }).click();
-  } finally {
-    consoleError.mockRestore();
-  }
+  if (!unavailableClientErrorBoundary.query()) {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      await page.getByRole("button", { name: "Trigger client error" }).click();
+      await expect
+        .element(page.getByText("Client error caught: next error boundary boom"))
+        .toBeVisible();
+      await page.getByRole("button", { name: "Recover client error" }).click();
+    } finally {
+      consoleError.mockRestore();
+    }
 
-  await expect.element(page.getByText("Client error boundary ready")).toBeVisible();
+    await expect.element(page.getByText("Client error boundary ready")).toBeVisible();
+  }
 
   const image = page.getByRole("img", { name: "Next API image" });
   await expect.element(image).toBeVisible();
