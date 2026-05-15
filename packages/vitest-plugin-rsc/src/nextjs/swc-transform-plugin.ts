@@ -52,10 +52,9 @@ type NextSwcTransformContext = {
   pageExtensions: string[];
 };
 
-// Keep this in sync with Next's webpack loader `FORCE_TRANSPILE_CONDITIONS`
-// and Turbopack's Next transform rules. Vite RSC still owns the RSC graph and
-// action wiring, but these files need Next's source-level compiler passes.
-const nextSwcTransformConditions = /next\/font|next\/dynamic|use server|use client|use cache/;
+// Vite RSC owns the directive graph and server action wiring. Keep Next SWC
+// focused on compiler features that do not own the RSC module protocol.
+const nextSwcTransformConditions = /next\/font|next\/dynamic/;
 
 export function useNextSwcTransform(): Plugin {
   let root = process.cwd();

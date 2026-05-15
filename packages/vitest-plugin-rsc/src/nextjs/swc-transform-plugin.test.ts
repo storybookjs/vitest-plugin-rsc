@@ -67,7 +67,52 @@ test("uses Next SWC to add next/dynamic loadable metadata", async () => {
   expect(code).toContain("./lazy-message");
 });
 
+test("leaves React Server Component directives to Vite RSC", async () => {
+  await expect(
+    tryTransformWithNextSwc(
+      `
+        "use client";
+
+        export function ClientProbe() {
+          return null;
+        }
+      `,
+      "app/next-apis/client-directive-fixture.tsx",
+    ),
+  ).resolves.toBeUndefined();
+  await expect(
+    tryTransformWithNextSwc(
+      `
+        export async function actionProbe() {
+          "use server";
+        }
+      `,
+      "app/next-apis/server-directive-fixture.tsx",
+    ),
+  ).resolves.toBeUndefined();
+  await expect(
+    tryTransformWithNextSwc(
+      `
+        export async function cacheProbe() {
+          "use cache";
+        }
+      `,
+      "app/next-apis/cache-directive-fixture.tsx",
+    ),
+  ).resolves.toBeUndefined();
+});
+
 async function transformWithNextSwc(source: string, relativeFile: string) {
+  const result = await tryTransformWithNextSwc(source, relativeFile);
+
+  if (!result || typeof result === "string") {
+    throw new Error("Expected Next SWC transform to return a transform result.");
+  }
+
+  return result.code;
+}
+
+async function tryTransformWithNextSwc(source: string, relativeFile: string) {
   const previousCwd = process.cwd();
   const plugin = useNextSwcTransform();
   const configResolved = getHookHandler(plugin.configResolved);
@@ -77,7 +122,7 @@ async function transformWithNextSwc(source: string, relativeFile: string) {
   try {
     await configResolved.call({} as never, { root: fixtureRoot, mode: "test" } as never);
 
-    const result = await transform.call(
+    return await transform.call(
       {
         environment: { name: "client" },
         getCombinedSourcemap: () => null,
@@ -85,12 +130,6 @@ async function transformWithNextSwc(source: string, relativeFile: string) {
       source,
       path.join(fixtureRoot, relativeFile),
     );
-
-    if (!result || typeof result === "string") {
-      throw new Error("Expected Next SWC transform to return a transform result.");
-    }
-
-    return result.code;
   } finally {
     process.chdir(previousCwd);
   }
