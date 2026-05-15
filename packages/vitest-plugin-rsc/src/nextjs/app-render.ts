@@ -511,11 +511,19 @@ function createNextRenderOpts(
   // Adaptation: component tests provide the minimum dynamic render options
   // needed by Next app-render without starting a Next server.
   return {
+    basePath: readNextDefineString(process.env.__NEXT_BASE_PATH, defaultConfig.basePath),
     supportsDynamicResponse: true,
     clientReferenceManifest: manifests.clientReferenceManifest,
     serverActionsManifest: manifests.serverActionsManifest,
-    cacheComponents: false,
-    cacheLifeProfiles: defaultConfig.cacheLife,
+    images: {
+      ...defaultConfig.images,
+      ...readNextDefineObject(process.env.__NEXT_IMAGE_OPTS),
+    },
+    trailingSlash: isNextDefineFlagEnabled(process.env.__NEXT_TRAILING_SLASH),
+    assetPrefix: readNextDefineString(process.env.__NEXT_ASSET_PREFIX, defaultConfig.assetPrefix),
+    cacheComponents: isNextDefineFlagEnabled(process.env.__NEXT_CACHE_COMPONENTS),
+    cacheLifeProfiles:
+      readNextDefineObject(process.env.__NEXT_CACHE_LIFE) ?? defaultConfig.cacheLife,
     experimental: {
       isRoutePPREnabled: false,
       authInterrupts: isNextDefineFlagEnabled(process.env.__NEXT_EXPERIMENTAL_AUTH_INTERRUPTS),
@@ -529,6 +537,25 @@ function createNextRenderOpts(
 
 function isNextDefineFlagEnabled(value: unknown) {
   return value === true || value === "true" || value === "1";
+}
+
+function readNextDefineString(value: unknown, fallback: string) {
+  return typeof value === "string" ? value : fallback;
+}
+
+function readNextDefineObject(value: unknown): Record<string, unknown> | undefined {
+  if (!value) return;
+  if (typeof value === "object") return value as Record<string, unknown>;
+  if (typeof value !== "string") return;
+
+  try {
+    const parsed = JSON.parse(value);
+    return typeof parsed === "object" && parsed !== null
+      ? (parsed as Record<string, unknown>)
+      : undefined;
+  } catch {
+    return;
+  }
 }
 
 async function setNextRenderManifests(manifests: NextRenderManifests): Promise<void> {

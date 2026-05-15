@@ -2,6 +2,11 @@ import { Buffer } from "node:buffer";
 import fs from "node:fs";
 import path from "node:path";
 import type { Plugin } from "vite";
+import {
+  getNextTsconfigPath,
+  loadNextProjectConfig,
+  type NextProjectConfig,
+} from "./config";
 import { createProjectRequire, getProjectRoot, normalizePath } from "./plugin-utils";
 
 const virtualNextRouteManifestId = "\0vitest-plugin-rsc:next-route-manifest";
@@ -22,12 +27,14 @@ type NextRouteManifestBuildEntry = {
 
 export function useNextRouteManifest(): Plugin {
   let root = process.cwd();
+  let mode = "test";
 
   return {
     name: "next-rsc-route-manifest",
     enforce: "pre",
     configResolved(config) {
       root = getProjectRoot(config);
+      mode = config.mode;
     },
     resolveId(source) {
       const [sourceFile] = source.split("?");
@@ -62,13 +69,13 @@ export function useNextRouteManifest(): Plugin {
           throw new Error("Missing pageFile for Next route tree virtual module.");
         }
 
-        const entries = await scanNextAppRoutes(root);
+        const entries = await scanNextAppRoutes(root, mode);
         const entry = entries.find((candidate) => candidate.pageFile === pageFile);
         if (!entry) {
           throw new Error(`No Next app route entry found for ${pageFile}.`);
         }
 
-        const { code, watchFiles } = await generateNextRouteTreeModule(root, entry, entries);
+        const { code, watchFiles } = await generateNextRouteTreeModule(root, mode, entry, entries);
         for (const file of watchFiles) {
           this.addWatchFile(file);
         }
@@ -76,7 +83,7 @@ export function useNextRouteManifest(): Plugin {
       }
 
       if (id === virtualNextRouteManifestId) {
-        const entries = await scanNextAppRoutes(root);
+        const entries = await scanNextAppRoutes(root, mode);
         for (const entry of entries) {
           this.addWatchFile(entry.pageFile);
         }
@@ -95,12 +102,13 @@ function isInNextAppDir(root: string, file: string) {
   });
 }
 
-async function scanNextAppRoutes(root: string): Promise<NextRouteManifestBuildEntry[]> {
+async function scanNextAppRoutes(
+  root: string,
+  mode: string,
+): Promise<NextRouteManifestBuildEntry[]> {
   const requireFromProject = createProjectRequire(root);
-  const { findDir } = requireFromProject(
-    "next/dist/lib/find-pages-dir.js",
-  ) as typeof import("next/dist/lib/find-pages-dir.js");
-  const appDir = findDir(root, "app");
+  const projectConfig = await loadNextProjectConfig(root, mode);
+  const appDir = projectConfig.appDir;
   if (!appDir) return [];
 
   // Begin copy: Next.js dev app-page route matcher setup
@@ -120,7 +128,7 @@ async function scanNextAppRoutes(root: string): Promise<NextRouteManifestBuildEn
 
   const provider = new DevAppPageRouteMatcherProvider(
     appDir,
-    ["tsx", "ts", "jsx", "js", "mdx"],
+    projectConfig.pageExtensions,
     new DefaultFileReader({
       ignorePartFilter: (part: string) => part === "node_modules" || part.startsWith("."),
     }),
@@ -178,11 +186,13 @@ function generateNextRouteManifest(entries: NextRouteManifestBuildEntry[]) {
 
 async function generateNextRouteTreeModule(
   root: string,
+  mode: string,
   entry: NextRouteManifestBuildEntry,
   entries: NextRouteManifestBuildEntry[],
 ) {
   assertRootLayoutExists(entry);
 
+  const projectConfig = await loadNextProjectConfig(root, mode);
   const watchFiles = new Set<string>([entry.pageFile]);
   const loader = createProjectRequire(root)(
     "next/dist/build/webpack/loaders/next-app-loader/index.js",
@@ -202,15 +212,17 @@ async function generateNextRouteTreeModule(
     appPaths: entry.appPaths,
     allNormalizedAppPaths: entry.allNormalizedAppPaths,
     preferredRegion: undefined,
-    pageExtensions: ["tsx", "ts", "jsx", "js", "mdx"],
-    assetPrefix: "",
+    pageExtensions: projectConfig.pageExtensions,
+    assetPrefix: projectConfig.assetPrefix,
     rootDir: root,
-    tsconfigPath: path.join(root, "tsconfig.json"),
-    isDev: false as const,
-    basePath: "",
-    nextConfigOutput: undefined,
+    tsconfigPath: getNextTsconfigPath(root),
+    isDev: projectConfig.isDev,
+    basePath: projectConfig.basePath,
+    nextConfigOutput: projectConfig.nextConfig.output,
     middlewareConfig: Buffer.from(JSON.stringify({ matchers: [] })).toString("base64"),
-    isGlobalNotFoundEnabled: undefined,
+    isGlobalNotFoundEnabled: projectConfig.nextConfig.experimental?.globalNotFound
+      ? true
+      : undefined,
   };
   // End copy
   const context: NextAppLoaderContext = {
@@ -243,11 +255,11 @@ type NextAppLoaderContext = {
     assetPrefix: string;
     rootDir: string;
     tsconfigPath: string;
-    isDev: false;
+    isDev: boolean;
     basePath: string;
-    nextConfigOutput: undefined;
+    nextConfigOutput: NextProjectConfig["nextConfig"]["output"];
     middlewareConfig: string;
-    isGlobalNotFoundEnabled: undefined;
+    isGlobalNotFoundEnabled: true | undefined;
   };
   _module: { buildInfo: Record<string, unknown> };
   _compiler: { context: string };

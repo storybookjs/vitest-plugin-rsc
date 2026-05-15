@@ -1,8 +1,12 @@
-import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Alias, Plugin, UserConfig } from "vite";
 import { useNextAppRenderCompatibility } from "./app-render-compat-plugin";
 import { useNextLinkClientReference } from "./client-reference-plugin";
+import {
+  loadNextProjectConfig,
+  type NextConfigLike,
+  type NextImageConfig,
+} from "./config";
 import { useNextFontLoader } from "./font-loader-plugin";
 import { useNextImageClientReference } from "./image-plugin";
 import { useNextMetadataImageLoader } from "./metadata-image-loader-plugin";
@@ -212,20 +216,6 @@ const nextImageOptimizeDeps = [
   "next/dist/shared/lib/router-context.shared-runtime.js",
 ] as const;
 
-type NextImageConfig = {
-  deviceSizes: number[];
-  imageSizes: number[];
-  qualities?: number[];
-  path: string;
-  loader: string;
-  dangerouslyAllowSVG: boolean;
-  unoptimized?: boolean;
-  domains?: string[];
-  remotePatterns?: unknown[];
-  localPatterns?: unknown[];
-  output?: string;
-};
-
 type NextCompilerAliasesModule = {
   createVendoredReactAliases(
     bundledReactChannel: "" | "-experimental",
@@ -238,34 +228,10 @@ type NextCompilerAliasesModule = {
   ): Record<string, string | string[]>;
 };
 
-type NextLoadConfig = (phase: string, dir: string) => Promise<LoadedNextConfig>;
-
-type NextConfigModule = {
-  default?: NextLoadConfig;
-} & NextLoadConfig;
-
-type LoadedNextConfig = {
-  cacheComponents?: boolean;
-  distDir?: string;
-  pageExtensions?: string[];
-  experimental?: {
-    allowDevelopmentBuild?: boolean;
-    appNavFailHandling?: boolean;
-    fetchCacheKeyPrefix?: string;
-    rootParams?: boolean;
-  };
-};
-
-type NextConstantsModule = {
-  PHASE_DEVELOPMENT_SERVER: string;
-  PHASE_PRODUCTION_BUILD: string;
-  PHASE_TEST: string;
-};
-
 type NextDefineEnvModule = {
   getDefineEnv(options: {
     isTurbopack: boolean;
-    config: LoadedNextConfig;
+    config: NextConfigLike;
     dev: boolean;
     distDir: string;
     projectPath: string;
@@ -295,13 +261,6 @@ type NextRootParamsLoaderContext = {
 type NextRootParamsLoaderModule = {
   default?: (this: NextRootParamsLoaderContext) => Promise<string> | string;
 } & ((this: NextRootParamsLoaderContext) => Promise<string> | string);
-
-type NextFindPagesDirModule = {
-  findPagesDir(dir: string): {
-    appDir?: string;
-    pagesDir?: string;
-  };
-};
 
 type NextDefineEnvs = {
   edge: Record<string, string>;
@@ -396,7 +355,8 @@ async function createNextRootParamsModule({
     );
   }
 
-  const { nextConfig } = await loadNextConfigForMode(root, mode);
+  const projectConfig = await loadNextProjectConfig(root, mode);
+  const { nextConfig } = projectConfig;
   const isRootParamsEnabled =
     nextConfig.experimental?.rootParams ?? nextConfig.cacheComponents ?? false;
 
@@ -406,7 +366,7 @@ async function createNextRootParamsModule({
     );
   }
 
-  const appDir = findNextAppDir(root);
+  const appDir = projectConfig.appDir;
   if (!appDir) {
     return createNextInvalidImportModule(
       "'next/root-params' can only be used with the App Directory.",
@@ -418,7 +378,7 @@ async function createNextRootParamsModule({
     "next/dist/build/webpack/loaders/next-root-params-loader.js",
   ) as NextRootParamsLoaderModule;
   const rootParamsLoader = loaderModule.default ?? loaderModule;
-  const pageExtensions = nextConfig.pageExtensions ?? ["tsx", "ts", "jsx", "js"];
+  const pageExtensions = projectConfig.pageExtensions;
 
   return rootParamsLoader.call({
     addContextDependency: () => {},
@@ -428,17 +388,6 @@ async function createNextRootParamsModule({
 
 function createNextInvalidImportModule(message: string) {
   return `throw new Error(${JSON.stringify(message)});\nexport {};`;
-}
-
-function findNextAppDir(root: string) {
-  try {
-    const { findPagesDir } = createProjectRequire(root)(
-      "next/dist/lib/find-pages-dir.js",
-    ) as NextFindPagesDirModule;
-    return findPagesDir(root).appDir;
-  } catch {
-    return;
-  }
 }
 
 function filterResolvableOptimizeDeps(root: string, deps: readonly string[]): string[] {
@@ -623,35 +572,15 @@ function createReactServerDomWebpackAliases(root: string) {
   };
 }
 
-function createNextImageConfig(root: string): NextImageConfig | undefined {
+async function createNextImageConfig(
+  root: string,
+  mode: string,
+): Promise<NextImageConfig | undefined> {
   try {
-    const projectRequire = createProjectRequire(root);
-    const { imageConfigDefault } = projectRequire(
-      "next/dist/shared/lib/image-config.js",
-    ) as typeof import("next/dist/shared/lib/image-config.js");
-    return pickNextImageConfig(imageConfigDefault);
+    return (await loadNextProjectConfig(root, mode)).nextImageConfig;
   } catch {
     return;
   }
-}
-
-function pickNextImageConfig(config: NextImageConfig): NextImageConfig {
-  // Mirrors Next's DefineEnv image config shape. Next includes the validation
-  // fields during dev; Vitest runs against dev-like browser modules, so expose
-  // them here too.
-  return {
-    deviceSizes: config.deviceSizes,
-    imageSizes: config.imageSizes,
-    qualities: config.qualities,
-    path: config.path,
-    loader: config.loader,
-    dangerouslyAllowSVG: config.dangerouslyAllowSVG,
-    unoptimized: config.unoptimized,
-    domains: config.domains,
-    remotePatterns: config.remotePatterns,
-    localPatterns: config.localPatterns,
-    output: config.output,
-  };
 }
 
 async function createNextDefineEnvs(
@@ -662,13 +591,13 @@ async function createNextDefineEnvs(
   try {
     const projectRequire = createProjectRequire(root);
     const { getDefineEnv } = projectRequire("next/dist/build/define-env.js") as NextDefineEnvModule;
-    const { constants, nextConfig, phase } = await loadNextConfigForMode(root, mode);
-    const dev = phase !== constants.PHASE_PRODUCTION_BUILD;
+    const projectConfig = await loadNextProjectConfig(root, mode);
+    const { nextConfig } = projectConfig;
     const baseOptions = {
       isTurbopack: false,
       config: nextConfig,
-      dev,
-      distDir: nextConfig.distDir ?? ".next",
+      dev: projectConfig.isDev,
+      distDir: projectConfig.distDir,
       projectPath: root,
       fetchCacheKeyPrefix: nextConfig.experimental?.fetchCacheKeyPrefix,
       hasRewrites: false,
@@ -703,22 +632,6 @@ async function createNextDefineEnvs(
   } catch {
     return createFallbackNextDefineEnvs(nextImageConfig);
   }
-}
-
-async function loadNextConfigForMode(root: string, mode: string) {
-  const projectRequire = createProjectRequire(root);
-  const loadConfigModule = projectRequire("next/dist/server/config.js") as NextConfigModule;
-  const constants = projectRequire("next/dist/shared/lib/constants.js") as NextConstantsModule;
-  const loadConfig = loadConfigModule.default ?? loadConfigModule;
-  const phase =
-    mode === "production"
-      ? constants.PHASE_PRODUCTION_BUILD
-      : process.env.NODE_ENV === "test"
-        ? constants.PHASE_TEST
-        : constants.PHASE_DEVELOPMENT_SERVER;
-  const nextConfig = await loadConfig(phase, root);
-
-  return { constants, nextConfig, phase };
 }
 
 function normalizeNextTestDefineEnv(defineEnv: Record<string, unknown>, nextRuntime: string) {
@@ -1127,7 +1040,7 @@ export function vitestPluginNext(): Plugin[] {
           isBrowser: true,
           isEdgeServer: false,
         });
-        const nextImageConfig = createNextImageConfig(root);
+        const nextImageConfig = await createNextImageConfig(root, env.mode);
         const nextOptionalAppRenderDeps = filterResolvableOptimizeDeps(
           root,
           nextOptionalAppRenderOptimizeDeps,

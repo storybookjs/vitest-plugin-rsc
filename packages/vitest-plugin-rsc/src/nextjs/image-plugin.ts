@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { Plugin } from "vite";
+import { loadNextProjectConfig } from "./config";
 import { createProjectRequire, getProjectRoot } from "./plugin-utils";
 
 const virtualNextImageId = "virtual:vitest-plugin-rsc/next-image";
@@ -11,12 +12,14 @@ const cssImporterPattern = /\.(?:css|scss|sass|less|styl)(?:$|\?)/;
 
 export function useNextImageClientReference(): Plugin {
   let root = process.cwd();
+  let mode = "test";
 
   return {
     name: "next-rsc-image-client-reference",
     enforce: "pre",
     configResolved(config) {
       root = getProjectRoot(config);
+      mode = config.mode;
     },
     async resolveId(source, importer, options) {
       if (source === "next/image" || source === "next/image.js") {
@@ -50,7 +53,7 @@ export function useNextImageClientReference(): Plugin {
       if (id.startsWith(virtualNextStaticImagePrefix)) {
         const imagePath = decodeURIComponent(id.slice(virtualNextStaticImagePrefix.length));
         this.addWatchFile(imagePath);
-        return loadNextStaticImage(root, imagePath);
+        return loadNextStaticImage(root, mode, imagePath);
       }
 
       if (id === virtualNextImageId) {
@@ -112,7 +115,8 @@ type NextTraceSpan = {
   traceFn<T>(fn: () => T): T;
 };
 
-async function loadNextStaticImage(root: string, imagePath: string) {
+async function loadNextStaticImage(root: string, mode: string, imagePath: string) {
+  const projectConfig = await loadNextProjectConfig(root, mode);
   const loaderModule = createProjectRequire(root)(
     "next/dist/build/webpack/loaders/next-image-loader/index.js",
   ) as { default?: NextImageLoader } | NextImageLoader;
@@ -127,8 +131,8 @@ async function loadNextStaticImage(root: string, imagePath: string) {
       getOptions: () => ({
         compilerType: "client",
         isDev: true,
-        assetPrefix: "",
-        basePath: "",
+        assetPrefix: projectConfig.assetPrefix,
+        basePath: projectConfig.basePath,
       }),
       rootContext: root,
       resourcePath: imagePath,

@@ -1,5 +1,6 @@
 import path from "node:path";
 import type { Plugin } from "vite";
+import { loadNextProjectConfig, type LoadedJsConfig, type NextConfigLike } from "./config";
 import { createProjectRequire, getProjectRoot, normalizePath } from "./plugin-utils";
 
 type NextSwc = {
@@ -38,54 +39,6 @@ type NextSwcOptionsModule = {
   }): unknown;
 };
 
-type NextConfigModule = {
-  default?: NextLoadConfig;
-} & NextLoadConfig;
-
-type NextLoadConfig = (phase: string, dir: string) => Promise<NextConfigLike>;
-
-type NextLoadJsConfigModule = {
-  default?: NextLoadJsConfig;
-} & NextLoadJsConfig;
-
-type NextLoadJsConfig = (dir: string, config: NextConfigLike) => Promise<LoadedJsConfig>;
-
-type LoadedJsConfig = {
-  jsConfig?: unknown;
-  resolvedBaseUrl?: unknown;
-};
-
-type NextFindPagesDirModule = {
-  findPagesDir(dir: string): { pagesDir?: string; appDir?: string };
-};
-
-type NextBuildUtilsModule = {
-  getSupportedBrowsers(dir: string, dev: boolean): string[];
-};
-
-type NextConstantsModule = {
-  PHASE_DEVELOPMENT_SERVER: string;
-  PHASE_PRODUCTION_BUILD: string;
-  PHASE_TEST: string;
-};
-
-type NextConfigLike = {
-  distDir?: string;
-  pageExtensions?: string[];
-  cacheComponents?: boolean;
-  cacheHandlers?: unknown;
-  compiler?: unknown;
-  modularizeImports?: unknown;
-  experimental?: {
-    allowDevelopmentBuild?: boolean;
-    optimizePackageImports?: unknown;
-    optimizeServerReact?: boolean;
-    swcPlugins?: unknown;
-    useCache?: boolean;
-    taint?: boolean;
-  };
-};
-
 type NextSwcTransformContext = {
   nextSwc: NextSwc;
   nextSwcOptions: NextSwcOptionsModule;
@@ -95,6 +48,8 @@ type NextSwcTransformContext = {
   pagesDir?: string;
   supportedBrowsers?: string[];
   isDev: boolean;
+  distDir: string;
+  pageExtensions: string[];
 };
 
 // Keep this in sync with Next's webpack loader `FORCE_TRANSPILE_CONDITIONS`
@@ -142,7 +97,7 @@ export function useNextSwcTransform(): Plugin {
           compilerOptions: context.nextConfig.compiler,
           jsConfig: context.loadedJsConfig.jsConfig,
           supportedBrowsers: isServer ? undefined : context.supportedBrowsers,
-          swcCacheDir: path.join(root, context.nextConfig.distDir ?? ".next", "cache", "swc"),
+          swcCacheDir: path.join(root, context.distDir, "cache", "swc"),
           relativeFilePathFromRoot: normalizePath(path.relative(root, filename)),
           esm: true,
           // Vite RSC owns client references and server actions. We still use
@@ -156,7 +111,7 @@ export function useNextSwcTransform(): Plugin {
           useCacheEnabled: context.nextConfig.experimental?.useCache,
           taintEnabled: context.nextConfig.experimental?.taint,
           trackDynamicImports: false,
-          pageExtensions: context.nextConfig.pageExtensions,
+          pageExtensions: context.pageExtensions,
         }) as Record<string, unknown>),
         inputSourceMap:
           inputSourceMap && typeof inputSourceMap === "object"
@@ -176,53 +131,22 @@ async function createNextSwcTransformContext(
   const projectRequire = createProjectRequire(root);
   const nextSwc = projectRequire("next/dist/build/swc/index.js") as NextSwc;
   const nextSwcOptions = projectRequire("next/dist/build/swc/options.js") as NextSwcOptionsModule;
-  const loadConfigModule = projectRequire("next/dist/server/config.js") as NextConfigModule;
-  const loadJsConfigModule = projectRequire(
-    "next/dist/build/load-jsconfig.js",
-  ) as NextLoadJsConfigModule;
-  const constants = projectRequire("next/dist/shared/lib/constants.js") as NextConstantsModule;
-  const { findPagesDir } = projectRequire(
-    "next/dist/lib/find-pages-dir.js",
-  ) as NextFindPagesDirModule;
-  const { getSupportedBrowsers } = projectRequire(
-    "next/dist/build/utils.js",
-  ) as NextBuildUtilsModule;
-
-  const loadConfig = loadConfigModule.default ?? loadConfigModule;
-  const loadJsConfig = loadJsConfigModule.default ?? loadJsConfigModule;
-  const phase =
-    mode === "production"
-      ? constants.PHASE_PRODUCTION_BUILD
-      : process.env.NODE_ENV === "test"
-        ? constants.PHASE_TEST
-        : constants.PHASE_DEVELOPMENT_SERVER;
-  const isDev = phase !== constants.PHASE_PRODUCTION_BUILD;
-  const nextConfig = await loadConfig(phase, root);
-  const loadedJsConfig = await loadJsConfig(root, nextConfig);
-  const nextDirectories = findNextDirectories(root, findPagesDir);
+  const projectConfig = await loadNextProjectConfig(root, mode);
 
   await nextSwc.loadBindings();
 
   return {
     nextSwc,
     nextSwcOptions,
-    nextConfig,
-    loadedJsConfig,
-    supportedBrowsers: getSupportedBrowsers(root, isDev),
-    isDev,
-    ...nextDirectories,
+    nextConfig: projectConfig.nextConfig,
+    loadedJsConfig: projectConfig.loadedJsConfig,
+    supportedBrowsers: projectConfig.supportedBrowsers,
+    isDev: projectConfig.isDev,
+    appDir: projectConfig.appDir,
+    pagesDir: projectConfig.pagesDir,
+    distDir: projectConfig.distDir,
+    pageExtensions: projectConfig.pageExtensions,
   };
-}
-
-function findNextDirectories(root: string, findPagesDir: NextFindPagesDirModule["findPagesDir"]) {
-  try {
-    return findPagesDir(root);
-  } catch {
-    return {
-      appDir: undefined,
-      pagesDir: undefined,
-    };
-  }
 }
 
 function isUserSourceFile(id: string) {
