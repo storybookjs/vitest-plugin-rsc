@@ -1,7 +1,7 @@
 import { expect, test, vi } from "vitest";
 import { page } from "vitest/browser";
 import { renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
-import { getAfterProbeRuns, resetAfterProbe } from "./after-probe";
+import { getAfterProbeRuns, getNestedAfterProbeRuns, resetAfterProbe } from "./after-probe";
 
 test("notes demo renders Next app-router API aliases and compiler surfaces", async () => {
   resetAfterProbe();
@@ -13,6 +13,7 @@ test("notes demo renders Next app-router API aliases and compiler surfaces", asy
   await expect.element(page.getByText("Root params available: none")).toBeVisible();
   await expect.element(page.getByText("After task scheduled")).toBeVisible();
   expect(getAfterProbeRuns()).toBe(1);
+  expect(getNestedAfterProbeRuns()).toBe(1);
   await expect
     .element(page.getByRole("link", { name: "Notes link" }))
     .toHaveAttribute("href", "/notes");

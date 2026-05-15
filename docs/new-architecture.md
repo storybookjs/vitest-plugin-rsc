@@ -284,13 +284,13 @@ Done:
 - Installs Next manifest singletons for modern and legacy Next 16 internals.
 - Uses Next `IncrementalCache`, `tagsManifest`, request metadata, patched fetch state, and request lifecycle hooks.
 - Supports cookies, headers, draft mode, `refresh`, redirects, notFound, Server Actions, and Next cache behavior in the notes demo path.
+- Drains nested `waitUntil` work scheduled by `after()` tasks before closing the request lifecycle.
 
 Remaining weakness:
 
 - `clientReferenceManifest` and server action manifests are proxy/minimal shims. They are needed because Vite RSC owns references, but they should be documented as adapters and tested more directly.
 - The Buffer handling has two layers: `ProvidePlugin`-like imports and a `Buffer.prototype.indexOf` patch for `Uint8Array` needles. The import is reasonable because Next webpack also provides Buffer in edge/client bundles. The prototype patch needs a failing upstream case or should be replaced with a narrower adapter.
 - `process.env.NEXT_RUNTIME` defaulting to `edge` is correct for this target, but it must be set by env configuration as much as possible, not by broad source rewrites.
-- `waitUntil` needs a drain-loop test. A single `Promise.allSettled()` pass is not equivalent to Next's request lifecycle when a `waitUntil` task schedules more `waitUntil` work.
 
 ### Browser Hydration and Router
 
@@ -355,6 +355,7 @@ Notes demo acceptance coverage includes realistic combinations of:
 - Route groups, catch-all, optional catch-all, templates, parallel default slots, selected layout segments, metadata, generated metadata, and not-found.
 - `next/link`, `next/form`, `next/script`, `next/image`, `getImageProps`, `next/dynamic`, `next/head` ignored by App Router, and client error boundaries.
 - Cookies, headers, draft mode, cache, Server Actions, redirects, refresh, and MSW-routed RSC/action transport.
+- Next `after()` request lifecycle behavior, including nested `waitUntil` work scheduled by an after task.
 
 This is useful coverage, but it is not full Next.js API coverage. It is still centered around the notes demo and a small number of focused unit tests.
 
@@ -460,24 +461,23 @@ P2: decide explicit non-goals.
 1. Add a focused test that imports the real `next/dist/server/app-render/entry-base.js` in the RSC environment and proves the optimized chunk contains client-reference proxies, not inlined client modules.
 2. Draft an upstream `@vitejs/plugin-rsc` issue or failing fixture for CommonJS `"use client"` modules required from server dependencies during RSC dependency optimization.
 3. Add notes-demo tests for `loading.tsx`, `error.tsx`, `global-error.tsx`, `forbidden.tsx`, and `unauthorized.tsx`.
-4. Add a nested `waitUntil` test proving request close drains promises added by earlier `waitUntil` tasks.
-5. Replace or justify the `Buffer.prototype.indexOf` patch with a minimal regression test pointing at the Next code path that needs it.
-6. Extend static image tests for dev serving, build emission, SVG policy, blur placeholder behavior, and image config loaded from `next.config`.
-7. Start next/font asset/preload work: emitted font files, CSS module contract, route-scoped preload metadata, and browser-visible `className`, `variable`, and `style` assertions.
-8. Add a `cacheComponents: true` fixture route and decide the `use cache` transform/runtime boundary before implementing cache handlers.
-9. Feed rewrites, redirects, and headers from real Next config into define/render options, or document them as explicitly out of scope.
-10. Add latest/canary Next compatibility jobs or scripts that exercise the focused unit suite and notes demo smoke tests.
-11. Add a plugin-level test that whole-document Next rendering preserves Vitest harness scripts while applying Next head/meta/title output.
-12. Add a route-handler decision test: either prove `route.ts` execution through Next route module code or assert a clear unsupported error.
-13. Add coverage that `renderServer(<ReactNode />)` uses the fake-route/app-render path and that `renderServer({ url })` can replace the matched page entry without bypassing Next's loader tree.
-14. Add route-only `renderServer({ url })` coverage for important existing notes demo pages that still render direct components with manual props, especially `/notes`, `/notes/[id]`, `/notes/new`, auth pages, and profile.
-15. Add coverage for App Router page exports: `metadata`, `generateMetadata`, `viewport`, `generateViewport`, `generateStaticParams`, `dynamic`, `dynamicParams`, `revalidate`, `fetchCache`, `runtime`, `preferredRegion`, and `maxDuration`.
-16. Add metadata route coverage for `generateImageMetadata`, `generateSitemaps`, static metadata files, `robots`, `sitemap`, `manifest`, `opengraph-image`, `twitter-image`, `icon`, `apple-icon`, and `favicon`.
-17. Add `next/server` coverage for `userAgent`, `ImageResponse`, route handler streaming, redirects, rewrites, and cookie mutation semantics.
-18. Add error/control-flow coverage for `unstable_rethrow`, `catchError`, and thrown control-flow errors across render, action, route handler, and hydration paths.
-19. Decide support for `instrumentation.ts`, `instrumentation-client.ts`, and `mdx-components.tsx`; add tests or explicit unsupported errors.
-20. Decide PPR/adapter-runtime scope and add streaming/Suspense fallback tests that document what the browser-mode test adapter does and does not emulate.
-21. Add coverage for `useLinkStatus`, `useReportWebVitals`, `next/error`, and `next/web-vitals` in the browser/client graph.
+4. Replace or justify the `Buffer.prototype.indexOf` patch with a minimal regression test pointing at the Next code path that needs it.
+5. Extend static image tests for dev serving, build emission, SVG policy, blur placeholder behavior, and image config loaded from `next.config`.
+6. Start next/font asset/preload work: emitted font files, CSS module contract, route-scoped preload metadata, and browser-visible `className`, `variable`, and `style` assertions.
+7. Add a `cacheComponents: true` fixture route and decide the `use cache` transform/runtime boundary before implementing cache handlers.
+8. Feed rewrites, redirects, and headers from real Next config into define/render options, or document them as explicitly out of scope.
+9. Add latest/canary Next compatibility jobs or scripts that exercise the focused unit suite and notes demo smoke tests.
+10. Add a plugin-level test that whole-document Next rendering preserves Vitest harness scripts while applying Next head/meta/title output.
+11. Add a route-handler decision test: either prove `route.ts` execution through Next route module code or assert a clear unsupported error.
+12. Add coverage that `renderServer(<ReactNode />)` uses the fake-route/app-render path and that `renderServer({ url })` can replace the matched page entry without bypassing Next's loader tree.
+13. Add route-only `renderServer({ url })` coverage for important existing notes demo pages that still render direct components with manual props, especially `/notes`, `/notes/[id]`, `/notes/new`, auth pages, and profile.
+14. Add coverage for App Router page exports: `metadata`, `generateMetadata`, `viewport`, `generateViewport`, `generateStaticParams`, `dynamic`, `dynamicParams`, `revalidate`, `fetchCache`, `runtime`, `preferredRegion`, and `maxDuration`.
+15. Add metadata route coverage for `generateImageMetadata`, `generateSitemaps`, static metadata files, `robots`, `sitemap`, `manifest`, `opengraph-image`, `twitter-image`, `icon`, `apple-icon`, and `favicon`.
+16. Add `next/server` coverage for `userAgent`, `ImageResponse`, route handler streaming, redirects, rewrites, and cookie mutation semantics.
+17. Add error/control-flow coverage for `unstable_rethrow`, `catchError`, and thrown control-flow errors across render, action, route handler, and hydration paths.
+18. Decide support for `instrumentation.ts`, `instrumentation-client.ts`, and `mdx-components.tsx`; add tests or explicit unsupported errors.
+19. Decide PPR/adapter-runtime scope and add streaming/Suspense fallback tests that document what the browser-mode test adapter does and does not emulate.
+20. Add coverage for `useLinkStatus`, `useReportWebVitals`, `next/error`, and `next/web-vitals` in the browser/client graph.
 
 ## Review Checklist For Future Work
 
