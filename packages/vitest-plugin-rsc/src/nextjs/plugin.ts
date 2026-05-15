@@ -1,4 +1,3 @@
-import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import type { Alias, Plugin, UserConfig } from "vite";
 import { useNextAppRenderCompatibility } from "./app-render-compat-plugin";
@@ -13,7 +12,6 @@ import { useNextSwcTransform } from "./swc-transform-plugin";
 
 const supportedEdgeNativeModules = ["buffer", "events", "assert", "util"] as const;
 const virtualServerReferenceInfoId = "\0vitest-plugin-rsc:next-server-reference-info";
-const virtualNextEntryBaseId = "\0vitest-plugin-rsc:next-entry-base";
 const virtualNextEntryBaseClientReferencePrefix =
   "\0vitest-plugin-rsc:next-entry-base-client-reference:";
 const virtualNextEntryBaseClientReferencePublicPrefix =
@@ -154,6 +152,7 @@ const nextRscServerOptimizeDeps = [
   "next/server",
   "next/dist/compiled/@edge-runtime/cookies/index.js",
   "next/dist/server/node-environment-baseline.js",
+  "next/dist/server/app-render/entry-base.js",
   "next/dist/server/app-render/app-render.js",
   "next/dist/server/app-render/action-handler.js",
   "next/dist/server/app-render/action-async-storage.external.js",
@@ -865,7 +864,8 @@ type NextEntryBaseClientReferenceName =
   | "client-segment"
   | "error-boundary"
   | "layout-router"
-  | "render-from-template-context";
+  | "render-from-template-context"
+  | "segment-explorer-node";
 
 const nextEntryBaseClientReferenceImports: Record<string, NextEntryBaseClientReferenceName> = {
   "../../client/components/client-page": "client-page",
@@ -880,170 +880,9 @@ const nextEntryBaseClientReferenceImports: Record<string, NextEntryBaseClientRef
   "../../client/components/render-from-template-context.js": "render-from-template-context",
   "../../lib/framework/boundary-components": "boundary-components",
   "../../lib/framework/boundary-components.js": "boundary-components",
+  "../../next-devtools/userspace/app/segment-explorer-node": "segment-explorer-node",
+  "../../next-devtools/userspace/app/segment-explorer-node.js": "segment-explorer-node",
 };
-
-const nextEntryBaseExportBindings: Record<string, string> = {
-  ClientPageRoot: "ClientPageRoot",
-  ClientSegmentRoot: "ClientSegmentRoot",
-  Fragment: "Fragment",
-  HTTPAccessFallbackBoundary: "HTTPAccessFallbackBoundary",
-  InstantValidation: "InstantValidation",
-  LayoutRouter: "LayoutRouter",
-  LoadingBoundaryProvider: "LoadingBoundaryProvider",
-  Postpone: "Postpone",
-  RenderFromTemplateContext: "RenderFromTemplateContext",
-  RootLayoutBoundary: "RootLayoutBoundary",
-  SegmentViewNode: "SegmentViewNode",
-  SegmentViewStateNode: "SegmentViewNode",
-  actionAsyncStorage: "actionAsyncStorage",
-  captureOwnerStack: "captureOwnerStack",
-  collectPrefetchHints: "collectPrefetchHints",
-  collectSegmentData: "collectSegmentData",
-  createElement: "createElement",
-  createMetadataComponents: "createMetadataComponents",
-  createPrerenderParamsForClientSegment: "createPrerenderParamsForClientSegment",
-  createPrerenderSearchParamsForClientPage: "createPrerenderSearchParamsForClientPage",
-  createServerParamsForServerSegment: "createServerParamsForServerSegment",
-  createServerSearchParamsForServerPage: "createServerSearchParamsForServerPage",
-  createTemporaryReferenceSet: "createTemporaryReferenceSet",
-  decodeAction: "decodeAction",
-  decodeFormState: "decodeFormState",
-  decodeReply: "decodeReply",
-  patchFetch: "patchFetch",
-  preconnect: "preconnect",
-  preloadFont: "preloadFont",
-  preloadStyle: "preloadStyle",
-  prerender: "prerender",
-  renderToReadableStream: "renderToReadableStream",
-  serverHooks: "hooksServerContext",
-  taintObjectReference: "taintObjectReference",
-  workAsyncStorage: "workAsyncStorage",
-  workUnitAsyncStorage: "workUnitAsyncStorage",
-};
-
-function useNextEntryBase(initialRoot = process.cwd()): Plugin {
-  let root = initialRoot;
-
-  return {
-    name: "next-rsc-entry-base",
-    enforce: "pre",
-    applyToEnvironment(environment) {
-      return environment.name === "client";
-    },
-    configResolved(config) {
-      root = getProjectRoot(config);
-    },
-    resolveId(source) {
-      if (
-        source === "next/dist/server/app-render/entry-base" ||
-        source === "next/dist/server/app-render/entry-base.js"
-      ) {
-        return virtualNextEntryBaseId;
-      }
-    },
-    load(id) {
-      if (id !== virtualNextEntryBaseId) return;
-      return createNextEntryBaseAdapterModule(root);
-    },
-  };
-}
-
-function createNextEntryBaseAdapterModule(root: string) {
-  const exportNames = parseNextEntryBaseExports(root);
-  const missing = exportNames.filter((name) => !nextEntryBaseExportBindings[name]);
-  if (missing.length > 0) {
-    throw new Error(
-      `Unsupported Next app-render entry-base export(s): ${missing.join(", ")}. Update vitest-plugin-rsc's entry-base adapter bindings.`,
-    );
-  }
-
-  const clientReference = (name: NextEntryBaseClientReferenceName) =>
-    `${virtualNextEntryBaseClientReferencePublicPrefix}${name}`;
-  const exportSpecifiers = exportNames
-    .map((name) => {
-      const binding = nextEntryBaseExportBindings[name]!;
-      return binding === name ? name : `${binding} as ${name}`;
-    })
-    .join(",\n  ");
-
-  return `
-// Begin copy: Next.js app-render entry-base adapter
-// Next app-render entry-base adapter.
-// Source: ${JSON.stringify(resolveNextEntryBasePath(root))}
-// Adaptation: real Next entry-base eagerly imports client components before
-// Vite RSC can wrap them as client references. Keep those client imports
-// explicit, but derive the public export surface from the project Next version.
-import { captureOwnerStack, createElement, Fragment } from "react";
-import {
-  createTemporaryReferenceSet,
-  decodeAction,
-  decodeFormState,
-  decodeReply,
-  renderToReadableStream,
-} from "@vitejs/plugin-rsc/vendor/react-server-dom/server.edge";
-import LayoutRouter, { LoadingBoundaryProvider } from ${JSON.stringify(clientReference("layout-router"))};
-import RenderFromTemplateContext from ${JSON.stringify(clientReference("render-from-template-context"))};
-import { ClientPageRoot } from ${JSON.stringify(clientReference("client-page"))};
-import { ClientSegmentRoot } from ${JSON.stringify(clientReference("client-segment"))};
-import { HTTPAccessFallbackBoundary } from ${JSON.stringify(clientReference("error-boundary"))};
-import { RootLayoutBoundary } from ${JSON.stringify(clientReference("boundary-components"))};
-import { actionAsyncStorage } from "next/dist/server/app-render/action-async-storage.external.js";
-import { workAsyncStorage } from "next/dist/server/app-render/work-async-storage.external.js";
-import { workUnitAsyncStorage } from "next/dist/server/app-render/work-unit-async-storage.external.js";
-import { collectPrefetchHints, collectSegmentData } from "next/dist/server/app-render/collect-segment-data.js";
-import { patchFetch as patchNextFetch } from "next/dist/server/lib/patch-fetch.js";
-import { createMetadataComponents } from "next/dist/lib/metadata/metadata.js";
-import * as hooksServerContext from "next/dist/client/components/hooks-server-context.js";
-import {
-  createPrerenderSearchParamsForClientPage,
-  createServerSearchParamsForServerPage,
-} from "next/dist/server/request/search-params.js";
-import {
-  createPrerenderParamsForClientSegment,
-  createServerParamsForServerSegment,
-} from "next/dist/server/request/params.js";
-import { Postpone } from "next/dist/server/app-render/rsc/postpone.js";
-import { preconnect, preloadFont, preloadStyle } from "next/dist/server/app-render/rsc/preloads.js";
-import { taintObjectReference } from "next/dist/server/app-render/rsc/taint.js";
-
-function SegmentViewNode({ children }) {
-  return children;
-}
-
-export {
-  ${exportSpecifiers},
-};
-
-function InstantValidation() {
-  return undefined;
-}
-function patchFetch() {
-  return patchNextFetch({
-    workAsyncStorage,
-    workUnitAsyncStorage,
-  });
-}
-async function prerender(model, clientModules, options) {
-  return { prelude: await renderToReadableStream(model, clientModules, options) };
-}
-// End copy
-`;
-}
-
-function parseNextEntryBaseExports(root: string) {
-  const source = fs.readFileSync(resolveNextEntryBasePath(root), "utf8");
-  const exportShape = source.match(/0 && \(module\.exports = \{([\s\S]*?)\}\);/)?.[1];
-
-  if (!exportShape) {
-    throw new Error("Could not find Next app-render entry-base export shape.");
-  }
-
-  return [...exportShape.matchAll(/^\s*([A-Za-z0-9_$]+):/gm)].map((match) => match[1]!);
-}
-
-function resolveNextEntryBasePath(root: string) {
-  return createProjectRequire(root).resolve("next/dist/server/app-render/entry-base.js");
-}
 
 function useNextEntryBaseClientReferences(): Plugin {
   return {
@@ -1076,6 +915,10 @@ function useNextEntryBaseClientReferences(): Plugin {
       const reference = id.slice(
         virtualNextEntryBaseClientReferencePrefix.length,
       ) as NextEntryBaseClientReferenceName;
+      if (!this.environment || this.environment.name === "client") {
+        return createNextEntryBaseServerClientReferenceModule(reference);
+      }
+
       return createNextEntryBaseClientReferenceModule(reference);
     },
   };
@@ -1099,6 +942,58 @@ function createNextEntryBaseClientReferenceModule(reference: NextEntryBaseClient
       return `"use client";\nexport { default, LoadingBoundaryProvider } from "next/dist/client/components/layout-router.js";\n`;
     case "render-from-template-context":
       return `"use client";\nexport { default } from "next/dist/client/components/render-from-template-context.js";\n`;
+    case "segment-explorer-node":
+      return `"use client";\nexport { SegmentViewNode, SegmentViewStateNode } from "next/dist/next-devtools/userspace/app/segment-explorer-node.js";\n`;
+  }
+}
+
+function createNextEntryBaseServerClientReferenceModule(
+  reference: NextEntryBaseClientReferenceName,
+) {
+  const id = `/@id/__x00__${virtualNextEntryBaseClientReferencePrefix.slice(1)}${reference}`;
+  const exports = getNextEntryBaseClientReferenceExports(reference);
+  const namedExports = exports
+    .filter((name) => name !== "default")
+    .map((name) => `export const ${name} = createClientReference(${JSON.stringify(name)});`)
+    .join("\n");
+  const defaultExport = exports.includes("default")
+    ? `export default createClientReference("default");`
+    : "";
+
+  return `
+import { registerClientReference } from "@vitejs/plugin-rsc/react/rsc";
+
+function createClientReference(name) {
+  return registerClientReference(
+    function() {
+      throw new Error("Unexpectedly client reference export '" + name + "' is called on server");
+    },
+    ${JSON.stringify(id)},
+    name
+  );
+}
+
+${defaultExport}
+${namedExports}
+`;
+}
+
+function getNextEntryBaseClientReferenceExports(reference: NextEntryBaseClientReferenceName) {
+  switch (reference) {
+    case "boundary-components":
+      return ["MetadataBoundary", "OutletBoundary", "RootLayoutBoundary", "ViewportBoundary"];
+    case "client-page":
+      return ["ClientPageRoot"];
+    case "client-segment":
+      return ["ClientSegmentRoot"];
+    case "error-boundary":
+      return ["HTTPAccessFallbackBoundary"];
+    case "layout-router":
+      return ["default", "LoadingBoundaryProvider"];
+    case "render-from-template-context":
+      return ["default"];
+    case "segment-explorer-node":
+      return ["SegmentViewNode", "SegmentViewStateNode"];
   }
 }
 
@@ -1208,7 +1103,6 @@ export function vitestPluginNext(): Plugin[] {
     disableNextDevServerRuntime(),
     useNextReactDomServerAlias(),
     useNextBuiltinGlobalErrorStub(),
-    useNextEntryBase(),
     useNextEntryBaseClientReferences(),
     ...useNextAppRenderCompatibility(),
     useNextLinkClientReference(),

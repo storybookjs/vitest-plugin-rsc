@@ -1,5 +1,3 @@
-import fs from "node:fs";
-import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import type { Alias, Plugin, UserConfig } from "vite";
 import { expect, test } from "vitest";
@@ -126,16 +124,66 @@ test("replaces next/root-params through Next's root params loader", async () => 
   }
 });
 
-test("keeps the Next entry-base adapter aligned with Next's export surface", async () => {
-  const plugin = findNextPlugin("next-rsc-entry-base");
+test("proxies Next entry-base client imports as RSC client references", async () => {
+  const plugin = findNextPlugin("next-rsc-entry-base-client-references");
+  const resolveId = getHookHandler(plugin.resolveId);
   const load = getHookHandler(plugin.load);
-  const code = (await load.call(
+  const resolved = (await resolveId.call(
     {} as never,
-    "\0vitest-plugin-rsc:next-entry-base",
+    "../../client/components/layout-router",
+    "/repo/node_modules/next/dist/server/app-render/entry-base.js",
+    {} as never,
+  )) as string;
+  const serverCode = (await load.call({} as never, resolved, {} as never)) as string;
+  const browserCode = (await load.call(
+    { environment: { name: "react_client" } } as never,
+    resolved,
     {} as never,
   )) as string;
 
-  expect(parseEntryBaseExports(code)).toEqual(parseRealNextEntryBaseExports());
+  expect(resolved).toBe("\0vitest-plugin-rsc:next-entry-base-client-reference:layout-router");
+  expect(serverCode).toContain(
+    'import { registerClientReference } from "@vitejs/plugin-rsc/react/rsc"',
+  );
+  expect(serverCode).toContain(
+    '"/@id/__x00__vitest-plugin-rsc:next-entry-base-client-reference:layout-router"',
+  );
+  expect(serverCode).toContain('export default createClientReference("default");');
+  expect(serverCode).toContain(
+    'export const LoadingBoundaryProvider = createClientReference("LoadingBoundaryProvider");',
+  );
+  expect(browserCode).toContain('"use client"');
+  expect(browserCode).toContain("next/dist/client/components/layout-router.js");
+});
+
+test("proxies Next entry-base devtools client imports as RSC client references", async () => {
+  const plugin = findNextPlugin("next-rsc-entry-base-client-references");
+  const resolveId = getHookHandler(plugin.resolveId);
+  const load = getHookHandler(plugin.load);
+  const resolved = (await resolveId.call(
+    {} as never,
+    "../../next-devtools/userspace/app/segment-explorer-node",
+    "/repo/node_modules/next/dist/server/app-render/entry-base.js",
+    {} as never,
+  )) as string;
+  const serverCode = (await load.call({} as never, resolved, {} as never)) as string;
+  const browserCode = (await load.call(
+    { environment: { name: "react_client" } } as never,
+    resolved,
+    {} as never,
+  )) as string;
+
+  expect(resolved).toBe(
+    "\0vitest-plugin-rsc:next-entry-base-client-reference:segment-explorer-node",
+  );
+  expect(serverCode).toContain(
+    'export const SegmentViewNode = createClientReference("SegmentViewNode");',
+  );
+  expect(serverCode).toContain(
+    'export const SegmentViewStateNode = createClientReference("SegmentViewStateNode");',
+  );
+  expect(browserCode).toContain('"use client"');
+  expect(browserCode).toContain("next/dist/next-devtools/userspace/app/segment-explorer-node.js");
 });
 
 async function resolveNextPluginConfig(userConfig: UserConfig = {}): Promise<UserConfig> {
@@ -186,30 +234,4 @@ function getHookHandler<T extends (...args: never[]) => unknown>(
 ): T {
   if (!hook) throw new Error("Expected Vite hook to be defined.");
   return typeof hook === "function" ? hook : hook.handler;
-}
-
-function parseEntryBaseExports(code: string) {
-  const exportBlocks = [...code.matchAll(/export\s*\{([\s\S]*?)\};/g)]
-    .flatMap((match) => match[1]!.split(","))
-    .map((name) => name.trim())
-    .map((name) => name.match(/\s+as\s+([A-Za-z0-9_$]+)$/)?.[1] ?? name)
-    .filter(Boolean);
-  const exportDeclarations = [...code.matchAll(/export\s+(?:const|function)\s+([A-Za-z0-9_$]+)/g)]
-    .map((match) => match[1]!)
-    .filter(Boolean);
-
-  return [...new Set([...exportBlocks, ...exportDeclarations])].sort();
-}
-
-function parseRealNextEntryBaseExports() {
-  const projectRequire = createRequire(new URL("package.json", `file://${fixtureRoot}/`));
-  const entryBasePath = projectRequire.resolve("next/dist/server/app-render/entry-base.js");
-  const source = fs.readFileSync(entryBasePath, "utf8");
-  const exportShape = source.match(/0 && \(module\.exports = \{([\s\S]*?)\}\);/)?.[1];
-
-  if (!exportShape) {
-    throw new Error("Could not find Next entry-base export shape.");
-  }
-
-  return [...exportShape.matchAll(/^\s*([A-Za-z0-9_$]+):/gm)].map((match) => match[1]!).sort();
 }
