@@ -337,7 +337,7 @@ Remaining weakness:
 
 - Document fallback parsing is still custom. It parses inline `self.__next_f.push(...)` scripts, detects `NEXT_HTTP_ERROR_FALLBACK` by string search, and patches fallback seed data. That is a fragile part of the adapter.
 - The no-op WebSocket for Next dev HotReload is a version-compat shim. It should stay isolated and covered by a targeted test.
-- Whole-document hydration must preserve Vitest's browser harness scripts while applying Next's head/body output. This belongs in the plugin-level tester HTML/head merge, not in the notes demo app.
+- Whole-document hydration must preserve Vitest's browser harness scripts while applying Next's head/body output. Done for the current tester HTML/head merge: notes-demo route hydration asserts preserved Vitest runtime scripts while applying Next title and metadata.
 - HTML responses are not required for every render. They are only needed where full document/head/error-fallback fidelity matters. The plugin should hydrate through its own controlled React/Vitest path, parse Next Flight bootstrap data without executing arbitrary Next inline scripts, and keep Vitest's harness scripts alive.
 - Do not reintroduce `router-element.ts` or a user-visible local router element. The user-facing route path should go through `NextAppRouter`.
 
@@ -404,7 +404,7 @@ Add focused tests in `playground/nextjs-notes-demo` before claiming more fidelit
 - Redirect control flow: render redirects, permanent redirects, Server Action redirects, and `next.config` redirects must assert that the redirected target rendered and that a redirect-specific marker survived into the target route. Form/Server Action redirects must additionally assert the client navigation spy so regressions to hard document redirects fail.
 - Entry-base and RSC optimizer boundary: direct import of real `next/dist/server/app-render/entry-base.js`, CommonJS `"use client"` dependency preservation, devtools segment explorer references, no direct execution of client modules under React Server aliases, and an upstream `@vitejs/plugin-rsc` repro.
 - Manifest contracts: `clientModules`, `ssrModuleMapping`, `edgeSSRModuleMapping`, `rscModuleMapping`, `edgeRscModuleMapping`, server action manifest workers, layer shape, and cache wrapper decode paths.
-- Test harness stability: root Vitest project definitions, process-level coverage config, custom tester HTML, preserved Vitest scripts, whole-document React expando cleanup, server action caller cleanup, and non-default Vitest API ports.
+- Test harness stability: root Vitest project definitions, process-level coverage config, custom tester HTML, preserved Vitest scripts during whole-document hydration, whole-document React expando cleanup, server action caller cleanup, and non-default Vitest API ports.
 - Optimizer stability: hidden `react_client`/`react_ssr` scan roots match the visible browser client scan roots, Next app source files are scanned up front, hidden optimizers are warmed before test execution, ESM app dependencies are not manually listed in demo `optimizeDeps.include`, and only CJS/Next-internal deps are explicitly prebundled unless backed by a focused regression.
 - Version compatibility: supported stable Next, latest stable Next, canary Next, and optional-internal fallbacks for missing loaders such as `next-root-params-loader`.
 - Adapter/runtime behavior: streaming boundaries, Suspense/loading fallback behavior, partial-prerendering/PPR scope, dynamic IO/cache-components scope, and adapter entrypoint assumptions.
@@ -443,7 +443,7 @@ P0: reduce document fallback and manifest magic.
 - Replace broad string matching for `NEXT_HTTP_ERROR_FALLBACK` with Next helpers where they exist.
 - Keep expanding notes-demo coverage for route-level fallbacks and document hydration. Done: route-level notFound, global-error, and error boundary document hydration.
 - Document why proxy manifests are necessary when Vite RSC owns references, and test the exact proxy contract.
-- Preserve Vitest harness scripts through plugin-level tester HTML/head merging. Do not solve this in the notes demo app.
+- Preserve Vitest harness scripts through plugin-level tester HTML/head merging. Done for the current document hydration path: a notes-demo browser test proves the plugin-level merge keeps Vitest runtime scripts while applying Next title/meta output.
 
 P0: prove or remove Buffer/process/runtime patches.
 
@@ -502,7 +502,7 @@ P2: decide explicit non-goals.
 7. Done for the first cache-components slice: notes demo runs with `cacheComponents: true`, Vite RSC hoists async `use cache` functions, and runtime goes through Next's `use-cache-wrapper` and cache handlers. Still needed: cached components with children, bound args, custom handlers, negative tests, and manifest mapping coverage.
 8. Done for config loading/defines/render opts and first render-path behavior: feed rewrites, redirects, headers, basePath, trailingSlash, image config, assetPrefix, cache components, and cache life from real Next config; apply same-origin rewrites and redirects before app route matching. Still needed: response headers and a higher-level request pipeline for middleware/proxy, external rewrites, and locale/basePath edge cases.
 9. Add latest/canary Next compatibility jobs or scripts that exercise the focused unit suite and notes demo smoke tests.
-10. Add a plugin-level test that whole-document Next rendering preserves Vitest harness scripts while applying Next head/meta/title output.
+10. Done: add a browser-level regression for the plugin document merge proving whole-document Next rendering preserves Vitest harness scripts while applying Next head/meta/title output.
 11. Done for the current scope: `renderServer({ url })` detects `route.ts` handlers through Next's app-route matcher and throws a clear unsupported-target error. Future support should execute them through Next route module/request code, not a local handler runner.
 12. Add coverage that `renderServer(<ReactNode />)` uses the fake-route/app-render path and that `renderServer({ url })` can replace the matched page entry without bypassing Next's loader tree.
 13. Add route-only `renderServer({ url })` coverage for important existing notes demo pages that still render direct components with manual props.

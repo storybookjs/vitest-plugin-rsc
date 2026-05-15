@@ -10,6 +10,24 @@ test("renderServer resolves page metadata through Next route conventions", async
   expect(document.title).toBe("Route convention metadata");
 });
 
+test("document hydration preserves Vitest harness scripts while applying Next metadata", async () => {
+  const beforeHarnessScripts = getVitestHarnessScriptSources();
+  expect(beforeHarnessScripts.length).toBeGreaterThan(0);
+
+  await renderServer({ url: "/route-patterns/conventions" });
+
+  await expect.element(page.getByRole("heading", { name: "Route conventions" })).toBeVisible();
+  expect(document.title).toBe("Route convention metadata");
+  expect(document.querySelector('meta[name="description"]')?.getAttribute("content")).toBe(
+    "A database-backed notes app for React Server Components tests.",
+  );
+
+  const afterHarnessScripts = new Set(getVitestHarnessScriptSources());
+  for (const scriptSource of beforeHarnessScripts) {
+    expect(afterHarnessScripts.has(scriptSource)).toBe(true);
+  }
+});
+
 test("Next loader tree includes route-level loading conventions", async () => {
   const { nextRouteManifest } = await import("virtual:vitest-plugin-rsc/next-routes");
   const entry = nextRouteManifest.find((route) => route.route === "/route-patterns/conventions");
@@ -114,4 +132,20 @@ function hasLoaderTreeModule(loaderTree: LoaderTree, moduleName: string): boolea
   if (moduleName in loaderTree[2]) return true;
 
   return Object.values(loaderTree[1]).some((child) => hasLoaderTreeModule(child, moduleName));
+}
+
+function getVitestHarnessScriptSources() {
+  return Array.from(document.head.querySelectorAll<HTMLScriptElement>("script[src]"))
+    .map((script) => script.getAttribute("src"))
+    .filter((src): src is string => Boolean(src && isVitestRuntimeUrl(src)));
+}
+
+function isVitestRuntimeUrl(value: string) {
+  return (
+    value.startsWith("/@fs/") ||
+    value.startsWith("/@vite/") ||
+    value.includes("/__vitest__/") ||
+    value.includes("/__vitest_test__/") ||
+    value.includes("/assets/")
+  );
 }
