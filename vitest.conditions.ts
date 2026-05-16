@@ -1,23 +1,33 @@
-import process from "node:process";
+/// <reference types="node" />
+
+import { registerHooks } from "node:module";
 
 const vitestPluginRscSourceCondition = "vitest-plugin-rsc-source";
 
-const nodeConditionArguments = [
-  process.execArgv.join(" "),
-  // oxlint-disable-next-line no-process-env
-  process.env.NODE_OPTIONS ?? "",
-].join(" ");
+const nodeConditions = getNodeConditions();
 
-export const vitestPluginRscSourceConditions = hasNodeCondition(vitestPluginRscSourceCondition)
+export const vitestPluginRscSourceConditions = nodeConditions.includes(
+  vitestPluginRscSourceCondition,
+)
   ? [vitestPluginRscSourceCondition]
   : [];
 
-function hasNodeCondition(condition: string): boolean {
-  return new RegExp(
-    `(?:^|\\s)(?:--conditions(?:=|\\s+)|-C(?:=|\\s+))${escapeRegExp(condition)}(?:\\s|$)`,
-  ).test(nodeConditionArguments);
-}
+function getNodeConditions(): string[] {
+  let conditions: string[] = [];
 
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const hooks = registerHooks({
+    resolve(specifier, context, nextResolve) {
+      conditions = context.conditions;
+      return nextResolve(specifier, context);
+    },
+  });
+
+  try {
+    // Trigger one resolution so Node exposes the active package export conditions.
+    import.meta.resolve("node:fs");
+  } finally {
+    hooks.deregister();
+  }
+
+  return conditions;
 }
