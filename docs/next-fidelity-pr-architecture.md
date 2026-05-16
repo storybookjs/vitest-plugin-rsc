@@ -55,7 +55,7 @@ Status values: `Not started`, `In progress`, `Blocked`, `Deferred`, `Rejected`,
 
 | Subgoal                                     | Status      | Branch/PR/Commit | Required Tests                                                          | Notes                                                                                                                         |
 | ------------------------------------------- | ----------- | ---------------- | ----------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| 1. Request router split                     | Not started |                  | `request-router.test.ts`; notes-demo routing/redirect/header tests      | Move routing out of `testing-library.tsx`; prefer Next routing helpers.                                                       |
+| 1. Request router split                     | Done        | PR #47           | `request-router.test.ts`; notes-demo routing/redirect/header tests      | Extracted `request-router.ts`; `testing-library.tsx` now imports the routing boundary. Local tests green; CI pending push.    |
 | 2. Routing data adapter                     | Not started |                  | `routing-data.test.ts`; rewrite ordering tests                          | Convert discovered routes and Next config into `@next/routing`-compatible data if it materially reduces glue.                 |
 | 3. App page invoker                         | Not started |                  | `app-page-invoker.test.ts`; notes-demo render/action coverage           | Try real `AppPageRouteModule`; keep direct app-render only if smaller and explicitly isolated.                                |
 | 4. App route invoker decision               | Not started |                  | `app-route-invoker.test.ts` if implemented                              | Either use `AppRouteRouteModule.handle()` or keep route-handler render targets explicitly unsupported.                        |
@@ -64,6 +64,20 @@ Status values: `Not started`, `In progress`, `Blocked`, `Deferred`, `Rejected`,
 | 7. Manifest bridge cleanup                  | Not started |                  | manifest bridge unit tests                                              | Move manifest construction out of render helpers and source-link every mirrored Next manifest shape.                          |
 | 8. Module readability pass                  | Not started |                  | package unit tests for touched modules                                  | Keep adapter responsibilities in dedicated modules instead of growing `testing-library.tsx`, `plugin.ts`, or `app-render.ts`. |
 | 9. Acceptance coverage and docs             | Not started |                  | notes-demo, no-MSW, package tests, build, typecheck, lint, CI matrix    | Keep README and architecture docs aligned with final behavior and support matrix.                                             |
+
+### Slice Log
+
+- 2026-05-16 Subgoal 1: moved request routing helpers, route-target
+  resolution, custom redirect/rewrite/header handling, route-handler detection,
+  and direct-render route matching from `testing-library.tsx` into
+  `request-router.ts`. Added `request-router.test.ts` for the extracted
+  boundary. Local verification:
+  - `pnpm --filter vitest-plugin-rsc test:run src/nextjs/request-router.test.ts`
+  - `pnpm test:run --project nextjs-notes-demo-browser --api 52643 app/next-apis/page.test.tsx`
+  - `pnpm exec oxlint docs/next-fidelity-pr-architecture.md packages/vitest-plugin-rsc/src/nextjs/request-router.ts packages/vitest-plugin-rsc/src/nextjs/request-router.test.ts packages/vitest-plugin-rsc/src/nextjs/testing-library.tsx`
+  - `pnpm build`
+  - `pnpm tsgo --build`
+  - CI: pending push.
 
 ## Agent Operating Rules
 
