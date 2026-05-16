@@ -1,14 +1,20 @@
 import type { Plugin } from "vite";
-import { getProjectRoot, tryResolveFromProject } from "./plugin-utils.ts";
+import { createNextAppRouterComponentStubSource } from "../../client/components/app-router.ts";
+import { createNextImageConfigContextStubSource } from "../../shared/lib/image-config-context.shared-runtime.ts";
+import { createNextServerInsertedHtmlStubSource } from "../../shared/lib/server-inserted-html.shared-runtime.ts";
+import { getProjectRoot, tryResolveFromProject } from "../../../plugin-utils.ts";
 
 const virtualNextAppRouterComponentStubId = "\0vitest-plugin-rsc:next-app-router-component-stub";
 const virtualNextServerInsertedHtmlStubId = "\0vitest-plugin-rsc:next-server-inserted-html-stub";
 const virtualNextImageConfigContextStubId = "\0vitest-plugin-rsc:next-image-config-context-stub";
 
-// Next's app-render module is a server renderer, but it imports a few client
-// runtime modules while the Vite RSC client environment is using react-server
-// conditions. Keep those compatibility redirects scoped here so the main plugin
-// can stay focused on Vite/RSC wiring.
+// Source: https://github.com/vercel/next.js/blob/ee6e79b1792a4d401ddf2480f40a83549fe8e722/packages/next/src/server/app-render/app-render.tsx
+// Adaptation: Next's app-render module is a server renderer, but it imports a
+// few client/runtime modules while this adapter evaluates app-render in the Vite
+// RSC `client` environment with react-server conditions. These Vite aliases are
+// the app-render import bridge; the replacement module payloads live under the
+// exact Next file names they imitate.
+// Begin adapted: Next.js app-render compatibility imports
 export function useNextAppRenderCompatibility(root = process.cwd()): Plugin[] {
   return [
     useNextAppRouterComponentStub(),
@@ -47,26 +53,7 @@ function useNextAppRouterComponentStub(): Plugin {
     load(id) {
       if (id !== virtualNextAppRouterComponentStubId) return;
 
-      return `
-import { createElement } from "react";
-
-export function createEmptyCacheNode() {
-  return {
-    lazyData: null,
-    rsc: null,
-    prefetchRsc: null,
-    head: null,
-    prefetchHead: null,
-    parallelRoutes: new Map(),
-    loading: null,
-    navigatedAt: -1,
-  };
-}
-
-export default function AppRouter() {
-  return createElement("vitest-next-app-router-stub");
-}
-`;
+      return createNextAppRouterComponentStubSource();
     },
   };
 }
@@ -126,16 +113,7 @@ function useNextServerInsertedHtmlStub(): Plugin {
     load(id) {
       if (id !== virtualNextServerInsertedHtmlStubId) return;
 
-      return `
-export const ServerInsertedHTMLContext = {
-  Provider({ children }) {
-    return children;
-  },
-};
-
-export function useServerInsertedHTML(callback) {
-}
-`;
+      return createNextServerInsertedHtmlStubSource();
     },
   };
 }
@@ -164,13 +142,7 @@ function useNextImageConfigContextStub(): Plugin {
     load(id) {
       if (id !== virtualNextImageConfigContextStubId) return;
 
-      return `
-export const ImageConfigContext = {
-  Provider({ children }) {
-    return children;
-  },
-};
-`;
+      return createNextImageConfigContextStubSource();
     },
   };
 }
@@ -212,3 +184,4 @@ function isNextAppRouterComponentImporter(id: string) {
 function isNextAppRenderServerModule(id: string) {
   return /[/\\]next[/\\]dist[/\\]server[/\\]app-render[/\\].+\.js(?:\?|$)/.test(id);
 }
+// End adapted

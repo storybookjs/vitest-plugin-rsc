@@ -8,7 +8,6 @@ import {
 } from "next/dist/client/components/app-router-headers.js";
 import { renderToHTMLOrFlight } from "next/dist/server/app-render/app-render.js";
 import { WebNextRequest, WebNextResponse } from "next/dist/server/base-http/web.js";
-import type { RenderOpts } from "next/dist/server/app-render/types.js";
 import { defaultConfig } from "next/dist/server/config-shared.js";
 import { createSnapshot } from "next/dist/server/app-render/async-local-storage.js";
 import { IncrementalCache } from "next/dist/server/lib/incremental-cache/index.js";
@@ -27,15 +26,29 @@ import * as ReactServer from "@vitejs/plugin-rsc/react/rsc";
 import { patchBufferIndexOfUint8ArrayNeedle } from "./buffer-compat.ts";
 import {
   createNextServerActionManifest,
-  createViteRscClientModulesProxy,
-  createViteRscModuleMappingProxy,
-} from "./app-render-manifest.ts";
+  emptyServerActionsManifest,
+} from "./src/build/webpack/plugins/flight-client-entry-plugin.ts";
+import {
+  emptyClientReferenceManifest,
+  htmlClientReferenceManifest,
+} from "./src/build/webpack/plugins/flight-manifest-plugin.ts";
+import { createAppPageRouteModule } from "./src/build/templates/app-page.ts";
 import {
   createNextHttpAccessFallbackError,
   getNextHttpAccessFallbackStatus,
   getNextRedirectUrlFromFlightPayloadText,
 } from "./src/client/app-index.ts";
-import { getNextFontManifestForRender } from "./src/build/webpack/plugins/next-font-manifest-plugin.ts";
+import {
+  createNextRenderOpts,
+  readNextDefineNumber,
+  readNextDefineObject,
+  type RequestLifecycle,
+} from "./src/server/app-render/types.ts";
+import {
+  setNextRenderManifests,
+  type NextRenderManifests,
+} from "./src/server/app-render/manifests-singleton.ts";
+import { ensureNextEdgeIncrementalCache } from "./src/server/web/adapter.ts";
 
 type NextIncrementalCacheConstructor =
   typeof import("next/dist/server/lib/incremental-cache/index.js").IncrementalCache;
@@ -53,23 +66,6 @@ export class NextAppRenderRedirectError extends Error {
 export function isNextAppRenderRedirectError(error: unknown): error is NextAppRenderRedirectError {
   return error instanceof NextAppRenderRedirectError;
 }
-
-type NextRenderManifests = {
-  page: string;
-  clientReferenceManifest: unknown;
-  serverActionsManifest: unknown;
-};
-
-const emptyBuildManifest = {
-  devFiles: [],
-  polyfillFiles: [],
-  lowPriorityFiles: [],
-  rootMainFiles: ["static/chunks/vitest-plugin-rsc-next-bootstrap.js"],
-  rootMainFilesTree: {},
-  pages: {
-    "/_app": [],
-  },
-};
 
 let NextIncrementalCache: NextIncrementalCacheConstructor | undefined;
 let nextCacheGeneration = 0;
@@ -289,7 +285,7 @@ async function renderNextRouteResult({
   const req = new WebNextRequest(request as never);
   const res = new WebNextResponse();
   const renderPage = normalizeAppPath(page);
-  const routeModule = createRouteModule({
+  const routeModule = createAppPageRouteModule({
     route,
     page,
     loaderTree,
@@ -474,7 +470,7 @@ function renderToReadableStreamWithViteRsc<T>(
 }
 
 type NextAppRenderComponentMod = typeof import("next/dist/server/app-render/entry-base.js") & {
-  routeModule: ReturnType<typeof createRouteModule>;
+  routeModule: ReturnType<typeof createAppPageRouteModule>;
 };
 
 type NextEntryBaseComponentMod = typeof import("next/dist/server/app-render/entry-base.js") &
@@ -516,35 +512,6 @@ function DefaultGlobalError() {
   return null;
 }
 
-function createRouteModule({
-  route,
-  page,
-  loaderTree,
-}: {
-  route: string;
-  page: string;
-  loaderTree: LoaderTree;
-}) {
-  // Begin copy: Next.js AppPageRouteModule definition shape
-  // Source: https://github.com/vercel/next.js/blob/4588a7354283f97e2124e3d82f55733ca4eb9373/packages/next/src/build/templates/app-page.ts#L118-L150
-  // Adaptation: Vitest creates the route module object directly because Vite
-  // already loaded the app tree through virtual modules.
-  return {
-    definition: {
-      kind: "APP_PAGE",
-      page,
-      pathname: route,
-      bundlePath: "",
-      filename: "",
-      appPaths: [page],
-    },
-    userland: {
-      loaderTree,
-    },
-  };
-  // End copy
-}
-
 async function ensureNextAppRenderGlobals() {
   const globalScope = globalThis as typeof globalThis & {
     Buffer?: typeof Buffer;
@@ -559,7 +526,7 @@ async function ensureNextAppRenderGlobals() {
   NextIncrementalCache = IncrementalCache;
   nextCacheHandlersPromise ??= initializeNextCacheHandlers();
   await nextCacheHandlersPromise;
-  ensureNextEdgeIncrementalCache(IncrementalCache);
+  ensureNextEdgeIncrementalCache(IncrementalCache, nextCacheGeneration);
 }
 
 async function initializeNextCacheHandlers() {
@@ -581,13 +548,6 @@ async function initializeNextCacheHandlers() {
     if (cacheHandler) setCacheHandler(kind, cacheHandler as CacheHandler);
   }
 }
-
-type RequestLifecycle = {
-  waitUntil(promise: Promise<unknown>): void;
-  onClose(callback: () => void): void;
-  onAfterTaskError(error: unknown): void;
-  close(): Promise<void>;
-};
 
 function createRequestLifecycle(): RequestLifecycle {
   const closeCallbacks = new Set<() => void>();
@@ -666,175 +626,11 @@ function closeStreamOnCompletion<T>(readable: ReadableStream<T>, close: () => Pr
   });
 }
 
-function createNextRenderOpts(
-  manifests: NextRenderManifests,
-  lifecycle: RequestLifecycle,
-): RenderOpts {
-  // Begin copy: Next.js app-render RenderOpts fields used by app-render
-  // Source: https://github.com/vercel/next.js/blob/4588a7354283f97e2124e3d82f55733ca4eb9373/packages/next/src/server/app-render/types.ts
-  // Source: https://github.com/vercel/next.js/blob/4588a7354283f97e2124e3d82f55733ca4eb9373/packages/next/src/server/base-server.ts#L2522-L2570
-  // Adaptation: component tests provide the minimum dynamic render options
-  // needed by Next app-render without starting a Next server.
-  return {
-    basePath: readNextDefineString(process.env.__NEXT_BASE_PATH, defaultConfig.basePath),
-    supportsDynamicResponse: true,
-    buildManifest: emptyBuildManifest,
-    nextFontManifest: getNextFontManifestForRender(),
-    crossOrigin: undefined,
-    clientReferenceManifest: manifests.clientReferenceManifest,
-    serverActionsManifest: manifests.serverActionsManifest,
-    subresourceIntegrityManifest: undefined,
-    images: {
-      ...defaultConfig.images,
-      ...readNextDefineObject(process.env.__NEXT_IMAGE_OPTS),
-    },
-    trailingSlash: isNextDefineFlagEnabled(process.env.__NEXT_TRAILING_SLASH),
-    assetPrefix: readNextDefineString(process.env.__NEXT_ASSET_PREFIX, defaultConfig.assetPrefix),
-    cacheComponents: isNextDefineFlagEnabled(process.env.__NEXT_CACHE_COMPONENTS),
-    cacheLifeProfiles:
-      readNextDefineObject(process.env.__NEXT_CACHE_LIFE) ?? defaultConfig.cacheLife,
-    experimental: {
-      isRoutePPREnabled: false,
-      authInterrupts: isNextDefineFlagEnabled(process.env.__NEXT_EXPERIMENTAL_AUTH_INTERRUPTS),
-    },
-    waitUntil: lifecycle.waitUntil,
-    onClose: lifecycle.onClose,
-    onAfterTaskError: lifecycle.onAfterTaskError,
-  } as unknown as RenderOpts;
-  // End copy
-}
-
-function isNextDefineFlagEnabled(value: unknown) {
-  return value === true || value === "true" || value === "1";
-}
-
-function readNextDefineNumber(value: unknown, fallback: number) {
-  if (typeof value === "number") return value;
-  if (typeof value !== "string" || value.length === 0) return fallback;
-
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : fallback;
-}
-
-function readNextDefineString(value: unknown, fallback: string) {
-  return typeof value === "string" ? value : fallback;
-}
-
-function readNextDefineObject(value: unknown): Record<string, unknown> | undefined {
-  if (!value) return;
-  if (typeof value === "object") return value as Record<string, unknown>;
-  if (typeof value !== "string") return;
-
-  try {
-    const parsed = JSON.parse(value);
-    return typeof parsed === "object" && parsed !== null
-      ? (parsed as Record<string, unknown>)
-      : undefined;
-  } catch {
-    return;
-  }
-}
-
 function resetNextCacheHandlerGlobals() {
   const globalScope = globalThis as Record<symbol, unknown>;
   delete globalScope[Symbol.for("@next/cache-handlers-map")];
   delete globalScope[Symbol.for("@next/cache-handlers-set")];
 }
-
-async function setNextRenderManifests(manifests: NextRenderManifests): Promise<void> {
-  const modern = await importModernManifestsSingleton();
-  if (modern?.setManifestsSingleton) {
-    modern.setManifestsSingleton(manifests);
-    return;
-  }
-
-  const legacy = await importLegacyManifestsSingleton();
-  if (!legacy?.setReferenceManifestsSingleton) return;
-
-  const actionUtils = await importLegacyActionUtils();
-  legacy.setReferenceManifestsSingleton({
-    ...manifests,
-    serverModuleMap: actionUtils?.createServerModuleMap?.({
-      serverActionsManifest: manifests.serverActionsManifest,
-    }),
-  });
-}
-
-async function importModernManifestsSingleton(): Promise<
-  | {
-      setManifestsSingleton?: (manifests: NextRenderManifests) => void;
-    }
-  | undefined
-> {
-  try {
-    return (await import("next/dist/server/app-render/manifests-singleton.js")) as {
-      setManifestsSingleton?: (manifests: NextRenderManifests) => void;
-    };
-  } catch {
-    return undefined;
-  }
-}
-
-async function importLegacyManifestsSingleton(): Promise<
-  | {
-      setReferenceManifestsSingleton?: (
-        manifests: NextRenderManifests & { serverModuleMap?: unknown },
-      ) => void;
-    }
-  | undefined
-> {
-  try {
-    return (await import("next/dist/server/app-render/encryption-utils.js")) as {
-      setReferenceManifestsSingleton?: (
-        manifests: NextRenderManifests & { serverModuleMap?: unknown },
-      ) => void;
-    };
-  } catch {
-    return undefined;
-  }
-}
-
-async function importLegacyActionUtils(): Promise<
-  | {
-      createServerModuleMap?: (options: { serverActionsManifest: unknown }) => unknown;
-    }
-  | undefined
-> {
-  try {
-    // @ts-ignore - this was a Next 16.0 internal and is not present in newer versions.
-    return (await import("next/dist/server/app-render/action-utils.js")) as {
-      createServerModuleMap?: (options: { serverActionsManifest: unknown }) => unknown;
-    };
-  } catch {
-    return undefined;
-  }
-}
-
-// Begin copy: Next.js client reference manifest shape
-// Source: https://github.com/vercel/next.js/blob/4588a7354283f97e2124e3d82f55733ca4eb9373/packages/next/src/build/webpack/plugins/flight-manifest-plugin.ts
-// Adaptation: Vite RSC owns client references, so these manifests are minimal
-// lookup shims for Next app-render.
-const emptyClientReferenceManifest = {
-  moduleLoading: { prefix: "", crossOrigin: null },
-  clientModules: createViteRscClientModulesProxy(),
-  rscModuleMapping: {},
-  edgeRscModuleMapping: {},
-  ssrModuleMapping: {},
-  edgeSSRModuleMapping: {},
-  entryCSSFiles: {},
-  entryJSFiles: {},
-} as never;
-
-const htmlClientReferenceManifest = {
-  moduleLoading: { prefix: "", crossOrigin: null },
-  clientModules: createViteRscClientModulesProxy(),
-  rscModuleMapping: createViteRscModuleMappingProxy(),
-  edgeRscModuleMapping: createViteRscModuleMappingProxy(),
-  ssrModuleMapping: createViteRscModuleMappingProxy(),
-  edgeSSRModuleMapping: createViteRscModuleMappingProxy(),
-  entryCSSFiles: {},
-  entryJSFiles: {},
-} as never;
 
 async function readReadableStreamText(stream: ReadableStream<Uint8Array>) {
   const decoder = new TextDecoder();
@@ -854,12 +650,6 @@ async function readReadableStreamText(stream: ReadableStream<Uint8Array>) {
   return text + decoder.decode();
 }
 
-const emptyServerActionsManifest = {
-  encryptionKey: "",
-  node: {},
-  edge: {},
-} as never;
-
 function createRouteParams(routePattern: string, pathname: string) {
   return (getRouteMatcher(getRouteRegex(normalizeRoutePattern(routePattern)))(pathname) ||
     {}) as Record<string, string | string[]>;
@@ -869,56 +659,6 @@ function normalizeRoutePattern(routePattern: string) {
   const withLeadingSlash = routePattern.startsWith("/") ? routePattern : `/${routePattern}`;
   const withoutTrailingSlash = withLeadingSlash === "/" ? "" : withLeadingSlash.replace(/\/$/, "");
   return normalizeAppPath(`${withoutTrailingSlash}/page`);
-}
-
-function ensureNextEdgeIncrementalCache(IncrementalCache: NextIncrementalCacheConstructor) {
-  const globalScope = globalThis as typeof globalThis & {
-    __incrementalCache?: unknown;
-    __incrementalCacheShared?: boolean;
-  };
-
-  if (globalScope.__incrementalCache) return;
-
-  // Begin copy: Next.js Edge incremental cache global shape
-  // Source: https://github.com/vercel/next.js/blob/4588a7354283f97e2124e3d82f55733ca4eb9373/packages/next/src/server/web/adapter.ts#L217-L235
-  // Adaptation: Vitest browser workers do not run Next's web adapter, but
-  // imported Next cache internals still read the same global.
-  globalScope.__incrementalCacheShared = true;
-  globalScope.__incrementalCache = createNextEdgeIncrementalCache(IncrementalCache);
-  // End copy
-}
-
-function createNextEdgeIncrementalCache(
-  IncrementalCache: NextIncrementalCacheConstructor | undefined = NextIncrementalCache,
-) {
-  if (!IncrementalCache) {
-    throw new Error("Invariant: Next IncrementalCache was not loaded.");
-  }
-
-  return new IncrementalCache({
-    fs: {} as never,
-    dev: false,
-    requestHeaders: {},
-    minimalMode: true,
-    fetchCacheKeyPrefix: `vitest-plugin-rsc-${nextCacheGeneration}`,
-    serverDistDir: "/",
-    maxMemoryCacheSize: readNextDefineNumber(
-      process.env.__NEXT_CACHE_MAX_MEMORY_SIZE,
-      defaultConfig.cacheMaxMemorySize ?? 50 * 1024 * 1024,
-    ),
-    flushToDisk: false,
-    getPrerenderManifest: () => ({
-      version: 4,
-      routes: {},
-      dynamicRoutes: {},
-      notFoundRoutes: [],
-      preview: {
-        previewModeId: "vitest-plugin-rsc",
-        previewModeSigningKey: "vitest-plugin-rsc",
-        previewModeEncryptionKey: "vitest-plugin-rsc",
-      },
-    }),
-  });
 }
 
 export function createResponseHeaders(res: WebNextResponse, result: RenderResult) {

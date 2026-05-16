@@ -1,3 +1,8 @@
+// Source: https://github.com/vercel/next.js/blob/ee6e79b1792a4d401ddf2480f40a83549fe8e722/packages/next/src/build/webpack/plugins/flight-manifest-plugin.ts#L54-L116
+// Adaptation: @vitejs/plugin-rsc owns client reference resolution in this
+// adapter. These proxies provide the Next client-reference manifest shape that
+// app-render expects while resolving modules through Vite RSC IDs.
+// Begin adapted: Next.js flight manifest client-reference proxy
 export function createViteRscClientModulesProxy() {
   return new Proxy(
     {},
@@ -31,59 +36,27 @@ export function createViteRscModuleMappingProxy() {
   );
 }
 
-// Begin copy: Next.js server action manifest shape
-// Source: https://github.com/vercel/next.js/blob/4588a7354283f97e2124e3d82f55733ca4eb9373/packages/next/src/build/webpack/plugins/flight-client-entry-plugin.ts
-// Adaptation: Vite RSC owns action module loading, so this is a minimal worker
-// lookup shim for Next app-render/action handling.
-export function createNextServerActionManifest(actionId: string, page: string) {
-  const [filename, exportedName] = actionId.split("#");
-  const worker = {
-    moduleId: actionId,
-    async: true as const,
-  };
-  const actionEntry = {
-    exportedName,
-    filename,
-    workers: createServerActionWorkers(page, worker),
-  };
+export const emptyClientReferenceManifest = {
+  moduleLoading: { prefix: "", crossOrigin: null },
+  clientModules: createViteRscClientModulesProxy(),
+  rscModuleMapping: {},
+  edgeRscModuleMapping: {},
+  ssrModuleMapping: {},
+  edgeSSRModuleMapping: {},
+  entryCSSFiles: {},
+  entryJSFiles: {},
+} as never;
 
-  return {
-    encryptionKey: "",
-    node: {
-      [actionId]: actionEntry,
-    },
-    edge: {
-      [actionId]: actionEntry,
-    },
-  } as never;
-}
-
-function createServerActionWorkers(
-  page: string,
-  worker: {
-    moduleId: string;
-    async: true;
-  },
-) {
-  const workerPage = page.startsWith("app") ? page : `app${page}`;
-  const routeWorkerPage = workerPage.replace(/\/(?:page|route)$/, "");
-
-  return new Proxy(
-    {
-      [workerPage]: worker,
-      [routeWorkerPage]: worker,
-    },
-    {
-      get(target, key) {
-        if (typeof key !== "string") {
-          return Reflect.get(target, key);
-        }
-        return Reflect.get(target, key) ?? worker;
-      },
-    },
-  );
-}
-// End copy
+export const htmlClientReferenceManifest = {
+  moduleLoading: { prefix: "", crossOrigin: null },
+  clientModules: createViteRscClientModulesProxy(),
+  rscModuleMapping: createViteRscModuleMappingProxy(),
+  edgeRscModuleMapping: createViteRscModuleMappingProxy(),
+  ssrModuleMapping: createViteRscModuleMappingProxy(),
+  edgeSSRModuleMapping: createViteRscModuleMappingProxy(),
+  entryCSSFiles: {},
+  entryJSFiles: {},
+} as never;
 
 function createViteRscModuleExportsProxy(id: string) {
   return new Proxy(
@@ -116,3 +89,4 @@ function isNextBuiltinGlobalErrorModuleId(id: string) {
     id.includes("next/dist/client/components/builtin/global-error")
   );
 }
+// End adapted

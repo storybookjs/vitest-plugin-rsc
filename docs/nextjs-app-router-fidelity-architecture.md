@@ -20,12 +20,14 @@ Node server lifecycle, or top-level document ownership.
 Go higher when it improves business or visual fidelity, or when it deletes glue:
 fewer imports, fewer local shims, fewer copied blocks, fewer special cases.
 
-Copy as little as possible. If code must be copied or substantially adapted,
-place it at the exact matching path under
-`packages/vitest-plugin-rsc/src/nextjs/src/`.
+Copy or adapt as little as possible. If code must be copied or substantially
+adapted, place it at the exact matching path under
+`packages/vitest-plugin-rsc/src/nextjs/src/` and wrap the implementation in
+source-linked markers.
 
 Do not create internal files that only wrap imports. A `nextjs/src/...` file must
-say exactly which upstream Next file and line ranges it imitates or copies.
+say exactly which upstream Next file and line ranges it imitates, copies, or
+adapts.
 
 Use this source order for every fidelity decision:
 
@@ -33,8 +35,12 @@ Use this source order for every fidelity decision:
    `@vitejs/plugin-rsc` module directly.
 2. Invoke the real Next loader, compiler transform, runtime helper, or RSC
    helper behind the narrowest Vite/Vitest adapter.
-3. Copy the smallest non-importable upstream block, with exact source lines,
-   `Begin copy` / `End copy` markers, and an adaptation note.
+3. Copy or adapt the smallest non-importable upstream block, with exact source
+   lines, markers, and an adaptation note. Use `Begin copy` / `End copy` for
+   mechanically copied upstream code. Use `Begin adapted` / `End adapted` for
+   Vite/Vitest boundary code that deliberately translates a concrete upstream
+   Next loader, template, runtime, manifest plugin, compiler option, or routing
+   conversion block.
 4. Add local behavior only as a last resort. The local code must explain why the
    upstream path is blocked and must have a regression test for the
    user-visible behavior.
@@ -106,6 +112,63 @@ cache behavior, layouts, templates, errors, metadata, fonts, images, CSS,
 hydration, navigation, Flight, and HTML. Production packaging fidelity is out of
 scope unless it changes those semantics.
 
+## Cache Components And `use cache` Ownership
+
+`use cache` is a cross-owner feature. Do not treat it like `next/font` or
+`next/dynamic`, and do not hand the RSC graph to Next's compiler to support it.
+
+Ownership split:
+
+- `@vitejs/plugin-rsc` owns directive handling in this adapter. Inline async
+  `"use cache"` functions are hoisted with
+  `transformHoistInlineDirective`, alongside the same Vite RSC graph ownership
+  that handles `"use client"`, `"use server"`, client references, server
+  references, and Flight module references.
+- Next owns cache semantics. Runtime behavior must go through installed Next
+  modules such as `server/use-cache/use-cache-wrapper.ts`, `server/use-cache/handlers.ts`,
+  app-render work/request stores, cache tags, cache life profiles, cache handler
+  registration, invalid dynamic access errors, and cache revalidation state.
+- This plugin owns only the adapter boundary: read `cacheComponents`,
+  `cacheLife`, `cacheHandlers`, and `cacheMaxMemorySize` from Next config;
+  expose configured cache handlers to the Vite RSC environment; call the RSC
+  hoist transform; wrap hoisted functions with Next's real `cache()` runtime;
+  and reject unsupported call shapes explicitly.
+
+Placement rules:
+
+- The source transform glue is Vite/RSC adapter code. It must not live under a
+  fake Next compiler mirror and must not enable Next's RSC, Server Action, or
+  `"use cache"` compiler transforms globally.
+- Runtime cache-handler setup that mirrors Next belongs under
+  `nextjs/src/server/use-cache/handlers.ts` only while direct installed imports
+  or a higher Edge App Page entry cannot own it.
+- Runtime wrapper call-shape glue that mirrors Next belongs under
+  `nextjs/src/server/use-cache/use-cache-wrapper.ts` only while the adapter must
+  bridge `transformHoistInlineDirective` output into Next's real `cache(kind,
+id, boundArgsLength, originalFn, args)` API.
+- The desired higher owner for request/work stores and cache handler
+  initialization is the Edge App Page path: `next-edge-ssr-loader`,
+  `edge-ssr-app`, `server/web/adapter`, `AppPageRouteModule`, and
+  app-render. Moving higher there should delete local runtime setup, not move
+  the RSC graph to Next's compiler.
+
+Supported adapter call shape:
+
+- Async function-level `"use cache"` directives when `cacheComponents` is
+  enabled.
+- Hoisted functions wrapped as `cache(kind, id, 0, originalFn, args)`.
+- Default, remote, private, and custom cache handlers through Next's handler
+  registry.
+- Cache life profiles and tag/invalidation behavior through Next runtime APIs.
+
+Explicitly unsupported until delegated to Next compiler output or upstream Vite
+RSC support:
+
+- Cached components with `children`.
+- Encrypted `boundArgsLength` cache call shapes.
+- Any transform that requires Next's webpack/Turbopack RSC graph or Server
+  Action graph to replace `@vitejs/plugin-rsc`.
+
 ## Public Adapter Surface
 
 These top-level files are package entrypoints. They may compose direct Next
@@ -116,6 +179,7 @@ imports and internal copied files, but they are not part of the exact
 packages/vitest-plugin-rsc/src/nextjs/
   plugin.ts
   testing-library.tsx
+  testing-library-runtime.tsx
   testing-library-client.ts
   client.tsx
   msw.ts
@@ -265,9 +329,9 @@ Same-origin request routing must preserve Next's observed App Router order:
 
 Array-form rewrites normalize to `afterFiles`. An `afterFiles` rewrite must not
 hide an existing exact app route. If this behavior cannot be delegated directly
-to `@next/routing` plus Next-produced routing data, the adapter code must live
-under the Next source file that produces or consumes that routing data, not in
-`testing-library.tsx`.
+to `@next/routing` plus Next-produced routing data, the Next-owned adapter code
+must live under the Next source file that produces or consumes that routing
+data, not in the public `testing-library.tsx` wrapper.
 
 App Page HTML/SSR flow is one mode of the Edge App Page entry:
 
@@ -816,6 +880,9 @@ Copies/adapts:
 1. SWC option construction needed outside webpack.
 2. The force-transpile trigger logic if Vite needs the same behavior.
 3. The call shape for `getLoaderSWCOptions()` and `transform()`.
+4. The presence of `"use cache"` in Next's force-transpile logic is only a
+   source-level transpilation signal. It is not permission to enable Next's RSC,
+   Server Action, or `"use cache"` compiler transforms inside this adapter.
 
 Direct imports in this imitation:
 
@@ -1591,6 +1658,8 @@ Copies/adapts:
    Vite config/runtime boundary.
 2. Do not create a parallel cache registry when Next's handler module can be
    imported.
+3. Do not include the source transform that detects or hoists `"use cache"`
+   functions here; that is `@vitejs/plugin-rsc` transform ownership.
 
 Direct imports in this imitation:
 
@@ -1633,6 +1702,8 @@ Copies/adapts:
 2. Runtime wrapper wiring around Next's real `cache()` implementation.
 3. Unsupported encrypted `boundArgsLength`/children call shapes must fail
    clearly instead of inventing local cache keys.
+4. The wrapper receives already-hoisted functions from `@vitejs/plugin-rsc`.
+   It must not parse directives or own the RSC transform.
 
 Direct imports in this imitation:
 
@@ -1640,9 +1711,12 @@ Direct imports in this imitation:
 
 Higher/lower consideration:
 
-- Higher candidate: Next compiler output for `"use cache"`.
-- Why not higher: Next's RSC/compiler transform would take ownership from
-  `@vitejs/plugin-rsc`.
+- Higher candidate for runtime setup: the real Edge App Page/app-render path
+  creates the stores, cache state, and handler initialization around this call.
+- Higher candidate for source output: upstream `@vitejs/plugin-rsc` support for
+  the remaining Next cache call shapes.
+- Why not Next compiler output by default: Next's RSC/compiler transform would
+  take ownership from `@vitejs/plugin-rsc`.
 - Lower fallback: local memoization.
 - Why not lower: cache tags, work stores, invalid dynamic access, and cache
   handler behavior are Next-owned.

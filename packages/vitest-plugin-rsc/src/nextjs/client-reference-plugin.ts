@@ -1,4 +1,8 @@
 import type { Plugin } from "vite";
+import { createNextFormClientReferenceSource } from "./src/client/app-dir/form.ts";
+import { createNextLinkClientReferenceSource } from "./src/client/app-dir/link.ts";
+import { createNextLinkReactServerSource } from "./src/client/app-dir/link.react-server.ts";
+import { createNextScriptClientReferenceSource } from "./src/client/script.ts";
 
 const virtualNextLinkReactServerId = "virtual:vitest-plugin-rsc/next-link-react-server";
 const virtualNextLinkClientReferenceId = "virtual:vitest-plugin-rsc/next-link-client-reference";
@@ -66,51 +70,19 @@ export function useNextLinkClientReference(): Plugin {
       id = stripQuery(id);
 
       if (id === virtualNextLinkReactServerId) {
-        return `
-import { jsx } from "react/jsx-runtime";
-import Link, { useLinkStatus } from ${JSON.stringify(virtualNextLinkClientReferenceId)};
-
-export { useLinkStatus };
-
-export default function LinkComponent(props) {
-  const isLegacyBehavior = props.legacyBehavior;
-  const childIsHostComponent =
-    typeof props.children === "string" ||
-    typeof props.children === "number" ||
-    typeof props.children?.type === "string";
-  const childIsClientComponent = props.children?.type?.$$typeof === Symbol.for("react.client.reference");
-  if (isLegacyBehavior && !childIsHostComponent && !childIsClientComponent) {
-    if (props.children?.type?.$$typeof === Symbol.for("react.lazy")) {
-      console.error("Using a Lazy Component as a direct child of next/link with legacyBehavior from a Server Component is not supported.");
-    } else {
-      console.error("Using a Server Component as a direct child of next/link with legacyBehavior is not supported.");
-    }
-  }
-  return jsx(Link, { ...props });
-}
-`;
+        return createNextLinkReactServerSource(virtualNextLinkClientReferenceId);
       }
 
       if (id === virtualNextLinkClientReferenceId) {
-        return `"use client";
-export { default, useLinkStatus } from "next/dist/client/app-dir/link.js";
-`;
+        return createNextLinkClientReferenceSource();
       }
 
       if (id === virtualNextFormClientReferenceId) {
-        return `"use client";
-export { default } from "next/dist/client/app-dir/form.js";
-`;
+        return createNextFormClientReferenceSource();
       }
 
       if (id === virtualNextScriptClientReferenceId) {
-        return `"use client";
-export {
-  default,
-  handleClientScriptLoad,
-  initScriptLoader,
-} from "next/dist/client/script.js";
-`;
+        return createNextScriptClientReferenceSource();
       }
     },
   };
