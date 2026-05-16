@@ -1,6 +1,6 @@
 # Next Fidelity PR Architecture Trial
 
-Status: 2026-05-16
+Status: 2026-05-16 (stacked branch initialized)
 Scope: stacked architecture cleanup work based on the current Next.js fidelity PR.
 
 This document is the source of truth and progress tracker for the next Codex
@@ -35,6 +35,13 @@ Recommended draft PR title:
 ```text
 refactor: split Next fidelity adapter architecture
 ```
+
+Active workspace for this stacked PR:
+
+- Branch: `codex/next-fidelity-architecture-cleanup`
+- Worktree: `/Users/kasperpeulen/.cursor/worktrees/vitest-plugin-rsc/next-fidelity-architecture-cleanup`
+- Base branch: `codex/next-fidelity-transforms-pr36`
+- Initial state: documentation-only handoff; implementation has not started.
 
 Work in priority order. Commit and push small, reviewable increments. After each
 pushed slice, check CI and keep it green before moving to the next major slice.
