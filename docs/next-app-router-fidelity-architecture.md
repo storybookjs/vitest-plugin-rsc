@@ -4,240 +4,451 @@ Source of truth: Next.js `v16.2.6`
 (`ee6e79b1792a4d401ddf2480f40a83549fe8e722`), installed
 `next@16.2.6`, and installed `@next/routing@16.2.6`.
 
-This document describes how Next's App Router pipeline is structured, then how
-`vitest-plugin-rsc` should map that pipeline onto Vite, Vitest, and
-`@vitejs/plugin-rsc`.
+This document is the high-level map for the `vitest-plugin-rsc/nextjs`
+adapter. It explains the planes of the system, how data moves between them,
+which local modules belong together, and where we should import Next internals
+instead of imitating them.
 
-## Core Model
+## The Big Picture
 
-Next is not one runtime function. It is a pipeline with strict phase ownership:
+The adapter is not one Next server. It is five connected planes:
+
+1. Vite/RSC environment setup.
+2. Next build-time artifacts.
+3. Next webpack/compiler feature adapters.
+4. Request and render runtime.
+5. Browser runtime, hydration, and transport.
+
+Each plane owns a different kind of work. Most architecture mistakes happen
+when a module does work from the wrong plane, such as building custom routes in
+browser runtime code, invoking route handlers through page render glue, or
+letting webpack-only assumptions leak into Vite RSC without an explicit bridge.
+
+## Plane 1: Vite And RSC Environments
+
+This is the foundation. It decides which module graph a file is evaluated in.
+
+Local modules:
+
+- `packages/vitest-plugin-rsc/src/index.ts`
+- `packages/vitest-plugin-rsc/src/nextjs/plugin.ts`
+- `packages/vitest-plugin-rsc/src/nextjs/plugin/aliases.ts`
+- `packages/vitest-plugin-rsc/src/nextjs/plugin/runtime-rewrites.ts`
+- `packages/vitest-plugin-rsc/src/nextjs/plugin/optimizer.ts`
+
+What it creates:
+
+- `client`: the RSC/edge-server graph. This is where Server Components and
+  Next server-layer internals run in browser-mode Vitest. It uses
+  `react-server` and `edge-light` conditions, and should define
+  `process.env.NEXT_RUNTIME` as `"edge"`.
+- `react_client`: the visible browser/App Router graph. This is where Client
+  Components, `NextAppRouter`, `next/link`, `next/form`, and `next/script`
+  run.
+- `react_ssr`: the browser-ish SSR graph used to turn Flight data into document
+  HTML for hydration tests.
+
+How it connects:
+
+- `vitestPluginRSC()` creates the three Vite environments and the websocket/HTTP
+  bridges that let hidden browser environments execute modules.
+- `vitestPluginNext()` layers Next aliases, defines, source transforms,
+  optimizer entries, route virtual modules, and runtime shims onto those
+  environments.
+- Hidden `react_client` and `react_ssr` optimizers inherit scan roots from the
+  visible Vitest browser client, then Next adds route-aware app entries and
+  resolvable Next internals.
+
+What we imitate:
+
+- Next webpack conditions, aliases, defines, and polyfills are mirrored through
+  Vite aliases, Vite `define`, optimize-deps config, and small runtime rewrites.
+- Next's webpack `ProvidePlugin` behavior for `Buffer` is mirrored narrowly for
+  installed Next internals.
+
+What should change:
+
+- Prefer real Next alias/define helpers such as `create-compiler-aliases` and
+  `define-env` over local fallback tables.
+- Keep runtime rewrites scoped to installed Next internals. They are shims, not
+  a general transform layer.
+- Do not create a webpack or Turbopack RSC graph. The graph belongs to Vite and
+  `@vitejs/plugin-rsc`.
+
+## Plane 2: Next Build-Time Artifacts
+
+This plane creates facts that Next would normally create during dev-server or
+build setup. These facts are serialized into virtual modules and then consumed
+by request/runtime code.
+
+Local modules:
+
+- `packages/vitest-plugin-rsc/src/nextjs/config.ts`
+- `packages/vitest-plugin-rsc/src/nextjs/route-manifest-plugin.ts`
+- `packages/vitest-plugin-rsc/src/nextjs/plugin/routing-data.ts`
+- `packages/vitest-plugin-rsc/src/nextjs/routing-types.ts`
+
+Important virtual modules:
+
+- `virtual:vitest-plugin-rsc/next-routes`: exports discovered app pages, route
+  handlers, loader trees, and serialized routing data.
+- `virtual:vitest-plugin-rsc/next-route-tree?...`: exports one loader tree for
+  one discovered App Page route.
+- `virtual:vitest-plugin-rsc/next-entrypoints`: imports discovered route trees,
+  route dependencies, and route handler modules for optimizer warmup.
+
+Data flow:
 
 ```text
-next.config
-  -> app route discovery
-  -> loader tree and source transforms
-  -> routes-manifest
-  -> adapter routing data
-  -> request routing
-  -> app page or app route invocation
-  -> RSC render and client navigation
+config.ts
+  loads next.config, custom routes, appDir, pageExtensions, image/cache config
+  -> route-manifest-plugin.ts
+      scans app pages and route handlers with Next dev matcher providers
+      invokes next-app-loader for each page loaderTree
+      -> plugin/routing-data.ts
+          converts route facts and next.config routes into @next/routing data
+          -> virtual:vitest-plugin-rsc/next-routes
 ```
 
-The plugin must mirror that phase split. If Next does something during build or
-dev-server setup, we do it in the Vite plugin or virtual-module generation
-layer. If Next does something per request, we call the matching request runtime
-module. Browser-facing test helpers must not construct Next build artifacts.
+Next modules to import:
 
-## Next's Pipeline
-
-### 1. Project Config
-
-Next first loads and normalizes project config.
-
-Source files:
-
-- [`packages/next/src/server/config.ts`](https://github.com/vercel/next.js/blob/v16.2.6/packages/next/src/server/config.ts)
-- [`packages/next/src/lib/load-custom-routes.ts`](https://github.com/vercel/next.js/blob/v16.2.6/packages/next/src/lib/load-custom-routes.ts)
-- [`packages/next/src/lib/find-pages-dir.ts`](https://github.com/vercel/next.js/blob/v16.2.6/packages/next/src/lib/find-pages-dir.ts)
-- [`packages/next/src/build/load-jsconfig.ts`](https://github.com/vercel/next.js/blob/v16.2.6/packages/next/src/build/load-jsconfig.ts)
-
-Output: normalized config, app/pages dirs, page extensions, ts/js config,
-image config, custom headers, redirects, rewrites, and internal routes such as
-trailing-slash redirects.
-
-Plugin rule: use installed `next/dist/...` modules through the user's project
-root. Do not duplicate config normalization.
-
-### 2. App Route Discovery
-
-Next discovers App Router pages and route handlers before request runtime.
-
-Source files:
-
-- [`dev-app-page-route-matcher-provider.ts`](https://github.com/vercel/next.js/blob/v16.2.6/packages/next/src/server/route-matcher-providers/dev/dev-app-page-route-matcher-provider.ts)
-- [`dev-app-route-route-matcher-provider.ts`](https://github.com/vercel/next.js/blob/v16.2.6/packages/next/src/server/route-matcher-providers/dev/dev-app-route-route-matcher-provider.ts)
-- [`default-file-reader.ts`](https://github.com/vercel/next.js/blob/v16.2.6/packages/next/src/server/route-matcher-providers/dev/helpers/file-reader/default-file-reader.ts)
-
-Output: route pathname, app path, source filename, route groups, catch-all
-shape, and route-handler pathnames.
-
-Plugin rule: these providers are the source of truth for route existence and
-normalization. Do not guess app paths locally for real discovered routes.
-
-### 3. Loader Tree And Transforms
-
-Next turns a page route into a loader tree and applies compiler/loader
-semantics.
-
-Source files:
-
-- [`next-app-loader/index.ts`](https://github.com/vercel/next.js/blob/v16.2.6/packages/next/src/build/webpack/loaders/next-app-loader/index.ts)
-- [`entries.ts`](https://github.com/vercel/next.js/blob/v16.2.6/packages/next/src/build/entries.ts)
-- [`swc/options.ts`](https://github.com/vercel/next.js/blob/v16.2.6/packages/next/src/build/swc/options.ts)
-- [`next-font-loader`](https://github.com/vercel/next.js/blob/v16.2.6/packages/next/src/build/webpack/loaders/next-font-loader/index.ts)
-- [`image-loader.ts`](https://github.com/vercel/next.js/blob/v16.2.6/packages/next/src/shared/lib/image-loader.ts)
-
-Output: loader tree, transformed source behavior, Next aliases/defines, font
-metadata, image metadata, metadata routes, and runtime bootstrap expectations.
-
-Plugin rule: invoke Next loaders/transforms from Vite plugin hooks where
-possible. Any copied option shape needs `Begin copy` / `End copy`, exact source
-links, and an adaptation note.
-
-### 4. Routes Manifest And Adapter Routing Data
-
-Next builds a route manifest, then converts it into adapter routing data.
-This is still build/dev-server setup work, not browser request runtime work.
-
-Source files:
-
-- [`generate-routes-manifest.ts`](https://github.com/vercel/next.js/blob/v16.2.6/packages/next/src/build/generate-routes-manifest.ts)
-- [`build-complete.ts` routing block](https://github.com/vercel/next.js/blob/v16.2.6/packages/next/src/build/adapter/build-complete.ts#L1928-L2185)
-- [`redirect-status.ts`](https://github.com/vercel/next.js/blob/v16.2.6/packages/next/src/lib/redirect-status.ts)
-- [`route-regex.ts`](https://github.com/vercel/next.js/blob/v16.2.6/packages/next/src/shared/lib/router/utils/route-regex.ts)
+- `next/dist/server/config.js`
+- `next/dist/lib/load-custom-routes.js`
+- `next/dist/lib/find-pages-dir.js`
+- `next/dist/build/load-jsconfig.js`
+- `next/dist/server/route-matcher-providers/dev/dev-app-page-route-matcher-provider.js`
+- `next/dist/server/route-matcher-providers/dev/dev-app-route-route-matcher-provider.js`
+- `next/dist/build/webpack/loaders/next-app-loader/index.js`
+- `next/dist/build/generate-routes-manifest.js`
 - `next/dist/compiled/@vercel/routing-utils/superstatic.js`
 
-Output: data shaped for request routing: route pathnames, custom route regexes,
-headers, redirects, rewrites by phase, dynamic route regexes, route-key query
-params, `basePath`, i18n, build id, data route behavior, and on-match headers.
+What we imitate:
 
-Important Next detail: `build-complete.ts` normalizes adapter outputs with
-`basePath`, prefixes dynamic route `sourceRegex` and `destination` with
-`basePath`, and then passes this data to the adapter's `onBuildComplete()`.
+- The dev route matcher setup is copied narrowly because we ask the provider
+  for matchers directly instead of starting the full Next dev server.
+- The `next-app-loader` option shape is copied from Next's entry builder, then
+  the generated webpack-shaped module is rewritten into a Vite virtual module.
+- The routing-data mapping copies the small non-exported adapter block from
+  `build-complete.ts`; importing `handleBuildComplete()` would require full
+  production build outputs, dist files, adapter modules, prerender manifests,
+  tracing roots, and build ids.
 
-Plugin rule: build this data in the Vite plugin or virtual route manifest
-module. Runtime request code should receive serialized routing data and should
-not import `next/dist/build/*`, `load-custom-routes`, `build-custom-route`, or
-`@vercel/routing-utils`.
+What should change:
 
-### 5. Request Routing
+- Keep all `next/dist/build/*`, `load-custom-routes`, `build-custom-route`, and
+  `@vercel/routing-utils` imports inside this plane.
+- Request runtime should receive serialized route facts. It should not construct
+  custom routes or dynamic route regexes.
+- The serialized routing data should carry the full request-routing contract
+  that `@next/routing` expects, including `buildId`, `basePath`, `i18n`,
+  `pathnames`, and route phases.
 
-Next resolves a concrete request URL through the routing phases.
+## Plane 3: Webpack And Compiler Feature Adapters
 
-Source files:
+This plane adapts Next features whose real implementation lives in webpack
+loaders, compiler options, or Next client/server aliases. These are build or
+transform concerns, not request routing concerns.
 
-- [`packages/next-routing/src/resolve-routes.ts`](https://github.com/vercel/next.js/blob/v16.2.6/packages/next-routing/src/resolve-routes.ts)
-- [`packages/next-routing/src/types.ts`](https://github.com/vercel/next.js/blob/v16.2.6/packages/next-routing/src/types.ts)
+Local modules:
 
-Input: request URL, headers, request body, `buildId`, `basePath`, i18n,
-pathnames, and route phase data.
+- `packages/vitest-plugin-rsc/src/nextjs/swc-transform-plugin.ts`
+- `packages/vitest-plugin-rsc/src/nextjs/font-loader-plugin.ts`
+- `packages/vitest-plugin-rsc/src/nextjs/font-manifest.ts`
+- `packages/vitest-plugin-rsc/src/nextjs/image-plugin.ts`
+- `packages/vitest-plugin-rsc/src/nextjs/metadata-image-loader-plugin.ts`
+- `packages/vitest-plugin-rsc/src/nextjs/plugin/root-params.ts`
+- `packages/vitest-plugin-rsc/src/nextjs/plugin/entry-base-client-references.ts`
+- `packages/vitest-plugin-rsc/src/nextjs/client-reference-plugin.ts`
 
-Output: redirect, external rewrite, resolved pathname, invocation target,
-resolved query, resolved headers, status, and route matches.
+How it connects:
 
-Plugin rule: `request-router.ts` should be a thin adapter around
-`@next/routing.resolveRoutes()`. It may map the result to our test harness
-target union and use Next request-time matcher utilities to recover concrete
-params. It must not build custom routes or dynamic adapter routes for real app
-routes.
+- User source flows through Vite transforms.
+- When source imports `next/font` or `next/dynamic`, `swc-transform-plugin.ts`
+  invokes Next SWC with Next loader options but keeps `serverComponents: false`.
+- Next SWC can rewrite `next/font` calls into target CSS requests, which
+  `font-loader-plugin.ts` resolves to real Next font loader output.
+- Static image imports and metadata image loader requests are intercepted by
+  Vite and delegated to Next's real webpack loaders.
+- App Router public APIs such as `next/link`, `next/form`, `next/script`,
+  `next/image`, and `next/root-params` are resolved to the correct RSC or
+  browser implementation for the current Vite environment.
 
-### 6. App Page And App Route Invocation
+Next modules to import:
 
-After routing, Next invokes either an App Page route module or an App Route
-route module.
+- `next/dist/build/swc/index.js`
+- `next/dist/build/swc/options.js`
+- `next/dist/compiled/@next/font/dist/google/loader.js`
+- `next/dist/compiled/@next/font/dist/local/loader.js`
+- `next/dist/build/webpack/loaders/next-image-loader/index.js`
+- `next/dist/build/webpack/loaders/next-metadata-image-loader.js`
+- `next/dist/build/webpack/loaders/next-root-params-loader.js`
+- `next/dist/client/image-component.js`
+- `next/dist/shared/lib/get-img-props.js`
 
-Source files:
+What we imitate:
 
-- [`build/templates/app-page.ts`](https://github.com/vercel/next.js/blob/v16.2.6/packages/next/src/build/templates/app-page.ts)
-- [`server/route-modules/app-page/module.ts`](https://github.com/vercel/next.js/blob/v16.2.6/packages/next/src/server/route-modules/app-page/module.ts)
-- [`server/app-render/app-render.tsx`](https://github.com/vercel/next.js/blob/v16.2.6/packages/next/src/server/app-render/app-render.tsx)
-- [`build/templates/app-route.ts`](https://github.com/vercel/next.js/blob/v16.2.6/packages/next/src/build/templates/app-route.ts)
-- [`server/route-modules/app-route/module.ts`](https://github.com/vercel/next.js/blob/v16.2.6/packages/next/src/server/route-modules/app-route/module.ts)
+- Webpack loader contexts are recreated just enough for Next's loaders to run.
+- Font assets and image assets are emitted or dev-served with Next-style
+  `/_next/static/media/...` URLs.
+- `next/image` is split so `getImageProps` stays callable in the RSC graph while
+  `Image` remains a client reference.
+- `next/dist/server/app-render/entry-base.js` CJS client imports are proxied as
+  Vite RSC client references because Vite/Rolldown can otherwise inline
+  `"use client"` CJS modules into the RSC optimized chunk.
 
-App pages go through `AppPageRouteModule.render()`, which delegates to
-`renderToHTMLOrFlight()`. App route handlers go through
-`AppRouteRouteModule.handle()`.
+What should change:
 
-Plugin rule: request routing, app page rendering, and route handler invocation
-are separate layers. If route handlers are supported, use
-`AppRouteRouteModule.handle()`. Do not invoke route handlers through page render
-glue. If `AppPageRouteModule` is retried, keep it server-only and import
-`next/dist/server/node-environment-baseline` before server route modules.
+- Do not let Next SWC own the RSC graph. Keep Next's RSC and Server Action
+  transforms disabled unless specific tests prove they can coexist with
+  `@vitejs/plugin-rsc`.
+- Keep webpack loader context imitation small and source-linked.
+- Delete or narrow `entry-base-client-references.ts` if `@vitejs/plugin-rsc`
+  learns to preserve CJS `"use client"` boundaries during dependency
+  optimization.
 
-### 7. RSC Graph And Browser Runtime
+## Plane 4: Request And Render Runtime
 
-In real Next, webpack or Turbopack owns the RSC graph and manifests. In this
-plugin, Vite owns the module graph and `@vitejs/plugin-rsc` owns RSC semantics.
+This plane runs per request. It consumes the serialized build-time artifacts and
+invokes Next request/runtime modules.
 
-Sources we mirror or depend on:
+Local modules:
 
-- [`@vitejs/plugin-rsc`](https://github.com/vitejs/vite-plugin-react/tree/main/packages/plugin-rsc)
-- [`webpack-config.ts` runtime polyfill precedent](https://github.com/vercel/next.js/blob/v16.2.6/packages/next/src/build/webpack-config.ts#L2020-L2044)
-- [`node-environment-baseline.ts`](https://github.com/vercel/next.js/blob/v16.2.6/packages/next/src/server/node-environment-baseline.ts)
-- [`vite optimizer scan.ts`](https://github.com/vitejs/vite/blob/main/packages/vite/src/node/optimizer/scan.ts)
+- `packages/vitest-plugin-rsc/src/nextjs/request-router.ts`
+- `packages/vitest-plugin-rsc/src/nextjs/next-routing.ts`
+- `packages/vitest-plugin-rsc/src/nextjs/app-render.ts`
+- `packages/vitest-plugin-rsc/src/nextjs/app-render-manifest.ts`
+- `packages/vitest-plugin-rsc/src/nextjs/direct-render-routing.ts`
+- `packages/vitest-plugin-rsc/src/nextjs/flight-payload.ts`
 
-Plugin rule: do not create a webpack/Turbopack RSC graph, layer graph, or
-manifest graph. Keep `"use client"`, `"use server"`, client references, server
-references, Server Action transport, browser/server graph separation, and HMR
-websocket updates in `@vitejs/plugin-rsc`.
-
-## Plugin Mapping
+Data flow:
 
 ```text
-Next build/dev-server setup
-  -> src/nextjs/config.ts
-  -> src/nextjs/route-manifest-plugin.ts
-  -> src/nextjs/plugin/routing-data.ts
-  -> virtual:vitest-plugin-rsc/next-routes
-
-Next request runtime
-  -> src/nextjs/next-routing.ts
-  -> src/nextjs/request-router.ts
-
-Next app invocation
-  -> src/nextjs/app-render.ts
-  -> future app-route-invoker.ts if route handler URLs are supported
-
-Vite RSC graph
-  -> @vitejs/plugin-rsc
-  -> small manifest/runtime bridges only where Next runtime needs data
+testing-library.tsx
+  imports virtual:vitest-plugin-rsc/next-routes
+  -> request-router.ts
+      calls @next/routing.resolveRoutes(serialized routing data)
+      returns app-page, app-route, redirect, external-rewrite, or not-found
+  -> app-render.ts
+      receives app-page loaderTree + invocation URL
+      builds WebNextRequest/WebNextResponse
+      calls renderToHTMLOrFlight()
+      returns Flight, HTML, or Server Action response
 ```
 
-Forbidden runtime imports:
+Next modules to import:
 
-- `next/dist/build/*`
-- `next/dist/lib/load-custom-routes`
-- `next/dist/lib/build-custom-route`
-- `next/dist/compiled/@vercel/routing-utils`
+- `@next/routing`
+- `next/dist/server/web/utils.js`
+- `next/dist/shared/lib/router/utils/route-matcher.js`
+- `next/dist/shared/lib/router/utils/route-regex.js`
+- `next/dist/server/base-http/web.js`
+- `next/dist/server/app-render/app-render.js`
+- `next/dist/server/app-render/entry-base.js`
+- `next/dist/server/app-render/types.js`
+- `next/dist/server/app-render/manifests-singleton.js`
+- `next/dist/server/request-meta.js`
+- `next/dist/server/use-cache/handlers.js`
+- `next/dist/server/lib/incremental-cache/index.js`
 
-## Already Good
+What we imitate:
 
-- Config loading delegates to installed Next modules.
-- Route discovery uses real Next dev matcher providers.
-- Loader trees come from real `next-app-loader`.
-- App rendering calls Next `renderToHTMLOrFlight()`, so we are not writing a
-  full renderer.
-- RSC graph ownership stays with `@vitejs/plugin-rsc`.
-- `@next/routing` is now the right request-router direction.
-- Raw custom routes are moving out of the browser runtime contract.
-- Direct ReactNode rendering is being split away from real request routing.
+- `request-router.ts` maps `@next/routing` output to a test-target union.
+- `app-render.ts` still builds a synthetic App Page route module shape because
+  directly importing `AppPageRouteModule` crossed the browser/server boundary.
+- Minimal webpack-shaped client-reference and server-action manifests are
+  proxied because Vite RSC owns the real references but Next app-render expects
+  webpack manifest records.
+- `RenderOpts`, request lifecycle hooks, cache globals, and manifest singleton
+  setup are assembled locally around Next app-render.
+- Direct React node renders use a separate synthetic route path in
+  `direct-render-routing.ts`; this is not real app route matching.
 
-## Must Change
+What should change:
 
-- The routing-data contract should include the request routing fields Next uses:
-  `buildId`, `basePath`, i18n, pathnames, and routes. Do not hardcode
-  `basePath: ""` in request runtime if `next.config.basePath` is supported.
-- Plugin routing data must mirror Next's `build-complete.ts` adapter data shape,
-  including basePath/pathname consistency, or explicitly document unsupported
-  cases with tests.
-- `request-router.ts` should stay a thin `resolveRoutes()` adapter. It should
-  not create build-time route data.
-- Synthetic direct-render routing belongs only in direct-render helper code.
-- Optimizer entries must not scan all `app/**/*` files. Preserve Vitest browser
-  setup entries for hidden RSC client environments and explicitly include only
-  CJS/Next internals that need prebundling.
-- Manifest bridge code should move into dedicated modules and source-link the
-  Next manifest shape it mirrors.
+- Keep `request-router.ts` thin. It may translate `@next/routing` results and
+  recover params; it must not build route data.
+- Move manifest bridge construction out of `app-render.ts` into dedicated
+  manifest-bridge modules.
+- Keep the synthetic App Page route module isolated and source-linked. If
+  `AppPageRouteModule` is retried, it needs a server-only boundary around
+  `module.compiled` and `node-environment-baseline`.
+- Route handlers should either remain explicit unsupported render targets or be
+  invoked through `AppRouteRouteModule.handle()`. Do not call userland handler
+  exports directly as the request pipeline.
 
-## Review Checklist
+## Plane 5: Browser Runtime, Hydration, And Transport
 
-- Does this code run in the same phase where Next runs the behavior?
-- Does it call installed Next code when that code is importable?
-- If it copies Next behavior, does it have Begin/End copy markers, exact
-  `v16.2.6` links, and an adaptation note?
-- Does browser/request runtime avoid Next build-only imports?
-- Does app page rendering stay separate from request routing?
-- Are route handlers either real `AppRouteRouteModule.handle()` or explicitly
-  unsupported?
-- Do tests cover user-visible behavior and adapter boundaries, not just local
-  helper shapes?
+This plane consumes Flight/HTML output and drives the real browser App Router.
+
+Local modules:
+
+- `packages/vitest-plugin-rsc/src/nextjs/testing-library.tsx`
+- `packages/vitest-plugin-rsc/src/nextjs/client.tsx`
+- `packages/vitest-plugin-rsc/src/nextjs/testing-library-client.ts`
+- `packages/vitest-plugin-rsc/src/nextjs/msw.ts`
+- `packages/vitest-plugin-rsc/src/testing-library-client.tsx`
+- `packages/vitest-plugin-rsc/src/testing-library-ssr.tsx`
+
+How it connects:
+
+- `testing-library.tsx` orchestrates the test helper. It loads route facts,
+  resolves initial requests, follows supported same-origin redirects, rejects
+  route handlers as page targets, renders route or direct-node sources, and
+  hydrates either a controlled root or the full document.
+- `app-render.ts` returns Flight or HTML. The base RSC testing library turns
+  Flight into UI through `@vitejs/plugin-rsc`.
+- `client.tsx` renders the real `NextAppRouter` with state created by Next's
+  `createInitialRouterState()`.
+- `testing-library-client.ts` connects Next's `callServer()` to a registered
+  in-process RSC/action fetch function.
+- `msw.ts` lets Flight and Server Action requests travel as real browser
+  requests when request headers, router refresh, cache revalidation, or action
+  protocol behavior matters.
+
+Next modules to import:
+
+- `next/dist/client/app-bootstrap.js`
+- `next/dist/client/components/app-router.js`
+- `next/dist/client/components/app-router-instance.js`
+- `next/dist/client/components/router-reducer/create-initial-router-state.js`
+- `next/dist/client/components/router-reducer/router-reducer.js`
+- `next/dist/client/app-call-server.js`
+- `next/dist/client/components/app-router-headers.js`
+- `next/dist/server/lib/server-action-request-meta.js`
+
+What we imitate:
+
+- The initial RSC payload shape and mutable action queue setup are copied
+  narrowly around Next client internals.
+- Document hydration parses the same inline `self.__next_f.push(...)` segment
+  shape that Next app-index consumes.
+- No-op websocket/static indicator state is supplied because component tests do
+  not run Next's full app-index/dev-client bootstrap.
+
+What should change:
+
+- `testing-library.tsx` should remain orchestration. It should not grow route
+  building, request-routing phase logic, app-render manifest logic, or app-route
+  handler execution.
+- Do not add a local router facade, navigation spy API, or fake router
+  assertions. Client navigation should be asserted through real browser/App
+  Router behavior.
+
+## Cross-Cutting Runtime Cache
+
+Cache Components touches multiple planes: compiler transform, request/runtime
+stores, app-render, cache handlers, and Vite RSC directive hoisting.
+
+Local modules:
+
+- `packages/vitest-plugin-rsc/src/nextjs/plugin/use-cache.ts`
+- `packages/vitest-plugin-rsc/src/nextjs/plugin/cache-handlers.ts`
+- `packages/vitest-plugin-rsc/src/nextjs/app-render.ts`
+
+Next modules to import:
+
+- `next/dist/server/use-cache/use-cache-wrapper.js`
+- `next/dist/server/use-cache/handlers.js`
+- `next/dist/server/lib/incremental-cache/index.js`
+- `next/dist/server/request/cookies.js`
+- `next/dist/server/request/headers.js`
+
+What we imitate:
+
+- Vite RSC hoists inline `"use cache"` functions.
+- The hoisted function is wrapped with Next's real cache wrapper.
+- Next cache handlers and incremental cache globals are initialized in the RSC
+  runtime before app-render/cache code reads them.
+
+What should change:
+
+- Cached components with `children` remain unsupported until the adapter can
+  produce Next's encrypted `boundArgsLength` call shape or delegate that shape
+  to upstream tooling.
+- Unsupported cache shapes should throw clearly.
+
+## Cross-Cutting Runtime Shims
+
+These shims exist because Next internals were built for webpack/Turbopack and a
+Next dev/server process, while tests run in Vite browser-mode environments.
+
+Local modules:
+
+- `packages/vitest-plugin-rsc/src/nextjs/plugin/runtime-rewrites.ts`
+- `packages/vitest-plugin-rsc/src/nextjs/app-render-compat-plugin.ts`
+- `packages/vitest-plugin-rsc/src/nextjs/buffer-compat.ts`
+- `packages/vitest-plugin-rsc/src/nextjs/plugin/server-reference-info.ts`
+- `packages/vitest-plugin-rsc/src/nextjs/plugin/builtin-global-error.ts`
+- `packages/vitest-plugin-rsc/src/nextjs/os-browser.ts`
+
+What we imitate:
+
+- Next's edge/client webpack environment for selected globals and native module
+  aliases.
+- Next's dev-server-only flags where installed Next internals branch on them.
+- Next server-reference info behavior for Vite RSC action ids.
+- Builtin global-error module availability across Next versions.
+
+What should change:
+
+- Keep every shim scoped, source-linked, and covered by package tests.
+- Prefer real Next bootstrap modules, aliases, conditions, or define values
+  over code rewriting when possible.
+
+## What Belongs Together
+
+Build-time route and loader tree modules belong together:
+
+- `config.ts`
+- `route-manifest-plugin.ts`
+- `plugin/routing-data.ts`
+- `routing-types.ts`
+- `plugin/optimizer.ts`
+
+Webpack/compiler adapters belong together:
+
+- `swc-transform-plugin.ts`
+- `font-loader-plugin.ts`
+- `image-plugin.ts`
+- `metadata-image-loader-plugin.ts`
+- `plugin/root-params.ts`
+- `plugin/entry-base-client-references.ts`
+- `client-reference-plugin.ts`
+
+Request/render runtime modules belong together:
+
+- `request-router.ts`
+- `next-routing.ts`
+- `app-render.ts`
+- `app-render-manifest.ts`
+- `direct-render-routing.ts`
+- `flight-payload.ts`
+
+Browser/transport modules belong together:
+
+- `testing-library.tsx`
+- `client.tsx`
+- `testing-library-client.ts`
+- `msw.ts`
+
+Runtime shims cut across the other groups, but they should stay small and
+source-linked instead of becoming a hidden platform layer.
+
+## Testing Focus
+
+Package tests should prove plane boundaries:
+
+- Build artifacts: config loading, route discovery, loader tree generation,
+  routing data conversion, and virtual optimizer entries.
+- Compiler adapters: SWC, font, image, metadata image, root params, API aliases,
+  CJS client-reference proxies.
+- Runtime routing/rendering: request-router behavior, app-render responses,
+  manifest proxies, redirect/access-fallback Flight parsing.
+- Browser transport: action protocol, MSW RSC requests, hydration behavior,
+  App Router navigation.
+- Shims: runtime rewrites, Buffer behavior, builtin global error, server
+  reference info, cache handlers.
+
+Notes-demo and no-MSW tests should cover user-visible behavior. Package tests
+should cover adapter contracts and guard against the wrong plane importing the
+wrong Next module.

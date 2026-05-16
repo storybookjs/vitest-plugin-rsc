@@ -11,8 +11,9 @@ import routingUtils from "next/dist/compiled/@vercel/routing-utils/superstatic.j
 import { getRedirectStatus, modifyRouteRegex } from "next/dist/lib/redirect-status.js";
 import type { CustomRoutes, Rewrite } from "next/dist/lib/load-custom-routes.js";
 import type { NextConfigComplete } from "next/dist/server/config-shared.js";
+import { addPathPrefix } from "next/dist/shared/lib/router/utils/add-path-prefix.js";
 import { getNamedRouteRegex } from "next/dist/shared/lib/router/utils/route-regex.js";
-import type { NextRoutingData } from "../routing-types";
+import { nextRoutingBuildId, type NextRoutingData } from "../routing-types";
 
 export type { NextRoutingData } from "../routing-types";
 
@@ -72,12 +73,13 @@ type InternalRoute = {
 // static build output at this boundary, so only loaded `onMatchHeaders` are
 // forwarded.
 export function createNextRoutingData(manifest: NextRoutingManifest): NextRoutingData {
-  const pathnames = createPathnames(manifest.pages, manifest.routeHandlers);
+  const discoveredPathnames = createPathnames(manifest.pages, manifest.routeHandlers);
+  const pathnames = normalizePathnames(discoveredPathnames, manifest.nextConfig);
   const rewrites = normalizeRewrites(manifest.customRoutes.rewrites);
   const routesManifest = generateRoutesManifest({
     pageKeys: {
       pages: [],
-      app: pathnames,
+      app: discoveredPathnames,
     },
     config: createRoutesManifestConfig(manifest.nextConfig),
     redirects: manifest.customRoutes.redirects,
@@ -90,6 +92,9 @@ export function createNextRoutingData(manifest: NextRoutingManifest): NextRoutin
   }).routesManifest;
 
   return {
+    buildId: nextRoutingBuildId,
+    basePath: manifest.nextConfig?.basePath ?? "",
+    i18n: normalizeI18n(manifest.nextConfig),
     pathnames,
     routes: {
       beforeMiddleware: [
@@ -109,6 +114,38 @@ export function createNextRoutingData(manifest: NextRoutingManifest): NextRoutin
 
 function createPathnames(pages: NextRoutingRouteEntry[], routeHandlers: NextRoutingRouteEntry[]) {
   return Array.from(new Set([...pages, ...routeHandlers].map((entry) => entry.route)));
+}
+
+function normalizePathnames(pathnames: string[], config: NextRoutesManifestConfig | undefined) {
+  return Array.from(
+    new Set(pathnames.map((pathname) => normalizeAdapterPathname(pathname, config?.basePath))),
+  );
+}
+
+// Mirrors Next adapter output pathname normalization.
+// Source: https://github.com/vercel/next.js/blob/v16.2.6/packages/next/src/build/adapter/build-complete.ts#L416-L434
+// Adaptation: Vitest has discovered route entries instead of production
+// AdapterOutput records, so only the pathname string normalization is needed.
+function normalizeAdapterPathname(pathname: string, basePath: string | undefined) {
+  if (!basePath) return pathname;
+  return addPathPrefix(pathname, basePath).replace(/\/$/, "") || "/";
+}
+
+function normalizeI18n(config: NextRoutesManifestConfig | undefined): NextRoutingData["i18n"] {
+  const i18n = config?.i18n;
+  if (!i18n) return undefined;
+
+  return {
+    defaultLocale: i18n.defaultLocale,
+    domains: i18n.domains?.map((domain) => ({
+      defaultLocale: domain.defaultLocale,
+      domain: domain.domain,
+      http: domain.http,
+      locales: domain.locales ? [...domain.locales] : undefined,
+    })),
+    localeDetection: i18n.localeDetection,
+    locales: [...i18n.locales],
+  };
 }
 
 function normalizeRewrites(rewrites: NextRoutingCustomRoutes["rewrites"]) {

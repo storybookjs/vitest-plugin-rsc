@@ -5,7 +5,7 @@ import {
   getNamedRouteRegex,
   getRouteRegex,
 } from "next/dist/shared/lib/router/utils/route-regex.js";
-import type { NextRoutingData } from "./routing-types";
+import { nextRoutingBuildId, type NextRoutingData } from "./routing-types";
 
 type PageOnlyRouteEntry = {
   route: string;
@@ -19,6 +19,9 @@ export function assertRoutePatternMatchesPath(routePattern: string, pathname: st
 
 export function createPageOnlyRoutingData(pages: PageOnlyRouteEntry[]): NextRoutingData {
   return {
+    buildId: nextRoutingBuildId,
+    basePath: "",
+    i18n: undefined,
     pathnames: Array.from(new Set(pages.map((entry) => entry.route))),
     routes: {
       beforeMiddleware: [],

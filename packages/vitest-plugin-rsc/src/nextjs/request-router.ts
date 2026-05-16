@@ -1,6 +1,7 @@
 import type { RouteInvocationTarget } from "@next/routing";
 import type { LoaderTree } from "next/dist/server/lib/app-dir-module.js";
 import { normalizeNextQueryParam } from "next/dist/server/web/utils.js";
+import { removePathPrefix } from "next/dist/shared/lib/router/utils/remove-path-prefix.js";
 import { getRouteMatcher } from "next/dist/shared/lib/router/utils/route-matcher.js";
 import { getRouteRegex } from "next/dist/shared/lib/router/utils/route-regex.js";
 import { resolveRoutes } from "./next-routing";
@@ -83,8 +84,9 @@ export async function resolveNextRequestTarget(options: {
   const routingData = options.manifest.routingData;
   const result = await resolveRoutes({
     url: requestedUrl,
-    buildId: "BUILD_ID",
-    basePath: "",
+    buildId: routingData.buildId,
+    basePath: routingData.basePath,
+    i18n: routingData.i18n,
     requestBody: createEmptyRequestBody(),
     headers: toHeaders(options.headers),
     pathnames: routingData.pathnames,
@@ -122,14 +124,23 @@ export async function resolveNextRequestTarget(options: {
   }
 
   const invocationUrl = createInvocationUrl(requestedUrl, result.invocationTarget);
-  const page = findResolvedRoute(options.manifest.pages, options.route, result.resolvedPathname);
+  const resolvedRoutePathname = removeResolvedBasePath(
+    result.resolvedPathname,
+    routingData.basePath,
+  );
+  const page = findResolvedRoute(options.manifest.pages, options.route, resolvedRoutePathname);
   if (page) {
     return {
       kind: "app-page",
       entry: page,
       requestedUrl,
       invocationUrl,
-      routeMatches: resolveRouteMatches(page.route, invocationUrl.pathname, result.routeMatches),
+      routeMatches: resolveRouteMatches(
+        page.route,
+        invocationUrl.pathname,
+        result.routeMatches,
+        routingData.basePath,
+      ),
       responseHeaders,
       status: result.status,
     };
@@ -138,7 +149,7 @@ export async function resolveNextRequestTarget(options: {
   const routeHandler = findResolvedRoute(
     options.manifest.routeHandlers,
     options.route,
-    result.resolvedPathname,
+    resolvedRoutePathname,
   );
   if (routeHandler) {
     return {
@@ -150,6 +161,7 @@ export async function resolveNextRequestTarget(options: {
         routeHandler.route,
         invocationUrl.pathname,
         result.routeMatches,
+        routingData.basePath,
       ),
       responseHeaders,
       status: result.status,
@@ -233,8 +245,12 @@ function resolveRouteMatches(
   route: string,
   pathname: string,
   fallbackMatches: Record<string, string> | undefined,
+  basePath: string,
 ) {
-  return matchRoutePatternParams(route, pathname) ?? normalizeRouteMatches(fallbackMatches);
+  return (
+    matchRoutePatternParams(route, removeBasePath(pathname, basePath)) ??
+    normalizeRouteMatches(fallbackMatches)
+  );
 }
 
 function normalizeRouteMatches(matches: Record<string, string> | undefined): RouteMatches {
@@ -254,6 +270,14 @@ function findResolvedRoute<T extends { route: string }>(
   if (!resolvedPathname) return;
   if (route && route !== resolvedPathname) return;
   return entries.find((entry) => entry.route === resolvedPathname);
+}
+
+function removeResolvedBasePath(pathname: string | undefined, basePath: string) {
+  return pathname ? removeBasePath(pathname, basePath) : undefined;
+}
+
+function removeBasePath(pathname: string, basePath: string) {
+  return basePath ? removePathPrefix(pathname, basePath) : pathname;
 }
 
 function matchRoutePatternParams(routePattern: string, pathname: string): RouteMatches | undefined {

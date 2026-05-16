@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 import { expect, test } from "vitest";
 import { loadNextProjectConfig } from "./config";
 import { loadNextRouteStaticInfo, useNextRouteManifest } from "./route-manifest-plugin";
+import { virtualNextEntrypointsPublicId } from "./virtual-ids";
 
 const fixtureRoot = fileURLToPath(
   new URL("../../../../playground/nextjs-notes-demo/", import.meta.url),
@@ -65,6 +66,43 @@ test("extracts a Vite loader tree module from the real Next app loader output", 
   expect(code).toContain("route-patterns/defaulted/page.tsx");
   expect(code).not.toContain("const __next_app_require__");
   expect(code).not.toContain("const __next_app_load_chunk__");
+});
+
+test("generates optimizer entrypoints from discovered Next routes only", async () => {
+  const plugin = useNextRouteManifest();
+  const configResolved = getHookHandler(plugin.configResolved);
+  const resolveId = getHookHandler(plugin.resolveId);
+  const load = getHookHandler(plugin.load);
+  const pageFile = path.join(fixtureRoot, "app/next-apis/page.tsx");
+  const nonRouteAppFile = path.join(fixtureRoot, "app/next-apis/after-probe.tsx");
+  const routeFile = path.join(fixtureRoot, "app/api/next-request-response/route.ts");
+
+  await configResolved.call({} as never, { root: fixtureRoot, mode: "test" } as never);
+
+  const resolved = (await resolveId.call(
+    {} as never,
+    virtualNextEntrypointsPublicId,
+    undefined,
+    {} as never,
+  )) as string;
+  const watchedFiles: string[] = [];
+  const code = (await load.call(
+    {
+      addWatchFile: (file: string) => watchedFiles.push(file),
+    } as never,
+    resolved,
+    {} as never,
+  )) as string;
+
+  expect(watchedFiles).toContain(pageFile);
+  expect(watchedFiles).toContain(routeFile);
+  expect(code).toContain("virtual:vitest-plugin-rsc/next-route-tree?");
+  expect(code).toContain("app%2Fnext-apis%2Fpage.tsx");
+  expect(code).toContain("/@fs/");
+  expect(code).toContain("app/api/next-request-response/route.ts");
+  expect(code).not.toContain("app/**/*");
+  expect(code).not.toContain("src/app/**/*");
+  expect(code).not.toContain(nonRouteAppFile);
 });
 
 function getHookHandler<T extends (...args: never[]) => unknown>(

@@ -1,4 +1,5 @@
 import type { CustomRoutes } from "next/dist/lib/load-custom-routes.js";
+import type { NextConfigComplete } from "next/dist/server/config-shared.js";
 import { createProjectRequire } from "./plugin-utils";
 
 export type NextImageConfig = {
@@ -25,6 +26,7 @@ export type NextConfigLike = {
   compiler?: unknown;
   distDir?: string;
   images?: NextImageConfig;
+  i18n?: NextConfigComplete["i18n"];
   modularizeImports?: unknown;
   output?: string;
   pageExtensions?: string[];

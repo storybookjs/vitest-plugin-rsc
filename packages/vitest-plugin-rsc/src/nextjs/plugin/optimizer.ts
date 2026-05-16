@@ -1,6 +1,5 @@
-import fs from "node:fs";
-import path from "node:path";
 import { createProjectRequire } from "../plugin-utils";
+import { virtualNextEntrypointsPublicId } from "../virtual-ids";
 
 export const nextRootParamsOptimizeDepsExclude = [
   "next/root-params",
@@ -110,6 +109,7 @@ const nextTestingLibraryOptimizeDeps = [
   "next/dist/server/app-render/get-preloadable-fonts.js",
   "next/dist/server/web/utils.js",
   "next/dist/shared/lib/encode-uri-path.js",
+  "next/dist/shared/lib/router/utils/remove-path-prefix.js",
   "next/dist/shared/lib/router/utils/route-matcher.js",
   "next/dist/shared/lib/router/utils/route-regex.js",
 ] as const;
@@ -250,13 +250,6 @@ function filterResolvableOptimizeDeps(root: string, deps: readonly string[]): st
   });
 }
 
-export function createNextSourceOptimizerEntries(root: string): string[] {
-  const candidates: [directory: string, pattern: string][] = [
-    ["app", "app/**/*.{js,jsx,ts,tsx,md,mdx}"],
-    ["src/app", "src/app/**/*.{js,jsx,ts,tsx,md,mdx}"],
-  ];
-
-  return candidates.flatMap(([directory, pattern]) =>
-    fs.existsSync(path.join(root, directory)) ? [pattern] : [],
-  );
+export function createNextSourceOptimizerEntries(_root: string): string[] {
+  return [virtualNextEntrypointsPublicId];
 }

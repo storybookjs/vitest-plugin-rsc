@@ -81,6 +81,10 @@ test("converts discovered pages, route handlers, and custom routes to routing da
     "/fallback-target",
     "/api/next-request-response",
   ]);
+  expect(data).toMatchObject({
+    buildId: "BUILD_ID",
+    basePath: "",
+  });
   expect(data.routes.beforeMiddleware).toEqual(
     expect.arrayContaining([
       expect.objectContaining({
@@ -282,11 +286,38 @@ test("converts Next internal trailing slash redirects on the plugin side", async
   expect(result.resolvedHeaders?.get("location")).toBe("/route-patterns/docs");
 });
 
+test("normalizes pathnames and dynamic route destinations with basePath", async () => {
+  const data = createNextRoutingData({
+    ...manifest,
+    nextConfig: {
+      basePath: "/base",
+    },
+  });
+  const result = await resolveRoute("/base/route-patterns/acme/settings?mode=edit", data);
+
+  expect(data.basePath).toBe("/base");
+  expect(data.pathnames).toContain("/base/route-patterns/[team]/settings");
+  expect(data.pathnames).not.toContain("/route-patterns/[team]/settings");
+  expect(data.routes.dynamicRoutes).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        destination: expect.stringContaining(
+          "/base/route-patterns/[team]/settings?nxtPteam=$nxtPteam",
+        ),
+      }),
+    ]),
+  );
+  expect(result.resolvedPathname).toBe("/base/route-patterns/[team]/settings");
+  expect(result.invocationTarget?.pathname).toBe("/base/route-patterns/acme/settings");
+  expect(result.resolvedQuery).toEqual({ mode: "edit", nxtPteam: "acme" });
+});
+
 async function resolveRoute(path: string, data: NextRoutingData = createNextRoutingData(manifest)) {
   return resolveRoutes({
     url: new URL(path, "https://example.com"),
-    buildId: "BUILD_ID",
-    basePath: "",
+    buildId: data.buildId,
+    basePath: data.basePath,
+    i18n: data.i18n,
     requestBody: new ReadableStream({
       start(controller) {
         controller.close();

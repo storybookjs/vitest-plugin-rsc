@@ -125,6 +125,31 @@ test("normalizes catch-all dynamic route matches through Next route matcher", as
   expect(target.invocationUrl.searchParams.has("slug")).toBe(false);
 });
 
+test("maps basePath-prefixed routing results back to discovered app routes", async () => {
+  const basePathManifest: NextRouteManifest = {
+    pages: routingManifest.pages,
+    routeHandlers: routingManifest.routeHandlers,
+    routingData: createNextRoutingData({
+      ...routingManifest,
+      nextConfig: {
+        basePath: "/base",
+      },
+    }),
+  };
+  const target = await resolveNextRequestTarget({
+    url: "/base/route-patterns/alpha/settings?mode=edit",
+    manifest: basePathManifest,
+  });
+
+  expect(target.kind).toBe("app-page");
+  if (target.kind !== "app-page") return;
+  expect(target.entry.route).toBe("/route-patterns/[team]/settings");
+  expect(target.invocationUrl.pathname).toBe("/base/route-patterns/alpha/settings");
+  expect(target.invocationUrl.searchParams.get("mode")).toBe("edit");
+  expect(target.invocationUrl.searchParams.has("team")).toBe(false);
+  expect(target.routeMatches).toEqual({ team: "alpha" });
+});
+
 test("preserves user-supplied query params that share dynamic route param keys", async () => {
   const target = await resolveNextRequestTarget({
     url: "/route-patterns/docs/a/b?slug=query&mode=docs",

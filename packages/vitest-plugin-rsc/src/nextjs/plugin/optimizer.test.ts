@@ -1,23 +1,18 @@
-import fs from "node:fs";
 import { createRequire } from "node:module";
-import os from "node:os";
 import path from "node:path";
 import { expect, test } from "vitest";
+import { virtualNextEntrypointsPublicId } from "../virtual-ids";
 import { createNextSourceOptimizerEntries, resolveNextOptimizeDeps } from "./optimizer";
 import { fixtureRoot } from "./test-utils";
 
-test("adds Next app source files as optimizer scan entries", () => {
-  expect(createNextSourceOptimizerEntries(fixtureRoot)).toContain(
-    "app/**/*.{js,jsx,ts,tsx,md,mdx}",
-  );
+test("uses the route-discovered virtual Next entrypoint as the optimizer scan entry", () => {
+  expect(createNextSourceOptimizerEntries(fixtureRoot)).toEqual([virtualNextEntrypointsPublicId]);
 });
 
-test("does not add app optimizer scan entries when no app directory exists", () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "vitest-plugin-rsc-next-empty-"));
-  try {
-    expect(createNextSourceOptimizerEntries(root)).toEqual([]);
-  } finally {
-    fs.rmSync(root, { recursive: true, force: true });
+test("does not use broad app source globs as optimizer scan entries", () => {
+  for (const entry of createNextSourceOptimizerEntries(fixtureRoot)) {
+    expect(entry).not.toContain("app/**/*");
+    expect(entry).not.toContain("src/app/**/*");
   }
 });
 
@@ -37,6 +32,7 @@ test("prebundles browser request-router dependencies for the testing library", (
     expect.arrayContaining([
       "@next/routing",
       "next/dist/server/web/utils.js",
+      "next/dist/shared/lib/router/utils/remove-path-prefix.js",
       "next/dist/shared/lib/router/utils/route-matcher.js",
       "next/dist/shared/lib/router/utils/route-regex.js",
     ]),

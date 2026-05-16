@@ -4,13 +4,16 @@ import type { Plugin } from "vite";
 import { loadNextProjectConfig, type NextProjectConfig } from "./config";
 import { createProjectRequire, getProjectRoot, normalizePath } from "./plugin-utils";
 import { createNextRoutingData } from "./plugin/routing-data";
-
-const virtualNextRouteManifestId = "\0vitest-plugin-rsc:next-route-manifest";
-const virtualNextRouteManifestPublicId = "virtual:vitest-plugin-rsc/next-routes";
-const virtualNextRouteTreeIdPrefix = "\0vitest-plugin-rsc:next-route-tree?";
-const virtualNextRouteTreePublicId = "virtual:vitest-plugin-rsc/next-route-tree";
-const virtualNextRouteEmptyModuleId = "\0vitest-plugin-rsc:next-route-empty-module";
-const virtualNextRouteEmptyModulePublicId = "virtual:vitest-plugin-rsc/next-route-empty-module";
+import {
+  virtualNextEntrypointsId,
+  virtualNextEntrypointsPublicId,
+  virtualNextRouteEmptyModuleId,
+  virtualNextRouteEmptyModulePublicId,
+  virtualNextRouteManifestId,
+  virtualNextRouteManifestPublicId,
+  virtualNextRouteTreeIdPrefix,
+  virtualNextRouteTreePublicId,
+} from "./virtual-ids";
 
 type NextRouteManifestBuildEntry = {
   route: string;
@@ -59,6 +62,9 @@ export function useNextRouteManifest(): Plugin {
       if (source === virtualNextRouteManifestPublicId) {
         return virtualNextRouteManifestId;
       }
+      if (source === virtualNextEntrypointsPublicId) {
+        return virtualNextEntrypointsId;
+      }
       if (source.startsWith(`${virtualNextRouteTreePublicId}?`)) {
         return `${virtualNextRouteTreeIdPrefix}${source.slice(virtualNextRouteTreePublicId.length + 1)}`;
       }
@@ -85,6 +91,27 @@ export function useNextRouteManifest(): Plugin {
         }
 
         const { code, watchFiles } = await generateNextRouteTreeModule(root, mode, entry, entries);
+        for (const file of watchFiles) {
+          this.addWatchFile(file);
+        }
+        return code;
+      }
+
+      if (id === virtualNextEntrypointsId) {
+        const [entries, routeHandlers] = await Promise.all([
+          scanNextAppRoutes(root, mode),
+          scanNextAppRouteHandlers(root, mode),
+        ]);
+        for (const entry of routeHandlers) {
+          this.addWatchFile(entry.routeFile);
+        }
+
+        const { code, watchFiles } = await generateNextEntrypointsModule(
+          root,
+          mode,
+          entries,
+          routeHandlers,
+        );
         for (const file of watchFiles) {
           this.addWatchFile(file);
         }
@@ -262,6 +289,43 @@ function generateNextRouteManifest(
     .join(",")}]`;
 
   return `${imports}\nexport const nextRouteManifest = ${manifest};\nexport const nextRouteHandlerManifest = ${routeHandlerManifest};\nexport const nextRoutingData = ${JSON.stringify(routingData)};\n`;
+}
+
+async function generateNextEntrypointsModule(
+  root: string,
+  mode: string,
+  entries: NextRouteManifestBuildEntry[],
+  routeHandlers: NextRouteHandlerManifestBuildEntry[],
+) {
+  const watchFiles = new Set<string>();
+  const routeModuleImports = new Set<string>();
+
+  const routeTreeImports = entries.map((entry) => {
+    const params = new URLSearchParams({ pageFile: entry.pageFile });
+    return `import ${JSON.stringify(`${virtualNextRouteTreePublicId}?${params}`)};`;
+  });
+
+  for (const entry of entries) {
+    const routeTree = await generateNextRouteTreeModule(root, mode, entry, entries);
+    for (const file of routeTree.watchFiles) {
+      watchFiles.add(file);
+    }
+    for (const source of extractRouteTreeImportSources(routeTree.code)) {
+      routeModuleImports.add(source);
+    }
+  }
+
+  const routeHandlerImports = routeHandlers.map(
+    (entry) => `import ${JSON.stringify(toViteImportSource(entry.routeFile))};`,
+  );
+  const routeDependencyImports = Array.from(routeModuleImports, (source) => {
+    return `import ${JSON.stringify(source)};`;
+  });
+
+  return {
+    code: `${[...routeTreeImports, ...routeDependencyImports, ...routeHandlerImports].join("\n")}\nexport {};\n`,
+    watchFiles: [...watchFiles],
+  };
 }
 
 async function generateNextRouteTreeModule(
@@ -462,6 +526,13 @@ function rewriteNextAppLoaderImports(code: string) {
       (_match, prefix: string, _quote: string, source: string) =>
         `${prefix}${JSON.stringify(toViteImportSource(source))}`,
     );
+}
+
+function extractRouteTreeImportSources(code: string) {
+  return Array.from(
+    code.matchAll(/\bimport\((?:\/\*[\s\S]*?\*\/\s*)?("([^"]+)"|'([^']+)')\)/g),
+    (match) => match[2] ?? match[3] ?? "",
+  ).filter(Boolean);
 }
 
 function toViteImportSource(source: string) {
