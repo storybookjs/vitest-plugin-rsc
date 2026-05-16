@@ -1,11 +1,80 @@
 # Next Fidelity PR Architecture Trial
 
 Status: 2026-05-16
-Scope: architecture work to try in the current Next.js fidelity PR before merge.
+Scope: stacked architecture cleanup work based on the current Next.js fidelity PR.
 
-This document is a working plan, not the long-term support contract. The stable contract lives in [new-architecture.md](new-architecture.md). This file records the architecture we want to try in this PR to reduce local Next.js glue while keeping the current user-facing behavior green.
+This document is the source of truth and progress tracker for the next Codex
+agent working on the Next fidelity architecture cleanup. The stable contract
+lives in [new-architecture.md](new-architecture.md). This file records the
+architecture we want to try in a new stacked PR to reduce local Next.js glue
+while keeping the current user-facing behavior green.
 
-The main question for this PR is:
+## Codex Goal
+
+Refactor the Next.js fidelity implementation into the cleaner adapter
+architecture described in this document.
+
+Create a new stacked branch and draft PR based on
+`codex/next-fidelity-transforms-pr36`. Do not continue this refactor directly on
+the base fidelity PR unless the user explicitly asks for that. Use this document
+as the live progress tracker throughout the work. Before starting each coherent
+slice, update the tracker below to show the active subgoal. After each slice,
+record the result, tests run, commit or PR reference, CI status, and any
+remaining follow-up.
+
+Recommended branch:
+
+```sh
+git checkout codex/next-fidelity-transforms-pr36
+git pull
+git checkout -b codex/next-fidelity-architecture-cleanup
+```
+
+Recommended draft PR title:
+
+```text
+refactor: split Next fidelity adapter architecture
+```
+
+Work in priority order. Commit and push small, reviewable increments. After each
+pushed slice, check CI and keep it green before moving to the next major slice.
+If an experiment only wraps existing glue without deleting, narrowing, or
+isolating it, reject that experiment and document why.
+
+## Progress Tracker
+
+Status values: `Not started`, `In progress`, `Blocked`, `Deferred`, `Rejected`,
+`Done`.
+
+| Subgoal                                     | Status      | Branch/PR/Commit | Required Tests                                                          | Notes                                                                                                                         |
+| ------------------------------------------- | ----------- | ---------------- | ----------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| 1. Request router split                     | Not started |                  | `request-router.test.ts`; notes-demo routing/redirect/header tests      | Move routing out of `testing-library.tsx`; prefer Next routing helpers.                                                       |
+| 2. Routing data adapter                     | Not started |                  | `routing-data.test.ts`; rewrite ordering tests                          | Convert discovered routes and Next config into `@next/routing`-compatible data if it materially reduces glue.                 |
+| 3. App page invoker                         | Not started |                  | `app-page-invoker.test.ts`; notes-demo render/action coverage           | Try real `AppPageRouteModule`; keep direct app-render only if smaller and explicitly isolated.                                |
+| 4. App route invoker decision               | Not started |                  | `app-route-invoker.test.ts` if implemented                              | Either use `AppRouteRouteModule.handle()` or keep route-handler render targets explicitly unsupported.                        |
+| 5. Optimizer entry architecture             | Not started |                  | optimizer entry tests; no-MSW app-shell regression                      | Replace broad `app/**` scan roots with discovered route or virtual entrypoint warmup.                                         |
+| 6. Generic CJS browser transform evaluation | Not started |                  | package CJS transform tests; real integration proving deleted Next glue | Evaluate PR #45 only if it removes or substantially narrows Next-specific client-reference glue.                              |
+| 7. Manifest bridge cleanup                  | Not started |                  | manifest bridge unit tests                                              | Move manifest construction out of render helpers and source-link every mirrored Next manifest shape.                          |
+| 8. Module readability pass                  | Not started |                  | package unit tests for touched modules                                  | Keep adapter responsibilities in dedicated modules instead of growing `testing-library.tsx`, `plugin.ts`, or `app-render.ts`. |
+| 9. Acceptance coverage and docs             | Not started |                  | notes-demo, no-MSW, package tests, build, typecheck, lint, CI matrix    | Keep README and architecture docs aligned with final behavior and support matrix.                                             |
+
+## Agent Operating Rules
+
+- Start by checking `pwd`, branch, and `git status --short --branch`.
+- Work only from the intended stacked branch unless the user redirects the work.
+- Keep this tracker current. A slice is not done until this document says what
+  changed, what tests ran, and whether CI is green.
+- Prefer installed Next/Vite/Vitest/@vitejs/plugin-rsc entrypoints over local
+  approximations.
+- Keep `@vitejs/plugin-rsc` responsible for the RSC graph: `"use client"`,
+  `"use server"`, client references, server references, Server Actions, and graph
+  separation.
+- Do not add a parallel Next.js implementation.
+- Do not preserve dead experiments, temporary files, obsolete APIs, or stale docs.
+- Any copied upstream block must include Begin/End copy markers, source links,
+  and an adaptation note.
+
+The main question for the stacked architecture PR is:
 
 > Can we replace the growing local request/render pipeline with smaller adapters around real Next.js routing and route modules?
 
@@ -25,7 +94,7 @@ This architecture trial is successful when:
 
 ## Current Pressure Points
 
-The current PR already delegates a lot of behavior to Next:
+The base fidelity PR already delegates a lot of behavior to Next:
 
 - Route discovery uses Next dev route matcher providers.
 - Loader trees come from the real `next-app-loader`.
@@ -500,7 +569,7 @@ Stop condition:
 
 ### Slice 6: App Route Invoker Decision
 
-- Decide whether route handlers are part of this PR.
+- Decide whether route handlers are part of the stacked architecture PR.
 - If yes, implement `AppRouteRouteModule.handle()` path.
 - If no, preserve explicit unsupported behavior and document it.
 
