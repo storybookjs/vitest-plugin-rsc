@@ -1,12 +1,13 @@
 import { defineConfig } from "vitest/config";
+import { vitestPluginRscSourceConditions } from "./vitest.conditions.ts";
 import vitestPluginRscProject from "./packages/vitest-plugin-rsc/vitest.config.ts";
 import nextjsNoMswDemoProject from "./playground/nextjs-no-msw-demo/vitest.config.ts";
 import { nextjsNotesProjects } from "./playground/nextjs-notes-demo/vitest.config.ts";
 import rscVitestDemoProject from "./playground/rsc-vitest-demo/vitest.config.ts";
 
-export default defineConfig(({ mode }) => ({
+export default defineConfig({
   resolve: {
-    conditions: mode === "source" ? ["vitest-plugin-rsc-source"] : [],
+    conditions: vitestPluginRscSourceConditions,
   },
   test: {
     coverage: {
@@ -37,4 +38,4 @@ export default defineConfig(({ mode }) => ({
       ...nextjsNotesProjects,
     ],
   },
-}));
+});

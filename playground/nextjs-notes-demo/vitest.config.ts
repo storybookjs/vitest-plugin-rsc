@@ -4,6 +4,7 @@ import { playwright } from "@vitest/browser-playwright";
 import { defineConfig, defineProject } from "vitest/config";
 import { vitestPluginRSC } from "vitest-plugin-rsc";
 import { vitestPluginNext } from "vitest-plugin-rsc/nextjs/plugin";
+import { vitestPluginRscSourceConditions } from "../../vitest.conditions.ts";
 
 // Make Vitest UI trace/source clicks a no-op instead of opening Cursor.
 // oxlint-disable-next-line no-process-env
@@ -19,7 +20,7 @@ const { loadEnvConfig } = nextNotesRequire("@next/env") as {
 const nextNotesDev = process.env.NODE_ENV !== "production" && process.env.NODE_ENV !== "test";
 loadEnvConfig(root, nextNotesDev);
 
-function createSharedProjectConfig(mode: string) {
+function createSharedProjectConfig() {
   return {
     root,
     envPrefix: ["VITE_", "CI"],
@@ -28,7 +29,7 @@ function createSharedProjectConfig(mode: string) {
       alias: {
         "vitest/suite": "@vitest/runner",
       },
-      conditions: [...(mode === "source" ? ["vitest-plugin-rsc-source"] : []), "test"],
+      conditions: [...vitestPluginRscSourceConditions, "test"],
     },
     optimizeDeps: {
       include: [
@@ -44,8 +45,8 @@ function createSharedProjectConfig(mode: string) {
 }
 
 export const nextjsNotesProjects = [
-  defineProject(({ mode }) => ({
-    ...createSharedProjectConfig(mode),
+  defineProject({
+    ...createSharedProjectConfig(),
     plugins: [vitestPluginRSC(), vitestPluginNext()],
     test: {
       name: "nextjs-notes-demo-browser",
@@ -66,9 +67,9 @@ export const nextjsNotesProjects = [
       globalSetup: ["./vitest.global-setup.ts"],
       setupFiles: ["./vitest.setup.ts"],
     },
-  })),
-  defineProject(({ mode }) => ({
-    ...createSharedProjectConfig(mode),
+  }),
+  defineProject({
+    ...createSharedProjectConfig(),
     test: {
       name: "nextjs-notes-demo-node",
       include: ["**/*.node.test.ts"],
@@ -76,7 +77,7 @@ export const nextjsNotesProjects = [
       environment: "node",
       setupFiles: ["./vitest.setup.node.ts"],
     },
-  })),
+  }),
 ];
 
 export default defineConfig({
