@@ -55,7 +55,7 @@ Status values: `Not started`, `In progress`, `Blocked`, `Deferred`, `Rejected`,
 
 | Subgoal                                     | Status      | Branch/PR/Commit | Required Tests                                                          | Notes                                                                                                                         |
 | ------------------------------------------- | ----------- | ---------------- | ----------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| 1. Request router split                     | In progress | PR #47 / 410b97e | `request-router.test.ts`; notes-demo routing/redirect/header tests      | Review follow-up: wire `testing-library.tsx` through the central `resolveNextRequestTarget()` boundary before closing.        |
+| 1. Request router split                     | Done        | PR #47 / ebee496 | `request-router.test.ts`; notes-demo routing/redirect/header tests      | `testing-library.tsx` now routes through the central `resolveNextRequestTarget()` boundary. Local tests and PR CI green.      |
 | 2. Routing data adapter                     | Not started |                  | `routing-data.test.ts`; rewrite ordering tests                          | Convert discovered routes and Next config into `@next/routing`-compatible data if it materially reduces glue.                 |
 | 3. App page invoker                         | Not started |                  | `app-page-invoker.test.ts`; notes-demo render/action coverage           | Try real `AppPageRouteModule`; keep direct app-render only if smaller and explicitly isolated.                                |
 | 4. App route invoker decision               | Not started |                  | `app-route-invoker.test.ts` if implemented                              | Either use `AppRouteRouteModule.handle()` or keep route-handler render targets explicitly unsupported.                        |
@@ -89,7 +89,9 @@ Status values: `Not started`, `In progress`, `Blocked`, `Deferred`, `Rejected`,
   - `pnpm build`
   - `pnpm tsgo --build`
   - `git diff --check`
-  - CI: pending push.
+  - CI: green on PR #47 for `ebee496`, including build, format, lint,
+    typecheck, Vitest, preview, semantic title, and Next.js
+    16.0/16.1/latest/canary compatibility.
 
 ## Agent Operating Rules
 
