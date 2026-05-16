@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { MinimalPluginContextWithoutEnvironment, Plugin, ViteDevServer } from "vite";
 import { afterEach, expect, test, vi } from "vitest";
-import { createReactClientCoveragePlugin } from "./coverage";
+import { createReactClientCoveragePlugin } from "./coverage.ts";
 
 const reactClientCoverageModulePath = "/@vite/react-client-coverage-module";
 const reactClientCoverageQuery = "vitest-plugin-rsc-react-client-coverage";

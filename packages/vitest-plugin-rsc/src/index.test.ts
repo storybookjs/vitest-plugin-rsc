@@ -1,7 +1,7 @@
 import { createServer, type Server } from "node:net";
 import type { Plugin, ViteDevServer } from "vite";
 import { afterEach, expect, test } from "vitest";
-import { vitestPluginRSC } from "./index";
+import { vitestPluginRSC } from "./index.ts";
 
 const servers: Server[] = [];
 const browserPlugin = { name: "vitest:browser:config" };

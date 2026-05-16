@@ -1,4 +1,4 @@
-import type { FetchNextRsc } from "./testing-library-client";
+import type { FetchNextRsc } from "./testing-library-client.ts";
 import {
   NEXT_URL,
   NEXT_ROUTER_STATE_TREE_HEADER,

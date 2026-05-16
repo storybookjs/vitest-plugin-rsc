@@ -1,6 +1,6 @@
-import { SequentialAsyncLocalStorage } from "./async-local-storage";
+import { SequentialAsyncLocalStorage } from "./async-local-storage.ts";
 
-export { SequentialAsyncLocalStorage as AsyncLocalStorage } from "./async-local-storage";
+export { SequentialAsyncLocalStorage as AsyncLocalStorage } from "./async-local-storage.ts";
 
 type RunCallback<R, TArgs extends unknown[]> = (...args: TArgs) => R;
 

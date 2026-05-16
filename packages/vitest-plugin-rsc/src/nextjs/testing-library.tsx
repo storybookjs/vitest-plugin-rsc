@@ -20,18 +20,18 @@ import {
   cleanup as baseCleanup,
   initialize as baseInitialize,
   type RenderConfiguration,
-} from "../testing-library";
-import type { FetchRsc, RscPayload, TestingLibraryClientRoot } from "../testing-library-client";
-import { importReactClient } from "../utilts";
+} from "../testing-library.tsx";
+import type { FetchRsc, RscPayload, TestingLibraryClientRoot } from "../testing-library-client.tsx";
+import { importReactClient } from "../utilts.ts";
 import * as ReactServer from "@vitejs/plugin-rsc/react/rsc";
 import { NextRouter } from "vitest-plugin-rsc/nextjs/client";
-import { createNextActionResponse, createNextRouteResponse } from "./flight-payload";
-import { buildFlightRouterStateWithNext } from "./flight-router-state";
-import { createSeedDataFromFlightRouterState } from "./flight-seed-data";
-import { createNextRequestContext, resetNextRequestContextCache } from "./request-context";
-import type { FetchNextRsc } from "./testing-library-client";
+import { createNextActionResponse, createNextRouteResponse } from "./flight-payload.ts";
+import { buildFlightRouterStateWithNext } from "./flight-router-state.ts";
+import { createSeedDataFromFlightRouterState } from "./flight-seed-data.ts";
+import { createNextRequestContext, resetNextRequestContextCache } from "./request-context.ts";
+import type { FetchNextRsc } from "./testing-library-client.ts";
 
-export * from "../testing-library";
+export * from "../testing-library.tsx";
 
 export type NextRenderConfiguration = Partial<RenderConfiguration> & {
   nextRscRequestsViaMsw?: boolean;
@@ -41,10 +41,10 @@ type NextRuntimeConfiguration = RenderConfiguration & {
   nextRscRequestsViaMsw: boolean;
 };
 
-const client = await importReactClient<typeof import("../testing-library-client")>(
+const client = await importReactClient<typeof import("../testing-library-client.tsx")>(
   "vitest-plugin-rsc/testing-library-client",
 );
-const nextClient = await importReactClient<typeof import("./testing-library-client")>(
+const nextClient = await importReactClient<typeof import("./testing-library-client.ts")>(
   "vitest-plugin-rsc/nextjs/testing-library-client",
 );
 

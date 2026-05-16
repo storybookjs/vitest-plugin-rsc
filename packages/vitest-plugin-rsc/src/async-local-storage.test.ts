@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { resetAsyncLocalStorage } from "./async-local-storage";
+import { resetAsyncLocalStorage } from "./async-local-storage.ts";
 import {
   AsyncLocalStorage,
   AsyncResource,
@@ -7,7 +7,7 @@ import {
   executionAsyncId,
   executionAsyncResource,
   triggerAsyncId,
-} from "./async-hooks";
+} from "./async-hooks.ts";
 
 function deferred<T>() {
   let resolve!: (value: T) => void;

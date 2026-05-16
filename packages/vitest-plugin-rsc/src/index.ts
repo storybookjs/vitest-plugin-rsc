@@ -1,7 +1,7 @@
 import { createServer } from "node:net";
 import { type Plugin, type ViteDevServer } from "vite";
 import { vitePluginRscMinimal } from "@vitejs/plugin-rsc/plugin";
-import { createReactClientCoveragePlugin } from "./coverage";
+import { createReactClientCoveragePlugin } from "./coverage.ts";
 
 const reactClientWebSocketInfoPath = "/@vite/react-client-runner-websocket";
 const reactClientWebSocketQuery = "vitest-plugin-rsc-react-client";

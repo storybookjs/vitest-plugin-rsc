@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { buildFlightRouterStateWithNext } from "./flight-router-state";
+import { buildFlightRouterStateWithNext } from "./flight-router-state.ts";
 
 test("builds route state through Next loader-tree machinery", async () => {
   const tree = await buildFlightRouterStateWithNext(

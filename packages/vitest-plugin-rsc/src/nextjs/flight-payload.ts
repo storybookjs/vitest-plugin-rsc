@@ -6,9 +6,9 @@ import type {
   NavigationFlightResponse,
 } from "next/dist/shared/lib/app-router-types";
 import type { ReactNode } from "react";
-import { buildFlightRouterStateWithNext } from "./flight-router-state";
-import { createSeedDataFromFlightRouterState } from "./flight-seed-data";
-import { findNextRouterElement, type NextRouterElementProps } from "./router-element";
+import { buildFlightRouterStateWithNext } from "./flight-router-state.ts";
+import { createSeedDataFromFlightRouterState } from "./flight-seed-data.ts";
+import { findNextRouterElement, type NextRouterElementProps } from "./router-element.ts";
 
 export async function createNextRouteResponse(
   root: ReactNode,

@@ -1,11 +1,11 @@
 import type { Container, RootOptions } from "react-dom/client";
 import type { JSXElementConstructor, ReactNode } from "react";
-import { resetAsyncLocalStorage } from "./async-local-storage";
-import { importReactClient } from "./utilts";
-import type { FetchRsc, RscPayload, TestingLibraryClientRoot } from "./testing-library-client";
+import { resetAsyncLocalStorage } from "./async-local-storage.ts";
+import { importReactClient } from "./utilts.ts";
+import type { FetchRsc, RscPayload, TestingLibraryClientRoot } from "./testing-library-client.tsx";
 import * as ReactServer from "@vitejs/plugin-rsc/react/rsc";
 
-const client = await importReactClient<typeof import("./testing-library-client")>(
+const client = await importReactClient<typeof import("./testing-library-client.tsx")>(
   "vitest-plugin-rsc/testing-library-client",
 );
 
