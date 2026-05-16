@@ -193,8 +193,11 @@ async function resolveBrowserApiPort(
 }
 
 function resolveViteListenHost(host: ViteDevServer["config"]["server"]["host"]) {
+  // Match Vite's default listen call. Checking "localhost" can miss ports that
+  // are unavailable for wildcard binds, which lets Vite fall back after
+  // /@vite/client has already captured the old port.
   if (host === undefined || host === false) {
-    return "localhost";
+    return undefined;
   }
   if (host === true) {
     return undefined;

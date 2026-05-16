@@ -12,7 +12,7 @@ afterEach(async () => {
 });
 
 test("moves the Vitest browser API server before Vite falls back from an occupied port", async () => {
-  const occupiedPort = await occupyPort("localhost");
+  const occupiedPort = await occupyPort();
   const server = createViteServer([browserPlugin], { port: occupiedPort });
 
   await configureServer.call({} as never, server);
