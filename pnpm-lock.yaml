@@ -72,6 +72,9 @@ importers:
         specifier: ^2.0.0
         version: 2.0.0
     devDependencies:
+      '@next/routing':
+        specifier: ^16.2.6
+        version: 16.2.6
       '@types/convert-source-map':
         specifier: ^2.0.3
         version: 2.0.3
@@ -1396,6 +1399,9 @@ packages:
 
   '@next/env@16.2.6':
     resolution: {integrity: sha512-gd8HoHN4ufj73WmR3JmVolrpJR47ILK6LouP5xElPglaVxir6e1a7VzvTvDWkOoPXT9rkkTzyCxBu4yeZfZwcw==}
+
+  '@next/routing@16.2.6':
+    resolution: {integrity: sha512-MyQR5HjGRIs6B/pgEIQarQPHlOZgr/aKoaZ8QL8eLpFvzbGUm01J4qeAFL8sdOHwUZ/ymIusdTKWMqBrPGm/ow==}
 
   '@next/swc-darwin-arm64@16.2.6':
     resolution: {integrity: sha512-ZJGkkcNfYgrrMkqOdZ7zoLa1TOy0qpcMfk/z4Mh/FKUz40gVO+HNQWqmLxf67Z5WB64DRp0dhEbyHfel+6sJUg==}
@@ -5170,6 +5176,8 @@ snapshots:
   '@neondatabase/serverless@1.1.0': {}
 
   '@next/env@16.2.6': {}
+
+  '@next/routing@16.2.6': {}
 
   '@next/swc-darwin-arm64@16.2.6':
     optional: true

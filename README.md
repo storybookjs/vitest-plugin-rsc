@@ -92,12 +92,11 @@ This plugin requires [Vitest Browser Mode](https://vitest.dev/guide/browser/).
 
 ## Next.js Version Support
 
-The base `vitestPluginRSC()` runtime is framework-agnostic. The `vitest-plugin-rsc/nextjs/*` helpers depend on Next.js App Router internals, so CI tests them against multiple Next.js targets:
+The base `vitestPluginRSC()` runtime is framework-agnostic. The `vitest-plugin-rsc/nextjs/*` helpers depend on Next.js App Router internals and Next's shared routing package, so CI tests them against matching Next.js and `@next/routing` targets:
 
-- `next@latest`: current stable, following new releases automatically.
-- `next@16.1`: pinned previous-stable line.
-- `next@16.0`: older pinned stable line.
-- `next@canary`: early warning when a private App Router internal changes.
+- `next@latest` with `@next/routing@latest`: current stable, following new releases automatically.
+- `next@16.2` with `@next/routing@16.2`: pinned supported stable line.
+- `next@canary` with `@next/routing@canary`: early warning when a private App Router or routing internal changes.
 
 For each target, CI builds the plugin and runs the package-level Next tests plus the Next.js playgrounds.
 
@@ -113,6 +112,12 @@ The examples below use Playwright as the Vitest browser provider; install it (or
 
 ```bash
 npm install -D @vitest/browser-playwright playwright
+```
+
+For Next.js App Router tests, use `next >=16.2.0` and install a matching `@next/routing` version:
+
+```bash
+npm install -D @next/routing@16.2
 ```
 
 ### 2. Register The Plugin

@@ -52,6 +52,7 @@
     "convert-source-map": "^2.0.0"
   },
   "devDependencies": {
+    "@next/routing": "^16.2.6",
     "@types/convert-source-map": "^2.0.3",
     "@types/estree": "^1.0.9",
     "@types/node": "^24.12.4",
@@ -66,13 +67,17 @@
     "vite": "^8.0.12"
   },
   "peerDependencies": {
+    "@next/routing": ">=16.2.0",
     "msw": "^2",
-    "next": "*",
+    "next": ">=16.2.0",
     "react": "*",
     "react-dom": "*",
     "vite": "*"
   },
   "peerDependenciesMeta": {
+    "@next/routing": {
+      "optional": true
+    },
     "msw": {
       "optional": true
     },

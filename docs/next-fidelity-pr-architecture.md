@@ -56,7 +56,7 @@ Status values: `Not started`, `In progress`, `Blocked`, `Deferred`, `Rejected`,
 | Subgoal                                     | Status      | Branch/PR/Commit | Required Tests                                                          | Notes                                                                                                                         |
 | ------------------------------------------- | ----------- | ---------------- | ----------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
 | 1. Request router split                     | Done        | PR #47 / 1f9dad3 | `request-router.test.ts`; notes-demo routing/redirect/header tests      | Review cleanup tightened the request-router boundary and explicit route override behavior. Local tests and PR CI green.       |
-| 2. Routing data adapter                     | Not started |                  | `routing-data.test.ts`; rewrite ordering tests                          | Convert discovered routes and Next config into `@next/routing`-compatible data if it materially reduces glue.                 |
+| 2. Routing data adapter                     | In progress | PR #47 / pending | `routing-data.test.ts`; rewrite ordering tests                          | Support-matrix trial uses matching `next`/`@next/routing` 16.2/latest/canary. Local checks green; CI pending.                 |
 | 3. App page invoker                         | Not started |                  | `app-page-invoker.test.ts`; notes-demo render/action coverage           | Try real `AppPageRouteModule`; keep direct app-render only if smaller and explicitly isolated.                                |
 | 4. App route invoker decision               | Not started |                  | `app-route-invoker.test.ts` if implemented                              | Either use `AppRouteRouteModule.handle()` or keep route-handler render targets explicitly unsupported.                        |
 | 5. Optimizer entry architecture             | Not started |                  | optimizer entry tests; no-MSW app-shell regression                      | Replace broad `app/**` scan roots with discovered route or virtual entrypoint warmup.                                         |
@@ -107,6 +107,31 @@ Status values: `Not started`, `In progress`, `Blocked`, `Deferred`, `Rejected`,
   - CI: green on PR #47 for `1f9dad3`, including build, format, lint,
     typecheck, Vitest, preview, semantic title, and Next.js
     16.0/16.1/latest/canary compatibility.
+- 2026-05-16 Subgoal 2 start: evaluating `@next/routing` and the routing data
+  boundary. Goal is to adopt it only if it deletes or narrows local
+  request-routing behavior; otherwise record a rejection/defer reason rather
+  than wrapping the same glue.
+- 2026-05-16 Subgoal 2 support-matrix trial: added `@next/routing` as a
+  package dev dependency, set optional `next`/`@next/routing` peers to
+  `>=16.2.0`, updated the Next compatibility matrix to
+  `16.2`/`latest`/`canary` with matching `@next/routing`, and updated README
+  support docs. Registry metadata shows `next` and `@next/routing` aligned at
+  `latest` 16.2.6 and `canary` 16.3.0-canary.21; the published package exposes
+  `resolveRoutes` through its CJS-shaped default export, which the routing
+  adapter must account for. Local verification:
+  - `pnpm info @next/routing version versions --json`
+  - `pnpm info next version dist-tags --json`
+  - `pnpm info @next/routing dist-tags --json`
+  - `pnpm --filter vitest-plugin-rsc add -D @next/routing@^16.2.6`
+  - `pnpm install --frozen-lockfile`
+  - `pnpm --filter vitest-plugin-rsc exec node -e "import('@next/routing').then((m)=>console.log(Object.keys(m).sort()))"`
+  - `pnpm build`
+  - `pnpm tsgo --build`
+  - `pnpm format:check`
+  - `pnpm lint:ci`
+  - `pnpm --filter vitest-plugin-rsc test:run src/nextjs/request-router.test.ts`
+  - `git diff --check`
+  - CI: pending on PR #47.
 
 ## Agent Operating Rules
 
