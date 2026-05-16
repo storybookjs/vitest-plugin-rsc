@@ -31,7 +31,7 @@ import { getNextFontManifestForRender } from "./src/build/webpack/plugins/next-f
 import {
   getNextHttpAccessFallbackStatus,
   isNextHttpAccessFallbackError,
-} from "./flight-payload.ts";
+} from "./src/client/app-index.ts";
 import {
   assertRoutePatternMatchesPath,
   createPageOnlyRoutingData,

@@ -34,7 +34,7 @@ import {
   createNextHttpAccessFallbackError,
   getNextHttpAccessFallbackStatus,
   getNextRedirectUrlFromFlightPayloadText,
-} from "./flight-payload.ts";
+} from "./src/client/app-index.ts";
 import { getNextFontManifestForRender } from "./src/build/webpack/plugins/next-font-manifest-plugin.ts";
 
 type NextIncrementalCacheConstructor =

@@ -4,7 +4,7 @@ import {
   getNextHttpAccessFallbackStatus,
   getNextRedirectUrlFromFlightPayloadText,
   isNextHttpAccessFallbackError,
-} from "./flight-payload.ts";
+} from "./app-index.ts";
 
 test("reads HTTP fallback digests from React Flight error rows", () => {
   const payload = [

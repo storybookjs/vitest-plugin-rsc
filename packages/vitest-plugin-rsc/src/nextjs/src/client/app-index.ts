@@ -6,6 +6,13 @@ import {
 import { getURLFromRedirectError } from "next/dist/client/components/redirect.js";
 import { isRedirectError } from "next/dist/client/components/redirect-error.js";
 
+// Source: https://github.com/vercel/next.js/blob/ee6e79b1792a4d401ddf2480f40a83549fe8e722/packages/next/src/client/app-index.tsx#L58-L115
+// Source: https://github.com/vercel/next.js/blob/ee6e79b1792a4d401ddf2480f40a83549fe8e722/packages/next/src/client/components/http-access-fallback/http-access-fallback.ts#L1-L64
+// Source: https://github.com/vercel/next.js/blob/ee6e79b1792a4d401ddf2480f40a83549fe8e722/packages/next/src/client/components/redirect-error.ts#L1-L46
+// Adaptation: Browser-mode tests inspect Flight text before React consumes it
+// so Next HTTP access fallback and redirect control-flow errors can be surfaced
+// through the same client digest helpers Next uses.
+// Begin adapted: Next.js app-index Flight control-flow payload parsing
 export function createNextHttpAccessFallbackError(status: number) {
   const error = new Error(`${HTTP_ERROR_FALLBACK_ERROR_CODE};${status}`) as Error & {
     digest: `${typeof HTTP_ERROR_FALLBACK_ERROR_CODE};${number}`;
@@ -100,3 +107,4 @@ function findEncodedControlFlowDigest(payload: string) {
 function createDigestError(digest: string | undefined) {
   return digest ? Object.assign(new Error(digest), { digest }) : undefined;
 }
+// End adapted
