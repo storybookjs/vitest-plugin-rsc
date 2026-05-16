@@ -1,26 +1,23 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { Plugin } from "vite";
-import { getProjectRoot, normalizePath, tryResolveFromProject } from "../plugin-utils.ts";
+import { getProjectRoot, normalizePath, tryResolveFromProject } from "../../../plugin-utils.ts";
 
+// Source: https://github.com/vercel/next.js/blob/ee6e79b1792a4d401ddf2480f40a83549fe8e722/packages/next/src/server/app-render/entry-base.ts#L13-L44
+// Source: https://github.com/vercel/next.js/blob/ee6e79b1792a4d401ddf2480f40a83549fe8e722/packages/next/src/build/webpack/plugins/flight-client-entry-plugin.ts
+// Adaptation: Next's app-render entry-base is a server-layer CJS module that
+// re-exports client components via relative require() calls. Webpack/Turbopack
+// layer metadata keeps those imports as client references, while Vite/Rolldown
+// dep optimization can inline the CJS `"use client"` modules into the RSC
+// optimized chunk. This bridge keeps the real Next entry-base module and
+// intercepts only these entry-base imports so the RSC graph receives client
+// references and browser/SSR graphs load the real Next client modules.
+// Begin adapted: Next.js app-render entry-base client reference bridge
 const virtualNextEntryBaseClientReferencePrefix =
   "\0vitest-plugin-rsc:next-entry-base-client-reference:";
 const virtualNextEntryBaseClientReferencePublicPrefix =
   "virtual:vitest-plugin-rsc/next-entry-base-client-reference/";
 
-// Next's app-render entry-base is a server-layer CJS module that re-exports
-// client components via relative require() calls. Next's webpack/Turbopack
-// layer metadata keeps those imports as client references. Vite/Rolldown dep
-// optimization otherwise inlines the CJS "use client" modules into the RSC
-// optimized chunk, so they execute with React Server aliases. Keep the real
-// Next entry-base module, but intercept only these entry-base imports so the
-// RSC graph receives client references and the browser/SSR graphs load the
-// real Next client modules.
-// Source: https://github.com/vercel/next.js/blob/4588a7354283f97e2124e3d82f55733ca4eb9373/packages/next/src/server/app-render/entry-base.ts
-// Source: https://github.com/vercel/next.js/blob/4588a7354283f97e2124e3d82f55733ca4eb9373/packages/next/src/build/webpack/plugins/flight-client-entry-plugin.ts
-// Upstream direction: @vitejs/plugin-rsc could preserve CJS "use client"
-// dependency boundaries during RSC dep optimization, externalize/proxy those
-// modules, and register that proxy with registerClientReference.
 export function useNextEntryBaseClientReferences(initialRoot = process.cwd()): Plugin {
   let root = initialRoot;
 
@@ -196,3 +193,4 @@ function readNextCommonJsExports(file: string) {
 
   return names.length > 0 ? names : undefined;
 }
+// End adapted

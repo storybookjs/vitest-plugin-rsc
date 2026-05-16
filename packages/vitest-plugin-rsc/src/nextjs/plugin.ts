@@ -18,7 +18,7 @@ import { useNextImageClientReference } from "./src/build/webpack/loaders/next-im
 import { useNextMetadataImageLoader } from "./src/build/webpack/loaders/next-metadata-image-loader.ts";
 import { useNextBuiltinGlobalErrorStub } from "./src/client/components/builtin/global-error.ts";
 import { useNextCacheHandlers } from "./src/server/use-cache/handlers.ts";
-import { useNextEntryBaseClientReferences } from "./plugin/entry-base-client-references.ts";
+import { useNextEntryBaseClientReferences } from "./src/server/app-render/entry-base.ts";
 import {
   createNextSourceOptimizerEntries,
   nextRootParamsOptimizeDepsExclude,

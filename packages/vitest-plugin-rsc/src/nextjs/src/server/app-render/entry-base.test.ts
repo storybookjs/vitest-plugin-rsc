@@ -2,8 +2,8 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { expect, test } from "vitest";
-import { useNextEntryBaseClientReferences } from "./entry-base-client-references.ts";
-import { fixtureRoot, getHookHandler } from "./test-utils.ts";
+import { fixtureRoot, getHookHandler } from "../../../plugin/test-utils.ts";
+import { useNextEntryBaseClientReferences } from "./entry-base.ts";
 
 test("proxies Next entry-base client imports as RSC client references", async () => {
   const plugin = useNextEntryBaseClientReferences();
