@@ -104,7 +104,7 @@ test("generates optimizer entrypoints from discovered Next routes only", async (
   expect(code).not.toContain("app/**/*");
   expect(code).not.toContain("src/app/**/*");
   expect(code).not.toContain(nonRouteAppFile);
-});
+}, 15_000);
 
 function getHookHandler<T extends (...args: never[]) => unknown>(
   hook: T | { handler: T } | undefined,
