@@ -141,7 +141,7 @@ This is not a generic CJS dependency transform. If `@vitejs/plugin-rsc` preserve
 
 Next SWC runs narrowly for source-level Next features such as `next/font` and `next/dynamic`. It imports Next's real SWC transform and loader option helpers.
 
-Keep `serverComponents: false` and do not globally enable Next's RSC or Server Action transforms. Vite RSC owns directives and references. For `use cache`, the adapter uses a Vite RSC hoist path plus Next's cache runtime wrapper rather than handing the RSC graph to Next's compiler.
+Keep `serverComponents: false` and do not globally enable Next's RSC or Server Action transforms. Vite RSC owns directives and references. For `use cache`, the adapter uses `@vitejs/plugin-rsc`'s hoist transform plus Next's cache runtime wrapper rather than handing the RSC graph to Next's compiler.
 
 Turbopack and Rust Next sources are useful sources of truth for compiler behavior. They are not permission to implement a Turbopack graph inside Vite. Turbopack-derived behavior must stay inside small adapters with tests for user-visible behavior.
 
