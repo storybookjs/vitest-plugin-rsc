@@ -1,5 +1,5 @@
 import { notFound, redirect } from "next/navigation";
-import { NextActionProtocolClient } from "./next-action-protocol-client";
+import { NextActionProtocolClient } from "./next-action-protocol-client.tsx";
 
 export function NextActionProtocolProbe() {
   async function defaultRedirectAction() {

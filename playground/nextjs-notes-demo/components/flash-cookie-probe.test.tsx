@@ -2,7 +2,7 @@ import { expect, test } from "vitest";
 import { page } from "vitest/browser";
 import { renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
 
-import FlashCookieProbe from "./flash-cookie-probe";
+import FlashCookieProbe from "./flash-cookie-probe.tsx";
 
 test("headers and cookies follow the documented request API methods", async () => {
   const requestHeaders = new Headers();

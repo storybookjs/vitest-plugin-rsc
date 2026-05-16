@@ -1,8 +1,8 @@
 // based on test cases in
 // https://github.com/vercel/next.js/blob/ad898de735c393d98960a68c8d9eaeee32206c57/test/e2e/app-dir/actions/app/encryption/page.js
 
-import { ActionBindClient } from "./client";
-import { TestServerActionBindClientForm } from "./form";
+import { ActionBindClient } from "./client.tsx";
+import { TestServerActionBindClientForm } from "./form.tsx";
 
 let testServerActionBindSimpleState = "[?]";
 let testServerActionBindActionState = "[?]";

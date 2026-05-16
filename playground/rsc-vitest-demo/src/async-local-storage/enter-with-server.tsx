@@ -4,7 +4,7 @@ import {
   getOptionalCurrentUser,
   injectUserContext,
   type UserStore,
-} from "./user-storage";
+} from "./user-storage.ts";
 
 export function UserContextProvider({
   children,

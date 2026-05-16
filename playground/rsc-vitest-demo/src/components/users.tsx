@@ -1,4 +1,4 @@
-import { Like } from "./like";
+import { Like } from "./like.tsx";
 import { getAllUsers } from "../lib/api.ts";
 import { db, getLikes } from "../lib/db.ts";
 

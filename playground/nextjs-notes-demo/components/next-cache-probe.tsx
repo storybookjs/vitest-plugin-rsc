@@ -3,7 +3,7 @@ import {
   nextCacheProbeFetchUrl,
   nextCacheProbeNoStoreFetchUrl,
   resetNextCacheProbeFetch,
-} from "./next-cache-msw";
+} from "./next-cache-msw.ts";
 
 const dataTag = "next-cache-probe:data";
 const fetchTag = "next-cache-probe:fetch";

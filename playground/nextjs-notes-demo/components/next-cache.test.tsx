@@ -1,7 +1,7 @@
 import { expect, test } from "vitest";
 import { page } from "vitest/browser";
 import { cleanup, renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
-import { NextCacheProbe, resetNextCacheProbe } from "./next-cache-probe";
+import { NextCacheProbe, resetNextCacheProbe } from "./next-cache-probe.tsx";
 
 test("server refresh rerenders without invalidating cached data or fetches", async () => {
   await renderNextCacheProbe();
