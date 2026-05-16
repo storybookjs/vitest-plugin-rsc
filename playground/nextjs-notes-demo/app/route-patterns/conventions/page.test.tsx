@@ -28,6 +28,16 @@ test("document hydration preserves Vitest harness scripts while applying Next me
   }
 });
 
+test("document hydration preserves CSS imported by the Vitest setup", async () => {
+  const beforeBackground = readCssVariable("--background");
+  expect(beforeBackground).toMatch(/^oklch\(/);
+
+  await renderServer({ url: "/route-patterns/conventions" });
+
+  await expect.element(page.getByRole("heading", { name: "Route conventions" })).toBeVisible();
+  expect(readCssVariable("--background")).toBe(beforeBackground);
+});
+
 test("Next loader tree includes route-level loading conventions", async () => {
   const { nextRouteManifest } = await import("virtual:vitest-plugin-rsc/next-routes");
   const entry = nextRouteManifest.find((route) => route.route === "/route-patterns/conventions");
@@ -138,6 +148,10 @@ function getVitestHarnessScriptSources() {
   return Array.from(document.head.querySelectorAll<HTMLScriptElement>("script[src]"))
     .map((script) => script.getAttribute("src"))
     .filter((src): src is string => Boolean(src && isVitestRuntimeUrl(src)));
+}
+
+function readCssVariable(name: string) {
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 }
 
 function isVitestRuntimeUrl(value: string) {

@@ -536,14 +536,11 @@ Pass `url` when the component needs location-aware behavior — `usePathname`, `
 ```tsx
 import { expect, test, vi } from "vitest";
 import { page } from "vitest/browser";
-import {
-  expectToHaveBeenNavigatedTo,
-  renderServer,
-} from "vitest-plugin-rsc/nextjs/testing-library";
+import { renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
 
 import { NoteToolbar } from "./note-toolbar";
 
-test("reads router state and records navigation", async () => {
+test("reads router state and navigates", async () => {
   await renderServer(<NoteToolbar />, {
     url: "/notes/123?tab=activity",
     route: "/notes/[id]",
@@ -555,7 +552,7 @@ test("reads router state and records navigation", async () => {
   await expect.element(page.getByText("segments: notes/123")).toBeVisible();
 
   await page.getByRole("button", { name: "Go to notes" }).click();
-  await vi.waitFor(() => expectToHaveBeenNavigatedTo({ pathname: "/notes" }));
+  await vi.waitFor(() => expect(window.location.pathname).toBe("/notes"));
 });
 ```
 
@@ -606,14 +603,11 @@ export function NoteToolbar() {
 }
 ```
 
-Client navigation is observable through `expectToHaveBeenNavigatedTo`:
+Client navigation is observable through the browser location:
 
 ```tsx
-import { vi } from "vitest";
-import {
-  expectToHaveBeenNavigatedTo,
-  renderServer,
-} from "vitest-plugin-rsc/nextjs/testing-library";
+import { expect, vi } from "vitest";
+import { renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
 
 await renderServer(<NoteToolbar />, {
   url: "/notes/123?tab=activity",
@@ -621,10 +615,10 @@ await renderServer(<NoteToolbar />, {
 });
 
 await page.getByRole("button", { name: "Go to notes" }).click();
-await vi.waitFor(() => expectToHaveBeenNavigatedTo({ pathname: "/notes" }));
+await vi.waitFor(() => expect(window.location.pathname).toBe("/notes"));
 ```
 
-Server Action redirects are handled through the same App Router path. Same-origin redirects update the route render or record a client-side navigation, depending on the action response.
+Server Action redirects are handled through the same App Router path. Same-origin redirects update the browser location and render the target route UI.
 
 ### Next Config Routes
 

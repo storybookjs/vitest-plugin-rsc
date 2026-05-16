@@ -175,8 +175,14 @@ function isTesterHeadNode(node: ChildNode): boolean {
   if (node.hasAttribute(preserveHeadAttribute)) return true;
 
   const tagName = node.tagName.toLowerCase();
+  if (tagName === "style") {
+    return true;
+  }
   if (tagName === "script") {
     return isVitestRuntimeUrl(node.getAttribute("src"));
+  }
+  if (tagName === "link" && node.getAttribute("rel") === "stylesheet") {
+    return isVitestRuntimeUrl(node.getAttribute("href"));
   }
   if (tagName === "link" && node.getAttribute("rel") === "modulepreload") {
     return isVitestRuntimeUrl(node.getAttribute("href"));
