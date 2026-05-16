@@ -4,10 +4,11 @@ import type { Plugin } from "vite";
 import { parseAstAsync } from "vite";
 import { loadNextProjectConfig } from "../config.ts";
 import { getProjectRoot, isProjectFile, normalizePath } from "../plugin-utils.ts";
-import { virtualNextCacheHandlersPublicId } from "../src/server/use-cache/handlers.ts";
-
-const virtualNextUseCacheRuntimeId = "\0vitest-plugin-rsc:next-use-cache-runtime";
-const virtualNextUseCacheRuntimePublicId = "virtual:vitest-plugin-rsc/next-use-cache-runtime";
+import {
+  createNextUseCacheRuntimeModule,
+  virtualNextUseCacheRuntimeId,
+  virtualNextUseCacheRuntimePublicId,
+} from "../src/server/use-cache/use-cache-wrapper.ts";
 
 export function useNextUseCacheTransform(): Plugin {
   let root = process.cwd();
@@ -51,12 +52,14 @@ export function useNextUseCacheTransform(): Plugin {
       const ast = await parseAstAsync(code, { lang: getParserLanguage(id) }, id);
       assertSupportedNextUseCacheFunctions(ast, id);
 
-      // Use the RSC plugin's directive hoist instead of a local parser/regex
-      // transform. Next owns cache runtime semantics; @vitejs/plugin-rsc owns
-      // directive hoisting and RSC graph transforms in this Vite harness.
-      // Source: https://github.com/vercel/next.js/blob/4588a7354283f97e2124e3d82f55733ca4eb9373/packages/next/src/server/use-cache/use-cache-wrapper.ts
-      // Source: https://github.com/vercel/next.js/blob/4588a7354283f97e2124e3d82f55733ca4eb9373/packages/next/src/build/webpack/loaders/next-flight-loader/action-client-wrapper.ts
+      // Source: https://github.com/vercel/next.js/blob/ee6e79b1792a4d401ddf2480f40a83549fe8e722/packages/next/src/server/use-cache/use-cache-wrapper.ts
+      // Source: https://github.com/vercel/next.js/blob/ee6e79b1792a4d401ddf2480f40a83549fe8e722/packages/next/src/build/webpack/loaders/next-flight-loader/action-client-wrapper.ts
       // Source: https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-rsc/src/transforms/hoist-inline-directive.ts
+      // Adaptation: @vitejs/plugin-rsc owns directive hoisting and the RSC
+      // graph in this Vite harness. This block adapts that hoist output into
+      // Next's `cache(kind, id, boundArgsLength, originalFn, args)` runtime
+      // without enabling Next's webpack/Turbopack RSC transforms.
+      // Begin adapted: Next.js use-cache source transform bridge
       const result = transformHoistInlineDirective(code, ast as never, {
         runtime: (value, name, meta) => {
           const kind = getNextUseCacheKind(meta.directiveMatch[1]);
@@ -68,6 +71,7 @@ export function useNextUseCacheTransform(): Plugin {
         rejectNonAsyncFunction: true,
         noExport: true,
       });
+      // End adapted
       if (!result.output.hasChanged()) return;
 
       result.output.prepend(
@@ -79,58 +83,6 @@ export function useNextUseCacheTransform(): Plugin {
       };
     },
   };
-}
-
-function createNextUseCacheRuntimeModule() {
-  return `import { cache as __next_use_cache } from "next/dist/server/use-cache/use-cache-wrapper.js";
-import { defaultConfig as __next_default_config } from "next/dist/server/config-shared.js";
-import { initializeCacheHandlers as __next_initialize_cache_handlers, setCacheHandler as __next_set_cache_handler } from "next/dist/server/use-cache/handlers.js";
-import { nextCacheHandlers as __next_cache_handlers } from ${JSON.stringify(virtualNextCacheHandlersPublicId)};
-
-let __next_cache_handlers_promise;
-
-function __next_read_define_number(value, fallback) {
-  if (typeof value === "number") return value;
-  if (typeof value !== "string" || value.length === 0) return fallback;
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : fallback;
-}
-
-function __next_read_define_object(value) {
-  if (!value) return {};
-  if (typeof value === "object") return value;
-  if (typeof value !== "string") return {};
-  try {
-    const parsed = JSON.parse(value);
-    return typeof parsed === "object" && parsed !== null ? parsed : {};
-  } catch {
-    return {};
-  }
-}
-
-async function __next_ensure_cache_handlers() {
-  __next_initialize_cache_handlers(
-    __next_read_define_number(
-      process.env.__NEXT_CACHE_MAX_MEMORY_SIZE,
-      __next_default_config.cacheMaxMemorySize ?? 50 * 1024 * 1024,
-    ),
-  );
-  const configuredCacheHandlers = __next_read_define_object(process.env.__NEXT_CACHE_HANDLERS);
-  for (const [kind, handlerPath] of Object.entries(configuredCacheHandlers)) {
-    if (typeof handlerPath !== "string" || handlerPath.length === 0) continue;
-    const cacheHandler = __next_cache_handlers[kind];
-    if (cacheHandler) __next_set_cache_handler(kind, cacheHandler);
-  }
-}
-
-export function __next_rsc_use_cache(kind, id, originalFn) {
-  return async (...args) => {
-    __next_cache_handlers_promise ??= __next_ensure_cache_handlers();
-    await __next_cache_handlers_promise;
-    return __next_use_cache(kind, id, 0, originalFn, args);
-  };
-}
-`;
 }
 
 function assertSupportedNextUseCacheFunctions(ast: unknown, id: string) {
