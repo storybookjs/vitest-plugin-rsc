@@ -1,9 +1,21 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { Plugin, ResolvedConfig } from "vite";
-import { loadNextProjectConfig } from "./config.ts";
-import { createProjectRequire, getProjectRoot } from "./plugin-utils.ts";
+import { loadNextProjectConfig } from "../../../../../config.ts";
+import { createProjectRequire, getProjectRoot } from "../../../../../plugin-utils.ts";
 
+// Mirror/adapt: Next.js next-image-loader and next/image external helper.
+// Source: https://github.com/vercel/next.js/blob/ee6e79b1792a4d401ddf2480f40a83549fe8e722/packages/next/src/build/webpack/loaders/next-image-loader/index.ts#L15-L87
+// Source: https://github.com/vercel/next.js/blob/ee6e79b1792a4d401ddf2480f40a83549fe8e722/packages/next/src/shared/lib/image-external.tsx#L17-L34
+// Adaptation: Vite resolves static image imports to a virtual module, invokes
+// Next's installed image loader, and keeps `next/image` as a client reference
+// while preserving the server-callable `getImageProps` helper.
+
+// Begin adapted: Next.js next-image-loader and next/image bridge
+// Source: https://github.com/vercel/next.js/blob/ee6e79b1792a4d401ddf2480f40a83549fe8e722/packages/next/src/build/webpack/loaders/next-image-loader/index.ts#L15-L87
+// Source: https://github.com/vercel/next.js/blob/ee6e79b1792a4d401ddf2480f40a83549fe8e722/packages/next/src/shared/lib/image-external.tsx#L17-L34
+// Adaptation: Replace webpack static-asset emission with Vite dev middleware
+// or Rollup assets, and expose the same observable module payloads.
 const virtualNextImageId = "virtual:vitest-plugin-rsc/next-image";
 const virtualNextImageClientReferenceId = "virtual:vitest-plugin-rsc/next-image-client-reference";
 const virtualNextStaticImagePrefix = "\0vitest-plugin-rsc:next-static-image:";
@@ -250,3 +262,4 @@ function createNoopTraceSpan(): NextTraceSpan {
   };
   return span;
 }
+// End adapted

@@ -2,10 +2,10 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, test } from "vitest";
-import { useNextImageClientReference } from "./image-plugin.ts";
+import { useNextImageClientReference } from "./index.ts";
 
 const fixtureRoot = fileURLToPath(
-  new URL("../../../../playground/nextjs-notes-demo/", import.meta.url),
+  new URL("../../../../../../../../../playground/nextjs-notes-demo/", import.meta.url),
 );
 const tinyPngBase64 =
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=";

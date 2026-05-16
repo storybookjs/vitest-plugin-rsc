@@ -2,8 +2,18 @@ import { Buffer } from "node:buffer";
 import fs from "node:fs";
 import path from "node:path";
 import type { Plugin } from "vite";
-import { createProjectRequire, getProjectRoot, splitOnce } from "./plugin-utils.ts";
+import { createProjectRequire, getProjectRoot, splitOnce } from "../../../../plugin-utils.ts";
 
+// Mirror/adapt: Next.js next-metadata-image-loader.
+// Source: https://github.com/vercel/next.js/blob/ee6e79b1792a4d401ddf2480f40a83549fe8e722/packages/next/src/build/webpack/loaders/next-metadata-image-loader.ts#L30-L188
+// Adaptation: Vite resolves the Next loader request to a virtual module, calls
+// the installed loader, and emulates the tiny webpack `loadModule` export shape
+// needed by dynamic metadata image routes.
+
+// Begin adapted: Next.js next-metadata-image-loader virtual module bridge
+// Source: https://github.com/vercel/next.js/blob/ee6e79b1792a4d401ddf2480f40a83549fe8e722/packages/next/src/build/webpack/loaders/next-metadata-image-loader.ts#L30-L188
+// Adaptation: Preserve Next loader options, resource query handling, and
+// dynamic metadata export discovery while replacing webpack loader context APIs.
 const virtualNextMetadataImageLoaderPrefix = "\0vitest-plugin-rsc:next-metadata-image-loader:";
 
 export function useNextMetadataImageLoader(): Plugin {
@@ -58,6 +68,7 @@ export function useNextMetadataImageLoader(): Plugin {
     },
   };
 }
+// End adapted
 
 type NextMetadataImageLoaderContext = {
   getOptions(): NextMetadataImageLoaderOptions;

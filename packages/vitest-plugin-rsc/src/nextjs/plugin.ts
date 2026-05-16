@@ -1,9 +1,6 @@
 import type { Plugin } from "vite";
 import { useNextAppRenderCompatibility } from "./app-render-compat-plugin.ts";
 import { useNextLinkClientReference } from "./client-reference-plugin.ts";
-import { useNextFontLoader } from "./font-loader-plugin.ts";
-import { useNextImageClientReference } from "./image-plugin.ts";
-import { useNextMetadataImageLoader } from "./metadata-image-loader-plugin.ts";
 import {
   appRouterApiPlugin,
   createAppRouterApiAliasesFromNext,
@@ -16,6 +13,9 @@ import {
   useNextCompiledOpenTelemetryApi,
   useNextReactDomServerAlias,
 } from "./src/build/webpack-config.ts";
+import { useNextFontLoader } from "./src/build/webpack/loaders/next-font-loader/index.ts";
+import { useNextImageClientReference } from "./src/build/webpack/loaders/next-image-loader/index.ts";
+import { useNextMetadataImageLoader } from "./src/build/webpack/loaders/next-metadata-image-loader.ts";
 import { useNextBuiltinGlobalErrorStub } from "./plugin/builtin-global-error.ts";
 import { useNextCacheHandlers } from "./plugin/cache-handlers.ts";
 import { useNextEntryBaseClientReferences } from "./plugin/entry-base-client-references.ts";

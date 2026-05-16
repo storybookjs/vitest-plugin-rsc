@@ -2,9 +2,25 @@ import { Buffer } from "node:buffer";
 import fs from "node:fs";
 import path from "node:path";
 import type { Plugin, ResolvedConfig } from "vite";
-import { loadNextProjectConfig } from "./config.ts";
-import { createProjectRequire, getProjectRoot, normalizePath } from "./plugin-utils.ts";
+import { loadNextProjectConfig } from "../../../../../config.ts";
+import {
+  createProjectRequire,
+  getProjectRoot,
+  normalizePath,
+} from "../../../../../plugin-utils.ts";
 
+// Mirror/adapt: Next.js next-font-loader.
+// Source: https://github.com/vercel/next.js/blob/ee6e79b1792a4d401ddf2480f40a83549fe8e722/packages/next/src/build/webpack/loaders/next-font-loader/index.ts#L9-L166
+// Source: https://github.com/vercel/next.js/blob/ee6e79b1792a4d401ddf2480f40a83549fe8e722/packages/next/src/build/webpack/loaders/next-font-loader/postcss-next-font.ts#L21-L194
+// Adaptation: Vite resolves the SWC-generated next/font target CSS import to a
+// virtual module, calls Next's installed font loader and postcss transform, and
+// translates webpack asset emission to Vite dev middleware or Rollup assets.
+
+// Begin adapted: Next.js next-font-loader virtual module bridge
+// Source: https://github.com/vercel/next.js/blob/ee6e79b1792a4d401ddf2480f40a83549fe8e722/packages/next/src/build/webpack/loaders/next-font-loader/index.ts#L9-L166
+// Source: https://github.com/vercel/next.js/blob/ee6e79b1792a4d401ddf2480f40a83549fe8e722/packages/next/src/build/webpack/loaders/next-font-loader/postcss-next-font.ts#L21-L194
+// Adaptation: Preserve Next font loader inputs, generated CSS module classes,
+// and manifest side effects while replacing webpack loader context APIs.
 const virtualNextFontPrefix = "virtual:vitest-plugin-rsc/next-font/";
 const fontAssetPlaceholderPrefix = "__vitest_plugin_rsc_next_font_asset__";
 
@@ -417,3 +433,4 @@ function getNextFontManifestKeys(root: string, importer: string) {
 function stripExtension(file: string) {
   return file.replace(/\.[^./\\]+$/, "");
 }
+// End adapted

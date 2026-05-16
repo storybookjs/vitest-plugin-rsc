@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { expect, test } from "vitest";
-import { useNextMetadataImageLoader } from "./metadata-image-loader-plugin.ts";
+import { useNextMetadataImageLoader } from "./next-metadata-image-loader.ts";
 
 test("invokes Next metadata image loader for static metadata image files", async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "vitest-plugin-rsc-metadata-image-"));
