@@ -98,10 +98,10 @@ test("converts discovered pages, route handlers, and custom routes to routing da
   expect(data.routes.dynamicRoutes).toEqual(
     expect.arrayContaining([
       expect.objectContaining({
-        destination: "/route-patterns/[team]/settings",
+        destination: expect.stringContaining("/route-patterns/[team]/settings?nxtPteam=$nxtPteam"),
       }),
       expect.objectContaining({
-        destination: "/route-patterns/docs/[...slug]",
+        destination: expect.stringContaining("/route-patterns/docs/[...slug]?nxtPslug=$nxtPslug"),
       }),
     ]),
   );
@@ -154,9 +154,10 @@ test("selects dynamic app routes after afterFiles rewrites", async () => {
 
   expect(result.resolvedPathname).toBe("/route-patterns/[team]/settings");
   expect(result.invocationTarget?.pathname).toBe("/route-patterns/acme/settings");
-  expect(result.routeMatches).toMatchObject({ team: "acme" });
+  expect(result.routeMatches).toMatchObject({ nxtPteam: "acme" });
   expect(result.resolvedQuery).toMatchObject({
     from: "after-files",
+    nxtPteam: "acme",
   });
   expect(result.resolvedHeaders?.get("x-route-team")).toBeNull();
   expect(result.resolvedQuery).not.toHaveProperty("team");
@@ -221,15 +222,15 @@ test("preserves query delimiters after non-modified custom route params", async 
 
   expect(result.resolvedPathname).toBe("/posts/[slug]");
   expect(result.invocationTarget?.pathname).toBe("/posts/config");
-  expect(result.resolvedQuery).toEqual({ from: "legacy" });
+  expect(result.resolvedQuery).toEqual({ from: "legacy", nxtPslug: "config" });
 });
 
-test("routes catch-all dynamic app routes without leaking params into query", async () => {
+test("routes catch-all dynamic app routes with Next route-key query params", async () => {
   const result = await resolveRoute("/route-patterns/docs/a/b");
 
   expect(result.resolvedPathname).toBe("/route-patterns/docs/[...slug]");
   expect(result.invocationTarget?.pathname).toBe("/route-patterns/docs/a/b");
-  expect(result.resolvedQuery).toEqual({});
+  expect(result.resolvedQuery).toEqual({ nxtPslug: "a/b" });
 });
 
 test("preserves user query params that share dynamic route param keys", async () => {
@@ -237,8 +238,8 @@ test("preserves user query params that share dynamic route param keys", async ()
 
   expect(result.resolvedPathname).toBe("/route-patterns/docs/[...slug]");
   expect(result.invocationTarget?.pathname).toBe("/route-patterns/docs/a/b");
-  expect(result.resolvedQuery).toEqual({ mode: "docs", slug: "query" });
-  expect(result.routeMatches).toMatchObject({ slug: "a/b" });
+  expect(result.resolvedQuery).toEqual({ mode: "docs", nxtPslug: "a/b", slug: "query" });
+  expect(result.routeMatches).toMatchObject({ nxtPslug: "a/b" });
 });
 
 test("returns redirects as Next adapter status and Location headers", async () => {
@@ -248,6 +249,28 @@ test("returns redirects as Next adapter status and Location headers", async () =
   expect(result.status).toBe(307);
   expect(result.resolvedHeaders?.get("location")).toBe("/next-apis?from=config");
   expect(result.resolvedHeaders?.get("x-legacy-slug")).toBe("config");
+});
+
+test("converts Next internal trailing slash redirects on the plugin side", async () => {
+  const data = createNextRoutingData({
+    ...manifest,
+    customRoutes: {
+      ...manifest.customRoutes,
+      redirects: [
+        {
+          source: "/:path+/",
+          destination: "/:path+",
+          permanent: true,
+          internal: true,
+          priority: true,
+        } as (typeof manifest.customRoutes.redirects)[number],
+      ],
+    },
+  });
+  const result = await resolveRoute("/route-patterns/docs/", data);
+
+  expect(result.status).toBe(308);
+  expect(result.resolvedHeaders?.get("location")).toBe("/route-patterns/docs");
 });
 
 async function resolveRoute(path: string, data: NextRoutingData = createNextRoutingData(manifest)) {

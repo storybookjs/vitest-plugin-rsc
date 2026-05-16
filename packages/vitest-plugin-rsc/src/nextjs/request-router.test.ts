@@ -6,10 +6,11 @@ import {
   type NextRouteManifest,
   type NextRouteManifestEntry,
 } from "./request-router";
+import { createNextRoutingData } from "./routing-data";
 
 const loaderTree = [] as unknown as LoaderTree;
 
-const manifest: NextRouteManifest = {
+const manifestRoutes = {
   pages: [
     page("/next-apis"),
     page("/before-target"),
@@ -54,6 +55,11 @@ const manifest: NextRouteManifest = {
       ],
     },
   },
+} satisfies Omit<NextRouteManifest, "routingData">;
+
+const manifest: NextRouteManifest = {
+  ...manifestRoutes,
+  routingData: createNextRoutingData(manifestRoutes),
 };
 
 test("resolves beforeFiles rewrites to app pages", async () => {

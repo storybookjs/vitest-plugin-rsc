@@ -3,6 +3,7 @@ import path from "node:path";
 import type { Plugin } from "vite";
 import { loadNextProjectConfig, type NextProjectConfig } from "./config";
 import { createProjectRequire, getProjectRoot, normalizePath } from "./plugin-utils";
+import { createNextRoutingData } from "./routing-data";
 
 const virtualNextRouteManifestId = "\0vitest-plugin-rsc:next-route-manifest";
 const virtualNextRouteManifestPublicId = "virtual:vitest-plugin-rsc/next-routes";
@@ -226,6 +227,12 @@ function generateNextRouteManifest(
   routeHandlers: NextRouteHandlerManifestBuildEntry[],
   projectConfig: NextProjectConfig,
 ) {
+  const routingData = createNextRoutingData({
+    pages: entries,
+    routeHandlers,
+    customRoutes: projectConfig.customRoutes,
+    nextConfig: projectConfig.nextConfig,
+  });
   const imports = entries
     .map((entry, index) => {
       const params = new URLSearchParams({ pageFile: entry.pageFile });
@@ -254,7 +261,7 @@ function generateNextRouteManifest(
     )
     .join(",")}]`;
 
-  return `${imports}\nexport const nextRouteManifest = ${manifest};\nexport const nextRouteHandlerManifest = ${routeHandlerManifest};\nexport const nextCustomRoutes = ${JSON.stringify(projectConfig.customRoutes)};\n`;
+  return `${imports}\nexport const nextRouteManifest = ${manifest};\nexport const nextRouteHandlerManifest = ${routeHandlerManifest};\nexport const nextCustomRoutes = ${JSON.stringify(projectConfig.customRoutes)};\nexport const nextRoutingData = ${JSON.stringify(routingData)};\n`;
 }
 
 async function generateNextRouteTreeModule(

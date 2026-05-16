@@ -31,6 +31,7 @@ import { getNextFontManifestForRender } from "./font-manifest";
 import { getNextHttpAccessFallbackStatus, isNextHttpAccessFallbackError } from "./flight-payload";
 import {
   assertRoutePatternMatchesPath,
+  createPageOnlyRoutingData,
   resolveNextRequestTarget,
   resolveRedirectUrl,
   type NextCustomRoutes,
@@ -845,12 +846,13 @@ function createAppPageFromRoutePattern(routePattern: string) {
 }
 
 async function loadNextRouteManifest() {
-  const { nextRouteManifest, nextRouteHandlerManifest, nextCustomRoutes } =
+  const { nextRouteManifest, nextRouteHandlerManifest, nextCustomRoutes, nextRoutingData } =
     await import("virtual:vitest-plugin-rsc/next-routes");
   return {
     pages: nextRouteManifest as NextRouteManifestEntry[],
     routeHandlers: nextRouteHandlerManifest as NextRouteHandlerManifestEntry[],
     customRoutes: nextCustomRoutes as NextCustomRoutes,
+    routingData: nextRoutingData,
   } satisfies NextRouteManifest;
 }
 
@@ -937,6 +939,7 @@ function createPageOnlyRouteManifest(pages: NextRouteManifestEntry[]): NextRoute
         fallback: [],
       },
     },
+    routingData: createPageOnlyRoutingData(pages),
   };
 }
 

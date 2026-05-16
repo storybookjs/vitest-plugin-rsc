@@ -1,11 +1,15 @@
 import type { CustomRoutes } from "next/dist/lib/load-custom-routes.js";
-import type { RouteInvocationTarget } from "@next/routing";
+import type { Route as NextRoutingRoute, RouteInvocationTarget } from "@next/routing";
 import type { LoaderTree } from "next/dist/server/lib/app-dir-module.js";
+import { normalizeNextQueryParam } from "next/dist/server/web/utils.js";
 import { normalizeAppPath } from "next/dist/shared/lib/router/utils/app-paths.js";
 import { getRouteMatcher } from "next/dist/shared/lib/router/utils/route-matcher.js";
-import { getRouteRegex } from "next/dist/shared/lib/router/utils/route-regex.js";
+import {
+  getNamedRouteRegex,
+  getRouteRegex,
+} from "next/dist/shared/lib/router/utils/route-regex.js";
 import { resolveRoutes } from "./next-routing";
-import { createNextRoutingData } from "./routing-data";
+import type { NextRoutingData } from "./routing-data";
 
 export type NextRouteManifestEntry = {
   route: string;
@@ -24,6 +28,7 @@ export type NextRouteManifest = {
   pages: NextRouteManifestEntry[];
   routeHandlers: NextRouteHandlerManifestEntry[];
   customRoutes: NextCustomRoutes;
+  routingData: NextRoutingData;
 };
 
 export type NextCustomRoutes = CustomRoutes;
@@ -83,7 +88,7 @@ export async function resolveNextRequestTarget(options: {
   manifest: NextRouteManifest;
 }): Promise<NextRequestTarget> {
   const requestedUrl = new URL(options.url, "http://localhost");
-  const routingData = createNextRoutingData(options.manifest);
+  const routingData = options.manifest.routingData;
   const result = await resolveRoutes({
     url: requestedUrl,
     buildId: "BUILD_ID",
@@ -168,7 +173,7 @@ export async function resolveNextRequestTarget(options: {
 }
 
 function matchRoutePattern(routePattern: string, pathname: string) {
-  return matchRoutePatternParams(routePattern, pathname) !== undefined;
+  return matchDirectRenderRoutePatternParams(routePattern, pathname) !== undefined;
 }
 
 export function assertRoutePatternMatchesPath(routePattern: string, pathname: string) {
@@ -185,6 +190,22 @@ export function resolveRedirectUrl(redirectUrl: string, baseUrl: string) {
   }
 
   return formatRelativeUrl(target);
+}
+
+export function createPageOnlyRoutingData(
+  pages: Pick<NextRouteManifestEntry, "route">[],
+): NextRoutingData {
+  return {
+    pathnames: Array.from(new Set(pages.map((entry) => entry.route))),
+    routes: {
+      beforeMiddleware: [],
+      beforeFiles: [],
+      afterFiles: [],
+      dynamicRoutes: createDynamicRoutes(pages),
+      onMatch: [],
+      fallback: [],
+    },
+  };
 }
 
 function createEmptyRequestBody() {
@@ -220,6 +241,7 @@ function createInvocationUrl(
   invocationUrl.pathname = invocationTarget.pathname;
   invocationUrl.search = "";
   for (const [key, value] of Object.entries(invocationTarget.query)) {
+    if (isSyntheticRouteParamQuery(key)) continue;
     if (Array.isArray(value)) {
       for (const item of value) {
         invocationUrl.searchParams.append(key, item);
@@ -229,6 +251,16 @@ function createInvocationUrl(
     }
   }
   return invocationUrl;
+}
+
+// Mirrors Next's App Router query cleanup after dynamic route matching.
+// Source: https://github.com/vercel/next.js/blob/v16.2.6/packages/next/src/server/base-server.ts
+// Adaptation: `@next/routing` returns prefixed route-key query params such as
+// `nxtPslug`; Vitest only needs to remove those synthetic keys before invoking
+// app render. User-supplied query params with the public key, such as `slug`,
+// remain untouched.
+function isSyntheticRouteParamQuery(key: string) {
+  return normalizeNextQueryParam(key) !== null;
 }
 
 function resolveRouteMatches(
@@ -260,8 +292,21 @@ function findResolvedRoute<T extends { route: string }>(
 
 function matchRoutePatternParams(routePattern: string, pathname: string): RouteMatches | undefined {
   try {
-    const normalizedRoutePattern = normalizeRoutePattern(routePattern);
-    const params = getRouteMatcher(getRouteRegex(normalizedRoutePattern))(pathname);
+    const params = getRouteMatcher(getRouteRegex(ensureLeadingSlash(routePattern)))(pathname);
+    return params ? (params as RouteMatches) : undefined;
+  } catch {
+    return;
+  }
+}
+
+function matchDirectRenderRoutePatternParams(
+  routePattern: string,
+  pathname: string,
+): RouteMatches | undefined {
+  try {
+    const params = getRouteMatcher(getRouteRegex(normalizeRoutePatternAsAppPath(routePattern)))(
+      pathname,
+    );
     return params ? (params as RouteMatches) : undefined;
   } catch {
     return;
@@ -272,8 +317,42 @@ function formatRelativeUrl(url: URL) {
   return `${url.pathname}${url.search}${url.hash}`;
 }
 
-function normalizeRoutePattern(routePattern: string) {
-  const withLeadingSlash = routePattern.startsWith("/") ? routePattern : `/${routePattern}`;
+function createDynamicRoutes(pages: Pick<NextRouteManifestEntry, "route">[]) {
+  const routes = new Map<string, NextRoutingRoute>();
+  for (const entry of pages) {
+    if (!entry.route.includes("[")) continue;
+    routes.set(entry.route, createDynamicRoute(entry.route));
+  }
+  return Array.from(routes.values());
+}
+
+// Source: https://github.com/vercel/next.js/blob/v16.2.6/packages/next/src/build/adapter/build-complete.ts
+// Source: https://github.com/vercel/next.js/blob/v16.2.6/packages/next/src/server/route-matchers/route-matcher.ts
+// Adaptation: direct ReactNode/page-only renders do not go through the Vite
+// route-manifest virtual module, so they synthesize only the dynamic route data
+// needed by `@next/routing` without custom-route conversion.
+function createDynamicRoute(route: string): NextRoutingRoute {
+  const routeRegex = getNamedRouteRegex(route, {
+    prefixRouteKeys: true,
+  });
+  return {
+    sourceRegex: routeRegex.namedRegex,
+    destination: `${route}${getDestinationQuery(routeRegex.routeKeys)}`,
+  };
+}
+
+function getDestinationQuery(routeKeys: Record<string, string> | undefined) {
+  const items = Object.entries(routeKeys ?? {});
+  if (items.length === 0) return "";
+  return `?${items.map(([key, value]) => `${value}=$${key}`).join("&")}`;
+}
+
+function ensureLeadingSlash(routePattern: string) {
+  return routePattern.startsWith("/") ? routePattern : `/${routePattern}`;
+}
+
+function normalizeRoutePatternAsAppPath(routePattern: string) {
+  const withLeadingSlash = ensureLeadingSlash(routePattern);
   const withoutTrailingSlash = withLeadingSlash === "/" ? "" : withLeadingSlash.replace(/\/$/, "");
   return normalizeAppPath(`${withoutTrailingSlash}/page`);
 }

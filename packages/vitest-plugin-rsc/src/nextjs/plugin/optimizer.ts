@@ -107,11 +107,11 @@ const nextRscClientUtilityOptimizeDeps = [
 
 const nextTestingLibraryOptimizeDeps = [
   "@next/routing",
-  "next/dist/compiled/@vercel/routing-utils/superstatic.js",
-  "next/dist/lib/build-custom-route.js",
-  "next/dist/lib/redirect-status.js",
   "next/dist/server/app-render/get-preloadable-fonts.js",
+  "next/dist/server/web/utils.js",
   "next/dist/shared/lib/encode-uri-path.js",
+  "next/dist/shared/lib/router/utils/route-matcher.js",
+  "next/dist/shared/lib/router/utils/route-regex.js",
 ] as const;
 
 const nextEntryBaseClientReferenceOptimizeDeps = [

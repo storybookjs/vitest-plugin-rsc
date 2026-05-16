@@ -30,15 +30,18 @@ test("only exposes optimizer deps that resolve in the installed Next version", (
   }
 });
 
-test("prebundles routing data dependencies for the browser testing library", () => {
+test("prebundles browser request-router dependencies for the testing library", () => {
   const depsByGroup = resolveNextOptimizeDeps(fixtureRoot);
 
   expect(depsByGroup.testingLibrary).toEqual(
     expect.arrayContaining([
       "@next/routing",
-      "next/dist/compiled/@vercel/routing-utils/superstatic.js",
-      "next/dist/lib/build-custom-route.js",
-      "next/dist/lib/redirect-status.js",
+      "next/dist/server/web/utils.js",
+      "next/dist/shared/lib/router/utils/route-matcher.js",
+      "next/dist/shared/lib/router/utils/route-regex.js",
     ]),
+  );
+  expect(depsByGroup.testingLibrary).not.toContain(
+    "next/dist/compiled/@vercel/routing-utils/superstatic.js",
   );
 });

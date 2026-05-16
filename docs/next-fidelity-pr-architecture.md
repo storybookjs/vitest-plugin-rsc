@@ -56,7 +56,7 @@ Status values: `Not started`, `In progress`, `Blocked`, `Deferred`, `Rejected`,
 | Subgoal                                     | Status      | Branch/PR/Commit | Required Tests                                                          | Notes                                                                                                                         |
 | ------------------------------------------- | ----------- | ---------------- | ----------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
 | 1. Request router split                     | Done        | PR #47 / 1f9dad3 | `request-router.test.ts`; notes-demo routing/redirect/header tests      | Review cleanup tightened the request-router boundary and explicit route override behavior. Local tests and PR CI green.       |
-| 2. Routing data adapter                     | Done        | PR #47 / pending | `routing-data.test.ts`; rewrite ordering tests                          | Delegates to `@next/routing` and Next's routing-utils custom-route conversion; latest cleanup mirrors Next adapter phases.    |
+| 2. Routing data adapter                     | Done        | PR #47 / pending | `routing-data.test.ts`; rewrite ordering tests                          | Uses Next `generateRoutesManifest` plus `build-complete` adapter mapping at the Vite plugin boundary; browser gets JSON data. |
 | 3. App page invoker                         | Deferred    | PR #47 / f78b253 | `app-page-invoker.test.ts`; notes-demo render/action coverage           | Direct `AppPageRouteModule` import experiment was rejected; next attempt needs a server-only/module.compiled boundary.        |
 | 4. App route invoker decision               | Done        | PR #47 / pending | `app-route-invoker.test.ts` if implemented                              | Route handlers stay explicitly unsupported as page render targets; direct-import route-handler tests remain covered.          |
 | 5. Optimizer entry architecture             | Not started |                  | optimizer entry tests; no-MSW app-shell regression                      | Replace broad `app/**` scan roots with discovered route or virtual entrypoint warmup.                                         |
@@ -280,6 +280,37 @@ Status values: `Not started`, `In progress`, `Blocked`, `Deferred`, `Rejected`,
   - `pnpm exec oxlint packages/vitest-plugin-rsc/src/nextjs/routing-data.ts packages/vitest-plugin-rsc/src/nextjs/routing-data.test.ts packages/vitest-plugin-rsc/src/nextjs/request-router.ts packages/vitest-plugin-rsc/src/nextjs/request-router.test.ts packages/vitest-plugin-rsc/src/nextjs/testing-library.tsx packages/vitest-plugin-rsc/src/nextjs/next-compiled.d.ts packages/vitest-plugin-rsc/src/nextjs/plugin/optimizer.ts packages/vitest-plugin-rsc/src/nextjs/plugin/optimizer.test.ts 'playground/nextjs-notes-demo/app/route-patterns/docs/[...slug]/page.tsx' 'playground/nextjs-notes-demo/app/route-patterns/docs/[...slug]/page.test.tsx' docs/next-fidelity-pr-architecture.md`
   - `pnpm format:check`
   - `pnpm lint:ci`
+  - `git diff --check`
+  - CI: red on PR #47 for `f07332a` in all Next compatibility jobs because the
+    build-time `@vercel/routing-utils` conversion was bundled into the
+    browser-mode runtime, where its Node `url` dependency is externalized.
+- 2026-05-16 Subgoal 2 CI cleanup start: fetched the latest PR review comments
+  again before editing. The current fix moves Next's routing-utils conversion
+  to the Vite plugin/virtual route manifest boundary, serializes
+  `nextRoutingData` into the browser, and keeps `@next/routing.resolveRoutes()`
+  as the browser-side request resolver.
+- 2026-05-16 Subgoal 2 CI cleanup result: moved route-data construction into
+  `route-manifest-plugin.ts`, so the browser imports precomputed
+  `nextRoutingData` from `virtual:vitest-plugin-rsc/next-routes` instead of
+  importing Next's build-time `@vercel/routing-utils`. `routing-data.ts` now
+  calls Next's exported `generateRoutesManifest()` for custom-route and dynamic
+  route manifest shape, then applies the small non-exported `build-complete.ts`
+  adapter mapping with copy markers. `handleBuildComplete()` itself was not
+  imported because Next only exports it as the full production build-completion
+  orchestrator requiring outputs, dist files, prerender manifests, an adapter
+  module, build id, and tracing roots. Dynamic route data now keeps Next's
+  prefixed route-key query (`nxtP...`) through `@next/routing`, and
+  `request-router.ts` strips those synthetic keys at the App Router invocation
+  boundary using Next's `normalizeNextQueryParam` behavior. Direct ReactNode
+  route-group matching keeps a narrowly isolated Next app-path normalization
+  path. Local verification:
+  - `pnpm --filter vitest-plugin-rsc test:run src/nextjs/routing-data.test.ts src/nextjs/request-router.test.ts src/nextjs/plugin/optimizer.test.ts`
+  - `pnpm build`
+  - `pnpm test:run --project nextjs-notes-demo-browser --api 52658 'app/route-patterns/docs/[...slug]/page.test.tsx' app/next-apis/page.test.tsx 'app/route-patterns/[team]/settings/page.test.tsx'`
+  - `pnpm test:run --project vitest-plugin-rsc --project nextjs-no-msw-demo --project nextjs-notes-demo-browser --project nextjs-notes-demo-node --api 52643`
+  - `pnpm tsgo --build`
+  - `pnpm lint:ci`
+  - `pnpm format:check`
   - `git diff --check`
   - CI: pending push.
 

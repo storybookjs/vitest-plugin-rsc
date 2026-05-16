@@ -1,20 +1,17 @@
+import path from "node:path";
 import type { ResolveRoutesParams, Route as NextRoutingRoute } from "@next/routing";
+import { generateRoutesManifest } from "next/dist/build/generate-routes-manifest.js";
 import type {
   ManifestHeaderRoute,
   ManifestRedirectRoute,
   ManifestRewriteRoute,
 } from "next/dist/build/index.js";
-import { buildCustomRoute } from "next/dist/lib/build-custom-route.js";
+import type { DynamicManifestRoute } from "next/dist/build/utils.js";
 import routingUtils from "next/dist/compiled/@vercel/routing-utils/superstatic.js";
 import { getRedirectStatus, modifyRouteRegex } from "next/dist/lib/redirect-status.js";
-import type { CustomRoutes, Header, Redirect, Rewrite } from "next/dist/lib/load-custom-routes.js";
-import { normalizeAppPath } from "next/dist/shared/lib/router/utils/app-paths.js";
+import type { CustomRoutes, Rewrite } from "next/dist/lib/load-custom-routes.js";
+import type { NextConfigComplete } from "next/dist/server/config-shared.js";
 import { getNamedRouteRegex } from "next/dist/shared/lib/router/utils/route-regex.js";
-import type {
-  NextRouteHandlerManifestEntry,
-  NextRouteManifest,
-  NextRouteManifestEntry,
-} from "./request-router";
 
 export type NextRoutingData = Pick<ResolveRoutesParams, "pathnames" | "routes">;
 
@@ -22,8 +19,25 @@ type NextRoutingCustomRoutes = Omit<CustomRoutes, "rewrites"> & {
   rewrites: CustomRoutes["rewrites"] | Rewrite[];
 };
 
-export type NextRoutingManifest = Omit<NextRouteManifest, "customRoutes"> & {
+type NextRoutingRouteEntry = {
+  route: string;
+};
+
+export type NextRoutingManifest = {
+  pages: NextRoutingRouteEntry[];
+  routeHandlers: NextRoutingRouteEntry[];
   customRoutes: NextRoutingCustomRoutes;
+  nextConfig?: NextRoutesManifestConfig;
+};
+
+type NextRoutesManifestConfig = {
+  basePath?: string;
+  cacheComponents?: boolean;
+  i18n?: NextConfigComplete["i18n"];
+  experimental?: {
+    caseSensitiveRoutes?: boolean;
+    [key: string]: unknown;
+  };
 };
 
 const { convertHeaders, convertRedirects, convertRewrites } = routingUtils;
@@ -39,11 +53,11 @@ type InternalRoute = {
 
 // Converts discovered Next route facts and loaded next.config routes into
 // `@next/routing` input data. Next owns custom-route regex/status construction
-// through `buildCustomRoute`, deployment routing conversion through
+// through `generateRoutesManifest`, deployment routing conversion through
 // `@vercel/routing-utils`, and dynamic app route regexes through
 // `getNamedRouteRegex`.
 //
-// Source: https://github.com/vercel/next.js/blob/ee6e79b1792a4d401ddf2480f40a83549fe8e722/packages/next/src/lib/build-custom-route.ts
+// Source: https://github.com/vercel/next.js/blob/v16.2.6/packages/next/src/build/generate-routes-manifest.ts
 // Source: https://github.com/vercel/next.js/blob/v16.2.6/packages/next/src/build/adapter/build-complete.ts
 // Source: https://github.com/vercel/next.js/blob/ee6e79b1792a4d401ddf2480f40a83549fe8e722/packages/next/src/shared/lib/router/utils/route-regex.ts
 // Source: https://github.com/vercel/next.js/blob/ee6e79b1792a4d401ddf2480f40a83549fe8e722/packages/next-routing/src/types.ts
@@ -57,27 +71,40 @@ type InternalRoute = {
 export function createNextRoutingData(manifest: NextRoutingManifest): NextRoutingData {
   const pathnames = createPathnames(manifest.pages, manifest.routeHandlers);
   const rewrites = normalizeRewrites(manifest.customRoutes.rewrites);
+  const routesManifest = generateRoutesManifest({
+    pageKeys: {
+      pages: [],
+      app: pathnames,
+    },
+    config: createRoutesManifestConfig(manifest.nextConfig),
+    redirects: manifest.customRoutes.redirects,
+    headers: manifest.customRoutes.headers,
+    onMatchHeaders: manifest.customRoutes.onMatchHeaders,
+    rewrites,
+    restrictedRedirectPaths: ["/_next"],
+    isAppPPREnabled: Boolean(manifest.nextConfig?.cacheComponents),
+    appType: "app",
+  }).routesManifest;
 
   return {
     pathnames,
     routes: {
       beforeMiddleware: [
-        ...manifest.customRoutes.headers.map(convertHeaderRoute),
-        ...manifest.customRoutes.redirects.map(convertRedirectRoute),
+        ...routesManifest.headers.map(buildRouteFromHeader),
+        ...routesManifest.redirects.map(buildRedirectItem),
       ],
-      beforeFiles: rewrites.beforeFiles.map(convertRewriteRoute),
-      afterFiles: rewrites.afterFiles.map(convertRewriteRoute),
-      dynamicRoutes: createDynamicRoutes(manifest.pages, manifest.routeHandlers),
-      onMatch: manifest.customRoutes.onMatchHeaders.map(convertHeaderRoute),
-      fallback: rewrites.fallback.map(convertRewriteRoute),
+      beforeFiles: routesManifest.rewrites.beforeFiles.map(buildRewriteItem),
+      afterFiles: routesManifest.rewrites.afterFiles.map(buildRewriteItem),
+      dynamicRoutes: routesManifest.dynamicRoutes.map((route) =>
+        buildDynamicRouteItem(route, manifest.nextConfig),
+      ),
+      onMatch: routesManifest.onMatchHeaders.map(buildRouteFromHeader),
+      fallback: routesManifest.rewrites.fallback.map(buildRewriteItem),
     },
   };
 }
 
-function createPathnames(
-  pages: NextRouteManifestEntry[],
-  routeHandlers: NextRouteHandlerManifestEntry[],
-) {
+function createPathnames(pages: NextRoutingRouteEntry[], routeHandlers: NextRoutingRouteEntry[]) {
   return Array.from(new Set([...pages, ...routeHandlers].map((entry) => entry.route)));
 }
 
@@ -93,28 +120,26 @@ function normalizeRewrites(rewrites: NextRoutingCustomRoutes["rewrites"]) {
   return rewrites;
 }
 
-function convertRedirectRoute(route: Redirect): NextAdapterRoutingRoute {
-  const built: ManifestRedirectRoute = buildCustomRoute("redirect", route, ["/_next"]);
-  return buildRedirectItem(built);
-}
-
-function convertRewriteRoute(route: Rewrite): NextAdapterRoutingRoute {
-  const built: ManifestRewriteRoute = buildCustomRoute("rewrite", route);
-  return buildRewriteItem(built);
-}
-
-function convertHeaderRoute(route: Header): NextAdapterRoutingRoute {
-  const built: ManifestHeaderRoute = buildCustomRoute("header", route);
-  return buildRouteFromHeader(built);
+function createRoutesManifestConfig(
+  config: NextRoutesManifestConfig | undefined,
+): NextConfigComplete {
+  return {
+    basePath: config?.basePath ?? "",
+    cacheComponents: config?.cacheComponents,
+    i18n: config?.i18n,
+    experimental: {
+      caseSensitiveRoutes: config?.experimental?.caseSensitiveRoutes,
+    },
+  } as NextConfigComplete;
 }
 
 // Begin copy: Next.js adapter custom-route mapping
 // Source: https://github.com/vercel/next.js/blob/v16.2.6/packages/next/src/build/adapter/build-complete.ts
-// Adaptation: input routes come from loaded `next.config` custom routes, so this
-// adapter first builds `Manifest*Route` values with Next's `buildCustomRoute`.
-// It keeps the same `@vercel/routing-utils` conversion shape and omits only the
-// production static-asset on-match header route, which depends on build outputs
-// Vitest does not create.
+// Adaptation: input routes come from Next's `generateRoutesManifest()` instead
+// of a production build's route manifest. This keeps the same
+// `@vercel/routing-utils` conversion shape and omits only the production
+// static-asset on-match header route, which depends on build outputs Vitest
+// does not create.
 function buildRewriteItem(route: ManifestRewriteRoute & InternalRoute): NextAdapterRoutingRoute {
   const converted = firstConverted(convertRewrites([route], ["nextInternalLocale"]), "rewrite");
   const regex = converted.src || route.regex;
@@ -155,37 +180,45 @@ function buildRedirectItem(route: ManifestRedirectRoute & InternalRoute): NextAd
 }
 // End copy
 
+// Begin copy: Next.js adapter dynamic route mapping
+// Source: https://github.com/vercel/next.js/blob/v16.2.6/packages/next/src/build/adapter/build-complete.ts
+// Adaptation: Vitest has no prerender manifest at this boundary, so fallback
+// false conditions and app `.rsc`/segment data routes are omitted. The app
+// page/route-handler dynamic route shape, regex, and route-key destination
+// query match Next's adapter mapping.
+function buildDynamicRouteItem(
+  route: DynamicManifestRoute,
+  config: NextRoutesManifestConfig | undefined,
+): NextRoutingRoute {
+  const shouldLocalize = config?.i18n;
+  const routeRegex = getNamedRouteRegex(route.page, {
+    prefixRouteKeys: true,
+  });
+  const sourceRegex = routeRegex.namedRegex.replace(
+    "^",
+    `^${config?.basePath && config.basePath !== "/" ? path.posix.join("/", config.basePath) : ""}[/]?${
+      shouldLocalize ? "(?<nextLocale>[^/]{1,})" : ""
+    }`,
+  );
+  const destination =
+    path.posix.join("/", config?.basePath ?? "", shouldLocalize ? "/$nextLocale" : "", route.page) +
+    getDestinationQuery(route.routeKeys);
+
+  return {
+    sourceRegex,
+    destination,
+  };
+}
+// End copy
+
 function firstConverted<T>(items: T[], kind: string): T {
   const item = items[0];
   if (!item) throw new Error(`Failed to convert Next ${kind} route for @next/routing.`);
   return item;
 }
 
-function createDynamicRoutes(
-  pages: NextRouteManifestEntry[],
-  routeHandlers: NextRouteHandlerManifestEntry[],
-) {
-  const routes = new Map<string, NextRoutingRoute>();
-  for (const entry of [...pages, ...routeHandlers]) {
-    if (!entry.route.includes("[")) continue;
-    routes.set(entry.route, createDynamicRoute(entry.route));
-  }
-  return Array.from(routes.values());
-}
-
-function createDynamicRoute(route: string): NextRoutingRoute {
-  const normalizedRoute = normalizeRoutePattern(route);
-  const routeRegex = getNamedRouteRegex(normalizedRoute, {
-    prefixRouteKeys: false,
-  });
-  return {
-    sourceRegex: routeRegex.namedRegex,
-    destination: route,
-  };
-}
-
-function normalizeRoutePattern(routePattern: string) {
-  const withLeadingSlash = routePattern.startsWith("/") ? routePattern : `/${routePattern}`;
-  const withoutTrailingSlash = withLeadingSlash === "/" ? "" : withLeadingSlash.replace(/\/$/, "");
-  return normalizeAppPath(`${withoutTrailingSlash}/page`);
+function getDestinationQuery(routeKeys: Record<string, string> | undefined) {
+  const items = Object.entries(routeKeys ?? {});
+  if (items.length === 0) return "";
+  return `?${items.map(([key, value]) => `${value}=$${key}`).join("&")}`;
 }
