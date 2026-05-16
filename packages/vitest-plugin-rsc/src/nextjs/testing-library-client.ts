@@ -1,4 +1,4 @@
-import type { ServerActionCaller } from "../testing-library-client";
+import type { ServerActionCaller } from "../testing-library-client.tsx";
 
 export type NextActionRequest = {
   id: string;

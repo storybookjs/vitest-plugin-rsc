@@ -1,19 +1,19 @@
 // @vitest-environment node
 
 import { expect, test } from "vitest";
-import manifest from "./manifest";
+import manifest from "./manifest.ts";
 import OpenGraphImage, {
   alt as openGraphAlt,
   generateImageMetadata as generateOpenGraphImageMetadata,
   size as openGraphSize,
-} from "./opengraph-image";
-import robots from "./robots";
-import sitemap, { generateSitemaps } from "./sitemap";
+} from "./opengraph-image.tsx";
+import robots from "./robots.ts";
+import sitemap, { generateSitemaps } from "./sitemap.ts";
 import TwitterImage, {
   alt as twitterAlt,
   generateImageMetadata as generateTwitterImageMetadata,
   size as twitterSize,
-} from "./twitter-image";
+} from "./twitter-image.tsx";
 
 test("metadata route exports cover robots, sitemap, and manifest conventions", async () => {
   expect(robots()).toEqual({

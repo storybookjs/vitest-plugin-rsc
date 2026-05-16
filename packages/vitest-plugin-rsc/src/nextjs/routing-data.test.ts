@@ -4,9 +4,9 @@ import {
   createNextRoutingData,
   type NextRoutingManifest,
   type NextRoutingData,
-} from "./plugin/routing-data";
-import { resolveRoutes } from "./next-routing";
-import type { NextRouteHandlerManifestEntry, NextRouteManifestEntry } from "./request-router";
+} from "./plugin/routing-data.ts";
+import { resolveRoutes } from "./next-routing.ts";
+import type { NextRouteHandlerManifestEntry, NextRouteManifestEntry } from "./request-router.ts";
 
 const loaderTree = [] as unknown as LoaderTree;
 

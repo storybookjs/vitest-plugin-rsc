@@ -6,8 +6,8 @@ import {
   type NextConfigLike,
   type NextCustomRoutes,
   type NextImageConfig,
-} from "../config";
-import { createProjectRequire, getProjectRoot, tryResolveFromProject } from "../plugin-utils";
+} from "../config.ts";
+import { createProjectRequire, getProjectRoot, tryResolveFromProject } from "../plugin-utils.ts";
 
 const supportedEdgeNativeModules = ["buffer", "events", "assert", "util"] as const;
 

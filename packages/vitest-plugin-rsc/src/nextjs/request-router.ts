@@ -4,8 +4,8 @@ import { normalizeNextQueryParam } from "next/dist/server/web/utils.js";
 import { removePathPrefix } from "next/dist/shared/lib/router/utils/remove-path-prefix.js";
 import { getRouteMatcher } from "next/dist/shared/lib/router/utils/route-matcher.js";
 import { getRouteRegex } from "next/dist/shared/lib/router/utils/route-regex.js";
-import { resolveRoutes } from "./next-routing";
-import type { NextRoutingData } from "./routing-types";
+import { resolveRoutes } from "./next-routing.ts";
+import type { NextRoutingData } from "./routing-types.ts";
 
 export type NextRouteManifestEntry = {
   route: string;

@@ -1,7 +1,7 @@
 import path from "node:path";
 import type { Plugin } from "vite";
-import { loadNextProjectConfig } from "../config";
-import { getProjectRoot, normalizePath } from "../plugin-utils";
+import { loadNextProjectConfig } from "../config.ts";
+import { getProjectRoot, normalizePath } from "../plugin-utils.ts";
 
 export const virtualNextCacheHandlersPublicId = "virtual:vitest-plugin-rsc/next-cache-handlers";
 const virtualNextCacheHandlersId = `\0${virtualNextCacheHandlersPublicId}`;

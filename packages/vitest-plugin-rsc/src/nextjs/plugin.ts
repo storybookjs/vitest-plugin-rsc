@@ -1,9 +1,9 @@
 import type { Plugin } from "vite";
-import { useNextAppRenderCompatibility } from "./app-render-compat-plugin";
-import { useNextLinkClientReference } from "./client-reference-plugin";
-import { useNextFontLoader } from "./font-loader-plugin";
-import { useNextImageClientReference } from "./image-plugin";
-import { useNextMetadataImageLoader } from "./metadata-image-loader-plugin";
+import { useNextAppRenderCompatibility } from "./app-render-compat-plugin.ts";
+import { useNextLinkClientReference } from "./client-reference-plugin.ts";
+import { useNextFontLoader } from "./font-loader-plugin.ts";
+import { useNextImageClientReference } from "./image-plugin.ts";
+import { useNextMetadataImageLoader } from "./metadata-image-loader-plugin.ts";
 import {
   appRouterApiPlugin,
   createAppRouterApiAliasesFromNext,
@@ -15,27 +15,27 @@ import {
   createReactServerDomWebpackAliases,
   useNextCompiledOpenTelemetryApi,
   useNextReactDomServerAlias,
-} from "./plugin/aliases";
-import { useNextBuiltinGlobalErrorStub } from "./plugin/builtin-global-error";
-import { useNextCacheHandlers } from "./plugin/cache-handlers";
-import { useNextEntryBaseClientReferences } from "./plugin/entry-base-client-references";
+} from "./plugin/aliases.ts";
+import { useNextBuiltinGlobalErrorStub } from "./plugin/builtin-global-error.ts";
+import { useNextCacheHandlers } from "./plugin/cache-handlers.ts";
+import { useNextEntryBaseClientReferences } from "./plugin/entry-base-client-references.ts";
 import {
   createNextSourceOptimizerEntries,
   nextRootParamsOptimizeDepsExclude,
   resolveNextOptimizeDeps,
-} from "./plugin/optimizer";
-import { useNextRootParams } from "./plugin/root-params";
+} from "./plugin/optimizer.ts";
+import { useNextRootParams } from "./plugin/root-params.ts";
 import {
   disableNextDevServerRuntime,
   provideBufferLikeNextWebpack,
   treatNextInternalsAsServerInRsc,
-} from "./plugin/runtime-rewrites";
-import { useVitestServerReferenceInfo } from "./plugin/server-reference-info";
-import { createNextTesterHtmlConfig, nextTesterHtmlPath } from "./plugin/tester-html";
-import { useNextUseCacheTransform } from "./plugin/use-cache";
-import { getProjectRoot } from "./plugin-utils";
-import { useNextRouteManifest } from "./route-manifest-plugin";
-import { useNextSwcTransform } from "./swc-transform-plugin";
+} from "./plugin/runtime-rewrites.ts";
+import { useVitestServerReferenceInfo } from "./plugin/server-reference-info.ts";
+import { createNextTesterHtmlConfig, nextTesterHtmlPath } from "./plugin/tester-html.ts";
+import { useNextUseCacheTransform } from "./plugin/use-cache.ts";
+import { getProjectRoot } from "./plugin-utils.ts";
+import { useNextRouteManifest } from "./route-manifest-plugin.ts";
+import { useNextSwcTransform } from "./swc-transform-plugin.ts";
 
 export { nextTesterHtmlPath };
 

@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { Plugin } from "vite";
-import { getProjectRoot, normalizePath, tryResolveFromProject } from "../plugin-utils";
+import { getProjectRoot, normalizePath, tryResolveFromProject } from "../plugin-utils.ts";
 
 const virtualNextEntryBaseClientReferencePrefix =
   "\0vitest-plugin-rsc:next-entry-base-client-reference:";

@@ -4,8 +4,8 @@ import {
   createNextServerActionManifest,
   createViteRscClientModulesProxy,
   createViteRscModuleMappingProxy,
-} from "./app-render-manifest";
-import { patchBufferIndexOfUint8ArrayNeedle } from "./buffer-compat";
+} from "./app-render-manifest.ts";
+import { patchBufferIndexOfUint8ArrayNeedle } from "./buffer-compat.ts";
 
 const patchedBufferIndexOfSymbol = Symbol.for("vitest-plugin-rsc.nextjs.patchedBufferIndexOf");
 

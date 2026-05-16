@@ -23,6 +23,14 @@ export default defineConfig({
   },
   rules: {
     "eslint/no-unused-vars": "off",
+    "import/extensions": [
+      "error",
+      "always",
+      {
+        checkTypeImports: true,
+        ignorePackages: true,
+      },
+    ],
     "nextjs/no-img-element": "off",
     "typescript/no-base-to-string": "off",
     "typescript/no-redundant-type-constituents": "off",

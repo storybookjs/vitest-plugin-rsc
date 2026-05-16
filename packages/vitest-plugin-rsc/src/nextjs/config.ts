@@ -1,6 +1,6 @@
 import type { CustomRoutes } from "next/dist/lib/load-custom-routes.js";
 import type { NextConfigComplete } from "next/dist/server/config-shared.js";
-import { createProjectRequire } from "./plugin-utils";
+import { createProjectRequire } from "./plugin-utils.ts";
 
 export type NextImageConfig = {
   deviceSizes: number[];

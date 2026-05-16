@@ -1,4 +1,4 @@
-import "next/dist/server/node-environment-baseline";
+import "next/dist/server/node-environment-baseline.js";
 import { getAccessFallbackErrorTypeByStatus } from "next/dist/client/components/http-access-fallback/http-access-fallback.js";
 import { isNextRouterError } from "next/dist/client/components/is-next-router-error.js";
 import { getPreloadableFonts } from "next/dist/server/app-render/get-preloadable-fonts.js";
@@ -11,9 +11,9 @@ import {
   cleanup as baseCleanup,
   initialize as baseInitialize,
   type RenderConfiguration,
-} from "../testing-library";
-import type { FetchRsc, RscPayload, TestingLibraryClientRoot } from "../testing-library-client";
-import { importReactClient, importReactSsr } from "../utilts";
+} from "../testing-library.tsx";
+import type { FetchRsc, RscPayload, TestingLibraryClientRoot } from "../testing-library-client.tsx";
+import { importReactClient, importReactSsr } from "../utilts.ts";
 import * as ReactServer from "@vitejs/plugin-rsc/react/rsc";
 import { NextRouter } from "vitest-plugin-rsc/nextjs/client";
 import {
@@ -26,10 +26,16 @@ import {
   resetNextAppRenderCache,
   type NextInitialRscPayload,
   type NextNavigationFlightPayload,
-} from "./app-render";
-import { getNextFontManifestForRender } from "./font-manifest";
-import { getNextHttpAccessFallbackStatus, isNextHttpAccessFallbackError } from "./flight-payload";
-import { assertRoutePatternMatchesPath, createPageOnlyRoutingData } from "./direct-render-routing";
+} from "./app-render.ts";
+import { getNextFontManifestForRender } from "./font-manifest.ts";
+import {
+  getNextHttpAccessFallbackStatus,
+  isNextHttpAccessFallbackError,
+} from "./flight-payload.ts";
+import {
+  assertRoutePatternMatchesPath,
+  createPageOnlyRoutingData,
+} from "./direct-render-routing.ts";
 import {
   resolveNextRequestTarget,
   resolveRedirectUrl,
@@ -37,10 +43,10 @@ import {
   type NextRouteHandlerManifestEntry,
   type NextRouteManifest,
   type NextRouteManifestEntry,
-} from "./request-router";
-import type { FetchNextRsc } from "./testing-library-client";
+} from "./request-router.ts";
+import type { FetchNextRsc } from "./testing-library-client.ts";
 
-export * from "../testing-library";
+export * from "../testing-library.tsx";
 
 export type NextRenderConfiguration = Partial<RenderConfiguration> & {
   nextRscRequestsViaMsw?: boolean;
@@ -50,13 +56,13 @@ type NextRuntimeConfiguration = RenderConfiguration & {
   nextRscRequestsViaMsw: boolean;
 };
 
-const client = await importReactClient<typeof import("../testing-library-client")>(
+const client = await importReactClient<typeof import("../testing-library-client.tsx")>(
   "vitest-plugin-rsc/testing-library-client",
 );
-const ssr = await importReactSsr<typeof import("../testing-library-ssr")>(
+const ssr = await importReactSsr<typeof import("../testing-library-ssr.tsx")>(
   "vitest-plugin-rsc/testing-library-ssr",
 );
-const nextClient = await importReactClient<typeof import("./testing-library-client")>(
+const nextClient = await importReactClient<typeof import("./testing-library-client.ts")>(
   "vitest-plugin-rsc/nextjs/testing-library-client",
 );
 const mountedContainers = new Set<Container>();

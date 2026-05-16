@@ -1,6 +1,6 @@
 import type { Plugin } from "vite";
-import { loadNextProjectConfig } from "../config";
-import { createProjectRequire, getProjectRoot, tryResolveFromProject } from "../plugin-utils";
+import { loadNextProjectConfig } from "../config.ts";
+import { createProjectRequire, getProjectRoot, tryResolveFromProject } from "../plugin-utils.ts";
 
 const virtualNextRootParamsId = "\0vitest-plugin-rsc:next-root-params";
 

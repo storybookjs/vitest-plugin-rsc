@@ -5,7 +5,7 @@ import {
   getNamedRouteRegex,
   getRouteRegex,
 } from "next/dist/shared/lib/router/utils/route-regex.js";
-import { nextRoutingBuildId, type NextRoutingData } from "./routing-types";
+import { nextRoutingBuildId, type NextRoutingData } from "./routing-types.ts";
 
 type PageOnlyRouteEntry = {
   route: string;

@@ -1,6 +1,6 @@
 import { Geist, Geist_Mono, Roboto } from "next/font/google";
 import localFont from "next/font/local";
-import { exportedGoogleFont, exportedLocalFont } from "./exported-fonts";
+import { exportedGoogleFont, exportedLocalFont } from "./exported-fonts.ts";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",

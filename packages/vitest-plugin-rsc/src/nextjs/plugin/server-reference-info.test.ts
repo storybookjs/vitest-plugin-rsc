@@ -1,7 +1,7 @@
 import path from "node:path";
 import { expect, test } from "vitest";
-import { useVitestServerReferenceInfo } from "./server-reference-info";
-import { fixtureRoot, getHookHandler } from "./test-utils";
+import { useVitestServerReferenceInfo } from "./server-reference-info.ts";
+import { fixtureRoot, getHookHandler } from "./test-utils.ts";
 
 test("aliases Next server-reference-info for Next internals", async () => {
   const plugin = useVitestServerReferenceInfo(fixtureRoot);

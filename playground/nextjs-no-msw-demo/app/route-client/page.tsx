@@ -1,4 +1,4 @@
-import { ClientCounter } from "./client-counter";
+import { ClientCounter } from "./client-counter.tsx";
 
 export default function RouteClientPage() {
   return (

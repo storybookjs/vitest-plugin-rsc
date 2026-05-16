@@ -1,7 +1,7 @@
 import * as React from "react";
 import * as ReactDOMClient from "react-dom/client";
 import * as ReactClient from "@vitejs/plugin-rsc/react/browser";
-import type { RenderConfiguration } from "./testing-library";
+import type { RenderConfiguration } from "./testing-library.tsx";
 
 export type RscPayload = {
   root: React.ReactNode;

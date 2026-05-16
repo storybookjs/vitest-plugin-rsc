@@ -1,9 +1,9 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, test } from "vitest";
-import { loadNextProjectConfig } from "./config";
-import { loadNextRouteStaticInfo, useNextRouteManifest } from "./route-manifest-plugin";
-import { virtualNextEntrypointsPublicId } from "./virtual-ids";
+import { loadNextProjectConfig } from "./config.ts";
+import { loadNextRouteStaticInfo, useNextRouteManifest } from "./route-manifest-plugin.ts";
+import { virtualNextEntrypointsPublicId } from "./virtual-ids.ts";
 
 const fixtureRoot = fileURLToPath(
   new URL("../../../../playground/nextjs-notes-demo/", import.meta.url),

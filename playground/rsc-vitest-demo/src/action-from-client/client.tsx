@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { testAction, testAction2, testActionState } from "./action";
+import { testAction, testAction2, testActionState } from "./action.tsx";
 
 export function TestActionFromClient() {
   return (

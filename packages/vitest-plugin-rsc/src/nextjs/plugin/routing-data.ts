@@ -13,9 +13,9 @@ import type { CustomRoutes, Rewrite } from "next/dist/lib/load-custom-routes.js"
 import type { NextConfigComplete } from "next/dist/server/config-shared.js";
 import { addPathPrefix } from "next/dist/shared/lib/router/utils/add-path-prefix.js";
 import { getNamedRouteRegex } from "next/dist/shared/lib/router/utils/route-regex.js";
-import { nextRoutingBuildId, type NextRoutingData } from "../routing-types";
+import { nextRoutingBuildId, type NextRoutingData } from "../routing-types.ts";
 
-export type { NextRoutingData } from "../routing-types";
+export type { NextRoutingData } from "../routing-types.ts";
 
 type NextRoutingCustomRoutes = Omit<CustomRoutes, "rewrites"> & {
   rewrites: CustomRoutes["rewrites"] | Rewrite[];

@@ -2,9 +2,9 @@ import path from "node:path";
 import { transformHoistInlineDirective } from "@vitejs/plugin-rsc/transforms";
 import type { Plugin } from "vite";
 import { parseAstAsync } from "vite";
-import { loadNextProjectConfig } from "../config";
-import { getProjectRoot, isProjectFile, normalizePath } from "../plugin-utils";
-import { virtualNextCacheHandlersPublicId } from "./cache-handlers";
+import { loadNextProjectConfig } from "../config.ts";
+import { getProjectRoot, isProjectFile, normalizePath } from "../plugin-utils.ts";
+import { virtualNextCacheHandlersPublicId } from "./cache-handlers.ts";
 
 const virtualNextUseCacheRuntimeId = "\0vitest-plugin-rsc:next-use-cache-runtime";
 const virtualNextUseCacheRuntimePublicId = "virtual:vitest-plugin-rsc/next-use-cache-runtime";

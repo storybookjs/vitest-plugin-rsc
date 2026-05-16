@@ -4,8 +4,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createServer, type Alias, type Plugin, type UserConfig, type ViteDevServer } from "vite";
 import { expect, test } from "vitest";
-import { vitestPluginRSC } from "../index";
-import { vitestPluginNext } from "./plugin";
+import { vitestPluginRSC } from "../index.ts";
+import { vitestPluginNext } from "./plugin.ts";
 
 const fixtureRoot = fileURLToPath(
   new URL("../../../../playground/nextjs-notes-demo/", import.meta.url),

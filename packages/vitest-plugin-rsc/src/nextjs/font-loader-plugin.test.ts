@@ -2,7 +2,7 @@ import fs from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { expect, test } from "vitest";
-import { useNextFontLoader } from "./font-loader-plugin";
+import { useNextFontLoader } from "./font-loader-plugin.ts";
 
 const packageRequire = createRequire(import.meta.url);
 const sourceFontPath = packageRequire.resolve(

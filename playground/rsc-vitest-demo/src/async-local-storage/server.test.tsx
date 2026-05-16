@@ -5,9 +5,9 @@ import {
   OptionalUserContextConsumer,
   UserContextConsumer,
   UserContextProvider,
-} from "./enter-with-server";
-import { UserAsyncStorageServer } from "./server";
-import { userAsyncStorage } from "./user-storage";
+} from "./enter-with-server.tsx";
+import { UserAsyncStorageServer } from "./server.tsx";
+import { userAsyncStorage } from "./user-storage.ts";
 
 test("user-defined AsyncLocalStorage is available across the server component tree", async () => {
   await userAsyncStorage.run(

@@ -1,6 +1,6 @@
 import { fileURLToPath } from "node:url";
 import { expect, test } from "vitest";
-import { loadNextProjectConfig } from "./config";
+import { loadNextProjectConfig } from "./config.ts";
 
 const fixtureRoot = fileURLToPath(
   new URL("../../../../playground/nextjs-notes-demo/", import.meta.url),

@@ -8,7 +8,7 @@ import {
 import { expect, test, vi } from "vitest";
 import { page } from "vitest/browser";
 import { renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
-import { NextActionProtocolProbe } from "./next-action-protocol-probe";
+import { NextActionProtocolProbe } from "./next-action-protocol-probe.tsx";
 
 type CapturedActionRequest = {
   url: string;

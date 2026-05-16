@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
-import { LayoutSegmentProbe } from "./layout-segment-probe";
+import { LayoutSegmentProbe } from "./layout-segment-probe.tsx";
 
 export const metadata: Metadata = {
   title: "Selected layout metadata",

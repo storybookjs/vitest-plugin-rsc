@@ -1,7 +1,12 @@
 import path from "node:path";
 import type { Plugin } from "vite";
-import { loadNextProjectConfig, type LoadedJsConfig, type NextConfigLike } from "./config";
-import { createProjectRequire, getProjectRoot, isProjectFile, normalizePath } from "./plugin-utils";
+import { loadNextProjectConfig, type LoadedJsConfig, type NextConfigLike } from "./config.ts";
+import {
+  createProjectRequire,
+  getProjectRoot,
+  isProjectFile,
+  normalizePath,
+} from "./plugin-utils.ts";
 
 type NextSwc = {
   loadBindings(): Promise<unknown>;

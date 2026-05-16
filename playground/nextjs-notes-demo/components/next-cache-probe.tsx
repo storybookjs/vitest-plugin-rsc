@@ -15,7 +15,7 @@ import {
   nextCacheProbeFetchUrl,
   nextCacheProbeNoStoreFetchUrl,
   resetNextCacheProbeFetch,
-} from "./next-cache-msw";
+} from "./next-cache-msw.ts";
 import { getNotesCacheHandlerEvents, resetNotesCacheHandlerEvents } from "../cache-handler.mjs";
 
 const dataTag = "next-cache-probe:data";

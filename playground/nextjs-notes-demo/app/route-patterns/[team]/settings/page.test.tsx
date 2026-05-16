@@ -1,7 +1,7 @@
 import { expect, test } from "vitest";
 import { page } from "vitest/browser";
 import { renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
-import { generateStaticParams } from "./page";
+import { generateStaticParams } from "./page.tsx";
 
 test("dynamic app routes expose generateStaticParams", () => {
   expect(generateStaticParams()).toEqual([{ team: "acme" }, { team: "beta" }]);

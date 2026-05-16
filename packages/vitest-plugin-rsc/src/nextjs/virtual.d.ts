@@ -1,6 +1,6 @@
 declare module "virtual:vitest-plugin-rsc/next-routes" {
   import type { LoaderTree } from "next/dist/server/lib/app-dir-module.js";
-  import type { NextRoutingData } from "./routing-types";
+  import type { NextRoutingData } from "./routing-types.ts";
 
   export const nextRouteManifest: {
     route: string;

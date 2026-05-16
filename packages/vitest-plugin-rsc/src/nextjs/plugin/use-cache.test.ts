@@ -1,7 +1,7 @@
 import path from "node:path";
 import { expect, test } from "vitest";
-import { useNextUseCacheTransform } from "./use-cache";
-import { fixtureRoot, getHookHandler, noMswFixtureRoot } from "./test-utils";
+import { useNextUseCacheTransform } from "./use-cache.ts";
+import { fixtureRoot, getHookHandler, noMswFixtureRoot } from "./test-utils.ts";
 
 test("hoists use cache directives to Next's cache wrapper when cacheComponents is enabled", async () => {
   const plugin = useNextUseCacheTransform();

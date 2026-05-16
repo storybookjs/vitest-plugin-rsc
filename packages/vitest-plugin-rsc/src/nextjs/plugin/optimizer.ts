@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
-import { createProjectRequire } from "../plugin-utils";
-import { virtualNextEntrypointsPublicId } from "../virtual-ids";
+import { createProjectRequire } from "../plugin-utils.ts";
+import { virtualNextEntrypointsPublicId } from "../virtual-ids.ts";
 
 export const nextRootParamsOptimizeDepsExclude = [
   "next/root-params",

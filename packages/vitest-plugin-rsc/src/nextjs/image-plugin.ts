@@ -1,8 +1,8 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { Plugin, ResolvedConfig } from "vite";
-import { loadNextProjectConfig } from "./config";
-import { createProjectRequire, getProjectRoot } from "./plugin-utils";
+import { loadNextProjectConfig } from "./config.ts";
+import { createProjectRequire, getProjectRoot } from "./plugin-utils.ts";
 
 const virtualNextImageId = "virtual:vitest-plugin-rsc/next-image";
 const virtualNextImageClientReferenceId = "virtual:vitest-plugin-rsc/next-image-client-reference";

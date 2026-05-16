@@ -1,9 +1,9 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { Plugin } from "vite";
-import { loadNextProjectConfig, type NextProjectConfig } from "./config";
-import { createProjectRequire, getProjectRoot, normalizePath } from "./plugin-utils";
-import { createNextRoutingData } from "./plugin/routing-data";
+import { loadNextProjectConfig, type NextProjectConfig } from "./config.ts";
+import { createProjectRequire, getProjectRoot, normalizePath } from "./plugin-utils.ts";
+import { createNextRoutingData } from "./plugin/routing-data.ts";
 import {
   virtualNextEntrypointsId,
   virtualNextEntrypointsPublicId,
@@ -13,7 +13,7 @@ import {
   virtualNextRouteManifestPublicId,
   virtualNextRouteTreeIdPrefix,
   virtualNextRouteTreePublicId,
-} from "./virtual-ids";
+} from "./virtual-ids.ts";
 
 type NextRouteManifestBuildEntry = {
   route: string;

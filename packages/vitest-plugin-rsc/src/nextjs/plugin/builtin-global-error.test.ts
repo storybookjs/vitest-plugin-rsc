@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
-import { useNextBuiltinGlobalErrorStub } from "./builtin-global-error";
-import { getHookHandler } from "./test-utils";
+import { useNextBuiltinGlobalErrorStub } from "./builtin-global-error.ts";
+import { getHookHandler } from "./test-utils.ts";
 
 test("loads the virtual built-in global-error client stub", async () => {
   const plugin = useNextBuiltinGlobalErrorStub();

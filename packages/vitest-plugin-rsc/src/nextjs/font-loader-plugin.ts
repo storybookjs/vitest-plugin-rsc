@@ -2,8 +2,8 @@ import { Buffer } from "node:buffer";
 import fs from "node:fs";
 import path from "node:path";
 import type { Plugin, ResolvedConfig } from "vite";
-import { loadNextProjectConfig } from "./config";
-import { createProjectRequire, getProjectRoot, normalizePath } from "./plugin-utils";
+import { loadNextProjectConfig } from "./config.ts";
+import { createProjectRequire, getProjectRoot, normalizePath } from "./plugin-utils.ts";
 
 const virtualNextFontPrefix = "virtual:vitest-plugin-rsc/next-font/";
 const fontAssetPlaceholderPrefix = "__vitest_plugin_rsc_next_font_asset__";

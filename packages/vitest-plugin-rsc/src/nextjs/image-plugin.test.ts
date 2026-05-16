@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, test } from "vitest";
-import { useNextImageClientReference } from "./image-plugin";
+import { useNextImageClientReference } from "./image-plugin.ts";
 
 const fixtureRoot = fileURLToPath(
   new URL("../../../../playground/nextjs-notes-demo/", import.meta.url),

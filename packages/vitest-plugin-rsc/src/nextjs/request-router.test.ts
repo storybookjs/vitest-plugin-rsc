@@ -8,8 +8,8 @@ import {
   type NextRouteHandlerManifestEntry,
   type NextRouteManifest,
   type NextRouteManifestEntry,
-} from "./request-router";
-import { createNextRoutingData, type NextRoutingManifest } from "./plugin/routing-data";
+} from "./request-router.ts";
+import { createNextRoutingData, type NextRoutingManifest } from "./plugin/routing-data.ts";
 
 const loaderTree = [] as unknown as LoaderTree;
 const currentDirectory = path.dirname(fileURLToPath(import.meta.url));

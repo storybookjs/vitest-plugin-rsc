@@ -1,5 +1,5 @@
 import type { Plugin } from "vite";
-import { tryResolveFromProject } from "../plugin-utils";
+import { tryResolveFromProject } from "../plugin-utils.ts";
 
 const virtualServerReferenceInfoId = "\0vitest-plugin-rsc:next-server-reference-info";
 

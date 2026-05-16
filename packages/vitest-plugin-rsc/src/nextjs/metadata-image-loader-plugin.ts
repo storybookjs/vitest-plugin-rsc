@@ -2,7 +2,7 @@ import { Buffer } from "node:buffer";
 import fs from "node:fs";
 import path from "node:path";
 import type { Plugin } from "vite";
-import { createProjectRequire, getProjectRoot, splitOnce } from "./plugin-utils";
+import { createProjectRequire, getProjectRoot, splitOnce } from "./plugin-utils.ts";
 
 const virtualNextMetadataImageLoaderPrefix = "\0vitest-plugin-rsc:next-metadata-image-loader:";
 

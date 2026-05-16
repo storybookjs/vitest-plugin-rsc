@@ -1,5 +1,5 @@
 import type { Plugin } from "vite";
-import { getProjectRoot, tryResolveFromProject } from "./plugin-utils";
+import { getProjectRoot, tryResolveFromProject } from "./plugin-utils.ts";
 
 const virtualNextAppRouterComponentStubId = "\0vitest-plugin-rsc:next-app-router-component-stub";
 const virtualNextServerInsertedHtmlStubId = "\0vitest-plugin-rsc:next-server-inserted-html-stub";

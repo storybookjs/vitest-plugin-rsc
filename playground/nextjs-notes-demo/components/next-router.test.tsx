@@ -1,9 +1,9 @@
 import { expect, test } from "vitest";
 import { page } from "vitest/browser";
 import { renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
-import { ClientRefreshProbe } from "./client-refresh-probe";
-import { NextRouterProbe } from "./next-router-probe";
-import { resetServerRefreshProbe, ServerRefreshProbe } from "./server-refresh-probe";
+import { ClientRefreshProbe } from "./client-refresh-probe.tsx";
+import { NextRouterProbe } from "./next-router-probe.tsx";
+import { resetServerRefreshProbe, ServerRefreshProbe } from "./server-refresh-probe.tsx";
 
 test("renderServer route options provide documented App Router hook values", async () => {
   await renderServer(<NextRouterProbe />, {

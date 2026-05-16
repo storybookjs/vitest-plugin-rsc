@@ -4,8 +4,8 @@ import {
   disableNextDevServerRuntime,
   provideBufferLikeNextWebpack,
   treatNextInternalsAsServerInRsc,
-} from "./runtime-rewrites";
-import { fixtureRoot, getHookHandler } from "./test-utils";
+} from "./runtime-rewrites.ts";
+import { fixtureRoot, getHookHandler } from "./test-utils.ts";
 
 test("rewrites Next server-runtime checks only for Next internals in the RSC environment", async () => {
   const plugin = treatNextInternalsAsServerInRsc();

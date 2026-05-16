@@ -2,7 +2,7 @@
 
 import { expect, test } from "vitest";
 import { NextRequest } from "next/server";
-import { DELETE, GET, HEAD, OPTIONS, PATCH, POST, PUT } from "./route";
+import { DELETE, GET, HEAD, OPTIONS, PATCH, POST, PUT } from "./route.ts";
 
 test("route handlers can read params, nextUrl, cookies, and userAgent", async () => {
   const response = await GET(

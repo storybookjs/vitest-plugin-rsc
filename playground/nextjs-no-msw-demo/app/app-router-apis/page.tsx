@@ -2,9 +2,9 @@ import dynamic from "next/dynamic";
 import Form from "next/form";
 import Head from "next/head";
 import Link from "next/link";
-import { ClientNavigationProbe } from "./client-navigation-probe";
+import { ClientNavigationProbe } from "./client-navigation-probe.tsx";
 
-const LazyMessage = dynamic(() => import("./lazy-message"));
+const LazyMessage = dynamic(() => import("./lazy-message.tsx"));
 
 export default function AppRouterApisPage() {
   return (

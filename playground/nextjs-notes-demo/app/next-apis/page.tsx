@@ -6,13 +6,13 @@ import Link from "next/link";
 import * as rootParams from "next/root-params";
 import Script from "next/script";
 import { connection } from "next/server";
-import { AfterProbe } from "./after-probe";
-import { ClientErrorProbe } from "./client-error-probe";
-import { ClientNavigationProbe } from "./client-navigation-probe";
+import { AfterProbe } from "./after-probe.tsx";
+import { ClientErrorProbe } from "./client-error-probe.tsx";
+import { ClientNavigationProbe } from "./client-navigation-probe.tsx";
 import staticLogo from "./fixtures/static-logo.svg";
-import { WebVitalsProbe } from "./web-vitals-probe";
+import { WebVitalsProbe } from "./web-vitals-probe.tsx";
 
-const LazyPanel = dynamic(() => import("./lazy-panel"));
+const LazyPanel = dynamic(() => import("./lazy-panel.tsx"));
 
 export default async function NextApisPage({
   searchParams,

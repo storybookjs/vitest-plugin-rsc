@@ -24,18 +24,18 @@ import { normalizeAppPath } from "next/dist/shared/lib/router/utils/app-paths.js
 import { getRouteMatcher } from "next/dist/shared/lib/router/utils/route-matcher.js";
 import { getRouteRegex } from "next/dist/shared/lib/router/utils/route-regex.js";
 import * as ReactServer from "@vitejs/plugin-rsc/react/rsc";
-import { patchBufferIndexOfUint8ArrayNeedle } from "./buffer-compat";
+import { patchBufferIndexOfUint8ArrayNeedle } from "./buffer-compat.ts";
 import {
   createNextServerActionManifest,
   createViteRscClientModulesProxy,
   createViteRscModuleMappingProxy,
-} from "./app-render-manifest";
+} from "./app-render-manifest.ts";
 import {
   createNextHttpAccessFallbackError,
   getNextHttpAccessFallbackStatus,
   getNextRedirectUrlFromFlightPayloadText,
-} from "./flight-payload";
-import { getNextFontManifestForRender } from "./font-manifest";
+} from "./flight-payload.ts";
+import { getNextFontManifestForRender } from "./font-manifest.ts";
 
 type NextIncrementalCacheConstructor =
   typeof import("next/dist/server/lib/incremental-cache/index.js").IncrementalCache;

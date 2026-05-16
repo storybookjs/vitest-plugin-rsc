@@ -1,7 +1,7 @@
 import { expect, test, vi } from "vitest";
 import { page } from "vitest/browser";
 import { renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
-import { getAfterProbeRuns, getNestedAfterProbeRuns, resetAfterProbe } from "./after-probe";
+import { getAfterProbeRuns, getNestedAfterProbeRuns, resetAfterProbe } from "./after-probe.tsx";
 
 test("notes demo renders Next app-router API aliases and compiler surfaces", async () => {
   resetAfterProbe();

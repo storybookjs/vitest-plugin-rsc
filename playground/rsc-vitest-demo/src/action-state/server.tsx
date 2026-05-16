@@ -1,4 +1,4 @@
-import { TestActionStateClient } from "./client";
+import { TestActionStateClient } from "./client.tsx";
 
 // Test case based on
 // https://github.com/remix-run/react-router/issues/13882
