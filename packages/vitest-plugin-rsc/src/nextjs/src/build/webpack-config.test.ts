@@ -10,8 +10,8 @@ import {
   createOptimizeDepsResolveAliases,
   createReactServerDomWebpackAliases,
   useNextReactDomServerAlias,
-} from "./aliases.ts";
-import { fixtureRoot, getHookHandler } from "./test-utils.ts";
+} from "./webpack-config.ts";
+import { fixtureRoot, getHookHandler } from "../../plugin/test-utils.ts";
 
 test("creates app-router API aliases from Next's compiler aliases", () => {
   expect(createAppRouterApiAliasesFromNext(fixtureRoot, true)).toEqual(

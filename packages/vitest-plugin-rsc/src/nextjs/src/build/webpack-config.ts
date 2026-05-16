@@ -6,9 +6,28 @@ import {
   type NextConfigLike,
   type NextCustomRoutes,
   type NextImageConfig,
-} from "../config.ts";
-import { createProjectRequire, getProjectRoot, tryResolveFromProject } from "../plugin-utils.ts";
+} from "../../config.ts";
+import { createProjectRequire, getProjectRoot, tryResolveFromProject } from "../../plugin-utils.ts";
 
+// Mirror/adapt: Next.js webpack config aliases, defines, and runtime shims.
+// Source: https://github.com/vercel/next.js/blob/ee6e79b1792a4d401ddf2480f40a83549fe8e722/packages/next/src/build/create-compiler-aliases.ts#L203-L246
+// Source: https://github.com/vercel/next.js/blob/ee6e79b1792a4d401ddf2480f40a83549fe8e722/packages/next/src/build/create-compiler-aliases.ts#L449-L477
+// Source: https://github.com/vercel/next.js/blob/ee6e79b1792a4d401ddf2480f40a83549fe8e722/packages/next/src/build/define-env.ts#L1-L370
+// Source: https://github.com/vercel/next.js/blob/ee6e79b1792a4d401ddf2480f40a83549fe8e722/packages/next/src/build/webpack-config.ts#L2028-L2035
+// Source: https://github.com/vercel/next.js/blob/ee6e79b1792a4d401ddf2480f40a83549fe8e722/packages/next/src/build/webpack/alias/react-dom-server.ts#L1-L27
+// Adaptation: Vite owns plugin composition and module resolution here, but
+// the aliases and defines mirror the concrete Next webpack/compiler sources
+// that select App Router API entries, vendored React layers, edge polyfills,
+// framework defines, and react-dom/server behavior.
+
+// Begin adapted: Next.js webpack-config aliases and defines
+// Source: https://github.com/vercel/next.js/blob/ee6e79b1792a4d401ddf2480f40a83549fe8e722/packages/next/src/build/create-compiler-aliases.ts#L203-L246
+// Source: https://github.com/vercel/next.js/blob/ee6e79b1792a4d401ddf2480f40a83549fe8e722/packages/next/src/build/create-compiler-aliases.ts#L449-L477
+// Source: https://github.com/vercel/next.js/blob/ee6e79b1792a4d401ddf2480f40a83549fe8e722/packages/next/src/build/define-env.ts#L1-L370
+// Source: https://github.com/vercel/next.js/blob/ee6e79b1792a4d401ddf2480f40a83549fe8e722/packages/next/src/build/webpack-config.ts#L2028-L2035
+// Source: https://github.com/vercel/next.js/blob/ee6e79b1792a4d401ddf2480f40a83549fe8e722/packages/next/src/build/webpack/alias/react-dom-server.ts#L1-L27
+// Adaptation: Use installed Next helpers where possible and translate their
+// webpack alias output into Vite alias/plugin objects.
 const supportedEdgeNativeModules = ["buffer", "events", "assert", "util"] as const;
 
 type NextCompilerAliasesModule = {
@@ -183,9 +202,11 @@ export function createNextEdgeNativeAliases(root: string): Alias[] {
 
 function createNextjsSiblingPath(fileName: string) {
   const currentFile = fileURLToPath(import.meta.url);
-  const relativePath = /[/\\]plugin[/\\][^/\\]+$/.test(currentFile)
-    ? `../${fileName}`
-    : `./${fileName}`;
+  const relativePath = /[/\\]src[/\\]build[/\\]webpack-config\.[cm]?[jt]s$/.test(currentFile)
+    ? `../../${fileName}`
+    : /[/\\]plugin[/\\][^/\\]+$/.test(currentFile)
+      ? `../${fileName}`
+      : `./${fileName}`;
   return fileURLToPath(new URL(relativePath, import.meta.url));
 }
 
@@ -539,3 +560,4 @@ function isReactDomServerImporter(importer: string | undefined) {
     ),
   );
 }
+// End adapted

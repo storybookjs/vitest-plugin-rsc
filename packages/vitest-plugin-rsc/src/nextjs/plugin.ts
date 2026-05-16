@@ -15,7 +15,7 @@ import {
   createReactServerDomWebpackAliases,
   useNextCompiledOpenTelemetryApi,
   useNextReactDomServerAlias,
-} from "./plugin/aliases.ts";
+} from "./src/build/webpack-config.ts";
 import { useNextBuiltinGlobalErrorStub } from "./plugin/builtin-global-error.ts";
 import { useNextCacheHandlers } from "./plugin/cache-handlers.ts";
 import { useNextEntryBaseClientReferences } from "./plugin/entry-base-client-references.ts";
