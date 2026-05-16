@@ -1,10 +1,6 @@
-import { expect, test, vi } from "vitest";
+import { expect, test } from "vitest";
 import { page } from "vitest/browser";
-import {
-  cleanup,
-  expectToHaveBeenNavigatedTo,
-  renderServer,
-} from "vitest-plugin-rsc/nextjs/testing-library";
+import { renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
 import { ClientRefreshProbe } from "./client-refresh-probe";
 import { NextRouterProbe } from "./next-router-probe";
 import { resetServerRefreshProbe, ServerRefreshProbe } from "./server-refresh-probe";
@@ -104,35 +100,6 @@ test("renderServer rejects static segment mismatches", async () => {
       route: "/posts/[id]",
     }),
   ).rejects.toThrow('Pattern "/posts/[id]" does not match pathname "/notes/123"');
-});
-
-test("renderServer records push and replace navigations", async () => {
-  await renderServer(<NextRouterProbe />, {
-    url: "/note/123/hello?q=test",
-    route: "/note/[id]/[slug]",
-  });
-
-  await page.getByRole("button", { name: "Push route" }).click();
-
-  await vi.waitFor(() => expectToHaveBeenNavigatedTo({ pathname: "/note/next" }));
-
-  await page.getByRole("button", { name: "Replace route" }).click();
-
-  await vi.waitFor(() => expectToHaveBeenNavigatedTo({ pathname: "/note/replaced" }));
-});
-
-test("cleanup clears recorded navigations", async () => {
-  await renderServer(<NextRouterProbe />, {
-    url: "/note/123/hello?q=test",
-    route: "/note/[id]/[slug]",
-  });
-
-  await page.getByRole("button", { name: "Push route" }).click();
-  await vi.waitFor(() => expectToHaveBeenNavigatedTo({ pathname: "/note/next" }));
-
-  await cleanup();
-
-  await expect(expectToHaveBeenNavigatedTo({ pathname: "/note/next" })).rejects.toThrow();
 });
 
 test("renderServer exposes catch-all params and selected segments", async () => {

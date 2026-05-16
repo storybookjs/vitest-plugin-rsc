@@ -4,10 +4,7 @@ import { page } from "vitest/browser";
 import { notes } from "#db/schema.ts";
 import { db } from "#lib/db.ts";
 import { signInAs } from "#test/auth.ts";
-import {
-  expectToHaveBeenNavigatedTo,
-  renderServer,
-} from "vitest-plugin-rsc/nextjs/testing-library";
+import { renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
 
 test("renders the new note form with empty fields", async () => {
   await signInAs();
@@ -52,7 +49,7 @@ test("create note action redirects to the created note route", async () => {
   });
   if (!createdNote) throw new Error("Expected create note action to insert a note.");
 
-  await vi.waitFor(() => expectToHaveBeenNavigatedTo({ pathname: `/notes/${createdNote.id}` }));
+  await vi.waitFor(() => expect(window.location.pathname).toBe(`/notes/${createdNote.id}`));
   await expect
     .element(page.getByRole("heading", { level: 1, name: "Redirected note" }))
     .toBeInTheDocument();

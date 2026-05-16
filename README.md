@@ -531,7 +531,7 @@ Many direct component tests can omit routing options:
 await renderServer(<CreateNoteForm />);
 ```
 
-Pass `url` when the component needs location-aware behavior — `usePathname`, `useSearchParams`, the selected-segment hooks, `next/link`, navigation assertions, request URL-dependent code, or cache invalidation against the current path. For dynamic routes, also pass the App Router route pattern with `route` so Next can derive params and selected segments from the URL:
+Pass `url` when the component needs location-aware behavior — `usePathname`, `useSearchParams`, the selected-segment hooks, `next/link`, browser location checks, request URL-dependent code, or cache invalidation against the current path. For dynamic routes, also pass the App Router route pattern with `route` so Next can derive params and selected segments from the URL:
 
 ```tsx
 import { expect, test, vi } from "vitest";
@@ -603,7 +603,7 @@ export function NoteToolbar() {
 }
 ```
 
-Client navigation is observable through the browser location:
+Client navigation updates the real browser location, so tests can assert `window.location` and the UI rendered for the target route:
 
 ```tsx
 import { expect, vi } from "vitest";
@@ -616,9 +616,10 @@ await renderServer(<NoteToolbar />, {
 
 await page.getByRole("button", { name: "Go to notes" }).click();
 await vi.waitFor(() => expect(window.location.pathname).toBe("/notes"));
+await expect.element(page.getByRole("heading", { name: "Notes" })).toBeVisible();
 ```
 
-Server Action redirects are handled through the same App Router path. Same-origin redirects update the browser location and render the target route UI.
+Server Action redirects use the same App Router path. Same-origin redirects update `window.location` and render the target route UI.
 
 ### Next Config Routes
 

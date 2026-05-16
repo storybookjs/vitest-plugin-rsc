@@ -1364,7 +1364,6 @@ export async function cleanup() {
     mountedContainers.clear();
     await baseCleanup();
     restoreInitialDocument();
-    resetNavigationSpy();
     await resetNextAppRenderCache();
   }
 }
@@ -1474,53 +1473,4 @@ function readNextAssetPrefix() {
 function getFontPreloadType(fontFile: string) {
   const ext = /\.(woff|woff2|eot|ttf|otf)$/.exec(fontFile)?.[1];
   return ext ? `font/${ext}` : "";
-}
-
-type NavigationSpy = {
-  mockClear: () => void;
-  mock?: {
-    calls: unknown[][];
-  };
-};
-
-function resetNavigationSpy() {
-  (globalThis as typeof globalThis & { onNavigate?: NavigationSpy }).onNavigate?.mockClear();
-}
-
-// @ts-ignore
-const expect = globalThis[Symbol.for("expect-global")];
-
-export async function expectToHaveBeenNavigatedTo(url: Partial<URL>) {
-  const calls = (globalThis as typeof globalThis & { onNavigate?: NavigationSpy }).onNavigate?.mock
-    ?.calls;
-  if (!calls) {
-    expect(globalThis.onNavigate).toHaveBeenCalledWith(expect.objectContaining(url));
-    return;
-  }
-
-  const navigations = calls.map(
-    ([navigation]) => toNavigationUrl(navigation)?.href ?? String(navigation),
-  );
-  expect(
-    calls.some(([navigation]) => {
-      const actualUrl = toNavigationUrl(navigation);
-      if (!actualUrl) return false;
-
-      return Object.entries(url).every(([key, expectedValue]) => {
-        return actualUrl[key as keyof URL] === expectedValue;
-      });
-    }),
-    `Expected navigation matching ${JSON.stringify(url)}. Actual navigations: ${navigations.join(", ")}`,
-  ).toBe(true);
-}
-
-function toNavigationUrl(value: unknown): URL | undefined {
-  if (value instanceof URL) return value;
-  if (typeof value !== "string") return;
-
-  try {
-    return new URL(value, location.href);
-  } catch {
-    return;
-  }
 }

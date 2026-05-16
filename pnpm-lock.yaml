@@ -68,9 +68,6 @@ importers:
       '@vitest/expect':
         specifier: 5.0.0-beta.2
         version: 5.0.0-beta.2
-      '@vitest/spy':
-        specifier: 5.0.0-beta.2
-        version: 5.0.0-beta.2
       convert-source-map:
         specifier: ^2.0.0
         version: 2.0.0

@@ -1,5 +1,4 @@
 "use client";
-import { fn, type Mock } from "@vitest/spy";
 import "next/dist/client/app-bootstrap.js";
 import NextAppRouter from "next/dist/client/components/app-router.js";
 import type {
@@ -10,15 +9,7 @@ import { createMutableActionQueue as createNextMutableActionQueue } from "next/d
 import { createHrefFromUrl } from "next/dist/client/components/router-reducer/create-href-from-url.js";
 import { createInitialRouterState } from "next/dist/client/components/router-reducer/create-initial-router-state.js";
 import { reducer } from "next/dist/client/components/router-reducer/router-reducer.js";
-import type {
-  AppRouterState,
-  ReducerActions,
-  ReducerState,
-} from "next/dist/client/components/router-reducer/router-reducer-types.js";
-import {
-  ACTION_NAVIGATE,
-  ACTION_SERVER_ACTION,
-} from "next/dist/client/components/router-reducer/router-reducer-types.js";
+import type { AppRouterState } from "next/dist/client/components/router-reducer/router-reducer-types.js";
 import type { InitialRSCPayload } from "next/dist/shared/lib/app-router-types";
 import React, { type ReactNode, useMemo, useRef } from "react";
 
@@ -27,10 +18,6 @@ import React, { type ReactNode, useMemo, useRef } from "react";
 // https://github.com/vercel/next.js/blob/4588a7354283f97e2124e3d82f55733ca4eb9373/packages/next/src/client/components/app-router.tsx
 // https://github.com/vercel/next.js/blob/4588a7354283f97e2124e3d82f55733ca4eb9373/packages/next/src/client/components/app-router-instance.ts
 
-declare global {
-  var onNavigate: Mock<(url: URL) => void>;
-}
-globalThis.onNavigate = fn<(url: URL) => void>();
 let actionQueue: AppRouterActionQueue | null = null;
 const globalErrorState: GlobalErrorState = [GlobalError, null];
 
@@ -184,100 +171,10 @@ function createMutableActionQueue(initialState: AppRouterState): AppRouterAction
   // mutable queue fields before each component-test router mount.
   actionQueue ??= createNextMutableActionQueue(initialState, null);
   actionQueue.state = initialState;
-  actionQueue.action = reduceRouterAction;
+  actionQueue.action = reducer;
   actionQueue.pending = null;
   actionQueue.last = null;
   actionQueue.needsRefresh = false;
   // End copy
   return actionQueue;
-}
-
-function reduceRouterAction(state: AppRouterState, action: ReducerActions): ReducerState {
-  if (action.type === ACTION_NAVIGATE) {
-    globalThis.onNavigate(action.url);
-    return state;
-  }
-
-  if (action.type === ACTION_SERVER_ACTION) {
-    let redirectUrl: URL | undefined;
-    const actionWithRedirectSpy = {
-      ...action,
-      reject(error: unknown) {
-        redirectUrl = getInternalRedirectUrl(error);
-        action.reject(error);
-      },
-    } satisfies typeof action;
-    const result = reducer(state, actionWithRedirectSpy);
-    if (isThenable(result)) {
-      return result.then((nextState) => {
-        recordSoftActionRedirect(nextState, redirectUrl);
-        return nextState;
-      }) as ReducerState;
-    }
-
-    recordSoftActionRedirect(result, redirectUrl);
-    return result;
-  }
-
-  return reducer(state, action);
-}
-
-function getInternalRedirectUrl(error: unknown) {
-  const redirectHref = getNextRedirectHref(error);
-  if (!redirectHref) return;
-
-  const redirectUrl = new URL(redirectHref, location.href);
-  return redirectUrl.origin === location.origin ? redirectUrl : undefined;
-}
-
-function getNextRedirectHref(error: unknown) {
-  // Begin copy: Next.js redirect error digest parsing
-  // Source: https://github.com/vercel/next.js/blob/4588a7354283f97e2124e3d82f55733ca4eb9373/packages/next/src/client/components/redirect-error.ts
-  // Source: https://github.com/vercel/next.js/blob/4588a7354283f97e2124e3d82f55733ca4eb9373/packages/next/src/client/components/redirect.ts
-  // Adaptation: parse only the redirect target needed by the test router. Do
-  // not import `redirect.ts` here because its CJS output conditionally requires
-  // server action async storage and broadens the browser bundle.
-  if (
-    typeof error !== "object" ||
-    error === null ||
-    !("digest" in error) ||
-    typeof error.digest !== "string"
-  ) {
-    return;
-  }
-
-  const digest = error.digest.split(";");
-  const [errorCode, type] = digest;
-  const statusCode = Number(digest.at(-2));
-  if (
-    errorCode !== "NEXT_REDIRECT" ||
-    (type !== "replace" && type !== "push") ||
-    ![303, 307, 308].includes(statusCode)
-  ) {
-    return;
-  }
-
-  return digest.slice(2, -2).join(";");
-  // End copy
-}
-
-function recordSoftActionRedirect(nextState: ReducerState, redirectUrl: URL | undefined) {
-  if (!redirectUrl || isMpaNavigationState(nextState)) return;
-
-  globalThis.onNavigate(redirectUrl);
-}
-
-function isMpaNavigationState(state: ReducerState) {
-  return Boolean(
-    (state as ReducerState & { pushRef?: { mpaNavigation?: boolean } }).pushRef?.mpaNavigation,
-  );
-}
-
-function isThenable<T>(value: T | Promise<T>): value is Promise<T> {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    "then" in value &&
-    typeof (value as { then?: unknown }).then === "function"
-  );
 }
