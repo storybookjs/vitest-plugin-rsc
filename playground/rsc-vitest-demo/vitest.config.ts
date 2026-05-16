@@ -2,13 +2,13 @@ import { fileURLToPath } from "node:url";
 import { defineProject } from "vitest/config";
 import { playwright } from "@vitest/browser-playwright";
 import { vitestPluginRSC } from "vitest-plugin-rsc";
+import { vitestPluginRscSourceConditions } from "../../vitest.conditions.ts";
 
 export default defineProject({
   root: fileURLToPath(new URL("./", import.meta.url)),
   plugins: [vitestPluginRSC()],
   resolve: {
-    // oxlint-disable-next-line no-process-env
-    conditions: process.env.CI ? [] : ["vitest-plugin-rsc-source"],
+    conditions: vitestPluginRscSourceConditions,
   },
   test: {
     name: "rsc-vitest-demo",

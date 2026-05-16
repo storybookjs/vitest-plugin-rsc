@@ -4,6 +4,7 @@ import { playwright } from "@vitest/browser-playwright";
 import { defineConfig, defineProject } from "vitest/config";
 import { vitestPluginRSC } from "vitest-plugin-rsc";
 import { vitestPluginNext } from "vitest-plugin-rsc/nextjs/plugin";
+import { vitestPluginRscSourceConditions } from "../../vitest.conditions.ts";
 
 // Make Vitest UI trace/source clicks a no-op instead of opening Cursor.
 // oxlint-disable-next-line no-process-env
@@ -27,8 +28,7 @@ const sharedProjectConfig = {
     alias: {
       "vitest/suite": "@vitest/runner",
     },
-    // oxlint-disable-next-line no-process-env
-    conditions: process.env.CI ? ["test"] : ["vitest-plugin-rsc-source", "test"],
+    conditions: [...vitestPluginRscSourceConditions, "test"],
   },
   optimizeDeps: {
     include: [

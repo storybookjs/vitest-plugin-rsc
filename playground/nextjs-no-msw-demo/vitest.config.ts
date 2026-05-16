@@ -3,13 +3,13 @@ import { playwright } from "@vitest/browser-playwright";
 import { defineProject } from "vitest/config";
 import { vitestPluginRSC } from "vitest-plugin-rsc";
 import { vitestPluginNext } from "vitest-plugin-rsc/nextjs/plugin";
+import { vitestPluginRscSourceConditions } from "../../vitest.conditions.ts";
 
 export default defineProject({
   root: fileURLToPath(new URL("./", import.meta.url)),
   plugins: [vitestPluginRSC(), vitestPluginNext()],
   resolve: {
-    // oxlint-disable-next-line no-process-env
-    conditions: process.env.CI ? ["test"] : ["vitest-plugin-rsc-source", "test"],
+    conditions: [...vitestPluginRscSourceConditions, "test"],
   },
   optimizeDeps: {
     include: [
