@@ -1,3 +1,5 @@
+import fs from "node:fs";
+import path from "node:path";
 import { createProjectRequire } from "../plugin-utils";
 import { virtualNextEntrypointsPublicId } from "../virtual-ids";
 
@@ -217,6 +219,24 @@ const nextImageOptimizeDeps = [
   "next/dist/shared/lib/router-context.shared-runtime.js",
 ] as const;
 
+const nextProjectRuntimeOptimizeDeps = [
+  "@base-ui/react/button",
+  "@base-ui/react/input",
+  "@base-ui/react/menu",
+  "@base-ui/react/separator",
+  "@better-auth/passkey/client",
+  "better-auth/react",
+  "class-variance-authority",
+  "clsx",
+  "lucide-react",
+  "next-themes",
+  "next/og",
+  "react-transition-progress",
+  "react-transition-progress/next",
+  "tailwind-merge",
+  "zod-form-data",
+] as const;
+
 export function resolveNextOptimizeDeps(root: string) {
   return {
     appRouterApi: filterResolvableOptimizeDeps(root, nextAppRouterApiOptimizeDeps),
@@ -235,6 +255,7 @@ export function resolveNextOptimizeDeps(root: string) {
     rscServer: filterResolvableOptimizeDeps(root, nextRscServerOptimizeDeps),
     testingLibrary: filterResolvableOptimizeDeps(root, nextTestingLibraryOptimizeDeps),
     appRouterClientApi: filterResolvableOptimizeDeps(root, nextAppRouterClientApiOptimizeDeps),
+    projectRuntime: filterProjectRuntimeOptimizeDeps(root, nextProjectRuntimeOptimizeDeps),
   };
 }
 
@@ -248,6 +269,40 @@ function filterResolvableOptimizeDeps(root: string, deps: readonly string[]): st
       return false;
     }
   });
+}
+
+function filterProjectRuntimeOptimizeDeps(root: string, deps: readonly string[]): string[] {
+  const declaredDependencies = readDeclaredDependencyNames(root);
+  return filterResolvableOptimizeDeps(root, deps).filter((dep) =>
+    declaredDependencies.has(getPackageName(dep)),
+  );
+}
+
+function readDeclaredDependencyNames(root: string): Set<string> {
+  try {
+    const packageJson = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8")) as {
+      dependencies?: Record<string, unknown>;
+      devDependencies?: Record<string, unknown>;
+      optionalDependencies?: Record<string, unknown>;
+      peerDependencies?: Record<string, unknown>;
+    };
+    return new Set([
+      ...Object.keys(packageJson.dependencies ?? {}),
+      ...Object.keys(packageJson.devDependencies ?? {}),
+      ...Object.keys(packageJson.optionalDependencies ?? {}),
+      ...Object.keys(packageJson.peerDependencies ?? {}),
+    ]);
+  } catch {
+    return new Set();
+  }
+}
+
+function getPackageName(dep: string) {
+  if (dep.startsWith("@")) {
+    const [scope, name] = dep.split("/");
+    return `${scope}/${name}`;
+  }
+  return dep.split("/")[0]!;
 }
 
 export function createNextSourceOptimizerEntries(_root: string): string[] {

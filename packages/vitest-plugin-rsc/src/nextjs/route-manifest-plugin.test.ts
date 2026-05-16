@@ -98,7 +98,8 @@ test("generates optimizer entrypoints from discovered Next routes only", async (
   expect(watchedFiles).toContain(routeFile);
   expect(code).toContain("virtual:vitest-plugin-rsc/next-route-tree?");
   expect(code).toContain("app%2Fnext-apis%2Fpage.tsx");
-  expect(code).toContain("/@fs/");
+  expect(code).toContain(JSON.stringify(pageFile));
+  expect(code).toContain(JSON.stringify(routeFile));
   expect(code).toContain("app/api/next-request-response/route.ts");
   expect(code).not.toContain("app/**/*");
   expect(code).not.toContain("src/app/**/*");

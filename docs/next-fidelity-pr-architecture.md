@@ -363,12 +363,20 @@ Status values: `Not started`, `In progress`, `Blocked`, `Deferred`, `Rejected`,
   suites, a separate Vitest browser websocket port bug was found and fixed on
   top of `main` in PR #49; this branch carries the same fix so local PR #47
   browser verification does not hit Vite's stale `/@vite/client` port fallback.
+  CI then exposed a cold-cache optimizer reload after the broad app globs were
+  removed. The follow-up keeps route-discovered virtual entries, makes the
+  optimizer-only entrypoint use filesystem imports for discovered route modules,
+  and adds a filtered `projectRuntime` prebundle group for dependencies declared
+  by the actual Next project package, so no-MSW and temp package tests do not
+  receive notes-demo-only includes.
   Local verification:
   - `pnpm --filter vitest-plugin-rsc test:run src/index.test.ts`
   - `pnpm --filter vitest-plugin-rsc test:run src/nextjs/routing-data.test.ts src/nextjs/request-router.test.ts src/nextjs/plugin/optimizer.test.ts src/nextjs/route-manifest-plugin.test.ts src/nextjs/plugin-composition.test.ts`
   - `pnpm build`
   - `CI=1 pnpm test:run --project nextjs-no-msw-demo --api 52661`
   - `CI=1 pnpm test:run --project nextjs-notes-demo-browser --api 52660 app/next-apis/page.test.tsx`
+  - `CI=1 pnpm test:run --project nextjs-notes-demo-browser --api 52663 components/next-router.test.tsx` after clearing Vite optimizer caches
+  - `CI=1 pnpm test:run --project vitest-plugin-rsc --project nextjs-no-msw-demo --project nextjs-notes-demo-browser --project nextjs-notes-demo-node --api 52662` after clearing Vite optimizer caches
   - `pnpm tsgo --build`
   - `pnpm lint:ci`
   - `pnpm format:check`

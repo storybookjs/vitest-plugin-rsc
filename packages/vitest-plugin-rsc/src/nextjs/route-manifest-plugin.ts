@@ -316,10 +316,10 @@ async function generateNextEntrypointsModule(
   }
 
   const routeHandlerImports = routeHandlers.map(
-    (entry) => `import ${JSON.stringify(toViteImportSource(entry.routeFile))};`,
+    (entry) => `import ${JSON.stringify(entry.routeFile)};`,
   );
   const routeDependencyImports = Array.from(routeModuleImports, (source) => {
-    return `import ${JSON.stringify(source)};`;
+    return `import ${JSON.stringify(toOptimizerImportSource(source))};`;
   });
 
   return {
@@ -541,4 +541,9 @@ function toViteImportSource(source: string) {
   if (file && !fs.existsSync(file)) return virtualNextRouteEmptyModulePublicId;
 
   return `/@fs/${normalizePath(source).replace(/^\//, "")}`;
+}
+
+function toOptimizerImportSource(source: string) {
+  if (!source.startsWith("/@fs/")) return source;
+  return `/${source.slice("/@fs/".length)}`;
 }
