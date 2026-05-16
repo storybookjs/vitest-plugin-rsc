@@ -2,10 +2,10 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Plugin } from "vite";
 import { expect, test } from "vitest";
-import { useNextSwcTransform } from "./swc-transform-plugin.ts";
+import { useNextSwcTransform } from "./next-swc-loader.ts";
 
 const fixtureRoot = fileURLToPath(
-  new URL("../../../../playground/nextjs-notes-demo/", import.meta.url),
+  new URL("../../../../../../../../playground/nextjs-notes-demo/", import.meta.url),
 );
 
 test("uses Next SWC to rewrite exported next/font calls", async () => {

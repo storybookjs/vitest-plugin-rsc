@@ -35,7 +35,7 @@ import { createNextTesterHtmlConfig, nextTesterHtmlPath } from "./plugin/tester-
 import { useNextUseCacheTransform } from "./plugin/use-cache.ts";
 import { getProjectRoot } from "./plugin-utils.ts";
 import { useNextRouteManifest } from "./route-manifest-plugin.ts";
-import { useNextSwcTransform } from "./swc-transform-plugin.ts";
+import { useNextSwcTransform } from "./src/build/webpack/loaders/next-swc-loader.ts";
 
 export { nextTesterHtmlPath };
 

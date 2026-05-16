@@ -1,13 +1,31 @@
 import path from "node:path";
 import type { Plugin } from "vite";
-import { loadNextProjectConfig, type LoadedJsConfig, type NextConfigLike } from "./config.ts";
+import {
+  loadNextProjectConfig,
+  type LoadedJsConfig,
+  type NextConfigLike,
+} from "../../../../config.ts";
 import {
   createProjectRequire,
   getProjectRoot,
   isProjectFile,
   normalizePath,
-} from "./plugin-utils.ts";
+} from "../../../../plugin-utils.ts";
 
+// Mirror/adapt: Next.js next-swc-loader transform.
+// Source: https://github.com/vercel/next.js/blob/ee6e79b1792a4d401ddf2480f40a83549fe8e722/packages/next/src/build/webpack/loaders/next-swc-loader.ts#L81-L180
+// Source: https://github.com/vercel/next.js/blob/ee6e79b1792a4d401ddf2480f40a83549fe8e722/packages/next/src/build/swc/options.ts#L385-L560
+// Adaptation: Vite runs this as a transform hook instead of a webpack loader.
+// `@vitejs/plugin-rsc` owns RSC directives and server references, so this
+// adapter invokes Next SWC only for compiler-owned features such as next/font,
+// next/dynamic metadata, styled-jsx/compiler options, modular imports, and
+// next/server CJS optimization.
+
+// Begin adapted: Next.js next-swc-loader transform
+// Source: https://github.com/vercel/next.js/blob/ee6e79b1792a4d401ddf2480f40a83549fe8e722/packages/next/src/build/webpack/loaders/next-swc-loader.ts#L81-L180
+// Source: https://github.com/vercel/next.js/blob/ee6e79b1792a4d401ddf2480f40a83549fe8e722/packages/next/src/build/swc/options.ts#L385-L560
+// Adaptation: Translate webpack loader options into the matching Next SWC
+// option helper, but leave RSC graph transforms disabled for Vite RSC.
 type NextSwc = {
   loadBindings(): Promise<unknown>;
   transform(code: string, options: unknown): Promise<{ code: string; map?: string | null }>;
@@ -167,3 +185,4 @@ function isUserSourceFile(id: string) {
 function hasSupportedNextSwcTransformTrigger(code: string) {
   return nextSwcTransformConditions.test(code);
 }
+// End adapted
