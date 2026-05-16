@@ -154,7 +154,7 @@ export async function renderServer(
   const explicitUrl = routeOnly || url !== undefined;
   const routeManifest = explicitUrl ? await loadNextRouteManifest() : undefined;
   const initialRequest = routeManifest
-    ? resolveInitialNextRequestTarget({
+    ? await resolveInitialNextRequestTarget({
         manifest: routeManifest,
         requestUrl,
         route,
@@ -203,7 +203,7 @@ export async function renderServer(
     ): Promise<ReactNode> {
       let renderUrl = activeRequestUrl;
       for (let redirectCount = 0; redirectCount < 5; redirectCount++) {
-        const appRenderEntry = resolveAppRenderEntry(renderSource, renderUrl, requestRoute);
+        const appRenderEntry = await resolveAppRenderEntry(renderSource, renderUrl, requestRoute);
         try {
           const initialFlightPayload =
             initialRSCPayload === undefined
@@ -260,7 +260,7 @@ export async function renderServer(
     };
 
     const fetchNextRsc: FetchNextRsc = async (request) => {
-      const appRenderEntry = resolveAppRenderEntry(renderSource, request.url, requestRoute);
+      const appRenderEntry = await resolveAppRenderEntry(renderSource, request.url, requestRoute);
       const stubMetadata = shouldUseDirectMetadataStub(renderSource, appRenderEntry);
 
       if (request.requestType === "next-action") {
@@ -309,7 +309,11 @@ export async function renderServer(
         };
       };
       const renderNextDocumentClientFallback = async (status?: number) => {
-        const appRenderEntry = resolveAppRenderEntry(renderSource, activeRequestUrl, requestRoute);
+        const appRenderEntry = await resolveAppRenderEntry(
+          renderSource,
+          activeRequestUrl,
+          requestRoute,
+        );
         if (status !== undefined) {
           const accessFallbackNode = await loadDeepestAccessFallbackNode(
             appRenderEntry.loaderTree,
@@ -379,7 +383,8 @@ export async function renderServer(
             accessFallbackStatus === undefined &&
             !isNextBuiltinGlobalErrorReferenceError(error) &&
             !hasNextErrorBoundary(
-              resolveAppRenderEntry(renderSource, activeRequestUrl, requestRoute).loaderTree,
+              (await resolveAppRenderEntry(renderSource, activeRequestUrl, requestRoute))
+                .loaderTree,
             )
           ) {
             throw error;
@@ -413,7 +418,8 @@ export async function renderServer(
           (getNextHttpAccessFallbackStatus(error) === undefined &&
             !isNextBuiltinGlobalErrorReferenceError(error) &&
             !hasNextErrorBoundary(
-              resolveAppRenderEntry(renderSource, activeRequestUrl, requestRoute).loaderTree,
+              (await resolveAppRenderEntry(renderSource, activeRequestUrl, requestRoute))
+                .loaderTree,
             ))
         ) {
           throw error;
@@ -433,7 +439,7 @@ export async function renderServer(
       injectNextFontStyles();
       if (hydrateDocument) {
         injectNextFontPreloadLinks(
-          resolveAppRenderEntry(renderSource, activeRequestUrl, requestRoute).loaderTree,
+          (await resolveAppRenderEntry(renderSource, activeRequestUrl, requestRoute)).loaderTree,
         );
       }
     } catch (error) {
@@ -497,7 +503,7 @@ async function renderNextDocumentHtml(
   requestRoute: string,
   options: { headers?: Headers | Record<string, string> },
 ) {
-  const appRenderEntry = resolveAppRenderEntry(source, url, requestRoute);
+  const appRenderEntry = await resolveAppRenderEntry(source, url, requestRoute);
   const componentMod = shouldUseDirectMetadataStub(source, appRenderEntry)
     ? await createNextDirectComponentMod()
     : undefined;
@@ -749,15 +755,15 @@ function toBaseConfig(): RenderConfiguration {
   };
 }
 
-function resolveAppRenderEntry(
+async function resolveAppRenderEntry(
   source: NextRenderSource,
   url: string,
   defaultRoute: string,
-): NextRouteManifestEntry {
+): Promise<NextRouteManifestEntry> {
   const location = new URL(url, "http://localhost");
 
   if (source.kind === "route") {
-    const target = resolveNextRequestTarget({
+    const target = await resolveNextRequestTarget({
       url,
       manifest: createPageOnlyRouteManifest(source.manifest),
     });
@@ -774,7 +780,7 @@ function resolveAppRenderEntry(
   }
 
   const target = source.manifest
-    ? resolveNextRequestTarget({
+    ? await resolveNextRequestTarget({
         url,
         manifest: createPageOnlyRouteManifest(source.manifest),
       })
@@ -848,21 +854,21 @@ async function loadNextRouteManifest() {
   } satisfies NextRouteManifest;
 }
 
-function resolveInitialNextRequestTarget(options: {
+async function resolveInitialNextRequestTarget(options: {
   manifest: NextRouteManifest;
   requestUrl: string;
   route: string | undefined;
   routeOnly: boolean;
   headers: Headers | Record<string, string> | undefined;
-}): {
+}): Promise<{
   target: Exclude<NextRequestTarget, { kind: "redirect" }>;
   url: string;
   routeEntry?: NextRouteManifestEntry;
-} {
+}> {
   let activeUrl = options.requestUrl;
 
   for (let redirectCount = 0; redirectCount < 5; redirectCount++) {
-    const target = resolveNextRequestTarget({
+    const target = await resolveNextRequestTarget({
       url: activeUrl,
       route: options.routeOnly ? options.route : undefined,
       headers: options.headers,

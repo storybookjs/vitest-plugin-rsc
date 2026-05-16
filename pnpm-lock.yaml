@@ -124,6 +124,9 @@ importers:
         specifier: 19.2.6
         version: 19.2.6(react@19.2.6)
     devDependencies:
+      '@next/routing':
+        specifier: ^16.2.6
+        version: 16.2.6
       '@types/node':
         specifier: ^24.12.4
         version: 24.12.4
@@ -245,6 +248,9 @@ importers:
       '@fontsource-variable/geist-mono':
         specifier: ^5.2.7
         version: 5.2.7
+      '@next/routing':
+        specifier: ^16.2.6
+        version: 16.2.6
       '@opentelemetry/api':
         specifier: ^1.9.1
         version: 1.9.1

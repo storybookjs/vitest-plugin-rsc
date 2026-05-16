@@ -29,3 +29,15 @@ test("only exposes optimizer deps that resolve in the installed Next version", (
     expect(() => requireFromFixture.resolve(dep)).not.toThrow();
   }
 });
+
+test("prebundles routing data dependencies for the browser testing library", () => {
+  const depsByGroup = resolveNextOptimizeDeps(fixtureRoot);
+
+  expect(depsByGroup.testingLibrary).toEqual(
+    expect.arrayContaining([
+      "@next/routing",
+      "next/dist/compiled/path-to-regexp/index.js",
+      "next/dist/lib/build-custom-route.js",
+    ]),
+  );
+});

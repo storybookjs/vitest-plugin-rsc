@@ -52,8 +52,8 @@ const manifest: NextRouteManifest = {
   },
 };
 
-test("resolves beforeFiles rewrites to app pages", () => {
-  const target = resolveNextRequestTarget({ url: "/before", manifest });
+test("resolves beforeFiles rewrites to app pages", async () => {
+  const target = await resolveNextRequestTarget({ url: "/before", manifest });
 
   expect(target.kind).toBe("app-page");
   if (target.kind !== "app-page") return;
@@ -62,8 +62,8 @@ test("resolves beforeFiles rewrites to app pages", () => {
   expect(target.invocationUrl.searchParams.get("via")).toBe("before");
 });
 
-test("does not let afterFiles rewrites shadow exact app routes", () => {
-  const target = resolveNextRequestTarget({ url: "/next-apis", manifest });
+test("does not let afterFiles rewrites shadow exact app routes", async () => {
+  const target = await resolveNextRequestTarget({ url: "/next-apis", manifest });
 
   expect(target.kind).toBe("app-page");
   if (target.kind !== "app-page") return;
@@ -72,8 +72,8 @@ test("does not let afterFiles rewrites shadow exact app routes", () => {
   expect(target.responseHeaders.get("x-next-config-header")).toBe("notes-demo");
 });
 
-test("selects dynamic app routes after afterFiles rewrites", () => {
-  const target = resolveNextRequestTarget({
+test("selects dynamic app routes after afterFiles rewrites", async () => {
+  const target = await resolveNextRequestTarget({
     url: "/route-patterns/alpha/settings",
     manifest,
   });
@@ -85,8 +85,8 @@ test("selects dynamic app routes after afterFiles rewrites", () => {
   expect(target.responseHeaders.get("x-route-team")).toBe("alpha");
 });
 
-test("uses fallback rewrites only after no exact or dynamic route matches", () => {
-  const target = resolveNextRequestTarget({ url: "/missing/deep/path", manifest });
+test("uses fallback rewrites only after no exact or dynamic route matches", async () => {
+  const target = await resolveNextRequestTarget({ url: "/missing/deep/path", manifest });
 
   expect(target.kind).toBe("app-page");
   if (target.kind !== "app-page") return;
@@ -95,8 +95,8 @@ test("uses fallback rewrites only after no exact or dynamic route matches", () =
   expect(target.invocationUrl.searchParams.get("from")).toBe("fallback");
 });
 
-test("returns redirect targets with Next redirect status and destination query params", () => {
-  const target = resolveNextRequestTarget({ url: "/legacy/config", manifest });
+test("returns redirect targets with Next redirect status and destination query params", async () => {
+  const target = await resolveNextRequestTarget({ url: "/legacy/config", manifest });
 
   expect(target.kind).toBe("redirect");
   if (target.kind !== "redirect") return;
@@ -106,8 +106,8 @@ test("returns redirect targets with Next redirect status and destination query p
   expect(target.responseHeaders.get("location")).toBe("/next-apis?from=config");
 });
 
-test("keeps explicit route overrides constrained to matching invocation pathnames", () => {
-  const target = resolveNextRequestTarget({
+test("keeps explicit route overrides constrained to matching invocation pathnames", async () => {
+  const target = await resolveNextRequestTarget({
     url: "/route-patterns/alpha/settings",
     route: "/route-patterns/[team]/settings",
     manifest,
@@ -119,8 +119,8 @@ test("keeps explicit route overrides constrained to matching invocation pathname
   expect(target.routeMatches).toEqual({ team: "alpha" });
 });
 
-test("does not fall back to URL-matched pages when explicit route overrides mismatch", () => {
-  const target = resolveNextRequestTarget({
+test("does not fall back to URL-matched pages when explicit route overrides mismatch", async () => {
+  const target = await resolveNextRequestTarget({
     url: "/next-apis",
     route: "/route-patterns/[team]/settings",
     manifest,
@@ -129,8 +129,8 @@ test("does not fall back to URL-matched pages when explicit route overrides mism
   expect(target.kind).toBe("not-found");
 });
 
-test("detects app route targets separately from app pages", () => {
-  const target = resolveNextRequestTarget({ url: "/api/next-request-response", manifest });
+test("detects app route targets separately from app pages", async () => {
+  const target = await resolveNextRequestTarget({ url: "/api/next-request-response", manifest });
 
   expect(target.kind).toBe("app-route");
   if (target.kind !== "app-route") return;

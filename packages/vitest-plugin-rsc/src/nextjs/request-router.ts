@@ -1,14 +1,9 @@
-import { getRedirectStatus, modifyRouteRegex } from "next/dist/lib/redirect-status.js";
+import type { ResolveRoutesQuery } from "@next/routing";
 import type { LoaderTree } from "next/dist/server/lib/app-dir-module.js";
 import { normalizeAppPath } from "next/dist/shared/lib/router/utils/app-paths.js";
-import { formatUrl } from "next/dist/shared/lib/router/utils/format-url.js";
-import { getPathMatch } from "next/dist/shared/lib/router/utils/path-match.js";
-import {
-  matchHas,
-  prepareDestination,
-} from "next/dist/shared/lib/router/utils/prepare-destination.js";
 import { getRouteMatcher } from "next/dist/shared/lib/router/utils/route-matcher.js";
 import { getRouteRegex } from "next/dist/shared/lib/router/utils/route-regex.js";
+import { createNextRoutingData } from "./routing-data";
 
 export type NextRouteManifestEntry = {
   route: string;
@@ -50,6 +45,7 @@ export type NextCustomRoutes = {
 };
 
 type RouteMatches = Record<string, string | string[]>;
+type NextRoutingModule = typeof import("@next/routing");
 
 export type NextRequestTarget =
   | {
@@ -89,79 +85,83 @@ export type NextRequestTarget =
       status?: number;
     };
 
-// Mirrors the phase ordering in Next's request router and rewrite resolver:
-// Source: https://github.com/vercel/next.js/blob/ee6e79b1792a4d401ddf2480f40a83549fe8e722/packages/next/src/server/lib/router-utils/resolve-routes.ts
-// Source: https://github.com/vercel/next.js/blob/ee6e79b1792a4d401ddf2480f40a83549fe8e722/packages/next/src/shared/lib/router/utils/resolve-rewrites.ts
-// Adaptation: Vitest has route-discovery facts but no Next router server,
-// filesystem checker, or `@next/routing` data source yet. This local boundary
-// delegates matching, interpolation, has/missing checks, route-regex matching,
-// app-path normalization, and redirect status handling to installed Next
-// helpers (`getPathMatch`, `prepareDestination`, `matchHas`, `getRouteRegex`,
-// `getRouteMatcher`, `normalizeAppPath`, and `getRedirectStatus`) so the next
-// `@next/routing` slice can narrow or delete the remaining phase-order glue.
-export function resolveNextRequestTarget(options: {
+let nextRoutingModulePromise: Promise<NextRoutingModule> | undefined;
+
+// Central request target resolution for Next App Router tests.
+//
+// Source: https://github.com/vercel/next.js/blob/ee6e79b1792a4d401ddf2480f40a83549fe8e722/packages/next-routing/src/resolve-routes.ts
+// Source: https://github.com/vercel/next.js/blob/ee6e79b1792a4d401ddf2480f40a83549fe8e722/packages/next-routing/src/types.ts
+// Adaptation: Vitest owns discovered app-page/app-route entries and has no
+// production middleware server. This boundary feeds those route facts plus
+// next.config custom routes into `@next/routing`, then maps the standalone
+// routing result back to the render-target union consumed by the test helper.
+export async function resolveNextRequestTarget(options: {
   url: string;
   route?: string;
   headers?: Headers | Record<string, string>;
   manifest: NextRouteManifest;
-}): NextRequestTarget {
+}): Promise<NextRequestTarget> {
   const requestedUrl = new URL(options.url, "http://localhost");
-  const requestedPath = formatRelativeUrl(requestedUrl);
-  const redirect = resolveNextCustomRedirect(
-    options.manifest.customRoutes.redirects,
-    requestedPath,
-    options.headers,
-  );
+  const routingData = createNextRoutingData(options.manifest);
+  const { resolveRoutes } = await loadNextRoutingModule();
+  const result = await resolveRoutes({
+    url: requestedUrl,
+    buildId: "BUILD_ID",
+    basePath: "",
+    requestBody: createEmptyRequestBody(),
+    headers: toHeaders(options.headers),
+    pathnames: routingData.pathnames,
+    routes: routingData.routes,
+    invokeMiddleware: async () => ({}),
+  });
+  const responseHeaders = result.resolvedHeaders ?? new Headers();
 
-  if (redirect) {
-    const redirectUrl = createRedirectUrl(redirect.destination, requestedPath);
-    const responseHeaders = new Headers();
-    responseHeaders.set("location", formatLocationHeader(redirectUrl, requestedUrl));
+  if (result.redirect) {
     return {
       kind: "redirect",
-      url: redirectUrl,
-      status: redirect.status,
+      url: result.redirect.url,
+      status: result.redirect.status,
       responseHeaders,
     };
   }
 
-  const rewrittenPath = resolveNextCustomRewrite(
-    options.manifest,
-    options.manifest.customRoutes.rewrites,
-    requestedPath,
-    options.headers,
-  );
-  const invocationUrl = new URL(rewrittenPath, requestedUrl);
-  const responseHeaders = resolveNextCustomResponseHeaders(
-    options.manifest.customRoutes.headers,
-    formatRelativeUrl(invocationUrl),
-    options.headers,
-  );
-  const page = findMatchedRoute(options.manifest.pages, options.route, invocationUrl.pathname);
+  if (result.externalRewrite) {
+    return {
+      kind: "external-rewrite",
+      url: result.externalRewrite,
+      responseHeaders,
+      status: result.status,
+    };
+  }
+
+  const invocationUrl = createInvocationUrl(requestedUrl, result.invocationTarget);
+  const page = findResolvedRoute(options.manifest.pages, options.route, result.resolvedPathname);
   if (page) {
     return {
       kind: "app-page",
-      entry: page.entry,
+      entry: page,
       requestedUrl,
       invocationUrl,
-      routeMatches: page.params,
+      routeMatches: normalizeRouteMatches(result.routeMatches),
       responseHeaders,
+      status: result.status,
     };
   }
 
-  const routeHandler = findMatchedRoute(
+  const routeHandler = findResolvedRoute(
     options.manifest.routeHandlers,
     options.route,
-    invocationUrl.pathname,
+    result.resolvedPathname,
   );
   if (routeHandler) {
     return {
       kind: "app-route",
-      entry: routeHandler.entry,
+      entry: routeHandler,
       requestedUrl,
       invocationUrl,
-      routeMatches: routeHandler.params,
+      routeMatches: normalizeRouteMatches(result.routeMatches),
       responseHeaders,
+      status: result.status,
     };
   }
 
@@ -169,6 +169,7 @@ export function resolveNextRequestTarget(options: {
     kind: "not-found",
     requestedUrl,
     responseHeaders,
+    status: result.status,
   };
 }
 
@@ -192,41 +193,73 @@ export function resolveRedirectUrl(redirectUrl: string, baseUrl: string) {
   return formatRelativeUrl(target);
 }
 
-function resolveNextCustomResponseHeaders(
-  headerRoutes: NextCustomRoute[],
-  requestUrl: string,
-  headers: Headers | Record<string, string> | undefined,
-) {
-  const responseHeaders = new Headers();
-  for (const headerRoute of headerRoutes) {
-    const match = matchNextCustomRoute("header", headerRoute, requestUrl, headers);
-    if (!match) continue;
-
-    for (const header of headerRoute.headers ?? []) {
-      responseHeaders.set(header.key, interpolateNextCustomRouteValue(header.value, match.params));
-    }
-  }
-  return responseHeaders;
+async function loadNextRoutingModule() {
+  nextRoutingModulePromise ??= import("@next/routing").then((routingModule) => {
+    const moduleWithDefault = routingModule as NextRoutingModule & {
+      default?: NextRoutingModule;
+    };
+    return typeof moduleWithDefault.resolveRoutes === "function"
+      ? moduleWithDefault
+      : moduleWithDefault.default!;
+  });
+  return nextRoutingModulePromise;
 }
 
-function findMatchedRoute<T extends { route: string }>(
+function createEmptyRequestBody() {
+  return new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.close();
+    },
+  });
+}
+
+function toHeaders(headers: Headers | Record<string, string> | undefined) {
+  return headers ? new Headers(headers) : new Headers();
+}
+
+function createInvocationUrl(
+  requestedUrl: URL,
+  invocationTarget:
+    | {
+        pathname: string;
+        query: ResolveRoutesQuery;
+      }
+    | undefined,
+) {
+  const invocationUrl = new URL(requestedUrl.toString());
+  if (!invocationTarget) return invocationUrl;
+
+  invocationUrl.pathname = invocationTarget.pathname;
+  invocationUrl.search = "";
+  for (const [key, value] of Object.entries(invocationTarget.query)) {
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        invocationUrl.searchParams.append(key, item);
+      }
+    } else {
+      invocationUrl.searchParams.set(key, value);
+    }
+  }
+  return invocationUrl;
+}
+
+function normalizeRouteMatches(matches: Record<string, string> | undefined): RouteMatches {
+  const routeMatches: RouteMatches = {};
+  for (const [key, value] of Object.entries(matches ?? {})) {
+    if (/^\d+$/.test(key)) continue;
+    routeMatches[key] = value;
+  }
+  return routeMatches;
+}
+
+function findResolvedRoute<T extends { route: string }>(
   entries: T[],
   route: string | undefined,
-  pathname: string,
-): { entry: T; params: RouteMatches } | undefined {
-  const exact = route ? entries.find((candidate) => candidate.route === route) : undefined;
-  if (exact) {
-    const params = matchRoutePatternParams(exact.route, pathname);
-    if (params) return { entry: exact, params };
-    return;
-  }
-
-  if (route) return;
-
-  for (const entry of entries) {
-    const params = matchRoutePatternParams(entry.route, pathname);
-    if (params) return { entry, params };
-  }
+  resolvedPathname: string | undefined,
+) {
+  if (!resolvedPathname) return;
+  if (route && route !== resolvedPathname) return;
+  return entries.find((entry) => entry.route === resolvedPathname);
 }
 
 function matchRoutePatternParams(routePattern: string, pathname: string): RouteMatches | undefined {
@@ -239,191 +272,8 @@ function matchRoutePatternParams(routePattern: string, pathname: string): RouteM
   }
 }
 
-function createRedirectUrl(redirectUrl: string, baseUrl: string) {
-  return new URL(redirectUrl, new URL(baseUrl, "http://localhost"));
-}
-
-function formatLocationHeader(target: URL, base: URL) {
-  return target.origin === base.origin ? formatRelativeUrl(target) : target.href;
-}
-
 function formatRelativeUrl(url: URL) {
   return `${url.pathname}${url.search}${url.hash}`;
-}
-
-function interpolateNextCustomRouteValue(value: string, params: Record<string, string | string[]>) {
-  return value.replace(/:([A-Za-z0-9_]+)/g, (token, key: string) => {
-    const param = params[key];
-    if (param === undefined) return token;
-    return Array.isArray(param) ? param.join("/") : param;
-  });
-}
-
-function resolveNextCustomRedirect(
-  redirects: NextCustomRoute[],
-  requestUrl: string,
-  headers: Headers | Record<string, string> | undefined,
-) {
-  for (const redirect of redirects) {
-    const match = matchNextCustomRoute("redirect", redirect, requestUrl, headers);
-    if (!match || !redirect.destination) continue;
-    const { parsedDestination } = prepareDestination({
-      appendParamsToQuery: false,
-      destination: redirect.destination,
-      params: match.params,
-      query: match.query,
-    });
-    const destination = formatUrl(parsedDestination);
-    if (!destination) continue;
-
-    // Calling getRedirectStatus keeps this adapter aligned with Next's
-    // permanent/statusCode rules even though tests follow same-origin redirects.
-    return {
-      destination,
-      status: getRedirectStatus(redirect),
-    };
-  }
-}
-
-function resolveNextCustomRewrite(
-  routeManifest: NextRouteManifest,
-  rewrites: NextCustomRoutes["rewrites"],
-  requestUrl: string,
-  headers: Headers | Record<string, string> | undefined,
-) {
-  let rewrittenUrl = requestUrl;
-
-  for (const rewrite of rewrites.beforeFiles) {
-    rewrittenUrl = resolveNextCustomRewriteRoute(rewrite, rewrittenUrl, headers) ?? rewrittenUrl;
-  }
-
-  if (hasNextStaticRouteMatch(routeManifest, rewrittenUrl)) {
-    return rewrittenUrl;
-  }
-
-  for (const rewrite of rewrites.afterFiles) {
-    const nextUrl = resolveNextCustomRewriteRoute(rewrite, rewrittenUrl, headers);
-    if (nextUrl) return nextUrl;
-  }
-
-  if (hasNextRouteMatch(routeManifest, rewrittenUrl)) {
-    return rewrittenUrl;
-  }
-
-  for (const rewrite of rewrites.fallback) {
-    const nextUrl = resolveNextCustomRewriteRoute(rewrite, rewrittenUrl, headers);
-    if (nextUrl) return nextUrl;
-  }
-
-  return rewrittenUrl;
-}
-
-function hasNextStaticRouteMatch(routeManifest: NextRouteManifest, requestUrl: string) {
-  const pathname = new URL(requestUrl, "http://localhost").pathname;
-  return (
-    routeManifest.pages.some((entry) => isNextStaticRouteMatch(entry.route, pathname)) ||
-    routeManifest.routeHandlers.some((entry) => isNextStaticRouteMatch(entry.route, pathname))
-  );
-}
-
-function isNextStaticRouteMatch(routePattern: string, pathname: string) {
-  if (routePattern.includes("[")) return false;
-  return normalizeStaticPathname(routePattern) === normalizeStaticPathname(pathname);
-}
-
-function normalizeStaticPathname(value: string) {
-  const withLeadingSlash = value.startsWith("/") ? value : `/${value}`;
-  return withLeadingSlash === "/" ? "/" : withLeadingSlash.replace(/\/$/, "");
-}
-
-function hasNextRouteMatch(routeManifest: NextRouteManifest, requestUrl: string) {
-  const pathname = new URL(requestUrl, "http://localhost").pathname;
-  return (
-    routeManifest.pages.some((entry) => matchRoutePattern(entry.route, pathname)) ||
-    routeManifest.routeHandlers.some((entry) => matchRoutePattern(entry.route, pathname))
-  );
-}
-
-function resolveNextCustomRewriteRoute(
-  rewrite: NextCustomRoute,
-  requestUrl: string,
-  headers: Headers | Record<string, string> | undefined,
-) {
-  if (!rewrite.destination) return;
-
-  const match = matchNextCustomRoute("rewrite", rewrite, requestUrl, headers);
-  if (!match) return;
-
-  const { parsedDestination } = prepareDestination({
-    appendParamsToQuery: true,
-    destination: rewrite.destination,
-    params: match.params,
-    query: match.query,
-  });
-  if (parsedDestination.protocol) {
-    throw new Error(
-      `renderServer cannot follow external Next rewrite "${formatUrl(parsedDestination)}".`,
-    );
-  }
-
-  return formatUrl(parsedDestination);
-}
-
-function matchNextCustomRoute(
-  type: "header" | "redirect" | "rewrite",
-  route: NextCustomRoute,
-  requestUrl: string,
-  headers: Headers | Record<string, string> | undefined,
-) {
-  const location = new URL(requestUrl, "http://localhost");
-  const query = searchParamsToQuery(location.searchParams);
-  const matcher = getPathMatch(route.source, {
-    strict: true,
-    removeUnnamedParams: true,
-    regexModifier: (regex: string) =>
-      modifyRouteRegex(regex, type === "redirect" ? ["/_next"] : undefined),
-  });
-  let params = matcher(location.pathname);
-  if (!params) return;
-
-  if (route.has || route.missing) {
-    const hasParams = matchHas(
-      { headers: toIncomingHeaders(headers) } as Parameters<typeof matchHas>[0],
-      query,
-      route.has as never,
-      route.missing as never,
-    );
-    if (!hasParams) return;
-    params = { ...params, ...hasParams };
-  }
-
-  return { params, query };
-}
-
-function searchParamsToQuery(searchParams: URLSearchParams) {
-  const query: Record<string, string | string[]> = {};
-  for (const [key, value] of searchParams) {
-    const current = query[key];
-    if (current === undefined) {
-      query[key] = value;
-    } else if (Array.isArray(current)) {
-      current.push(value);
-    } else {
-      query[key] = [current, value];
-    }
-  }
-  return query;
-}
-
-function toIncomingHeaders(headers: Headers | Record<string, string> | undefined) {
-  const incomingHeaders: Record<string, string> = {};
-  if (!headers) return incomingHeaders;
-
-  const entries = headers instanceof Headers ? headers.entries() : Object.entries(headers);
-  for (const [key, value] of entries) {
-    incomingHeaders[key.toLowerCase()] = value;
-  }
-  return incomingHeaders;
 }
 
 function normalizeRoutePattern(routePattern: string) {
