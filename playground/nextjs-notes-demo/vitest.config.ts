@@ -20,23 +20,6 @@ export default defineConfig({
     },
     conditions: ["test"],
   },
-  optimizeDeps: {
-    include: [
-      "next/dist/client/components/http-access-fallback/http-access-fallback.js",
-      "next/dist/client/components/redirect-error.js",
-      "next/dist/client/components/redirect-status-code.js",
-      "next/dist/client/components/redirect.js",
-      "next/dist/client/components/router-reducer/create-href-from-url.js",
-      "next/dist/server/lib/server-action-request-meta.js",
-    ],
-  },
-  environments: {
-    client: {
-      optimizeDeps: {
-        include: ["next/dist/lib/metadata/get-metadata-route"],
-      },
-    },
-  },
   test: {
     maxWorkers,
     projects: [
