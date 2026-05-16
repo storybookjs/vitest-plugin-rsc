@@ -88,14 +88,14 @@ Use real Next.js code paths whenever possible. Prefer imports from `next/dist/..
 
 Use local source checkouts as references for intent, and installed package files as the runtime import target. Prefer the upstream clones below unless the user explicitly asks to compare a fork or branch:
 
-- Next.js: `/Users/kasperpeulen/code/github/vercel/next.js`
-- React: `/Users/kasperpeulen/code/github/facebook/react`
-- Vite: `/Users/kasperpeulen/code/github/vitejs/vite`
-- Vitest: `/Users/kasperpeulen/code/github/vitest-dev/vitest`
-- `@vitejs/plugin-rsc`: `/Users/kasperpeulen/code/github/vitejs/vite-plugin-react/packages/plugin-rsc`
-- Storybook Next.js Vite plugin: `/Users/kasperpeulen/code/github/storybookjs/vite-plugin-storybook-nextjs`
+- Next.js: `~/code/github/vercel/next.js`
+- React: `~/code/github/facebook/react`
+- Vite: `~/code/github/vitejs/vite`
+- Vitest: `~/code/github/vitest-dev/vitest`
+- `@vitejs/plugin-rsc`: `~/code/github/vitejs/vite-plugin-react/packages/plugin-rsc`
+- Storybook Next.js Vite plugin: `~/code/github/storybookjs/vite-plugin-storybook-nextjs`
 
-There are local forks and duplicate checkouts, including `/Users/kasperpeulen/code/github/vite`, `/Users/kasperpeulen/code/github/vitest`, and `/Users/kasperpeulen/code/github/vite-plugin-react`. Treat those as secondary references for local experiments, not the default source of truth.
+There are local forks and duplicate checkouts, including `~/code/github/vite`, `~/code/github/vitest`, and `~/code/github/vite-plugin-react`. Treat those as secondary references for local experiments, not the default source of truth.
 
 When adding or reviewing fidelity work, inspect the relevant upstream source first, then choose the smallest Vite adapter around the matching installed package module such as `next/dist/...`, `vite`, `vitest`, or `@vitejs/plugin-rsc`.
 

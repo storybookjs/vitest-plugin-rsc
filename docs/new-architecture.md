@@ -311,12 +311,12 @@ Before merging a Next.js fidelity change, verify:
 
 Local source checkouts used as references:
 
-- Next.js: `/Users/kasperpeulen/code/github/vercel/next.js`
-- React: `/Users/kasperpeulen/code/github/facebook/react`
-- Vite: `/Users/kasperpeulen/code/github/vitejs/vite`
-- Vitest: `/Users/kasperpeulen/code/github/vitest-dev/vitest`
-- `@vitejs/plugin-rsc`: `/Users/kasperpeulen/code/github/vitejs/vite-plugin-react/packages/plugin-rsc`
-- Storybook Next.js Vite plugin: `/Users/kasperpeulen/code/github/storybookjs/vite-plugin-storybook-nextjs`
+- Next.js: `~/code/github/vercel/next.js`
+- React: `~/code/github/facebook/react`
+- Vite: `~/code/github/vitejs/vite`
+- Vitest: `~/code/github/vitest-dev/vitest`
+- `@vitejs/plugin-rsc`: `~/code/github/vitejs/vite-plugin-react/packages/plugin-rsc`
+- Storybook Next.js Vite plugin: `~/code/github/storybookjs/vite-plugin-storybook-nextjs`
 
 Important upstream areas:
 
