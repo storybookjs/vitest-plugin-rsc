@@ -178,6 +178,10 @@ Status values: `Not started`, `In progress`, `Blocked`, `Deferred`, `Rejected`,
   target params now use Next's `getRouteMatcher(getRouteRegex(...))` for the
   selected route pattern and concrete invocation pathname, so `@next/routing`
   still owns route order while Next's matcher preserves catch-all array params.
+  A subsequent review note found that the `:param?` conversion also consumed a
+  normal URL query delimiter after non-modified params; the converter now only
+  consumes destination modifiers when they match the source token modifier, and
+  keeps `/posts/:slug?from=legacy` as `/posts/$1?from=legacy`.
   Local verification:
   - `pnpm --filter vitest-plugin-rsc test:run src/nextjs/request-router.test.ts src/nextjs/routing-data.test.ts`
   - `pnpm exec oxlint packages/vitest-plugin-rsc/src/nextjs/request-router.ts packages/vitest-plugin-rsc/src/nextjs/request-router.test.ts packages/vitest-plugin-rsc/src/nextjs/routing-data.ts packages/vitest-plugin-rsc/src/nextjs/routing-data.test.ts`

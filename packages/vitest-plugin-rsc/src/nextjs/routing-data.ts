@@ -176,19 +176,44 @@ function buildNextCustomRoute(kind: CustomRouteKind, route: NextCustomRoute): Bu
 
 function convertNextRouteTemplate(value: string, source: string) {
   const placeholders = createSourceParamPlaceholders(source);
-  return value.replace(/:([A-Za-z_][A-Za-z0-9_]*)([?*+])?/g, (_token, key: string) => {
-    return placeholders.get(key) ?? `$${key}`;
-  });
+  return value.replace(
+    /:([A-Za-z_][A-Za-z0-9_]*)([?*+])?/g,
+    (token, key: string, destinationModifier: string | undefined, offset: number) => {
+      const placeholder = placeholders.get(key);
+      const replacement = placeholder?.value ?? `$${key}`;
+      if (!destinationModifier) return replacement;
+
+      const modifierOffset = offset + token.length - destinationModifier.length;
+      if (
+        placeholder?.modifier === destinationModifier &&
+        !isUrlQueryDelimiter(value, modifierOffset)
+      ) {
+        return replacement;
+      }
+
+      return `${replacement}${destinationModifier}`;
+    },
+  );
 }
 
 function createSourceParamPlaceholders(source: string) {
-  const placeholders = new Map<string, string>();
+  const placeholders = new Map<string, { value: string; modifier: string }>();
   for (const token of parse(source)) {
     if (typeof token === "string") continue;
     if (typeof token.name !== "string") continue;
-    placeholders.set(token.name, `$${placeholders.size + 1}`);
+    placeholders.set(token.name, {
+      value: `$${placeholders.size + 1}`,
+      modifier: token.modifier,
+    });
   }
   return placeholders;
+}
+
+function isUrlQueryDelimiter(value: string, offset: number) {
+  if (value[offset] !== "?") return false;
+  if (value.lastIndexOf("?", offset - 1) !== -1) return false;
+  const next = value[offset + 1];
+  return Boolean(next && next !== "/" && next !== "#" && next !== "&");
 }
 
 function toRoutingConditions(conditions: unknown[] | undefined) {

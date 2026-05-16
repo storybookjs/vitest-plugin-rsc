@@ -180,6 +180,32 @@ test("converts catch-all custom route params without preserving literal modifier
   expect(result.resolvedQuery).toEqual({ path: "deep/path" });
 });
 
+test("preserves query delimiters after non-modified custom route params", async () => {
+  const data = createNextRoutingData({
+    ...manifest,
+    pages: [...manifest.pages, page("/posts/[slug]")],
+    customRoutes: {
+      ...manifest.customRoutes,
+      redirects: [],
+      rewrites: {
+        beforeFiles: [{ source: "/legacy/:slug", destination: "/posts/:slug?from=legacy" }],
+        afterFiles: [],
+        fallback: [],
+      },
+    },
+  });
+
+  expect(data.routes.beforeFiles).toEqual([
+    expect.objectContaining({ destination: "/posts/$1?from=legacy" }),
+  ]);
+
+  const result = await resolveRoute("/legacy/config", data);
+
+  expect(result.resolvedPathname).toBe("/posts/[slug]");
+  expect(result.invocationTarget?.pathname).toBe("/posts/config");
+  expect(result.resolvedQuery).toEqual({ from: "legacy", slug: "config" });
+});
+
 test("routes catch-all dynamic app routes with template path and query params", async () => {
   const result = await resolveRoute("/route-patterns/docs/a/b");
 
