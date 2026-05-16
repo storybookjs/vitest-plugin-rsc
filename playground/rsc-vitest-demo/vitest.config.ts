@@ -7,6 +7,7 @@ export default defineConfig({
   test: {
     restoreMocks: true,
     browser: {
+      traceView: true,
       enabled: true,
       headless: true,
       provider: playwright(),

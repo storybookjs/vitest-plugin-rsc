@@ -77,6 +77,7 @@ export default defineConfig({
           maxWorkers,
           restoreMocks: true,
           browser: {
+            traceView: true,
             enabled: true,
             headless: true,
             provider: playwright(),
@@ -101,6 +102,7 @@ export default defineConfig({
           exclude: ["node_modules"],
           maxWorkers,
           browser: {
+            traceView: true,
             enabled: true,
             headless: true,
             provider: playwright(),
@@ -130,6 +132,7 @@ export default defineConfig({
           exclude: ["**/*.node.test.{ts,tsx}", "node_modules"],
           maxWorkers,
           browser: {
+            traceView: true,
             enabled: true,
             headless: true,
             viewport: { width: 390, height: 844 },

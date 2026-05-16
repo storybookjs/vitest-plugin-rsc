@@ -18,6 +18,7 @@ export default defineConfig({
   },
   test: {
     browser: {
+      traceView: true,
       enabled: true,
       headless: true,
       provider: playwright(),
