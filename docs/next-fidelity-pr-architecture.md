@@ -56,7 +56,7 @@ Status values: `Not started`, `In progress`, `Blocked`, `Deferred`, `Rejected`,
 | Subgoal                                     | Status      | Branch/PR/Commit | Required Tests                                                          | Notes                                                                                                                         |
 | ------------------------------------------- | ----------- | ---------------- | ----------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
 | 1. Request router split                     | Done        | PR #47 / 1f9dad3 | `request-router.test.ts`; notes-demo routing/redirect/header tests      | Review cleanup tightened the request-router boundary and explicit route override behavior. Local tests and PR CI green.       |
-| 2. Routing data adapter                     | In progress | PR #47 / pending | `routing-data.test.ts`; rewrite ordering tests                          | Support-matrix trial uses matching `next`/`@next/routing` 16.2/latest/canary. Local checks green; CI pending.                 |
+| 2. Routing data adapter                     | In progress | PR #47 / 59c841d | `routing-data.test.ts`; rewrite ordering tests                          | Added routing-data conversion and focused `@next/routing` tests. Not wired into `request-router.ts` yet; CI pending.          |
 | 3. App page invoker                         | Not started |                  | `app-page-invoker.test.ts`; notes-demo render/action coverage           | Try real `AppPageRouteModule`; keep direct app-render only if smaller and explicitly isolated.                                |
 | 4. App route invoker decision               | Not started |                  | `app-route-invoker.test.ts` if implemented                              | Either use `AppRouteRouteModule.handle()` or keep route-handler render targets explicitly unsupported.                        |
 | 5. Optimizer entry architecture             | Not started |                  | optimizer entry tests; no-MSW app-shell regression                      | Replace broad `app/**` scan roots with discovered route or virtual entrypoint warmup.                                         |
@@ -132,6 +132,23 @@ Status values: `Not started`, `In progress`, `Blocked`, `Deferred`, `Rejected`,
   - `pnpm --filter vitest-plugin-rsc test:run src/nextjs/request-router.test.ts`
   - `git diff --check`
   - CI: pending on PR #47.
+- 2026-05-16 Subgoal 2 routing-data adapter: added `routing-data.ts` to
+  translate discovered app pages, app route handlers, custom routes, array
+  rewrites, redirects, headers, and dynamic route patterns into
+  `@next/routing` data. The adapter delegates custom route regex/status
+  construction to Next's `buildCustomRoute`, dynamic route regexes to
+  `getNamedRouteRegex`, and keeps the CJS-shaped `@next/routing` import
+  handling in tests. It is not wired into `request-router.ts` yet, so existing
+  runtime behavior is unchanged. Local verification:
+  - `pnpm --filter vitest-plugin-rsc test:run src/nextjs/routing-data.test.ts`
+  - `pnpm exec oxlint packages/vitest-plugin-rsc/src/nextjs/routing-data.ts packages/vitest-plugin-rsc/src/nextjs/routing-data.test.ts packages/vitest-plugin-rsc/src/nextjs/next-compiled.d.ts`
+  - `pnpm build`
+  - `pnpm tsgo --build`
+  - `pnpm format:check`
+  - `pnpm lint:ci`
+  - `pnpm --filter vitest-plugin-rsc test:run src/nextjs/request-router.test.ts src/nextjs/routing-data.test.ts`
+  - `git diff --check`
+  - CI: pending on PR #47 for `59c841d`.
 
 ## Agent Operating Rules
 
