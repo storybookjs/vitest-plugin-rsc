@@ -1,7 +1,7 @@
 import { stringify, type ParsedUrlQueryInput } from "node:querystring";
 import type { NextProjectConfig } from "../../config.ts";
 import { createProjectRequire } from "../../plugin-utils.ts";
-import { virtualNextRouteTreePublicId } from "../../virtual-ids.ts";
+import { virtualNextEntrypointsPublicId, virtualNextRouteTreePublicId } from "../../virtual-ids.ts";
 import { loadNextRouteStaticInfo } from "./analysis/get-page-static-info.ts";
 import {
   extractRouteTreeImportSources,
@@ -79,6 +79,10 @@ export async function generateNextEntrypointsModule(
     code: `${[...routeTreeImports, ...routeDependencyImports, ...routeHandlerImports].join("\n")}\nexport {};\n`,
     watchFiles: [...watchFiles],
   };
+}
+
+export function createNextSourceOptimizerEntries(_root: string): string[] {
+  return [virtualNextEntrypointsPublicId];
 }
 
 export async function createNextAppLoaderOptions(

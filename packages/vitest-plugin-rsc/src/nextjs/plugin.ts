@@ -16,17 +16,14 @@ import {
   useNextCompiledOpenTelemetryApi,
   useNextReactDomServerAlias,
 } from "./src/build/webpack-config.ts";
+import { createNextSourceOptimizerEntries } from "./src/build/entries.ts";
 import { useNextFontLoader } from "./src/build/webpack/loaders/next-font-loader/index.ts";
 import { useNextImageClientReference } from "./src/build/webpack/loaders/next-image-loader/index.ts";
 import { useNextMetadataImageLoader } from "./src/build/webpack/loaders/next-metadata-image-loader.ts";
 import { useNextBuiltinGlobalErrorStub } from "./src/client/components/builtin/global-error.ts";
 import { useNextCacheHandlers } from "./src/server/use-cache/handlers.ts";
 import { useNextEntryBaseClientReferences } from "./src/server/app-render/entry-base.ts";
-import {
-  createNextSourceOptimizerEntries,
-  nextRootParamsOptimizeDepsExclude,
-  resolveNextOptimizeDeps,
-} from "./plugin/optimizer.ts";
+import { nextRootParamsOptimizeDepsExclude, resolveNextOptimizeDeps } from "./plugin/optimizer.ts";
 import { useNextRootParams } from "./src/build/webpack/loaders/next-root-params-loader.ts";
 import { useVitestServerReferenceInfo } from "./src/shared/lib/server-reference-info.ts";
 import { createNextTesterHtmlConfig, nextTesterHtmlPath } from "./plugin/tester-html.ts";
