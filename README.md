@@ -685,11 +685,11 @@ This repository ships three reference apps under `playground/`:
 - `playground/nextjs-no-msw-demo` — a Next.js App Router setup that calls Server Actions directly inside the test runtime. Use this when you want the simplest Next setup.
 - `playground/nextjs-notes-demo` — a fuller Next.js App Router notes app with Better Auth, Drizzle, PGlite test databases, shadcn/ui, MSW-routed Server Actions, mocked email, and per-test seeding. This is the larger reference for the patterns in this README.
 
-All Vitest suites are registered as root projects, so the full repository runs from the root package:
+Vitest suites are wired through the root workspace, while each package or playground owns its local config:
 
 ```bash
 pnpm test
-pnpm test --project nextjs-notes-demo-browser --project nextjs-notes-demo-node
+pnpm test:run --project nextjs-notes-demo-browser --project nextjs-notes-demo-node
 ```
 
 ## Architecture

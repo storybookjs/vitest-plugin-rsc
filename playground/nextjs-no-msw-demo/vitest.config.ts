@@ -1,12 +1,26 @@
+import { fileURLToPath } from "node:url";
 import { playwright } from "@vitest/browser-playwright";
-import { defineConfig } from "vitest/config";
-import { vitestPluginRSC } from "vitest-plugin-rsc";
-import { vitestPluginNext } from "vitest-plugin-rsc/nextjs/plugin";
+import { defineProject } from "vitest/config";
 
-export default defineConfig({
+// oxlint-disable-next-line no-process-env
+const isCI = Boolean(process.env.CI);
+const sourceConditions = isCI ? [] : ["vitest-plugin-rsc-source"];
+const vitestPluginRSCImport = isCI
+  ? "vitest-plugin-rsc"
+  : "../../packages/vitest-plugin-rsc/src/index.ts";
+const vitestPluginNextImport = isCI
+  ? "vitest-plugin-rsc/nextjs/plugin"
+  : "../../packages/vitest-plugin-rsc/src/nextjs/plugin.ts";
+const [{ vitestPluginRSC }, { vitestPluginNext }] = await Promise.all([
+  import(/* @vite-ignore */ vitestPluginRSCImport),
+  import(/* @vite-ignore */ vitestPluginNextImport),
+]);
+
+export default defineProject({
+  root: fileURLToPath(new URL("./", import.meta.url)),
   plugins: [vitestPluginRSC(), vitestPluginNext()],
   resolve: {
-    conditions: ["test"],
+    conditions: [...sourceConditions, "test"],
   },
   optimizeDeps: {
     include: [
@@ -17,6 +31,9 @@ export default defineConfig({
     ],
   },
   test: {
+    name: "nextjs-no-msw-demo",
+    include: ["**/*.test.{ts,tsx}"],
+    exclude: ["node_modules"],
     browser: {
       enabled: true,
       headless: true,

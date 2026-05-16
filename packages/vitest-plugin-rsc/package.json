@@ -27,7 +27,63 @@
     "./package.json": "./package.json",
     ".": {
       "types": "./dist/index.d.ts",
+      "vitest-plugin-rsc-source": "./src/index.ts",
       "default": "./dist/index.js"
+    },
+    "./async-hooks": {
+      "types": "./dist/async-hooks.d.ts",
+      "vitest-plugin-rsc-source": "./src/async-hooks.ts",
+      "default": "./dist/async-hooks.js"
+    },
+    "./async-local-storage": {
+      "types": "./dist/async-local-storage.d.ts",
+      "vitest-plugin-rsc-source": "./src/async-local-storage.ts",
+      "default": "./dist/async-local-storage.js"
+    },
+    "./testing-library": {
+      "types": "./dist/testing-library.d.ts",
+      "vitest-plugin-rsc-source": "./src/testing-library.tsx",
+      "default": "./dist/testing-library.js"
+    },
+    "./testing-library-client": {
+      "types": "./dist/testing-library-client.d.ts",
+      "vitest-plugin-rsc-source": "./src/testing-library-client.tsx",
+      "default": "./dist/testing-library-client.js"
+    },
+    "./nextjs/client": {
+      "types": "./dist/nextjs/client.d.ts",
+      "vitest-plugin-rsc-source": "./src/nextjs/client.tsx",
+      "default": "./dist/nextjs/client.js"
+    },
+    "./nextjs/testing-library-client": {
+      "types": "./dist/nextjs/testing-library-client.d.ts",
+      "vitest-plugin-rsc-source": "./src/nextjs/testing-library-client.ts",
+      "default": "./dist/nextjs/testing-library-client.js"
+    },
+    "./nextjs/testing-library": {
+      "types": "./dist/nextjs/testing-library.d.ts",
+      "vitest-plugin-rsc-source": "./src/nextjs/testing-library.tsx",
+      "default": "./dist/nextjs/testing-library.js"
+    },
+    "./nextjs/msw": {
+      "types": "./dist/nextjs/msw.d.ts",
+      "vitest-plugin-rsc-source": "./src/nextjs/msw.ts",
+      "default": "./dist/nextjs/msw.js"
+    },
+    "./nextjs/os-browser": {
+      "types": "./dist/nextjs/os-browser.d.ts",
+      "vitest-plugin-rsc-source": "./src/nextjs/os-browser.ts",
+      "default": "./dist/nextjs/os-browser.js"
+    },
+    "./nextjs/request-context": {
+      "types": "./dist/nextjs/request-context.d.ts",
+      "vitest-plugin-rsc-source": "./src/nextjs/request-context.ts",
+      "default": "./dist/nextjs/request-context.js"
+    },
+    "./nextjs/plugin": {
+      "types": "./dist/nextjs/plugin.d.ts",
+      "vitest-plugin-rsc-source": "./src/nextjs/plugin.ts",
+      "default": "./dist/nextjs/plugin.js"
     },
     "./*": {
       "types": "./dist/*.d.ts",

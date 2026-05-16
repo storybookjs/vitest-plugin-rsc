@@ -1,5 +1,5 @@
+import "next/dist/server/node-environment-baseline.js";
 import { Buffer } from "node:buffer";
-import "next/dist/server/node-environment-baseline";
 import * as NextAppRouterHeaders from "next/dist/client/components/app-router-headers.js";
 import { actionAsyncStorage } from "next/dist/server/app-render/action-async-storage.external.js";
 import {

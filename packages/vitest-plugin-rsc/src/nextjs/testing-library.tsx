@@ -1,4 +1,4 @@
-import "next/dist/server/node-environment-baseline";
+import "next/dist/server/node-environment-baseline.js";
 import {
   NEXT_ACTION_NOT_FOUND_HEADER,
   RSC_CONTENT_TYPE_HEADER,

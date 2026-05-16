@@ -1,7 +1,7 @@
 import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import type { Alias, Plugin, UserConfig } from "vite";
+import type { Alias, Plugin } from "vite";
 
 const supportedEdgeNativeModules = ["buffer", "events", "assert", "util"] as const;
 // Begin copy: Next.js ACTION_ID_EXPECTED_LENGTH
@@ -113,7 +113,10 @@ function createNextEdgeNativeAliases(root: string): Alias[] {
   // `next/dist/server/config-shared.js` is importable, but it touches `os.cpus`
   // during module evaluation. Alias `os` to a small browser shim so we can keep
   // importing Next's config defaults instead of copying them.
-  const osBrowserShim = fileURLToPath(new URL("./os-browser.js", import.meta.url));
+  const osBrowserShimExtension = import.meta.url.endsWith(".ts") ? ".ts" : ".js";
+  const osBrowserShim = fileURLToPath(
+    new URL(`./os-browser${osBrowserShimExtension}`, import.meta.url),
+  );
   aliases.push(
     { find: "node:os", replacement: osBrowserShim },
     { find: "os", replacement: osBrowserShim },
