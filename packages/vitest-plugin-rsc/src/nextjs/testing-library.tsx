@@ -31,13 +31,10 @@ import { getNextFontManifestForRender } from "./font-manifest";
 import { getNextHttpAccessFallbackStatus, isNextHttpAccessFallbackError } from "./flight-payload";
 import {
   assertRoutePatternMatchesPath,
-  resolveNextCustomRequestUrl,
-  resolveNextCustomResponseHeaders,
-  resolveNextRoute,
+  resolveNextRequestTarget,
   resolveRedirectUrl,
-  tryResolveDirectRenderRoute,
-  tryResolveNextRoute,
   type NextCustomRoutes,
+  type NextRequestTarget,
   type NextRouteHandlerManifestEntry,
   type NextRouteManifest,
   type NextRouteManifestEntry,
@@ -156,22 +153,19 @@ export async function renderServer(
   const requestUrl = url ?? "/";
   const explicitUrl = routeOnly || url !== undefined;
   const routeManifest = explicitUrl ? await loadNextRouteManifest() : undefined;
-  const initialRequestUrl = routeManifest
-    ? resolveNextCustomRequestUrl(routeManifest, requestUrl, headers)
-    : requestUrl;
-  const responseHeaders = routeManifest
-    ? resolveNextCustomResponseHeaders(
-        routeManifest.customRoutes.headers,
-        initialRequestUrl,
+  const initialRequest = routeManifest
+    ? resolveInitialNextRequestTarget({
+        manifest: routeManifest,
+        requestUrl,
+        route,
+        routeOnly,
         headers,
-      )
-    : new Headers();
-  const location = new URL(initialRequestUrl, "http://localhost");
-  const routeEntry = routeManifest
-    ? routeOnly
-      ? resolveNextRoute(routeManifest.pages, routeManifest.routeHandlers, route, location.pathname)
-      : tryResolveDirectRenderRoute(routeManifest.pages, route, location.pathname)
+      })
     : undefined;
+  const initialRequestUrl = initialRequest?.url ?? requestUrl;
+  const responseHeaders = initialRequest?.target.responseHeaders ?? new Headers();
+  const location = new URL(initialRequestUrl, "http://localhost");
+  const routeEntry = initialRequest?.routeEntry;
   const hydrateDocument = Boolean(routeEntry);
   container ??= hydrateDocument
     ? document.body
@@ -763,7 +757,14 @@ function resolveAppRenderEntry(
   const location = new URL(url, "http://localhost");
 
   if (source.kind === "route") {
-    const entry = resolveNextRoute(source.manifest, [], undefined, location.pathname);
+    const target = resolveNextRequestTarget({
+      url,
+      manifest: createPageOnlyRouteManifest(source.manifest),
+    });
+    if (target.kind !== "app-page") {
+      throw new Error(`No Next app route found for URL "${location.pathname}".`);
+    }
+    const entry = target.entry;
     return source.wrapper
       ? {
           ...entry,
@@ -772,9 +773,13 @@ function resolveAppRenderEntry(
       : entry;
   }
 
-  const entry = source.manifest
-    ? tryResolveNextRoute(source.manifest, undefined, location.pathname)
+  const target = source.manifest
+    ? resolveNextRequestTarget({
+        url,
+        manifest: createPageOnlyRouteManifest(source.manifest),
+      })
     : undefined;
+  const entry = target?.kind === "app-page" ? target.entry : undefined;
   if (entry) {
     if (source.replacementRoute && entry.route === source.replacementRoute) {
       return replaceRoutePageWithNode(entry, source.getNode());
@@ -841,6 +846,95 @@ async function loadNextRouteManifest() {
     routeHandlers: nextRouteHandlerManifest as NextRouteHandlerManifestEntry[],
     customRoutes: nextCustomRoutes as NextCustomRoutes,
   } satisfies NextRouteManifest;
+}
+
+function resolveInitialNextRequestTarget(options: {
+  manifest: NextRouteManifest;
+  requestUrl: string;
+  route: string | undefined;
+  routeOnly: boolean;
+  headers: Headers | Record<string, string> | undefined;
+}): {
+  target: Exclude<NextRequestTarget, { kind: "redirect" }>;
+  url: string;
+  routeEntry?: NextRouteManifestEntry;
+} {
+  let activeUrl = options.requestUrl;
+
+  for (let redirectCount = 0; redirectCount < 5; redirectCount++) {
+    const target = resolveNextRequestTarget({
+      url: activeUrl,
+      route: options.routeOnly ? options.route : undefined,
+      headers: options.headers,
+      manifest: options.manifest,
+    });
+
+    if (target.kind === "redirect") {
+      activeUrl = resolveRedirectUrl(target.url.href, activeUrl);
+      continue;
+    }
+
+    const url = formatNextRequestUrl(getNextRequestTargetUrl(target));
+    const routeEntry = options.routeOnly
+      ? resolveRouteOnlyEntry(target, options.route)
+      : resolveDirectRenderEntry(target, options.route);
+
+    return { target, url, routeEntry };
+  }
+
+  throw new Error(`renderServer exceeded the Next redirect limit for ${options.requestUrl}.`);
+}
+
+function resolveRouteOnlyEntry(
+  target: Exclude<NextRequestTarget, { kind: "redirect" }>,
+  route: string | undefined,
+) {
+  if (target.kind === "app-page") return target.entry;
+  if (target.kind === "app-route") {
+    throw new Error(
+      `renderServer({ url: "${target.invocationUrl.pathname}" }) matched Next route handler "${target.entry.appPath}" at ${target.entry.routeFile}. Route handlers are not page render targets yet; import the route handler directly or use a future route-handler testing helper.`,
+    );
+  }
+
+  const routeHint = route
+    ? ` route "${route}"`
+    : ` URL "${getNextRequestTargetUrl(target).pathname}"`;
+  throw new Error(`No Next app route found for${routeHint}.`);
+}
+
+function resolveDirectRenderEntry(
+  target: Exclude<NextRequestTarget, { kind: "redirect" }>,
+  route: string | undefined,
+) {
+  if (target.kind !== "app-page") return;
+  if (!route) return target.entry;
+  return target.entry.route === route ? target.entry : undefined;
+}
+
+function getNextRequestTargetUrl(target: Exclude<NextRequestTarget, { kind: "redirect" }>) {
+  if (target.kind === "app-page" || target.kind === "app-route") return target.invocationUrl;
+  if (target.kind === "external-rewrite") return target.url;
+  return target.requestedUrl;
+}
+
+function createPageOnlyRouteManifest(pages: NextRouteManifestEntry[]): NextRouteManifest {
+  return {
+    pages,
+    routeHandlers: [],
+    customRoutes: {
+      headers: [],
+      redirects: [],
+      rewrites: {
+        beforeFiles: [],
+        afterFiles: [],
+        fallback: [],
+      },
+    },
+  };
+}
+
+function formatNextRequestUrl(url: URL) {
+  return `${url.pathname}${url.search}${url.hash}`;
 }
 
 function createDirectNodeLoaderTree(routePattern: string, node: ReactNode): LoaderTree {
