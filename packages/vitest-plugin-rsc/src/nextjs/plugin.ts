@@ -30,7 +30,7 @@ import {
   provideBufferLikeNextWebpack,
   treatNextInternalsAsServerInRsc,
 } from "./plugin/runtime-rewrites.ts";
-import { useVitestServerReferenceInfo } from "./plugin/server-reference-info.ts";
+import { useVitestServerReferenceInfo } from "./src/shared/lib/server-reference-info.ts";
 import { createNextTesterHtmlConfig, nextTesterHtmlPath } from "./plugin/tester-html.ts";
 import { useNextUseCacheTransform } from "./plugin/use-cache.ts";
 import { getProjectRoot } from "./plugin-utils.ts";

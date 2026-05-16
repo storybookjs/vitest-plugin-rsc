@@ -1,6 +1,12 @@
 import type { Plugin } from "vite";
-import { tryResolveFromProject } from "../plugin-utils.ts";
+import { tryResolveFromProject } from "../../../plugin-utils.ts";
 
+// Source: https://github.com/vercel/next.js/blob/ee6e79b1792a4d401ddf2480f40a83549fe8e722/packages/next/src/shared/lib/server-reference-info.ts#L1-L76
+// Adaptation: Next's reducer uses this helper to omit unused action arguments
+// from hex-encoded action IDs. Vite RSC action IDs are module references, not
+// Next hex IDs, so this virtual helper delegates real hex IDs to Next and
+// treats Vite IDs as using all arguments.
+// Begin adapted: Next.js server-reference-info bridge
 const virtualServerReferenceInfoId = "\0vitest-plugin-rsc:next-server-reference-info";
 
 export function useVitestServerReferenceInfo(root = process.cwd()): Plugin {
@@ -10,11 +16,6 @@ export function useVitestServerReferenceInfo(root = process.cwd()): Plugin {
     name: "next-rsc-server-reference-info",
     enforce: "pre",
     async resolveId(source, importer) {
-      // Next's server-action reducer imports this helper to omit unused action
-      // arguments from hex-encoded Next action IDs. Vite RSC action IDs are not
-      // Next hex IDs, so we alias the helper and preserve all args for those
-      // IDs while copying Next's behavior for real hex IDs.
-      // Source: https://github.com/vercel/next.js/blob/4588a7354283f97e2124e3d82f55733ca4eb9373/packages/next/src/shared/lib/server-reference-info.ts
       if (
         source !== "next/dist/shared/lib/server-reference-info.js" &&
         source !== "next/dist/shared/lib/server-reference-info" &&
@@ -53,3 +54,4 @@ export function extractInfoFromServerReferenceId(id) {
     },
   };
 }
+// End adapted
