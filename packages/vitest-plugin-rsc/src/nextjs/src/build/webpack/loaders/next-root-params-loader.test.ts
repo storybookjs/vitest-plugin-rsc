@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
-import { useNextRootParams } from "./root-params.ts";
-import { fixtureRoot, getHookHandler } from "./test-utils.ts";
+import { fixtureRoot, getHookHandler } from "../../../../plugin/test-utils.ts";
+import { useNextRootParams } from "./next-root-params-loader.ts";
 
 test("replaces next/root-params through Next's root params loader", async () => {
   const plugin = useNextRootParams("client", true);

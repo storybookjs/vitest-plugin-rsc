@@ -1,7 +1,16 @@
 import type { Plugin } from "vite";
-import { loadNextProjectConfig } from "../config.ts";
-import { createProjectRequire, getProjectRoot, tryResolveFromProject } from "../plugin-utils.ts";
+import { loadNextProjectConfig } from "../../../../config.ts";
+import {
+  createProjectRequire,
+  getProjectRoot,
+  tryResolveFromProject,
+} from "../../../../plugin-utils.ts";
 
+// Source: https://github.com/vercel/next.js/blob/ee6e79b1792a4d401ddf2480f40a83549fe8e722/packages/next/src/build/webpack/loaders/next-root-params-loader.ts#L8-L44
+// Adaptation: Vite resolves `next/root-params` to a virtual module and invokes
+// Next's webpack loader with the minimal loader context it needs, so root
+// parameter discovery stays owned by Next.
+// Begin adapted: Next.js next-root-params-loader bridge
 const virtualNextRootParamsId = "\0vitest-plugin-rsc:next-root-params";
 
 type NextRootParamsLoaderContext = {
@@ -117,3 +126,4 @@ async function createNextRootParamsModule({
 function createNextInvalidImportModule(message: string) {
   return `throw new Error(${JSON.stringify(message)});\nexport {};`;
 }
+// End adapted

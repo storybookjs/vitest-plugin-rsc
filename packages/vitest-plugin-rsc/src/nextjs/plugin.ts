@@ -24,7 +24,7 @@ import {
   nextRootParamsOptimizeDepsExclude,
   resolveNextOptimizeDeps,
 } from "./plugin/optimizer.ts";
-import { useNextRootParams } from "./plugin/root-params.ts";
+import { useNextRootParams } from "./src/build/webpack/loaders/next-root-params-loader.ts";
 import {
   disableNextDevServerRuntime,
   provideBufferLikeNextWebpack,
