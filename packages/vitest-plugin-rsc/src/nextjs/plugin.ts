@@ -10,6 +10,9 @@ import {
   createNextVendoredReactAliases,
   createOptimizeDepsResolveAliases,
   createReactServerDomWebpackAliases,
+  disableNextDevServerRuntime,
+  provideBufferLikeNextWebpack,
+  treatNextInternalsAsServerInRsc,
   useNextCompiledOpenTelemetryApi,
   useNextReactDomServerAlias,
 } from "./src/build/webpack-config.ts";
@@ -25,11 +28,6 @@ import {
   resolveNextOptimizeDeps,
 } from "./plugin/optimizer.ts";
 import { useNextRootParams } from "./src/build/webpack/loaders/next-root-params-loader.ts";
-import {
-  disableNextDevServerRuntime,
-  provideBufferLikeNextWebpack,
-  treatNextInternalsAsServerInRsc,
-} from "./plugin/runtime-rewrites.ts";
 import { useVitestServerReferenceInfo } from "./src/shared/lib/server-reference-info.ts";
 import { createNextTesterHtmlConfig, nextTesterHtmlPath } from "./plugin/tester-html.ts";
 import { useNextUseCacheTransform } from "./plugin/use-cache.ts";
