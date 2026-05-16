@@ -129,15 +129,37 @@ The document fallback parser is a boundary adapter. It mirrors Next app-index's 
 
 Do not reintroduce a user-visible local router element. The route path should go through `NextAppRouter`.
 
-## Dependency Client Boundaries And Optimizers
+## Dependency Client Boundaries, CJS, And Optimizers
 
 Hidden Vite environments must not discover app-shell dependencies mid-test. The base RSC plugin copies optimizer scan roots from the visible Vitest browser client into hidden `react_client` and `react_ssr` runners, and warms those optimizers before test execution. The Next plugin contributes `app/**` and `src/app/**` scan entries when those directories exist.
 
 Demo apps must not paper over late dependency discovery by adding broad ESM app-shell dependencies to `optimizeDeps.include`. Explicit prebundling should be limited to CJS dependencies, resolvable Next internals, or dependencies with a focused optimizer regression.
 
-Next's installed `next/dist/server/app-render/entry-base.js` remains a real server-layer CJS module. The current PR36 adapter is intentionally Next-specific: `next-rsc-entry-base-client-references` intercepts only known client imports from that entry-base module in the RSC environment, returns client-reference proxies there, and lets browser/SSR graphs load the real Next client modules.
+CommonJS dependency boundaries are split across three Vite execution shapes:
 
-This is not a generic CJS dependency transform. If `@vitejs/plugin-rsc` preserves CJS `"use client"` dependency boundaries during RSC dep optimization, delete the Next-specific entry-base adapter or reduce it to whatever Next-only layer metadata remains.
+- The RSC `client` environment must not execute `"use client"` CJS modules. It must see client-reference proxies.
+- The `react_client` and `react_ssr` environments must be able to execute browser-safe CJS modules as ESM.
+- Dependency optimizer hooks may still be bundling CJS parents with `require()`. They must not receive transformed children that introduce top-level await unless the parent require has also been rewritten safely.
+
+That is why this adapter separates generic CJS mechanics from Next policy. `cjs-browser-plugin.ts` is the generic layer. It can detect CJS, proxy direct `"use client"` CJS boundaries, rewrite parent `require()` targets, emit executable ESM wrappers, preserve or hoist nested requires, and make virtual ids stable across requests. It must not contain Next-specific module names or `next/dist/...` regexes. Its policy surface is intentionally grouped by the actual problem: `boundary` for client-reference decisions, `runtime` for executable CJS decisions, and `optimizer` for CJS-preserving optimizer behavior.
+
+The Next adapter owns the policy for installed Next internals:
+
+- `plugin/cjs-browser-boundaries.ts` discovers the Next `entry-base.js` client-boundary set and passes predicates/options into the generic CJS plugin.
+- In the RSC/optimizer path, those boundaries are proxies, not executable modules.
+- In browser/SSR paths, Next client boundaries re-export from stable `next/dist/...` module ids so Next's App Router context and client-reference semantics are preserved.
+- Next runtime CJS helpers that are browser-safe, shared, or compiled helpers are selected by the Next adapter, not by the generic CJS plugin.
+- Known server-only nested requires, such as branches guarded by `typeof window === "undefined"`, must not be hoisted into browser imports.
+
+The common failure modes are:
+
+- Raw CJS reaches the browser module runner: `exports is not defined` or `module is not defined`.
+- A real client component module crosses the RSC boundary: React reports a `Module` object being passed to Client Components.
+- A CJS child with top-level await is still consumed by a CJS optimizer parent: Rolldown reports `REQUIRE_TLA`.
+- Browser/SSR executes a Next client boundary in the wrong context: App Router invariants such as `expected layout router to be mounted`.
+- Hidden environments discover Next app-shell dependencies late: Vite reloads the test mid-run.
+
+Fixes should respect the ownership split. Add generic capability to `cjs-browser-plugin.ts` only when the behavior is framework-neutral. Add Next file predicates, stable `next/dist/...` ids, and optimizer includes in the Next adapter. Do not add a new standalone Next virtual-client-reference implementation unless the generic plugin cannot model the boundary.
 
 ## Source Transforms
 

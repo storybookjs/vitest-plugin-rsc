@@ -103,27 +103,31 @@ test("returns Next client-reference records from manifest proxies", () => {
   expect(moduleMapping[Symbol.iterator]).toBeUndefined();
 });
 
-test("maps Next builtin global-error manifest records to the Vite virtual stub", () => {
+test("keeps Next builtin global-error manifest records on their Vite module ids", () => {
   const clientModules = createViteRscClientModulesProxy() as Record<string, unknown>;
   const moduleMapping = createViteRscModuleMappingProxy() as Record<
     string,
     Record<string, unknown>
   >;
-  const expected = {
-    id: "/@id/__x00__virtual:vitest-plugin-rsc/next-builtin-global-error-stub",
-    name: "default",
-    chunks: [],
-    async: true,
-  };
 
   expect(
     clientModules[
       "/node_modules/.vite/deps/next_dist_client_components_builtin_global-error.js#default"
     ],
-  ).toEqual(expected);
+  ).toEqual({
+    id: "/node_modules/.vite/deps/next_dist_client_components_builtin_global-error.js",
+    name: "default",
+    chunks: [],
+    async: true,
+  });
   expect(
     moduleMapping["/node_modules/next/dist/client/components/builtin/global-error.js"]?.default,
-  ).toEqual(expected);
+  ).toEqual({
+    id: "/node_modules/next/dist/client/components/builtin/global-error.js",
+    name: "default",
+    chunks: [],
+    async: true,
+  });
 });
 
 test("creates Next server action manifest worker records for page and route layers", () => {

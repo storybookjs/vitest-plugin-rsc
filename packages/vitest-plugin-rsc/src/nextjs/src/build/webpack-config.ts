@@ -123,16 +123,24 @@ export function createAppRouterApiAliasesFromNext(
 ): Record<string, string> {
   const appRouterEntrypoints = isServerOnlyLayer
     ? {
+        "next/form": "next/dist/client/app-dir/form",
+        "next/form.js": "next/dist/client/app-dir/form",
         "next/link": "next/dist/client/app-dir/link.react-server",
         "next/link.js": "next/dist/client/app-dir/link.react-server",
         "next/navigation": "next/dist/client/components/navigation.react-server",
         "next/navigation.js": "next/dist/client/components/navigation.react-server",
+        "next/script": "next/dist/client/script",
+        "next/script.js": "next/dist/client/script",
       }
     : {
+        "next/form": "next/dist/client/app-dir/form",
+        "next/form.js": "next/dist/client/app-dir/form",
         "next/link": "next/dist/client/app-dir/link",
         "next/link.js": "next/dist/client/app-dir/link",
         "next/navigation": "next/dist/client/components/navigation",
         "next/navigation.js": "next/dist/client/components/navigation",
+        "next/script": "next/dist/client/script",
+        "next/script.js": "next/dist/client/script",
       };
 
   try {

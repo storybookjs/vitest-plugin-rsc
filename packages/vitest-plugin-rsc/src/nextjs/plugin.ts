@@ -1,5 +1,5 @@
 import type { Plugin } from "vite";
-import { useNextLinkClientReference } from "./client-reference-plugin.ts";
+import { cjsBrowserPlugin } from "../cjs-browser-plugin.ts";
 import {
   appRouterApiPlugin,
   createAppRouterApiAliasesFromNext,
@@ -19,11 +19,13 @@ import { createNextSourceOptimizerEntries } from "./src/build/entries.ts";
 import { useNextFontLoader } from "./src/build/webpack/loaders/next-font-loader/index.ts";
 import { useNextImageClientReference } from "./src/build/webpack/loaders/next-image-loader/index.ts";
 import { useNextMetadataImageLoader } from "./src/build/webpack/loaders/next-metadata-image-loader.ts";
-import { useNextBuiltinGlobalErrorStub } from "./src/client/components/builtin/global-error.ts";
 import { useNextAppRenderCompatibility } from "./src/server/app-render/app-render.ts";
 import { useNextCacheHandlers } from "./src/server/use-cache/handlers.ts";
-import { useNextEntryBaseClientReferences } from "./src/server/app-render/entry-base.ts";
 import { nextRootParamsOptimizeDepsExclude, resolveNextOptimizeDeps } from "./plugin/optimizer.ts";
+import {
+  createNextCjsBrowserBoundaryOptions,
+  useNextCjsBrowserBoundaries,
+} from "./plugin/cjs-browser-boundaries.ts";
 import { useNextRootParams } from "./src/build/webpack/loaders/next-root-params-loader.ts";
 import { useVitestServerReferenceInfo } from "./src/shared/lib/server-reference-info.ts";
 import {
@@ -44,11 +46,9 @@ export function vitestPluginNext(): Plugin[] {
     treatNextInternalsAsServerInRsc(),
     disableNextDevServerRuntime(),
     useNextReactDomServerAlias(),
-    useNextBuiltinGlobalErrorStub(),
-    useNextEntryBaseClientReferences(),
+    ...useNextCjsBrowserBoundaries({ name: "next-rsc:cjs-browser-transform" }),
     ...useNextAppRenderCompatibility(),
     useNextCacheHandlers(),
-    useNextLinkClientReference(),
     useNextSwcTransform(),
     useNextUseCacheTransform(),
     useNextFontLoader(),
@@ -92,6 +92,7 @@ function createNextPluginConfig(): Plugin {
       const nextOptimizeDeps = resolveNextOptimizeDeps(root);
       const nextDefineEnvs = await createNextDefineEnvs(root, env.mode, nextImageConfig);
       const nextSourceOptimizerEntries = createNextSourceOptimizerEntries(root);
+      const nextCjsBoundaryOptions = await createNextCjsBrowserBoundaryOptions(root);
 
       return {
         ...createNextTesterHtmlConfig(config),
@@ -160,10 +161,16 @@ function createNextPluginConfig(): Plugin {
                   treatNextInternalsAsServerInRsc(),
                   disableNextDevServerRuntime(),
                   useNextReactDomServerAlias(root),
-                  useNextEntryBaseClientReferences(root),
+                  ...cjsBrowserPlugin({
+                    ...nextCjsBoundaryOptions,
+                    name: "next-rsc:optimizer-cjs-browser-transform",
+                    boundary: {
+                      ...nextCjsBoundaryOptions.boundary,
+                      proxy: true,
+                    },
+                  }),
                   ...useNextAppRenderCompatibility(root),
                   useNextCacheHandlers(root),
-                  useNextLinkClientReference(),
                   useNextImageClientReference(),
                   useNextCompiledOpenTelemetryApi(root),
                 ],
@@ -217,7 +224,6 @@ function createNextPluginConfig(): Plugin {
                 plugins: [
                   useVitestServerReferenceInfo(root),
                   disableNextDevServerRuntime(),
-                  useNextLinkClientReference(),
                   useNextCompiledOpenTelemetryApi(root),
                 ],
                 resolve: {
@@ -270,7 +276,6 @@ function createNextPluginConfig(): Plugin {
                 plugins: [
                   useVitestServerReferenceInfo(root),
                   disableNextDevServerRuntime(),
-                  useNextLinkClientReference(),
                   useNextCompiledOpenTelemetryApi(root),
                 ],
                 resolve: {

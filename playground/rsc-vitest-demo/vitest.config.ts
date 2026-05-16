@@ -10,6 +10,9 @@ export default defineProject({
   resolve: {
     conditions: vitestPluginRscSourceConditions,
   },
+  optimizeDeps: {
+    include: ["cjs-client-boundary"],
+  },
   test: {
     name: "rsc-vitest-demo",
     include: ["src/**/*.{test,spec}.{ts,tsx}"],

@@ -19,17 +19,21 @@ import { fixtureRoot, getHookHandler } from "../../plugin/test-utils.ts";
 test("creates app-router API aliases from Next's compiler aliases", () => {
   expect(createAppRouterApiAliasesFromNext(fixtureRoot, true)).toEqual(
     expect.objectContaining({
+      "next/form": "next/dist/client/app-dir/form",
       "next/link": "next/dist/client/app-dir/link.react-server",
       "next/link.js": "next/dist/client/app-dir/link.react-server",
       "next/navigation": "next/dist/client/components/navigation.react-server",
       "next/navigation.js": "next/dist/client/components/navigation.react-server",
+      "next/script": "next/dist/client/script",
     }),
   );
 
   expect(createAppRouterApiAliasesFromNext(fixtureRoot, false)).toEqual(
     expect.objectContaining({
+      "next/form": "next/dist/client/app-dir/form",
       "next/link": "next/dist/client/app-dir/link",
       "next/navigation": "next/dist/client/components/navigation",
+      "next/script": "next/dist/client/script",
     }),
   );
 });

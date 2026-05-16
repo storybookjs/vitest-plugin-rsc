@@ -1,6 +1,7 @@
 import { createServer } from "node:net";
 import { type Plugin, type ViteDevServer } from "vite";
 import { vitePluginRscMinimal } from "@vitejs/plugin-rsc/plugin";
+import { cjsBrowserPlugin } from "./cjs-browser-plugin.ts";
 import { createReactClientCoveragePlugin } from "./coverage.ts";
 
 const reactClientWebSocketInfoPath = "/@vite/react-client-runner-websocket";
@@ -8,6 +9,7 @@ const reactSsrInvokePath = "/@vite/invoke-react-ssr";
 const reactClientWebSocketQuery = "vitest-plugin-rsc-react-client";
 const reactClientWebSocketInvokeEvent = "vitest-plugin-rsc:react-client:invoke";
 const reactClientWebSocketInvokeResultEvent = "vitest-plugin-rsc:react-client:invoke-result";
+const vitestBrowserApiDefaultPort = 63315;
 type ReactClientInvokePayload = Parameters<
   ViteDevServer["environments"][string]["hot"]["handleInvoke"]
 >[0];
@@ -29,6 +31,9 @@ function withConfiguredSourceConditions(
 export function vitestPluginRSC(): Plugin[] {
   return [
     createBrowserApiPortPlugin(),
+    ...cjsBrowserPlugin({
+      exclude: isNextInternalDependency,
+    }),
     ...vitePluginRscMinimal({
       environment: {
         browser: "react_client",
@@ -118,6 +123,19 @@ export function vitestPluginRSC(): Plugin[] {
                   "@vitejs/plugin-rsc/vendor/react-server-dom/client.edge",
                 ],
                 exclude: ["vite", "vitest-plugin-rsc", "@vitejs/plugin-rsc"],
+                rolldownOptions: {
+                  plugins: [
+                    // Runs inside RSC dep optimization so optimized CJS
+                    // dependencies keep `"use client"` children as references.
+                    ...cjsBrowserPlugin({
+                      exclude: isNextInternalDependency,
+                      name: "rsc:optimizer-cjs-browser-transform",
+                      boundary: {
+                        proxy: true,
+                      },
+                    }),
+                  ],
+                },
               },
             },
             react_client: {
@@ -259,11 +277,18 @@ function isVitestBrowserServer(server: ViteDevServer): boolean {
   return server.config.plugins.some((plugin) => plugin.name === "vitest:browser:config");
 }
 
+function isNextInternalDependency(id: string) {
+  return /[/\\]node_modules[/\\]next[/\\]dist[/\\]/.test(id);
+}
+
 async function resolveBrowserApiPort(
   port: number,
   host: ViteDevServer["config"]["server"]["host"],
 ) {
   const listenHost = resolveViteListenHost(host);
+  if (port === vitestBrowserApiDefaultPort) {
+    return await listenOnAvailablePort(0, listenHost);
+  }
   try {
     return await listenOnAvailablePort(port, listenHost);
   } catch (error) {

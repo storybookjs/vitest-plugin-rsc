@@ -7,6 +7,9 @@ export const nextRootParamsOptimizeDepsExclude = [
 
 const nextBrowserRuntimeOptimizeDeps = [
   "node:buffer",
+  "next/dist/client/dev/noop-turbopack-hmr.js",
+  "next/dist/compiled/next-devtools",
+  "next/dist/compiled/next-devtools/index.js",
   "vitest-plugin-rsc/async-local-storage",
 ] as const;
 
@@ -17,6 +20,7 @@ const nextClientRouterOptimizeDeps = [
   "next/dist/client/components/app-router.js",
   "next/dist/client/app-dir/link",
   "next/dist/client/app-dir/link.js",
+  "next/dist/client/components/navigation-devtools.js",
   "next/dist/client/components/navigation.react-server",
   "next/dist/client/components/app-router-instance.js",
   "next/dist/client/components/navigation.react-server.js",
@@ -24,10 +28,14 @@ const nextClientRouterOptimizeDeps = [
   "next/dist/client/components/router-reducer/compute-changed-path.js",
   "next/dist/client/components/router-reducer/create-href-from-url.js",
   "next/dist/client/components/router-reducer/create-initial-router-state.js",
+  "next/dist/client/components/router-reducer/create-router-cache-key.js",
+  "next/dist/client/components/router-reducer/fetch-server-response.js",
   "next/dist/client/components/router-reducer/ppr-navigations.js",
   "next/dist/client/components/router-reducer/router-reducer.js",
   "next/dist/client/components/router-reducer/router-reducer-types.js",
   "next/dist/client/components/router-reducer/reducers/server-action-reducer.js",
+  "next/dist/client/components/segment-cache/cache.js",
+  "next/dist/client/components/segment-cache/navigation.js",
   "next/dist/client/components/unresolved-thenable.js",
   "next/dist/shared/lib/server-reference-info.js",
   "next/dist/client/components/app-router-headers.js",
@@ -92,13 +100,22 @@ const nextAppRouterClientApiOptimizeDeps = [
 ] as const;
 
 const nextRscClientUtilityOptimizeDeps = [
+  "next/dist/client/app-dir/form",
+  "next/dist/client/app-dir/form.js",
+  "next/dist/client/script",
+  "next/dist/client/script.js",
   "next/dist/client/components/app-router-headers.js",
+  "next/dist/client/components/forbidden.js",
   "next/dist/client/components/http-access-fallback/http-access-fallback.js",
+  "next/dist/client/components/not-found.js",
   "next/dist/client/components/navigation.react-server",
   "next/dist/client/components/navigation.react-server.js",
+  "next/dist/client/components/readonly-url-search-params.js",
   "next/dist/client/components/redirect-error.js",
   "next/dist/client/components/redirect-status-code.js",
   "next/dist/client/components/redirect.js",
+  "next/dist/client/components/unauthorized.js",
+  "next/dist/client/components/unstable-rethrow.js",
   "next/dist/server/lib/server-action-request-meta.js",
   "next/dist/shared/lib/server-reference-info.js",
 ] as const;
@@ -119,6 +136,7 @@ const nextEntryBaseClientReferenceOptimizeDeps = [
   "next/dist/client/components/http-access-fallback/error-boundary.js",
   "next/dist/client/components/layout-router.js",
   "next/dist/client/components/render-from-template-context.js",
+  "next/dist/next-devtools/userspace/app/segment-explorer-node.js",
   "next/dist/lib/framework/boundary-components.js",
 ] as const;
 
@@ -219,7 +237,10 @@ const nextImageOptimizeDeps = [
 export function resolveNextOptimizeDeps(root: string) {
   return {
     appRouterApi: filterResolvableOptimizeDeps(root, nextAppRouterApiOptimizeDeps),
-    browserRuntime: filterResolvableOptimizeDeps(root, nextBrowserRuntimeOptimizeDeps),
+    browserRuntime: [
+      "@vercel/turbopack-ecmascript-runtime/browser/dev/hmr-client/hmr-client.ts",
+      ...filterResolvableOptimizeDeps(root, nextBrowserRuntimeOptimizeDeps),
+    ],
     builtinError: filterResolvableOptimizeDeps(root, nextBuiltinErrorOptimizeDeps),
     clientNavigation: filterResolvableOptimizeDeps(root, nextClientNavigationOptimizeDeps),
     clientRouter: filterResolvableOptimizeDeps(root, nextClientRouterOptimizeDeps),
