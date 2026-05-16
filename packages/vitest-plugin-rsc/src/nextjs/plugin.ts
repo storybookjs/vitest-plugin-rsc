@@ -17,7 +17,7 @@ import { useNextFontLoader } from "./src/build/webpack/loaders/next-font-loader/
 import { useNextImageClientReference } from "./src/build/webpack/loaders/next-image-loader/index.ts";
 import { useNextMetadataImageLoader } from "./src/build/webpack/loaders/next-metadata-image-loader.ts";
 import { useNextBuiltinGlobalErrorStub } from "./plugin/builtin-global-error.ts";
-import { useNextCacheHandlers } from "./plugin/cache-handlers.ts";
+import { useNextCacheHandlers } from "./src/server/use-cache/handlers.ts";
 import { useNextEntryBaseClientReferences } from "./plugin/entry-base-client-references.ts";
 import {
   createNextSourceOptimizerEntries,

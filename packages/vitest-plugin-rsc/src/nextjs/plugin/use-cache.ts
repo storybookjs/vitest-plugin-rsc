@@ -4,7 +4,7 @@ import type { Plugin } from "vite";
 import { parseAstAsync } from "vite";
 import { loadNextProjectConfig } from "../config.ts";
 import { getProjectRoot, isProjectFile, normalizePath } from "../plugin-utils.ts";
-import { virtualNextCacheHandlersPublicId } from "./cache-handlers.ts";
+import { virtualNextCacheHandlersPublicId } from "../src/server/use-cache/handlers.ts";
 
 const virtualNextUseCacheRuntimeId = "\0vitest-plugin-rsc:next-use-cache-runtime";
 const virtualNextUseCacheRuntimePublicId = "virtual:vitest-plugin-rsc/next-use-cache-runtime";

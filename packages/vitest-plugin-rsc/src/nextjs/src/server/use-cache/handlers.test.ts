@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
-import { useNextCacheHandlers, virtualNextCacheHandlersPublicId } from "./cache-handlers.ts";
-import { fixtureRoot, getHookHandler, noMswFixtureRoot } from "./test-utils.ts";
+import { fixtureRoot, getHookHandler, noMswFixtureRoot } from "../../../plugin/test-utils.ts";
+import { useNextCacheHandlers, virtualNextCacheHandlersPublicId } from "./handlers.ts";
 
 test("loads configured Next cache handlers from project config", async () => {
   const plugin = useNextCacheHandlers();
