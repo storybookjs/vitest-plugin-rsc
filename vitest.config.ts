@@ -10,6 +10,25 @@ export default defineConfig({
     conditions: process.env.CI ? [] : ["vitest-plugin-rsc-source"],
   },
   test: {
+    coverage: {
+      provider: "v8",
+      reporter: ["text", "html", "lcov"],
+      include: [
+        "packages/vitest-plugin-rsc/src/**/*.{ts,tsx}",
+        "playground/rsc-vitest-demo/src/**/*.{ts,tsx}",
+        "playground/nextjs-no-msw-demo/**/*.{ts,tsx}",
+        "playground/nextjs-notes-demo/**/*.{ts,tsx}",
+      ],
+      exclude: [
+        "**/.next/**/*",
+        "**/node_modules/**/*",
+        "**/*.{test,test-fixture,mock,config}.{ts,tsx}",
+        "**/*.d.ts",
+        "**/vitest*.{ts,tsx}",
+        "playground/nextjs-notes-demo/{db,env,scripts,test}/**/*.{ts,tsx}",
+        "playground/nextjs-notes-demo/lib/db{,.dev}.ts",
+      ],
+    },
     // oxlint-disable-next-line no-process-env
     maxWorkers: process.env.CI ? undefined : 2,
     projects: [
