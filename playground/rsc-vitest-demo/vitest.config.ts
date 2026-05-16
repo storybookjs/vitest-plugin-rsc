@@ -2,13 +2,12 @@ import { fileURLToPath } from "node:url";
 import { defineProject } from "vitest/config";
 import { playwright } from "@vitest/browser-playwright";
 import { vitestPluginRSC } from "vitest-plugin-rsc";
-import { vitestPluginRscSourceConditions } from "../../vitest.conditions.ts";
 
-export default defineProject({
+export default defineProject(({ mode }) => ({
   root: fileURLToPath(new URL("./", import.meta.url)),
   plugins: [vitestPluginRSC()],
   resolve: {
-    conditions: vitestPluginRscSourceConditions,
+    conditions: mode === "source" ? ["vitest-plugin-rsc-source"] : [],
   },
   test: {
     name: "rsc-vitest-demo",
@@ -23,4 +22,4 @@ export default defineProject({
     },
     setupFiles: ["./src/vitest.setup.ts"],
   },
-});
+}));

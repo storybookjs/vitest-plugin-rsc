@@ -3,13 +3,12 @@ import { playwright } from "@vitest/browser-playwright";
 import { defineProject } from "vitest/config";
 import { vitestPluginRSC } from "vitest-plugin-rsc";
 import { vitestPluginNext } from "vitest-plugin-rsc/nextjs/plugin";
-import { vitestPluginRscSourceConditions } from "../../vitest.conditions.ts";
 
-export default defineProject({
+export default defineProject(({ mode }) => ({
   root: fileURLToPath(new URL("./", import.meta.url)),
   plugins: [vitestPluginRSC(), vitestPluginNext()],
   resolve: {
-    conditions: [...vitestPluginRscSourceConditions, "test"],
+    conditions: [...(mode === "source" ? ["vitest-plugin-rsc-source"] : []), "test"],
   },
   optimizeDeps: {
     include: [
@@ -32,4 +31,4 @@ export default defineProject({
     isolate: false,
     setupFiles: ["./vitest.setup.ts"],
   },
-});
+}));
