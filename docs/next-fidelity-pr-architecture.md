@@ -53,17 +53,17 @@ isolating it, reject that experiment and document why.
 Status values: `Not started`, `In progress`, `Blocked`, `Deferred`, `Rejected`,
 `Done`.
 
-| Subgoal                                     | Status      | Branch/PR/Commit | Required Tests                                                          | Notes                                                                                                                         |
-| ------------------------------------------- | ----------- | ---------------- | ----------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| 1. Request router split                     | Done        | PR #47 / 1f9dad3 | `request-router.test.ts`; notes-demo routing/redirect/header tests      | Review cleanup tightened the request-router boundary and explicit route override behavior. Local tests and PR CI green.       |
-| 2. Routing data adapter                     | In progress | PR #47 / 59c841d | `routing-data.test.ts`; rewrite ordering tests                          | Added routing-data conversion and focused `@next/routing` tests. Not wired into `request-router.ts` yet; CI pending.          |
-| 3. App page invoker                         | Not started |                  | `app-page-invoker.test.ts`; notes-demo render/action coverage           | Try real `AppPageRouteModule`; keep direct app-render only if smaller and explicitly isolated.                                |
-| 4. App route invoker decision               | Not started |                  | `app-route-invoker.test.ts` if implemented                              | Either use `AppRouteRouteModule.handle()` or keep route-handler render targets explicitly unsupported.                        |
-| 5. Optimizer entry architecture             | Not started |                  | optimizer entry tests; no-MSW app-shell regression                      | Replace broad `app/**` scan roots with discovered route or virtual entrypoint warmup.                                         |
-| 6. Generic CJS browser transform evaluation | Not started |                  | package CJS transform tests; real integration proving deleted Next glue | Evaluate PR #45 only if it removes or substantially narrows Next-specific client-reference glue.                              |
-| 7. Manifest bridge cleanup                  | Not started |                  | manifest bridge unit tests                                              | Move manifest construction out of render helpers and source-link every mirrored Next manifest shape.                          |
-| 8. Module readability pass                  | Not started |                  | package unit tests for touched modules                                  | Keep adapter responsibilities in dedicated modules instead of growing `testing-library.tsx`, `plugin.ts`, or `app-render.ts`. |
-| 9. Acceptance coverage and docs             | Not started |                  | notes-demo, no-MSW, package tests, build, typecheck, lint, CI matrix    | Keep README and architecture docs aligned with final behavior and support matrix.                                             |
+| Subgoal                                     | Status      | Branch/PR/Commit | Required Tests                                                          | Notes                                                                                                                            |
+| ------------------------------------------- | ----------- | ---------------- | ----------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| 1. Request router split                     | Done        | PR #47 / 1f9dad3 | `request-router.test.ts`; notes-demo routing/redirect/header tests      | Review cleanup tightened the request-router boundary and explicit route override behavior. Local tests and PR CI green.          |
+| 2. Routing data adapter                     | Done        | PR #47 / 341513d | `routing-data.test.ts`; rewrite ordering tests                          | `request-router.ts` now builds routing data and delegates request resolution to `@next/routing`. Local checks green; CI pending. |
+| 3. App page invoker                         | Not started |                  | `app-page-invoker.test.ts`; notes-demo render/action coverage           | Try real `AppPageRouteModule`; keep direct app-render only if smaller and explicitly isolated.                                   |
+| 4. App route invoker decision               | Not started |                  | `app-route-invoker.test.ts` if implemented                              | Either use `AppRouteRouteModule.handle()` or keep route-handler render targets explicitly unsupported.                           |
+| 5. Optimizer entry architecture             | Not started |                  | optimizer entry tests; no-MSW app-shell regression                      | Replace broad `app/**` scan roots with discovered route or virtual entrypoint warmup.                                            |
+| 6. Generic CJS browser transform evaluation | Not started |                  | package CJS transform tests; real integration proving deleted Next glue | Evaluate PR #45 only if it removes or substantially narrows Next-specific client-reference glue.                                 |
+| 7. Manifest bridge cleanup                  | Not started |                  | manifest bridge unit tests                                              | Move manifest construction out of render helpers and source-link every mirrored Next manifest shape.                             |
+| 8. Module readability pass                  | Not started |                  | package unit tests for touched modules                                  | Keep adapter responsibilities in dedicated modules instead of growing `testing-library.tsx`, `plugin.ts`, or `app-render.ts`.    |
+| 9. Acceptance coverage and docs             | Not started |                  | notes-demo, no-MSW, package tests, build, typecheck, lint, CI matrix    | Keep README and architecture docs aligned with final behavior and support matrix.                                                |
 
 ### Slice Log
 
@@ -149,6 +149,28 @@ Status values: `Not started`, `In progress`, `Blocked`, `Deferred`, `Rejected`,
   - `pnpm --filter vitest-plugin-rsc test:run src/nextjs/request-router.test.ts src/nextjs/routing-data.test.ts`
   - `git diff --check`
   - CI: pending on PR #47 for `59c841d`.
+- 2026-05-16 Subgoal 2 request-router integration: wired
+  `resolveNextRequestTarget()` through `createNextRoutingData()` and
+  `@next/routing.resolveRoutes()`, making the request router async and deleting
+  the local custom redirect/rewrite/header phase-order implementation. Kept a
+  small synchronous route-pattern assertion for direct-node fallback rendering.
+  Added focused optimizer coverage for the newly imported routing dependencies,
+  added `@next/routing` to the Next demo workspaces so Vite can prebundle it
+  from the app root, and updated the Next compatibility workflow to install the
+  matching `@next/routing` version in each Next demo. Local verification:
+  - `pnpm --filter vitest-plugin-rsc test:run src/nextjs/request-router.test.ts src/nextjs/routing-data.test.ts src/nextjs/plugin/optimizer.test.ts`
+  - `pnpm exec oxlint packages/vitest-plugin-rsc/src/nextjs/request-router.ts packages/vitest-plugin-rsc/src/nextjs/request-router.test.ts packages/vitest-plugin-rsc/src/nextjs/routing-data.ts packages/vitest-plugin-rsc/src/nextjs/testing-library.tsx packages/vitest-plugin-rsc/src/nextjs/plugin/optimizer.ts packages/vitest-plugin-rsc/src/nextjs/plugin/optimizer.test.ts`
+  - `pnpm tsgo --build`
+  - `pnpm build`
+  - `pnpm test:run --project nextjs-notes-demo-browser --api 52644 app/next-apis/page.test.tsx`
+  - `pnpm test:run --project nextjs-notes-demo-browser --api 52643 components/next-router.test.tsx app/next-apis/page.test.tsx app/api/next-request-response/route-render.test.tsx app/metadata-routes.browser.test.tsx`
+  - `pnpm test:run --project nextjs-no-msw-demo --api 52645`
+  - `pnpm test:run --project nextjs-notes-demo-node --api 52646`
+  - `pnpm install --frozen-lockfile`
+  - `pnpm format:check`
+  - `pnpm lint:ci`
+  - `git diff --check`
+  - CI: pending on PR #47 for `341513d`.
 
 ## Agent Operating Rules
 
