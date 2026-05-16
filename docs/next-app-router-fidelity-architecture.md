@@ -48,6 +48,17 @@ boundary for this adapter, not a claim that Node runtime apps do not work in
 production Next.js. If a feature fundamentally requires Node runtime semantics,
 we leave it unsupported in this adapter for now.
 
+Because the runtime target is Edge/Web, the runtime bootstrap must follow
+Next's Edge templates, not Next's Node server bootstrap. Do not import
+`next/dist/server/node-environment.js` or
+`next/dist/server/node-environment-baseline.js` in the Edge App Router runtime
+path. Those files belong to Next's Node server path (`next-server.ts`,
+`router-server.ts`, build workers, and export workers). If a direct low-level
+Next server import fails because it expected that Node bootstrap, that is a sign
+we are importing the wrong layer for this adapter. Move higher to the Edge
+template/loader/adapter path instead of patching the Edge runtime with
+`node-environment`.
+
 MSW is the preferred HTTP boundary for browser-observed behavior. Browser
 requests should go through MSW into the in-process adapter when request/response
 semantics matter. Direct calls may exist for focused tests, but they are lower
@@ -109,6 +120,10 @@ Request-time Edge App Router flow:
 
 ```text
 Request
+  -> Edge/Web runtime bootstrap
+       App Page: server/web/globals from edge-ssr-app
+       App Route: edge-app-route through EdgeRouteModuleWrapper/server/web/adapter
+       never server/node-environment or server/node-environment-baseline
   -> route manifests / adapter routing data
   -> request routing
        production: router/server routing over manifests
@@ -298,14 +313,20 @@ nextjs/msw.ts
   -> @next/routing
        resolves redirect, rewrite, app-page, app-route, or not-found
        calls invokeMiddleware when middleware/proxy matches
-  -> nextjs/src/server/web/adapter.ts
+  -> Next server/web/adapter
+       direct import preferred; mirror nextjs/src/server/web/adapter.ts only if copying
        runs middleware/proxy semantics when @next/routing invokes middleware
-  -> nextjs/src/build/templates/edge-ssr-app.ts
+  -> Edge App Page entry
+       next-edge-ssr-loader / loadEntrypoint preferred
+       mirror nextjs/src/build/templates/edge-ssr-app.ts only if copying
        handles App Page HTML, Flight, and app-render action responses
-  -> nextjs/src/build/templates/edge-app-route.ts
+  -> Edge App Route entry
+       next-edge-app-route-loader / loadEntrypoint preferred
+       mirror nextjs/src/build/templates/edge-app-route.ts only if copying
        handles App Route route.ts responses
-  -> nextjs/src/client/app-index.tsx
-       hydrates/boots the browser App Router inside the Vitest-owned page
+  -> app-index semantics
+       direct App Router imports preferred
+       mirror nextjs/src/client/app-index.tsx only for copied bootstrap/hydration pieces
 ```
 
 Visual and protocol support comes from the same mirrored graph:
@@ -369,10 +390,15 @@ Associated imports from those lines:
 - `next-image-loader`
 - `next-metadata-image-loader`
 - `next-root-params-loader`
-- `server/config`
-- `lib/load-custom-routes`
-- `lib/find-pages-dir`
-- `build/load-jsconfig`
+
+Inputs consumed before this imitation:
+
+- `next/dist/server/config.js`
+- `next/dist/lib/load-custom-routes.js`
+- `next/dist/lib/find-pages-dir.js`
+- `next/dist/build/load-jsconfig.js`
+- `next/dist/build/utils.js`
+- `next/dist/shared/lib/image-config.js`
 
 Copies/adapts:
 
@@ -390,12 +416,6 @@ Direct imports in this imitation:
 - `next/dist/build/create-compiler-aliases.js`
 - `next/dist/build/swc/options.js`
 - `next/dist/build/swc/index.js`
-- `next/dist/server/config.js`
-- `next/dist/lib/load-custom-routes.js`
-- `next/dist/lib/find-pages-dir.js`
-- `next/dist/build/load-jsconfig.js`
-- `next/dist/build/utils.js`
-- `next/dist/shared/lib/image-config.js`
 
 Higher/lower consideration:
 
@@ -619,6 +639,7 @@ Imitates/copies these upstream lines:
 
 Associated imports from those lines:
 
+- `../../server/web/globals`
 - `../../server/web/adapter`
 - `../../server/lib/incremental-cache`
 - `../../server/app-render/manifests-singleton`
@@ -649,6 +670,15 @@ Gets transitively:
 - `renderToHTMLOrFlight()` through `AppPageRouteModule.render()`.
 - `NextRequestHint` and `NextFetchEvent` through `server/web/adapter`.
 - Edge App Page handling for HTML, Flight, and app-render action responses.
+
+Must not import:
+
+- `next/dist/server/node-environment.js`
+- `next/dist/server/node-environment-baseline.js`
+
+Why: `edge-ssr-app.ts` imports `server/web/globals`, then goes through
+`server/web/adapter`. Node environment setup is from Next's Node server path,
+not this Edge App Page path.
 
 Higher/lower consideration:
 
@@ -736,6 +766,16 @@ Direct imports in this imitation:
 - `next/dist/server/web/edge-route-module-wrapper.js`
 - `next/dist/server/web/utils.js`
 - `next/dist/server/route-modules/app-route/module.compiled.js`
+
+Must not import:
+
+- `next/dist/server/node-environment.js`
+- `next/dist/server/node-environment-baseline.js`
+
+Why: `edge-app-route.ts` does not use the Node server bootstrap. It wraps the
+route module with `EdgeRouteModuleWrapper`, which calls `server/web/adapter`.
+If direct route-module imports need Node-only globals, the adapter is too low in
+the stack and should move back up to the Edge loader/template/wrapper.
 
 Gets transitively:
 
@@ -955,6 +995,9 @@ Copies/adapts:
 Direct imports in this imitation:
 
 - `next/dist/build/webpack/loaders/next-font-loader/index.js`, preferred.
+
+Lower fallback imports if the real loader cannot run:
+
 - `next/dist/compiled/@next/font/dist/google/loader.js`
 - `next/dist/compiled/@next/font/dist/local/loader.js`
 - `next/dist/compiled/loader-utils3`
@@ -1230,25 +1273,12 @@ Higher/lower consideration:
 - Lower fallback: fake router/hydration.
 - Why not lower: business and visual navigation should use real App Router.
 
-## Public Surface And Pure Imports
+## Possible Internal Mirror Paths
 
-Top-level public files such as `nextjs/plugin.ts`, `nextjs/testing-library.tsx`,
-`nextjs/client.tsx`, and `nextjs/msw.ts` are package API surface. They may be
-custom because they are not inside the internal `nextjs/src` mirror.
-
-Pure direct imports from Next do not get internal files. Examples:
-
-- Config loading should direct import `next/dist/server/config.js`.
-- Custom routes should direct import `next/dist/lib/load-custom-routes.js`.
-- `@next/routing` should be imported directly.
-- `next/dist/server/web/adapter.js` should be imported directly unless copying
-  is required.
-
-## Ideal Internal Layout
-
-Only create these files when they imitate/copy the matching upstream source.
-Most files below are fallback-only: if the direct import or higher loader works,
-the mirror file should not exist.
+This is not a target file list. It is the allowed set of exact mirror paths if
+copying or substantial adaptation becomes necessary. Most files below are
+fallback-only: if the direct import or higher loader works, the mirror file
+should not exist.
 
 ```text
 packages/vitest-plugin-rsc/src/nextjs/src/
