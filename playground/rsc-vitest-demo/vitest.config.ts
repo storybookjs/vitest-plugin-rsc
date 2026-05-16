@@ -1,20 +1,14 @@
 import { fileURLToPath } from "node:url";
 import { defineProject } from "vitest/config";
 import { playwright } from "@vitest/browser-playwright";
-
-// oxlint-disable-next-line no-process-env
-const isCI = Boolean(process.env.CI);
-const sourceConditions = isCI ? [] : ["vitest-plugin-rsc-source"];
-const vitestPluginRSCImport = isCI
-  ? "vitest-plugin-rsc"
-  : "../../packages/vitest-plugin-rsc/src/index.ts";
-const { vitestPluginRSC } = await import(/* @vite-ignore */ vitestPluginRSCImport);
+import { vitestPluginRSC } from "vitest-plugin-rsc";
 
 export default defineProject({
   root: fileURLToPath(new URL("./", import.meta.url)),
   plugins: [vitestPluginRSC()],
   resolve: {
-    conditions: sourceConditions,
+    // oxlint-disable-next-line no-process-env
+    conditions: process.env.CI ? [] : ["vitest-plugin-rsc-source"],
   },
   test: {
     name: "rsc-vitest-demo",

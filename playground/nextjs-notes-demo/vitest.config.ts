@@ -2,24 +2,12 @@ import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import { playwright } from "@vitest/browser-playwright";
 import { defineConfig, defineProject } from "vitest/config";
+import { vitestPluginRSC } from "vitest-plugin-rsc";
+import { vitestPluginNext } from "vitest-plugin-rsc/nextjs/plugin";
 
 // Make Vitest UI trace/source clicks a no-op instead of opening Cursor.
 // oxlint-disable-next-line no-process-env
 process.env.LAUNCH_EDITOR = "/usr/bin/true";
-
-// oxlint-disable-next-line no-process-env
-const isCI = Boolean(process.env.CI);
-const sourceConditions = isCI ? [] : ["vitest-plugin-rsc-source"];
-const vitestPluginRSCImport = isCI
-  ? "vitest-plugin-rsc"
-  : "../../packages/vitest-plugin-rsc/src/index.ts";
-const vitestPluginNextImport = isCI
-  ? "vitest-plugin-rsc/nextjs/plugin"
-  : "../../packages/vitest-plugin-rsc/src/nextjs/plugin.ts";
-const [{ vitestPluginRSC }, { vitestPluginNext }] = await Promise.all([
-  import(/* @vite-ignore */ vitestPluginRSCImport),
-  import(/* @vite-ignore */ vitestPluginNextImport),
-]);
 
 const root = fileURLToPath(new URL("./", import.meta.url));
 const nextNotesRequire = createRequire(new URL("./package.json", import.meta.url));
@@ -39,7 +27,8 @@ const sharedProjectConfig = {
     alias: {
       "vitest/suite": "@vitest/runner",
     },
-    conditions: [...sourceConditions, "test"],
+    // oxlint-disable-next-line no-process-env
+    conditions: process.env.CI ? ["test"] : ["vitest-plugin-rsc-source", "test"],
   },
   optimizeDeps: {
     include: [
