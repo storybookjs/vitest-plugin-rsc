@@ -176,7 +176,7 @@ function buildNextCustomRoute(kind: CustomRouteKind, route: NextCustomRoute): Bu
 
 function convertNextRouteTemplate(value: string, source: string) {
   const placeholders = createSourceParamPlaceholders(source);
-  return value.replace(/:([A-Za-z_][A-Za-z0-9_]*)/g, (_token, key: string) => {
+  return value.replace(/:([A-Za-z_][A-Za-z0-9_]*)([?*+])?/g, (_token, key: string) => {
     return placeholders.get(key) ?? `$${key}`;
   });
 }

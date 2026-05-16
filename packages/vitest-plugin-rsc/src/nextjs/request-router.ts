@@ -142,7 +142,7 @@ export async function resolveNextRequestTarget(options: {
       entry: page,
       requestedUrl,
       invocationUrl,
-      routeMatches: normalizeRouteMatches(result.routeMatches),
+      routeMatches: resolveRouteMatches(page.route, invocationUrl.pathname, result.routeMatches),
       responseHeaders,
       status: result.status,
     };
@@ -159,7 +159,11 @@ export async function resolveNextRequestTarget(options: {
       entry: routeHandler,
       requestedUrl,
       invocationUrl,
-      routeMatches: normalizeRouteMatches(result.routeMatches),
+      routeMatches: resolveRouteMatches(
+        routeHandler.route,
+        invocationUrl.pathname,
+        result.routeMatches,
+      ),
       responseHeaders,
       status: result.status,
     };
@@ -241,6 +245,14 @@ function createInvocationUrl(
     }
   }
   return invocationUrl;
+}
+
+function resolveRouteMatches(
+  route: string,
+  pathname: string,
+  fallbackMatches: Record<string, string> | undefined,
+) {
+  return matchRoutePatternParams(route, pathname) ?? normalizeRouteMatches(fallbackMatches);
 }
 
 function normalizeRouteMatches(matches: Record<string, string> | undefined): RouteMatches {

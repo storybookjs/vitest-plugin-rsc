@@ -14,6 +14,7 @@ const manifest: NextRouteManifest = {
     page("/next-apis"),
     page("/before-target"),
     page("/route-patterns/[team]/settings"),
+    page("/route-patterns/docs/[...slug]"),
     page("/fallback-target"),
   ],
   routeHandlers: [routeHandler("/api/next-request-response")],
@@ -47,7 +48,9 @@ const manifest: NextRouteManifest = {
           destination: "/route-patterns/acme/settings?from=after-files",
         },
       ],
-      fallback: [{ source: "/missing/:path*", destination: "/fallback-target?from=fallback" }],
+      fallback: [
+        { source: "/missing/:path*", destination: "/fallback-target?from=fallback&path=:path*" },
+      ],
     },
   },
 };
@@ -93,6 +96,19 @@ test("uses fallback rewrites only after no exact or dynamic route matches", asyn
   expect(target.entry.route).toBe("/fallback-target");
   expect(target.invocationUrl.pathname).toBe("/fallback-target");
   expect(target.invocationUrl.searchParams.get("from")).toBe("fallback");
+  expect(target.invocationUrl.searchParams.get("path")).toBe("deep/path");
+});
+
+test("normalizes catch-all dynamic route matches through Next route matcher", async () => {
+  const target = await resolveNextRequestTarget({
+    url: "/route-patterns/docs/a/b",
+    manifest,
+  });
+
+  expect(target.kind).toBe("app-page");
+  if (target.kind !== "app-page") return;
+  expect(target.entry.route).toBe("/route-patterns/docs/[...slug]");
+  expect(target.routeMatches).toEqual({ slug: ["a", "b"] });
 });
 
 test("returns redirect targets with Next redirect status and destination query params", async () => {

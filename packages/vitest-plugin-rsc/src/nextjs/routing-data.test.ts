@@ -16,6 +16,7 @@ const manifest: NextRoutingManifest = {
     page("/next-apis"),
     page("/before-target"),
     page("/route-patterns/[team]/settings"),
+    page("/route-patterns/docs/[...slug]"),
     page("/fallback-target"),
   ],
   routeHandlers: [routeHandler("/api/next-request-response")],
@@ -49,7 +50,9 @@ const manifest: NextRoutingManifest = {
           destination: "/route-patterns/acme/settings?from=after-files",
         },
       ],
-      fallback: [{ source: "/missing/:path*", destination: "/fallback-target?from=fallback" }],
+      fallback: [
+        { source: "/missing/:path*", destination: "/fallback-target?from=fallback&path=:path*" },
+      ],
     },
   },
 };
@@ -61,6 +64,7 @@ test("converts discovered pages, route handlers, and custom routes to routing da
     "/next-apis",
     "/before-target",
     "/route-patterns/[team]/settings",
+    "/route-patterns/docs/[...slug]",
     "/fallback-target",
     "/api/next-request-response",
   ]);
@@ -71,11 +75,16 @@ test("converts discovered pages, route handlers, and custom routes to routing da
       status: 307,
     }),
   ]);
-  expect(data.routes.dynamicRoutes).toEqual([
-    expect.objectContaining({
-      destination: "/route-patterns/[team]/settings?team=$team",
-    }),
-  ]);
+  expect(data.routes.dynamicRoutes).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        destination: "/route-patterns/[team]/settings?team=$team",
+      }),
+      expect.objectContaining({
+        destination: "/route-patterns/docs/[...slug]?slug=$slug",
+      }),
+    ]),
+  );
   expect(data.routes.onMatch).toEqual([
     expect.objectContaining({
       headers: { "x-next-config-header": "notes-demo" },
@@ -139,7 +148,44 @@ test("uses fallback rewrites only after no exact or dynamic route matches", asyn
 
   expect(result.resolvedPathname).toBe("/fallback-target");
   expect(result.invocationTarget?.pathname).toBe("/fallback-target");
-  expect(result.resolvedQuery).toEqual({ from: "fallback" });
+  expect(result.resolvedQuery).toEqual({ from: "fallback", path: "deep/path" });
+});
+
+test("converts catch-all custom route params without preserving literal modifiers", async () => {
+  const data = createNextRoutingData({
+    ...manifest,
+    customRoutes: {
+      ...manifest.customRoutes,
+      rewrites: {
+        beforeFiles: [
+          { source: "/catch/:path*", destination: "/fallback-target?path=:path*" },
+          { source: "/plus/:path+", destination: "/fallback-target?path=:path+" },
+          { source: "/optional/:path?", destination: "/fallback-target?path=:path?" },
+        ],
+        afterFiles: [],
+        fallback: [],
+      },
+    },
+  });
+
+  expect(data.routes.beforeFiles).toEqual([
+    expect.objectContaining({ destination: "/fallback-target?path=$1" }),
+    expect.objectContaining({ destination: "/fallback-target?path=$1" }),
+    expect.objectContaining({ destination: "/fallback-target?path=$1" }),
+  ]);
+
+  const result = await resolveRoute("/catch/deep/path", data);
+
+  expect(result.resolvedPathname).toBe("/fallback-target");
+  expect(result.resolvedQuery).toEqual({ path: "deep/path" });
+});
+
+test("routes catch-all dynamic app routes with template path and query params", async () => {
+  const result = await resolveRoute("/route-patterns/docs/a/b");
+
+  expect(result.resolvedPathname).toBe("/route-patterns/docs/[...slug]");
+  expect(result.invocationTarget?.pathname).toBe("/route-patterns/docs/a/b");
+  expect(result.resolvedQuery).toEqual({ slug: "a/b" });
 });
 
 test("returns redirects with Next status and interpolated destination query", async () => {
