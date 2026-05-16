@@ -108,6 +108,15 @@ test("renderServer does not let next.config afterFiles rewrites shadow app route
   expect(result.headers.get("x-next-config-header")).toBe("notes-demo");
 });
 
+test("renderServer rejects explicit route overrides that do not match the request URL", async () => {
+  await expect(() =>
+    renderServer({
+      url: "/next-apis",
+      route: "/route-patterns/[team]/settings",
+    }),
+  ).rejects.toThrow('No Next app route found for route "/route-patterns/[team]/settings".');
+});
+
 test("renderServer follows next.config redirects before resolving app routes", async () => {
   await renderServer({ url: "/next-config-redirect" });
 

@@ -89,11 +89,16 @@ export type NextRequestTarget =
       status?: number;
     };
 
+// Mirrors the phase ordering in Next's request router and rewrite resolver:
 // Source: https://github.com/vercel/next.js/blob/ee6e79b1792a4d401ddf2480f40a83549fe8e722/packages/next/src/server/lib/router-utils/resolve-routes.ts
 // Source: https://github.com/vercel/next.js/blob/ee6e79b1792a4d401ddf2480f40a83549fe8e722/packages/next/src/shared/lib/router/utils/resolve-rewrites.ts
-// Adaptation: Vitest has route-discovery facts but no Next router server or
-// filesystem checker. This keeps the request-routing order isolated until the
-// `@next/routing` data adapter can replace more of this local glue.
+// Adaptation: Vitest has route-discovery facts but no Next router server,
+// filesystem checker, or `@next/routing` data source yet. This local boundary
+// delegates matching, interpolation, has/missing checks, route-regex matching,
+// app-path normalization, and redirect status handling to installed Next
+// helpers (`getPathMatch`, `prepareDestination`, `matchHas`, `getRouteRegex`,
+// `getRouteMatcher`, `normalizeAppPath`, and `getRedirectStatus`) so the next
+// `@next/routing` slice can narrow or delete the remaining phase-order glue.
 export function resolveNextRequestTarget(options: {
   url: string;
   route?: string;
@@ -167,65 +172,7 @@ export function resolveNextRequestTarget(options: {
   };
 }
 
-export function resolveNextRoute(
-  nextRouteManifest: NextRouteManifestEntry[],
-  nextRouteHandlerManifest: NextRouteHandlerManifestEntry[],
-  route: string | undefined,
-  pathname: string,
-) {
-  const entry = tryResolveNextRoute(nextRouteManifest, route, pathname);
-
-  if (!entry) {
-    const routeHandler = tryResolveNextRouteHandler(nextRouteHandlerManifest, route, pathname);
-    if (routeHandler) {
-      throw new Error(
-        `renderServer({ url: "${pathname}" }) matched Next route handler "${routeHandler.appPath}" at ${routeHandler.routeFile}. Route handlers are not page render targets yet; import the route handler directly or use a future route-handler testing helper.`,
-      );
-    }
-
-    const routeHint = route ? ` route "${route}"` : ` URL "${pathname}"`;
-    throw new Error(`No Next app route found for${routeHint}.`);
-  }
-
-  return entry;
-}
-
-export function tryResolveNextRoute(
-  nextRouteManifest: NextRouteManifestEntry[],
-  route: string | undefined,
-  pathname: string,
-) {
-  return route
-    ? (nextRouteManifest.find((candidate) => candidate.route === route) ??
-        nextRouteManifest.find((candidate) => matchRoutePattern(candidate.route, pathname)))
-    : nextRouteManifest.find((candidate) => matchRoutePattern(candidate.route, pathname));
-}
-
-function tryResolveNextRouteHandler(
-  nextRouteHandlerManifest: NextRouteHandlerManifestEntry[],
-  route: string | undefined,
-  pathname: string,
-) {
-  return route
-    ? (nextRouteHandlerManifest.find((candidate) => candidate.route === route) ??
-        nextRouteHandlerManifest.find((candidate) => matchRoutePattern(candidate.route, pathname)))
-    : nextRouteHandlerManifest.find((candidate) => matchRoutePattern(candidate.route, pathname));
-}
-
-export function tryResolveDirectRenderRoute(
-  nextRouteManifest: NextRouteManifestEntry[],
-  route: string | undefined,
-  pathname: string,
-) {
-  if (!route) {
-    return nextRouteManifest.find((candidate) => matchRoutePattern(candidate.route, pathname));
-  }
-
-  const entry = nextRouteManifest.find((candidate) => candidate.route === route);
-  return entry && matchRoutePattern(route, pathname) ? entry : undefined;
-}
-
-export function matchRoutePattern(routePattern: string, pathname: string) {
+function matchRoutePattern(routePattern: string, pathname: string) {
   return matchRoutePatternParams(routePattern, pathname) !== undefined;
 }
 
@@ -245,21 +192,7 @@ export function resolveRedirectUrl(redirectUrl: string, baseUrl: string) {
   return formatRelativeUrl(target);
 }
 
-export function resolveNextCustomRequestUrl(
-  routeManifest: NextRouteManifest,
-  requestUrl: string,
-  headers: Headers | Record<string, string> | undefined,
-) {
-  const customRoutes = routeManifest.customRoutes;
-  const redirect = resolveNextCustomRedirect(customRoutes.redirects, requestUrl, headers);
-  if (redirect) {
-    return resolveRedirectUrl(redirect.destination, requestUrl);
-  }
-
-  return resolveNextCustomRewrite(routeManifest, customRoutes.rewrites, requestUrl, headers);
-}
-
-export function resolveNextCustomResponseHeaders(
+function resolveNextCustomResponseHeaders(
   headerRoutes: NextCustomRoute[],
   requestUrl: string,
   headers: Headers | Record<string, string> | undefined,
@@ -285,10 +218,12 @@ function findMatchedRoute<T extends { route: string }>(
   if (exact) {
     const params = matchRoutePatternParams(exact.route, pathname);
     if (params) return { entry: exact, params };
+    return;
   }
 
+  if (route) return;
+
   for (const entry of entries) {
-    if (entry === exact) continue;
     const params = matchRoutePatternParams(entry.route, pathname);
     if (params) return { entry, params };
   }

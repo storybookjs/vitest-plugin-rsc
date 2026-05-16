@@ -2,8 +2,6 @@ import type { LoaderTree } from "next/dist/server/lib/app-dir-module.js";
 import { expect, test } from "vitest";
 import {
   resolveNextRequestTarget,
-  resolveNextRoute,
-  tryResolveDirectRenderRoute,
   type NextRouteHandlerManifestEntry,
   type NextRouteManifest,
   type NextRouteManifestEntry,
@@ -108,37 +106,35 @@ test("returns redirect targets with Next redirect status and destination query p
   expect(target.responseHeaders.get("location")).toBe("/next-apis?from=config");
 });
 
+test("keeps explicit route overrides constrained to matching invocation pathnames", () => {
+  const target = resolveNextRequestTarget({
+    url: "/route-patterns/alpha/settings",
+    route: "/route-patterns/[team]/settings",
+    manifest,
+  });
+
+  expect(target.kind).toBe("app-page");
+  if (target.kind !== "app-page") return;
+  expect(target.entry.route).toBe("/route-patterns/[team]/settings");
+  expect(target.routeMatches).toEqual({ team: "alpha" });
+});
+
+test("does not fall back to URL-matched pages when explicit route overrides mismatch", () => {
+  const target = resolveNextRequestTarget({
+    url: "/next-apis",
+    route: "/route-patterns/[team]/settings",
+    manifest,
+  });
+
+  expect(target.kind).toBe("not-found");
+});
+
 test("detects app route targets separately from app pages", () => {
   const target = resolveNextRequestTarget({ url: "/api/next-request-response", manifest });
 
   expect(target.kind).toBe("app-route");
   if (target.kind !== "app-route") return;
   expect(target.entry.appPath).toBe("/api/next-request-response/route");
-  expect(() =>
-    resolveNextRoute(
-      manifest.pages,
-      manifest.routeHandlers,
-      undefined,
-      "/api/next-request-response",
-    ),
-  ).toThrow(/Route handlers are not page render targets yet/);
-});
-
-test("keeps direct component route overrides constrained to matching pathnames", () => {
-  expect(
-    tryResolveDirectRenderRoute(
-      manifest.pages,
-      "/route-patterns/[team]/settings",
-      "/route-patterns/alpha/settings",
-    )?.route,
-  ).toBe("/route-patterns/[team]/settings");
-  expect(
-    tryResolveDirectRenderRoute(
-      manifest.pages,
-      "/route-patterns/[team]/settings",
-      "/route-patterns/alpha/profile",
-    ),
-  ).toBeUndefined();
 });
 
 function page(route: string): NextRouteManifestEntry {
