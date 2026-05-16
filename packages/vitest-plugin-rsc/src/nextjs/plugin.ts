@@ -16,7 +16,7 @@ import {
 import { useNextFontLoader } from "./src/build/webpack/loaders/next-font-loader/index.ts";
 import { useNextImageClientReference } from "./src/build/webpack/loaders/next-image-loader/index.ts";
 import { useNextMetadataImageLoader } from "./src/build/webpack/loaders/next-metadata-image-loader.ts";
-import { useNextBuiltinGlobalErrorStub } from "./plugin/builtin-global-error.ts";
+import { useNextBuiltinGlobalErrorStub } from "./src/client/components/builtin/global-error.ts";
 import { useNextCacheHandlers } from "./src/server/use-cache/handlers.ts";
 import { useNextEntryBaseClientReferences } from "./plugin/entry-base-client-references.ts";
 import {
