@@ -35,7 +35,7 @@ import {
   getNextHttpAccessFallbackStatus,
   getNextRedirectUrlFromFlightPayloadText,
 } from "./flight-payload.ts";
-import { getNextFontManifestForRender } from "./font-manifest.ts";
+import { getNextFontManifestForRender } from "./src/build/webpack/plugins/next-font-manifest-plugin.ts";
 
 type NextIncrementalCacheConstructor =
   typeof import("next/dist/server/lib/incremental-cache/index.js").IncrementalCache;

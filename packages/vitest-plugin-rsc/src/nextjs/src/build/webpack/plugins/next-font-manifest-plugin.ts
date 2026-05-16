@@ -1,3 +1,9 @@
+// Source: https://github.com/vercel/next.js/blob/ee6e79b1792a4d401ddf2480f40a83549fe8e722/packages/next/src/build/webpack/plugins/next-font-manifest-plugin.ts#L7-L16
+// Source: https://github.com/vercel/next.js/blob/ee6e79b1792a4d401ddf2480f40a83549fe8e722/packages/next/src/build/webpack/plugins/next-font-manifest-plugin.ts#L71-L111
+// Adaptation: Vite does not run NextFontManifestPlugin. The font loader bridge
+// records the same manifest shape in memory so app-render and preload helpers
+// can consume Next-compatible font metadata.
+// Begin adapted: Next.js next-font-manifest-plugin output shape
 const nextFontManifestSymbol = Symbol.for("vitest-plugin-rsc.nextjs.fontManifest");
 
 export type NextFontManifest = {
@@ -35,3 +41,4 @@ function getMutableNextFontManifest(): NextFontManifest {
     pagesUsingSizeAdjust: false,
   });
 }
+// End adapted

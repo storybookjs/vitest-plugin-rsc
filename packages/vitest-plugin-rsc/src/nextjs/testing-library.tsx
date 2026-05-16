@@ -27,7 +27,7 @@ import {
   type NextInitialRscPayload,
   type NextNavigationFlightPayload,
 } from "./app-render.ts";
-import { getNextFontManifestForRender } from "./font-manifest.ts";
+import { getNextFontManifestForRender } from "./src/build/webpack/plugins/next-font-manifest-plugin.ts";
 import {
   getNextHttpAccessFallbackStatus,
   isNextHttpAccessFallbackError,
