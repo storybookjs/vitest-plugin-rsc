@@ -30,6 +30,46 @@ Keep Vitest project definitions and coverage settings in the root `vitest.config
 
 For bigger feature work, run the full Next.js notes demo suite from the root (`pnpm test --project nextjs-notes-demo-browser --project nextjs-notes-demo-node`) before merging. It is the in-tree acceptance app and covers the realistic combinations of routing, cookies, cache, Server Actions, and MSW-routed transport.
 
+## Plugin Architecture Mental Model
+
+This repo is a Vitest Browser Mode RSC runtime. Do not assume a normal Node test runner and do not assume a running Next dev server. `renderServer` runs the React Server Components pipeline inside the Vitest browser process, with server modules evaluated through Vite environments and their output serialized as React Flight.
+
+The important runtime shape is:
+
+1. Server/RSC code is transformed and executed in the Vite `client` environment.
+2. Client Components are resolved and hydrated in the Vite `react_client` browser environment.
+3. SSR/document HTML for hydration is produced through the Vite `react_ssr` environment.
+4. The final UI is asserted through `vitest/browser` in a real browser page.
+
+The environment names are easy to misread:
+
+- `client` is the RSC/edge-server environment, not the visible browser UI. It uses `react-server` and `edge-light` conditions and should define `process.env.NEXT_RUNTIME` as `"edge"`.
+- `react_client` is the browser App Router/Client Component environment. It uses browser conditions, Next browser React aliases, and `process.env.NEXT_RUNTIME` as `""`.
+- `react_ssr` is the browser-ish SSR environment used to turn Flight data into HTML for document hydration.
+
+Because the "server" side runs in a browser-mode runtime, server code should be browser/edge-compatible. Prefer Web APIs (`fetch`, `Request`, `Response`, `Headers`, `URL`, `FormData`, Web Streams, Web Crypto) and in-memory test infrastructure. Do not add real filesystem, process, TCP, or Node server assumptions to tests or runtime code. Node compatibility shims are acceptable only when they mirror Next/Vite behavior and stay narrowly scoped.
+
+`@vitejs/plugin-rsc` owns the RSC protocol. It is responsible for `"use client"`, `"use server"`, client references, server references, Server Action loading, Flight serialization/deserialization, and the Vite ModuleRunner bridge between environments. Do not replace that with Next webpack/Turbopack RSC bundling, webpack layers, RSC manifests, or a parallel module graph.
+
+The transport differs from production but preserves the same protocol shape. In production, the browser fetches Flight from a server endpoint. Here, Flight streams and client-reference resolution move between Vite environments inside the Vitest browser runtime. The bridge relies on Vite's ModuleRunner and browser/HMR websocket infrastructure. Do not start a Next dev server, add Next's webpack/Turbopack HMR client, or bypass the Vite environment bridge with ad hoc HTTP endpoints.
+
+Next.js integration should feed real Next behavior into that Vite RSC graph:
+
+- Route renders use Next route discovery, `next-app-loader` loader trees, `renderToHTMLOrFlight`, and `NextAppRouter`.
+- Next config, env defines, runtime aliases, cache/request stores, cookies, headers, redirects, access fallbacks, fonts, images, and metadata should come from installed `next/dist/...` modules whenever practical.
+- Local code should be a boundary adapter between Next, Vite, Vitest, and `@vitejs/plugin-rsc`, not a second implementation of Next.
+
+There are two action transports:
+
+- Without MSW, Server Actions are called directly inside the test runtime. This is good for focused action-and-rerender tests.
+- With MSW, Next RSC fetches and Server Action POSTs travel as real browser requests through `nextRscRequestHandlers`. Use this path when request headers, router refresh, cache revalidation, or Next's action response protocol matter.
+
+Client navigation and redirects must be tested as real browser behavior. Do not add navigation spy APIs or fake router assertions. Assert `window.location` and target-route UI after clicks, `router.push`/`replace`, form submissions, and Server Action redirects.
+
+Dependency optimization is part of correctness. Hidden Vite environments must not discover app-shell dependencies mid-test because that can trigger reloads or blank pages. The base RSC plugin copies optimizer scan roots from the visible Vitest browser client into hidden `react_client` and `react_ssr` runners, and the Next plugin contributes app directory entries. Do not paper over late discovery by adding broad ESM app-shell dependencies to demo `optimizeDeps.include`; explicit prebundling should be limited to CJS dependencies, resolvable Next internals, or a focused optimizer regression.
+
+When debugging blank screens at the end of a browser test, think first about real browser navigation, Vite optimizer reloads, missing client references, document hydration, or MSW/RSC request handling. Avoid fixes that only silence the symptom, such as app-local mocks, hard redirects, or custom router state.
+
 ## Worktree Safety
 
 Before editing, committing, rebasing, or pushing, verify the working directory, branch, and status with `pwd`, `git branch --show-current`, and `git status --short --branch`. If the user names a specific branch or PR worktree, use only that branch/worktree for the task. Stop instead of editing when the current branch does not match the requested work.
