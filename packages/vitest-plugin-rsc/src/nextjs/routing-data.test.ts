@@ -26,8 +26,22 @@ const manifest: NextRoutingManifest = {
         headers: [{ key: "x-next-config-header", value: "notes-demo" }],
       },
       {
+        source: "/before",
+        headers: [{ key: "x-before-source", value: "rewrite-source" }],
+      },
+      {
+        source: "/legacy/:slug",
+        headers: [{ key: "x-legacy-slug", value: ":slug" }],
+      },
+      {
         source: "/route-patterns/:team/settings",
         headers: [{ key: "x-route-team", value: ":team" }],
+      },
+    ],
+    onMatchHeaders: [
+      {
+        source: "/next-apis",
+        headers: [{ key: "x-on-match-header", value: "notes-demo-on-match" }],
       },
     ],
     redirects: [
@@ -67,29 +81,33 @@ test("converts discovered pages, route handlers, and custom routes to routing da
     "/fallback-target",
     "/api/next-request-response",
   ]);
-  expect(data.routes.beforeMiddleware).toEqual([
-    expect.objectContaining({
-      destination: "/next-apis?from=$1",
-      headers: { Location: "/next-apis?from=$1" },
-      status: 307,
-    }),
-  ]);
+  expect(data.routes.beforeMiddleware).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        headers: { "x-next-config-header": "notes-demo" },
+      }),
+      expect.objectContaining({
+        headers: { "x-before-source": "rewrite-source" },
+      }),
+      expect.objectContaining({
+        headers: { Location: "/next-apis?from=$1" },
+        status: 307,
+      }),
+    ]),
+  );
   expect(data.routes.dynamicRoutes).toEqual(
     expect.arrayContaining([
       expect.objectContaining({
-        destination: "/route-patterns/[team]/settings?team=$team",
+        destination: "/route-patterns/[team]/settings",
       }),
       expect.objectContaining({
-        destination: "/route-patterns/docs/[...slug]?slug=$slug",
+        destination: "/route-patterns/docs/[...slug]",
       }),
     ]),
   );
   expect(data.routes.onMatch).toEqual([
     expect.objectContaining({
-      headers: { "x-next-config-header": "notes-demo" },
-    }),
-    expect.objectContaining({
-      headers: { "x-route-team": "$1" },
+      headers: { "x-on-match-header": "notes-demo-on-match" },
     }),
   ]);
 });
@@ -119,14 +137,16 @@ test("does not let afterFiles rewrites shadow exact app routes", async () => {
   expect(result.invocationTarget?.pathname).toBe("/next-apis");
   expect(result.resolvedQuery).toEqual({});
   expect(result.resolvedHeaders?.get("x-next-config-header")).toBe("notes-demo");
+  expect(result.resolvedHeaders?.get("x-on-match-header")).toBe("notes-demo-on-match");
 });
 
-test("resolves beforeFiles rewrites to app routes", async () => {
+test("applies next.config headers before beforeFiles rewrites", async () => {
   const result = await resolveRoute("/before");
 
   expect(result.resolvedPathname).toBe("/before-target");
   expect(result.invocationTarget?.pathname).toBe("/before-target");
   expect(result.resolvedQuery).toEqual({ via: "before" });
+  expect(result.resolvedHeaders?.get("x-before-source")).toBe("rewrite-source");
 });
 
 test("selects dynamic app routes after afterFiles rewrites", async () => {
@@ -137,9 +157,9 @@ test("selects dynamic app routes after afterFiles rewrites", async () => {
   expect(result.routeMatches).toMatchObject({ team: "acme" });
   expect(result.resolvedQuery).toMatchObject({
     from: "after-files",
-    team: "acme",
   });
-  expect(result.resolvedHeaders?.get("x-route-team")).toBe("acme");
+  expect(result.resolvedHeaders?.get("x-route-team")).toBeNull();
+  expect(result.resolvedQuery).not.toHaveProperty("team");
 });
 
 test("uses fallback rewrites only after no exact or dynamic route matches", async () => {
@@ -167,11 +187,10 @@ test("converts catch-all custom route params without preserving literal modifier
     },
   });
 
-  expect(data.routes.beforeFiles).toEqual([
-    expect.objectContaining({ destination: "/fallback-target?path=$1" }),
-    expect.objectContaining({ destination: "/fallback-target?path=$1" }),
-    expect.objectContaining({ destination: "/fallback-target?path=$1" }),
-  ]);
+  for (const route of data.routes.beforeFiles) {
+    expect(route.destination).toContain("$1");
+    expect(route.destination).not.toContain(":path");
+  }
 
   const result = await resolveRoute("/catch/deep/path", data);
 
@@ -202,24 +221,33 @@ test("preserves query delimiters after non-modified custom route params", async 
 
   expect(result.resolvedPathname).toBe("/posts/[slug]");
   expect(result.invocationTarget?.pathname).toBe("/posts/config");
-  expect(result.resolvedQuery).toEqual({ from: "legacy", slug: "config" });
+  expect(result.resolvedQuery).toEqual({ from: "legacy" });
 });
 
-test("routes catch-all dynamic app routes with template path and query params", async () => {
+test("routes catch-all dynamic app routes without leaking params into query", async () => {
   const result = await resolveRoute("/route-patterns/docs/a/b");
 
   expect(result.resolvedPathname).toBe("/route-patterns/docs/[...slug]");
   expect(result.invocationTarget?.pathname).toBe("/route-patterns/docs/a/b");
-  expect(result.resolvedQuery).toEqual({ slug: "a/b" });
+  expect(result.resolvedQuery).toEqual({});
 });
 
-test("returns redirects with Next status and interpolated destination query", async () => {
+test("preserves user query params that share dynamic route param keys", async () => {
+  const result = await resolveRoute("/route-patterns/docs/a/b?slug=query&mode=docs");
+
+  expect(result.resolvedPathname).toBe("/route-patterns/docs/[...slug]");
+  expect(result.invocationTarget?.pathname).toBe("/route-patterns/docs/a/b");
+  expect(result.resolvedQuery).toEqual({ mode: "docs", slug: "query" });
+  expect(result.routeMatches).toMatchObject({ slug: "a/b" });
+});
+
+test("returns redirects as Next adapter status and Location headers", async () => {
   const result = await resolveRoute("/legacy/config");
 
-  expect(result.redirect?.url.pathname).toBe("/next-apis");
-  expect(result.redirect?.url.searchParams.get("from")).toBe("config");
+  expect(result.redirect).toBeUndefined();
   expect(result.status).toBe(307);
   expect(result.resolvedHeaders?.get("location")).toBe("/next-apis?from=config");
+  expect(result.resolvedHeaders?.get("x-legacy-slug")).toBe("config");
 });
 
 async function resolveRoute(path: string, data: NextRoutingData = createNextRoutingData(manifest)) {

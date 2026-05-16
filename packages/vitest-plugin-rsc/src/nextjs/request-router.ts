@@ -26,7 +26,7 @@ export type NextRouteManifest = {
   customRoutes: NextCustomRoutes;
 };
 
-export type NextCustomRoutes = Pick<CustomRoutes, "headers" | "redirects" | "rewrites">;
+export type NextCustomRoutes = CustomRoutes;
 
 type RouteMatches = Record<string, string | string[]>;
 
@@ -101,6 +101,16 @@ export async function resolveNextRequestTarget(options: {
       kind: "redirect",
       url: result.redirect.url,
       status: result.redirect.status,
+      responseHeaders,
+    };
+  }
+
+  const headerRedirect = resolveHeaderRedirect(responseHeaders, result.status, requestedUrl);
+  if (headerRedirect) {
+    return {
+      kind: "redirect",
+      url: headerRedirect.url,
+      status: headerRedirect.status,
       responseHeaders,
     };
   }
@@ -187,6 +197,17 @@ function createEmptyRequestBody() {
 
 function toHeaders(headers: Headers | Record<string, string> | undefined) {
   return headers ? new Headers(headers) : new Headers();
+}
+
+function resolveHeaderRedirect(headers: Headers, status: number | undefined, requestedUrl: URL) {
+  if (!status || status < 300 || status >= 400) return;
+  const location = headers.get("location");
+  if (!location) return;
+
+  return {
+    url: new URL(location, requestedUrl),
+    status,
+  };
 }
 
 function createInvocationUrl(

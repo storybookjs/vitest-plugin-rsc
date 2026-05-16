@@ -56,7 +56,7 @@ Status values: `Not started`, `In progress`, `Blocked`, `Deferred`, `Rejected`,
 | Subgoal                                     | Status      | Branch/PR/Commit | Required Tests                                                          | Notes                                                                                                                         |
 | ------------------------------------------- | ----------- | ---------------- | ----------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
 | 1. Request router split                     | Done        | PR #47 / 1f9dad3 | `request-router.test.ts`; notes-demo routing/redirect/header tests      | Review cleanup tightened the request-router boundary and explicit route override behavior. Local tests and PR CI green.       |
-| 2. Routing data adapter                     | Done        | PR #47 / f78b253 | `routing-data.test.ts`; rewrite ordering tests                          | Delegates to `@next/routing`; review cleanup replaced local custom-route types and centralized the CJS package-shape shim.    |
+| 2. Routing data adapter                     | Done        | PR #47 / pending | `routing-data.test.ts`; rewrite ordering tests                          | Delegates to `@next/routing` and Next's routing-utils custom-route conversion; latest cleanup mirrors Next adapter phases.    |
 | 3. App page invoker                         | Deferred    | PR #47 / f78b253 | `app-page-invoker.test.ts`; notes-demo render/action coverage           | Direct `AppPageRouteModule` import experiment was rejected; next attempt needs a server-only/module.compiled boundary.        |
 | 4. App route invoker decision               | Done        | PR #47 / pending | `app-route-invoker.test.ts` if implemented                              | Route handlers stay explicitly unsupported as page render targets; direct-import route-handler tests remain covered.          |
 | 5. Optimizer entry architecture             | Not started |                  | optimizer entry tests; no-MSW app-shell regression                      | Replace broad `app/**` scan roots with discovered route or virtual entrypoint warmup.                                         |
@@ -258,6 +258,30 @@ Status values: `Not started`, `In progress`, `Blocked`, `Deferred`, `Rejected`,
   - `pnpm test:run --project nextjs-notes-demo-browser --api 52654 app/api/next-request-response/route-render.test.tsx app/metadata-routes.browser.test.tsx`
   - `pnpm test:run --project nextjs-notes-demo-node --api 52655 app/api/next-request-response/route.node.test.ts 'app/api/route-handler-matrix/[id]/route.node.test.ts' app/metadata-routes.node.test.ts`
   - CI: docs-only pending push.
+- 2026-05-16 Subgoal 2 review follow-up after `f78b253`: fetched the latest
+  PR review comments before continuing, including the later reviewer note that
+  Subgoal 2 should mirror Next's `build-complete.ts` routing-data mapping rather
+  than maintain a local custom-route compiler. This slice now builds manifest
+  custom routes with Next's `buildCustomRoute`, converts headers/redirects/
+  rewrites through the compiled `@vercel/routing-utils`, and keeps the same
+  adapter phase shape: normal headers plus redirects in `beforeMiddleware`,
+  rewrites in their Next phases, and `onMatchHeaders` in `routes.onMatch`.
+  Redirects intentionally surface from `@next/routing` as status plus Location
+  headers and are translated back to `kind: "redirect"` at the request-router
+  boundary. Dynamic app-route destinations no longer add synthetic route params
+  to query strings. Package tests cover the adapter behavior, and the notes-demo
+  catch-all route asserts that route params do not appear in `searchParams`
+  unless the user supplied that query key.
+  Local verification:
+  - `pnpm --filter vitest-plugin-rsc test:run src/nextjs/routing-data.test.ts src/nextjs/request-router.test.ts src/nextjs/plugin/optimizer.test.ts`
+  - `pnpm build`
+  - `pnpm tsgo --build`
+  - `pnpm test:run --project nextjs-notes-demo-browser --api 52658 'app/route-patterns/docs/[...slug]/page.test.tsx' app/next-apis/page.test.tsx 'app/route-patterns/[team]/settings/page.test.tsx'`
+  - `pnpm exec oxlint packages/vitest-plugin-rsc/src/nextjs/routing-data.ts packages/vitest-plugin-rsc/src/nextjs/routing-data.test.ts packages/vitest-plugin-rsc/src/nextjs/request-router.ts packages/vitest-plugin-rsc/src/nextjs/request-router.test.ts packages/vitest-plugin-rsc/src/nextjs/testing-library.tsx packages/vitest-plugin-rsc/src/nextjs/next-compiled.d.ts packages/vitest-plugin-rsc/src/nextjs/plugin/optimizer.ts packages/vitest-plugin-rsc/src/nextjs/plugin/optimizer.test.ts 'playground/nextjs-notes-demo/app/route-patterns/docs/[...slug]/page.tsx' 'playground/nextjs-notes-demo/app/route-patterns/docs/[...slug]/page.test.tsx' docs/next-fidelity-pr-architecture.md`
+  - `pnpm format:check`
+  - `pnpm lint:ci`
+  - `git diff --check`
+  - CI: pending push.
 
 ## Agent Operating Rules
 

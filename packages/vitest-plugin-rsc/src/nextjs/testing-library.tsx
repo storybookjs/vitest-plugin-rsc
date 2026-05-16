@@ -929,6 +929,7 @@ function createPageOnlyRouteManifest(pages: NextRouteManifestEntry[]): NextRoute
     routeHandlers: [],
     customRoutes: {
       headers: [],
+      onMatchHeaders: [],
       redirects: [],
       rewrites: {
         beforeFiles: [],

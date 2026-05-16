@@ -36,8 +36,9 @@ test("prebundles routing data dependencies for the browser testing library", () 
   expect(depsByGroup.testingLibrary).toEqual(
     expect.arrayContaining([
       "@next/routing",
-      "next/dist/compiled/path-to-regexp/index.js",
+      "next/dist/compiled/@vercel/routing-utils/superstatic.js",
       "next/dist/lib/build-custom-route.js",
+      "next/dist/lib/redirect-status.js",
     ]),
   );
 });

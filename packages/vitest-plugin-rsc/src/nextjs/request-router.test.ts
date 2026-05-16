@@ -29,6 +29,7 @@ const manifest: NextRouteManifest = {
         headers: [{ key: "x-route-team", value: ":team" }],
       },
     ],
+    onMatchHeaders: [],
     redirects: [
       {
         source: "/legacy/:slug",
@@ -85,6 +86,7 @@ test("selects dynamic app routes after afterFiles rewrites", async () => {
   if (target.kind !== "app-page") return;
   expect(target.entry.route).toBe("/route-patterns/[team]/settings");
   expect(target.routeMatches).toEqual({ team: "alpha" });
+  expect(target.invocationUrl.searchParams.has("team")).toBe(false);
   expect(target.responseHeaders.get("x-route-team")).toBe("alpha");
 });
 
@@ -109,6 +111,21 @@ test("normalizes catch-all dynamic route matches through Next route matcher", as
   if (target.kind !== "app-page") return;
   expect(target.entry.route).toBe("/route-patterns/docs/[...slug]");
   expect(target.routeMatches).toEqual({ slug: ["a", "b"] });
+  expect(target.invocationUrl.searchParams.has("slug")).toBe(false);
+});
+
+test("preserves user-supplied query params that share dynamic route param keys", async () => {
+  const target = await resolveNextRequestTarget({
+    url: "/route-patterns/docs/a/b?slug=query&mode=docs",
+    manifest,
+  });
+
+  expect(target.kind).toBe("app-page");
+  if (target.kind !== "app-page") return;
+  expect(target.entry.route).toBe("/route-patterns/docs/[...slug]");
+  expect(target.routeMatches).toEqual({ slug: ["a", "b"] });
+  expect(target.invocationUrl.searchParams.get("slug")).toBe("query");
+  expect(target.invocationUrl.searchParams.get("mode")).toBe("docs");
 });
 
 test("returns redirect targets with Next redirect status and destination query params", async () => {
