@@ -1,4 +1,4 @@
-# Architecture
+# RSC Runtime Architecture
 
 `renderServer` runs the same React Server Components protocol your app uses in production:
 

@@ -13,6 +13,7 @@ declare module "virtual:vitest-plugin-rsc/next-routes" {
     appPath: string;
     routeFile: string;
   }[];
+  export const routing: NextRoutingData;
   export const nextRoutingData: NextRoutingData;
 }
 

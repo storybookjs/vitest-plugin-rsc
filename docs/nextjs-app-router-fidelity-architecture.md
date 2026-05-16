@@ -1,4 +1,4 @@
-# Next App Router Fidelity Architecture
+# Next.js App Router Fidelity Architecture
 
 Source of truth: Next.js `v16.2.6`
 (`ee6e79b1792a4d401ddf2480f40a83549fe8e722`), installed
@@ -27,6 +27,18 @@ place it at the exact matching path under
 Do not create internal files that only wrap imports. A `nextjs/src/...` file must
 say exactly which upstream Next file and line ranges it imitates or copies.
 
+Use this source order for every fidelity decision:
+
+1. Import and call the installed Next, Vite, Vitest, React, or
+   `@vitejs/plugin-rsc` module directly.
+2. Invoke the real Next loader, compiler transform, runtime helper, or RSC
+   helper behind the narrowest Vite/Vitest adapter.
+3. Copy the smallest non-importable upstream block, with exact source lines,
+   `Begin copy` / `End copy` markers, and an adaptation note.
+4. Add local behavior only as a last resort. The local code must explain why the
+   upstream path is blocked and must have a regression test for the
+   user-visible behavior.
+
 PR #45 is the precedent for this mindset: when CJS `"use client"` handling
 blocked real Next modules, it explored a generic browser/RSC CJS bridge instead
 of adding more Next-specific stubs. Local shims are allowed as proving grounds,
@@ -34,14 +46,38 @@ but generic lower-layer fixes should be patched or upstreamed when possible.
 
 ## Constraints
 
+Ownership boundaries are part of the architecture, not review preferences.
+Next.js owns App Router semantics: route discovery, route conventions, loader
+trees, route modules, metadata, static info, request stores, cookies, headers,
+draft mode, redirects, access fallbacks, cache state, fetch patching, app render,
+fonts, images, App Router API modules, aliases, defines, compiler options, and
+runtime globals.
+
 Vite is the bundler. Webpack and Turbopack do not own module resolution,
 transforms, HMR, optimizer behavior, RSC graph splitting, or manifests.
 `@vitejs/plugin-rsc` owns RSC boundaries, client references, server references,
-Server Action loading, and Flight module references.
+Server Action loading, Flight serialization/deserialization, and Vite
+ModuleRunner transport between the server, browser, and SSR environments. Do not
+replace that with Next's webpack/Turbopack RSC graph, layer graph, client
+reference graph, or manifest graph.
 
 Vitest owns the browser document. We cannot serve a real top-level Next
 document. We can ask Next for HTML/Flight and hydrate a Next-like document
 inside the Vitest page while preserving the Vite/Vitest harness.
+
+The Vite RSC environment names are fixed:
+
+- `client` is the RSC/edge-server environment. It uses `react-server` and
+  `edge-light` conditions and defines `process.env.NEXT_RUNTIME` as `"edge"`.
+- `react_client` is the visible browser App Router and Client Component
+  environment. It uses browser conditions, Next browser React aliases, and
+  defines `process.env.NEXT_RUNTIME` as `""`.
+- `react_ssr` is the browser-ish SSR environment used to turn Flight data into
+  HTML for hydration.
+
+Runtime code must not assume a Node test runner or a running Next dev server.
+The "server" side runs inside Vitest Browser Mode through Vite environments and
+should use Web APIs unless a narrowly scoped shim mirrors real Next behavior.
 
 The runtime target is App Router Edge/Web API only for now. This is a support
 boundary for this adapter, not a claim that Node runtime apps do not work in
@@ -186,7 +222,9 @@ The adapter's job is to preserve this shape on Vite:
 
 - Vite replaces webpack/Turbopack as bundler.
 - `@vitejs/plugin-rsc` replaces Next's webpack/Turbopack RSC graph ownership.
-- Vite virtual modules replace build output files when needed.
+- Vite virtual modules replace build output files when needed, and their
+  payload generators belong under the Next source file that would have produced
+  that artifact.
 - MSW replaces the network boundary to a real Next server.
 - The Edge/Web runtime path remains the semantic target.
 
@@ -215,6 +253,21 @@ browser Request
   -> middleware/proxy via server/web/adapter if matched
   -> App Page edge handler, App Route edge handler, redirect, rewrite, or response
 ```
+
+Same-origin request routing must preserve Next's observed App Router order:
+
+1. Redirects.
+2. `beforeFiles` rewrites.
+3. Exact App Page or App Route match.
+4. `afterFiles` rewrites.
+5. Dynamic App Page or App Route match.
+6. `fallback` rewrites.
+
+Array-form rewrites normalize to `afterFiles`. An `afterFiles` rewrite must not
+hide an existing exact app route. If this behavior cannot be delegated directly
+to `@next/routing` plus Next-produced routing data, the adapter code must live
+under the Next source file that produces or consumes that routing data, not in
+`testing-library.tsx`.
 
 App Page HTML/SSR flow is one mode of the Edge App Page entry:
 
@@ -278,11 +331,105 @@ HTML + inline Flight bootstrap
   -> navigation/refresh/action fetches return to MSW
 ```
 
+Redirects are an observable browser contract. Tests must prove the redirect
+branch was hit, for example by asserting target-route UI plus a
+redirect-specific marker such as a preserved `from=` query value. Form and
+Server Action redirects must be client-side App Router navigations through the
+hydrated React tree; a hard document navigation that leaves Vitest on a blank
+page is a regression.
+
+Hydration must stay tied to Next app-index semantics. The adapter may parse the
+`self.__next_f.push(...)` bootstrap tuple shape that `app-index.tsx` consumes,
+but it must not scan arbitrary document HTML for broad magic strings. Document
+hydration must preserve Vite/Vitest harness scripts, and visible navigation must
+go through `NextAppRouter` rather than a local router element or navigation spy.
+
 The same file can participate in multiple phases, but the phase boundary should
 stay explicit. For example, `edge-ssr-app` is runtime code generated at
 build-time. `next-app-loader` is build-time code whose loader tree is consumed
 at runtime. `server/web/adapter` is runtime code used by middleware, App Page
 edge entries, and App Route edge entries.
+
+Dependency optimization is build/test startup work, not request runtime work.
+Hidden `react_client` and `react_ssr` environments must not discover app-shell
+dependencies mid-test because that can reload the browser page. The base RSC
+plugin should copy optimizer scan roots from the visible Vitest browser client,
+and the Next adapter should contribute route-discovered entrypoints shaped like
+Next `entries.ts` output. A broad `app/**` source scan is only a temporary
+fallback. Demo apps must not include broad ESM app-shell dependencies in
+`optimizeDeps.include`; explicit prebundling should be limited to CJS
+dependencies, resolvable Next internals, or a focused optimizer regression.
+
+Vite virtual modules are not an exception to the mirror rule. The Vite
+`resolveId` / `load` hook dispatch is adapter plumbing, but the code that
+generates a virtual module payload must live under the exact Next source file it
+imitates or adapts:
+
+```text
+virtual:vitest-plugin-rsc/next-entrypoints
+  -> nextjs/src/build/entries.ts
+     imitates Next's App Router entry creation and the build graph roots that
+     webpack would discover from those entries
+
+virtual:vitest-plugin-rsc/next-route-tree?...
+  -> nextjs/src/build/webpack/loaders/next-app-loader/index.ts
+     imitates next-app-loader output: loader tree, userland module imports, and
+     convention module references
+
+virtual:vitest-plugin-rsc/next-routes
+  -> nextjs/src/build/adapter/build-complete.ts
+     imitates route manifest to adapter routing data conversion
+
+future virtual Edge App Page entry
+  -> nextjs/src/build/webpack/loaders/next-edge-ssr-loader/index.ts
+     or nextjs/src/build/templates/edge-ssr-app.ts when the loader/template must
+     be copied or substantially adapted
+
+future virtual Edge App Route entry
+  -> nextjs/src/build/webpack/loaders/next-edge-app-route-loader/index.ts
+     or nextjs/src/build/templates/edge-app-route.ts when the loader/template
+     must be copied or substantially adapted
+```
+
+The virtual ID does not decide ownership. The payload decides ownership. If a
+virtual module contains Next build-time semantics, it must point at the upstream
+Next file and line range that would have produced equivalent webpack output,
+`.next` artifact data, or runtime entry code.
+
+Virtual payloads must keep a structure comparable to the webpack/Next artifact
+they replace: the same meaningful exports, entry shape, loader/template shape,
+manifest fields, request metadata, and protocol data where those exist upstream.
+Do not invent a local convenience API and call it equivalent. If Vite needs a
+small translation layer, keep that layer outside the Next-owned payload and make
+the payload itself look like the thing webpack or Next would have generated.
+
+The intended glue contract for virtual modules is:
+
+- The public virtual ID is only the Vite transport address.
+- The query, exports, and serialized objects are the Next contract.
+- `next-route-tree` query data must be `AppLoaderOptions`-shaped and serialized
+  like `entries.ts#getAppEntry()` serializes `next-app-loader` requests with
+  `querystring.stringify`.
+- `page`, `pagePath`, `appPaths`, and `allNormalizedAppPaths` must keep Next's
+  meanings. For example, `page`/`appPaths` use App Router page paths such as
+  `/notes/page`, while `allNormalizedAppPaths` uses the normalized route-key
+  set from `appPathsPerRoute`, such as `/notes`.
+- `next-route-tree` exports `tree` because the upstream `app-page` template
+  consumes `tree`; `loaderTree` is only an adapter manifest property after that
+  boundary.
+- `next-routes` exports `routing` because `build-complete.ts` calls
+  `onBuildComplete({ routing })`; `nextRoutingData` can exist only as a
+  compatibility alias.
+
+Concrete naming/data parity:
+
+| Vite module/artifact                            | Webpack/Next source                                      | Upstream names and data to preserve                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| ----------------------------------------------- | -------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `virtual:vitest-plugin-rsc/next-entrypoints`    | `entries.ts#getAppEntry()`                               | Preserve the `getAppEntry()` entry shape: `import` is a `next-app-loader?${AppLoaderOptions}!` request and `layer` is `WEBPACK_LAYERS.reactServerComponents`. If the Vite optimizer needs a scan-only module, derive it from the same `AppLoaderOptions` fields (`name`, `page`, `pagePath`, `appDir`, `appPaths`, `allNormalizedAppPaths`, `pageExtensions`, `basePath`, `assetPrefix`, `rootDir`, `tsconfigPath`, `isDev`, `nextConfigOutput`, `preferredRegion`, `middlewareConfig`, `isGlobalNotFoundEnabled`) rather than inventing a smaller route model. |
+| `virtual:vitest-plugin-rsc/next-route-tree?...` | `next-app-loader` + `app-page` template                  | Preserve the generated names injected into `app-page`: `tree`, `__next_app_require__`, and `__next_app_load_chunk__`. The Vite module may export `tree` for consumption, but it must not rename the payload to a local concept such as `loaderTree` before the adapter boundary.                                                                                                                                                                                                                                                                                |
+| `virtual:vitest-plugin-rsc/next-routes`         | `build-complete.ts#onBuildComplete()`                    | Preserve the adapter field name `routing` and its object shape: `beforeMiddleware`, `beforeFiles`, `afterFiles`, `dynamicRoutes`, `onMatch`, `fallback`, `shouldNormalizeNextData`, and `rsc` when supported. Extra Vitest manifest exports may exist next to it, but request routing should consume `routing` as the Next-owned payload.                                                                                                                                                                                                                       |
+| Future Edge App Page virtual entry              | `next-edge-ssr-loader` + `edge-ssr-app` template         | Preserve `pageModPath` / `VAR_USERLAND`, `VAR_PAGE`, cache handler injection, exported `ComponentMod`, exported `handler`, and the default backwards-compatible handler shape.                                                                                                                                                                                                                                                                                                                                                                                  |
+| Future Edge App Route virtual entry             | `next-edge-app-route-loader` + `edge-app-route` template | Preserve `modulePath` / `VAR_USERLAND`, `VAR_PAGE`, cache handler injection, exported `ComponentMod`, exported `handler`, and the default backwards-compatible handler shape.                                                                                                                                                                                                                                                                                                                                                                                   |
 
 ## File Connection Overview
 
@@ -352,11 +499,65 @@ If a direct import works, the corresponding mirror file should not be created.
 If a mirror file exists, it must document the exact upstream lines it
 imitates/copies.
 
+## Support Boundaries And Review Contract
+
+This document describes the target architecture. A feature is not a support
+claim until the matching Next-owned path is wired, covered by tests, and tracked
+in `nextjs-fidelity-architecture-tracker.md`.
+
+Unsupported or unclaimed behavior must fail clearly or stay undocumented as a
+feature. Do not make a demo pass with app-local mocks, local route runners,
+fake router state, or broad source rewrites that imply unsupported Next
+semantics.
+
+These remain unsupported unless a later section explicitly maps them to a
+working Next source path and tests:
+
+- Pages Router.
+- `next/legacy/image`.
+- Production Next build output fidelity.
+- PPR/progressive timing fidelity.
+- Node.js runtime parity.
+- `instrumentation.ts` and `instrumentation-client.ts` startup lifecycles.
+- `mdx-components.tsx` without a delegated MDX compiler path.
+- Next image optimizer endpoint behavior.
+- Cached components with `children` / encrypted `boundArgsLength` cache call
+  shape.
+- Route handlers as `renderServer({ url })` targets unless they run through the
+  Edge App Route path and `AppRouteRouteModule.handle()`.
+
+Tests should cover framework behavior, not just demo behavior. Use notes-demo
+browser tests for user-visible App Router behavior such as route matching,
+layouts, params, metadata, document/head behavior, cookies, headers, redirects,
+Server Actions, refresh, request stores, client navigation, forms, CSS, fonts,
+and images. Use MSW-routed transport when request/response semantics matter.
+Use package-level tests for adapter internals such as transforms, aliases,
+loader adapters, optimizer behavior, manifest proxies, runtime shims, and
+version gates.
+
+Before accepting a fidelity change, verify that it deletes or narrows glue where
+a real Next/Vite/Vitest/RSC entrypoint can own the behavior, that every copied
+block has source links and adaptation notes, that every local shim names the
+upstream behavior it mirrors, and that no webpack/Turbopack RSC graph or Next
+dev server was introduced.
+
 ## Internal Files That Imitate Next.js
+
+Most files in this section should not exist forever. They are a map for the
+glue we may need while making Next internals work inside Vite/Vitest. The
+preferred end state is that many of these paths disappear by going higher up in
+Next's own pipeline: use the real entry/template/loader/module that already owns
+the behavior instead of keeping a lower-level mirror. Direct `next/dist/...`
+imports are good when that is the highest practical owner; otherwise prefer the
+higher Next layer even if it means adapting a larger boundary once and deleting
+several lower shims. A file under `nextjs/src/` is acceptable only while it
+copies or substantially adapts a specific upstream Next file and line range.
 
 Every section below names the local file, the upstream file it imitates, the
 line ranges that matter, the associated imports, and the higher/lower
-consideration.
+consideration. Treat "Direct imports", "Higher candidate", and "Why not higher"
+as deletion pressure: when the higher/direct path works, remove the mirror file
+instead of keeping a wrapper around it.
 
 ### `nextjs/src/build/webpack-config.ts`
 
@@ -450,6 +651,19 @@ Copies/adapts:
    only if `next/dist/build/entries.js#getAppEntry` cannot be imported.
 2. If direct import works, do not create this file.
 
+Virtual modules/artifacts owned:
+
+- `virtual:vitest-plugin-rsc/next-entrypoints`: Vite optimizer/build-scan entry
+  module generated from Next App Router entry creation. It must import the
+  route-tree virtual modules and route handler modules discovered from the same
+  App Router entry facts that webpack would have received from `entries.ts`.
+  Preserve `getAppEntry()` naming and data: the canonical upstream entry has an
+  `import` request shaped like `next-app-loader?${AppLoaderOptions}!` and a
+  `WEBPACK_LAYERS.reactServerComponents` layer. Any scan-only Vite module must
+  be derived from those `AppLoaderOptions` field names, including dev-only
+  fields such as `rootDir`, `tsconfigPath`, and `isDev`, not from a local route
+  model.
+
 Direct imports in this imitation:
 
 - `next/dist/build/entries.js#getAppEntry`
@@ -463,6 +677,117 @@ Higher/lower consideration:
   serialization.
 - Lower fallback: manually build `next-app-loader?...!` request strings.
 - Why not lower: it duplicates Next entry serialization.
+
+### `nextjs/src/server/route-matcher-providers/dev/dev-app-page-route-matcher-provider.ts`
+
+Imitates/copies from:
+
+- `vercel/next.js/packages/next/src/server/route-matcher-providers/dev/dev-app-page-route-matcher-provider.ts`
+
+Imitates/copies these upstream lines:
+
+- `dev-app-page-route-matcher-provider.ts:L10-L103`: App Page matcher provider,
+  page/default file matching, app path grouping, catch-all normalization, and
+  deterministic parallel-route sorting.
+
+Associated imports from those lines:
+
+- `AppPageRouteMatcher`
+- `RouteKind.APP_PAGE`
+- `DevAppNormalizers`
+- `normalizeCatchAllRoutes`
+- `compareAppPaths`
+
+Copies/adapts:
+
+1. App Page route discovery only when the real provider needs a Vite-specific
+   `FileReader` or app-dir boundary.
+2. App path grouping used later by `next-app-loader` entry options.
+
+Direct imports in this imitation:
+
+- `next/dist/server/route-matcher-providers/dev/dev-app-page-route-matcher-provider.js`,
+  preferred.
+
+Higher/lower consideration:
+
+- Higher candidate: real Next dev matcher provider.
+- Lower fallback: local `app/**/page.tsx` globbing.
+- Why not lower: route groups, parallel slots, defaults, and catch-all
+  normalization are Next-owned.
+
+### `nextjs/src/server/route-matcher-providers/dev/dev-app-route-route-matcher-provider.ts`
+
+Imitates/copies from:
+
+- `vercel/next.js/packages/next/src/server/route-matcher-providers/dev/dev-app-route-route-matcher-provider.ts`
+
+Imitates/copies these upstream lines:
+
+- `dev-app-route-route-matcher-provider.ts:L16-L138`: App Route matcher
+  provider, metadata route handling, ignored route filtering, normalizers, and
+  `AppRouteRouteMatcher` creation.
+
+Associated imports from those lines:
+
+- `AppRouteRouteMatcher`
+- `RouteKind.APP_ROUTE`
+- `isAppRouteRoute`
+- `isMetadataRouteFile`
+- `isStaticMetadataRoute`
+- `isStaticMetadataFile`
+- `normalizeMetadataPageToRoute`
+
+Copies/adapts:
+
+1. App Route and metadata route discovery only when the real provider needs a
+   Vite-specific file reader or app-dir boundary.
+2. The distinction between static metadata files and metadata route handlers.
+
+Direct imports in this imitation:
+
+- `next/dist/server/route-matcher-providers/dev/dev-app-route-route-matcher-provider.js`,
+  preferred.
+
+Higher/lower consideration:
+
+- Higher candidate: real Next dev matcher provider.
+- Lower fallback: local `app/**/route.ts` globbing.
+- Why not lower: metadata route mapping and ignored route filtering are
+  Next-owned.
+
+### `nextjs/src/server/route-matcher-providers/dev/helpers/file-reader/default-file-reader.ts`
+
+Imitates/copies from:
+
+- `vercel/next.js/packages/next/src/server/route-matcher-providers/dev/helpers/file-reader/default-file-reader.ts`
+
+Imitates/copies these upstream lines:
+
+- `default-file-reader.ts:L14-L52`: `DefaultFileReader` behavior, recursive
+  absolute-path reads, pathname filters, ignored path parts, and unsorted output.
+
+Associated imports from those lines:
+
+- `recursiveReadDir`
+- `DefaultFileReaderOptions`
+- `FileReader`
+
+Copies/adapts:
+
+1. File-reader setup for the real dev route matcher providers.
+2. Vite project-root and extension filtering only at the adapter boundary.
+
+Direct imports in this imitation:
+
+- `next/dist/server/route-matcher-providers/dev/helpers/file-reader/default-file-reader.js`,
+  preferred.
+
+Higher/lower consideration:
+
+- Higher candidate: real `DefaultFileReader`.
+- Lower fallback: ad hoc recursive app-dir reads.
+- Why not lower: route discovery should stay aligned with Next's dev matchers.
 
 ### `nextjs/src/build/webpack/loaders/next-swc-loader.ts`
 
@@ -556,6 +881,16 @@ Copies/adapts:
    discovery and request-time app-render. Do not replace it with a local route
    convention model.
 
+Virtual modules/artifacts owned:
+
+- `virtual:vitest-plugin-rsc/next-route-tree?...`: Vite representation of the
+  `next-app-loader` generated module for one App Page route. It must expose the
+  loader tree and the rewritten userland/convention module imports that app-render
+  consumes. Preserve the upstream injected names from `app-page`: `tree`,
+  `__next_app_require__`, and `__next_app_load_chunk__`. If Vite exports the
+  tree for another virtual module to import, the export name should be `tree`;
+  `loaderTree` is only the adapter manifest property used after this boundary.
+
 Direct imports in this imitation:
 
 - `next/dist/build/webpack/loaders/next-app-loader/index.js`
@@ -572,6 +907,42 @@ Higher/lower consideration:
   traversal.
 - Why not lower: it reimplements App Router conventions and breaks the same
   loader-tree contract that `AppPageRouteModule` and app-render consume.
+
+### `nextjs/src/server/lib/app-dir-module.ts`
+
+Imitates/copies from:
+
+- `vercel/next.js/packages/next/src/server/lib/app-dir-module.ts`
+
+Imitates/copies these upstream lines:
+
+- `app-dir-module.ts:L4-L29`: `LoaderTree` tuple shape generated by
+  `next-app-loader`.
+- `app-dir-module.ts:L31-L68`: convention module lookup helpers for layout,
+  page, default page, and access fallback modules.
+
+Associated imports from those lines:
+
+- `AppDirModules`
+- `DEFAULT_SEGMENT_KEY`
+
+Copies/adapts:
+
+1. The `LoaderTree` tuple shape only when TypeScript/runtime glue needs to name
+   the payload crossing from loader output into app-render.
+2. Do not reinterpret the tuple into a local route tree before the Next boundary.
+
+Direct imports in this imitation:
+
+- `next/dist/server/lib/app-dir-module.js`, preferred for types/helpers where
+  available.
+
+Higher/lower consideration:
+
+- Higher candidate: let `next-app-loader` and App Page route modules consume the
+  tree directly.
+- Lower fallback: local loader-tree object model.
+- Why not lower: app-render consumes Next's tuple shape.
 
 ### `nextjs/src/build/webpack/loaders/next-edge-ssr-loader/index.ts`
 
@@ -602,6 +973,13 @@ Copies/adapts:
 3. `appDirLoader` and `pageModPath` wiring if needed.
 4. If direct loader invocation works with a small Vite loader context, do not
    create this file.
+
+Virtual modules/artifacts owned:
+
+- Future `virtual:vitest-plugin-rsc/next-edge-ssr-app?...`: Vite representation
+  of the edge App Page entry generated by `next-edge-ssr-loader`. It must point
+  at the App Page module produced from the loader tree and expand
+  `loadEntrypoint("edge-ssr-app")` without letting webpack own the graph.
 
 Direct imports in this imitation:
 
@@ -655,6 +1033,13 @@ Copies/adapts:
 3. `AppPageRouteModule.prepare()` and `AppPageRouteModule.render()`.
 4. `RenderResult` to Web `Response`.
 5. Cache handler and `waitUntil`/`onClose` wiring.
+
+Virtual modules/artifacts owned:
+
+- Future `virtual:vitest-plugin-rsc/next-edge-ssr-app?...` fallback payload, but
+  only when `next-edge-ssr-loader` or `loadEntrypoint("edge-ssr-app")` cannot
+  generate the entry. If this template owns the payload, the virtual module must
+  be a source-linked adaptation of `edge-ssr-app.ts`, not a local render wrapper.
 
 Direct imports in this imitation:
 
@@ -719,6 +1104,14 @@ Copies/adapts:
 4. If direct loader invocation works with a small Vite loader context, do not
    create this file.
 
+Virtual modules/artifacts owned:
+
+- Future `virtual:vitest-plugin-rsc/next-edge-app-route?...`: Vite
+  representation of the edge App Route entry generated by
+  `next-edge-app-route-loader`. It must point at the userland `route.ts` module
+  and expand `loadEntrypoint("edge-app-route")` without letting webpack own the
+  graph.
+
 Direct imports in this imitation:
 
 - `next/dist/build/webpack/loaders/next-edge-app-route-loader/index.js`,
@@ -760,6 +1153,14 @@ Copies/adapts:
 2. Web `Request` to Next request data shape.
 3. Cache handler injection.
 4. `waitUntil` propagation.
+
+Virtual modules/artifacts owned:
+
+- Future `virtual:vitest-plugin-rsc/next-edge-app-route?...` fallback payload,
+  but only when `next-edge-app-route-loader` or
+  `loadEntrypoint("edge-app-route")` cannot generate the entry. If this template
+  owns the payload, the virtual module must be a source-linked adaptation of
+  `edge-app-route.ts`, not a direct userland handler caller.
 
 Direct imports in this imitation:
 
@@ -821,6 +1222,16 @@ Copies/adapts:
 2. RSC/data/segment route mapping if needed for business or visual fidelity.
 3. Header/rewrite/redirect conversion into `@next/routing` data.
 4. The final `routing` shape.
+
+Virtual modules/artifacts owned:
+
+- `virtual:vitest-plugin-rsc/next-routes`: Vite representation of Next's route
+  manifest plus adapter routing data. It must export the discovered App Page and
+  App Route manifest entries and the serialized `@next/routing` data that
+  `build-complete.ts` would pass to adapter `onBuildComplete`. The Next-owned
+  export name for the routing payload is `routing`, matching
+  `onBuildComplete({ routing })`; compatibility aliases may exist, but request
+  routing should consume `routing`.
 
 Direct imports in this imitation:
 
@@ -1156,6 +1567,86 @@ Higher/lower consideration:
 - Lower fallback: local root params discovery.
 - Why not lower: root params semantics are Next-owned.
 
+### `nextjs/src/server/use-cache/handlers.ts`
+
+Imitates/copies from:
+
+- `vercel/next.js/packages/next/src/server/use-cache/handlers.ts`
+
+Imitates/copies these upstream lines:
+
+- `handlers.ts:L10-L26`: global cache handler symbols and shared reference
+  object.
+- `handlers.ts:L34-L80`: `initializeCacheHandlers()`.
+- `handlers.ts:L88-L140`: cache handler lookup and mutation APIs.
+
+Associated imports from those lines:
+
+- `createDefaultCacheHandler`
+- `CacheHandler`
+
+Copies/adapts:
+
+1. Cache handler initialization and custom handler registration only at the
+   Vite config/runtime boundary.
+2. Do not create a parallel cache registry when Next's handler module can be
+   imported.
+
+Direct imports in this imitation:
+
+- `next/dist/server/use-cache/handlers.js`, preferred.
+
+Higher/lower consideration:
+
+- Higher candidate: Next App Page route module setup that initializes handlers
+  through the Edge entry.
+- Lower fallback: local cache handler map.
+- Why not lower: `use-cache-wrapper` reads Next's global handler registry.
+
+### `nextjs/src/server/use-cache/use-cache-wrapper.ts`
+
+Imitates/copies from:
+
+- `vercel/next.js/packages/next/src/server/use-cache/use-cache-wrapper.ts`
+
+Imitates/copies these upstream lines:
+
+- `use-cache-wrapper.ts:L1-L78`: React Flight, async-storage, manifest, cache
+  handler, and dynamic-rendering imports used by the cache wrapper.
+- `use-cache-wrapper.ts:L100-L124`: cache key part and cached page/layout prop
+  shapes.
+- `use-cache-wrapper.ts:L1084-L1126`: exported `cache()` call shape, cache
+  handler lookup, and required WorkStore/WorkUnitStore validation.
+
+Associated imports from those lines:
+
+- `workAsyncStorage`
+- `workUnitAsyncStorage`
+- `getClientReferenceManifest`
+- `getServerModuleMap`
+- `getCacheHandler`
+- `decryptActionBoundArgs`
+
+Copies/adapts:
+
+1. The call shape for hoisted `"use cache"` functions.
+2. Runtime wrapper wiring around Next's real `cache()` implementation.
+3. Unsupported encrypted `boundArgsLength`/children call shapes must fail
+   clearly instead of inventing local cache keys.
+
+Direct imports in this imitation:
+
+- `next/dist/server/use-cache/use-cache-wrapper.js#cache`, preferred.
+
+Higher/lower consideration:
+
+- Higher candidate: Next compiler output for `"use cache"`.
+- Why not higher: Next's RSC/compiler transform would take ownership from
+  `@vitejs/plugin-rsc`.
+- Lower fallback: local memoization.
+- Why not lower: cache tags, work stores, invalid dynamic access, and cache
+  handler behavior are Next-owned.
+
 ### `nextjs/src/build/webpack/plugins/flight-manifest-plugin.ts`
 
 Imitates/copies from:
@@ -1231,6 +1722,123 @@ Higher/lower consideration:
 - Lower fallback: ad hoc action map.
 - Why not lower: Server Action protocol expects Next-shaped records.
 
+### `nextjs/src/server/app-render/entry-base.ts`
+
+Imitates/copies from:
+
+- `vercel/next.js/packages/next/src/server/app-render/entry-base.ts`
+
+Imitates/copies these upstream lines:
+
+- `entry-base.ts:L1-L14`: React Flight server/static exports and React exports
+  re-exported through Next's server entry base.
+- `entry-base.ts:L16-L46`: client component, request, metadata, access
+  fallback, preload, postpone, taint, and segment-data exports.
+- `entry-base.ts:L59-L103`: work store imports, devtools exports, HMR globals,
+  and `patchFetch()`.
+
+Associated imports from those lines:
+
+- `react-server-dom-webpack/server`
+- `react-server-dom-webpack/static`
+- `client/components/layout-router`
+- `client/components/client-page`
+- `client/components/client-segment`
+- `server/request/search-params`
+- `server/request/params`
+- `server/lib/patch-fetch`
+
+Copies/adapts:
+
+1. Only the RSC client-reference boundary for client imports re-exported by
+   `entry-base`.
+2. This is temporary Next-specific glue. If `@vitejs/plugin-rsc` preserves CJS
+   `"use client"` dependencies during RSC optimization, delete this adapter or
+   reduce it to any remaining Next-only metadata.
+
+Direct imports in this imitation:
+
+- `next/dist/server/app-render/entry-base.js`, preferred.
+
+Higher/lower consideration:
+
+- Higher candidate: real `entry-base.js` plus generic RSC CJS client-reference
+  handling.
+- Lower fallback: per-export Next client stubs.
+- Why not lower: it grows a local copy of Next's App Router client boundary.
+
+### `nextjs/src/shared/lib/server-reference-info.ts`
+
+Imitates/copies from:
+
+- `vercel/next.js/packages/next/src/shared/lib/server-reference-info.ts`
+
+Imitates/copies these upstream lines:
+
+- `server-reference-info.ts:L1-L5`: `ServerReferenceInfo` shape.
+- `server-reference-info.ts:L7-L54`: server action vs `"use cache"` ID bit
+  parsing.
+- `server-reference-info.ts:L56-L83`: unused argument omission.
+
+Associated imports from those lines:
+
+- None.
+
+Copies/adapts:
+
+1. Alias or proxy only when Next internals need this helper across the Vite RSC
+   boundary.
+2. Do not duplicate server reference ID parsing locally when the installed helper
+   resolves.
+
+Direct imports in this imitation:
+
+- `next/dist/shared/lib/server-reference-info.js`, preferred.
+
+Higher/lower consideration:
+
+- Higher candidate: direct installed helper import.
+- Lower fallback: local bit parsing.
+- Why not lower: Server Action and `"use cache"` reference IDs are Next-owned.
+
+### `nextjs/src/client/components/builtin/global-error.tsx`
+
+Imitates/copies from:
+
+- `vercel/next.js/packages/next/src/client/components/builtin/global-error.tsx`
+
+Imitates/copies these upstream lines:
+
+- `global-error.tsx:L1-L11`: client directive and default global-error
+  component type.
+- `global-error.tsx:L13-L66`: default global-error UI, ISR error handling, and
+  default export signature.
+
+Associated imports from those lines:
+
+- `handleISRError`
+- `errorStyles`
+- `errorThemeCss`
+- `WarningIcon`
+
+Copies/adapts:
+
+1. Built-in global-error fallback only when the app does not provide a
+   `global-error` module and Next's app-render manifest expects the built-in
+   module record.
+2. Prefer loading the real built-in client module as a client reference where
+   Vite can preserve the boundary.
+
+Direct imports in this imitation:
+
+- `next/dist/client/components/builtin/global-error.js`, preferred.
+
+Higher/lower consideration:
+
+- Higher candidate: user or built-in global-error module from the loader tree.
+- Lower fallback: local error page.
+- Why not lower: root error fallback UI and module signatures are Next-owned.
+
 ### `nextjs/src/client/app-index.tsx`
 
 Imitates/copies from:
@@ -1243,6 +1851,10 @@ Imitates/copies these upstream lines:
 - `app-index.tsx:L79-L110`: `nextServerDataCallback()` for bootstrap, string,
   form-state, and binary segments.
 - `app-index.tsx:L125-L130`: flushing buffered Flight chunks into the stream.
+- `shared/lib/app-router-types.ts:L290-L325`: `InitialRSCPayload` fields
+  consumed by `createInitialRouterState()`.
+- `client/components/app-router-instance.ts:L220-L256`:
+  `createMutableActionQueue()` state and singleton behavior.
 
 Associated imports from those lines:
 
@@ -1275,10 +1887,15 @@ Higher/lower consideration:
 
 ## Possible Internal Mirror Paths
 
-This is not a target file list. It is the allowed set of exact mirror paths if
-copying or substantial adaptation becomes necessary. Most files below are
-fallback-only: if the direct import or higher loader works, the mirror file
-should not exist.
+This is not a target file list, and it is not an implementation checklist. It is
+the maximum allowed set of exact mirror paths if copying or substantial
+adaptation becomes necessary. The preferred outcome is fewer files than this by
+going higher up in Next's pipeline. For example, a working Edge App Page entry
+should delete lower render/request shims; a working `next-app-loader` entry
+should delete local loader-tree construction; a working generic RSC CJS boundary
+should delete Next-specific `entry-base` proxies. Most files below are
+fallback-only: if the direct import, real loader, or higher Edge entry works, the
+mirror file should not exist.
 
 ```text
 packages/vitest-plugin-rsc/src/nextjs/src/
@@ -1318,11 +1935,32 @@ packages/vitest-plugin-rsc/src/nextjs/src/
 
   client/
     app-index.tsx                             # mirror only hydration/bootstrap pieces
+    components/
+      builtin/
+        global-error.tsx                      # fallback-only if built-in module cannot be loaded as client reference
 
   server/
+    app-render/
+      entry-base.ts                           # temporary mirror/proxy for CJS client-reference boundary only
+    lib/
+      app-dir-module.ts                       # mirror only loader-tree tuple/helpers when direct import cannot own it
+    route-matcher-providers/
+      dev/
+        dev-app-page-route-matcher-provider.ts  # fallback-only around real dev matcher provider
+        dev-app-route-route-matcher-provider.ts # fallback-only around real dev matcher provider
+        helpers/
+          file-reader/
+            default-file-reader.ts            # fallback-only around real file reader
+    use-cache/
+      handlers.ts                             # fallback-only if real cache handler registry cannot be imported
+      use-cache-wrapper.ts                    # fallback-only around real cache() call shape
     web/
       adapter.ts                              # fallback-only if direct server/web/adapter import fails
       edge-route-module-wrapper.ts            # fallback-only if direct import fails
+
+  shared/
+    lib/
+      server-reference-info.ts                # fallback-only if direct helper import cannot cross Vite boundary
 ```
 
 Do not create files such as `nextjs/src/build/config.ts`,

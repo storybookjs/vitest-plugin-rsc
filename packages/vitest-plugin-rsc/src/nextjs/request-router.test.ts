@@ -9,7 +9,10 @@ import {
   type NextRouteManifest,
   type NextRouteManifestEntry,
 } from "./request-router.ts";
-import { createNextRoutingData, type NextRoutingManifest } from "./plugin/routing-data.ts";
+import {
+  createNextRoutingData,
+  type NextRoutingManifest,
+} from "./src/build/adapter/build-complete.ts";
 
 const loaderTree = [] as unknown as LoaderTree;
 const currentDirectory = path.dirname(fileURLToPath(import.meta.url));

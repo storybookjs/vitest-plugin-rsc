@@ -850,12 +850,12 @@ function createAppPageFromRoutePattern(routePattern: string) {
 }
 
 async function loadNextRouteManifest() {
-  const { nextRouteManifest, nextRouteHandlerManifest, nextRoutingData } =
+  const { nextRouteManifest, nextRouteHandlerManifest, routing } =
     await import("virtual:vitest-plugin-rsc/next-routes");
   return {
     pages: nextRouteManifest as NextRouteManifestEntry[],
     routeHandlers: nextRouteHandlerManifest as NextRouteHandlerManifestEntry[],
-    routingData: nextRoutingData,
+    routingData: routing,
   } satisfies NextRouteManifest;
 }
 

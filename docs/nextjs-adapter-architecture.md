@@ -5,7 +5,7 @@ Scope: App Router support in `vitest-plugin-rsc/nextjs` for browser-mode Vitest 
 
 This is a reference document, not a roadmap. It records the architecture we want contributors to preserve after the Next.js fidelity work in this PR: what owns which behavior, where the adapter intentionally bridges framework internals into Vite/Vitest, what is supported, and what is explicitly outside the current browser-mode contract.
 
-For the in-progress request-routing, optimizer, and route-module experiments in this PR, see [next-fidelity-pr-architecture.md](next-fidelity-pr-architecture.md). Once those experiments land or are rejected, fold the final outcome back into this reference document.
+For the in-progress request-routing, optimizer, and route-module experiments in this PR, see [nextjs-fidelity-architecture-tracker.md](nextjs-fidelity-architecture-tracker.md). Once those experiments land or are rejected, fold the final outcome back into this reference document.
 
 The central goal is high-fidelity App Router tests without building a second Next.js. When the adapter needs Next behavior, prefer installed Next/Vite/Vitest/`@vitejs/plugin-rsc` entrypoints. Local code should be a narrow boundary adapter, not a parallel framework implementation.
 

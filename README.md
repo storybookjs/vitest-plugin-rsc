@@ -897,4 +897,4 @@ pnpm test:run --project nextjs-notes-demo-browser --project nextjs-notes-demo-no
 
 The transport is the only unusual part. In production, the browser fetches the Flight stream from a server endpoint. In this plugin, the stream is passed between two Vite environments (`client` for RSC, `react_client` for the browser) inside the Vitest browser runtime, bridged over a dedicated Vite websocket so React can resolve Client Component references with browser conditions.
 
-For the full walkthrough — the two-environment setup, client reference registration, the Module Runner bridge, and the end-to-end flow — see [docs/architecture.md](docs/architecture.md).
+For the full walkthrough — the two-environment setup, client reference registration, the Module Runner bridge, and the end-to-end flow — see [docs/rsc-runtime-architecture.md](docs/rsc-runtime-architecture.md).

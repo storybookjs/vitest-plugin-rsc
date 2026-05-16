@@ -13,10 +13,30 @@ import type { CustomRoutes, Rewrite } from "next/dist/lib/load-custom-routes.js"
 import type { NextConfigComplete } from "next/dist/server/config-shared.js";
 import { addPathPrefix } from "next/dist/shared/lib/router/utils/add-path-prefix.js";
 import { getNamedRouteRegex } from "next/dist/shared/lib/router/utils/route-regex.js";
-import { nextRoutingBuildId, type NextRoutingData } from "../routing-types.ts";
+import type { NextProjectConfig } from "../../../config.ts";
+import { nextRoutingBuildId, type NextRoutingData } from "../../../routing-types.ts";
+import { createNextAppLoaderOptions, createNextRouteTreeVirtualSource } from "../entries.ts";
+import type { NextRouteHandlerManifestBuildEntry } from "../../server/route-matcher-providers/dev/dev-app-route-route-matcher-provider.ts";
+import type { NextRouteManifestBuildEntry } from "../../server/route-matcher-providers/dev/dev-app-page-route-matcher-provider.ts";
 
-export type { NextRoutingData } from "../routing-types.ts";
+// Mirror/adapt: Next.js build-complete adapter routing payload.
+// Source: https://github.com/vercel/next.js/blob/v16.2.6/packages/next/src/build/adapter/build-complete.ts
+// Source: https://github.com/vercel/next.js/blob/v16.2.6/packages/next/src/build/generate-routes-manifest.ts
+// Source: https://github.com/vercel/next.js/blob/ee6e79b1792a4d401ddf2480f40a83549fe8e722/packages/next-routing/src/types.ts
+// Adaptation: Vitest has discovered route facts instead of production build
+// outputs. This file keeps the Next adapter's routing data names and route
+// conversion shape, but it receives pages/route handlers from Vite discovery
+// and serializes the payload for the browser runtime to consume.
 
+export type { NextRoutingData } from "../../../routing-types.ts";
+
+// Begin adapted: Next.js adapter routing payload assembly
+// Source: https://github.com/vercel/next.js/blob/v16.2.6/packages/next/src/build/adapter/build-complete.ts
+// Source: https://github.com/vercel/next.js/blob/v16.2.6/packages/next/src/build/generate-routes-manifest.ts
+// Source: https://github.com/vercel/next.js/blob/ee6e79b1792a4d401ddf2480f40a83549fe8e722/packages/next-routing/src/types.ts
+// Adaptation: Next production build-complete receives build output manifests.
+// Vitest receives Vite-discovered route facts, then preserves Next's route
+// manifest generation, adapter `routing` shape, and @next/routing data names.
 type NextRoutingCustomRoutes = Omit<CustomRoutes, "rewrites"> & {
   rewrites: CustomRoutes["rewrites"] | Rewrite[];
 };
@@ -112,6 +132,51 @@ export function createNextRoutingData(manifest: NextRoutingManifest): NextRoutin
   };
 }
 
+export async function generateNextRouteManifestModule(
+  root: string,
+  entries: NextRouteManifestBuildEntry[],
+  routeHandlers: NextRouteHandlerManifestBuildEntry[],
+  projectConfig: NextProjectConfig,
+) {
+  const routing = createNextRoutingData({
+    pages: entries,
+    routeHandlers,
+    customRoutes: projectConfig.customRoutes,
+    nextConfig: projectConfig.nextConfig,
+  });
+  const imports = (
+    await Promise.all(
+      entries.map(async (entry, index) => {
+        const loaderOptions = await createNextAppLoaderOptions(root, projectConfig, entry);
+        return `import { tree as tree${index} } from ${JSON.stringify(createNextRouteTreeVirtualSource(loaderOptions))};`;
+      }),
+    )
+  ).join("\n");
+
+  const manifest = `[${entries
+    .map(
+      (entry, index) => `{
+        route: ${JSON.stringify(entry.route)},
+        appPath: ${JSON.stringify(entry.appPath)},
+        pageFile: ${JSON.stringify(entry.pageFile)},
+        loaderTree: tree${index},
+      }`,
+    )
+    .join(",")}]`;
+
+  const routeHandlerManifest = `[${routeHandlers
+    .map(
+      (entry) => `{
+        route: ${JSON.stringify(entry.route)},
+        appPath: ${JSON.stringify(entry.appPath)},
+        routeFile: ${JSON.stringify(entry.routeFile)},
+      }`,
+    )
+    .join(",")}]`;
+
+  return `${imports}\nexport const nextRouteManifest = ${manifest};\nexport const nextRouteHandlerManifest = ${routeHandlerManifest};\nexport const routing = ${JSON.stringify(routing)};\nexport const nextRoutingData = routing;\n`;
+}
+
 function createPathnames(pages: NextRoutingRouteEntry[], routeHandlers: NextRoutingRouteEntry[]) {
   return Array.from(new Set([...pages, ...routeHandlers].map((entry) => entry.route)));
 }
@@ -174,8 +239,9 @@ function createRoutesManifestConfig(
     },
   } as NextConfigComplete;
 }
+// End adapted
 
-// Begin copy: Next.js adapter custom-route mapping
+// Begin adapted: Next.js adapter custom-route mapping
 // Source: https://github.com/vercel/next.js/blob/v16.2.6/packages/next/src/build/adapter/build-complete.ts
 // Adaptation: input routes come from Next's `generateRoutesManifest()` instead
 // of a production build's route manifest. This keeps the same
@@ -271,9 +337,15 @@ function buildTrailingSlashRedirectItems(
     priority: true,
   }));
 }
-// End copy
 
-// Begin copy: Next.js adapter dynamic route mapping
+function firstConverted<T>(items: T[], kind: string): T {
+  const item = items[0];
+  if (!item) throw new Error(`Failed to convert Next ${kind} route for @next/routing.`);
+  return item;
+}
+// End adapted
+
+// Begin adapted: Next.js adapter dynamic route mapping
 // Source: https://github.com/vercel/next.js/blob/v16.2.6/packages/next/src/build/adapter/build-complete.ts
 // Adaptation: Vitest has no prerender manifest at this boundary, so fallback
 // false conditions and app `.rsc`/segment data routes are omitted. The app
@@ -302,16 +374,10 @@ function buildDynamicRouteItem(
     destination,
   };
 }
-// End copy
-
-function firstConverted<T>(items: T[], kind: string): T {
-  const item = items[0];
-  if (!item) throw new Error(`Failed to convert Next ${kind} route for @next/routing.`);
-  return item;
-}
 
 function getDestinationQuery(routeKeys: Record<string, string> | undefined) {
   const items = Object.entries(routeKeys ?? {});
   if (items.length === 0) return "";
   return `?${items.map(([key, value]) => `${value}=$${key}`).join("&")}`;
 }
+// End adapted

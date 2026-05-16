@@ -24,7 +24,7 @@ Preview packages for PR commits are handled by `pkg.pr.new`, which publishes ins
 
 ## Testing
 
-Vitest projects that import `vitest-plugin-rsc` use the package exports, so build the package before running Vitest directly. From the root, prefer `pnpm test`, which runs `pnpm build` before the root Vitest project suite. If you intentionally bypass the script with `pnpm test:run`, run `pnpm build` first.
+Vitest projects that import `vitest-plugin-rsc` use the package exports. From the root, prefer the buildless test path: `pnpm test` (or `pnpm test:run`), which runs Vitest with `NODE_OPTIONS='--conditions=vitest-plugin-rsc-source'` so workspace tests load source files through the package export condition. Use `pnpm test:dist` when you specifically need to validate the built package output, and run `pnpm build` first if you intentionally run a command that consumes `dist` without that source condition.
 
 Keep Vitest project definitions and coverage settings in the root `vitest.config.ts`. Vitest coverage is process-level config, so do not add `coverage` blocks to individual project configs.
 
@@ -76,7 +76,7 @@ When debugging blank screens at the end of a browser test, think first about rea
 
 Before editing, committing, rebasing, or pushing, verify the working directory, branch, and status with `pwd`, `git branch --show-current`, and `git status --short --branch`. If the user names a specific branch or PR worktree, use only that branch/worktree for the task. Stop instead of editing when the current branch does not match the requested work.
 
-For this Next fidelity effort, the architecture backlog lives in `docs/new-architecture.md`. Keep that file updated when adding, completing, or intentionally dropping a Next.js fidelity task.
+For this Next fidelity effort, the stable adapter reference lives in `docs/nextjs-adapter-architecture.md`, the App Router fidelity source map lives in `docs/nextjs-app-router-fidelity-architecture.md`, and the active fidelity architecture tracker lives in `docs/nextjs-fidelity-architecture-tracker.md`. Keep those files updated when adding, completing, or intentionally dropping a Next.js fidelity task.
 
 Treat that backlog as prioritized, not flat. Work on P0 items before expanding scope; only pick P1/P2 work when the related P0 foundation is done or explicitly deferred.
 

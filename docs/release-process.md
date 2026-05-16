@@ -1,4 +1,4 @@
-# Releasing
+# Release Process
 
 This repository has two release paths:
 
