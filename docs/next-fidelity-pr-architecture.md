@@ -56,8 +56,8 @@ Status values: `Not started`, `In progress`, `Blocked`, `Deferred`, `Rejected`,
 | Subgoal                                     | Status      | Branch/PR/Commit | Required Tests                                                          | Notes                                                                                                                         |
 | ------------------------------------------- | ----------- | ---------------- | ----------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
 | 1. Request router split                     | Done        | PR #47 / 1f9dad3 | `request-router.test.ts`; notes-demo routing/redirect/header tests      | Review cleanup tightened the request-router boundary and explicit route override behavior. Local tests and PR CI green.       |
-| 2. Routing data adapter                     | Done        | PR #47 / 0e6c469 | `routing-data.test.ts`; rewrite ordering tests                          | `request-router.ts` now delegates to `@next/routing`; review follow-up fixed catch-all/query delimiter params; CI green.      |
-| 3. App page invoker                         | In progress | PR #47 / pending | `app-page-invoker.test.ts`; notes-demo render/action coverage           | First slice tries a real `AppPageRouteModule`; broader `app-page-invoker.ts` split remains follow-up pending verification.    |
+| 2. Routing data adapter                     | Done        | PR #47 / pending | `routing-data.test.ts`; rewrite ordering tests                          | Delegates to `@next/routing`; review cleanup replaced local custom-route types and centralized the CJS package-shape shim.    |
+| 3. App page invoker                         | Deferred    | PR #47 / pending | `app-page-invoker.test.ts`; notes-demo render/action coverage           | Direct `AppPageRouteModule` import experiment was rejected; next attempt needs a server-only/module.compiled boundary.        |
 | 4. App route invoker decision               | Not started |                  | `app-route-invoker.test.ts` if implemented                              | Either use `AppRouteRouteModule.handle()` or keep route-handler render targets explicitly unsupported.                        |
 | 5. Optimizer entry architecture             | Not started |                  | optimizer entry tests; no-MSW app-shell regression                      | Replace broad `app/**` scan roots with discovered route or virtual entrypoint warmup.                                         |
 | 6. Generic CJS browser transform evaluation | Not started |                  | package CJS transform tests; real integration proving deleted Next glue | Evaluate PR #45 only if it removes or substantially narrows Next-specific client-reference glue.                              |
@@ -139,7 +139,7 @@ Status values: `Not started`, `In progress`, `Blocked`, `Deferred`, `Rejected`,
   rewrites, redirects, headers, and dynamic route patterns into
   `@next/routing` data. The adapter delegates custom route regex/status
   construction to Next's `buildCustomRoute`, dynamic route regexes to
-  `getNamedRouteRegex`, and keeps the CJS-shaped `@next/routing` import
+  `getNamedRouteRegex`, and initially kept CJS-shaped `@next/routing` import
   handling in tests. It is not wired into `request-router.ts` yet, so existing
   runtime behavior is unchanged. Local verification:
   - `pnpm --filter vitest-plugin-rsc test:run src/nextjs/routing-data.test.ts`
@@ -202,7 +202,10 @@ Status values: `Not started`, `In progress`, `Blocked`, `Deferred`, `Rejected`,
   constructing the real route module removes the plain synthetic route-module
   object and keeps route-module behavior behind Next's class. This slice keeps
   the existing `RenderOpts`, manifest bridge, and Vite RSC stream adapter in
-  place while checking whether the smaller invocation change stays green.
+  place while checking whether the smaller invocation change stays green. PR CI
+  later failed in every Next compatibility job because the direct
+  `next/dist/server/route-modules/app-page/module.js` import crossed into the
+  browser setup graph; the follow-up cleanup below reverts this experiment.
   Local verification:
   - `pnpm --filter vitest-plugin-rsc test:run src/nextjs/app-render.test.ts src/nextjs/request-router.test.ts`
   - `pnpm exec oxlint packages/vitest-plugin-rsc/src/nextjs/app-render.ts docs/next-fidelity-pr-architecture.md`
@@ -212,11 +215,39 @@ Status values: `Not started`, `In progress`, `Blocked`, `Deferred`, `Rejected`,
   - `pnpm lint:ci`
   - `pnpm test:run --project nextjs-notes-demo-browser --api 52649 app/next-apis/page.test.tsx components/next-action-protocol.test.tsx`
   - `git diff --check`
+  - CI: red on PR #47 for `15e0567` in the Next 16.2/latest/canary browser
+    compatibility jobs.
+- 2026-05-16 Subgoal 2/3 review cleanup after `15e0567`: fetched the latest
+  PR review comments before continuing. The reviewer accepted the
+  `/posts/:slug?from=legacy` bug fix but asked for cleanup before broadening
+  the app-page invoker split, then flagged `15e0567` as a browser/server
+  boundary failure. This slice replaces local custom-route model types with
+  Next's `CustomRoutes`, `Header`, `Redirect`, `Rewrite`, manifest route types,
+  and `@next/routing` `ResolveRoutesParams`/`RouteInvocationTarget` types. It
+  moves the CJS-shaped `@next/routing` default import into one
+  `next-routing.ts` shim, tightens the destination-conversion source note with
+  Next `prepare-destination` and `@next/routing` `replaceDestination` links,
+  and reverts the direct `AppPageRouteModule` experiment back to the previous
+  `renderToHTMLOrFlight()` adapter. A future Subgoal 3 attempt must either
+  generate a server-only app-page module around Next's `module.compiled` path or
+  explicitly isolate the remaining direct render boundary.
+  Local verification:
+  - `pnpm build`
+  - `pnpm --filter vitest-plugin-rsc test:run src/nextjs/request-router.test.ts src/nextjs/routing-data.test.ts src/nextjs/app-render.test.ts src/nextjs/plugin/optimizer.test.ts`
+  - `pnpm test:run --project nextjs-notes-demo-browser --api 52653 app/next-apis/page.test.tsx components/next-action-protocol.test.tsx 'app/route-patterns/docs/[...slug]/page.test.tsx'`
+  - `pnpm tsgo --build`
+  - `pnpm exec oxlint packages/vitest-plugin-rsc/src/nextjs/request-router.ts packages/vitest-plugin-rsc/src/nextjs/routing-data.ts packages/vitest-plugin-rsc/src/nextjs/routing-data.test.ts packages/vitest-plugin-rsc/src/nextjs/next-routing.ts packages/vitest-plugin-rsc/src/nextjs/config.ts packages/vitest-plugin-rsc/src/nextjs/virtual.d.ts packages/vitest-plugin-rsc/src/nextjs/app-render.ts packages/vitest-plugin-rsc/src/nextjs/plugin/optimizer.ts packages/vitest-plugin-rsc/src/nextjs/plugin/optimizer.test.ts docs/next-fidelity-pr-architecture.md`
+  - `pnpm format:check`
+  - `pnpm lint:ci`
+  - `git diff --check`
   - CI: pending push.
 
 ## Agent Operating Rules
 
 - Start by checking `pwd`, branch, and `git status --short --branch`.
+- Always fetch the latest PR review comments and review threads before
+  continuing after a push, before starting a new coherent slice, and before
+  posting GitHub comments.
 - Work only from the intended stacked branch unless the user redirects the work.
 - Keep this tracker current. A slice is not done until this document says what
   changed, what tests ran, and whether CI is green.

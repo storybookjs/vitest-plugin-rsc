@@ -1,43 +1,35 @@
-import type { Route as NextRoutingRoute, RouteHas } from "@next/routing";
+import type { ResolveRoutesParams, Route as NextRoutingRoute } from "@next/routing";
+import type {
+  ManifestHeaderRoute,
+  ManifestRedirectRoute,
+  ManifestRewriteRoute,
+} from "next/dist/build/index.js";
 import { buildCustomRoute } from "next/dist/lib/build-custom-route.js";
 import { parse } from "next/dist/compiled/path-to-regexp";
+import type {
+  CustomRoutes,
+  Header,
+  Redirect,
+  Rewrite,
+  RouteHas,
+} from "next/dist/lib/load-custom-routes.js";
 import { normalizeAppPath } from "next/dist/shared/lib/router/utils/app-paths.js";
 import { getNamedRouteRegex } from "next/dist/shared/lib/router/utils/route-regex.js";
 import type {
-  NextCustomRoute,
-  NextCustomRoutes,
   NextRouteHandlerManifestEntry,
   NextRouteManifest,
   NextRouteManifestEntry,
 } from "./request-router";
 
-export type NextRoutingData = {
-  pathnames: string[];
-  routes: {
-    beforeMiddleware: NextRoutingRoute[];
-    beforeFiles: NextRoutingRoute[];
-    afterFiles: NextRoutingRoute[];
-    dynamicRoutes: NextRoutingRoute[];
-    onMatch: NextRoutingRoute[];
-    fallback: NextRoutingRoute[];
-    shouldNormalizeNextData?: boolean;
-  };
-};
+export type NextRoutingData = Pick<ResolveRoutesParams, "pathnames" | "routes">;
 
-type NextRoutingCustomRoutes = Omit<NextCustomRoutes, "rewrites"> & {
-  rewrites: NextCustomRoutes["rewrites"] | NextCustomRoute[];
+type NextRoutingCustomRoutes = Pick<CustomRoutes, "headers" | "redirects"> & {
+  rewrites: CustomRoutes["rewrites"] | Rewrite[];
 };
 
 export type NextRoutingManifest = Omit<NextRouteManifest, "customRoutes"> & {
   customRoutes: NextRoutingCustomRoutes;
 };
-
-type BuiltCustomRoute = NextCustomRoute & {
-  regex: string;
-  statusCode?: number;
-};
-
-type CustomRouteKind = "header" | "redirect" | "rewrite";
 
 // Converts discovered Next route facts and loaded next.config routes into
 // `@next/routing` input data. Next still owns custom-route regex/status
@@ -46,10 +38,17 @@ type CustomRouteKind = "header" | "redirect" | "rewrite";
 //
 // Source: https://github.com/vercel/next.js/blob/ee6e79b1792a4d401ddf2480f40a83549fe8e722/packages/next/src/lib/build-custom-route.ts
 // Source: https://github.com/vercel/next.js/blob/ee6e79b1792a4d401ddf2480f40a83549fe8e722/packages/next/src/shared/lib/router/utils/route-regex.ts
+// Source: https://github.com/vercel/next.js/blob/ee6e79b1792a4d401ddf2480f40a83549fe8e722/packages/next/src/shared/lib/router/utils/prepare-destination.ts
+// Source: https://github.com/vercel/next.js/blob/ee6e79b1792a4d401ddf2480f40a83549fe8e722/packages/next-routing/src/destination.ts
 // Source: https://github.com/vercel/next.js/blob/ee6e79b1792a4d401ddf2480f40a83549fe8e722/packages/next-routing/src/types.ts
 // Adaptation: Vitest route discovery already provides app page and route
 // handler pathnames, so this adapter only translates those facts plus loaded
 // next.config custom routes into the standalone `@next/routing` data model.
+// Next config destinations use `:param` placeholders while `@next/routing`
+// `replaceDestination` consumes `$1` and `$name` placeholders. Next's
+// `prepareDestination` also resolves against a request at match time, so this
+// boundary keeps a narrow placeholder conversion adapter instead of delegating
+// directly to either implementation.
 export function createNextRoutingData(manifest: NextRoutingManifest): NextRoutingData {
   const pathnames = createPathnames(manifest.pages, manifest.routeHandlers);
   const rewrites = normalizeRewrites(manifest.customRoutes.rewrites);
@@ -86,8 +85,8 @@ function normalizeRewrites(rewrites: NextRoutingCustomRoutes["rewrites"]) {
   return rewrites;
 }
 
-function convertRedirectRoute(route: NextCustomRoute): NextRoutingRoute {
-  const built = buildNextCustomRoute("redirect", route);
+function convertRedirectRoute(route: Redirect): NextRoutingRoute {
+  const built: ManifestRedirectRoute = buildCustomRoute("redirect", route, ["/_next"]);
   const destination = route.destination
     ? convertNextRouteTemplate(route.destination, route.source)
     : undefined;
@@ -101,8 +100,8 @@ function convertRedirectRoute(route: NextCustomRoute): NextRoutingRoute {
   };
 }
 
-function convertRewriteRoute(route: NextCustomRoute): NextRoutingRoute {
-  const built = buildNextCustomRoute("rewrite", route);
+function convertRewriteRoute(route: Rewrite): NextRoutingRoute {
+  const built: ManifestRewriteRoute = buildCustomRoute("rewrite", route);
   return {
     sourceRegex: built.regex,
     destination: route.destination
@@ -113,8 +112,8 @@ function convertRewriteRoute(route: NextCustomRoute): NextRoutingRoute {
   };
 }
 
-function convertHeaderRoute(route: NextCustomRoute): NextRoutingRoute {
-  const built = buildNextCustomRoute("header", route);
+function convertHeaderRoute(route: Header): NextRoutingRoute {
+  const built: ManifestHeaderRoute = buildCustomRoute("header", route);
   return {
     sourceRegex: built.regex,
     headers: Object.fromEntries(
@@ -159,21 +158,6 @@ function createDynamicRouteDestination(route: string, routeKeys: Record<string, 
   return query.length > 0 ? `${route}?${query.join("&")}` : route;
 }
 
-function buildNextCustomRoute(kind: "header", route: NextCustomRoute): BuiltCustomRoute;
-function buildNextCustomRoute(kind: "rewrite", route: NextCustomRoute): BuiltCustomRoute;
-function buildNextCustomRoute(kind: "redirect", route: NextCustomRoute): BuiltCustomRoute;
-function buildNextCustomRoute(kind: CustomRouteKind, route: NextCustomRoute): BuiltCustomRoute {
-  if (kind === "redirect") {
-    return buildCustomRoute("redirect", route as never, ["/_next"]) as BuiltCustomRoute;
-  }
-
-  if (kind === "header") {
-    return buildCustomRoute("header", route as never) as BuiltCustomRoute;
-  }
-
-  return buildCustomRoute("rewrite", route as never) as BuiltCustomRoute;
-}
-
 function convertNextRouteTemplate(value: string, source: string) {
   const placeholders = createSourceParamPlaceholders(source);
   return value.replace(
@@ -216,8 +200,8 @@ function isUrlQueryDelimiter(value: string, offset: number) {
   return Boolean(next && next !== "/" && next !== "#" && next !== "&");
 }
 
-function toRoutingConditions(conditions: unknown[] | undefined) {
-  return conditions?.length ? (conditions as RouteHas[]) : undefined;
+function toRoutingConditions(conditions: RouteHas[] | undefined) {
+  return conditions?.length ? conditions : undefined;
 }
 
 function normalizeRoutePattern(routePattern: string) {

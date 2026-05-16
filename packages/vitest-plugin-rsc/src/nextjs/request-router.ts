@@ -1,8 +1,10 @@
-import type { ResolveRoutesQuery } from "@next/routing";
+import type { CustomRoutes } from "next/dist/lib/load-custom-routes.js";
+import type { RouteInvocationTarget } from "@next/routing";
 import type { LoaderTree } from "next/dist/server/lib/app-dir-module.js";
 import { normalizeAppPath } from "next/dist/shared/lib/router/utils/app-paths.js";
 import { getRouteMatcher } from "next/dist/shared/lib/router/utils/route-matcher.js";
 import { getRouteRegex } from "next/dist/shared/lib/router/utils/route-regex.js";
+import { resolveRoutes } from "./next-routing";
 import { createNextRoutingData } from "./routing-data";
 
 export type NextRouteManifestEntry = {
@@ -24,28 +26,9 @@ export type NextRouteManifest = {
   customRoutes: NextCustomRoutes;
 };
 
-export type NextCustomRoute = {
-  source: string;
-  destination?: string;
-  permanent?: boolean;
-  statusCode?: number;
-  has?: unknown[];
-  missing?: unknown[];
-  headers?: { key: string; value: string }[];
-};
-
-export type NextCustomRoutes = {
-  headers: NextCustomRoute[];
-  redirects: NextCustomRoute[];
-  rewrites: {
-    beforeFiles: NextCustomRoute[];
-    afterFiles: NextCustomRoute[];
-    fallback: NextCustomRoute[];
-  };
-};
+export type NextCustomRoutes = Pick<CustomRoutes, "headers" | "redirects" | "rewrites">;
 
 type RouteMatches = Record<string, string | string[]>;
-type NextRoutingModule = typeof import("@next/routing");
 
 export type NextRequestTarget =
   | {
@@ -85,8 +68,6 @@ export type NextRequestTarget =
       status?: number;
     };
 
-let nextRoutingModulePromise: Promise<NextRoutingModule> | undefined;
-
 // Central request target resolution for Next App Router tests.
 //
 // Source: https://github.com/vercel/next.js/blob/ee6e79b1792a4d401ddf2480f40a83549fe8e722/packages/next-routing/src/resolve-routes.ts
@@ -103,7 +84,6 @@ export async function resolveNextRequestTarget(options: {
 }): Promise<NextRequestTarget> {
   const requestedUrl = new URL(options.url, "http://localhost");
   const routingData = createNextRoutingData(options.manifest);
-  const { resolveRoutes } = await loadNextRoutingModule();
   const result = await resolveRoutes({
     url: requestedUrl,
     buildId: "BUILD_ID",
@@ -197,18 +177,6 @@ export function resolveRedirectUrl(redirectUrl: string, baseUrl: string) {
   return formatRelativeUrl(target);
 }
 
-async function loadNextRoutingModule() {
-  nextRoutingModulePromise ??= import("@next/routing").then((routingModule) => {
-    const moduleWithDefault = routingModule as NextRoutingModule & {
-      default?: NextRoutingModule;
-    };
-    return typeof moduleWithDefault.resolveRoutes === "function"
-      ? moduleWithDefault
-      : moduleWithDefault.default!;
-  });
-  return nextRoutingModulePromise;
-}
-
 function createEmptyRequestBody() {
   return new ReadableStream<Uint8Array>({
     start(controller) {
@@ -223,12 +191,7 @@ function toHeaders(headers: Headers | Record<string, string> | undefined) {
 
 function createInvocationUrl(
   requestedUrl: URL,
-  invocationTarget:
-    | {
-        pathname: string;
-        query: ResolveRoutesQuery;
-      }
-    | undefined,
+  invocationTarget: RouteInvocationTarget | undefined,
 ) {
   const invocationUrl = new URL(requestedUrl.toString());
   if (!invocationTarget) return invocationUrl;

@@ -6,6 +6,7 @@ import {
   RSC_CONTENT_TYPE_HEADER,
   RSC_HEADER,
 } from "next/dist/client/components/app-router-headers.js";
+import { renderToHTMLOrFlight } from "next/dist/server/app-render/app-render.js";
 import { WebNextRequest, WebNextResponse } from "next/dist/server/base-http/web.js";
 import type { RenderOpts } from "next/dist/server/app-render/types.js";
 import { defaultConfig } from "next/dist/server/config-shared.js";
@@ -19,7 +20,6 @@ import { initializeCacheHandlers, setCacheHandler } from "next/dist/server/use-c
 import type { LoaderTree } from "next/dist/server/lib/app-dir-module.js";
 import type RenderResult from "next/dist/server/render-result.js";
 import type { InitialRSCPayload } from "next/dist/shared/lib/app-router-types";
-import { AppPageRouteModule } from "next/dist/server/route-modules/app-page/module.js";
 import { normalizeAppPath } from "next/dist/shared/lib/router/utils/app-paths.js";
 import { getRouteMatcher } from "next/dist/shared/lib/router/utils/route-matcher.js";
 import { getRouteRegex } from "next/dist/shared/lib/router/utils/route-regex.js";
@@ -315,18 +315,20 @@ async function renderNextRouteResult({
 
   addRequestMeta(req, "resolvedPathname", location.pathname);
 
-  const result = (await routeModule.render(req, res, {
-    page: renderPage,
-    query: Object.fromEntries(location.searchParams),
-    params: renderOpts.params,
-    fallbackRouteParams: null,
-    renderOpts: renderOpts as never,
-    sharedContext: {
+  const result = (await renderToHTMLOrFlight(
+    req,
+    res,
+    renderPage,
+    Object.fromEntries(location.searchParams),
+    null,
+    renderOpts as never,
+    undefined,
+    {
       buildId: "",
       deploymentId: "",
       clientAssetToken: "",
     },
-  })) as RenderResult;
+  )) as RenderResult;
 
   const headers = createResponseHeaders(res, result);
   return new Response(
@@ -475,8 +477,6 @@ type NextAppRenderComponentMod = typeof import("next/dist/server/app-render/entr
   routeModule: ReturnType<typeof createRouteModule>;
 };
 
-type NextAppPageRouteModuleOptions = ConstructorParameters<typeof AppPageRouteModule>[0];
-
 type NextEntryBaseComponentMod = typeof import("next/dist/server/app-render/entry-base.js") &
   Record<string, unknown>;
 
@@ -525,13 +525,13 @@ function createRouteModule({
   page: string;
   loaderTree: LoaderTree;
 }) {
-  // Begin copy: Next.js AppPageRouteModule construction shape
+  // Begin copy: Next.js AppPageRouteModule definition shape
   // Source: https://github.com/vercel/next.js/blob/4588a7354283f97e2124e3d82f55733ca4eb9373/packages/next/src/build/templates/app-page.ts#L118-L150
   // Adaptation: Vitest creates the route module object directly because Vite
   // already loaded the app tree through virtual modules.
-  return new AppPageRouteModule({
+  return {
     definition: {
-      kind: "APP_PAGE" as NextAppPageRouteModuleOptions["definition"]["kind"],
+      kind: "APP_PAGE",
       page,
       pathname: route,
       bundlePath: "",
@@ -541,9 +541,7 @@ function createRouteModule({
     userland: {
       loaderTree,
     },
-    distDir: "",
-    relativeProjectDir: "",
-  });
+  };
   // End copy
 }
 

@@ -5,9 +5,8 @@ import {
   type NextRoutingManifest,
   type NextRoutingData,
 } from "./routing-data";
+import { resolveRoutes } from "./next-routing";
 import type { NextRouteHandlerManifestEntry, NextRouteManifestEntry } from "./request-router";
-
-type NextRoutingModule = typeof import("@next/routing");
 
 const loaderTree = [] as unknown as LoaderTree;
 
@@ -224,7 +223,6 @@ test("returns redirects with Next status and interpolated destination query", as
 });
 
 async function resolveRoute(path: string, data: NextRoutingData = createNextRoutingData(manifest)) {
-  const { resolveRoutes } = await loadNextRouting();
   return resolveRoutes({
     url: new URL(path, "https://example.com"),
     buildId: "BUILD_ID",
@@ -239,13 +237,6 @@ async function resolveRoute(path: string, data: NextRoutingData = createNextRout
     routes: data.routes,
     invokeMiddleware: async () => ({}),
   });
-}
-
-async function loadNextRouting(): Promise<NextRoutingModule> {
-  const routingModule = (await import("@next/routing")) as NextRoutingModule & {
-    default?: NextRoutingModule;
-  };
-  return typeof routingModule.resolveRoutes === "function" ? routingModule : routingModule.default!;
 }
 
 function page(route: string): NextRouteManifestEntry {

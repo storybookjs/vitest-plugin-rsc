@@ -1,3 +1,4 @@
+import type { CustomRoutes } from "next/dist/lib/load-custom-routes.js";
 import { createProjectRequire } from "./plugin-utils";
 
 export type NextImageConfig = {
@@ -57,17 +58,7 @@ type NextConfigModule = {
   default?: NextLoadConfig;
 } & NextLoadConfig;
 
-export type NextCustomRoute = Record<string, unknown>;
-
-export type NextCustomRoutes = {
-  headers: NextCustomRoute[];
-  redirects: NextCustomRoute[];
-  rewrites: {
-    beforeFiles: NextCustomRoute[];
-    afterFiles: NextCustomRoute[];
-    fallback: NextCustomRoute[];
-  };
-};
+export type NextCustomRoutes = CustomRoutes;
 
 type NextLoadCustomRoutes = (config: NextConfigLike) => Promise<NextCustomRoutes>;
 
