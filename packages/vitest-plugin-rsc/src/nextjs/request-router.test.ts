@@ -1,3 +1,6 @@
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import type { LoaderTree } from "next/dist/server/lib/app-dir-module.js";
 import { expect, test } from "vitest";
 import {
@@ -6,11 +9,12 @@ import {
   type NextRouteManifest,
   type NextRouteManifestEntry,
 } from "./request-router";
-import { createNextRoutingData } from "./routing-data";
+import { createNextRoutingData, type NextRoutingManifest } from "./plugin/routing-data";
 
 const loaderTree = [] as unknown as LoaderTree;
+const currentDirectory = path.dirname(fileURLToPath(import.meta.url));
 
-const manifestRoutes = {
+const routingManifest = {
   pages: [
     page("/next-apis"),
     page("/before-target"),
@@ -55,11 +59,12 @@ const manifestRoutes = {
       ],
     },
   },
-} satisfies Omit<NextRouteManifest, "routingData">;
+} satisfies NextRoutingManifest;
 
 const manifest: NextRouteManifest = {
-  ...manifestRoutes,
-  routingData: createNextRoutingData(manifestRoutes),
+  pages: routingManifest.pages,
+  routeHandlers: routingManifest.routeHandlers,
+  routingData: createNextRoutingData(routingManifest),
 };
 
 test("resolves beforeFiles rewrites to app pages", async () => {
@@ -174,6 +179,17 @@ test("detects app route targets separately from app pages", async () => {
   expect(target.kind).toBe("app-route");
   if (target.kind !== "app-route") return;
   expect(target.entry.appPath).toBe("/api/next-request-response/route");
+});
+
+test("keeps Next build-time routing imports out of runtime request modules", () => {
+  for (const file of ["request-router.ts", "testing-library.tsx"]) {
+    const source = fs.readFileSync(path.join(currentDirectory, file), "utf8");
+
+    expect(source).not.toContain("next/dist/build/");
+    expect(source).not.toContain("next/dist/lib/build-custom-route");
+    expect(source).not.toContain("next/dist/lib/load-custom-routes");
+    expect(source).not.toContain("next/dist/compiled/@vercel/routing-utils");
+  }
 });
 
 function page(route: string): NextRouteManifestEntry {

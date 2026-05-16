@@ -43,6 +43,12 @@ declare module "next/dist/compiled/@vercel/routing-utils/superstatic.js" {
     missing?: RouteHas[];
   };
 
+  export type ConvertedTrailingSlashRoute = {
+    src?: string;
+    headers?: Record<string, string>;
+    status?: number;
+  };
+
   const routingUtils: {
     convertHeaders(routes: ManifestHeaderRoute[]): ConvertedHeaderRoute[];
     convertRedirects(routes: ManifestRedirectRoute[], status?: number): ConvertedRedirectRoute[];
@@ -50,6 +56,7 @@ declare module "next/dist/compiled/@vercel/routing-utils/superstatic.js" {
       routes: ManifestRewriteRoute[],
       excludedPathParams?: string[],
     ): ConvertedRewriteRoute[];
+    convertTrailingSlash(trailingSlash: boolean, status?: number): ConvertedTrailingSlashRoute[];
   };
 
   export default routingUtils;

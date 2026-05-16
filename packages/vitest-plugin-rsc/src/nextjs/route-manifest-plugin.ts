@@ -3,7 +3,7 @@ import path from "node:path";
 import type { Plugin } from "vite";
 import { loadNextProjectConfig, type NextProjectConfig } from "./config";
 import { createProjectRequire, getProjectRoot, normalizePath } from "./plugin-utils";
-import { createNextRoutingData } from "./routing-data";
+import { createNextRoutingData } from "./plugin/routing-data";
 
 const virtualNextRouteManifestId = "\0vitest-plugin-rsc:next-route-manifest";
 const virtualNextRouteManifestPublicId = "virtual:vitest-plugin-rsc/next-routes";
@@ -261,7 +261,7 @@ function generateNextRouteManifest(
     )
     .join(",")}]`;
 
-  return `${imports}\nexport const nextRouteManifest = ${manifest};\nexport const nextRouteHandlerManifest = ${routeHandlerManifest};\nexport const nextCustomRoutes = ${JSON.stringify(projectConfig.customRoutes)};\nexport const nextRoutingData = ${JSON.stringify(routingData)};\n`;
+  return `${imports}\nexport const nextRouteManifest = ${manifest};\nexport const nextRouteHandlerManifest = ${routeHandlerManifest};\nexport const nextRoutingData = ${JSON.stringify(routingData)};\n`;
 }
 
 async function generateNextRouteTreeModule(

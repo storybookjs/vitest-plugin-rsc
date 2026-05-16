@@ -29,12 +29,10 @@ import {
 } from "./app-render";
 import { getNextFontManifestForRender } from "./font-manifest";
 import { getNextHttpAccessFallbackStatus, isNextHttpAccessFallbackError } from "./flight-payload";
+import { assertRoutePatternMatchesPath, createPageOnlyRoutingData } from "./direct-render-routing";
 import {
-  assertRoutePatternMatchesPath,
-  createPageOnlyRoutingData,
   resolveNextRequestTarget,
   resolveRedirectUrl,
-  type NextCustomRoutes,
   type NextRequestTarget,
   type NextRouteHandlerManifestEntry,
   type NextRouteManifest,
@@ -846,12 +844,11 @@ function createAppPageFromRoutePattern(routePattern: string) {
 }
 
 async function loadNextRouteManifest() {
-  const { nextRouteManifest, nextRouteHandlerManifest, nextCustomRoutes, nextRoutingData } =
+  const { nextRouteManifest, nextRouteHandlerManifest, nextRoutingData } =
     await import("virtual:vitest-plugin-rsc/next-routes");
   return {
     pages: nextRouteManifest as NextRouteManifestEntry[],
     routeHandlers: nextRouteHandlerManifest as NextRouteHandlerManifestEntry[],
-    customRoutes: nextCustomRoutes as NextCustomRoutes,
     routingData: nextRoutingData,
   } satisfies NextRouteManifest;
 }
@@ -929,16 +926,6 @@ function createPageOnlyRouteManifest(pages: NextRouteManifestEntry[]): NextRoute
   return {
     pages,
     routeHandlers: [],
-    customRoutes: {
-      headers: [],
-      onMatchHeaders: [],
-      redirects: [],
-      rewrites: {
-        beforeFiles: [],
-        afterFiles: [],
-        fallback: [],
-      },
-    },
     routingData: createPageOnlyRoutingData(pages),
   };
 }

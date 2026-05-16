@@ -28,6 +28,7 @@ export type NextConfigLike = {
   modularizeImports?: unknown;
   output?: string;
   pageExtensions?: string[];
+  skipTrailingSlashRedirect?: boolean;
   trailingSlash?: boolean;
   typescript?: {
     tsconfigPath?: string;

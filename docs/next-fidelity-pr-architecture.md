@@ -56,7 +56,7 @@ Status values: `Not started`, `In progress`, `Blocked`, `Deferred`, `Rejected`,
 | Subgoal                                     | Status      | Branch/PR/Commit | Required Tests                                                          | Notes                                                                                                                         |
 | ------------------------------------------- | ----------- | ---------------- | ----------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
 | 1. Request router split                     | Done        | PR #47 / 1f9dad3 | `request-router.test.ts`; notes-demo routing/redirect/header tests      | Review cleanup tightened the request-router boundary and explicit route override behavior. Local tests and PR CI green.       |
-| 2. Routing data adapter                     | Done        | PR #47 / pending | `routing-data.test.ts`; rewrite ordering tests                          | Uses Next `generateRoutesManifest` plus `build-complete` adapter mapping at the Vite plugin boundary; browser gets JSON data. |
+| 2. Routing data adapter                     | In progress | PR #47 / pending | `routing-data.test.ts`; rewrite ordering tests                          | Build-time routing conversion lives in the Vite plugin boundary; browser runtime consumes serialized routing data.            |
 | 3. App page invoker                         | Deferred    | PR #47 / f78b253 | `app-page-invoker.test.ts`; notes-demo render/action coverage           | Direct `AppPageRouteModule` import experiment was rejected; next attempt needs a server-only/module.compiled boundary.        |
 | 4. App route invoker decision               | Done        | PR #47 / pending | `app-route-invoker.test.ts` if implemented                              | Route handlers stay explicitly unsupported as page render targets; direct-import route-handler tests remain covered.          |
 | 5. Optimizer entry architecture             | Not started |                  | optimizer entry tests; no-MSW app-shell regression                      | Replace broad `app/**` scan roots with discovered route or virtual entrypoint warmup.                                         |
@@ -311,6 +311,34 @@ Status values: `Not started`, `In progress`, `Blocked`, `Deferred`, `Rejected`,
   - `pnpm tsgo --build`
   - `pnpm lint:ci`
   - `pnpm format:check`
+  - `git diff --check`
+  - CI: pending push.
+- 2026-05-16 Subgoal 2 runtime-boundary cleanup: fetched the latest PR review
+  comments before editing. The routing-data builder moved under the Vite plugin
+  boundary at `src/nextjs/plugin/routing-data.ts`; the virtual route module now
+  exports prebuilt `nextRoutingData` only, not raw `nextCustomRoutes`.
+  `request-router.ts` consumes serialized routing data and a new boundary test
+  asserts that `request-router.ts` and `testing-library.tsx` do not import
+  Next build/custom-route/routing-utils modules. Direct ReactNode/page-only
+  synthetic routing moved to `direct-render-routing.ts` so it no longer sets the
+  real app-route architecture. Next's internal trailing-slash redirects are
+  recognized only as the exact shapes injected by `loadCustomRoutes()` and are
+  converted with `routingUtils.convertTrailingSlash()` instead of being passed
+  through `convertRedirects()` or a local custom-route parser. `handleBuildComplete()`
+  itself remains deliberately unused because its exported API is the full
+  production build-completion orchestrator; this slice imports the available
+  Next build helpers and copies only the small adapter mapping that is not
+  exported separately.
+  Local verification:
+  - `pnpm --filter vitest-plugin-rsc test:run src/nextjs/routing-data.test.ts src/nextjs/request-router.test.ts src/nextjs/plugin/optimizer.test.ts`
+  - `pnpm build`
+  - `pnpm test:run --project nextjs-notes-demo-browser --api 52658 'app/route-patterns/docs/[...slug]/page.test.tsx' app/next-apis/page.test.tsx 'app/route-patterns/[team]/settings/page.test.tsx'`
+  - `pnpm test:run --project vitest-plugin-rsc --project nextjs-no-msw-demo --project nextjs-notes-demo-browser --project nextjs-notes-demo-node --api 52643`
+  - `pnpm tsgo --build`
+  - `pnpm lint:ci`
+  - `pnpm format:check`
+  - `pnpm exec oxlint packages/vitest-plugin-rsc/src/nextjs/config.ts packages/vitest-plugin-rsc/src/nextjs/next-compiled.d.ts packages/vitest-plugin-rsc/src/nextjs/plugin/routing-data.ts packages/vitest-plugin-rsc/src/nextjs/request-router.test.ts packages/vitest-plugin-rsc/src/nextjs/request-router.ts packages/vitest-plugin-rsc/src/nextjs/route-manifest-plugin.ts packages/vitest-plugin-rsc/src/nextjs/routing-data.test.ts packages/vitest-plugin-rsc/src/nextjs/testing-library.tsx packages/vitest-plugin-rsc/src/nextjs/virtual.d.ts packages/vitest-plugin-rsc/src/nextjs/direct-render-routing.ts packages/vitest-plugin-rsc/src/nextjs/routing-types.ts docs/next-fidelity-pr-architecture.md`
+  - `pnpm exec oxfmt --check packages/vitest-plugin-rsc/src/nextjs/direct-render-routing.ts packages/vitest-plugin-rsc/src/nextjs/routing-types.ts`
   - `git diff --check`
   - CI: pending push.
 

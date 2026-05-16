@@ -1,5 +1,5 @@
 import path from "node:path";
-import type { ResolveRoutesParams, Route as NextRoutingRoute } from "@next/routing";
+import type { Route as NextRoutingRoute } from "@next/routing";
 import { generateRoutesManifest } from "next/dist/build/generate-routes-manifest.js";
 import type {
   ManifestHeaderRoute,
@@ -12,8 +12,9 @@ import { getRedirectStatus, modifyRouteRegex } from "next/dist/lib/redirect-stat
 import type { CustomRoutes, Rewrite } from "next/dist/lib/load-custom-routes.js";
 import type { NextConfigComplete } from "next/dist/server/config-shared.js";
 import { getNamedRouteRegex } from "next/dist/shared/lib/router/utils/route-regex.js";
+import type { NextRoutingData } from "../routing-types";
 
-export type NextRoutingData = Pick<ResolveRoutesParams, "pathnames" | "routes">;
+export type { NextRoutingData } from "../routing-types";
 
 type NextRoutingCustomRoutes = Omit<CustomRoutes, "rewrites"> & {
   rewrites: CustomRoutes["rewrites"] | Rewrite[];
@@ -34,13 +35,15 @@ type NextRoutesManifestConfig = {
   basePath?: string;
   cacheComponents?: boolean;
   i18n?: NextConfigComplete["i18n"];
+  skipTrailingSlashRedirect?: boolean;
+  trailingSlash?: boolean;
   experimental?: {
     caseSensitiveRoutes?: boolean;
     [key: string]: unknown;
   };
 };
 
-const { convertHeaders, convertRedirects, convertRewrites } = routingUtils;
+const { convertHeaders, convertRedirects, convertRewrites, convertTrailingSlash } = routingUtils;
 
 type NextAdapterRoutingRoute = NextRoutingRoute & {
   source?: string;
@@ -91,7 +94,7 @@ export function createNextRoutingData(manifest: NextRoutingManifest): NextRoutin
     routes: {
       beforeMiddleware: [
         ...routesManifest.headers.map(buildRouteFromHeader),
-        ...routesManifest.redirects.map(buildRedirectItem),
+        ...buildRedirectItems(routesManifest.redirects, manifest.nextConfig),
       ],
       beforeFiles: routesManifest.rewrites.beforeFiles.map(buildRewriteItem),
       afterFiles: routesManifest.rewrites.afterFiles.map(buildRewriteItem),
@@ -127,6 +130,8 @@ function createRoutesManifestConfig(
     basePath: config?.basePath ?? "",
     cacheComponents: config?.cacheComponents,
     i18n: config?.i18n,
+    skipTrailingSlashRedirect: config?.skipTrailingSlashRedirect,
+    trailingSlash: config?.trailingSlash,
     experimental: {
       caseSensitiveRoutes: config?.experimental?.caseSensitiveRoutes,
     },
@@ -165,6 +170,28 @@ function buildRouteFromHeader(route: ManifestHeaderRoute & InternalRoute): NextA
   };
 }
 
+function buildRedirectItems(
+  routes: (ManifestRedirectRoute & InternalRoute)[],
+  config: NextRoutesManifestConfig | undefined,
+): NextAdapterRoutingRoute[] {
+  const items: NextAdapterRoutingRoute[] = [];
+  let trailingSlashRedirectConverted = false;
+
+  for (const route of routes) {
+    if (isNextInternalTrailingSlashRedirect(route)) {
+      if (!trailingSlashRedirectConverted) {
+        items.push(...buildTrailingSlashRedirectItems(config));
+        trailingSlashRedirectConverted = true;
+      }
+      continue;
+    }
+
+    items.push(buildRedirectItem(route));
+  }
+
+  return items;
+}
+
 function buildRedirectItem(route: ManifestRedirectRoute & InternalRoute): NextAdapterRoutingRoute {
   const converted = firstConverted(convertRedirects([route], 307), "redirect");
   const regex = converted.src || route.regex;
@@ -177,6 +204,35 @@ function buildRedirectItem(route: ManifestRedirectRoute & InternalRoute): NextAd
     missing: route.missing,
     priority: route.internal || undefined,
   };
+}
+
+// Source: https://github.com/vercel/next.js/blob/v16.2.6/packages/next/src/lib/load-custom-routes.ts#L795-L841
+// Source: next/dist/compiled/@vercel/routing-utils/superstatic.js `convertTrailingSlash`
+// Adaptation: `loadCustomRoutes()` injects these internal redirect shapes before
+// `generateRoutesManifest()`. The production adapter converts that behavior via
+// `convertTrailingSlash()` rather than by parsing the internal `/:path+/`
+// route as a user redirect.
+function isNextInternalTrailingSlashRedirect(route: ManifestRedirectRoute & InternalRoute) {
+  if (!route.internal || !route.priority) return false;
+
+  return (
+    (route.source === "/:path+/" && route.destination === "/:path+") ||
+    (route.source === "/:file((?!\\.well-known(?:/.*)?)(?:[^/]+/)*[^/]+\\.\\w+)/" &&
+      route.destination === "/:file") ||
+    (route.source === "/:notfile((?!\\.well-known(?:/.*)?)(?:[^/]+/)*[^/\\.]+)" &&
+      route.destination === "/:notfile/")
+  );
+}
+
+function buildTrailingSlashRedirectItems(
+  config: NextRoutesManifestConfig | undefined,
+): NextAdapterRoutingRoute[] {
+  return convertTrailingSlash(Boolean(config?.trailingSlash), 308).map((route) => ({
+    sourceRegex: route.src ?? "",
+    headers: route.headers ?? {},
+    status: route.status,
+    priority: true,
+  }));
 }
 // End copy
 

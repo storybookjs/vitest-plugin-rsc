@@ -1,15 +1,10 @@
-import type { CustomRoutes } from "next/dist/lib/load-custom-routes.js";
-import type { Route as NextRoutingRoute, RouteInvocationTarget } from "@next/routing";
+import type { RouteInvocationTarget } from "@next/routing";
 import type { LoaderTree } from "next/dist/server/lib/app-dir-module.js";
 import { normalizeNextQueryParam } from "next/dist/server/web/utils.js";
-import { normalizeAppPath } from "next/dist/shared/lib/router/utils/app-paths.js";
 import { getRouteMatcher } from "next/dist/shared/lib/router/utils/route-matcher.js";
-import {
-  getNamedRouteRegex,
-  getRouteRegex,
-} from "next/dist/shared/lib/router/utils/route-regex.js";
+import { getRouteRegex } from "next/dist/shared/lib/router/utils/route-regex.js";
 import { resolveRoutes } from "./next-routing";
-import type { NextRoutingData } from "./routing-data";
+import type { NextRoutingData } from "./routing-types";
 
 export type NextRouteManifestEntry = {
   route: string;
@@ -27,11 +22,8 @@ export type NextRouteHandlerManifestEntry = {
 export type NextRouteManifest = {
   pages: NextRouteManifestEntry[];
   routeHandlers: NextRouteHandlerManifestEntry[];
-  customRoutes: NextCustomRoutes;
   routingData: NextRoutingData;
 };
-
-export type NextCustomRoutes = CustomRoutes;
 
 type RouteMatches = Record<string, string | string[]>;
 
@@ -172,16 +164,6 @@ export async function resolveNextRequestTarget(options: {
   };
 }
 
-function matchRoutePattern(routePattern: string, pathname: string) {
-  return matchDirectRenderRoutePatternParams(routePattern, pathname) !== undefined;
-}
-
-export function assertRoutePatternMatchesPath(routePattern: string, pathname: string) {
-  if (matchRoutePattern(routePattern, pathname)) return;
-
-  throw new Error(`Pattern "${routePattern}" does not match pathname "${pathname}".`);
-}
-
 export function resolveRedirectUrl(redirectUrl: string, baseUrl: string) {
   const base = new URL(baseUrl, "http://localhost");
   const target = new URL(redirectUrl, base);
@@ -190,22 +172,6 @@ export function resolveRedirectUrl(redirectUrl: string, baseUrl: string) {
   }
 
   return formatRelativeUrl(target);
-}
-
-export function createPageOnlyRoutingData(
-  pages: Pick<NextRouteManifestEntry, "route">[],
-): NextRoutingData {
-  return {
-    pathnames: Array.from(new Set(pages.map((entry) => entry.route))),
-    routes: {
-      beforeMiddleware: [],
-      beforeFiles: [],
-      afterFiles: [],
-      dynamicRoutes: createDynamicRoutes(pages),
-      onMatch: [],
-      fallback: [],
-    },
-  };
 }
 
 function createEmptyRequestBody() {
@@ -299,60 +265,10 @@ function matchRoutePatternParams(routePattern: string, pathname: string): RouteM
   }
 }
 
-function matchDirectRenderRoutePatternParams(
-  routePattern: string,
-  pathname: string,
-): RouteMatches | undefined {
-  try {
-    const params = getRouteMatcher(getRouteRegex(normalizeRoutePatternAsAppPath(routePattern)))(
-      pathname,
-    );
-    return params ? (params as RouteMatches) : undefined;
-  } catch {
-    return;
-  }
-}
-
 function formatRelativeUrl(url: URL) {
   return `${url.pathname}${url.search}${url.hash}`;
 }
 
-function createDynamicRoutes(pages: Pick<NextRouteManifestEntry, "route">[]) {
-  const routes = new Map<string, NextRoutingRoute>();
-  for (const entry of pages) {
-    if (!entry.route.includes("[")) continue;
-    routes.set(entry.route, createDynamicRoute(entry.route));
-  }
-  return Array.from(routes.values());
-}
-
-// Source: https://github.com/vercel/next.js/blob/v16.2.6/packages/next/src/build/adapter/build-complete.ts
-// Source: https://github.com/vercel/next.js/blob/v16.2.6/packages/next/src/server/route-matchers/route-matcher.ts
-// Adaptation: direct ReactNode/page-only renders do not go through the Vite
-// route-manifest virtual module, so they synthesize only the dynamic route data
-// needed by `@next/routing` without custom-route conversion.
-function createDynamicRoute(route: string): NextRoutingRoute {
-  const routeRegex = getNamedRouteRegex(route, {
-    prefixRouteKeys: true,
-  });
-  return {
-    sourceRegex: routeRegex.namedRegex,
-    destination: `${route}${getDestinationQuery(routeRegex.routeKeys)}`,
-  };
-}
-
-function getDestinationQuery(routeKeys: Record<string, string> | undefined) {
-  const items = Object.entries(routeKeys ?? {});
-  if (items.length === 0) return "";
-  return `?${items.map(([key, value]) => `${value}=$${key}`).join("&")}`;
-}
-
 function ensureLeadingSlash(routePattern: string) {
   return routePattern.startsWith("/") ? routePattern : `/${routePattern}`;
-}
-
-function normalizeRoutePatternAsAppPath(routePattern: string) {
-  const withLeadingSlash = ensureLeadingSlash(routePattern);
-  const withoutTrailingSlash = withLeadingSlash === "/" ? "" : withLeadingSlash.replace(/\/$/, "");
-  return normalizeAppPath(`${withoutTrailingSlash}/page`);
 }

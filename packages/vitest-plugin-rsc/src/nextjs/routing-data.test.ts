@@ -4,7 +4,7 @@ import {
   createNextRoutingData,
   type NextRoutingManifest,
   type NextRoutingData,
-} from "./routing-data";
+} from "./plugin/routing-data";
 import { resolveRoutes } from "./next-routing";
 import type { NextRouteHandlerManifestEntry, NextRouteManifestEntry } from "./request-router";
 
@@ -269,6 +269,15 @@ test("converts Next internal trailing slash redirects on the plugin side", async
   });
   const result = await resolveRoute("/route-patterns/docs/", data);
 
+  expect(data.routes.beforeMiddleware).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        sourceRegex: "^/(.*)\\/$",
+        headers: { Location: "/$1" },
+        status: 308,
+      }),
+    ]),
+  );
   expect(result.status).toBe(308);
   expect(result.resolvedHeaders?.get("location")).toBe("/route-patterns/docs");
 });
