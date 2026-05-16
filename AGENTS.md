@@ -99,6 +99,8 @@ There are local forks and duplicate checkouts, including `~/code/github/vite`, `
 
 When adding or reviewing fidelity work, inspect the relevant upstream source first, then choose the smallest Vite adapter around the matching installed package module such as `next/dist/...`, `vite`, `vitest`, or `@vitejs/plugin-rsc`.
 
+Every adapter that mirrors Next compiler, webpack loader/plugin, Turbopack, or runtime bootstrap behavior must keep a nearby upstream GitHub source link in the code, even when no code is copied verbatim. The link should point at the exact Next/Vite/Vitest/RSC source that defines the behavior being adapted, followed by a short note explaining why the Vite/Vitest adapter exists.
+
 For any missing Next.js behavior, use this decision order. Earlier options are better because they usually mean less local glue:
 
 1. Import and call the relevant installed framework/runtime module directly.
