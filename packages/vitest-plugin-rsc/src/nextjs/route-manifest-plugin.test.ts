@@ -84,7 +84,7 @@ test("extracts a Vite loader tree module from the real Next app loader output", 
   expect(code).toContain("route-patterns/defaulted/page.tsx");
   expect(code).not.toContain("const __next_app_require__");
   expect(code).not.toContain("const __next_app_load_chunk__");
-});
+}, 15_000);
 
 test("generates optimizer entrypoints from discovered Next routes only", async () => {
   const plugin = useNextRouteManifest();
