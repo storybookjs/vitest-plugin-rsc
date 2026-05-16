@@ -1,9 +1,7 @@
 import "next/dist/server/node-environment-baseline.js";
 import { getAccessFallbackErrorTypeByStatus } from "next/dist/client/components/http-access-fallback/http-access-fallback.js";
 import { isNextRouterError } from "next/dist/client/components/is-next-router-error.js";
-import { getPreloadableFonts } from "next/dist/server/app-render/get-preloadable-fonts.js";
 import type { LoaderTree } from "next/dist/server/lib/app-dir-module.js";
-import { encodeURIPath } from "next/dist/shared/lib/encode-uri-path.js";
 import type { Container } from "react-dom/client";
 import { createElement, isValidElement, type JSXElementConstructor, type ReactNode } from "react";
 import {
@@ -26,14 +24,19 @@ import {
   type NextInitialRscPayload,
   type NextNavigationFlightPayload,
 } from "./app-render.ts";
-import { getNextFontManifestForRender } from "./src/build/webpack/plugins/next-font-manifest-plugin.ts";
 import {
   createNextDocumentFlightStream,
   getNextHttpAccessFallbackStatus,
-  isNextHttpAccessFallbackError,
 } from "./src/client/app-index.ts";
 import {
-  collectLoaderTreeFilePaths,
+  applyInitialAccessFallback,
+  findInitialAccessFallbackNode,
+} from "./src/server/app-render/create-component-tree.tsx";
+import {
+  injectNextFontPreloadLinks,
+  injectNextFontStyles,
+} from "./src/server/app-render/get-layer-assets.tsx";
+import {
   createDirectNodeLoaderTree,
   findDeepestAccessFallbackModule,
   hasNextErrorBoundary,
@@ -536,138 +539,6 @@ async function createNextDocumentInitialPayload(html: string) {
   );
 }
 
-function applyInitialAccessFallback(payload: NextInitialRscPayload) {
-  for (const flightDataPath of payload.f) {
-    const seedData = flightDataPath[flightDataPath.length - 3] as
-      | NextCacheNodeSeedData
-      | null
-      | undefined;
-    replaceAccessFallbackSeedData(seedData);
-  }
-}
-
-function findInitialAccessFallbackNode(payload: NextInitialRscPayload) {
-  for (const flightDataPath of payload.f) {
-    const seedData = flightDataPath[flightDataPath.length - 3] as
-      | NextCacheNodeSeedData
-      | null
-      | undefined;
-    const found = findNotFoundNode(seedData?.[0]);
-    if (found) return found;
-  }
-}
-
-type NextCacheNodeSeedData = [
-  node: ReactNode | null,
-  parallelRoutes: Record<string, NextCacheNodeSeedData | null>,
-  loading: null,
-  isPartial: boolean,
-  varyParams: unknown,
-];
-
-function replaceAccessFallbackSeedData(
-  seedData: NextCacheNodeSeedData | null | undefined,
-  inheritedNotFound?: ReactNode,
-) {
-  if (!seedData) return;
-
-  const node = seedData[0];
-  const notFound = findNotFoundNode(node) ?? inheritedNotFound;
-  if (notFound && isAccessFallbackSeedNode(seedData)) {
-    seedData[0] = notFound;
-  }
-
-  for (const child of Object.values(seedData[1])) {
-    replaceAccessFallbackSeedData(child, notFound);
-  }
-}
-
-function isAccessFallbackSeedNode(seedData: NextCacheNodeSeedData) {
-  return containsAccessFallback(seedData[0]) || isLeafLazySeedNode(seedData);
-}
-
-function isLeafLazySeedNode(seedData: NextCacheNodeSeedData) {
-  return Object.keys(seedData[1]).length === 0 && containsThenable(seedData[0]);
-}
-
-function findNotFoundNode(value: unknown): ReactNode | undefined {
-  if (Array.isArray(value)) {
-    for (const item of value) {
-      const found = findNotFoundNode(item);
-      if (found) return found;
-    }
-    return;
-  }
-
-  if (!isValidElement(value)) return;
-
-  const props = value.props as { children?: unknown; notFound?: unknown };
-  const child = findNotFoundNode(props.children);
-  if (child) return child;
-
-  if (Array.isArray(props.notFound) && props.notFound[0]) {
-    return props.notFound[0] as ReactNode;
-  }
-}
-
-function containsAccessFallback(value: unknown): boolean {
-  if (isNextHttpAccessFallbackError(value)) return true;
-  if (isRejectedAccessFallbackThenable(value)) return true;
-
-  if (Array.isArray(value)) {
-    return value.some((item) => containsAccessFallback(item));
-  }
-
-  if (isValidElement(value)) {
-    return containsAccessFallback((value.props as { children?: unknown }).children);
-  }
-
-  return false;
-}
-
-function containsThenable(value: unknown): boolean {
-  if (isThenable(value)) return true;
-
-  if (Array.isArray(value)) {
-    return value.some((item) => containsThenable(item));
-  }
-
-  if (isValidElement(value)) {
-    return containsThenable((value.props as { children?: unknown }).children);
-  }
-
-  return false;
-}
-
-function isThenable(value: unknown): value is Promise<unknown> {
-  return (
-    (typeof value === "object" || typeof value === "function") &&
-    value !== null &&
-    "then" in value &&
-    typeof (value as { then?: unknown }).then === "function"
-  );
-}
-
-function isRejectedAccessFallbackThenable(value: unknown) {
-  if (typeof value !== "object" || value === null) return false;
-
-  const candidate = value as {
-    status?: unknown;
-    reason?: unknown;
-    _reason?: unknown;
-    value?: unknown;
-    _value?: unknown;
-  };
-  if (candidate.status !== "rejected") return false;
-
-  return (
-    isNextHttpAccessFallbackError(candidate.reason) ||
-    isNextHttpAccessFallbackError(candidate._reason) ||
-    isNextHttpAccessFallbackError(candidate.value) ||
-    isNextHttpAccessFallbackError(candidate._value)
-  );
-}
-
 async function unmountRoot(container: Container, removeContainer: boolean) {
   const index = mountedRootEntries.findIndex((it) => it.container === container);
   if (index === -1) return;
@@ -958,53 +829,4 @@ function restoreAttributes(element: Element, attributes: [string, string][]) {
   for (const [name, value] of attributes) {
     element.setAttribute(name, value);
   }
-}
-
-function injectNextFontStyles() {
-  const fontStyles = (globalThis as typeof globalThis & Record<symbol, Map<string, string>>)[
-    Symbol.for("vitest-plugin-rsc.nextjs.fontStyles")
-  ];
-  if (!fontStyles) return;
-
-  for (const [id, css] of fontStyles) {
-    if (document.getElementById(id)) continue;
-
-    const style = document.createElement("style");
-    style.id = id;
-    style.textContent = css;
-    document.head.appendChild(style);
-  }
-}
-
-function injectNextFontPreloadLinks(loaderTree: LoaderTree) {
-  const manifest = getNextFontManifestForRender();
-  const injectedFontPreloadTags = new Set<string>();
-
-  for (const filePath of collectLoaderTreeFilePaths(loaderTree)) {
-    const preloadedFonts = getPreloadableFonts(manifest, filePath, injectedFontPreloadTags);
-    if (!preloadedFonts?.length) continue;
-
-    for (const fontFile of preloadedFonts) {
-      const href = `${readNextAssetPrefix()}/_next/${encodeURIPath(fontFile)}`;
-      if (document.head.querySelector(`link[rel="preload"][as="font"][href="${href}"]`)) {
-        continue;
-      }
-
-      const link = document.createElement("link");
-      link.rel = "preload";
-      link.as = "font";
-      link.href = href;
-      link.type = getFontPreloadType(fontFile);
-      document.head.appendChild(link);
-    }
-  }
-}
-
-function readNextAssetPrefix() {
-  return typeof process.env.__NEXT_ASSET_PREFIX === "string" ? process.env.__NEXT_ASSET_PREFIX : "";
-}
-
-function getFontPreloadType(fontFile: string) {
-  const ext = /\.(woff|woff2|eot|ttf|otf)$/.exec(fontFile)?.[1];
-  return ext ? `font/${ext}` : "";
 }
