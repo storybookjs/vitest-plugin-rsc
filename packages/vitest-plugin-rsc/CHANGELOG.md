@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.2.3](https://github.com/storybookjs/vitest-plugin-rsc/compare/v0.2.2...v0.2.3) (2026-05-16)
+
+
+### Bug Fixes
+
+* keep Vitest projects local ([#46](https://github.com/storybookjs/vitest-plugin-rsc/issues/46)) ([f90ed3e](https://github.com/storybookjs/vitest-plugin-rsc/commit/f90ed3eb974d406bf128fefc5196ddcfb904c6ba))
+* match Vite browser port probing ([#49](https://github.com/storybookjs/vitest-plugin-rsc/issues/49)) ([66218b4](https://github.com/storybookjs/vitest-plugin-rsc/commit/66218b43788658440af0df5579f843e260c4b67b))
+
 ## [0.2.2](https://github.com/storybookjs/vitest-plugin-rsc/compare/v0.2.1...v0.2.2) (2026-05-15)
 
 
