@@ -1,9 +1,5 @@
 import type { Plugin } from "vite";
-import { useNextAppRenderCompatibility } from "./app-render-compat-plugin";
-import { useNextLinkClientReference } from "./client-reference-plugin";
-import { useNextFontLoader } from "./font-loader-plugin";
-import { useNextImageClientReference } from "./image-plugin";
-import { useNextMetadataImageLoader } from "./metadata-image-loader-plugin";
+import { useNextLinkClientReference } from "./client-reference-plugin.ts";
 import {
   appRouterApiPlugin,
   createAppRouterApiAliasesFromNext,
@@ -13,29 +9,32 @@ import {
   createNextVendoredReactAliases,
   createOptimizeDepsResolveAliases,
   createReactServerDomWebpackAliases,
-  useNextCompiledOpenTelemetryApi,
-  useNextReactDomServerAlias,
-} from "./plugin/aliases";
-import { useNextBuiltinGlobalErrorStub } from "./plugin/builtin-global-error";
-import { useNextCacheHandlers } from "./plugin/cache-handlers";
-import { useNextEntryBaseClientReferences } from "./plugin/entry-base-client-references";
-import {
-  createNextSourceOptimizerEntries,
-  nextRootParamsOptimizeDepsExclude,
-  resolveNextOptimizeDeps,
-} from "./plugin/optimizer";
-import { useNextRootParams } from "./plugin/root-params";
-import {
   disableNextDevServerRuntime,
   provideBufferLikeNextWebpack,
   treatNextInternalsAsServerInRsc,
-} from "./plugin/runtime-rewrites";
-import { useVitestServerReferenceInfo } from "./plugin/server-reference-info";
-import { createNextTesterHtmlConfig, nextTesterHtmlPath } from "./plugin/tester-html";
-import { useNextUseCacheTransform } from "./plugin/use-cache";
-import { getProjectRoot } from "./plugin-utils";
-import { useNextRouteManifest } from "./route-manifest-plugin";
-import { useNextSwcTransform } from "./swc-transform-plugin";
+  useNextCompiledOpenTelemetryApi,
+  useNextReactDomServerAlias,
+} from "./src/build/webpack-config.ts";
+import { createNextSourceOptimizerEntries } from "./src/build/entries.ts";
+import { useNextFontLoader } from "./src/build/webpack/loaders/next-font-loader/index.ts";
+import { useNextImageClientReference } from "./src/build/webpack/loaders/next-image-loader/index.ts";
+import { useNextMetadataImageLoader } from "./src/build/webpack/loaders/next-metadata-image-loader.ts";
+import { useNextBuiltinGlobalErrorStub } from "./src/client/components/builtin/global-error.ts";
+import { useNextAppRenderCompatibility } from "./src/server/app-render/app-render.ts";
+import { useNextCacheHandlers } from "./src/server/use-cache/handlers.ts";
+import { useNextEntryBaseClientReferences } from "./src/server/app-render/entry-base.ts";
+import { nextRootParamsOptimizeDepsExclude, resolveNextOptimizeDeps } from "./plugin/optimizer.ts";
+import { useNextRootParams } from "./src/build/webpack/loaders/next-root-params-loader.ts";
+import { useVitestServerReferenceInfo } from "./src/shared/lib/server-reference-info.ts";
+import {
+  createNextTesterHtmlConfig,
+  nextTesterHtmlPath,
+  useNextBrowserPolyfills,
+} from "./plugin/tester-html.ts";
+import { useNextUseCacheTransform } from "./plugin/use-cache.ts";
+import { getProjectRoot } from "./plugin-utils.ts";
+import { useNextRouteManifest } from "./route-manifest-plugin.ts";
+import { useNextSwcTransform } from "./src/build/webpack/loaders/next-swc-loader.ts";
 
 export { nextTesterHtmlPath };
 
@@ -59,6 +58,7 @@ export function vitestPluginNext(): Plugin[] {
     useNextRootParams("client", true),
     useNextRootParams("react_client", false),
     useNextRootParams("react_ssr", false),
+    useNextBrowserPolyfills(),
     appRouterApiPlugin("client", true),
     appRouterApiPlugin("react_client", false),
     appRouterApiPlugin("react_ssr", false),

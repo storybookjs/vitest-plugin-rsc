@@ -1,7 +1,7 @@
 import * as React from "react";
 import * as ReactDOMServer from "react-dom/server.browser";
 import * as ReactClient from "@vitejs/plugin-rsc/react/ssr";
-import type { RscPayload } from "./testing-library-client";
+import type { RscPayload } from "./testing-library-client.tsx";
 
 let ssrRequire: unknown;
 

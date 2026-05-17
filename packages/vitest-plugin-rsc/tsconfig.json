@@ -18,6 +18,7 @@
     /* If NOT transpiling with TypeScript: */
     "module": "preserve",
     "noEmit": true,
+    "allowImportingTsExtensions": true,
 
     /* If your code runs in the DOM: */
     "lib": ["es2024", "dom", "dom.iterable"],

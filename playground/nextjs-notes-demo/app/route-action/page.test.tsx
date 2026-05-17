@@ -1,7 +1,7 @@
 import { expect, test, vi } from "vitest";
 import { page } from "vitest/browser";
 import { renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
-import { resetRouteActionState } from "./page";
+import { resetRouteActionState } from "./page.tsx";
 
 test("renderServer route actions are handled through Next app-render", async () => {
   resetRouteActionState();

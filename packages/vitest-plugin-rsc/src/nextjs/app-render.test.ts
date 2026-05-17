@@ -1,11 +1,11 @@
 import { Buffer } from "node:buffer";
 import { expect, test } from "vitest";
+import { createNextServerActionManifest } from "./src/build/webpack/plugins/flight-client-entry-plugin.ts";
 import {
-  createNextServerActionManifest,
   createViteRscClientModulesProxy,
   createViteRscModuleMappingProxy,
-} from "./app-render-manifest";
-import { patchBufferIndexOfUint8ArrayNeedle } from "./buffer-compat";
+} from "./src/build/webpack/plugins/flight-manifest-plugin.ts";
+import { patchBufferIndexOfUint8ArrayNeedle } from "./buffer-compat.ts";
 
 const patchedBufferIndexOfSymbol = Symbol.for("vitest-plugin-rsc.nextjs.patchedBufferIndexOf");
 

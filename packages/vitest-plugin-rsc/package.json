@@ -27,7 +27,68 @@
     "./package.json": "./package.json",
     ".": {
       "types": "./dist/index.d.ts",
+      "vitest-plugin-rsc-source": "./src/index.ts",
       "default": "./dist/index.js"
+    },
+    "./async-hooks": {
+      "types": "./dist/async-hooks.d.ts",
+      "vitest-plugin-rsc-source": "./src/async-hooks.ts",
+      "default": "./dist/async-hooks.js"
+    },
+    "./async-local-storage": {
+      "types": "./dist/async-local-storage.d.ts",
+      "vitest-plugin-rsc-source": "./src/async-local-storage.ts",
+      "default": "./dist/async-local-storage.js"
+    },
+    "./testing-library": {
+      "types": "./dist/testing-library.d.ts",
+      "vitest-plugin-rsc-source": "./src/testing-library.tsx",
+      "default": "./dist/testing-library.js"
+    },
+    "./testing-library-client": {
+      "types": "./dist/testing-library-client.d.ts",
+      "vitest-plugin-rsc-source": "./src/testing-library-client.tsx",
+      "default": "./dist/testing-library-client.js"
+    },
+    "./testing-library-ssr": {
+      "types": "./dist/testing-library-ssr.d.ts",
+      "vitest-plugin-rsc-source": "./src/testing-library-ssr.tsx",
+      "default": "./dist/testing-library-ssr.js"
+    },
+    "./nextjs/client": {
+      "types": "./dist/nextjs/client.d.ts",
+      "vitest-plugin-rsc-source": "./src/nextjs/client.tsx",
+      "default": "./dist/nextjs/client.js"
+    },
+    "./nextjs/testing-library-client": {
+      "types": "./dist/nextjs/testing-library-client.d.ts",
+      "vitest-plugin-rsc-source": "./src/nextjs/testing-library-client.ts",
+      "default": "./dist/nextjs/testing-library-client.js"
+    },
+    "./nextjs/testing-library": {
+      "types": "./dist/nextjs/testing-library.d.ts",
+      "vitest-plugin-rsc-source": "./src/nextjs/testing-library.tsx",
+      "default": "./dist/nextjs/testing-library.js"
+    },
+    "./nextjs/msw": {
+      "types": "./dist/nextjs/msw.d.ts",
+      "vitest-plugin-rsc-source": "./src/nextjs/msw.ts",
+      "default": "./dist/nextjs/msw.js"
+    },
+    "./nextjs/os-browser": {
+      "types": "./dist/nextjs/os-browser.d.ts",
+      "vitest-plugin-rsc-source": "./src/nextjs/os-browser.ts",
+      "default": "./dist/nextjs/os-browser.js"
+    },
+    "./nextjs/browser-polyfills": {
+      "types": "./dist/nextjs/browser-polyfills.d.ts",
+      "vitest-plugin-rsc-source": "./src/nextjs/browser-polyfills.ts",
+      "default": "./dist/nextjs/browser-polyfills.js"
+    },
+    "./nextjs/plugin": {
+      "types": "./dist/nextjs/plugin.d.ts",
+      "vitest-plugin-rsc-source": "./src/nextjs/plugin.ts",
+      "default": "./dist/nextjs/plugin.js"
     },
     "./*": {
       "types": "./dist/*.d.ts",
@@ -52,6 +113,7 @@
     "convert-source-map": "^2.0.0"
   },
   "devDependencies": {
+    "@next/routing": "^16.2.6",
     "@types/convert-source-map": "^2.0.3",
     "@types/estree": "^1.0.9",
     "@types/node": "^24.12.4",
@@ -66,13 +128,17 @@
     "vite": "^8.0.12"
   },
   "peerDependencies": {
+    "@next/routing": ">=16.2.0",
     "msw": "^2",
-    "next": "*",
+    "next": ">=16.2.0",
     "react": "*",
     "react-dom": "*",
     "vite": "*"
   },
   "peerDependenciesMeta": {
+    "@next/routing": {
+      "optional": true
+    },
     "msw": {
       "optional": true
     },

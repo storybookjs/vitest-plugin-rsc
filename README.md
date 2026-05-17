@@ -92,12 +92,11 @@ This plugin requires [Vitest Browser Mode](https://vitest.dev/guide/browser/).
 
 ## Next.js Version Support
 
-The base `vitestPluginRSC()` runtime is framework-agnostic. The `vitest-plugin-rsc/nextjs/*` helpers depend on Next.js App Router internals, so CI tests them against multiple Next.js targets:
+The base `vitestPluginRSC()` runtime is framework-agnostic. The `vitest-plugin-rsc/nextjs/*` helpers depend on Next.js App Router internals and Next's shared routing package, so CI tests them against matching Next.js and `@next/routing` targets:
 
-- `next@latest`: current stable, following new releases automatically.
-- `next@16.1`: pinned previous-stable line.
-- `next@16.0`: older pinned stable line.
-- `next@canary`: early warning when a private App Router internal changes.
+- `next@latest` with `@next/routing@latest`: current stable, following new releases automatically.
+- `next@16.2` with `@next/routing@16.2`: pinned supported stable line.
+- `next@canary` with `@next/routing@canary`: early warning when a private App Router or routing internal changes.
 
 For each target, CI builds the plugin and runs the package-level Next tests plus the Next.js playgrounds.
 
@@ -113,6 +112,12 @@ The examples below use Playwright as the Vitest browser provider; install it (or
 
 ```bash
 npm install -D @vitest/browser-playwright playwright
+```
+
+For Next.js App Router tests, use `next >=16.2.0` and install a matching `@next/routing` version:
+
+```bash
+npm install -D @next/routing@16.2
 ```
 
 ### 2. Register The Plugin
@@ -874,11 +879,11 @@ This repository ships three reference apps under `playground/`:
 - `playground/nextjs-no-msw-demo` — a Next.js App Router setup that calls Server Actions directly inside the test runtime. Use this when you want the simplest Next setup.
 - `playground/nextjs-notes-demo` — a fuller Next.js App Router notes app with Better Auth, Drizzle, PGlite test databases, shadcn/ui, MSW-routed Server Actions, mocked email, and per-test seeding. This is the larger reference for the patterns in this README.
 
-All Vitest suites are registered as root projects, so the full repository runs from the root package:
+Vitest suites are wired through the root workspace, while each package or playground owns its local config:
 
 ```bash
 pnpm test
-pnpm test --project nextjs-notes-demo-browser --project nextjs-notes-demo-node
+pnpm test:run --project nextjs-notes-demo-browser --project nextjs-notes-demo-node
 ```
 
 ## Architecture
@@ -892,4 +897,4 @@ pnpm test --project nextjs-notes-demo-browser --project nextjs-notes-demo-node
 
 The transport is the only unusual part. In production, the browser fetches the Flight stream from a server endpoint. In this plugin, the stream is passed between two Vite environments (`client` for RSC, `react_client` for the browser) inside the Vitest browser runtime, bridged over a dedicated Vite websocket so React can resolve Client Component references with browser conditions.
 
-For the full walkthrough — the two-environment setup, client reference registration, the Module Runner bridge, and the end-to-end flow — see [docs/architecture.md](docs/architecture.md).
+For the full walkthrough — the two-environment setup, client reference registration, the Module Runner bridge, and the end-to-end flow — see [docs/rsc-runtime-architecture.md](docs/rsc-runtime-architecture.md).

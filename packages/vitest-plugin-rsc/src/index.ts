@@ -1,7 +1,7 @@
 import { createServer } from "node:net";
 import { type Plugin, type ViteDevServer } from "vite";
 import { vitePluginRscMinimal } from "@vitejs/plugin-rsc/plugin";
-import { createReactClientCoveragePlugin } from "./coverage";
+import { createReactClientCoveragePlugin } from "./coverage.ts";
 
 const reactClientWebSocketInfoPath = "/@vite/react-client-runner-websocket";
 const reactSsrInvokePath = "/@vite/invoke-react-ssr";
@@ -15,6 +15,16 @@ type ReactClientWebSocketInvoke = {
   id: string;
   payload: ReactClientInvokePayload;
 };
+
+function withConfiguredSourceConditions(
+  config: { resolve?: { conditions?: string[] } },
+  conditions: string[],
+): string[] {
+  const sourceConditions = (config.resolve?.conditions ?? []).filter(
+    (condition) => condition === "vitest-plugin-rsc-source",
+  );
+  return [...new Set([...sourceConditions, ...conditions])];
+}
 
 export function vitestPluginRSC(): Plugin[] {
   return [
@@ -80,7 +90,7 @@ export function vitestPluginRSC(): Plugin[] {
           await optimizerWarmup;
         };
       },
-      config() {
+      config(config) {
         return {
           resolve: {
             alias: {
@@ -95,7 +105,7 @@ export function vitestPluginRSC(): Plugin[] {
                 preTransformRequests: false,
               },
               resolve: {
-                conditions: ["browser", "react-server"],
+                conditions: withConfiguredSourceConditions(config, ["browser", "react-server"]),
               },
               optimizeDeps: {
                 include: [
@@ -114,7 +124,7 @@ export function vitestPluginRSC(): Plugin[] {
               consumer: "client",
               keepProcessEnv: false,
               resolve: {
-                conditions: ["browser"],
+                conditions: withConfiguredSourceConditions(config, ["browser"]),
                 dedupe: ["react", "react-dom"],
               },
               dev: {
@@ -265,8 +275,11 @@ async function resolveBrowserApiPort(
 }
 
 function resolveViteListenHost(host: ViteDevServer["config"]["server"]["host"]) {
+  // Match Vite's default listen call. Checking "localhost" can miss ports that
+  // are unavailable for wildcard binds, which lets Vite fall back after
+  // /@vite/client has already captured the old port.
   if (host === undefined || host === false) {
-    return "localhost";
+    return undefined;
   }
   if (host === true) {
     return undefined;

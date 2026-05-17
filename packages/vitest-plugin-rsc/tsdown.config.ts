@@ -1,5 +1,7 @@
 import { defineConfig } from "tsdown";
 
+const sourcemap = process.argv.slice(2).includes("--sourcemap");
+
 export default defineConfig({
   entry: [
     "src/index.ts",
@@ -8,6 +10,7 @@ export default defineConfig({
     "src/testing-library.tsx",
     "src/testing-library-client.tsx",
     "src/testing-library-ssr.tsx",
+    "src/nextjs/browser-polyfills.ts",
     "src/nextjs/client.tsx",
     "src/nextjs/testing-library-client.ts",
     "src/nextjs/testing-library.tsx",
@@ -22,6 +25,6 @@ export default defineConfig({
   },
   copy: [{ from: "src/nextjs/tester.html", to: "dist/nextjs" }],
   dts: {
-    sourcemap: process.argv.slice(2).includes("--sourcemap"),
+    sourcemap,
   },
 });

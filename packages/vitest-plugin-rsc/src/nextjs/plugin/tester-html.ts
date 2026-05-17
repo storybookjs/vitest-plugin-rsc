@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
-import type { UserConfig } from "vite";
+import type { Plugin, UserConfig } from "vite";
 
 export const nextTesterHtmlPath = resolveNextTesterHtmlPath();
 
@@ -31,6 +31,33 @@ export function createNextTesterHtmlConfig(config: UserConfig): UserConfig {
       },
     },
   } as UserConfig;
+}
+
+export function useNextBrowserPolyfills(): Plugin {
+  return {
+    name: "next-rsc-browser-polyfills",
+    enforce: "pre",
+    transformIndexHtml: {
+      order: "pre",
+      handler(_html, context) {
+        if (context.filename !== nextTesterHtmlPath) {
+          return;
+        }
+
+        return [
+          {
+            tag: "script",
+            attrs: {
+              type: "module",
+              src: "/@id/vitest-plugin-rsc/nextjs/browser-polyfills",
+              "data-vitest-plugin-rsc-next-baseline": "",
+            },
+            injectTo: "head-prepend",
+          },
+        ];
+      },
+    },
+  };
 }
 
 function hasTesterHtmlPath(browser: VitestBrowserConfig | undefined): boolean {

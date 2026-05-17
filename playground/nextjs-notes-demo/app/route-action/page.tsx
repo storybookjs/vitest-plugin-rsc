@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import { RouteActionClient } from "./client";
+import { RouteActionClient } from "./client.tsx";
 
 let routeActionCount = 0;
 

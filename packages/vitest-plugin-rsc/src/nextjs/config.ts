@@ -1,4 +1,6 @@
-import { createProjectRequire } from "./plugin-utils";
+import type { CustomRoutes } from "next/dist/lib/load-custom-routes.js";
+import type { NextConfigComplete } from "next/dist/server/config-shared.js";
+import { createProjectRequire } from "./plugin-utils.ts";
 
 export type NextImageConfig = {
   deviceSizes: number[];
@@ -24,9 +26,11 @@ export type NextConfigLike = {
   compiler?: unknown;
   distDir?: string;
   images?: NextImageConfig;
+  i18n?: NextConfigComplete["i18n"];
   modularizeImports?: unknown;
   output?: string;
   pageExtensions?: string[];
+  skipTrailingSlashRedirect?: boolean;
   trailingSlash?: boolean;
   typescript?: {
     tsconfigPath?: string;
@@ -57,17 +61,7 @@ type NextConfigModule = {
   default?: NextLoadConfig;
 } & NextLoadConfig;
 
-export type NextCustomRoute = Record<string, unknown>;
-
-export type NextCustomRoutes = {
-  headers: NextCustomRoute[];
-  redirects: NextCustomRoute[];
-  rewrites: {
-    beforeFiles: NextCustomRoute[];
-    afterFiles: NextCustomRoute[];
-    fallback: NextCustomRoute[];
-  };
-};
+export type NextCustomRoutes = CustomRoutes;
 
 type NextLoadCustomRoutes = (config: NextConfigLike) => Promise<NextCustomRoutes>;
 

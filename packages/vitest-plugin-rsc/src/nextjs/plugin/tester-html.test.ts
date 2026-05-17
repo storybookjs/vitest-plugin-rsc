@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { createNextTesterHtmlConfig, nextTesterHtmlPath } from "./tester-html";
+import { createNextTesterHtmlConfig, nextTesterHtmlPath } from "./tester-html.ts";
 
 test("sets the Next tester HTML in Vitest browser projects by default", () => {
   expect(createNextTesterHtmlConfig({})).toEqual({

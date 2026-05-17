@@ -1,4 +1,4 @@
-import { TestPayloadClient } from "./client";
+import { TestPayloadClient } from "./client.tsx";
 
 export function TestPayloadServer() {
   return (

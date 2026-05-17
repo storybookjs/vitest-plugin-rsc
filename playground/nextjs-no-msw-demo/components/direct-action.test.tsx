@@ -1,7 +1,7 @@
 import { expect, test } from "vitest";
 import { page } from "vitest/browser";
 import { renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
-import { DirectActionProbe, resetDirectActionProbe } from "./direct-action-probe";
+import { DirectActionProbe, resetDirectActionProbe } from "./direct-action-probe.tsx";
 
 test("default server actions rerender without MSW", async () => {
   resetDirectActionProbe();

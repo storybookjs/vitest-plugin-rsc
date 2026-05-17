@@ -4,7 +4,7 @@ import { expect, test } from "vitest";
 import React from "react";
 import { ImageResponse } from "next/og";
 import { NextRequest, NextResponse, URLPattern, userAgentFromString } from "next/server";
-import { GET } from "./route";
+import { GET } from "./route.ts";
 
 test("route handlers can use documented NextRequest, NextResponse, cookies, nextUrl, and userAgent APIs", async () => {
   const request = new NextRequest(

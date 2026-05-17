@@ -78,7 +78,7 @@ jobs:
       - run: pnpm --dir playground/rsc-vitest-demo exec playwright install --with-deps --only-shell chromium
       - run: pnpm --dir playground/nextjs-notes-demo exec playwright install --with-deps --only-shell chromium
       - run: pnpm build
-      - run: pnpm test:run --project rsc-vitest-demo
+      - run: pnpm test:dist --project rsc-vitest-demo
 
   next-compat:
     name: Next.js ${{ matrix.next-version }} Compatibility
@@ -86,7 +86,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        next-version: ["canary", "latest", "16.1", "16.0"]
+        next-version: ["canary", "latest", "16.2"]
     steps:
       - uses: actions/checkout@v6
       - uses: pnpm/action-setup@v6
@@ -99,15 +99,15 @@ jobs:
         env:
           NEXT_VERSION: ${{ matrix.next-version }}
         run: |
-          pnpm --filter vitest-plugin-rsc add -D "next@${NEXT_VERSION}"
-          pnpm --filter nextjs-no-msw-demo add "next@${NEXT_VERSION}"
-          pnpm --filter nextjs-notes-demo add "next@${NEXT_VERSION}" "@next/env@${NEXT_VERSION}"
+          pnpm --filter vitest-plugin-rsc add -D "next@${NEXT_VERSION}" "@next/routing@${NEXT_VERSION}"
+          pnpm --filter nextjs-no-msw-demo add "next@${NEXT_VERSION}" "@next/routing@${NEXT_VERSION}"
+          pnpm --filter nextjs-notes-demo add "next@${NEXT_VERSION}" "@next/env@${NEXT_VERSION}" "@next/routing@${NEXT_VERSION}"
       - run: pnpm --dir playground/nextjs-notes-demo exec playwright install --with-deps --only-shell chromium
       - run: pnpm build
       - name: Test Next.js surfaces
         timeout-minutes: 15
         run: |
-          pnpm test:run \
+          pnpm test:dist \
             --project vitest-plugin-rsc \
             --project nextjs-no-msw-demo \
             --project nextjs-notes-demo-browser \

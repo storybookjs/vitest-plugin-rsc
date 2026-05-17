@@ -24,7 +24,7 @@ Preview packages for PR commits are handled by `pkg.pr.new`, which publishes ins
 
 ## Testing
 
-Vitest projects that import `vitest-plugin-rsc` use the package exports, so build the package before running Vitest directly. From the root, prefer `pnpm test`, which runs `pnpm build` before the root Vitest project suite. If you intentionally bypass the script with `pnpm test:run`, run `pnpm build` first.
+Vitest projects that import `vitest-plugin-rsc` use the package exports. From the root, prefer the buildless test path: `pnpm test` (or `pnpm test:run`), which runs Vitest with `NODE_OPTIONS='--conditions=vitest-plugin-rsc-source'` so workspace tests load source files through the package export condition. Use `pnpm test:dist` when you specifically need to validate the built package output, and run `pnpm build` first if you intentionally run a command that consumes `dist` without that source condition.
 
 Keep Vitest project definitions and coverage settings in the root `vitest.config.ts`. Vitest coverage is process-level config, so do not add `coverage` blocks to individual project configs.
 
@@ -76,7 +76,7 @@ When debugging blank screens at the end of a browser test, think first about rea
 
 Before editing, committing, rebasing, or pushing, verify the working directory, branch, and status with `pwd`, `git branch --show-current`, and `git status --short --branch`. If the user names a specific branch or PR worktree, use only that branch/worktree for the task. Stop instead of editing when the current branch does not match the requested work.
 
-For this Next fidelity effort, the architecture backlog lives in `docs/new-architecture.md`. Keep that file updated when adding, completing, or intentionally dropping a Next.js fidelity task.
+For this Next fidelity effort, the stable adapter reference lives in `docs/nextjs-adapter-architecture.md`, the App Router fidelity source map lives in `docs/nextjs-app-router-fidelity-architecture.md`, and the active fidelity architecture tracker lives in `docs/nextjs-fidelity-architecture-tracker.md`. Keep those files updated when adding, completing, or intentionally dropping a Next.js fidelity task.
 
 Treat that backlog as prioritized, not flat. Work on P0 items before expanding scope; only pick P1/P2 work when the related P0 foundation is done or explicitly deferred.
 
@@ -120,7 +120,7 @@ Use Next's transform layer for source-level Next features instead of regex trans
 
 Keep compatibility shims small, explicit, and as close to Next.js as possible. If Next installs a global, injects a polyfill, or relies on webpack `ProvidePlugin` behavior, mirror that behavior through the narrowest Vite/Vitest adapter we can. Prefer importing Next's bootstrap/runtime code, or copying the relevant upstream block, over inventing a local substitute. Process, Buffer, WebSocket, document, and browser runtime shims are acceptable when they reflect real Next behavior; custom behavior beyond Next should be treated as high-risk, documented with a source reference, and covered by a regression test that fails without it.
 
-When copying code from Next.js, wrap it in clear copy markers and include the upstream source path or permalink plus a short adaptation note:
+When copying or adapting code from Next.js, wrap it in clear markers and include the upstream source path or permalink plus a short adaptation note. Use `Begin copy` / `End copy` only for mechanically copied upstream code. Use `Begin adapted` / `End adapted` for Vite/Vitest boundary code that deliberately translates concrete upstream Next loader, template, runtime, manifest plugin, compiler option, or routing conversion behavior:
 
 ```ts
 // Begin copy: Next.js <behavior/name>
@@ -128,6 +128,12 @@ When copying code from Next.js, wrap it in clear copy markers and include the up
 // Adaptation: <why this differs for Vite/Vitest tests>
 ...
 // End copy
+
+// Begin adapted: Next.js <behavior/name>
+// Source: https://github.com/vercel/next.js/blob/<sha>/<path>
+// Adaptation: <which Vite/Vitest boundary forces this translation>
+...
+// End adapted
 ```
 
 Tests should cover framework features, not just demo behavior. Every supported Next API, route convention, page export, or runtime behavior touched by the plugin should have a focused test in `playground/nextjs-notes-demo`. Package-level unit tests in `packages/vitest-plugin-rsc/src/nextjs` are still useful for plugin internals, transforms, aliases, and loader adapters, but they do not replace notes-demo coverage for user-visible Next behavior. Do not add app-local mocks to make the notes demo pass when the plugin can provide the behavior for every user.

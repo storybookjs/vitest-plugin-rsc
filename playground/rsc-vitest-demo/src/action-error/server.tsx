@@ -1,4 +1,4 @@
-import ErrorBoundary from "./error-boundary";
+import ErrorBoundary from "./error-boundary.tsx";
 
 // see browser console to verify that server action error shows
 // server component stack with correct source map

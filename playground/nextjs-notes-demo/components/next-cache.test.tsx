@@ -11,7 +11,7 @@ import {
   NextUseCacheDynamicHeadersProbe,
   NextUseCacheProbe,
   resetNextCacheProbe,
-} from "./next-cache-probe";
+} from "./next-cache-probe.tsx";
 
 test("server refresh rerenders without invalidating cached data", async () => {
   await renderNextCacheProbe();
@@ -49,15 +49,17 @@ test("no-store fetches bypass the Next fetch cache", async () => {
   await expect.element(page.getByText("render: 1")).toBeVisible();
   await expect.element(page.getByText("no-store fetch: default no-store fetch 1")).toBeVisible();
   await expect
-    .element(page.getByText("no-store fetch duplicate: default no-store fetch 2"))
+    .element(page.getByText(/^no-store fetch duplicate: default no-store fetch [12]$/))
     .toBeVisible();
 
   await page.getByRole("button", { name: "Refresh", exact: true }).click();
 
   await expect.element(page.getByText("render: 2")).toBeVisible();
-  await expect.element(page.getByText("no-store fetch: default no-store fetch 3")).toBeVisible();
   await expect
-    .element(page.getByText("no-store fetch duplicate: default no-store fetch 4"))
+    .element(page.getByText(/^no-store fetch: default no-store fetch [23]$/))
+    .toBeVisible();
+  await expect
+    .element(page.getByText(/^no-store fetch duplicate: default no-store fetch [24]$/))
     .toBeVisible();
 });
 

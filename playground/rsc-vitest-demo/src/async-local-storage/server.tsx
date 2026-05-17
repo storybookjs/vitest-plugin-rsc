@@ -1,4 +1,4 @@
-import { getCurrentUser } from "./user-storage";
+import { getCurrentUser } from "./user-storage.ts";
 
 export async function UserAsyncStorageServer() {
   return (

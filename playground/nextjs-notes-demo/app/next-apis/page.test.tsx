@@ -1,7 +1,7 @@
 import { expect, test, vi } from "vitest";
 import { page } from "vitest/browser";
 import { renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
-import { getAfterProbeRuns, getNestedAfterProbeRuns, resetAfterProbe } from "./after-probe";
+import { getAfterProbeRuns, getNestedAfterProbeRuns, resetAfterProbe } from "./after-probe.tsx";
 
 test("notes demo renders Next app-router API aliases and compiler surfaces", async () => {
   resetAfterProbe();
@@ -106,6 +106,15 @@ test("renderServer does not let next.config afterFiles rewrites shadow app route
   await expect.element(page.getByRole("heading", { name: "Next APIs" })).toBeVisible();
   expect(page.getByText("Redirect source: after-files-shadow").query()).toBeNull();
   expect(result.headers.get("x-next-config-header")).toBe("notes-demo");
+});
+
+test("renderServer rejects explicit route overrides that do not match the request URL", async () => {
+  await expect(() =>
+    renderServer({
+      url: "/next-apis",
+      route: "/route-patterns/[team]/settings",
+    }),
+  ).rejects.toThrow('No Next app route found for route "/route-patterns/[team]/settings".');
 });
 
 test("renderServer follows next.config redirects before resolving app routes", async () => {
