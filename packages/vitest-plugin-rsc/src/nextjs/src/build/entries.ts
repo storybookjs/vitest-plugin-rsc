@@ -1,3 +1,5 @@
+import fs from "node:fs";
+import path from "node:path";
 import { stringify, type ParsedUrlQueryInput } from "node:querystring";
 import type { NextProjectConfig } from "../../config.ts";
 import { createProjectRequire } from "../../plugin-utils.ts";
@@ -81,8 +83,15 @@ export async function generateNextEntrypointsModule(
   };
 }
 
-export function createNextSourceOptimizerEntries(_root: string): string[] {
-  return [virtualNextEntrypointsPublicId];
+export function createNextSourceOptimizerEntries(root: string): string[] {
+  const entries: string[] = [];
+  for (const appDir of ["app", "src/app"]) {
+    if (!fs.existsSync(path.join(root, appDir))) continue;
+    entries.push(
+      `${appDir}/**/{page,layout,template,error,loading,not-found,forbidden,unauthorized,global-error,default,route,icon,apple-icon,opengraph-image,twitter-image,sitemap,robots,manifest}.{js,jsx,ts,tsx}`,
+    );
+  }
+  return entries;
 }
 
 export async function createNextAppLoaderOptions(

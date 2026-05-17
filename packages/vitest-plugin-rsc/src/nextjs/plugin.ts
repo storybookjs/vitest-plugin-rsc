@@ -290,20 +290,5 @@ function createNextPluginConfig(): Plugin {
         },
       };
     },
-    configResolved(config) {
-      const deps = resolveNextOptimizeDeps(getProjectRoot(config)).projectRuntime;
-      appendOptimizeDepsIncludes(config, deps);
-      appendOptimizeDepsIncludes(config.environments.client, deps);
-      appendOptimizeDepsIncludes(config.environments.react_client, deps);
-      appendOptimizeDepsIncludes(config.environments.react_ssr, deps);
-    },
   };
-}
-
-function appendOptimizeDepsIncludes(
-  target: { optimizeDeps: { include?: string[] } } | undefined,
-  deps: string[],
-) {
-  if (!target || deps.length === 0) return;
-  target.optimizeDeps.include = [...new Set([...(target.optimizeDeps.include ?? []), ...deps])];
 }

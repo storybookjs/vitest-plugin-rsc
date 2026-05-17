@@ -29,20 +29,3 @@ test("prebundles browser request-router dependencies for the testing library", (
     "next/dist/compiled/@vercel/routing-utils/superstatic.js",
   );
 });
-
-test("prebundles focused project runtime deps that route entry scans miss", () => {
-  const depsByGroup = resolveNextOptimizeDeps(fixtureRoot);
-
-  expect(depsByGroup.projectRuntime).toEqual(
-    expect.arrayContaining([
-      "@base-ui/react/button",
-      "class-variance-authority",
-      "next/og",
-      "react-transition-progress/next",
-      "zod-form-data",
-    ]),
-  );
-
-  const noMswRoot = path.resolve(fixtureRoot, "../nextjs-no-msw-demo");
-  expect(resolveNextOptimizeDeps(noMswRoot).projectRuntime).toEqual(["next/og"]);
-});
