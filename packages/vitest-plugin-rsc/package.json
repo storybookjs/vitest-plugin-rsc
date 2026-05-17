@@ -110,7 +110,11 @@
     "@jridgewell/gen-mapping": "^0.3.13",
     "@vitejs/plugin-rsc": "0.5.26",
     "@vitest/expect": "5.0.0-beta.2",
-    "convert-source-map": "^2.0.0"
+    "cjs-module-lexer": "^2.2.0",
+    "convert-source-map": "^2.0.0",
+    "es-module-lexer": "^2.1.0",
+    "estree-walker": "^3.0.3",
+    "magic-string": "^0.30.21"
   },
   "devDependencies": {
     "@next/routing": "^16.2.6",

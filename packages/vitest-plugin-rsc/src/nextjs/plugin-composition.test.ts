@@ -129,16 +129,33 @@ test("optimizes real Next entry-base with client-reference proxies in the RSC en
     );
     const code = fs.readFileSync(entryBaseChunk, "utf8");
 
-    expect(code).toContain(
-      'import { registerClientReference } from "@vitejs/plugin-rsc/react/rsc"',
-    );
-    expect(code).toContain("vitest-plugin-rsc:next-entry-base-client-reference:");
+    expect(code).toContain("registerClientReference");
+    expect(code).toContain("/@id/__x00__rsc:cjs-browser-esm:");
+    expect(code).not.toContain("next-entry-base-client-reference");
+    expect(code).not.toContain("__cjs_module_runner_transform = true");
     expect(code).not.toContain("node_modules/next/dist/client/components/layout-router.js");
+
+    const globalErrorChunk = findOptimizedChunk(
+      cacheDir,
+      "next_dist_client_components_builtin_global-error__js.js",
+    );
+    const globalErrorCode = fs.readFileSync(globalErrorChunk, "utf8");
+    const globalErrorRuntimeChunk = findImportedChunk(
+      globalErrorChunk,
+      globalErrorCode,
+      /^global-error-/,
+    );
+    const globalErrorRuntimeCode = globalErrorRuntimeChunk
+      ? fs.readFileSync(globalErrorRuntimeChunk, "utf8")
+      : globalErrorCode;
+
+    expect(globalErrorRuntimeCode).toContain("registerClientReference");
+    expect(globalErrorRuntimeCode).not.toContain("__cjs_module_runner_transform");
   } finally {
     await server?.close();
     fs.rmSync(root, { recursive: true, force: true });
   }
-});
+}, 10_000);
 
 async function resolveNextPluginConfig(userConfig: UserConfig = {}): Promise<UserConfig> {
   const previousCwd = process.cwd();
@@ -214,6 +231,19 @@ function collectFiles(directory: string, matches: string[], basename: string) {
       collectFiles(file, matches, basename);
     } else if (entry.name === basename) {
       matches.push(file);
+    }
+  }
+}
+
+function findImportedChunk(
+  importer: string,
+  code: string,
+  basenamePattern: RegExp,
+): string | undefined {
+  for (const match of code.matchAll(/(?:from "\.\/|import\("\.\/)([^")]+\.js)/g)) {
+    const basename = match[1];
+    if (basename && basenamePattern.test(basename)) {
+      return path.join(path.dirname(importer), basename);
     }
   }
 }

@@ -21,6 +21,15 @@ test("moves the Vitest browser API server before Vite falls back from an occupie
   expect(server.config.server.port).not.toBe(occupiedPort);
 });
 
+test("does not reuse Vitest's default browser API port for the Vite server", async () => {
+  const server = createViteServer([browserPlugin], { port: 63315 });
+
+  await configureServer.call({} as never, server);
+
+  expect(server.config.server.port).toEqual(expect.any(Number));
+  expect(server.config.server.port).not.toBe(63315);
+});
+
 test.each([
   ["strict Vitest browser API ports", [browserPlugin], { strictPort: true }],
   ["non-browser Vite servers", [], {}],
