@@ -26,7 +26,11 @@ import { useNextEntryBaseClientReferences } from "./src/server/app-render/entry-
 import { nextRootParamsOptimizeDepsExclude, resolveNextOptimizeDeps } from "./plugin/optimizer.ts";
 import { useNextRootParams } from "./src/build/webpack/loaders/next-root-params-loader.ts";
 import { useVitestServerReferenceInfo } from "./src/shared/lib/server-reference-info.ts";
-import { createNextTesterHtmlConfig, nextTesterHtmlPath } from "./plugin/tester-html.ts";
+import {
+  createNextTesterHtmlConfig,
+  nextTesterHtmlPath,
+  useNextBrowserPolyfills,
+} from "./plugin/tester-html.ts";
 import { useNextUseCacheTransform } from "./plugin/use-cache.ts";
 import { getProjectRoot } from "./plugin-utils.ts";
 import { useNextRouteManifest } from "./route-manifest-plugin.ts";
@@ -54,6 +58,7 @@ export function vitestPluginNext(): Plugin[] {
     useNextRootParams("client", true),
     useNextRootParams("react_client", false),
     useNextRootParams("react_ssr", false),
+    useNextBrowserPolyfills(),
     appRouterApiPlugin("client", true),
     appRouterApiPlugin("react_client", false),
     appRouterApiPlugin("react_ssr", false),
