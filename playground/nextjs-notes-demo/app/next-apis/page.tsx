@@ -56,12 +56,13 @@ export default async function NextApisPage({
         height={24}
         priority
         src="/vitest-rsc.png"
+        style={{ width: "auto" }}
         unoptimized
         width={48}
       />
       <Image alt="Imported static logo" priority src={staticLogo} unoptimized />
-      <img {...imageProps} alt={imageProps.alt} />
-      <img {...optimizedImageProps} alt={optimizedImageProps.alt} />
+      <img {...imageProps} alt={imageProps.alt} style={{ width: "auto" }} />
+      <img {...optimizedImageProps} alt={optimizedImageProps.alt} style={{ width: "auto" }} />
       <Script id="next-api-script" strategy="afterInteractive">
         {`window.__nextApiScript = "loaded";`}
       </Script>
