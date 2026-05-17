@@ -28,7 +28,7 @@ import { createProjectRequire, getProjectRoot, tryResolveFromProject } from "../
 // Source: https://github.com/vercel/next.js/blob/ee6e79b1792a4d401ddf2480f40a83549fe8e722/packages/next/src/build/webpack/alias/react-dom-server.ts#L1-L27
 // Adaptation: Use installed Next helpers where possible and translate their
 // webpack alias output into Vite alias/plugin objects.
-const supportedEdgeNativeModules = ["buffer", "events", "assert", "util"] as const;
+const supportedEdgeNativeModules = ["buffer", "events", "assert"] as const;
 
 type NextCompilerAliasesModule = {
   createVendoredReactAliases(
@@ -177,6 +177,18 @@ export function createNextEdgeNativeAliases(root: string): Alias[] {
   const aliases: Alias[] = [
     { find: "node:async_hooks", replacement: asyncHooksShim ?? "vitest-plugin-rsc/async-hooks" },
     { find: "async_hooks", replacement: asyncHooksShim ?? "vitest-plugin-rsc/async-hooks" },
+    {
+      // Mirrors Next's browser/edge fallback for Node's `path` module.
+      // Source: https://github.com/vercel/next.js/blob/ee6e79b1792a4d401ddf2480f40a83549fe8e722/packages/next/src/build/webpack-config.ts#L1868-L1870
+      find: "node:path",
+      replacement: "next/dist/compiled/path-browserify",
+    },
+    {
+      // Mirrors Next's browser/edge fallback for Node's `path` module.
+      // Source: https://github.com/vercel/next.js/blob/ee6e79b1792a4d401ddf2480f40a83549fe8e722/packages/next/src/build/webpack-config.ts#L1868-L1870
+      find: "path",
+      replacement: "next/dist/compiled/path-browserify",
+    },
   ];
 
   // `next/dist/server/config-shared.js` is importable, but it touches `os.cpus`
@@ -186,6 +198,24 @@ export function createNextEdgeNativeAliases(root: string): Alias[] {
   aliases.push(
     { find: "node:os", replacement: osBrowserShim },
     { find: "os", replacement: osBrowserShim },
+  );
+
+  const utilBrowserShim =
+    tryResolveFromProject(root, "next/dist/compiled/util") ?? "next/dist/compiled/util";
+  const utilEdgeShim = createNextjsSiblingPath("util-edge.js");
+  aliases.push(
+    {
+      // Next exposes `node:util` to Edge code as a sandbox native module subset.
+      // Source: https://github.com/vercel/next.js/blob/v16.2.6/packages/next/src/server/web/sandbox/context.ts#L237-L244
+      find: "node:util",
+      replacement: utilEdgeShim,
+    },
+    {
+      // Mirrors Next's browser/client fallback for bare `util`.
+      // Source: https://github.com/vercel/next.js/blob/v16.2.6/packages/next/src/build/webpack-config.ts#L1892-L1894
+      find: "util",
+      replacement: utilBrowserShim,
+    },
   );
 
   for (const mod of supportedEdgeNativeModules) {
@@ -206,6 +236,26 @@ export function createNextEdgeNativeAliases(root: string): Alias[] {
   });
 
   return aliases;
+}
+
+export function useNextCompiledOpenTelemetryApi(): Plugin {
+  return {
+    name: "next-rsc-compiled-opentelemetry-api",
+    enforce: "pre",
+    transform(code, id) {
+      if (!/[/\\]next[/\\]dist[/\\]server[/\\]lib[/\\]trace[/\\]tracer\.js(?:\?|$)/.test(id)) {
+        return;
+      }
+
+      const nextCode = code.replaceAll(
+        "require('@opentelemetry/api')",
+        "require('next/dist/compiled/@opentelemetry/api')",
+      );
+      if (nextCode === code) return;
+
+      return { code: nextCode, map: null };
+    },
+  };
 }
 
 function createNextjsSiblingPath(fileName: string) {
@@ -293,16 +343,47 @@ function isReactPackageAlias(source: string) {
 }
 
 export function createReactServerDomWebpackAliases(root: string) {
+  // Mirrors Next's vendored React aliases for RSDW. The client/browser and
+  // edge entries should come from the installed Next package so Vite's dep
+  // optimizer sees the same targets as Next webpack.
+  // Source: https://github.com/vercel/next.js/blob/4588a7354283f97e2124e3d82f55733ca4eb9373/packages/next/src/build/create-compiler-aliases.ts#L244-L417
   return {
     browser:
-      tryResolveFromProject(root, "@vitejs/plugin-rsc/vendor/react-server-dom/client.browser") ??
-      "@vitejs/plugin-rsc/vendor/react-server-dom/client.browser",
+      tryResolveFromProject(root, "next/dist/compiled/react-server-dom-webpack/client.browser") ??
+      "next/dist/compiled/react-server-dom-webpack/client.browser",
     edge:
-      tryResolveFromProject(root, "@vitejs/plugin-rsc/vendor/react-server-dom/client.edge") ??
-      "@vitejs/plugin-rsc/vendor/react-server-dom/client.edge",
+      tryResolveFromProject(root, "next/dist/compiled/react-server-dom-webpack/client.edge") ??
+      "next/dist/compiled/react-server-dom-webpack/client.edge",
+    ssr: createNextjsSiblingPath("react-server-dom-webpack-ssr.ts"),
     serverEdge:
-      tryResolveFromProject(root, "@vitejs/plugin-rsc/vendor/react-server-dom/server.edge") ??
-      "@vitejs/plugin-rsc/vendor/react-server-dom/server.edge",
+      tryResolveFromProject(root, "next/dist/compiled/react-server-dom-webpack/server.edge") ??
+      "next/dist/compiled/react-server-dom-webpack/server.edge",
+    staticEdge:
+      tryResolveFromProject(root, "next/dist/compiled/react-server-dom-webpack/static.edge") ??
+      "next/dist/compiled/react-server-dom-webpack/static.edge",
+  };
+}
+
+export function useNextServerOnlyAlias(initialRoot = process.cwd()): Plugin {
+  let replacement = tryResolveFromProject(initialRoot, "next/dist/compiled/server-only/empty");
+
+  return {
+    name: "next-rsc-server-only-alias",
+    enforce: "pre",
+    applyToEnvironment(environment) {
+      return environment.name === "client" || environment.name === "react_ssr";
+    },
+    configResolved(config) {
+      replacement = tryResolveFromProject(
+        getProjectRoot(config),
+        "next/dist/compiled/server-only/empty",
+      );
+    },
+    resolveId(source) {
+      if (source === "server-only" && replacement) {
+        return replacement;
+      }
+    },
   };
 }
 
@@ -460,22 +541,6 @@ function createFallbackNextDefineEnvs(
   };
 }
 
-export function useNextCompiledOpenTelemetryApi(root: string): Plugin {
-  const replacement = tryResolveFromProject(root, "next/dist/compiled/@opentelemetry/api");
-
-  return {
-    name: "next-rsc-edge-compiled-opentelemetry-api",
-    enforce: "pre",
-    resolveId(source) {
-      if (source !== "@opentelemetry/api" || !replacement) {
-        return;
-      }
-
-      return replacement;
-    },
-  };
-}
-
 export function useNextReactDomServerAlias(initialRoot = process.cwd()): Plugin {
   let reactDomServerAlias: string | undefined;
   let appRenderSsrAliases: Record<string, string> = {};
@@ -494,7 +559,7 @@ export function useNextReactDomServerAlias(initialRoot = process.cwd()): Plugin 
     name: "next-rsc-react-dom-server-alias",
     enforce: "pre",
     applyToEnvironment(environment) {
-      return environment.name === "client";
+      return environment.name === "client" || environment.name === "react_ssr";
     },
     configResolved(config) {
       refreshAliases(getProjectRoot(config));
@@ -522,9 +587,67 @@ export function useNextReactDomServerAlias(initialRoot = process.cwd()): Plugin 
   };
 }
 
+const nextAsyncStorageInstanceExports: Record<string, string> = {
+  "action-async-storage-instance": "actionAsyncStorageInstance",
+  "dynamic-access-async-storage-instance": "dynamicAccessAsyncStorageInstance",
+  "work-async-storage-instance": "workAsyncStorageInstance",
+  "work-unit-async-storage-instance": "workUnitAsyncStorageInstance",
+};
+
+export function useNextSharedAsyncStorageLayer(): Plugin {
+  return {
+    name: "next-rsc-shared-async-storage-layer",
+    enforce: "pre",
+    applyToEnvironment(environment) {
+      return environment.name === "client" || environment.name === "react_ssr";
+    },
+    transform(code, id) {
+      const instanceName = getNextAsyncStorageInstanceExport(id);
+      if (!instanceName) return;
+
+      const cjsCreateAsyncLocalStorage = "(0, _asynclocalstorage.createAsyncLocalStorage)()";
+      const esmCreateAsyncLocalStorage = "createAsyncLocalStorage()";
+      const cjsInitializer = `const ${instanceName} = ${cjsCreateAsyncLocalStorage};`;
+      const esmInitializer = `export const ${instanceName} = ${esmCreateAsyncLocalStorage};`;
+      const sharedStorage = `globalThis[Symbol.for("vitest-plugin-rsc.next.shared-async-storage.${instanceName}")]`;
+
+      // Mirrors Next's shared webpack layer for async-storage modules while Vite
+      // keeps RSC and SSR in separate module graphs.
+      // Source: https://github.com/vercel/next.js/blob/ee6e79b1792a4d401ddf2480f40a83549fe8e722/packages/next/src/build/webpack-config.ts#L1179-L1185
+      const nextCode = code
+        .replace(
+          cjsInitializer,
+          `const ${instanceName} = (${sharedStorage} ??= ${cjsCreateAsyncLocalStorage});`,
+        )
+        .replace(
+          esmInitializer,
+          `export const ${instanceName} = (${sharedStorage} ??= ${esmCreateAsyncLocalStorage});`,
+        );
+
+      if (nextCode === code) return;
+      return { code: nextCode, map: null };
+    },
+  };
+}
+
+function getNextAsyncStorageInstanceExport(id: string | undefined) {
+  if (!id) return;
+
+  const normalized = id.replaceAll("\\", "/").split("?")[0] ?? "";
+  const match = normalized.match(
+    /(?:^|[/\\])next\/dist\/(?:esm\/)?server\/app-render\/((?:work|work-unit|action|dynamic-access)-async-storage-instance)\.js$/,
+  );
+  const storageInstanceName = match?.[1];
+  if (!storageInstanceName) return;
+
+  return nextAsyncStorageInstanceExports[storageInstanceName];
+}
+
 function createNextAppRenderSsrAliases(root: string) {
-  // Mirrors Next's react-dom-server webpack alias for server/app-render and
-  // metadata internals while keeping @vitejs/plugin-rsc in charge of the graph.
+  // Mirrors Next's SSR-layer React aliases for App Page route rendering while
+  // keeping @vitejs/plugin-rsc in charge of the graph.
+  // Source: https://github.com/vercel/next.js/blob/4588a7354283f97e2124e3d82f55733ca4eb9373/packages/next/src/build/webpack-config.ts#L1503-L1507
+  // Source: https://github.com/vercel/next.js/blob/4588a7354283f97e2124e3d82f55733ca4eb9373/packages/next/src/build/webpack-config.ts#L1637-L1647
   // Source: https://github.com/vercel/next.js/blob/4588a7354283f97e2124e3d82f55733ca4eb9373/packages/next/src/build/webpack/alias/react-dom-server.ts
   const entries = {
     react: "next/dist/compiled/react",
@@ -553,7 +676,7 @@ function createNextAppRenderSsrAliases(root: string) {
 function isNextAppRenderSsrImporter(importer: string | undefined) {
   return Boolean(
     importer &&
-    /[/\\]next[/\\]dist[/\\](?:server[/\\](?:app-render|stream-utils)|lib[/\\]metadata)[/\\]/.test(
+    /[/\\]next[/\\]dist[/\\](?:server[/\\](?:app-render|stream-utils|route-modules[/\\]app-page)|lib[/\\]metadata)[/\\]/.test(
       importer,
     ) &&
     !/[/\\]next[/\\]dist[/\\]server[/\\]app-render[/\\]entry-base\.js(?:\?|$)/.test(importer),
@@ -566,6 +689,79 @@ function isReactDomServerImporter(importer: string | undefined) {
     /[/\\](?:react-dom-server|react-dom[/\\](?:cjs[/\\])?react-dom-server|react-dom[/\\](?:cjs[/\\])?server\.)/.test(
       importer,
     ),
+  );
+}
+
+export function useNextReactServerConditionForServerBundles(initialRoot = process.cwd()): Plugin {
+  let reactServerAliases: Alias[] = [];
+
+  function refreshAliases(root: string) {
+    reactServerAliases = createNextVendoredReactAliases({
+      root,
+      layer: "rsc",
+      isBrowser: false,
+      isEdgeServer: true,
+    });
+  }
+
+  refreshAliases(initialRoot);
+
+  return {
+    name: "next-rsc-server-bundle-react-alias",
+    enforce: "pre",
+    configResolved(config) {
+      refreshAliases(getProjectRoot(config));
+    },
+    transform(code, id) {
+      if (!isReactServerConditionBundleImporter(id)) return;
+
+      let nextCode = code;
+      for (const source of ["react", "next/dist/compiled/react"]) {
+        const replacement = findStringAliasReplacement(reactServerAliases, source);
+        if (!replacement) continue;
+        nextCode = nextCode
+          .replaceAll(`require("${source}")`, `require(${JSON.stringify(replacement)})`)
+          .replaceAll(`require('${source}')`, `require(${JSON.stringify(replacement)})`);
+      }
+      if (nextCode === code) return;
+
+      return { code: nextCode, map: null };
+    },
+    resolveId(source, importer, options) {
+      if (!isReactServerConditionBundleImporter(importer)) return;
+
+      const replacement = findStringAliasReplacement(reactServerAliases, source);
+      if (!replacement) return;
+
+      return this.resolve(replacement, importer, {
+        ...options,
+        skipSelf: true,
+      });
+    },
+  };
+}
+
+function findStringAliasReplacement(aliases: Alias[], source: string) {
+  return aliases.find((alias): alias is Alias & { find: string } => alias.find === source)
+    ?.replacement;
+}
+
+function isReactServerConditionBundleImporter(importer: string | undefined) {
+  return Boolean(
+    importer &&
+    (isReactServerDomWebpackServerImporter(importer) || isReactDomReactServerImporter(importer)),
+  );
+}
+
+function isReactServerDomWebpackServerImporter(importer: string) {
+  return /[/\\](?:react-server-dom-webpack(?:-experimental)?[/\\](?:cjs[/\\])?react-server-dom-webpack-server|react-server-dom-webpack-server)\.(?:edge|browser|node)\./.test(
+    importer,
+  );
+}
+
+function isReactDomReactServerImporter(importer: string) {
+  return /[/\\]react-dom(?:-experimental)?[/\\](?:cjs[/\\])?react-dom\.react-server\./.test(
+    importer,
   );
 }
 
@@ -587,37 +783,100 @@ export function provideBufferLikeNextWebpack(): Plugin {
       // bundles. Vite has no direct ProvidePlugin equivalent, so this import is
       // scoped to installed Next internals.
       // Source: https://github.com/vercel/next.js/blob/ee6e79b1792a4d401ddf2480f40a83549fe8e722/packages/next/src/build/webpack-config.ts#L2028-L2035
+      const bufferProvide = /\.cjs(?:[?#]|$)/.test(id)
+        ? 'const { Buffer } = require("node:buffer");'
+        : 'import { Buffer } from "node:buffer";';
       return {
-        code: `import { Buffer } from "node:buffer";\n${code}`,
+        code: `${bufferProvide}\n${code}`,
         map: null,
       };
     },
   };
 }
 
-export function treatNextInternalsAsServerInRsc(): Plugin {
+export function patchReactServerDomWebpackRequire(): Plugin {
+  return {
+    name: "next-rsc-patch-react-server-dom-webpack-require",
+    enforce: "pre",
+    transform(code, id) {
+      if (
+        (!code.includes("__webpack_require__") && !code.includes("globalThis.__next_require__")) ||
+        !isReactServerDomWebpackRuntimeModule(id)
+      ) {
+        return;
+      }
+
+      // Mirrors @vitejs/plugin-rsc's RSDW webpack-require patch inside Vite's
+      // optimizer. Optimized Next App Router deps can inline Next's compiled
+      // react-server-dom-webpack client before the normal plugin transform runs.
+      // Source: https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-rsc/src/core/plugin.ts
+      let nextCode = code;
+      if (nextCode.includes("__webpack_require__.u")) {
+        nextCode = nextCode.replaceAll("__webpack_require__.u", "({}).u");
+      }
+      nextCode = nextCode.replaceAll("__webpack_require__", "__vite_rsc_require__");
+      nextCode = nextCode.replaceAll("globalThis.__next_require__", "__vite_rsc_require__");
+      if (nextCode === code) return;
+
+      return { code: nextCode, map: null };
+    },
+  };
+}
+
+function isReactServerDomWebpackRuntimeModule(id: string | undefined) {
+  return Boolean(
+    id &&
+    /[/\\](?:react-server-dom-webpack|react-server-dom-webpack-server|react-server-dom-client)(?:[/\\]|[.-])/.test(
+      id,
+    ),
+  );
+}
+
+type NextServerInternalsMode = "rsc" | "react_ssr";
+
+export function treatNextInternalsAsServerInRsc(
+  options: { mode?: NextServerInternalsMode } = {},
+): Plugin {
   return {
     name: "next-rsc-server-next-internals",
     enforce: "pre",
     applyToEnvironment(environment) {
-      return environment.name === "client";
+      return environment.name === "client" || environment.name === "react_ssr";
     },
     transform(code, id) {
-      if (!isNextInternalModule(id)) return;
+      const mode = options.mode ?? getNextServerInternalsMode(this.environment?.name);
+      if (!mode || !isNextServerRuntimeRewriteTarget(id, mode)) return;
 
       // Next compiles server-layer internals with server/edge constants through
       // its compiler define pipeline. Vite RSC defines the same values, but dep
-      // optimization can evaluate Next internals before Vite's normal define
-      // pass removes browser branches. Keep this rewrite isolated to installed
-      // Next internals until it can be replaced by optimizer define/conditions.
+      // optimization can evaluate Next internals before Vite's normal define pass
+      // removes browser branches. In react_ssr, keep this scoped to installed
+      // Next server/edge modules so browser App Router modules keep browser React
+      // and browser feature checks.
       // Source: https://github.com/vercel/next.js/blob/ee6e79b1792a4d401ddf2480f40a83549fe8e722/packages/next/src/build/define-env.ts
       let nextCode = rewriteNextRuntimeChecks(code);
+      nextCode = bindNextEdgeWebCryptoGlobal(nextCode, id);
+      nextCode = rewriteNextEdgeWebCryptoGlobals(nextCode, id);
+      nextCode = ensureNextRequestStreamingBodyDuplex(nextCode, id);
       nextCode = rewriteTypeofWindowChecks(nextCode);
       if (nextCode === code) return;
 
       return { code: nextCode, map: null };
     },
   };
+}
+
+function getNextServerInternalsMode(
+  environmentName: string | undefined,
+): NextServerInternalsMode | undefined {
+  if (environmentName === "react_ssr") return "react_ssr";
+  if (environmentName === "client" || environmentName === undefined) return "rsc";
+}
+
+function isNextServerRuntimeRewriteTarget(id: string, mode: NextServerInternalsMode) {
+  if (!isNextInternalModule(id)) return false;
+  if (mode === "rsc") return true;
+  return isNextServerOrEdgeRuntimeModule(id) || isNextAppRouterInstanceModule(id);
 }
 
 export function disableNextDevServerRuntime(): Plugin {
@@ -647,12 +906,65 @@ function isNextInternalModule(id: string) {
   );
 }
 
+function isNextServerOrEdgeRuntimeModule(id: string) {
+  return /[/\\]next[/\\]dist[/\\](?:server|lib|build[/\\]adapter)[/\\]/.test(id);
+}
+
+function isNextAppRouterInstanceModule(id: string) {
+  return /[/\\]next[/\\]dist[/\\]client[/\\]components[/\\]app-router-instance\.js(?:\?|$)/.test(
+    id,
+  );
+}
+
 function rewriteTypeofWindowChecks(code: string) {
   return code.replace(/\btypeof\s+window\b(?!\s*[.[\]])/g, '"undefined"');
 }
 
 function rewriteNextRuntimeChecks(code: string) {
   return code.replace(/\bprocess\.env\.NEXT_RUNTIME\b/g, '"edge"');
+}
+
+function rewriteNextEdgeWebCryptoGlobals(code: string, id: string) {
+  if (isNextEdgeWebCryptoModule(id)) return code;
+
+  // Keep Next's Edge Web Crypto calls bound to the browser's real global object
+  // after Rolldown lowers optimized chunks. Dot access can be folded back to the
+  // free `crypto` binding, which may not carry the full Web Crypto shape.
+  return code.replace(/(?<![\w$.])crypto\.(subtle|randomUUID)\b/g, 'globalThis["crypto"].$1');
+}
+
+function bindNextEdgeWebCryptoGlobal(code: string, id: string) {
+  if (!isNextEdgeWebCryptoModule(id)) return code;
+  if (!/\bcrypto\.(?:subtle|randomUUID)\b/.test(code)) return code;
+  if (/\b(?:const|let|var)\s+crypto\b/.test(code)) return code;
+
+  return `const crypto = globalThis["crypto"];\n${code}`;
+}
+
+function isNextEdgeWebCryptoModule(id: string) {
+  return /[/\\]next[/\\]dist[/\\](?:server[/\\](?:app-render[/\\](?:app-render|encryption-utils)|lib[/\\]incremental-cache[/\\]index)|build[/\\]templates[/\\]app-page)\.js(?:\?|$)/.test(
+    id,
+  );
+}
+
+function ensureNextRequestStreamingBodyDuplex(code: string, id: string) {
+  if (!isNextRequestSpecExtensionModule(id)) return code;
+
+  // NextRequest normally adds RequestInit.duplex for Node, while edge builds
+  // skip it because the edge runtime supplies a compatible Request. Browser
+  // mode still constructs a Web Request and requires the same standard duplex
+  // flag when Next's adapter forwards a streaming Server Action body.
+  // Source: https://github.com/vercel/next.js/blob/ee6e79b1792a4d401ddf2480f40a83549fe8e722/packages/next/src/server/web/spec-extension/request.ts#L37-L42
+  return code.replace(
+    /if \("edge" !== ['"]edge['"]\) \{\s*if \(init\.body && init\.duplex !== ['"]half['"]\) \{\s*init\.duplex = ['"]half['"];\s*\}\s*\}/,
+    "if (init.body && init.duplex !== 'half') {\n            init.duplex = 'half';\n        }",
+  );
+}
+
+function isNextRequestSpecExtensionModule(id: string) {
+  return /[/\\]next[/\\]dist[/\\]server[/\\]web[/\\]spec-extension[/\\]request\.js(?:\?|$)/.test(
+    id,
+  );
 }
 
 function rewriteNextDevServerChecks(code: string) {

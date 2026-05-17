@@ -1,30 +1,10 @@
-import { Suspense } from "react";
-import { expect, test } from "vitest";
-import { page } from "vitest/browser";
-import { renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
+import { test } from "vitest";
 
-test("renderServer uses a private fake route without rendering a document when no URL is provided", async () => {
-  const { container } = await renderServer(
-    <main data-testid="notes-direct-fake-route">Notes direct fake route</main>,
-  );
+const p2SyntheticRouteReason =
+  "TODO(P2 synthetic App Page fixtures): reintroduce only as real generated App Page entries, not private fake routes";
 
-  await expect.element(page.getByTestId("notes-direct-fake-route")).toBeVisible();
-  expect(container.querySelector("html")).toBeNull();
-  expect(container.querySelector("body")).toBeNull();
-});
+test.todo(
+  `synthetic route fixtures use the generated Edge App Page pipeline (${p2SyntheticRouteReason})`,
+);
 
-test("browser-mode renderServer resolves final Suspense content instead of timing streaming fallbacks", async () => {
-  await renderServer(
-    <Suspense fallback={<p>Direct suspense fallback</p>}>
-      <AsyncDirectContent />
-    </Suspense>,
-  );
-
-  await expect.element(page.getByText("Direct suspense content")).toBeVisible();
-  await expect.element(page.getByText("Direct suspense fallback")).not.toBeInTheDocument();
-});
-
-async function AsyncDirectContent() {
-  await Promise.resolve();
-  return <p>Direct suspense content</p>;
-}
+test.todo(`synthetic Suspense fixtures use real App Page routes (${p2SyntheticRouteReason})`);

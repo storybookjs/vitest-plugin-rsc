@@ -34,6 +34,7 @@ export default defineConfig({
     projects: [
       vitestPluginRscProject,
       rscVitestDemoProject,
+      // Legacy/P2 direct no-MSW coverage, not a P1 Edge App Page gate.
       nextjsNoMswDemoProject,
       ...nextjsNotesProjects,
     ],

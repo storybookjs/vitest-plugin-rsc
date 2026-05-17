@@ -21,20 +21,35 @@ export type ServerActionCaller = {
 };
 
 const pendingClientReferenceLoads = new Set<Promise<unknown>>();
+const clientReferenceImportCache = new Map<string, Promise<unknown>>();
 const preserveHeadAttribute = "data-vitest-plugin-rsc-preserve";
 let preservedTesterHeadNodes: ChildNode[] | undefined;
+
+type TestingLibraryClientGlobals = typeof globalThis & {
+  IS_REACT_ACT_ENVIRONMENT: boolean;
+  __VITE_ENVIRONMENT_RUNNER_IMPORT__?: (environmentName: string, id: string) => Promise<unknown>;
+  __vite_rsc_client_require__?: (id: string) => Promise<unknown>;
+  __vite_rsc_require__?: (id: string) => Promise<unknown>;
+  __vite_rsc_server_require__?: (id: string) => Promise<unknown>;
+  __vitest_plugin_rsc_client_reference_root__?: string;
+  __vitest_plugin_rsc_client_reference_root_prefixes__?: string[];
+};
+
+const clientGlobal = globalThis as TestingLibraryClientGlobals;
 
 export async function createTestingLibraryClientRoot(options: {
   container: HTMLElement;
   config: RenderConfiguration;
-  fetchRsc: FetchRsc;
+  fetchRsc?: FetchRsc;
   serverActionCaller?: ServerActionCaller;
   hydrateDocument?: boolean;
   documentOnly?: boolean;
+  initialPayload?: RscPayload;
   initialStream?: ReadableStream<Uint8Array>;
   documentHtml?: string;
 }) {
   let setPayload: (v: RscPayload) => void;
+  installClientReferenceRequire();
 
   if (options.documentOnly) {
     resetReactDocumentExpandos();
@@ -53,9 +68,11 @@ export async function createTestingLibraryClientRoot(options: {
     applyDocumentHtml(options.documentHtml);
   }
 
-  const initialPayload = await ReactClient.createFromReadableStream<RscPayload>(
-    options.initialStream ?? (await options.fetchRsc()),
-  );
+  const initialPayload =
+    options.initialPayload ??
+    (await ReactClient.createFromReadableStream<RscPayload>(
+      options.initialStream ?? (await getFetchRsc(options.fetchRsc)()),
+    ));
 
   function BrowserRoot() {
     const [payload, setPayload_] = React.useState(initialPayload);
@@ -74,7 +91,7 @@ export async function createTestingLibraryClientRoot(options: {
     const temporaryReferences = ReactClient.createTemporaryReferenceSet();
     const reply = await ReactClient.encodeReply(args, { temporaryReferences });
     const payload = await ReactClient.createFromReadableStream<RscPayload>(
-      await options.fetchRsc({ id, reply }),
+      await getFetchRsc(options.fetchRsc)({ id, reply }),
       { temporaryReferences },
     );
     setPayload(payload);
@@ -93,7 +110,7 @@ export async function createTestingLibraryClientRoot(options: {
 
   async function rerender() {
     const payload = await ReactClient.createFromReadableStream<RscPayload>(
-      await options.fetchRsc(),
+      await getFetchRsc(options.fetchRsc)(),
     );
     setPayload(payload);
   }
@@ -110,6 +127,11 @@ export async function createTestingLibraryClientRoot(options: {
     rerender: () => act(() => rerender()),
     unmount: () => act(() => unmount()),
   };
+}
+
+function getFetchRsc(fetchRsc: FetchRsc | undefined): FetchRsc {
+  if (fetchRsc) return fetchRsc;
+  throw new Error("This testing root does not support RSC stream refetching.");
 }
 
 async function hydrateDocumentRoot(
@@ -235,32 +257,102 @@ async function waitForClientReferenceLoads() {
   }
 }
 
-declare global {
-  var IS_REACT_ACT_ENVIRONMENT: boolean;
-}
-
 // we call act only when rendering to flush any possible effects
 // usually the async nature of Vitest browser mode ensures consistency,
 // but rendering is sync and controlled by React directly
 async function act<T>(callback: () => T | Promise<T>) {
-  globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+  clientGlobal.IS_REACT_ACT_ENVIRONMENT = true;
   try {
     await React.act(callback);
   } finally {
-    globalThis.IS_REACT_ACT_ENVIRONMENT = false;
+    clientGlobal.IS_REACT_ACT_ENVIRONMENT = false;
   }
 }
 
 export function initialize() {
-  ReactClient.setRequireModule({
-    load: (id) => {
-      const mod = import(/* @vite-ignore */ id);
-      pendingClientReferenceLoads.add(mod);
-      mod.then(
-        () => pendingClientReferenceLoads.delete(mod),
-        () => pendingClientReferenceLoads.delete(mod),
-      );
-      return mod;
-    },
-  });
+  installClientReferenceRequire();
+}
+
+export function configureClientReferenceRoot(root: string | undefined, prefixes: string[]) {
+  const configuredRoot = root || process.env.__NEXT_PROJECT_ROOT;
+  clientGlobal.__vitest_plugin_rsc_client_reference_root__ = configuredRoot
+    ? configuredRoot.replace(/\/$/, "")
+    : undefined;
+  clientGlobal.__vitest_plugin_rsc_client_reference_root_prefixes__ = prefixes;
+}
+
+function installClientReferenceRequire() {
+  ReactClient.setRequireModule({ load: loadClientReference });
+  clientGlobal.__vite_rsc_client_require__ = loadClientReference;
+  clientGlobal.__vite_rsc_require__ = (id) => {
+    if (id.startsWith("$$server:")) {
+      return getServerRequire()(id.slice("$$server:".length));
+    }
+    return loadClientReference(id);
+  };
+}
+
+function getServerRequire() {
+  const serverRequire = clientGlobal.__vite_rsc_server_require__;
+  if (serverRequire) return serverRequire;
+  throw new Error("React server reference loading was not initialized.");
+}
+
+function loadClientReference(id: string) {
+  id = removeReferenceCacheTag(id);
+  let mod = clientReferenceImportCache.get(id);
+  if (!mod) {
+    mod = importClientReference(id);
+    clientReferenceImportCache.set(id, mod);
+    pendingClientReferenceLoads.add(mod);
+    const pendingMod = mod;
+    pendingMod.then(
+      () => pendingClientReferenceLoads.delete(pendingMod),
+      () => pendingClientReferenceLoads.delete(pendingMod),
+    );
+  }
+  return mod;
+}
+
+function removeReferenceCacheTag(id: string) {
+  return id.split("$$cache=")[0]!;
+}
+
+function importClientReference(id: string) {
+  id = resolveProjectRootRelativeClientReference(id);
+
+  const runnerImport = clientGlobal.__VITE_ENVIRONMENT_RUNNER_IMPORT__;
+  if (runnerImport) {
+    return runnerImport("react_client", id);
+  }
+
+  return import(/* @vite-ignore */ toClientReferenceImportId(id));
+}
+
+function resolveProjectRootRelativeClientReference(id: string) {
+  if (id.includes("://")) return id;
+
+  const root = clientGlobal.__vitest_plugin_rsc_client_reference_root__;
+  const prefixes = clientGlobal.__vitest_plugin_rsc_client_reference_root_prefixes__ ?? [];
+  if (id.startsWith("/@id/")) return id;
+  if (!root) return id;
+
+  if (id.startsWith("/@fs/")) {
+    const fsPath = id.slice("/@fs".length);
+    return prefixes.some((prefix) => fsPath.startsWith(prefix)) ? `/@fs${root}${fsPath}` : id;
+  }
+
+  if (!prefixes.some((prefix) => id.startsWith(prefix))) return id;
+
+  return `${root}${id}`;
+}
+
+function toClientReferenceImportId(id: string) {
+  if (id.startsWith("/")) {
+    return id.startsWith("/@fs/") || id.startsWith("/@id/") ? id : `/@fs${id}`;
+  }
+  if (!id.startsWith("\0") && !id.startsWith(".") && !id.includes("://")) {
+    return `/@id/${id}`;
+  }
+  return id.startsWith("\0") ? `/@id/__x00__${id.slice(1)}` : id;
 }

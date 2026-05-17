@@ -1,10 +1,16 @@
 # Next.js Fidelity Architecture Tracker
 
 Status: 2026-05-17, P0 file placement completed for the public Next.js
-surface; P1 higher-up deletion remains open.
+surface; P1 Edge App Page/App Route focused browser gates pass through generated
+Edge entries, including redirect coverage without local Flight sniffing or
+direct-node fallback paths. Notes-demo browser probes now use real App Page URLs,
+including focused `next/link`, `router.push`, and `router.replace` client
+navigation, except explicit P2 client-bootstrap/protocol-worker TODOs.
 
-Architecture reference:
-[nextjs-app-router-fidelity-architecture.md](nextjs-app-router-fidelity-architecture.md).
+Architecture references:
+[nextjs-app-router-fidelity-architecture.md](nextjs-app-router-fidelity-architecture.md)
+and the P1 Edge App Page plan in
+[nextjs-edge-app-page-delegation.md](nextjs-edge-app-page-delegation.md).
 
 This tracker starts from one agreed rule:
 
@@ -15,6 +21,14 @@ This tracker starts from one agreed rule:
 > `packages/vitest-plugin-rsc/src/nextjs/src/...` mirror path.
 > Vite virtual-module transport can stay top-level, but a payload generator that
 > preserves a Next-owned module/source/runtime shape belongs in the mirror path.
+
+The matching mirror path is owned by the upstream source file, not by local
+convenience. Code adapted from `build/templates/edge-ssr-app.ts` goes in
+`nextjs/src/build/templates/edge-ssr-app.ts`; code adapted from
+`server/app-render/manifests-singleton.ts` goes in
+`nextjs/src/server/app-render/manifests-singleton.ts`. Do not group unrelated
+upstream owners under a local bucket such as manifest setup, dispatcher, request
+runtime, or cache wiring.
 
 That rule is only the P0 cleanup. It is not the final architecture. The real
 goal is to make local Next mirrors temporary and removable by going higher up in
@@ -76,9 +90,15 @@ Strict marker requirement for `nextjs/src`:
   adapter code, manifest plugin code, compiler option code, or route/build
   conversion code. A Vite virtual-module generator is allowed there when its
   payload is the adapted equivalent of that upstream Next output;
+- `Source:` markers in a mirror file must name the same upstream source path the
+  local file mirrors. A `server/app-render/manifests-singleton.ts` mirror may not
+  host adapted `build/templates/edge-ssr-app.ts` code, even if the code touches
+  manifest singleton setup;
 - if a helper cannot point at a concrete upstream Next glue file and line range,
   do not put it under `nextjs/src`; keep it as top-level Vite/Vitest adapter
   plumbing or delete it through a P1 higher-owner spike;
+- if one helper spans multiple upstream files, split it by upstream file or keep
+  top-level boundary glue that calls the correctly placed source-linked helpers;
 - Vite/Vitest boundary code inside a mirror file must be inside an adapted block
   that names the exact Next glue being preserved and the boundary that forces the
   adaptation. If the boundary code has no upstream Next glue counterpart, it is
@@ -144,15 +164,16 @@ infrastructure with no upstream Next owner.
 
 ## Virtual Module Contracts
 
-| Virtual module or planned payload               | Owning mirror file                                              | Contract to preserve                                                                                                                                  |
-| ----------------------------------------------- | --------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `virtual:vitest-plugin-rsc/next-entrypoints`    | `src/build/entries.ts`                                          | Imitates `entries.ts#getAppEntry()`: `next-app-loader?${AppLoaderOptions}!` request data and React Server Components layer intent.                    |
-| `virtual:vitest-plugin-rsc/next-route-tree?...` | `src/build/webpack/loaders/next-app-loader/index.ts`            | Imitates `next-app-loader` + `app-page`: `tree`, `__next_app_require__`, `__next_app_load_chunk__`, and convention module imports.                    |
-| `virtual:vitest-plugin-rsc/next-routes`         | `src/build/adapter/build-complete.ts`                           | Imitates `build-complete.ts#onBuildComplete({ routing })`: export `routing`; compatibility aliases may exist but request routing consumes `routing`.  |
-| future App Page Edge virtual entry              | `src/build/webpack/loaders/next-edge-ssr-loader/index.ts`       | Imitates `next-edge-ssr-loader`: `pageModPath`/`VAR_USERLAND`, `VAR_PAGE`, cache handler injection, exported `ComponentMod`, exported `handler`.      |
-| future App Page Edge template fallback          | `src/build/templates/edge-ssr-app.ts`                           | Imitates `edge-ssr-app.ts` only if the loader/template cannot run directly.                                                                           |
-| future App Route Edge virtual entry             | `src/build/webpack/loaders/next-edge-app-route-loader/index.ts` | Imitates `next-edge-app-route-loader`: `modulePath`/`VAR_USERLAND`, `VAR_PAGE`, cache handler injection, exported `ComponentMod`, exported `handler`. |
-| future App Route Edge template fallback         | `src/build/templates/edge-app-route.ts`                         | Imitates `edge-app-route.ts` only if the loader/template cannot run directly.                                                                         |
+| Virtual module or payload                         | Owning mirror file                                              | Contract to preserve                                                                                                                                                                                                                                                                              |
+| ------------------------------------------------- | --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `virtual:vitest-plugin-rsc/next-entrypoints`      | `src/build/entries.ts`                                          | Uses installed `entries.ts#getAppEntry()` import serialization when available; the `next-app-loader?${AppLoaderOptions}!` fallback is a tested transport boundary with React Server Components layer intent.                                                                                      |
+| `virtual:vitest-plugin-rsc/next-route-tree?...`   | `src/build/webpack/loaders/next-app-loader/index.ts`            | Tree-only representation of `next-app-loader` + `app-page`: `tree`, `__next_app_require__`, `__next_app_load_chunk__`, and convention module imports. Do not expand this ID to full App Page output without an explicit full-output mode.                                                         |
+| `virtual:vitest-plugin-rsc/next-app-page?...`     | `src/build/webpack/loaders/next-app-loader/index.ts`            | Wired isolated full App Page userland representation of the same `next-app-loader?<AppLoaderOptions>!` artifact. The Edge App Page entry consumes this full output; the tree-only ID remains separate.                                                                                            |
+| `virtual:vitest-plugin-rsc/next-routes`           | `src/build/adapter/build-complete.ts`                           | Imitates `build-complete.ts#onBuildComplete({ routing })`: export `routing`; compatibility aliases may exist but request routing consumes `routing`.                                                                                                                                              |
+| `virtual:vitest-plugin-rsc/next-edge-ssr-app?...` | `src/build/webpack/loaders/next-edge-ssr-loader/index.ts`       | Imitates `next-edge-ssr-loader`: `pageModPath`/`VAR_USERLAND` is `getAppEntry().import + pagePath + ?__next_edge_ssr_entry__`, then `VAR_PAGE`, cache handler injection, exported `ComponentMod`, and exported `handler`. Initial SSR and browser App Page request gates consume this same entry. |
+| future App Page Edge template fallback            | `src/build/templates/edge-ssr-app.ts`                           | Imitates `edge-ssr-app.ts` only if the loader/template cannot run directly.                                                                                                                                                                                                                       |
+| App Route Edge virtual entry                      | `src/build/webpack/loaders/next-edge-app-route-loader/index.ts` | Imitates `next-edge-app-route-loader`: `modulePath`/`VAR_USERLAND`, `VAR_PAGE`, cache handler injection, exported `ComponentMod`, exported `handler`. Unit dispatch and the focused browser App Route fixture select this artifact for App Route API targets through MSW.                         |
+| future App Route Edge template fallback           | `src/build/templates/edge-app-route.ts`                         | Imitates `edge-app-route.ts` only if the loader/template cannot run directly.                                                                                                                                                                                                                     |
 
 The query, exports, and serialized objects are the Next contract. Do not rename
 Next-owned payload fields into local convenience names before the adapter
@@ -163,15 +184,15 @@ boundary.
 These are package entrypoints or Vitest/Vite adapter entrypoints. They may
 compose mirror files, but they should not own copied Next behavior:
 
-| File                        | Decision       | Reason                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| --------------------------- | -------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `plugin.ts`                 | Keep top-level | Public Vite plugin composition entrypoint. It wires mirror adapters into Vite.                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| `testing-library.tsx`       | Keep top-level | Public test helper surface. Done in this worktree: this file is now a thin composition wrapper; render/request runtime plumbing moved to `testing-library-runtime.tsx`, document Flight bootstrap parsing moved to `src/client/app-index.ts`, direct-render LoaderTree helpers moved to `src/server/lib/app-dir-module.ts`, app-render access-fallback seed recovery moved to `src/server/app-render/create-component-tree.tsx`, and font layer asset injection moved to `src/server/app-render/get-layer-assets.tsx`. |
-| `testing-library-client.ts` | Keep top-level | Public/client helper entrypoint.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| `client.tsx`                | Keep top-level | Public browser/client helper entrypoint. Done in this worktree: this file is now a thin composition wrapper; App Router initial state helpers moved to `src/client/components/router-reducer/create-initial-router-state.ts`, action queue reset moved to `src/client/components/app-router-instance.ts`, and app-index dev bootstrap state moved to `src/client/app-index.ts`.                                                                                                                                        |
-| `msw.ts`                    | Keep top-level | Public MSW integration entrypoint. It should call mirror/runtime adapters, not own Next internals.                                                                                                                                                                                                                                                                                                                                                                                                                     |
-| `virtual.d.ts`              | Keep top-level | Public virtual module declarations.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| `tester.html`               | Keep top-level | Vitest tester document, not a Next source mirror.                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| File                        | Decision       | Reason                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| --------------------------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `plugin.ts`                 | Keep top-level | Public Vite plugin composition entrypoint. It wires mirror adapters into Vite.                                                                                                                                                                                                                                                                                                                                           |
+| `testing-library.tsx`       | Keep top-level | Public test helper surface. Done in this worktree: this file is now a thin composition wrapper; render/request runtime plumbing moved to `testing-library-runtime.tsx`, and document Flight bootstrap parsing moved to `src/client/app-index.ts`. The later Edge App Page cleanup deleted the direct-render LoaderTree helpers, app-render access-fallback seed recovery, and manual font layer asset injection helpers. |
+| `testing-library-client.ts` | Keep top-level | Public/client helper entrypoint.                                                                                                                                                                                                                                                                                                                                                                                         |
+| `client.tsx`                | Internal only  | `vitest-plugin-rsc/nextjs/client` has no published/default export and is removed from build entrypoints; the source-condition entry remains only for the internal RSC client-reference handoff until full Next `app-index.tsx` bootstrap can own document hydration.                                                                                                                                                     |
+| `msw.ts`                    | Keep top-level | Public MSW integration entrypoint. It should call mirror/runtime adapters, not own Next internals. For browser-originated Edge App Page/App Route requests, it is the only supported runtime transport.                                                                                                                                                                                                                  |
+| `virtual.d.ts`              | Keep top-level | Public virtual module declarations.                                                                                                                                                                                                                                                                                                                                                                                      |
+| `tester.html`               | Keep top-level | Vitest tester document, not a Next source mirror.                                                                                                                                                                                                                                                                                                                                                                        |
 
 ## Adapter Plumbing That Can Stay Top-Level
 
@@ -216,7 +237,7 @@ test would prove that deletion is safe.
 | empty/missing app module handling from `route-manifest-plugin.ts`    | likely top-level Vite plumbing or `src/build/webpack/loaders/next-app-loader/index.ts`                                                                               | Next app-loader missing/default convention modules        | Only put under app-loader if it mirrors default convention module behavior.                                                                                                                                                |
 | entrypoint virtual source generation from `route-manifest-plugin.ts` | `src/build/entries.ts`                                                                                                                                               | `entries.ts#getAppEntry()`                                | Done in this worktree. Owns `next-entrypoints` and `next-route-tree?...AppLoaderOptions` request generation. P1 deletion target: let a higher Next entries/loader pipeline provide the scan roots directly.                |
 | route-tree generation from `route-manifest-plugin.ts`                | `src/build/webpack/loaders/next-app-loader/index.ts`                                                                                                                 | `next-app-loader` and `app-page` template injection names | Done in this worktree. Owns invoking real loader, extracting `tree`, and import rewriting. P1 deletion target: delete local extraction once a real `next-app-loader` Vite bridge can expose the app-page entry directly.   |
-| loader-tree tuple/types/helpers, if locally named                    | `src/server/lib/app-dir-module.ts`                                                                                                                                   | `server/lib/app-dir-module.ts`                            | Only create if TypeScript/runtime glue must name the `LoaderTree` tuple; do not create a local route-tree object model.                                                                                                    |
+| loader-tree tuple/types/helpers, if locally named                    | Deleted                                                                                                                                                              | Generated `next-app-loader` output                        | Done in this cleanup. Testing-library no longer needs local direct-node, wrapper, fallback, or layer-asset traversal helpers.                                                                                              |
 | static route info loading from `route-manifest-plugin.ts`            | `src/build/analysis/get-page-static-info.ts`                                                                                                                         | static info collector                                     | Done in this worktree. Owns `preferredRegion`, `middlewareConfig`, route segment config feeding loader options. P1 deletion target: delete the wrapper when a higher Next entries path supplies static info.               |
 | `plugin/routing-data.ts`                                             | `src/build/adapter/build-complete.ts`                                                                                                                                | `build-complete.ts#onBuildComplete()`                     | Already moved in this worktree. Must keep copy/adapt markers.                                                                                                                                                              |
 | `routing-data.test.ts`                                               | `src/build/adapter/build-complete.test.ts`                                                                                                                           | Same                                                      | Already moved in this worktree.                                                                                                                                                                                            |
@@ -226,18 +247,18 @@ test would prove that deletion is safe.
 
 ### App Render And Manifests
 
-| Current file                                                                      | Target path                                                                                                                                                                                                                     | Source it mirrors                                                                                                                                                    | Notes                                                                                                                                                                                                                                                                                                                                                                  |
-| --------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `app-render.ts`                                                                   | Split source-linked blocks to `src/build/templates/app-page.ts`, `src/server/app-render/types.ts`, `src/server/app-render/manifests-singleton.ts`, and `src/server/web/adapter.ts`                                              | Edge App Page/app-render path                                                                                                                                        | Done in this worktree. The top-level file remains the Vite/Vitest render adapter; copied/adapted Next-shaped route-module, render opts, manifest singleton, manifest shapes, and Edge cache globals now live under mirror paths. P1 deletion target: replace the lower render wrapper with `next-edge-ssr-loader`/`edge-ssr-app`/`AppPageRouteModule` where practical. |
-| `app-render.test.ts`                                                              | Follow split modules or keep top-level integration test                                                                                                                                                                         | Same                                                                                                                                                                 | Unit tests move with split pieces; integration may stay top-level.                                                                                                                                                                                                                                                                                                     |
-| `app-render-compat-plugin.ts`                                                     | `src/server/app-render/app-render.ts`, with replacement payloads in `src/client/components/app-router.ts`, `src/shared/lib/server-inserted-html.shared-runtime.ts`, and `src/shared/lib/image-config-context.shared-runtime.ts` | `server/app-render/app-render.tsx`                                                                                                                                   | Done in this worktree. App-render import compatibility now lives beside the app-render mirror it adapts; replacement payloads live under the exact Next module filenames they imitate. P1 deletion target: delete this once the Edge App Page path owns app-render runtime setup directly.                                                                             |
-| `app-render-manifest.ts`                                                          | Split into `src/build/webpack/plugins/flight-manifest-plugin.ts`, `src/build/webpack/plugins/flight-client-entry-plugin.ts`, and `src/build/webpack/plugins/next-font-manifest-plugin.ts`                                       | Next manifest plugins                                                                                                                                                | Done in this worktree. Manifest shapes are grouped by the Next plugin whose output they imitate, and the old top-level duplicate was removed. P1 deletion target: delete manifest glue that `@vitejs/plugin-rsc` or real Next route modules can own.                                                                                                                   |
-| `client-reference-plugin.ts`                                                      | Split payloads into `src/client/app-dir/link.react-server.ts`, `src/client/app-dir/link.ts`, `src/client/app-dir/form.ts`, and `src/client/script.ts`; keep Vite hook top-level                                                 | App Router client-reference virtual modules                                                                                                                          | Done in this worktree. Vite `resolveId`/`load` wrapper stays top-level adapter plumbing; source payloads live under the matching Next client mirrors. P1 deletion target: let real Next client references or generic `@vitejs/plugin-rsc` boundaries own these modules.                                                                                                |
-| `flight-payload.ts`                                                               | `src/client/app-index.ts`                                                                                                                                                                                                       | Flight bootstrap/payload parsing                                                                                                                                     | Done in this worktree. Flight control-flow digest parsing belongs to the app-index Flight bootstrap mirror; `.ts` is used because the helper has no JSX and is imported from tests/runtime.                                                                                                                                                                            |
-| `flight-payload.test.ts`                                                          | `src/client/app-index.test.ts`                                                                                                                                                                                                  | Same                                                                                                                                                                 | Done in this worktree. Test follows implementation.                                                                                                                                                                                                                                                                                                                    |
-| `font-manifest.ts`                                                                | `src/build/webpack/plugins/next-font-manifest-plugin.ts`                                                                                                                                                                        | Next font manifest plugin output                                                                                                                                     | Done in this worktree. In-memory manifest preserves NextFontManifestPlugin output shape. P1 deletion target: let a real Next font manifest plugin/entry path provide the manifest.                                                                                                                                                                                     |
-| app-render access-fallback seed recovery from `testing-library-runtime.tsx`       | `src/server/app-render/create-component-tree.tsx`                                                                                                                                                                               | `server/app-render/create-component-tree.tsx`, `client/components/layout-router.tsx`, and `client/components/http-access-fallback/http-access-fallback.ts`           | Done in this worktree. Boundary-node recovery is placed beside the exact app-render tree owner and source-linked to the client fallback behavior it preserves. P1 deletion target: delete this helper when the higher App Page render path lets Next's LayoutRouter consume the initial Flight payload directly.                                                       |
-| next/font document style and preload injection from `testing-library-runtime.tsx` | `src/server/app-render/get-layer-assets.tsx`                                                                                                                                                                                    | `server/app-render/get-layer-assets.tsx`, `server/app-render/get-preloadable-fonts.tsx`, `next-font-loader/postcss-next-font.ts`, and `next-font-manifest-plugin.ts` | Done in this worktree. The helper preserves Next font manifest lookup and emitted CSS injection at the Vitest document boundary. P1 deletion target: delete this when a higher app-render layer can emit/inject layer assets directly.                                                                                                                                 |
+| Current file                                                                      | Target path                                                                                                                                                                               | Source it mirrors                                                        | Notes                                                                                                                                                                                                                                                                   |
+| --------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `app-render.ts`                                                                   | Deleted for App Page route runtime; split only tiny non-render residue elsewhere if truly needed                                                                                          | Edge App Page/app-render path                                            | Done in this worktree. Generated `next-edge-ssr-loader`/`edge-ssr-app` entries and `AppPageRouteModule.render()` now own the focused App Page route-runtime gates instead of the top-level local render wrapper.                                                        |
+| `app-render.test.ts`                                                              | Follow split modules or keep top-level integration test                                                                                                                                   | Same                                                                     | Unit tests move with split pieces; integration may stay top-level.                                                                                                                                                                                                      |
+| `app-render-compat-plugin.ts`                                                     | Deleted; do not replace with another local App Page compatibility shim                                                                                                                    | `server/app-render/app-render.tsx`                                       | Done in this worktree. The generated Edge App Page path owns runtime setup directly. Replacement payload mirrors may only remain where independently imported by real Next mirror code, not as an App Page wrapper compatibility plugin.                                |
+| `app-render-manifest.ts`                                                          | Split into `src/build/webpack/plugins/flight-manifest-plugin.ts`, `src/build/webpack/plugins/flight-client-entry-plugin.ts`, and `src/build/webpack/plugins/next-font-manifest-plugin.ts` | Next manifest plugins                                                    | Done in this worktree. Manifest shapes are grouped by the Next plugin whose output they imitate, and the old top-level duplicate was removed. P1 deletion target: delete manifest glue that `@vitejs/plugin-rsc` or real Next route modules can own.                    |
+| `client-reference-plugin.ts`                                                      | Split payloads into `src/client/app-dir/link.react-server.ts`, `src/client/app-dir/link.ts`, `src/client/app-dir/form.ts`, and `src/client/script.ts`; keep Vite hook top-level           | App Router client-reference virtual modules                              | Done in this worktree. Vite `resolveId`/`load` wrapper stays top-level adapter plumbing; source payloads live under the matching Next client mirrors. P1 deletion target: let real Next client references or generic `@vitejs/plugin-rsc` boundaries own these modules. |
+| `flight-payload.ts`                                                               | `src/client/app-index.ts`                                                                                                                                                                 | Flight bootstrap/payload parsing                                         | Done in this worktree. Flight control-flow digest parsing belongs to the app-index Flight bootstrap mirror; `.ts` is used because the helper has no JSX and is imported from tests/runtime.                                                                             |
+| `flight-payload.test.ts`                                                          | `src/client/app-index.test.ts`                                                                                                                                                            | Same                                                                     | Done in this worktree. Test follows implementation.                                                                                                                                                                                                                     |
+| `font-manifest.ts`                                                                | `src/build/webpack/plugins/next-font-manifest-plugin.ts`                                                                                                                                  | Next font manifest plugin output                                         | Done in this worktree. In-memory manifest preserves NextFontManifestPlugin output shape. P1 deletion target: let a real Next font manifest plugin/entry path provide the manifest.                                                                                      |
+| app-render access-fallback seed recovery from `testing-library-runtime.tsx`       | Deleted                                                                                                                                                                                   | Delegated Edge App Page HTML/Flight payload                              | Done in this cleanup. The runtime no longer recovers fallback boundary nodes locally; initial route rendering uses generated Edge HTML and the router consumes the generated payload.                                                                                   |
+| next/font document style and preload injection from `testing-library-runtime.tsx` | Deleted                                                                                                                                                                                   | Generated Edge/App Render path plus `next-font-loader` module evaluation | Done in this cleanup. The runtime no longer injects font styles or preload links after render; Edge render owns manifest consumption and the font module injects CSS when it evaluates in the browser.                                                                  |
 
 ### Edge Entries And Request Runtime
 
@@ -246,14 +267,14 @@ mirrors just because the path exists in the architecture document. First try the
 real Next loader/template/route-module path and only create the mirror if that
 higher owner is blocked.
 
-| Current file or planned payload                | Target path                                                     | Source it mirrors                         | Notes                                                                                                                                                           |
-| ---------------------------------------------- | --------------------------------------------------------------- | ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| future App Page virtual entry                  | `src/build/webpack/loaders/next-edge-ssr-loader/index.ts`       | `next-edge-ssr-loader`                    | First try the real loader or `loadEntrypoint("edge-ssr-app")`. This owns the App Page Edge entry shape, not `app-render.ts` as a local wrapper.                 |
-| fallback App Page Edge template                | `src/build/templates/edge-ssr-app.ts`                           | `build/templates/edge-ssr-app.ts`         | Create only if the edge loader/template cannot be invoked. Must preserve `ComponentMod`, `handler`, cache handler injection, and Web response conversion.       |
-| future App Route virtual entry                 | `src/build/webpack/loaders/next-edge-app-route-loader/index.ts` | `next-edge-app-route-loader`              | First try the real loader or `loadEntrypoint("edge-app-route")`. Do not directly call userland `GET`/`POST` as the render/request contract.                     |
-| fallback App Route Edge template               | `src/build/templates/edge-app-route.ts`                         | `build/templates/edge-app-route.ts`       | Create only if the edge app-route loader/template cannot be invoked. Must preserve `EdgeRouteModuleWrapper.wrap(module.routeModule)`.                           |
-| middleware/proxy and Edge request adapter code | `src/server/web/adapter.ts`                                     | `server/web/adapter.ts`                   | Create only if direct `next/dist/server/web/adapter.js` import fails. This owns request stores, RSC rewrite headers, redirect handling, and `FetchEventResult`. |
-| App Route Edge wrapper code                    | `src/server/web/edge-route-module-wrapper.ts`                   | `server/web/edge-route-module-wrapper.ts` | Create only if direct import fails. This owns `AppRouteRouteModule.handle()` invocation through Next's Edge wrapper.                                            |
+| Current file or planned payload                | Target path                                                     | Source it mirrors                         | Notes                                                                                                                                                                                                                                                     |
+| ---------------------------------------------- | --------------------------------------------------------------- | ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| App Page Edge virtual entry                    | `src/build/webpack/loaders/next-edge-ssr-loader/index.ts`       | `next-edge-ssr-loader`                    | Wired in this worktree through the real loader or `loadEntrypoint("edge-ssr-app")`. This owns the App Page Edge entry shape, not `app-render.ts` as a local wrapper.                                                                                      |
+| fallback App Page Edge template                | `src/build/templates/edge-ssr-app.ts`                           | `build/templates/edge-ssr-app.ts`         | Create only if the edge loader/template cannot be invoked. Must preserve `ComponentMod`, `handler`, cache handler injection, and Web response conversion.                                                                                                 |
+| App Route virtual entry                        | `src/build/webpack/loaders/next-edge-app-route-loader/index.ts` | `next-edge-app-route-loader`              | Wired in this worktree through the real loader or `loadEntrypoint("edge-app-route")`. Focused browser coverage dispatches through MSW to the generated Edge App Route handler. Do not directly call userland `GET`/`POST` as the render/request contract. |
+| fallback App Route Edge template               | `src/build/templates/edge-app-route.ts`                         | `build/templates/edge-app-route.ts`       | Create only if the edge app-route loader/template cannot be invoked. Must preserve `EdgeRouteModuleWrapper.wrap(module.routeModule)`.                                                                                                                     |
+| middleware/proxy and Edge request adapter code | `src/server/web/adapter.ts`                                     | `server/web/adapter.ts`                   | Create only if direct `next/dist/server/web/adapter.js` import fails. This owns request stores, RSC rewrite headers, redirect handling, and `FetchEventResult`.                                                                                           |
+| App Route Edge wrapper code                    | `src/server/web/edge-route-module-wrapper.ts`                   | `server/web/edge-route-module-wrapper.ts` | Create only if direct import fails. This owns `AppRouteRouteModule.handle()` invocation through Next's Edge wrapper.                                                                                                                                      |
 
 ### Fonts, Images, Metadata, Cache, Root Params
 
@@ -312,8 +333,20 @@ higher owner is blocked.
 
 ## Execution Order
 
+Before creating or moving any `nextjs/src/...` code, every subagent must answer
+this checklist in the change itself:
+
+1. What upstream Next source file and source lines own this behavior?
+2. Is the local path the exact mirror of that upstream source path?
+3. If the helper spans multiple upstream files, was it split by source owner or
+   kept as top-level boundary glue with source-linked calls?
+4. Are the `Source:`, `Adaptation:`, and copy/adapted markers next to the code?
+
+Then proceed:
+
 1. Create the `nextjs/src/...` directory structure first.
-2. Move one coherent source family at a time with current behavior unchanged.
+2. Move one coherent upstream source family at a time with current behavior
+   unchanged.
 3. During P0, allow only path/import/export/test updates and marker
    additions. Do not switch to higher Next code paths in the same diff.
 4. For every moved implementation file under `nextjs/src`, add or preserve
@@ -344,16 +377,93 @@ architecture:
    -> `src/build/entries.ts`.
 4. Done in this worktree: static-info loading from `route-manifest-plugin.ts` ->
    `src/build/analysis/get-page-static-info.ts`.
-5. Done in this worktree: route matcher provider/file-reader extraction from `route-manifest-plugin.ts`
-   -> `src/server/route-matcher-providers/dev/...`.
+5. Done in this worktree with provider unit coverage: route matcher
+   provider/file-reader extraction from `route-manifest-plugin.ts` ->
+   `src/server/route-matcher-providers/dev/...`.
 
 Then move loader/plugin feature families: SWC, font, image, metadata image, root
 params, cache, builtins, server-reference info, manifests.
 
-Edge App Page and Edge App Route entries are the next higher-level design
-target, but in P0 they should only receive copied/extracted code if we
-already have local logic that clearly imitates their source files. Otherwise
-track them as planned virtual payloads until a P1 loader/template spike.
+Edge App Page has wired resolver/source coverage for generated artifacts and
+focused runtime/browser gates. Initial SSR/document rendering is owned by the
+test harness/runtime without MSW and dispatches directly to the generated Edge
+App Page handler. Browser-originated RSC/navigation/API requests and Server
+Action POSTs go through MSW to generated Edge App Page or Edge App Route
+handlers. The top-level `packages/vitest-plugin-rsc/src/nextjs/app-render.ts`
+wrapper and local `src/server/app-render/app-render.ts` compatibility path are
+deleted history for App Page route runtime. This P1 route-runtime slice is scoped
+to real filesystem App Page routes discovered through the route manifest, not
+`renderServer(<ReactNode />)` synthetic routes. It has no private probe headers,
+dev-server middleware, direct React-node/local app-render compatibility path,
+route-entry replacement compatibility mode, fake-route fallback, Cookie-header
+side channel, or custom `ModuleRunner` side-channels. Do not preserve old
+non-MSW App Page route runtime behavior in the Edge model.
+
+## P1 Edge App Page Order
+
+Use the Edge App Page delegation doc as the gate matrix. Current recommended
+order is: keep artifact-generation virtual modules and unit tests green, then
+proceed through initial HTML/Flight via the generated Edge handler, MSW RSC GET
+to that same handler, Server Action POST, App Route/API through the Edge App
+Route path, and old-helper deletion.
+
+For this P1 order, the App Page route target is a real filesystem route through
+the generated Edge pipeline. `renderServer(<ReactNode />)` is outside that
+architecture, and there is no separate compatibility mode for old
+direct-node/local app-render glue, replacement-helper dispatch, or fake routes.
+`renderServer({ url })` App Page route behavior must eventually go through the
+same request-router/Edge handler path as browser-observed requests, but initial
+SSR/document rendering must not use MSW. Server Actions for App Page fidelity go
+browser POST -> MSW -> Edge App Page handler.
+
+Coverage ladder:
+
+1. Unit tests first: virtual manifest `edgeAppPage` entry exposure, generated
+   Edge handler invocation/context, manifest/cache global installation, initial
+   HTML dispatch selection, MSW RSC GET forwarding/dispatch selection, Server
+   Action POST request preservation, real action-manifest/action-entry wiring,
+   and App Route/API Edge dispatch selection.
+2. Focused runtime/browser gates now pass: initial HTML through the Edge handler
+   without MSW, browser RSC GET through MSW to the same handler, Server Action
+   POST through MSW to the same handler for both the action-not-found checkpoint
+   and a focused real action execution, hydrated `next/link` /
+   `router.push` / `router.replace` client navigation, and browser App Route/API
+   fetches through MSW to the Edge App Route handler. Remaining work is broader
+   Server Action protocol coverage, browser/MSW Cookie-header coverage when
+   available without side channels, and the P2 legacy no-MSW cleanup TODO:
+   migrate or retire `playground/nextjs-no-msw-demo` coverage without treating it
+   as P1 Edge App Page acceptance.
+
+Enable the ladder one test at a time. Do not narrow or empty include patterns to
+hide failures, and do not treat old non-MSW tests as new Edge App Page
+acceptance.
+
+Future fake or synthetic App Page routes are P2 exploration only. If reintroduced
+for `renderServer(<ReactNode />)` or similar helpers, they must enter the new
+architecture as synthetic file/page module -> real Next `next-app-loader` full
+output -> `edge-ssr-app` -> generated Edge handler request path. Browser requests
+to such routes would still enter through MSW. They are not a separate
+compatibility mode for P1.
+
+File-level deletion/reduction after those gates:
+
+- Initial HTML deleted top-level `app-render.ts` HTML/result helpers and the
+  `testing-library-runtime.tsx` document fallback/access-fallback paths plus
+  manual font/layer asset injection.
+- RSC GET deleted top-level `app-render.ts` Flight/initial-payload helpers and
+  the `testing-library-runtime.tsx` GET/`prepareServerRoot()` initial-payload
+  path.
+- Server Actions deleted top-level `app-render.ts` action helpers, local action
+  decoding in `msw.ts`, and action request-shape APIs in
+  `testing-library-client.ts` / `testing-library-runtime.tsx`; focused real
+  action manifest/protocol execution now goes through the generated Edge handler.
+- App Route/API uses `edge-app-route`, `EdgeRouteModuleWrapper`, and
+  `AppRouteRouteModule.handle()` through MSW instead of direct userland
+  route-handler runners.
+- `src/build/templates/app-page.ts#createAppPageRouteModule`, top-level
+  `app-render.ts`, and local app-render compatibility files are deleted for App
+  Page route runtime. Keep manifest/cache proxy files only while they adapt Vite
+  RSC graph data into Next-shaped inputs.
 
 ## P1 Deletion Targets
 
@@ -363,7 +473,9 @@ Use this list after each P0 family is green:
   `@next/routing` over `build-complete`-shaped routing data.
 - Replace App Page render wrappers with the real Edge App Page loader/template
   path: `next-edge-ssr-loader`, `edge-ssr-app`, `server/web/adapter`, and
-  `AppPageRouteModule`.
+  `AppPageRouteModule`. The deletion target is the whole top-level
+  `app-render.ts` App Page route runtime file, not just individual helper
+  functions.
 - Replace App Route direct calls with the real Edge App Route path:
   `next-edge-app-route-loader`, `edge-app-route`, `EdgeRouteModuleWrapper`, and
   `AppRouteRouteModule.handle()`.
@@ -383,6 +495,14 @@ Minimum after each move:
 - moved file's unit test;
 - affected top-level integration test;
 - architecture check: every moved mirror has a direct/higher deletion target;
+- manifest/action gate: Edge handlers receive `self.__RSC_MANIFEST`,
+  `self.__RSC_SERVER_MANIFEST`, cache handler setup, and raw action POST
+  requests in Next-shaped form before local action decode/replay is removed;
+- architecture guard TODO: add wrong-source marker detection when a repo-wide
+  marker scanner exists. It should fail when a `nextjs/src/...` file contains a
+  `Source:` URL for a different mirrored Next path, such as
+  `build/templates/edge-ssr-app.ts` inside
+  `src/server/app-render/manifests-singleton.ts`;
 - `pnpm tsgo --build`;
 - `pnpm exec oxfmt --check <moved files>`;
 - `git diff --check`.

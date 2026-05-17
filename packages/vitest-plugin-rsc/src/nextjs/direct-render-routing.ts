@@ -53,9 +53,9 @@ function createDynamicRoutes(pages: PageOnlyRouteEntry[]) {
 
 // Source: https://github.com/vercel/next.js/blob/v16.2.6/packages/next/src/build/adapter/build-complete.ts
 // Source: https://github.com/vercel/next.js/blob/v16.2.6/packages/next/src/server/route-matchers/route-matcher.ts
-// Adaptation: direct ReactNode/page-only renders do not go through the Vite
-// route-manifest virtual module, so they synthesize only the dynamic route data
-// needed by `@next/routing` without custom-route conversion.
+// Adaptation: page-only rerender paths resolve against an already filtered
+// manifest, so they synthesize only the app-page dynamic route data needed by
+// `@next/routing` without route handlers or custom-route conversion.
 function createDynamicRoute(route: string): NextRoutingRoute {
   const routeRegex = getNamedRouteRegex(route, {
     prefixRouteKeys: true,

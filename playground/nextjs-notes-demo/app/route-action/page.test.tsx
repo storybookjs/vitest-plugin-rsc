@@ -3,7 +3,7 @@ import { page } from "vitest/browser";
 import { renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
 import { resetRouteActionState } from "./page.tsx";
 
-test("renderServer route actions are handled through Next app-render", async () => {
+test("route actions are handled through the generated Edge App Page route", async () => {
   resetRouteActionState();
 
   await renderServer({ url: "/route-action" });

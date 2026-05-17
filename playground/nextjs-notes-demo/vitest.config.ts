@@ -23,6 +23,7 @@ loadEnvConfig(root, nextNotesDev);
 function createSharedProjectConfig() {
   return {
     root,
+    publicDir: fileURLToPath(new URL("../../public", import.meta.url)),
     envPrefix: ["VITE_", "CI"],
     resolve: {
       tsconfigPaths: true,
@@ -38,7 +39,14 @@ function createSharedProjectConfig() {
         "next/dist/client/components/redirect-status-code.js",
         "next/dist/client/components/redirect.js",
         "next/dist/client/components/router-reducer/create-href-from-url.js",
+        "next/dist/server/lib/cache-control",
+        "next/dist/server/lib/patch-fetch",
         "next/dist/server/lib/server-action-request-meta.js",
+        "next/dist/server/route-modules/app-route/module.compiled",
+        "next/dist/server/send-response",
+        "next/dist/server/web/edge-route-module-wrapper",
+        "next/dist/server/web/spec-extension/adapters/next-request",
+        "next/dist/server/web/utils",
       ],
     },
   };

@@ -1,11 +1,16 @@
-import type { FetchNextRsc } from "./testing-library-client.ts";
-import {
-  NEXT_URL,
-  NEXT_ROUTER_STATE_TREE_HEADER,
-  RSC_HEADER,
-} from "next/dist/client/components/app-router-headers.js";
+import { RSC_HEADER } from "next/dist/client/components/app-router-headers.js";
 import { getServerActionRequestMetadata } from "next/dist/server/lib/server-action-request-meta.js";
-import { HttpResponse, http } from "msw";
+import { HttpResponse, http, passthrough } from "msw";
+import {
+  dispatchNextAppRouteRequest,
+  dispatchNextAppPageActionPost,
+  dispatchNextAppPageRscGet,
+} from "./src/server/next-server.ts";
+import type {
+  NextRouteHandlerManifestEntry,
+  NextRouteManifest,
+  NextRouteManifestEntry,
+} from "./request-router.ts";
 
 export const nextRscRequestHandlers = [
   http.post(
@@ -14,49 +19,54 @@ export const nextRscRequestHandlers = [
       const { actionId } = getNextActionRequestMetadata(request);
       if (!actionId) return;
 
-      const fetchRsc = (globalThis as typeof globalThis & Record<symbol, FetchNextRsc | undefined>)[
-        Symbol.for("vitest-plugin-rsc.nextjs.fetchRsc")
-      ];
-      if (!fetchRsc) {
-        return HttpResponse.text(
-          "Next server actions require initialize({ nextRscRequestsViaMsw: true }) before using nextRscRequestHandlers.",
-          { status: 500 },
-        );
-      }
-
-      const reply = await readActionReply(request);
-      return fetchRsc({
-        id: actionId,
-        reply,
-        requestType: "next-action",
-        url: request.url,
-        routerState: request.headers.get(NEXT_ROUTER_STATE_TREE_HEADER),
-        nextUrl: request.headers.get(NEXT_URL),
+      const delegatedResponse = await dispatchNextAppPageActionPost({
+        request,
+        manifest: await loadNextRouteManifest(),
       });
+      if (delegatedResponse) return delegatedResponse;
+
+      return createUnhandledAppPageRequestResponse(request, "Server Action POST");
     },
   ),
   http.get(
     ({ request }) => request.headers.has(RSC_HEADER),
     async ({ request }) => {
-      const fetchRsc = (globalThis as typeof globalThis & Record<symbol, FetchNextRsc | undefined>)[
-        Symbol.for("vitest-plugin-rsc.nextjs.fetchRsc")
-      ];
-      if (!fetchRsc) {
-        return HttpResponse.text(
-          "Next RSC requests require initialize({ nextRscRequestsViaMsw: true }) before using nextRscRequestHandlers.",
-          { status: 500 },
-        );
-      }
-
-      return fetchRsc({
-        requestType: "next-route",
-        url: request.url,
-        routerState: request.headers.get(NEXT_ROUTER_STATE_TREE_HEADER),
-        nextUrl: request.headers.get(NEXT_URL),
+      const delegatedResponse = await dispatchNextAppPageRscGet({
+        request,
+        manifest: await loadNextRouteManifest(),
       });
+      if (delegatedResponse) return delegatedResponse;
+
+      return createUnhandledAppPageRequestResponse(request, "RSC GET");
     },
   ),
+  http.all("*", async ({ request }) => {
+    if (isViteInternalRequest(request)) {
+      return passthrough();
+    }
+
+    const delegatedResponse = await dispatchNextAppRouteRequest({
+      request,
+      manifest: await loadNextRouteManifest(),
+    });
+    if (delegatedResponse) return delegatedResponse;
+
+    return passthrough();
+  }),
 ];
+
+function isViteInternalRequest(request: Request) {
+  const { pathname } = new URL(request.url);
+  return pathname.startsWith("/@") || pathname.startsWith("/__vitest");
+}
+
+function createUnhandledAppPageRequestResponse(request: Request, requestKind: string) {
+  const { pathname } = new URL(request.url);
+  return HttpResponse.text(
+    `No generated Next Edge App Page handler found for ${requestKind} "${pathname}".`,
+    { status: 404 },
+  );
+}
 
 function getNextActionRequestMetadata(request: Request) {
   return getServerActionRequestMetadata(
@@ -64,7 +74,12 @@ function getNextActionRequestMetadata(request: Request) {
   );
 }
 
-async function readActionReply(request: Request) {
-  const contentType = request.headers.get("content-type") ?? "";
-  return contentType.includes("multipart/form-data") ? request.formData() : request.text();
+async function loadNextRouteManifest(): Promise<NextRouteManifest> {
+  const { nextRouteManifest, nextRouteHandlerManifest, routing } =
+    await import("virtual:vitest-plugin-rsc/next-routes");
+  return {
+    pages: nextRouteManifest as NextRouteManifestEntry[],
+    routeHandlers: nextRouteHandlerManifest as NextRouteHandlerManifestEntry[],
+    routingData: routing,
+  };
 }

@@ -1,5 +1,6 @@
 import { Buffer } from "node:buffer";
 import fs from "node:fs";
+import { createRequire } from "node:module";
 import path from "node:path";
 import type { Plugin, ResolvedConfig } from "vite";
 import { loadNextProjectConfig } from "../../../../../config.ts";
@@ -109,8 +110,9 @@ export function useNextFontLoader(): Plugin {
 
       const request = parseFontRequest(id);
       const projectRequire = createProjectRequire(root);
+      const nextRequire = createNextRequire(projectRequire);
       const projectConfig = await loadNextProjectConfig(root, mode);
-      const loaderUtils = projectRequire("next/dist/compiled/loader-utils3") as {
+      const loaderUtils = nextRequire("next/dist/compiled/loader-utils3") as {
         interpolateName(
           context: unknown,
           name: string,
@@ -123,7 +125,7 @@ export function useNextFontLoader(): Plugin {
           maxLength: number,
         ): string;
       };
-      const loaderModule = projectRequire(
+      const loaderModule = nextRequire(
         request.kind === "google"
           ? "next/dist/compiled/@next/font/dist/google/loader.js"
           : "next/dist/compiled/@next/font/dist/local/loader.js",
@@ -194,7 +196,7 @@ export function useNextFontLoader(): Plugin {
       });
 
       const cssModule = await createFontCssModule(
-        projectRequire,
+        nextRequire,
         result,
         request.data,
         [...getNextFontManifestKeys(root, request.importer)],
@@ -204,6 +206,10 @@ export function useNextFontLoader(): Plugin {
       return cssModule;
     },
   };
+}
+
+function createNextRequire(projectRequire: NodeJS.Require): NodeJS.Require {
+  return createRequire(projectRequire.resolve("next/package.json"));
 }
 
 function createVirtualFontId(request: FontRequest) {
@@ -216,14 +222,14 @@ function parseFontRequest(id: string): FontRequest {
 }
 
 async function createFontCssModule(
-  projectRequire: ReturnType<typeof createProjectRequire>,
+  nextRequire: NodeJS.Require,
   result: NextFontLoaderResult,
   data: unknown[],
   manifestKeys: string[],
   manifestFiles: Array<{ fontFile: string; preload: boolean; isUsingSizeAdjust: boolean }>,
   emittedAssets = new Map<string, string>(),
 ) {
-  const postcss = projectRequire("postcss") as (plugins: unknown[]) => {
+  const postcss = nextRequire("postcss") as (plugins: unknown[]) => {
     process(
       css: string,
       options: { from?: string },
@@ -235,14 +241,14 @@ async function createFontCssModule(
       };
     }>;
   };
-  const postcssNextFontModule = projectRequire(
+  const postcssNextFontModule = nextRequire(
     "next/dist/build/webpack/loaders/next-font-loader/postcss-next-font.js",
   ) as { default?: (options: unknown) => unknown } | ((options: unknown) => unknown);
   const postcssNextFont =
     typeof postcssNextFontModule === "function"
       ? postcssNextFontModule
       : postcssNextFontModule.default;
-  const loaderUtils = projectRequire("next/dist/compiled/loader-utils3") as {
+  const loaderUtils = nextRequire("next/dist/compiled/loader-utils3") as {
     getHashDigest(buffer: Buffer, hashType: string, digestType: string, maxLength: number): string;
   };
 

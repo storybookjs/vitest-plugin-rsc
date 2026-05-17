@@ -20,6 +20,9 @@ export default defineProject({
     ],
   },
   test: {
+    // Legacy/P2 direct no-MSW coverage. Do not use this browser project as a
+    // P1 Edge App Page acceptance gate; browser-originated P1 coverage belongs
+    // in the notes demo through MSW transport.
     name: "nextjs-no-msw-demo",
     include: ["**/*.test.{ts,tsx}"],
     exclude: ["node_modules"],

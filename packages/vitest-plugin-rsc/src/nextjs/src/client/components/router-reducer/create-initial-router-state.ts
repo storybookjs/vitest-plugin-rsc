@@ -39,7 +39,7 @@ export function createNextRouterStateSnapshot({
   if (!initialFlightPayload && !providedInitialRSCPayload) {
     const routeHint = route ? ` for route "${route}"` : "";
     throw new Error(
-      `NextRouter${routeHint} must be rendered through renderServer from vitest-plugin-rsc/nextjs.`,
+      `Next App Router hydration boundary${routeHint} must be rendered through renderServer from vitest-plugin-rsc/nextjs.`,
     );
   }
 

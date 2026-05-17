@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { runInNewContext } from "node:vm";
 import type { Plugin } from "vite";
 import { parseAstAsync } from "vite";
 import { expect, test } from "vitest";
@@ -93,6 +94,41 @@ exports.value = cache.getStaleTimeMs;
   expect(output).toContain("m.default != null");
 });
 
+test("preserves a CJS namespace default when named exports extend an explicit default", async () => {
+  const id = path.join(os.tmpdir(), "node_modules/example/api.cjs");
+  const code = `
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.createContextKey = function createContextKey(description) {
+  return Symbol.for(description);
+};
+exports.default = { trace: {} };
+`;
+  const ast = await parseAstAsync(code, { lang: "js" }, id);
+
+  const result = await transformCjsToBrowserEsm(code, ast, { id });
+  const executable = result.output
+    .toString()
+    .replace("export default __cjs_default__;", "globalThis.__default = __cjs_default__;")
+    .replace(
+      "export const __cjs_module_runner_transform = true;",
+      "globalThis.__cjs_module_runner_transform = true;",
+    )
+    .replace(
+      'export const createContextKey = __cjs_exports__["createContextKey"];',
+      'globalThis.__createContextKey = __cjs_exports__["createContextKey"];',
+    );
+  const context = { Symbol };
+
+  runInNewContext(executable, context);
+  const mod = context as typeof context & {
+    __createContextKey: (description: string) => symbol;
+    __default: { createContextKey: (description: string) => symbol };
+  };
+
+  expect(mod.__default.createContextKey).toBe(mod.__createContextKey);
+  expect(typeof mod.__default.createContextKey("vitest-plugin-rsc.next.trace")).toBe("symbol");
+});
+
 test("does not treat shadowed require parameters as CommonJS requires", async () => {
   const id = path.join(os.tmpdir(), "node_modules/example/shadowed-parameter.cjs");
   const code = `
@@ -113,7 +149,7 @@ exports.load = load;
   expect(output).not.toContain('await import("local-only")');
 });
 
-test("transforms non-optimized CommonJS dependencies and proxies direct use-client boundaries", async () => {
+test("transforms non-optimized CommonJS dependencies and exposes direct use-client boundaries", async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "vitest-plugin-rsc-cjs-"));
   try {
     const packageRoot = path.join(root, "node_modules/example");
@@ -291,7 +327,7 @@ test("allows specific skipped internals to opt into the CJS browser transform", 
   }
 });
 
-test("proxies direct use-client CommonJS exports without executing the module in RSC", async () => {
+test("exposes direct use-client CommonJS exports without executing the module in RSC", async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "vitest-plugin-rsc-cjs-proxy-exports-"));
   try {
     const packageRoot = path.join(root, "node_modules/example");
@@ -770,6 +806,58 @@ test("leaves explicit runtime files to optimizer CJS handling without an environ
   }
 });
 
+test("loads explicit runtime .cjs files as executable ESM in named environments", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "vitest-plugin-rsc-cjs-runtime-cjs-"));
+  try {
+    const packageRoot = path.join(root, "node_modules/example");
+    const cacheDir = path.join(root, "node_modules/.vite");
+    fs.mkdirSync(packageRoot, { recursive: true });
+    fs.mkdirSync(cacheDir, { recursive: true });
+    fs.writeFileSync(path.join(packageRoot, "package.json"), '{"type":"commonjs"}');
+
+    const runtimeFile = path.join(packageRoot, "runtime.cjs");
+    const unrelatedFile = path.join(packageRoot, "unrelated.cjs");
+    const runtimeCode = "exports.run = function run() { return 'runtime'; };";
+    fs.writeFileSync(runtimeFile, runtimeCode);
+    fs.writeFileSync(unrelatedFile, "exports.value = 'unrelated';");
+
+    const plugin = findPlugin("rsc:cjs-browser-transform", {
+      runtime: {
+        include: (id) => id === runtimeFile,
+      },
+    });
+    const resolveId = getHookHandler(plugin.resolveId);
+    const load = getHookHandler(plugin.load);
+    const context = {
+      environment: {
+        name: "react_ssr",
+        config: { cacheDir },
+      },
+      resolve: async (source: string) => ({ id: source, external: false }),
+    };
+
+    const runtimeId = (await resolveId.call(context as never, runtimeFile, undefined, {
+      isEntry: false,
+    })) as string;
+    const unrelatedId = await resolveId.call(context as never, unrelatedFile, undefined, {
+      isEntry: false,
+    });
+    const result = (await load.call(context as never, runtimeId)) as {
+      code: string;
+      moduleType?: string;
+    };
+
+    expect(runtimeId).toContain("rsc:cjs-browser-esm:");
+    expect(unrelatedId).toBeUndefined();
+    expect(result.code).toContain("var exports = {}; var module = { exports };");
+    expect(result.code).toContain('export const run = __cjs_exports__["run"];');
+    expect(result.code).toContain("export const __cjs_module_runner_transform = true");
+    expect(result.moduleType).toBe("js");
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("rewrites selected Next runtime utility children back to bare Next ids", async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "vitest-plugin-rsc-cjs-next-runtime-child-"));
   try {
@@ -1102,6 +1190,15 @@ test("loads direct use-client CommonJS as executable ESM in browser execution en
         undefined,
         { isEntry: false },
       )) as string;
+      const result = (await load.call(
+        {
+          environment: {
+            name: environmentName,
+            config: { cacheDir: path.join(root, "node_modules/.vite") },
+          },
+        } as never,
+        clientId,
+      )) as { code: string; moduleType?: string };
       const bareImportId = await resolveId.call(
         {
           environment: {
@@ -1118,16 +1215,6 @@ test("loads direct use-client CommonJS as executable ESM in browser execution en
         { isEntry: false },
       );
 
-      const result = (await load.call(
-        {
-          environment: {
-            name: environmentName,
-            config: { cacheDir: path.join(root, "node_modules/.vite") },
-          },
-        } as never,
-        clientId,
-      )) as { code: string; moduleType?: string };
-
       expect(result.code).toContain('(__cjs_interop__(await import("react")))');
       expect(result.code).toContain('export const Client = __cjs_exports__["Client"];');
       expect(result.code).toContain("export const __cjs_module_runner_transform = true");
@@ -1141,7 +1228,7 @@ test("loads direct use-client CommonJS as executable ESM in browser execution en
   }
 });
 
-test("can re-export direct use-client CommonJS from a stable module id", async () => {
+test("exposes stable use-client CommonJS through directive ESM wrappers", async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "vitest-plugin-rsc-cjs-reexport-client-"));
   try {
     const packageRoot = path.join(root, "node_modules/example");
@@ -1176,9 +1263,49 @@ test("can re-export direct use-client CommonJS from a stable module id", async (
       moduleType?: string;
     };
 
-    expect(result.code).toBe(
-      '"use client";\nexport { Client, default } from "example/client.cjs";\n',
+    expect(result.code).toMatch(/^"use client";/);
+    expect(result.code).toContain('export { Client, default } from "example/client.cjs";');
+    expect(result.code).not.toContain("registerClientReference");
+    expect(result.code).not.toContain("__cjs_module_runner_transform");
+    expect(result.moduleType).toBe("js");
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("does not self-reexport raw optimizer use-client modules from their own stable ids", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "vitest-plugin-rsc-cjs-raw-stable-id-"));
+  try {
+    const packageRoot = path.join(root, "node_modules/example");
+    fs.mkdirSync(packageRoot, { recursive: true });
+    fs.writeFileSync(path.join(packageRoot, "package.json"), '{"type":"commonjs"}');
+
+    const clientFile = path.join(packageRoot, "client.js");
+    const clientCode =
+      '"use client";\nexports.default = function Client() {};\nexports.Client = function Client() {};';
+    fs.writeFileSync(clientFile, clientCode);
+
+    const transform = getHookHandler(
+      findPlugin("rsc:cjs-browser-transform", {
+        boundary: {
+          moduleId: (id) => (id === clientFile ? "example/client.js" : undefined),
+          proxy: true,
+        },
+      }).transform,
     );
+    const result = (await transform.call(
+      {
+        environment: {
+          config: { cacheDir: path.join(root, "node_modules/.vite") },
+        },
+      } as never,
+      clientCode,
+      clientFile,
+    )) as { code: string; moduleType?: string };
+
+    expect(result.code).toContain("registerClientReference");
+    expect(result.code).not.toContain('from "example/client.js"');
+    expect(result.code).not.toContain("__cjs_module_runner_transform");
     expect(result.moduleType).toBe("js");
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
@@ -1257,7 +1384,7 @@ test("wraps selected Next CJS utilities only when reached from executable virtua
   }
 });
 
-test("can explicitly proxy client boundaries when an optimizer hook has no environment name", async () => {
+test("can expose client boundaries through directives when an optimizer hook has no environment name", async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "vitest-plugin-rsc-cjs-optimizer-proxy-"));
   try {
     const packageRoot = path.join(root, "node_modules/example");

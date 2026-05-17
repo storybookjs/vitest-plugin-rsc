@@ -11,13 +11,40 @@ export type NextRouteManifestEntry = {
   route: string;
   appPath: string;
   pageFile: string;
+  rootDir?: string;
   loaderTree: LoaderTree;
+  edgeAppPageSource?: string;
+  edgeAppPage?: () => Promise<NextEdgeAppPageModule>;
+};
+
+export type NextEdgeAppRouteModule = {
+  handler: (
+    request: Request,
+    context: {
+      waitUntil: (promise: Promise<unknown>) => void;
+      requestMeta?: Record<string, unknown>;
+      signal?: AbortSignal;
+    },
+  ) => Promise<Response>;
+};
+
+export type NextEdgeAppPageModule = {
+  handler: (
+    request: Request,
+    context: {
+      waitUntil: (promise: Promise<unknown>) => void;
+      requestMeta?: Record<string, unknown>;
+      signal?: AbortSignal;
+    },
+  ) => Promise<Response>;
 };
 
 export type NextRouteHandlerManifestEntry = {
   route: string;
   appPath: string;
   routeFile: string;
+  edgeAppRouteSource?: string;
+  edgeAppRoute?: () => Promise<NextEdgeAppRouteModule>;
 };
 
 export type NextRouteManifest = {

@@ -1,54 +1,15 @@
-import "next/dist/server/node-environment-baseline.js";
-import { getAccessFallbackErrorTypeByStatus } from "next/dist/client/components/http-access-fallback/http-access-fallback.js";
 import { isNextRouterError } from "next/dist/client/components/is-next-router-error.js";
-import type { LoaderTree } from "next/dist/server/lib/app-dir-module.js";
 import type { Container } from "react-dom/client";
-import { createElement, isValidElement, type JSXElementConstructor, type ReactNode } from "react";
+import { isValidElement } from "react";
 import {
   cleanup as baseCleanup,
   initialize as baseInitialize,
   type RenderConfiguration,
 } from "../testing-library.tsx";
-import type { FetchRsc, RscPayload, TestingLibraryClientRoot } from "../testing-library-client.tsx";
-import { importReactClient, importReactSsr } from "../utilts.ts";
-import * as ReactServer from "@vitejs/plugin-rsc/react/rsc";
-import { NextRouter } from "vitest-plugin-rsc/nextjs/client";
-import {
-  createNextDirectComponentMod,
-  isNextAppRenderRedirectError,
-  renderNextRouteActionResponse,
-  renderNextRouteFlightResponse,
-  renderNextRouteHtmlResponse,
-  renderNextRouteInitialPayload,
-  resetNextAppRenderCache,
-  type NextInitialRscPayload,
-  type NextNavigationFlightPayload,
-} from "./app-render.ts";
-import {
-  createNextDocumentFlightStream,
-  getNextHttpAccessFallbackStatus,
-} from "./src/client/app-index.ts";
-import {
-  applyInitialAccessFallback,
-  findInitialAccessFallbackNode,
-} from "./src/server/app-render/create-component-tree.tsx";
-import {
-  injectNextFontPreloadLinks,
-  injectNextFontStyles,
-} from "./src/server/app-render/get-layer-assets.tsx";
-import {
-  createDirectNodeLoaderTree,
-  findDeepestAccessFallbackModule,
-  hasNextErrorBoundary,
-  replaceFirstPageModule,
-  replacePageModule,
-  wrapRootLayoutLoaderTree,
-  type LoaderTreeModule,
-} from "./src/server/lib/app-dir-module.ts";
-import {
-  assertRoutePatternMatchesPath,
-  createPageOnlyRoutingData,
-} from "./direct-render-routing.ts";
+import type { TestingLibraryClientRoot } from "../testing-library-client.tsx";
+import { importReactClient } from "../utilts.ts";
+import { readNextAppPageInitialDocument } from "./src/server/next-server.ts";
+import { createPageOnlyRoutingData } from "./direct-render-routing.ts";
 import {
   resolveNextRequestTarget,
   resolveRedirectUrl,
@@ -57,22 +18,11 @@ import {
   type NextRouteManifest,
   type NextRouteManifestEntry,
 } from "./request-router.ts";
-import type { FetchNextRsc } from "./testing-library-client.ts";
 
-export type NextRenderConfiguration = Partial<RenderConfiguration> & {
-  nextRscRequestsViaMsw?: boolean;
-};
+export type NextRenderConfiguration = Partial<RenderConfiguration>;
 
-type NextRuntimeConfiguration = RenderConfiguration & {
-  nextRscRequestsViaMsw: boolean;
-};
+type NextRuntimeConfiguration = RenderConfiguration;
 
-const client = await importReactClient<typeof import("../testing-library-client.tsx")>(
-  "vitest-plugin-rsc/testing-library-client",
-);
-const ssr = await importReactSsr<typeof import("../testing-library-ssr.tsx")>(
-  "vitest-plugin-rsc/testing-library-ssr",
-);
 const nextClient = await importReactClient<typeof import("./testing-library-client.ts")>(
   "vitest-plugin-rsc/nextjs/testing-library-client",
 );
@@ -82,17 +32,9 @@ const mountedRootEntries: {
   root: TestingLibraryClientRoot;
 }[] = [];
 
-const NextRouterForRender = NextRouter as unknown as JSXElementConstructor<{
-  route?: string;
-  url?: string;
-  initialFlightPayload?: NextNavigationFlightPayload;
-  initialRSCPayload?: NextInitialRscPayload;
-}>;
-
 let config: NextRuntimeConfiguration = {
   reactStrictMode: false,
   rootOptions: {},
-  nextRscRequestsViaMsw: false,
 };
 let initialDocumentSnapshot: DocumentSnapshot | undefined;
 let shouldRestoreDocument = false;
@@ -116,346 +58,92 @@ export function initialize(customConfig: NextRenderConfiguration = {}): void {
 type NextRenderServerOptions = {
   container?: HTMLElement;
   baseElement?: HTMLElement;
-  wrapper?: JSXElementConstructor<{ children: ReactNode }>;
   url?: string;
   route?: string;
   headers?: Headers | Record<string, string>;
 };
 
-type NextRouteRenderOptions = Omit<NextRenderServerOptions, "url"> & {
+type NextAppPageRenderOptions = Omit<NextRenderServerOptions, "url"> & {
   url: string;
+  wrapper?: never;
 };
 
-type NextRenderSource =
-  | {
-      kind: "node";
-      getNode: () => ReactNode;
-      manifest?: NextRouteManifestEntry[];
-      replacementRoute?: string;
-      fallbackRoute: string;
-    }
-  | {
-      kind: "route";
-      manifest: NextRouteManifestEntry[];
-      wrapper?: JSXElementConstructor<{ children: ReactNode }>;
-    };
+type NextRenderSource = {
+  manifest: NextRouteManifest;
+};
 
-const directNodePageFile = "vitest-plugin-rsc/direct-page";
-
-export async function renderServer(
-  uiOrOptions: ReactNode | NextRouteRenderOptions,
-  renderOptions: NextRenderServerOptions = {},
-): Promise<{
+export async function renderServer(options: NextAppPageRenderOptions): Promise<{
   container: HTMLElement;
   baseElement: HTMLElement;
   headers: Headers;
   unmount: () => Promise<void>;
-  rerender: (ui: ReactNode) => Promise<void>;
+  rerender: () => Promise<void>;
   asFragment: () => DocumentFragment;
 }> {
-  const routeOnly = isRouteRenderOptions(uiOrOptions);
-  const {
-    container: initialContainer,
-    baseElement = document.body,
-    wrapper: WrapperComponent,
-    url,
-    route,
-    headers,
-  } = routeOnly ? uiOrOptions : renderOptions;
-  let ui = routeOnly ? null : (uiOrOptions as ReactNode);
+  if (!isAppPageRenderOptions(options)) {
+    throw new Error(
+      "renderServer(<ReactNode />) and renderServer(<ReactNode />, { url }) are no longer supported by vitest-plugin-rsc/nextjs/testing-library. Use renderServer({ url }) to render a generated Next App Page route.",
+    );
+  }
+
+  if ((options as { wrapper?: unknown }).wrapper !== undefined) {
+    throw new Error(
+      "renderServer({ url, wrapper }) is not supported for generated Next App Page routes. Render the route without a wrapper.",
+    );
+  }
+
+  const { container: initialContainer, baseElement = document.body, url, route, headers } = options;
   let container = initialContainer;
 
   const requestUrl = url ?? "/";
-  const explicitUrl = routeOnly || url !== undefined;
-  const routeManifest = explicitUrl ? await loadNextRouteManifest() : undefined;
-  const initialRequest = routeManifest
-    ? await resolveInitialNextRequestTarget({
-        manifest: routeManifest,
-        requestUrl,
-        route,
-        routeOnly,
-        headers,
-      })
-    : undefined;
-  const initialRequestUrl = initialRequest?.url ?? requestUrl;
-  const responseHeaders = initialRequest?.target.responseHeaders ?? new Headers();
-  const location = new URL(initialRequestUrl, "http://localhost");
-  const routeEntry = initialRequest?.routeEntry;
-  const hydrateDocument = Boolean(routeEntry);
-  container ??= hydrateDocument
-    ? document.body
-    : baseElement.appendChild(document.createElement("div"));
+  const routeManifest = await loadNextRouteManifest();
+  const initialRequest = await resolveInitialNextRequestTarget({
+    manifest: routeManifest,
+    requestUrl,
+    route,
+    headers,
+  });
+  const initialRequestUrl = initialRequest.url;
+  const responseHeaders = initialRequest.target.responseHeaders ?? new Headers();
+  const hydrateDocument = true;
+  container ??= document.body;
 
-  let root: TestingLibraryClientRoot;
+  let root: TestingLibraryClientRoot | undefined;
 
   if (!mountedContainers.has(container)) {
-    const requestRoute = routeEntry?.route ?? route ?? location.pathname;
-    const routeSource: NextRenderSource | undefined = routeEntry
-      ? routeOnly
-        ? { kind: "route", manifest: routeManifest!.pages, wrapper: WrapperComponent }
-        : undefined
-      : undefined;
-    const getServerRoot = () => {
-      let serverRoot = ui;
-      if (!routeOnly && WrapperComponent) {
-        serverRoot = <WrapperComponent>{ui}</WrapperComponent>;
-      }
-      return serverRoot;
-    };
-    const renderSource: NextRenderSource =
-      routeSource ??
-      ({
-        kind: "node",
-        getNode: getServerRoot,
-        manifest: route && !routeEntry ? undefined : routeManifest?.pages,
-        replacementRoute: routeEntry?.route,
-        fallbackRoute: requestRoute,
-      } satisfies NextRenderSource);
+    const renderSource: NextRenderSource = { manifest: routeManifest };
     let activeRequestUrl = initialRequestUrl;
 
-    async function prepareServerRoot(
-      initialRSCPayload?: NextInitialRscPayload,
-    ): Promise<ReactNode> {
-      let renderUrl = activeRequestUrl;
-      for (let redirectCount = 0; redirectCount < 5; redirectCount++) {
-        const appRenderEntry = await resolveAppRenderEntry(renderSource, renderUrl, requestRoute);
-        try {
-          const initialFlightPayload =
-            initialRSCPayload === undefined
-              ? await renderNextRouteInitialPayload({
-                  loaderTree: appRenderEntry.loaderTree,
-                  route: appRenderEntry.route,
-                  page: appRenderEntry.appPath,
-                  url: renderUrl,
-                  headers,
-                  componentMod: shouldUseDirectMetadataStub(renderSource, appRenderEntry)
-                    ? await createNextDirectComponentMod()
-                    : undefined,
-                })
-              : undefined;
-          activeRequestUrl = renderUrl;
-
-          return (
-            <NextRouterForRender
-              url={renderUrl}
-              route={appRenderEntry.route}
-              initialFlightPayload={initialFlightPayload}
-              initialRSCPayload={initialRSCPayload}
-            />
-          );
-        } catch (error) {
-          if (initialRSCPayload !== undefined || !isNextAppRenderRedirectError(error)) {
-            throw error;
-          }
-          renderUrl = resolveRedirectUrl(error.url, renderUrl);
-        }
-      }
-
-      throw new Error(`renderServer exceeded the Next redirect limit for ${activeRequestUrl}.`);
-    }
-
-    const fetchRsc: FetchRsc = async (actionRequest) => {
-      let returnValue: unknown | undefined;
-      let temporaryReferences: unknown | undefined;
-      if (actionRequest) {
-        const { id, reply } = actionRequest;
-        temporaryReferences = ReactServer.createTemporaryReferenceSet();
-        const args = await ReactServer.decodeReply(reply, {
-          temporaryReferences,
-        });
-        const action = await ReactServer.loadServerAction(id);
-        returnValue = await action.apply(null, args);
-      }
-      const rscPayload: RscPayload = {
-        root: await prepareServerRoot(),
-        returnValue,
-      };
-      const rscOptions = { temporaryReferences };
-      return ReactServer.renderToReadableStream<RscPayload>(rscPayload, rscOptions);
-    };
-
-    const fetchNextRsc: FetchNextRsc = async (request) => {
-      const appRenderEntry = await resolveAppRenderEntry(renderSource, request.url, requestRoute);
-      const stubMetadata = shouldUseDirectMetadataStub(renderSource, appRenderEntry);
-
-      if (request.requestType === "next-action") {
-        return renderNextRouteActionResponse({
-          loaderTree: appRenderEntry.loaderTree,
-          route: appRenderEntry.route,
-          page: appRenderEntry.appPath,
-          url: request.url,
-          actionId: request.id,
-          reply: request.reply,
-          routerState: request.routerState,
-          nextUrl: request.nextUrl,
-          blockRedirectFlight: renderSource.kind === "node",
-          stubMetadata,
-        });
-      }
-
-      return renderNextRouteFlightResponse({
-        loaderTree: appRenderEntry.loaderTree,
-        route: appRenderEntry.route,
-        page: appRenderEntry.appPath,
-        url: request.url,
-        routerState: request.routerState,
-        componentMod: stubMetadata ? await createNextDirectComponentMod() : undefined,
-      });
-    };
-
-    const serverActionCaller = config.nextRscRequestsViaMsw
-      ? nextClient.createServerActionCaller({ fetchRsc: fetchNextRsc })
-      : undefined;
+    const serverActionCaller = nextClient.createServerActionCaller();
 
     try {
-      let initialStream: ReadableStream<Uint8Array> | undefined;
       let documentHtml: string | undefined;
-      let documentOnly = false;
-      let hydrateClientRoot = hydrateDocument;
-      const renderServerRootForHydration = async (serverRoot: ReactNode) => {
-        const rscPayload: RscPayload = { root: serverRoot };
-        const rscStream = ReactServer.renderToReadableStream<RscPayload>(rscPayload);
-        const [ssrStream, clientStream] = rscStream.tee();
-        return {
-          documentHtml: await ssr.renderToHtml(ssrStream),
-          initialStream: clientStream,
-          hydrateDocument: true,
-          documentOnly: false,
-        };
-      };
-      const renderNextDocumentClientFallback = async (status?: number) => {
-        const appRenderEntry = await resolveAppRenderEntry(
-          renderSource,
-          activeRequestUrl,
-          requestRoute,
-        );
-        if (status !== undefined) {
-          const accessFallbackNode = await loadDeepestAccessFallbackNode(
-            appRenderEntry.loaderTree,
-            status,
-          );
-          if (accessFallbackNode) {
-            return renderServerRootForHydration(accessFallbackNode);
-          }
-        }
-
-        const documentHtml = await renderNextDocumentHtml(
-          renderSource,
-          activeRequestUrl,
-          requestRoute,
-          {
-            headers,
-          },
-        );
-        const initialRSCPayload = await createNextDocumentInitialPayload(documentHtml);
-        if (status !== undefined) {
-          const initialAccessFallbackNode = findInitialAccessFallbackNode(initialRSCPayload);
-          if (initialAccessFallbackNode) {
-            return renderServerRootForHydration(initialAccessFallbackNode);
-          }
-          applyInitialAccessFallback(initialRSCPayload);
-        }
-        const rscPayload: RscPayload = {
-          root: await prepareServerRoot(initialRSCPayload),
-        };
-
-        return {
-          documentHtml,
-          initialStream: ReactServer.renderToReadableStream<RscPayload>(rscPayload),
-          hydrateDocument: status === undefined,
-          documentOnly: false,
-        };
-      };
+      const hydrateClientRoot = hydrateDocument;
 
       if (hydrateDocument) {
         shouldRestoreDocument = true;
-        try {
-          initialStream = await fetchRsc();
-          const [inspectionStream, renderStream] = initialStream.tee();
-          const flightPayloadText = await readReadableStreamText(inspectionStream);
-          const accessFallbackStatus = getNextHttpAccessFallbackStatus(flightPayloadText);
-          if (accessFallbackStatus) {
-            const fallbackRender = await renderNextDocumentClientFallback(accessFallbackStatus);
-            documentHtml = fallbackRender.documentHtml;
-            initialStream = fallbackRender.initialStream;
-            hydrateClientRoot = fallbackRender.hydrateDocument;
-            documentOnly = fallbackRender.documentOnly;
-          } else {
-            const [ssrStream, clientStream] = renderStream.tee();
-            initialStream = clientStream;
-            documentHtml = await ssr.renderToHtml(ssrStream);
-            if (isBlankDocumentHtml(documentHtml)) {
-              const fallbackRender = await renderNextDocumentClientFallback();
-              documentHtml = fallbackRender.documentHtml;
-              initialStream = fallbackRender.initialStream;
-              hydrateClientRoot = fallbackRender.hydrateDocument;
-              documentOnly = fallbackRender.documentOnly;
-            }
-          }
-        } catch (error) {
-          const accessFallbackStatus = getNextHttpAccessFallbackStatus(error);
-          if (
-            accessFallbackStatus === undefined &&
-            !isNextBuiltinGlobalErrorReferenceError(error) &&
-            !hasNextErrorBoundary(
-              (await resolveAppRenderEntry(renderSource, activeRequestUrl, requestRoute))
-                .loaderTree,
-            )
-          ) {
-            throw error;
-          }
-
-          const fallbackRender = await renderNextDocumentClientFallback(accessFallbackStatus);
-          documentHtml = fallbackRender.documentHtml;
-          initialStream = fallbackRender.initialStream;
-          hydrateClientRoot = fallbackRender.hydrateDocument;
-          documentOnly = fallbackRender.documentOnly;
-        }
-      }
-
-      const clientRootOptions = {
-        container,
-        config: toBaseConfig(),
-        fetchRsc,
-        serverActionCaller,
-        hydrateDocument: hydrateClientRoot,
-        documentOnly,
-        initialStream,
-        documentHtml,
-      };
-
-      try {
-        root = await client.createTestingLibraryClientRoot(clientRootOptions);
-      } catch (error) {
-        if (
-          !hydrateDocument ||
-          documentOnly ||
-          (getNextHttpAccessFallbackStatus(error) === undefined &&
-            !isNextBuiltinGlobalErrorReferenceError(error) &&
-            !hasNextErrorBoundary(
-              (await resolveAppRenderEntry(renderSource, activeRequestUrl, requestRoute))
-                .loaderTree,
-            ))
-        ) {
-          throw error;
-        }
-
-        const fallbackRender = await renderNextDocumentClientFallback(
-          getNextHttpAccessFallbackStatus(error),
-        );
-        root = await client.createTestingLibraryClientRoot({
-          ...clientRootOptions,
-          hydrateDocument: fallbackRender.hydrateDocument,
-          documentOnly: fallbackRender.documentOnly,
-          initialStream: fallbackRender.initialStream,
-          documentHtml: fallbackRender.documentHtml,
+        const initialDocument = await renderNextDocumentHtml(renderSource, activeRequestUrl, {
+          headers,
+          manifest: routeManifest,
+        });
+        activeRequestUrl = initialDocument.url;
+        replaceBrowserHistoryUrl(activeRequestUrl);
+        documentHtml = initialDocument.html;
+        const appRenderEntry = await resolveAppRenderEntry(renderSource, activeRequestUrl);
+        root = await nextClient.createNextAppRouterClientRoot({
+          container,
+          config: toBaseConfig(),
+          serverActionCaller,
+          hydrateDocument: hydrateClientRoot,
+          documentHtml,
+          projectRoot: appRenderEntry.rootDir ?? inferNextProjectRoot(appRenderEntry),
+          route: appRenderEntry.route,
+          url: activeRequestUrl,
         });
       }
-      injectNextFontStyles();
-      if (hydrateDocument) {
-        injectNextFontPreloadLinks(
-          (await resolveAppRenderEntry(renderSource, activeRequestUrl, requestRoute)).loaderTree,
-        );
+
+      if (!root) {
+        throw new Error("Next App Page render did not create a client root.");
       }
     } catch (error) {
       serverActionCaller?.cleanup();
@@ -466,14 +154,16 @@ export async function renderServer(
   } else {
     root = mountedRootEntries.find((it) => it.container === container)!.root;
   }
+  if (!root) {
+    throw new Error("Next App Page render did not create a client root.");
+  }
 
   return {
     container,
     baseElement,
     headers: responseHeaders,
     unmount: () => unmountRoot(container, false),
-    rerender: async (newUi) => {
-      ui = newUi;
+    rerender: async () => {
       await root.rerender();
     },
     asFragment: () => {
@@ -482,61 +172,23 @@ export async function renderServer(
   };
 }
 
-function isBlankDocumentHtml(html: string | undefined) {
-  return !html?.trim();
-}
-
-function isNextBuiltinGlobalErrorReferenceError(error: unknown) {
-  return getErrorMessage(error).includes("next_dist_client_components_builtin_global-error");
-}
-
-function getErrorMessage(error: unknown) {
-  return error instanceof Error ? error.message : String(error);
-}
-
-async function readReadableStreamText(stream: ReadableStream<Uint8Array>) {
-  const decoder = new TextDecoder();
-  const reader = stream.getReader();
-  let text = "";
-
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      text += decoder.decode(value, { stream: true });
-    }
-  } finally {
-    reader.releaseLock();
-  }
-
-  return text + decoder.decode();
-}
-
 async function renderNextDocumentHtml(
   source: NextRenderSource,
   url: string,
-  requestRoute: string,
-  options: { headers?: Headers | Record<string, string> },
+  options: { headers?: Headers | Record<string, string>; manifest?: NextRouteManifest },
 ) {
-  const appRenderEntry = await resolveAppRenderEntry(source, url, requestRoute);
-  const componentMod = shouldUseDirectMetadataStub(source, appRenderEntry)
-    ? await createNextDirectComponentMod()
-    : undefined;
-  const response = await renderNextRouteHtmlResponse({
-    loaderTree: appRenderEntry.loaderTree,
-    route: appRenderEntry.route,
-    page: appRenderEntry.appPath,
-    url,
-    headers: options.headers,
-    componentMod,
+  if (!options.manifest) {
+    throw new Error("renderServer({ url }) requires a generated Next route manifest.");
+  }
+  const initialDocument = await readNextAppPageInitialDocument({
+    request: { url, headers: options.headers },
+    manifest: options.manifest,
   });
-  return response.text();
-}
-
-async function createNextDocumentInitialPayload(html: string) {
-  return ReactServer.createFromReadableStream<NextInitialRscPayload>(
-    createNextDocumentFlightStream(html),
-  );
+  if (initialDocument === undefined) {
+    const entry = await resolveAppRenderEntry(source, url);
+    throw new Error(`No generated Next Edge App Page handler found for "${entry.appPath}".`);
+  }
+  return initialDocument;
 }
 
 async function unmountRoot(container: Container, removeContainer: boolean) {
@@ -563,94 +215,17 @@ function toBaseConfig(): RenderConfiguration {
 async function resolveAppRenderEntry(
   source: NextRenderSource,
   url: string,
-  defaultRoute: string,
 ): Promise<NextRouteManifestEntry> {
   const location = new URL(url, "http://localhost");
 
-  if (source.kind === "route") {
-    const target = await resolveNextRequestTarget({
-      url,
-      manifest: createPageOnlyRouteManifest(source.manifest),
-    });
-    if (target.kind !== "app-page") {
-      throw new Error(`No Next app route found for URL "${location.pathname}".`);
-    }
-    const entry = target.entry;
-    return source.wrapper
-      ? {
-          ...entry,
-          loaderTree: wrapRootLayoutLoaderTree(entry.loaderTree, source.wrapper),
-        }
-      : entry;
+  const target = await resolveNextRequestTarget({
+    url,
+    manifest: createPageOnlyRouteManifest(source.manifest.pages),
+  });
+  if (target.kind !== "app-page") {
+    throw new Error(`No Next app route found for URL "${location.pathname}".`);
   }
-
-  const target = source.manifest
-    ? await resolveNextRequestTarget({
-        url,
-        manifest: createPageOnlyRouteManifest(source.manifest),
-      })
-    : undefined;
-  const entry = target?.kind === "app-page" ? target.entry : undefined;
-  if (entry) {
-    if (source.replacementRoute && entry.route === source.replacementRoute) {
-      return replaceRoutePageWithNode(entry, source.getNode());
-    }
-    return entry;
-  }
-
-  assertRoutePatternMatchesPath(defaultRoute, location.pathname);
-  return createDirectNodeRouteEntry(defaultRoute, source.getNode());
-}
-
-function replaceRoutePageWithNode(
-  entry: NextRouteManifestEntry,
-  node: ReactNode,
-): NextRouteManifestEntry {
-  const createReplacement = (originalPageModule: LoaderTreeModule | undefined) =>
-    createPageReplacementModule(originalPageModule, node);
-
-  const replacement = replacePageModule(entry.loaderTree, entry.pageFile, createReplacement);
-
-  return {
-    ...entry,
-    loaderTree: replacement.replaced
-      ? replacement.loaderTree
-      : replaceFirstPageModule(entry.loaderTree, createReplacement).loaderTree,
-  };
-}
-
-function createPageReplacementModule(
-  originalPageModule: LoaderTreeModule | undefined,
-  node: ReactNode,
-): LoaderTreeModule {
-  return [
-    async () => ({
-      ...(originalPageModule ? await originalPageModule[0]() : {}),
-      default: function VitestNextRoutePageReplacement() {
-        return node;
-      },
-    }),
-    originalPageModule?.[1] ?? "vitest-plugin-rsc/page-replacement",
-  ];
-}
-
-function createDirectNodeRouteEntry(route: string, node: ReactNode): NextRouteManifestEntry {
-  return {
-    route,
-    appPath: createAppPageFromRoutePattern(route),
-    pageFile: directNodePageFile,
-    loaderTree: createDirectNodeLoaderTree({
-      routePattern: route,
-      node,
-      pageFile: directNodePageFile,
-    }),
-  };
-}
-
-function createAppPageFromRoutePattern(routePattern: string) {
-  const withLeadingSlash = routePattern.startsWith("/") ? routePattern : `/${routePattern}`;
-  const route = withLeadingSlash.replace(/\/$/, "");
-  return `${route === "" ? "" : route}/page`;
+  return target.entry;
 }
 
 async function loadNextRouteManifest() {
@@ -667,19 +242,17 @@ async function resolveInitialNextRequestTarget(options: {
   manifest: NextRouteManifest;
   requestUrl: string;
   route: string | undefined;
-  routeOnly: boolean;
   headers: Headers | Record<string, string> | undefined;
 }): Promise<{
   target: Exclude<NextRequestTarget, { kind: "redirect" }>;
   url: string;
-  routeEntry?: NextRouteManifestEntry;
 }> {
   let activeUrl = options.requestUrl;
 
   for (let redirectCount = 0; redirectCount < 5; redirectCount++) {
     const target = await resolveNextRequestTarget({
       url: activeUrl,
-      route: options.routeOnly ? options.route : undefined,
+      route: options.route,
       headers: options.headers,
       manifest: options.manifest,
     });
@@ -690,17 +263,15 @@ async function resolveInitialNextRequestTarget(options: {
     }
 
     const url = formatNextRequestUrl(getNextRequestTargetUrl(target));
-    const routeEntry = options.routeOnly
-      ? resolveRouteOnlyEntry(target, options.route)
-      : resolveDirectRenderEntry(target, options.route);
+    resolveAppPageRenderEntry(target, options.route);
 
-    return { target, url, routeEntry };
+    return { target, url };
   }
 
   throw new Error(`renderServer exceeded the Next redirect limit for ${options.requestUrl}.`);
 }
 
-function resolveRouteOnlyEntry(
+function resolveAppPageRenderEntry(
   target: Exclude<NextRequestTarget, { kind: "redirect" }>,
   route: string | undefined,
 ) {
@@ -715,15 +286,6 @@ function resolveRouteOnlyEntry(
     ? ` route "${route}"`
     : ` URL "${getNextRequestTargetUrl(target).pathname}"`;
   throw new Error(`No Next app route found for${routeHint}.`);
-}
-
-function resolveDirectRenderEntry(
-  target: Exclude<NextRequestTarget, { kind: "redirect" }>,
-  route: string | undefined,
-) {
-  if (target.kind !== "app-page") return;
-  if (!route) return target.entry;
-  return target.entry.route === route ? target.entry : undefined;
 }
 
 function getNextRequestTargetUrl(target: Exclude<NextRequestTarget, { kind: "redirect" }>) {
@@ -744,26 +306,20 @@ function formatNextRequestUrl(url: URL) {
   return `${url.pathname}${url.search}${url.hash}`;
 }
 
-function shouldUseDirectMetadataStub(source: NextRenderSource, entry: NextRouteManifestEntry) {
-  return source.kind === "node" && entry.pageFile === directNodePageFile;
+function inferNextProjectRoot(entry: NextRouteManifestEntry) {
+  const pageFile = entry.pageFile.replaceAll("\\", "/");
+  for (const marker of ["/src/app/", "/app/"]) {
+    const markerIndex = pageFile.indexOf(marker);
+    if (markerIndex !== -1) return pageFile.slice(0, markerIndex);
+  }
 }
 
-async function loadDeepestAccessFallbackNode(
-  loaderTree: LoaderTree,
-  status: number,
-): Promise<ReactNode | undefined> {
-  const moduleName = getAccessFallbackErrorTypeByStatus(status);
-  if (!moduleName) return;
-
-  const fallbackModule = findDeepestAccessFallbackModule(loaderTree, moduleName);
-  if (!fallbackModule) return;
-
-  const mod = await fallbackModule[0]();
-  const Fallback = mod.default as JSXElementConstructor<Record<string, never>> | undefined;
-  return Fallback ? createElement(Fallback) : undefined;
+function replaceBrowserHistoryUrl(url: string) {
+  const nextUrl = new URL(url, window.location.href);
+  window.history.replaceState(window.history.state, "", formatNextRequestUrl(nextUrl));
 }
 
-function isRouteRenderOptions(value: unknown): value is NextRouteRenderOptions {
+function isAppPageRenderOptions(value: unknown): value is NextAppPageRenderOptions {
   return Boolean(
     value &&
     typeof value === "object" &&
@@ -784,7 +340,6 @@ export async function cleanup() {
     mountedContainers.clear();
     await baseCleanup();
     restoreInitialDocument();
-    await resetNextAppRenderCache();
   }
 }
 

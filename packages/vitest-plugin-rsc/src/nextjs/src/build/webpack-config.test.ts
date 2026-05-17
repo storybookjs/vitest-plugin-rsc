@@ -13,6 +13,8 @@ import {
   provideBufferLikeNextWebpack,
   treatNextInternalsAsServerInRsc,
   useNextReactDomServerAlias,
+  useNextServerOnlyAlias,
+  useNextSharedAsyncStorageLayer,
 } from "./webpack-config.ts";
 import { fixtureRoot, getHookHandler } from "../../plugin/test-utils.ts";
 
@@ -66,19 +68,48 @@ test("creates Next edge native aliases with resolved local shims", () => {
   const aliases = createNextEdgeNativeAliases(fixtureRoot);
 
   expect(findAlias(aliases, "async_hooks")).toContain("vitest-plugin-rsc");
+  expect(findAlias(aliases, "path")).toContain("next/dist/compiled/path-browserify");
+  expect(findAlias(aliases, "node:path")).toContain("next/dist/compiled/path-browserify");
   expect(findAlias(aliases, "os")).toContain("os-browser.js");
+  expect(findAlias(aliases, "util")).toContain("next/dist/compiled/util");
+  expect(findAlias(aliases, "node:util")).toContain("util-edge.js");
   expect(findAlias(aliases, "buffer")).toContain("next/dist/compiled/buffer");
-  expect(findAlias(aliases, "@opentelemetry/api")).toBe("next/dist/compiled/@opentelemetry/api");
+  expect(findAlias(aliases, "@opentelemetry/api")).toContain(
+    "next/dist/compiled/@opentelemetry/api",
+  );
 });
 
-test("creates react-server-dom-webpack aliases for Vite RSC vendor modules", () => {
-  expect(createReactServerDomWebpackAliases(fixtureRoot)).toEqual(
+test("creates react-server-dom-webpack aliases from installed Next entries", () => {
+  const aliases = createReactServerDomWebpackAliases(fixtureRoot);
+
+  expect(aliases).toEqual(
     expect.objectContaining({
-      browser: expect.stringContaining("@vitejs/plugin-rsc"),
-      edge: expect.stringContaining("@vitejs/plugin-rsc"),
-      serverEdge: expect.stringContaining("@vitejs/plugin-rsc"),
+      browser: expect.stringContaining(
+        "next/dist/compiled/react-server-dom-webpack/client.browser",
+      ),
+      edge: expect.stringContaining("next/dist/compiled/react-server-dom-webpack/client.edge"),
+      serverEdge: expect.stringContaining(
+        "next/dist/compiled/react-server-dom-webpack/server.edge",
+      ),
+      staticEdge: expect.stringContaining(
+        "next/dist/compiled/react-server-dom-webpack/static.edge",
+      ),
     }),
   );
+  expect(aliases.ssr).toContain("react-server-dom-webpack-ssr.ts");
+});
+
+test("aliases server-only to Next's empty marker in Edge-like environments", async () => {
+  const plugin = useNextServerOnlyAlias(fixtureRoot);
+  const resolveId = getHookHandler(plugin.resolveId);
+
+  expect(plugin.applyToEnvironment?.({ name: "client" } as never)).toBe(true);
+  expect(plugin.applyToEnvironment?.({ name: "react_ssr" } as never)).toBe(true);
+  expect(plugin.applyToEnvironment?.({ name: "react_client" } as never)).toBe(false);
+  expect(resolveId.call({} as never, "server-only", undefined, {} as never)).toContain(
+    "next/dist/compiled/server-only/empty",
+  );
+  expect(await resolveId.call({} as never, "client-only", undefined, {} as never)).toBeUndefined();
 });
 
 test("creates optimizeDeps resolve aliases from edge, app-router, and React aliases", () => {
@@ -118,6 +149,7 @@ test("resolves react-dom/server through Next's app-render SSR alias", async () =
   const resolveId = getHookHandler(plugin.resolveId);
 
   expect(plugin.applyToEnvironment?.({ name: "client" } as never)).toBe(true);
+  expect(plugin.applyToEnvironment?.({ name: "react_ssr" } as never)).toBe(true);
   expect(
     resolveId.call(
       {} as never,
@@ -126,6 +158,80 @@ test("resolves react-dom/server through Next's app-render SSR alias", async () =
       {} as never,
     ),
   ).toContain("next/dist/build/webpack/alias/react-dom-server");
+});
+
+test("resolves AppPageRouteModule React through Next's SSR layer aliases", async () => {
+  const plugin = useNextReactDomServerAlias(fixtureRoot);
+  const resolveId = getHookHandler(plugin.resolveId);
+
+  const appPageRouteModule = path.join(
+    fixtureRoot,
+    "node_modules/next/dist/server/route-modules/app-page/module.js",
+  );
+
+  expect(plugin.applyToEnvironment?.({ name: "client" } as never)).toBe(true);
+  expect(plugin.applyToEnvironment?.({ name: "react_ssr" } as never)).toBe(true);
+  expect(resolveId.call({} as never, "react", appPageRouteModule, {} as never)).toContain(
+    "next/dist/compiled/react/index.js",
+  );
+  expect(
+    resolveId.call({} as never, "next/dist/compiled/react", appPageRouteModule, {} as never),
+  ).toContain("next/dist/compiled/react/index.js");
+});
+
+test("shares Next async-storage modules from react_ssr with the RSC graph", async () => {
+  const plugin = useNextSharedAsyncStorageLayer();
+  const transform = getHookHandler(plugin.transform);
+  const code = `
+    const _asynclocalstorage = require("./async-local-storage");
+    const workAsyncStorageInstance = (0, _asynclocalstorage.createAsyncLocalStorage)();
+  `;
+
+  expect(plugin.applyToEnvironment?.({ name: "react_ssr" } as never)).toBe(true);
+  expect(plugin.applyToEnvironment?.({ name: "client" } as never)).toBe(true);
+  expect(plugin.applyToEnvironment?.({ name: "react_client" } as never)).toBe(false);
+
+  const result = (await transform.call(
+    { environment: { name: "client" } } as never,
+    code,
+    path.join(
+      fixtureRoot,
+      "node_modules/next/dist/server/app-render/work-async-storage-instance.js",
+    ),
+  )) as { code: string };
+
+  expect(result.code).toContain(
+    'Symbol.for("vitest-plugin-rsc.next.shared-async-storage.workAsyncStorageInstance")',
+  );
+  expect(result.code).toContain("const workAsyncStorageInstance = (globalThis[Symbol.for");
+  expect(
+    await transform.call(
+      {} as never,
+      code,
+      path.join(fixtureRoot, "node_modules/next/dist/server/request/search-params.js"),
+    ),
+  ).toBeUndefined();
+});
+
+test("shares ESM Next async-storage instance modules too", async () => {
+  const plugin = useNextSharedAsyncStorageLayer();
+  const transform = getHookHandler(plugin.transform);
+  const result = (await transform.call(
+    {} as never,
+    `import { createAsyncLocalStorage } from './async-local-storage';
+export const workUnitAsyncStorageInstance = createAsyncLocalStorage();`,
+    path.join(
+      fixtureRoot,
+      "node_modules/next/dist/esm/server/app-render/work-unit-async-storage-instance.js",
+    ),
+  )) as { code: string };
+
+  expect(result.code).toContain(
+    'Symbol.for("vitest-plugin-rsc.next.shared-async-storage.workUnitAsyncStorageInstance")',
+  );
+  expect(result.code).toContain(
+    "export const workUnitAsyncStorageInstance = (globalThis[Symbol.for",
+  );
 });
 
 test("rewrites Next server-runtime checks only for Next internals in the RSC environment", async () => {
@@ -150,8 +256,101 @@ test("rewrites Next server-runtime checks only for Next internals in the RSC env
   expect(result.code).toContain('export const hasWindow = "undefined" !== "undefined";');
   expect(result.code).toContain("export const indexedWindow = typeof window.document;");
   expect(
-    await transform.call({} as never, code, path.join(fixtureRoot, "node_modules/react/index.js")),
+    await transform.call(
+      { environment: { name: "client" } } as never,
+      code,
+      path.join(fixtureRoot, "node_modules/react/index.js"),
+    ),
   ).toBeUndefined();
+});
+
+test("rewrites Next runtime checks for generated Edge App Page modules in react_ssr", async () => {
+  const plugin = treatNextInternalsAsServerInRsc();
+  const transform = getHookHandler(plugin.transform);
+  const code = `
+    if (process.env.NEXT_RUNTIME === "edge") {
+      module.exports = require("next/dist/server/route-modules/app-page/module.js");
+    }
+  `;
+
+  expect(plugin.applyToEnvironment?.({ name: "react_ssr" } as never)).toBe(true);
+
+  const result = (await transform.call(
+    { environment: { name: "react_ssr" } } as never,
+    code,
+    path.join(
+      fixtureRoot,
+      "node_modules/next/dist/server/route-modules/app-page/module.compiled.js",
+    ),
+  )) as { code: string };
+
+  expect(result.code).toContain('if ("edge" === "edge")');
+});
+
+test("routes Next Edge render Web Crypto calls through the global Web Crypto object", async () => {
+  const plugin = treatNextInternalsAsServerInRsc();
+  const transform = getHookHandler(plugin.transform);
+  const code = `
+    export const requestId = await crypto.subtle.digest("SHA-1", input);
+    export const uuid = crypto.randomUUID();
+    export const existing = await globalThis.crypto.subtle.digest("SHA-1", input);
+    export const nodeUuid = nodeCrypto.randomUUID();
+  `;
+
+  const result = (await transform.call(
+    { environment: { name: "react_ssr" } } as never,
+    code,
+    path.join(fixtureRoot, "node_modules/next/dist/server/app-render/app-render.js"),
+  )) as { code: string };
+
+  expect(result.code).toContain('const crypto = globalThis["crypto"];');
+  expect(result.code).toContain(
+    'export const requestId = await crypto.subtle.digest("SHA-1", input);',
+  );
+  expect(result.code).toContain("export const uuid = crypto.randomUUID();");
+  expect(result.code).toContain(
+    'export const existing = await globalThis.crypto.subtle.digest("SHA-1", input);',
+  );
+  expect(result.code).toContain("export const nodeUuid = nodeCrypto.randomUUID();");
+});
+
+test("does not rewrite Next client internals in react_ssr", async () => {
+  const plugin = treatNextInternalsAsServerInRsc();
+  const transform = getHookHandler(plugin.transform);
+  const code = `
+    export const runtime = process.env.NEXT_RUNTIME;
+    export const hasWindow = typeof window !== "undefined";
+  `;
+
+  expect(
+    await transform.call(
+      { environment: { name: "react_ssr" } } as never,
+      code,
+      path.join(fixtureRoot, "node_modules/next/dist/client/components/app-router.js"),
+    ),
+  ).toBeUndefined();
+});
+
+test("preserves NextRequest duplex setup for streamed browser request bodies", async () => {
+  const plugin = treatNextInternalsAsServerInRsc();
+  const transform = getHookHandler(plugin.transform);
+  const code = `
+    if (process.env.NEXT_RUNTIME !== 'edge') {
+      if (init.body && init.duplex !== 'half') {
+        init.duplex = 'half';
+      }
+    }
+  `;
+
+  const result = (await transform.call(
+    { environment: { name: "client" } } as never,
+    code,
+    path.join(fixtureRoot, "node_modules/next/dist/server/web/spec-extension/request.js"),
+  )) as { code: string };
+
+  expect(result.code).toContain("if (init.body && init.duplex !== 'half')");
+  expect(result.code).toContain("init.duplex = 'half';");
+  expect(result.code).not.toContain("\"edge\" !== 'edge'");
 });
 
 test("disables Next dev-server runtime checks only inside Next internals", async () => {
@@ -188,6 +387,20 @@ test("provides Buffer only to Next internals that reference Buffer", async () =>
   expect(
     await transform.call({} as never, code, path.join(fixtureRoot, "node_modules/react/index.js")),
   ).toBeUndefined();
+});
+
+test("provides Buffer with CommonJS syntax for Next compiled CJS internals", async () => {
+  const plugin = provideBufferLikeNextWebpack();
+  const transform = getHookHandler(plugin.transform);
+  const code = `module.exports = Buffer.from("next");`;
+
+  const result = (await transform.call(
+    {} as never,
+    code,
+    path.join(fixtureRoot, "node_modules/next/dist/compiled/nanoid/index.cjs"),
+  )) as { code: string };
+
+  expect(result.code).toMatch(/^const \{ Buffer \} = require\("node:buffer"\);/);
 });
 
 function findAlias(aliases: Alias[], find: string) {
