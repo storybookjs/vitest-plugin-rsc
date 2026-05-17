@@ -5,10 +5,13 @@ Source of truth: Next.js `v16.2.6`
 `next@16.2.6`, and installed `@next/routing@16.2.6`.
 
 This document describes the ideal architecture for `vitest-plugin-rsc/nextjs`.
-The rule is strict: every internal file under `nextjs/src/` must imitate a
-concrete Next.js source file or an exact line range inside one. If a behavior can
-be handled by a direct `next/dist/...` import and copies/adapts no Next source,
-it should not get a `nextjs/src/` file.
+The rule is strict: every internal file under `nextjs/src/` must copy or adapt a
+concrete Next.js source file, line range, generated module shape, manifest
+shape, bootstrap module, or runtime contract. `nextjs/src/` is also the right
+home for Vite/Vitest boundary translations when they intentionally produce the
+same or similar shape as the matching upstream Next file or virtual build
+output. If a behavior can be handled by a direct `next/dist/...` import and
+copies/adapts no Next-owned behavior, it should not get a `nextjs/src/` file.
 
 ## Core Rules
 
@@ -23,7 +26,9 @@ fewer imports, fewer local shims, fewer copied blocks, fewer special cases.
 Copy or adapt as little as possible. If code must be copied or substantially
 adapted, place it at the exact matching path under
 `packages/vitest-plugin-rsc/src/nextjs/src/` and wrap the implementation in
-source-linked markers.
+source-linked markers. Use `Begin adapted` for Vite/Vitest translations that
+preserve a concrete Next module output, manifest shape, bootstrap module, or
+runtime contract.
 
 Do not create internal files that only wrap imports. A `nextjs/src/...` file must
 say exactly which upstream Next file and line ranges it imitates, copies, or
@@ -458,7 +463,10 @@ future virtual Edge App Route entry
 The virtual ID does not decide ownership. The payload decides ownership. If a
 virtual module contains Next build-time semantics, it must point at the upstream
 Next file and line range that would have produced equivalent webpack output,
-`.next` artifact data, or runtime entry code.
+`.next` artifact data, or runtime entry code. It should remain at that mirrored
+Next path even when the implementation is a Vite virtual-module generator or
+test helper. Move it out only when the payload is purely plugin infrastructure
+with no upstream Next owner.
 
 Virtual payloads must keep a structure comparable to the webpack/Next artifact
 they replace: the same meaningful exports, entry shape, loader/template shape,
@@ -560,8 +568,8 @@ nextjs/src/build/webpack/plugins/flight-client-entry-plugin.ts
 
 This overview is a dependency map, not a promise that every file must exist.
 If a direct import works, the corresponding mirror file should not be created.
-If a mirror file exists, it must document the exact upstream lines it
-imitates/copies.
+If a mirror file exists, it must document the exact upstream lines or upstream
+artifact shape it imitates, copies, or adapts.
 
 ## Support Boundaries And Review Contract
 

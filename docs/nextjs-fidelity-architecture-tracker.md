@@ -10,9 +10,11 @@ This tracker starts from one agreed rule:
 
 > Only public package entrypoints and non-Next adapter plumbing may stay directly
 > under `packages/vitest-plugin-rsc/src/nextjs/`. Any file that imitates Next.js
-> semantics, artifact shapes, loaders, manifests, runtime modules, compiler
-> behavior, or app-render behavior must live under the matching
+> semantics, adapted equivalents, artifact shapes, loaders, manifests, runtime
+> modules, compiler behavior, or app-render behavior must live under the matching
 > `packages/vitest-plugin-rsc/src/nextjs/src/...` mirror path.
+> Vite virtual-module transport can stay top-level, but a payload generator that
+> preserves a Next-owned module/source/runtime shape belongs in the mirror path.
 
 That rule is only the P0 cleanup. It is not the final architecture. The real
 goal is to make local Next mirrors temporary and removable by going higher up in
@@ -65,13 +67,15 @@ Strict marker requirement for `nextjs/src`:
   mechanical changes such as imports, formatting, types, or export boundaries;
 - use `Begin adapted` / `End adapted` for Next glue that is deliberately
   adapted to the Vite/Vitest boundary but still mirrors a concrete upstream Next
-  glue layer;
+  glue layer, module output, manifest shape, bootstrap module, or runtime
+  contract;
 - the default expectation is that roughly 90% of each `nextjs/src` implementation
   file is inside source-linked copy or adapted blocks;
 - local glue is not allowed in `nextjs/src` unless that glue is itself copied or
   directly adapted from a concrete Next glue layer: loader code, template code,
   adapter code, manifest plugin code, compiler option code, or route/build
-  conversion code;
+  conversion code. A Vite virtual-module generator is allowed there when its
+  payload is the adapted equivalent of that upstream Next output;
 - if a helper cannot point at a concrete upstream Next glue file and line range,
   do not put it under `nextjs/src`; keep it as top-level Vite/Vitest adapter
   plumbing or delete it through a P1 higher-owner spike;
@@ -135,7 +139,8 @@ contract:
 
 Virtual modules are Vite transport addresses only. The payload generator belongs
 under the Next source file that would have produced the webpack output,
-template, manifest, or adapter data.
+template, manifest, or adapter data. Move it out only when it is purely plugin
+infrastructure with no upstream Next owner.
 
 ## Virtual Module Contracts
 

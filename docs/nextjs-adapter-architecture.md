@@ -69,6 +69,8 @@ Use this order whenever adding or changing fidelity behavior:
 3. If the behavior exists only inside a non-importable upstream block, copy the smallest block with source links, `Begin copy`/`End copy` markers, and an adaptation note.
 4. Add local behavior only as the last resort, with a regression test for the user-visible behavior and a clear reason the upstream path cannot be used.
 
+Use `Begin adapted` for Vite/Vitest boundary code that intentionally preserves a concrete upstream module output, manifest shape, bootstrap module, or runtime contract. Such files belong under the matching `nextjs/src/...` path while Next owns the behavior; move them out only when they are pure plugin infrastructure.
+
 Next internals are acceptable here because fidelity is the point of the adapter. They must be treated as version-sensitive: optional internals need feature checks, optimizer includes must only include modules that resolve from the installed Next package, and compatibility CI must cover supported stable Next versions plus latest and canary.
 
 ## Config And Request Routing
