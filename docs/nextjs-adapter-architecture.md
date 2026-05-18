@@ -1,6 +1,6 @@
 # Next.js Adapter Architecture
 
-Status: 2026-05-16
+Status: 2026-05-17
 Scope: App Router support in `vitest-plugin-rsc/nextjs` for browser-mode Vitest RSC tests.
 
 This is a reference document, not a roadmap. It records the architecture we want contributors to preserve after the Next.js fidelity work in this PR: what owns which behavior, where the adapter intentionally bridges framework internals into Vite/Vitest, what is supported, and what is explicitly outside the current browser-mode contract.
@@ -33,7 +33,14 @@ Vitest owns the test harness:
 - Browser project startup.
 - DOM lifecycle and Testing Library integration.
 - Browser API ports and websocket runtime.
-- Optional MSW transport used by demo tests.
+- The initial document render owner through the Testing Library runtime, not MSW.
+
+MSW owns browser-originated same-origin request transport for this adapter: RSC
+and navigation fetches, Server Action POSTs, and App Route/API fetches. It should
+route those requests to generated Edge App Page or Edge App Route handlers, not
+to local render helpers. Browser/MSW currently does not expose the `Cookie`
+header on intercepted `Request.headers`; keep cookie-sensitive browser App Route
+coverage as backlog until it can be tested without private side channels.
 
 This package adapts those systems to each other. It should not reintroduce local versions of Next request context, component-tree rendering, flight-router-state management, router elements, webpack layer graphs, Turbopack graphs, or RSC manifests.
 
@@ -45,17 +52,18 @@ The environment names come from the base RSC plugin:
 - `react_client` is the browser App Router environment. It uses browser conditions, Next browser React aliases, and defines `process.env.NEXT_RUNTIME` as `""`.
 - `react_ssr` is the browser-ish SSR environment used to turn Flight data into HTML for hydration.
 
-The intended render path is:
+The intended route request path is:
 
 ```text
 Next app source
   -> Vite transforms
   -> narrow Next SWC pass for source-level Next features
   -> @vitejs/plugin-rsc transforms RSC directives and references
-  -> Next route matcher / next-app-loader loader tree
-  -> Next app-render produces Flight or HTML
-  -> Vite RSC deserializes client references in the browser graph
-  -> Testing Library renders or hydrates the result
+  -> Next route matcher / next-app-loader / Edge entry artifacts
+  -> initial SSR/Flight: testing-library-runtime.tsx -> generated Edge App Page handler
+  -> browser RSC/action/API: MSW -> generated Edge App Page or App Route handler
+  -> Next route modules produce HTML, Flight, action, or API Response
+  -> Testing Library hydrates or observes the browser result
 ```
 
 The adapter does not run webpack. It does invoke selected Next webpack loaders in-process where those loaders are the JavaScript implementation layer Next itself uses.
@@ -69,7 +77,9 @@ Use this order whenever adding or changing fidelity behavior:
 3. If the behavior exists only inside a non-importable upstream block, copy the smallest block with source links, `Begin copy`/`End copy` markers, and an adaptation note.
 4. Add local behavior only as the last resort, with a regression test for the user-visible behavior and a clear reason the upstream path cannot be used.
 
-Use `Begin adapted` for Vite/Vitest boundary code that intentionally preserves a concrete upstream module output, manifest shape, bootstrap module, or runtime contract. Such files belong under the matching `nextjs/src/...` path while Next owns the behavior; move them out only when they are pure plugin infrastructure.
+Source file owns mirror path. A file under `nextjs/src/...` may only contain copied or adapted behavior whose upstream owner is the same Next source file that the local path mirrors. Code from `build/templates/edge-ssr-app.ts` belongs in `packages/vitest-plugin-rsc/src/nextjs/src/build/templates/edge-ssr-app.ts`. Code from `server/app-render/manifests-singleton.ts` belongs in `packages/vitest-plugin-rsc/src/nextjs/src/server/app-render/manifests-singleton.ts`. Do not group code by local convenience, such as manifest setup, dispatcher shape, or request lifecycle, when the upstream owner differs.
+
+Use `Begin adapted` for Vite/Vitest boundary code that intentionally preserves a concrete upstream module output, manifest shape, bootstrap module, or runtime contract. Such files belong under the exact matching `nextjs/src/...` path while Next owns the behavior; move them out only when they are pure plugin infrastructure. If a helper spans multiple upstream files, split it by source owner or keep only a top-level boundary glue function that calls source-linked helpers in their correct mirrors. Do not hide an `edge-ssr-app` adaptation inside `server/app-render/manifests-singleton.ts`, or vice versa.
 
 Next internals are acceptable here because fidelity is the point of the adapter. They must be treated as version-sensitive: optional internals need feature checks, optimizer includes must only include modules that resolve from the installed Next package, and compatibility CI must cover supported stable Next versions plus latest and canary.
 
@@ -86,9 +96,9 @@ The adapter loads Next config through Next internals, then feeds the resulting v
 
 1. Redirects.
 2. `beforeFiles` rewrites.
-3. Exact app route match.
+3. Exact App Page or App Route match.
 4. `afterFiles` rewrites.
-5. Dynamic app route match.
+5. Dynamic App Page or App Route match.
 6. `fallback` rewrites.
 
 Array rewrites normalize to `afterFiles`. An `afterFiles` rewrite must not hide an existing exact app route.
@@ -101,7 +111,7 @@ Response headers from matching `next.config` header routes are exposed for same-
 
 Route discovery uses Next's App Router matchers. Loader trees are produced by invoking Next's `next-app-loader`; the Vite adapter extracts the loader tree and rewrites imports only at the bundler boundary.
 
-The app render path calls `next/dist/server/app-render/app-render.js#renderToHTMLOrFlight` with a synthetic App Page route module, `WebNextRequest`, `WebNextResponse`, loader tree, render options, cache state, and manifest proxies.
+The old lower app render path called `next/dist/server/app-render/app-render.js#renderToHTMLOrFlight` with a synthetic App Page route module, `WebNextRequest`, `WebNextResponse`, loader tree, render options, cache state, and manifest proxies. That top-level `packages/vitest-plugin-rsc/src/nextjs/app-render.ts` App Page runtime path is deletion history for the P1 Edge App Page delegation work, not the settled App Page route architecture.
 
 Supported page-route behavior includes:
 
@@ -112,9 +122,9 @@ Supported page-route behavior includes:
 - Route-level `not-found`, `forbidden`, `unauthorized`, `error`, and root `global-error`.
 - Metadata, generated metadata, viewport, generated viewport, static metadata image conventions, and metadata image modules.
 - Segment static info for the covered App Router page exports.
-- Direct React node renders through a private synthetic route, so `renderServer(<ReactNode />)` still uses the Next app-render path instead of a local React-only router.
+- The P1 route target is a real filesystem App Page route discovered from `app/**/page.*` and executed through generated `next-app-loader` / `edge-ssr-app` artifacts. There is no separate compatibility mode for that path. `renderServer(<ReactNode />)`, legacy direct-node/local app-render glue, route-entry replacement helpers, and fake routes are outside P1; any future fake route must be P2 work that enters through a synthetic file/page module, real `next-app-loader` full output, `edge-ssr-app`, and the correct request owner: non-MSW initial render and MSW browser request transport.
 
-Route handlers are not page render targets. `renderServer({ url })` detects app-route matches, including metadata route endpoints, and reports them as unsupported render targets. Direct route-handler imports cover `NextRequest`, `NextResponse`, `userAgent`, `ImageResponse`, methods, params, streaming, cookies, redirects, and rewrites. If route handlers become a render target, they must run through Next route module/request code, not a local handler runner.
+Route handlers are not page render targets. `renderServer({ url })` detects app-route matches, including metadata route endpoints, and reports them as unsupported render targets. Browser-originated route API requests dispatch through MSW to generated `next-edge-app-route-loader` / `edge-app-route` artifacts so the route enters `EdgeRouteModuleWrapper` and `AppRouteRouteModule.handle()` rather than a local handler runner. Focused unit and browser coverage exists for the dispatch and artifact contract; Cookie-header assertions remain backlog until browser/MSW exposes them without a side channel.
 
 ## Browser Hydration And Router
 
@@ -122,10 +132,14 @@ The browser path uses Next App Router internals:
 
 - Initial router state is created from the Next RSC payload.
 - The browser tree is rendered with `NextAppRouter`.
-- Server Actions and RSC refetches go through the Vite RSC transport.
+- Server Actions and RSC refetches go through MSW to the generated Edge App Page
+  handler.
 - Document hydration preserves Vitest harness scripts while applying Next head/body output.
 
-HTML responses are required only for tests that need document/head/error-fallback fidelity. Most tests should use the controlled React/Vitest path and consume the Flight payload to final UI.
+HTML responses are required for tests that need document/head/error-fallback
+fidelity and should come from the generated Edge App Page handler. Controlled
+React/Vitest helper paths may exist for local helper behavior, but they must not
+define App Page route semantics.
 
 The document fallback parser is a boundary adapter. It mirrors Next app-index's `self.__next_f.push(...)` bootstrap segment shape, parses React Flight rows for fallback and redirect digests, and uses Next redirect/access-fallback helpers. It must not scan arbitrary document HTML for broad magic strings.
 
@@ -273,7 +287,8 @@ These are not current browser-mode adapter claims:
 - Pages Router.
 - `next/legacy/image`.
 - Middleware/proxy execution.
-- Route handlers as `renderServer({ url })` targets.
+- Route handlers as `renderServer({ url })` page-render targets. Browser App
+  Route/API requests belong on the MSW -> Edge App Route path.
 - Production Next build output fidelity.
 - PPR/progressive timing fidelity.
 - Node.js runtime parity.
@@ -295,7 +310,11 @@ Use notes-demo browser tests for user-visible App Router behavior:
 - Client navigation, form/action redirects, and browser graph behavior.
 - MSW-routed transport where the browser request path matters.
 
-Use no-MSW demo tests when the behavior specifically requires proving the no-MSW transport or direct browser/server integration path.
+Use no-MSW demo tests only as legacy/P2 coverage when the behavior specifically
+belongs to direct component/helper rendering outside the Edge App Page route
+model. Browser-originated App Page/App Route request behavior should use MSW
+transport and must not count the no-MSW browser project as P1 Edge App Page
+acceptance.
 
 Use package-level tests for plugin internals:
 
@@ -324,14 +343,15 @@ Before merging a Next.js fidelity change, verify:
 2. `@vitejs/plugin-rsc` still owns RSC directives, references, action transport, and browser/server graph separation.
 3. No webpack/Turbopack RSC graph, layer graph, manifest graph, or bundler runtime was introduced.
 4. Any copied upstream block is minimal, source-linked, wrapped in copy markers, and adapted only at the Vite/Vitest boundary.
-5. Optional Next internals are feature-checked and not blindly included in optimizer lists.
-6. Demo apps do not include broad ESM app-shell dependencies as optimizer workarounds.
-7. Redirect tests prove the redirect branch was hit and form/action redirects prove client-side App Router navigation.
-8. Rewrites follow Next order, especially `afterFiles` not shadowing existing exact routes.
-9. Route handlers are not executed through `renderServer({ url })` until a Next route-module helper exists.
-10. Unsupported behavior is documented as unsupported instead of approximated locally.
-11. The notes demo covers user-visible framework behavior; package tests cover internal adapter contracts.
-12. CI is green across supported, latest, and canary Next before merge.
+5. Every `nextjs/src/...` mirror path matches the upstream source file named by its `Source:` markers; no code is placed by local convenience if the upstream owner differs.
+6. Optional Next internals are feature-checked and not blindly included in optimizer lists.
+7. Demo apps do not include broad ESM app-shell dependencies as optimizer workarounds.
+8. Redirect tests prove the redirect branch was hit and form/action redirects prove client-side App Router navigation.
+9. Rewrites follow Next order, especially `afterFiles` not shadowing existing exact routes.
+10. Route handlers are not executed through `renderServer({ url })` until a Next route-module helper exists.
+11. Unsupported behavior is documented as unsupported instead of approximated locally.
+12. The notes demo covers user-visible framework behavior; package tests cover internal adapter contracts.
+13. CI is green across supported, latest, and canary Next before merge.
 
 ## Useful References
 

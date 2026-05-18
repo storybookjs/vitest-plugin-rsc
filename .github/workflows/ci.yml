@@ -107,6 +107,9 @@ jobs:
       - name: Test Next.js surfaces
         timeout-minutes: 15
         run: |
+          # nextjs-no-msw-demo is legacy/P2 direct no-MSW coverage, not a P1
+          # Edge App Page acceptance gate. P1 browser coverage belongs in the
+          # notes-demo MSW projects plus focused package tests.
           pnpm test:dist \
             --project vitest-plugin-rsc \
             --project nextjs-no-msw-demo \

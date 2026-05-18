@@ -1,7 +1,9 @@
 import fs from "node:fs";
+import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
 import { expect, test } from "vitest";
+import { cjsBrowserPlugin } from "../../cjs-browser-plugin.ts";
 import {
   collectNextCjsBrowserBoundaryFiles,
   createNextCjsBrowserBoundaryOptions,
@@ -107,6 +109,12 @@ test("creates an include predicate for only discovered files and an entry-base p
   try {
     const entryBaseFile = path.join(root, "node_modules/next/dist/server/app-render/entry-base.js");
     const appRenderFile = path.join(root, "node_modules/next/dist/server/app-render/app-render.js");
+    const compiledOpenTelemetryApiFile = path.join(
+      root,
+      "node_modules/next/dist/compiled/@opentelemetry/api/index.js",
+    );
+    const compiledNanoidFile = path.join(root, "node_modules/next/dist/compiled/nanoid/index.cjs");
+    const tracerFile = path.join(root, "node_modules/next/dist/server/lib/trace/tracer.js");
     const clientFile = path.join(root, "node_modules/next/dist/client/components/client-page.js");
     const unreachedClientFile = path.join(
       root,
@@ -155,10 +163,76 @@ test("creates an include predicate for only discovered files and an entry-base p
     expect(options.boundary?.moduleId?.(clientFile)).toBe(
       "next/dist/client/components/client-page.js",
     );
+    expect(options.runtime?.include?.(compiledOpenTelemetryApiFile)).toBe(true);
+    expect(options.runtime?.include?.(compiledNanoidFile)).toBe(true);
+    expect(options.runtime?.include?.(tracerFile)).toBe(true);
+    expect(options.runtime?.include?.(appRenderFile)).toBe(false);
+    expect(options.runtime?.moduleId?.(compiledOpenTelemetryApiFile)).toBe(
+      "next/dist/compiled/@opentelemetry/api/index.js",
+    );
+    expect(options.runtime?.moduleId?.(compiledNanoidFile)).toBe(
+      "next/dist/compiled/nanoid/index.cjs",
+    );
+    expect(options.runtime?.moduleId?.(tracerFile)).toBe("next/dist/server/lib/trace/tracer.js");
+    expect(options.runtime?.resolveBareImport?.("@opentelemetry/api", "client")).toBe(
+      "next/dist/compiled/@opentelemetry/api",
+    );
+    expect(
+      options.runtime?.resolveBareImport?.("react-server-dom-webpack/client", "react_client"),
+    ).toBe("next/dist/compiled/react-server-dom-webpack/client.browser");
+    expect(
+      options.runtime?.resolveBareImport?.("react-server-dom-webpack/client", "react_ssr"),
+    ).toContain(path.normalize("src/nextjs/react-server-dom-webpack-ssr.ts"));
+    expect(options.runtime?.resolveBareImport?.("react-server-dom-webpack/client", "client")).toBe(
+      "next/dist/compiled/react-server-dom-webpack/client.edge",
+    );
     expect(isNextEntryBaseModuleFile(entryBaseFile)).toBe(true);
   } finally {
     fs.rmSync(root, { recursive: true, force: true });
   }
+});
+
+test("real Next entry-base routes use-client CJS files through directive boundaries", async () => {
+  const requireFromFixture = createRequire(path.join(fixtureRoot, "package.json"));
+  const entryBaseFile = requireFromFixture.resolve("next/dist/server/app-render/entry-base.js");
+  const layoutRouterFile = requireFromFixture.resolve(
+    "next/dist/client/components/layout-router.js",
+  );
+  const options = await createNextCjsBrowserBoundaryOptions(fixtureRoot);
+  const plugin = cjsBrowserPlugin({
+    ...options,
+    boundary: {
+      ...options.boundary,
+      proxy: false,
+    },
+    name: "next-rsc:test-cjs-boundary",
+  })[0]!;
+  const transform = getHookHandler(plugin.transform);
+  const context = {
+    environment: {
+      name: "client",
+      config: { cacheDir: path.join(fixtureRoot, "node_modules/.vite") },
+    },
+  };
+
+  const entryBaseResult = (await transform.call(
+    context as never,
+    fs.readFileSync(entryBaseFile, "utf8"),
+    entryBaseFile,
+  )) as { code: string };
+  const layoutRouterResult = (await transform.call(
+    context as never,
+    fs.readFileSync(layoutRouterFile, "utf8"),
+    layoutRouterFile,
+  )) as {
+    code: string;
+  };
+
+  expect(entryBaseResult.code).toContain("rsc:cjs-browser-esm:");
+  expect(layoutRouterResult.code).toMatch(/^["']use client["'];/);
+  expect(layoutRouterResult.code).toContain('from "next/dist/client/components/layout-router.js"');
+  expect(layoutRouterResult.code).not.toContain("registerClientReference");
+  expect(layoutRouterResult.code).not.toContain("var exports = {}; var module = { exports };");
 });
 
 function hasNextDistFile(files: ReadonlySet<string>, relativeFile: string) {
@@ -168,4 +242,11 @@ function hasNextDistFile(files: ReadonlySet<string>, relativeFile: string) {
 
 function real(file: string) {
   return fs.realpathSync.native(file);
+}
+
+function getHookHandler<T extends (...args: never[]) => unknown>(
+  hook: T | { handler: T } | undefined,
+): T {
+  if (!hook) throw new Error("Expected Vite hook to be defined.");
+  return typeof hook === "function" ? hook : hook.handler;
 }

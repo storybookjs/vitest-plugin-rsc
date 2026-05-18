@@ -49,16 +49,16 @@ document.head.appendChild(disableMotionStyle);
 
 const MOBILE_VIEWPORT = { width: 390, height: 844 } as const;
 const TEST_NOW = "2026-05-06T00:00:00.000Z";
+const MSW_WORKER_URL = "/mockServiceWorker.js";
 
-let base: PGlite;
+let base: PGlite | undefined;
 let currentDbClient: PGlite | undefined;
 let pointerResetTarget: HTMLElement | undefined;
 const worker = setupWorker(...nextCacheProbeFetchHandler, ...nextRscRequestHandlers);
 
 // Vitest mounts React into an existing document. Route tests intentionally let
-// the plugin render RootLayout's <html>/<body> tags into that mount so the
-// route tree matches Next's app-render output; keep matching document defaults
-// here for assertions that read document-level state.
+// generated Next App Page HTML hydrate into that mount; keep matching document
+// defaults here for assertions that read document-level state.
 function applyDocumentDefaults() {
   document.documentElement.lang = "en";
   document.documentElement.className = "antialiased";
@@ -102,13 +102,32 @@ async function closeCurrentDbClient() {
   currentDbClient = undefined;
 }
 
+async function unregisterStaleMswWorkerRegistrations() {
+  if (navigator.serviceWorker.controller) return;
+
+  const workerUrl = new URL(MSW_WORKER_URL, location.href).href;
+  const registrations = await navigator.serviceWorker.getRegistrations();
+  await Promise.all(
+    registrations
+      .filter((registration) => isMswRegistration(registration, workerUrl))
+      .map((registration) => registration.unregister()),
+  );
+}
+
+function isMswRegistration(registration: ServiceWorkerRegistration, workerUrl: string) {
+  return [registration.active, registration.installing, registration.waiting].some(
+    (workerState) => workerState?.scriptURL === workerUrl,
+  );
+}
+
 beforeAll(async () => {
+  initialize();
+  await unregisterStaleMswWorkerRegistrations();
   await worker.start({
     onUnhandledRequest: "bypass",
     quiet: true,
-    serviceWorker: { url: "/mockServiceWorker.js" },
+    serviceWorker: { url: MSW_WORKER_URL },
   });
-  initialize({ nextRscRequestsViaMsw: true });
   base = await PGlite.create("memory://");
   await base.exec(inject("testSchemaSQL"));
 });
@@ -120,6 +139,9 @@ beforeEach(async () => {
   setCurrentUser(null);
   deleteFlashCookies();
   applyDocumentDefaults();
+  if (!base) {
+    throw new Error("PGlite base database was not initialized.");
+  }
   const clone = await base.clone();
   if (!(clone instanceof PGlite)) {
     throw new TypeError("Expected PGlite.clone() to return a PGlite instance");
@@ -143,6 +165,8 @@ afterEach(async () => {
 afterAll(async () => {
   await cleanup();
   await closeCurrentDbClient();
-  await base.close();
+  if (base && !base.closed) {
+    await base.close();
+  }
   worker.stop();
 });

@@ -180,10 +180,10 @@ beforeEach(async () => {
 
 For Next.js, pick the setup that matches what you want to test:
 
-| Setup       | Use when                                                                 | Action transport    |
-| ----------- | ------------------------------------------------------------------------ | ------------------- |
-| Without MSW | Simple action-and-rerender tests                                         | Direct (in-process) |
-| With MSW    | Tests that care about `next/cache`, router refreshes, or request headers | Real `POST` via MSW |
+| Setup       | Use when                                                                                        | Action transport              |
+| ----------- | ----------------------------------------------------------------------------------------------- | ----------------------------- |
+| Without MSW | Legacy/P2 focused direct component/helper coverage outside the Edge App Page route model        | Direct (in-process)           |
+| With MSW    | App Page/App Route browser requests, router refreshes, request headers, or Next action protocol | Real browser requests via MSW |
 
 Without MSW, Server Actions are called directly inside the RSC test runtime. The action still runs inside the Next request context, which is enough for simple action-and-rerender tests:
 
@@ -201,7 +201,10 @@ beforeEach(async () => {
 });
 ```
 
-With MSW, client-side RSC fetches and Server Action POSTs travel as real HTTP requests through MSW. This exercises the Next-style action response, route response, router refresh, and cache revalidation header path:
+With MSW, client-side RSC fetches, App Route/API fetches, and Server Action
+POSTs travel as real HTTP requests through MSW to generated Edge App Page or
+Edge App Route handlers. This exercises the Next-style action response, route
+response, router refresh, and cache revalidation header path:
 
 ```ts
 // src/vitest.setup.ts
@@ -216,7 +219,7 @@ const worker = setupWorker(...appHandlers, ...nextRscRequestHandlers);
 
 beforeAll(async () => {
   await worker.start({ onUnhandledRequest: "bypass" });
-  initialize({ nextRscRequestsViaMsw: true });
+  initialize();
 });
 
 beforeEach(async () => {
@@ -236,7 +239,7 @@ The plugin runs server code inside the browser test runtime. That sounds wrong, 
 The plugin shims the Node built-ins server code most often reaches for, the same way Next does for its edge runtime:
 
 - `vitestPluginRSC()` shims `node:async_hooks`.
-- `vitestPluginNext()` also shims `node:buffer`, `node:events`, `node:assert`, `node:util`, and `node:os`, using Next's own pre-compiled browser-safe versions.
+- `vitestPluginNext()` also shims `node:buffer`, `node:events`, `node:assert`, `node:util`, and `node:os`. Bare browser fallbacks use Next's compiled packages; `node:util` matches the smaller native subset that Next exposes in its Edge sandbox.
 
 A fast unit test shouldn't touch the real database, filesystem, or network — those make tests slow and flaky. Standard practice is to keep IO inside the test runtime; the same picks work whether the test runs in Node or in this plugin's browser runtime:
 
@@ -471,7 +474,11 @@ The examples below aren't a separate testing API. They're normal Next.js code pa
 
 ### Testing App Routes
 
-Use `renderServer({ url })` when you want to test the actual app route from your `app/` directory. The plugin discovers the matching page, loads the surrounding layouts/templates/parallel slots, renders the route through Next app-render, and hydrates the resulting document in the browser:
+Use `renderServer({ url })` when you want to test the actual app route from your
+`app/` directory. The plugin discovers the matching page, loads the surrounding
+layouts/templates/parallel slots through Next's app-loader output, dispatches
+the initial document render directly to the generated Edge App Page handler, and
+hydrates the resulting document in the browser:
 
 ```tsx
 import { expect, test } from "vitest";
@@ -526,7 +533,10 @@ test("renders a route-aware toolbar", async () => {
 });
 ```
 
-If the URL matches a real app route, direct component rendering replaces only that matched page and keeps the route's layouts, metadata, and document behavior. If the component does not need a real route, omit `url` and the plugin creates a small test route context for it.
+If you need real route layouts, metadata, and document behavior, use
+`renderServer({ url })` against the app route. `renderServer(<Component />)` is
+for component-scoped RSC tests with optional route state; it does not replace a
+matched App Page route in the Edge App Page route model.
 
 ### Router Hooks And Links
 
@@ -695,6 +705,11 @@ test("reads request headers and mutates cookies from an action", async () => {
   await expect.element(page.getByText("flash: saved")).toBeVisible();
 });
 ```
+
+For browser-originated App Route/API requests, MSW currently does not expose the
+`Cookie` header on intercepted `Request.headers`. Keep Cookie-sensitive browser
+App Route assertions on backlog until that can be tested without a private side
+channel.
 
 ```tsx
 import { refresh } from "next/cache";
@@ -876,7 +891,7 @@ Metadata route files can be imported directly in node tests when you want to ass
 This repository ships three reference apps under `playground/`:
 
 - `playground/rsc-vitest-demo` — a minimal non-Next RSC app. Use this as the smallest end-to-end example of `vitest-plugin-rsc` on its own.
-- `playground/nextjs-no-msw-demo` — a Next.js App Router setup that calls Server Actions directly inside the test runtime. Use this when you want the simplest Next setup.
+- `playground/nextjs-no-msw-demo` — legacy/P2 no-MSW coverage for direct component/helper rendering and direct Server Action calls. It is not the P1 Edge App Page browser acceptance suite.
 - `playground/nextjs-notes-demo` — a fuller Next.js App Router notes app with Better Auth, Drizzle, PGlite test databases, shadcn/ui, MSW-routed Server Actions, mocked email, and per-test seeding. This is the larger reference for the patterns in this README.
 
 Vitest suites are wired through the root workspace, while each package or playground owns its local config:

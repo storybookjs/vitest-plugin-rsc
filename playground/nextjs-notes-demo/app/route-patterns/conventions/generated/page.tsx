@@ -26,7 +26,7 @@ export default function GeneratedConventionPage() {
   return (
     <main>
       <h1>Generated route conventions</h1>
-      <p>Next app-render resolved this page through generated route metadata.</p>
+      <p>Generated Next route metadata resolved this page.</p>
     </main>
   );
 }

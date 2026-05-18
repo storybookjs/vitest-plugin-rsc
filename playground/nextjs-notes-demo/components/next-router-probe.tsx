@@ -27,15 +27,13 @@ export function NextRouterProbe() {
       <p>params: {JSON.stringify(params)}</p>
       <p>selected segment: {selectedSegment ?? "null"}</p>
       <p>selected segments: {selectedSegments.join(",") || "empty"}</p>
-      <button type="button" onClick={() => router.push("/note/next")}>
+      <button type="button" onClick={() => router.push("/note/pushed/details?q=pushed")}>
         Push route
       </button>
-      <button type="button" onClick={() => router.replace("/note/replaced")}>
+      <button type="button" onClick={() => router.replace("/note/replaced/details?q=replaced")}>
         Replace route
       </button>
-      <Link href={{ pathname: "/note/link", query: { q: "linked" } }} prefetch={false}>
-        Link route
-      </Link>
+      <Link href="/note/link/details?q=linked">Link route</Link>
     </section>
   );
 }

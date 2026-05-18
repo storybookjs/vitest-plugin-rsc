@@ -56,9 +56,8 @@
       "default": "./dist/testing-library-ssr.js"
     },
     "./nextjs/client": {
-      "types": "./dist/nextjs/client.d.ts",
       "vitest-plugin-rsc-source": "./src/nextjs/client.tsx",
-      "default": "./dist/nextjs/client.js"
+      "default": null
     },
     "./nextjs/testing-library-client": {
       "types": "./dist/nextjs/testing-library-client.d.ts",
@@ -84,6 +83,16 @@
       "types": "./dist/nextjs/browser-polyfills.d.ts",
       "vitest-plugin-rsc-source": "./src/nextjs/browser-polyfills.ts",
       "default": "./dist/nextjs/browser-polyfills.js"
+    },
+    "./nextjs/edge-web-crypto": {
+      "types": "./dist/nextjs/edge-web-crypto.d.ts",
+      "vitest-plugin-rsc-source": "./src/nextjs/edge-web-crypto.ts",
+      "default": "./dist/nextjs/edge-web-crypto.js"
+    },
+    "./nextjs/edge-web-crypto/install": {
+      "types": "./dist/nextjs/edge-web-crypto-install.d.ts",
+      "vitest-plugin-rsc-source": "./src/nextjs/edge-web-crypto-install.ts",
+      "default": "./dist/nextjs/edge-web-crypto-install.js"
     },
     "./nextjs/plugin": {
       "types": "./dist/nextjs/plugin.d.ts",

@@ -118,6 +118,11 @@ export function cjsBrowserPlugin(pluginOptions: CjsBrowserPluginOptions = {}): P
         if (!file.endsWith(".cjs")) return;
 
         const code = fs.readFileSync(file, "utf8");
+        if (this.environment?.name !== undefined && pluginOptions.runtime?.include?.(file)) {
+          const id = createVirtualCjsBrowserId(file);
+          forcedExecutableVirtualCjsBrowserIds.add(id);
+          return id;
+        }
         if (!(await getCjsTransformMode(code, file, pluginOptions))) return;
 
         return createVirtualCjsBrowserId(file);
@@ -727,12 +732,14 @@ async function createCjsClientReferenceProxy(code: string, id: string) {
     code: `
 import { registerClientReference } from "@vitejs/plugin-rsc/react/rsc";
 
+const clientReferenceId = ${JSON.stringify(createCjsBrowserPublicId(id))};
+
 function createClientReference(name) {
   return registerClientReference(
     function() {
-      throw new Error("Unexpectedly client reference export '" + name + "' is called on server");
+      throw new Error("Unexpectedly client reference export '" + name + "' from " + clientReferenceId + " is called on server");
     },
-    ${JSON.stringify(createCjsBrowserPublicId(id))},
+    clientReferenceId,
     name
   );
 }

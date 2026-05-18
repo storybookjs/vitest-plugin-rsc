@@ -1,17 +1,11 @@
 import { expect, test } from "vitest";
 import { page } from "vitest/browser";
-import { createAsyncLocalStorage } from "next/dist/server/app-render/async-local-storage.js";
 import { renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
+import { nextAsyncStorage } from "./next-async-storage/probe.tsx";
 
-const nextAsyncStorage = createAsyncLocalStorage<{ route: string }>();
-
-function NextAsyncStorageProbe() {
-  return <p>Next async storage route: {nextAsyncStorage.getStore()?.route ?? "missing"}</p>;
-}
-
-test("renders with Next's app-render async storage wrapper", async () => {
+test("renders a real App Page with Next async storage scope", async () => {
   await nextAsyncStorage.run({ route: "/next-async-storage" }, () =>
-    renderServer(<NextAsyncStorageProbe />, { url: "/next-async-storage" }),
+    renderServer({ url: "/next-async-storage" }),
   );
 
   await expect

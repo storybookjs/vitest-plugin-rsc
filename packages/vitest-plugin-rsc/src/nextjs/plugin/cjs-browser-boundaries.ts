@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import type { Plugin } from "vite";
 import {
   cjsBrowserPlugin,
@@ -37,8 +38,9 @@ type NextCjsBrowserBoundaryPluginOptions = {
 // Source: https://github.com/vercel/next.js/blob/4588a7354283f97e2124e3d82f55733ca4eb9373/packages/next/src/server/app-render/entry-base.ts
 // Source: https://github.com/vercel/next.js/blob/4588a7354283f97e2124e3d82f55733ca4eb9373/packages/next/src/build/webpack/plugins/flight-client-entry-plugin.ts
 // Adaptation: @vitejs/plugin-rsc owns the client-reference protocol in this
-// package, so this code only discovers the small set of real Next CJS files
-// that must be routed through the generic CJS browser transform.
+// package. This code only discovers the small set of real Next CJS files whose
+// upstream exports are client-owned, then lets the CJS transform expose a
+// top-level `"use client"` ESM surface for Vite/RSC to consume.
 export function useNextCjsBrowserBoundaries({
   initialRoot = process.cwd(),
   name,
@@ -208,16 +210,23 @@ function isNextExecutableCjsChildFile(id: string) {
 
 function isNextRuntimeCjsFile(id: string) {
   const file = normalizeModuleFile(id);
-  if (
-    /[/\\]node_modules[/\\]next[/\\]dist[/\\]client[/\\]components[/\\](?:router-reducer[/\\]fetch-server-response|segment-cache[/\\](?:cache|navigation)\.js$)/.test(
-      file,
-    )
-  ) {
-    return false;
+  if (isNextOpenTelemetryRuntimeCjsFile(file)) {
+    return true;
   }
-  return /[/\\]node_modules[/\\]next[/\\]dist[/\\](?:client[/\\].+|compiled[/\\][^/\\]+[/\\]index|lib[/\\].+|next-devtools[/\\].+|server[/\\](?:app-render[/\\](?:action-async-storage|work-async-storage|work-unit-async-storage)(?:\.external|-instance)|dev[/\\]hot-reloader-types)|shared[/\\].+)\.js$/.test(
+  if (isNextCompiledRuntimeCjsFile(file)) {
+    return true;
+  }
+  return isNextExecutableCjsChildFile(file);
+}
+
+function isNextOpenTelemetryRuntimeCjsFile(file: string) {
+  return /[/\\]node_modules[/\\]next[/\\]dist[/\\](?:compiled[/\\]@opentelemetry[/\\]api[/\\]index|server[/\\]lib[/\\]trace[/\\]tracer)\.js$/.test(
     file,
   );
+}
+
+function isNextCompiledRuntimeCjsFile(file: string) {
+  return /[/\\]node_modules[/\\]next[/\\]dist[/\\]compiled[/\\]nanoid[/\\]index\.cjs$/.test(file);
 }
 
 function shouldRewriteNextNestedRequires(id: string) {
@@ -227,8 +236,19 @@ function shouldRewriteNextNestedRequires(id: string) {
 }
 
 function resolveNextBareBrowserImport(source: string, environmentName?: string) {
+  if (source === "@opentelemetry/api") {
+    return "next/dist/compiled/@opentelemetry/api";
+  }
   if (source !== "react-server-dom-webpack/client") return;
-  return environmentName === "react_client"
-    ? "@vitejs/plugin-rsc/vendor/react-server-dom/client.browser"
-    : "@vitejs/plugin-rsc/vendor/react-server-dom/client.edge";
+  if (environmentName === "react_client") {
+    return "next/dist/compiled/react-server-dom-webpack/client.browser";
+  }
+  if (environmentName === "react_ssr") {
+    return createNextjsSiblingPath("react-server-dom-webpack-ssr.ts");
+  }
+  return "next/dist/compiled/react-server-dom-webpack/client.edge";
+}
+
+function createNextjsSiblingPath(fileName: string) {
+  return fileURLToPath(new URL(`../${fileName}`, import.meta.url));
 }

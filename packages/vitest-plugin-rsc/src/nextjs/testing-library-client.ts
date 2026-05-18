@@ -1,40 +1,59 @@
-import type { ServerActionCaller } from "../testing-library-client.tsx";
+import * as React from "react";
+import * as ReactClient from "@vitejs/plugin-rsc/react/browser";
+import type { InitialRSCPayload } from "next/dist/shared/lib/app-router-types";
+import type { RenderConfiguration } from "../testing-library.tsx";
+import {
+  configureClientReferenceRoot,
+  createTestingLibraryClientRoot,
+  initialize as initializeTestingLibraryClient,
+  type ServerActionCaller,
+  type TestingLibraryClientRoot,
+} from "../testing-library-client.tsx";
+import { NextAppRouterHydrationBoundary } from "./client.tsx";
+import { createNextDocumentFlightStream } from "./src/client/app-index.ts";
 
-export type NextActionRequest = {
-  id: string;
-  reply: string | FormData;
-  requestType: "next-action";
+type NextAppRouterClientRootOptions = {
+  container: HTMLElement;
+  config: RenderConfiguration;
+  serverActionCaller?: ServerActionCaller;
+  hydrateDocument: boolean;
+  documentHtml: string;
+  projectRoot?: string;
+  route?: string;
   url: string;
-  routerState?: string | null;
-  nextUrl?: string | null;
 };
 
-export type NextRouteRequest = {
-  requestType: "next-route";
-  url: string;
-  routerState?: string | null;
-  nextUrl?: string | null;
-};
-
-export type FetchNextRsc = (request: NextActionRequest | NextRouteRequest) => Promise<Response>;
-
-export function createServerActionCaller({
-  fetchRsc,
-}: {
-  fetchRsc: FetchNextRsc;
-}): ServerActionCaller {
-  const fetchRscSymbol = Symbol.for("vitest-plugin-rsc.nextjs.fetchRsc");
-  const globalScope = globalThis as typeof globalThis & Record<symbol, FetchNextRsc | undefined>;
-  globalScope[fetchRscSymbol] = fetchRsc;
-
+export function createServerActionCaller(): ServerActionCaller {
   return {
     call: callNextServerAction,
-    cleanup: () => {
-      if (globalScope[fetchRscSymbol] === fetchRsc) {
-        delete globalScope[fetchRscSymbol];
-      }
-    },
+    cleanup: () => {},
   };
+}
+
+export async function createNextAppRouterClientRoot(
+  options: NextAppRouterClientRootOptions,
+): Promise<TestingLibraryClientRoot> {
+  configureClientReferenceRoot(options.projectRoot, ["/app/", "/src/app/"]);
+  initializeTestingLibraryClient();
+
+  const initialRSCPayload = await ReactClient.createFromReadableStream<InitialRSCPayload>(
+    createNextDocumentFlightStream(options.documentHtml),
+  );
+
+  return createTestingLibraryClientRoot({
+    container: options.container,
+    config: options.config,
+    serverActionCaller: options.serverActionCaller,
+    hydrateDocument: options.hydrateDocument,
+    documentHtml: options.documentHtml,
+    initialPayload: {
+      root: React.createElement(NextAppRouterHydrationBoundary, {
+        route: options.route,
+        url: options.url,
+        initialRSCPayload,
+      }),
+    },
+  });
 }
 
 async function callNextServerAction(id: string, args: unknown[]) {

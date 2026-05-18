@@ -15,7 +15,13 @@ import { addPathPrefix } from "next/dist/shared/lib/router/utils/add-path-prefix
 import { getNamedRouteRegex } from "next/dist/shared/lib/router/utils/route-regex.js";
 import type { NextProjectConfig } from "../../../config.ts";
 import { nextRoutingBuildId, type NextRoutingData } from "../../../routing-types.ts";
-import { createNextAppLoaderOptions, createNextRouteTreeVirtualSource } from "../entries.ts";
+import {
+  createNextAppRouteLoaderOptions,
+  createNextAppLoaderOptions,
+  createNextEdgeAppRouteVirtualSource,
+  createNextEdgeSsrAppVirtualSource,
+  createNextRouteTreeVirtualSource,
+} from "../entries.ts";
 import type { NextRouteHandlerManifestBuildEntry } from "../../server/route-matcher-providers/dev/dev-app-route-route-matcher-provider.ts";
 import type { NextRouteManifestBuildEntry } from "../../server/route-matcher-providers/dev/dev-app-page-route-matcher-provider.ts";
 
@@ -144,37 +150,69 @@ export async function generateNextRouteManifestModule(
     customRoutes: projectConfig.customRoutes,
     nextConfig: projectConfig.nextConfig,
   });
-  const imports = (
-    await Promise.all(
-      entries.map(async (entry, index) => {
-        const loaderOptions = await createNextAppLoaderOptions(root, projectConfig, entry);
-        return `import { tree as tree${index} } from ${JSON.stringify(createNextRouteTreeVirtualSource(loaderOptions))};`;
-      }),
+  const pageEntries = await Promise.all(
+    entries.map(async (entry, index) => {
+      const loaderOptions = await createNextAppLoaderOptions(root, projectConfig, entry);
+      return {
+        entry,
+        index,
+        routeTreeSource: createNextRouteTreeVirtualSource(loaderOptions),
+        edgeAppPageSource: createNextEdgeSsrAppVirtualSource(loaderOptions),
+      };
+    }),
+  );
+  const imports = pageEntries
+    .map(({ index, routeTreeSource, edgeAppPageSource }) =>
+      [
+        `import { tree as tree${index} } from ${JSON.stringify(routeTreeSource)};`,
+        `const edgeAppPage${index} = () => import(${JSON.stringify(edgeAppPageSource)});`,
+      ].join("\n"),
     )
-  ).join("\n");
-
-  const manifest = `[${entries
+    .join("\n");
+  const routeHandlerEntries = await Promise.all(
+    routeHandlers.map(async (entry, index) => {
+      const loaderOptions = await createNextAppRouteLoaderOptions(root, projectConfig, entry);
+      return {
+        entry,
+        index,
+        edgeAppRouteSource: createNextEdgeAppRouteVirtualSource(loaderOptions),
+      };
+    }),
+  );
+  const routeHandlerImports = routeHandlerEntries
     .map(
-      (entry, index) => `{
+      ({ index, edgeAppRouteSource }) =>
+        `const edgeAppRoute${index} = () => import(${JSON.stringify(edgeAppRouteSource)});`,
+    )
+    .join("\n");
+
+  const manifest = `[${pageEntries
+    .map(
+      ({ entry, index, edgeAppPageSource }) => `{
         route: ${JSON.stringify(entry.route)},
         appPath: ${JSON.stringify(entry.appPath)},
         pageFile: ${JSON.stringify(entry.pageFile)},
+        rootDir: ${JSON.stringify(root)},
         loaderTree: tree${index},
+        edgeAppPageSource: ${JSON.stringify(edgeAppPageSource)},
+        edgeAppPage: edgeAppPage${index},
       }`,
     )
     .join(",")}]`;
 
-  const routeHandlerManifest = `[${routeHandlers
+  const routeHandlerManifest = `[${routeHandlerEntries
     .map(
-      (entry) => `{
+      ({ entry, index, edgeAppRouteSource }) => `{
         route: ${JSON.stringify(entry.route)},
         appPath: ${JSON.stringify(entry.appPath)},
         routeFile: ${JSON.stringify(entry.routeFile)},
+        edgeAppRouteSource: ${JSON.stringify(edgeAppRouteSource)},
+        edgeAppRoute: edgeAppRoute${index},
       }`,
     )
     .join(",")}]`;
 
-  return `${imports}\nexport const nextRouteManifest = ${manifest};\nexport const nextRouteHandlerManifest = ${routeHandlerManifest};\nexport const routing = ${JSON.stringify(routing)};\nexport const nextRoutingData = routing;\n`;
+  return `${imports}\n${routeHandlerImports}\nexport const nextRouteManifest = ${manifest};\nexport const nextRouteHandlerManifest = ${routeHandlerManifest};\nexport const routing = ${JSON.stringify(routing)};\nexport const nextRoutingData = routing;\n`;
 }
 
 function createPathnames(pages: NextRoutingRouteEntry[], routeHandlers: NextRoutingRouteEntry[]) {

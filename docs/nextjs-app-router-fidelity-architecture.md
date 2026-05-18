@@ -34,6 +34,33 @@ Do not create internal files that only wrap imports. A `nextjs/src/...` file mus
 say exactly which upstream Next file and line ranges it imitates, copies, or
 adapts.
 
+### Source File Owns Mirror Path
+
+The upstream source file decides the mirror path. Local categories do not. If an
+implementation adapts `build/templates/edge-ssr-app.ts`, the local home is
+`packages/vitest-plugin-rsc/src/nextjs/src/build/templates/edge-ssr-app.ts`. If
+it adapts `server/app-render/manifests-singleton.ts`, the local home is
+`packages/vitest-plugin-rsc/src/nextjs/src/server/app-render/manifests-singleton.ts`.
+Do not group code by local convenience, such as "manifest setup", "dispatcher",
+"request runtime", or "cache wiring", when the upstream owner differs.
+
+When a helper appears to span upstream files, split it by upstream owner first.
+If the only coherent shape is adapter glue, keep that glue top-level and make it
+call source-linked helpers in their exact mirrors. A mirror file must not contain
+code adapted from a different Next source file just because the local call site
+finds that grouping convenient.
+
+Subagent placement checklist before creating or moving `nextjs/src/...` code:
+
+1. Name the upstream Next source file and source lines before choosing the local
+   path.
+2. Confirm the local path is the exact mirror of that upstream file under
+   `packages/vitest-plugin-rsc/src/nextjs/src/`.
+3. If the source path is not exact, split the helper or keep boundary glue
+   top-level instead of placing it under the wrong mirror.
+4. Add `Source:`, `Adaptation:`, and `Begin copy` / `Begin adapted` markers next
+   to the implementation, not only in review notes.
+
 Use this source order for every fidelity decision:
 
 1. Import and call the installed Next, Vite, Vitest, React, or
@@ -106,10 +133,25 @@ we are importing the wrong layer for this adapter. Move higher to the Edge
 template/loader/adapter path instead of patching the Edge runtime with
 `node-environment`.
 
-MSW is the preferred HTTP boundary for browser-observed behavior. Browser
-requests should go through MSW into the in-process adapter when request/response
-semantics matter. Direct calls may exist for focused tests, but they are lower
-fidelity and must not define framework semantics.
+MSW is the supported browser/runtime transport for browser-originated Edge App
+Page App Router requests: RSC/navigation fetches, API-style browser fetches, and
+Server Action POSTs. Initial SSR/document rendering is not MSW transport; it is
+the test harness/runtime path and should still consume generated Edge App Page
+artifacts and Next route modules. Direct calls may exist for focused unit tests
+outside route runtime, but they are lower fidelity and must not define framework
+semantics. For this P1 Edge App Page architecture, `renderServer(<ReactNode />)`
+is outside App Page route runtime. The P1 route target is a real filesystem App
+Page route through generated `next-app-loader` / `edge-ssr-app` artifacts, not a
+separate compatibility mode for legacy direct-node/local app-render,
+replacement-helper, or fake-route paths.
+
+Do not preserve old non-MSW App Page route runtime behavior in the Edge model.
+The only non-MSW App Page route runtime path is initial SSR/document rendering
+from the test harness into the generated Edge handler. There are no private
+probe headers, dev-server middleware dispatch paths, custom `ModuleRunner`
+side-channels, or local `renderToHTMLOrFlight()` wrappers for App Page route
+requests. If `renderToHTMLOrFlight()` runs, it is reached inside Next through
+`AppPageRouteModule.render()`.
 
 The fidelity target is business and visual semantics: routing, params, cookies,
 headers, middleware/proxy, redirects, rewrites, Server Actions, route handlers,
@@ -186,11 +228,20 @@ packages/vitest-plugin-rsc/src/nextjs/
   testing-library.tsx
   testing-library-runtime.tsx
   testing-library-client.ts
-  client.tsx
   msw.ts
   virtual.d.ts
   tester.html
 ```
+
+`vitest-plugin-rsc/nextjs/client` is no longer a published public surface: it
+has no default export target and is not built by tsdown. The temporary
+client-side App Router hydration bridge remains in `client.tsx` for the internal
+`vitest-plugin-rsc-source` RSC client-reference handoff and is source-linked to
+Next's `app-index.tsx`. The blocker for deleting that bridge outright is that
+real Next `app-index` consumes inline `self.__next_f` data at module evaluation
+time, creates a one-shot global action queue, and calls
+`hydrateRoot(document, ...)`, while Vitest applies generated Edge HTML through
+inert DOMParser snapshots and reuses the document across test roots.
 
 ## Production Next.js App Router Overview
 
@@ -294,7 +345,10 @@ The adapter's job is to preserve this shape on Vite:
 - Vite virtual modules replace build output files when needed, and their
   payload generators belong under the Next source file that would have produced
   that artifact.
-- MSW replaces the network boundary to a real Next server.
+- MSW replaces the browser-originated network boundary to a real Next server.
+  Browser/MSW `Request.headers` currently does not expose `Cookie`; keep that as
+  backlog for cookie-sensitive browser App Route coverage rather than adding a
+  private Cookie side channel.
 - The Edge/Web runtime path remains the semantic target.
 
 ## Phase Overview
@@ -317,7 +371,10 @@ next.config
 Request-runtime work decides what a concrete URL does:
 
 ```text
-browser Request
+request owner
+  -> initial SSR/document render: testing-library-runtime.tsx, not MSW
+  -> browser RSC/navigation/action/API request: MSW nextRscRequestHandlers
+  -> virtual:vitest-plugin-rsc/next-routes
   -> routing data / @next/routing-style resolution
   -> middleware/proxy via server/web/adapter if matched
   -> App Page edge handler, App Route edge handler, redirect, rewrite, or response
@@ -338,52 +395,91 @@ to `@next/routing` plus Next-produced routing data, the Next-owned adapter code
 must live under the Next source file that produces or consumes that routing
 data, not in the public `testing-library.tsx` wrapper.
 
-App Page HTML/SSR flow is one mode of the Edge App Page entry:
+Build/plugin artifact generation creates the App Page and Edge entry artifacts
+that both runtime owners consume:
 
 ```text
-Request without RSC header
-  -> edge-ssr-app.handler()
+Vite plugin setup
+  -> useNextRouteManifest()
+  -> scanNextAppRoutes() / scanNextAppRouteHandlers()
+  -> loadNextProjectConfig()
+  -> generateNextRouteManifestModule()
+  -> createNextAppLoaderOptions()
+  -> createNextRouteTreeVirtualSource() for current tree-only consumers
+  -> createNextEdgeSsrAppVirtualSource()
+  -> virtual:vitest-plugin-rsc/next-routes
+       exports routing, nextRouteManifest, nextRouteHandlerManifest
+       App Page entries include edgeAppPageSource and edgeAppPage loader
+  -> virtual:vitest-plugin-rsc/next-app-page?...
+       getAppEntry() / next-app-loader full App Page userland output
+  -> virtual:vitest-plugin-rsc/next-edge-ssr-app?...
+       next-edge-ssr-loader / edge-ssr-app output
+       VAR_USERLAND imports the full next-app-page userland module
+  -> manifest/cache adapters provide Next-shaped input globals
+```
+
+App Page HTML/SSR flow is one mode of the Edge App Page entry. In this adapter,
+the initial document render is not MSW transport:
+
+```text
+renderServer({ url }) / initial test harness render
+  -> testing-library-runtime.tsx
+  -> virtual:vitest-plugin-rsc/next-routes
+  -> request-router.ts resolves App Page target
+  -> target.edgeAppPage imports virtual:vitest-plugin-rsc/next-edge-ssr-app?...
+  -> install Next-shaped manifest/cache globals
+  -> edge-ssr-app.handler(request without RSC headers, ctx)
   -> server/web/adapter
-  -> AppPageRouteModule.prepare()
   -> AppPageRouteModule.render()
-  -> renderToHTMLOrFlight()
-  -> HTML RenderResult
-  -> Web Response
-  -> browser document hydration inside Vitest-owned page
+  -> HTML Response with Flight bootstrap
+  -> app-index / NextAppRouter hydration inside the Vitest-owned document
 ```
 
 App Page RSC/Flight flow is the same Edge App Page entry with different request
 headers:
 
 ```text
-Request with RSC / router state headers
+browser navigation / router refresh / RSC fetch
+  -> MSW nextRscRequestHandlers
+  -> request pipeline / request-router.ts resolves App Page target
+  -> target.edgeAppPage imports virtual:vitest-plugin-rsc/next-edge-ssr-app?...
+  -> install Next-shaped manifest/cache globals
   -> edge-ssr-app.handler()
   -> server/web/adapter
-  -> AppPageRouteModule.prepare()
   -> AppPageRouteModule.render()
-  -> renderToHTMLOrFlight()
-  -> Flight RenderResult
-  -> text/x-component Response
+  -> Flight Response
   -> Next client router consumes Flight and updates the tree
 ```
 
 Server Actions also flow through the App Page render path:
 
 ```text
-Server Action POST
-  -> MSW HTTP boundary
-  -> Edge App Page request path
-  -> app-render action handling inside renderToHTMLOrFlight()
+browser POST with Server Action headers/body
+  -> MSW nextRscRequestHandlers
+  -> request pipeline / request-router.ts resolves App Page target
+  -> target.edgeAppPage imports virtual:vitest-plugin-rsc/next-edge-ssr-app?...
+  -> install Next-shaped manifest/cache globals
+  -> edge-ssr-app.handler(raw POST request, ctx)
+  -> server/web/adapter
+  -> AppPageRouteModule.render()
+  -> Next app-render action protocol
   -> action redirect / revalidation / Flight response protocol
   -> Next client action reducer consumes the response
 ```
 
+Server Actions for App Page fidelity go browser POST -> MSW -> Edge App Page
+handler. A direct/no-MSW action transport is not a supported compatibility
+target for this Edge model.
+
 App Route runtime is separate from App Page rendering:
 
 ```text
-Request to app/**/route.ts
-  -> edge-app-route.handler()
-  -> EdgeRouteModuleWrapper.wrap(routeModule)
+browser/API fetch to app/**/route.ts
+  -> MSW request pipeline
+  -> virtual:vitest-plugin-rsc/next-routes resolves App Route target
+  -> Edge App Route virtual entry
+  -> edge-app-route.handler(request, ctx)
+  -> EdgeRouteModuleWrapper
   -> server/web/adapter
   -> AppRouteRouteModule.handle()
   -> user route handler Response
@@ -442,22 +538,27 @@ virtual:vitest-plugin-rsc/next-entrypoints
 
 virtual:vitest-plugin-rsc/next-route-tree?...
   -> nextjs/src/build/webpack/loaders/next-app-loader/index.ts
-     imitates next-app-loader output: loader tree, userland module imports, and
+     tree-only next-app-loader output: loader tree, userland module imports, and
      convention module references
+
+virtual:vitest-plugin-rsc/next-app-page?...
+  -> nextjs/src/build/webpack/loaders/next-app-loader/index.ts
+     isolated full-output source for the complete app-page userland module,
+     separate from next-route-tree and consumed by the Edge App Page entry
 
 virtual:vitest-plugin-rsc/next-routes
   -> nextjs/src/build/adapter/build-complete.ts
      imitates route manifest to adapter routing data conversion
 
-future virtual Edge App Page entry
+virtual:vitest-plugin-rsc/next-edge-ssr-app?...
   -> nextjs/src/build/webpack/loaders/next-edge-ssr-loader/index.ts
-     or nextjs/src/build/templates/edge-ssr-app.ts when the loader/template must
-     be copied or substantially adapted
+     isolated Edge App Page source generated from the Next edge-ssr-app path;
+     consumed by initial SSR and MSW browser App Page request owners
 
-future virtual Edge App Route entry
+virtual:vitest-plugin-rsc/next-edge-app-route?...
   -> nextjs/src/build/webpack/loaders/next-edge-app-route-loader/index.ts
-     or nextjs/src/build/templates/edge-app-route.ts when the loader/template
-     must be copied or substantially adapted
+     isolated Edge App Route source generated from the Next edge-app-route path;
+     unit runtime dispatch consumes it for manifest-backed App Route API requests
 ```
 
 The virtual ID does not decide ownership. The payload decides ownership. If a
@@ -480,8 +581,8 @@ The intended glue contract for virtual modules is:
 - The public virtual ID is only the Vite transport address.
 - The query, exports, and serialized objects are the Next contract.
 - `next-route-tree` query data must be `AppLoaderOptions`-shaped and serialized
-  like `entries.ts#getAppEntry()` serializes `next-app-loader` requests with
-  `querystring.stringify`.
+  through the same tested `querystring.stringify` boundary that
+  `entries.ts#getAppEntry()` uses for `next-app-loader` requests.
 - `page`, `pagePath`, `appPaths`, and `allNormalizedAppPaths` must keep Next's
   meanings. For example, `page`/`appPaths` use App Router page paths such as
   `/notes/page`, while `allNormalizedAppPaths` uses the normalized route-key
@@ -489,19 +590,28 @@ The intended glue contract for virtual modules is:
 - `next-route-tree` exports `tree` because the upstream `app-page` template
   consumes `tree`; `loaderTree` is only an adapter manifest property after that
   boundary.
+- The isolated full App Page userland module uses
+  `virtual:vitest-plugin-rsc/next-app-page?...`; `next-route-tree` remains
+  tree-only for current manifests and tests.
+- The isolated Edge App Page entry preserves `VAR_USERLAND` as
+  `getAppEntry().import + pagePath + ?__next_edge_ssr_entry__`. The
+  `getAppEntry().import` portion is obtained from the installed Next
+  `getAppEntry()` when available; the serialized fallback is a tested transport
+  boundary, not local app semantics.
 - `next-routes` exports `routing` because `build-complete.ts` calls
   `onBuildComplete({ routing })`; `nextRoutingData` can exist only as a
   compatibility alias.
 
 Concrete naming/data parity:
 
-| Vite module/artifact                            | Webpack/Next source                                      | Upstream names and data to preserve                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| ----------------------------------------------- | -------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `virtual:vitest-plugin-rsc/next-entrypoints`    | `entries.ts#getAppEntry()`                               | Preserve the `getAppEntry()` entry shape: `import` is a `next-app-loader?${AppLoaderOptions}!` request and `layer` is `WEBPACK_LAYERS.reactServerComponents`. If the Vite optimizer needs a scan-only module, derive it from the same `AppLoaderOptions` fields (`name`, `page`, `pagePath`, `appDir`, `appPaths`, `allNormalizedAppPaths`, `pageExtensions`, `basePath`, `assetPrefix`, `rootDir`, `tsconfigPath`, `isDev`, `nextConfigOutput`, `preferredRegion`, `middlewareConfig`, `isGlobalNotFoundEnabled`) rather than inventing a smaller route model. |
-| `virtual:vitest-plugin-rsc/next-route-tree?...` | `next-app-loader` + `app-page` template                  | Preserve the generated names injected into `app-page`: `tree`, `__next_app_require__`, and `__next_app_load_chunk__`. The Vite module may export `tree` for consumption, but it must not rename the payload to a local concept such as `loaderTree` before the adapter boundary.                                                                                                                                                                                                                                                                                |
-| `virtual:vitest-plugin-rsc/next-routes`         | `build-complete.ts#onBuildComplete()`                    | Preserve the adapter field name `routing` and its object shape: `beforeMiddleware`, `beforeFiles`, `afterFiles`, `dynamicRoutes`, `onMatch`, `fallback`, `shouldNormalizeNextData`, and `rsc` when supported. Extra Vitest manifest exports may exist next to it, but request routing should consume `routing` as the Next-owned payload.                                                                                                                                                                                                                       |
-| Future Edge App Page virtual entry              | `next-edge-ssr-loader` + `edge-ssr-app` template         | Preserve `pageModPath` / `VAR_USERLAND`, `VAR_PAGE`, cache handler injection, exported `ComponentMod`, exported `handler`, and the default backwards-compatible handler shape.                                                                                                                                                                                                                                                                                                                                                                                  |
-| Future Edge App Route virtual entry             | `next-edge-app-route-loader` + `edge-app-route` template | Preserve `modulePath` / `VAR_USERLAND`, `VAR_PAGE`, cache handler injection, exported `ComponentMod`, exported `handler`, and the default backwards-compatible handler shape.                                                                                                                                                                                                                                                                                                                                                                                   |
+| Vite module/artifact                                | Webpack/Next source                                      | Upstream names and data to preserve                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| --------------------------------------------------- | -------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `virtual:vitest-plugin-rsc/next-entrypoints`        | `entries.ts#getAppEntry()`                               | Preserve the `getAppEntry()` entry shape: `import` is a `next-app-loader?${AppLoaderOptions}!` request and `layer` is `WEBPACK_LAYERS.reactServerComponents`. If the Vite optimizer needs a scan-only module, derive it from the same `AppLoaderOptions` fields (`name`, `page`, `pagePath`, `appDir`, `appPaths`, `allNormalizedAppPaths`, `pageExtensions`, `basePath`, `assetPrefix`, `rootDir`, `tsconfigPath`, `isDev`, `nextConfigOutput`, `preferredRegion`, `middlewareConfig`, `isGlobalNotFoundEnabled`) rather than inventing a smaller route model. |
+| `virtual:vitest-plugin-rsc/next-route-tree?...`     | `next-app-loader` + `app-page` template                  | Preserve the generated names injected into `app-page`: `tree`, `__next_app_require__`, and `__next_app_load_chunk__`. The Vite module may export `tree` for consumption, but it must not rename the payload to a local concept such as `loaderTree` before the adapter boundary. This ID remains tree-only unless a future query explicitly opts into full output.                                                                                                                                                                                              |
+| `virtual:vitest-plugin-rsc/next-app-page?...`       | `next-app-loader` + `app-page` template                  | Preserve the isolated full app-page userland output from `next-app-loader?<AppLoaderOptions>!`; the Edge App Page entry consumes this artifact instead of the tree-only route-tree module.                                                                                                                                                                                                                                                                                                                                                                      |
+| `virtual:vitest-plugin-rsc/next-routes`             | `build-complete.ts#onBuildComplete()`                    | Preserve the adapter field name `routing` and its object shape: `beforeMiddleware`, `beforeFiles`, `afterFiles`, `dynamicRoutes`, `onMatch`, `fallback`, `shouldNormalizeNextData`, and `rsc` when supported. Extra Vitest manifest exports may exist next to it, but request routing should consume `routing` as the Next-owned payload.                                                                                                                                                                                                                       |
+| `virtual:vitest-plugin-rsc/next-edge-ssr-app?...`   | `next-edge-ssr-loader` + `edge-ssr-app` template         | Preserve `pageModPath` / `VAR_USERLAND` as `getAppEntry().import + pagePath + ?__next_edge_ssr_entry__`, then `VAR_PAGE`, cache handler injection, exported `ComponentMod`, exported `handler`, and the default backwards-compatible handler shape. Initial SSR and browser App Page requests consume this same Edge entry through their separate request owners.                                                                                                                                                                                               |
+| `virtual:vitest-plugin-rsc/next-edge-app-route?...` | `next-edge-app-route-loader` + `edge-app-route` template | Preserve `modulePath` / `VAR_USERLAND`, `VAR_PAGE`, cache handler injection, exported `ComponentMod`, exported `handler`, and the default backwards-compatible handler shape. Unit request dispatch and the focused browser App Route fixture consume this source for App Route API targets through MSW.                                                                                                                                                                                                                                                        |
 
 ## File Connection Overview
 
@@ -547,6 +657,30 @@ nextjs/msw.ts
        direct App Router imports preferred
        mirror nextjs/src/client/app-index.tsx only for copied bootstrap/hydration pieces
 ```
+
+The initial SSR/document path is separate from the browser-observed MSW path:
+
+```text
+nextjs/testing-library-runtime.tsx
+  -> virtual:vitest-plugin-rsc/next-routes
+  -> request-router.ts
+  -> generated Edge App Page entry
+  -> Next server/web/adapter
+  -> AppPageRouteModule.render()
+  -> HTML/Flight bootstrap consumed by app-index hydration
+```
+
+The anti-callstack for App Page route runtime is:
+
+```text
+testing-library-runtime.tsx
+  -> app-render.ts
+  -> local renderToHTMLOrFlight wrapper
+```
+
+There is also no browser request path through private probe headers,
+dev-server middleware, custom `ModuleRunner` side-channels, or non-MSW direct
+route runtime.
 
 Visual and protocol support comes from the same mirrored graph:
 
@@ -597,6 +731,23 @@ working Next source path and tests:
   shape.
 - Route handlers as `renderServer({ url })` targets unless they run through the
   Edge App Route path and `AppRouteRouteModule.handle()`.
+- App Page route runtime through non-MSW browser transport in the Edge model.
+- `renderServer({ url })` App Page route behavior that bypasses the same
+  request-router/generated Edge entry/Next route module path used by
+  browser-observed requests. It should not use MSW for initial document
+  rendering.
+- A separate compatibility mode for `renderServer(<ReactNode />)`,
+  legacy direct-node/local app-render, replacement-helper, or fake-route paths.
+- Fake or synthetic App Page routes outside P2, or any such route that bypasses
+  real `next-app-loader` full output, `edge-ssr-app`, or the correct request
+  owner: non-MSW initial render and MSW browser request transport.
+
+Future fake or synthetic App Page routes may be explored in P2 only if they
+enter through the same architecture as real routes: synthetic file/page module ->
+real Next `next-app-loader` full output -> `edge-ssr-app` -> generated Edge
+handler request path. Browser-originated requests to those routes would still
+enter through MSW. They are not a P1 requirement for real filesystem App Page
+route dispatch.
 
 Tests should cover framework behavior, not just demo behavior. Use notes-demo
 browser tests for user-visible App Router behavior such as route matching,
@@ -959,12 +1110,17 @@ Copies/adapts:
 Virtual modules/artifacts owned:
 
 - `virtual:vitest-plugin-rsc/next-route-tree?...`: Vite representation of the
-  `next-app-loader` generated module for one App Page route. It must expose the
+  tree portion of the `next-app-loader` generated module for one App Page route.
+  It must expose the
   loader tree and the rewritten userland/convention module imports that app-render
   consumes. Preserve the upstream injected names from `app-page`: `tree`,
   `__next_app_require__`, and `__next_app_load_chunk__`. If Vite exports the
   tree for another virtual module to import, the export name should be `tree`;
   `loaderTree` is only the adapter manifest property used after this boundary.
+- `virtual:vitest-plugin-rsc/next-app-page?...`: Isolated Vite representation
+  of the complete `next-app-loader?<AppLoaderOptions>!` app-page userland
+  artifact. Keep it separate from `next-route-tree`; the Edge App Page entry
+  consumes this full userland output.
 
 Direct imports in this imitation:
 
@@ -985,39 +1141,18 @@ Higher/lower consideration:
 
 ### `nextjs/src/server/lib/app-dir-module.ts`
 
-Imitates/copies from:
-
-- `vercel/next.js/packages/next/src/server/lib/app-dir-module.ts`
-
-Imitates/copies these upstream lines:
-
-- `app-dir-module.ts:L4-L29`: `LoaderTree` tuple shape generated by
-  `next-app-loader`.
-- `app-dir-module.ts:L31-L68`: convention module lookup helpers for layout,
-  page, default page, and access fallback modules.
-
-Associated imports from those lines:
-
-- `AppDirModules`
-- `DEFAULT_SEGMENT_KEY`
-
-Copies/adapts:
-
-1. The `LoaderTree` tuple shape only when TypeScript/runtime glue needs to name
-   the payload crossing from loader output into app-render.
-2. Do not reinterpret the tuple into a local route tree before the Next boundary.
-
-Direct imports in this imitation:
-
-- `next/dist/server/lib/app-dir-module.js`, preferred for types/helpers where
-  available.
+Status: deleted in the Edge App Page cleanup. The generated Edge entry and
+route manifest now carry the Next loader-tree tuple directly; testing-library no
+longer synthesizes direct-node routes, wrapper trees, access-fallback recovery
+nodes, or font layer traversal.
 
 Higher/lower consideration:
 
 - Higher candidate: let `next-app-loader` and App Page route modules consume the
   tree directly.
 - Lower fallback: local loader-tree object model.
-- Why not lower: app-render consumes Next's tuple shape.
+- Why not lower: app-render consumes Next's tuple shape; local helper traversal
+  recreated old direct-node/replacement behavior.
 
 ### `nextjs/src/build/webpack/loaders/next-edge-ssr-loader/index.ts`
 
@@ -1051,10 +1186,13 @@ Copies/adapts:
 
 Virtual modules/artifacts owned:
 
-- Future `virtual:vitest-plugin-rsc/next-edge-ssr-app?...`: Vite representation
-  of the edge App Page entry generated by `next-edge-ssr-loader`. It must point
-  at the App Page module produced from the loader tree and expand
+- `virtual:vitest-plugin-rsc/next-edge-ssr-app?...`: Isolated Vite
+  representation of the edge App Page entry generated by `next-edge-ssr-loader`.
+  It must point at the App Page module using the same `VAR_USERLAND` string Next builds:
+  `getAppEntry().import + pagePath + ?__next_edge_ssr_entry__`, then expand
   `loadEntrypoint("edge-ssr-app")` without letting webpack own the graph.
+  Initial SSR and browser-originated App Page requests consume this same entry
+  through their separate request owners.
 
 Direct imports in this imitation:
 
@@ -1111,7 +1249,7 @@ Copies/adapts:
 
 Virtual modules/artifacts owned:
 
-- Future `virtual:vitest-plugin-rsc/next-edge-ssr-app?...` fallback payload, but
+- `virtual:vitest-plugin-rsc/next-edge-ssr-app?...` fallback payload, but
   only when `next-edge-ssr-loader` or `loadEntrypoint("edge-ssr-app")` cannot
   generate the entry. If this template owns the payload, the virtual module must
   be a source-linked adaptation of `edge-ssr-app.ts`, not a local render wrapper.
@@ -1145,9 +1283,57 @@ Higher/lower consideration:
 - Higher candidate: `next-edge-ssr-loader` or `loadEntrypoint("edge-ssr-app")`.
 - Why not higher only if proven: the loader/generator requires too much webpack
   context.
-- Lower fallback: direct `renderToHTMLOrFlight()`.
+- Lower fallback: direct `renderToHTMLOrFlight()` is retired.
 - Why not lower: it recreates render context, request wrapping, response
-  conversion, and route module shape.
+  conversion, and route module shape that the generated Edge entry and
+  `AppPageRouteModule.render()` now own.
+
+#### Edge App Page manifest and cache input contract
+
+This is the P1 spike contract for delegating App Pages to Next's Edge entry
+without migrating the runtime flow in the same step.
+
+Module evaluation reads only the manifest globals that Next's generated Edge
+entry reads:
+
+- `self.__RSC_MANIFEST?.['VAR_PAGE']`, where `VAR_PAGE` is the app entry page
+  path such as `/notes/page`.
+- `self.__RSC_SERVER_MANIFEST`, parsed as JSON.
+
+When both values exist, `edge-ssr-app.ts` calls
+`setManifestsSingleton({ page: 'VAR_PAGE', clientReferenceManifest,
+serverActionsManifest })` during module evaluation. The client reference
+manifest JS asset is produced by `flight-manifest-plugin` as
+`globalThis.__RSC_MANIFEST[pagePath.slice('app'.length)] = manifest`, so the
+lookup key remains the app page path including `/page`. Next's singleton then
+normalizes that page for work-store route lookup. The server action manifest JS
+asset is produced by `flight-client-entry-plugin` as
+`self.__RSC_SERVER_MANIFEST = JSON.stringify(edgeJson)`, where the Edge JSON
+contains the `node`, `edge`, and `encryptionKey` fields.
+
+Cache handler imports are loader-injected module dependencies, not manifest
+semantics. `next-edge-ssr-loader` turns configured cache handlers into static
+imports and request-handler registration statements. At request time,
+`edge-ssr-app.ts` calls
+`cacheHandlers.initializeCacheHandlers(nextConfig.cacheMaxMemorySize)` and then
+the injected `cacheHandlers.setCacheHandler(kind, importedHandler)` statements.
+The current `virtual:vitest-plugin-rsc/next-cache-handlers` module is allowed to
+remain a Vite transport adapter for those imports until the Edge entry owns this
+setup directly.
+
+The delegated Edge path still has one per-request manifest setup: Server Action
+POSTs create an action-specific `serverActionsManifest` before importing the
+generated Edge handler. This preserves Next's action worker lookup for the
+current page without reviving the lower app-render wrapper.
+
+Negative contract:
+
+- The Edge App Page path must not import
+  `next/dist/server/node-environment-baseline.js`; `edge-ssr-app.ts` imports
+  `server/web/globals` instead.
+- The Edge App Page path must not call the local lower app-render wrapper or its
+  direct `renderToHTMLOrFlight()` path. It should reach app render through
+  `AppPageRouteModule.render()` from the generated Edge entry.
 
 ### `nextjs/src/build/webpack/loaders/next-edge-app-route-loader/index.ts`
 
@@ -1181,11 +1367,11 @@ Copies/adapts:
 
 Virtual modules/artifacts owned:
 
-- Future `virtual:vitest-plugin-rsc/next-edge-app-route?...`: Vite
+- `virtual:vitest-plugin-rsc/next-edge-app-route?...`: Vite
   representation of the edge App Route entry generated by
   `next-edge-app-route-loader`. It must point at the userland `route.ts` module
   and expand `loadEntrypoint("edge-app-route")` without letting webpack own the
-  graph.
+  graph. Unit MSW dispatch now selects this artifact for App Route API targets.
 
 Direct imports in this imitation:
 
@@ -1231,7 +1417,7 @@ Copies/adapts:
 
 Virtual modules/artifacts owned:
 
-- Future `virtual:vitest-plugin-rsc/next-edge-app-route?...` fallback payload,
+- `virtual:vitest-plugin-rsc/next-edge-app-route?...` fallback payload,
   but only when `next-edge-app-route-loader` or
   `loadEntrypoint("edge-app-route")` cannot generate the entry. If this template
   owns the payload, the virtual module must be a source-linked adaptation of

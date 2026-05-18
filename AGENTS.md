@@ -57,14 +57,15 @@ The transport differs from production but preserves the same protocol shape. In 
 
 Next.js integration should feed real Next behavior into that Vite RSC graph:
 
-- Route renders use Next route discovery, `next-app-loader` loader trees, `renderToHTMLOrFlight`, and `NextAppRouter`.
+- App Page route renders use Next route discovery, generated `next-app-loader` / Edge App Page entries, `AppPageRouteModule.render()`, and `NextAppRouter`.
 - Next config, env defines, runtime aliases, cache/request stores, cookies, headers, redirects, access fallbacks, fonts, images, and metadata should come from installed `next/dist/...` modules whenever practical.
 - Local code should be a boundary adapter between Next, Vite, Vitest, and `@vitejs/plugin-rsc`, not a second implementation of Next.
 
-There are two action transports:
+For App Page route fidelity, browser-originated transport is MSW-only:
 
-- Without MSW, Server Actions are called directly inside the test runtime. This is good for focused action-and-rerender tests.
-- With MSW, Next RSC fetches and Server Action POSTs travel as real browser requests through `nextRscRequestHandlers`. Use this path when request headers, router refresh, cache revalidation, or Next's action response protocol matter.
+- Initial SSR/document rendering is a test harness/runtime request that dispatches directly to the generated Edge App Page handler, without MSW.
+- Browser RSC/navigation fetches, App Route/API fetches, and Server Action POSTs travel as real browser requests through `nextRscRequestHandlers` to generated Edge App Page or Edge App Route handlers.
+- Direct no-MSW Server Action calls remain useful only for focused component/helper tests outside the Edge App Page route model.
 
 Client navigation and redirects must be tested as real browser behavior. Do not add navigation spy APIs or fake router assertions. Assert `window.location` and target-route UI after clicks, `router.push`/`replace`, form submissions, and Server Action redirects.
 
@@ -138,7 +139,7 @@ When copying or adapting code from Next.js, wrap it in clear markers and include
 
 Tests should cover framework features, not just demo behavior. Every supported Next API, route convention, page export, or runtime behavior touched by the plugin should have a focused test in `playground/nextjs-notes-demo`. Package-level unit tests in `packages/vitest-plugin-rsc/src/nextjs` are still useful for plugin internals, transforms, aliases, and loader adapters, but they do not replace notes-demo coverage for user-visible Next behavior. Do not add app-local mocks to make the notes demo pass when the plugin can provide the behavior for every user.
 
-For Next.js integration work, rebuild before running tests that consume package output. Use non-default Vitest API ports, for example `--api 52643`, to avoid colliding with other local runs. Put tests in the notes demo by default. Use no-MSW fixtures only when the behavior specifically requires proving the no-MSW transport path.
+For Next.js integration work, rebuild before running tests that consume package output. Use non-default Vitest API ports, for example `--api 52643`, to avoid colliding with other local runs. Put tests in the notes demo by default. Treat no-MSW fixtures as legacy/P2 direct helper coverage only; they are not P1 Edge App Page browser acceptance.
 
 Before merging Next.js integration changes, check that:
 

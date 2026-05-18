@@ -69,6 +69,24 @@ const ssrRunner = new ModuleRunner(
 export const importReactClient = runner.import.bind(runner);
 export const importReactSsr = ssrRunner.import.bind(ssrRunner);
 
+(
+  globalThis as typeof globalThis & {
+    __VITE_ENVIRONMENT_RUNNER_IMPORT__?: (environmentName: string, id: string) => Promise<unknown>;
+  }
+).__VITE_ENVIRONMENT_RUNNER_IMPORT__ = async (environmentName, id) => {
+  const browserId = toBrowserImportId(id);
+  if (environmentName === "client") {
+    return import(/* @vite-ignore */ browserId);
+  }
+  if (environmentName === "react_client") {
+    return importReactClient(browserId);
+  }
+  if (environmentName === "react_ssr") {
+    return importReactSsr(browserId);
+  }
+  throw new Error(`Unknown Vite RSC environment "${environmentName}".`);
+};
+
 async function invokeReactClient(payload: InvokePayload) {
   return await withReactClientCoverage(await invokeReactClientOverWebSocket(payload));
 }
@@ -134,6 +152,24 @@ function isViteFetchResult(value: unknown): value is ViteFetchResult {
 
 function isNodeModuleFile(file: string) {
   return file.replace(/\\/g, "/").includes("/node_modules/");
+}
+
+function toBrowserImportId(id: string) {
+  if (id.startsWith("virtual:vitest-plugin-rsc/next-app-page?")) {
+    const [params] = id.slice("virtual:vitest-plugin-rsc/next-app-page?".length).split("!");
+    return `/@id/__x00__vitest-plugin-rsc:next-app-page?${params}`;
+  }
+  if (id.startsWith("virtual:vitest-plugin-rsc/next-server-action-entry?")) {
+    const params = id.slice("virtual:vitest-plugin-rsc/next-server-action-entry?".length);
+    return `/@id/__x00__vitest-plugin-rsc:next-server-action-entry?${params}`;
+  }
+  if (id.startsWith("/")) {
+    return id.startsWith("/@fs/") || id.startsWith("/@id/") ? id : `/@fs${id}`;
+  }
+  if (!id.startsWith("\0") && !id.startsWith(".") && !id.includes("://")) {
+    return `/@id/${id}`;
+  }
+  return id.startsWith("\0") ? `/@id/__x00__${id.slice(1)}` : id;
 }
 
 function withBrowserSourceUrl(code: string, sourceUrl: string) {

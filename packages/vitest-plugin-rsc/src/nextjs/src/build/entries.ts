@@ -3,23 +3,33 @@ import path from "node:path";
 import { stringify, type ParsedUrlQueryInput } from "node:querystring";
 import type { NextProjectConfig } from "../../config.ts";
 import { createProjectRequire } from "../../plugin-utils.ts";
-import { virtualNextEntrypointsPublicId, virtualNextRouteTreePublicId } from "../../virtual-ids.ts";
-import { loadNextRouteStaticInfo } from "./analysis/get-page-static-info.ts";
 import {
-  extractRouteTreeImportSources,
-  generateNextRouteTreeModule,
-  toOptimizerImportSource,
-} from "./webpack/loaders/next-app-loader/index.ts";
+  virtualNextAppRoutePublicId,
+  virtualNextAppPagePublicId,
+  virtualNextEntrypointsPublicId,
+  virtualNextRouteTreePublicId,
+} from "../../virtual-ids.ts";
+import { loadNextRouteStaticInfo } from "./analysis/get-page-static-info.ts";
+import { generateNextRouteTreeModule } from "./webpack/loaders/next-app-loader/index.ts";
+import {
+  createNextEdgeAppPageEntrypointVirtualSource,
+  createNextEdgeAppPageUserlandSource,
+} from "./webpack/loaders/next-edge-ssr-loader/index.ts";
+import {
+  createNextEdgeAppRouteEntrypointVirtualSource,
+  createNextEdgeAppRouteUserlandSource,
+} from "./webpack/loaders/next-edge-app-route-loader/index.ts";
 import type { NextRouteManifestBuildEntry } from "../server/route-matcher-providers/dev/dev-app-page-route-matcher-provider.ts";
 import type { NextRouteHandlerManifestBuildEntry } from "../server/route-matcher-providers/dev/dev-app-route-route-matcher-provider.ts";
 
-// Mirror/adapt: Next.js App Router entry and next-app-loader option shape.
+// Direct Next entry serialization: App Router entry and next-app-loader options.
 // Source: https://github.com/vercel/next.js/blob/ee6e79b1792a4d401ddf2480f40a83549fe8e722/packages/next/src/build/entries.ts#L287-L294
 // Source: https://github.com/vercel/next.js/blob/ee6e79b1792a4d401ddf2480f40a83549fe8e722/packages/next/src/build/entries.ts#L593-L615
 // Source: https://github.com/vercel/next.js/blob/ee6e79b1792a4d401ddf2480f40a83549fe8e722/packages/next/src/build/webpack/loaders/next-app-loader/index.ts#L48-L67
-// Adaptation: Vite uses a virtual module instead of webpack entry objects, but
-// the query payload is still AppLoaderOptions-shaped and serialized like
-// Next's `getAppEntry()`.
+// Note: Vite uses virtual modules instead of webpack entry objects. Real
+// `next-app-loader` requests delegate to the installed Next `getAppEntry()`
+// when available; remaining query serialization is a tested transport boundary
+// for virtual modules and installs where that export differs, not app semantics.
 
 // Begin adapted: Next.js AppLoaderOptions and App Router entries
 // Source: https://github.com/vercel/next.js/blob/ee6e79b1792a4d401ddf2480f40a83549fe8e722/packages/next/src/build/entries.ts#L287-L294
@@ -46,14 +56,35 @@ export type NextAppLoaderOptions = {
   isGlobalNotFoundEnabled: true | undefined;
 };
 
+export type NextAppRouteLoaderOptions = {
+  name: string;
+  page: string;
+  pagePath: string;
+  appDir: string;
+  routeFile: string;
+  preferredRegion: string | string[] | undefined;
+  pageExtensions: string[];
+  rootDir?: string;
+  tsconfigPath?: string;
+  isDev?: true;
+  nextConfigOutput: NextProjectConfig["nextConfig"]["output"];
+  middlewareConfig: string;
+};
+
+type NextAppEntry = {
+  import?: unknown;
+};
+
+type NextBuildEntriesModule = {
+  getAppEntry?: (options: Readonly<NextAppLoaderOptions>) => NextAppEntry;
+};
+
 export async function generateNextEntrypointsModule(
   root: string,
   projectConfig: NextProjectConfig,
   entries: NextRouteManifestBuildEntry[],
-  routeHandlers: NextRouteHandlerManifestBuildEntry[],
 ) {
   const watchFiles = new Set<string>();
-  const routeModuleImports = new Set<string>();
   const routeTreeImports: string[] = [];
 
   for (const entry of entries) {
@@ -65,33 +96,20 @@ export async function generateNextEntrypointsModule(
     for (const file of routeTree.watchFiles) {
       watchFiles.add(file);
     }
-    for (const source of extractRouteTreeImportSources(routeTree.code)) {
-      routeModuleImports.add(source);
-    }
   }
 
-  const routeHandlerImports = routeHandlers.map(
-    (entry) => `import ${JSON.stringify(entry.routeFile)};`,
-  );
-  const routeDependencyImports = Array.from(routeModuleImports, (source) => {
-    return `import ${JSON.stringify(toOptimizerImportSource(source))};`;
-  });
-
   return {
-    code: `${[...routeTreeImports, ...routeDependencyImports, ...routeHandlerImports].join("\n")}\nexport {};\n`,
+    code: `${routeTreeImports.join("\n")}\nexport {};\n`,
     watchFiles: [...watchFiles],
   };
 }
 
 export function createNextSourceOptimizerEntries(root: string): string[] {
-  const entries: string[] = [];
   for (const appDir of ["app", "src/app"]) {
     if (!fs.existsSync(path.join(root, appDir))) continue;
-    entries.push(
-      `${appDir}/**/{page,layout,template,error,loading,not-found,forbidden,unauthorized,global-error,default,route,icon,apple-icon,opengraph-image,twitter-image,sitemap,robots,manifest}.{js,jsx,ts,tsx}`,
-    );
+    return [virtualNextEntrypointsPublicId];
   }
-  return entries;
+  return [];
 }
 
 export async function createNextAppLoaderOptions(
@@ -127,35 +145,132 @@ export async function createNextAppLoaderOptions(
   };
 }
 
+export async function createNextAppRouteLoaderOptions(
+  root: string,
+  projectConfig: NextProjectConfig,
+  entry: NextRouteHandlerManifestBuildEntry,
+): Promise<NextAppRouteLoaderOptions> {
+  const appDir = projectConfig.appDir;
+  if (!appDir) {
+    throw new Error(`Cannot create Next App Route loader options without an app directory.`);
+  }
+  const staticInfo = await loadNextRouteStaticInfo(root, projectConfig, {
+    route: entry.route,
+    appDir,
+    appPath: entry.appPath,
+    appPaths: [entry.appPath],
+    allNormalizedAppPaths: [entry.route],
+    pageFile: entry.routeFile,
+  });
+  const { encodeToBase64 } = createProjectRequire(root)(
+    "next/dist/build/webpack/loaders/utils.js",
+  ) as {
+    encodeToBase64(value: object): string;
+  };
+
+  return {
+    name: `app${entry.appPath}`,
+    page: entry.appPath,
+    pagePath: createPrivateAppDirRouteFilePath(appDir, entry.routeFile),
+    appDir,
+    routeFile: entry.routeFile,
+    preferredRegion: staticInfo.preferredRegion,
+    pageExtensions: projectConfig.pageExtensions,
+    rootDir: root,
+    tsconfigPath: projectConfig.tsconfigPath,
+    isDev: projectConfig.isDev ? true : undefined,
+    nextConfigOutput: projectConfig.nextConfig.output,
+    middlewareConfig: encodeToBase64((staticInfo.middleware ?? { matchers: [] }) as object),
+  };
+}
+
+function createPrivateAppDirRouteFilePath(appDir: string, routeFile: string) {
+  return `private-next-app-dir/${path.relative(appDir, routeFile).split(path.sep).join("/")}`;
+}
+
 export function createNextRouteTreeVirtualSource(options: NextAppLoaderOptions) {
   return `${virtualNextRouteTreePublicId}?${stringifyNextAppLoaderOptions(options)}`;
 }
 
-function stringifyNextAppLoaderOptions(options: NextAppLoaderOptions) {
-  const query: ParsedUrlQueryInput = {
-    name: options.name,
-    page: options.page,
-    pagePath: options.pagePath,
-    appDir: options.appDir,
-    appPaths: options.appPaths ? [...options.appPaths] : null,
-    allNormalizedAppPaths: options.allNormalizedAppPaths
-      ? [...options.allNormalizedAppPaths]
-      : null,
-    preferredRegion: Array.isArray(options.preferredRegion)
-      ? [...options.preferredRegion]
-      : (options.preferredRegion ?? null),
-    pageExtensions: [...options.pageExtensions],
-    assetPrefix: options.assetPrefix,
-    rootDir: options.rootDir ?? null,
-    tsconfigPath: options.tsconfigPath ?? null,
-    isDev: options.isDev ?? null,
-    basePath: options.basePath,
-    nextConfigOutput: options.nextConfigOutput ?? null,
-    middlewareConfig: options.middlewareConfig,
-    isGlobalNotFoundEnabled: options.isGlobalNotFoundEnabled ?? null,
-  };
+export function createNextAppPageVirtualSource(options: NextAppLoaderOptions) {
+  return `${virtualNextAppPagePublicId}?${stringifyNextAppLoaderOptions(options)}`;
+}
 
-  return stringify(query);
+export function createNextAppRouteVirtualSource(options: NextAppRouteLoaderOptions) {
+  return `${virtualNextAppRoutePublicId}?${stringifyNextAppRouteLoaderOptions(options)}`;
+}
+
+export function createNextEdgeSsrAppVirtualSource(options: NextAppLoaderOptions) {
+  const appPageVirtualSource = createNextAppPageVirtualSource(options);
+
+  return createNextEdgeAppPageEntrypointVirtualSource({
+    page: options.page,
+    userland: createNextEdgeAppPageUserlandSource({
+      appPageVirtualSource,
+      pagePath: options.pagePath,
+    }),
+  });
+}
+
+export function createNextEdgeAppRouteVirtualSource(options: NextAppRouteLoaderOptions) {
+  const appRouteVirtualSource = createNextAppRouteVirtualSource(options);
+
+  return createNextEdgeAppRouteEntrypointVirtualSource({
+    page: options.page,
+    userland: createNextEdgeAppRouteUserlandSource({
+      appRouteVirtualSource,
+      pagePath: options.pagePath,
+    }),
+  });
+}
+
+export function createNextAppLoaderSource(options: NextAppLoaderOptions) {
+  return getInstalledNextAppEntryImport(options) ?? createSerializedNextAppLoaderSource(options);
+}
+
+function stringifyNextAppLoaderOptions(options: NextAppLoaderOptions) {
+  return stringify(options as unknown as ParsedUrlQueryInput);
+}
+
+function stringifyNextAppRouteLoaderOptions(options: NextAppRouteLoaderOptions) {
+  return stringify(options as unknown as ParsedUrlQueryInput);
+}
+
+function createSerializedNextAppLoaderSource(options: NextAppLoaderOptions) {
+  return `next-app-loader?${stringifyNextAppLoaderOptions(options)}!`;
+}
+
+function getInstalledNextAppEntryImport(options: NextAppLoaderOptions) {
+  if (!options.rootDir) return;
+
+  const getAppEntry = loadInstalledGetAppEntry(options.rootDir);
+  if (!getAppEntry) return;
+
+  const entry = getAppEntry(options);
+  return typeof entry.import === "string" ? entry.import : undefined;
+}
+
+function loadInstalledGetAppEntry(root: string) {
+  const projectRequire = createProjectRequire(root);
+  let entriesPath: string;
+  try {
+    entriesPath = projectRequire.resolve("next/dist/build/entries.js");
+  } catch (error) {
+    if (isModuleNotFoundError(error)) return;
+    throw error;
+  }
+
+  const entries = projectRequire(entriesPath) as NextBuildEntriesModule;
+  return typeof entries.getAppEntry === "function" ? entries.getAppEntry : undefined;
+}
+
+function isModuleNotFoundError(error: unknown) {
+  return (
+    typeof error === "object" &&
+    error !== null &&
+    "code" in error &&
+    error.code === "MODULE_NOT_FOUND"
+  );
 }
 
 export function parseNextAppLoaderOptions(params: URLSearchParams): NextAppLoaderOptions {
@@ -182,6 +297,23 @@ export function parseNextAppLoaderOptions(params: URLSearchParams): NextAppLoade
   };
 }
 
+export function parseNextAppRouteLoaderOptions(params: URLSearchParams): NextAppRouteLoaderOptions {
+  return {
+    name: getRequiredParam(params, "name"),
+    page: getRequiredParam(params, "page"),
+    pagePath: getRequiredParam(params, "pagePath"),
+    appDir: getRequiredParam(params, "appDir"),
+    routeFile: getRequiredParam(params, "routeFile"),
+    preferredRegion: parsePreferredRegionParam(params),
+    pageExtensions: parseRequiredArrayParam(params, "pageExtensions"),
+    rootDir: parseOptionalParam(params, "rootDir"),
+    tsconfigPath: parseOptionalParam(params, "tsconfigPath"),
+    isDev: params.get("isDev") === "true" ? true : undefined,
+    nextConfigOutput: parseOptionalParam(params, "nextConfigOutput"),
+    middlewareConfig: getRequiredParam(params, "middlewareConfig"),
+  };
+}
+
 function getRequiredParam(params: URLSearchParams, name: string) {
   const value = parseOptionalParam(params, name);
   if (value === undefined) {
@@ -193,6 +325,11 @@ function getRequiredParam(params: URLSearchParams, name: string) {
 function parseOptionalParam(params: URLSearchParams, name: string) {
   const value = params.get(name);
   return value === null || value === "" ? undefined : value;
+}
+
+function parsePreferredRegionParam(params: URLSearchParams) {
+  const preferredRegion = parseOptionalArrayParam(params, "preferredRegion");
+  return preferredRegion.length > 1 ? preferredRegion : (preferredRegion[0] ?? undefined);
 }
 
 function parseRequiredArrayParam(params: URLSearchParams, name: string) {

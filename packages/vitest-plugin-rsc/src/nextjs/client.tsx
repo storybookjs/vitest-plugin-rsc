@@ -3,27 +3,32 @@ import "next/dist/client/app-bootstrap.js";
 import NextAppRouter from "next/dist/client/components/app-router.js";
 import type { AppRouterActionQueue } from "next/dist/client/components/app-router-instance.js";
 import type { InitialRSCPayload } from "next/dist/shared/lib/app-router-types";
-import React, { type ReactNode, useMemo, useRef } from "react";
+import { useMemo, useRef } from "react";
 import { staticIndicatorState, webSocket } from "./src/client/app-index.ts";
+import { createMutableActionQueue } from "./src/client/components/app-router-instance.ts";
 import {
   createNextRouterStateSnapshot,
   type InitialFlightPayload,
   type NextRouterStateSnapshot,
 } from "./src/client/components/router-reducer/create-initial-router-state.ts";
-import { createMutableActionQueue } from "./src/client/components/app-router-instance.ts";
 
-export const NextRouter = ({
+// Source: https://github.com/vercel/next.js/blob/ee6e79b1792a4d401ddf2480f40a83549fe8e722/packages/next/src/client/app-index.tsx#L276-L420
+// Adaptation: Vitest applies generated Edge App Page document HTML through an
+// inert DOMParser snapshot and reuses the browser document across tests, so the
+// one-shot `app-index` module bootstrap cannot own hydrateRoot yet. This file is
+// intentionally internal: `vitest-plugin-rsc/nextjs/client` is not exported.
+// Begin adapted: Next.js App Router document hydration boundary
+export function NextAppRouterHydrationBoundary({
   route,
   url = "/",
   initialFlightPayload,
   initialRSCPayload,
 }: {
-  children?: ReactNode;
   route?: string;
   url?: string;
   initialFlightPayload?: InitialFlightPayload;
   initialRSCPayload?: InitialRSCPayload;
-}) => {
+}) {
   const snapshot = useMemo(
     () => createNextRouterStateSnapshot({ route, url, initialFlightPayload, initialRSCPayload }),
     [route, url, initialFlightPayload, initialRSCPayload],
@@ -39,7 +44,7 @@ export const NextRouter = ({
   }
   const currentActionQueue = actionQueueRef.current;
   if (!currentActionQueue) {
-    throw new Error("Invariant: NextRouter action queue was not initialized.");
+    throw new Error("Invariant: Next App Router action queue was not initialized.");
   }
 
   return (
@@ -51,4 +56,5 @@ export const NextRouter = ({
       staticIndicatorState={staticIndicatorState}
     />
   );
-};
+}
+// End adapted
