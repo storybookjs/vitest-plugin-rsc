@@ -33,6 +33,10 @@ function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
   );
 }
 
+function isReadableStreamLike(value: unknown): value is ReadableStream<unknown> {
+  return typeof ReadableStream !== "undefined" && value instanceof ReadableStream;
+}
+
 function withFinally<R>(result: R, onFinally: () => void): R {
   return (result as PromiseLike<unknown>).then(
     (value) => {
@@ -44,6 +48,41 @@ function withFinally<R>(result: R, onFinally: () => void): R {
       throw error;
     },
   ) as R;
+}
+
+function withStreamFinally<R>(result: R, onFinally: () => void): R {
+  const reader = (result as ReadableStream<unknown>).getReader();
+  let closed = false;
+
+  const close = () => {
+    if (closed) return;
+    closed = true;
+    onFinally();
+  };
+
+  return new ReadableStream({
+    async pull(controller) {
+      try {
+        const next = await reader.read();
+        if (next.done) {
+          close();
+          controller.close();
+          return;
+        }
+        controller.enqueue(next.value);
+      } catch (error) {
+        close();
+        controller.error(error);
+      }
+    },
+    async cancel(reason) {
+      try {
+        await reader.cancel(reason);
+      } finally {
+        close();
+      }
+    },
+  }) as R;
 }
 
 export class SequentialAsyncLocalStorage<Store> {
@@ -76,6 +115,11 @@ export class SequentialAsyncLocalStorage<Store> {
         closeFrame(frame);
       });
     }
+    if (isReadableStreamLike(result)) {
+      return withStreamFinally(result, () => {
+        closeFrame(frame);
+      });
+    }
 
     closeFrame(frame);
     return result;
@@ -97,6 +141,11 @@ export class SequentialAsyncLocalStorage<Store> {
 
     if (isPromiseLike(result)) {
       return withFinally(result, () => {
+        closeFrame(frame);
+      });
+    }
+    if (isReadableStreamLike(result)) {
+      return withStreamFinally(result, () => {
         closeFrame(frame);
       });
     }
@@ -147,6 +196,11 @@ export class SequentialAsyncLocalStorage<Store> {
 
       if (isPromiseLike(result)) {
         return withFinally(result, () => {
+          closeFrame(frame);
+        });
+      }
+      if (isReadableStreamLike(result)) {
+        return withStreamFinally(result, () => {
           closeFrame(frame);
         });
       }

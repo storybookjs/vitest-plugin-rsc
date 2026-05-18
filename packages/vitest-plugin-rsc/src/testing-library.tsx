@@ -1,12 +1,15 @@
 import type { Container, RootOptions } from "react-dom/client";
 import type { JSXElementConstructor, ReactNode } from "react";
 import { resetAsyncLocalStorage } from "./async-local-storage.ts";
-import { importReactClient } from "./utilts.ts";
+import { importReactClient, importReactSsr } from "./utilts.ts";
 import type { FetchRsc, RscPayload, TestingLibraryClientRoot } from "./testing-library-client.tsx";
 import * as ReactServer from "@vitejs/plugin-rsc/react/rsc";
 
 const client = await importReactClient<typeof import("./testing-library-client.tsx")>(
   "vitest-plugin-rsc/testing-library-client",
+);
+const ssr = await importReactSsr<typeof import("./testing-library-ssr.tsx")>(
+  "vitest-plugin-rsc/testing-library-ssr",
 );
 
 const mountedContainers = new Set<Container>();
@@ -21,10 +24,12 @@ export async function renderServer(
     container,
     baseElement = document.body,
     wrapper: WrapperComponent,
+    hydrateDocument = false,
   }: {
     container?: HTMLElement;
     baseElement?: HTMLElement;
     wrapper?: JSXElementConstructor<{ children: ReactNode }>;
+    hydrateDocument?: boolean;
   } = {},
 ): Promise<{
   container: HTMLElement;
@@ -33,7 +38,9 @@ export async function renderServer(
   rerender: (ui: ReactNode) => Promise<void>;
   asFragment: () => DocumentFragment;
 }> {
-  container ??= baseElement.appendChild(document.createElement("div"));
+  container ??= hydrateDocument
+    ? document.body
+    : baseElement.appendChild(document.createElement("div"));
 
   let root: TestingLibraryClientRoot;
 
@@ -62,10 +69,23 @@ export async function renderServer(
       const stream = ReactServer.renderToReadableStream<RscPayload>(rscPayload, rscOptions);
       return stream;
     };
+
+    let initialStream: ReadableStream<Uint8Array> | undefined;
+    let documentHtml: string | undefined;
+    if (hydrateDocument) {
+      initialStream = await fetchRsc();
+      const [ssrStream, clientStream] = initialStream.tee();
+      initialStream = clientStream;
+      documentHtml = await ssr.renderToHtml(ssrStream);
+    }
+
     root = await client.createTestingLibraryClientRoot({
       container,
       config,
       fetchRsc,
+      hydrateDocument,
+      initialStream,
+      documentHtml,
     });
     mountedRootEntries.push({ container, root });
     mountedContainers.add(container);
@@ -135,5 +155,6 @@ export function initialize(customConfig: Partial<RenderConfiguration> = {}): voi
   ReactServer.setRequireModule({
     load: (id) => __vite_rsc_raw_import__(id),
   });
+  ssr.initialize();
   client.initialize();
 }

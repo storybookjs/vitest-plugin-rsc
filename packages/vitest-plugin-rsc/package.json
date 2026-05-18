@@ -50,6 +50,11 @@
       "vitest-plugin-rsc-source": "./src/testing-library-client.tsx",
       "default": "./dist/testing-library-client.js"
     },
+    "./testing-library-ssr": {
+      "types": "./dist/testing-library-ssr.d.ts",
+      "vitest-plugin-rsc-source": "./src/testing-library-ssr.tsx",
+      "default": "./dist/testing-library-ssr.js"
+    },
     "./nextjs/client": {
       "types": "./dist/nextjs/client.d.ts",
       "vitest-plugin-rsc-source": "./src/nextjs/client.tsx",
@@ -75,10 +80,10 @@
       "vitest-plugin-rsc-source": "./src/nextjs/os-browser.ts",
       "default": "./dist/nextjs/os-browser.js"
     },
-    "./nextjs/request-context": {
-      "types": "./dist/nextjs/request-context.d.ts",
-      "vitest-plugin-rsc-source": "./src/nextjs/request-context.ts",
-      "default": "./dist/nextjs/request-context.js"
+    "./nextjs/browser-polyfills": {
+      "types": "./dist/nextjs/browser-polyfills.d.ts",
+      "vitest-plugin-rsc-source": "./src/nextjs/browser-polyfills.ts",
+      "default": "./dist/nextjs/browser-polyfills.js"
     },
     "./nextjs/plugin": {
       "types": "./dist/nextjs/plugin.d.ts",
@@ -105,10 +110,14 @@
     "@jridgewell/gen-mapping": "^0.3.13",
     "@vitejs/plugin-rsc": "0.5.26",
     "@vitest/expect": "5.0.0-beta.2",
-    "@vitest/spy": "5.0.0-beta.2",
-    "convert-source-map": "^2.0.0"
+    "cjs-module-lexer": "^2.2.0",
+    "convert-source-map": "^2.0.0",
+    "es-module-lexer": "^2.1.0",
+    "estree-walker": "^3.0.3",
+    "magic-string": "^0.30.21"
   },
   "devDependencies": {
+    "@next/routing": "^16.2.6",
     "@types/convert-source-map": "^2.0.3",
     "@types/estree": "^1.0.9",
     "@types/node": "^24.12.4",
@@ -123,13 +132,17 @@
     "vite": "^8.0.12"
   },
   "peerDependencies": {
+    "@next/routing": ">=16.2.0",
     "msw": "^2",
-    "next": "*",
+    "next": ">=16.2.0",
     "react": "*",
     "react-dom": "*",
     "vite": "*"
   },
   "peerDependenciesMeta": {
+    "@next/routing": {
+      "optional": true
+    },
     "msw": {
       "optional": true
     },

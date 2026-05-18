@@ -46,6 +46,34 @@ test("default action redirects use Next's push redirect type", async () => {
   );
 });
 
+test("permanent action redirects use Next's action redirect protocol", async () => {
+  await renderServer(<NextActionProtocolProbe />, { url: "/action-protocol" });
+
+  const request = await captureActionRequest(() =>
+    page.getByRole("button", { name: "Capture permanent redirect action" }).click(),
+  );
+  const response = await replayActionRequest(request);
+
+  expect(response.status).toBe(303);
+  expect(response.headers.get("x-action-redirect")).toBe(
+    "/action-protocol-permanent-target?from=action;replace",
+  );
+});
+
+test("unstable_rethrow preserves Next router errors in server actions", async () => {
+  await renderServer(<NextActionProtocolProbe />, { url: "/action-protocol" });
+
+  const request = await captureActionRequest(() =>
+    page.getByRole("button", { name: "Capture rethrow redirect action" }).click(),
+  );
+  const response = await replayActionRequest(request);
+
+  expect(response.status).toBe(303);
+  expect(response.headers.get("x-action-redirect")).toBe(
+    "/action-protocol-rethrow-target?from=action;push",
+  );
+});
+
 test("thrown action errors use Next's rejected Flight payload with status 500", async () => {
   await renderServer(<NextActionProtocolProbe />, { url: "/action-protocol" });
 
@@ -68,6 +96,28 @@ test("HTTP access fallback action errors keep their status and Flight payload", 
 
   expect(response.status).toBe(404);
   expect(response.headers.get("content-type")).toContain(RSC_CONTENT_TYPE_HEADER);
+});
+
+test("auth interrupt actions keep their status and Flight payload", async () => {
+  await renderServer(<NextActionProtocolProbe />, { url: "/action-protocol" });
+
+  const forbiddenRequest = await captureActionRequest(() =>
+    page.getByRole("button", { name: "Capture forbidden action" }).click(),
+  );
+  const forbiddenResponse = await ignoreExpectedConsoleError(() =>
+    replayActionRequest(forbiddenRequest),
+  );
+  expect(forbiddenResponse.status).toBe(403);
+  expect(forbiddenResponse.headers.get("content-type")).toContain(RSC_CONTENT_TYPE_HEADER);
+
+  const unauthorizedRequest = await captureActionRequest(() =>
+    page.getByRole("button", { name: "Capture unauthorized action" }).click(),
+  );
+  const unauthorizedResponse = await ignoreExpectedConsoleError(() =>
+    replayActionRequest(unauthorizedRequest),
+  );
+  expect(unauthorizedResponse.status).toBe(401);
+  expect(unauthorizedResponse.headers.get("content-type")).toContain(RSC_CONTENT_TYPE_HEADER);
 });
 
 test("missing action ids use Next's action-not-found response protocol", async () => {
@@ -100,7 +150,9 @@ test("incoming next-url does not mark route payloads as interceptable", async ()
   });
   expect(response.status).toBe(200);
 
-  await expect(response.text()).resolves.toContain('"i":false');
+  const payload = await response.text();
+  expect(payload).toContain("action-protocol");
+  expect(payload).not.toContain('"i":true');
 });
 
 function startActionRequestCapture() {

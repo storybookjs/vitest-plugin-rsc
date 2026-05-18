@@ -24,6 +24,7 @@ export default defineProject({
     include: ["**/*.test.{ts,tsx}"],
     exclude: ["node_modules"],
     browser: {
+      traceView: true,
       enabled: true,
       headless: true,
       provider: playwright(),

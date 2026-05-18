@@ -68,13 +68,25 @@ importers:
       '@vitest/expect':
         specifier: 5.0.0-beta.2
         version: 5.0.0-beta.2
-      '@vitest/spy':
-        specifier: 5.0.0-beta.2
-        version: 5.0.0-beta.2
+      cjs-module-lexer:
+        specifier: ^2.2.0
+        version: 2.2.0
       convert-source-map:
         specifier: ^2.0.0
         version: 2.0.0
+      es-module-lexer:
+        specifier: ^2.1.0
+        version: 2.1.0
+      estree-walker:
+        specifier: ^3.0.3
+        version: 3.0.3
+      magic-string:
+        specifier: ^0.30.21
+        version: 0.30.21
     devDependencies:
+      '@next/routing':
+        specifier: ^16.2.6
+        version: 16.2.6
       '@types/convert-source-map':
         specifier: ^2.0.3
         version: 2.0.3
@@ -124,6 +136,9 @@ importers:
         specifier: 19.2.6
         version: 19.2.6(react@19.2.6)
     devDependencies:
+      '@next/routing':
+        specifier: ^16.2.6
+        version: 16.2.6
       '@types/node':
         specifier: ^24.12.4
         version: 24.12.4
@@ -245,6 +260,9 @@ importers:
       '@fontsource-variable/geist-mono':
         specifier: ^5.2.7
         version: 5.2.7
+      '@next/routing':
+        specifier: ^16.2.6
+        version: 16.2.6
       '@opentelemetry/api':
         specifier: ^1.9.1
         version: 1.9.1
@@ -1400,6 +1418,9 @@ packages:
   '@next/env@16.2.6':
     resolution: {integrity: sha512-gd8HoHN4ufj73WmR3JmVolrpJR47ILK6LouP5xElPglaVxir6e1a7VzvTvDWkOoPXT9rkkTzyCxBu4yeZfZwcw==}
 
+  '@next/routing@16.2.6':
+    resolution: {integrity: sha512-MyQR5HjGRIs6B/pgEIQarQPHlOZgr/aKoaZ8QL8eLpFvzbGUm01J4qeAFL8sdOHwUZ/ymIusdTKWMqBrPGm/ow==}
+
   '@next/swc-darwin-arm64@16.2.6':
     resolution: {integrity: sha512-ZJGkkcNfYgrrMkqOdZ7zoLa1TOy0qpcMfk/z4Mh/FKUz40gVO+HNQWqmLxf67Z5WB64DRp0dhEbyHfel+6sJUg==}
     engines: {node: '>= 10'}
@@ -2459,6 +2480,9 @@ packages:
   chalk@5.6.2:
     resolution: {integrity: sha512-7NzBL0rN6fMUW+f7A6Io4h40qQlG+xGmtMxfbnH/K7TAtt8JQWVQK+6g0UXKMeVJoyV5EkkNsErQ8pVD3bLHbA==}
     engines: {node: ^12.17.0 || ^14.13 || >=16.0.0}
+
+  cjs-module-lexer@2.2.0:
+    resolution: {integrity: sha512-4bHTS2YuzUvtoLjdy+98ykbNB5jS0+07EvFNXerqZQJ89F7DI6ET7OQo/HJuW6K0aVsKA9hj9/RVb2kQVOrPDQ==}
 
   class-variance-authority@0.7.1:
     resolution: {integrity: sha512-Ka+9Trutv7G8M6WT6SeiRWz792K5qEqIGEGzXKhAE6xOWAY6pPH8U+9IY3oCMv6kqTmLsv7Xh/2w2RigkePMsg==}
@@ -5174,6 +5198,8 @@ snapshots:
 
   '@next/env@16.2.6': {}
 
+  '@next/routing@16.2.6': {}
+
   '@next/swc-darwin-arm64@16.2.6':
     optional: true
 
@@ -6009,6 +6035,8 @@ snapshots:
   chai@6.2.2: {}
 
   chalk@5.6.2: {}
+
+  cjs-module-lexer@2.2.0: {}
 
   class-variance-authority@0.7.1:
     dependencies:

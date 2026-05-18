@@ -1,9 +1,54 @@
-import "./env/server.ts";
 import type { NextConfig } from "next";
+import { fileURLToPath } from "node:url";
 
 const nextConfig: NextConfig = {
   typescript: { ignoreBuildErrors: true },
   reactCompiler: true,
+  async rewrites() {
+    return [
+      { source: "/next-config-rewrite", destination: "/next-apis" },
+      {
+        source: "/next-apis",
+        destination: "/route-patterns/conventions?from=after-files-shadow",
+      },
+    ];
+  },
+  async redirects() {
+    return [
+      {
+        source: "/next-config-redirect",
+        destination: "/next-apis?from=config-redirect",
+        permanent: false,
+      },
+    ];
+  },
+  async headers() {
+    return [
+      {
+        source: "/next-apis",
+        headers: [{ key: "x-next-config-header", value: "notes-demo" }],
+      },
+    ];
+  },
+  cacheComponents: true,
+  cacheLife: {
+    "notes-demo-fast": {
+      stale: 1,
+      revalidate: 1,
+      expire: 60,
+    },
+  },
+  cacheHandlers: {
+    "notes-custom": fileURLToPath(new URL("./cache-handler.mjs", import.meta.url)),
+  },
+  cacheMaxMemorySize: 50 * 1024 * 1024,
+  images: {
+    path: "/custom-next-image",
+  },
+  experimental: {
+    authInterrupts: true,
+    rootParams: true,
+  },
   serverExternalPackages: ["@electric-sql/pglite", "drizzle-kit"],
 };
 

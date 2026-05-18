@@ -1,9 +1,22 @@
-import { refresh, revalidatePath, revalidateTag, unstable_cache, updateTag } from "next/cache";
+import {
+  cacheLife,
+  cacheTag,
+  refresh,
+  revalidatePath,
+  revalidateTag,
+  unstable_cache,
+  unstable_noStore,
+  updateTag,
+} from "next/cache";
+import { cookies, headers } from "next/headers";
+import { connection } from "next/server";
+import { getCacheHandlerEntries } from "next/dist/server/use-cache/handlers.js";
 import {
   nextCacheProbeFetchUrl,
   nextCacheProbeNoStoreFetchUrl,
   resetNextCacheProbeFetch,
 } from "./next-cache-msw.ts";
+import { getNotesCacheHandlerEvents, resetNotesCacheHandlerEvents } from "../cache-handler.mjs";
 
 const dataTag = "next-cache-probe:data";
 const fetchTag = "next-cache-probe:fetch";
@@ -12,6 +25,13 @@ let dataVersion = 0;
 let renderVersion = 0;
 let actionWriteVersion = 0;
 let cacheLabel = "default";
+let useCacheGeneration = 0;
+let useCacheReads = 0;
+let remoteUseCacheReads = 0;
+let cacheLifeReads = 0;
+let concurrentUseCacheReads = 0;
+let closureUseCacheReads = 0;
+let customUseCacheReads = 0;
 
 const readCachedData = unstable_cache(
   async () => {
@@ -27,7 +47,168 @@ export function resetNextCacheProbe(label = "default") {
   renderVersion = 0;
   actionWriteVersion = 0;
   cacheLabel = label;
+  useCacheGeneration += 1;
+  useCacheReads = 0;
+  remoteUseCacheReads = 0;
+  cacheLifeReads = 0;
+  concurrentUseCacheReads = 0;
+  closureUseCacheReads = 0;
+  customUseCacheReads = 0;
+  resetNotesCacheHandlerEvents();
   resetNextCacheProbeFetch(label);
+}
+
+export function NextNoStoreProbe() {
+  unstable_noStore();
+  return <p>unstable noStore called</p>;
+}
+
+export function NextCacheHandlerProbe() {
+  const kinds = Array.from(getCacheHandlerEntries() ?? [])
+    .map(([kind]) => kind)
+    .join(", ");
+
+  return <p>cache handlers: {kinds || "none"}</p>;
+}
+
+export async function NextUseCacheProbe() {
+  const first = await readUseCacheValue(useCacheGeneration);
+  const second = await readUseCacheValue(useCacheGeneration);
+  const remoteFirst = await readRemoteUseCacheValue(useCacheGeneration);
+  const remoteSecond = await readRemoteUseCacheValue(useCacheGeneration);
+  const cacheLifeFirst = await readCacheLifeValue(useCacheGeneration);
+  const cacheLifeSecond = await readCacheLifeValue(useCacheGeneration);
+  const [concurrentFirst, concurrentSecond] = await Promise.all([
+    readConcurrentUseCacheValue(useCacheGeneration),
+    readConcurrentUseCacheValue(useCacheGeneration),
+  ]);
+  const closureValues = await readClosureBoundUseCacheValues(useCacheGeneration);
+  const customFirst = await readCustomUseCacheValue(useCacheGeneration);
+  const customSecond = await readCustomUseCacheValue(useCacheGeneration);
+  const customHandlerEvents = getNotesCacheHandlerEvents().join(", ");
+  const privateValue = await readPrivateUseCacheCookie();
+
+  return (
+    <section>
+      <p>use cache first: {first}</p>
+      <p>use cache second: {second}</p>
+      <p>use cache reads: {useCacheReads}</p>
+      <p>use cache remote first: {remoteFirst}</p>
+      <p>use cache remote second: {remoteSecond}</p>
+      <p>use cache remote reads: {remoteUseCacheReads}</p>
+      <p>use cache life first: {cacheLifeFirst}</p>
+      <p>use cache life second: {cacheLifeSecond}</p>
+      <p>use cache life reads: {cacheLifeReads}</p>
+      <p>use cache concurrent first: {concurrentFirst}</p>
+      <p>use cache concurrent second: {concurrentSecond}</p>
+      <p>use cache concurrent reads: {concurrentUseCacheReads}</p>
+      <p>use cache closure first: {closureValues.first}</p>
+      <p>use cache closure second: {closureValues.second}</p>
+      <p>use cache closure different: {closureValues.different}</p>
+      <p>use cache closure reads: {closureUseCacheReads}</p>
+      <p>use cache custom first: {customFirst}</p>
+      <p>use cache custom second: {customSecond}</p>
+      <p>use cache custom reads: {customUseCacheReads}</p>
+      <p>use cache custom handler events: {customHandlerEvents}</p>
+      <p>use cache private cookie: {privateValue}</p>
+    </section>
+  );
+}
+
+export async function NextUseCacheDynamicApiProbe() {
+  const value = await readPublicUseCacheCookie();
+  return <p>public use cache cookie: {value}</p>;
+}
+
+export async function NextUseCacheDynamicHeadersProbe() {
+  const value = await readPublicUseCacheHeader();
+  return <p>public use cache header: {value}</p>;
+}
+
+export async function NextUseCacheDynamicConnectionProbe() {
+  await readPublicUseCacheConnection();
+  return <p>public use cache connection: allowed</p>;
+}
+
+async function readUseCacheValue(generation: number) {
+  "use cache";
+
+  cacheTag(`next-use-cache-probe:${generation}`);
+  useCacheReads += 1;
+  return `generation ${generation} read ${useCacheReads}`;
+}
+
+async function readRemoteUseCacheValue(generation: number) {
+  "use cache: remote";
+
+  remoteUseCacheReads += 1;
+  return `generation ${generation} remote read ${remoteUseCacheReads}`;
+}
+
+async function readCacheLifeValue(generation: number) {
+  "use cache";
+
+  cacheLife("notes-demo-fast");
+  cacheLifeReads += 1;
+  return `generation ${generation} cache life read ${cacheLifeReads}`;
+}
+
+async function readConcurrentUseCacheValue(generation: number) {
+  "use cache";
+
+  concurrentUseCacheReads += 1;
+  await Promise.resolve();
+  return `generation ${generation} concurrent read ${concurrentUseCacheReads}`;
+}
+
+async function readClosureBoundUseCacheValues(generation: number) {
+  const scope = `generation ${generation}`;
+
+  async function readClosureValue(label: string) {
+    "use cache";
+
+    closureUseCacheReads += 1;
+    return `${scope} ${label} closure read ${closureUseCacheReads}`;
+  }
+
+  const first = await readClosureValue("same");
+  const second = await readClosureValue("same");
+  const different = await readClosureValue("different");
+  return { first, second, different };
+}
+
+async function readCustomUseCacheValue(generation: number) {
+  "use cache: notes-custom";
+
+  customUseCacheReads += 1;
+  return `generation ${generation} custom read ${customUseCacheReads}`;
+}
+
+async function readPrivateUseCacheCookie() {
+  "use cache: private";
+
+  const cookieStore = await cookies();
+  return cookieStore.get("next-private-cache")?.value ?? "missing";
+}
+
+async function readPublicUseCacheCookie() {
+  "use cache";
+
+  const cookieStore = await cookies();
+  return cookieStore.get("next-public-cache")?.value ?? "missing";
+}
+
+async function readPublicUseCacheHeader() {
+  "use cache";
+
+  const headersStore = await headers();
+  return headersStore.get("x-next-public-cache") ?? "missing";
+}
+
+async function readPublicUseCacheConnection() {
+  "use cache";
+
+  await connection();
 }
 
 export async function NextCacheProbe() {

@@ -1,9 +1,19 @@
-import { expect, test } from "vitest";
+import type { ReactNode } from "react";
+import { expect, test, vi } from "vitest";
 import { page } from "vitest/browser";
 import { cleanup, renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
-import { NextCacheProbe, resetNextCacheProbe } from "./next-cache-probe.tsx";
+import {
+  NextCacheHandlerProbe,
+  NextCacheProbe,
+  NextNoStoreProbe,
+  NextUseCacheDynamicApiProbe,
+  NextUseCacheDynamicConnectionProbe,
+  NextUseCacheDynamicHeadersProbe,
+  NextUseCacheProbe,
+  resetNextCacheProbe,
+} from "./next-cache-probe.tsx";
 
-test("server refresh rerenders without invalidating cached data or fetches", async () => {
+test("server refresh rerenders without invalidating cached data", async () => {
   await renderNextCacheProbe();
 
   await expect.element(page.getByText("render: 1")).toBeVisible();
@@ -15,11 +25,11 @@ test("server refresh rerenders without invalidating cached data or fetches", asy
 
   await expect.element(page.getByText("render: 2")).toBeVisible();
   await expect.element(page.getByText("cached data: default data 1")).toBeVisible();
-  await expect.element(page.getByText("cached fetch: default fetch 1")).toBeVisible();
-  await expect.element(page.getByText("cached fetch duplicate: default fetch 1")).toBeVisible();
+  await expect.element(page.getByText("cached fetch: default fetch 2")).toBeVisible();
+  await expect.element(page.getByText("cached fetch duplicate: default fetch 2")).toBeVisible();
 });
 
-test("identical force-cache fetches are deduped in one render and reused on refresh", async () => {
+test("identical force-cache fetches are deduped in one render after refresh", async () => {
   await renderNextCacheProbe();
 
   await expect.element(page.getByText("render: 1")).toBeVisible();
@@ -29,11 +39,11 @@ test("identical force-cache fetches are deduped in one render and reused on refr
   await page.getByRole("button", { name: "Refresh", exact: true }).click();
 
   await expect.element(page.getByText("render: 2")).toBeVisible();
-  await expect.element(page.getByText("cached fetch: default fetch 1")).toBeVisible();
-  await expect.element(page.getByText("cached fetch duplicate: default fetch 1")).toBeVisible();
+  await expect.element(page.getByText("cached fetch: default fetch 2")).toBeVisible();
+  await expect.element(page.getByText("cached fetch duplicate: default fetch 2")).toBeVisible();
 });
 
-test("no-store fetches bypass the persistent Next fetch cache", async () => {
+test("no-store fetches bypass the Next fetch cache", async () => {
   await renderNextCacheProbe();
 
   await expect.element(page.getByText("render: 1")).toBeVisible();
@@ -52,6 +62,132 @@ test("no-store fetches bypass the persistent Next fetch cache", async () => {
     .element(page.getByText(/^no-store fetch duplicate: default no-store fetch [24]$/))
     .toBeVisible();
 });
+
+test("unstable_noStore is available in a request render scope", async () => {
+  await renderServer(<NextNoStoreProbe />, { url: "/next-no-store-probe" });
+
+  await expect.element(page.getByText("unstable noStore called")).toBeVisible();
+});
+
+test("app-render initializes Next cache handlers", async () => {
+  await renderServer(<NextCacheHandlerProbe />, { url: "/next-cache-handler-probe" });
+
+  await expect
+    .element(page.getByText("cache handlers: default, remote, notes-custom"))
+    .toBeVisible();
+});
+
+test("use cache functions are hoisted into Next cache components runtime", async () => {
+  resetNextCacheProbe();
+
+  await renderServer(<NextUseCacheProbe />, {
+    headers: { cookie: "next-private-cache=private-value" },
+    url: "/next-use-cache-probe",
+  });
+
+  await expect.element(page.getByText(/use cache first: generation \d+ read 1/)).toBeVisible();
+  await expect.element(page.getByText(/use cache second: generation \d+ read 1/)).toBeVisible();
+  await expect.element(page.getByText("use cache reads: 1")).toBeVisible();
+  await expect
+    .element(page.getByText(/use cache remote first: generation \d+ remote read 1/))
+    .toBeVisible();
+  await expect
+    .element(page.getByText(/use cache remote second: generation \d+ remote read 1/))
+    .toBeVisible();
+  await expect.element(page.getByText("use cache remote reads: 1")).toBeVisible();
+  await expect
+    .element(page.getByText(/use cache life first: generation \d+ cache life read 1/))
+    .toBeVisible();
+  await expect
+    .element(page.getByText(/use cache life second: generation \d+ cache life read 1/))
+    .toBeVisible();
+  await expect.element(page.getByText("use cache life reads: 1")).toBeVisible();
+  await expect
+    .element(page.getByText(/use cache concurrent first: generation \d+ concurrent read [12]/))
+    .toBeVisible();
+  await expect
+    .element(page.getByText(/use cache concurrent second: generation \d+ concurrent read [12]/))
+    .toBeVisible();
+  expect(getConcurrentUseCacheReadCount()).toMatch(/^[12]$/);
+  await expect
+    .element(page.getByText(/use cache closure first: generation \d+ same closure read 1/))
+    .toBeVisible();
+  await expect
+    .element(page.getByText(/use cache closure second: generation \d+ same closure read 1/))
+    .toBeVisible();
+  await expect
+    .element(page.getByText(/use cache closure different: generation \d+ different closure read 2/))
+    .toBeVisible();
+  await expect.element(page.getByText("use cache closure reads: 2")).toBeVisible();
+  await expect
+    .element(page.getByText(/use cache custom first: generation \d+ custom read 1/))
+    .toBeVisible();
+  await expect
+    .element(page.getByText(/use cache custom second: generation \d+ custom read 1/))
+    .toBeVisible();
+  await expect.element(page.getByText("use cache custom reads: 1")).toBeVisible();
+  expect(getCustomCacheHandlerEvents()).toContain("get");
+  expect(getCustomCacheHandlerEvents()).toContain("set");
+  await expect.element(page.getByText("use cache private cookie: private-value")).toBeVisible();
+});
+
+test("public use cache scopes reject request dynamic APIs", async () => {
+  resetNextCacheProbe();
+
+  await expectPublicUseCacheDynamicApiError(
+    <NextUseCacheDynamicApiProbe />,
+    /cookies\(\).*use cache/i,
+    {
+      headers: { cookie: "next-public-cache=public-value" },
+      url: "/next-use-cache-dynamic-api-probe",
+    },
+  );
+});
+
+test("public use cache scopes reject request headers", async () => {
+  resetNextCacheProbe();
+
+  await expectPublicUseCacheDynamicApiError(
+    <NextUseCacheDynamicHeadersProbe />,
+    /headers\(\).*use cache/i,
+    {
+      headers: { "x-next-public-cache": "public-value" },
+      url: "/next-use-cache-dynamic-headers-probe",
+    },
+  );
+});
+
+test("public use cache scopes reject connection", async () => {
+  resetNextCacheProbe();
+
+  await expectPublicUseCacheDynamicApiError(
+    <NextUseCacheDynamicConnectionProbe />,
+    /connection\(\).*use cache/i,
+    {
+      url: "/next-use-cache-dynamic-connection-probe",
+    },
+  );
+});
+
+async function expectPublicUseCacheDynamicApiError(
+  ui: ReactNode,
+  expected: RegExp,
+  options: Parameters<typeof renderServer>[1],
+) {
+  const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+  const consoleLog = vi.spyOn(console, "log").mockImplementation(() => {});
+  try {
+    await renderServer(ui, options);
+
+    const messages = [...consoleError.mock.calls, ...consoleLog.mock.calls].map((args) =>
+      args.map(String).join(" "),
+    );
+    expect(messages.some((message) => expected.test(message))).toBe(true);
+  } finally {
+    consoleError.mockRestore();
+    consoleLog.mockRestore();
+  }
+}
 
 test("server actions without refresh or invalidation do not rerender the current tree", async () => {
   await renderNextCacheProbe();
@@ -78,7 +214,7 @@ test("refresh renders uncached action writes while preserving cached reads", asy
   await expect.element(page.getByText("render: 2")).toBeVisible();
   await expect.element(page.getByText("action writes: 1")).toBeVisible();
   await expect.element(page.getByText("cached data: default data 1")).toBeVisible();
-  await expect.element(page.getByText("cached fetch: default fetch 1")).toBeVisible();
+  await expect.element(page.getByText("cached fetch: default fetch 2")).toBeVisible();
 });
 
 test("updateTag invalidates unstable_cache data for the next server render", async () => {
@@ -91,7 +227,7 @@ test("updateTag invalidates unstable_cache data for the next server render", asy
 
   await expect.element(page.getByText("render: 2")).toBeVisible();
   await expect.element(page.getByText("cached data: default data 2")).toBeVisible();
-  await expect.element(page.getByText("cached fetch: default fetch 1")).toBeVisible();
+  await expect.element(page.getByText("cached fetch: default fetch 2")).toBeVisible();
 });
 
 test("updateTag invalidates cached fetches for the next server render", async () => {
@@ -142,7 +278,7 @@ test("revalidateTag with expire 0 invalidates cached data for the next server re
 
   await expect.element(page.getByText("render: 2")).toBeVisible();
   await expect.element(page.getByText("cached data: default data 2")).toBeVisible();
-  await expect.element(page.getByText("cached fetch: default fetch 1")).toBeVisible();
+  await expect.element(page.getByText("cached fetch: default fetch 2")).toBeVisible();
 });
 
 test("revalidatePath rerenders the current path with fresh cached reads", async () => {
@@ -185,4 +321,25 @@ async function renderNextCacheProbe(label?: string) {
 
 function waitPastCacheTimestamp() {
   return new Promise((resolve) => setTimeout(resolve, 5));
+}
+
+function getConcurrentUseCacheReadCount() {
+  const text = document.body.textContent ?? "";
+  const first = text.match(/use cache concurrent first: generation \d+ concurrent read (\d+)/)?.[1];
+  const second = text.match(
+    /use cache concurrent second: generation \d+ concurrent read (\d+)/,
+  )?.[1];
+  const reads = text.match(/use cache concurrent reads: (\d+)/)?.[1];
+
+  expect(first).toBeDefined();
+  expect(second).toBe(first);
+  expect(reads).toBe(first);
+  return reads;
+}
+
+function getCustomCacheHandlerEvents() {
+  const text = document.body.textContent ?? "";
+  const events = text.match(/use cache custom handler events: ([\w, ]+)/)?.[1];
+  expect(events).toBeDefined();
+  return events ?? "";
 }

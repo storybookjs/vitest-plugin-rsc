@@ -31,9 +31,13 @@ Pick one piece of the app — a wishlist carousel, a notes form, a settings pane
 - [Example: Server Action Form](#example-server-action-form)
 - [Example: Drizzle + PGlite Setup](#example-drizzle--pglite-setup)
 - [Next.js App Router Helpers](#nextjs-app-router-helpers)
+  - [Testing App Routes](#testing-app-routes)
+  - [Direct Component Tests With Route State](#direct-component-tests-with-route-state)
   - [Router Hooks And Links](#router-hooks-and-links)
+  - [Next Config Routes](#next-config-routes)
   - [Request Headers And Cookies](#request-headers-and-cookies)
   - [Cache And Revalidation](#cache-and-revalidation)
+  - [Fonts, Images, And Metadata](#fonts-images-and-metadata)
 - [Playgrounds](#playgrounds)
 - [Architecture](#architecture)
 
@@ -80,6 +84,7 @@ Agents do dramatically better when wrapped in a self-healing loop with fast unit
 - **Code coverage**: V8 or Istanbul coverage for your RSC code, via Vitest's coverage provider.
 - **No deployed infra**: Use in-memory infrastructure like PGlite instead of spinning up a preview server and database.
 - **Per-test isolation**: Each test gets its own DB clone, cookies, module mocks, and DOM. Matching this in E2E means a new server or database per test — usually impractical.
+- **Next.js App Router tests**: Render real app routes, hydrate the Next document, call Server Actions, use App Router hooks, assert redirects, exercise cache revalidation, and cover `next/font`, `next/image`, and metadata routes from Vitest.
 
 ## Requirements
 
@@ -87,12 +92,11 @@ This plugin requires [Vitest Browser Mode](https://vitest.dev/guide/browser/).
 
 ## Next.js Version Support
 
-The base `vitestPluginRSC()` runtime is framework-agnostic. The `vitest-plugin-rsc/nextjs/*` helpers depend on Next.js App Router internals, so CI tests them against multiple Next.js targets:
+The base `vitestPluginRSC()` runtime is framework-agnostic. The `vitest-plugin-rsc/nextjs/*` helpers depend on Next.js App Router internals and Next's shared routing package, so CI tests them against matching Next.js and `@next/routing` targets:
 
-- `next@latest`: current stable, following new releases automatically.
-- `next@16.1`: pinned previous-stable line.
-- `next@16.0`: older pinned stable line.
-- `next@canary`: early warning when a private App Router internal changes.
+- `next@latest` with `@next/routing@latest`: current stable, following new releases automatically.
+- `next@16.2` with `@next/routing@16.2`: pinned supported stable line.
+- `next@canary` with `@next/routing@canary`: early warning when a private App Router or routing internal changes.
 
 For each target, CI builds the plugin and runs the package-level Next tests plus the Next.js playgrounds.
 
@@ -108,6 +112,12 @@ The examples below use Playwright as the Vitest browser provider; install it (or
 
 ```bash
 npm install -D @vitest/browser-playwright playwright
+```
+
+For Next.js App Router tests, use `next >=16.2.0` and install a matching `@next/routing` version:
+
+```bash
+npm install -D @next/routing@16.2
 ```
 
 ### 2. Register The Plugin
@@ -441,42 +451,101 @@ App code keeps importing `db` from `#lib/db.ts`. `vi.mock("#lib/db.ts")` automat
 
 ## Next.js App Router Helpers
 
-The Next.js plugin adds aliases, request context, cache context, router state, and optimizer config for App Router internals:
+The Next.js plugin adds route rendering, document hydration, aliases, request context, cache context, router state, and optimizer config for App Router tests:
 
 ```ts
 import { vitestPluginNext } from "vitest-plugin-rsc/nextjs/plugin";
 ```
 
-Tests use the same public App Router imports your app uses. The plugin wires those entrypoints to Next's own App Router internals and fills in the test request, router, cache, and Server Action runtime around them:
+Tests use the same public App Router imports your app uses. The plugin wires those entrypoints to Next's App Router internals and fills in the test request, router, cache, document, asset, and Server Action runtime around them:
 
 - `next/link`: `<Link>` rendering and navigation through the test router.
 - `next/navigation`: router hooks, selected-layout segment hooks, `redirect`, `notFound`, and the rest of the public App Router navigation exports.
 - `next/headers`: `headers()` and `cookies()` in Server Components and Server Actions.
-- `next/cache`: `refresh`, `revalidatePath`, `revalidateTag`, `updateTag`, and patched `fetch` behavior for tag-based caching. `unstable_cache` works too, but the examples below use the tagged `fetch` API.
+- `next/cache`: `refresh`, `revalidatePath`, `revalidateTag`, `updateTag`, `unstable_cache`, and patched `fetch` behavior for tag-based caching.
+- `next/image`: static image imports and `getImageProps`, with `<Image>` rendered as a Client Component.
+- `next/font`: local and Google font modules, generated CSS, static media URLs, and route font preloads.
+- Metadata routes and metadata exports: `metadata`, `generateMetadata`, `robots`, `sitemap`, `manifest`, Open Graph images, and Twitter images.
 
 The examples below aren't a separate testing API. They're normal Next.js code paths running inside a Vitest Browser Mode test.
 
+### Testing App Routes
+
+Use `renderServer({ url })` when you want to test the actual app route from your `app/` directory. The plugin discovers the matching page, loads the surrounding layouts/templates/parallel slots, renders the route through Next app-render, and hydrates the resulting document in the browser:
+
+```tsx
+import { expect, test } from "vitest";
+import { page } from "vitest/browser";
+import { renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
+
+test("renders the real notes route", async () => {
+  await renderServer({ url: "/notes" });
+
+  await expect.element(page.getByRole("heading", { name: "Notes" })).toBeVisible();
+});
+```
+
+Dynamic routes are resolved from the app route tree:
+
+```tsx
+await renderServer({ url: "/notes/123" });
+await renderServer({ url: "/docs/getting-started/install" });
+```
+
+Route groups, nested layouts, parallel routes, default slots, templates, metadata exports, and route-level `loading`, `not-found`, `error`, `forbidden`, and `unauthorized` files are included in the route render. Since route renders hydrate the full Next document, you can assert visible UI and document metadata in the same test:
+
+```tsx
+await renderServer({ url: "/notes/123" });
+
+await expect.element(page.getByText("Inbox triage")).toBeVisible();
+expect(document.title).toContain("Inbox triage");
+expect(document.querySelector('meta[property="og:title"]')?.getAttribute("content")).toContain(
+  "Inbox triage",
+);
+```
+
+### Direct Component Tests With Route State
+
+Use `renderServer(<Component />)` when you want a smaller component test but still need RSC, Client Components, Server Actions, and App Router context. Pass `url` and `route` when the component reads params, search params, selected segments, or the current path:
+
+```tsx
+import { expect, test } from "vitest";
+import { page } from "vitest/browser";
+import { renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
+
+import { NoteToolbar } from "./note-toolbar";
+
+test("renders a route-aware toolbar", async () => {
+  await renderServer(<NoteToolbar />, {
+    url: "/notes/123?tab=activity",
+    route: "/notes/[id]",
+  });
+
+  await expect.element(page.getByText("note id: 123")).toBeVisible();
+  await expect.element(page.getByText("tab: activity")).toBeVisible();
+});
+```
+
+If the URL matches a real app route, direct component rendering replaces only that matched page and keeps the route's layouts, metadata, and document behavior. If the component does not need a real route, omit `url` and the plugin creates a small test route context for it.
+
 ### Router Hooks And Links
 
-Many tests can omit routing options:
+Many direct component tests can omit routing options:
 
 ```tsx
 await renderServer(<CreateNoteForm />);
 ```
 
-Pass `url` when the component needs location-aware behavior — `usePathname`, `useSearchParams`, the selected-segment hooks, `next/link`, navigation assertions, request URL-dependent code, or cache invalidation against the current path. For dynamic routes, also pass the App Router route pattern with `route` so Next can derive params and selected segments from the URL:
+Pass `url` when the component needs location-aware behavior — `usePathname`, `useSearchParams`, the selected-segment hooks, `next/link`, browser location checks, request URL-dependent code, or cache invalidation against the current path. For dynamic routes, also pass the App Router route pattern with `route` so Next can derive params and selected segments from the URL:
 
 ```tsx
 import { expect, test, vi } from "vitest";
 import { page } from "vitest/browser";
-import {
-  expectToHaveBeenNavigatedTo,
-  renderServer,
-} from "vitest-plugin-rsc/nextjs/testing-library";
+import { renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
 
 import { NoteToolbar } from "./note-toolbar";
 
-test("reads router state and records navigation", async () => {
+test("reads router state and navigates", async () => {
   await renderServer(<NoteToolbar />, {
     url: "/notes/123?tab=activity",
     route: "/notes/[id]",
@@ -488,7 +557,7 @@ test("reads router state and records navigation", async () => {
   await expect.element(page.getByText("segments: notes/123")).toBeVisible();
 
   await page.getByRole("button", { name: "Go to notes" }).click();
-  await vi.waitFor(() => expectToHaveBeenNavigatedTo({ pathname: "/notes" }));
+  await vi.waitFor(() => expect(window.location.pathname).toBe("/notes"));
 });
 ```
 
@@ -537,6 +606,65 @@ export function NoteToolbar() {
     </>
   );
 }
+```
+
+Client navigation updates the real browser location, so tests can assert `window.location` and the UI rendered for the target route:
+
+```tsx
+import { expect, vi } from "vitest";
+import { renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
+
+await renderServer(<NoteToolbar />, {
+  url: "/notes/123?tab=activity",
+  route: "/notes/[id]",
+});
+
+await page.getByRole("button", { name: "Go to notes" }).click();
+await vi.waitFor(() => expect(window.location.pathname).toBe("/notes"));
+await expect.element(page.getByRole("heading", { name: "Notes" })).toBeVisible();
+```
+
+Server Action redirects use the same App Router path. Same-origin redirects update `window.location` and render the target route UI.
+
+### Next Config Routes
+
+`vitestPluginNext()` loads `next.config` and applies matching headers, redirects, and rewrites before route rendering. Write the config once and use it from tests the same way the app uses it:
+
+```ts
+// next.config.ts
+import type { NextConfig } from "next";
+
+const nextConfig: NextConfig = {
+  async headers() {
+    return [
+      {
+        source: "/notes",
+        headers: [{ key: "x-notes-route", value: "enabled" }],
+      },
+    ];
+  },
+  async redirects() {
+    return [
+      {
+        source: "/start",
+        destination: "/notes?from=start",
+        permanent: false,
+      },
+    ];
+  },
+  async rewrites() {
+    return [{ source: "/dashboard", destination: "/notes" }];
+  },
+};
+
+export default nextConfig;
+```
+
+```tsx
+const result = await renderServer({ url: "/start" });
+
+expect(result.headers.get("x-notes-route")).toBe("enabled");
+await expect.element(page.getByRole("heading", { name: "Notes" })).toBeVisible();
 ```
 
 ### Request Headers And Cookies
@@ -677,6 +805,72 @@ test("creating a note invalidates the notes cache", async () => {
 });
 ```
 
+`use cache` functions also run through the Next cache runtime when `cacheComponents: true` is enabled in `next.config`:
+
+```ts
+// next.config.ts
+import type { NextConfig } from "next";
+
+const nextConfig: NextConfig = {
+  cacheComponents: true,
+  cacheLife: {
+    fast: { stale: 1, revalidate: 1, expire: 60 },
+  },
+};
+
+export default nextConfig;
+```
+
+```tsx
+async function readExpensiveValue(id: string) {
+  "use cache: fast";
+
+  return fetch(`https://example.test/api/value/${id}`).then((response) => response.text());
+}
+```
+
+### Fonts, Images, And Metadata
+
+Use `next/font`, `next/image`, static image imports, and route metadata in tests the same way you use them in the app. Route renders apply the generated font CSS and preload tags to the browser document:
+
+```tsx
+import localFont from "next/font/local";
+import Image from "next/image";
+import logo from "./logo.png";
+
+const brandFont = localFont({
+  src: "./brand.woff2",
+  variable: "--font-brand",
+});
+
+export const metadata = {
+  title: "Marketing",
+  openGraph: {
+    title: "Marketing",
+  },
+};
+
+export default function MarketingPage() {
+  return (
+    <main className={brandFont.className}>
+      <h1>Marketing</h1>
+      <Image src={logo} alt="Acme logo" priority />
+    </main>
+  );
+}
+```
+
+```tsx
+await renderServer({ url: "/marketing" });
+
+await expect.element(page.getByRole("heading", { name: "Marketing" })).toBeVisible();
+await expect.element(page.getByAltText("Acme logo")).toBeVisible();
+expect(document.title).toBe("Marketing");
+expect(document.head.querySelector('link[rel="preload"][as="font"]')).not.toBeNull();
+```
+
+Metadata route files can be imported directly in node tests when you want to assert `robots`, `sitemap`, `manifest`, Open Graph image, or Twitter image responses.
+
 ## Playgrounds
 
 This repository ships three reference apps under `playground/`:
@@ -703,4 +897,4 @@ pnpm test:run --project nextjs-notes-demo-browser --project nextjs-notes-demo-no
 
 The transport is the only unusual part. In production, the browser fetches the Flight stream from a server endpoint. In this plugin, the stream is passed between two Vite environments (`client` for RSC, `react_client` for the browser) inside the Vitest browser runtime, bridged over a dedicated Vite websocket so React can resolve Client Component references with browser conditions.
 
-For the full walkthrough — the two-environment setup, client reference registration, the Module Runner bridge, and the end-to-end flow — see [docs/architecture.md](docs/architecture.md).
+For the full walkthrough — the two-environment setup, client reference registration, the Module Runner bridge, and the end-to-end flow — see [docs/rsc-runtime-architecture.md](docs/rsc-runtime-architecture.md).

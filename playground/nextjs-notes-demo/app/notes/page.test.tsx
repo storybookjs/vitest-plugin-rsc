@@ -1,16 +1,15 @@
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 import { eq } from "drizzle-orm";
 import { page } from "vitest/browser";
 import { db } from "#lib/db.ts";
 import { notes } from "#db/schema.ts";
 import { applyScenario, scenarioUsers } from "#lib/db.scenarios.ts";
 import { otherUser, signInAs, testUser } from "#test/auth.ts";
-import { renderServer } from "#test/render.tsx";
-import NotesPage from "./page.tsx";
+import { renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
 
 async function renderNotesPage() {
   await signInAs();
-  await renderServer(<NotesPage />, { url: "/notes" });
+  await renderServer({ url: "/notes" });
 }
 
 test("renders Notes heading", async () => {
@@ -29,6 +28,69 @@ test("shows empty state when no notes exist", async () => {
     .toBeInTheDocument();
 });
 
+test("navigates through the notes app after creating a note", async () => {
+  await renderNotesPage();
+
+  await expect.element(page.getByRole("heading", { level: 1, name: "Notes" })).toBeInTheDocument();
+  await page.getByRole("link", { name: "Create your first note" }).click();
+
+  await vi.waitFor(() => expect(window.location.pathname).toBe("/notes/new"));
+  await expect
+    .element(page.getByRole("heading", { level: 1, name: "New note" }))
+    .toBeInTheDocument();
+
+  await page.getByLabelText("Title").fill("Trace flow note");
+  await page.getByLabelText("Content").fill("Created while recording app navigation.");
+  await page.getByRole("button", { name: "Create note" }).click();
+
+  const createdNote = await vi.waitFor(async () => {
+    const [note] = await db.select().from(notes).where(eq(notes.title, "Trace flow note"));
+    expect(note).toBeDefined();
+    return note;
+  });
+  if (!createdNote) throw new Error("Expected the note creation action to insert a note.");
+
+  await vi.waitFor(() => expect(window.location.pathname).toBe(`/notes/${createdNote.id}`));
+  await expect
+    .element(page.getByRole("heading", { level: 1, name: "Trace flow note" }))
+    .toBeInTheDocument();
+  await expect
+    .element(page.getByText("Created while recording app navigation."))
+    .toBeInTheDocument();
+
+  await page.getByRole("link", { name: "Edit" }).click();
+
+  await vi.waitFor(() => expect(window.location.pathname).toBe(`/notes/${createdNote.id}/edit`));
+  await expect
+    .element(page.getByRole("heading", { level: 1, name: "Edit note" }))
+    .toBeInTheDocument();
+  await page.getByLabelText("Title").fill("Trace flow note, edited");
+  await page.getByLabelText("Content").fill("Edited while staying inside the app shell.");
+  await page.getByRole("button", { name: "Save changes" }).click();
+
+  await vi.waitFor(() => expect(window.location.pathname).toBe(`/notes/${createdNote.id}`));
+  await expect
+    .element(page.getByRole("heading", { level: 1, name: "Trace flow note, edited" }))
+    .toBeInTheDocument();
+  await expect
+    .element(page.getByText("Edited while staying inside the app shell."))
+    .toBeInTheDocument();
+
+  await page.getByRole("link", { name: "All notes" }).click();
+
+  await vi.waitFor(() => expect(window.location.pathname).toBe("/notes"));
+  await expect.element(page.getByRole("heading", { level: 1, name: "Notes" })).toBeInTheDocument();
+  const noteLink = page.getByRole("link", { name: /Trace flow note, edited/ });
+  await expect.element(noteLink).toBeInTheDocument();
+
+  await noteLink.click();
+
+  await vi.waitFor(() => expect(window.location.pathname).toBe(`/notes/${createdNote.id}`));
+  await expect
+    .element(page.getByRole("heading", { level: 1, name: "Trace flow note, edited" }))
+    .toBeInTheDocument();
+});
+
 test("renders notes from the database", async () => {
   await applyScenario(db, "notes-basic");
   await signInAs({
@@ -41,7 +103,7 @@ test("renders notes from the database", async () => {
   });
   const seededNotes = await db.select().from(notes);
 
-  await renderServer(<NotesPage />, { url: "/notes" });
+  await renderServer({ url: "/notes" });
 
   for (const note of seededNotes) {
     await expect.element(page.getByText(note.title)).toBeInTheDocument();
@@ -71,7 +133,7 @@ test("lists favorite notes before non-favorites", async () => {
     },
   ]);
 
-  await renderServer(<NotesPage />, { url: "/notes" });
+  await renderServer({ url: "/notes" });
 
   await expect.element(page.getByText("Newer favorite")).toBeInTheDocument();
   await expect
@@ -116,7 +178,7 @@ test("only renders notes owned by the current user", async () => {
     { ownerId: otherUser.id, title: "Not mine", content: "Hidden" },
   ]);
 
-  await renderServer(<NotesPage />, { url: "/notes" });
+  await renderServer({ url: "/notes" });
 
   await expect.element(page.getByText("Mine")).toBeInTheDocument();
   await expect.element(page.getByText("Not mine")).not.toBeInTheDocument();

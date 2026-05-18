@@ -1,10 +1,10 @@
-import { expect, test } from "vitest";
+import { eq } from "drizzle-orm";
+import { expect, test, vi } from "vitest";
 import { page } from "vitest/browser";
 import { db } from "#lib/db.ts";
 import { notes } from "#db/schema.ts";
 import { signInAs, testUser } from "#test/auth.ts";
-import { renderServer } from "#test/render.tsx";
-import NotePage from "./page.tsx";
+import { renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
 
 const noteId = "00000000-0000-4000-8000-000000000001";
 const databaseGeneratedNoteId = "70458a4b-ecef-4a2a-00e1-53f5b00c951e";
@@ -20,10 +20,7 @@ test("renders the note title and content with metadata", async () => {
     updatedAt,
   });
 
-  await renderServer(<NotePage params={Promise.resolve({ id: noteId })} />, {
-    route: "/notes/[id]",
-    url: `/notes/${noteId}`,
-  });
+  await renderServer({ url: `/notes/${noteId}` });
 
   await expect
     .element(page.getByRole("heading", { level: 1, name: "Roadmap thoughts" }))
@@ -45,10 +42,7 @@ test("renders note when id matches database-stored uuid", async () => {
     updatedAt,
   });
 
-  await renderServer(<NotePage params={Promise.resolve({ id: databaseGeneratedNoteId })} />, {
-    route: "/notes/[id]",
-    url: `/notes/${databaseGeneratedNoteId}`,
-  });
+  await renderServer({ url: `/notes/${databaseGeneratedNoteId}` });
 
   await expect
     .element(page.getByRole("heading", { level: 1, name: "Seeded note" }))
@@ -68,10 +62,7 @@ test("shows an empty content placeholder when the note has no body", async () =>
     updatedAt,
   });
 
-  await renderServer(<NotePage params={Promise.resolve({ id: noteId })} />, {
-    route: "/notes/[id]",
-    url: `/notes/${noteId}`,
-  });
+  await renderServer({ url: `/notes/${noteId}` });
 
   await expect.element(page.getByText("No content yet.")).toBeInTheDocument();
 });
@@ -87,10 +78,7 @@ test("renders the favorite badge for favorited notes", async () => {
     updatedAt,
   });
 
-  await renderServer(<NotePage params={Promise.resolve({ id: noteId })} />, {
-    route: "/notes/[id]",
-    url: `/notes/${noteId}`,
-  });
+  await renderServer({ url: `/notes/${noteId}` });
 
   await expect
     .element(page.getByRole("heading", { level: 1, name: "Starred idea" }))
@@ -100,4 +88,26 @@ test("renders the favorite badge for favorited notes", async () => {
   await expect
     .element(page.getByRole("button", { name: "Unfavorite note" }))
     .toHaveAttribute("aria-pressed", "true");
+});
+
+test("delete note action redirects to the notes route", async () => {
+  await signInAs();
+  await db.insert(notes).values({
+    id: noteId,
+    ownerId: testUser.id,
+    title: "Delete redirect target",
+    content: "This note should be removed by the action.",
+    updatedAt,
+  });
+
+  await renderServer({ url: `/notes/${noteId}` });
+  await page.getByRole("button", { name: "Delete" }).click();
+
+  await vi.waitFor(async () => {
+    const deletedNotes = await db.select().from(notes).where(eq(notes.id, noteId));
+    expect(deletedNotes).toHaveLength(0);
+  });
+  await vi.waitFor(() => expect(window.location.pathname).toBe("/notes"));
+  await expect.element(page.getByRole("heading", { level: 1, name: "Notes" })).toBeInTheDocument();
+  await expect.element(page.getByText("No notes yet")).toBeInTheDocument();
 });

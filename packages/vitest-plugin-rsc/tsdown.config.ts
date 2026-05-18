@@ -1,5 +1,7 @@
 import { defineConfig } from "tsdown";
 
+const sourcemap = process.argv.slice(2).includes("--sourcemap");
+
 export default defineConfig({
   entry: [
     "src/index.ts",
@@ -7,12 +9,13 @@ export default defineConfig({
     "src/async-hooks.ts",
     "src/testing-library.tsx",
     "src/testing-library-client.tsx",
+    "src/testing-library-ssr.tsx",
+    "src/nextjs/browser-polyfills.ts",
     "src/nextjs/client.tsx",
     "src/nextjs/testing-library-client.ts",
     "src/nextjs/testing-library.tsx",
     "src/nextjs/msw.ts",
     "src/nextjs/os-browser.ts",
-    "src/nextjs/request-context.ts",
     "src/nextjs/plugin.ts",
   ],
   format: ["esm"],
@@ -20,7 +23,8 @@ export default defineConfig({
   deps: {
     neverBundle: [/^virtual:/, /^@vitejs\/plugin-rsc\/vendor\//, "vitest-plugin-rsc/nextjs/client"],
   },
+  copy: [{ from: "src/nextjs/tester.html", to: "dist/nextjs" }],
   dts: {
-    sourcemap: process.argv.slice(2).includes("--sourcemap"),
+    sourcemap,
   },
 });

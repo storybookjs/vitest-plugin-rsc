@@ -29,6 +29,7 @@ export const nextRscRequestHandlers = [
         id: actionId,
         reply,
         requestType: "next-action",
+        url: request.url,
         routerState: request.headers.get(NEXT_ROUTER_STATE_TREE_HEADER),
         nextUrl: request.headers.get(NEXT_URL),
       });

@@ -1,0 +1,75 @@
+import dynamic from "next/dynamic";
+import Form from "next/form";
+import Head from "next/head";
+import Image, { getImageProps } from "next/image";
+import Link from "next/link";
+import * as rootParams from "next/root-params";
+import Script from "next/script";
+import { connection } from "next/server";
+import { AfterProbe } from "./after-probe.tsx";
+import { ClientErrorProbe } from "./client-error-probe.tsx";
+import { ClientNavigationProbe } from "./client-navigation-probe.tsx";
+import staticLogo from "./fixtures/static-logo.svg";
+import { WebVitalsProbe } from "./web-vitals-probe.tsx";
+
+const LazyPanel = dynamic(() => import("./lazy-panel.tsx"));
+
+export default async function NextApisPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ from?: string }>;
+}) {
+  await connection();
+  const { from } = await searchParams;
+  const rootParamNames = Object.keys(rootParams).join(", ") || "none";
+  const { props: imageProps } = getImageProps({
+    alt: "Next getImageProps image",
+    height: 8,
+    src: "/vitest-rsc.png",
+    unoptimized: true,
+    width: 16,
+  });
+  const { props: optimizedImageProps } = getImageProps({
+    alt: "Configured optimized image",
+    height: 12,
+    src: "/vitest-rsc.png",
+    width: 12,
+  });
+
+  return (
+    <main>
+      <Head>
+        <title>Ignored by App Router head</title>
+      </Head>
+      <h1>Next APIs</h1>
+      <p>Connection scope ready</p>
+      {from ? <p>Next APIs redirect source: {from}</p> : null}
+      <p>Root params available: {rootParamNames}</p>
+      <AfterProbe />
+      <Link href="/notes">Notes link</Link>
+      <Form action="/notes">
+        <input aria-label="Search notes" name="q" defaultValue="next-form" />
+        <button type="submit">Search</button>
+      </Form>
+      <Image
+        alt="Next API image"
+        height={24}
+        priority
+        src="/vitest-rsc.png"
+        style={{ width: "auto" }}
+        unoptimized
+        width={48}
+      />
+      <Image alt="Imported static logo" priority src={staticLogo} unoptimized />
+      <img {...imageProps} alt={imageProps.alt} style={{ width: "auto" }} />
+      <img {...optimizedImageProps} alt={optimizedImageProps.alt} style={{ width: "auto" }} />
+      <Script id="next-api-script" strategy="afterInteractive">
+        {`window.__nextApiScript = "loaded";`}
+      </Script>
+      <LazyPanel />
+      <ClientNavigationProbe />
+      <ClientErrorProbe />
+      <WebVitalsProbe />
+    </main>
+  );
+}

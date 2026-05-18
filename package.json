@@ -4,9 +4,9 @@
   "scripts": {
     "format": "oxfmt $(git ls-files ':!:public/mockServiceWorker.js')",
     "format:check": "oxfmt --check $(git ls-files ':!:public/mockServiceWorker.js')",
-    "lint": "oxlint $(git ls-files)",
-    "lint:ci": "oxlint --format=github $(git ls-files)",
-    "lint:fix": "oxlint --fix $(git ls-files)",
+    "lint": "oxlint .",
+    "lint:ci": "oxlint . --format=github",
+    "lint:fix": "oxlint . --fix",
     "tsgo": "tsgo --build",
     "build": "pnpm -r --filter='./packages/*' run build",
     "test": "pnpm test:run",
