@@ -47,11 +47,28 @@ export async function buildFlightRouterStateWithNext(
   //   booleans before the dynamic param callback. Component tests synthesize a
   //   dynamic per-test tree, so those build/runtime prerender switches are
   //   `false`.
+  // - Next 16.3.x adds one more positional boolean before the dynamic param
+  //   callback (9 arguments total), following the same "no prerender switches
+  //   during component tests" rationale.
   const loaderTree = createLoaderTree(routePattern, PAGE_SEGMENT_KEY);
   const getDynamicParamFromSegment = createGetDynamicParamFromSegment(routePattern, pathname);
   const searchParams = Object.fromEntries(new URLSearchParams(search));
   const createFlightRouterState =
     createFlightRouterStateFromLoaderTree as unknown as CreateFlightRouterStateFromLoaderTree;
+
+  if (createFlightRouterState.length >= 9) {
+    return createFlightRouterState(
+      loaderTree,
+      null,
+      false,
+      false,
+      false,
+      false,
+      false,
+      getDynamicParamFromSegment,
+      searchParams,
+    );
+  }
 
   if (createFlightRouterState.length >= 8) {
     return createFlightRouterState(
