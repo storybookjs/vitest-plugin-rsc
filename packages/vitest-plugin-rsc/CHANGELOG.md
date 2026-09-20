@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.2.5](https://github.com/storybookjs/vitest-plugin-rsc/compare/v0.2.4...v0.2.5) (2026-09-20)
+
+
+### Bug Fixes
+
+* support Next 16.4 canary RSC payloads and IncrementalCache options ([411f5b7](https://github.com/storybookjs/vitest-plugin-rsc/commit/411f5b70b22e97393f0c5ea10bfe52d2878fc307))
+* support Next 16.4 canary RSC payloads and IncrementalCache options ([81b4874](https://github.com/storybookjs/vitest-plugin-rsc/commit/81b4874d83dc2e7b81615d8759782c95a2d2d1af))
+
 ## [0.2.4](https://github.com/storybookjs/vitest-plugin-rsc/compare/v0.2.3...v0.2.4) (2026-09-20)
 
 
