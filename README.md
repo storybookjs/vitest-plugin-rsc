@@ -34,6 +34,7 @@ Pick one piece of the app — a wishlist carousel, a notes form, a settings pane
   - [Router Hooks And Links](#router-hooks-and-links)
   - [Request Headers And Cookies](#request-headers-and-cookies)
   - [Cache And Revalidation](#cache-and-revalidation)
+- [Whole Routes With `visit()`](#whole-routes-with-visit)
 - [Playgrounds](#playgrounds)
 - [Architecture](#architecture)
 
@@ -677,12 +678,60 @@ test("creating a note invalidates the notes cache", async () => {
 });
 ```
 
+## Whole Routes With `visit()`
+
+> Experimental. Needs `next@16.4` or later.
+
+`renderServer` renders one slice of your app. `visit` opens a route of it, the way a browser does: the request goes to Next's own request handler, the HTML it sends is shown in the tab, and Next's own client code hydrates it. From there Next's router is in charge, so links, forms, Server Actions, redirects, cookies and `loading.tsx` behave as they do in your app.
+
+The test stays white-box. The server runs in the test's tab, so the `db` you seed and spy on is the one your Server Components read.
+
+```ts
+// vitest.config.ts
+import { vitestPluginRSC } from "vitest-plugin-rsc";
+import { vitestPluginNext } from "vitest-plugin-rsc/next/plugin";
+
+export default defineConfig({
+  plugins: [vitestPluginRSC(), vitestPluginNext()],
+  // ...browser mode, as in Quick Start. There is no setup file to add.
+});
+```
+
+```tsx
+import { expect, test } from "vitest";
+import { page } from "vitest/browser";
+import { visit } from "vitest-plugin-rsc/next";
+
+import { db } from "./lib/db.ts";
+
+test("creates a note", async () => {
+  const response = await visit("/notes/new");
+  expect(response.status).toBe(200);
+
+  await page.getByRole("textbox", { name: "Title" }).fill("Plan the week");
+  await page.getByRole("button", { name: "Create" }).click();
+
+  // The action called redirect(): the router is on the new note.
+  await expect.element(page.getByRole("heading", { name: "Plan the week" })).toBeVisible();
+  expect(window.location.pathname).toBe("/notes/1");
+  await expect.poll(() => document.title).toBe("Plan the week | Notes");
+  expect(db.notes.get("1")?.title).toBe("Plan the week");
+});
+```
+
+After every test the page is left and the tab's cookies are cleared, like a new browser context. Cookies you set on `document.cookie` before `visit()` are sent with the request.
+
+`handleRequest(url, init)` sends a single request and resolves with the response, for when the response is what you assert on: a status, a header, the HTML or the Flight payload.
+
+See [docs/next-routes.md](docs/next-routes.md) for how it works and what it does not cover yet, and `playground/next-e2e-demo` for a running example.
+
 ## Playgrounds
 
-This repository ships three reference apps under `playground/`:
+This repository ships four reference apps under `playground/`:
 
 - `playground/rsc-vitest-demo` — a minimal non-Next RSC app. Use this as the smallest end-to-end example of `vitest-plugin-rsc` on its own.
 - `playground/nextjs-no-msw-demo` — a Next.js App Router setup that calls Server Actions directly inside the test runtime. Use this when you want the simplest Next setup.
+- `playground/next-e2e-demo` — a small Next.js App Router app tested route by route with `visit()`. See [Whole Routes With `visit()`](#whole-routes-with-visit).
 - `playground/nextjs-notes-demo` — a fuller Next.js App Router notes app with Better Auth, Drizzle, PGlite test databases, shadcn/ui, MSW-routed Server Actions, mocked email, and per-test seeding. This is the larger reference for the patterns in this README.
 
 Vitest suites are wired through the root workspace, while each package or playground owns its local config:

@@ -85,6 +85,41 @@
       "vitest-plugin-rsc-source": "./src/nextjs/plugin.ts",
       "default": "./dist/nextjs/plugin.js"
     },
+    "./next": {
+      "types": "./dist/next/index.d.ts",
+      "vitest-plugin-rsc-source": "./src/next/index.ts",
+      "default": "./dist/next/index.js"
+    },
+    "./next/plugin": {
+      "types": "./dist/next/plugin.d.ts",
+      "vitest-plugin-rsc-source": "./src/next/plugin.ts",
+      "default": "./dist/next/plugin.js"
+    },
+    "./next/setup": {
+      "types": "./dist/next/setup.d.ts",
+      "vitest-plugin-rsc-source": "./src/next/setup.ts",
+      "default": "./dist/next/setup.js"
+    },
+    "./next/rsc": {
+      "types": "./dist/next/rsc.d.ts",
+      "vitest-plugin-rsc-source": "./src/next/rsc.ts",
+      "default": "./dist/next/rsc.js"
+    },
+    "./next/ssr": {
+      "types": "./dist/next/ssr.d.ts",
+      "vitest-plugin-rsc-source": "./src/next/ssr.ts",
+      "default": "./dist/next/ssr.js"
+    },
+    "./next/client": {
+      "types": "./dist/next/client.d.ts",
+      "vitest-plugin-rsc-source": "./src/next/client.tsx",
+      "default": "./dist/next/client.js"
+    },
+    "./next/app-page-entrypoint": {
+      "types": "./dist/next/app-page-entrypoint.d.ts",
+      "vitest-plugin-rsc-source": "./src/next/app-page-entrypoint.ts",
+      "default": "./dist/next/app-page-entrypoint.js"
+    },
     "./*": {
       "types": "./dist/*.d.ts",
       "default": "./dist/*.js"

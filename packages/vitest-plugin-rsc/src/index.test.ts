@@ -89,7 +89,7 @@ describe("react_client optimizer", () => {
 
   test("scans the browser test files and shares their excludes", async () => {
     const configureOptimizer = getHookHandler(
-      getPlugin("rsc:react-client-optimizer").configureServer,
+      getPlugin("rsc:runner-environment-optimizer:react_client").configureServer,
     );
     const environments = {
       client: { optimizeDeps: { entries: ["/src/app.test.tsx"], exclude: ["msw"] } },

@@ -78,7 +78,7 @@ jobs:
       - run: pnpm --dir playground/rsc-vitest-demo exec playwright install --with-deps --only-shell chromium
       - run: pnpm --dir playground/nextjs-notes-demo exec playwright install --with-deps --only-shell chromium
       - run: pnpm build
-      - run: pnpm test:dist --project rsc-vitest-demo
+      - run: pnpm test:dist --project rsc-vitest-demo --project next-e2e-demo
 
   next-compat:
     name: Next.js ${{ matrix.next-version }} Compatibility
@@ -111,3 +111,26 @@ jobs:
             --project nextjs-no-msw-demo \
             --project nextjs-notes-demo-browser \
             --project nextjs-notes-demo-node
+
+  next-routes-compat:
+    name: Next.js ${{ matrix.next-version }} Routes
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        next-version: ["canary", "latest"]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Install Next.js ${{ matrix.next-version }}
+        env:
+          NEXT_VERSION: ${{ matrix.next-version }}
+        run: pnpm --filter next-e2e-demo add "next@${NEXT_VERSION}"
+      - run: pnpm --dir playground/next-e2e-demo exec playwright install --with-deps --only-shell chromium
+      - run: pnpm build
+      - run: pnpm test:dist --project next-e2e-demo

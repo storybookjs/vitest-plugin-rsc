@@ -21,6 +21,11 @@ type AsyncContextFrame = {
 // Cleanup invalidates older async finalizers so a previous test cannot
 // restore a stale frame after the stores have been reset.
 let resetGeneration = 0;
+// See enterAmbientScope().
+let ambientStores: StoreValues | undefined;
+// Marks a storage that was left with `exit()`, which is not the same as one
+// that was never entered: only the latter falls back to the ambient store.
+const exited = Symbol("exited");
 let rootFrame: AsyncContextFrame = createFrame(undefined, new Map());
 let currentFrame: AsyncContextFrame = rootFrame;
 
@@ -48,9 +53,11 @@ function withFinally<R>(result: R, onFinally: () => void): R {
 
 export class SequentialAsyncLocalStorage<Store> {
   getStore(): Store | undefined {
-    return currentFrame.stores.get(this as SequentialAsyncLocalStorage<unknown>) as
-      | Store
-      | undefined;
+    const self = this as SequentialAsyncLocalStorage<unknown>;
+    const store = currentFrame.stores.has(self)
+      ? currentFrame.stores.get(self)
+      : ambientStores?.get(self);
+    return store === exited ? undefined : (store as Store | undefined);
   }
 
   run<R, TArgs extends unknown[]>(
@@ -62,6 +69,9 @@ export class SequentialAsyncLocalStorage<Store> {
     const frame = createFrame(previousFrame, previousFrame.stores);
     frame.stores.set(this as SequentialAsyncLocalStorage<unknown>, store);
     currentFrame = frame;
+    if (ambientStores && !ambientStores.has(this as SequentialAsyncLocalStorage<unknown>)) {
+      ambientStores.set(this as SequentialAsyncLocalStorage<unknown>, store);
+    }
 
     let result: R;
     try {
@@ -84,7 +94,7 @@ export class SequentialAsyncLocalStorage<Store> {
   exit<R, TArgs extends unknown[]>(callback: RunCallback<R, TArgs>, ...args: TArgs): R {
     const previousFrame = currentFrame;
     const frame = createFrame(previousFrame, previousFrame.stores);
-    frame.stores.delete(this as SequentialAsyncLocalStorage<unknown>);
+    frame.stores.set(this as SequentialAsyncLocalStorage<unknown>, exited);
     currentFrame = frame;
 
     let result: R;
@@ -116,7 +126,7 @@ export class SequentialAsyncLocalStorage<Store> {
   disable(): void {
     // Compatibility-only counterpart to enterWith().
     const frame = createFrame(currentFrame, currentFrame.stores);
-    frame.stores.delete(this as SequentialAsyncLocalStorage<unknown>);
+    frame.stores.set(this as SequentialAsyncLocalStorage<unknown>, exited);
     currentFrame = frame;
   }
 
@@ -177,12 +187,35 @@ export function createSnapshot(): <R, TArgs extends unknown[]>(
   return SequentialAsyncLocalStorage.snapshot();
 }
 
+/**
+ * Starts a scope in which the first store a storage is entered with stays
+ * readable after its `run()` has returned, until the returned function is
+ * called.
+ *
+ * A server enters its request stores once and then does the work from
+ * scheduled tasks: React renders a tree that way, and an async component
+ * resumes that way after every `await`. Node carries the store along. A
+ * browser cannot, so inside this scope the outermost store of the request is
+ * what a later task reads. That is right for one request at a time.
+ */
+export function enterAmbientScope(): () => void {
+  const stores: StoreValues = new Map();
+  // A server can make a request to itself while it handles one. The inner
+  // request is the one at work until it ends.
+  const outerStores = ambientStores;
+  ambientStores = stores;
+  return () => {
+    if (ambientStores === stores) ambientStores = outerStores;
+  };
+}
+
 export function resetAsyncLocalStorage(): void {
   // Test cleanup must call this to drop request-local state that may be left
   // behind by a failed render, an unawaited promise, or other hanging work.
   // Bumping the generation also prevents delayed promise finalizers and old
   // snapshots from re-entering a previous test's frame.
   resetGeneration++;
+  ambientStores = undefined;
   rootFrame = createFrame(undefined, new Map());
   currentFrame = rootFrame;
 }

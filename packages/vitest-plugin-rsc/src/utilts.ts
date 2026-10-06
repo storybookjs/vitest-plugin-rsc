@@ -37,6 +37,9 @@ type InvokeResultMessage = {
   };
 };
 
+// Before anything replaces it: this request is for the dev server.
+const nativeFetch = globalThis.fetch;
+
 let webSocket: WebSocket | undefined;
 let webSocketPromise: Promise<WebSocket> | undefined;
 let webSocketInfoPromise: Promise<WebSocketInfo> | undefined;
@@ -44,21 +47,62 @@ let nextInvokeId = 0;
 
 const pendingInvokes = new Map<string, PendingInvoke>();
 
-const runner = new ModuleRunner(
-  {
-    sourcemapInterceptor: false,
-    transport: {
-      invoke: invokeReactClient,
+const runners = new Map<string, ModuleRunner>();
+
+// One module runner per Vite environment that runs in the page next to the
+// browser tests. All of them share this websocket.
+function getRunner(environment: string): ModuleRunner {
+  let runner = runners.get(environment);
+  if (!runner) runners.set(environment, (runner = createEnvironmentRunner(environment)));
+  return runner;
+}
+
+/**
+ * A module runner with a module graph of its own: every module it imports is
+ * evaluated again, the way a page load evaluates a page's scripts again.
+ */
+export function createEnvironmentRunner(environment: string): ModuleRunner {
+  return new ModuleRunner(
+    {
+      sourcemapInterceptor: false,
+      transport: {
+        invoke: (payload) => invokeEnvironment(environment, payload),
+      },
+      hmr: false,
     },
-    hmr: false,
-  },
-  new ESModulesEvaluator(),
-);
+    new ESModulesEvaluator(),
+  );
+}
 
-export const importReactClient = runner.import.bind(runner);
+export function importEnvironment<T = any>(environment: string, id: string): Promise<T> {
+  return getRunner(environment).import<T>(id);
+}
 
-async function invokeReactClient(payload: InvokePayload) {
-  return await withReactClientCoverage(await invokeReactClientOverWebSocket(payload));
+export function importReactClient<T = any>(id: string): Promise<T> {
+  return importEnvironment<T>("react_client", id);
+}
+
+// What a browser's HTTP cache is to a page load: a module graph that is
+// evaluated again (see createEnvironmentRunner) does not have to fetch the
+// code of a dependency again. Source files are fetched every time, since they
+// change while the tests are being watched.
+const dependencyModules = new Map<string, InvokeResult>();
+
+async function invokeEnvironment(environment: string, payload: InvokePayload) {
+  const key = environment + JSON.stringify(payload);
+  let result = dependencyModules.get(key);
+  if (!result) {
+    result = await invokeOverWebSocket(environment, payload);
+    if (
+      isInvokeSuccess(result) &&
+      isViteFetchResult(result.result) &&
+      isNodeModuleFile(result.result.file)
+    ) {
+      dependencyModules.set(key, result);
+    }
+  }
+  // Coverage is collected for the modules the browser itself runs.
+  return environment === "react_client" ? await withReactClientCoverage(result) : result;
 }
 
 async function withReactClientCoverage(result: InvokeResult) {
@@ -145,7 +189,7 @@ function toBrowserCoverageFileUrl(file: string) {
   return url.href;
 }
 
-async function invokeReactClientOverWebSocket(payload: InvokePayload) {
+async function invokeOverWebSocket(environment: string, payload: InvokePayload) {
   const socket = await getReactClientWebSocket();
   const info = await getWebSocketInfo();
   const id = String(++nextInvokeId);
@@ -162,7 +206,7 @@ async function invokeReactClientOverWebSocket(payload: InvokePayload) {
         JSON.stringify({
           type: "custom",
           event: reactClientWebSocketInvokeEvent,
-          data: { id, payload },
+          data: { id, environment, payload },
         }),
       );
     } catch (error) {
@@ -287,7 +331,7 @@ function createWebSocketUrl(info: WebSocketInfo) {
 }
 
 async function getWebSocketInfo() {
-  webSocketInfoPromise ??= fetch(reactClientWebSocketInfoPath).then(async (response) => {
+  webSocketInfoPromise ??= nativeFetch(reactClientWebSocketInfoPath).then(async (response) => {
     if (!response.ok) {
       throw new Error("Failed to fetch React client websocket info");
     }

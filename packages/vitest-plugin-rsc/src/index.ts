@@ -1,7 +1,8 @@
 import { createServer } from "node:net";
-import { type EnvironmentOptions, type Plugin, type ViteDevServer } from "vite";
+import { type Plugin, type ViteDevServer } from "vite";
 import { vitePluginRscMinimal } from "@vitejs/plugin-rsc/plugin";
 import { createReactClientCoveragePlugin } from "./coverage.ts";
+import { createRunnerEnvironmentPlugins } from "./runner-environment.ts";
 
 const reactClientWebSocketInfoPath = "/@vite/react-client-runner-websocket";
 const reactClientWebSocketQuery = "vitest-plugin-rsc-react-client";
@@ -12,6 +13,7 @@ type ReactClientInvokePayload = Parameters<
 >[0];
 type ReactClientWebSocketInvoke = {
   id: string;
+  environment: string;
   payload: ReactClientInvokePayload;
 };
 
@@ -47,9 +49,15 @@ export function vitestPluginRSC(): Plugin[] {
             const invoke = parseWebSocketInvoke(raw);
             if (!invoke) return;
 
-            const result = await server.environments["react_client"]!.hot.handleInvoke(
-              invoke.payload,
-            );
+            // The page runs every environment but `client` through a module
+            // runner of its own, see utilts.ts.
+            const environment = server.environments[invoke.environment];
+            const result =
+              environment && invoke.environment !== "client"
+                ? await environment.hot.handleInvoke(invoke.payload)
+                : {
+                    error: { message: `No environment "${invoke.environment}" to run in the page` },
+                  };
 
             socket.send(
               JSON.stringify({
@@ -133,59 +141,7 @@ export function vitestPluginRSC(): Plugin[] {
       },
     },
     createReactClientCoveragePlugin(),
-    ...createReactClientOptimizerPlugins(),
-  ];
-}
-
-// react_client runs in the page through this plugin's module runner, so it has
-// its own dependency optimizer next to the one of the browser tests (`client`).
-function createReactClientOptimizerPlugins(): Plugin[] {
-  // Vitest 5 serves browser tests from the project's Vite server, where its
-  // `vitest:environments-module-runner` plugin configures every environment but
-  // `client` for Node and disables their optimizer. React's CommonJS entries
-  // would then reach the page raw. So take react_client's optimizeDeps from right
-  // before that hook and put them back after it. (Its other overrides, like
-  // keepProcessEnv, are harmless: the page defines `process`.) Once Vitest leaves
-  // browser-consumed environments alone, this round trip changes nothing.
-  let optimizeDeps: EnvironmentOptions["optimizeDeps"];
-
-  return [
-    {
-      name: "rsc:react-client-optimizer:before-vitest",
-      // The first post hook, so it includes what earlier hooks contributed.
-      enforce: "pre",
-      configEnvironment: {
-        order: "post",
-        handler(name, config) {
-          if (name === "react_client") optimizeDeps = config.optimizeDeps;
-        },
-      },
-    },
-    {
-      name: "rsc:react-client-optimizer",
-      enforce: "post",
-      configEnvironment: {
-        order: "post",
-        handler(name, config) {
-          if (name === "react_client") config.optimizeDeps = optimizeDeps;
-        },
-      },
-      configureServer(server) {
-        // Vitest seeds the browser optimizer with the test and setup files once
-        // the config is resolved. react_client later imports client components
-        // from those files, so scan them too, or Vite discovers their deps
-        // mid-test and reloads the page. Optimizers start on listen, after this.
-        const client = server.config.environments.client!;
-        const reactClient = server.config.environments.react_client!;
-        reactClient.optimizeDeps.entries ??= client.optimizeDeps.entries;
-        reactClient.optimizeDeps.exclude = [
-          ...new Set([
-            ...(client.optimizeDeps.exclude ?? []),
-            ...(reactClient.optimizeDeps.exclude ?? []),
-          ]),
-        ];
-      },
-    },
+    ...createRunnerEnvironmentPlugins("react_client"),
   ];
 }
 
@@ -278,6 +234,8 @@ function parseWebSocketInvoke(raw: unknown): ReactClientWebSocketInvoke | undefi
     }
     return {
       id: message.data.id,
+      environment:
+        typeof message.data.environment === "string" ? message.data.environment : "react_client",
       payload: message.data.payload,
     };
   } catch {

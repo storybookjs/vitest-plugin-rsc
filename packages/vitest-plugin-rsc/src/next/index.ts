@@ -1,0 +1,244 @@
+import "./globals.ts";
+import { resetAsyncLocalStorage } from "../async-local-storage.ts";
+import { createEnvironmentRunner, importEnvironment } from "../utilts.ts";
+import { loadDocument, unloadDocument } from "./document.ts";
+import { registry } from "./registry.ts";
+
+// The server's platform (globals.ts) has to be there before a module of Next's
+// server loads, so the layers load from here on, in order: rsc, then ssr.
+await import("./rsc.ts");
+const ssr = await importEnvironment<typeof import("./ssr.ts")>(
+  "next_ssr",
+  "vitest-plugin-rsc/next/ssr",
+);
+
+const nativeFetch = globalThis.fetch;
+
+// The origin of the app is also the origin of the test's own modules, so a
+// `fetch` is only the app's when it says so: Next's router and its Server
+// Actions mark their requests. Everything else goes to the network.
+function isAppRequest(input: RequestInfo | URL, init: RequestInit | undefined): boolean {
+  const request = input instanceof Request ? input : undefined;
+  const url = new URL(request ? request.url : String(input), window.location.href);
+  if (url.origin !== window.location.origin) return false;
+  const headers = new Headers(init?.headers ?? request?.headers);
+  return headers.has("rsc") || headers.has("next-action");
+}
+
+// The cookies the server has set, to forget them when the test ends.
+const cookiesToClear = new Set<string>();
+
+function clearCookies(): void {
+  for (const cookie of document.cookie.split(";")) {
+    const name = cookie.split("=")[0]!.trim();
+    if (name) cookiesToClear.add(`${name}=; path=/`);
+  }
+  for (const cookie of cookiesToClear) {
+    document.cookie = `${cookie}; expires=Thu, 01 Jan 1970 00:00:00 GMT`;
+  }
+  cookiesToClear.clear();
+}
+
+// The network between a browser and the Next.js server in this tab. It does
+// what a browser does for a same-origin request: send the cookies, store the
+// ones that come back, follow redirects.
+async function browserFetch(request: Request): Promise<Response> {
+  let url = new URL(request.url);
+  let method = request.method;
+  // Read once: a 307 or 308 sends the body again.
+  let body = request.body ? new Uint8Array(await request.arrayBuffer()) : null;
+  let redirected = false;
+
+  for (;;) {
+    const headers = new Headers(request.headers);
+    headers.set("host", url.host);
+    if (!headers.has("user-agent")) headers.set("user-agent", navigator.userAgent);
+    if (method !== "GET" && method !== "HEAD") headers.set("origin", url.origin);
+    if (!headers.has("cookie") && document.cookie) headers.set("cookie", document.cookie);
+
+    const response = await ssr.handleRequest({
+      url: url.href,
+      method,
+      headers,
+      body,
+      signal: request.signal,
+    });
+    for (const cookie of response.headers.getSetCookie()) {
+      // A script cannot store an HttpOnly cookie, and `document.cookie` is the
+      // cookie jar of this tab, so store it as a regular one.
+      document.cookie = cookie.replace(/;\s*httponly/i, "");
+      const [pair, ...attributes] = cookie.split(";");
+      const scope = attributes.filter((attribute) => /^\s*(path|domain)=/i.test(attribute));
+      cookiesToClear.add([`${pair!.split("=")[0]}=`, ...scope].join(";"));
+    }
+
+    const location = response.headers.get("location");
+    if (response.status >= 300 && response.status < 400 && location) {
+      if (request.redirect === "manual") return response;
+      url = new URL(location, url);
+      // 307 and 308 repeat the request; the others turn it into a GET.
+      if (response.status !== 307 && response.status !== 308) {
+        method = "GET";
+        body = null;
+      }
+      redirected = true;
+      if (url.origin !== window.location.origin) {
+        return nativeFetch(url, { method, headers: request.headers, body });
+      }
+      continue;
+    }
+
+    Object.defineProperties(response, {
+      url: { value: url.href },
+      redirected: { value: redirected },
+    });
+    return response;
+  }
+}
+
+/**
+ * Sends a request to the Next.js server of the app, like `fetch` from a page
+ * of the app would. Use it to assert on a response itself: its status, its
+ * headers, its HTML or Flight body.
+ *
+ * The request carries the tab's cookies, unless it has a `cookie` header.
+ */
+export function handleRequest(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  // Not the browser's Request, which drops a `cookie` header.
+  return browserFetch(new registry.Request(input, init));
+}
+
+// The browser's `fetch`: what Next's client router and Client Components call.
+globalThis.fetch = (input, init) =>
+  isAppRequest(input, init) ? browserFetch(new Request(input, init)) : nativeFetch(input, init);
+
+// The server's `fetch`. A request to the app itself is one the server makes
+// while it handles another: Next renders the page a Server Action redirects
+// to that way. It carries the headers Next gave it, cookies included, and
+// does not go through the browser's cookie jar.
+registry.fetch = (input, init) => {
+  if (!isAppRequest(input, init)) return nativeFetch(input, init);
+  const request = new registry.Request(input, init);
+  return ssr.handleRequest(
+    {
+      url: request.url,
+      method: request.method,
+      headers: request.headers,
+      body: request.body,
+      signal: request.signal,
+    },
+    true,
+  );
+};
+// Where the server reaches itself, which `next start` sets too. Next reads it
+// when it needs it, from the `process` of the tab.
+process.env.__NEXT_PRIVATE_ORIGIN = window.location.origin;
+
+let page: { unmount(): void } | undefined;
+// Tells a page load that the tab has moved on: to another page, or to the
+// next test.
+let currentLoad: AbortController | undefined;
+
+/**
+ * Opens a page of the Next.js app in this tab, as a browser does: it requests
+ * the document from the server, shows the HTML it gets back, and starts the
+ * app's client code, which hydrates it. From there Next's own router is in
+ * charge, so links, forms and Server Actions work as they do in the app.
+ *
+ * Resolves once the page has hydrated, with the server's response.
+ */
+export function visit(url: string): Promise<Response> {
+  return loadPage(new URL(url, window.location.origin), { headers: { accept: "text/html" } });
+}
+
+async function loadPage(url: URL, init: RequestInit): Promise<Response> {
+  const leaving = leavePage();
+  const load = (currentLoad = new AbortController());
+  await leaving;
+  const superseded = () => {
+    if (load.signal.aborted) throw load.signal.reason;
+  };
+
+  const response = await browserFetch(new Request(url, { ...init, signal: load.signal }));
+  superseded();
+  const { interactive } = loadDocument(response.body);
+  // Where the browser ended up, after any redirects.
+  window.history.replaceState(null, "", response.url);
+
+  // The app starts when its bootstrap script is there, which is with the
+  // first part of the document: the server can still be sending the rest.
+  await interactive;
+  superseded();
+  // A page load runs the app's scripts from scratch, so every page gets a
+  // module graph of its own for the browser layer.
+  const runner = createEnvironmentRunner("react_client");
+  const client = await runner.import<typeof import("./client.tsx")>(
+    "vitest-plugin-rsc/next/client",
+  );
+  superseded();
+  // The page counts as open from here, so that leaving it stops it, also
+  // while it hydrates.
+  let unmount: (() => void) | undefined;
+  let left = false;
+  page = {
+    unmount() {
+      left = true;
+      unmount?.();
+    },
+  };
+  try {
+    ({ unmount } = await client.start());
+  } catch (error) {
+    // Starting an app whose page is gone fails in its own ways.
+    superseded();
+    throw error;
+  }
+  if (left) unmount();
+  superseded();
+  return response;
+}
+
+function leavePage(): Promise<void> {
+  currentLoad?.abort(new DOMException("The page was left before it had loaded.", "AbortError"));
+  currentLoad = undefined;
+  page?.unmount();
+  page = undefined;
+  unloadDocument();
+  return ssr.settleRequests().then(resetAsyncLocalStorage);
+}
+
+/**
+ * Leaves the page that `visit()` opened and forgets the tab's cookies, like a
+ * new browser context. Runs after every test.
+ */
+export async function cleanup(): Promise<void> {
+  await leavePage();
+  clearCookies();
+}
+
+// The app can leave its page without its router: `location.assign()`, a
+// `<form>` or an `<a>` that React does not handle, Next's own fallback when a
+// client-side navigation is not possible. For a browser that is a page load.
+// For this tab it would replace the test with the app, so load the page the
+// way `visit()` does instead.
+type NavigateEvent = Event & {
+  destination: { url: string; sameDocument: boolean };
+  hashChange: boolean;
+  formData: FormData | null;
+};
+(window as { navigation?: EventTarget }).navigation?.addEventListener("navigate", (event) => {
+  const { destination, hashChange, formData } = event as NavigateEvent;
+  if (!page || destination.sameDocument || hashChange || !event.cancelable) return;
+  const url = new URL(destination.url);
+  if (url.origin !== window.location.origin) return;
+
+  event.preventDefault();
+  loadPage(url, {
+    method: formData ? "POST" : "GET",
+    headers: { accept: "text/html" },
+    body: formData,
+  }).catch((error: unknown) => {
+    // The test moved on before the page had loaded.
+    if (!(error instanceof DOMException && error.name === "AbortError")) reportError(error);
+  });
+});
