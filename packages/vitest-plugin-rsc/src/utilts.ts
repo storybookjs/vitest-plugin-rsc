@@ -21,14 +21,7 @@ type ViteFetchResult = {
   file: string;
 };
 
-type WebSocketInfo = {
-  token: string;
-  protocol: string | null;
-  host: string | null;
-  port: number | null;
-  path: string;
-  timeout: number;
-};
+type WebSocketInfo = { token: string; path: string };
 type PendingInvoke = {
   resolve: (result: InvokeResult) => void;
   reject: (error: unknown) => void;
@@ -50,6 +43,7 @@ let webSocket: WebSocket | undefined;
 let webSocketPromise: Promise<WebSocket> | undefined;
 let webSocketInfoPromise: Promise<WebSocketInfo> | undefined;
 let nextInvokeId = 0;
+const invokeTimeout = 30_000;
 
 const pendingInvokes = new Map<string, PendingInvoke>();
 
@@ -197,14 +191,13 @@ function toBrowserCoverageFileUrl(file: string) {
 
 async function invokeOverWebSocket(environment: string, payload: InvokePayload) {
   const socket = await getReactClientWebSocket();
-  const info = await getWebSocketInfo();
   const id = String(++nextInvokeId);
 
   return new Promise<InvokeResult>((resolve, reject) => {
     const timeoutId = setTimeout(() => {
       pendingInvokes.delete(id);
       reject(new Error(`React client websocket invoke timed out: ${id}`));
-    }, info.timeout);
+    }, invokeTimeout);
 
     pendingInvokes.set(id, { resolve, reject, timeoutId });
     try {
@@ -323,14 +316,8 @@ function rejectPendingInvokes(error: unknown) {
 }
 
 function createWebSocketUrl(info: WebSocketInfo) {
-  const protocol = info.protocol ?? (window.location.protocol === "https:" ? "wss" : "ws");
-  let host = window.location.host;
-
-  if (info.host || info.port != null) {
-    host = `${info.host ?? window.location.hostname}${info.port == null ? "" : `:${info.port}`}`;
-  }
-
-  const url = new URL(`${protocol}://${host}${info.path}`);
+  const protocol = window.location.protocol === "https:" ? "wss" : "ws";
+  const url = new URL(`${protocol}://${window.location.host}${info.path}`);
   url.searchParams.set("token", info.token);
   url.searchParams.set(reactClientWebSocketQuery, "1");
   return url;

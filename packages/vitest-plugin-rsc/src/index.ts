@@ -171,29 +171,8 @@ function parseWebSocketInvoke(raw: unknown): ReactClientWebSocketInvoke | undefi
   }
 }
 
+// Vitest sets `server.hmr` to `false`, so the socket goes to the page's own
+// host and port, and only needs the token and the base.
 function getReactClientWebSocketInfo(server: ViteDevServer) {
-  const hmr = getHmrOptions(server);
-
-  return {
-    token: server.config.webSocketToken,
-    protocol: hmr?.protocol ?? null,
-    host: hmr?.host ?? null,
-    port: hmr?.clientPort ?? hmr?.port ?? null,
-    path: getWebSocketPath(server),
-    timeout: hmr?.timeout ?? 30_000,
-  };
-}
-
-function getWebSocketPath(server: ViteDevServer) {
-  const hmr = getHmrOptions(server);
-
-  if (!hmr?.path) {
-    return server.config.base;
-  }
-
-  return `${server.config.base.replace(/\/$/, "")}/${hmr.path.replace(/^\//, "")}`;
-}
-
-function getHmrOptions(server: ViteDevServer) {
-  return typeof server.config.server.hmr === "object" ? server.config.server.hmr : undefined;
+  return { token: server.config.webSocketToken, path: server.config.base };
 }
