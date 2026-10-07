@@ -37,6 +37,21 @@ test("lists the routes of the app, one for each pathname", async () => {
   expect(route(routes, "/board").page).toBe("/board/@team/page");
 });
 
+test("rejects parallel routes that `next build` rejects", async () => {
+  const next = nextWith({
+    "next/dist/build/normalize-catchall-routes.js": {
+      normalizeCatchAllRoutes: () => ({
+        unmatchedAppPages: ["/board/@team/members/page"],
+        incompatibleParallelRouteSlots: [],
+      }),
+    },
+  });
+
+  await expect(loadNextProject(root, next)).rejects.toThrow(
+    'Pages no route matches: ["/board/@team/members/page"]',
+  );
+});
+
 test("says which file of Next's build no longer loads", async () => {
   const next = nextWith({ "next/dist/build/define-env.js": new Error("Cannot find module") });
 

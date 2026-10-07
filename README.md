@@ -93,7 +93,7 @@ Agents do better when wrapped in a self-healing loop with fast unit tests — ed
 ## Requirements
 
 - Vitest 5 or later, in [Browser Mode](https://vitest.dev/guide/browser/). The examples use Playwright as the browser provider.
-- For Next.js: the App Router, and `next@16.4` or later. CI runs the two Next.js playgrounds against the pinned `next@16.4.0` and against `next@canary`.
+- For Next.js: the App Router, and `next@16.4` or later. CI runs the two Next.js playgrounds against the pinned `next@16.4.0`, against `next@latest` and against `next@canary`. With a Next.js whose build code the plugin does not know, a run stops when it starts, with the version and what changed: see [When Next Changes](docs/next-routes.md#when-next-changes).
 
 ## Next.js
 
@@ -644,7 +644,7 @@ Next compiles an app into three layers, each with its own module graph and its o
 
 The test runs in `client`, the Vite environment of the `rsc` layer. That is why a module your test imports is the instance your Server Components read.
 
-[docs/next-routes.md](docs/next-routes.md) is the full description: what comes from Next, how a request travels, what stands in for a server, caching, and how server code is kept from seeing the tab. [docs/architecture.md](docs/architecture.md) describes the part without Next.js: the two environments and the module runner between them.
+[docs/next-routes.md](docs/next-routes.md) is the full description: what comes from Next, how a request travels, what stands in for a server, caching, how server code is told it is on a server, and what is checked of the installed Next.js. [docs/architecture.md](docs/architecture.md) describes the part without Next.js: the two environments and the module runner between them.
 
 ## What Does Not Work Yet
 
