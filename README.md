@@ -180,7 +180,7 @@ A URL that is not a route gets the app's not-found page, with status `404`.
 
 Before and after every test the page is left, the tab's cookies are cleared, and so is what the app put in `localStorage` and `sessionStorage`. The server forgets what it has cached. A test starts like a new browser context.
 
-A page has a `<body>` of its own, as in a browser, and so has a node: what your test has in the body moves into it, and back. A move takes the focus from an element and loads an `<iframe>` again. So read `document.body` when you need it: a body you kept from before the page is not the page's. Testing Library's `screen` is bound to the body at import, use `within(document.body)` or Vitest's `page`.
+A page has a `<body>` of its own, as in a browser, and so has a node: what your test has in the body moves into it, and back. A move takes the focus from an element and loads an `<iframe>` again. What is added to the document while a page or a node is open is removed when it is left. So read `document.body` when you need it: a body you kept from before the page is not the page's. Testing Library's `screen` is bound to the body at import, use `within(document.body)` or Vitest's `page`.
 
 ### Render One Component
 

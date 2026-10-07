@@ -394,6 +394,39 @@ test("gives the body of the document as the base element, also after the node is
   expect(result.baseElement === document.body).toBe(true);
 });
 
+test("gives the body as the base element when the test asks for it, next to a container", async () => {
+  const container = document.body.appendChild(document.createElement("section"));
+  const result = await renderServer(<h1>Hello</h1>, { container, baseElement: document.body });
+
+  expect(result.baseElement === document.body).toBe(true);
+  await cleanup();
+  container.remove();
+});
+
+test("keeps the attributes that the test gave the document before a node", async () => {
+  document.documentElement.dataset.theme = "dark";
+  document.body.dataset.density = "compact";
+  const { unmount } = await renderServer(<h1>Hello</h1>);
+  expect(document.body.dataset.density).toBe("compact");
+
+  await unmount();
+
+  expect(document.documentElement.dataset.theme).toBe("dark");
+  expect(document.body.dataset.density).toBe("compact");
+  delete document.documentElement.dataset.theme;
+  delete document.body.dataset.density;
+});
+
+test("says that a container which went with a page is not in the document", async () => {
+  await renderServer({ url: "/" });
+  // Added to the page, so it is left with the page.
+  const container = document.body.appendChild(document.createElement("section"));
+
+  await expect(renderServer(<h1>Hello</h1>, { container })).rejects.toThrow(
+    "the container of a node has to be in the document",
+  );
+});
+
 test("lets go of a node that the test has left, also in a container of the test's", async () => {
   const tab = globalThis as { __viteRscCallServer?: object };
   // The test keeps this container, and React adds its listeners to it, not

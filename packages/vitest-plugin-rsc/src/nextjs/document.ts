@@ -13,7 +13,6 @@ const runnerUrl = window.location.href;
 const elements = (of: Document) => [of.documentElement, of.head, of.body];
 const attributesOf = (element: Element) =>
   Array.from(element.attributes, ({ name, value }) => [name, value] as const);
-const runnerAttributes = elements(document).map(attributesOf);
 
 let unload: (() => void) | undefined;
 
@@ -54,6 +53,8 @@ export function loadDocument(html: string, container?: Element): void {
 
   // What was here before the page. Everything else is the page's to lose.
   const runnerBody = document.body;
+  const runnerAttributes = elements(document).map(attributesOf);
+  const runnerScripts = new Set(document.querySelectorAll("script"));
   const before = new Set<Node>([...document.head.childNodes, ...runnerBody.childNodes]);
   const parked: Node[] = [];
   for (const node of container ? [] : document.head.childNodes) {
@@ -109,7 +110,7 @@ export function loadDocument(html: string, container?: Element): void {
   // data into place, and Next's, which carry the Flight payload. The scripts
   // with a `src` are the app's chunks, which `renderServer()` stands in for.
   for (const script of document.querySelectorAll("script")) {
-    if (before.has(script) || script.src) continue;
+    if (runnerScripts.has(script) || script.src) continue;
     if (!script.type || script.type === "text/javascript" || script.type === "module") {
       // A script that throws is reported, and the page goes on, as in a browser.
       try {

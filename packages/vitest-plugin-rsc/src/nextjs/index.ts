@@ -277,6 +277,13 @@ export async function renderServer(
   // A body is the one of the document, whichever that is: a node has a body
   // of its own, and the page after it another.
   const base = options.baseElement instanceof HTMLBodyElement ? undefined : options.baseElement;
+  if (options.container && !options.container.isConnected) {
+    throw new Error(
+      "vitest-plugin-rsc: the container of a node has to be in the document. What is added " +
+        "to the document while a page is open is removed when that page is left, so add the " +
+        "container after it.",
+    );
+  }
   const container =
     options.container ?? (base ?? document.body).appendChild(document.createElement("div"));
   if (!options.container) containers.add(container);
@@ -290,7 +297,7 @@ export async function renderServer(
     response,
     container,
     get baseElement() {
-      return base ?? options.container ?? document.body;
+      return base ?? (options.baseElement ? document.body : (options.container ?? document.body));
     },
     asFragment() {
       const fragment = document.createRange().createContextualFragment(container.innerHTML);
