@@ -28,6 +28,7 @@ beforeEach(() => {
     "notes.test.tsx",
     "profile.test.tsx",
     "next.config.ts",
+    "next.settings.ts",
   ]) {
     fs.mkdirSync(path.dirname(at(file)), { recursive: true });
     fs.writeFileSync(at(file), "");
@@ -75,10 +76,11 @@ function start(related?: string[]) {
     shared: () => [at("next.config.ts")],
   });
   const config = { reporters: [] as unknown[], related: related && [...related] };
+  const tagsFilter: string[] = [];
   const vitest = { config, getGlobalTestNamePattern: () => undefined as RegExp | undefined };
   const project = {
     name: "app",
-    config: { root, setupFiles: [at("vitest.setup.ts")] },
+    config: { root, setupFiles: [at("vitest.setup.ts")], tagsFilter },
     vite: {
       config: { cacheDir: at("node_modules/.vite") },
       environments: { rsc: { moduleGraph: rsc }, browser: { moduleGraph: browser } },
@@ -92,6 +94,7 @@ function start(related?: string[]) {
   };
   return {
     vitest,
+    tagsFilter,
     /** A run of a test file that loads these modules. */
     run(testFile: string, loads: string[], run: { state?: string; testNamePattern?: RegExp } = {}) {
       const moduleId = at(testFile);
@@ -181,7 +184,7 @@ test("forgets a test file that did not pass, or that ran in part", () => {
   expect(unknown()).toBe(true);
 
   start().run("notes.test.tsx", ["route/notes"]);
-  // Every test but one skipped: the test file is as good as passed.
+  // Every test skipped, by a bail or a stop.
   start().run("notes.test.tsx", [], { state: "skipped" });
   expect(unknown()).toBe(true);
 
@@ -195,6 +198,29 @@ test("forgets a test file that did not pass, or that ran in part", () => {
   vitest.getGlobalTestNamePattern = () => /one test/;
   run("notes.test.tsx", []);
   expect(unknown()).toBe(true);
+
+  start().run("notes.test.tsx", ["route/notes"]);
+  const tagged = start();
+  // `--tags`: the tab leaves out the tests without the tag.
+  tagged.tagsFilter.push("smoke");
+  tagged.run("notes.test.tsx", []);
+  expect(unknown()).toBe(true);
+});
+
+test("belongs to what a file like next.config imports, which Vite has no module of", () => {
+  fs.writeFileSync(at("next.config.ts"), 'import { settings } from "./next.settings.ts";');
+  start().run("notes.test.tsx", ["route/notes"]);
+
+  expect(start(changed("next.settings.ts")).belongs("notes.test.tsx")).toBe(true);
+});
+
+test("belongs to the mock of a module that comes after the run", () => {
+  start().run("profile.test.tsx", ["route/profile"]);
+  expect(start(changed("lib/unused.ts")).belongs("profile.test.tsx")).toBe(false);
+  fs.mkdirSync(at("app/profile/__mocks__"));
+  fs.writeFileSync(at("app/profile/__mocks__/avatar.tsx"), "");
+
+  expect(start(changed("app/profile/__mocks__/avatar.tsx")).belongs("profile.test.tsx")).toBe(true);
 });
 
 test("forgets every test file when a file comes to the app directory, or next to it", () => {

@@ -51,6 +51,36 @@ type Options = {
 
 const stylesheet = /\.(css|scss|sass|less|styl|stylus|pcss|postcss)$/;
 
+// A file like `next.config.ts` is in no module graph of Vite: Next loads it.
+// What it imports from the project is read off its text, and so is what a
+// `tsconfig.json` extends.
+const relativeSpecifier = /["'](\.{1,2}\/[^"'\n]+)["']/g;
+const endings = ["", ".ts", ".mts", ".cts", ".js", ".mjs", ".cjs", ".json", ".tsx", ".jsx"];
+
+function withImports(files: string[], seen = new Set<string>()): string[] {
+  for (const file of files) {
+    if (seen.has(file)) continue;
+    seen.add(file);
+    let text: string;
+    try {
+      text = fs.readFileSync(file, "utf8");
+    } catch {
+      continue;
+    }
+    const imported = Array.from(text.matchAll(relativeSpecifier), ([, specifier]) => {
+      const base = path.resolve(path.dirname(file), specifier!);
+      return [...endings, ...endings.map((ending) => `/index${ending}`)]
+        .map((ending) => base + ending)
+        .find((candidate) => fs.statSync(candidate, { throwIfNoEntry: false })?.isFile());
+    });
+    withImports(
+      imported.flatMap((found) => (found ? [normalizePath(found)] : [])),
+      seen,
+    );
+  }
+  return [...seen];
+}
+
 export function createRelatedRoutes(options: Options) {
   const projects: ReturnType<typeof createProject>[] = [];
 
@@ -116,6 +146,7 @@ function createProject(
   // A file that comes or goes here can change which route a URL gets, and
   // which layouts and boundaries a route has, without a change to a file that
   // is written down.
+  const shared = () => withImports(options.shared().map(normalizePath));
   const routeFiles = () => {
     const names = fs.readdirSync(options.appDir(), { recursive: true }) as string[];
     const shared = options.shared().map(relative);
@@ -156,11 +187,12 @@ function createProject(
     ];
   };
 
-  /** The files a test file depends on, from the module graphs. */
+  /** The files a test file depends on, from the module graphs. Some are not there. */
   const dependenciesOf = (testFile: string): string[] => {
     const all = graphs();
     const lists = new Set(options.lists);
     const files = new Set<string>();
+    const absent = new Set<string>();
     const seen = new Set<EnvironmentModuleNode>();
     const queue: EnvironmentModuleNode[] = [];
     const addFile = (file: string) => {
@@ -168,14 +200,22 @@ function createProject(
       files.add(file);
       // A Client Component has its imports in the other layers.
       for (const graph of all) queue.push(...(graph.getModulesByFile(file) ?? []));
-      // Vitest loads a mock from here in place of the file.
-      addFile(path.posix.join(path.posix.dirname(file), "__mocks__", path.posix.basename(file)));
+      // Vitest loads a mock from here in place of the file. Also written down
+      // when it is not there: it may come.
+      const mock = path.posix.join(
+        path.posix.dirname(file),
+        "__mocks__",
+        path.posix.basename(file),
+      );
+      if (file.includes("/__mocks__/")) return;
+      if (fs.existsSync(mock)) addFile(mock);
+      else absent.add(mock);
     };
     for (const file of [
       testFile,
       ...project.config.setupFiles,
       ...[project.config.globalSetup ?? []].flat(),
-      ...options.shared(),
+      ...shared(),
     ]) {
       addFile(normalizePath(file));
     }
@@ -197,7 +237,7 @@ function createProject(
       if (file) addFile(file);
       queue.push(...node.importedModules);
     }
-    return [...files];
+    return [...files, ...absent];
   };
 
   const isFiltered = (spec: TestSpecification) =>
@@ -206,12 +246,15 @@ function createProject(
       spec.testIds?.length ||
       spec.testNamePattern ||
       spec.testTagsFilter?.length ||
+      // `--tags` is not on the specification: the tab filters by it.
+      project.config.tagsFilter?.length ||
       vitest.getGlobalTestNamePattern(),
     );
 
   // After `configureVitest`, Vitest makes its reporters of this list.
   vitest.config.reporters.push({
     onTestRunStart(specifications: readonly TestSpecification[]) {
+      forget();
       hashes.clear();
       written.clear();
       for (const spec of specifications) {
@@ -232,10 +275,7 @@ function createProject(
       saved.files[testFile] = Object.fromEntries(
         dependenciesOf(module.moduleId)
           .sort()
-          .flatMap((file) => {
-            const hash = hashOf(file);
-            return hash ? [[relative(file), hash]] : [];
-          }),
+          .map((file) => [relative(file), hashOf(file) ?? ""]),
       );
       written.add(testFile);
     },
@@ -255,6 +295,17 @@ function createProject(
     },
   } as never);
 
+  // The test files that are empty in the `ssr` environment. Vite keeps the
+  // result of a transform, and the next lookup has to ask again.
+  const stubbed = new Set<string>();
+  const forget = () => {
+    const graph = project.vite.environments.ssr?.moduleGraph;
+    for (const id of stubbed) {
+      for (const node of graph?.getModulesByFile(id) ?? []) graph!.invalidateModule(node);
+    }
+    stubbed.clear();
+  };
+
   // The changed files Vitest looks up, as it had them before the plugin
   // added to them.
   const changes = new WeakMap<string[], Set<string>>();
@@ -273,13 +324,17 @@ function createProject(
       // Vitest sets this before it looks up, also for `--changed`.
       const related = vitest.config.related!;
       let changed = changes.get(related);
-      if (!changed) changes.set(related, (changed = new Set(related.map(normalizePath))));
-      hashes.clear();
+      if (!changed) {
+        changes.set(related, (changed = new Set(related.map(normalizePath))));
+        hashes.clear();
+      }
+      stubbed.add(id);
 
       const files = saved.files[relative(id)];
       const belongs = files
         ? Object.entries(files).some(
-            ([file, hash]) => changed.has(absolute(file)) || hashOf(absolute(file)) !== hash,
+            ([file, hash]) =>
+              changed.has(absolute(file)) || (hashOf(absolute(file)) ?? "") !== hash,
           )
         : // Another test file that changed runs on its own account.
           [...changed].some((file) => !isTestFile(file));

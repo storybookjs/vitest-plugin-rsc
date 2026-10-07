@@ -404,14 +404,15 @@ A run does know (`related.ts`). When a test file has passed, the files it depend
 - what the routes it loaded import, and the modules of the Server Actions it called;
 - in each layer, since a Client Component has its imports in the browser layer;
 - the mock of a module, from the `__mocks__` directory next to it;
-- what Next reads next to the `app` directory: `next.config`, `tsconfig.json`, `.env` files.
+- what Next reads next to the `app` directory, and what those files import: `next.config`, `tsconfig.json`, `.env` files.
 
 At the next lookup the plugin answers for a test file itself. It belongs to the change when one of its files is a changed one, or is no longer what it was when it was written down. That second part is for a cache that is older than the checkout: a page that got a new import in a commit without a run. For a test file that belongs, the plugin adds it to the list of changed files, which Vitest keeps a test file for. The test file itself is empty in the `ssr` environment during a lookup, so Vitest follows no import into a file it cannot read.
 
 - **Never too few.** A test file that is not written down belongs to every change, also one outside the project. That is one that did not pass, one that ran in part (a name pattern, a line, a tag, a bail), and every test file of a checkout without the cache.
 - **A file that comes to the `app` directory or goes**, or next to it, can change which route a URL gets and which layouts a route has, without a change to a file that is written down. Then nothing that is written down counts.
 - **The `ssr` environment is only Vitest's lookup** for a project in browser mode: its own code and the global setup run in another one. Vitest's static parse of a test file reads it there too, and finds no tests in it during a lookup.
-- **Not known:** a test that loads a route only some of the time, like one behind a condition on the date. A file Tailwind scans is no dependency of a test, though a class in it adds to the stylesheet.
+- **Not known:** a test that loads a route only some of the time, like one behind a condition on the date or one that is skipped while it runs. A file that is no module: one the app reads from disk, or one in `public/`. A file Tailwind scans is no dependency of a test, though a class in it adds to the stylesheet.
+- **One lookup at a time.** Vite keeps the empty test file, and the plugin lets go of it when a run starts. Code that looks up twice without a run in between gets the first answer.
 
 `scripts/related-probe.mjs` says which test files `vitest related` picks.
 

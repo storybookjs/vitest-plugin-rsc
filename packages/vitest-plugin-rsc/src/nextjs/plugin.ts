@@ -409,19 +409,31 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
     environments: layers.map((layer) => environmentOf[layer]),
     lists,
     appDir: () => project.appDir,
-    // What Next reads next to the `app` directory, in the root or in `src`.
-    shared: () =>
-      [...new Set([project.root, path.dirname(project.appDir)])].flatMap((directory) =>
-        fs
-          .readdirSync(directory)
-          .filter((name) =>
-            /^(next\.config|tsconfig|jsconfig|middleware|proxy|instrumentation(-client)?)\.\w+$|^\.env(\.|$)/.test(
-              name,
-            ),
-          )
-          .map((name) => path.join(directory, name)),
-      ),
+    // What Next reads next to the `app` directory, in the root or in `src`,
+    // and the mocks of packages, which Vitest reads from the root.
+    shared: () => {
+      const mocks = path.join(project.root, "__mocks__");
+      return [
+        ...nextFiles(),
+        ...(fs.existsSync(mocks)
+          ? (fs.readdirSync(mocks, { recursive: true }) as string[])
+              .map((name) => path.join(mocks, name))
+              .filter((file) => fs.statSync(file).isFile())
+          : []),
+      ];
+    },
   });
+  const nextFiles = () =>
+    [...new Set([project.root, path.dirname(project.appDir)])].flatMap((directory) =>
+      fs
+        .readdirSync(directory)
+        .filter((name) =>
+          /^(next\.config|middleware|proxy|instrumentation(-client)?)\.\w+$|^[tj]sconfig(\.[\w-]+)?\.json$|^\.env(\.|$)/.test(
+            name,
+          ),
+        )
+        .map((name) => path.join(directory, name)),
+    );
   // Watch mode runs the test files that loaded a route, see watch.ts.
   const routeWatch = createRouteWatch({ environment: environmentOf.rsc, lists, modulesOf });
   const resolvers = Object.fromEntries(
