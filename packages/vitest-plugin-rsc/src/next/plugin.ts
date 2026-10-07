@@ -110,7 +110,7 @@ export function extractInfoFromServerReferenceId(id) {
 // One that is made inside a cache scope belongs to the render of that scope,
 // so its component is called in it.
 const scopedJsxRuntime = (entry: string) => `
-import * as runtime from ${JSON.stringify(`next/dist/compiled/react/${entry}.react-server`)};
+import runtime from ${JSON.stringify(`next/dist/compiled/react/${entry}.react-server`)};
 import { workUnitAsyncStorage } from "next/dist/server/app-render/work-unit-async-storage.external";
 export const Fragment = runtime.Fragment;
 function scoped(type) {
@@ -120,9 +120,13 @@ function scoped(type) {
   const inScope = globalThis.AsyncLocalStorage.snapshot();
   return Object.defineProperty((...args) => inScope(type, ...args), "name", { value: type.name });
 }
-export const jsx = (type, ...rest) => runtime.jsx(scoped(type), ...rest);
-export const jsxs = (type, ...rest) => runtime.jsxs(scoped(type), ...rest);
-export const jsxDEV = (type, ...rest) => runtime.jsxDEV(scoped(type), ...rest);
+const wrap = (create) => create && ((type, ...rest) => create(scoped(type), ...rest));
+// Read by name at run time: the optimizer folds runtime.jsxDEV to what the
+// production build exports, which is nothing.
+export const jsx = wrap(Reflect.get(runtime, "jsx"));
+export const jsxs = wrap(Reflect.get(runtime, "jsxs"));
+export const jsxDEV = wrap(Reflect.get(runtime, "jsxDEV"));
+export default { Fragment, jsx, jsxs, jsxDEV };
 `;
 
 type Alias = { key: string; exact: boolean; target: string | false };
@@ -264,7 +268,10 @@ function createLayerResolver(getProject: () => NextProject, layer: NextLayer) {
           return nextFile("next/dist/esm/shared/lib/server-reference-info.js");
         }
         if (importer?.startsWith(`${bridgePrefix}scoped-`) && source.includes("/react/jsx-")) {
-          return nextFile(source);
+          return this.resolve(source, path.join(getProject().root, "package.json"), {
+            ...options,
+            skipSelf: true,
+          });
         }
 
         let specifier = source;
