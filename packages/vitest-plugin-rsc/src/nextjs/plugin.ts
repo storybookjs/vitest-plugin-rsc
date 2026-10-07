@@ -9,7 +9,8 @@ import { flightBridge, type FlightEntry } from "./flight.ts";
 import { createCompilePlugin, createDependencyCompilePlugin } from "./compile.ts";
 import { loadNextProject, type NextLayer, type NextProject } from "./project.ts";
 import { createServerCode, type ServerCodeOptions } from "./server-code.ts";
-import { createRouteWatch, routeLoadedCommand } from "./watch.ts";
+import { createRelatedRoutes } from "./related.ts";
+import { createRouteWatch, routeLoadedCommand, type RouteKind } from "./watch.ts";
 
 // Each layer of Next is a Vite environment, and all three run in the test's
 // tab (docs/next-routes.md). Where Next's own bundler config says a module
@@ -393,19 +394,29 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
   let project: NextProject;
   const serverCode = createServerCode(registry, options);
   const getProject = () => project;
-  // Watch mode runs the test files that loaded a route, see watch.ts.
-  const routeWatch = createRouteWatch({
-    environment: environmentOf.rsc,
-    lists: routeModules.map(({ list }) => `\0${list}`),
-    modulesOf: (kind, page) =>
-      [...project.routes, ...project.componentRoutes].flatMap((route, index) =>
-        route.kind === kind && entryOf(route) === page
-          ? routeModules
-              .filter((modules) => modules.layer === "rsc")
-              .map(({ prefix }) => `\0${prefix}${index}`)
-          : [],
-      ),
+  // `vitest --changed` knows the routes a test file loaded, see related.ts.
+  // The modules of the routes, for what follows.
+  const lists = routeModules.map(({ list }) => `\0${list}`);
+  const modulesOf = (kind: RouteKind, page: string) =>
+    [...project.routes, ...project.componentRoutes].flatMap((route, index) =>
+      route.kind === kind && entryOf(route) === page
+        ? routeModules
+            .filter((modules) => modules.layer === "rsc")
+            .map(({ prefix }) => `\0${prefix}${index}`)
+        : [],
+    );
+  const relatedRoutes = createRelatedRoutes({
+    environments: layers.map((layer) => environmentOf[layer]),
+    lists,
+    modulesOf,
+    appDir: () => project.appDir,
+    shared: () =>
+      ["next.config.js", "next.config.mjs", "next.config.ts", "next.config.mts", "tsconfig.json"]
+        .map((name) => path.join(project.root, name))
+        .filter((file) => fs.existsSync(file)),
   });
+  // Watch mode runs the test files that loaded a route, see watch.ts.
+  const routeWatch = createRouteWatch({ environment: environmentOf.rsc, lists, modulesOf });
   const resolvers = Object.fromEntries(
     layers.map((layer) => [layer, createLayerResolver(getProject, layer)]),
   ) as Record<NextLayer, LayerResolver>;
@@ -534,7 +545,14 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
         ).test ??= {});
         test.setupFiles = [setupFile, ...[test.setupFiles ?? []].flat()];
         // Vitest lists the commands for the tab when the project starts.
-        ((test.browser ??= {}).commands ??= {})[routeLoadedCommand] = routeWatch.command;
+        ((test.browser ??= {}).commands ??= {})[routeLoadedCommand] = (
+          context: { testPath: string | undefined },
+          kind: RouteKind,
+          page: string,
+        ) => {
+          routeWatch.command(context, kind, page);
+          relatedRoutes.loaded(context.testPath, kind, page);
+        };
 
         return {
           // Next's build resolves the `paths` of the tsconfig.
@@ -598,6 +616,12 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
           resolve: test.dir || test.root,
         });
         serverCode.addTestFiles((file) => setupFiles.has(file) || isIncluded(file));
+        relatedRoutes.start(vitest, testProject, isIncluded);
+      },
+      // Vitest looks up the test files of a changed file in this environment.
+      async transform(code, id) {
+        const imports = await relatedRoutes.imports(this.environment.name, id.split("?")[0]!);
+        if (imports) return { code: code + imports, map: null };
       },
       resolveId(source) {
         if (source === manifestId || routeModules.some(isRouteModule(source))) return `\0${source}`;

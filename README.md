@@ -89,6 +89,7 @@ Agents do better when wrapped in a self-healing loop with fast unit tests — ed
 - **White-box inputs**: The server runs in the test's tab. The `db` your test seeds is the module instance your Server Components read. Mock IO, fake clocks, set cookies and headers.
 - **Black-box output**: Assert what the user sees and does via `vitest/browser` — Playwright locators (`getByRole`, `getByText`, etc.) and `expect.element` matchers.
 - **Watch mode**: Edit a page, a layout or a component, and Vitest reruns the test files that opened a route with it.
+- **Diff-scoped runs**: `vitest --changed` and `vitest related` run those same test files. What a test file depends on is written down when it passes, in Vite's cache directory. A test file that is not written down runs for every change, so keep that directory between runs of CI to make them short.
 - **No deployed infra**: Use in-memory infrastructure like PGlite instead of spinning up a preview server and database.
 - **Per-test isolation**: Each test starts with an empty Data Cache, without cookies, and without what the app put in `localStorage` and `sessionStorage`.
 
@@ -748,7 +749,6 @@ The test runs in `client`, the Vite environment of the `rsc` layer. That is why 
 - `middleware.ts` / `proxy.ts`, and the redirects, rewrites and headers of `next.config`.
 - `"use cache"`. And inside a function cached with `unstable_cache`, after its first `await`, the request's store is read instead of the cache's.
 - A mock for Client Components.
-- `vitest related` and `vitest --changed` for route files. They pick a test file by the modules it imports. The plugin loads `page.tsx`, `layout.tsx` and `route.ts`, not the test file, so a change to one of those picks no test file. A change to a module that a test file imports does pick it. Watch mode does know the routes of a test file, once it has run.
 - Route handlers run as they do on Next's edge runtime, also the ones a deployment runs on Node.js.
 - More than one request at a time. A response that streams without end holds up every request after it.
 - A navigation that leaves the page without Next's router, like `location.assign()`, needs the Navigation API, which today means Chromium.
