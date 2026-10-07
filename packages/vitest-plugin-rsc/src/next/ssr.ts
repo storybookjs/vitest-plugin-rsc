@@ -202,7 +202,9 @@ async function handle(request: ServerRequest): Promise<Response> {
     setManifestsSingleton({
       page,
       clientReferenceManifest: clientReferenceManifest as never,
-      serverActionsManifest: { node: actions, edge: actions, encryptionKey: "" } as never,
+      serverActionsManifest: { node: actions, edge: actions, // SPIKE: Next encrypts what a `"use cache"` function closes over. A
+      // build makes up a key; any 256 bits do.
+      encryptionKey: btoa("vitest-plugin-rsc-encryption-key") } as never,
     });
 
     await registry.loadAppPage(page);

@@ -7,6 +7,7 @@ import type { TestProject } from "vitest/node";
 import { createRunnerEnvironmentPlugins } from "../runner-environment.ts";
 import { loadNextProject, type NextLayer, type NextProject, type NextRoute } from "./project.ts";
 import { createServerCode, type ServerCodeOptions } from "./server-code.ts";
+import { useCachePlugin, useCacheResolvePlugin } from "./use-cache.ts";
 import { pageViteClientPlugin } from "./vite-client.ts";
 
 // Next compiles an App Router app into three layers, each with its own module
@@ -105,6 +106,25 @@ export function extractInfoFromServerReferenceId(id) {
 }
 `;
 
+// SPIKE: React calls the components of an element later, from its own tasks.
+// One that is made inside a cache scope belongs to the render of that scope,
+// so its component is called in it.
+const scopedJsxRuntime = (entry: string) => `
+import * as runtime from ${JSON.stringify(`next/dist/compiled/react/${entry}.react-server`)};
+import { workUnitAsyncStorage } from "next/dist/server/app-render/work-unit-async-storage.external";
+export const Fragment = runtime.Fragment;
+function scoped(type) {
+  if (typeof type !== "function" || "$$typeof" in type) return type;
+  const store = workUnitAsyncStorage.getStore();
+  if (store?.type !== "cache" && store?.type !== "private-cache") return type;
+  const inScope = globalThis.AsyncLocalStorage.snapshot();
+  return Object.defineProperty((...args) => inScope(type, ...args), "name", { value: type.name });
+}
+export const jsx = (type, ...rest) => runtime.jsx(scoped(type), ...rest);
+export const jsxs = (type, ...rest) => runtime.jsxs(scoped(type), ...rest);
+export const jsxDEV = (type, ...rest) => runtime.jsxDEV(scoped(type), ...rest);
+`;
+
 type Alias = { key: string; exact: boolean; target: string | false };
 
 // The module resolution of one layer: Next's alias tables with webpack's
@@ -190,6 +210,12 @@ function createLayerResolver(getProject: () => NextProject, layer: NextLayer) {
     if (source === "next/dist/esm/shared/lib/server-reference-info.js") {
       return `${bridgePrefix}server-reference-info`;
     }
+    // SPIKE: an element that is made in a cache scope renders in that scope.
+    // oxlint-disable-next-line no-process-env
+    if (layer === "rsc" && process.env.VITE_SPIKE_JSX === "1") {
+      const jsx = /^next\/dist\/compiled\/react\/(jsx-(?:dev-)?runtime)\.react-server(\.js)?$/.exec(source);
+      if (jsx) return `${bridgePrefix}scoped-${jsx[1]}`;
+    }
   }
 
   /**
@@ -237,6 +263,9 @@ function createLayerResolver(getProject: () => NextProject, layer: NextLayer) {
         if (importer === `${bridgePrefix}server-reference-info`) {
           return nextFile("next/dist/esm/shared/lib/server-reference-info.js");
         }
+        if (importer?.startsWith(`${bridgePrefix}scoped-`) && source.includes("/react/jsx-")) {
+          return nextFile(source);
+        }
 
         let specifier = source;
         // Relative imports between Next's own files, and the absolute paths
@@ -271,6 +300,7 @@ function createLayerResolver(getProject: () => NextProject, layer: NextLayer) {
         if (name === "server-reference-info") {
           return serverReferenceInfoShim("next/dist/esm/shared/lib/server-reference-info.js");
         }
+        if (name.startsWith("scoped-")) return scopedJsxRuntime(name.slice("scoped-".length));
         return rscFlightBridges[name.slice("flight-".length)];
       },
     };
@@ -404,6 +434,9 @@ const runtimeImports: Record<NextLayer, string[]> = {
     "react-dom",
     "next/dist/compiled/buffer",
     "next/dist/server/route-kind",
+    // SPIKE: what a compiled `"use cache"` function imports.
+    "next/dist/server/use-cache/use-cache-wrapper",
+    "next/dist/server/app-render/encryption",
     vendoredFlight("server.edge"),
     vendoredFlight("static.edge"),
     vendoredFlight("client.edge"),
@@ -415,6 +448,7 @@ const runtimeImports: Record<NextLayer, string[]> = {
     "next/dist/server/app-render/manifests-singleton",
     "next/dist/server/lib/incremental-cache",
     "next/dist/server/lib/incremental-cache/tags-manifest.external",
+    "next/dist/server/use-cache/handlers",
     "next/dist/server/web/get-edge-preview-props",
     "next/dist/shared/lib/router/utils/route-regex",
     "next/dist/shared/lib/router/utils/route-matcher",
@@ -455,6 +489,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
   return [
     ...createRunnerEnvironmentPlugins(environmentOf.ssr),
     pageViteClientPlugin(registry, [environmentOf.ssr, environmentOf.browser]),
+    useCacheResolvePlugin(environmentOf.rsc),
     {
       name: "vitest-plugin-rsc:next",
       enforce: "pre",
@@ -729,6 +764,9 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
         });
       },
     },
+    // SPIKE: before the server code is compiled, after Vite RSC's `"use server"`.
+    // oxlint-disable-next-line no-process-env
+    useCachePlugin(getProject, environmentOf.rsc, () => process.env.VITE_SPIKE_CTX ?? "stack"),
     serverCode.plugin({ [environmentOf.rsc]: "rsc", [environmentOf.ssr]: "ssr" }),
     ...layers.map((layer) => ({
       ...resolvers[layer].plugin(),

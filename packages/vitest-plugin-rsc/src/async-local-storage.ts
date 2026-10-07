@@ -32,6 +32,51 @@ const exited = Symbol("exited");
 let rootFrame: AsyncContextFrame = createFrame(undefined, new Map());
 let currentFrame: AsyncContextFrame = rootFrame;
 
+// SPIKE (research/use-cache-spike). "stack": inside the scope of a request, a
+// frame whose callback returned a promise stays open until that promise
+// settles, and code is attributed to it by the async call stack: the promise
+// is awaited by a function with the name of the frame, which V8 lists in
+// `new Error().stack` for everything that is awaited from the callback down.
+// "settled": frames last until their promise settles, also in a request scope,
+// as before the ambient scope existed.
+const spikeVariant: string =
+  (import.meta as { env?: Record<string, string> }).env?.VITE_SPIKE_CTX ?? "stack";
+const openFrames = new Map<string, AsyncContextFrame>();
+let frameIds = 0;
+// How many `run()` callbacks are on the synchronous stack.
+let syncDepth = 0;
+export const spikeStats = { lookups: 0, hits: 0, opened: 0, lookupMs: 0 };
+
+function frameOnStack(): AsyncContextFrame | undefined {
+  if (openFrames.size === 0) return undefined;
+  const started = performance.now();
+  const limit = Error.stackTraceLimit;
+  Error.stackTraceLimit = Infinity;
+  const stack = new Error().stack ?? "";
+  Error.stackTraceLimit = limit;
+  // The innermost frame is the first one listed.
+  const id = /__als_frame_(\d+)__/.exec(stack)?.[1];
+  const frame = id === undefined ? undefined : openFrames.get(id);
+  spikeStats.lookups++;
+  spikeStats.lookupMs += performance.now() - started;
+  if (frame) spikeStats.hits++;
+  return frame;
+}
+
+// The frame of the code that is running now.
+function activeFrame(): AsyncContextFrame {
+  if (spikeVariant !== "stack" || syncDepth > 0) return currentFrame;
+  return frameOnStack() ?? currentFrame;
+}
+
+// Whether a frame holds a store that a later task would not read anyway.
+function differsFromAmbient(frame: AsyncContextFrame): boolean {
+  for (const [storage, store] of frame.stores) {
+    if (ambientStore(storage) !== store) return true;
+  }
+  return false;
+}
+
 function isPromiseLike(value: unknown): value is PromiseLike<unknown> {
   return (
     typeof value === "object" &&
@@ -61,16 +106,45 @@ function runInFrame<R, TArgs extends unknown[]>(
   frame: AsyncContextFrame,
   callback: RunCallback<R, TArgs>,
   args: TArgs,
+  attribute = true,
 ): R {
-  const untilSettled = ambientScope === undefined;
+  const untilSettled = ambientScope === undefined || spikeVariant.startsWith("settled");
   currentFrame = frame;
 
   let result: R;
+  syncDepth++;
   try {
     result = callback(...args);
   } catch (error) {
     closeFrame(frame);
     throw error;
+  } finally {
+    syncDepth--;
+  }
+
+  if (
+    spikeVariant === "stack" &&
+    !untilSettled &&
+    attribute &&
+    result instanceof Promise &&
+    differsFromAmbient(frame)
+  ) {
+    closeFrame(frame);
+    const id = String(++frameIds);
+    const name = `__als_frame_${id}__`;
+    openFrames.set(id, frame);
+    spikeStats.opened++;
+    const pending = result;
+    const generation = resetGeneration;
+    return {
+      async [name]() {
+        try {
+          return await pending;
+        } finally {
+          if (generation === resetGeneration) openFrames.delete(id);
+        }
+      },
+    }[name]!() as R;
   }
 
   if (untilSettled && isPromiseLike(result)) {
@@ -86,9 +160,8 @@ function runInFrame<R, TArgs extends unknown[]>(
 export class SequentialAsyncLocalStorage<Store> {
   getStore(): Store | undefined {
     const self = this as SequentialAsyncLocalStorage<unknown>;
-    const store = currentFrame.stores.has(self)
-      ? currentFrame.stores.get(self)
-      : ambientStore(self);
+    const frame = activeFrame();
+    const store = frame.stores.has(self) ? frame.stores.get(self) : ambientStore(self);
     return store === exited ? undefined : (store as Store | undefined);
   }
 
@@ -97,7 +170,7 @@ export class SequentialAsyncLocalStorage<Store> {
     callback: RunCallback<R, TArgs>,
     ...args: TArgs
   ): R {
-    const previousFrame = currentFrame;
+    const previousFrame = activeFrame();
     const frame = createFrame(previousFrame, previousFrame.stores);
     frame.stores.set(this as SequentialAsyncLocalStorage<unknown>, store);
     if (ambientScope && !ambientScope.stores.has(this as SequentialAsyncLocalStorage<unknown>)) {
@@ -107,11 +180,11 @@ export class SequentialAsyncLocalStorage<Store> {
   }
 
   exit<R, TArgs extends unknown[]>(callback: RunCallback<R, TArgs>, ...args: TArgs): R {
-    const previousFrame = currentFrame;
+    const previousFrame = activeFrame();
     const frame = createFrame(previousFrame, previousFrame.stores);
     frame.stores.set(this as SequentialAsyncLocalStorage<unknown>, exited);
     const scope = ambientScope;
-    const result = runInFrame(frame, callback, args);
+    const result = runInFrame(frame, callback, args, false);
     // See enterAmbientScope(): the work that starts here goes on outside the
     // store, for longer than this frame and than the promise.
     if (scope && isPromiseLike(result)) {
@@ -149,12 +222,12 @@ export class SequentialAsyncLocalStorage<Store> {
       // from one test cannot re-enter the previous test's request context.
       if (snapshotGeneration !== resetGeneration) return fn(...args);
 
-      return runInFrame(createFrame(currentFrame, snapshot), fn, args);
+      return runInFrame(createFrame(activeFrame(), snapshot), fn, args);
     };
   }
 
   static #snapshotStores(): StoreValues {
-    return new Map(currentFrame.stores);
+    return new Map(activeFrame().stores);
   }
 }
 
@@ -232,6 +305,7 @@ export function resetAsyncLocalStorage(): void {
   // Bumping the generation also prevents delayed promise finalizers and old
   // snapshots from re-entering a previous test's frame.
   resetGeneration++;
+  openFrames.clear();
   ambientScope = undefined;
   rootFrame = createFrame(undefined, new Map());
   currentFrame = rootFrame;

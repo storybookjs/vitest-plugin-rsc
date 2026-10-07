@@ -1,5 +1,6 @@
 import { IncrementalCache } from "next/dist/server/lib/incremental-cache";
 import { tagsManifest } from "next/dist/server/lib/incremental-cache/tags-manifest.external";
+import { initializeCacheHandlers } from "next/dist/server/use-cache/handlers";
 import { getEdgePreviewProps } from "next/dist/server/web/get-edge-preview-props";
 import { nextConfig } from "virtual:vitest-plugin-rsc/next-manifest";
 
@@ -98,6 +99,12 @@ export function shareIncrementalCache(headers = new Headers()): void {
  */
 export function resetCaches(): void {
   tagsManifest.clear();
+  // SPIKE: the handlers of `"use cache"` are on `globalThis`, and Next makes
+  // them once. Without them it makes new ones, which are empty.
+  for (const name of ["map", "set", "built-in"]) {
+    delete (globalThis as Record<symbol, unknown>)[Symbol.for(`@next/cache-handlers-${name}`)];
+  }
+  (initializeCacheHandlers as (size?: number) => void)(config.cacheMaxMemorySize);
   generation++;
   shareIncrementalCache();
 }

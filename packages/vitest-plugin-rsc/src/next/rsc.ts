@@ -4,6 +4,7 @@ import * as FlightServer from "@vitejs/plugin-rsc/vendor/react-server-dom/server
 import * as FlightStatic from "@vitejs/plugin-rsc/vendor/react-server-dom/static.edge";
 import appPages from "virtual:vitest-plugin-rsc/next-app-pages";
 import routeHandlers from "virtual:vitest-plugin-rsc/next-route-handlers";
+import { SequentialAsyncLocalStorage } from "../async-local-storage.ts";
 import { actionModulePrefix, registry } from "./registry.ts";
 
 // The rsc layer: Server Components, Server Actions, route handlers and the
@@ -18,16 +19,51 @@ ReactServer.setRequireModule({
 // Next passes its client and server reference manifests to the Flight codec.
 // Vite RSC resolves a reference by its module id at runtime, with manifests of
 // its own, so these take Next's manifest arguments and leave them out.
+// SPIKE (research/use-cache-spike): how a cached function starts in its scope.
+//
+// Next enters the store of a cache scope, decodes the arguments, which it
+// awaits, and only then renders the result: `renderToReadableStream(promise)`
+// with a promise that calls the function when React first reads it. Node has
+// carried the store there. Here the two calls are tied by what Next passes to
+// both, the set of temporary references: the scope the arguments were decoded
+// in is the scope their function is called in.
+type Scope = ReturnType<typeof SequentialAsyncLocalStorage.snapshot>;
+type FlightOptions = { temporaryReferences?: object };
+const scopes = new WeakMap<object, Scope>();
+const spikeVariant: string =
+  (import.meta as { env?: Record<string, string> }).env?.VITE_SPIKE_CTX ?? "stack";
+
+function inScopeOfReply(model: unknown, options?: FlightOptions): unknown {
+  const scope = options?.temporaryReferences && scopes.get(options.temporaryReferences);
+  const thenable = model as PromiseLike<unknown> | null;
+  if (!scope || /^none|nolink$/.test(spikeVariant) || typeof thenable?.then !== "function") {
+    return model;
+  }
+  return {
+    then: (onFulfilled: (value: unknown) => unknown, onRejected: (error: unknown) => unknown) =>
+      scope(() => thenable.then(onFulfilled, onRejected)),
+  };
+}
+
 registry.flightServer = {
-  renderToReadableStream: (model: unknown, _clientModules: unknown, options?: object) =>
-    ReactServer.renderToReadableStream(model, options),
-  decodeReply: (body: string | FormData, _serverModules: unknown, options?: object) =>
-    ReactServer.decodeReply(body, options),
+  renderToReadableStream: (model: unknown, _clientModules: unknown, options?: FlightOptions) =>
+    ReactServer.renderToReadableStream(inScopeOfReply(model, options), options),
+  decodeReply: (body: string | FormData, _serverModules: unknown, options?: FlightOptions) => {
+    if (options?.temporaryReferences) {
+      scopes.set(options.temporaryReferences, SequentialAsyncLocalStorage.snapshot());
+    }
+    return ReactServer.decodeReply(body, options);
+  },
   decodeReplyFromAsyncIterable: (
     body: AsyncIterable<[string, string | File]>,
     _serverModules: unknown,
-    options?: object,
-  ) => FlightServer.decodeReplyFromAsyncIterable(body, createServerManifest(), options),
+    options?: FlightOptions,
+  ) => {
+    if (options?.temporaryReferences) {
+      scopes.set(options.temporaryReferences, SequentialAsyncLocalStorage.snapshot());
+    }
+    return FlightServer.decodeReplyFromAsyncIterable(body, createServerManifest(), options);
+  },
   decodeAction: (body: FormData) => ReactServer.decodeAction(body),
   decodeFormState: (result: unknown, body: FormData) => ReactServer.decodeFormState(result, body),
   createTemporaryReferenceSet: ReactServer.createTemporaryReferenceSet,
@@ -36,8 +72,8 @@ registry.flightServer = {
   createClientModuleProxy: FlightServer.createClientModuleProxy,
 };
 registry.flightStatic = {
-  prerender: (model: unknown, _clientModules: unknown, options?: object) =>
-    FlightStatic.prerender(model, createClientManifest(), options),
+  prerender: (model: unknown, _clientModules: unknown, options?: FlightOptions) =>
+    FlightStatic.prerender(inScopeOfReply(model, options), createClientManifest(), options),
 };
 registry.flightClient = {
   createFromReadableStream: (

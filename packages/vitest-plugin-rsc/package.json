@@ -100,6 +100,11 @@
       "vitest-plugin-rsc-source": "./src/next/setup.ts",
       "default": "./dist/next/setup.js"
     },
+    "./next/use-cache-runtime": {
+      "types": "./dist/next/use-cache-runtime.d.ts",
+      "vitest-plugin-rsc-source": "./src/next/use-cache-runtime.ts",
+      "default": "./dist/next/use-cache-runtime.js"
+    },
     "./next/rsc": {
       "types": "./dist/next/rsc.d.ts",
       "vitest-plugin-rsc-source": "./src/next/rsc.ts",
