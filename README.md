@@ -719,7 +719,7 @@ test("creates a note", async () => {
 });
 ```
 
-After every test the page is left and the tab's cookies are cleared, like a new browser context. Cookies you set on `document.cookie` before `renderServer()` are sent with the request, and so are the `headers` you pass it.
+Before and after every test the page is left, and the tab's cookies and what the app put in `localStorage` and `sessionStorage` are cleared, like a new browser context. That also goes for a page a `beforeAll` opened. Cookies you set on `document.cookie` before `renderServer()` are sent with the request, and so are the `headers` you pass it.
 
 To test one slice of a route, pass a node. The route renders it where it has its page, inside its layouts, with the request, the cookies and the router of that route:
 
@@ -734,7 +734,9 @@ test("favorites a note", async () => {
 });
 ```
 
-Without a `url` the node renders at `/`. The page's own `generateMetadata` does not run, and a URL that is not a route gets the not-found page.
+Without a `url` the node renders at `/`. The page module itself is not loaded, so its `generateMetadata`, `metadata`, `viewport` and segment config like `dynamic` do not apply; those of the layouts do. Parallel slots keep their own pages. A URL that is not a route gets the not-found page.
+
+`renderServer` resolves with `{ response, unmount }`: the server's `Response` to the document request, and a function that leaves the page.
 
 `vi.mock()` works on the modules your Server Components and Server Actions import. It does not reach Client Components, which load in module graphs of their own.
 

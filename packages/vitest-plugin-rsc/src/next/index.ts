@@ -26,6 +26,15 @@ function isAppRequest(input: RequestInfo | URL, init: RequestInit | undefined): 
   return headers.has("rsc") || headers.has("next-action");
 }
 
+// A test's own timers may be fake.
+const setTimeout = globalThis.setTimeout;
+
+// What was in the tab's storage before the app ran, which is the test
+// runner's to keep.
+const storages = [localStorage, sessionStorage].map(
+  (storage) => [storage, new Set(Object.keys(storage))] as const,
+);
+
 // The cookies the server has set, to forget them when the test ends.
 const cookiesToClear = new Set<string>();
 
@@ -150,7 +159,7 @@ export type RenderServerOptions = {
 export type RenderServerResult = {
   /** The server's response to the request of the document. */
   response: Response;
-  /** Leaves the page. */
+  /** Leaves the page. The tab keeps its cookies until the test ends. */
   unmount(): Promise<void>;
 };
 
@@ -173,43 +182,52 @@ export function renderServer(
 export async function renderServer(
   ...args: [RenderServerOptions] | [ReactNode, RenderServerOptions?]
 ): Promise<RenderServerResult> {
-  const [ui, options = {}] = isOptions(args) ? [undefined, args[0]] : args;
+  const [first, second] = args;
+  const [node, options] = isOptions(first) ? [undefined, first] : [{ ui: first }, second ?? {}];
   const url = new URL(options.url ?? "/", window.location.origin);
-
-  registry.pageOverrides = {};
-  // A URL that is not a route has no page to render the node in: it gets the
-  // not-found page, like any other request for it.
-  const page = isOptions(args) ? undefined : ssr.pageOf(url.pathname);
-  if (page) registry.pageOverrides[page] = ui;
-
   const headers = new Headers(options.headers);
   if (!headers.has("accept")) headers.set("accept", "text/html");
-  return { response: await loadPage(url, { headers }), unmount: leavePage };
+
+  // A URL that is not a route has no page to render the node in: it gets the
+  // not-found page, like any other request for it.
+  const route = node && ssr.pageOf(url.pathname);
+  const response = await loadPage(url, { headers }, route ? { [route]: node.ui } : {});
+  return {
+    response,
+    async unmount() {
+      await leavePage();
+      registry.pageOverrides = {};
+    },
+  };
 }
 
-function isOptions(args: unknown[]): args is [RenderServerOptions] {
-  const [first] = args;
-  // A React element is an object too, but one with a `$$typeof`.
-  return (
-    args.length === 1 &&
-    typeof first === "object" &&
-    first !== null &&
-    !("$$typeof" in first) &&
-    !Array.isArray(first) &&
-    !(Symbol.iterator in first) &&
-    !("then" in first)
-  );
+// The options, or a node to render. A plain object is never a node: React
+// has elements, which carry a `$$typeof`, and the rest are not plain objects.
+function isOptions(value: unknown): value is RenderServerOptions {
+  if (typeof value !== "object" || value === null || "$$typeof" in value) return false;
+  const prototype: unknown = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
 }
 
-async function loadPage(url: URL, init: RequestInit): Promise<Response> {
+// `pageOverrides` is for a load that starts a test's page. A navigation that
+// the page itself makes keeps the ones it has.
+async function loadPage(
+  url: URL,
+  init: RequestInit,
+  pageOverrides?: Record<string, unknown>,
+): Promise<Response> {
   const leaving = leavePage();
   const load = (currentLoad = new AbortController());
   await leaving;
   const superseded = () => {
     if (load.signal.aborted) throw load.signal.reason;
   };
+  superseded();
 
-  const response = await browserFetch(new Request(url, { ...init, signal: load.signal }));
+  if (pageOverrides) registry.pageOverrides = pageOverrides;
+
+  // Not the browser's Request, which drops a `cookie` header.
+  const response = await browserFetch(new registry.Request(url, { ...init, signal: load.signal }));
   superseded();
   const { interactive } = loadDocument(response.body);
   // Where the browser ended up, after any redirects.
@@ -250,29 +268,39 @@ async function loadPage(url: URL, init: RequestInit): Promise<Response> {
   return response;
 }
 
-async function leavePage(): Promise<void> {
+// One at a time: a page that is being left is left before the next one is.
+let leaving: Promise<void> = Promise.resolve();
+
+function leavePage(): Promise<void> {
   currentLoad?.abort(new DOMException("The page was left before it had loaded.", "AbortError"));
   currentLoad = undefined;
-  const leaving = page;
+  const left = page;
   page = undefined;
-  // An app that is still starting cannot be stopped, and would go on to
-  // hydrate the next page with the client code of this one. It is about done:
-  // the document it starts from is already there.
-  await Promise.race([leaving?.started, new Promise((resolve) => setTimeout(resolve, 1000))]);
-  leaving?.unmount();
-  unloadDocument();
-  await ssr.settleRequests();
-  resetAsyncLocalStorage();
+  leaving = leaving.then(async () => {
+    // An app that is still starting cannot be stopped, and would go on to
+    // hydrate the next page with the client code of this one. It is about
+    // done: the document it starts from is already there.
+    await Promise.race([left?.started, new Promise((resolve) => setTimeout(resolve, 5000))]);
+    left?.unmount();
+    unloadDocument();
+    await ssr.settleRequests();
+    resetAsyncLocalStorage();
+  });
+  return leaving;
 }
 
 /**
- * Leaves the page that `renderServer()` opened and forgets the tab's cookies, like a
- * new browser context. Runs after every test.
+ * Leaves the page that `renderServer()` opened and forgets the tab's cookies and
+ * what the app put in its storage, like a new browser context. Runs before and
+ * after every test.
  */
 export async function cleanup(): Promise<void> {
   await leavePage();
   registry.pageOverrides = {};
   clearCookies();
+  for (const [storage, keys] of storages) {
+    for (const key of Object.keys(storage)) if (!keys.has(key)) storage.removeItem(key);
+  }
 }
 
 // The app can leave its page without its router: `location.assign()`, a

@@ -65,6 +65,9 @@ export function pageOf(pathname: string): string | undefined {
   return matchers.find(({ match }) => match(pathname))?.page;
 }
 
+// A test's own timers may be fake.
+const setTimeout = globalThis.setTimeout;
+
 // One request at a time: see `enterAmbientScope`.
 let queue: Promise<unknown> = Promise.resolve();
 // The renders whose response is still being written, and how to stop them.

@@ -1,4 +1,4 @@
-import { renderServer } from "vitest-plugin-rsc/next";
+import { handleRequest, renderServer } from "vitest-plugin-rsc/next";
 import { afterEach, beforeEach, expect, test, vi, type MockInstance } from "vitest";
 import { page } from "vitest/browser";
 import { cookies, headers } from "next/headers";
@@ -262,6 +262,51 @@ test("calls a Server Action from a node", async () => {
   expect(db.notes.get("1")?.favorite).toBe(true);
 });
 
+test("sends a cookie header instead of the tab's cookies", async () => {
+  document.cookie = "last-created=7";
+
+  await renderServer(<RequestInfo />, { url: "/notes", headers: { cookie: "last-created=9" } });
+
+  await expect.element(page.getByText("9", { exact: true })).toBeVisible();
+});
+
+test("renders a node in the slot that has the page of a route", async () => {
+  await renderServer({ url: "/dashboard/details" });
+  await expect.element(page.getByText("Details of the stats")).toBeVisible();
+
+  await renderServer(<p>Just the slot</p>, { url: "/dashboard/details" });
+
+  await expect.element(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
+  await expect.element(page.getByText("Just the slot")).toBeVisible();
+  await expect.element(page.getByText("Details of the stats")).not.toBeInTheDocument();
+});
+
+test("takes options that a wrapper passes on with a second argument", async () => {
+  // What TypeScript does not allow, and a wrapper in JavaScript does anyway.
+  const render = renderServer as (...args: unknown[]) => ReturnType<typeof renderServer>;
+
+  await render({ url: "/notes" }, undefined);
+
+  await expect.element(page.getByRole("heading", { name: "Notes" })).toBeVisible();
+});
+
+test("renders the page again after unmount()", async () => {
+  const { unmount } = await renderServer(<h1>Not the notes</h1>, { url: "/notes" });
+  await unmount();
+
+  const response = await handleRequest("/notes");
+
+  expect(await response.text()).toContain("<h1>Notes</h1>");
+});
+
+test("starts every test without what the app stored in the tab", async () => {
+  // The theme test above stored its theme.
+  expect(localStorage.getItem("theme")).toBeNull();
+
+  await renderServer({ url: "/settings" });
+  await expect.element(page.getByRole("button", { name: "Theme: light" })).toBeVisible();
+});
+
 test("renders the page again once a test renders the route itself", async () => {
   await renderServer(<h1>Not the notes</h1>, { url: "/notes" });
   await expect.element(page.getByRole("heading", { name: "Not the notes" })).toBeVisible();
@@ -274,6 +319,7 @@ test("renders the not-found page for a node at a url that is not a route", async
   const { response } = await renderServer(<h1>Nowhere</h1>, { url: "/nope" });
 
   expect(response.status).toBe(404);
+  await expect.element(page.getByRole("heading", { name: "Nothing here" })).toBeVisible();
   await expect.element(page.getByRole("heading", { name: "Nowhere" })).not.toBeInTheDocument();
 });
 
