@@ -21,6 +21,6 @@ export default defineProject({
       screenshotFailures: false,
       instances: [{ browser: "chromium" }],
     },
-    setupFiles: ["./src/vitest.setup.ts"],
+    setupFiles: ["./src/test/websockets.ts", "./src/vitest.setup.ts"],
   },
 });

@@ -1,4 +1,10 @@
 import { ESModulesEvaluator, ModuleRunner, type ModuleRunnerTransport } from "vite/module-runner";
+import * as pageClient from "virtual:vitest-plugin-rsc/vite-client";
+
+// The page's own instance of Vite's client, for the modules that the runners
+// below evaluate: see vite-client.ts.
+(globalThis as { __vitest_plugin_rsc_vite_client__?: unknown }).__vitest_plugin_rsc_vite_client__ =
+  pageClient;
 
 const reactClientCoverageModulePath = "/@vite/react-client-coverage-module";
 const reactClientWebSocketInfoPath = "/@vite/react-client-runner-websocket";
@@ -15,14 +21,7 @@ type ViteFetchResult = {
   file: string;
 };
 
-type WebSocketInfo = {
-  token: string;
-  protocol: string | null;
-  host: string | null;
-  port: number | null;
-  path: string;
-  timeout: number;
-};
+type WebSocketInfo = { token: string; path: string };
 type PendingInvoke = {
   resolve: (result: InvokeResult) => void;
   reject: (error: unknown) => void;
@@ -44,6 +43,7 @@ let webSocket: WebSocket | undefined;
 let webSocketPromise: Promise<WebSocket> | undefined;
 let webSocketInfoPromise: Promise<WebSocketInfo> | undefined;
 let nextInvokeId = 0;
+const invokeTimeout = 30_000;
 
 const pendingInvokes = new Map<string, PendingInvoke>();
 
@@ -191,14 +191,13 @@ function toBrowserCoverageFileUrl(file: string) {
 
 async function invokeOverWebSocket(environment: string, payload: InvokePayload) {
   const socket = await getReactClientWebSocket();
-  const info = await getWebSocketInfo();
   const id = String(++nextInvokeId);
 
   return new Promise<InvokeResult>((resolve, reject) => {
     const timeoutId = setTimeout(() => {
       pendingInvokes.delete(id);
       reject(new Error(`React client websocket invoke timed out: ${id}`));
-    }, info.timeout);
+    }, invokeTimeout);
 
     pendingInvokes.set(id, { resolve, reject, timeoutId });
     try {
@@ -317,14 +316,8 @@ function rejectPendingInvokes(error: unknown) {
 }
 
 function createWebSocketUrl(info: WebSocketInfo) {
-  const protocol = info.protocol ?? (window.location.protocol === "https:" ? "wss" : "ws");
-  let host = window.location.host;
-
-  if (info.host || info.port != null) {
-    host = `${info.host ?? window.location.hostname}${info.port == null ? "" : `:${info.port}`}`;
-  }
-
-  const url = new URL(`${protocol}://${host}${info.path}`);
+  const protocol = window.location.protocol === "https:" ? "wss" : "ws";
+  const url = new URL(`${protocol}://${window.location.host}${info.path}`);
   url.searchParams.set("token", info.token);
   url.searchParams.set(reactClientWebSocketQuery, "1");
   return url;
