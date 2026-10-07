@@ -1,6 +1,7 @@
 import { handleRequest, renderServer } from "vitest-plugin-rsc/next";
 import { Suspense } from "react";
-import { afterEach, beforeEach, expect, test, vi, type MockInstance } from "vitest";
+import { afterAll, afterEach, beforeEach, expect, test, vi, type MockInstance } from "vitest";
+import { spikeStats } from "../../../packages/vitest-plugin-rsc/src/async-local-storage.ts";
 import { page } from "vitest/browser";
 import { signInAs } from "../test/browser.ts";
 import {
@@ -37,6 +38,9 @@ beforeEach(() => {
 afterEach(() => {
   expect(consoleError.mock.calls).toEqual([]);
 });
+
+// SPIKE: what the attribution by call stack cost in this file.
+afterAll(() => console.log("SPIKE_STATS " + JSON.stringify(spikeStats)));
 
 const revalidate = (tag: string) => handleRequest(`/api/revalidate?tag=${tag}`, { method: "POST" });
 const nextMillisecond = () => new Promise((resolve) => setTimeout(resolve, 5));
