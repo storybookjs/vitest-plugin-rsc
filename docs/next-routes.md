@@ -241,7 +241,7 @@ In browser mode, Vitest 5.0 has a bug here: it does not wait for the mocks of a 
 - A `cacheHandler` or `cacheHandlers` of `next.config`. The cache is Next's own, in memory.
 - Code that leaves a store with `AsyncLocalStorage.exit()` for work that awaits, and reads the store again after it: the store stays left for the rest of the request. Next does this for the render after a Server Action, where nothing reads it again.
 - An `after()` callback that takes longer than a second goes on without the stores of its request, so `cookies()` and `headers()` fail in it from then on. Under `vi.useFakeTimers()` a response without a body never tells Next it was sent, so its `after()` callbacks do not run while the request lasts, and the next request starts a second late.
-- A navigation without Next's router to a route handler that does not answer with HTML, like a download link, is an uncaught error: there is nothing for the tab to show.
+- A navigation without Next's router to a route handler that does not answer with HTML, like a download link, is an uncaught error: there is nothing for the tab to show. So is a navigation to another origin, like a redirect to a sign-in or a checkout: the tab stays where it is.
 - Server code is only told it is on a server where it asks `typeof window`: see [Server Code In A Tab](#server-code-in-a-tab).
 - A mock for Client Components: see [Mocks](#mocks).
 - One request at a time. A request that waits for another one that the test has not sent yet will wait forever. A response that streams without end, like server-sent events, holds up every request after it.
