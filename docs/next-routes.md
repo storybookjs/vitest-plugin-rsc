@@ -245,6 +245,7 @@ In browser mode, Vitest 5.0 has a bug here: it does not wait for the mocks of a 
 - Server code is only told it is on a server where it asks `typeof window`: see [Server Code In A Tab](#server-code-in-a-tab).
 - A mock for Client Components: see [Mocks](#mocks).
 - One request at a time. A request that waits for another one that the test has not sent yet will wait forever. A response that streams without end, like server-sent events, holds up every request after it.
+- A page that the test leaves before the server has sent anything, because the page waits for data outside a Suspense boundary, is not stopped. Its render goes on once the data comes, without its request, and Next logs the errors that follow, maybe in a later test.
 - A same-origin `fetch` for a path that a dynamic route matches goes to the app, also when it is for a file in `public/`, which a deployment serves before it looks at the routes. With `app/[locale]/page.tsx` that is every path of one segment, like `/data.json`. With a catch-all at the root, like `app/[...slug]`, it is every path.
 - A form that is posted without JavaScript, before the page has hydrated. Such a request names its action in the form data and not in a `next-action` header, and the server does not look there: it renders the page and does not run the action.
 - A navigation that leaves the page without Next's router, like `location.assign()`, is turned into a page load with the Navigation API, which today means Chromium.
