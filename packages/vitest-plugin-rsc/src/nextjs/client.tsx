@@ -2,6 +2,7 @@ import { appBootstrap } from "next/dist/client/app-bootstrap";
 import { callServer } from "next/dist/client/app-call-server";
 import ReactDOMClient, { type Root } from "react-dom/client";
 import { registerModuleLoader } from "./client-modules.ts";
+import { recordListeners, type Leftovers } from "./leftovers.ts";
 
 // The browser layer. This module is the app's client entry: what Next's
 // `main-app.js` chunk is for a deployment. Like that chunk, it runs once per
@@ -13,11 +14,17 @@ declare global {
   var __NEXT_HYDRATED_CB: (() => void) | undefined;
 }
 
-/** Hydrates the document. Resolves once it has, with how to leave the page. */
-export async function start(): Promise<{ unmount(): void }> {
+/**
+ * Hydrates the document. Resolves once it has, with how to leave the page.
+ * Calls `loaded` once Next's client has loaded, before a module of the app
+ * has.
+ */
+export async function start(loaded: () => void): Promise<{ unmount(): void }> {
   // Not when this module loads: a page that was left while it loaded must not
-  // take over from the page that is there now.
-  registerModuleLoader("browser");
+  // take over from the page that is there now. The modules of the app wait
+  // for Next's client: the Flight client asks for them as soon as it loads.
+  let nextLoaded!: () => void;
+  registerModuleLoader("browser", new Promise((resolve) => (nextLoaded = resolve)));
   // A Server Action imported by a Client Component calls the server the way
   // Next's router does: a POST to the current page.
   globalThis.__viteRscCallServer = callServer;
@@ -26,17 +33,29 @@ export async function start(): Promise<{ unmount(): void }> {
   // the document, the `appElement` of `app-index.js`: a Client Component can
   // create roots of its own.
   let root: Root | undefined;
+  // React adds its listeners when it creates a root, and never removes them:
+  // to the container, and for any container some to the document.
+  const listeners: Leftovers[] = [];
   const { hydrateRoot, createRoot } = ReactDOMClient;
-  const keep = (container: unknown, created: Root): Root => {
-    if (container === document) root = created;
-    return created;
+  const keep = (container: unknown, create: () => Root): Root => {
+    const added = recordListeners(document);
+    listeners.push(added);
+    try {
+      const created = create();
+      if (container === document) root = created;
+      return created;
+    } finally {
+      added.stop();
+    }
   };
-  ReactDOMClient.hydrateRoot = (...args) => keep(args[0], hydrateRoot(...args));
-  ReactDOMClient.createRoot = (...args) => keep(args[0], createRoot(...args));
+  ReactDOMClient.hydrateRoot = (...args) => keep(args[0], () => hydrateRoot(...args));
+  ReactDOMClient.createRoot = (...args) => keep(args[0], () => createRoot(...args));
 
   // Next's entry reads the Flight payload in the document when it loads, so
   // it loads here, once Client Components can be loaded.
   const { hydrate } = await import("next/dist/client/app-index");
+  loaded();
+  nextLoaded();
   // Next reads its asset prefix off the URL of the script that is running,
   // which for a deployment is the bootstrap script in the server's HTML.
   const bootstrapScript = document.querySelector("script[src*='/_next/']");
@@ -74,6 +93,7 @@ export async function start(): Promise<{ unmount(): void }> {
   return {
     unmount() {
       app.unmount();
+      for (const added of listeners) added.remove();
     },
   };
 }

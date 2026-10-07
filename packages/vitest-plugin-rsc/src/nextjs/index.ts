@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { resetAsyncLocalStorage } from "../async-local-storage.ts";
 import { createEnvironmentRunner, importEnvironment } from "../utilts.ts";
 import { loadDocument, unloadDocument } from "./document.ts";
+import { recordListeners, recordMessageChannels } from "./leftovers.ts";
 import { registry } from "./registry.ts";
 
 // The server's platform (globals.ts) has to be there before a module of Next's
@@ -31,6 +32,7 @@ function isAppRequest(input: RequestInfo | URL, init: RequestInit | undefined): 
 
 // A test's own timers may be fake.
 const setTimeout = globalThis.setTimeout;
+const clearTimeout = globalThis.clearTimeout;
 
 // What was in the tab's storage before the app ran, which is the test
 // runner's to keep.
@@ -295,30 +297,46 @@ async function loadPage(
   // A page load runs the app's scripts from scratch, so every page gets a
   // module graph of its own for the browser layer.
   const runner = createEnvironmentRunner("react_client");
-  const client = await runner.import<typeof import("./client.tsx")>(
-    "vitest-plugin-rsc/nextjs/client",
-  );
-  superseded();
+  // The browser's Flight client reads properties off `__webpack_require__`
+  // when it loads, which is before the page can say how it loads a module,
+  // and wraps some of them. One that the pages shared would keep every page.
+  registry.browserRequire = (id) => registry.loadBrowserModule(id);
+  // React's scheduler, Next's router and Next's dev overlay each leave
+  // something on the tab when they load: see leftovers.ts. That is from here
+  // until `start()` says that Next's client has loaded. No module of the app
+  // loads in that time.
+  const leftovers = [recordListeners(window), recordMessageChannels()];
+  const loaded = () => leftovers.forEach((leftover) => leftover.stop());
   // The page counts as open from here, so that leaving it stops it, also
-  // while it hydrates.
+  // while its scripts load and while it hydrates.
   let unmount: (() => void) | undefined;
   let left = false;
-  const started = client.start();
-  page = {
-    started: started.catch(() => {}),
-    unmount() {
-      left = true;
-      unmount?.();
-    },
+  let leave = () => {
+    left = true;
+    loaded();
   };
+  const started = (async () => {
+    const client = await runner.import<typeof import("./client.tsx")>(
+      "vitest-plugin-rsc/nextjs/client",
+    );
+    superseded();
+    return client.start(loaded);
+  })();
+  page = { started: started.catch(() => {}), unmount: () => leave() };
   try {
     ({ unmount } = await started);
   } catch (error) {
     // Starting an app whose page is gone fails in its own ways.
     superseded();
     throw error;
+  } finally {
+    loaded();
+    leave = () => {
+      unmount?.();
+      leftovers.forEach((leftover) => leftover.remove());
+    };
+    if (left) leave();
   }
-  if (left) unmount();
   superseded();
   return response;
 }
@@ -335,7 +353,13 @@ function leavePage(): Promise<void> {
     // An app that is still starting cannot be stopped, and would go on to
     // hydrate the next page with the client code of this one. It is about
     // done: the document it starts from is already there.
-    await Promise.race([left?.started, new Promise((resolve) => setTimeout(resolve, 5000))]);
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    await Promise.race([
+      left?.started,
+      new Promise((resolve) => (timeout = setTimeout(resolve, 5000))),
+    ]);
+    // A timer that is still set keeps the page until it fires.
+    clearTimeout(timeout);
     left?.unmount();
     unloadDocument();
     await ssr.settleRequests();

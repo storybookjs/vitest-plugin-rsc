@@ -449,7 +449,10 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
             // has, like `useRouter` of `next/navigation` in the rsc layer (the
             // notes demo). webpack leaves such an import undefined.
             shimMissingExports: true,
-            // Vite only defines NODE_ENV for dependencies.
+            // Vite does not apply `define` to dependencies. NODE_ENV is all
+            // it defines for them, as the "test" of Vitest. Not in the rsc
+            // layer: there Vitest keeps `process.env`, so it is read as the
+            // code runs.
             transform: {
               define: {
                 ...definesOf(project, layer),
