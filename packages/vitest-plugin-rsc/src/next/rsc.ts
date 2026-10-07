@@ -3,9 +3,11 @@ import * as ReactServer from "@vitejs/plugin-rsc/react/rsc";
 import * as FlightServer from "@vitejs/plugin-rsc/vendor/react-server-dom/server.edge";
 import * as FlightStatic from "@vitejs/plugin-rsc/vendor/react-server-dom/static.edge";
 import appPages from "virtual:vitest-plugin-rsc/next-app-pages";
+import routeHandlers from "virtual:vitest-plugin-rsc/next-route-handlers";
 import { actionModulePrefix, registry } from "./registry.ts";
 
-// The rsc layer: Server Components, Server Actions and the Flight encoder.
+// The rsc layer: Server Components, Server Actions, route handlers and the
+// Flight encoder.
 
 declare let __vite_rsc_raw_import__: (id: string) => Promise<unknown>;
 
@@ -50,6 +52,12 @@ registry.loadAppPage = async (page) => {
   const load = (appPages as Record<string, () => Promise<unknown>>)[page];
   if (!load) throw new Error(`vitest-plugin-rsc: unknown Next.js app page ${page}`);
   return (registry.appPages[page] ??= await load());
+};
+
+registry.loadRouteHandler = async (page) => {
+  const load = routeHandlers[page];
+  if (!load) throw new Error(`vitest-plugin-rsc: unknown Next.js route handler ${page}`);
+  return (await load()).handler;
 };
 
 declare global {

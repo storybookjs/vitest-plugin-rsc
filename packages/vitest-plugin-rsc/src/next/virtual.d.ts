@@ -1,6 +1,14 @@
 declare module "virtual:vitest-plugin-rsc/next-manifest" {
-  export const routes: { page: string; pathname: string }[];
+  export const routes: { kind: "page" | "route"; page: string; pathname: string }[];
   export const nextConfig: Record<string, unknown>;
+}
+
+declare module "virtual:vitest-plugin-rsc/next-route-handlers" {
+  const routeHandlers: Record<
+    string,
+    () => Promise<{ handler: import("./registry.ts").EdgeHandler }>
+  >;
+  export default routeHandlers;
 }
 
 declare module "virtual:vitest-plugin-rsc/next-app-pages" {
@@ -11,12 +19,7 @@ declare module "virtual:vitest-plugin-rsc/next-app-pages" {
 declare module "virtual:vitest-plugin-rsc/next-edge-entries" {
   const edgeEntries: Record<
     string,
-    () => Promise<{
-      handler(
-        request: { url: string; method: string; headers: Headers; body?: unknown },
-        context: { waitUntil?: (promise: Promise<unknown>) => void; signal?: AbortSignal },
-      ): Promise<Response>;
-    }>
+    () => Promise<{ handler: import("./registry.ts").EdgeHandler }>
   >;
   export default edgeEntries;
 }

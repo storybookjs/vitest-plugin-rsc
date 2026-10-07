@@ -33,8 +33,14 @@ const appPagesId = "virtual:vitest-plugin-rsc/next-app-pages";
 const appPagePrefix = "virtual:vitest-plugin-rsc/next-app-page/";
 const edgeEntriesId = "virtual:vitest-plugin-rsc/next-edge-entries";
 const edgeEntryPrefix = "virtual:vitest-plugin-rsc/next-edge-entry/";
+// The edge entries of the route handlers. Next's bundler config puts a route
+// handler in the rsc layer as a whole: `route.ts`, its route module and its
+// request handler.
+const routeHandlersId = "virtual:vitest-plugin-rsc/next-route-handlers";
+const routeHandlerPrefix = "virtual:vitest-plugin-rsc/next-route-handler/";
 const layerOfRouteModule = (id: string): NextLayer | undefined =>
-  id === `\0${appPagesId}` || id.startsWith(`\0${appPagePrefix}`)
+  [appPagesId, routeHandlersId].some((listId) => id === `\0${listId}`) ||
+  [appPagePrefix, routeHandlerPrefix].some((prefix) => id.startsWith(`\0${prefix}`))
     ? "rsc"
     : id === `\0${edgeEntriesId}` || id.startsWith(`\0${edgeEntryPrefix}`)
       ? "ssr"
@@ -248,7 +254,12 @@ function createLayerResolver(getProject: () => NextProject, layer: NextLayer) {
         // Not found as a file of the `next` package: leave the import alone.
         if (specifier !== source && target === specifier && !nextFile(target)) return;
         // Keep it a bare specifier, so Vite maps it to the pre-bundled dependency.
-        return this.resolve(target, importer, { ...options, skipSelf: true });
+        // Next is the project's: a package of the app that imports `react`
+        // can have another `next` closer by, as in a pnpm workspace.
+        const from = target.startsWith("next/")
+          ? path.join(getProject().root, "package.json")
+          : importer;
+        return this.resolve(target, from, { ...options, skipSelf: true });
       },
       load(id) {
         if (id === emptyModuleId) return "export {};";
@@ -466,15 +477,22 @@ export function vitestPluginNext(): Plugin[] {
         project = await loadNextProject(path.resolve(config.root ?? process.cwd()));
 
         // What the route entries import from Next. The request handler is
-        // one template. The loader tree differs: which of Next's builtin
-        // boundaries a route needs depends on what the app leaves out.
-        const [route] = project.routes;
+        // one template per kind of route. The loader tree differs: which of
+        // Next's builtin boundaries a route needs depends on what the app
+        // leaves out.
         const appPageEntries = await Promise.all(
           project.routes.map((candidate) => project.loadAppPageEntry(candidate)),
         );
+        const edgeEntryImports = async (kind: NextRoute["kind"]) => {
+          const route = project.routes.find((candidate) => candidate.kind === kind);
+          return route ? findNextImports(await project.loadEdgeEntry(route, "")) : [];
+        };
         const entryImports = {
-          rsc: appPageEntries.flatMap(({ code }) => findNextImports(code)),
-          ssr: route ? findNextImports(await project.loadEdgeEntry(route, "")) : [],
+          rsc: [
+            ...appPageEntries.flatMap(({ code }) => findNextImports(code)),
+            ...(await edgeEntryImports("route")),
+          ],
+          ssr: await edgeEntryImports("page"),
         };
         // `next/og` renders images with wasm: not something to pre-bundle for
         // every project.
@@ -578,8 +596,10 @@ export function vitestPluginNext(): Plugin[] {
           source === manifestId ||
           source === appPagesId ||
           source === edgeEntriesId ||
+          source === routeHandlersId ||
           source.startsWith(appPagePrefix) ||
-          source.startsWith(edgeEntryPrefix)
+          source.startsWith(edgeEntryPrefix) ||
+          source.startsWith(routeHandlerPrefix)
         ) {
           return `\0${source}`;
         }
@@ -592,7 +612,11 @@ export function vitestPluginNext(): Plugin[] {
         }
 
         if (id === `\0${manifestId}`) {
-          const routes = project.routes.map(({ page, pathname }) => ({ page, pathname }));
+          const routes = project.routes.map(({ kind, page, pathname }) => ({
+            kind,
+            page,
+            pathname,
+          }));
           return (
             `export const routes = ${JSON.stringify(routes)};\n` +
             `export const nextConfig = ${JSON.stringify(project.config)};\n`
@@ -605,21 +629,44 @@ export function vitestPluginNext(): Plugin[] {
         if (!layer) return;
         if (environmentOf[layer] !== this.environment.name) return "export default {};";
 
-        if (id === `\0${appPagesId}` || id === `\0${edgeEntriesId}`) {
-          const prefix = id === `\0${appPagesId}` ? appPagePrefix : edgeEntryPrefix;
-          const entries = project.routes.map(
-            ({ page }) =>
-              `  ${JSON.stringify(page)}: () => import(${JSON.stringify(prefix + encodePage(page))}),`,
-          );
+        const list = (
+          [
+            [appPagesId, appPagePrefix, "page"],
+            [edgeEntriesId, edgeEntryPrefix, "page"],
+            [routeHandlersId, routeHandlerPrefix, "route"],
+          ] as const
+        ).find(([listId]) => id === `\0${listId}`);
+        if (list) {
+          const [, prefix, kind] = list;
+          const entries = project.routes
+            .filter((route) => route.kind === kind)
+            .map(
+              ({ page }) =>
+                `  ${JSON.stringify(page)}: () => import(${JSON.stringify(prefix + encodePage(page))}),`,
+            );
           return `export default {\n${entries.join("\n")}\n};\n`;
         }
 
-        // The rsc-layer module of a route, from Next's own app loader: the
-        // loader tree with the page, its layouts and its boundaries.
+        // The rsc-layer module of a route, from Next's own app loader. For a
+        // page: the loader tree with the page, its layouts and its boundaries.
+        // For a route handler: the route module of its `route.ts`.
         if (id.startsWith(`\0${appPagePrefix}`)) {
           const route = findRoute(id, appPagePrefix);
           const { code, watchFiles } = await project.loadAppPageEntry(route);
           for (const file of watchFiles) this.addWatchFile(file);
+          if (route.kind === "route") {
+            // Next's template loads `route.ts` when the first request comes
+            // in, with the `require` of its bundler. Here that is `import()`:
+            // Next waits for a module that loads asynchronously.
+            if (!/\buserland: \(\)\s*=>\s*require\(/.test(code)) {
+              throw new Error("vitest-plugin-rsc: unsupported Next.js app-route template");
+            }
+            return applyDefines(
+              code.replace(/\brequire\(/g, "import("),
+              id,
+              definesOf(project, "rsc"),
+            );
+          }
           return (
             `import { requireModule as __next_require__ } from "vitest-plugin-rsc/next/rsc";\n` +
             (await applyDefines(
@@ -649,6 +696,15 @@ export function vitestPluginNext(): Plugin[] {
             id,
             definesOf(project, "ssr"),
           );
+        }
+
+        // The request handler of a route handler, from Next's own edge
+        // template: `handler(Request)`. Its userland import is the route
+        // module, which is in this layer too.
+        if (id.startsWith(`\0${routeHandlerPrefix}`)) {
+          const route = findRoute(id, routeHandlerPrefix);
+          const code = await project.loadEdgeEntry(route, appPagePrefix + encodePage(route.page));
+          return applyDefines(stripTurbopackTransitions(code), id, definesOf(project, "rsc"));
         }
       },
     },

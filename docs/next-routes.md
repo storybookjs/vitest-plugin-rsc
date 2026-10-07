@@ -14,7 +14,9 @@ Only the build is tied to a bundler. So this plugin does the build with Vite, an
 | -------------------------------------------- | ----------------------------------------------------------------- |
 | The routes of the app                        | `next/dist/build/route-discovery`                                 |
 | A route's loader tree: page, layouts, errors | `next-app-loader`, Next's webpack loader, called as-is            |
-| A route's request handler                    | `next/dist/build/templates/edge-ssr-app`, expanded by Next        |
+| A page's request handler                     | `next/dist/build/templates/edge-ssr-app`, expanded by Next        |
+| A route handler's route module               | `next-app-loader` again, which expands `templates/app-route`      |
+| A route handler's request handler            | `next/dist/build/templates/edge-app-route`, expanded by Next      |
 | Compile-time constants                       | `getDefineEnv()`                                                  |
 | Module aliases, per layer                    | `createWebpackAliases()` and the other alias tables               |
 | React                                        | The React that Next ships, through `createVendoredReactAliases()` |
@@ -33,7 +35,7 @@ Next compiles an App Router app into three layers. Each has its own module graph
 
 Each layer is a Vite environment here, with the aliases and constants Next gives that layer. All three run in the test's tab. That is what keeps the test white-box: the `db` your test seeds is the module instance the Server Component reads.
 
-Where Next's bundler config moves a module to another layer, the plugin does the same. The route module is created by the `rsc` layer but belongs to `ssr`. The route's request handler is in `ssr` and imports the page from `rsc`. Client Components load once for `ssr`, to render HTML, and once for `browser`.
+Where Next's bundler config moves a module to another layer, the plugin does the same. The route module is created by the `rsc` layer but belongs to `ssr`. The route's request handler is in `ssr` and imports the page from `rsc`. Client Components load once for `ssr`, to render HTML, and once for `browser`. A route handler is `rsc` as a whole: its `route.ts`, its route module and its request handler.
 
 ## A Request
 
@@ -58,6 +60,35 @@ With a node, `renderServer(<Node />, { url })`, the request is the same one. The
 
 After that, Next's router is in charge. A `<Link>` navigation is an RSC request to the same handler. A Server Action is a `POST` with a `Next-Action` header.
 
+## Route Handlers
+
+An `app/**/route.ts` is a route like a page is, with a request handler from another template:
+
+```
+handleRequest("/api/notes/1", { method: "PUT", body })     or fetch() in a Client Component
+  │  PUT /api/notes/1                      with the tab's cookies
+  ▼
+rsc      handler(Request)                  Next's edge entry for the route handler
+           └─ AppRouteRouteModule          Next's route module: the request stores, cookies(),
+              └─ PUT(request, { params })  redirect(), notFound(), HEAD and OPTIONS, 405
+  │  200 application/json                  Set-Cookie goes into the tab's cookies
+  ▼
+the caller gets the Response               its body as the handler writes it
+```
+
+There is no HTML to render, so the `ssr` layer has no part in it. The module that `route.ts` imports is the instance the test imports, and `vi.mock()` replaces it for both.
+
+An edge function of Next does not match its own route. Whoever routes a request to it adds the params of the dynamic segments to the query of the URL, and Next's wrapper reads them from there. The plugin does what `next start` does for an edge function. So `GET /api/notes/1` reaches the handler with `params.id` set to `"1"` and with `?id=1` in `request.url`, as it would for a handler with `export const runtime = "edge"`.
+
+### Which Requests Are The App's
+
+The origin of the app is also the origin of the Vite dev server, which serves the modules of the test and of the app. So the `fetch` of the tab has to choose. A same-origin request goes to the Next.js server when:
+
+- its path matches a route of the app, a page or a route handler, by Next's own route list and matcher, or
+- Next's router or a Server Action sent it, which mark their requests with a header.
+
+Everything else goes to the network: Vite's modules, files in `public/`, a service worker.
+
 ## What Stands In For A Server
 
 The server layers are written for an edge runtime, which is close to a browser: web streams, `fetch`, `crypto`. The plugin adds the rest of that platform:
@@ -72,11 +103,13 @@ And for the browser side, a page load: the tab cannot navigate away from the tes
 ## Not Yet
 
 - `next/font`, `next/image` optimization, and metadata files like `icon.png` and `sitemap.ts`. These are build-time loaders that still have to be ported.
-- Route handlers (`route.ts`), `middleware.ts` / `proxy.ts`, and the redirects, rewrites and headers of `next.config`.
+- `middleware.ts` / `proxy.ts`, and the redirects, rewrites and headers of `next.config`.
+- Route handlers run as they do on Next's edge runtime, also the ones a deployment runs on Node.js. The params of the dynamic segments are in the query of `request.url` too, where they replace a query parameter of the same name. Static generation of a `GET` handler and `revalidate` do not apply: every request runs the handler.
+- A `new Response()` in your own `route.ts` is the browser's, which drops a `Set-Cookie` header. Set cookies with `cookies()` or `NextResponse`, which keep it.
 - `"use cache"` and `unstable_cache`. The store a request entered first is the one a later task reads, so code that resumes after an `await` inside a cache scope reads the request's store instead of the cache's.
 - `fetch` in your own server code is the browser's `fetch`, without Next's cache options. And `typeof window` is `"object"` there: only Next's own server code is compiled as server code.
 - `vi.mock()` replaces a module in the `rsc` layer, where the test runs. The other two layers load their modules themselves, so a mock does not reach a Client Component.
-- One request at a time. A request that waits for another one that the test has not sent yet will wait forever.
-- A same-origin `fetch` is only the app's when Next's router or a Server Action sends it. Other requests go to the dev server.
+- One request at a time. A request that waits for another one that the test has not sent yet will wait forever. A response that streams without end, like server-sent events, holds up every request after it.
+- A catch-all route at the root of the app, like `app/[...slug]`, matches every path. Then every same-origin `fetch` goes to the app, also one for a file in `public/`, which a deployment serves before it looks at the routes.
 - A navigation that leaves the page without Next's router, like `location.assign()`, is turned into a page load with the Navigation API, which today means Chromium.
 - Every `renderServer()` loads React and the app's client code again, as a page load does. The listeners React adds to the document stay, so a tab that visits thousands of pages grows.

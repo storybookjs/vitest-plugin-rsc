@@ -10,7 +10,9 @@ import path from "node:path";
 export type NextLayer = "rsc" | "ssr" | "browser";
 
 export type NextRoute = {
-  /** App page name, e.g. `/notes/[id]/page`. */
+  /** What serves the route: a `page.tsx` with its layouts, or a `route.ts`. */
+  kind: "page" | "route";
+  /** App page name, e.g. `/notes/[id]/page` or `/api/notes/[id]/route`. */
   page: string;
   /** Routable pathname, e.g. `/notes/[id]`. */
   pathname: string;
@@ -32,9 +34,15 @@ export type NextProject = {
   defines: Record<NextLayer, Record<string, string>>;
   /** Next's compiler aliases per layer, in webpack's notation: `$` ends an exact match. */
   aliases: Record<NextLayer, Record<string, string | false>>;
-  /** The RSC-layer module of a route: its loader tree and `entry-base`. */
+  /**
+   * The RSC-layer module of a route, from Next's app loader. For a page: its
+   * loader tree and `entry-base`. For a route handler: its route module.
+   */
   loadAppPageEntry(route: NextRoute): Promise<{ code: string; watchFiles: string[] }>;
-  /** The SSR-layer module of a route: Next's edge `handler(Request)`. */
+  /**
+   * Next's edge `handler(Request)` of a route. For a page it is a module of
+   * the SSR layer, for a route handler one of the RSC layer.
+   */
   loadEdgeEntry(route: NextRoute, userland: string): Promise<string>;
 };
 
@@ -74,6 +82,15 @@ export async function loadNextProject(root: string): Promise<NextProject> {
   const { getDefineEnv } = require("next/dist/build/define-env.js");
   const { normalizeAppPath } = require("next/dist/shared/lib/router/utils/app-paths.js");
   const { loadEntrypoint } = require("next/dist/build/load-entrypoint.js");
+  const { isAppRouteRoute } = require("next/dist/lib/is-app-route-route.js") as {
+    isAppRouteRoute(page: string): boolean;
+  };
+  const { isMetadataRouteFile, DEFAULT_METADATA_ROUTE_EXTENSIONS } =
+    require("next/dist/lib/metadata/is-metadata-route.js") as {
+      isMetadataRouteFile(file: string, extensions: string[], strict: boolean): boolean;
+      DEFAULT_METADATA_ROUTE_EXTENSIONS: string[];
+    };
+  const { APP_DIR_ALIAS } = require("next/dist/lib/constants.js") as { APP_DIR_ALIAS: string };
   const { SUPPORTED_NATIVE_MODULES } =
     require("next/dist/build/webpack/plugins/middleware-plugin.js") as {
       SUPPORTED_NATIVE_MODULES: readonly string[];
@@ -120,10 +137,25 @@ export async function loadNextProject(root: string): Promise<NextProject> {
     const pathname = normalizeAppPath(page) as string;
     pagesOf.set(pathname, [...(pagesOf.get(pathname) ?? []), page]);
   }
-  const routes = [...pagesOf].map(([pathname, appPaths]) => {
+  const routes: NextRoute[] = [...pagesOf].map(([pathname, appPaths]) => {
     const page = appPaths.find((appPath) => !appPath.includes("/@")) ?? appPaths[0]!;
-    return { page, pathname, appPaths, pagePath: mappedAppPages[page]! };
+    return { kind: "page", page, pathname, appPaths, pagePath: mappedAppPages[page]! };
   });
+  // Route handlers. Next also lists metadata files like `sitemap.ts` as app
+  // routes. Those need its metadata loaders and are not served yet.
+  for (const [page, pagePath] of Object.entries(mappedAppPages)) {
+    if (
+      isAppRouteRoute(page) &&
+      !isMetadataRouteFile(
+        pagePath.slice(APP_DIR_ALIAS.length),
+        DEFAULT_METADATA_ROUTE_EXTENSIONS,
+        true,
+      )
+    ) {
+      const pathname = normalizeAppPath(page) as string;
+      routes.push({ kind: "route", page, pathname, appPaths: [page], pagePath });
+    }
+  }
 
   const { generateBuildId } = require("next/dist/build/generate-build-id.js");
   const buildId: string = await generateBuildId(config.generateBuildId, () => "vitest");
@@ -250,7 +282,10 @@ export async function loadNextProject(root: string): Promise<NextProject> {
           rootDir: root,
           isDev: false,
           basePath: config.basePath ?? "",
-          nextConfigOutput: config.output,
+          // Loader options are a query string for webpack, where an option
+          // that is not set is empty. The template of a route handler needs
+          // a value to inject.
+          nextConfigOutput: config.output ?? "",
           preferredRegion: undefined,
           middlewareConfig: Buffer.from("{}").toString("base64"),
           isGlobalNotFoundEnabled: !!config.experimental?.globalNotFound,
@@ -266,10 +301,13 @@ export async function loadNextProject(root: string): Promise<NextProject> {
       return { code, watchFiles: [...watchFiles].filter((file) => fs.existsSync(file)) };
     },
     loadEdgeEntry(route, userland) {
+      // The two templates name the same injection differently.
+      const registration =
+        route.kind === "page" ? "cacheHandlerRegistration" : "edgeCacheHandlersRegistration";
       return loadEntrypoint(
-        "edge-ssr-app",
+        route.kind === "page" ? "edge-ssr-app" : "edge-app-route",
         { VAR_USERLAND: userland, VAR_PAGE: route.page },
-        { cacheHandlerImports: "\n", cacheHandlerRegistration: "\n" },
+        { cacheHandlerImports: "\n", [registration]: "\n" },
         { incrementalCacheHandler: null },
       );
     },

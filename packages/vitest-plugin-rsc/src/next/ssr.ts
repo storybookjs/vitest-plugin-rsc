@@ -56,13 +56,30 @@ const notFoundPage = "/_not-found/page";
 const matchers = getSortedRoutes(
   routes.filter((route) => route.page !== notFoundPage).map((route) => route.pathname),
 ).map((pathname) => ({
-  page: routes.find((route) => route.pathname === pathname)!.page,
+  route: routes.find((route) => route.pathname === pathname)!,
   match: getRouteMatcher(getRouteRegex(pathname)),
 }));
 
-/** The page of the route that serves a pathname, if there is one. */
+type RouteParams = Record<string, string | string[] | undefined>;
+
+// The route that serves a pathname, a page or a route handler, and the
+// params of its dynamic segments.
+function matchRoute(pathname: string) {
+  for (const { route, match } of matchers) {
+    const params = match(pathname) as RouteParams | false;
+    if (params) return { route, params };
+  }
+}
+
+/** Whether a pathname is a route of the app: a page or a route handler. */
+export function isRoute(pathname: string): boolean {
+  return matchRoute(pathname) !== undefined;
+}
+
+/** The page of the route that serves a pathname, if a page serves it. */
 export function pageOf(pathname: string): string | undefined {
-  return matchers.find(({ match }) => match(pathname))?.page;
+  const route = matchRoute(pathname)?.route;
+  return route?.kind === "page" ? route.page : undefined;
 }
 
 // A test's own timers may be fake.
@@ -76,8 +93,9 @@ const rendering = new Set<() => void>();
 let generation = 0;
 
 /**
- * The Next.js server of this app. A pathname that is not a page gets the
- * app's not-found page, as it does from a deployment.
+ * The Next.js server of this app: its pages and its route handlers. A
+ * pathname that is not a route gets the app's not-found page, as it does from
+ * a deployment.
  *
  * `nested` is for a request the server makes to itself while it handles one,
  * which cannot wait for that one to finish.
@@ -116,11 +134,36 @@ export async function settleRequests(): Promise<void> {
 
 async function handle(request: ServerRequest): Promise<Response> {
   const { pathname } = new URL(request.url);
-  const matched = pageOf(pathname);
-  const page = matched ?? notFoundPage;
+  const matched = matchRoute(pathname);
+  const page = matched?.route.page ?? notFoundPage;
   const endRequestScope = registry.enterRequestScope();
+  // What Next still does for a request after it has responded, like the
+  // callbacks of `after()`. The request lasts until that is done.
+  const background: Promise<unknown>[] = [];
+  const context = {
+    waitUntil: (promise: Promise<unknown>) => void background.push(promise),
+    signal: request.signal,
+  };
+  const endRequest = async () => {
+    await Promise.allSettled(background);
+    endRequestScope();
+  };
 
   try {
+    if (matched?.route.kind === "route") {
+      // An edge function of Next does not match its own route. It gets the
+      // params of the dynamic segments from whoever routes the request to it,
+      // in the query of the URL. This is what `next start` does.
+      const url = new URL(request.url);
+      for (const [name, value] of Object.entries(matched.params)) {
+        url.searchParams.delete(name);
+        for (const item of [value ?? []].flat()) url.searchParams.append(name, item);
+      }
+      const handler = await registry.loadRouteHandler(page);
+      const response = await handler({ ...request, url: url.href }, context);
+      return finishWithBody(request, response, response.status, endRequest);
+    }
+
     // Next's build lists every Server Action. Here an action is its module id
     // and export, so the only one to list is the one this request calls.
     const actionId = request.headers.get("next-action");
@@ -140,10 +183,10 @@ async function handle(request: ServerRequest): Promise<Response> {
 
     await registry.loadAppPage(page);
     const { handler } = await edgeEntries[page]!();
-    const response = await handler(request, { waitUntil() {}, signal: request.signal });
+    const response = await handler(request, context);
     // The not-found page does not know it is one: whoever routes a request to
     // it sets the status. For a deployment that is the platform's router.
-    return finishWithBody(response, matched ? response.status : 404, endRequestScope);
+    return finishWithBody(request, response, matched ? response.status : 404, endRequest);
   } catch (error) {
     endRequestScope();
     throw error;
@@ -152,7 +195,12 @@ async function handle(request: ServerRequest): Promise<Response> {
 
 // Calls `onFinish` once the server has written the whole body, whether or not
 // anyone reads it.
-function finishWithBody(response: Response, status: number, onFinish: () => void): Response {
+function finishWithBody(
+  request: ServerRequest,
+  response: Response,
+  status: number,
+  onFinish: () => Promise<void>,
+): Response {
   let finished: Promise<void> = Promise.resolve();
   let body: ReadableStream<Uint8Array> | null = null;
   if (response.body) {
@@ -181,14 +229,16 @@ function finishWithBody(response: Response, status: number, onFinish: () => void
         }
       } finally {
         rendering.delete(stop);
-        onFinish();
+        await onFinish();
       }
     })();
   } else {
-    onFinish();
+    finished = onFinish();
   }
 
-  const result = new registry.Response(body, {
+  // Next answers HEAD with the response to a GET. Leaving out the body is for
+  // the HTTP server in front of it.
+  const result = new registry.Response(request.method === "HEAD" ? null : body, {
     status,
     statusText: response.statusText,
     headers: response.headers,

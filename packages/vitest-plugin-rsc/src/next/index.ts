@@ -15,13 +15,16 @@ const ssr = await importEnvironment<typeof import("./ssr.ts")>(
 
 const nativeFetch = globalThis.fetch;
 
-// The origin of the app is also the origin of the test's own modules, so a
-// `fetch` is only the app's when it says so: Next's router and its Server
-// Actions mark their requests. Everything else goes to the network.
+// The origin of the app is also the origin of the dev server, which serves the
+// modules of the test and of the app. A `fetch` is the app's when its path is
+// a route of the app, a page or a route handler, or when Next's router or a
+// Server Action sends it, which mark their requests. Everything else goes to
+// the network.
 function isAppRequest(input: RequestInfo | URL, init: RequestInit | undefined): boolean {
   const request = input instanceof Request ? input : undefined;
   const url = new URL(request ? request.url : String(input), window.location.href);
   if (url.origin !== window.location.origin) return false;
+  if (ssr.isRoute(url.pathname)) return true;
   const headers = new Headers(init?.headers ?? request?.headers);
   return headers.has("rsc") || headers.has("next-action");
 }
@@ -229,6 +232,16 @@ async function loadPage(
   // Not the browser's Request, which drops a `cookie` header.
   const response = await browserFetch(new registry.Request(url, { ...init, signal: load.signal }));
   superseded();
+  // A route handler can answer with anything. A browser would show it or
+  // download it; there is no app in it to start.
+  const contentType = response.headers.get("content-type") ?? "";
+  if (!/^text\/html\b/i.test(contentType)) {
+    await response.body?.cancel();
+    throw new Error(
+      `vitest-plugin-rsc: ${response.url} responded with ${contentType || "no content type"}, ` +
+        `which is not a page to open. Use handleRequest() to assert on the response itself.`,
+    );
+  }
   const { interactive } = loadDocument(response.body);
   // Where the browser ended up, after any redirects.
   window.history.replaceState(null, "", response.url);

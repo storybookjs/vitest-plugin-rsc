@@ -13,6 +13,12 @@ export type ServerRequest = {
   signal?: AbortSignal;
 };
 
+/** The `handler` of an edge entry of Next: one route, as a function of a request. */
+export type EdgeHandler = (
+  request: ServerRequest,
+  context: { waitUntil?: (promise: Promise<unknown>) => void; signal?: AbortSignal },
+) => Promise<Response>;
+
 type AnyFunction = (...args: any[]) => any;
 
 export type NextRegistry = {
@@ -30,6 +36,8 @@ export type NextRegistry = {
   /** Loads the rsc-layer module of a route, into `appPages`. */
   loadAppPage(page: string): Promise<unknown>;
   appPages: Record<string, unknown>;
+  /** Loads the edge entry of a route handler, which is in the rsc layer. */
+  loadRouteHandler(page: string): Promise<EdgeHandler>;
   /** What a test renders in place of the page of a route, by page name. */
   pageOverrides: Record<string, unknown>;
   /** Loads a Client Component by its module id, in the ssr layer. */

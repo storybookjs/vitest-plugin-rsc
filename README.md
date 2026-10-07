@@ -738,9 +738,29 @@ Without a `url` the node renders at `/`. The page module itself is not loaded, s
 
 `renderServer` resolves with `{ response, unmount }`: the server's `Response` to the document request, and a function that leaves the page.
 
-`vi.mock()` works on the modules your Server Components and Server Actions import. It does not reach Client Components, which load in module graphs of their own.
+`vi.mock()` works on the modules your Server Components, Server Actions and route handlers import. It does not reach Client Components, which load in module graphs of their own.
 
 `handleRequest(url, init)` sends a single request and resolves with the response, for when the response is what you assert on: a status, a header, the HTML or the Flight payload.
+
+Route handlers (`app/**/route.ts`) are served too. `handleRequest` is how a test calls one, and a `fetch` to one from a Client Component reaches it with the tab's cookies:
+
+```ts
+import { handleRequest } from "vitest-plugin-rsc/next";
+
+test("renames a note", async () => {
+  db.notes.set("1", { id: "1", title: "Inbox triage", body: "" });
+
+  const response = await handleRequest("/api/notes/1", {
+    method: "PUT",
+    body: JSON.stringify({ title: "Inbox zero" }),
+  });
+
+  expect(response.status).toBe(200);
+  expect(db.notes.get("1")?.title).toBe("Inbox zero");
+});
+```
+
+A same-origin `fetch` goes to the app when its path is one of the app's routes. Any other path goes to the Vite dev server, as before.
 
 See [docs/next-routes.md](docs/next-routes.md) for how it works and what it does not cover yet, and `playground/next-e2e-demo` for a running example.
 
