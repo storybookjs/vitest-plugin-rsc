@@ -30,8 +30,24 @@ test("serves a route handler with a dynamic segment", async () => {
     note: { id: "1", title: "Inbox triage", body: "Sort the inbox" },
     // NextRequest and headers() are the request's.
     pathname: "/api/notes/1",
+    // As on Next's edge runtime, the params are in the query too.
+    search: "?id=1",
     client: "test",
   });
+});
+
+test("answers 500 when a route handler throws, and logs the error", async () => {
+  consoleError.mockImplementation(() => {});
+
+  const response = await handleRequest("/api/notes/broken");
+
+  expect(response.status).toBe(500);
+  expect(await response.text()).toBe("Internal Server Error");
+  expect(consoleError.mock.calls).toEqual([[new Error("The database is down")]]);
+  consoleError.mockClear();
+
+  // The server goes on.
+  expect((await handleRequest("/api/echo/a")).status).toBe(200);
 });
 
 test("stores the cookies a route handler sets with NextResponse", async () => {
@@ -95,16 +111,45 @@ test("gives a route handler the body of a request and the cookies of the tab", a
   expect(document.cookie).toContain("last-renamed=1");
 });
 
-test("answers with a response that has no body, and runs after() once it has", async () => {
+test("answers with a response that has no body", async () => {
   db.notes.set("1", { id: "1", title: "Inbox triage", body: "Sort the inbox" });
-  auditLog.length = 0;
 
   const response = await handleRequest("/api/notes/1", { method: "DELETE" });
 
   expect(response.status).toBe(204);
   expect(response.body).toBeNull();
   expect(db.notes.has("1")).toBe(false);
+});
+
+test("runs after() of a route handler once the response is there", async () => {
+  auditLog.length = 0;
+
+  await handleRequest("/api/notes/1", { method: "DELETE" });
+
+  expect(auditLog).toEqual([]);
   await expect.poll(() => auditLog).toEqual(["deleted note 1"]);
+});
+
+test("runs after() of a page, with the request it belongs to", async () => {
+  auditLog.length = 0;
+  document.cookie = "language=nl";
+
+  const response = await handleRequest("/settings");
+  await response.text();
+
+  await expect.poll(() => auditLog).toEqual(["opened settings in nl"]);
+});
+
+test("does not let a request wait for an after() that does not end", async () => {
+  // A response without a body ends on a timer, which the test has stopped.
+  vi.useFakeTimers();
+  try {
+    await handleRequest("/api/notes/1", { method: "DELETE" });
+
+    expect((await handleRequest("/api/echo/a")).status).toBe(200);
+  } finally {
+    vi.useRealTimers();
+  }
 });
 
 test.for(["GET", "POST", "PUT", "PATCH", "DELETE"])(
@@ -123,6 +168,11 @@ test.for(["GET", "POST", "PUT", "PATCH", "DELETE"])(
     });
   },
 );
+
+test("serves an optional catch-all route handler with and without segments", async () => {
+  expect(await (await handleRequest("/api/files")).json()).toEqual({ path: [] });
+  expect(await (await handleRequest("/api/files/a/b")).json()).toEqual({ path: ["a", "b"] });
+});
 
 test("answers HEAD and OPTIONS the way Next implements them for a route handler", async () => {
   const head = await handleRequest("/api/echo/a", { method: "HEAD" });
@@ -172,6 +222,43 @@ test("serves the fetch() of a Client Component with a route handler", async () =
   expect(db.notes.get("1")?.title).toBe("Inbox zero");
   // The component refreshes the router: the page is rendered again.
   await expect.element(page.getByRole("heading", { name: "Inbox zero" })).toBeVisible();
+});
+
+test("serves a fetch() with a Request, its body and the cookies of the tab", async () => {
+  document.cookie = "editor=kasper";
+  const request = new Request("/api/notes/7", {
+    method: "PUT",
+    body: JSON.stringify({ title: "Plan the week" }),
+  });
+
+  const response = await fetch(request);
+
+  expect(await response.json()).toEqual({
+    note: { id: "7", title: "Plan the week", body: "" },
+    editor: "kasper",
+  });
+});
+
+test("reports a navigation to a route handler that does not answer with a document", async () => {
+  await renderServer({ url: "/" });
+  // An uncaught error, which would fail this test run too.
+  const reportError = vi.spyOn(window, "reportError").mockImplementation(() => {});
+
+  window.location.assign("/api/echo/a");
+
+  await expect.poll(() => reportError.mock.calls).toHaveLength(1);
+  expect(String(reportError.mock.calls[0]![0])).toMatch(
+    /the app navigated to a URL that is not a page: .*\/api\/echo\/a responded with application\/json/,
+  );
+});
+
+// The fetch() of your own server code is the browser's: this request waits in
+// line behind the request of the page, which waits for it. It passes once the
+// server code of the app is compiled with the server's fetch.
+test.skip("serves the fetch() of a Server Component with a route handler", async () => {
+  await renderServer({ url: "/status" });
+
+  await expect.element(page.getByRole("heading", { name: "Status of status" })).toBeVisible();
 });
 
 test("leaves a same-origin fetch() that is not a route of the app to the dev server", async () => {

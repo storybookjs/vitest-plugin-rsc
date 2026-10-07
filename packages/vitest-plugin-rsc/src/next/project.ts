@@ -153,6 +153,13 @@ export async function loadNextProject(root: string): Promise<NextProject> {
       )
     ) {
       const pathname = normalizeAppPath(page) as string;
+      // `next build` fails on this too.
+      if (pagesOf.has(pathname)) {
+        throw new Error(
+          `vitest-plugin-rsc: ${pathname} is both a page and a route handler ` +
+            `(${pagesOf.get(pathname)!.join(", ")} and ${page}). A path can only be one of them.`,
+        );
+      }
       routes.push({ kind: "route", page, pathname, appPaths: [page], pagePath });
     }
   }

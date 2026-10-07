@@ -658,11 +658,12 @@ export function vitestPluginNext(): Plugin[] {
             // Next's template loads `route.ts` when the first request comes
             // in, with the `require` of its bundler. Here that is `import()`:
             // Next waits for a module that loads asynchronously.
-            if (!/\buserland: \(\)\s*=>\s*require\(/.test(code)) {
+            const loadUserland = /(\buserland: \(\)\s*=>\s*)require\(/;
+            if (!loadUserland.test(code)) {
               throw new Error("vitest-plugin-rsc: unsupported Next.js app-route template");
             }
             return applyDefines(
-              code.replace(/\brequire\(/g, "import("),
+              stripTurbopackTransitions(code).replace(loadUserland, "$1import("),
               id,
               definesOf(project, "rsc"),
             );

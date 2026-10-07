@@ -11,12 +11,15 @@ export async function GET(request: NextRequest, { params }: Context) {
   // `/api/notes/latest` is a permalink to the page of the note created last.
   if (id === "latest") redirect(`/notes/${(await cookies()).get("last-created")?.value ?? "1"}`);
 
+  if (id === "broken") throw new Error("The database is down");
+
   const note = await db.getNote(id);
   if (!note) notFound();
 
   const response = NextResponse.json({
     note,
     pathname: request.nextUrl.pathname,
+    search: request.nextUrl.search,
     client: (await headers()).get("x-client"),
   });
   response.cookies.set("last-read", id);

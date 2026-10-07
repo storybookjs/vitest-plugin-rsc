@@ -91,6 +91,8 @@ let queue: Promise<unknown> = Promise.resolve();
 const rendering = new Set<() => void>();
 // Changes when the test moves on, for the requests that were still waiting.
 let generation = 0;
+// How long a request waits, after its response, for the work Next does then.
+const backgroundWorkTimeout = 1000;
 
 /**
  * The Next.js server of this app: its pages and its route handlers. A
@@ -138,14 +140,19 @@ async function handle(request: ServerRequest): Promise<Response> {
   const page = matched?.route.page ?? notFoundPage;
   const endRequestScope = registry.enterRequestScope();
   // What Next still does for a request after it has responded, like the
-  // callbacks of `after()`. The request lasts until that is done.
+  // callbacks of `after()`. The request lasts until that is done, so that
+  // they still read its stores. Not forever: the next request waits for this
+  // one, and work that a test holds up, or its fake timers, must not stop it.
   const background: Promise<unknown>[] = [];
   const context = {
     waitUntil: (promise: Promise<unknown>) => void background.push(promise),
     signal: request.signal,
   };
   const endRequest = async () => {
-    await Promise.allSettled(background);
+    await Promise.race([
+      Promise.allSettled(background),
+      new Promise((resolve) => setTimeout(resolve, backgroundWorkTimeout)),
+    ]);
     endRequestScope();
   };
 
@@ -160,7 +167,17 @@ async function handle(request: ServerRequest): Promise<Response> {
         for (const item of [value ?? []].flat()) url.searchParams.append(name, item);
       }
       const handler = await registry.loadRouteHandler(page);
-      const response = await handler({ ...request, url: url.href }, context);
+      let response: Response;
+      try {
+        response = await handler({ ...request, url: url.href }, context);
+      } catch (error) {
+        if (request.signal?.aborted) throw error;
+        // Next's route module rethrows what a handler throws, and the edge
+        // entry does not catch it: the server in front of it logs the error
+        // and answers 500, which is what `next start` does.
+        console.error(error);
+        response = new registry.Response("Internal Server Error", { status: 500 });
+      }
       return finishWithBody(request, response, response.status, endRequest);
     }
 
@@ -236,8 +253,8 @@ function finishWithBody(
     finished = onFinish();
   }
 
-  // Next answers HEAD with the response to a GET. Leaving out the body is for
-  // the HTTP server in front of it.
+  // Next answers HEAD with the response to a GET. Its edge wrapper leaves
+  // dropping the body to the server in front of it.
   const result = new registry.Response(request.method === "HEAD" ? null : body, {
     status,
     statusText: response.statusText,

@@ -760,7 +760,7 @@ test("renames a note", async () => {
 });
 ```
 
-A same-origin `fetch` goes to the app when its path is one of the app's routes. Any other path goes to the Vite dev server, as before.
+A same-origin `fetch` goes to the app when its path is one of the app's routes, or when Next's router or a Server Action sends it. Anything else goes to the Vite dev server. A handler that throws answers `500` and logs the error with `console.error`, as `next start` does.
 
 See [docs/next-routes.md](docs/next-routes.md) for how it works and what it does not cover yet, and `playground/next-e2e-demo` for a running example.
 

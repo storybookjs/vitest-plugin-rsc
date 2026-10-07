@@ -237,9 +237,13 @@ async function loadPage(
   const contentType = response.headers.get("content-type") ?? "";
   if (!/^text\/html\b/i.test(contentType)) {
     await response.body?.cancel();
+    const what = `${response.url} responded with ${contentType || "no content type"}`;
     throw new Error(
-      `vitest-plugin-rsc: ${response.url} responded with ${contentType || "no content type"}, ` +
-        `which is not a page to open. Use handleRequest() to assert on the response itself.`,
+      pageOverrides
+        ? `vitest-plugin-rsc: ${what}, which is not a page to open. ` +
+            `Use handleRequest() to assert on the response itself.`
+        : `vitest-plugin-rsc: the app navigated to a URL that is not a page: ${what}. ` +
+            `A browser would show or download it, which this tab cannot do.`,
     );
   }
   const { interactive } = loadDocument(response.body);
