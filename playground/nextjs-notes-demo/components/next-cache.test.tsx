@@ -193,6 +193,9 @@ test("Next cache state is reset by cleanup", async () => {
   await expect.element(page.getByText("cached fetch duplicate: first fetch 1")).toBeVisible();
   await expect.element(page.getByText("no-store fetch: first no-store fetch 1")).toBeVisible();
 
+  // The app's theme provider removes a style from the page a moment after it
+  // mounts. Let that timer of the app run before the page is left.
+  await new Promise((resolve) => setTimeout(resolve, 10));
   await cleanup();
   await renderNextCacheProbe("second");
 
