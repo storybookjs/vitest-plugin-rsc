@@ -93,10 +93,7 @@ export async function loadNextProject(root: string): Promise<NextProject> {
   // 16.4 is where Next's request stores became one per realm, which is what
   // lets the layers run as separate module graphs.
   if (major < 16 || (major === 16 && minor < 4)) {
-    throw new Error(
-      `vitest-plugin-rsc/next needs next@16.4 or later, found next@${version}. ` +
-        `For earlier versions, use vitest-plugin-rsc/nextjs.`,
-    );
+    throw new Error(`vitest-plugin-rsc/nextjs needs next@16.4 or later, found next@${version}.`);
   }
 
   const loadConfig = require("next/dist/server/config.js").default as (

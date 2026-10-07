@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 import { page } from "vitest/browser";
-import { renderServer } from "vitest-plugin-rsc/next";
+import { renderServer } from "vitest-plugin-rsc/nextjs";
 
 test("renders the email-only sign-up form", async () => {
   await renderServer({ url: "/auth/sign-up" });

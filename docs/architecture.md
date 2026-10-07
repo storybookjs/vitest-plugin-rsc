@@ -1,5 +1,7 @@
 # Architecture
 
+This page describes `vitestPluginRSC()` on its own: how the `renderServer` of `vitest-plugin-rsc/testing-library` renders a Server Component. A Next.js app runs on the same two environments and a third one, see [next-routes.md](next-routes.md).
+
 `renderServer` runs the same React Server Components protocol your app uses in production:
 
 1. Render the server tree to a React Flight stream.
@@ -78,7 +80,7 @@ async function invokeReactClient(payload) {
     JSON.stringify({
       type: "custom",
       event: "vitest-plugin-rsc:react-client:invoke",
-      data: { id, payload },
+      data: { id, environment: "react_client", payload },
     }),
   );
 
@@ -86,7 +88,7 @@ async function invokeReactClient(payload) {
 }
 ```
 
-On the Vite server, the websocket message is handled by `react_client`:
+On the Vite server, the websocket message is handled by the environment it names. Without Next.js that is always `react_client`:
 
 ```tsx
 server.ws.on("connection", (socket) => {
@@ -94,7 +96,8 @@ server.ws.on("connection", (socket) => {
     const invoke = parseWebSocketInvoke(raw);
     if (!invoke) return;
 
-    const result = await server.environments["react_client"]!.hot.handleInvoke(invoke.payload);
+    const environment = server.environments[invoke.environment];
+    const result = await environment.hot.handleInvoke(invoke.payload);
 
     socket.send(
       JSON.stringify({

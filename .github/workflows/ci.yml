@@ -75,24 +75,13 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm --dir playground/rsc-vitest-demo exec playwright install --with-deps --only-shell chromium
-      - run: pnpm --dir playground/nextjs-notes-demo exec playwright install --with-deps --only-shell chromium
+      - run: pnpm exec playwright install --with-deps --only-shell chromium
       - run: pnpm build
-      - name: Test the base runtime and whole Next.js routes
-        run: |
-          pnpm test:dist \
-            --project rsc-vitest-demo \
-            --project next-e2e-demo \
-            --project nextjs-notes-demo-browser \
-            --project nextjs-notes-demo-node
+      - run: pnpm test:dist
 
-  next-compat:
-    name: Next.js ${{ matrix.next-version }} Compatibility
+  next-canary:
+    name: Next.js canary
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        next-version: ["canary", "latest", "16.1", "16.0"]
     steps:
       - uses: actions/checkout@v6
       - uses: pnpm/action-setup@v6
@@ -101,48 +90,17 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: Install Next.js ${{ matrix.next-version }}
-        env:
-          NEXT_VERSION: ${{ matrix.next-version }}
+      # The Test job runs the pinned Next.js. This one tells early when a
+      # canary changes something of Next that the plugin calls.
+      - name: Install Next.js canary
         run: |
-          pnpm --filter vitest-plugin-rsc add -D "next@${NEXT_VERSION}"
-          pnpm --filter nextjs-no-msw-demo add "next@${NEXT_VERSION}"
-      - run: pnpm --dir playground/nextjs-no-msw-demo exec playwright install --with-deps --only-shell chromium
+          pnpm --filter nextjs-e2e-demo add next@canary
+          pnpm --filter nextjs-notes-demo add next@canary @next/env@canary
+      - run: pnpm exec playwright install --with-deps --only-shell chromium
       - run: pnpm build
-      - name: Test Next.js surfaces
+      - name: Test the Next.js playgrounds
         run: |
           pnpm test:dist \
-            --project vitest-plugin-rsc \
-            --project nextjs-no-msw-demo
-
-  next-routes-compat:
-    name: Next.js ${{ matrix.next-version }} Routes
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        # The pinned stable version runs in the Test job. `latest` resolved to
-        # 16.3 here, and `vitest-plugin-rsc/next` needs 16.4.
-        next-version: ["canary"]
-    steps:
-      - uses: actions/checkout@v6
-      - uses: pnpm/action-setup@v6
-      - uses: actions/setup-node@v6
-        with:
-          node-version-file: .nvmrc
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - name: Install Next.js ${{ matrix.next-version }}
-        env:
-          NEXT_VERSION: ${{ matrix.next-version }}
-        run: |
-          pnpm --filter next-e2e-demo add "next@${NEXT_VERSION}"
-          pnpm --filter nextjs-notes-demo add "next@${NEXT_VERSION}" "@next/env@${NEXT_VERSION}"
-      - run: pnpm --dir playground/next-e2e-demo exec playwright install --with-deps --only-shell chromium
-      - run: pnpm build
-      - name: Test whole Next.js routes
-        run: |
-          pnpm test:dist \
-            --project next-e2e-demo \
+            --project nextjs-e2e-demo \
             --project nextjs-notes-demo-browser \
             --project nextjs-notes-demo-node

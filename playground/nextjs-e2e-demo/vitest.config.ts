@@ -3,7 +3,7 @@ import { playwright } from "@vitest/browser-playwright";
 import type { Plugin } from "vite";
 import { defineProject } from "vitest/config";
 import { vitestPluginRSC } from "vitest-plugin-rsc";
-import { vitestPluginNext } from "vitest-plugin-rsc/next/plugin";
+import { vitestPluginNext } from "vitest-plugin-rsc/nextjs/plugin";
 import { vitestPluginRscSourceConditions } from "../../vitest.conditions.ts";
 
 // Stands in for a service the app's server calls: it answers with the number
@@ -11,7 +11,7 @@ import { vitestPluginRscSourceConditions } from "../../vitest.conditions.ts";
 function hitsService(): Plugin {
   const hits = new Map<string, number>();
   return {
-    name: "next-e2e-demo:hits-service",
+    name: "nextjs-e2e-demo:hits-service",
     configureServer(server) {
       server.middlewares.use("/service/hits", (request, response) => {
         const key = new URL(request.url ?? "/", "http://localhost").searchParams.get("key") ?? "";
@@ -26,8 +26,6 @@ function hitsService(): Plugin {
 
 export default defineProject({
   root: fileURLToPath(new URL("./", import.meta.url)),
-  // Where the service worker of MSW is, which the cache tests use.
-  publicDir: fileURLToPath(new URL("../../public", import.meta.url)),
   plugins: [
     vitestPluginRSC(),
     // The helpers in `test/` work on the page, so they have to see the browser.
@@ -39,7 +37,7 @@ export default defineProject({
     conditions: vitestPluginRscSourceConditions,
   },
   test: {
-    name: "next-e2e-demo",
+    name: "nextjs-e2e-demo",
     include: ["**/*.test.{ts,tsx}"],
     exclude: ["node_modules"],
     browser: {

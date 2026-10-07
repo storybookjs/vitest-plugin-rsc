@@ -2,7 +2,7 @@
 
 This repo keeps two benchmark layers:
 
-- Repo-local Vitest command benchmarks are the portable baseline. They run in CI, produce JSON artifacts, and cover every playground that ships with this repository — including the Next.js notes demo, which doubles as the comprehensive acceptance app.
+- Repo-local Vitest command benchmarks are the portable baseline. They run in CI, produce JSON artifacts, and cover `playground/rsc-vitest-demo` and the Next.js notes demo, which doubles as the comprehensive acceptance app. `playground/nextjs-e2e-demo` has no benchmark.
 - An optional Vitest bench micro layer for render-helper hotspots. It is supporting evidence only; the main acceptance signal is end-to-end Vitest browser command runtime.
 
 The suite is intentionally informational for now. It fails when benchmark commands fail, but it does not enforce timing thresholds or block PRs on small regressions.
@@ -77,7 +77,7 @@ For command-level comparisons, compare the two `commands/summary.md` files and k
 
 ## Acceptance: nextjs-notes-demo
 
-`playground/nextjs-notes-demo` is the in-tree acceptance app. Its tests open whole routes with `vitest-plugin-rsc/next`. It exercises Next.js App Router routing, `headers()` / `cookies()`, Server Actions, Better Auth, Drizzle, PGlite test databases, and shadcn/ui — the realistic combinations the plugin needs to keep working.
+`playground/nextjs-notes-demo` is the in-tree acceptance app. Its tests open the routes of the app with `renderServer({ url })`. It exercises Next.js App Router routing, `headers()` / `cookies()`, Server Actions, Better Auth, Drizzle, PGlite test databases, and shadcn/ui — the realistic combinations the plugin needs to keep working.
 
 The `nextjs-notes-demo:cold:all-tests` and `nextjs-notes-demo:warm:all-tests` scenarios above run that suite under `hyperfine`, so feature work that could affect runtime behavior should look at those numbers before merging.
 
