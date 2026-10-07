@@ -105,7 +105,18 @@ export async function loadNextProject(root: string): Promise<NextProject> {
   const { findPagesDir } = require("next/dist/lib/find-pages-dir.js");
   const { discoverRoutes } = require("next/dist/build/route-discovery.js");
   const { getDefineEnv } = require("next/dist/build/define-env.js");
-  const { normalizeAppPath } = require("next/dist/shared/lib/router/utils/app-paths.js");
+  const { normalizeAppPath, compareAppPaths, selectAppPageEntry } =
+    require("next/dist/shared/lib/router/utils/app-paths.js") as {
+      normalizeAppPath(page: string): string;
+      compareAppPaths(a: string, b: string): number;
+      selectAppPageEntry(pathname: string, appPaths: string[]): string;
+    };
+  const { normalizeCatchAllRoutes } = require("next/dist/build/normalize-catchall-routes.js") as {
+    normalizeCatchAllRoutes(
+      appPaths: Record<string, string[]>,
+      options: { strictRouteMatching: boolean; defaultAppPaths: string[] },
+    ): { unmatchedAppPages: string[]; incompatibleParallelRouteSlots: unknown[] };
+  };
   const { loadEntrypoint } = require("next/dist/build/load-entrypoint.js");
   const { isAppRouteRoute } = require("next/dist/lib/is-app-route-route.js") as {
     isAppRouteRoute(page: string): boolean;
@@ -156,39 +167,54 @@ export async function loadNextProject(root: string): Promise<NextProject> {
     isSrcDir: path.basename(path.dirname(appDir)) === "src",
   });
   const mappedAppPages = (discovered.mappedAppPages ?? {}) as Record<string, string>;
-  // A route is every page with the same pathname: `/dashboard/page` and the
-  // parallel `/dashboard/@stats/page` are one route, named after the former.
-  const pagesOf = new Map<string, string[]>();
-  for (const page of Object.keys(mappedAppPages).sort()) {
-    if (!page.endsWith("/page")) continue;
-    const pathname = normalizeAppPath(page) as string;
-    pagesOf.set(pathname, [...(pagesOf.get(pathname) ?? []), page]);
+  // The routes, the way `createEntrypoints` of `next build` lists them. A
+  // route is every page with the same pathname: `/dashboard/page` and the
+  // parallel `/dashboard/@stats/page` are one route.
+  const appPathsPerRoute: Record<string, string[]> = {};
+  for (const page of Object.keys(mappedAppPages)) {
+    (appPathsPerRoute[normalizeAppPath(page)] ??= []).push(page);
   }
-  const routes: NextRoute[] = [...pagesOf].map(([pathname, appPaths]) => {
-    const page = appPaths.find((appPath) => !appPath.includes("/@")) ?? appPaths[0]!;
-    return { kind: "page", page, pathname, appPaths, pagePath: mappedAppPages[page]! };
-  });
-  // Route handlers. Next also lists metadata files like `sitemap.ts` as app
-  // routes. Those need its metadata loaders and are not served yet.
-  for (const [page, pagePath] of Object.entries(mappedAppPages)) {
-    if (
-      isAppRouteRoute(page) &&
+  const strictRouteMatching = !!config.experimental?.strictRouteMatching;
+  // Adds a catch-all page to the routes it also matches, and drops the routes
+  // that can never render.
+  const { unmatchedAppPages, incompatibleParallelRouteSlots } = normalizeCatchAllRoutes(
+    appPathsPerRoute,
+    { strictRouteMatching, defaultAppPaths: Object.keys(discovered.mappedAppDefaults ?? {}) },
+  );
+  if (unmatchedAppPages.length > 0 || incompatibleParallelRouteSlots.length > 0) {
+    throw new Error(
+      `vitest-plugin-rsc: \`next build\` fails on the parallel routes of this app. ` +
+        `Pages no route matches: ${JSON.stringify(unmatchedAppPages)}. ` +
+        `Routes with a slot that has no page and no default: ` +
+        `${JSON.stringify(incompatibleParallelRouteSlots)}.`,
+    );
+  }
+  const routes: NextRoute[] = [];
+  for (const [pathname, appPaths] of Object.entries(appPathsPerRoute)) {
+    appPaths.sort(compareAppPaths);
+    const page = selectAppPageEntry(pathname, appPaths);
+    const pagePath = mappedAppPages[page]!;
+    // Next also lists metadata files like `sitemap.ts` as app routes. Those
+    // need its metadata loaders and are not served yet.
+    const isRouteHandler = (appPath: string) =>
+      isAppRouteRoute(appPath) &&
       !isMetadataRouteFile(
-        pagePath.slice(APP_DIR_ALIAS.length),
+        mappedAppPages[appPath]!.slice(APP_DIR_ALIAS.length),
         DEFAULT_METADATA_ROUTE_EXTENSIONS,
         true,
-      )
-    ) {
-      const pathname = normalizeAppPath(page) as string;
-      // `next build` fails on this too.
-      if (pagesOf.has(pathname)) {
-        throw new Error(
-          `vitest-plugin-rsc: ${pathname} is both a page and a route handler ` +
-            `(${pagesOf.get(pathname)!.join(", ")} and ${page}). A path can only be one of them.`,
-        );
-      }
-      routes.push({ kind: "route", page, pathname, appPaths: [page], pagePath });
+      );
+    const pages = appPaths.filter((appPath) => appPath.endsWith("/page"));
+    const handlers = appPaths.filter(isRouteHandler);
+    // `next build` fails on this too.
+    if (pages.length > 0 && handlers.length > 0) {
+      throw new Error(
+        `vitest-plugin-rsc: ${pathname} is both a page and a route handler ` +
+          `(${pages.join(", ")} and ${handlers.join(", ")}). A path can only be one of them.`,
+      );
     }
+    if (pages.length > 0) routes.push({ kind: "page", page, pathname, appPaths, pagePath });
+    else if (handlers.length > 0)
+      routes.push({ kind: "route", page, pathname, appPaths, pagePath });
   }
 
   const { generateBuildId } = require("next/dist/build/generate-build-id.js");
@@ -323,6 +349,10 @@ export async function loadNextProject(root: string): Promise<NextProject> {
           preferredRegion: undefined,
           middlewareConfig: Buffer.from("{}").toString("base64"),
           isGlobalNotFoundEnabled: !!config.experimental?.globalNotFound,
+          explicitParallelRouteChildren: !!config.experimental?.explicitParallelRouteChildren,
+          strictRouteMatching,
+          // Every route here is the one entry `next build` keeps for its pathname.
+          isFinalRouteMatcher: strictRouteMatching,
         }),
         _module: { buildInfo: {} },
         _compilation: compilation,
@@ -332,7 +362,10 @@ export async function loadNextProject(root: string): Promise<NextProject> {
         addContextDependency: (dir) => watchFiles.add(dir),
       };
       const code = await nextAppLoader.call(context);
-      return { code, watchFiles: [...watchFiles].filter((file) => fs.existsSync(file)) };
+      // Not the directories Next scans: Vite takes a watched file for an
+      // import of the module, and a directory is not one.
+      const isFile = (file: string) => !!fs.statSync(file, { throwIfNoEntry: false })?.isFile();
+      return { code, watchFiles: [...watchFiles].filter(isFile) };
     },
     loadEdgeEntry(route, userland) {
       // The two templates name the same injection differently.

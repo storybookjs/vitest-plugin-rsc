@@ -143,6 +143,21 @@ test("renders parallel routes", async () => {
     .toHaveTextContent("1 notes");
 });
 
+test("renders a route that only has slots, as `next build` does", async () => {
+  // The layout renders `children`, and nothing is there: `next build` makes no
+  // `children` for a layout without a page. An implicit one would be Next's
+  // default, which answers 404.
+  const { response } = await renderServer({ url: "/board" });
+
+  expect(response.status).toBe(200);
+  await expect
+    .element(page.getByRole("region", { name: "Team" }))
+    .toHaveTextContent("Three members");
+  await expect
+    .element(page.getByRole("region", { name: "Activity" }))
+    .toHaveTextContent("No activity yet");
+});
+
 test("shows the error boundary of a route, and recovers from it", async () => {
   // Next logs the error on the server and React logs it in the browser.
   consoleError.mockImplementation(() => {});
