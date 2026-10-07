@@ -33,6 +33,7 @@ test("answers typeof window as a server does, and replaces nothing else of it", 
     "undefined",
     "undefined",
   ]);
+  expect(await run(`var result = typeof(window);`)).toBe("undefined");
   expect(await run(`function f(window) { return typeof window; } var result = f(1);`)).toBe(
     "number",
   );

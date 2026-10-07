@@ -1,7 +1,8 @@
+import fs from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { expect, test } from "vitest";
+import { onTestFinished, expect, test } from "vitest";
 import { loadNextProject, type NextRoute } from "./project.ts";
 
 const root = fileURLToPath(new URL("../../../../playground/nextjs-e2e-demo", import.meta.url));
@@ -37,6 +38,42 @@ test("lists the routes of the app, one for each pathname", async () => {
   expect(route(routes, "/board").page).toBe("/board/@team/page");
 });
 
+// An app of its own, next to the demo so that it finds the same Next.
+function appWith(files: string[]): string {
+  const dir = fs.mkdtempSync(path.join(root, ".app-"));
+  onTestFinished(() => fs.rmSync(dir, { recursive: true, force: true }));
+  for (const file of files) {
+    fs.mkdirSync(path.dirname(path.join(dir, "app", file)), { recursive: true });
+    const isRoute = path.basename(file).startsWith("route.");
+    fs.writeFileSync(
+      path.join(dir, "app", file),
+      isRoute ? "export const GET = () => new Response();" : "export default () => null;",
+    );
+  }
+  return dir;
+}
+
+test("lists a route handler and a metadata file next to a catch-all page of a slot", async () => {
+  // Next's modal pattern: the catch-all page of `@auth` matches every path.
+  const app = appWith([
+    "layout.js",
+    "default.js",
+    "@auth/default.js",
+    "@auth/[...catchAll]/page.js",
+    "@auth/login/page.js",
+    "login/page.js",
+    "api/hello/route.js",
+    "sitemap.js",
+  ]);
+
+  const { routes } = await loadNextProject(app, installed);
+
+  expect(route(routes, "/api/hello")).toMatchObject({ kind: "route", page: "/api/hello/route" });
+  expect(route(routes, "/login")).toMatchObject({ kind: "page" });
+  // Not served yet: Next's metadata loaders build it.
+  expect(route(routes, "/sitemap.xml")).toBeUndefined();
+});
+
 test("rejects parallel routes that `next build` rejects", async () => {
   const next = nextWith({
     "next/dist/build/normalize-catchall-routes.js": {
@@ -48,7 +85,20 @@ test("rejects parallel routes that `next build` rejects", async () => {
   });
 
   await expect(loadNextProject(root, next)).rejects.toThrow(
-    'Pages no route matches: ["/board/@team/members/page"]',
+    "The following page files do not match any complete route:\n- /board/@team/members/page",
+  );
+});
+
+test("rejects an interception route without the route it intercepts, as `next build` does", async () => {
+  const app = appWith([
+    "layout.js",
+    "default.js",
+    "@modal/default.js",
+    "@modal/(.)photo/[id]/page.js",
+  ]);
+
+  await expect(loadNextProject(app, installed)).rejects.toThrow(
+    "- /(.)photo/[id] (expected /photo/[id])",
   );
 });
 

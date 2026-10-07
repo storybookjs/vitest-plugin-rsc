@@ -16,7 +16,9 @@ const browserGlobals = ["window", "document", "location", "localStorage", "sessi
 const serverGlobals = ["Request", "Response", "fetch"];
 
 const mentionsServerGlobal = new RegExp(`\\b(?:${serverGlobals.join("|")})\\b`);
-const mentionsTypeofBrowserGlobal = new RegExp(`\\btypeof\\s+(?:${browserGlobals.join("|")})\\b`);
+// Also `typeof(window)`: which `typeof` the defines replace is up to oxc.
+const mentionsTypeof = /\btypeof\b/;
+const mentionsBrowserGlobal = new RegExp(`\\b(?:${browserGlobals.join("|")})\\b`);
 
 type Compiled = Pick<Awaited<ReturnType<typeof transformWithOxc>>, "code" | "map">;
 
@@ -34,7 +36,7 @@ export async function compileServerCode(
       defines[name] = defines[`globalThis.${name}`] = `${registry}.${name}`;
     }
   }
-  if (mentionsTypeofBrowserGlobal.test(code)) {
+  if (mentionsTypeof.test(code) && mentionsBrowserGlobal.test(code)) {
     for (const name of browserGlobals) defines[`typeof ${name}`] = '"undefined"';
   }
   if (Object.keys(defines).length === 0) return;

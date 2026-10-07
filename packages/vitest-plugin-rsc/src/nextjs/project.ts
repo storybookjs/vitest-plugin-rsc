@@ -100,10 +100,11 @@ export async function loadNextProject(
   if (major < 16 || (major === 16 && minor < 4)) {
     throw new Error(`vitest-plugin-rsc/nextjs needs next@16.4 or later, found next@${version}.`);
   }
-  const fail = (what: string): never => {
+  const fail = (what: string, cause?: unknown): never => {
     throw new Error(
       `vitest-plugin-rsc: next@${version} differs from the Next.js this plugin was written for: ` +
         `${what}. Use a version of vitest-plugin-rsc that supports next@${version}.`,
+      { cause },
     );
   };
   // A module of Next's build. An export that is gone fails where it is read.
@@ -112,11 +113,13 @@ export async function loadNextProject(
     try {
       loaded = require(`next/dist/${file}.js`) as T;
     } catch (error) {
-      return fail(`next/dist/${file}.js does not load (${(error as Error).message})`);
+      return fail(`next/dist/${file}.js does not load (${(error as Error).message})`, error);
     }
     return new Proxy(loaded, {
       get: (target, name) =>
-        target[name as keyof T] ?? fail(`next/dist/${file}.js has no export \`${String(name)}\``),
+        target[name as keyof T] !== undefined
+          ? target[name as keyof T]
+          : fail(`next/dist/${file}.js has no export \`${String(name)}\``),
     });
   };
   // A piece of the code Next generates that is replaced for Vite.
@@ -141,6 +144,20 @@ export async function loadNextProject(
   >("shared/lib/router/utils/app-paths");
   const { isAppRouteRoute } =
     load<typeof import("next/dist/lib/is-app-route-route.js")>("lib/is-app-route-route");
+  const { isAppPageRoute } =
+    load<typeof import("next/dist/lib/is-app-page-route.js")>("lib/is-app-page-route");
+  const { findMissingCanonicalInterceptionRoutes } = load<
+    typeof import("next/dist/shared/lib/router/utils/interception-routes.js")
+  >("shared/lib/router/utils/interception-routes");
+  const { MissingCanonicalInterceptionRoutesError } = load<
+    typeof import("next/dist/shared/lib/errors/missing-canonical-interception-routes-error.js")
+  >("shared/lib/errors/missing-canonical-interception-routes-error");
+  const { IncompatibleParallelRouteSlotsError } = load<
+    typeof import("next/dist/shared/lib/errors/incompatible-parallel-route-slots-error.js")
+  >("shared/lib/errors/incompatible-parallel-route-slots-error");
+  const { UnmatchedAppPagesError } = load<
+    typeof import("next/dist/shared/lib/errors/unmatched-app-pages-error.js")
+  >("shared/lib/errors/unmatched-app-pages-error");
   const { isMetadataRouteFile, DEFAULT_METADATA_ROUTE_EXTENSIONS } = load<
     typeof import("next/dist/lib/metadata/is-metadata-route.js")
   >("lib/metadata/is-metadata-route");
@@ -205,12 +222,37 @@ export async function loadNextProject(
     appPathsPerRoute,
     { strictRouteMatching, defaultAppPaths: Object.keys(discovered.mappedAppDefaults ?? {}) },
   );
-  if (unmatchedAppPages.length > 0 || incompatibleParallelRouteSlots.length > 0) {
+  // What `createEntrypoints` of `next build` rejects, with its errors.
+  const pagePathsPerRoute = Object.fromEntries(
+    Object.entries(appPathsPerRoute).flatMap(([pathname, appPaths]) => {
+      const pages = appPaths.filter(isAppPageRoute);
+      return pages.length > 0 ? [[pathname, pages]] : [];
+    }),
+  );
+  const routeErrors = [
+    ...(strictRouteMatching && findMissingCanonicalInterceptionRoutes(pagePathsPerRoute).length > 0
+      ? [
+          new MissingCanonicalInterceptionRoutesError(
+            findMissingCanonicalInterceptionRoutes(pagePathsPerRoute),
+          ),
+        ]
+      : []),
+    ...(incompatibleParallelRouteSlots.length > 0
+      ? [
+          new IncompatibleParallelRouteSlotsError(
+            incompatibleParallelRouteSlots.map((slot) => ({
+              ...slot,
+              layoutFile: path.relative(root, path.join(appDir, slot.layoutPath, "layout")),
+            })),
+          ),
+        ]
+      : []),
+    ...(unmatchedAppPages.length > 0 ? [new UnmatchedAppPagesError(unmatchedAppPages)] : []),
+  ];
+  if (routeErrors.length > 0) {
     throw new Error(
-      `vitest-plugin-rsc: \`next build\` fails on the parallel routes of this app. ` +
-        `Pages no route matches: ${JSON.stringify(unmatchedAppPages)}. ` +
-        `Routes with a slot that has no page and no default: ` +
-        `${JSON.stringify(incompatibleParallelRouteSlots)}.`,
+      `vitest-plugin-rsc: \`next build\` fails on the routes of this app.\n\n` +
+        routeErrors.map((error) => error.message).join("\n\n"),
     );
   }
   // Next also lists metadata files like `sitemap.ts` as app routes. Those
@@ -227,8 +269,11 @@ export async function loadNextProject(
     appPaths.sort(compareAppPaths);
     const page = selectAppPageEntry(pathname, appPaths);
     const pagePath = mappedAppPages[page]!;
-    const pages = appPaths.filter((appPath) => appPath.endsWith("/page"));
-    const handlers = appPaths.filter(isRouteHandler);
+    // A route's own files: a catch-all page of a slot is listed with every
+    // route it also matches, like a route handler's.
+    const own = appPaths.filter((appPath) => normalizeAppPath(appPath) === pathname);
+    const pages = own.filter((appPath) => appPath.endsWith("/page"));
+    const handlers = own.filter(isRouteHandler);
     // `next build` fails on this too.
     if (pages.length > 0 && handlers.length > 0) {
       throw new Error(
@@ -236,7 +281,8 @@ export async function loadNextProject(
           `(${pages.join(", ")} and ${handlers.join(", ")}). A path can only be one of them.`,
       );
     }
-    const kind = pages.length > 0 ? "page" : handlers.length > 0 ? "route" : undefined;
+    // What the route is, is what Next builds for it: the file it selects.
+    const kind = page.endsWith("/page") ? "page" : isRouteHandler(page) ? "route" : undefined;
     if (kind) routes.push({ kind, page, pathname, appPaths, pagePath });
   }
 

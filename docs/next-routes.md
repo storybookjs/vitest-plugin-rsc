@@ -23,7 +23,7 @@ Only the build is tied to a bundler. So this plugin does the build with Vite, an
 
 Everything behind those is Next's runtime, unchanged: `handler(Request)` returns the `Response` a deployment would send.
 
-The routes are listed the way `next build` lists its entries. The pages with the same pathname are one route, a catch-all page in a slot is added to the routes it also matches, and an app whose parallel routes `next build` rejects is rejected here, with the pages and slots it is about. The loader gets the options a build passes, so a layout of slots only has no `children`, as in a deployment.
+The routes are listed the way `next build` lists its entries. The pages with the same pathname are one route, a catch-all page in a slot is added to the routes it also matches, and an app whose routes `next build` rejects is rejected here, with Next's own errors: pages no route matches, slots that cannot render the same URLs, and, with `strictRouteMatching`, an interception route without the route it intercepts. The loader gets the options a build passes, so a layout of slots only has no `children`, as in a deployment.
 
 ### When Next Changes
 
@@ -42,7 +42,7 @@ That file checks what the plugin relies on when a run starts. A Next.js that dif
 | The `app-route` template loads `route.ts` with `userland: () => require(`        | A `require` that the tab does not have               |
 | The `edge-ssr-app` template imports the page as `pageMod`                        | An import of a module that does not exist            |
 
-What it cannot check is what Next's runtime does with all of that once a request comes in: a manifest field it starts to read, or a key it starts to require in the loader tree. That shows up as a failing test. CI runs both playgrounds against `next@latest` and `next@canary` for it.
+A function of the build code that is still there but takes other arguments is not checked: it fails with its own error, at startup. What it cannot check either is what Next's runtime does with all of that once a request comes in: a manifest field it starts to read, or a key it starts to require in the loader tree. That shows up as a failing test. CI runs both playgrounds against `next@latest` and `next@canary` for it.
 
 ## Three Layers, Three Environments
 
