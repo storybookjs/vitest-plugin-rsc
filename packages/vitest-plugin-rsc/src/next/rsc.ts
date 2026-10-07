@@ -33,8 +33,17 @@ const scopes = new WeakMap<object, Scope>();
 const spikeVariant: string =
   (import.meta as { env?: Record<string, string> }).env?.VITE_SPIKE_CTX ?? "stack";
 
+// SPIKE, `VITE_SPIKE_LINK=render`: no tie at all. A render belongs to the
+// context that starts it, as on Node, where React's first task inherits it.
+// The shim attributes Next's call of `renderToReadableStream` to the scope by
+// the async call stack, so the snapshot is taken there.
+const linkAtRender =
+  (import.meta as { env?: Record<string, string> }).env?.VITE_SPIKE_LINK === "render";
+
 function inScopeOfReply(model: unknown, options?: FlightOptions): unknown {
-  const scope = options?.temporaryReferences && scopes.get(options.temporaryReferences);
+  const scope = linkAtRender
+    ? SequentialAsyncLocalStorage.snapshot()
+    : options?.temporaryReferences && scopes.get(options.temporaryReferences);
   const thenable = model as PromiseLike<unknown> | null;
   if (!scope || /^none|nolink$/.test(spikeVariant) || typeof thenable?.then !== "function") {
     return model;

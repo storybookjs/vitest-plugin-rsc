@@ -110,7 +110,7 @@ export function extractInfoFromServerReferenceId(id) {
 // One that is made inside a cache scope belongs to the render of that scope,
 // so its component is called in it.
 const scopedJsxRuntime = (entry: string) => `
-import runtime from ${JSON.stringify(`next/dist/compiled/react/${entry}.react-server`)};
+import runtime from ${JSON.stringify(`next/dist/compiled/react/cjs/react-${entry}.react-server.development.js`)};
 import { workUnitAsyncStorage } from "next/dist/server/app-render/work-unit-async-storage.external";
 export const Fragment = runtime.Fragment;
 function scoped(type) {
@@ -266,12 +266,6 @@ function createLayerResolver(getProject: () => NextProject, layer: NextLayer) {
         // The shim wraps the module it replaces.
         if (importer === `${bridgePrefix}server-reference-info`) {
           return nextFile("next/dist/esm/shared/lib/server-reference-info.js");
-        }
-        if (importer?.startsWith(`${bridgePrefix}scoped-`) && source.includes("/react/jsx-")) {
-          return this.resolve(source, path.join(getProject().root, "package.json"), {
-            ...options,
-            skipSelf: true,
-          });
         }
 
         let specifier = source;
@@ -444,6 +438,9 @@ const runtimeImports: Record<NextLayer, string[]> = {
     // SPIKE: what a compiled `"use cache"` function imports.
     "next/dist/server/use-cache/use-cache-wrapper",
     "next/dist/server/app-render/encryption",
+    // SPIKE: what the scoped JSX runtime wraps.
+    "next/dist/compiled/react/cjs/react-jsx-runtime.react-server.development.js",
+    "next/dist/compiled/react/cjs/react-jsx-dev-runtime.react-server.development.js",
     vendoredFlight("server.edge"),
     vendoredFlight("static.edge"),
     vendoredFlight("client.edge"),
