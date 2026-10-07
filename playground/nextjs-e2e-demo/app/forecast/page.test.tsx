@@ -1,4 +1,4 @@
-import { renderServer } from "vitest-plugin-rsc/nextjs";
+import { renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
 import { expect, test, vi } from "vitest";
 import { page } from "vitest/browser";
 import { getForecast } from "../lib/weather.ts";

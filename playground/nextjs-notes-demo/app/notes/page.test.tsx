@@ -5,7 +5,7 @@ import { db } from "#lib/db.ts";
 import { notes } from "#db/schema.ts";
 import { applyScenario, scenarioUsers } from "#lib/db.scenarios.ts";
 import { otherUser, signInAs, testUser } from "#test/auth.ts";
-import { renderServer } from "vitest-plugin-rsc/nextjs";
+import { renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
 
 async function renderNotesPage() {
   await signInAs();

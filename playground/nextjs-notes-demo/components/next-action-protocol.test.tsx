@@ -7,7 +7,7 @@ import {
 } from "next/dist/client/components/app-router-headers.js";
 import { expect, test, vi } from "vitest";
 import { page } from "vitest/browser";
-import { handleRequest, renderServer } from "vitest-plugin-rsc/nextjs";
+import { handleRequest, renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
 import { NextActionProtocolProbe } from "./next-action-protocol-probe.tsx";
 
 type CapturedActionRequest = {

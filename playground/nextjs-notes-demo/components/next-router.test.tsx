@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 import { page } from "vitest/browser";
-import { renderServer } from "vitest-plugin-rsc/nextjs";
+import { renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
 import { ClientRefreshProbe } from "./client-refresh-probe.tsx";
 import { NextRouterProbe } from "./next-router-probe.tsx";
 import {

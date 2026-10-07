@@ -47,7 +47,7 @@
       "vitest-plugin-rsc-source": "./src/testing-library-client.tsx",
       "default": "./dist/testing-library-client.js"
     },
-    "./nextjs": {
+    "./nextjs/testing-library": {
       "types": "./dist/nextjs/index.d.ts",
       "vitest-plugin-rsc-source": "./src/nextjs/index.ts",
       "default": "./dist/nextjs/index.js"

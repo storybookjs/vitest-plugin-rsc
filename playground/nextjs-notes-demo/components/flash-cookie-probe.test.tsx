@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 import { page } from "vitest/browser";
-import { renderServer } from "vitest-plugin-rsc/nextjs";
+import { renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
 
 import FlashCookieProbe from "./flash-cookie-probe.tsx";
 

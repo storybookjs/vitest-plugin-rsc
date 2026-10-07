@@ -1,4 +1,4 @@
-import { handleRequest, renderServer } from "vitest-plugin-rsc/nextjs";
+import { handleRequest, renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
 import { afterEach, beforeEach, expect, test, vi, type MockInstance } from "vitest";
 import { page } from "vitest/browser";
 import { auditLog } from "../lib/audit.ts";

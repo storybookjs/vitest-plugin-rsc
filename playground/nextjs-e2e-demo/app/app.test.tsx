@@ -1,4 +1,4 @@
-import { cleanup, handleRequest, renderServer } from "vitest-plugin-rsc/nextjs";
+import { cleanup, handleRequest, renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
 import { afterEach, beforeEach, expect, test, vi, type MockInstance } from "vitest";
 import { cdp, page } from "vitest/browser";
 import { cookies, headers } from "next/headers";

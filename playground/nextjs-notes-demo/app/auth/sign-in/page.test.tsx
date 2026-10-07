@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 import { page } from "vitest/browser";
-import { renderServer } from "vitest-plugin-rsc/nextjs";
+import { renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
 
 test("renders sign-in form with email, passkey, and link to sign up", async () => {
   await renderServer({ url: "/auth/sign-in" });

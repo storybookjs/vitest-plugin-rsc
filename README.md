@@ -136,7 +136,7 @@ export default defineConfig({
 ```tsx
 import { expect, test } from "vitest";
 import { page } from "vitest/browser";
-import { renderServer } from "vitest-plugin-rsc/nextjs";
+import { renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
 import { db } from "./lib/notes.ts";
 
 test("navigates on the client with next/link", async () => {
@@ -319,7 +319,7 @@ test: {
 ```tsx
 import { expect, test, vi } from "vitest";
 import { page } from "vitest/browser";
-import { renderServer } from "vitest-plugin-rsc/nextjs";
+import { renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
 import { getForecast } from "../lib/weather.ts";
 
 test("renders a route with a server module mocked in the setup file", async () => {
@@ -342,7 +342,7 @@ Route handlers (`app/**/route.ts`) are served too, and `handleRequest` is how a 
 
 ```ts
 import { expect, test } from "vitest";
-import { handleRequest } from "vitest-plugin-rsc/nextjs";
+import { handleRequest } from "vitest-plugin-rsc/nextjs/testing-library";
 import { db } from "../lib/notes.ts";
 
 test("gives a route handler the body of a request and the cookies of the tab", async () => {
@@ -529,7 +529,7 @@ App code keeps importing `db` from `#lib/db.ts`. A test seeds rows with the same
 ### API
 
 ```ts
-import { cleanup, handleRequest, renderServer } from "vitest-plugin-rsc/nextjs";
+import { cleanup, handleRequest, renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
 import { vitestPluginNext } from "vitest-plugin-rsc/nextjs/plugin";
 ```
 

@@ -1,6 +1,6 @@
 import { expect, test, vi } from "vitest";
 import { page } from "vitest/browser";
-import { cleanup, renderServer } from "vitest-plugin-rsc/nextjs";
+import { cleanup, renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
 import { NextCacheProbe, resetNextCacheProbe } from "./next-cache-probe.tsx";
 
 // Next's Data Cache, seen through a probe that renders in place of a page:

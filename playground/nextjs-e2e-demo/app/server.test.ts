@@ -1,4 +1,4 @@
-import { handleRequest } from "vitest-plugin-rsc/nextjs";
+import { handleRequest } from "vitest-plugin-rsc/nextjs/testing-library";
 import { expect, test, vi } from "vitest";
 import { db } from "./lib/notes.ts";
 
