@@ -1,8 +1,8 @@
-import { createServer } from "node:net";
 import { type Plugin, type ViteDevServer } from "vite";
 import { vitePluginRscMinimal } from "@vitejs/plugin-rsc/plugin";
 import { createReactClientCoveragePlugin } from "./coverage.ts";
 import { createRunnerEnvironmentPlugins } from "./runner-environment.ts";
+import { pageViteClientPlugin } from "./vite-client.ts";
 
 const reactClientWebSocketInfoPath = "/@vite/react-client-runner-websocket";
 const reactClientWebSocketQuery = "vitest-plugin-rsc-react-client";
@@ -29,7 +29,7 @@ function withConfiguredSourceConditions(
 
 export function vitestPluginRSC(): Plugin[] {
   return [
-    createBrowserApiPortPlugin(),
+    pageViteClientPlugin(),
     ...vitePluginRscMinimal({
       environment: {
         browser: "react_client",
@@ -143,78 +143,6 @@ export function vitestPluginRSC(): Plugin[] {
     createReactClientCoveragePlugin(),
     ...createRunnerEnvironmentPlugins("react_client"),
   ];
-}
-
-function createBrowserApiPortPlugin(): Plugin {
-  return {
-    name: "rsc:browser-api-port",
-    async configureServer(server) {
-      if (
-        !isVitestBrowserServer(server) ||
-        server.config.server.strictPort ||
-        typeof server.config.server.port !== "number"
-      ) {
-        return;
-      }
-
-      // Vite injects /@vite/client before listen(). Avoid Vite's later port
-      // fallback path so the browser receives the final server port up front.
-      server.config.server.port = await resolveBrowserApiPort(
-        server.config.server.port,
-        server.config.server.host,
-      );
-    },
-  };
-}
-
-function isVitestBrowserServer(server: ViteDevServer): boolean {
-  return server.config.plugins.some((plugin) => plugin.name === "vitest:browser:config");
-}
-
-async function resolveBrowserApiPort(
-  port: number,
-  host: ViteDevServer["config"]["server"]["host"],
-) {
-  const listenHost = resolveViteListenHost(host);
-  try {
-    return await listenOnAvailablePort(port, listenHost);
-  } catch (error) {
-    if (!isAddressInUse(error)) {
-      throw error;
-    }
-    return await listenOnAvailablePort(0, listenHost);
-  }
-}
-
-function resolveViteListenHost(host: ViteDevServer["config"]["server"]["host"]) {
-  // Match Vite's default listen call. Checking "localhost" can miss ports that
-  // are unavailable for wildcard binds, which lets Vite fall back after
-  // /@vite/client has already captured the old port.
-  if (host === undefined || host === false) {
-    return undefined;
-  }
-  if (host === true) {
-    return undefined;
-  }
-  return host;
-}
-
-function isAddressInUse(error: unknown): boolean {
-  return (
-    typeof error === "object" && error !== null && "code" in error && error.code === "EADDRINUSE"
-  );
-}
-
-function listenOnAvailablePort(port: number, host: string | undefined) {
-  return new Promise<number>((resolve, reject) => {
-    const server = createServer();
-    server.unref();
-    server.once("error", reject);
-    server.listen({ port, host }, () => {
-      const address = server.address();
-      server.close(() => resolve(typeof address === "object" && address ? address.port : port));
-    });
-  });
 }
 
 function parseWebSocketInvoke(raw: unknown): ReactClientWebSocketInvoke | undefined {

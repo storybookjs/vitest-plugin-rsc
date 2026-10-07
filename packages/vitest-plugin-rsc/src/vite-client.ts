@@ -5,23 +5,29 @@ import { normalizePath, parseAstAsync, type Plugin } from "vite";
 // Vite adds an import of its client, `/@vite/client`, to a module that uses
 // `import.meta.hot`, to CSS, which the client puts in the document, and to a
 // module with a dynamic import it cannot analyse, like the one that loads a
-// Client Component by its id (client-modules.ts).
+// Client Component by its id (testing-library-client.tsx).
 //
-// A page has one such client, with one websocket to the dev server. A module
-// runner would evaluate another copy for every module graph it creates. Such a
-// copy has no page URL to read the address of the dev server off, so it falls
-// back to the port the server was configured with, which is not the port it
-// listens on when that one was taken. That can be the dev server of another
-// project, and a copy reloads the tab when that server goes away.
+// A page has one such client, with one websocket to the dev server, and finds
+// that server by the URL it was loaded from. A module runner would evaluate
+// another copy for every module graph it creates. Such a copy has a file URL,
+// so it falls back to the address Vite wrote into it: the port the server was
+// configured with, written before the server listens. When that port is taken,
+// say by another Vitest run, the server listens on the next free one, and the
+// copy connects to the other run's server. That one refuses it, which Vite's
+// client reports with `console.error`, or drops it later, on which Vite's
+// client reloads the tab.
 //
-// So the layers that load through a module runner get the client of the page.
+// So the environments that load through a module runner get the client of the
+// page, and nothing in the page depends on a port that was known up front.
 
-/** The page's own instance of Vite's client, for the layer the page loads. */
-export const pageViteClientId = "virtual:vitest-plugin-rsc/next-vite-client";
+/** The page's own instance of Vite's client. */
+const pageViteClientId = "virtual:vitest-plugin-rsc/vite-client";
+/** Where the page keeps it for its module runners, see utilts.ts. */
+const pageViteClientGlobal = "globalThis.__vitest_plugin_rsc_vite_client__";
 
-export function pageViteClientPlugin(registry: string, runnerEnvironments: string[]): Plugin {
+export function pageViteClientPlugin(): Plugin {
   return {
-    name: "vitest-plugin-rsc:next-vite-client",
+    name: "rsc:page-vite-client",
     enforce: "pre",
     resolveId(source) {
       if (source === pageViteClientId) return `\0${pageViteClientId}`;
@@ -35,13 +41,16 @@ export function pageViteClientPlugin(registry: string, runnerEnvironments: strin
         return `export * from ${JSON.stringify(url)};`;
       }
 
-      if (!runnerEnvironments.includes(this.environment.name)) return;
+      // The page loads `client` itself, and every other environment for a
+      // browser through a module runner.
+      const { name, config } = this.environment;
+      if (name === "client" || config.consumer !== "client") return;
       // Vite resolves `/@vite/client` to this file itself, with an alias.
       const file = id.split("?")[0]!;
       if (!normalizePath(file).endsWith("/vite/dist/client/client.mjs")) return;
       const names = await exportNames(fs.readFileSync(file, "utf8"));
       return (
-        `const client = ${registry}.viteClient;\n` +
+        `const client = ${pageViteClientGlobal};\n` +
         names.map((name) => `export const ${name} = client.${name};`).join("\n")
       );
     },

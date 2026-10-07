@@ -51,8 +51,6 @@ export type NextRegistry = {
   browserRequire(id: string): Promise<unknown>;
   loadBrowserModule(id: string): Promise<unknown>;
   ssr: { AppPageRouteModule: new (options: unknown) => unknown };
-  /** Vite's client of the page, `/@vite/client`, for the layers a module runner loads. */
-  viteClient: Record<string, unknown>;
 };
 
 const scope = globalThis as { __vitest_plugin_rsc_next__?: Partial<NextRegistry> };
