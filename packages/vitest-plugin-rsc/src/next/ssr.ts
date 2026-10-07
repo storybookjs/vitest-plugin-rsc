@@ -5,6 +5,7 @@ import { getRouteRegex } from "next/dist/shared/lib/router/utils/route-regex";
 import { getSortedRoutes } from "next/dist/shared/lib/router/utils/sorted-routes";
 import edgeEntries from "virtual:vitest-plugin-rsc/next-edge-entries";
 import { nextConfig, routes } from "virtual:vitest-plugin-rsc/next-manifest";
+import { resetCaches, shareIncrementalCache } from "./cache.ts";
 import { registerModuleLoader } from "./client-modules.ts";
 import { actionModulePrefix, registry, type ServerRequest } from "./registry.ts";
 
@@ -82,6 +83,8 @@ export function pageOf(pathname: string): string | undefined {
   return route?.kind === "page" ? route.page : undefined;
 }
 
+export { resetCaches };
+
 // A test's own timers may be fake.
 const setTimeout = globalThis.setTimeout;
 
@@ -139,6 +142,7 @@ async function handle(request: ServerRequest): Promise<Response> {
   const matched = matchRoute(pathname);
   const page = matched?.route.page ?? notFoundPage;
   const endRequestScope = registry.enterRequestScope();
+  shareIncrementalCache(request.headers);
   // What Next still does for a request after it has responded, like the
   // callbacks of `after()`. The request lasts until that is done, so that
   // they still read its stores. Not forever: the next request waits for this

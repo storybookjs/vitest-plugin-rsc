@@ -26,6 +26,8 @@ function hitsService(): Plugin {
 
 export default defineProject({
   root: fileURLToPath(new URL("./", import.meta.url)),
+  // Where the service worker of MSW is, which the cache tests use.
+  publicDir: fileURLToPath(new URL("../../public", import.meta.url)),
   plugins: [
     vitestPluginRSC(),
     // What is in `test/` helps the tests. It is not code of the app's server.
