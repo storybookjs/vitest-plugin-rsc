@@ -6,8 +6,7 @@ import appPages from "virtual:vitest-plugin-rsc/next-app-pages";
 import routeHandlers from "virtual:vitest-plugin-rsc/next-route-handlers";
 import { actionModulePrefix, registry } from "./registry.ts";
 
-// The rsc layer: Server Components, Server Actions, route handlers and the
-// Flight encoder.
+// The rsc layer: Server Components, Server Actions and route handlers.
 
 declare let __vite_rsc_raw_import__: (id: string) => Promise<unknown>;
 
@@ -15,9 +14,8 @@ ReactServer.setRequireModule({
   load: (id) => __vite_rsc_raw_import__(id),
 });
 
-// Next passes its client and server reference manifests to the Flight codec.
-// Vite RSC resolves a reference by its module id at runtime, with manifests of
-// its own, so these take Next's manifest arguments and leave them out.
+// Next passes its reference manifests to the Flight codec. Vite RSC has its
+// own, so these take Next's manifest arguments and leave them out.
 registry.flightServer = {
   renderToReadableStream: (model: unknown, _clientModules: unknown, options?: object) =>
     ReactServer.renderToReadableStream(model, options),
@@ -67,12 +65,9 @@ declare global {
 const modules = new Map<string, Promise<unknown>>();
 
 /**
- * Next's `__next_app__.require`: the module loader of the server bundle, which
- * holds the modules of both server layers. React's Flight codec calls it for a
- * reference in a payload, and Next calls it for the module of a Server Action.
- *
- * Like webpack's, it returns the same promise for the same id: React keeps the
- * state of a module on that promise.
+ * Next's `__next_app__.require`, the module loader of both server layers.
+ * Like webpack's, it returns the same promise for the same id: React keeps
+ * the state of a module on that promise.
  */
 export function requireModule(id: string): Promise<unknown> {
   let loading = modules.get(id);

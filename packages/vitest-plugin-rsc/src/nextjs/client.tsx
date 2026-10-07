@@ -3,10 +3,8 @@ import { callServer } from "next/dist/client/app-call-server";
 import ReactDOMClient, { type Root } from "react-dom/client";
 import { registerModuleLoader } from "./client-modules.ts";
 
-// The browser layer. This module is the app's client entry: what Next's
-// `main-app.js` chunk is for a deployment. Like that chunk, it runs once per
-// page load, in a module graph of its own (see `renderServer()`), and starts the app
-// from the document the server sent.
+// The browser layer: the app's client entry, what Next's `main-app.js` chunk
+// is for a deployment. It runs once per page load, in a module graph of its own.
 
 declare global {
   var __viteRscCallServer: typeof callServer;

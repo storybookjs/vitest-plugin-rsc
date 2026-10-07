@@ -10,9 +10,7 @@ import { createServerCode, type ServerCodeOptions } from "./server-code.ts";
 import { pageViteClientPlugin } from "./vite-client.ts";
 
 // Each layer of Next is a Vite environment, and all three run in the test's
-// tab (docs/next-routes.md). Where Next's own bundler config says a module
-// belongs to another layer, it is bridged to that environment through
-// `registry` (registry.ts).
+// tab: see docs/next-routes.md.
 const environmentOf: Record<NextLayer, string> = {
   rsc: "client",
   ssr: "next_ssr",
@@ -23,11 +21,9 @@ const layers = Object.keys(environmentOf) as NextLayer[];
 const registry = "globalThis.__vitest_plugin_rsc_next__";
 // Shared by the layers: the routes and the `next.config`.
 const manifestId = "virtual:vitest-plugin-rsc/next-manifest";
-// The modules of the routes, per layer: one that lists them, and one for each
-// by its place in `project.routes`. A page has a module in the rsc layer and
-// its request handler in the ssr layer. Next's bundler config puts a route
-// handler in the rsc layer as a whole: its route module, which is with the
-// modules of the pages, and its request handler.
+// The modules of the routes: one that lists them, and one for each by its
+// place in `project.routes`. Next's bundler config puts the request handler
+// of a page in the ssr layer, and a route handler in the rsc layer as a whole.
 const virtual = (name: string) => `virtual:vitest-plugin-rsc/next-${name}`;
 const routeModules = [
   { list: virtual("app-pages"), prefix: virtual("app-page/"), layer: "rsc", kind: "page" },
@@ -261,12 +257,11 @@ function createLayerResolver(getProject: () => NextProject, layer: NextLayer) {
 
 type LayerResolver = ReturnType<typeof createLayerResolver>;
 
-// Client Components of Next's own runtime: the layout router, the error
-// boundaries, `next/link`. Vite RSC turns `"use client"` modules into client
-// references while it serves source files, but dependencies are pre-bundled
-// without that step, so do it here. The reference is the module's specifier,
-// which the other two layers load as their own pre-bundled copy. (`/@id/` is
-// how Vite spells a bare specifier where a URL is expected.)
+// Client Components of Next's own runtime, like the layout router. Vite RSC
+// turns `"use client"` modules into client references while it serves source
+// files, but dependencies are pre-bundled without that step, so do it here.
+// The reference is the module's specifier, which the other two layers load as
+// their own pre-bundled copy. (`/@id/` is Vite's URL for a bare specifier.)
 function nextClientBoundaryPlugin(getProject: () => NextProject, resolver: LayerResolver): Plugin {
   return {
     name: "vitest-plugin-rsc:next-client-boundary",
@@ -325,8 +320,7 @@ function findImports(code: string): string[] {
 
 // Follows the imports of Next's rsc-layer runtime up to each `"use client"`
 // module: the modules a Flight payload can refer to. The other two layers
-// pre-bundle them up front, or Vite would discover them mid-test and reload
-// the page. This is what Next's client entry plugin does for its own bundles.
+// pre-bundle them up front, or Vite would find them mid-test and reload the tab.
 function findClientBoundaries(resolver: LayerResolver, roots: string[]): string[] {
   const boundaries = new Set<string>();
   const seen = new Set<string>();
@@ -411,10 +405,9 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
         project = await loadNextProject(path.resolve(config.root ?? process.cwd()));
         serverCode.configure(project.root);
 
-        // What the route entries import from Next. The request handler is
-        // one template per kind of route. The loader tree differs: which of
-        // Next's builtin boundaries a route needs depends on what the app
-        // leaves out.
+        // What the route entries import from Next. Loading them here is also
+        // what checks them against the installed Next: see project.ts. The
+        // request handler is one template per kind of route.
         const appPageEntries = await Promise.all(
           project.routes.map((candidate) => project.loadAppPageEntry(candidate)),
         );

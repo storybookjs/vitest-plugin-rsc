@@ -6,12 +6,10 @@ import { loadDocument, unloadDocument } from "./document.ts";
 import * as viteClient from "virtual:vitest-plugin-rsc/next-vite-client";
 import { registry } from "./registry.ts";
 
-// The page's own instance of Vite's client. The other two layers use it too:
-// see vite-client.ts.
+// The other two layers use the page's instance of Vite's client too.
 registry.viteClient = viteClient;
 
-// The server's platform (globals.ts) has to be there before a module of Next's
-// server loads, so the layers load from here on, in order: rsc, then ssr.
+// After globals.ts, which a module of Next's server needs: rsc, then ssr.
 await import("./rsc.ts");
 const ssr = await importEnvironment<typeof import("./ssr.ts")>(
   "next_ssr",
@@ -20,11 +18,9 @@ const ssr = await importEnvironment<typeof import("./ssr.ts")>(
 
 const nativeFetch = globalThis.fetch;
 
-// The origin of the app is also the origin of the dev server, which serves the
-// modules of the test and of the app. A `fetch` is the app's when its path is
-// a route of the app, a page or a route handler, or when Next's router or a
-// Server Action sends it, which mark their requests. Everything else goes to
-// the network.
+// The origin of the app is also the origin of the dev server. A `fetch` is
+// the app's when its path is a route of the app, or when Next's router or a
+// Server Action sends it, which mark their requests.
 function isAppRequest(input: RequestInfo | URL, init: RequestInit | undefined): boolean {
   const request = input instanceof Request ? input : undefined;
   const url = new URL(request ? request.url : String(input), window.location.href);
@@ -37,8 +33,7 @@ function isAppRequest(input: RequestInfo | URL, init: RequestInit | undefined): 
 // A test's own timers may be fake.
 const setTimeout = globalThis.setTimeout;
 
-// What was in the tab's storage before the app ran, which is the test
-// runner's to keep.
+// What was in the tab's storage before the app ran: the test runner's.
 const storages = [localStorage, sessionStorage].map(
   (storage) => [storage, new Set(Object.keys(storage))] as const,
 );
@@ -57,8 +52,7 @@ function clearCookies(): void {
   cookiesToClear.clear();
 }
 
-// The network between a browser and the Next.js server in this tab. It does
-// what a browser does for a same-origin request: send the cookies, store the
+// What a browser does for a same-origin request: send the cookies, store the
 // ones that come back, follow redirects.
 async function browserFetch(request: Request): Promise<Response> {
   let url = new URL(request.url);
@@ -82,8 +76,8 @@ async function browserFetch(request: Request): Promise<Response> {
       signal: request.signal,
     });
     for (const cookie of response.headers.getSetCookie()) {
-      // A script cannot store an HttpOnly cookie, and `document.cookie` is the
-      // cookie jar of this tab, so store it as a regular one.
+      // `document.cookie` is the cookie jar, and a script cannot store an
+      // HttpOnly cookie there.
       document.cookie = cookie.replace(/;\s*httponly/i, "");
       const [pair, ...attributes] = cookie.split(";");
       const scope = attributes.filter((attribute) => /^\s*(path|domain)=/i.test(attribute));
@@ -126,14 +120,12 @@ export function handleRequest(input: RequestInfo | URL, init?: RequestInit): Pro
   return browserFetch(new registry.Request(input, init));
 }
 
-// The browser's `fetch`: what Next's client router and Client Components call.
 globalThis.fetch = (input, init) =>
   isAppRequest(input, init) ? browserFetch(new Request(input, init)) : nativeFetch(input, init);
 
 // The server's `fetch`. A request to the app itself is one the server makes
-// while it handles another: Next renders the page a Server Action redirects
-// to that way. It carries the headers Next gave it, cookies included, and
-// does not go through the browser's cookie jar.
+// while it handles another, as Next does for the page a Server Action
+// redirects to. It has its own headers, and skips the browser's cookie jar.
 registry.fetch = (input, init) => {
   if (!isAppRequest(input, init)) return nativeFetch(input, init);
   const request = new registry.Request(input, init);
@@ -148,13 +140,11 @@ registry.fetch = (input, init) => {
     true,
   );
 };
-// Where the server reaches itself, which `next start` sets too. Next reads it
-// when it needs it, from the `process` of the tab.
+// Where the server reaches itself, which `next start` sets too.
 process.env.__NEXT_PRIVATE_ORIGIN = window.location.origin;
 
 let page: { started: Promise<unknown>; unmount(): void } | undefined;
-// Tells a page load that the tab has moved on: to another page, or to the
-// next test.
+// Tells a page load that the tab has moved on.
 let currentLoad: AbortController | undefined;
 
 export type RenderServerOptions = {
@@ -209,8 +199,7 @@ export async function renderServer(
   };
 }
 
-// The options, or a node to render. A plain object is never a node: React
-// has elements, which carry a `$$typeof`, and the rest are not plain objects.
+// A plain object is never a node: an element carries a `$$typeof`.
 function isOptions(value: unknown): value is RenderServerOptions {
   if (typeof value !== "object" || value === null || "$$typeof" in value) return false;
   const prototype: unknown = Object.getPrototypeOf(value);
@@ -234,11 +223,9 @@ async function loadPage(
 
   if (pageOverrides) registry.pageOverrides = pageOverrides;
 
-  // Not the browser's Request, which drops a `cookie` header.
   const response = await browserFetch(new registry.Request(url, { ...init, signal: load.signal }));
   superseded();
-  // A route handler can answer with anything. A browser would show it or
-  // download it; there is no app in it to start.
+  // A route handler can answer with anything: there is no app in it to start.
   const contentType = response.headers.get("content-type") ?? "";
   if (!/^text\/html\b/i.test(contentType)) {
     await response.body?.cancel();
@@ -255,19 +242,16 @@ async function loadPage(
   // Where the browser ended up, after any redirects.
   window.history.replaceState(null, "", response.url);
 
-  // The app starts when its bootstrap script is there, which is with the
-  // first part of the document: the server can still be sending the rest.
+  // The server can still be sending the rest of the document.
   await interactive;
   superseded();
-  // A page load runs the app's scripts from scratch, so every page gets a
-  // module graph of its own for the browser layer.
+  // A page load runs the app's scripts from scratch: a module graph of its own.
   const runner = createEnvironmentRunner("react_client");
   const client = await runner.import<typeof import("./client.tsx")>(
     "vitest-plugin-rsc/nextjs/client",
   );
   superseded();
-  // The page counts as open from here, so that leaving it stops it, also
-  // while it hydrates.
+  // The page is open from here: leaving it stops it, also while it hydrates.
   let unmount: (() => void) | undefined;
   let left = false;
   const started = client.start();
@@ -299,9 +283,8 @@ function leavePage(): Promise<void> {
   const left = page;
   page = undefined;
   leaving = leaving.then(async () => {
-    // An app that is still starting cannot be stopped, and would go on to
-    // hydrate the next page with the client code of this one. It is about
-    // done: the document it starts from is already there.
+    // An app that is still starting cannot be stopped, and would hydrate the
+    // next page with the client code of this one. It is about done.
     await Promise.race([left?.started, new Promise((resolve) => setTimeout(resolve, 5000))]);
     left?.unmount();
     unloadDocument();
@@ -327,10 +310,8 @@ export async function cleanup(): Promise<void> {
 }
 
 // The app can leave its page without its router: `location.assign()`, a
-// `<form>` or an `<a>` that React does not handle, Next's own fallback when a
-// client-side navigation is not possible. For a browser that is a page load.
-// For this tab it would replace the test with the app, so load the page the
-// way `renderServer()` does instead.
+// `<form>` or an `<a>` that React does not handle. That would replace the test
+// with the app, so load the page the way `renderServer()` does instead.
 type NavigateEvent = Event & {
   destination: { url: string; sameDocument: boolean };
   hashChange: boolean;

@@ -1,8 +1,4 @@
-// The three layers of the app are three module graphs in one browser tab.
-// Next's bundler config moves a few things across them: the route module is
-// created for the rsc layer but belongs to the ssr layer, and the edge entry
-// of the ssr layer imports the page of the rsc layer. Those cross here.
-//
+// Where the three layers, three module graphs in one tab, reach each other.
 // Each graph has its own copy of this module. They share the object.
 
 export type ServerRequest = {
@@ -44,10 +40,7 @@ export type NextRegistry = {
   pageOverrides: Record<string, unknown>;
   /** Loads a Client Component by its module id, in the ssr layer. */
   loadSsrModule(id: string): Promise<unknown>;
-  /**
-   * `__webpack_require__` for the Flight client of the browser layer: loads a
-   * Client Component by its module id, in that layer.
-   */
+  /** `__webpack_require__` for the Flight client of the browser layer. */
   browserRequire(id: string): Promise<unknown>;
   loadBrowserModule(id: string): Promise<unknown>;
   ssr: { AppPageRouteModule: new (options: unknown) => unknown };
@@ -62,8 +55,5 @@ export const registry = (scope.__vitest_plugin_rsc_next__ ??= {
   pageOverrides: {},
 }) as NextRegistry;
 
-/**
- * Next's build gives the module of a Server Action an id. Here the id of the
- * action already says where it is, so the module id is the action id, marked.
- */
+/** The id of the module of a Server Action is the id of the action, marked. */
 export const actionModulePrefix = "action:";

@@ -1,11 +1,9 @@
 import { endOfCompleteScripts } from "./html-stream.ts";
 
-// A page load, for a tab that cannot load a page: the test runs in this
-// document and has to stay in it. So the document the server sends is moved
-// into this one as it arrives. What the test runner needs stays, its scripts
-// and styles. The rest of what is in the document steps aside for as long as
-// the page is there: a second `<title>` would hide the page's, and text in
-// `<body>` is not what React expects to hydrate.
+// A page load, for a tab that has to stay in the document of the test: the
+// document the server sends is moved into this one as it arrives. The scripts
+// and styles of the test runner stay. The rest steps aside while the page is
+// there: a second `<title>` would hide the page's.
 
 const runnerUrl = window.location.href;
 const elements = (of: Document) => [of.documentElement, of.head, of.body];
@@ -41,11 +39,7 @@ export type PageLoad = {
 
 /**
  * Replaces the page in this document with the one the server streams as
- * `html`, and runs its inline scripts.
- *
- * The server sends a page in parts: first what it has, then each part that
- * was waiting for data, with a script that moves it into place. They show up
- * here as they arrive, like in a browser.
+ * `html`, part by part as in a browser, and runs its inline scripts.
  */
 export function loadDocument(html: ReadableStream<Uint8Array> | null): PageLoad {
   unloadDocument();
@@ -82,11 +76,10 @@ export function loadDocument(html: ReadableStream<Uint8Array> | null): PageLoad 
     document.head.append(...page.head.childNodes);
     if (page.body) document.body.append(...page.body.childNodes);
 
-    // The inline scripts are how the server's HTML continues after its first
-    // bytes: React's, which move streamed content into place, and Next's,
-    // which carry the Flight payload to hydrate with. Run them in document
-    // order, as the parser would have. The scripts with a `src` are the app's
-    // chunks, which `renderServer()` stands in for.
+    // The inline scripts move streamed content into place and carry the
+    // Flight payload. Run them in document order, as the parser would have.
+    // The scripts with a `src` are the app's chunks, which `renderServer()`
+    // stands in for.
     for (const script of document.querySelectorAll("script")) {
       if (before.has(script) || ran.has(script)) continue;
       ran.add(script);

@@ -3,10 +3,9 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import type { AppLoaderOptions } from "next/dist/build/webpack/loaders/next-app-loader/index.js";
 
-// The one file that calls the build code of the project's own `next`. The
-// routes, the route entries, the compile-time constants and the alias tables
-// are what `next build` computes. What the plugin assumes about them is
-// checked here, so that another Next fails when a run starts, with its
+// The one file that calls the build code of the project's own `next`: what
+// `next build` computes is asked from Next. What the plugin assumes about it
+// is checked here, so that another Next fails when a run starts, with its
 // version and what changed.
 
 /** The layers Next compiles an App Router app into, each with its own React. */

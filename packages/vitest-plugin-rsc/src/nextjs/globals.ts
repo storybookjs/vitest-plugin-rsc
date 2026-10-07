@@ -2,9 +2,8 @@ import { Buffer } from "node:buffer";
 import { enterAmbientScope, SequentialAsyncLocalStorage } from "../async-local-storage.ts";
 import { registry } from "./registry.ts";
 
-// Next's server runs here as it does on an edge runtime, which is close to a
-// browser tab: web streams, `fetch`, `crypto`. This file is the rest of that
-// platform. It has to load before any module of Next's server does.
+// What an edge runtime has and a browser tab lacks. It has to load before
+// any module of Next's server does.
 
 // A browser drops `cookie` from the headers of a Request and `set-cookie` from
 // those of a Response. A server has to see both, so the server layers get
