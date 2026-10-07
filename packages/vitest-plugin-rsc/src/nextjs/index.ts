@@ -248,7 +248,11 @@ async function loadPage(
   }
   // The whole document, then the app: what a browser has once the page has
   // loaded.
-  const html = await response.text();
+  const html = await response.text().catch((error: unknown) => {
+    // Leaving the page cuts off the document.
+    superseded();
+    throw error;
+  });
   superseded();
   loadDocument(html);
   // Where the browser ended up, after any redirects.
