@@ -76,10 +76,10 @@ export async function compileServerCode(
   code: string,
   id: string,
   registry: string,
-  { bundled = false } = {},
+  { bundled = false, define = {} as Record<string, string> } = {},
 ): Promise<Compiled | undefined> {
   // Replacements are scope-aware: a parameter named `fetch` is not the global.
-  const defines: Record<string, string> = {};
+  const defines = { ...define };
   if (mentionsServerGlobal.test(code)) {
     for (const name of serverGlobals) {
       defines[name] = defines[`globalThis.${name}`] = `${registry}.${name}`;
@@ -112,6 +112,9 @@ export type ServerCodeOptions = {
    * files and setup files of the Vitest config: glob patterns, relative to the
    * project root. They keep the tab's `window` and `fetch`.
    *
+   * Files are matched by their real path, which for a package is seldom
+   * `node_modules/<name>` under the root. So start a pattern for one with `**`.
+   *
    * @example ["test/**", "**\/node_modules/@electric-sql/pglite/**"]
    */
   testModules?: string | RegExp | (string | RegExp)[];
@@ -120,7 +123,9 @@ export type ServerCodeOptions = {
 // The directory of this package. Its own runtime knows where it runs.
 function findOwnDir(): string {
   let dir = path.dirname(fileURLToPath(import.meta.url));
-  while (!fs.existsSync(path.join(dir, "package.json"))) dir = path.dirname(dir);
+  while (!fs.existsSync(path.join(dir, "package.json")) && dir !== path.dirname(dir)) {
+    dir = path.dirname(dir);
+  }
   return normalizePath(dir);
 }
 
@@ -202,9 +207,9 @@ export function createServerCode(registry: string, options: ServerCodeOptions = 
      * optimizer, among other things. What is compiled into them is part of it.
      */
     cacheKey: { __vitest_plugin_rsc_test_modules__: JSON.stringify(patterns.map(String)) },
-    /** For a module this plugin generates. */
-    compile: async (code: string, id: string) =>
-      (await compileServerCode(code, id, registry))?.code ?? code,
+    /** For a module this plugin generates, with the constants of its layer. */
+    compile: async (code: string, id: string, define: Record<string, string>) =>
+      (await compileServerCode(code, id, registry, { define }))?.code ?? code,
     /** Call once the root of the project is known. */
     configure(root: string): void {
       if (patterns.length > 0) isTestModule = createFilter(patterns, null, { resolve: root });
@@ -224,16 +229,16 @@ export function createServerCode(registry: string, options: ServerCodeOptions = 
           this: { warn(message: string): void },
           code: string,
           id: string,
-        ): Promise<{ code: string; map: null } | undefined> {
+        ): Promise<Compiled | undefined> {
           if (!/\.[cm]?js$/.test(id) || !isServerCode(id, layer)) return;
           try {
-            const result = await compileServerCode(code, id, registry, { bundled: true });
-            return result && { code: result.code, map: null };
+            return await compileServerCode(code, id, registry, { bundled: true });
           } catch (error) {
             // JSX in a `.js` file, for one. The bundler may still take it.
+            const reason = String(error instanceof Error ? error.message : error);
             this.warn(
               `vitest-plugin-rsc: ${id} is not compiled as server code, it does not parse as ` +
-                `JavaScript: ${String(error instanceof Error ? error.message : error).split("\n")[0]}`,
+                `JavaScript. ${reason.replace(/\s+/g, " ")}`,
             );
           }
         },
@@ -254,7 +259,11 @@ export function createServerCode(registry: string, options: ServerCodeOptions = 
           // left out of pre-bundling is served as it is.
           if (file.includes("/node_modules/")) return;
           if (file.startsWith(`${normalizePath(this.environment.config.cacheDir)}/`)) return;
-          if (!isServerCode(file, environments[this.environment.name]!)) return;
+          const layer = environments[this.environment.name]!;
+          // Without Vitest's config there is no telling a test file from a
+          // file of the app, and a test file must keep the tab.
+          if (layer === "rsc" && testFileMatchers.length === 0) return;
+          if (!isServerCode(file, layer)) return;
           return compileServerCode(code, file, registry);
         },
       };

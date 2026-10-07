@@ -59,7 +59,7 @@ test("keeps the text of a function in a source file, for an app that sends it to
 
 test("keeps what is first in a module first", async () => {
   const compiled = await compileServerCode(
-    `"use client";\nexport const width = typeof window;`,
+    `"use client";\nexport const width = typeof window;\nexport const load = () => fetch("/");`,
     "/app/module.js",
     registry,
   );

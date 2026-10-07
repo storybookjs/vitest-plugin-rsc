@@ -63,7 +63,7 @@ After that, Next's router is in charge. A `<Link>` navigation is an RSC request 
 The server layers are written for an edge runtime, which is close to a browser: web streams, `fetch`, `crypto`. The plugin adds the rest of that platform:
 
 - **`Request` and `Response`** that keep `Cookie` and `Set-Cookie`, which a browser drops from its own.
-- **`fetch`**, so that Next patches the server's `fetch`, not the page's. Both reach the same network.
+- **`fetch`**, so that Next patches the server's `fetch`, not the page's. Next does that from the `rsc` layer when it first renders, and both server layers call the result. Both reach the same network.
 - **`AsyncLocalStorage`**. A browser cannot carry a store across `await`. Requests are handled one at a time, and the store a request entered first stays readable until the request ends.
 - **`Buffer`**, **`process`**, and the Node modules an edge runtime has.
 
@@ -82,9 +82,9 @@ The globals only a browser has are `window`, `document`, `location`, `localStora
 | How                    | The five names are declared as variables of the module | `typeof window` is replaced by `"undefined"` |
 | `typeof window`        | `"undefined"`                                          | `"undefined"`                                |
 | `window.innerWidth`    | Throws a `TypeError`                                   | Reads the tab's `window`                     |
-| The text of a function | Unchanged                                              | `typeof window` in it is replaced            |
+| The text of a function | Keeps `window` and the other four names                | `typeof window` in it is replaced            |
 
-The second column is what `next build` does to the bundles it makes for a server, and what libraries rely on to tell a server from a browser. The first goes further, and cannot be used for dependencies: a bundler puts many modules in one scope and renames the variables that clash, inside functions too. That matters for a function that is sent to the browser as text. `next-themes` does that with its theme script, `` `(${script.toString()})()` ``, and in the page that text has to find the tab's `document`.
+The second column is what `next build` does to the bundles it makes for a server, and what libraries rely on to tell a server from a browser. The first goes further, and cannot be used for dependencies: a bundler puts many modules in one scope and renames the variables that clash, inside functions too. That matters for a function that is sent to the browser as text. `next-themes` does that with its theme script, `` `(${script.toString()})()` ``, and in the page that text has to find the tab's `document`. In both columns a `fetch`, `Request` or `Response` in such a function is replaced, and the module may be printed with other whitespace.
 
 A Client Component is a module of two layers: it has no `window` while Next renders it to HTML in `ssr`, and has one in `browser`.
 
@@ -96,10 +96,14 @@ The `rsc` layer shares its Vite environment with the test, and a test needs the 
 
 ```ts
 vitestPluginNext({
-  // Glob patterns, relative to the project root.
-  testModules: ["test/**", "**/node_modules/@electric-sql/pglite/**"],
+  // Glob patterns, relative to the project root. One for a package starts
+  // with `**`: files are matched by their real path, which package managers
+  // put elsewhere than in `node_modules/<name>` under the root.
+  testModules: ["test/**", "**/node_modules/@testing-library/**"],
 });
 ```
+
+Packages that need this are the ones a test uses in the tab and that ask `typeof window` or `typeof document`: `@testing-library/dom` does, for `screen`. The locators of `vitest/browser` need nothing.
 
 Everything else in that environment is server code, including a module that only a test imports and a file with in-source tests. A component that is defined in a test file is code of that test file, and sees the tab. A package that a test or a setup file uses in the tab, and that is not one of Vitest's, has to be in `testModules` if it asks `typeof window`.
 

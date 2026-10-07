@@ -427,13 +427,8 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
   const serverCode = createServerCode(registry, options);
   // A route entry is a module of a server layer that is generated here: Vite
   // only replaces `define` keys in pre-bundled dependencies.
-  const compileRouteEntry = async (code: string, id: string, layer: NextLayer) => {
-    const file = `${id.replace(/\W+/g, "-")}.js`;
-    const { code: defined } = await transformWithOxc(code, file, {
-      define: definesOf(project, layer),
-    });
-    return serverCode.compile(defined, file);
-  };
+  const compileRouteEntry = (code: string, id: string, layer: NextLayer) =>
+    serverCode.compile(code, `${id.replace(/\W+/g, "-")}.js`, definesOf(project, layer));
   const getProject = () => project;
   const resolvers = Object.fromEntries(
     layers.map((layer) => [layer, createLayerResolver(getProject, layer)]),
