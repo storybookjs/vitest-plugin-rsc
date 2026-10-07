@@ -162,7 +162,7 @@ test("pre-bundles a file that is not plain JavaScript as it is, with a warning",
 });
 
 test("tells the server code of a layer from the code of the test", () => {
-  const serverCode = createServerCode(registry, { testModules: ["test/**"] });
+  const serverCode = createServerCode(registry, { browserModules: ["test/**"] });
   serverCode.configure(root);
   serverCode.addTestFiles((file) => file.endsWith(".test.tsx"));
   // A second project that shares the plugin.

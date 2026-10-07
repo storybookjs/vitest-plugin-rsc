@@ -46,6 +46,13 @@ test("hides the window of the tab from a Server Component", async () => {
   await expect.element(page.getByText("Viewport: unknown")).toBeVisible();
 });
 
+test("tells a package of the app that it is on the server", async () => {
+  await renderServer({ url: "/environment" });
+
+  // @t3-oss/env-core refuses to hand out a server variable in a browser.
+  await expect.element(page.getByText("Server variable: hello from the server")).toBeVisible();
+});
+
 test("leaves the tab to a test file", () => {
   expect(typeof window).toBe("object");
   expect(typeof document).toBe("object");
@@ -55,7 +62,7 @@ test("leaves the tab to a test file", () => {
   expect(response.headers.getSetCookie()).toEqual([]);
 });
 
-test("leaves the tab to a module that the config lists in testModules", async () => {
+test("leaves the tab to a module that the config lists in browserModules", async () => {
   expect(whereAmI()).toBe("browser");
   signInAs("grace");
 

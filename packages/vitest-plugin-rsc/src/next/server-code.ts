@@ -108,16 +108,24 @@ export async function compileServerCode(
 
 export type ServerCodeOptions = {
   /**
-   * Modules that are part of the test and not of the app, next to the test
-   * files and setup files of the Vitest config: glob patterns, relative to the
-   * project root. They keep the tab's `window` and `fetch`.
+   * Modules that have to see the browser they really run in: glob patterns,
+   * relative to the project root. They keep the tab's `window` and `fetch`,
+   * as the test files and setup files of the Vitest config do.
+   *
+   * Server code asks `typeof window` to know its role: is this the server
+   * side of the app? There the answer has to be yes. A module asks the same
+   * to know what it can do: is there a DOM to query, a `document.cookie` to
+   * set? There the answer has to be the truth, and the code cannot say which
+   * of the two it is. So everything gets the first answer, and this option
+   * lists what needs the second: a helper of the tests, or a package they
+   * use on the page.
    *
    * Files are matched by their real path, which for a package is seldom
    * `node_modules/<name>` under the root. So start a pattern for one with `**`.
    *
-   * @example ["test/**", "**\/node_modules/@electric-sql/pglite/**"]
+   * @example ["test/**", "**\/node_modules/@testing-library/**"]
    */
-  testModules?: string | RegExp | (string | RegExp)[];
+  browserModules?: string | RegExp | (string | RegExp)[];
 };
 
 // The directory of this package. Its own runtime knows where it runs.
@@ -179,8 +187,8 @@ const name = "vitest-plugin-rsc:next-server-code";
 
 export function createServerCode(registry: string, options: ServerCodeOptions = {}) {
   const ownDir = findOwnDir();
-  const patterns = [options.testModules ?? []].flat();
-  let isTestModule: (file: string) => boolean = () => false;
+  const patterns = [options.browserModules ?? []].flat();
+  let isBrowserModule: (file: string) => boolean = () => false;
   // One for every Vitest project this plugin is in.
   const testFileMatchers: ((file: string) => boolean)[] = [];
   let testRunnerPackages = new Set<string>();
@@ -188,14 +196,14 @@ export function createServerCode(registry: string, options: ServerCodeOptions = 
   /**
    * Whether a file is server code in a layer. Everything in the ssr layer is.
    * The rsc layer shares its environment with the test: the test files, what
-   * runs them and what the options add to those are not.
+   * runs them and the `browserModules` of the options are not.
    */
   function isServerCode(file: string, layer: NextLayer): boolean {
     if (layer === "browser" || !path.isAbsolute(file)) return false;
     file = normalizePath(file);
     if (file.startsWith(`${ownDir}/`)) return false;
     if (layer === "ssr") return true;
-    if (isTestModule(file) || testFileMatchers.some((matches) => matches(file))) return false;
+    if (isBrowserModule(file) || testFileMatchers.some((matches) => matches(file))) return false;
     const packageDir = packageDirOf(file);
     return !packageDir || !testRunnerPackages.has(packageDir);
   }
@@ -206,13 +214,13 @@ export function createServerCode(registry: string, options: ServerCodeOptions = 
      * Vite keys its cache of pre-bundled dependencies on the `define` of the
      * optimizer, among other things. What is compiled into them is part of it.
      */
-    cacheKey: { __vitest_plugin_rsc_test_modules__: JSON.stringify(patterns.map(String)) },
+    cacheKey: { __vitest_plugin_rsc_browser_modules__: JSON.stringify(patterns.map(String)) },
     /** For a module this plugin generates, with the constants of its layer. */
     compile: async (code: string, id: string, define: Record<string, string>) =>
       (await compileServerCode(code, id, registry, { define }))?.code ?? code,
     /** Call once the root of the project is known. */
     configure(root: string): void {
-      if (patterns.length > 0) isTestModule = createFilter(patterns, null, { resolve: root });
+      if (patterns.length > 0) isBrowserModule = createFilter(patterns, null, { resolve: root });
       // Vitest pre-bundles its own runtime for the tab, in the environment of
       // the test, which is the one of the rsc layer.
       testRunnerPackages = findPackagesWithDependencies(testRunnerPackageNames(root), root);

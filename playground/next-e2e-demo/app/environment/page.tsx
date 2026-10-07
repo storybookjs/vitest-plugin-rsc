@@ -1,4 +1,5 @@
 import { RenderedIn } from "../components/rendered-in.tsx";
+import { env } from "../lib/env.ts";
 
 // A server has no window to measure.
 function viewport(): string {
@@ -15,6 +16,7 @@ export default function EnvironmentPage() {
       <h1>Environment</h1>
       <p>Server Component: typeof window is {typeof window}</p>
       <p>Viewport: {viewport()}</p>
+      <p>Server variable: {env.GREETING}</p>
       <RenderedIn />
     </>
   );
