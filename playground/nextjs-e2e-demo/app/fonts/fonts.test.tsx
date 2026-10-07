@@ -18,6 +18,11 @@ afterEach(() => {
   expect(consoleError.mock.calls).toEqual([]);
 });
 
+// The font itself, the first family of the list. The one after it is Next's
+// fallback, a local Arial with the metrics of the font: a machine without
+// Arial has nothing to load for it, and `load()` then rejects.
+const loadFont = (fontFamily: string) => document.fonts.load(`16px ${fontFamily.split(",")[0]}`);
+
 test("sets text in a font of next/font/local, a file of the app", async () => {
   await renderServer({ url: "/fonts" });
 
@@ -25,7 +30,7 @@ test("sets text in a font of next/font/local, a file of the app", async () => {
   await expect.element(text).toHaveClass(geist.className);
   await expect.element(text).toHaveStyle({ fontFamily: geist.style.fontFamily });
   // Served where Next's build puts it.
-  const [face] = await document.fonts.load(`16px ${geist.style.fontFamily}`);
+  const [face] = await loadFont(geist.style.fontFamily);
   expect(face?.status).toBe("loaded");
 });
 
@@ -37,7 +42,7 @@ test("sets text in a font of next/font/google, which Next hosts itself", async (
   await expect.element(text).toHaveClass(inter.className);
   await expect.element(text).toHaveStyle({ fontFamily: inter.style.fontFamily });
   // Not its fallback font, which Next sets when the download fails.
-  const [face] = await document.fonts.load(`16px ${inter.style.fontFamily}`);
+  const [face] = await loadFont(inter.style.fontFamily);
   expect(face?.family).toBe("Inter");
   expect(face?.status).toBe("loaded");
   const sources = [...document.querySelectorAll("style")].flatMap(
@@ -53,7 +58,7 @@ test("sets text in the font of a package that calls next/font itself, like geist
   const text = page.getByText("Set in the font of a package");
   await expect.element(text).toHaveClass(GeistMono.className);
   await expect.element(text).toHaveStyle({ fontFamily: GeistMono.style.fontFamily });
-  const [face] = await document.fonts.load(`16px ${GeistMono.style.fontFamily}`);
+  const [face] = await loadFont(GeistMono.style.fontFamily);
   expect(face?.status).toBe("loaded");
 });
 
@@ -80,6 +85,6 @@ test("loads a font that only a Client Component calls", async () => {
   const text = page.getByText("Set in a font of a Client Component");
   const { fontFamily } = getComputedStyle(text.element());
   expect(fontFamily).toMatch(/^display, "display Fallback"$/);
-  const [face] = await document.fonts.load(`16px ${fontFamily}`);
+  const [face] = await loadFont(fontFamily);
   expect(face?.status).toBe("loaded");
 });
