@@ -142,9 +142,13 @@ function createNodeResponse() {
   const body = new ReadableStream<Uint8Array>({
     start: (c) => void (controller = c),
     // Whoever reads the response has left, like a browser that leaves a page.
-    cancel: () => response.destroy(),
+    cancel() {
+      cancelled = true;
+      response.destroy();
+    },
   });
   let wrote = false;
+  let cancelled = false;
   let sendHead!: () => void;
   // Resolves when the status and the headers are final: at the first byte.
   const head = new Promise<void>((resolve) => (sendHead = resolve));
@@ -208,13 +212,16 @@ function createNodeResponse() {
       // like `after()`, comes after whoever asked has its answer.
       nativeSetTimeout(() => response.emit("close"));
     },
-    /** Ends the response before all of it went out. Without an error, the reader left. */
+    /**
+     * Ends the response before all of it went out: with an error, or without
+     * one when whoever asked has left. Before its head there is no response
+     * to end: see `respond()`.
+     */
     destroy(error?: unknown) {
       if (response.destroyed || response.writableEnded) return;
       response.destroyed = true;
-      sendHead();
-      // A reader that left has cancelled the body already.
-      if (error !== undefined) controller.error(error);
+      // A reader that cancelled the body has ended it already.
+      if (response.headersSent && !cancelled) controller.error(error ?? leftBeforeSent());
       response.emit("close");
     },
     /** The response as the tab gets it, once its head is there. */
@@ -249,14 +256,27 @@ function toHeaders(values: Record<string, unknown>, init?: HeadersInit): Headers
 
 type NodeResponse = ReturnType<typeof createNodeResponse>;
 
+const leftBeforeSent = () =>
+  new DOMException("The page was left before the server had sent it.", "AbortError");
+const pending = new Promise<never>(() => {});
+
 // The response of the server once its head is there, while `written` goes on
 // to write the body. What fails before that is the failure of the request;
 // after it, the body ends with the error.
+//
+// A request that is left before its head has no response. It lasts until
+// Next's handler is done with it, which can be much later, when the data it
+// waited for comes: its stores have to be there until then.
 function respond(res: NodeResponse, written: Promise<unknown>): Promise<Response> {
-  const failed = new Promise<never>((_, reject) =>
-    written.catch((error) => (res.headersSent ? res.destroy(error ?? new Error()) : reject(error))),
+  const settled = written.then(
+    () => (res.headersSent ? pending : Promise.reject(leftBeforeSent())),
+    (error) => {
+      if (!res.headersSent) throw error;
+      res.destroy(error ?? new Error("The request handler failed."));
+      return pending;
+    },
   );
-  return Promise.race([res.toResponse(toHeaders), failed]);
+  return Promise.race([res.toResponse(toHeaders), settled]);
 }
 
 // What `next start` knows of a request before a route gets it: the URL the
