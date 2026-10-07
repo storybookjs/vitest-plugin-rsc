@@ -79,9 +79,16 @@ jobs:
       - run: pnpm build
       - run: pnpm test:dist
 
-  next-canary:
-    name: Next.js canary
+  next:
+    name: Next.js ${{ matrix.next }}
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # The Test job runs the pinned Next.js. `latest` tells when a release
+        # changes something of Next that the plugin calls, `canary` tells it
+        # before the release.
+        next: [latest, canary]
     steps:
       - uses: actions/checkout@v6
       - uses: pnpm/action-setup@v6
@@ -90,12 +97,10 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      # The Test job runs the pinned Next.js. This one tells early when a
-      # canary changes something of Next that the plugin calls.
-      - name: Install Next.js canary
+      - name: Install Next.js ${{ matrix.next }}
         run: |
-          pnpm --filter nextjs-e2e-demo add next@canary
-          pnpm --filter nextjs-notes-demo add next@canary @next/env@canary
+          pnpm --filter nextjs-e2e-demo add next@${{ matrix.next }}
+          pnpm --filter nextjs-notes-demo add next@${{ matrix.next }} @next/env@${{ matrix.next }}
       - run: pnpm exec playwright install --with-deps --only-shell chromium
       - run: pnpm build
       - name: Test the Next.js playgrounds

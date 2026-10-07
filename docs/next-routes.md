@@ -12,7 +12,7 @@ Only the build is tied to a bundler. So this plugin does the build with Vite, an
 
 | What                                         | Where it comes from                                               |
 | -------------------------------------------- | ----------------------------------------------------------------- |
-| The routes of the app                        | `next/dist/build/route-discovery`                                 |
+| The routes of the app                        | `next/dist/build/route-discovery`, `normalizeCatchAllRoutes()`    |
 | A route's loader tree: page, layouts, errors | `next-app-loader`, Next's webpack loader, called as-is            |
 | A page's request handler                     | `next/dist/build/templates/edge-ssr-app`, expanded by Next        |
 | A route handler's route module               | `next-app-loader` again, which expands `templates/app-route`      |
@@ -22,6 +22,27 @@ Only the build is tied to a bundler. So this plugin does the build with Vite, an
 | React                                        | The React that Next ships, through `createVendoredReactAliases()` |
 
 Everything behind those is Next's runtime, unchanged: `handler(Request)` returns the `Response` a deployment would send.
+
+The routes are listed the way `next build` lists its entries. The pages with the same pathname are one route, a catch-all page in a slot is added to the routes it also matches, and an app whose parallel routes `next build` rejects is rejected here, with the pages and slots it is about. The loader gets the options a build passes, so a layout of slots only has no `children`, as in a deployment.
+
+### When Next Changes
+
+All of this is internal to Next, and it changes between minor versions. The output of the build code names the runtime it was made for: the constants the runtime reads, the files an alias leads to, the arguments a template passes. So the plugin does not bring a copy of Next's build code. It calls the one of the installed `next`, from one file, `project.ts`, which is typed against Next's own declarations.
+
+That file checks what the plugin relies on when a run starts. A Next.js that differs stops the run with one message: the version, and what is different.
+
+| What is checked                                                                  | Without the check                                    |
+| -------------------------------------------------------------------------------- | ---------------------------------------------------- |
+| Every file and export of the build code that is called                           | A `TypeError` somewhere in the plugin                |
+| `discoverRoutes()` returns `mappedAppPages`                                      | An app without routes: every URL is a 404            |
+| `getDefineEnv()` sets `process.env.NEXT_RUNTIME` to `edge` for the server layers | Next's modules load their Node.js builds in the tab  |
+| The alias tables have `react-server-dom-webpack/server$`                         | A `TypeError` on a path                              |
+| `IncrementalCache` takes `fs`, `serverDistDir` and `fetchCacheKeyPrefix`         | Nothing is cached, or a test finds another's entries |
+| The app loader's output has `__webpack_require__` and imports `app-page-runtime` | Next's Node.js request handler loads in the tab      |
+| The `app-route` template loads `route.ts` with `userland: () => require(`        | A `require` that the tab does not have               |
+| The `edge-ssr-app` template imports the page as `pageMod`                        | An import of a module that does not exist            |
+
+What it cannot check is what Next's runtime does with all of that once a request comes in: a manifest field it starts to read, or a key it starts to require in the loader tree. That shows up as a failing test. CI runs both playgrounds against `next@latest` and `next@canary` for it.
 
 ## Three Layers, Three Environments
 
