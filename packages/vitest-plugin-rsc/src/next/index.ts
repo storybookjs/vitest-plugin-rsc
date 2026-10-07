@@ -3,12 +3,12 @@ import type { ReactNode } from "react";
 import { resetAsyncLocalStorage } from "../async-local-storage.ts";
 import { createEnvironmentRunner, importEnvironment } from "../utilts.ts";
 import { loadDocument, unloadDocument } from "./document.ts";
+import * as viteClient from "virtual:vitest-plugin-rsc/next-vite-client";
 import { registry } from "./registry.ts";
 
-// The page's own copy of Vite's client, which the browser has loaded by now.
-// The other two layers use it too: see vite-client.ts.
-const { BASE_URL = "/" } = (import.meta as { env?: { BASE_URL?: string } }).env ?? {};
-registry.viteClient = await import(/* @vite-ignore */ `${BASE_URL}@vite/client`);
+// The page's own instance of Vite's client. The other two layers use it too:
+// see vite-client.ts.
+registry.viteClient = viteClient;
 
 // The server's platform (globals.ts) has to be there before a module of Next's
 // server loads, so the layers load from here on, in order: rsc, then ssr.

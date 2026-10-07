@@ -72,13 +72,20 @@ export function requireModule(id: string): Promise<unknown> {
   return loading;
 }
 
-// An action id is `<module>#<export>`, and it comes from a request: the module
-// may not be there, or not have the export.
-registry.hasServerAction = (id) =>
-  requireModule(actionModulePrefix + id).then(
-    (module) => typeof (module as Record<string, unknown>)[id] === "function",
-    () => false,
-  );
+// An action id is `<module>#<export>`, and it comes from a request: it may not
+// be an id at all, or name an export that is not there or is not an action.
+registry.hasServerAction = async (id) => {
+  if (!id.includes("#")) return false;
+  try {
+    const actions = (await requireModule(actionModulePrefix + id)) as Record<string, unknown>;
+    const action = actions[id] as { $$typeof?: symbol } | undefined;
+    return action?.$$typeof === Symbol.for("react.server.reference");
+  } catch {
+    // The module did not load. That is an error of the app and not an unknown
+    // action: Next loads the module again, gets the same error and reports it.
+    return true;
+  }
+};
 
 async function loadModule(id: string): Promise<unknown> {
   if (id.startsWith(actionModulePrefix)) {

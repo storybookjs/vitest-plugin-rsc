@@ -332,7 +332,7 @@ test("leaves the page with unmount()", async () => {
   await expect.element(page.getByRole("heading", { name: "Home" })).not.toBeInTheDocument();
 });
 
-test("loads a page over the connections to the dev server that the tab has", async () => {
+test("loads a page with the one Vite client that the tab has", async () => {
   await renderServer({ url: "/settings" });
   // Vite's client opens a websocket when it is evaluated. The tab has one.
   const WebSocket = vi.spyOn(globalThis, "WebSocket");
@@ -341,4 +341,10 @@ test("loads a page over the connections to the dev server that the tab has", asy
 
   await expect.element(page.getByRole("button", { name: "Theme: light" })).toBeVisible();
   expect(WebSocket).not.toHaveBeenCalled();
+  // And the tab has loaded it from one URL: another URL is another instance.
+  const clients = performance
+    .getEntriesByType("resource")
+    .map((entry) => new URL(entry.name))
+    .filter((url) => url.pathname.endsWith("/@vite/client"));
+  expect(clients.map((url) => url.pathname + url.search)).toEqual(["/@vite/client"]);
 });

@@ -118,8 +118,6 @@ function createLayerResolver(getProject: () => NextProject, layer: NextLayer) {
     return file;
   }
 
-  const projectFile = () => path.join(getProject().root, "package.json");
-
   function toSpecifier(file: string): string {
     return `next/${path.relative(getProject().nextDir, file).split(path.sep).join("/")}`;
   }
@@ -250,14 +248,13 @@ function createLayerResolver(getProject: () => NextProject, layer: NextLayer) {
         if (target === source) return;
         // Not found as a file of the `next` package: leave the import alone.
         if (specifier !== source && target === specifier && !nextFile(target)) return;
-        // Keep it a bare specifier, so Vite maps it to the pre-bundled
-        // dependency. It is a file of the project's `next`, so look it up from
-        // the project: a package like `next-themes` may see no `next` from
-        // where it is installed, or another copy of it.
-        return this.resolve(target, target.startsWith("next/") ? projectFile() : importer, {
-          ...options,
-          skipSelf: true,
-        });
+        // Keep it a bare specifier, so Vite maps it to the pre-bundled dependency.
+        // Next is the project's: a package of the app that imports `react`
+        // can have another `next` closer by, as in a pnpm workspace.
+        const from = target.startsWith("next/")
+          ? path.join(getProject().root, "package.json")
+          : importer;
+        return this.resolve(target, from, { ...options, skipSelf: true });
       },
       load(id) {
         if (id === emptyModuleId) return "export {};";

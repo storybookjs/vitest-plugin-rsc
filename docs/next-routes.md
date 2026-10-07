@@ -71,10 +71,10 @@ And for the browser side, a page load: the tab cannot navigate away from the tes
 
 Two things that a build knows and a request has to find out here:
 
-- **Server Actions.** Next's build lists every action of the app. Here an action is the module and the export its id names, so the server looks whether the id of a request names one. An id that does not gets the response Next gives a request from another deployment: `409`, with `x-nextjs-action-not-found`.
-- **Vite's client.** Vite imports `/@vite/client` into modules with CSS or `import.meta.hot`. The `ssr` and `browser` layers load through a module runner, and get the client the page already has. A copy of their own would open a websocket per page load, to the port the dev server was configured with, which is another server when that port was taken.
+- **Server Actions.** Next's build lists every action of the app. Here an action is the module and the export its id names (`<module>#<export>`), so for a `POST` with a `next-action` header the server looks whether that id names a Server Action, and lists only that one. An id that names none gets the response Next gives when it has no such action: `409`, with `x-nextjs-action-not-found`. Next answers an id that cannot be one of its own with `400`; that does not happen here, because an id here is not shaped like Next's. When the module of the action fails to load, that error is the response, a `500`.
+- **Vite's client.** Vite imports `/@vite/client` into a module with CSS, with `import.meta.hot`, or with a dynamic import it cannot analyse, like the one that loads a Client Component by its id. The `ssr` and `browser` layers load through a module runner, and get the client the page already has. A copy of their own would open a websocket per page load, to the port the dev server was configured with, which is another server when that port was taken.
 
-`next.config.ts` is loaded by Next, from the project directory: Next looks up what the config imports by a relative path from the working directory.
+Next loads `next.config.ts` itself. It compiles the file and runs the result as a module without a filename, so Node looks up a relative import of the config, like `./env.ts`, from the working directory. For `next build` that is the project; for Vitest it can be the root of a workspace. So the plugin makes the project the working directory of the process while Next loads the config, one project at a time.
 
 ## Not Yet
 
@@ -83,7 +83,9 @@ Two things that a build knows and a request has to find out here:
 - `"use cache"` and `unstable_cache`. The store a request entered first is the one a later task reads, so code that resumes after an `await` inside a cache scope reads the request's store instead of the cache's. And nothing stores what `unstable_cache` computed for the next request.
 - `fetch` in your own server code is the browser's `fetch`, without Next's cache options. And `typeof window` is `"object"` there: only Next's own server code is compiled as server code.
 - `vi.mock()` replaces a module in the `rsc` layer, where the test runs. The other two layers load their modules themselves, so a mock does not reach a Client Component.
+- A form that is posted without JavaScript, before the page has hydrated. Such a request names its action in the form data and not in a `next-action` header, and the server does not look there: it renders the page and does not run the action.
 - One request at a time. A request that waits for another one that the test has not sent yet will wait forever.
 - A same-origin `fetch` is only the app's when Next's router or a Server Action sends it. Other requests go to the dev server.
 - A navigation that leaves the page without Next's router, like `location.assign()`, is turned into a page load with the Navigation API, which today means Chromium.
 - Every `renderServer()` loads React and the app's client code again, as a page load does. The listeners React adds to the document stay, so a tab that visits thousands of pages grows.
+- A test file starts slowly: its tab loads Next's runtime for three layers before the first test. With as many tabs as cores, the first test of a file can time out. `playground/nextjs-notes-demo` sets `maxWorkers: 4` for that.

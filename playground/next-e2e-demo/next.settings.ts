@@ -1,1 +1,1 @@
-export const reactStrictMode = true;
+export const pageExtensions = ["tsx", "ts", "jsx", "js"];

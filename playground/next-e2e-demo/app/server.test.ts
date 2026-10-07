@@ -42,6 +42,43 @@ test("answers a Server Action that the app does not have the way Next does", asy
   warn.mockRestore();
 });
 
+test("does not call an export of the app that is not a Server Action", async () => {
+  const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+  // A function of the server, in a module without "use server".
+  const response = await handleRequest("/notes", {
+    method: "POST",
+    headers: { "next-action": "/app/layout.tsx#default" },
+    body: "[]",
+  });
+
+  expect(response.status).toBe(409);
+  expect(response.headers.get("x-nextjs-action-not-found")).toBe("1");
+  expect(warn).toHaveBeenCalledOnce();
+  warn.mockRestore();
+});
+
+test("reports the error of a Server Action whose module fails to load", async () => {
+  const error = vi.spyOn(console, "error").mockImplementation(() => {});
+  const call = () =>
+    handleRequest("/notes", {
+      method: "POST",
+      headers: { "next-action": "/app/lib/broken-actions.ts#unreachable" },
+      body: "[]",
+    });
+
+  const response = await call();
+
+  expect(response.status).toBe(500);
+  expect(response.headers.get("x-nextjs-action-not-found")).toBeNull();
+  expect(await response.text()).toContain("The actions of this module cannot load");
+  expect(String(error.mock.calls[0]?.[0])).toContain("The actions of this module cannot load");
+
+  // And again: the error is not replaced by "no such action" the second time.
+  expect((await call()).status).toBe(500);
+  error.mockRestore();
+});
+
 test("sends the cookie header of a request", async () => {
   const response = await handleRequest("/notes", { headers: { cookie: "last-created=3" } });
 

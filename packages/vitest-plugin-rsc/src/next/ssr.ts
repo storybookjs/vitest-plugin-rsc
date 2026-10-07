@@ -125,7 +125,7 @@ async function handle(request: ServerRequest): Promise<Response> {
     // and export, so the only one to list is the one this request calls, if
     // the app has it. An id that names no action stays out, and Next answers
     // it the way it answers a request from another deployment.
-    const actionId = request.headers.get("next-action");
+    const actionId = request.method === "POST" ? request.headers.get("next-action") : null;
     const actions =
       actionId && (await registry.hasServerAction(actionId))
         ? {

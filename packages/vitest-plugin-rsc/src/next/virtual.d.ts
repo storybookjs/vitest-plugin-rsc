@@ -3,6 +3,10 @@ declare module "virtual:vitest-plugin-rsc/next-manifest" {
   export const nextConfig: Record<string, unknown>;
 }
 
+declare module "virtual:vitest-plugin-rsc/next-vite-client" {
+  export const createHotContext: unknown;
+}
+
 declare module "virtual:vitest-plugin-rsc/next-app-pages" {
   const appPages: Record<string, () => Promise<unknown>>;
   export default appPages;
