@@ -180,7 +180,7 @@ A URL that is not a route gets the app's not-found page, with status `404`.
 
 Before and after every test the page is left, the tab's cookies are cleared, and so is what the app put in `localStorage` and `sessionStorage`. The server forgets what it has cached. A test starts like a new browser context.
 
-A page has a `<body>` of its own, as in a browser, and so has a node: what your test has in the body moves into it, and back. So read `document.body` when you need it: a body you kept from before the page is not the page's. Testing Library's `screen` is bound to the body at import, use `within(document.body)` or Vitest's `page`.
+A page has a `<body>` of its own, as in a browser, and so has a node: what your test has in the body moves into it, and back. A move takes the focus from an element and loads an `<iframe>` again. So read `document.body` when you need it: a body you kept from before the page is not the page's. Testing Library's `screen` is bound to the body at import, use `within(document.body)` or Vitest's `page`.
 
 ### Render One Component
 
@@ -630,7 +630,7 @@ The options for a node, all optional:
 | `headers`     | Headers for the request, next to the ones a browser sends.                                          |
 | `wrapper`     | A component that wraps the node on the server. It can be a Server Component.                        |
 | `container`   | An empty element for the node. Defaults to a new `<div>` in `baseElement`, which `cleanup` removes. |
-| `baseElement` | Defaults to `container` if you pass one, or else to `document.body`, the body of the node.          |
+| `baseElement` | Defaults to `container` if you pass one, or else to `document.body`, whichever body that is.        |
 
 A node resolves with `{ container, baseElement, asFragment, unmount, response }`.
 

@@ -274,9 +274,11 @@ export async function renderServer(
   // Leaving the page that is there takes what was added to the document
   // since it loaded, so the container comes after that.
   await leavePage();
+  // A body is the one of the document, whichever that is: a node has a body
+  // of its own, and the page after it another.
+  const base = options.baseElement instanceof HTMLBodyElement ? undefined : options.baseElement;
   const container =
-    options.container ??
-    (options.baseElement ?? document.body).appendChild(document.createElement("div"));
+    options.container ?? (base ?? document.body).appendChild(document.createElement("div"));
   if (!options.container) containers.add(container);
   const ui = wrapper ? createElement(wrapper, null, first) : first;
   const response = await loadPage(
@@ -287,8 +289,9 @@ export async function renderServer(
   return {
     response,
     container,
-    // The body is the node's own, and is there once the node has loaded.
-    baseElement: options.baseElement ?? options.container ?? document.body,
+    get baseElement() {
+      return base ?? options.container ?? document.body;
+    },
     asFragment() {
       const fragment = document.createRange().createContextualFragment(container.innerHTML);
       // Not the scripts that run: they are how Next and React bring the page

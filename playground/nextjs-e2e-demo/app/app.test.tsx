@@ -381,6 +381,19 @@ test("lets go of a node that rendered a portal in the body", async () => {
   mine.remove();
 });
 
+test("gives the body of the document as the base element, also after the node is left", async () => {
+  const result = await renderServer(<Link href="/notes">All notes</Link>, {
+    baseElement: document.body,
+  });
+  expect(result.baseElement === document.body).toBe(true);
+  expect(result.baseElement.contains(result.container)).toBe(true);
+
+  await page.getByRole("link", { name: "All notes" }).click();
+
+  await expect.element(page.getByRole("heading", { name: "Notes" })).toBeVisible();
+  expect(result.baseElement === document.body).toBe(true);
+});
+
 test("lets go of a node that the test has left, also in a container of the test's", async () => {
   const tab = globalThis as { __viteRscCallServer?: object };
   // The test keeps this container, and React adds its listeners to it, not
