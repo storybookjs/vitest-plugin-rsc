@@ -738,7 +738,28 @@ Without a `url` the node renders at `/`. The page module itself is not loaded, s
 
 `renderServer` resolves with `{ response, unmount }`: the server's `Response` to the document request, and a function that leaves the page.
 
-`vi.mock()` works on the modules your Server Components and Server Actions import. It does not reach Client Components, which load in module graphs of their own.
+Mock the modules of your app in a setup file, not in a test file. With `isolate: false` the test files of a tab share their modules, so the file that loads a module first decides whether the others get the mock. A bare `vi.mock()` is enough, and each test says what the mock does with `vi.mocked()`:
+
+```ts
+// vitest.setup.ts
+import { vi } from "vitest";
+
+vi.mock("./app/lib/weather.ts");
+```
+
+```tsx
+import { getForecast } from "../lib/weather.ts";
+
+test("shows the forecast", async () => {
+  vi.mocked(getForecast).mockResolvedValue("sunny");
+
+  await renderServer({ url: "/forecast" });
+
+  await expect.element(page.getByText("Today: sunny")).toBeVisible();
+});
+```
+
+A mock replaces the module your Server Components and Server Actions import. It does not reach Client Components, which load in module graphs of their own.
 
 `handleRequest(url, init)` sends a single request and resolves with the response, for when the response is what you assert on: a status, a header, the HTML or the Flight payload.
 

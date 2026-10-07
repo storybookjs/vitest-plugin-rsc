@@ -69,13 +69,21 @@ The server layers are written for an edge runtime, which is close to a browser: 
 
 And for the browser side, a page load: the tab cannot navigate away from the test, so the server's document is moved into the test's document as it streams, its inline scripts are run in order, and the URL is set with the History API.
 
+## Mocks
+
+`vi.mock()` replaces a module in the `rsc` layer, where the test runs: the module your Server Components and Server Actions import. The other two layers load their modules themselves, so a mock does not reach a Client Component.
+
+The mocks of app modules go in a setup file. With `isolate: false` the test files of a tab share their modules, so a module is mocked for all of them or for none, and the file that loads it first decides. A setup file runs before every test file. A bare `vi.mock("./app/lib/weather.ts")` there is enough, and a test says what the mock does with `vi.mocked(getForecast).mockResolvedValue("sunny")`.
+
+`vitestPluginRSC()` adds a last setup file of its own that waits until those mocks are in place. In browser mode, Vitest 5.0.0-beta.7 to 5.0.3 does not wait for that before it imports a test file, so a test file with no `vi.mock()` of its own would get the real module ([vitest-dev/vitest#11450](https://github.com/vitest-dev/vitest/issues/11450)).
+
 ## Not Yet
 
 - `next/font`, `next/image` optimization, and metadata files like `icon.png` and `sitemap.ts`. These are build-time loaders that still have to be ported.
 - Route handlers (`route.ts`), `middleware.ts` / `proxy.ts`, and the redirects, rewrites and headers of `next.config`.
 - `"use cache"` and `unstable_cache`. The store a request entered first is the one a later task reads, so code that resumes after an `await` inside a cache scope reads the request's store instead of the cache's.
 - `fetch` in your own server code is the browser's `fetch`, without Next's cache options. And `typeof window` is `"object"` there: only Next's own server code is compiled as server code.
-- `vi.mock()` replaces a module in the `rsc` layer, where the test runs. The other two layers load their modules themselves, so a mock does not reach a Client Component.
+- A mock for Client Components: see [Mocks](#mocks).
 - One request at a time. A request that waits for another one that the test has not sent yet will wait forever.
 - A same-origin `fetch` is only the app's when Next's router or a Server Action sends it. Other requests go to the dev server.
 - A navigation that leaves the page without Next's router, like `location.assign()`, is turned into a page load with the Navigation API, which today means Chromium.

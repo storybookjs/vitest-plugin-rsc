@@ -30,6 +30,11 @@
       "vitest-plugin-rsc-source": "./src/index.ts",
       "default": "./dist/index.js"
     },
+    "./setup-mocks": {
+      "types": "./dist/setup-mocks.d.ts",
+      "vitest-plugin-rsc-source": "./src/setup-mocks.ts",
+      "default": "./dist/setup-mocks.js"
+    },
     "./async-hooks": {
       "types": "./dist/async-hooks.d.ts",
       "vitest-plugin-rsc-source": "./src/async-hooks.ts",

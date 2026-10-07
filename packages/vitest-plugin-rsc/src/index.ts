@@ -1,4 +1,6 @@
 import { createServer } from "node:net";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { type Plugin, type ViteDevServer } from "vite";
 import { vitePluginRscMinimal } from "@vitejs/plugin-rsc/plugin";
 import { createReactClientCoveragePlugin } from "./coverage.ts";
@@ -16,6 +18,11 @@ type ReactClientWebSocketInvoke = {
   environment: string;
   payload: ReactClientInvokePayload;
 };
+
+// Vitest wants a file for a setup file. This is `vitest-plugin-rsc/setup-mocks`.
+const setupMocksFile = fileURLToPath(
+  new URL(`./setup-mocks${path.extname(import.meta.url)}`, import.meta.url),
+);
 
 function withConfiguredSourceConditions(
   config: { resolve?: { conditions?: string[] } },
@@ -85,6 +92,8 @@ export function vitestPluginRSC(): Plugin[] {
       },
       config(config) {
         return {
+          // Appended, so after the project's own setup files: see setup-mocks.ts.
+          test: { setupFiles: [setupMocksFile] },
           resolve: {
             alias: {
               "node:async_hooks": "vitest-plugin-rsc/async-hooks",

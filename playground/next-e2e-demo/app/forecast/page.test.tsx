@@ -3,9 +3,8 @@ import { expect, test, vi } from "vitest";
 import { page } from "vitest/browser";
 import { getForecast } from "../lib/weather.ts";
 
-vi.mock("../lib/weather.ts");
-
-test("renders a route with a mocked server module", async () => {
+// The mock itself is in vitest.setup.ts.
+test("renders a route with a server module mocked in the setup file", async () => {
   vi.mocked(getForecast).mockResolvedValue("sunny");
 
   await renderServer({ url: "/forecast" });

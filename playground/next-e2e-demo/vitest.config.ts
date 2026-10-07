@@ -22,5 +22,6 @@ export default defineProject({
       instances: [{ browser: "chromium" }],
     },
     isolate: false,
+    setupFiles: ["./vitest.setup.ts"],
   },
 });
