@@ -513,6 +513,8 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
         test.setupFiles = [setupFile, ...[test.setupFiles ?? []].flat()];
 
         return {
+          // Next's build resolves the `paths` of the tsconfig.
+          resolve: { tsconfigPaths: config.resolve?.tsconfigPaths ?? true },
           environments: {
             [environmentOf.rsc]: {
               optimizeDeps: {

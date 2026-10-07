@@ -67,7 +67,7 @@ test("scopes the styles of styled-jsx to their component", async () => {
     .not.toHaveStyle({ color: "rgb(128, 0, 128)" });
 });
 
-test("lets a Server Component import server-only code", async () => {
+test("lets a Server Component import server-only code, by a path of the tsconfig", async () => {
   await renderServer({ url: "/secret" });
 
   await expect.element(page.getByText("API key: key-123")).toBeVisible();
