@@ -4,6 +4,7 @@ import { page } from "vitest/browser";
 import { auditLog } from "../lib/audit.ts";
 import { db } from "../lib/notes.ts";
 import { getForecast } from "../lib/weather.ts";
+import { nextRuntime } from "../../test/runtime.ts";
 
 let consoleError: MockInstance<typeof console.error>;
 
@@ -28,8 +29,8 @@ test("serves a route handler with a dynamic segment", async () => {
     note: { id: "1", title: "Inbox triage", body: "Sort the inbox" },
     // NextRequest and headers() are the request's.
     pathname: "/api/notes/1",
-    // As on Next's edge runtime, the params are in the query too.
-    search: "?id=1",
+    // On Next's edge runtime the params are in the query too.
+    search: nextRuntime === "edge" ? "?id=1" : "",
     client: "test",
   });
 });
@@ -55,7 +56,8 @@ test("answers 500 when a route handler throws, and logs the error", async () => 
   const response = await handleRequest("/api/notes/broken");
 
   expect(response.status).toBe(500);
-  expect(await response.text()).toBe("Internal Server Error");
+  // Next's request handler for Node.js answers without a body.
+  expect(await response.text()).toBe(nextRuntime === "edge" ? "Internal Server Error" : "");
   expect(consoleError.mock.calls).toEqual([[new Error("The database is down")]]);
   consoleError.mockClear();
 

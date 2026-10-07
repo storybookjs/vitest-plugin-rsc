@@ -1,5 +1,6 @@
 import { Buffer } from "node:buffer";
 import { enterAmbientScope, SequentialAsyncLocalStorage } from "../async-local-storage.ts";
+import { runtime } from "virtual:vitest-plugin-rsc/next-manifest";
 import { registry } from "./registry.ts";
 
 // Next's server runs here as it does on an edge runtime, which is close to a
@@ -41,7 +42,7 @@ class ServerRequest extends NativeRequest {
             body.on("end", () => controller.close());
             body.on("error", (error) => controller.error(error));
           },
-          cancel: (reason) =>  body.destroy?.(reason),
+          cancel: (reason) => body.destroy?.(reason),
         }),
       };
     }
@@ -130,23 +131,6 @@ const scope = globalThis as Record<string, any>;
 
 scope.process ??= { env: {} };
 scope.process.env ??= {};
-// What Next's Node.js server asks of its process.
-scope.process.cwd ??= () => "/";
-scope.process.on ??= () => scope.process;
-scope.process.off ??= () => scope.process;
-scope.process.nextTick ??= (callback: (...args: unknown[]) => void, ...args: unknown[]) =>
-  queueMicrotask(() => callback(...args));
-scope.process.hrtime ??= Object.assign(() => [0, 0], {
-  bigint: () => BigInt(Math.round(performance.now() * 1e6)),
-});
-// A task of its own, after the microtasks: what Next's Node.js server waits
-// for between the stages of a render. Not a timer of the test, which may be
-// fake.
-const nativeSetTimeout = globalThis.setTimeout;
-const nativeClearTimeout = globalThis.clearTimeout;
-scope.setImmediate ??= (callback: (...args: unknown[]) => void, ...args: unknown[]) =>
-  nativeSetTimeout(callback, 0, ...args);
-scope.clearImmediate ??= (id: number) => nativeClearTimeout(id);
 scope.global ??= scope;
 scope.global.process ??= scope.process;
 scope.Buffer ??= Buffer;
@@ -162,18 +146,43 @@ for (const method of ["indexOf", "lastIndexOf"] as const) {
     return original.call(this, value, ...rest);
   } as never;
 }
-// Node's own `Buffer` has these, and busboy reads the parts of a form with
-// them. Every layer has its own copy of the `Buffer` polyfill, and each is a
-// Uint8Array.
-const decoders = { latin1: "latin1", ascii: "latin1", utf8: "utf-8", ucs2: "utf-16le" };
-for (const [encoding, label] of Object.entries(decoders)) {
-  if (`${encoding}Slice` in Uint8Array.prototype) continue;
-  Object.defineProperty(Uint8Array.prototype, `${encoding}Slice`, {
-    configurable: true,
-    writable: true,
-    value(this: Uint8Array, start?: number, end?: number) {
-      return new TextDecoder(label).decode(this.subarray(start, end));
-    },
-  });
-}
 scope.AsyncLocalStorage ??= SequentialAsyncLocalStorage;
+
+// Spike: what Next's Node.js runtime needs on top of that. Only then, because
+// the tab is the page's and the test's too: a library that finds a
+// `setImmediate` or a `process.nextTick` takes itself to be on Node.js.
+if (runtime === "nodejs") {
+  const { process } = scope;
+  process.cwd ??= () => "/";
+  process.on ??= () => process;
+  process.off ??= () => process;
+  process.nextTick ??= (callback: (...args: unknown[]) => void, ...args: unknown[]) =>
+    queueMicrotask(() => callback(...args));
+  process.hrtime ??= Object.assign(() => [0, 0], {
+    bigint: () => BigInt(Math.round(performance.now() * 1e6)),
+  });
+
+  // A task of its own, after the microtasks: what Next's Node.js server waits
+  // for between the stages of a render. Server code gets these two in place
+  // of the globals (server-code.ts), so the tab has no `setImmediate`. Not a
+  // timer of the test, which may be fake.
+  const nativeSetTimeout = globalThis.setTimeout;
+  const nativeClearTimeout = globalThis.clearTimeout;
+  registry.setImmediate = (callback, ...args) => nativeSetTimeout(callback, 0, ...args);
+  registry.clearImmediate = (id) => nativeClearTimeout(id as number);
+
+  // Node's own `Buffer` has these, and busboy reads the parts of a form with
+  // them. Every layer has its own copy of the `Buffer` polyfill, and each is a
+  // Uint8Array.
+  const decoders = { latin1: "latin1", ascii: "latin1", utf8: "utf-8", ucs2: "utf-16le" };
+  for (const [encoding, label] of Object.entries(decoders)) {
+    if (`${encoding}Slice` in Uint8Array.prototype) continue;
+    Object.defineProperty(Uint8Array.prototype, `${encoding}Slice`, {
+      configurable: true,
+      writable: true,
+      value(this: Uint8Array, start?: number, end?: number) {
+        return new TextDecoder(label).decode(this.subarray(start, end));
+      },
+    });
+  }
+}

@@ -375,6 +375,44 @@ The mocks of app modules go in a setup file. With `isolate: false` the test file
 
 In browser mode, Vitest 5.0 has a bug here: it does not wait for the mocks of a setup file before it imports a test file, so a test file with no `vi.mock()` of its own gets the real module ([vitest-dev/vitest#11450](https://github.com/vitest-dev/vitest/issues/11450), fixed by [#11520](https://github.com/vitest-dev/vitest/pull/11520) but not released yet). Until a release has the fix, import the mocked module in the setup file after the `vi.mock()` call. This repository patches Vitest instead, see `patches/`.
 
+## The Node.js Runtime
+
+A spike, off by default. With `VITEST_PLUGIN_RSC_NEXT_RUNTIME=nodejs` the server layers are compiled for Next's Node.js runtime in place of its edge runtime, which Next has deprecated: `next build` warns about it since 16.4, and Cache Components, `"use cache"` and `proxy.ts` only exist for Node.js.
+
+It is the same renderer. `process.env.NEXT_RUNTIME` is a compile-time constant, and with `nodejs` Next's code takes its other branches. Three things stay as on edge, because a tab has web APIs and no Node.js ones:
+
+- Web streams. `process.env.__NEXT_USE_NODE_STREAMS` is Next's own compile-time switch between `renderToPipeableStream` and `renderToReadableStream`. `getDefineEnv()` turns it on for Node.js, and the plugin turns it off.
+- React's builds for web streams: `react-dom/server.edge`, and Vite RSC's Flight codec.
+- The ESM files of Next, and its route modules as modules. For Node.js Next loads one bundle of its own, `next/dist/compiled/next-server/app-page.runtime`, with React for both server layers in it.
+
+What a Node.js server has and a tab does not:
+
+| What                                                         | Here                                                                                                                                                                                                                                            |
+| ------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `http.IncomingMessage`, `http.ServerResponse`                | Two objects in `node-server.ts` with what Next reads and writes. The response becomes a `Response` at its first byte                                                                                                                            |
+| The manifests in `.next/`                                    | `load-manifest.external`, the module Next keeps out of its bundle to read them, answers from memory                                                                                                                                             |
+| The request handler of a route handler                       | Next's own, `templates/app-route`, as `next start` calls it: `handler(req, res, ctx)`                                                                                                                                                           |
+| The request handler of a page                                | `routeModule.prepare()` and `routeModule.render()`, called as Next's handler calls them. Not `templates/app-page-runtime` itself yet: around those calls it serves prerendered pages                                                            |
+| `node:stream`, `stream/promises`                             | `next/dist/compiled/stream-browserify`, which Next ships, with `Readable.toWeb()` and `fromWeb()` added                                                                                                                                         |
+| The body of a Server Action: busboy, `decodeReplyFromBusboy` | Next's busboy on that stream. The parts are collected into a `FormData` for Vite RSC's `decodeReply`                                                                                                                                            |
+| `node:crypto`                                                | Web Crypto for random values. A SHA-256 in JavaScript for `createHash`, which Next's cache keys need at once; another algorithm throws                                                                                                          |
+| `setImmediate`                                               | A function in `registry` that server code is compiled to call. Not a global: a library in the page that finds a `setImmediate` uses it, as React's scheduler does, and with one the playgrounds failed now and then on a `removeChild` of React |
+| A `Request` with a Node.js stream as its body                | The server's `Request` takes one, as Node's does                                                                                                                                                                                                |
+| What Next patches when its server starts                     | Left out: `console`, `Date`, `Math.random`, `crypto`, the handlers of the process, the hook on `require`. The tab is the test's                                                                                                                 |
+
+Both playgrounds pass on it, with the same tests and in the same time. Three tests of `playground/nextjs-e2e-demo` expect another answer, and say so (`test/runtime.ts`):
+
+- The params of a route handler are not in the query of its `request.url`, as they are on edge.
+- A route handler that throws is answered with `500` and no body. The `Internal Server Error` on edge is the plugin's.
+- A render that goes on without its request fails with Next's `cookies was called outside a request scope`.
+
+What it does not show yet:
+
+- Cache Components and `"use cache"`. Their code is reached only with `cacheComponents`, and needs what a tab does not have at all: `AsyncLocalStorage` for more than one scope at a time, the order of `process.nextTick` and `setImmediate` in Node's event loop, and Next's patched `Date` and `Math.random`. The stand-in for `fast-set-immediate.external` throws where that starts.
+- `templates/app-page-runtime` for pages, with the response cache around a render.
+- `proxy.ts`, `instrumentation.ts`, draft mode, a `cacheHandler` of the app: `load-manifest.external` and its neighbours are where they would go.
+- `Uint8Array.prototype` gets `latin1Slice()` and the like in the tab, which Node's `Buffer` has and busboy calls. That is a global of the page too.
+
 ## Not Yet
 
 - Metadata files like `icon.png` and `sitemap.ts`. Next's metadata loaders still have to be run. A run warns once when it starts about the metadata files of the app, apart from `favicon.ico`: a page renders without them, and their routes are not served.

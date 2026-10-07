@@ -7,7 +7,7 @@ import { normalizeAppPath } from "next/dist/shared/lib/router/utils/app-paths";
 import { getBotType } from "next/dist/shared/lib/router/utils/is-bot";
 import { parseMaxPostponedStateSize } from "next/dist/shared/lib/size-limit";
 import { nextConfig } from "virtual:vitest-plugin-rsc/next-manifest";
-import { Readable } from "vitest-plugin-rsc/node-stream";
+import { Readable } from "virtual:vitest-plugin-rsc/node-stream";
 import { registry, type ServerRequest } from "./registry.ts";
 
 // Spike: Next's Node.js server in the tab, in place of its edge runtime, which
@@ -82,6 +82,9 @@ registry.node = {
 };
 
 type Listener = (...args: unknown[]) => void;
+
+// A test's own timers may be fake.
+const nativeSetTimeout = globalThis.setTimeout;
 
 /** As much of an `http.IncomingMessage` as Next's server reads. */
 function createNodeRequest(request: ServerRequest) {
@@ -179,7 +182,9 @@ function createNodeResponse() {
       response.finished = true;
       controller.close();
       response.emit("finish");
-      response.emit("close");
+      // A socket closes after the response has gone out: what Next runs then,
+      // like `after()`, comes after whoever asked has its answer.
+      nativeSetTimeout(() => response.emit("close"));
     },
     destroy(error?: unknown) {
       if (response.finished) return;

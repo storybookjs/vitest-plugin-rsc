@@ -79,6 +79,30 @@ jobs:
       - run: pnpm build
       - run: pnpm test:dist
 
+  node-runtime:
+    # Spike: the server of the playgrounds on Next's Node.js runtime, in place
+    # of its edge runtime. See "The Node.js Runtime" in docs/next-routes.md.
+    name: Next.js Node.js runtime
+    runs-on: ubuntu-latest
+    env:
+      VITEST_PLUGIN_RSC_NEXT_RUNTIME: nodejs
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps --only-shell chromium
+      - run: pnpm build
+      - name: Test the Next.js playgrounds
+        run: |
+          pnpm test:dist \
+            --project nextjs-e2e-demo \
+            --project nextjs-notes-demo-browser \
+            --project nextjs-notes-demo-node
+
   next:
     name: Next.js ${{ matrix.next }}
     runs-on: ubuntu-latest

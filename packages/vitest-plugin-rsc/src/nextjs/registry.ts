@@ -27,6 +27,9 @@ export type NextRegistry = {
   Response: typeof Response;
   /** The server's `fetch`: its network, which is not the browser's. */
   fetch: typeof fetch;
+  /** For Next's Node.js runtime: a task after the microtasks. Not globals of the tab. */
+  setImmediate(callback: (...args: any[]) => void, ...args: unknown[]): unknown;
+  clearImmediate(id: unknown): void;
   /** Starts the scope of one request, see `enterAmbientScope`. Returns its end. */
   enterRequestScope(): () => void;
   /** The rsc layer's Flight codec, behind the signatures Next calls. */

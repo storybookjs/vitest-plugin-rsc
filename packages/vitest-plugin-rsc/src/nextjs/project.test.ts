@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { onTestFinished, expect, test, vi } from "vitest";
 import { flightBridge } from "./flight.ts";
 import { vitestPluginNext } from "./plugin.ts";
-import { loadNextProject, type NextRoute } from "./project.ts";
+import { loadNextProject, nextRuntime, type NextRoute } from "./project.ts";
 
 const root = fileURLToPath(new URL("../../../../playground/nextjs-e2e-demo", import.meta.url));
 const installed = createRequire(path.join(root, "package.json"));
@@ -198,11 +198,13 @@ test("does not take a route discovery without app pages for an app without route
   );
 });
 
-test("needs the define that makes Next's modules pick their edge build", async () => {
+test("needs the define that makes Next's modules pick the build of their runtime", async () => {
   const next = nextWith({ "next/dist/build/define-env.js": { getDefineEnv: () => ({}) } });
 
   await expect(loadNextProject(root, next)).rejects.toThrow(
-    changed("`getDefineEnv()` does not define `process.env.NEXT_RUNTIME` as `edge`"),
+    changed(
+      `\`getDefineEnv()\` does not define \`process.env.NEXT_RUNTIME\` as \`${nextRuntime}\``,
+    ),
   );
 });
 

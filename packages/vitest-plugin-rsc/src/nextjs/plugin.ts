@@ -158,8 +158,8 @@ export async function ensureInstrumentationRegistered() {}
   // Next patches \`setImmediate\` on these two as well, for Cache Components.
   "node-timers": `
 module.exports = {
-  setImmediate: (...args) => globalThis.setImmediate(...args),
-  clearImmediate: (...args) => globalThis.clearImmediate(...args),
+  setImmediate: (...args) => ${registry}.setImmediate(...args),
+  clearImmediate: (...args) => ${registry}.clearImmediate(...args),
   setTimeout: (...args) => globalThis.setTimeout(...args),
   clearTimeout: (...args) => globalThis.clearTimeout(...args),
 };
@@ -229,6 +229,16 @@ export const createHash = (algorithm) => {
 };
 export default { webcrypto, randomUUID, randomFillSync, randomBytes, getRandomValues, createHash };
 `,
+  // Next patches the global \`setImmediate\` when this loads, to run the
+  // stages of a prerender in one task. That is for Cache Components, and the
+  // tab's globals are the page's too.
+  "fast-set-immediate": `
+export const unpatchedSetImmediate = (...args) => ${registry}.setImmediate(...args);
+export function DANGEROUSLY_runPendingImmediatesAfterCurrentTask() {
+  throw new Error("vitest-plugin-rsc: Next's staged rendering, for Cache Components, is not supported.");
+}
+export function expectNoPendingImmediates() {}
+`,
   // Next asks Node.js for the source map of a file in a stack. Vite has them.
   "node-module": `
 export const findSourceMap = () => undefined;
@@ -265,6 +275,10 @@ const nodeBridgeOf: [RegExp, string][] = [
   // \`require\`, a \`crypto\` global.
   [/^next\/dist\/(esm\/)?build\/adapter\/setup-node-env\.external(\.js)?$/, "node-environment"],
   [/^(node:)?module$/, "node-module"],
+  [
+    /^next\/dist\/(esm\/)?server\/node-environment-extensions\/fast-set-immediate\.external(\.js)?$/,
+    "fast-set-immediate",
+  ],
   [/^(node:)?timers(\/promises)?$/, "node-timers"],
   [/^(node:)?crypto$/, "node-crypto"],
   [
@@ -359,7 +373,7 @@ function createLayerResolver(getProject: () => NextProject, layer: NextLayer) {
     }
     if (source === serverReferenceInfo) return `${bridgePrefix}server-reference-info`;
     // The Readable that node-server.ts makes a request of.
-    if (source === "vitest-plugin-rsc/node-stream") return `${bridgePrefix}node-stream`;
+    if (source === "virtual:vitest-plugin-rsc/node-stream") return `${bridgePrefix}node-stream`;
     if (layer !== "browser" && nextRuntime === "nodejs") {
       const bridge = nodeBridgeOf.find(([pattern]) => pattern.test(source));
       if (bridge) return bridgePrefix + bridge[1];

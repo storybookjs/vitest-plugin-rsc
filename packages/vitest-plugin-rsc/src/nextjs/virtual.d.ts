@@ -11,7 +11,7 @@ declare module "virtual:vitest-plugin-rsc/next-manifest" {
   export const runtime: "edge" | "nodejs";
 }
 
-declare module "vitest-plugin-rsc/node-stream" {
+declare module "virtual:vitest-plugin-rsc/node-stream" {
   export { Readable } from "node:stream";
 }
 

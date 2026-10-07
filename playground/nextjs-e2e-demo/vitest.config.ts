@@ -41,6 +41,12 @@ export default defineProject({
   resolve: {
     conditions: vitestPluginRscSourceConditions,
   },
+  // For the tests whose answer depends on Next's server runtime: test/runtime.ts.
+  define: {
+    __NEXT_RUNTIME__: JSON.stringify(
+      process.env.VITEST_PLUGIN_RSC_NEXT_RUNTIME === "nodejs" ? "nodejs" : "edge",
+    ),
+  },
   test: {
     name: "nextjs-e2e-demo",
     include: ["**/*.test.{ts,tsx}"],
