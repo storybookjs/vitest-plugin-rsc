@@ -16,7 +16,7 @@ for (const file of files) {
   });
   const specs = await vitest.getRelevantTestSpecifications();
   const picked = specs.map((spec) => path.relative(process.cwd(), spec.moduleId)).sort();
-  console.log("RELATED", file, "->", JSON.stringify(picked));
+  console.log("RELATED", file, "->", picked.length, JSON.stringify(picked));
   await vitest.close();
 }
 process.exit(0);

@@ -54,7 +54,7 @@ registry.flightClient = {
 
 // Tells the plugin which route the test file that runs now has loaded: see
 // watch.ts.
-type RouteLoaded = (kind: RouteKind, page: string) => Promise<void>;
+type RouteLoaded = (kind: RouteKind | "action", page: string) => Promise<void>;
 const routeLoaded = (commands as unknown as Partial<Record<string, RouteLoaded>>)[
   routeLoadedCommand
 ];
@@ -99,6 +99,10 @@ const modules = new Map<string, Promise<unknown>>();
  * state of a module on that promise.
  */
 export function requireModule(id: string): Promise<unknown> {
+  if (id.startsWith(actionModulePrefix)) {
+    const [module] = id.slice(actionModulePrefix.length).split("#");
+    void routeLoaded?.("action", module!).catch(() => {});
+  }
   let loading = modules.get(id);
   if (!loading) modules.set(id, (loading = loadModule(id)));
   return loading;

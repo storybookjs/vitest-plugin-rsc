@@ -398,13 +398,20 @@ app/profile/page.tsx changes
 
 These pick the test files of a change before anything has run, so the tab cannot say what they load. Vitest answers from the imports of each test file: it transforms the file in the `ssr` environment, follows the imports that are files of the project, and keeps the test files that reach a changed file. For an app of Next that fails twice. A test file does not import the page it opens. And the `ssr` environment is none of the three layers: it has no compiler of Next, so it cannot read a file of the app that needs one, like a `.js` file with JSX.
 
-A run does know (`related.ts`). When a test file has passed, the files it depends on are in Vite's module graphs: what it imports, and what the routes it loaded import, in each layer, since a Client Component has its imports in the browser layer. They are written to `vitest-plugin-rsc/related.json` in Vite's cache directory. At the next lookup, the plugin adds the changed files among them to the test file as imports that never run, and gives each file a test file depends on an empty result in the `ssr` environment, so that Vitest does not transform it.
+A run does know (`related.ts`). When a test file has passed, the files it depends on are in Vite's module graphs, and the plugin writes them down, each with a hash of what is in it, in `vitest-plugin-rsc/related-<project>.json` in Vite's cache directory:
 
-- **Never too few.** A test file that is not written down depends on every file of the project. That is one that failed, one that ran in part (a name pattern, a line, a tag), and every test file of a checkout without the cache.
-- **A file that comes to the `app` directory or goes** can change which route a URL gets and which layouts a route has, without a change to a file that is written down. Then nothing that is written down counts.
-- **`next.config` and `tsconfig.json`** are files every test file depends on.
-- **The `ssr` environment is only Vitest's lookup** for a project in browser mode: its own code and the global setup run in another one. That is why its results can be empty.
-- **Not known:** a test that loads a route only some of the time, like one behind a condition on the date, and a file outside the project root that no module imports.
+- what the test file and the setup files import;
+- what the routes it loaded import, and the modules of the Server Actions it called;
+- in each layer, since a Client Component has its imports in the browser layer;
+- the mock of a module, from the `__mocks__` directory next to it;
+- what Next reads next to the `app` directory: `next.config`, `tsconfig.json`, `.env` files.
+
+At the next lookup the plugin answers for a test file itself. It belongs to the change when one of its files is a changed one, or is no longer what it was when it was written down. That second part is for a cache that is older than the checkout: a page that got a new import in a commit without a run. For a test file that belongs, the plugin adds it to the list of changed files, which Vitest keeps a test file for. The test file itself is empty in the `ssr` environment during a lookup, so Vitest follows no import into a file it cannot read.
+
+- **Never too few.** A test file that is not written down belongs to every change, also one outside the project. That is one that did not pass, one that ran in part (a name pattern, a line, a tag, a bail), and every test file of a checkout without the cache.
+- **A file that comes to the `app` directory or goes**, or next to it, can change which route a URL gets and which layouts a route has, without a change to a file that is written down. Then nothing that is written down counts.
+- **The `ssr` environment is only Vitest's lookup** for a project in browser mode: its own code and the global setup run in another one. Vitest's static parse of a test file reads it there too, and finds no tests in it during a lookup.
+- **Not known:** a test that loads a route only some of the time, like one behind a condition on the date. A file Tailwind scans is no dependency of a test, though a class in it adds to the stylesheet.
 
 `scripts/related-probe.mjs` says which test files `vitest related` picks.
 
