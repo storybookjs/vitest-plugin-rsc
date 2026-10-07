@@ -413,14 +413,16 @@ test("computes again after a route handler has expired the tag", async () => {
 
 ### Server Code In A Tab
 
-The server runs in a tab, but your server code does not see the tab. In Server Components, Server Actions, route handlers and the modules and packages they import, and in Client Components while they render to HTML, `typeof window` is `"undefined"` and `fetch` is the one Next patches. Test files and setup files keep the tab's `window` and `fetch`.
+The server runs in a tab, and your server code is told it is on a server, the way Next's own build tells it. In Server Components, Server Actions, route handlers and the modules and packages they import, and in Client Components while they render to HTML, `typeof window` is `"undefined"` and `fetch` is the one Next patches. Test files and setup files keep the tab's `typeof window` and `fetch`.
 
-A module that has to see the browser it really runs in is listed in `browserModules`. A helper of your tests that sets `document.cookie` is one:
+Only `typeof` is answered that way. Server code that reads `window.innerWidth` without asking first throws on a server, and reads the tab's `window` here.
+
+A module that has to know it is in a browser is listed in `browserModules`. A helper of your tests that asks before it touches the page is one:
 
 ```ts
 // test/browser.ts
-export function signInAs(user: string): void {
-  document.cookie = `session=${user}; path=/`;
+export function scrollToTop(): void {
+  if (typeof window !== "undefined") window.scrollTo(0, 0);
 }
 ```
 
@@ -442,7 +444,7 @@ afterEach(() => {
 });
 ```
 
-See [Server Code In A Tab](docs/next-routes.md#server-code-in-a-tab) for how the tab is hidden, where that has gaps, and when a package needs an entry in `browserModules`.
+See [Server Code In A Tab](docs/next-routes.md#server-code-in-a-tab) for what is replaced, where that has gaps, and when a package needs an entry in `browserModules`.
 
 ### Example: Drizzle + PGlite
 

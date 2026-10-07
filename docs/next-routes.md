@@ -144,22 +144,14 @@ The same rule decides what `redirect()` does in the render after a Server Action
 
 ## Server Code In A Tab
 
-A tab has a `window`, and a `fetch` that Next has not patched. Server code must see neither. A tab cannot lose its globals, but a module can be compiled not to see them, so that is what happens to the modules of a server layer: your JavaScript and TypeScript source files, and the dependencies Vite pre-bundles.
+A tab has a `window`, and a `fetch` that Next has not patched. A tab cannot lose its globals, but a module can be compiled not to see them, so that is what happens to the modules of a server layer: your JavaScript and TypeScript source files, and the dependencies Vite pre-bundles.
 
-`fetch`, `Request` and `Response` are the server's in both, also when they are written `globalThis.fetch`. So a `fetch` in your server code is the one Next patches: two calls for the same URL in one render are one request. It is still a request the tab makes, so the browser's rules for one apply, like CORS.
+- `typeof window` is replaced by `"undefined"`. That is what `next build` does to the code it compiles for a server, and what libraries rely on to tell a server from a browser. The same goes for `typeof document`, `typeof location`, `typeof localStorage` and `typeof sessionStorage`, which a server answers that way without help.
+- `fetch`, `Request` and `Response` are the server's, also when they are written `globalThis.fetch`. So a `fetch` in your server code is the one Next patches: two calls for the same URL in one render are one request. It is still a request the tab makes, so the browser's rules for one apply, like CORS.
 
-The globals only a browser has are `window`, `document`, `location`, `localStorage` and `sessionStorage`. How they are hidden differs:
+Nothing else is replaced. Code that reads `window.innerWidth` without asking `typeof window` first throws on a server, and reads the tab's `window` here.
 
-|                        | Your source files                                      | Pre-bundled dependencies                     |
-| ---------------------- | ------------------------------------------------------ | -------------------------------------------- |
-| How                    | The five names are declared as variables of the module | `typeof window` is replaced by `"undefined"` |
-| `typeof window`        | `"undefined"`                                          | `"undefined"`                                |
-| `window.innerWidth`    | Throws a `TypeError`                                   | Reads the tab's `window`                     |
-| The text of a function | Keeps `window` and the other four names                | `typeof window` in it is replaced            |
-
-The second column is what `next build` does to the bundles it makes for a server, and what libraries rely on to tell a server from a browser. The first goes further, and cannot be used for dependencies: a bundler puts many modules in one scope and renames the variables that clash, inside functions too. That matters for a function that is sent to the browser as text. `next-themes` does that with its theme script, `` `(${script.toString()})()` ``, and in the page that text has to find the tab's `document`. In both columns a `fetch`, `Request` or `Response` in such a function is replaced, and the module may be printed with other whitespace.
-
-A Client Component is a module of two layers: it has no `window` while Next renders it to HTML in `ssr`, and has one in `browser`.
+A Client Component is a module of two layers: it is told it has no `window` while Next renders it to HTML in `ssr`, and has one in `browser`.
 
 The `rsc` layer shares its Vite environment with the test, and a test needs the tab. So in that environment these are not server code:
 
@@ -174,7 +166,7 @@ Everything else in that environment is server code, including a module that only
 Code asks `typeof window` for one of two reasons, and they need opposite answers here.
 
 - **Role.** Am I the server side of this app? `@t3-oss/env-core` asks, and only hands out a server variable if the answer is yes. `next-themes` asks, and reads no theme from storage on the server. The answer has to be: you are the server.
-- **Capability.** Is there a DOM here that I can work on? Testing Library asks before it binds `screen` to `document.body`. A helper of yours that sets `document.cookie` does not even ask. The answer has to be the truth: you are in a browser. Unless the module also gets by without a DOM: PGlite asks to pick how it loads, is told it is not in a browser, and works all the same.
+- **Capability.** Is there a DOM here that I can work on? Testing Library asks before it binds `screen` to `document.body`. The answer has to be the truth: you are in a browser. Unless the module also gets by without a DOM: PGlite asks to pick how it loads, is told it is not in a browser, and works all the same.
 
 Nothing in the code says which of the two a module means. So every other module of the `rsc` environment gets the first answer, and `browserModules` lists the ones that need the second:
 
@@ -189,15 +181,15 @@ vitestPluginNext({
 
 When you need it, as far as this was tried:
 
-- A source file that is not a test file or a setup file and that works on the page: a helper that reads `window`, `document`, `location` or storage. Without an entry it fails with a `TypeError`, as `document` is `undefined` in it. The demo has one in `test/`.
-- A package that the tests use on the page and that asks `typeof window` or `typeof document` first. `@testing-library/dom` is one: without an entry `screen.getByRole()` throws "For queries bound to document.body a global document has to be available".
+- A source file that is not a test file or a setup file and that asks `typeof window` or `typeof document` before it works on the page. Without an entry it is told it is on a server. The demo has one in `test/`.
+- A package that the tests use on the page and that asks the same first. `@testing-library/dom` is one: without an entry `screen.getByRole()` throws "For queries bound to document.body a global document has to be available".
 
 When you do not:
 
+- A helper or a package that touches `document` without asking first. Only `typeof` is replaced.
 - The locators, `userEvent` and `expect.element` of `vitest/browser`, and the rest of Vitest.
 - MSW. Vitest leaves it out of pre-bundling, so it is served as it is.
 - PGlite, in memory and on IndexedDB. It is told that it is not in a browser, and works all the same.
-- A package that touches `document` without asking first. Only `typeof` is replaced in packages.
 
 A package that both the tests and the app use can only get one of the two answers. If it needs both, it cannot be used on both sides. And an entry does not help a package of the app that, told it is on a server, takes a path only Node.js has.
 
@@ -205,8 +197,7 @@ What this does not cover:
 
 - Everything else a browser has: `navigator`, `self`, `history`, `XMLHttpRequest`, `HTMLElement`, `indexedDB`, `matchMedia`, `requestAnimationFrame`. A library that asks for one of those to tell a browser from a server still finds it.
 - Code that looks a global up at runtime: `globalThis.window`, `self.window`, `"window" in globalThis`.
-- A dependency that reads `window` without asking `typeof window` first. On a server that throws. Here it reads the tab's.
-- In your source files, reading `window` throws a `ReferenceError` on a server. Here it gives `undefined`: `window.innerWidth` throws a `TypeError`, and `if (window)` is false where a server would throw.
+- Code that reads `window` without asking `typeof window` first. On a server that throws a `ReferenceError`. Here it reads the tab's.
 - Files that are not JavaScript or TypeScript when Vite loads them, like `.vue` or `.mdx`, and modules that another plugin generates.
 - Dependencies in files other than `.js`, `.mjs` and `.cjs`, and a dependency that is left out of pre-bundling with `optimizeDeps.exclude`: those are served as they are. Vitest leaves out `msw`.
 - With `resolve.preserveSymlinks`, the packages of Vitest are not recognized.
@@ -230,7 +221,7 @@ In browser mode, Vitest 5.0 has a bug here: it does not wait for the mocks of a 
 - Code that leaves a store with `AsyncLocalStorage.exit()` for work that awaits, and reads the store again after it: the store stays left for the rest of the request. Next does this for the render after a Server Action, where nothing reads it again.
 - An `after()` callback that takes longer than a second goes on without the stores of its request, so `cookies()` and `headers()` fail in it from then on. Under `vi.useFakeTimers()` a response without a body never tells Next it was sent, so its `after()` callbacks do not run while the request lasts, and the next request starts a second late.
 - A navigation without Next's router to a route handler that does not answer with HTML, like a download link, is an uncaught error: there is nothing for the tab to show.
-- Hiding the tab from server code has gaps: see [Server Code In A Tab](#server-code-in-a-tab).
+- Server code is only told it is on a server where it asks `typeof window`: see [Server Code In A Tab](#server-code-in-a-tab).
 - A mock for Client Components: see [Mocks](#mocks).
 - One request at a time. A request that waits for another one that the test has not sent yet will wait forever. A response that streams without end, like server-sent events, holds up every request after it.
 - A same-origin `fetch` for a path that a dynamic route matches goes to the app, also when it is for a file in `public/`, which a deployment serves before it looks at the routes. With `app/[locale]/page.tsx` that is every path of one segment, like `/data.json`. With a catch-all at the root, like `app/[...slug]`, it is every path.
