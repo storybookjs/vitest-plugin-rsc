@@ -252,13 +252,17 @@ test("reports a navigation to a route handler that does not answer with a docume
   );
 });
 
-// The fetch() of your own server code is the browser's: this request waits in
-// line behind the request of the page, which waits for it. It passes once the
-// server code of the app is compiled with the server's fetch.
-test.skip("serves the fetch() of a Server Component with a route handler", async () => {
+test("serves the fetch() of a Server Component with a route handler", async () => {
   await renderServer({ url: "/status" });
 
   await expect.element(page.getByRole("heading", { name: "Status of status" })).toBeVisible();
+});
+
+test("keeps the Set-Cookie of a plain Response in a route handler", async () => {
+  const response = await handleRequest("/api/plain");
+
+  expect(response.headers.getSetCookie()).toEqual(["plain=1; Path=/"]);
+  expect(document.cookie).toBe("plain=1");
 });
 
 test("leaves a same-origin fetch() that is not a route of the app to the dev server", async () => {

@@ -2,9 +2,11 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { transformProxyExport } from "@vitejs/plugin-rsc/transforms";
-import { normalizePath, parseAstAsync, transformWithOxc, type Plugin } from "vite";
+import { createFilter, normalizePath, parseAstAsync, transformWithOxc, type Plugin } from "vite";
+import type { TestProject } from "vitest/node";
 import { createRunnerEnvironmentPlugins } from "../runner-environment.ts";
 import { loadNextProject, type NextLayer, type NextProject, type NextRoute } from "./project.ts";
+import { createServerCode, type ServerCodeOptions } from "./server-code.ts";
 
 // Next compiles an App Router app into three layers, each with its own module
 // graph: `rsc` (Server Components, the `react-server` React), `ssr` (the
@@ -317,21 +319,6 @@ function nextClientBoundaryPlugin(getProject: () => NextProject, resolver: Layer
   };
 }
 
-// The server layers run in a browser tab, where `window` exists. Next's
-// runtime asks `typeof window` to tell a server from a browser.
-function nextServerWindowPlugin(getProject: () => NextProject): Plugin {
-  return {
-    name: "vitest-plugin-rsc:next-server-window",
-    transform(code, id) {
-      if (!isNextFile(getProject(), id) || !/\btypeof\s+window\b/.test(code)) return;
-      return {
-        code: code.replace(/\btypeof\s+window\b(?!\s*[.[\]])/g, '"undefined"'),
-        map: null,
-      };
-    },
-  };
-}
-
 function encodePage(page: string): string {
   return Buffer.from(page).toString("hex");
 }
@@ -346,8 +333,8 @@ function stripTurbopackTransitions(code: string): string {
   return code.replace(/\s+with\s*\{\s*['"]turbopack-transition['"]\s*:\s*['"][^'"]*['"]\s*\}/g, "");
 }
 
-// Next's compile-time constants for a layer, and what stands in for the
-// platform of that layer in a browser tab.
+// Next's compile-time constants for a layer. A server layer gets what makes
+// a module server code on top of these: see server-code.ts.
 function definesOf(project: NextProject, layer: NextLayer): Record<string, string> {
   // Not NODE_ENV: React stays a development build, for its warnings.
   const { "process.env.NODE_ENV": _, ...defines } = project.defines[layer];
@@ -356,29 +343,15 @@ function definesOf(project: NextProject, layer: NextLayer): Record<string, strin
     // Next's ncc-compiled packages only build paths with it that they never
     // read here.
     __dirname: '""',
-    ...(layer === "browser"
-      ? {
-          // The browser's Flight client loads Client Components in its own
-          // module graph. (Vite RSC points this at one global, for a server
-          // and a browser that do not share a tab.)
-          __webpack_require__: `${registry}.browserRequire`,
-          // Makes Next's root component report that it has hydrated.
-          "process.env.__NEXT_TEST_MODE": "true",
-        }
-      : {
-          // The `Request`, `Response` and `fetch` of a server, see globals.ts.
-          Request: `${registry}.Request`,
-          Response: `${registry}.Response`,
-          fetch: `${registry}.fetch`,
-          "globalThis.fetch": `${registry}.fetch`,
-        }),
+    ...(layer === "browser" && {
+      // The browser's Flight client loads Client Components in its own
+      // module graph. (Vite RSC points this at one global, for a server
+      // and a browser that do not share a tab.)
+      __webpack_require__: `${registry}.browserRequire`,
+      // Makes Next's root component report that it has hydrated.
+      "process.env.__NEXT_TEST_MODE": "true",
+    }),
   };
-}
-
-// Vite only replaces `define` keys in pre-bundled dependencies. The route
-// entries are generated modules, so replace them there here.
-async function applyDefines(code: string, id: string, defines: Record<string, string>) {
-  return (await transformWithOxc(code, `${id.replace(/\W+/g, "-")}.js`, { define: defines })).code;
 }
 
 function findNextImports(code: string): string[] {
@@ -455,8 +428,15 @@ const runtimeImports: Record<NextLayer, string[]> = {
   ],
 };
 
-export function vitestPluginNext(): Plugin[] {
+export type VitestPluginNextOptions = ServerCodeOptions;
+
+export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[] {
   let project: NextProject;
+  const serverCode = createServerCode(registry, options);
+  // A route entry is a module of a server layer that is generated here: Vite
+  // only replaces `define` keys in pre-bundled dependencies.
+  const compileRouteEntry = (code: string, id: string, layer: NextLayer) =>
+    serverCode.compile(code, `${id.replace(/\W+/g, "-")}.js`, definesOf(project, layer));
   const getProject = () => project;
   const resolvers = Object.fromEntries(
     layers.map((layer) => [layer, createLayerResolver(getProject, layer)]),
@@ -475,6 +455,7 @@ export function vitestPluginNext(): Plugin[] {
       enforce: "pre",
       async config(config) {
         project = await loadNextProject(path.resolve(config.root ?? process.cwd()));
+        serverCode.configure(project.root);
 
         // What the route entries import from Next. The request handler is
         // one template per kind of route. The loader tree differs: which of
@@ -539,14 +520,19 @@ export function vitestPluginNext(): Plugin[] {
             plugins: [
               resolvers[layer].plugin(),
               ...(layer === "rsc" ? [nextClientBoundaryPlugin(getProject, resolvers.rsc)] : []),
-              ...(layer === "browser" ? [] : [nextServerWindowPlugin(getProject)]),
+              ...(layer === "browser" ? [] : [serverCode.optimizerPlugin(layer)]),
             ],
             // Next's files import names that only another layer's build of a
             // package has, in branches that layer never takes. webpack leaves
             // such an import undefined.
             shimMissingExports: true,
             // Vite only defines NODE_ENV for dependencies.
-            transform: { define: definesOf(project, layer) },
+            transform: {
+              define: {
+                ...definesOf(project, layer),
+                ...(layer !== "browser" && serverCode.cacheKey),
+              },
+            },
           },
         });
 
@@ -590,6 +576,17 @@ export function vitestPluginNext(): Plugin[] {
             [environmentOf.browser]: { optimizeDeps: optimizeDeps("browser") },
           },
         };
+      },
+      // Vitest's hook for a plugin of a project: what its config says is a
+      // test file or a setup file is not server code.
+      configureVitest({ project: { config: test } }: { project: TestProject }) {
+        const setupFiles = new Set(test.setupFiles.map((file) => normalizePath(file)));
+        // `test.include`, matched the way Vitest does. Not `includeSource`:
+        // a file with tests in its source is a file of the app.
+        const isIncluded = createFilter(test.include, test.exclude, {
+          resolve: test.dir || test.root,
+        });
+        serverCode.addTestFiles((file) => setupFiles.has(file) || isIncluded(file));
       },
       resolveId(source) {
         if (
@@ -662,18 +659,18 @@ export function vitestPluginNext(): Plugin[] {
             if (!loadUserland.test(code)) {
               throw new Error("vitest-plugin-rsc: unsupported Next.js app-route template");
             }
-            return applyDefines(
+            return compileRouteEntry(
               stripTurbopackTransitions(code).replace(loadUserland, "$1import("),
               id,
-              definesOf(project, "rsc"),
+              "rsc",
             );
           }
           return (
             `import { requireModule as __next_require__ } from "vitest-plugin-rsc/next/rsc";\n` +
-            (await applyDefines(
+            (await compileRouteEntry(
               stripTurbopackTransitions(code).replaceAll("__webpack_require__", "__next_require__"),
               id,
-              definesOf(project, "rsc"),
+              "rsc",
             ))
           );
         }
@@ -689,13 +686,13 @@ export function vitestPluginNext(): Plugin[] {
           if (!code.includes(importUserland)) {
             throw new Error("vitest-plugin-rsc: unsupported Next.js edge-ssr-app template");
           }
-          return applyDefines(
+          return compileRouteEntry(
             stripTurbopackTransitions(code).replace(
               importUserland,
               `const pageMod = ${registry}.appPages[${JSON.stringify(route.page)}];`,
             ),
             id,
-            definesOf(project, "ssr"),
+            "ssr",
           );
         }
 
@@ -705,7 +702,7 @@ export function vitestPluginNext(): Plugin[] {
         if (id.startsWith(`\0${routeHandlerPrefix}`)) {
           const route = findRoute(id, routeHandlerPrefix);
           const code = await project.loadEdgeEntry(route, appPagePrefix + encodePage(route.page));
-          return applyDefines(stripTurbopackTransitions(code), id, definesOf(project, "rsc"));
+          return compileRouteEntry(stripTurbopackTransitions(code), id, "rsc");
         }
       },
     },
@@ -727,6 +724,7 @@ export function vitestPluginNext(): Plugin[] {
         });
       },
     },
+    serverCode.plugin({ [environmentOf.rsc]: "rsc", [environmentOf.ssr]: "ssr" }),
     ...layers.map((layer) => ({
       ...resolvers[layer].plugin(),
       applyToEnvironment: (environment: { name: string }) =>

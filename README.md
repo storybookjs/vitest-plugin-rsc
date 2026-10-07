@@ -740,6 +740,14 @@ Without a `url` the node renders at `/`. The page module itself is not loaded, s
 
 `vi.mock()` works on the modules your Server Components, Server Actions and route handlers import. It does not reach Client Components, which load in module graphs of their own.
 
+The server runs in a tab, but your server code does not see the tab. In Server Components, Server Actions and the modules and packages they import, and in Client Components while they render to HTML, `typeof window` is `"undefined"` and `fetch` is the one Next patches. Test files and setup files keep the tab's `window` and `fetch`. A helper module or a package that the test needs in the tab as well is listed in `testModules`:
+
+```ts
+vitestPluginNext({ testModules: ["test/**"] });
+```
+
+A Client Component that renders something else on the server than in the browser now fails the way it does in production, with a hydration mismatch. With `next-themes`, for example, `useTheme()` has no theme on the server.
+
 `handleRequest(url, init)` sends a single request and resolves with the response, for when the response is what you assert on: a status, a header, the HTML or the Flight payload.
 
 Route handlers (`app/**/route.ts`) are served too. `handleRequest` is how a test calls one, and a `fetch` to one from a Client Component reaches it with the tab's cookies:
