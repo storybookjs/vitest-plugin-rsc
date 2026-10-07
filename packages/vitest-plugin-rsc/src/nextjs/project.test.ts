@@ -609,3 +609,47 @@ test("needs the loaders that Next's build has for a font", async () => {
     changed("`getNextFontLoader()` no longer uses css-loader and next-font-loader"),
   );
 });
+
+test("loads an image with Next's image loader, and has its file where the module says it is", async () => {
+  const project = await loadNextProject(root);
+  const logo = appFile("images/logo.png");
+  expect(project.isImage(logo)).toBe(true);
+  expect(project.isImage(appFile("styles/global.css"))).toBe(false);
+
+  const code = await project.loadImage(logo);
+
+  const image = JSON.parse(code.slice("export default ".length, -1)) as Record<string, string>;
+  expect(image).toEqual({
+    src: expect.stringMatching(/^\/_next\/static\/media\/logo\.\w{8}\.png$/),
+    width: 40,
+    height: 30,
+    blurWidth: 8,
+    blurHeight: 6,
+    blurDataURL: expect.stringMatching(/^data:image\/png;base64,/),
+  });
+  expect(project.readEmittedFile(image.src!)).toEqual({
+    body: fs.readFileSync(logo),
+    contentType: "image/png",
+  });
+});
+
+test("does not load an image as a module when next.config turns that off", async () => {
+  const app = appWith(["layout.js", "page.js"], { images: { disableStaticImages: true } });
+
+  const project = await loadNextProject(app, installed);
+
+  expect(project.isImage(appFile("images/logo.png"))).toBe(false);
+});
+
+test("needs the image loader to export the data of an image", async () => {
+  const next = nextWith({
+    "next/dist/build/webpack/loaders/next-image-loader/index.js": {
+      default: async () => "module.exports = {};",
+    },
+  });
+  const project = await loadNextProject(root, next);
+
+  await expect(project.loadImage(appFile("images/logo.png"))).rejects.toThrow(
+    changed("next-image-loader no longer exports the data of an image"),
+  );
+});

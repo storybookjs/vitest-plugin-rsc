@@ -1,7 +1,9 @@
 import fs from "node:fs";
+import type { IncomingMessage, ServerResponse } from "node:http";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { init as initCjsLexer, parse as parseCjs } from "cjs-module-lexer";
+import querystring from "node:querystring";
 import { stripVTControlCharacters } from "node:util";
 import { compileFunction } from "node:vm";
 import type { AppLoaderOptions } from "next/dist/build/webpack/loaders/next-app-loader/index.js";
@@ -95,6 +97,10 @@ export type NextProject = {
    * client module in the rsc layer: Vite RSC turns it into references.
    */
   compile(code: string, file: string, layer: NextLayer): Promise<Compiled | undefined>;
+  /** Whether Next's build imports a file as an image: `next-image-loader`. */
+  isImage(file: string): boolean;
+  /** The module of an image: what `next-image-loader` makes of the file. */
+  loadImage(file: string): Promise<string>;
   /**
    * A call of a `next/font` function, by the import the SWC transform turns it
    * into: the CSS of the font, and what the call returns.
@@ -102,9 +108,22 @@ export type NextProject = {
   loadFont(request: string): Promise<{ css: string; exports: Record<string, unknown> }>;
   /** A file the loaders emitted for the browser, by the path the browser asks for. */
   readEmittedFile(pathname: string): { body: Buffer; contentType: string } | undefined;
+  /**
+   * Answers a request for `/_next/image` with Next's image optimizer, as
+   * `next start` does, and resolves with whether it was one. `serveFile`
+   * answers the request for an image of the app.
+   */
+  optimizeImage(
+    request: IncomingMessage,
+    response: ServerResponse,
+    serveFile: ServeFile,
+  ): Promise<boolean>;
 };
 
 export type Compiled = { code: string; map?: string };
+
+/** Answers a request the way the server does: what Next calls for an image of the app. */
+export type ServeFile = (request: IncomingMessage, response: ServerResponse) => Promise<void>;
 
 // What Next's webpack loaders use of their context. Each loader here is
 // called the way webpack calls it.
@@ -415,18 +434,27 @@ export async function loadNextProject(
   const { getLoaderSWCOptions } =
     load<typeof import("next/dist/build/swc/options.js")>("build/swc/options");
   const { WEBPACK_LAYERS } = load<typeof import("next/dist/lib/constants.js")>("lib/constants");
+  const { COMPILER_NAMES } =
+    load<typeof import("next/dist/shared/lib/constants.js")>("shared/lib/constants");
   const loadJsConfig =
     load<typeof import("next/dist/build/load-jsconfig.js")>("build/load-jsconfig").default;
   const { getRSCModuleInformation } = load<
     typeof import("next/dist/build/analysis/get-page-static-info.js")
   >("build/analysis/get-page-static-info");
+  const { nextImageLoaderRegex } =
+    load<typeof import("next/dist/build/webpack-config.js")>("build/webpack-config");
+  const nextImageLoader = load<
+    typeof import("next/dist/build/webpack/loaders/next-image-loader/index.js")
+  >("build/webpack/loaders/next-image-loader/index").default as unknown as Loader;
   const { getNextFontLoader } = load<
     typeof import("next/dist/build/webpack/config/blocks/css/loaders/next-font.js")
   >("build/webpack/config/blocks/css/loaders/next-font");
   const nextFontLoader = load<
     typeof import("next/dist/build/webpack/loaders/next-font-loader/index.js")
   >("build/webpack/loaders/next-font-loader/index").default as unknown as Loader;
-  const { getContentType } =
+  const imageOptimizer =
+    load<typeof import("next/dist/server/image-optimizer.js")>("server/image-optimizer");
+  const { getContentType, getExtension } =
     load<typeof import("next/dist/server/serve-static.js")>("server/serve-static");
 
   // The app is served the way a deployment serves it: production Next on its
@@ -1090,6 +1118,7 @@ export async function loadNextProject(
   // Where the browser asks for the files the loaders emit. An asset prefix
   // with an origin is another server.
   const emittedPath = `${config.assetPrefix.startsWith("/") ? config.assetPrefix : ""}/_next/`;
+  const { images } = config;
 
   // next-app-loader keys its per-build caches on the compilation object.
   const compilation = {};
@@ -1190,6 +1219,26 @@ export async function loadNextProject(
         : code;
     },
     compile,
+    isImage: (file) => !images.disableStaticImages && nextImageLoaderRegex.test(file),
+    async loadImage(file) {
+      const options = {
+        isDev: false,
+        compilerType: COMPILER_NAMES.client,
+        assetPrefix: config.assetPrefix,
+        basePath: config.basePath,
+        outputHashSalt: (config as { outputHashSalt?: string }).outputHashSalt,
+      };
+      const [code] = await runLoader(
+        nextImageLoader,
+        options,
+        file,
+        await fs.promises.readFile(file),
+      );
+      if (typeof code !== "string" || !code.startsWith("export default {")) {
+        fail("next-image-loader no longer exports the data of an image");
+      }
+      return code as string;
+    },
     loadFont(request) {
       let font = fonts.get(request);
       if (!font) {
@@ -1205,6 +1254,65 @@ export async function loadNextProject(
       const body = emitted.get(name);
       if (!body) return;
       return { body, contentType: getContentType(path.extname(name).slice(1)) ?? "" };
+    },
+    // What `handleNextImageRequest` of Next's server does, without its cache.
+    async optimizeImage(request, response, serveFile) {
+      const url = new URL(request.url!, "http://n");
+      if (url.pathname !== images.path) return false;
+      if (images.loader !== "default" || images.unoptimized) {
+        response.statusCode = 404;
+        response.end();
+        return true;
+      }
+      const { ImageOptimizerCache, ImageError } = imageOptimizer;
+      const query = querystring.parse(url.search.slice(1));
+      const params = ImageOptimizerCache.validateParams(request, query, config, false);
+      if ("errorMessage" in params) {
+        response.statusCode = 400;
+        response.end(params.errorMessage);
+        return true;
+      }
+      try {
+        const upstream = params.isAbsolute
+          ? await imageOptimizer.fetchExternalImage(
+              params.href,
+              images.dangerouslyAllowLocalIP,
+              images.maximumResponseBody,
+              images.maximumRedirects,
+            )
+          : await imageOptimizer.fetchInternalImage(
+              params.href,
+              request,
+              response,
+              images.maximumResponseBody,
+              serveFile,
+            );
+        const { buffer, contentType, maxAge, etag } = await imageOptimizer.imageOptimizer(
+          upstream,
+          params,
+          config,
+          { isDev: false },
+        );
+        imageOptimizer.sendResponse(
+          request,
+          response,
+          params.href,
+          getExtension(contentType!)!,
+          buffer,
+          etag,
+          params.isStatic,
+          "MISS",
+          images,
+          maxAge,
+          // Not for the browser to keep: a test run may follow with another image.
+          true,
+        );
+      } catch (error) {
+        if (!(error instanceof ImageError)) throw error;
+        response.statusCode = error.statusCode;
+        response.end(error.message);
+      }
+      return true;
     },
   };
 }

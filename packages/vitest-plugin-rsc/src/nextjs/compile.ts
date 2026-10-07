@@ -2,12 +2,13 @@ import fs from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import path from "node:path";
 import { normalizePath, type Plugin } from "vite";
-import type { NextLayer, NextProject } from "./project.ts";
+import type { NextLayer, NextProject, ServeFile } from "./project.ts";
 
 // Before Next bundles the code of the app, its build compiles it: with its SWC
-// transform, and with a webpack loader for fonts. Here those run in the
-// environments of the three layers, as Next's own code (project.ts). What the
-// loader emits for the browser, the dev server serves where a deployment does.
+// transform, and with webpack loaders for images and fonts. Here those run in
+// the environments of the three layers, as Next's own code (project.ts).
+// What they emit for the browser, the dev server serves where a deployment
+// does, and it answers `/_next/image` with Next's image optimizer.
 
 // A call of a `next/font` function: a module for what it returns, and one for
 // its CSS, which Vite puts in the page.
@@ -45,8 +46,17 @@ export function createCompilePlugin(
     name: "vitest-plugin-rsc:next-compile",
     enforce: "pre",
     configureServer(server) {
+      // What Next calls for an image of the app: the server, for its own
+      // files and for those in `public/`.
+      const serveFile: ServeFile = async (request, response) => {
+        server.middlewares.handle(request, response, (error?: unknown) => {
+          response.statusCode = error ? 500 : 404;
+          response.end();
+        });
+      };
       const serve = async (request: IncomingMessage, response: ServerResponse) => {
         const project = getProject();
+        if (await project.optimizeImage(request, response, serveFile)) return true;
         const file = project.readEmittedFile(new URL(request.url!, "http://n").pathname);
         if (!file) return false;
         response.setHeader("content-type", file.contentType);
@@ -85,6 +95,10 @@ export function createCompilePlugin(
           `export default ${JSON.stringify(exports)};\n`
         );
       }
+      // With a query it is Vite's: `?url`, `?raw`.
+      if (!layerOf(this.environment.name) || id.includes("?")) return;
+      if (!getProject().isImage(id) || !fs.existsSync(id)) return;
+      return getProject().loadImage(id);
     },
     async transform(code, id) {
       const layer = layerOf(this.environment.name);
