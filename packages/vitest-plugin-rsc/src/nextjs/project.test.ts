@@ -5,6 +5,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { onTestFinished, expect, test, vi } from "vitest";
 import { flightBridge } from "./flight.ts";
+import { vitestPluginNext } from "./plugin.ts";
 import { loadNextProject, type NextRoute } from "./project.ts";
 
 const root = fileURLToPath(new URL("../../../../playground/nextjs-e2e-demo", import.meta.url));
@@ -91,6 +92,50 @@ test("lists a route handler and a metadata file next to a catch-all page of a sl
   expect(route(routes, "/login")).toMatchObject({ kind: "page" });
   // Not served yet: Next's metadata loaders build it.
   expect(route(routes, "/sitemap.xml")).toBeUndefined();
+});
+
+test("lists the metadata files of the app, and warns once that they are left out", async () => {
+  const app = appWith([
+    "layout.js",
+    "page.js",
+    "favicon.ico",
+    "icon.png",
+    "sitemap.js",
+    "blog/page.js",
+    "blog/opengraph-image.png",
+  ]);
+
+  const { metadataFiles } = await loadNextProject(app, installed);
+  expect(metadataFiles).toEqual([
+    "app/blog/opengraph-image.png",
+    "app/favicon.ico",
+    "app/icon.png",
+    "app/sitemap.js",
+  ]);
+
+  // What a run of that app logs when it starts. Not the favicon, which every
+  // new app has.
+  const plugin = vitestPluginNext().find(({ name }) => name === "vitest-plugin-rsc:next")!;
+  await (plugin.config as (config: object) => Promise<unknown>)({ root: app });
+  const warnOnce = vi.fn();
+  (plugin.configResolved as (config: object) => void)({ logger: { warnOnce } });
+  expect(warnOnce.mock.calls).toEqual([
+    [
+      "vitest-plugin-rsc: Next.js metadata files are not supported yet. The pages of " +
+        `${path.relative(process.cwd(), app)} leave them out, and their routes are not served: ` +
+        "app/blog/opengraph-image.png, app/icon.png, app/sitemap.js",
+    ],
+  ]);
+});
+
+test("does not warn about the favicon alone", async () => {
+  const app = appWith(["layout.js", "page.js", "favicon.ico"]);
+
+  const plugin = vitestPluginNext().find(({ name }) => name === "vitest-plugin-rsc:next")!;
+  await (plugin.config as (config: object) => Promise<unknown>)({ root: app });
+  const warnOnce = vi.fn();
+  (plugin.configResolved as (config: object) => void)({ logger: { warnOnce } });
+  expect(warnOnce).not.toHaveBeenCalled();
 });
 
 test("rejects parallel routes that `next build` rejects", async () => {

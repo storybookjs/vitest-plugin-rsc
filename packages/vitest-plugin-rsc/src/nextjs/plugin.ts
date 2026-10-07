@@ -500,6 +500,18 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
           },
         };
       },
+      // An app with metadata files still runs, as it would without them: say
+      // which files are left out. Not `favicon.ico`, which only adds a
+      // `<link rel="icon">`, and which every new app has.
+      configResolved(config) {
+        const files = project.metadataFiles.filter((file) => path.basename(file) !== "favicon.ico");
+        if (files.length === 0) return;
+        const app = path.relative(process.cwd(), project.root) || path.basename(project.root);
+        config.logger.warnOnce(
+          `vitest-plugin-rsc: Next.js metadata files are not supported yet. The pages of ` +
+            `${app} leave them out, and their routes are not served: ${files.join(", ")}`,
+        );
+      },
       // Vitest's hook for a plugin of a project: what its config says is a
       // test file or a setup file is not server code.
       configureVitest({ project: { config: test } }: { project: TestProject }) {
@@ -514,6 +526,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
       resolveId(source) {
         if (source === manifestId || routeModules.some(isRouteModule(source))) return `\0${source}`;
         // TODO: run Next's metadata loaders for these inline loader requests.
+        // Until then a page has no metadata from files: see configResolved.
         if (/^next-metadata-(image|route)-loader\?/.test(source)) return `${bridgePrefix}metadata`;
       },
       async load(id) {

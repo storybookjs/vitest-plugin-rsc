@@ -36,6 +36,8 @@ export type NextProject = {
   /** Version of the installed `next` package. */
   version: string;
   routes: NextRoute[];
+  /** The metadata files of the app, like `app/icon.png`, which are not served yet. */
+  metadataFiles: string[];
   /** The resolved `next.config`, as far as it serializes. */
   config: Record<string, unknown>;
   /** Next's compile-time constants per layer, as code strings. */
@@ -359,15 +361,22 @@ export async function loadNextProject(
         routeErrors.map((error) => error.message).join("\n\n"),
     );
   }
-  // Next also lists metadata files like `sitemap.ts` as app routes. Those
-  // need its metadata loaders and are not served yet.
-  const isRouteHandler = (appPath: string) =>
+  // Next also lists metadata files like `sitemap.ts` and `icon.png` as app
+  // routes. Those need its metadata loaders and are not served yet.
+  const fileOf = (appPath: string) => mappedAppPages[appPath]!.slice(APP_DIR_ALIAS.length);
+  const isMetadataFile = (appPath: string) =>
     isAppRouteRoute(appPath) &&
-    !isMetadataRouteFile(
-      mappedAppPages[appPath]!.slice(APP_DIR_ALIAS.length),
-      DEFAULT_METADATA_ROUTE_EXTENSIONS,
-      true,
-    );
+    isMetadataRouteFile(fileOf(appPath), DEFAULT_METADATA_ROUTE_EXTENSIONS, true);
+  const isRouteHandler = (appPath: string) => isAppRouteRoute(appPath) && !isMetadataFile(appPath);
+  const metadataFiles = Object.keys(mappedAppPages)
+    .filter(isMetadataFile)
+    .map((appPath) =>
+      path
+        .relative(root, path.join(appDir, fileOf(appPath)))
+        .split(path.sep)
+        .join("/"),
+    )
+    .sort();
   const routes: NextRoute[] = [];
   for (const [pathname, appPaths] of Object.entries(appPathsPerRoute)) {
     appPaths.sort(compareAppPaths);
@@ -610,6 +619,7 @@ export async function loadNextProject(
     nextDir,
     version,
     routes,
+    metadataFiles,
     config: JSON.parse(JSON.stringify(config)),
     defines: { rsc: definesFor("rsc"), ssr: definesFor("ssr"), browser: definesFor("browser") },
     aliases,

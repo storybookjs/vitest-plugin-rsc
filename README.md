@@ -648,7 +648,7 @@ The test runs in `client`, the Vite environment of the `rsc` layer. That is why 
 
 ## What Does Not Work Yet
 
-- `next/font`, `next/image` optimization, and metadata files like `icon.png` and `sitemap.ts`.
+- `next/font`, `next/image` optimization, and metadata files like `icon.png` and `sitemap.ts`. A run warns about the metadata files of the app, apart from `favicon.ico`, when it starts.
 - `middleware.ts` / `proxy.ts`, and the redirects, rewrites and headers of `next.config`.
 - `"use cache"`. And inside a function cached with `unstable_cache`, after its first `await`, the request's store is read instead of the cache's.
 - A mock for Client Components.
