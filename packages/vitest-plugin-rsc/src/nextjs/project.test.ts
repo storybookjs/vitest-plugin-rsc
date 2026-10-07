@@ -3,7 +3,8 @@ import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { onTestFinished, expect, test } from "vitest";
+import { onTestFinished, expect, test, vi } from "vitest";
+import { flightBridge } from "./flight.ts";
 import { loadNextProject, type NextRoute } from "./project.ts";
 
 const root = fileURLToPath(new URL("../../../../playground/nextjs-e2e-demo", import.meta.url));
@@ -257,5 +258,54 @@ test("needs the manifests that the server is given for each request", async () =
 
   await expect(loadNextProject(root, next)).rejects.toThrow(
     changed("`setManifestsSingleton()` takes no `serverActionsManifest`"),
+  );
+});
+
+test.for([
+  "export const setManifestsSingleton = (options) =>\n  set(options.page, options.clientReferenceManifest, options.serverActionsManifest);",
+  "function setManifestsSingleton({ page, clientReferenceManifest, serverActionsManifest }) {}\nexport { setManifestsSingleton };",
+  `export * from ${JSON.stringify(installed.resolve(runtime("server/app-render/manifests-singleton")))};`,
+])("takes the manifests however Next declares the function that gets them: %s", async (source) => {
+  const next = nextWith({ [runtime("server/app-render/manifests-singleton")]: source });
+
+  await expect(loadNextProject(root, next)).resolves.toBeDefined();
+});
+
+test("reads the exports of the Flight codec of the rsc layer", async () => {
+  const { flightExports } = await loadNextProject(root);
+
+  expect(flightExports.client).toContain("createFromFetch");
+  expect(flightExports.static).toEqual(["prerender"]);
+  expect(flightExports.server).toContain("decodeReplyFromAsyncIterable");
+});
+
+test("gives the rsc layer every export of the Flight codec, one without an adapter one that throws", async () => {
+  const file = "next/dist/compiled/react-server-dom-webpack/static.edge";
+  const next = nextWith({
+    [file]: sourceWith(
+      `${file}.js`,
+      "exports.prerender = s.prerender;",
+      "exports.prerender = s.prerender;\nexports.resumeAndPrerender = s.resumeAndPrerender;",
+    ),
+  });
+  const { flightExports } = await loadNextProject(root, next);
+  expect(flightExports.static).toEqual(["prerender", "resumeAndPrerender"]);
+
+  // The module the rsc layer gets, with an adapter where rsc.ts puts it.
+  const registry = "globalThis.__flight_bridge_test__";
+  vi.stubGlobal("__flight_bridge_test__", {
+    flightStatic: { prerender: (model: unknown) => ["prerendered", model] },
+  });
+  onTestFinished(() => {
+    vi.unstubAllGlobals();
+  });
+  const bridge = flightBridge("static", flightExports.static, version, registry);
+  const { prerender, resumeAndPrerender } = (await import(
+    /* @vite-ignore */ `data:text/javascript,${encodeURIComponent(bridge)}`
+  )) as Record<string, (...args: unknown[]) => unknown>;
+
+  expect(prerender!("page")).toEqual(["prerendered", "page"]);
+  expect(() => resumeAndPrerender!()).toThrow(
+    `vitest-plugin-rsc: \`resumeAndPrerender\` of Next's Flight codec is not supported in the rsc layer (next@${version}).`,
   );
 });

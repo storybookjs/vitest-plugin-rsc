@@ -5,6 +5,7 @@ import { hasDirective, transformDirectiveProxyExport } from "@vitejs/plugin-rsc/
 import { createFilter, normalizePath, parseAst, parseAstAsync, type Plugin } from "vite";
 import type { TestProject } from "vitest/node";
 import { createRunnerEnvironmentPlugins } from "../runner-environment.ts";
+import { flightBridge, type FlightEntry } from "./flight.ts";
 import { loadNextProject, type NextLayer, type NextProject } from "./project.ts";
 import { createServerCode, type ServerCodeOptions } from "./server-code.ts";
 
@@ -49,38 +50,6 @@ const vendoredFlight = (entry: string) => `@vitejs/plugin-rsc/vendor/react-serve
 const setupFile = fileURLToPath(
   new URL(`./setup${path.extname(import.meta.url)}`, import.meta.url),
 );
-
-// A module that forwards its exports to an object in `registry`, which the
-// runtime of the owning environment puts there. The lookup is deferred to the
-// call, so a pre-bundled chunk can load before the owner has.
-function bridgeModule(owner: string, names: string[]): string {
-  return names
-    .map((name) => `export const ${name} = (...args) => ${registry}.${owner}.${name}(...args);`)
-    .join("\n");
-}
-
-// Next's renderer is bundler-agnostic, apart from the Flight codec it imports
-// as `react-server-dom-webpack`. In the rsc layer that codec is Vite RSC's,
-// through the adapters in rsc.ts.
-const rscFlightBridges: Record<string, string> = {
-  server: bridgeModule("flightServer", [
-    "renderToReadableStream",
-    "decodeReply",
-    "decodeReplyFromAsyncIterable",
-    "decodeAction",
-    "decodeFormState",
-    "createTemporaryReferenceSet",
-    "registerServerReference",
-    "registerClientReference",
-    "createClientModuleProxy",
-  ]),
-  static: bridgeModule("flightStatic", ["prerender"]),
-  client: bridgeModule("flightClient", [
-    "createFromReadableStream",
-    "encodeReply",
-    "createTemporaryReferenceSet",
-  ]),
-};
 
 // Next's server reference ids are 42 hex characters whose first byte says
 // which arguments the function uses. Vite RSC's are `<module>#<export>`. The
@@ -250,7 +219,9 @@ function createLayerResolver(getProject: () => NextProject, layer: NextLayer) {
         if (!id.startsWith(bridgePrefix)) return;
         const name = id.slice(bridgePrefix.length);
         if (name === "server-reference-info") return serverReferenceInfoShim;
-        return rscFlightBridges[name.slice("flight-".length)];
+        const { flightExports, version } = getProject();
+        const entry = name.slice("flight-".length) as FlightEntry;
+        return flightBridge(entry, flightExports[entry], version, registry);
       },
     };
   }
@@ -474,9 +445,9 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
               ...(layer === "rsc" ? [nextClientBoundaryPlugin(getProject, resolvers.rsc)] : []),
               ...(layer === "browser" ? [] : [serverCode.optimizerPlugin(layer)]),
             ],
-            // Next's files import names that only another layer's build of a
-            // package has, in branches that layer never takes. webpack leaves
-            // such an import undefined.
+            // A package can import what only another layer's build of a module
+            // has, like `useRouter` of `next/navigation` in the rsc layer (the
+            // notes demo). webpack leaves such an import undefined.
             shimMissingExports: true,
             // Vite only defines NODE_ENV for dependencies.
             transform: {

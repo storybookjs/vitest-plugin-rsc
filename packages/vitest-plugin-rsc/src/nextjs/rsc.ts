@@ -4,6 +4,7 @@ import { prerender } from "@vitejs/plugin-rsc/react/rsc/static";
 import * as FlightServer from "@vitejs/plugin-rsc/vendor/react-server-dom/server.edge";
 import appPages from "virtual:vitest-plugin-rsc/next-app-pages";
 import routeHandlers from "virtual:vitest-plugin-rsc/next-route-handlers";
+import type { FlightAdapters } from "./flight.ts";
 import { actionModulePrefix, registry } from "./registry.ts";
 
 // The rsc layer: Server Components, Server Actions, route handlers and the
@@ -17,7 +18,8 @@ ReactServer.setRequireModule({
 
 // Next passes its client and server reference manifests to the Flight codec.
 // Vite RSC resolves a reference by its module id at runtime, with manifests of
-// its own, so these take Next's manifest arguments and leave them out.
+// its own, so these take Next's manifest arguments and leave them out. See
+// flight.ts for the exports of Next's codec that are not here.
 registry.flightServer = {
   renderToReadableStream: (model: unknown, _clientModules: unknown, options?: object) =>
     ReactServer.renderToReadableStream(model, options),
@@ -34,11 +36,11 @@ registry.flightServer = {
   registerServerReference: ReactServer.registerServerReference,
   registerClientReference: ReactServer.registerClientReference,
   createClientModuleProxy: FlightServer.createClientModuleProxy,
-};
+} satisfies FlightAdapters<"server">;
 registry.flightStatic = {
   prerender: (model: unknown, _clientModules: unknown, options?: object) =>
     prerender(model, options),
-};
+} satisfies FlightAdapters<"static">;
 registry.flightClient = {
   createFromReadableStream: (
     stream: ReadableStream<Uint8Array>,
@@ -46,7 +48,7 @@ registry.flightClient = {
   ) => ReactServer.createFromReadableStream(stream, options),
   encodeReply: ReactServer.encodeReply,
   createTemporaryReferenceSet: ReactServer.createClientTemporaryReferenceSet,
-};
+} satisfies FlightAdapters<"client">;
 
 registry.loadAppPage = async (page) => {
   const load = (appPages as Record<string, () => Promise<unknown>>)[page];

@@ -1,8 +1,10 @@
 import fs from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
+import { init as initCjsLexer, parse as parseCjs } from "cjs-module-lexer";
 import type { AppLoaderOptions } from "next/dist/build/webpack/loaders/next-app-loader/index.js";
 import { parseAst } from "vite";
+import { rscFlightCodec, type FlightEntry } from "./flight.ts";
 
 // The one file that calls the build code of the project's own `next`. The
 // routes, the route entries, the compile-time constants and the alias tables
@@ -31,6 +33,8 @@ export type NextProject = {
   appDir: string;
   /** Directory of the installed `next` package. */
   nextDir: string;
+  /** Version of the installed `next` package. */
+  version: string;
   routes: NextRoute[];
   /** The resolved `next.config`, as far as it serializes. */
   config: Record<string, unknown>;
@@ -38,6 +42,11 @@ export type NextProject = {
   defines: Record<NextLayer, Record<string, string>>;
   /** Next's compiler aliases per layer, in webpack's notation: `$` ends an exact match. */
   aliases: Record<NextLayer, Record<string, string | false>>;
+  /**
+   * The exports of each entry of the Flight codec that the rsc layer imports
+   * as `react-server-dom-webpack/<entry>`.
+   */
+  flightExports: Record<FlightEntry, string[]>;
   /**
    * The rsc-layer module of a route, from Next's app loader, with this
    * package's runtime where Next's code names its bundler. For a page: its
@@ -561,6 +570,37 @@ export async function loadNextProject(
     }
   }
 
+  const aliases = {
+    rsc: aliasesFor("rsc"),
+    ssr: aliasesFor("ssr"),
+    browser: aliasesFor("browser"),
+  };
+
+  // The Flight codec of the rsc layer is CommonJS. Its exports, the way Node
+  // finds them for an `import` of it. Of a `module.exports = require()` in
+  // each branch the lexer gives the last: the development build, which is the
+  // one that runs here.
+  await initCjsLexer();
+  const exportsOf = (file: string): string[] => {
+    const { exports, reexports } = parseCjs(fs.readFileSync(file, "utf8"));
+    const requireFrom = createRequire(file);
+    return [
+      ...exports.filter((name) => name !== "__esModule"),
+      ...reexports.flatMap((reexport) => exportsOf(requireFrom.resolve(reexport))),
+    ];
+  };
+  const flightExports = {} as Record<FlightEntry, string[]>;
+  for (const entry of Object.keys(rscFlightCodec) as FlightEntry[]) {
+    const specifier = `react-server-dom-webpack/${entry}`;
+    const target = aliases.rsc[`${specifier}$`];
+    if (typeof target !== "string") return fail(`the alias tables have no \`${specifier}$\``);
+    try {
+      flightExports[entry] = [...new Set(exportsOf(require.resolve(target)))];
+    } catch (error) {
+      return fail(`${target} cannot be read (${(error as Error).message})`, error);
+    }
+  }
+
   // next-app-loader keys its per-build caches on the compilation object.
   const compilation = {};
 
@@ -568,10 +608,12 @@ export async function loadNextProject(
     root,
     appDir,
     nextDir,
+    version,
     routes,
     config: JSON.parse(JSON.stringify(config)),
     defines: { rsc: definesFor("rsc"), ssr: definesFor("ssr"), browser: definesFor("browser") },
-    aliases: { rsc: aliasesFor("rsc"), ssr: aliasesFor("ssr"), browser: aliasesFor("browser") },
+    aliases,
+    flightExports,
     async loadAppPageEntry(route) {
       const watchFiles = new Set<string>();
       const context: AppLoaderContext = {

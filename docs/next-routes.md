@@ -29,26 +29,28 @@ The routes are listed the way `next build` lists its entries. The pages with the
 
 All of this is internal to Next, and it changes between minor versions. The output of the build code names the runtime it was made for: the constants the runtime reads, the files an alias leads to, the arguments a template passes. So the plugin does not bring a copy of Next's build code. It calls the one of the installed `next`, from one file, `project.ts`, which is typed against Next's own declarations.
 
-That file checks what the plugin relies on when a run starts: of the build code, and of the runtime that the plugin's own modules call in the tab. The files of the runtime are only read for it, not loaded: they run in the tab. A Next.js that differs stops the run with one message: the version, and what is different.
+That file checks what the plugin relies on when a run starts: of the build code, and of the runtime that the plugin's own modules call in the tab. Of the runtime it checks what would fail silently, or without saying why: a hook, a global, `document.currentScript`, what the shim of `server-reference-info` replaces, the manifests. A static import of a name that is gone needs no check: the module fails to link, with a `SyntaxError` that names it. The files of the runtime are only read for it, not loaded: they run in the tab. A Next.js that differs stops the run with one message: the version, and what is different.
 
-| What is checked                                                                                            | Without the check                                                       |
-| ---------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
-| Every file and export of the build code that is called                                                     | A `TypeError` somewhere in the plugin                                   |
-| `discoverRoutes()` returns `mappedAppPages`                                                                | An app without routes: every URL is a 404                               |
-| `getDefineEnv()` sets `process.env.NEXT_RUNTIME` to `edge` for the server layers                           | Next's modules load their Node.js builds in the tab                     |
-| The alias tables have `react-server-dom-webpack/server$`                                                   | A `TypeError` on a path                                                 |
-| `IncrementalCache` takes `fs`, `serverDistDir` and `fetchCacheKeyPrefix`                                   | Nothing is cached, or a test finds another's entries                    |
-| The app loader's output has `__webpack_require__` and imports `app-page-runtime`                           | Next's Node.js request handler loads in the tab                         |
-| The `app-route` template loads `route.ts` with `userland: () => require(`                                  | A `require` that the tab does not have                                  |
-| The `edge-ssr-app` template imports the page as `pageMod`                                                  | An import of a module that does not exist                               |
-| The client entry has `appBootstrap()`, `hydrate()` and `callServer()`                                      | A `TypeError` when a page loads                                         |
-| Next's root component calls `__NEXT_HYDRATED_CB` under `process.env.__NEXT_TEST_MODE`                      | `renderServer()` waits for the page to hydrate until the test times out |
-| Next takes its asset prefix from the `/_next/` URL of `document.currentScript`                             | The app does not start in the tab                                       |
-| `server-reference-info` has the functions the plugin replaces for Vite RSC's ids                           | Next rejects the ids of Vite RSC's Server Actions                       |
-| The edge route module reads the globals `__BUILD_MANIFEST`, `__SERVER_FILES_MANIFEST` and `__RSC_MANIFEST` | Manifests that Next does not read                                       |
-| `setManifestsSingleton()` takes `page`, `clientReferenceManifest` and `serverActionsManifest`              | Manifests that Next does not read                                       |
+| What is checked                                                                                                           | Without the check                                                       |
+| ------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| Every file and export of the build code that is called                                                                    | A `TypeError` somewhere in the plugin                                   |
+| `discoverRoutes()` returns `mappedAppPages`                                                                               | An app without routes: every URL is a 404                               |
+| `getDefineEnv()` sets `process.env.NEXT_RUNTIME` to `edge` for the server layers                                          | Next's modules load their Node.js builds in the tab                     |
+| The alias tables have `react-server-dom-webpack/server$`                                                                  | A `TypeError` on a path                                                 |
+| `IncrementalCache` takes `fs`, `serverDistDir` and `fetchCacheKeyPrefix`                                                  | Nothing is cached, or a test finds another's entries                    |
+| The app loader's output has `__webpack_require__` and imports `app-page-runtime`                                          | Next's Node.js request handler loads in the tab                         |
+| The `app-route` template loads `route.ts` with `userland: () => require(`                                                 | A `require` that the tab does not have                                  |
+| The `edge-ssr-app` template imports the page as `pageMod`                                                                 | An import of a module that does not exist                               |
+| The client entry has `hydrate()`, which the plugin imports once the page is there                                         | A `TypeError` when a page loads                                         |
+| Next's root component calls `__NEXT_HYDRATED_CB` under `process.env.__NEXT_TEST_MODE`                                     | `renderServer()` waits for the page to hydrate until the test times out |
+| Next takes its asset prefix from the `/_next/` URL of `document.currentScript`                                            | The app does not start in the tab                                       |
+| `server-reference-info` has the functions the plugin replaces for Vite RSC's ids                                          | Next rejects the ids of Vite RSC's Server Actions                       |
+| The edge route module reads the globals `self.__BUILD_MANIFEST`, `self.__SERVER_FILES_MANIFEST` and `self.__RSC_MANIFEST` | Manifests that Next does not read                                       |
+| `setManifestsSingleton()` takes `page`, `clientReferenceManifest` and `serverActionsManifest`                             | Manifests that Next does not read                                       |
 
-A function that is still there but takes other arguments is not checked: a function of the build code fails with its own error, at startup, one of the runtime when a test calls it. What it cannot check either is what Next's runtime does with all of that once a request comes in: a manifest field it starts to read, or a key it starts to require in the loader tree. That shows up as a failing test. CI runs both playgrounds against `next@latest` and `next@canary` for it.
+Apart from the options of `setManifestsSingleton()`, a function that is still there but takes other arguments is not checked: a function of the build code fails with its own error, at startup, one of the runtime when a test calls it. What it cannot check either is what Next's runtime does with all of that once a request comes in: a manifest field it starts to read, or a key it starts to require in the loader tree. That shows up as a failing test. CI runs both playgrounds against `next@latest` and `next@canary` for it.
+
+The Flight codec that Next imports as `react-server-dom-webpack` is Vite RSC's in the `rsc` layer, through adapters that leave out Next's manifests. The layer has every export of Next's codec, as the installed `next` has it. One that the plugin has no adapter for throws when it is called, and says so; a new export that nothing calls does not stop a run.
 
 ## Three Layers, Three Environments
 
