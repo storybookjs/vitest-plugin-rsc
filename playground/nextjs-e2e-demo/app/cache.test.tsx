@@ -125,9 +125,6 @@ test.for(["ada", "grace"])("starts a test with an empty cache: %s", async (autho
 });
 
 test("does not keep what a cached function computes after its test has ended", async () => {
-  // Next reports the render that is stopped half way, and the component in
-  // it that goes on without a request.
-  consoleError.mockImplementation(() => {});
   reports.author = "ada";
   let finishReport = () => {};
   reports.waitFor = new Promise((resolve) => (finishReport = resolve));
@@ -140,9 +137,6 @@ test("does not keep what a cached function computes after its test has ended", a
   await opening;
   finishReport();
   await expect.poll(() => reports.written).toBe(1);
-  // Both reports are in before the next page is asked for.
-  await expect.poll(() => consoleError.mock.calls.length).toBe(2);
-  consoleError.mockClear();
   reports.author = "grace";
   reports.waitFor = undefined;
   await renderServer({ url: "/reports/7" });
