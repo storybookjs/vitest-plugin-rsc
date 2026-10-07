@@ -101,9 +101,9 @@ Everything else in that environment is server code, including a module that only
 Code asks `typeof window` for one of two reasons, and they need opposite answers here.
 
 - **Role.** Am I the server side of this app? `@t3-oss/env-core` asks, and only hands out a server variable if the answer is yes. `next-themes` asks, and reads no theme from storage on the server. The answer has to be: you are the server.
-- **Capability.** Is there a DOM here that I can work on? Testing Library asks before it binds `screen` to `document.body`. A helper of yours that sets `document.cookie` does not even ask. The answer has to be the truth: you are in a browser.
+- **Capability.** Is there a DOM here that I can work on? Testing Library asks before it binds `screen` to `document.body`. A helper of yours that sets `document.cookie` does not even ask. The answer has to be the truth: you are in a browser. Unless the module also gets by without a DOM: PGlite asks to pick how it loads, is told it is not in a browser, and works all the same.
 
-Nothing in the code says which of the two a module means. So every module of the `rsc` environment gets the first answer, and `browserModules` lists the ones that need the second:
+Nothing in the code says which of the two a module means. So every other module of the `rsc` environment gets the first answer, and `browserModules` lists the ones that need the second:
 
 ```ts
 vitestPluginNext({
@@ -126,9 +126,7 @@ When you do not:
 - PGlite, in memory and on IndexedDB. It is told that it is not in a browser, and works all the same.
 - A package that touches `document` without asking first. Only `typeof` is replaced in packages.
 
-The notes demo in this repository, with PGlite, MSW, Drizzle, `@t3-oss/env-nextjs` and `next-themes`, runs without a single entry.
-
-A package that both the tests and the app use can only get one of the two answers. If it needs both, it cannot be used on both sides.
+A package that both the tests and the app use can only get one of the two answers. If it needs both, it cannot be used on both sides. And an entry does not help a package of the app that, told it is on a server, takes a path only Node.js has.
 
 What this does not cover:
 

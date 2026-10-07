@@ -115,10 +115,11 @@ export type ServerCodeOptions = {
    * Server code asks `typeof window` to know its role: is this the server
    * side of the app? There the answer has to be yes. A module asks the same
    * to know what it can do: is there a DOM to query, a `document.cookie` to
-   * set? There the answer has to be the truth, and the code cannot say which
-   * of the two it is. So everything gets the first answer, and this option
-   * lists what needs the second: a helper of the tests, or a package they
-   * use on the page.
+   * set? There the answer has to be the truth, unless the module gets by
+   * without a DOM too. The code cannot say which of the two it is. So what
+   * is not a test file gets the first answer, and this option lists what
+   * needs the second: a helper of the tests, or a package they use on the
+   * page.
    *
    * Files are matched by their real path, which for a package is seldom
    * `node_modules/<name>` under the root. So start a pattern for one with `**`.

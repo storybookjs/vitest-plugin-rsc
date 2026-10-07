@@ -162,7 +162,9 @@ test("pre-bundles a file that is not plain JavaScript as it is, with a warning",
 });
 
 test("tells the server code of a layer from the code of the test", () => {
-  const serverCode = createServerCode(registry, { browserModules: ["test/**"] });
+  const serverCode = createServerCode(registry, {
+    browserModules: ["test/**", "**/node_modules/@testing-library/**"],
+  });
   serverCode.configure(root);
   serverCode.addTestFiles((file) => file.endsWith(".test.tsx"));
   // A second project that shares the plugin.
@@ -177,6 +179,9 @@ test("tells the server code of a layer from the code of the test", () => {
   // The rsc layer shares its environment with the test.
   expect(serverCode.isServerCode(file("app/page.tsx"), "rsc")).toBe(true);
   expect(serverCode.isServerCode(file("node_modules/zod/index.js"), "rsc")).toBe(true);
+  // A package is matched where the package manager really put it.
+  const inStore = "/store/.pnpm/@testing-library+dom@10/node_modules/@testing-library/dom/x.js";
+  expect(serverCode.isServerCode(inStore, "rsc")).toBe(false);
   expect(serverCode.isServerCode(file("app/page.test.tsx"), "rsc")).toBe(false);
   expect(serverCode.isServerCode(file("vitest.setup.ts"), "rsc")).toBe(false);
   expect(serverCode.isServerCode(file("test/render.tsx"), "rsc")).toBe(false);
