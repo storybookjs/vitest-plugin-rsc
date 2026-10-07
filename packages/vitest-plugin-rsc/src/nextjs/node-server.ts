@@ -1,4 +1,10 @@
+import { RSC_HEADER } from "next/dist/client/components/app-router-headers";
+import { RedirectStatusCode } from "next/dist/client/components/redirect-status-code";
+import { NEXT_CACHE_TAGS_HEADER } from "next/dist/lib/constants";
 import { NodeNextRequest, NodeNextResponse } from "next/dist/server/base-http/node";
+import { isRSCRequestHeader } from "next/dist/server/lib/is-rsc-request";
+import { setRequestMeta } from "next/dist/server/request-meta";
+import { sendRenderResult } from "next/dist/server/send-payload";
 import { getIsPossibleServerAction } from "next/dist/server/lib/server-action-request-meta";
 import { shouldServeStreamingMetadata } from "next/dist/server/lib/streaming-metadata";
 import { createDevRenderContext } from "next/dist/server/route-modules/app-page/dev-render-context";
@@ -142,7 +148,11 @@ function createNodeResponse() {
   const headers = new Map<string, number | string | string[]>();
   const listeners = new Map<string, Set<Listener>>();
   let controller!: ReadableStreamDefaultController<Uint8Array>;
-  const body = new ReadableStream<Uint8Array>({ start: (c) => void (controller = c) });
+  const body = new ReadableStream<Uint8Array>({
+    start: (c) => void (controller = c),
+    // Whoever reads the response has left, like a browser that leaves a page.
+    cancel: () => response.destroy(),
+  });
   let wrote = false;
   let sendHead!: () => void;
   // Resolves when the status and the headers are final: at the first byte.
@@ -154,6 +164,8 @@ function createNodeResponse() {
     statusMessage: "",
     finished: false,
     headersSent: false,
+    writableEnded: false,
+    writableFinished: false,
     errored: null,
     destroyed: false,
     setHeader(name: string, value: number | string | string[]) {
@@ -186,27 +198,32 @@ function createNodeResponse() {
       sendHead();
     },
     write(chunk: string | Uint8Array) {
+      if (response.destroyed || response.writableEnded) return false;
       response.flushHeaders();
       wrote = true;
       controller.enqueue(typeof chunk === "string" ? encoder.encode(chunk) : new Uint8Array(chunk));
       return true;
     },
-    end(chunk?: string | Uint8Array) {
-      if (response.finished) return;
+    end(chunk?: string | Uint8Array | null) {
+      if (response.destroyed || response.writableEnded) return;
       if (chunk !== undefined && chunk !== null) response.write(chunk);
       response.flushHeaders();
-      response.finished = true;
+      // All of it went out: Next takes a `close` before that for a client
+      // that left, and aborts the signal of the request.
+      response.writableEnded = response.writableFinished = response.finished = true;
       controller.close();
       response.emit("finish");
       // A socket closes after the response has gone out: what Next runs then,
       // like `after()`, comes after whoever asked has its answer.
       nativeSetTimeout(() => response.emit("close"));
     },
+    /** Ends the response before all of it went out. Without an error, the reader left. */
     destroy(error?: unknown) {
-      if (response.finished) return;
-      response.destroyed = response.finished = true;
+      if (response.destroyed || response.writableEnded) return;
+      response.destroyed = true;
       sendHead();
-      controller.error(error);
+      // A reader that left has cancelled the body already.
+      if (error !== undefined) controller.error(error);
       response.emit("close");
     },
     /** The response as the tab gets it, once its head is there. */
@@ -239,6 +256,24 @@ function toHeaders(values: Record<string, unknown>, init?: HeadersInit): Headers
   return headers;
 }
 
+type NodeResponse = ReturnType<typeof createNodeResponse>;
+
+// The response of the server once its head is there, while `written` goes on
+// to write the body. What fails before that is the failure of the request;
+// after it, the body ends with the error.
+function respond(res: NodeResponse, written: Promise<unknown>): Promise<Response> {
+  const failed = new Promise<never>((_, reject) =>
+    written.catch((error) => (res.headersSent ? res.destroy(error ?? new Error()) : reject(error))),
+  );
+  return Promise.race([res.toResponse(toHeaders), failed]);
+}
+
+// What `next start` knows of a request before a route gets it: the URL the
+// browser asked for. Without it Next takes the server to be `localhost`.
+function requestMetaOf(request: ServerRequest) {
+  return { initURL: request.url, initProtocol: new URL(request.url).protocol.slice(0, -1) };
+}
+
 /**
  * One request for a route handler, by the request handler Next's build makes
  * for it: `templates/app-route`, as `next start` calls it.
@@ -250,26 +285,19 @@ export async function handleRouteHandler(
 ): Promise<Response> {
   const req = createNodeRequest(request);
   const res = createNodeResponse();
-  request.signal?.addEventListener("abort", () => res.destroy(request.signal?.reason));
+  request.signal?.addEventListener("abort", () => res.destroy(), { once: true });
+  // The cache of the server: see cache.ts. Next's route module makes one of
+  // its own when it stores a response, and leaves it in this global.
+  const cache = globalThis.__incrementalCache;
   const handled = handler(req, res, {
     waitUntil: context.waitUntil,
-    // The cache of the server: see cache.ts.
-    requestMeta: { incrementalCache: globalThis.__incrementalCache },
-  });
-  // A handler that fails before it has answered. After that, the body ends.
-  const failed = new Promise<never>((_, reject) =>
-    handled.catch((error) => (res.headersSent ? res.destroy(error) : reject(error))),
-  );
-  return Promise.race([res.toResponse((headers) => toHeaders(headers)), failed]);
+    requestMeta: { ...requestMetaOf(request), incrementalCache: cache },
+  }).finally(() => (globalThis.__incrementalCache = cache));
+  return respond(res, handled);
 }
 
 type RenderResult = {
-  isNull: boolean;
-  isDynamic: boolean;
-  contentType?: string;
   metadata: { statusCode?: number; headers?: Record<string, unknown> };
-  toUnchunkedString(): string;
-  pipeTo(writable: WritableStream<Uint8Array>): Promise<void>;
 };
 
 /**
@@ -292,7 +320,7 @@ export async function handlePage(
       prepare(req: unknown, res: unknown, options: object): Promise<any>;
       render(req: unknown, res: unknown, context: object): Promise<RenderResult>;
       onRequestError(...args: unknown[]): Promise<void>;
-      getVaryHeader(pathname: string, patterns: RegExp[]): string | undefined;
+      getVaryHeader(pathname: string, patterns: RegExp[]): string;
     };
     default?: unknown;
   };
@@ -300,6 +328,8 @@ export async function handlePage(
   const req = createNodeRequest(request);
   const res = createNodeResponse();
 
+  setRequestMeta(req as never, requestMetaOf(request) as never);
+  const nextRes = new NodeNextResponse(res as never);
   const prepared = await routeModule.prepare(req, res, {
     srcPage: page,
     multiZoneDraftMode: false,
@@ -323,6 +353,7 @@ export async function handlePage(
     routerServerContext,
   } = prepared;
   const config = nextConfig as Record<string, any>;
+  res.setHeader("Vary", routeModule.getVaryHeader(resolvedPathname, interceptionRoutePatterns));
   const userAgent = req.headers["user-agent"] ?? "";
 
   const renderContext = {
@@ -408,33 +439,42 @@ export async function handlePage(
     },
   };
 
-  const result = await routeModule.render(
-    new NodeNextRequest(req as never),
-    new NodeNextResponse(res as never),
-    renderContext,
-  );
-  const close = () => res.emit("close");
-  if (result.isNull) {
-    close();
-    return new registry.Response(null, { status: 500 });
+  let result: RenderResult;
+  try {
+    result = await routeModule.render(
+      new NodeNextRequest(req as never),
+      nextRes as never,
+      renderContext,
+    );
+  } catch (error) {
+    // What Next was to run when the response closes, like `after()`.
+    res.destroy();
+    throw error;
   }
 
-  const headers = toHeaders(
-    { ...res.getHeaders(), ...result.metadata.headers },
-    { "content-type": result.contentType || "text/html; charset=utf-8" },
-  );
-  const vary = routeModule.getVaryHeader(resolvedPathname, interceptionRoutePatterns);
-  if (vary) headers.set("vary", vary);
-  const status = result.metadata.statusCode || res.statusCode || 200;
-
-  if (!result.isDynamic) {
-    close();
-    return new registry.Response(result.toUnchunkedString(), { status, headers });
+  // From here on as Next's request handler goes on after a render: the
+  // headers and the status of the render, then Next's own `sendRenderResult`.
+  const { metadata } = result;
+  for (const [name, value] of Object.entries(metadata.headers ?? {})) {
+    if (value === undefined || name === NEXT_CACHE_TAGS_HEADER) continue;
+    for (const item of [value].flat()) nextRes.appendHeader(name, String(item));
   }
-  const { readable, writable } = new TransformStream<Uint8Array, Uint8Array>();
-  result
-    .pipeTo(writable)
-    .catch((error) => console.error(error))
-    .finally(close);
-  return new registry.Response(readable, { status, headers });
+  if (metadata.statusCode) {
+    // A redirect is in the payload of an RSC request, for Next's router.
+    const isRscRequest = isRSCRequestHeader(req.headers[RSC_HEADER]);
+    res.statusCode =
+      isRscRequest && metadata.statusCode in RedirectStatusCode ? 200 : metadata.statusCode;
+  }
+  return respond(
+    res,
+    sendRenderResult({
+      req: req as never,
+      res: res as never,
+      result: result as never,
+      generateEtags: config.generateEtags,
+      poweredByHeader: config.poweredByHeader,
+      // Nothing is prerendered: every page is rendered for its request.
+      cacheControl: { revalidate: 0, expire: undefined },
+    }),
+  );
 }

@@ -105,12 +105,6 @@ Readable.fromWeb ??= (web) => {
     },
   });
 };
-Readable.from ??= (chunks) => {
-  const readable = new Readable({ read() {} });
-  for (const chunk of typeof chunks === "string" || chunks instanceof Uint8Array ? [chunks] : chunks) readable.push(chunk);
-  readable.push(null);
-  return readable;
-};
 export default stream;
 export const { Writable, Duplex, Transform, PassThrough, Stream, finished, pipeline } = stream;
 export { Readable };
@@ -157,14 +151,15 @@ export async function ensureInstrumentationRegistered() {}
   // Next's bundle for Node.js brings React for both server layers, and its
   // route module hands them to those patches. Here a layer has its own.
   "vendored-react": `export const React = undefined;`,
-  // Next patches \`setImmediate\` on these two as well, for Cache Components.
+  // For the server code of the app. Next's own importer of it is replaced below.
   "node-timers": `
-module.exports = {
-  setImmediate: (...args) => ${registry}.setImmediate(...args),
-  clearImmediate: (...args) => ${registry}.clearImmediate(...args),
-  setTimeout: (...args) => globalThis.setTimeout(...args),
-  clearTimeout: (...args) => globalThis.clearTimeout(...args),
-};
+export const setImmediate = (...args) => ${registry}.setImmediate(...args);
+export const clearImmediate = (...args) => ${registry}.clearImmediate(...args);
+export const setTimeout = (...args) => globalThis.setTimeout(...args);
+export const clearTimeout = (...args) => globalThis.clearTimeout(...args);
+export const setInterval = (...args) => globalThis.setInterval(...args);
+export const clearInterval = (...args) => globalThis.clearInterval(...args);
+export default { setImmediate, clearImmediate, setTimeout, clearTimeout, setInterval, clearInterval };
 `,
   // Of Node's \`crypto\`, what Next's server uses where it has no Web Crypto
   // branch: the ids of nanoid.
@@ -281,7 +276,7 @@ const nodeBridgeOf: [RegExp, string][] = [
     /^next\/dist\/(esm\/)?server\/node-environment-extensions\/fast-set-immediate\.external(\.js)?$/,
     "fast-set-immediate",
   ],
-  [/^(node:)?timers(\/promises)?$/, "node-timers"],
+  [/^(node:)?timers$/, "node-timers"],
   [/^(node:)?crypto$/, "node-crypto"],
   [
     /^next\/dist\/(esm\/)?server\/route-modules\/app-page\/vendored\/(rsc|ssr)\/entrypoints(\.js)?$/,
@@ -594,6 +589,12 @@ const runtimeImports: Record<NextLayer, string[]> = {
     "next/dist/server/lib/incremental-cache/tags-manifest.external",
     // node-server.ts
     "next/dist/server/base-http/node",
+    "next/dist/client/components/app-router-headers",
+    "next/dist/client/components/redirect-status-code",
+    "next/dist/lib/constants",
+    "next/dist/server/lib/is-rsc-request",
+    "next/dist/server/request-meta",
+    "next/dist/server/send-payload",
     "next/dist/server/lib/server-action-request-meta",
     "next/dist/server/lib/streaming-metadata",
     "next/dist/server/route-modules/app-page/dev-render-context",

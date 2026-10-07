@@ -116,7 +116,6 @@ async function handle(request: ServerRequest): Promise<Response> {
   const background: Promise<unknown>[] = [];
   const context = {
     waitUntil: (promise: Promise<unknown>) => void background.push(promise),
-    signal: request.signal,
   };
   const endRequest = async () => {
     await Promise.race([

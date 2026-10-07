@@ -225,6 +225,19 @@ test("streams the response of a route handler, which reads a mocked module", asy
   expect(await reader.read()).toEqual({ done: true, value: undefined });
 });
 
+test("stops a route handler whose streamed response is no longer read", async () => {
+  let resolveForecast!: (forecast: string) => void;
+  vi.mocked(getForecast).mockReturnValue(new Promise((resolve) => (resolveForecast = resolve)));
+
+  const response = await handleRequest("/api/forecast");
+  const reader = response.body!.getReader();
+  await reader.read();
+  await reader.cancel();
+  resolveForecast("sunny");
+  // What the handler writes now goes nowhere, and Next reports no error.
+  await new Promise((resolve) => setTimeout(resolve, 50));
+});
+
 test("serves the fetch() of a Client Component with a route handler", async () => {
   db.notes.set("1", { id: "1", title: "Inbox triage", body: "Sort the inbox" });
   document.cookie = "editor=kasper";
@@ -280,9 +293,13 @@ test("serves the fetch() of a Server Component with a route handler", async () =
 test("serves a route handler that asks for the edge runtime", async () => {
   // `export const runtime = "edge"`. It runs on Node.js like the others, and
   // the run warns about it when it starts.
-  const response = await handleRequest("/api/runtime");
+  const response = await handleRequest("/api/runtime?x=1");
 
-  expect(await response.json()).toEqual({ asked: "edge" });
+  expect(await response.json()).toEqual({
+    asked: "edge",
+    // The URL the tab asked for, with its origin.
+    url: `${location.origin}/api/runtime?x=1`,
+  });
 });
 
 test("keeps the Set-Cookie of a plain Response in a route handler", async () => {

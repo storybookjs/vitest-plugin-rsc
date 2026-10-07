@@ -25,7 +25,7 @@ Only the build is tied to a bundler. So this plugin does the build with Vite, an
 | An imported image                            | `next-image-loader`, called as-is                                                 |
 | An image behind `/_next/image`               | Next's image optimizer, `next/dist/server/image-optimizer`                        |
 
-Everything behind those is Next's runtime, unchanged: `handler(Request)` returns the `Response` a deployment would send.
+Everything behind those is Next's runtime, unchanged: what it writes to the response of its server is the `Response` the tab gets.
 
 The routes are listed the way `next build` lists its entries. The pages with the same pathname are one route, a catch-all page in a slot is added to the routes it also matches, and an app whose routes `next build` rejects is rejected here, with Next's own errors: pages no route matches, slots that cannot render the same URLs, and, with `strictRouteMatching`, an interception route without the route it intercepts. The loader gets the options a build passes, so a layout of slots only has no `children`, as in a deployment.
 
@@ -387,11 +387,11 @@ What a Node.js server has and a tab does not:
 
 | What                                                         | Here                                                                                                                                                                                                                                            |
 | ------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `http.IncomingMessage`, `http.ServerResponse`                | Two objects in `node-server.ts` with what Next reads and writes. The response becomes a `Response` at its first byte                                                                                                                            |
+| `http.IncomingMessage`, `http.ServerResponse`                | Two objects in `node-server.ts` with what Next reads and writes. The response becomes a `Response` at its first byte, and a reader that cancels its body closes it, as a browser that leaves does                                               |
 | The manifests in `.next/`                                    | `load-manifest.external`, the module Next keeps out of its bundle to read them, answers from memory                                                                                                                                             |
 | The request handler of a route handler                       | Next's own, `templates/app-route`, as `next start` calls it: `handler(req, res, ctx)`                                                                                                                                                           |
-| The request handler of a page                                | `routeModule.prepare()` and `routeModule.render()`, called as Next's handler calls them. Not `templates/app-page-runtime` itself: around those calls it serves prerendered pages                                                                |
-| `node:stream`, `stream/promises`                             | `next/dist/compiled/stream-browserify`, which Next ships, with `Readable.toWeb()`, `fromWeb()` and `from()` added                                                                                                                               |
+| The request handler of a page                                | `routeModule.prepare()` and `routeModule.render()`, then Next's `sendRenderResult()`, as Next's handler calls them. Not `templates/app-page-runtime` itself: around those calls it serves prerendered pages and partial prerenders              |
+| `node:stream`, `stream/promises`                             | `next/dist/compiled/stream-browserify`, which Next ships, with `Readable.toWeb()` and `fromWeb()` added                                                                                                                                         |
 | The body of a Server Action: busboy, `decodeReplyFromBusboy` | Next's busboy on that stream. The parts are collected into a `FormData` for Vite RSC's `decodeReply`                                                                                                                                            |
 | `node:crypto`                                                | Web Crypto for random values. A SHA-256 in JavaScript for `createHash`, which Next's cache keys need at once; another algorithm throws                                                                                                          |
 | `node:path`                                                  | `next/dist/compiled/path-browserify`                                                                                                                                                                                                            |
@@ -406,7 +406,7 @@ What a Node.js server has and a tab does not:
 What is still to do on it:
 
 - Cache Components and `"use cache"`. Their code is reached only with `cacheComponents`, and needs what a tab does not have at all: `AsyncLocalStorage` for more than one scope at a time, the order of `process.nextTick` and `setImmediate` in Node's event loop, and Next's patched `Date` and `Math.random`. The stand-in for `fast-set-immediate.external` throws where that starts.
-- `templates/app-page-runtime` for pages, with the response cache around a render.
+- `templates/app-page-runtime` for pages, with the response cache around a render. Until then a page has no `ETag` handling of a prerendered page and no partial prerendering.
 - `proxy.ts`, `instrumentation.ts`, draft mode, a `cacheHandler` of the app: `load-manifest.external` and its neighbours are where they would go.
 
 ## Watch Mode
