@@ -13,7 +13,7 @@ let consoleError: MockInstance<typeof console.error>;
 beforeEach(() => {
   vi.restoreAllMocks();
   consoleError = vi.spyOn(console, "error");
-  Object.assign(reports, { author: "nobody", duration: 0, written: 0 });
+  Object.assign(reports, { author: "nobody", duration: 0, waitFor: undefined, written: 0 });
 });
 
 afterEach(() => {
@@ -123,16 +123,20 @@ test("does not keep what a cached function computes after its test has ended", a
   // it that goes on without a request.
   consoleError.mockImplementation(() => {});
   reports.author = "ada";
-  reports.duration = 500;
+  let finishReport = () => {};
+  reports.waitFor = new Promise((resolve) => (finishReport = resolve));
   await renderServer({ url: "/reports/7" });
   await expect.element(page.getByText("Writing the report…")).toBeVisible();
 
   // What runs between two tests, while the report is still being written.
   await cleanup();
+  finishReport();
   await expect.poll(() => reports.written).toBe(1);
+  // Both reports are in before the next page is asked for.
+  await expect.poll(() => consoleError.mock.calls.length).toBe(2);
   consoleError.mockClear();
   reports.author = "grace";
-  reports.duration = 0;
+  reports.waitFor = undefined;
   await renderServer({ url: "/reports/7" });
 
   await expect.element(page.getByText("Report 7 by grace, number 2")).toBeVisible();
