@@ -212,6 +212,19 @@ test("sends the cookies the test sets before it opens a page", async () => {
   await expect.element(page.getByText("Last created: 7")).toBeVisible();
 });
 
+test("keeps the CSS of a page whose module loaded while another page was there", async () => {
+  await renderServer({ url: "/" });
+
+  // The module of the page loads for this navigation, and Vite adds its CSS
+  // to the document then. The module does not load again.
+  await page.getByRole("link", { name: "Notice" }).click();
+  const notice = page.getByText("The office is closed on Friday.");
+  await expect.element(notice).toHaveStyle({ color: "rgb(0, 128, 0)" });
+
+  await renderServer({ url: "/notice" });
+  await expect.element(notice).toHaveStyle({ color: "rgb(0, 128, 0)" });
+});
+
 test("loads the page when the app navigates without its router", async () => {
   await renderServer({ url: "/" });
 

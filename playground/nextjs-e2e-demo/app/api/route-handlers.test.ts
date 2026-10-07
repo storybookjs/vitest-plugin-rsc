@@ -34,6 +34,21 @@ test("serves a route handler with a dynamic segment", async () => {
   });
 });
 
+test("gives each of two requests sent at once its own request stores", async () => {
+  db.notes.set("1", { id: "1", title: "Inbox triage", body: "Sort the inbox" });
+  db.notes.set("2", { id: "2", title: "Plan the week", body: "" });
+
+  // The handler reads headers() after it has awaited: in a tab only one
+  // request at a time can have its stores there.
+  const [first, second] = await Promise.all([
+    handleRequest("/api/notes/1", { headers: { "x-client": "first" } }),
+    handleRequest("/api/notes/2", { headers: { "x-client": "second" } }),
+  ]);
+
+  expect(await first.json()).toMatchObject({ pathname: "/api/notes/1", client: "first" });
+  expect(await second.json()).toMatchObject({ pathname: "/api/notes/2", client: "second" });
+});
+
 test("answers 500 when a route handler throws, and logs the error", async () => {
   consoleError.mockImplementation(() => {});
 

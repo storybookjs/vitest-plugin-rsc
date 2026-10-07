@@ -12,7 +12,8 @@ export default function RootLayout({ children }: { children: ReactNode }) {
     <html lang="en" suppressHydrationWarning>
       <body>
         <nav aria-label="Main">
-          <Link href="/">Home</Link> <Link href="/notes">Notes</Link>
+          <Link href="/">Home</Link> <Link href="/notes">Notes</Link>{" "}
+          <Link href="/notice">Notice</Link>
         </nav>
         <main>{children}</main>
       </body>
