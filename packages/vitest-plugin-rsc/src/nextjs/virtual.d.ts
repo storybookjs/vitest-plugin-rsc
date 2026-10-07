@@ -7,6 +7,12 @@ declare module "virtual:vitest-plugin-rsc/next-manifest" {
     component?: string;
   }[];
   export const nextConfig: import("next/dist/server/config-shared").NextConfigComplete;
+  /** Which of Next's server runtimes the server layers are compiled for. */
+  export const runtime: "edge" | "nodejs";
+}
+
+declare module "vitest-plugin-rsc/node-stream" {
+  export { Readable } from "node:stream";
 }
 
 declare module "virtual:vitest-plugin-rsc/next-route-handlers" {

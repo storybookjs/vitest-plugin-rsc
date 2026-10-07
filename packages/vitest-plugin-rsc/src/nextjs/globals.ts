@@ -108,6 +108,23 @@ const scope = globalThis as Record<string, any>;
 
 scope.process ??= { env: {} };
 scope.process.env ??= {};
+// What Next's Node.js server asks of its process.
+scope.process.cwd ??= () => "/";
+scope.process.on ??= () => scope.process;
+scope.process.off ??= () => scope.process;
+scope.process.nextTick ??= (callback: (...args: unknown[]) => void, ...args: unknown[]) =>
+  queueMicrotask(() => callback(...args));
+scope.process.hrtime ??= Object.assign(() => [0, 0], {
+  bigint: () => BigInt(Math.round(performance.now() * 1e6)),
+});
+// A task of its own, after the microtasks: what Next's Node.js server waits
+// for between the stages of a render. Not a timer of the test, which may be
+// fake.
+const nativeSetTimeout = globalThis.setTimeout;
+const nativeClearTimeout = globalThis.clearTimeout;
+scope.setImmediate ??= (callback: (...args: unknown[]) => void, ...args: unknown[]) =>
+  nativeSetTimeout(callback, 0, ...args);
+scope.clearImmediate ??= (id: number) => nativeClearTimeout(id);
 scope.global ??= scope;
 scope.global.process ??= scope.process;
 scope.Buffer ??= Buffer;

@@ -54,6 +54,8 @@ export type NextRegistry = {
   browserRequire(id: string): Promise<unknown>;
   loadBrowserModule(id: string): Promise<unknown>;
   ssr: { AppPageRouteModule: new (options: unknown) => unknown };
+  /** For Next's Node.js server: what stands in for the files of a build. */
+  node: Record<string, AnyFunction>;
 };
 
 const scope = globalThis as { __vitest_plugin_rsc_next__?: Partial<NextRegistry> };

@@ -7,7 +7,7 @@ import type { TestProject } from "vitest/node";
 import { createRunnerEnvironmentPlugins } from "../runner-environment.ts";
 import { flightBridge, type FlightEntry } from "./flight.ts";
 import { createCompilePlugin, createDependencyCompilePlugin } from "./compile.ts";
-import { loadNextProject, type NextLayer, type NextProject } from "./project.ts";
+import { loadNextProject, nextRuntime, type NextLayer, type NextProject } from "./project.ts";
 import { createServerCode, type ServerCodeOptions } from "./server-code.ts";
 
 // Each layer of Next is a Vite environment, and all three run in the test's
@@ -72,6 +72,155 @@ export function extractInfoFromServerReferenceId(id) {
     : { type: "server-action", usedArgs: [true, true, true, true, true, true], hasRestArgs: true };
 }
 `;
+
+// Spike, for Next's Node.js server: the modules of it that reach for what a
+// tab does not have. Each is one module that Next itself keeps apart.
+const forward = (owner: string, names: string[]) =>
+  names
+    .map((name) => `export const ${name} = (...args) => ${registry}.${owner}.${name}(...args);`)
+    .join("\n");
+const nodeStream = `
+import stream from "next/dist/compiled/stream-browserify";
+const { Readable } = stream;
+// Next's polyfill is an older \`stream\`, without the bridge to web streams.
+Readable.toWeb ??= (readable) =>
+  new ReadableStream({
+    start(controller) {
+      readable.on("data", (chunk) => controller.enqueue(new Uint8Array(chunk)));
+      readable.on("end", () => controller.close());
+      readable.on("error", (error) => controller.error(error));
+    },
+    cancel: (reason) => void readable.destroy(reason),
+  });
+Readable.fromWeb ??= (web) => {
+  const reader = web.getReader();
+  return new Readable({
+    read() {
+      reader.read().then(
+        ({ done, value }) => void this.push(done ? null : Buffer.from(value)),
+        (error) => this.destroy(error),
+      );
+    },
+  });
+};
+Readable.from ??= (chunks) => {
+  const readable = new Readable({ read() {} });
+  for (const chunk of typeof chunks === "string" || chunks instanceof Uint8Array ? [chunks] : chunks) readable.push(chunk);
+  readable.push(null);
+  return readable;
+};
+export default stream;
+export const { Writable, Duplex, Transform, PassThrough, Stream, finished, pipeline } = stream;
+export { Readable };
+`;
+const nodeBridges: Record<string, string> = {
+  "node-stream": nodeStream,
+  "node-stream-promises": `
+import stream from ${JSON.stringify(`${bridgePrefix}node-stream`)};
+const isStream = (value) => value && (typeof value.pipe === "function" || typeof value.write === "function");
+export const pipeline = (...streams) => {
+  // The options, with a signal: the request ends with the test here.
+  if (!isStream(streams.at(-1))) streams.pop();
+  return new Promise((resolve, reject) =>
+    stream.pipeline(...streams, (error) => (error ? reject(error) : resolve())),
+  );
+};
+export const finished = (target) =>
+  new Promise((resolve, reject) => stream.finished(target, (error) => (error ? reject(error) : resolve())));
+`,
+  "react-server-node": forward("flightServer", [
+    "createTemporaryReferenceSet",
+    "decodeReply",
+    "decodeReplyFromBusboy",
+    "decodeAction",
+    "decodeFormState",
+  ]),
+  "load-manifest":
+    forward("node", [
+      "loadManifest",
+      "evalManifest",
+      "loadManifestFromRelativePath",
+      "evalManifestFromRelativePath",
+    ]) + `\nexport const clearManifestCache = () => false;`,
+  // \`instrumentation.ts\` is not run yet.
+  instrumentation: `
+export async function getInstrumentationModule() {}
+export async function instrumentationOnRequestError() {}
+export async function ensureInstrumentationRegistered() {}
+`,
+  // What Next's Node.js server patches when it starts: \`console\`, \`Date\`,
+  // \`Math.random\`, \`crypto\`, \`setImmediate\`, the handlers of its process.
+  // The tab is the test's too. (Cache Components reads these patches.)
+  "node-environment": `export const installProcessErrorHandlers = () => {};`,
+  // Next's bundle for Node.js brings React for both server layers, and its
+  // route module hands them to those patches. Here a layer has its own.
+  "vendored-react": `export const React = undefined;`,
+  // Next patches \`setImmediate\` on these two as well, for Cache Components.
+  "node-timers": `
+module.exports = {
+  setImmediate: (...args) => globalThis.setImmediate(...args),
+  clearImmediate: (...args) => globalThis.clearImmediate(...args),
+  setTimeout: (...args) => globalThis.setTimeout(...args),
+  clearTimeout: (...args) => globalThis.clearTimeout(...args),
+};
+`,
+  // Of Node's \`crypto\`, what Next's server uses where it has no Web Crypto
+  // branch: the ids of nanoid.
+  "node-crypto": `
+const web = globalThis.crypto;
+export const webcrypto = web;
+export const randomUUID = () => web.randomUUID();
+export const randomFillSync = (buffer) => (web.getRandomValues(buffer), buffer);
+export const randomBytes = (size) => web.getRandomValues(Buffer.alloc(size));
+export const getRandomValues = (buffer) => web.getRandomValues(buffer);
+export const createHash = () => {
+  throw new Error("vitest-plugin-rsc: node:crypto's createHash() is not there in a tab");
+};
+export default { webcrypto, randomUUID, randomFillSync, randomBytes, getRandomValues, createHash };
+`,
+  // Next asks Node.js for the source map of a file in a stack. Vite has them.
+  "node-module": `
+export const findSourceMap = () => undefined;
+export default { findSourceMap };
+`,
+  // Next's cache keeps its entries in memory. With this it finds no file.
+  "node-fs": `
+const missing = () => { throw Object.assign(new Error("ENOENT"), { code: "ENOENT" }); };
+export const nodeFs = {
+  existsSync: () => false,
+  readFile: async () => missing(),
+  readFileSync: missing,
+  stat: async () => missing(),
+  writeFile: async () => {},
+  mkdir: async () => {},
+};
+`,
+};
+const nodeBridgeOf: [RegExp, string][] = [
+  [/^(node:)?stream$/, "node-stream"],
+  [/^(node:)?stream\/promises$/, "node-stream-promises"],
+  [/^next\/dist\/(esm\/)?server\/app-render\/react-server\.node(\.js)?$/, "react-server-node"],
+  [/^next\/dist\/(esm\/)?server\/load-manifest\.external(\.js)?$/, "load-manifest"],
+  [
+    /^next\/dist\/(esm\/)?server\/lib\/router-utils\/instrumentation-globals\.external(\.js)?$/,
+    "instrumentation",
+  ],
+  [/^next\/dist\/(esm\/)?server\/lib\/node-fs-methods(\.js)?$/, "node-fs"],
+  [
+    /^next\/dist\/(esm\/)?server\/node-environment(-extensions\/(error-inspect|console-file|console-exit|console-dim\.external|unhandled-rejection\.external|random|date|web-crypto|node-crypto|process-error-handlers))?(\.js)?$/,
+    "node-environment",
+  ],
+  // What sets up a Node.js process for Next: the patches above, a hook on
+  // \`require\`, a \`crypto\` global.
+  [/^next\/dist\/(esm\/)?build\/adapter\/setup-node-env\.external(\.js)?$/, "node-environment"],
+  [/^(node:)?module$/, "node-module"],
+  [/^(node:)?timers(\/promises)?$/, "node-timers"],
+  [/^(node:)?crypto$/, "node-crypto"],
+  [
+    /^next\/dist\/(esm\/)?server\/route-modules\/app-page\/vendored\/(rsc|ssr)\/entrypoints(\.js)?$/,
+    "vendored-react",
+  ],
+];
 
 type Alias = { key: string; exact: boolean; target: string | false };
 
@@ -158,6 +307,12 @@ function createLayerResolver(getProject: () => NextProject, layer: NextLayer) {
       if (flight) return `${bridgePrefix}flight-${flight[1]}`;
     }
     if (source === serverReferenceInfo) return `${bridgePrefix}server-reference-info`;
+    // The Readable that node-server.ts makes a request of.
+    if (source === "vitest-plugin-rsc/node-stream") return `${bridgePrefix}node-stream`;
+    if (layer !== "browser" && nextRuntime === "nodejs") {
+      const bridge = nodeBridgeOf.find(([pattern]) => pattern.test(source));
+      if (bridge) return bridgePrefix + bridge[1];
+    }
   }
 
   /**
@@ -244,6 +399,7 @@ function createLayerResolver(getProject: () => NextProject, layer: NextLayer) {
         if (!id.startsWith(bridgePrefix)) return;
         const name = id.slice(bridgePrefix.length);
         if (name === "server-reference-info") return serverReferenceInfoShim;
+        if (name in nodeBridges) return nodeBridges[name];
         const { flightExports, version } = getProject();
         const entry = name.slice("flight-".length) as FlightEntry;
         return flightBridge(entry, flightExports[entry], version, registry);
@@ -370,6 +526,16 @@ const runtimeImports: Record<NextLayer, string[]> = {
     "next/dist/server/lib/incremental-cache",
     "next/dist/server/lib/incremental-cache/tags-manifest.external",
     "next/dist/server/web/get-edge-preview-props",
+    // node-server.ts
+    "next/dist/server/base-http/node",
+    "next/dist/server/lib/server-action-request-meta",
+    "next/dist/server/lib/streaming-metadata",
+    "next/dist/server/route-modules/app-page/dev-render-context",
+    "next/dist/server/route-modules/app-page/parse-request-headers",
+    "next/dist/shared/lib/router/utils/app-paths",
+    "next/dist/shared/lib/router/utils/is-bot",
+    "next/dist/shared/lib/size-limit",
+    "next/dist/compiled/stream-browserify",
     "next/dist/shared/lib/router/utils/route-regex",
     "next/dist/shared/lib/router/utils/route-matcher",
     "next/dist/shared/lib/router/utils/sorted-routes",
@@ -593,7 +759,8 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
           }));
           return (
             `export const routes = ${JSON.stringify([...routes, ...project.componentRoutes])};\n` +
-            `export const nextConfig = ${JSON.stringify(project.config)};\n`
+            `export const nextConfig = ${JSON.stringify(project.config)};\n` +
+            `export const runtime = ${JSON.stringify(nextRuntime)};\n`
           );
         }
 

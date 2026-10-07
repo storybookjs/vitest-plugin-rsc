@@ -19,6 +19,14 @@ import { rscFlightCodec, type FlightEntry } from "./flight.ts";
 /** The layers Next compiles an App Router app into, each with its own React. */
 export type NextLayer = "rsc" | "ssr" | "browser";
 
+/**
+ * Which of Next's two server runtimes the server layers are compiled for.
+ * Spike: `nodejs` is opted into with VITEST_PLUGIN_RSC_NEXT_RUNTIME.
+ */
+export type NextRuntime = "edge" | "nodejs";
+export const nextRuntime: NextRuntime =
+  process.env.VITEST_PLUGIN_RSC_NEXT_RUNTIME === "nodejs" ? "nodejs" : "edge";
+
 export type NextRoute = {
   /** What serves the route: a `page.tsx` with its layouts, or a `route.ts`. */
   kind: "page" | "route";
@@ -587,16 +595,22 @@ export async function loadNextProject(
       fetchCacheKeyPrefix: config.experimental.fetchCacheKeyPrefix,
       hasRewrites: false,
       isClient: layer === "browser",
-      isEdgeServer: layer !== "browser",
-      isNodeServer: false,
+      isEdgeServer: layer !== "browser" && nextRuntime === "edge",
+      isNodeServer: layer !== "browser" && nextRuntime === "nodejs",
       clientRouterFilters: undefined,
       middlewareMatchers: undefined,
       rewrites: { beforeFiles: [], afterFiles: [], fallback: [] },
     });
     // Next's own modules pick their edge build with it, like `module.compiled`.
-    if (layer !== "browser" && defines["process.env.NEXT_RUNTIME"] !== '"edge"') {
-      fail("`getDefineEnv()` does not define `process.env.NEXT_RUNTIME` as `edge`");
+    if (
+      layer !== "browser" &&
+      defines["process.env.NEXT_RUNTIME"] !== JSON.stringify(nextRuntime)
+    ) {
+      fail(`\`getDefineEnv()\` does not define \`process.env.NEXT_RUNTIME\` as \`${nextRuntime}\``);
     }
+    // Next's Node.js server renders to Node.js streams unless this is off:
+    // a compile-time switch of its own. A tab has web streams.
+    if (layer !== "browser") defines["process.env.__NEXT_USE_NODE_STREAMS"] = "false";
     return {
       ...(layer !== "browser" &&
         Object.fromEntries(
@@ -624,9 +638,20 @@ export async function loadNextProject(
       if (name === "async_hooks") continue;
       aliases[`${name}$`] = aliases[`node:${name}$`] = `next/dist/compiled/${name}`;
     }
+    if (layer !== "browser" && nextRuntime === "nodejs") {
+      aliases.path$ = aliases["node:path$"] = "next/dist/compiled/path-browserify";
+      // Next's own module for `react-dom/server` takes React's build for
+      // Node.js streams by the runtime. The one for web streams, as on edge.
+      for (const channel of ["", "-experimental"]) {
+        aliases[`next/dist/build/webpack/alias/react-dom-server${channel}.js$`] =
+          `next/dist/compiled/react-dom${channel}/cjs/react-dom-server.edge.development.js`;
+      }
+    }
     const base = compilerAliases.createWebpackAliases({
       distDir,
       isClient: layer === "browser",
+      // Also for Node.js: the ESM files of Next, and the builds of React
+      // for web streams, which is what a tab has.
       isEdgeServer: layer !== "browser",
       dev: false,
       config,

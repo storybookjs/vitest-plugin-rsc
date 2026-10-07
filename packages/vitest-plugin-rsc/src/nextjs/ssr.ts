@@ -4,9 +4,10 @@ import { getRouteMatcher } from "next/dist/shared/lib/router/utils/route-matcher
 import { getRouteRegex } from "next/dist/shared/lib/router/utils/route-regex";
 import { getSortedRoutes } from "next/dist/shared/lib/router/utils/sorted-routes";
 import edgeEntries from "virtual:vitest-plugin-rsc/next-edge-entries";
-import { nextConfig, routes as allRoutes } from "virtual:vitest-plugin-rsc/next-manifest";
+import { nextConfig, routes as allRoutes, runtime } from "virtual:vitest-plugin-rsc/next-manifest";
 import { shareIncrementalCache } from "./cache.ts";
 import { registerModuleLoader } from "./client-modules.ts";
+import { handleNodePage } from "./node-server.ts";
 import { actionModulePrefix, registry, type ServerRequest } from "./registry.ts";
 
 export { resetCaches } from "./cache.ts";
@@ -203,8 +204,13 @@ async function handle(request: ServerRequest): Promise<Response> {
     });
 
     await registry.loadAppPage(entry);
-    const { handler } = await edgeEntries[entry]!();
-    const response = await handler(request, context);
+    let response: Response;
+    if (runtime === "nodejs") {
+      response = await handleNodePage(request, context, page, entry);
+    } else {
+      const { handler } = await edgeEntries[entry]!();
+      response = await handler(request, context);
+    }
     // Whoever routes a request to the not-found page sets its status.
     const status = component || matched ? response.status : 404;
     return finishWithBody(request, response, status, endRequest);
