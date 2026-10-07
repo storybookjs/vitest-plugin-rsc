@@ -118,7 +118,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        next-version: ["canary", "latest"]
+        # The pinned stable version runs in the Test job. `latest` resolved to
+        # 16.3 here, and `vitest-plugin-rsc/next` needs 16.4.
+        next-version: ["canary"]
     steps:
       - uses: actions/checkout@v6
       - uses: pnpm/action-setup@v6
