@@ -5,13 +5,13 @@ export function NextActionProtocolProbe() {
   async function defaultRedirectAction() {
     "use server";
 
-    redirect("/action-protocol-default-target?from=action");
+    redirect("/fixtures/router/default/target?from=action");
   }
 
   async function redirectAction() {
     "use server";
 
-    redirect("/action-protocol-target?from=action", "push");
+    redirect("/fixtures/router/push/target?from=action", "push");
   }
 
   async function throwAction() {

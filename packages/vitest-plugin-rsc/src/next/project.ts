@@ -57,6 +57,34 @@ type AppLoaderContext = {
   addContextDependency(dir: string): void;
 };
 
+// Next compiles a `next.config.ts` and runs the result as a module without a
+// filename (`requireFromString` in next/dist/build/next-config-ts), so Node
+// looks up what the config imports by a relative path from the working
+// directory. For `next build` that is the project. Vitest loads the projects
+// of a workspace side by side, in one process with one working directory, so
+// they take turns to have it.
+//
+// The working directory is the whole process's: other work that runs while a
+// config loads sees the project as the working directory too. Next's loader
+// for Node's own TypeScript support would not need this, but it gives up on a
+// config that `next build` accepts, like one with an import without an
+// extension, and then loads it this way after all.
+const workingDirectory = process.cwd();
+let directoryQueue: Promise<unknown> = Promise.resolve();
+
+function inDirectory<T>(directory: string, load: () => Promise<T>): Promise<T> {
+  const result = directoryQueue.then(async () => {
+    process.chdir(directory);
+    try {
+      return await load();
+    } finally {
+      process.chdir(workingDirectory);
+    }
+  });
+  directoryQueue = result.catch(() => {});
+  return result;
+}
+
 export async function loadNextProject(root: string): Promise<NextProject> {
   const require = createRequire(path.join(root, "package.json"));
   const nextDir = path.dirname(require.resolve("next/package.json"));
@@ -113,7 +141,9 @@ export async function loadNextProject(root: string): Promise<NextProject> {
 
   // The app is served the way a deployment serves it: production Next on its
   // edge runtime. React itself stays a development build, see plugin.ts.
-  const config = await loadConfig(PHASE_PRODUCTION_BUILD, root, { silent: true });
+  const config = await inDirectory(root, () =>
+    loadConfig(PHASE_PRODUCTION_BUILD, root, { silent: true }),
+  );
   const { appDir } = findPagesDir(root) as { appDir?: string };
   if (!appDir) {
     throw new Error(`vitest-plugin-rsc: no \`app\` directory found in ${root}`);

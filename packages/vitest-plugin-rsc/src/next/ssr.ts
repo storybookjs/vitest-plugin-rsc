@@ -186,16 +186,19 @@ async function handle(request: ServerRequest): Promise<Response> {
     }
 
     // Next's build lists every Server Action. Here an action is its module id
-    // and export, so the only one to list is the one this request calls.
-    const actionId = request.headers.get("next-action");
-    const actions = actionId
-      ? {
-          [actionId]: {
-            workers: anyKey(() => ({ moduleId: actionModulePrefix + actionId, async: true })),
-            layer: {},
-          },
-        }
-      : {};
+    // and export, so the only one to list is the one this request calls, if
+    // the app has it. An id that names no action stays out, and Next answers
+    // it the way it answers a request from another deployment.
+    const actionId = request.method === "POST" ? request.headers.get("next-action") : null;
+    const actions =
+      actionId && (await registry.hasServerAction(actionId))
+        ? {
+            [actionId]: {
+              workers: anyKey(() => ({ moduleId: actionModulePrefix + actionId, async: true })),
+              layer: {},
+            },
+          }
+        : {};
     setManifestsSingleton({
       page,
       clientReferenceManifest: clientReferenceManifest as never,

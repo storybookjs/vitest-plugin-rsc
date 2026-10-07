@@ -345,3 +345,20 @@ test("replaces the page when a component redirects in the render after a Server 
   // in a component, so it replaces the entry of the page.
   expect(window.history.length).toBe(entries);
 });
+
+test("loads a page with the one Vite client that the tab has", async () => {
+  await renderServer({ url: "/settings" });
+  // Vite's client opens a websocket when it is evaluated. The tab has one.
+  const WebSocket = vi.spyOn(globalThis, "WebSocket");
+
+  await renderServer({ url: "/settings" });
+
+  await expect.element(page.getByRole("button", { name: "Theme: light" })).toBeVisible();
+  expect(WebSocket).not.toHaveBeenCalled();
+  // And the tab has loaded it from one URL: another URL is another instance.
+  const clients = performance
+    .getEntriesByType("resource")
+    .map((entry) => new URL(entry.name))
+    .filter((url) => url.pathname.endsWith("/@vite/client"));
+  expect(clients.map((url) => url.pathname + url.search)).toEqual(["/@vite/client"]);
+});

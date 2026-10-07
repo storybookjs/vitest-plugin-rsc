@@ -1,195 +1,146 @@
-import { expect, test, vi } from "vitest";
+import { expect, test } from "vitest";
 import { page } from "vitest/browser";
-import {
-  cleanup,
-  expectToHaveBeenNavigatedTo,
-  renderServer,
-} from "vitest-plugin-rsc/nextjs/testing-library";
+import { renderServer } from "vitest-plugin-rsc/next";
 import { ClientRefreshProbe } from "./client-refresh-probe.tsx";
 import { NextRouterProbe } from "./next-router-probe.tsx";
-import { resetServerRefreshProbe, ServerRefreshProbe } from "./server-refresh-probe.tsx";
+import {
+  readServerRefreshProbe,
+  resetServerRefreshProbe,
+  ServerRefreshProbe,
+} from "./server-refresh-probe.tsx";
 
-test("renderServer route options provide documented App Router hook values", async () => {
+// The probes render where a route of the app has its page. The routes under
+// `app/fixtures` are there for that; their layout shows the selected segments.
+
+test("App Router hooks read the URL and the params of the route", async () => {
   await renderServer(<NextRouterProbe />, {
-    url: "/note/123/hello?q=first&q=second",
-    route: "/note/[id]/[slug]",
+    url: "/fixtures/router/123/hello?q=first&q=second",
   });
 
-  await expect.element(page.getByText("pathname: /note/123/hello")).toBeVisible();
-  await expect.element(page.getByText("search q: first")).toBeVisible();
+  await expectRouterState({
+    pathname: "/fixtures/router/123/hello",
+    searchQ: "first",
+    params: { id: "123", slug: "hello" },
+    selectedSegment: "router",
+    selectedSegments: "router,123,hello",
+  });
   await expect.element(page.getByText("search q all: first,second")).toBeVisible();
   await expect.element(page.getByText("search has missing: false")).toBeVisible();
-  await expect.element(page.getByText('params: {"id":"123","slug":"hello"}')).toBeVisible();
-  await expect.element(page.getByText("selected segment: note")).toBeVisible();
-  await expect.element(page.getByText("selected segments: note,123,hello")).toBeVisible();
   await expect
     .element(page.getByRole("link", { name: "Link route" }))
-    .toHaveAttribute("href", "/note/link?q=linked");
+    .toHaveAttribute("href", "/fixtures/router/next/linked?q=linked");
 });
 
-test("renderServer route option provides dynamic params", async () => {
-  await renderServer(<NextRouterProbe />, {
-    url: "/note/123/hello?q=first&q=second",
-    route: "/note/[id]/[slug]",
-  });
-
-  await expect.element(page.getByText("pathname: /note/123/hello")).toBeVisible();
-  await expect.element(page.getByText('params: {"id":"123","slug":"hello"}')).toBeVisible();
-  await expect.element(page.getByText("selected segments: note,123,hello")).toBeVisible();
-});
-
-test("renderServer defaults the route to the URL pathname", async () => {
-  await renderServer(<NextRouterProbe />, { url: "/plain?q=ok" });
+test("a static route has no params", async () => {
+  await renderServer(<NextRouterProbe />, { url: "/fixtures?q=ok" });
 
   await expectRouterState({
-    pathname: "/plain",
+    pathname: "/fixtures",
     searchQ: "ok",
-    params: {},
-    selectedSegment: "plain",
-    selectedSegments: "plain",
-  });
-});
-
-test("renderServer defaults url and route to the root segment", async () => {
-  await renderServer(<NextRouterProbe />);
-
-  await expectRouterState({
-    pathname: "/",
     params: {},
     selectedSegment: "null",
     selectedSegments: "empty",
   });
 });
 
-test("renderServer resolves dynamic params from route patterns", async () => {
-  await renderServer(<NextRouterProbe />, {
-    url: "/notes/a%20b?q=encoded",
-    route: "/notes/[id]",
-  });
+test("renderServer renders a node at the root route by default", async () => {
+  await renderServer(<NextRouterProbe />);
+
+  await expect.element(page.getByText("pathname: /", { exact: true })).toBeVisible();
+  await expect.element(page.getByText("params: {}")).toBeVisible();
+  expect(window.location.pathname).toBe("/");
+});
+
+test("dynamic params keep the encoding of the URL", async () => {
+  await renderServer(<NextRouterProbe />, { url: "/fixtures/router/a%20b/c?q=encoded" });
 
   await expectRouterState({
-    pathname: "/notes/a%20b",
+    pathname: "/fixtures/router/a%20b/c",
     searchQ: "encoded",
-    params: { id: "a%20b" },
-    selectedSegment: "notes",
-    selectedSegments: "notes,a%20b",
+    params: { id: "a%20b", slug: "c" },
+    selectedSegment: "router",
+    selectedSegments: "router,a%20b,c",
   });
 });
 
-test("renderServer keeps route groups in the router tree without consuming URL segments", async () => {
-  await renderServer(<NextRouterProbe />, {
-    url: "/notes/123?q=group",
-    route: "/(dashboard)/notes/[id]",
-  });
+test("route groups are in the selected segments and not in the URL", async () => {
+  await renderServer(<NextRouterProbe />, { url: "/fixtures/grouped/123?q=group" });
 
   await expectRouterState({
-    pathname: "/notes/123",
+    pathname: "/fixtures/grouped/123",
     searchQ: "group",
     params: { id: "123" },
-    selectedSegment: "(dashboard)",
-    selectedSegments: "(dashboard),notes,123",
+    selectedSegment: "(group)",
+    selectedSegments: "(group),grouped,123",
   });
 });
 
-test("renderServer rejects a dynamic route without matching URL params", async () => {
-  await expect(() => renderServer(<NextRouterProbe />, { route: "/note/[id]" })).rejects.toThrow(
-    'Pattern "/note/[id]" does not match pathname "/"',
-  );
-});
-
-test("renderServer rejects static segment mismatches", async () => {
-  await expect(() =>
-    renderServer(<NextRouterProbe />, {
-      url: "/notes/123",
-      route: "/posts/[id]",
-    }),
-  ).rejects.toThrow('Pattern "/posts/[id]" does not match pathname "/notes/123"');
-});
-
-test("renderServer records push and replace navigations", async () => {
-  await renderServer(<NextRouterProbe />, {
-    url: "/note/123/hello?q=test",
-    route: "/note/[id]/[slug]",
-  });
+test("router.push and router.replace navigate to another URL of the route", async () => {
+  await renderServer(<NextRouterProbe />, { url: "/fixtures/router/123/hello?q=test" });
+  const entries = window.history.length;
 
   await page.getByRole("button", { name: "Push route" }).click();
 
-  await vi.waitFor(() => expectToHaveBeenNavigatedTo({ pathname: "/note/next" }));
+  await expect.element(page.getByText("pathname: /fixtures/router/next/pushed")).toBeVisible();
+  await expect.element(page.getByText('params: {"id":"next","slug":"pushed"}')).toBeVisible();
+  expect(window.location.pathname).toBe("/fixtures/router/next/pushed");
+  expect(window.history.length).toBe(entries + 1);
 
   await page.getByRole("button", { name: "Replace route" }).click();
 
-  await vi.waitFor(() => expectToHaveBeenNavigatedTo({ pathname: "/note/replaced" }));
+  await expect.element(page.getByText("pathname: /fixtures/router/next/replaced")).toBeVisible();
+  expect(window.location.pathname).toBe("/fixtures/router/next/replaced");
+  expect(window.history.length).toBe(entries + 1);
 });
 
-test("cleanup clears recorded navigations", async () => {
-  await renderServer(<NextRouterProbe />, {
-    url: "/note/123/hello?q=test",
-    route: "/note/[id]/[slug]",
-  });
-
-  await page.getByRole("button", { name: "Push route" }).click();
-  await vi.waitFor(() => expectToHaveBeenNavigatedTo({ pathname: "/note/next" }));
-
-  await cleanup();
-
-  await expect(expectToHaveBeenNavigatedTo({ pathname: "/note/next" })).rejects.toThrow();
-});
-
-test("renderServer exposes catch-all params and selected segments", async () => {
-  await renderServer(<NextRouterProbe />, {
-    url: "/docs/a/b?q=docs",
-    route: "/docs/[...slug]",
-  });
-
-  await expect.element(page.getByText("pathname: /docs/a/b")).toBeVisible();
-  await expect.element(page.getByText('params: {"slug":["a","b"]}')).toBeVisible();
-  await expect.element(page.getByText("selected segment: docs")).toBeVisible();
-  await expect.element(page.getByText("selected segments: docs,a/b")).toBeVisible();
-});
-
-test("renderServer supports optional catch-all routes without extra segments", async () => {
-  await renderServer(<NextRouterProbe />, {
-    url: "/docs?q=index",
-    route: "/docs/[[...slug]]",
-  });
+test("a catch-all route collects its segments in one param", async () => {
+  await renderServer(<NextRouterProbe />, { url: "/fixtures/docs/a/b?q=docs" });
 
   await expectRouterState({
-    pathname: "/docs",
-    searchQ: "index",
-    params: {},
+    pathname: "/fixtures/docs/a/b",
+    searchQ: "docs",
+    params: { slug: ["a", "b"] },
     selectedSegment: "docs",
-    selectedSegments: "docs",
+    selectedSegments: "docs,a/b",
   });
 });
 
-test("renderServer rejects required catch-all routes without extra segments", async () => {
-  await expect(() =>
-    renderServer(<NextRouterProbe />, {
-      url: "/docs",
-      route: "/docs/[...slug]",
-    }),
-  ).rejects.toThrow('Pattern "/docs/[...slug]" does not match pathname "/docs"');
+test("an optional catch-all route matches without extra segments", async () => {
+  await renderServer(<NextRouterProbe />, { url: "/fixtures/optional?q=index" });
+
+  await expectRouterState({
+    pathname: "/fixtures/optional",
+    searchQ: "index",
+    params: {},
+    selectedSegment: "optional",
+    selectedSegments: "optional",
+  });
+});
+
+test("a catch-all route does not match without extra segments", async () => {
+  const { response } = await renderServer(<NextRouterProbe />, { url: "/fixtures/docs" });
+
+  expect(response.status).toBe(404);
+  await expect.element(page.getByText("This page could not be found.")).toBeVisible();
+  await expect.element(page.getByText("pathname: /fixtures/docs")).not.toBeInTheDocument();
 });
 
 test("server actions without refresh leave the current server tree stale", async () => {
   resetServerRefreshProbe();
 
-  await renderServer(<ServerRefreshProbe shouldRefresh={false} />, {
-    url: "/refresh-probe",
-  });
+  await renderServer(<ServerRefreshProbe shouldRefresh={false} />, { url: "/fixtures" });
 
   await expect.element(page.getByText("server count: 0")).toBeVisible();
-  await page.getByRole("button", { name: "Increment" }).click();
+  await untilActionResponse(() => page.getByRole("button", { name: "Increment" }).click());
 
+  expect(readServerRefreshProbe()).toBe(1);
   await expect.element(page.getByText("server count: 0")).toBeVisible();
 });
 
 test("server refresh updates the current server tree", async () => {
   resetServerRefreshProbe();
 
-  await renderServer(<ServerRefreshProbe shouldRefresh />, {
-    url: "/refresh-probe",
-  });
+  await renderServer(<ServerRefreshProbe shouldRefresh />, { url: "/fixtures" });
 
   await expect.element(page.getByText("server count: 0")).toBeVisible();
   await page.getByRole("button", { name: "Increment" }).click();
@@ -205,16 +156,37 @@ test("client router.refresh updates the current server tree", async () => {
       <ServerRefreshProbe shouldRefresh={false} />
       <ClientRefreshProbe />
     </>,
-    { url: "/refresh-probe" },
+    { url: "/fixtures" },
   );
 
   await expect.element(page.getByText("server count: 0")).toBeVisible();
-  await page.getByRole("button", { name: "Increment" }).click();
+  await untilActionResponse(() => page.getByRole("button", { name: "Increment" }).click());
+  expect(readServerRefreshProbe()).toBe(1);
   await expect.element(page.getByText("server count: 0")).toBeVisible();
 
   await page.getByRole("button", { name: "Refresh router" }).click();
   await expect.element(page.getByText("server count: 1")).toBeVisible();
 });
+
+// Runs a Server Action and waits until the router has its whole response and
+// a frame has passed: a tree that is still stale then was not refreshed.
+async function untilActionResponse(trigger: () => Promise<unknown>) {
+  const fetch = globalThis.fetch;
+  const bodies: Promise<string>[] = [];
+  globalThis.fetch = async (input, init) => {
+    const response = await fetch(input, init);
+    if (new Request(input, init).headers.has("next-action")) bodies.push(response.clone().text());
+    return response;
+  };
+  try {
+    await trigger();
+    await expect.poll(() => bodies.length).toBe(1);
+    await Promise.all(bodies);
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+  } finally {
+    globalThis.fetch = fetch;
+  }
+}
 
 async function expectRouterState({
   pathname,
@@ -224,16 +196,18 @@ async function expectRouterState({
   selectedSegments,
 }: {
   pathname: string;
-  searchQ?: string | null;
+  searchQ: string;
   params: Record<string, string | string[]>;
   selectedSegment: string;
   selectedSegments: string;
 }) {
-  await expect.element(page.getByText(`pathname: ${pathname}`)).toBeVisible();
-  if (searchQ !== undefined) {
-    await expect.element(page.getByText(`search q: ${searchQ}`)).toBeVisible();
-  }
+  await expect.element(page.getByText(`pathname: ${pathname}`, { exact: true })).toBeVisible();
+  await expect.element(page.getByText(`search q: ${searchQ}`, { exact: true })).toBeVisible();
   await expect.element(page.getByText(`params: ${JSON.stringify(params)}`)).toBeVisible();
-  await expect.element(page.getByText(`selected segment: ${selectedSegment}`)).toBeVisible();
-  await expect.element(page.getByText(`selected segments: ${selectedSegments}`)).toBeVisible();
+  await expect
+    .element(page.getByText(`selected segment: ${selectedSegment}`, { exact: true }))
+    .toBeVisible();
+  await expect
+    .element(page.getByText(`selected segments: ${selectedSegments}`, { exact: true }))
+    .toBeVisible();
 }

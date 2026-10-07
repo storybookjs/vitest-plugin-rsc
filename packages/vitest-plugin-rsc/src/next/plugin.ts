@@ -7,6 +7,7 @@ import type { TestProject } from "vitest/node";
 import { createRunnerEnvironmentPlugins } from "../runner-environment.ts";
 import { loadNextProject, type NextLayer, type NextProject, type NextRoute } from "./project.ts";
 import { createServerCode, type ServerCodeOptions } from "./server-code.ts";
+import { pageViteClientPlugin } from "./vite-client.ts";
 
 // Next compiles an App Router app into three layers, each with its own module
 // graph: `rsc` (Server Components, the `react-server` React), `ssr` (the
@@ -453,6 +454,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
 
   return [
     ...createRunnerEnvironmentPlugins(environmentOf.ssr),
+    pageViteClientPlugin(registry, [environmentOf.ssr, environmentOf.browser]),
     {
       name: "vitest-plugin-rsc:next",
       enforce: "pre",

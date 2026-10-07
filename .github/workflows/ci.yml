@@ -78,7 +78,13 @@ jobs:
       - run: pnpm --dir playground/rsc-vitest-demo exec playwright install --with-deps --only-shell chromium
       - run: pnpm --dir playground/nextjs-notes-demo exec playwright install --with-deps --only-shell chromium
       - run: pnpm build
-      - run: pnpm test:dist --project rsc-vitest-demo --project next-e2e-demo
+      - name: Test the base runtime and whole Next.js routes
+        run: |
+          pnpm test:dist \
+            --project rsc-vitest-demo \
+            --project next-e2e-demo \
+            --project nextjs-notes-demo-browser \
+            --project nextjs-notes-demo-node
 
   next-compat:
     name: Next.js ${{ matrix.next-version }} Compatibility
@@ -101,16 +107,13 @@ jobs:
         run: |
           pnpm --filter vitest-plugin-rsc add -D "next@${NEXT_VERSION}"
           pnpm --filter nextjs-no-msw-demo add "next@${NEXT_VERSION}"
-          pnpm --filter nextjs-notes-demo add "next@${NEXT_VERSION}" "@next/env@${NEXT_VERSION}"
-      - run: pnpm --dir playground/nextjs-notes-demo exec playwright install --with-deps --only-shell chromium
+      - run: pnpm --dir playground/nextjs-no-msw-demo exec playwright install --with-deps --only-shell chromium
       - run: pnpm build
       - name: Test Next.js surfaces
         run: |
           pnpm test:dist \
             --project vitest-plugin-rsc \
-            --project nextjs-no-msw-demo \
-            --project nextjs-notes-demo-browser \
-            --project nextjs-notes-demo-node
+            --project nextjs-no-msw-demo
 
   next-routes-compat:
     name: Next.js ${{ matrix.next-version }} Routes
@@ -132,7 +135,14 @@ jobs:
       - name: Install Next.js ${{ matrix.next-version }}
         env:
           NEXT_VERSION: ${{ matrix.next-version }}
-        run: pnpm --filter next-e2e-demo add "next@${NEXT_VERSION}"
+        run: |
+          pnpm --filter next-e2e-demo add "next@${NEXT_VERSION}"
+          pnpm --filter nextjs-notes-demo add "next@${NEXT_VERSION}" "@next/env@${NEXT_VERSION}"
       - run: pnpm --dir playground/next-e2e-demo exec playwright install --with-deps --only-shell chromium
       - run: pnpm build
-      - run: pnpm test:dist --project next-e2e-demo
+      - name: Test whole Next.js routes
+        run: |
+          pnpm test:dist \
+            --project next-e2e-demo \
+            --project nextjs-notes-demo-browser \
+            --project nextjs-notes-demo-node

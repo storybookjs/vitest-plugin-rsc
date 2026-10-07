@@ -1,6 +1,13 @@
-import { vi, beforeAll, beforeEach, afterEach, afterAll, inject } from "vitest";
-import { cleanup, initialize } from "vitest-plugin-rsc/nextjs/testing-library";
-import { nextRscRequestHandlers } from "vitest-plugin-rsc/nextjs/msw";
+import {
+  vi,
+  beforeAll,
+  beforeEach,
+  afterEach,
+  afterAll,
+  expect,
+  inject,
+  type MockInstance,
+} from "vitest";
 import { page } from "vitest/browser";
 import { PGlite } from "@electric-sql/pglite";
 import { drizzle } from "drizzle-orm/pglite";
@@ -10,7 +17,6 @@ import * as authSessionModule from "#lib/auth-session.ts";
 import * as dbModule from "#lib/db.ts";
 import * as flashCookieModule from "#lib/flash-cookie.ts";
 import { nextCacheProbeFetchHandler } from "#components/next-cache-msw.ts";
-import "#app/globals.css";
 import "@fontsource-variable/geist";
 import "@fontsource-variable/geist-mono";
 
@@ -39,7 +45,7 @@ vi.mock("next/font/google", () => ({
   Geist_Mono: () => ({ variable: "font-geist-mono" }),
 }));
 
-// next/font/google is mocked below, so the --font-geist-* CSS variables that
+// next/font/google is mocked above, so the --font-geist-* CSS variables that
 // RootLayout's className would normally define are absent in tests. Bind the
 // fontsource font-family names to those variables on :root so `font-sans`
 // resolves to real Geist instead of the browser's serif fallback.
@@ -68,25 +74,7 @@ const TEST_NOW = "2026-05-06T00:00:00.000Z";
 let base: PGlite;
 let currentDbClient: PGlite | undefined;
 let pointerResetTarget: HTMLElement | undefined;
-const worker = setupWorker(...nextCacheProbeFetchHandler, ...nextRscRequestHandlers);
-
-// Vitest mounts React into an existing document. Route tests intentionally let
-// the plugin render RootLayout's <html>/<body> tags into that mount so the
-// route tree matches Next's app-render output; keep matching document defaults
-// here for assertions that read document-level state.
-function applyDocumentDefaults() {
-  document.documentElement.lang = "en";
-  document.documentElement.className = "antialiased";
-  document.documentElement.style.colorScheme = "";
-  document.body.className = "";
-  localStorage.removeItem("theme");
-}
-
-function changeTheme(colorScheme: "light" | "dark") {
-  document.documentElement.classList.remove("light", "dark");
-  document.documentElement.classList.add(colorScheme);
-  document.documentElement.style.colorScheme = colorScheme;
-}
+const worker = setupWorker(...nextCacheProbeFetchHandler);
 
 async function resetInteractiveState() {
   if (!pointerResetTarget) {
@@ -123,18 +111,22 @@ beforeAll(async () => {
     quiet: true,
     serviceWorker: { url: "/mockServiceWorker.js" },
   });
-  initialize({ nextRscRequestsViaMsw: true });
   base = await PGlite.create("memory://");
   await base.exec(inject("testSchemaSQL"));
 });
 
+let consoleError: MockInstance<typeof console.error>;
+
 beforeEach(async () => {
+  consoleError = vi.spyOn(console, "error");
+  consoleError.mockClear();
+  // The plugin has left the page of the previous test by now, so the pointer
+  // moves in a document that no longer changes.
+  await resetInteractiveState();
   worker.resetHandlers();
-  await cleanup();
   await closeCurrentDbClient();
   setCurrentUser(null);
   deleteFlashCookies();
-  applyDocumentDefaults();
   const clone = await base.clone();
   if (!(clone instanceof PGlite)) {
     throw new TypeError("Expected PGlite.clone() to return a PGlite instance");
@@ -150,13 +142,13 @@ beforeEach(async () => {
 });
 
 afterEach(async () => {
-  await resetInteractiveState();
-  changeTheme("light");
   await page.viewport(MOBILE_VIEWPORT.width, MOBILE_VIEWPORT.height);
+  // React reports a hydration mismatch with console.error, and Next a render
+  // that failed on the server. A test that expects one silences it with a spy.
+  expect(consoleError.mock.calls).toEqual([]);
 });
 
 afterAll(async () => {
-  await cleanup();
   await closeCurrentDbClient();
   await base.close();
   worker.stop();
