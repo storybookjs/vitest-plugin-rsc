@@ -7,6 +7,7 @@ import { notFound, redirect } from "next/navigation";
 import type { ReactNode } from "react";
 import { ClientFrame } from "./components/client-frame.tsx";
 import { Counter } from "./components/counter.tsx";
+import { HelpDialog } from "./components/help-dialog.tsx";
 import { FavoriteButton } from "./components/favorite-button.tsx";
 import { RouterState } from "./components/router-state.tsx";
 import { Shortcuts } from "./components/shortcuts.tsx";
@@ -348,6 +349,36 @@ test("lets go of a page that rendered a portal in the body", async () => {
       { timeout: 4000, interval: 100 },
     )
     .toBe(true);
+});
+
+test("lets go of a node that rendered a portal in the body", async () => {
+  const tab = globalThis as { __viteRscCallServer?: object };
+  // What the test has in the body stays there for the node.
+  const mine = document.body.appendChild(document.createElement("aside"));
+  await renderServer(<HelpDialog />);
+  // Not the elements themselves: the assertion would keep them.
+  expect(mine.parentElement === document.body).toBe(true);
+  await page.getByRole("button", { name: "Help" }).click();
+  await page.getByRole("dialog", { name: "Help" }).getByRole("button", { name: "Close" }).click();
+  await expect.element(page.getByRole("dialog")).not.toBeInTheDocument();
+  // A function of the node's own modules.
+  const callServer = new WeakRef(tab.__viteRscCallServer!);
+
+  await renderServer({ url: "/" });
+  await page.getByRole("heading", { name: "Home" }).hover();
+
+  await expect
+    .poll(
+      async () => {
+        await cdp().send("HeapProfiler.collectGarbage");
+        return callServer.deref() === undefined;
+      },
+      { timeout: 4000, interval: 100 },
+    )
+    .toBe(true);
+  await cleanup();
+  expect(mine.parentElement).toBe(document.body);
+  mine.remove();
 });
 
 test("lets go of a node that the test has left, also in a container of the test's", async () => {

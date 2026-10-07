@@ -5,9 +5,9 @@
 // there: a second `<title>` would hide the page's, and text in `<body>` is not
 // what React expects to hydrate.
 //
-// A page gets a `<body>` of its own, as it does in a browser. What the page
-// leaves on its body goes with it: React adds its listeners to the body when
-// a portal renders there, and they would keep the page.
+// A page gets a `<body>` of its own, as it does in a browser, and so does a
+// node. What it leaves on its body goes with it: React adds its listeners to
+// the body when a portal renders there, and they would keep the page.
 
 const runnerUrl = window.location.href;
 const elements = (of: Document) => [of.documentElement, of.head, of.body];
@@ -45,7 +45,7 @@ function setAttributes(element: Element, attributes: Iterable<readonly [string, 
  * inline scripts left in `self.__next_f`, and hydrates.
  *
  * With a `container`, the page is the one of a node, which renders no
- * `<html>` or `<body>`, and the rest of the document stays the test's. What
+ * `<html>` or `<body>`, and what is in the document stays the test's. What
  * the HTML parser puts in `<body>` goes in the container: the node, with the
  * scripts it renders, and after it the scripts of Next and React.
  */
@@ -61,12 +61,14 @@ export function loadDocument(html: string, container?: Element): void {
   }
   for (const node of parked) document.head.removeChild(node);
   // The body of the page. What the runner needs moves into it, and back.
-  const pageBody = container ? undefined : document.createElement("body");
-  if (pageBody) {
-    const staying = Array.from(runnerBody.childNodes).filter(staysDuringPage);
-    document.documentElement.replaceChild(pageBody, runnerBody);
-    pageBody.append(...staying);
-  }
+  // For a node that is all there is: the document stays the test's.
+  const pageBody = document.createElement("body");
+  const staying = Array.from(runnerBody.childNodes).filter(
+    (node) => container || staysDuringPage(node),
+  );
+  setAttributes(pageBody, attributesOf(runnerBody));
+  document.documentElement.replaceChild(pageBody, runnerBody);
+  pageBody.append(...staying);
 
   unload = () => {
     container?.replaceChildren();
@@ -76,11 +78,9 @@ export function loadDocument(html: string, container?: Element): void {
       }
     }
     document.head.append(...parked);
-    if (pageBody) {
-      // In the order they are in: what stayed, and the CSS Vite added.
-      runnerBody.append(...pageBody.childNodes);
-      pageBody.replaceWith(runnerBody);
-    }
+    // In the order they are in: what stayed, and the CSS Vite added.
+    runnerBody.append(...pageBody.childNodes);
+    pageBody.replaceWith(runnerBody);
     elements(document).forEach((element, index) =>
       setAttributes(element, runnerAttributes[index]!),
     );

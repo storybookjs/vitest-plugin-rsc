@@ -261,7 +261,7 @@ export async function renderServer(
     return { response: await loadPage(url, { headers }, {}), unmount: leavePage };
   }
 
-  const { baseElement = options.container ?? document.body, wrapper } = options;
+  const { wrapper } = options;
   // The container becomes the node's: React hydrates all of it, and leaving
   // the node empties it. The document is the test's to keep, and so is a
   // container with content: see `loadPage()`.
@@ -274,7 +274,9 @@ export async function renderServer(
   // Leaving the page that is there takes what was added to the document
   // since it loaded, so the container comes after that.
   await leavePage();
-  const container = options.container ?? baseElement.appendChild(document.createElement("div"));
+  const container =
+    options.container ??
+    (options.baseElement ?? document.body).appendChild(document.createElement("div"));
   if (!options.container) containers.add(container);
   const ui = wrapper ? createElement(wrapper, null, first) : first;
   const response = await loadPage(
@@ -285,7 +287,8 @@ export async function renderServer(
   return {
     response,
     container,
-    baseElement,
+    // The body is the node's own, and is there once the node has loaded.
+    baseElement: options.baseElement ?? options.container ?? document.body,
     asFragment() {
       const fragment = document.createRange().createContextualFragment(container.innerHTML);
       // Not the scripts that run: they are how Next and React bring the page
