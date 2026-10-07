@@ -39,20 +39,26 @@ function setAttributes(element: Element, attributes: Iterable<readonly [string, 
  * The page is there in full before the app starts, so the document has loaded
  * by the time Next's client looks: it reads the Flight payload that Next's
  * inline scripts left in `self.__next_f`, and hydrates.
+ *
+ * With a `container`, the page is the one of a node, which renders no
+ * `<html>` or `<body>`, and the rest of the document stays the test's. What
+ * the HTML parser puts in `<body>` goes in the container: the node, with the
+ * scripts it renders, and after it the scripts of Next and React.
  */
-export function loadDocument(html: string): void {
+export function loadDocument(html: string, container?: Element): void {
   unloadDocument();
 
   // What was here before the page. Everything else is the page's to lose.
   const before = new Set<Node>([...document.head.childNodes, ...document.body.childNodes]);
   const parked: { node: Node; parent: Node }[] = [];
-  for (const node of before) {
+  for (const node of container ? [] : before) {
     if (staysDuringPage(node) || !node.parentNode) continue;
     parked.push({ node, parent: node.parentNode });
     node.parentNode.removeChild(node);
   }
 
   unload = () => {
+    container?.replaceChildren();
     for (const parent of [document.head, document.body]) {
       for (const node of Array.from(parent.childNodes)) {
         if (!before.has(node) && !isViteStyle(node)) node.remove();
@@ -72,11 +78,16 @@ export function loadDocument(html: string): void {
   // A parsed document has no scripting, so its scripts do not run, also not
   // once they are moved.
   const page = new DOMParser().parseFromString(html, "text/html");
-  elements(page).forEach((element, index) =>
-    setAttributes(elements(document)[index]!, attributesOf(element)),
-  );
-  document.head.append(...page.head.childNodes);
-  document.body.append(...page.body.childNodes);
+  if (container) {
+    document.head.append(...page.head.childNodes);
+    container.append(...page.body.childNodes);
+  } else {
+    elements(page).forEach((element, index) =>
+      setAttributes(elements(document)[index]!, attributesOf(element)),
+    );
+    document.head.append(...page.head.childNodes);
+    document.body.append(...page.body.childNodes);
+  }
 
   // The inline scripts: React's, which move content that was waiting for
   // data into place, and Next's, which carry the Flight payload. The scripts

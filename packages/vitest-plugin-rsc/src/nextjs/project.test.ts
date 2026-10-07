@@ -246,6 +246,75 @@ test("needs the import of the page that it replaces in the edge template", async
   );
 });
 
+test("gives a node a route for each pathname of the app, and one for /", async () => {
+  // An app without a page at `/`.
+  const { componentRoutes } = await loadNextProject(appWith(["layout.js", "notes/[id]/page.js"]));
+
+  // None for Next's own `/_not-found` and `/_global-error`.
+  expect(componentRoutes).toEqual([
+    { kind: "page", page: "/page", pathname: "/", component: "(vitest-plugin-rsc)/" },
+    {
+      kind: "page",
+      // The name a page at that pathname has: Next tags the cached reads of
+      // the node with it, for `revalidatePath()` (next-cache.test.tsx in the
+      // notes demo fails with another name).
+      page: "/notes/[id]/page",
+      pathname: "/notes/[id]",
+      component: "(vitest-plugin-rsc)/notes/[id]",
+    },
+  ]);
+});
+
+test("gives the route of a node the segments of its pathname, and nothing of the app", async () => {
+  const project = await loadNextProject(root);
+  const node = project.componentRoutes.find((candidate) => candidate.pathname === "/notes/[id]")!;
+
+  const { code, watchFiles } = await project.loadAppPageEntry(node);
+
+  const tree = /^const tree = (.*)$/m.exec(code)![1];
+  // Next's own boundaries at the root, and no layout.
+  const boundaries = ["global-error", "not-found", "forbidden", "unauthorized"].map((name) => {
+    const file = `"next/dist/client/components/builtin/${name}.js"`;
+    return `"${name}": [() => import(${file}), ${file}]`;
+  });
+  expect(tree).toBe(
+    `["(vitest-plugin-rsc)", { children: ["notes", { children: ["[id]", { children: ` +
+      `["__PAGE__", {}, { page: [__next_component__, "vitest-plugin-rsc/component"] }] ` +
+      `}, {}, null] }, {}, null] }, { ${boundaries.join(", ")} }, null]`,
+  );
+  expect(code).toContain('page: "/notes/[id]/page"');
+  // Bound to this package like the entry of a page of the app.
+  expect(code).toContain('from "vitest-plugin-rsc/nextjs/app-page-entrypoint"');
+  expect(code).not.toContain("__webpack_require__");
+  expect(code).not.toContain(project.appDir);
+  expect(watchFiles).toEqual([]);
+});
+
+test("needs the page template to take what Next's app loader puts in it", async () => {
+  const next = nextWith({
+    "next/dist/build/load-entrypoint.js": {
+      loadEntrypoint: async () => {
+        throw new Error("Invariant: Expected to inject all injections, found tree");
+      },
+    },
+  });
+  const project = await loadNextProject(root, next);
+
+  await expect(project.loadAppPageEntry(project.componentRoutes[0]!)).rejects.toThrow(
+    changed("the app-page template does not take the injections of next-app-loader"),
+  );
+});
+
+test.for(["global-error", "not-found", "forbidden", "unauthorized"])(
+  "needs Next's own %s page for the route of a node",
+  async (name) => {
+    const file = `next/dist/client/components/builtin/${name}.js`;
+    const next = nextWith({ [file]: new Error("Cannot find module") });
+
+    await expect(loadNextProject(root, next)).rejects.toThrow(changed(`${file} is not there`));
+  },
+);
+
 // A file of Next's runtime, which runs in the tab.
 const runtime = (file: string) => `next/dist/esm/${file}.js`;
 
@@ -265,6 +334,36 @@ test.for([
     "has no export `hydrate`",
   ],
   ["client/app-index", "__NEXT_HYDRATED_CB", "__NEXT_ON_HYDRATED", "has no `__NEXT_HYDRATED_CB`"],
+  [
+    "client/app-index",
+    "const appElement = document",
+    "const rootElement = document",
+    "has no `const appElement = document`",
+  ],
+  [
+    "client/app-index",
+    "ReactDOMClient.createRoot(appElement",
+    "ReactDOMClient.createRoot(document",
+    "has no `ReactDOMClient.createRoot(appElement`",
+  ],
+  [
+    "client/components/render-tree",
+    "PrefetchHint.IsRootLayoutOrAbove",
+    "PrefetchHint.InRootLayout",
+    "has no `PrefetchHint.IsRootLayoutOrAbove`",
+  ],
+  [
+    "client/components/segment-cache/cache",
+    "currentTree.segment === nextTree.segment",
+    "isSameRoot(currentTree, nextTree)",
+    "has no `currentTree.segment === nextTree.segment`",
+  ],
+  [
+    "client/components/render-tree",
+    "isNavigatingToNewRootLayout(",
+    "isOtherRootLayout(",
+    "has no `isNavigatingToNewRootLayout(`",
+  ],
   [
     "client/asset-prefix",
     "document.currentScript",

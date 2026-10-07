@@ -1,6 +1,6 @@
 # Next.js: How It Works
 
-`vitest-plugin-rsc/nextjs/testing-library` runs a Next.js App Router app in the test's browser tab: the server that answers a request, the HTML it renders, and the client that hydrates it. This page explains how, and what it does not do yet. The [README](../README.md#nextjs) shows how to use it.
+`vitest-plugin-rsc/nextjs/testing-library`, with the plugin from `vitest-plugin-rsc/nextjs/plugin`, runs a Next.js App Router app in the test's browser tab: the server that answers a request, the HTML it renders, and the client that hydrates it. This page explains how, and what it does not do yet. The [README](../README.md#nextjs) shows how to use it.
 
 It needs `next@16.4` or later. That is where Next's request stores became one per realm, which is what lets the three layers below run as separate module graphs.
 
@@ -85,9 +85,107 @@ browser  the HTML goes into the document   once all of it has arrived
          Next's client entry hydrates it   in a module graph of its own, like a page load
 ```
 
-With a node, `renderServer(<Node />, { url })`, the request is the same one. The only difference is in the route's loader tree: where Next loads the page module of that route, it gets a component that returns the node. Layouts, params, cookies and the router are the route's own. What Next reads off the page module besides its component is gone with it: `generateMetadata`, `metadata`, `viewport`, and segment config like `dynamic`.
-
 After that, Next's router is in charge. A `<Link>` navigation is an RSC request to the same handler. A Server Action is a `POST` with a `Next-Action` header.
+
+## A Component
+
+`renderServer(<Node />, { url })` renders one node the way Testing Library renders a component: in a `<div>` in `document.body`, without the layouts of the app. It is not a second renderer. The node is the page of a route, and the request for it is the one above.
+
+```
+renderServer(<Node />, { url: "/notes/7" })
+  │  GET /notes/7                          the same request, with the tab's cookies
+  ▼
+ssr      handler(Request)                  the same edge-ssr-app handler, for the route of the node
+  ▼
+rsc      loader tree → Flight              a tree with the node as its page, and no layout
+  ▼
+ssr      Flight → HTML                     no <html> or <body>: nothing in the tree renders them
+  ▼
+browser  the HTML goes into the container  with Next's inline scripts, which run
+         Next's client entry hydrates it   the container, where it would hydrate the document
+```
+
+### The Route Of A Node
+
+The route exists for as long as the node is there, at the pathname of `url`. Its loader tree is written here and not by `next-app-loader`. That loader reads a directory of files, and it ends the process for a page without a root layout. Next's renderer needs no layout. The tree goes into Next's own `app-page` template, with the injections `next-app-loader` makes, and from there on the route is a page like any other: the same request handler, manifests, cookie jar and cache.
+
+For `/notes/7`, where the app has `app/notes/[id]/page.tsx`:
+
+```js
+[
+  "(vitest-plugin-rsc)",
+  {
+    children: [
+      "notes",
+      {
+        children: [
+          "[id]",
+          { children: ["__PAGE__", {}, { page: [loadTheNode, "vitest-plugin-rsc/component"] }] },
+          {},
+          null,
+        ],
+      },
+      {},
+      null,
+    ],
+  },
+  { "global-error": [() => import("next/dist/client/components/builtin/global-error.js"), "…"] },
+  null,
+];
+```
+
+- **The segments** are those of the app's route for the URL, so Next finds the same params. The plugin matches the URL against the routes of the app, as it does for every request. A URL of no route gets the tree of `/`, which has no params. A route handler's pathname has a tree too.
+- **The page name** is the one of the pathname, like `/notes/[id]/page`. Next derives the tags of `revalidatePath()` from it.
+- **No layout**, also not a pass-through one. So the HTML has no `<html>` or `<body>`, and it fits in a `<div>`.
+- **Next's builtin boundaries** are the only other modules, at the root: `global-error`, which Next's renderer throws without, and `not-found`, `forbidden` and `unauthorized`. `next-app-loader` gives them to a root that has none of its own. They are Next's, not the app's.
+- **The root segment is not `""`**, which is what the root of every tree of the app is. That is part of what makes leaving the node a page load, see below.
+
+There is one such route for each pathname of the app, and one for `/`. They are in the same lists as the app's pages, and load when they are first requested.
+
+### Next's Router In A `<div>`
+
+Next's client entry, `app-index.js`, builds the app and calls `hydrateRoot(document, …)`. There is no option for another root. The plugin already wraps `ReactDOMClient.hydrateRoot` and `createRoot` for the duration of that call, to keep the root, which Next does not hand out. For a node, the same wrapper passes the container where Next passes `document`. Nothing else differs: Next's own `hydrate()` creates the router state from the Flight payload in the page and renders its own `AppRouter`. So `Link`, `useRouter()`, `usePathname()`, `useParams()`, `useSearchParams()`, `router.refresh()` and Server Actions are Next's. No router state is made up.
+
+The server's HTML is a fragment: hoisted tags like `<meta>`, the node, and Next's inline scripts. The HTML parser puts the leading tags in `<head>`, where React looks for them. What it puts in `<body>` goes in the container, in the order it has: the node, with any `<script>` it renders itself, and Next's scripts after it, which run as for a page. The rest of the document stays the test's, so nothing is parked. That is why the container has to be empty, and cannot be `<body>`.
+
+Not every response for a node is that fragment. Then the response loads as the page it is, in the document, and the container stays empty:
+
+- A node that calls `redirect()` while it renders gets the page it redirects to. The node's route is gone.
+- A node that throws, or calls `notFound()`, gets a whole document from Next, with `<html id="__next_error__">`: Next has no HTML for it and renders its global error page, or its not-found page, in the tab. Next's client entry does that with `createRoot(document)`, as for any page.
+
+React listens for events on the root's container. For a node that is the `<div>`, not `document`. Only `selectionchange` is on the document. The plugin removes both when the node is left, as it does for a page: the container can be the test's, and outlive the node.
+
+### Leaving The Node
+
+A request is the node's when its pathname is the node's. A change of search params, `router.refresh()` and a Server Action stay with the node.
+
+A navigation to another pathname gets the app's route for it. Next's router then walks the tree it has and the tree it gets, from the root (`render-tree.js`). It loads the page, instead of navigating on the client, when three things hold at a segment:
+
+1. The two trees do not match there. For the root, Next compares the segments themselves (`doesRouteStructureMatch()`), and these differ: `(vitest-plugin-rsc)` and `""`.
+2. The segment of the new tree is in its root layout or above it (`PrefetchHint.IsRootLayoutOrAbove`). The root of a tree of the app is.
+3. `isNavigatingToNewRootLayout()` says the root layout is another one. It does, at the root already: the segments differ.
+
+So the plugin's page load takes over, the same one a `location.assign()` gets. The node is unmounted, the document becomes the page's, and the node's route is gone.
+
+This is how an app with two root layouts, in two route groups, moves between them. A node has no layout at all, so every segment of its tree counts as above the root layout, and no page of the app shares one with it.
+
+A link to the node's own pathname stays with the node. With the default URL that is `/`: a `<Link href="/">` in a node does not load the app's home page.
+
+A link in a node is not prefetched, and neither is one in a page. `NODE_ENV` is `"test"` in the tab. Next marks a link as visible only when `NODE_ENV` is `"production"` (`links.js`), and it prefetches no link that is not visible, also not on hover.
+
+### What It Needs Of Next
+
+Checked at startup, like the rest (see [When Next Changes](#when-next-changes)):
+
+| What                                                                                                                                 | Without it                                                    |
+| ------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------- |
+| The `app-page` template takes `tree`, `__next_app_require__` and `__next_app_load_chunk__`                                           | No route for a node                                           |
+| `next/dist/client/components/builtin/` has `global-error.js`, `not-found.js`, `forbidden.js` and `unauthorized.js`                   | No route for a node                                           |
+| `app-index.js` has `const appElement = document`, and calls `hydrateRoot(appElement` and `createRoot(appElement`                     | The node hydrates the document, or nothing                    |
+| `segment-cache/cache.js` compares the root segments of two trees                                                                     | A link from a node renders a page of the app in the container |
+| `render-tree.js` calls `doesRouteStructureMatch(`, reads `PrefetchHint.IsRootLayoutOrAbove` and calls `isNavigatingToNewRootLayout(` | The same                                                      |
+
+Not checked: the shape of a loader tree, `[segment, parallelRoutes, modules, staticSiblings]`. The tests of a node fail when it changes.
 
 ## Route Handlers
 
@@ -243,6 +341,7 @@ In browser mode, Vitest 5.0 has a bug here: it does not wait for the mocks of a 
 
 - `next/font`, `next/image` optimization, and metadata files like `icon.png` and `sitemap.ts`. These are build-time loaders that still have to be ported. A run warns once when it starts about the metadata files of the app, apart from `favicon.ico`: a page renders without them, and their routes are not served.
 - `middleware.ts` / `proxy.ts`, and the redirects, rewrites and headers of `next.config`.
+- `trailingSlash`. A URL with a trailing slash, like `/notes/7/`, is served as it is, for a page and for a node. A deployment redirects it to `/notes/7`, or the other way around with `trailingSlash: true`: that redirect is one of Next's config routes.
 - Route handlers run as they do on Next's edge runtime, also the ones a deployment runs on Node.js. The params of the dynamic segments are in the query of `request.url` too, where they replace a query parameter of the same name. Static generation of a `GET` handler and `revalidate` do not apply: every request runs the handler.
 - `"use cache"`. Next compiles such a function with its SWC transform, which the plugin does not run yet. And it would not be enough: the function is called after Next has awaited, so it would never read the store of its cache scope. `cacheTag()` and `cacheLife()` need that store, and so does collecting the tags of the `fetch` calls in it. See [Caching](#a-cache-scope-ends-at-its-first-await).
 - Inside a function cached with `unstable_cache`, after its first `await`, the request's store is read instead of the cache's. See [Caching](#a-cache-scope-ends-at-its-first-await).
@@ -257,5 +356,6 @@ In browser mode, Vitest 5.0 has a bug here: it does not wait for the mocks of a 
 - A same-origin `fetch` for a path that a dynamic route matches goes to the app, also when it is for a file in `public/`, which a deployment serves before it looks at the routes. With `app/[locale]/page.tsx` that is every path of one segment, like `/data.json`. With a catch-all at the root, like `app/[...slug]`, it is every path.
 - A form that is posted without JavaScript, before the page has hydrated. Such a request names its action in the form data and not in a `next-action` header, and the server does not look there: it renders the page and does not run the action.
 - A navigation that leaves the page without Next's router, like `location.assign()`, is turned into a page load with the Navigation API, which today means Chromium.
+- A timer that the app starts keeps running after its page is left, like the one `next-themes` uses to turn transitions back on. A browser drops it with the page. Here it fires later, and fails if it touches the document of its page. A test that ends right after the app loaded a page itself, like the page a node links to, can run into that: wait for the page to settle first.
 - Every `renderServer()` loads React and the app's client code again, as a page load does. The plugin releases a page when the test leaves it: it removes what React and Next left on the tab while they loaded. What the app's own code leaves on the tab keeps that page in memory, as in a tab that never reloads: a listener on `window`, an interval, a global. That is the app's to clean up, like in the cleanup of an effect. A portal into `document.body` keeps its page too: React adds its listeners to the body, which is the tab's. If the tab grows too much, use `isolate: true`: every test file then starts in a new page, and loads the server of the app again.
 - A test file starts slowly: its tab loads Next's runtime for three layers before the first test. With as many tabs as cores, the first test of a file can time out. `playground/nextjs-notes-demo` sets `maxWorkers: 4` for that.

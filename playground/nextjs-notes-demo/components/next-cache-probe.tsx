@@ -120,7 +120,7 @@ export async function NextCacheProbe() {
         action={async () => {
           "use server";
           actionWriteVersion += 1;
-          revalidatePath("/fixtures", "page");
+          revalidatePath("/", "page");
         }}
       >
         <button>Revalidate current path</button>

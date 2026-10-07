@@ -56,6 +56,17 @@ registry.loadAppPage = async (page) => {
   return (registry.appPages[page] ??= await load());
 };
 
+/** The page module of the route of a node: see `loadComponentPageEntry()`. */
+export async function loadComponent(): Promise<{ default: () => unknown }> {
+  return {
+    default: function Component() {
+      const { component } = registry;
+      if (!component) throw new Error("vitest-plugin-rsc: the node of the test is gone");
+      return component.ui;
+    },
+  };
+}
+
 registry.loadRouteHandler = async (page) => {
   const load = routeHandlers[page];
   if (!load) throw new Error(`vitest-plugin-rsc: unknown Next.js route handler ${page}`);

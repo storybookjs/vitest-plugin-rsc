@@ -27,7 +27,8 @@ const manifestId = "virtual:vitest-plugin-rsc/next-manifest";
 // by its place in `project.routes`. A page has a module in the rsc layer and
 // its request handler in the ssr layer. Next's bundler config puts a route
 // handler in the rsc layer as a whole: its route module, which is with the
-// modules of the pages, and its request handler.
+// modules of the pages, and its request handler. The routes of a node are
+// pages too, listed after the ones of the app.
 const virtual = (name: string) => `virtual:vitest-plugin-rsc/next-${name}`;
 const routeModules = [
   { list: virtual("app-pages"), prefix: virtual("app-page/"), layer: "rsc", kind: "page" },
@@ -40,6 +41,9 @@ const routeModules = [
   },
 ] as const;
 const [appPages, edgeEntries] = routeModules;
+// What the modules of a route are listed by: its page name, which the route
+// of a node shares with a page of the app.
+const entryOf = (route: { page: string; component?: string }) => route.component ?? route.page;
 const isRouteModule = (id: string) => (modules: (typeof routeModules)[number]) =>
   id === modules.list || id.startsWith(modules.prefix);
 const bridgePrefix = "\0vitest-plugin-rsc/next-bridge/";
@@ -384,11 +388,19 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
         // one template per kind of route. The loader tree differs: which of
         // Next's builtin boundaries a route needs depends on what the app
         // leaves out.
+        // The route of a node has Next's own global error page, which an app
+        // with one of its own does not import.
         const appPageEntries = await Promise.all(
-          project.routes.map((candidate) => project.loadAppPageEntry(candidate)),
+          [...project.routes, ...project.componentRoutes.slice(0, 1)].map((candidate) =>
+            project.loadAppPageEntry(candidate),
+          ),
         );
+        // Also the routes of a node, which are pages: an app of route
+        // handlers only has no page of its own, besides the ones Next adds.
         const edgeEntryImports = async (kind: "page" | "route") => {
-          const route = project.routes.find((candidate) => candidate.kind === kind);
+          const route = [...project.routes, ...project.componentRoutes].find(
+            (candidate) => candidate.kind === kind,
+          );
           return route ? findImports(await project.loadEdgeEntry(route, "")) : [];
         };
         const entryImports = {
@@ -544,7 +556,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
             pathname,
           }));
           return (
-            `export const routes = ${JSON.stringify(routes)};\n` +
+            `export const routes = ${JSON.stringify([...routes, ...project.componentRoutes])};\n` +
             `export const nextConfig = ${JSON.stringify(project.config)};\n`
           );
         }
@@ -555,12 +567,13 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
         // Vite's dependency scan follows the test's imports in every
         // environment, also into the modules of another layer.
         if (environmentOf[layer] !== this.environment.name) return "export default {};";
+        const routes = [...project.routes, ...project.componentRoutes];
 
         if (id === `\0${list}`) {
-          const entries = project.routes.flatMap((route, index) =>
+          const entries = routes.flatMap((route, index) =>
             route.kind === kind
               ? [
-                  `  ${JSON.stringify(route.page)}: () => import(${JSON.stringify(prefix + index)}),`,
+                  `  ${JSON.stringify(entryOf(route))}: () => import(${JSON.stringify(prefix + index)}),`,
                 ]
               : [],
           );
@@ -568,7 +581,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
         }
 
         const index = id.slice(prefix.length + 1);
-        const route = project.routes[Number(index)]!;
+        const route = routes[Number(index)]!;
         let code: string;
         if (modules === appPages) {
           const entry = await project.loadAppPageEntry(route);
@@ -580,7 +593,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
           code = await project.loadEdgeEntry(
             route,
             modules === edgeEntries
-              ? `${registry}.appPages[${JSON.stringify(route.page)}]`
+              ? `${registry}.appPages[${JSON.stringify(entryOf(route))}]`
               : appPages.prefix + index,
           );
         }

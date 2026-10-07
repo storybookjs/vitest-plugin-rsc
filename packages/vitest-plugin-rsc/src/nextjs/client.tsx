@@ -15,11 +15,11 @@ declare global {
 }
 
 /**
- * Hydrates the document. Resolves once it has, with how to leave the page.
- * Calls `loaded` once Next's client has loaded, before a module of the app
- * has.
+ * Hydrates the document, or with a `container`, the node of a test in it.
+ * Resolves once it has, with how to leave the page. Calls `loaded` once Next's
+ * client has loaded, before a module of the app has.
  */
-export async function start(loaded: () => void): Promise<{ unmount(): void }> {
+export async function start(loaded: () => void, container?: Element): Promise<{ unmount(): void }> {
   // Not when this module loads: a page that was left while it loaded must not
   // take over from the page that is there now. The modules of the app wait
   // for Next's client: the Flight client asks for them as soon as it loads.
@@ -31,25 +31,33 @@ export async function start(loaded: () => void): Promise<{ unmount(): void }> {
 
   // Next's entry does not hand out the root it creates. Its root is the one of
   // the document, the `appElement` of `app-index.js`: a Client Component can
-  // create roots of its own.
+  // create roots of its own. For a node, that root is the container: Next's
+  // app, its router included, runs in there and leaves the rest of the
+  // document to the test.
   let root: Root | undefined;
   // React adds its listeners when it creates a root, and never removes them:
   // to the container, and for any container some to the document.
   const listeners: Leftovers[] = [];
   const { hydrateRoot, createRoot } = ReactDOMClient;
-  const keep = (container: unknown, create: () => Root): Root => {
-    const added = recordListeners(document);
-    listeners.push(added);
+  // The root of the document is Next's own. For a node it is on the container
+  // instead: `to` is where the root goes.
+  const keep = <Target,>(target: Target, create: (to: Target) => Root): Root => {
+    const isApp = (target as unknown) === document;
+    const to = isApp && container ? (container as Target) : target;
+    // The container of a node can be the test's, which outlives the node.
+    const targets: EventTarget[] = isApp && container ? [document, container] : [document];
+    const added = targets.map((of) => recordListeners(of));
+    listeners.push(...added);
     try {
-      const created = create();
-      if (container === document) root = created;
+      const created = create(to);
+      if (isApp) root = created;
       return created;
     } finally {
-      added.stop();
+      for (const recorded of added) recorded.stop();
     }
   };
-  ReactDOMClient.hydrateRoot = (...args) => keep(args[0], () => hydrateRoot(...args));
-  ReactDOMClient.createRoot = (...args) => keep(args[0], () => createRoot(...args));
+  ReactDOMClient.hydrateRoot = (target, ...args) => keep(target, (to) => hydrateRoot(to, ...args));
+  ReactDOMClient.createRoot = (target, ...args) => keep(target, (to) => createRoot(to, ...args));
 
   // Next's entry reads the Flight payload in the document when it loads, so
   // it loads here, once Client Components can be loaded.

@@ -8,6 +8,7 @@ import {
 import { expect, test, vi } from "vitest";
 import { page } from "vitest/browser";
 import { handleRequest, renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
+import { watchPageLoad } from "#test/page-load.ts";
 import { NextActionProtocolProbe } from "./next-action-protocol-probe.tsx";
 
 type CapturedActionRequest = {
@@ -17,7 +18,7 @@ type CapturedActionRequest = {
 };
 
 test("action redirects answer with a redirect header and the Flight data of the target", async () => {
-  await renderServer(<NextActionProtocolProbe />, { url: "/fixtures" });
+  await renderServer(<NextActionProtocolProbe />);
 
   const request = await captureActionRequest(() =>
     page.getByRole("button", { name: "Capture redirect action" }).click(),
@@ -28,16 +29,14 @@ test("action redirects answer with a redirect header and the Flight data of the 
   // from the body.
   expect(response.status).toBe(200);
   expect(response.headers.get("location")).toBeNull();
-  expect(response.headers.get("x-action-redirect")).toBe(
-    "/fixtures/router/push/target?from=action;push",
-  );
+  expect(response.headers.get("x-action-redirect")).toBe("/auth/sign-in?from=action;push");
   expect(response.headers.get("content-type")).toContain(RSC_CONTENT_TYPE_HEADER);
   // The target is another route, so it renders its own page.
-  await expect(response.text()).resolves.toContain("Fixture page");
+  await expect(response.text()).resolves.toContain("Welcome back to Notes Demo");
 });
 
 test("default action redirects use Next's push redirect type", async () => {
-  await renderServer(<NextActionProtocolProbe />, { url: "/fixtures" });
+  await renderServer(<NextActionProtocolProbe />);
 
   const request = await captureActionRequest(() =>
     page.getByRole("button", { name: "Capture default redirect action" }).click(),
@@ -45,23 +44,27 @@ test("default action redirects use Next's push redirect type", async () => {
   const response = await replayActionRequest(request);
 
   expect(response.status).toBe(200);
-  expect(response.headers.get("x-action-redirect")).toBe(
-    "/fixtures/router/default/target?from=action;push",
-  );
+  expect(response.headers.get("x-action-redirect")).toBe("/auth/sign-up?from=action;push");
 });
 
-test("the router follows an action redirect to its target", async () => {
-  await renderServer(<NextActionProtocolProbe />, { url: "/fixtures" });
+test("the router follows an action redirect to its target, a page of the app", async () => {
+  await renderServer(<NextActionProtocolProbe />);
+  const pageLoaded = watchPageLoad();
 
   await page.getByRole("button", { name: "Capture redirect action" }).click();
 
-  await expect.poll(() => window.location.pathname).toBe("/fixtures/router/push/target");
+  await expect
+    .element(page.getByRole("heading", { level: 1, name: "Welcome back to Notes Demo" }))
+    .toBeVisible();
+  // The page with the layouts of the app: Next loads it as a page.
+  await expect.element(page.getByRole("banner")).toBeVisible();
+  expect(window.location.pathname).toBe("/auth/sign-in");
   expect(window.location.search).toBe("?from=action");
-  await expect.element(page.getByText("selected segments: router,push,target")).toBeVisible();
+  await pageLoaded();
 });
 
 test("thrown action errors use Next's rejected Flight payload with status 500", async () => {
-  await renderServer(<NextActionProtocolProbe />, { url: "/fixtures" });
+  await renderServer(<NextActionProtocolProbe />);
 
   const request = await captureActionRequest(() =>
     page.getByRole("button", { name: "Capture throw action" }).click(),
@@ -73,7 +76,7 @@ test("thrown action errors use Next's rejected Flight payload with status 500", 
 });
 
 test("HTTP access fallback action errors keep their status and Flight payload", async () => {
-  await renderServer(<NextActionProtocolProbe />, { url: "/fixtures" });
+  await renderServer(<NextActionProtocolProbe />);
 
   const request = await captureActionRequest(() =>
     page.getByRole("button", { name: "Capture not-found action" }).click(),
@@ -85,10 +88,10 @@ test("HTTP access fallback action errors keep their status and Flight payload", 
 });
 
 test("an action id that names no action gets Next's unrecognized-action response", async () => {
-  await renderServer(<NextActionProtocolProbe />, { url: "/fixtures" });
+  await renderServer(<NextActionProtocolProbe />);
 
   const response = await ignoreExpectedConsoleWarn(() =>
-    handleRequest("/fixtures", {
+    handleRequest("/", {
       method: "POST",
       headers: {
         [ACTION_HEADER]: "missing-action-id",
@@ -104,9 +107,9 @@ test("an action id that names no action gets Next's unrecognized-action response
 });
 
 test("incoming next-url does not mark route payloads as interceptable", async () => {
-  await renderServer(<NextActionProtocolProbe />, { url: "/fixtures" });
+  await renderServer(<NextActionProtocolProbe />);
 
-  const response = await handleRequest("/fixtures", {
+  const response = await handleRequest("/", {
     headers: {
       [RSC_HEADER]: "1",
       [NEXT_URL]: "/intercepted-origin",

@@ -1,5 +1,5 @@
 import "./globals.ts";
-import type { ReactNode } from "react";
+import { createElement, type JSXElementConstructor, type ReactNode } from "react";
 import { resetAsyncLocalStorage } from "../async-local-storage.ts";
 import { createEnvironmentRunner, importEnvironment } from "../utilts.ts";
 import { loadDocument, unloadDocument } from "./document.ts";
@@ -97,6 +97,8 @@ async function browserFetch(request: Request, navigation = false): Promise<Respo
   // Read once: a 307 or 308 sends the body again.
   let body = request.body ? new Uint8Array(await request.arrayBuffer()) : null;
   let redirected = false;
+  // As many as a browser follows.
+  let redirects = 0;
 
   for (;;) {
     const headers = new Headers(request.headers);
@@ -128,6 +130,12 @@ async function browserFetch(request: Request, navigation = false): Promise<Respo
         body = null;
       }
       redirected = true;
+      if (++redirects > 20) {
+        throw new Error(
+          `vitest-plugin-rsc: too many redirects for ${request.url}. ` +
+            `The last one was to ${url.href}.`,
+        );
+      }
       if (url.origin !== window.location.origin) {
         if (navigation) throw leftTheApp(url);
         return nativeFetch(url, { method, headers: request.headers, body });
@@ -200,43 +208,100 @@ export type RenderServerResult = {
   unmount(): Promise<void>;
 };
 
+export type RenderComponentOptions = RenderServerOptions & {
+  /**
+   * Where the node renders. Defaults to a `<div>` appended to `baseElement`,
+   * which `cleanup()` removes. A container of the test's is only emptied.
+   */
+  container?: HTMLElement;
+  /** Defaults to the `container` of the test, or else to `document.body`. */
+  baseElement?: HTMLElement;
+  /** Wraps the node on the server. It can be a Server Component. */
+  wrapper?: JSXElementConstructor<{ children: ReactNode }>;
+};
+
+export type RenderComponentResult = RenderServerResult & {
+  container: HTMLElement;
+  baseElement: HTMLElement;
+  /**
+   * What the container holds now, as a fragment of its own, for a snapshot.
+   * Without the scripts that run, which are Next's and React's.
+   */
+  asFragment(): DocumentFragment;
+};
+
 /**
  * Opens a route of the Next.js app in this tab, as a browser does: it requests
  * the document from the server, shows the HTML it gets back, and starts the
  * app's client code, which hydrates it. From there Next's own router is in
  * charge, so links, forms and Server Actions work as they do in the app.
  *
- * With a node, the route renders that node where it has its page: one slice of
- * the app, inside the layouts, the request and the router of a real route.
+ * With a node, it renders that node in a container, like Testing Library
+ * does, on a route of its own: one without the app's layouts, at the URL of
+ * `url` with the params the app's route for it has. The request, the cookies,
+ * the Server Actions and the router are Next's, as for a page. A navigation
+ * to a route of the app loads that page.
  *
  * Resolves once the page has hydrated.
  */
 export function renderServer(options: RenderServerOptions): Promise<RenderServerResult>;
 export function renderServer(
   ui: ReactNode,
-  options?: RenderServerOptions,
-): Promise<RenderServerResult>;
+  options?: RenderComponentOptions,
+): Promise<RenderComponentResult>;
 export async function renderServer(
-  ...args: [RenderServerOptions] | [ReactNode, RenderServerOptions?]
-): Promise<RenderServerResult> {
+  ...args: [RenderServerOptions] | [ReactNode, RenderComponentOptions?]
+): Promise<RenderServerResult | RenderComponentResult> {
   const [first, second] = args;
-  const [node, options] = isOptions(first) ? [undefined, first] : [{ ui: first }, second ?? {}];
+  const options: RenderComponentOptions = (isOptions(first) ? first : second) ?? {};
   const url = new URL(options.url ?? "/", window.location.origin);
   const headers = new Headers(options.headers);
   if (!headers.has("accept")) headers.set("accept", "text/html");
+  if (isOptions(first)) {
+    return { response: await loadPage(url, { headers }, {}), unmount: leavePage };
+  }
 
-  // A URL that is not a route has no page to render the node in: it gets the
-  // not-found page, like any other request for it.
-  const route = node && ssr.pageOf(url.pathname);
-  const response = await loadPage(url, { headers }, route ? { [route]: node.ui } : {});
+  const { baseElement = options.container ?? document.body, wrapper } = options;
+  // The container becomes the node's: React hydrates all of it, and leaving
+  // the node empties it. The document is the test's to keep, and so is a
+  // container with content: see `loadPage()`.
+  if (options.container === document.body || options.container === document.documentElement) {
+    throw new Error(
+      "vitest-plugin-rsc: the container of a node cannot be the <body> or the <html> of the " +
+        "document, which hold the test's own elements. Pass an element in it, or no container.",
+    );
+  }
+  // Leaving the page that is there takes what was added to the document
+  // since it loaded, so the container comes after that.
+  await leavePage();
+  const container = options.container ?? baseElement.appendChild(document.createElement("div"));
+  if (!options.container) containers.add(container);
+  const ui = wrapper ? createElement(wrapper, null, first) : first;
+  const response = await loadPage(
+    url,
+    { headers },
+    { container, component: { pathname: url.pathname, ui } },
+  );
   return {
     response,
-    async unmount() {
-      await leavePage();
-      registry.pageOverrides = {};
+    container,
+    baseElement,
+    asFragment() {
+      const fragment = document.createRange().createContextualFragment(container.innerHTML);
+      // Not the scripts that run: they are how Next and React bring the page
+      // to the tab, with a Flight payload that differs on every run. A script
+      // of data, like JSON-LD, is content.
+      for (const script of fragment.querySelectorAll("script")) {
+        if (!script.type || /^(text\/javascript|module)$/i.test(script.type)) script.remove();
+      }
+      return fragment;
     },
+    unmount: leavePage,
   };
 }
+
+// The containers `renderServer()` made for a node, which `cleanup()` removes.
+const containers = new Set<HTMLElement>();
 
 // The options, or a node to render. A plain object is never a node: React
 // has elements, which carry a `$$typeof`, and the rest are not plain objects.
@@ -246,13 +311,14 @@ function isOptions(value: unknown): value is RenderServerOptions {
   return prototype === Object.prototype || prototype === null;
 }
 
-// `pageOverrides` is for a load that starts a test's page. A navigation that
-// the page itself makes keeps the ones it has.
-async function loadPage(
-  url: URL,
-  init: RequestInit,
-  pageOverrides?: Record<string, unknown>,
-): Promise<Response> {
+// What a test opens: a page, or a node in a container. A page load that the
+// app makes itself, a navigation, has no `opening`.
+type Opening = {
+  container?: Element;
+  component?: NonNullable<typeof registry.component>;
+};
+
+async function loadPage(url: URL, init: RequestInit, opening?: Opening): Promise<Response> {
   const leaving = leavePage();
   const load = (currentLoad = new AbortController());
   await leaving;
@@ -261,13 +327,36 @@ async function loadPage(
   };
   superseded();
 
-  if (pageOverrides) registry.pageOverrides = pageOverrides;
+  // Once the node that was in it is gone.
+  if (opening?.container?.hasChildNodes()) {
+    throw new Error(
+      "vitest-plugin-rsc: the container of a node has to be empty. " +
+        "The node is hydrated in it, and leaving the node empties it.",
+    );
+  }
+  const component = (registry.component = opening?.component);
+  try {
+    return await openPage(url, init, load.signal, opening);
+  } catch (error) {
+    // A node that did not get to open has no route. Unless the tab has moved
+    // on, to a page or a node of its own.
+    if (component && registry.component === component) registry.component = undefined;
+    throw error;
+  }
+}
+
+async function openPage(
+  url: URL,
+  init: RequestInit,
+  signal: AbortSignal,
+  opening: Opening | undefined,
+): Promise<Response> {
+  const superseded = () => {
+    if (signal.aborted) throw signal.reason;
+  };
 
   // Not the browser's Request, which drops a `cookie` header.
-  const response = await browserFetch(
-    new registry.Request(url, { ...init, signal: load.signal }),
-    true,
-  );
+  const response = await browserFetch(new registry.Request(url, { ...init, signal }), true);
   superseded();
   // A route handler can answer with anything. A browser would show it or
   // download it; there is no app in it to start.
@@ -276,7 +365,7 @@ async function loadPage(
     await response.body?.cancel();
     const what = `${response.url} responded with ${contentType || "no content type"}`;
     throw new Error(
-      pageOverrides
+      opening
         ? `vitest-plugin-rsc: ${what}, which is not a page to open. ` +
             `Use handleRequest() to assert on the response itself.`
         : `vitest-plugin-rsc: the app navigated to a URL that is not a page: ${what}. ` +
@@ -291,7 +380,17 @@ async function loadPage(
     throw error;
   });
   superseded();
-  loadDocument(html);
+  // The response is the node's when it comes from the node's route and is not
+  // a document. A node that redirects gets the page it redirects to, and one
+  // that fails to render gets Next's error page, which is a whole document.
+  // Those load as the pages they are, and the container stays empty.
+  let container = opening?.container;
+  if (opening?.component && new URL(response.url).pathname !== opening.component.pathname) {
+    registry.component = undefined;
+    container = undefined;
+  }
+  if (/^\s*<!doctype/i.test(html)) container = undefined;
+  loadDocument(html, container);
   // Where the browser ended up, after any redirects.
   window.history.replaceState(null, "", response.url);
   // A page load runs the app's scripts from scratch, so every page gets a
@@ -320,7 +419,7 @@ async function loadPage(
       "vitest-plugin-rsc/nextjs/client",
     );
     superseded();
-    return client.start(loaded);
+    return client.start(loaded, container);
   })();
   page = { started: started.catch(() => {}), unmount: () => leave() };
   try {
@@ -363,19 +462,23 @@ function leavePage(): Promise<void> {
     left?.unmount();
     unloadDocument();
     await ssr.settleRequests();
+    // The route of a node goes with its page.
+    registry.component = undefined;
     resetAsyncLocalStorage();
   });
   return leaving;
 }
 
 /**
- * Leaves the page that `renderServer()` opened and forgets the tab's cookies and
- * what the app put in its storage, like a new browser context. The server
- * forgets what it has cached. Runs before and after every test.
+ * Leaves the page that `renderServer()` opened, removes the containers it made
+ * and forgets the tab's cookies and what the app put in its storage, like a
+ * new browser context. The server forgets what it has cached. Runs before and
+ * after every test.
  */
 export async function cleanup(): Promise<void> {
   await leavePage();
-  registry.pageOverrides = {};
+  for (const container of containers) container.remove();
+  containers.clear();
   ssr.resetCaches();
   clearCookies();
   for (const [storage, keys] of storages) {

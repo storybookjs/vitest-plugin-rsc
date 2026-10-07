@@ -24,7 +24,7 @@ Seed exactly the state a route needs, open it, use the hydrated page in a real b
 - [Next.js](#nextjs)
   - [Set Up](#set-up)
   - [Open A Route](#open-a-route)
-  - [Render One Slice Of A Route](#render-one-slice-of-a-route)
+  - [Render One Component](#render-one-component)
   - [Server Actions](#server-actions)
   - [Mocks](#mocks)
   - [Requests And Route Handlers](#requests-and-route-handlers)
@@ -83,7 +83,7 @@ Agents do better when wrapped in a self-healing loop with fast unit tests — ed
 ## What You Get
 
 - **Real Next.js behaviour**: the request goes through Next's own request handler, renderer and router. Layouts, `loading.tsx`, error boundaries, redirects, cookies, Server Actions, route handlers and the Data Cache do what they do in your app.
-- **Focused scope**: Test a whole route, or one component in place of the page of a route.
+- **Focused scope**: Test a whole route, or one component on its own.
 - **White-box inputs**: The server runs in the test's tab. The `db` your test seeds is the module instance your Server Components read. Mock IO, fake clocks, set cookies and headers.
 - **Black-box output**: Assert what the user sees and does via `vitest/browser` — Playwright locators (`getByRole`, `getByText`, etc.) and `expect.element` matchers.
 - **Watch mode**: Vitest reruns the tests of the project when you edit a file of the app.
@@ -178,35 +178,49 @@ A URL that is not a route gets the app's not-found page, with status `404`.
 
 Before and after every test the page is left, the tab's cookies are cleared, and so is what the app put in `localStorage` and `sessionStorage`. The server forgets what it has cached. A test starts like a new browser context.
 
-### Render One Slice Of A Route
+### Render One Component
 
-Pass a node to test one component instead of a whole page. The route renders the node where it has its page: inside its layouts, with the request, the cookies and the router of that route.
+Pass a node to test one component instead of a whole page. It renders like Testing Library renders a component: in a `<div>` container in `document.body`, without the layouts of your app. Everything around it is still Next: the request, the cookies, Server Actions, the cache and the router.
 
 ```tsx
 import { Counter } from "./components/counter.tsx";
 
-test("renders a node in place of the page of a route", async () => {
-  const { response } = await renderServer(
+test("renders a node in a container, without the layouts of the app", async () => {
+  const { container, response } = await renderServer(
     <>
       <h1>Just a counter</h1>
       <Counter />
     </>,
-    { url: "/notes" },
   );
 
   expect(response.status).toBe(200);
-  expect(window.location.pathname).toBe("/notes");
-  // The layouts of the route are there, its page is not.
-  await expect.element(page.getByRole("navigation", { name: "Main" })).toBeVisible();
+  expect(container.parentElement).toBe(document.body);
   await expect.element(page.getByRole("heading", { name: "Just a counter" })).toBeVisible();
-  await expect.element(page.getByRole("heading", { name: "Notes" })).not.toBeInTheDocument();
+  // No layout of the app.
+  await expect.element(page.getByRole("navigation", { name: "Main" })).not.toBeInTheDocument();
 
   await page.getByRole("button", { name: "Count: 0" }).click();
   await expect.element(page.getByRole("button", { name: "Count: 1" })).toBeVisible();
 });
 ```
 
-Without a `url` the node renders at `/`. The page module of the route is not loaded, so its `generateMetadata`, `metadata`, `viewport` and segment config like `dynamic` do not apply. Those of the layouts do. Parallel slots keep their own pages. At a URL that is not a route there is no page to replace, so the node is not rendered and you get the not-found page.
+The node is the page of a route that exists for as long as the node is there, and that has nothing of your app: no layout, no `loading`, no `error`. Next serves it the way it serves your pages.
+
+Without a `url` the request is `GET /`, whether or not your app has a page there. With a `url`, `usePathname()` and `useSearchParams()` come from it, and the params are the ones your app's route for that URL has. You do not name the route: the plugin knows the routes of your app.
+
+```tsx
+import { RouterState } from "./components/router-state.tsx";
+
+test("gives a node the params that the app's route has for its url", async () => {
+  // The app has `app/notes/[id]/page.tsx`.
+  await renderServer(<RouterState />, { url: "/notes/7?q=1" });
+
+  await expect.element(page.getByText('{"id":"7"}')).toBeVisible();
+  expect(window.location.pathname).toBe("/notes/7");
+});
+```
+
+A URL that is no route of your app is not an error. The node renders there with no params.
 
 A node can be a Server Component that reads the request:
 
@@ -227,12 +241,39 @@ async function RequestInfo() {
 test("gives a node the request: its headers and cookies", async () => {
   document.cookie = "last-created=7";
 
-  await renderServer(<RequestInfo />, { url: "/notes", headers: { "x-tenant": "acme" } });
+  await renderServer(<RequestInfo />, { headers: { "x-tenant": "acme" } });
 
   await expect.element(page.getByText("acme")).toBeVisible();
   await expect.element(page.getByText("7", { exact: true })).toBeVisible();
 });
 ```
+
+`wrapper` wraps the node on the server, for the providers a layout would give it. It can be a Server Component:
+
+```tsx
+async function Tenant({ children }: { children: ReactNode }) {
+  const tenant = (await headers()).get("x-tenant");
+  return <section aria-label={`Tenant ${tenant}`}>{children}</section>;
+}
+
+test("wraps a node in a wrapper, which can be a Server Component", async () => {
+  await renderServer(<Counter />, { wrapper: Tenant, headers: { "x-tenant": "acme" } });
+
+  const tenant = page.getByRole("region", { name: "Tenant acme" });
+  await tenant.getByRole("button", { name: "Count: 0" }).click();
+  await expect.element(tenant.getByRole("button", { name: "Count: 1" })).toBeVisible();
+});
+```
+
+What to know:
+
+- **Global CSS is not there.** Your root layout imports it, and the node does not render in your layouts. Import it in the setup file of the test project or in the `wrapper`, as with Testing Library.
+- **Leaving the node's URL loads a page.** A `<Link>`, a `router.push()` or a `redirect()` to another pathname is a page load of that route of your app, with its layouts. The node is gone after it. A change of search params stays with the node.
+- **The node owns its URL.** While it is there, a request for its pathname gets the node, also from `handleRequest`, and a link to it goes nowhere. Without a `url` that pathname is `/`, so a `<Link href="/">` in a node does not open your home page. Give the node another `url` to test such a link. The same goes for a route handler: with `url: "/api/notes"`, a `fetch("/api/notes")` from the tab gets the node's HTML and not the handler's response. `unmount()` and the end of the test give the pathname back to your app.
+- **The container is the node's.** It has to be empty, and it cannot be `document.body`. It also holds what Next renders around a page: a hidden `<div>` and a few comments, where metadata streams in, and Next's scripts. `asFragment()` leaves out the scripts that run, and keeps a script of data like JSON-LD.
+- **`useSelectedLayoutSegments()` is empty**, as it is in a page: a node has no segments below it.
+- **A node that throws, or calls `notFound()`, gets Next's own page for it**: the global error page with status `500`, where the error is also reported as uncaught, or the not-found page with status `404`. Next renders those as a document, so they are not in the container. Your `app/global-error.tsx` and `app/not-found.tsx` are not used: they belong to your app's layouts.
+- **A node that calls `redirect()` while it renders** loads the page it redirects to, like a page does. The container stays empty.
 
 ### Server Actions
 
@@ -286,7 +327,7 @@ import { FavoriteButton } from "./components/favorite-button.tsx";
 test("calls a Server Action from a node", async () => {
   db.notes.set("1", { id: "1", title: "Inbox triage", body: "" });
 
-  await renderServer(<FavoriteButton id="1" favorite={false} />, { url: "/notes/1" });
+  await renderServer(<FavoriteButton id="1" favorite={false} />);
 
   await page.getByRole("button", { name: "Favorite" }).click();
   await expect.element(page.getByRole("button", { name: "Favorite", pressed: true })).toBeVisible();
@@ -533,15 +574,27 @@ import { cleanup, handleRequest, renderServer } from "vitest-plugin-rsc/nextjs/t
 import { vitestPluginNext } from "vitest-plugin-rsc/nextjs/plugin";
 ```
 
-| Function                                   | What it does                                                                                  |
-| ------------------------------------------ | --------------------------------------------------------------------------------------------- |
-| `renderServer({ url, headers })`           | Opens a route. Resolves with `{ response, unmount }` once the page has hydrated.              |
-| `renderServer(<Node />, { url, headers })` | Opens the route with the node in place of its page. `url` defaults to `/`.                    |
-| `handleRequest(input, init)`               | Sends one request to the app, like `fetch`. Resolves with the `Response`.                     |
-| `cleanup()`                                | Leaves the page, clears cookies, storage and the cache. The plugin runs it around every test. |
-| `vitestPluginNext({ browserModules })`     | The Vite plugin. `browserModules` are glob patterns, relative to the project root.            |
+| Function                               | What it does                                                                                  |
+| -------------------------------------- | --------------------------------------------------------------------------------------------- |
+| `renderServer({ url, headers })`       | Opens a route. Resolves with `{ response, unmount }` once the page has hydrated.              |
+| `renderServer(<Node />, options)`      | Renders a node in a container, on a route of its own. See the options below.                  |
+| `handleRequest(input, init)`           | Sends one request to the app, like `fetch`. Resolves with the `Response`.                     |
+| `cleanup()`                            | Leaves the page, clears cookies, storage and the cache. The plugin runs it around every test. |
+| `vitestPluginNext({ browserModules })` | The Vite plugin. `browserModules` are glob patterns, relative to the project root.            |
 
-The types are `RenderServerOptions`, `RenderServerResult` and `VitestPluginNextOptions`.
+The options for a node, all optional:
+
+| Option        | What it does                                                                                        |
+| ------------- | --------------------------------------------------------------------------------------------------- |
+| `url`         | The URL of the request. Defaults to `/`. The params are those of your app's route for it.           |
+| `headers`     | Headers for the request, next to the ones a browser sends.                                          |
+| `wrapper`     | A component that wraps the node on the server. It can be a Server Component.                        |
+| `container`   | An empty element for the node. Defaults to a new `<div>` in `baseElement`, which `cleanup` removes. |
+| `baseElement` | Defaults to `container` if you pass one, or else to `document.body`.                                |
+
+A node resolves with `{ container, baseElement, asFragment, unmount, response }`.
+
+The types are `RenderServerOptions`, `RenderServerResult`, `RenderComponentOptions`, `RenderComponentResult` and `VitestPluginNextOptions`.
 
 The package also exports `vitest-plugin-rsc/nextjs/rsc`, `/ssr`, `/client` and `/app-page-entrypoint`. Those are internal: the plugin imports them itself, and Vite has to be able to resolve them.
 

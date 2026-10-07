@@ -4,7 +4,7 @@ import { getRouteMatcher } from "next/dist/shared/lib/router/utils/route-matcher
 import { getRouteRegex } from "next/dist/shared/lib/router/utils/route-regex";
 import { getSortedRoutes } from "next/dist/shared/lib/router/utils/sorted-routes";
 import edgeEntries from "virtual:vitest-plugin-rsc/next-edge-entries";
-import { nextConfig, routes } from "virtual:vitest-plugin-rsc/next-manifest";
+import { nextConfig, routes as allRoutes } from "virtual:vitest-plugin-rsc/next-manifest";
 import { shareIncrementalCache } from "./cache.ts";
 import { registerModuleLoader } from "./client-modules.ts";
 import { actionModulePrefix, registry, type ServerRequest } from "./registry.ts";
@@ -51,6 +51,13 @@ Object.assign(globalThis, {
   __RSC_MANIFEST: anyKey(() => clientReferenceManifest),
 });
 
+// The routes of the app, and the route of a node for each of their
+// pathnames: see `handle()`.
+const routes = allRoutes.filter((route) => !route.component);
+const componentRoutes = new Map(
+  allRoutes.filter((route) => route.component).map((route) => [route.pathname, route]),
+);
+
 const notFoundPage = "/_not-found/page";
 const matchers = getSortedRoutes(
   routes.filter((route) => route.page !== notFoundPage).map((route) => route.pathname),
@@ -68,15 +75,12 @@ function matchRoute(pathname: string) {
   }
 }
 
-/** Whether a pathname is a route of the app: a page or a route handler. */
+/**
+ * Whether a pathname is a route of the app, a page or a route handler, or the
+ * route of the node a test renders.
+ */
 export function isRoute(pathname: string): boolean {
-  return matchRoute(pathname) !== undefined;
-}
-
-/** The page of the route that serves a pathname, if a page serves it. */
-export function pageOf(pathname: string): string | undefined {
-  const route = matchRoute(pathname)?.route;
-  return route?.kind === "page" ? route.page : undefined;
+  return registry.component?.pathname === pathname || matchRoute(pathname) !== undefined;
 }
 
 // A test's own timers may be fake.
@@ -128,7 +132,17 @@ export async function settleRequests(): Promise<void> {
 async function handle(request: ServerRequest): Promise<Response> {
   const { pathname } = new URL(request.url);
   const matched = matchRoute(pathname);
-  const page = matched?.route.page ?? notFoundPage;
+  // While a test renders a node, the pathname of its URL is the node's route.
+  // Of the routes of a node, the one with the segments of the app's route, so
+  // that Next finds the params the app's route has. A URL of no route has
+  // none, like `/`.
+  const component =
+    registry.component?.pathname === pathname
+      ? (componentRoutes.get(matched?.route.pathname ?? "/") ?? componentRoutes.get("/"))
+      : undefined;
+  const page = component?.page ?? matched?.route.page ?? notFoundPage;
+  // What the modules of the route are listed by.
+  const entry = component?.component ?? page;
   const endRequestScope = registry.enterRequestScope();
   shareIncrementalCache(request.headers);
   // What Next does after it has responded, like `after()`, still reads the
@@ -147,7 +161,7 @@ async function handle(request: ServerRequest): Promise<Response> {
   };
 
   try {
-    if (matched?.route.kind === "route") {
+    if (!component && matched?.route.kind === "route") {
       // An edge function gets the params of its dynamic segments from
       // whoever routes to it, in the query of the URL, as `next start` does.
       const url = new URL(request.url);
@@ -188,11 +202,12 @@ async function handle(request: ServerRequest): Promise<Response> {
       serverActionsManifest: { node: actions, edge: actions, encryptionKey: "" } as never,
     });
 
-    await registry.loadAppPage(page);
-    const { handler } = await edgeEntries[page]!();
+    await registry.loadAppPage(entry);
+    const { handler } = await edgeEntries[entry]!();
     const response = await handler(request, context);
     // Whoever routes a request to the not-found page sets its status.
-    return finishWithBody(request, response, matched ? response.status : 404, endRequest);
+    const status = component || matched ? response.status : 404;
+    return finishWithBody(request, response, status, endRequest);
   } catch (error) {
     endRequestScope();
     throw error;

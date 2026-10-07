@@ -1,5 +1,11 @@
 declare module "virtual:vitest-plugin-rsc/next-manifest" {
-  export const routes: { kind: "page" | "route"; page: string; pathname: string }[];
+  export const routes: {
+    kind: "page" | "route";
+    page: string;
+    pathname: string;
+    /** For a route of a node: what its modules are listed by, in place of `page`. */
+    component?: string;
+  }[];
   export const nextConfig: import("next/dist/server/config-shared").NextConfigComplete;
 }
 

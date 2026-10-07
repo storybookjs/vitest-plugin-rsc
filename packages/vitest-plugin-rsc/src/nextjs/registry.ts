@@ -40,8 +40,11 @@ export type NextRegistry = {
   loadRouteHandler(page: string): Promise<EdgeHandler>;
   /** Whether an id names a Server Action of the app, in the rsc layer. */
   hasServerAction(id: string): Promise<boolean>;
-  /** What a test renders in place of the page of a route, by page name. */
-  pageOverrides: Record<string, unknown>;
+  /**
+   * The node that `renderServer(<Node />, { url })` renders, and the pathname
+   * of its URL. While it is there, that pathname is the node's route.
+   */
+  component: { pathname: string; ui: unknown } | undefined;
   /** Loads a Client Component by its module id, in the ssr layer. */
   loadSsrModule(id: string): Promise<unknown>;
   /**
@@ -57,7 +60,6 @@ const scope = globalThis as { __vitest_plugin_rsc_next__?: Partial<NextRegistry>
 
 export const registry = (scope.__vitest_plugin_rsc_next__ ??= {
   appPages: {},
-  pageOverrides: {},
 }) as NextRegistry;
 
 /**

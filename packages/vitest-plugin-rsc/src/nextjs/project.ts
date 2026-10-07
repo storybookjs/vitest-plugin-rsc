@@ -28,6 +28,22 @@ export type NextRoute = {
   appPaths: string[];
 };
 
+/** A route of a node, see `NextProject.componentRoutes`. */
+export type ComponentRoute = {
+  kind: "page";
+  /**
+   * Its page name, e.g. `/notes/[id]/page`, from which Next takes its params
+   * and the tags of its path. `revalidatePath("/notes/[id]", "page")` expires
+   * the cached reads with those tags. A page of the app can have the same
+   * name.
+   */
+  page: string;
+  /** Routable pathname, e.g. `/notes/[id]`. */
+  pathname: string;
+  /** What its modules are listed by, which no page of the app has as its name. */
+  component: string;
+};
+
 export type NextProject = {
   root: string;
   appDir: string;
@@ -36,6 +52,12 @@ export type NextProject = {
   /** Version of the installed `next` package. */
   version: string;
   routes: NextRoute[];
+  /**
+   * The routes `renderServer(<Node />, { url })` renders a node in: one for
+   * each pathname of the app, so that a URL has the params of the app's route,
+   * and one for `/`, for a node without a url or with a URL of no route.
+   */
+  componentRoutes: ComponentRoute[];
   /** The metadata files of the app, like `app/icon.png`, which are not served yet. */
   metadataFiles: string[];
   /** The resolved `next.config`, as far as it serializes. */
@@ -53,14 +75,19 @@ export type NextProject = {
    * The rsc-layer module of a route, from Next's app loader, with this
    * package's runtime where Next's code names its bundler. For a page: its
    * loader tree and `entry-base`. For a route handler: its route module.
+   *
+   * For a route of a node: Next's page template around a loader tree that has
+   * the segments of the pathname, and the node as its page. Nothing of the app.
    */
-  loadAppPageEntry(route: NextRoute): Promise<{ code: string; watchFiles: string[] }>;
+  loadAppPageEntry(
+    route: NextRoute | ComponentRoute,
+  ): Promise<{ code: string; watchFiles: string[] }>;
   /**
    * Next's edge `handler(Request)` of a route. `userland` is what it serves:
    * for a route handler the specifier of its route module, for a page an
    * expression for its rsc-layer module, which lives in another environment.
    */
-  loadEdgeEntry(route: NextRoute, userland: string): Promise<string>;
+  loadEdgeEntry(route: NextRoute | ComponentRoute, userland: string): Promise<string>;
 };
 
 // What next-app-loader uses of webpack's loader context.
@@ -187,6 +214,11 @@ function optionKeys({ code, params = [] }: Declared): string[] {
     ).flat(),
   ];
 }
+
+// The root segment of the routes of a node: see `loadComponentPageEntry()`.
+// The parentheses make it a route group for Next, so it never shows in a
+// pathname.
+const componentRoot = "(vitest-plugin-rsc)";
 
 // Next's templates carry Turbopack-only import attributes. They mean nothing
 // to Vite and are a syntax error in a browser.
@@ -549,6 +581,42 @@ export async function loadNextProject(
   // It knows that the app has hydrated from Next's own e2e hook, which the
   // plugin turns on with this define.
   appIndex.contains("process.env.__NEXT_TEST_MODE", "__NEXT_HYDRATED_CB");
+  // The route of a node has Next's own boundaries at its root, the ones
+  // next-app-loader gives a root that has none: the global error page, which
+  // Next's renderer throws without, and the pages for `notFound()`,
+  // `forbidden()` and `unauthorized()`.
+  const builtinBoundaries = Object.fromEntries(
+    ["global-error", "not-found", "forbidden", "unauthorized"].map((name) => {
+      const file = `next/dist/client/components/builtin/${name}.js`;
+      try {
+        require.resolve(file);
+      } catch (error) {
+        fail(`${file} is not there`, error);
+      }
+      return [name, file];
+    }),
+  );
+  // It finds the root Next hydrates by the document it is for, and gives a
+  // node its container in its place.
+  appIndex.contains(
+    "const appElement = document",
+    "ReactDOMClient.hydrateRoot(appElement",
+    "ReactDOMClient.createRoot(appElement",
+  );
+  // A node renders on a route whose root segment is not the app's, and that
+  // has no root layout. Next's router leaves the node with a page load for a
+  // page of the app when all of this holds: it compares the root segments of
+  // the two trees directly, so the trees do not match at the root; it asks
+  // there whether the new tree is in a root layout, which a tree of the app
+  // is; and it takes the two for different root layouts.
+  runtimeFile("client/components/segment-cache/cache").contains(
+    "currentTree.segment === nextTree.segment",
+  );
+  runtimeFile("client/components/render-tree").contains(
+    "doesRouteStructureMatch(",
+    "PrefetchHint.IsRootLayoutOrAbove",
+    "isNavigatingToNewRootLayout(",
+  );
   // It hands Next the bootstrap script as the one that is running.
   runtimeFile("client/asset-prefix").contains("document.currentScript", "/_next/");
   // The shim in plugin.ts reads these, and replaces the functions for Vite
@@ -610,6 +678,73 @@ export async function loadNextProject(
     }
   }
 
+  // The route entry of a page binds Next's renderer to its bundler: its module
+  // loader, and a runtime that also holds the request handler for Node.js.
+  // Here both are this package's: rsc.ts, app-page-entrypoint.ts.
+  const bindPageEntry = (code: string, where: string) => {
+    code = replace(code, /\b__webpack_require__\b/g, "__next_require__", where);
+    code = replace(
+      code,
+      /(["'])next\/dist\/build\/templates\/app-page-runtime\1/,
+      `"vitest-plugin-rsc/nextjs/app-page-entrypoint"`,
+      where,
+    );
+    return `import { requireModule as __next_require__ } from "vitest-plugin-rsc/nextjs/rsc";\n${code}`;
+  };
+
+  async function loadComponentPageEntry({ page, pathname }: ComponentRoute): Promise<string> {
+    // A loader tree the way Next's app loader writes one: a segment, its
+    // slots, its modules, and the static segments next to it, which only
+    // a build knows. It has a segment for each one of the pathname, so
+    // that Next finds the params of the URL, and the node as its page.
+    //
+    // Not from Next's app loader, which reads a directory of files and exits
+    // the process for a page without a root layout.
+    //
+    // No layout: Next's renderer does not need one. The modules besides the
+    // page are Next's own boundaries, see `builtinBoundaries`.
+    //
+    // The root segment is not the app's `""`. Next's router compares the
+    // root segments of two routes directly, and takes a difference for
+    // another root layout. So a navigation from the node to a page of the
+    // app is a page load, which renders the app's root layout, and not a
+    // client-side one into the container.
+    const segment = (name: string, children: string, modules = "{}") =>
+      `[${JSON.stringify(name)}, ${children}, ${modules}, null]`;
+    let tree = `["__PAGE__", {}, { page: [__next_component__, "vitest-plugin-rsc/component"] }]`;
+    for (const name of pathname.split("/").filter(Boolean).reverse()) {
+      tree = segment(name, `{ children: ${tree} }`);
+    }
+    const boundaries = Object.entries(builtinBoundaries).map(
+      ([name, file]) =>
+        `${JSON.stringify(name)}: [() => import(${JSON.stringify(file)}), ${JSON.stringify(file)}]`,
+    );
+    tree = segment(componentRoot, `{ children: ${tree} }`, `{ ${boundaries.join(", ")} }`);
+    let code: string;
+    try {
+      code = await loadEntrypoint(
+        "app-page",
+        { VAR_DEFINITION_PAGE: page, VAR_DEFINITION_PATHNAME: pathname },
+        {
+          tree,
+          // What next-app-loader injects.
+          __next_app_require__: "__webpack_require__",
+          __next_app_load_chunk__: "() => Promise.resolve()",
+        },
+      );
+    } catch (error) {
+      return fail(
+        `the app-page template does not take the injections of next-app-loader ` +
+          `(${(error as Error).message})`,
+        error,
+      );
+    }
+    return (
+      `import { loadComponent as __next_component__ } from "vitest-plugin-rsc/nextjs/rsc";\n` +
+      bindPageEntry(stripTurbopackTransitions(code), "the app-page template")
+    );
+  }
+
   // next-app-loader keys its per-build caches on the compilation object.
   const compilation = {};
 
@@ -619,12 +754,23 @@ export async function loadNextProject(
     nextDir,
     version,
     routes,
+    // Not for Next's own pages, `/_not-found` and `/_global-error`.
+    componentRoutes: [...new Set(["/", ...routes.map((route) => route.pathname)])]
+      .filter((pathname) => !/^\/_(not-found|global-error)$/.test(pathname))
+      .map((pathname) => ({
+        kind: "page",
+        page: `${pathname === "/" ? "" : pathname}/page`,
+        pathname,
+        component: `${componentRoot}${pathname}`,
+      })),
     metadataFiles,
     config: JSON.parse(JSON.stringify(config)),
     defines: { rsc: definesFor("rsc"), ssr: definesFor("ssr"), browser: definesFor("browser") },
     aliases,
     flightExports,
     async loadAppPageEntry(route) {
+      if ("component" in route)
+        return { code: await loadComponentPageEntry(route), watchFiles: [] };
       const watchFiles = new Set<string>();
       const context: AppLoaderContext = {
         // What `createEntrypoints` of `next build` passes.
@@ -669,17 +815,7 @@ export async function loadNextProject(
         // waits for a module that loads asynchronously.
         code = replace(code, /(\buserland: \(\)\s*=>\s*)require\(/, "$1import(", where);
       } else {
-        // The route entry binds Next's renderer to its bundler: its module
-        // loader, and a runtime that also holds the request handler for
-        // Node.js. Here both are this package's: rsc.ts, app-page-entrypoint.ts.
-        code = replace(code, /\b__webpack_require__\b/g, "__next_require__", where);
-        code = replace(
-          code,
-          /(["'])next\/dist\/build\/templates\/app-page-runtime\1/,
-          `"vitest-plugin-rsc/nextjs/app-page-entrypoint"`,
-          where,
-        );
-        code = `import { requireModule as __next_require__ } from "vitest-plugin-rsc/nextjs/rsc";\n${code}`;
+        code = bindPageEntry(code, where);
       }
       return { code, watchFiles: [...watchFiles].filter((file) => fs.existsSync(file)) };
     },

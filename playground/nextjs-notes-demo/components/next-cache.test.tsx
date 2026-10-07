@@ -3,7 +3,7 @@ import { page } from "vitest/browser";
 import { cleanup, renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
 import { NextCacheProbe, resetNextCacheProbe } from "./next-cache-probe.tsx";
 
-// Next's Data Cache, seen through a probe that renders in place of a page:
+// Next's Data Cache, seen through a probe that renders on its own:
 // `unstable_cache`, cached and uncached `fetch`, and what invalidates them.
 // The service the probe fetches from is MSW, which vitest.setup.ts starts.
 
@@ -193,9 +193,6 @@ test("Next cache state is reset by cleanup", async () => {
   await expect.element(page.getByText("cached fetch duplicate: first fetch 1")).toBeVisible();
   await expect.element(page.getByText("no-store fetch: first no-store fetch 1")).toBeVisible();
 
-  // The app's theme provider removes a style from the page a moment after it
-  // mounts. Let that timer of the app run before the page is left.
-  await new Promise((resolve) => setTimeout(resolve, 10));
   await cleanup();
   await renderNextCacheProbe("second");
 
@@ -207,7 +204,7 @@ test("Next cache state is reset by cleanup", async () => {
 
 async function renderNextCacheProbe(label?: string) {
   resetNextCacheProbe(label);
-  await renderServer(<NextCacheProbe />, { url: "/fixtures" });
+  await renderServer(<NextCacheProbe />);
 }
 
 function waitPastCacheTimestamp() {
