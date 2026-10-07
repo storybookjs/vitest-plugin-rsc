@@ -637,7 +637,7 @@ A node resolves with `{ container, baseElement, asFragment, unmount, response }`
 
 The types are `RenderServerOptions`, `RenderServerResult`, `RenderComponentOptions`, `RenderComponentResult` and `VitestPluginNextOptions`.
 
-The package also exports `vitest-plugin-rsc/nextjs/rsc`, `/ssr`, `/client` and `/app-page-entrypoint`. Those are internal: the plugin imports them itself, and Vite has to be able to resolve them.
+The package also exports `vitest-plugin-rsc/nextjs/rsc`, `/ssr` and `/client`. Those are internal: the plugin imports them itself, and Vite has to be able to resolve them.
 
 ## React Server Components Without Next.js
 

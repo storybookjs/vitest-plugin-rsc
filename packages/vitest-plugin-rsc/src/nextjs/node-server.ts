@@ -1,21 +1,7 @@
-import { RSC_HEADER } from "next/dist/client/components/app-router-headers";
-import { RedirectStatusCode } from "next/dist/client/components/redirect-status-code";
-import { NEXT_CACHE_TAGS_HEADER } from "next/dist/lib/constants";
-import { NodeNextRequest, NodeNextResponse } from "next/dist/server/base-http/node";
-import { isRSCRequestHeader } from "next/dist/server/lib/is-rsc-request";
-import { setRequestMeta } from "next/dist/server/request-meta";
-import { sendRenderResult } from "next/dist/server/send-payload";
-import { getIsPossibleServerAction } from "next/dist/server/lib/server-action-request-meta";
-import { shouldServeStreamingMetadata } from "next/dist/server/lib/streaming-metadata";
-import { createDevRenderContext } from "next/dist/server/route-modules/app-page/dev-render-context";
-import { parseRequestHeaders } from "next/dist/server/route-modules/app-page/parse-request-headers";
-import { normalizeAppPath } from "next/dist/shared/lib/router/utils/app-paths";
-import { getBotType } from "next/dist/shared/lib/router/utils/is-bot";
-import { parseMaxPostponedStateSize } from "next/dist/shared/lib/size-limit";
 import { nextConfig } from "virtual:vitest-plugin-rsc/next-manifest";
 import { Readable } from "virtual:vitest-plugin-rsc/node-stream";
 import { preview } from "./cache.ts";
-import { registry, type RouteHandler, type ServerRequest } from "./registry.ts";
+import { registry, type RequestHandler, type ServerRequest } from "./registry.ts";
 
 // Next's server runs here as it does on Node.js, its default runtime. (Its
 // edge runtime, which is closer to a tab, is deprecated.) The renderer takes
@@ -26,6 +12,8 @@ import { registry, type RouteHandler, type ServerRequest } from "./registry.ts";
 //   - The manifests of a build, which Next reads from `.next/`: given here,
 //     through `load-manifest.external`, the module Next keeps out of its own
 //     bundle for it.
+// The request handlers are Next's own, the ones its build makes for a page
+// and for a route handler and `next start` calls: `handler(req, res, ctx)`.
 // The Node modules that Next's server imports are in plugin.ts, and its
 // globals in globals.ts.
 
@@ -87,7 +75,10 @@ const manifests: [suffix: string, manifest: () => unknown][] = [
     "_client-reference-manifest.js",
     () => ({ __RSC_MANIFEST: anyKey(() => clientReferenceManifest) }),
   ],
-  ["server-reference-manifest.json", () => ({ node: {}, edge: {}, encryptionKey: "" })],
+  [
+    "server-reference-manifest.json",
+    () => ({ node: serverActions, edge: serverActions, encryptionKey: "" }),
+  ],
   ["required-server-files.json", () => ({ config: nextConfig })],
   ["BUILD_ID", () => process.env.__NEXT_BUILD_ID ?? "vitest"],
 ];
@@ -274,14 +265,22 @@ function requestMetaOf(request: ServerRequest) {
   return { initURL: request.url, initProtocol: new URL(request.url).protocol.slice(0, -1) };
 }
 
+// Next's build lists the Server Actions of the app in a manifest. Here the
+// server lists the one a request calls, for that request: see ssr.ts.
+let serverActions: object = {};
+export function setServerActions(actions: object): void {
+  serverActions = actions;
+}
+
 /**
- * One request for a route handler, by the request handler Next's build makes
- * for it: `templates/app-route`, as `next start` calls it.
+ * One request, by the request handler Next's build makes for its route:
+ * `templates/app-page-runtime` for a page and `templates/app-route` for a
+ * route handler, as `next start` calls them.
  */
-export async function handleRouteHandler(
+export async function handleRequest(
   request: ServerRequest,
   context: { waitUntil?: (promise: Promise<unknown>) => void },
-  handler: RouteHandler,
+  handler: RequestHandler,
 ): Promise<Response> {
   const req = createNodeRequest(request);
   const res = createNodeResponse();
@@ -294,187 +293,4 @@ export async function handleRouteHandler(
     requestMeta: { ...requestMetaOf(request), incrementalCache: cache },
   }).finally(() => (globalThis.__incrementalCache = cache));
   return respond(res, handled);
-}
-
-type RenderResult = {
-  metadata: { statusCode?: number; headers?: Record<string, unknown> };
-};
-
-/**
- * One request for a page, by Next's Node.js route module: `prepare()`, then
- * `render()`, as the request handler of `next start` calls them.
- *
- * Not that handler itself, `templates/app-page-runtime`: around these two
- * calls it has the response cache of prerendered pages, and nothing is
- * prerendered here.
- */
-export async function handlePage(
-  request: ServerRequest,
-  context: { waitUntil?: (promise: Promise<unknown>) => void },
-  page: string,
-  entry: string,
-): Promise<Response> {
-  const ComponentMod = registry.appPages[entry] as {
-    routeModule: {
-      relativeProjectDir: string;
-      prepare(req: unknown, res: unknown, options: object): Promise<any>;
-      render(req: unknown, res: unknown, context: object): Promise<RenderResult>;
-      onRequestError(...args: unknown[]): Promise<void>;
-      getVaryHeader(pathname: string, patterns: RegExp[]): string;
-    };
-    default?: unknown;
-  };
-  const { routeModule } = ComponentMod;
-  const req = createNodeRequest(request);
-  const res = createNodeResponse();
-
-  setRequestMeta(req as never, requestMetaOf(request) as never);
-  const nextRes = new NodeNextResponse(res as never);
-  const prepared = await routeModule.prepare(req, res, {
-    srcPage: page,
-    multiZoneDraftMode: false,
-  });
-  if (!prepared) return new registry.Response("Bad Request", { status: 400 });
-  const {
-    query,
-    params,
-    buildId,
-    buildManifest,
-    nextFontManifest,
-    reactLoadableManifest,
-    subresourceIntegrityManifest,
-    previewProps,
-    resolvedPathname,
-    interceptionRoutePatterns,
-    deploymentId,
-    clientAssetToken,
-    isDraftMode,
-    isOnDemandRevalidate,
-    routerServerContext,
-  } = prepared;
-  const config = nextConfig as Record<string, any>;
-  res.setHeader("Vary", routeModule.getVaryHeader(resolvedPathname, interceptionRoutePatterns));
-  const userAgent = req.headers["user-agent"] ?? "";
-
-  const renderContext = {
-    query,
-    params,
-    page: normalizeAppPath(page),
-    routeMatch: { resolvedPathname },
-    parsedRequestHeaders: parseRequestHeaders(req.headers, {
-      isRoutePPREnabled: false,
-      previewModeId: previewProps?.previewModeId,
-    }),
-    sharedContext: { buildId, deploymentId, clientAssetToken },
-    dev: createDevRenderContext(req as never),
-    fallbackRouteParams: null,
-    renderOpts: {
-      App: () => null,
-      Document: () => null,
-      pageConfig: {},
-      ComponentMod,
-      Component: ComponentMod.default ?? ComponentMod,
-      params,
-      routeModule,
-      page,
-      postponed: undefined,
-      serveStreamingMetadata: shouldServeStreamingMetadata(userAgent, config.htmlLimitedBots),
-      supportsDynamicResponse: true,
-      buildManifest,
-      nextFontManifest,
-      reactLoadableManifest,
-      subresourceIntegrityManifest,
-      dir: "/",
-      isDraftMode,
-      botType: getBotType(userAgent),
-      isOnDemandRevalidate,
-      isPossibleServerAction: getIsPossibleServerAction(req as never),
-      assetPrefix: config.assetPrefix,
-      nextConfigOutput: config.output,
-      crossOrigin: config.crossOrigin,
-      trailingSlash: config.trailingSlash,
-      images: config.images,
-      previewProps,
-      enableTainting: config.experimental.taint,
-      reactMaxHeadersLength: config.reactMaxHeadersLength,
-      multiZoneDraftMode: false,
-      // The cache of the server: see cache.ts.
-      incrementalCache: globalThis.__incrementalCache,
-      cacheLifeProfiles: config.cacheLife,
-      staticPageGenerationTimeout: config.staticPageGenerationTimeout,
-      basePath: config.basePath,
-      serverActions: config.experimental.serverActions,
-      logServerFunctions: typeof config.logging === "object" && !!config.logging.serverFunctions,
-      cacheComponents: Boolean(config.cacheComponents),
-      validationLevel: config.experimental.instantInsights?.validationLevel,
-      experimental: {
-        isRoutePPREnabled: false,
-        expireTime: config.expireTime,
-        staleTimes: config.experimental.staleTimes,
-        dynamicOnHover: Boolean(config.experimental.dynamicOnHover),
-        optimisticRouting: Boolean(config.experimental.optimisticRouting),
-        parallelRouteMetadata: Boolean(config.experimental.parallelRouteMetadata),
-        inlineCss: Boolean(config.experimental.inlineCss),
-        prefetchInlining: config.experimental.prefetchInlining ?? false,
-        authInterrupts: Boolean(config.experimental.authInterrupts),
-        reactBrowserBailout: Boolean(config.experimental.reactBrowserBailout),
-        serverComponentsHmrCancellation: false,
-        useCacheTimeout: config.experimental.useCacheTimeout,
-        durableUseCacheEntries: Boolean(config.experimental.durableUseCacheEntries),
-        cachedNavigations: config.experimental.cachedNavigations ?? false,
-        clientTraceMetadata: config.experimental.clientTraceMetadata || [],
-        clientParamParsingOrigins: config.experimental.clientParamParsingOrigins,
-        maxPostponedStateSizeBytes: parseMaxPostponedStateSize(
-          config.experimental.maxPostponedStateSize,
-        ),
-        disableResumeDataCacheCompression:
-          config.experimental.disableResumeDataCacheCompression ?? false,
-        exposeTestingApi: false,
-      },
-      waitUntil: context.waitUntil,
-      onClose: (callback: Listener) => void res.on("close", callback),
-      onAfterTaskError: () => {},
-      onInstrumentationRequestError: (error: unknown, errorContext: unknown, silenceLog: unknown) =>
-        routeModule.onRequestError(req, error, errorContext, silenceLog, routerServerContext),
-    },
-  };
-
-  let result: RenderResult;
-  try {
-    result = await routeModule.render(
-      new NodeNextRequest(req as never),
-      nextRes as never,
-      renderContext,
-    );
-  } catch (error) {
-    // What Next was to run when the response closes, like `after()`.
-    res.destroy();
-    throw error;
-  }
-
-  // From here on as Next's request handler goes on after a render: the
-  // headers and the status of the render, then Next's own `sendRenderResult`.
-  const { metadata } = result;
-  for (const [name, value] of Object.entries(metadata.headers ?? {})) {
-    if (value === undefined || name === NEXT_CACHE_TAGS_HEADER) continue;
-    for (const item of [value].flat()) nextRes.appendHeader(name, String(item));
-  }
-  if (metadata.statusCode) {
-    // A redirect is in the payload of an RSC request, for Next's router.
-    const isRscRequest = isRSCRequestHeader(req.headers[RSC_HEADER]);
-    res.statusCode =
-      isRscRequest && metadata.statusCode in RedirectStatusCode ? 200 : metadata.statusCode;
-  }
-  return respond(
-    res,
-    sendRenderResult({
-      req: req as never,
-      res: res as never,
-      result: result as never,
-      generateEtags: config.generateEtags,
-      poweredByHeader: config.poweredByHeader,
-      // Nothing is prerendered: every page is rendered for its request.
-      cacheControl: { revalidate: 0, expire: undefined },
-    }),
-  );
 }

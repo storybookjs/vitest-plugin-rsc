@@ -1,4 +1,3 @@
-import { setManifestsSingleton } from "next/dist/server/app-render/manifests-singleton";
 import * as appPageModule from "next/dist/server/route-modules/app-page/module";
 import { getRouteMatcher } from "next/dist/shared/lib/router/utils/route-matcher";
 import { getRouteRegex } from "next/dist/shared/lib/router/utils/route-regex";
@@ -6,8 +5,13 @@ import { getSortedRoutes } from "next/dist/shared/lib/router/utils/sorted-routes
 import { routes as allRoutes } from "virtual:vitest-plugin-rsc/next-manifest";
 import { shareIncrementalCache } from "./cache.ts";
 import { registerModuleLoader } from "./client-modules.ts";
-import { anyKey, clientReferenceManifest, handlePage, handleRouteHandler } from "./node-server.ts";
-import { actionModulePrefix, registry, type ServerRequest } from "./registry.ts";
+import { anyKey, handleRequest as handleWith, setServerActions } from "./node-server.ts";
+import {
+  actionModulePrefix,
+  registry,
+  type RequestHandler,
+  type ServerRequest,
+} from "./registry.ts";
 
 export { resetCaches } from "./cache.ts";
 
@@ -130,7 +134,7 @@ async function handle(request: ServerRequest): Promise<Response> {
       // Next's own request handler finds the params of the route, and
       // answers 500 for a route handler that throws.
       const handler = await registry.loadRouteHandler(page);
-      const response = await handleRouteHandler(request, context, handler);
+      const response = await handleWith(request, context, handler);
       return finishWithBody(request, response, response.status, endRequest);
     }
 
@@ -147,14 +151,10 @@ async function handle(request: ServerRequest): Promise<Response> {
             },
           }
         : {};
-    setManifestsSingleton({
-      page,
-      clientReferenceManifest: clientReferenceManifest as never,
-      serverActionsManifest: { node: actions, edge: actions, encryptionKey: "" } as never,
-    });
+    setServerActions(actions);
 
-    await registry.loadAppPage(entry);
-    const response = await handlePage(request, context, page, entry);
+    const { handler } = (await registry.loadAppPage(entry)) as { handler: RequestHandler };
+    const response = await handleWith(request, context, handler);
     // Whoever routes a request to the not-found page sets its status.
     const status = component || matched ? response.status : 404;
     return finishWithBody(request, response, status, endRequest);

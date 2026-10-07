@@ -16,7 +16,7 @@ declare module "virtual:vitest-plugin-rsc/node-stream" {
 declare module "virtual:vitest-plugin-rsc/next-route-handlers" {
   const routeHandlers: Record<
     string,
-    () => Promise<{ handler: import("./registry.ts").RouteHandler }>
+    () => Promise<{ handler: import("./registry.ts").RequestHandler }>
   >;
   export default routeHandlers;
 }

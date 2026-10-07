@@ -241,6 +241,11 @@ export function expectNoPendingImmediates() {}
 export const findSourceMap = () => undefined;
 export default { findSourceMap };
 `,
+  "ssr-app-page-module": `
+export const AppPageRouteModule = new Proxy(class {}, {
+  construct: (_, args) => new ${registry}.ssr.AppPageRouteModule(...args),
+});
+`,
   // Next's cache keeps its entries in memory. With this it finds no file.
   "node-fs": `
 const missing = () => { throw Object.assign(new Error("ENOENT"), { code: "ENOENT" }); };
@@ -369,6 +374,14 @@ function createLayerResolver(getProject: () => NextProject, layer: NextLayer) {
       if (flight) return `${bridgePrefix}flight-${flight[1]}`;
     }
     if (source === serverReferenceInfo) return `${bridgePrefix}server-reference-info`;
+    // The route module of a page is made in the rsc layer, by Next's request
+    // handler for it, and belongs to the ssr layer.
+    if (
+      layer === "rsc" &&
+      /^next\/dist\/(esm\/)?server\/route-modules\/app-page\/module\.compiled(\.js)?$/.test(source)
+    ) {
+      return `${bridgePrefix}ssr-app-page-module`;
+    }
     // The Readable that node-server.ts makes a request of.
     if (source === "virtual:vitest-plugin-rsc/node-stream") return `${bridgePrefix}node-stream`;
     if (layer !== "browser") {
@@ -588,20 +601,6 @@ const runtimeImports: Record<NextLayer, string[]> = {
     "next/dist/server/lib/incremental-cache",
     "next/dist/server/lib/incremental-cache/tags-manifest.external",
     // node-server.ts
-    "next/dist/server/base-http/node",
-    "next/dist/client/components/app-router-headers",
-    "next/dist/client/components/redirect-status-code",
-    "next/dist/lib/constants",
-    "next/dist/server/lib/is-rsc-request",
-    "next/dist/server/request-meta",
-    "next/dist/server/send-payload",
-    "next/dist/server/lib/server-action-request-meta",
-    "next/dist/server/lib/streaming-metadata",
-    "next/dist/server/route-modules/app-page/dev-render-context",
-    "next/dist/server/route-modules/app-page/parse-request-headers",
-    "next/dist/shared/lib/router/utils/app-paths",
-    "next/dist/shared/lib/router/utils/is-bot",
-    "next/dist/shared/lib/size-limit",
     "next/dist/compiled/stream-browserify",
     "next/dist/shared/lib/router/utils/route-regex",
     "next/dist/shared/lib/router/utils/route-matcher",

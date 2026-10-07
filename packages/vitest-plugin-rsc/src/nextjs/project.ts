@@ -811,6 +811,11 @@ export async function loadNextProject(
     "loadManifestFromRelativePath",
     "evalManifestFromRelativePath",
   );
+  // Next's request handler of a page makes the route module, in the rsc
+  // layer. The plugin gives it the class of the ssr layer for this import.
+  runtimeFile("build/templates/app-page-runtime").contains(
+    "server/route-modules/app-page/module.compiled",
+  );
   // The plugin turns Next's renderer to web streams with this.
   runtimeFile("server/app-render/stream-ops").contains("process.env.__NEXT_USE_NODE_STREAMS");
   const setManifests = runtimeFile("server/app-render/manifests-singleton").export(
@@ -856,16 +861,13 @@ export async function loadNextProject(
   }
 
   // The route entry of a page binds Next's renderer to its bundler: its module
-  // loader, and a runtime that also holds the request handler for Node.js.
-  // Here both are this package's: rsc.ts, app-page-entrypoint.ts.
+  // loader, which here is this package's (rsc.ts). It imports Next's runtime
+  // for a page, which has the request handler for Node.js.
   const bindPageEntry = (code: string, where: string) => {
     code = replace(code, /\b__webpack_require__\b/g, "__next_require__", where);
-    code = replace(
-      code,
-      /(["'])next\/dist\/build\/templates\/app-page-runtime\1/,
-      `"vitest-plugin-rsc/nextjs/app-page-entrypoint"`,
-      where,
-    );
+    if (!/(["'])next\/dist\/build\/templates\/app-page-runtime\1/.test(code)) {
+      fail(`${where} has no \`next/dist/build/templates/app-page-runtime\``);
+    }
     return `import { requireModule as __next_require__ } from "vitest-plugin-rsc/nextjs/rsc";\n${code}`;
   };
 

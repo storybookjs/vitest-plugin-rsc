@@ -14,10 +14,10 @@ export type ServerRequest = {
 };
 
 /**
- * The request handler Next's build makes for a route handler, for Node.js:
- * it takes an `http.IncomingMessage` and writes to an `http.ServerResponse`.
+ * The request handler Next's build makes for a route, for Node.js: it takes
+ * an `http.IncomingMessage` and writes to an `http.ServerResponse`.
  */
-export type RouteHandler = (
+export type RequestHandler = (
   req: unknown,
   res: unknown,
   context: { waitUntil?: (promise: Promise<unknown>) => void; requestMeta?: object },
@@ -44,7 +44,7 @@ export type NextRegistry = {
   loadAppPage(page: string): Promise<unknown>;
   appPages: Record<string, unknown>;
   /** Loads the request handler of a route handler, which is in the rsc layer. */
-  loadRouteHandler(page: string): Promise<RouteHandler>;
+  loadRouteHandler(page: string): Promise<RequestHandler>;
   /** Whether an id names a Server Action of the app, in the rsc layer. */
   hasServerAction(id: string): Promise<boolean>;
   /**

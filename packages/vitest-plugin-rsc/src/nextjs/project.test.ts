@@ -284,8 +284,8 @@ test("gives the route of a node the segments of its pathname, and nothing of the
       `}, {}, null] }, {}, null] }, { ${boundaries.join(", ")} }, null]`,
   );
   expect(code).toContain('page: "/notes/[id]/page"');
-  // Bound to this package like the entry of a page of the app.
-  expect(code).toContain('from "vitest-plugin-rsc/nextjs/app-page-entrypoint"');
+  // Next's own request handler, like the entry of a page of the app.
+  expect(code).toContain('from "next/dist/build/templates/app-page-runtime"');
   expect(code).not.toContain("__webpack_require__");
   expect(code).not.toContain(project.appDir);
   expect(watchFiles).toEqual([]);

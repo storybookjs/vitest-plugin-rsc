@@ -10,20 +10,20 @@ Next.js is two things. A build, written for webpack and Turbopack, that turns `a
 
 Only the build is tied to a bundler. So this plugin does the build with Vite, and asks Next's own build code for everything that is not bundling:
 
-| What                                         | Where it comes from                                                               |
-| -------------------------------------------- | --------------------------------------------------------------------------------- |
-| The routes of the app                        | `next/dist/build/route-discovery`, `normalizeCatchAllRoutes()`                    |
-| A route's loader tree: page, layouts, errors | `next-app-loader`, Next's webpack loader, called as-is                            |
-| A page's request handler                     | Next's route module: `prepare()` and `render()`, see [below](#the-nodejs-runtime) |
-| A route handler's route module               | `next-app-loader` again, which expands `templates/app-route`                      |
-| A route handler's request handler            | In the same template, `templates/app-route`: `handler(req, res)`                  |
-| Compile-time constants                       | `getDefineEnv()`                                                                  |
-| Module aliases, per layer                    | `createWebpackAliases()` and the other alias tables                               |
-| React                                        | The React that Next ships, through `createVendoredReactAliases()`                 |
-| The compile of a source file of the app      | Next's SWC transform, with `getLoaderSWCOptions()` for its layer                  |
-| A call of a `next/font` function             | `next-font-loader` and Next's `css-loader`, called as-is                          |
-| An imported image                            | `next-image-loader`, called as-is                                                 |
-| An image behind `/_next/image`               | Next's image optimizer, `next/dist/server/image-optimizer`                        |
+| What                                         | Where it comes from                                               |
+| -------------------------------------------- | ----------------------------------------------------------------- |
+| The routes of the app                        | `next/dist/build/route-discovery`, `normalizeCatchAllRoutes()`    |
+| A route's loader tree: page, layouts, errors | `next-app-loader`, Next's webpack loader, called as-is            |
+| A page's request handler                     | `next/dist/build/templates/app-page-runtime`: `handler(req, res)` |
+| A route handler's route module               | `next-app-loader` again, which expands `templates/app-route`      |
+| A route handler's request handler            | In the same template, `templates/app-route`: `handler(req, res)`  |
+| Compile-time constants                       | `getDefineEnv()`                                                  |
+| Module aliases, per layer                    | `createWebpackAliases()` and the other alias tables               |
+| React                                        | The React that Next ships, through `createVendoredReactAliases()` |
+| The compile of a source file of the app      | Next's SWC transform, with `getLoaderSWCOptions()` for its layer  |
+| A call of a `next/font` function             | `next-font-loader` and Next's `css-loader`, called as-is          |
+| An imported image                            | `next-image-loader`, called as-is                                 |
+| An image behind `/_next/image`               | Next's image optimizer, `next/dist/server/image-optimizer`        |
 
 Everything behind those is Next's runtime, unchanged: what it writes to the response of its server is the `Response` the tab gets.
 
@@ -35,26 +35,26 @@ All of this is internal to Next, and it changes between minor versions. The outp
 
 That file checks what the plugin relies on when a run starts, or for a loader when it is first used: of the build code, and of the runtime that the plugin's own modules call in the tab. Of the runtime it checks what would fail silently, or without saying why: a hook, a global, `document.currentScript`, what the shim of `server-reference-info` replaces, the manifests. A static import of a name that is gone needs no check: the module fails to link, with a `SyntaxError` that names it. The files of the runtime are only read for it, not loaded: they run in the tab. A Next.js that differs stops the run with one message: the version, and what is different.
 
-| What is checked                                                                                              | Without the check                                                       |
-| ------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------- |
-| Every file and export of the build code that is called                                                       | A `TypeError` somewhere in the plugin                                   |
-| `discoverRoutes()` returns `mappedAppPages`                                                                  | An app without routes: every URL is a 404                               |
-| `getDefineEnv()` sets `process.env.NEXT_RUNTIME` to `nodejs` for the server layers                           | Next's code takes the branches of another runtime                       |
-| The alias tables have `react-server-dom-webpack/server$`                                                     | A `TypeError` on a path                                                 |
-| `IncrementalCache` takes `fs`, `serverDistDir` and `fetchCacheKeyPrefix`                                     | Nothing is cached, or a test finds another's entries                    |
-| The SWC transform turns a call of a `next/font` function into an import of `next/font/.../target.css?`       | A font function that throws, without a message                          |
-| The SWC transform marks a `"use client"` module of the `rsc` layer                                           | A client module that asks for the `require` of Next's bundler           |
-| `getNextFontLoader()` uses css-loader and next-font-loader, and css-loader makes a list of CSS with `locals` | A font without CSS, or without class names                              |
-| `next-image-loader` makes a module that starts with `export default {`                                       | An imported image that is not what `next/image` takes                   |
-| The app loader's output has `__webpack_require__` and imports `app-page-runtime`                             | Next's Node.js request handler loads in the tab                         |
-| The `app-route` template loads `route.ts` with `userland: () => require(`                                    | A `require` that the tab does not have                                  |
-| `stream-ops` reads `process.env.__NEXT_USE_NODE_STREAMS`                                                     | Next renders to Node.js streams, which a tab does not have              |
-| The client entry has `hydrate()`, which the plugin imports once the page is there                            | A `TypeError` when a page loads                                         |
-| Next's root component calls `__NEXT_HYDRATED_CB` under `process.env.__NEXT_TEST_MODE`                        | `renderServer()` waits for the page to hydrate until the test times out |
-| Next takes its asset prefix from the `/_next/` URL of `document.currentScript`                               | The app does not start in the tab                                       |
-| `server-reference-info` has the functions the plugin replaces for Vite RSC's ids                             | Next rejects the ids of Vite RSC's Server Actions                       |
-| The route module reads the manifests through `load-manifest.external`                                        | Next looks for the files of a build in `.next/`                         |
-| `setManifestsSingleton()` takes `page`, `clientReferenceManifest` and `serverActionsManifest`                | Manifests that Next does not read                                       |
+| What is checked                                                                                                                       | Without the check                                                            |
+| ------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| Every file and export of the build code that is called                                                                                | A `TypeError` somewhere in the plugin                                        |
+| `discoverRoutes()` returns `mappedAppPages`                                                                                           | An app without routes: every URL is a 404                                    |
+| `getDefineEnv()` sets `process.env.NEXT_RUNTIME` to `nodejs` for the server layers                                                    | Next's code takes the branches of another runtime                            |
+| The alias tables have `react-server-dom-webpack/server$`                                                                              | A `TypeError` on a path                                                      |
+| `IncrementalCache` takes `fs`, `serverDistDir` and `fetchCacheKeyPrefix`                                                              | Nothing is cached, or a test finds another's entries                         |
+| The SWC transform turns a call of a `next/font` function into an import of `next/font/.../target.css?`                                | A font function that throws, without a message                               |
+| The SWC transform marks a `"use client"` module of the `rsc` layer                                                                    | A client module that asks for the `require` of Next's bundler                |
+| `getNextFontLoader()` uses css-loader and next-font-loader, and css-loader makes a list of CSS with `locals`                          | A font without CSS, or without class names                                   |
+| `next-image-loader` makes a module that starts with `export default {`                                                                | An imported image that is not what `next/image` takes                        |
+| The app loader's output has `__webpack_require__` and imports `app-page-runtime`, which imports the route module as `module.compiled` | A `require` that the tab does not have, or a route module of the wrong layer |
+| The `app-route` template loads `route.ts` with `userland: () => require(`                                                             | A `require` that the tab does not have                                       |
+| `stream-ops` reads `process.env.__NEXT_USE_NODE_STREAMS`                                                                              | Next renders to Node.js streams, which a tab does not have                   |
+| The client entry has `hydrate()`, which the plugin imports once the page is there                                                     | A `TypeError` when a page loads                                              |
+| Next's root component calls `__NEXT_HYDRATED_CB` under `process.env.__NEXT_TEST_MODE`                                                 | `renderServer()` waits for the page to hydrate until the test times out      |
+| Next takes its asset prefix from the `/_next/` URL of `document.currentScript`                                                        | The app does not start in the tab                                            |
+| `server-reference-info` has the functions the plugin replaces for Vite RSC's ids                                                      | Next rejects the ids of Vite RSC's Server Actions                            |
+| The route module reads the manifests through `load-manifest.external`                                                                 | Next looks for the files of a build in `.next/`                              |
+| `setManifestsSingleton()` takes `page`, `clientReferenceManifest` and `serverActionsManifest`                                         | Manifests that Next does not read                                            |
 
 Apart from the options of `setManifestsSingleton()`, a function that is still there but takes other arguments is not checked: a function of the build code fails with its own error, at startup, one of the runtime when a test calls it. What it cannot check either is what Next's runtime does with all of that once a request comes in: a manifest field it starts to read, or a key it starts to require in the loader tree. That shows up as a failing test. CI runs both playgrounds against `next@latest` and `next@canary` for it.
 
@@ -110,7 +110,9 @@ What Next's build does that the plugin does not, is under [Not Yet](#not-yet).
 renderServer({ url: "/notes/1" })
   │  GET /notes/1                          the browser's fetch, with its cookies
   ▼
-ssr      prepare(), render()               Next's route module for the route
+rsc      handler(req, res)                 Next's request handler for the route
+  ▼
+ssr      prepare(), render()               Next's route module
   │        └─ app-render
   ▼
 rsc      Server Components → Flight        your page, layouts, data
@@ -133,7 +135,7 @@ After that, Next's router is in charge. A `<Link>` navigation is an RSC request 
 renderServer(<Node />, { url: "/notes/7" })
   │  GET /notes/7                          the same request, with the tab's cookies
   ▼
-ssr      prepare(), render()               the same route module, for the route of the node
+rsc      handler(req, res)                 the same request handler, for the route of the node
   ▼
 rsc      loader tree → Flight              a tree with the node as its page, and no layout
   ▼
@@ -390,7 +392,7 @@ What a Node.js server has and a tab does not:
 | `http.IncomingMessage`, `http.ServerResponse`                | Two objects in `node-server.ts` with what Next reads and writes. The response becomes a `Response` at its first byte, and a reader that cancels its body closes it, as a browser that leaves does                                               |
 | The manifests in `.next/`                                    | `load-manifest.external`, the module Next keeps out of its bundle to read them, answers from memory                                                                                                                                             |
 | The request handler of a route handler                       | Next's own, `templates/app-route`, as `next start` calls it: `handler(req, res, ctx)`                                                                                                                                                           |
-| The request handler of a page                                | `routeModule.prepare()` and `routeModule.render()`, then Next's `sendRenderResult()`, as Next's handler calls them. Not `templates/app-page-runtime` itself: around those calls it serves prerendered pages and partial prerenders              |
+| The request handler of a page                                | Next's own, `templates/app-page-runtime`, as `next start` calls it: `handler(req, res, ctx)`. It makes the route module in the `rsc` layer, and gets the class of the `ssr` layer for it                                                        |
 | `node:stream`, `stream/promises`                             | `next/dist/compiled/stream-browserify`, which Next ships, with `Readable.toWeb()` and `fromWeb()` added                                                                                                                                         |
 | The body of a Server Action: busboy, `decodeReplyFromBusboy` | Next's busboy on that stream. The parts are collected into a `FormData` for Vite RSC's `decodeReply`                                                                                                                                            |
 | `node:crypto`                                                | Web Crypto for random values. A SHA-256 in JavaScript for `createHash`, which Next's cache keys need at once; another algorithm throws                                                                                                          |
@@ -406,7 +408,7 @@ What a Node.js server has and a tab does not:
 What is still to do on it:
 
 - Cache Components and `"use cache"`. Their code is reached only with `cacheComponents`, and needs what a tab does not have at all: `AsyncLocalStorage` for more than one scope at a time, the order of `process.nextTick` and `setImmediate` in Node's event loop, and Next's patched `Date` and `Math.random`. The stand-in for `fast-set-immediate.external` throws where that starts.
-- `templates/app-page-runtime` for pages, with the response cache around a render. Until then a page has no `ETag` handling of a prerendered page and no partial prerendering.
+- Prerendered pages. Next's request handler of a page has the response cache of a build around a render, and here no page is in it: every request renders its page.
 - `proxy.ts`, `instrumentation.ts`, draft mode, a `cacheHandler` of the app: `load-manifest.external` and its neighbours are where they would go.
 
 ## Watch Mode
