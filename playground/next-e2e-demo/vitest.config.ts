@@ -26,6 +26,8 @@ function hitsService(): Plugin {
 
 export default defineProject({
   root: fileURLToPath(new URL("./", import.meta.url)),
+  // Where the service worker of MSW is, which the cache tests use.
+  publicDir: fileURLToPath(new URL("../../public", import.meta.url)),
   plugins: [
     vitestPluginRSC(),
     // The helpers in `test/` work on the page, so they have to see the browser.

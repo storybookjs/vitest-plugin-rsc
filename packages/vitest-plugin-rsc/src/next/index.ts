@@ -308,12 +308,13 @@ function leavePage(): Promise<void> {
 
 /**
  * Leaves the page that `renderServer()` opened and forgets the tab's cookies and
- * what the app put in its storage, like a new browser context. Runs before and
- * after every test.
+ * what the app put in its storage, like a new browser context. The server
+ * forgets what it has cached. Runs before and after every test.
  */
 export async function cleanup(): Promise<void> {
   await leavePage();
   registry.pageOverrides = {};
+  ssr.resetCaches();
   clearCookies();
   for (const [storage, keys] of storages) {
     for (const key of Object.keys(storage)) if (!keys.has(key)) storage.removeItem(key);

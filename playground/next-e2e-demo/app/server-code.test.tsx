@@ -2,6 +2,7 @@ import { handleRequest, renderServer } from "vitest-plugin-rsc/next";
 import { afterEach, beforeEach, expect, test, vi, type MockInstance } from "vitest";
 import { page } from "vitest/browser";
 import { signInAs, whereAmI } from "../test/browser.ts";
+import { requestHits } from "../test/service.ts";
 
 // The app's server code runs in this tab, compiled as server code: without the
 // tab's `window`, and with the `fetch`, `Request` and `Response` of a server.
@@ -17,13 +18,6 @@ afterEach(() => {
   // React reports a hydration mismatch here, and Next a failed render.
   expect(consoleError.mock.calls).toEqual([]);
 });
-
-// The requests the service in vitest.config.ts has had for a key, this one included.
-async function requestHits(key: string): Promise<number> {
-  const response = await fetch(`/service/hits?key=${key}`);
-  const { hits } = (await response.json()) as { hits: number };
-  return hits;
-}
 
 test("renders a Client Component without a window on the server, and with one in the browser", async () => {
   const response = await handleRequest("/environment");

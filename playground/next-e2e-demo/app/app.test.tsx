@@ -331,3 +331,17 @@ test("leaves the page with unmount()", async () => {
 
   await expect.element(page.getByRole("heading", { name: "Home" })).not.toBeInTheDocument();
 });
+
+test("replaces the page when a component redirects in the render after a Server Action", async () => {
+  await renderServer({ url: "/members" });
+  await expect.element(page.getByRole("heading", { name: "Members" })).toBeVisible();
+  const entries = window.history.length;
+
+  await page.getByRole("button", { name: "Sign in as ada" }).click();
+
+  await expect.element(page.getByRole("heading", { name: "Account" })).toBeVisible();
+  expect(window.location.pathname).toBe("/account");
+  // A redirect() in a Server Action adds an entry to the history. This one is
+  // in a component, so it replaces the entry of the page.
+  expect(window.history.length).toBe(entries);
+});
