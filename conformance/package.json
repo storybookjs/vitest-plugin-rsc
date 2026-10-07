@@ -1,0 +1,37 @@
+{
+  "name": "next-conformance",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "conformance": "node src/run.ts",
+    "test": "node --test \"src/*.test.ts\" \"shim/*.test.ts\""
+  },
+  "dependencies": {
+    "next": "16.4.0",
+    "react": "19.2.6",
+    "react-dom": "19.2.6"
+  },
+  "devDependencies": {
+    "@types/node": "^24.12.4",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-rsc": "0.5.36",
+    "@vitest/browser": "5.0.3",
+    "@vitest/browser-playwright": "5.0.3",
+    "cheerio": "^1.1.2",
+    "jest-extended": "4.0.2",
+    "nanoid": "4.0.1",
+    "outdent": "0.8.0",
+    "pathe": "^2.0.3",
+    "playwright": "^1.60.0",
+    "server-only": "^0.0.1",
+    "strip-ansi": "^7.1.2",
+    "typescript": "^6.0.3",
+    "vite": "^8.3.1",
+    "vitest": "5.0.3",
+    "vitest-plugin-rsc": "workspace:*"
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}

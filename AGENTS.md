@@ -29,3 +29,5 @@ Vitest projects that import `vitest-plugin-rsc` use the package exports. From th
 Keep Vitest project definitions and coverage settings in the root `vitest.config.ts`. Vitest coverage is process-level config, so do not add `coverage` blocks to individual project configs.
 
 For bigger feature work, run the full Next.js notes demo suite from the root (`pnpm test --project nextjs-notes-demo-browser --project nextjs-notes-demo-node`) before merging. It is the in-tree acceptance app: its tests open the routes of the app with `renderServer({ url })` and cover the realistic combinations of routing, cookies, forms, Server Actions and third-party client packages.
+
+`pnpm conformance` runs fixtures of Next's own e2e tests against the plugin, see `docs/next-conformance.md`. It is not a part of `pnpm test`: it fetches the fixtures from `vercel/next.js` and takes minutes. Run it after a change to how the plugin runs Next.js. A test that starts or stops passing fails it; `pnpm conformance --update` records the change in `conformance/expectations.json`, where every failing test has a reason.

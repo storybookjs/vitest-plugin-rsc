@@ -1,6 +1,7 @@
 packages:
   - "packages/*"
   - "playground/**"
+  - "conformance"
 allowBuilds:
   esbuild: true
   msw: true

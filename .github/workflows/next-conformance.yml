@@ -1,0 +1,69 @@
+name: Next.js conformance
+
+# Runs fixtures of Next's own e2e tests against the plugin, see
+# docs/next-conformance.md. Not a part of CI, and no check that a pull request
+# needs: it takes its time, and it fetches from vercel/next.js. It runs when
+# the runner changes, by hand, and once a week against the canary of Next.js,
+# to tell early when Next changes what the plugin relies on.
+on:
+  workflow_dispatch:
+    inputs:
+      next:
+        description: The Next.js to run, like `canary` or `16.5.0`. Empty for the pinned one.
+        required: false
+  schedule:
+    - cron: "0 5 * * 1"
+  pull_request:
+    paths:
+      - "conformance/**"
+      - ".github/workflows/next-conformance.yml"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  conformance:
+    name: Next.js ${{ inputs.next || (github.event_name == 'schedule' && 'canary') || 'pinned' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      NEXT: ${{ inputs.next || (github.event_name == 'schedule' && 'canary') || '' }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # The fixtures are fetched at the tag of the Next.js that is installed.
+      # The expectations are of the pinned one: against another Next.js, what
+      # differs is what the run is for.
+      - name: Install Next.js ${{ env.NEXT }}
+        if: env.NEXT != ''
+        run: |
+          pnpm --filter next-conformance add --config.minimum-release-age=0 "next@$NEXT"
+          pnpm --filter next-conformance exec node -p "'next@' + require('next/package.json').version"
+      - run: pnpm exec playwright install --with-deps --only-shell chromium
+      - run: pnpm --filter next-conformance test
+      - name: Run the fixtures
+        run: |
+          set -o pipefail
+          pnpm conformance | tee conformance.log
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo '```'
+            sed -n '/tests pass/,$p' conformance.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: next-conformance
+          path: |
+            conformance/.results
+            conformance/.work/logs
+          include-hidden-files: true
