@@ -638,13 +638,32 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
   const relatedRoutes = createRelatedRoutes({
     environments: layers.map((layer) => environmentOf[layer]),
     lists,
-    modulesOf,
     appDir: () => project.appDir,
-    shared: () =>
-      ["next.config.js", "next.config.mjs", "next.config.ts", "next.config.mts", "tsconfig.json"]
-        .map((name) => path.join(project.root, name))
-        .filter((file) => fs.existsSync(file)),
+    // What Next reads next to the `app` directory, in the root or in `src`,
+    // and the mocks of packages, which Vitest reads from the root.
+    shared: () => {
+      const mocks = path.join(project.root, "__mocks__");
+      return [
+        ...nextFiles(),
+        ...(fs.existsSync(mocks)
+          ? (fs.readdirSync(mocks, { recursive: true }) as string[])
+              .map((name) => path.join(mocks, name))
+              .filter((file) => fs.statSync(file).isFile())
+          : []),
+      ];
+    },
   });
+  const nextFiles = () =>
+    [...new Set([project.root, path.dirname(project.appDir)])].flatMap((directory) =>
+      fs
+        .readdirSync(directory)
+        .filter((name) =>
+          /^(next\.config|middleware|proxy|instrumentation(-client)?)\.\w+$|^[tj]sconfig(\.[\w-]+)?\.json$|^\.env(\.|$)/.test(
+            name,
+          ),
+        )
+        .map((name) => path.join(directory, name)),
+    );
   // Watch mode runs the test files that loaded a route, see watch.ts.
   const routeWatch = createRouteWatch({ environment: environmentOf.rsc, lists, modulesOf });
   const resolvers = Object.fromEntries(
@@ -767,11 +786,14 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
         // Vitest lists the commands for the tab when the project starts.
         ((test.browser ??= {}).commands ??= {})[routeLoadedCommand] = (
           context: { testPath: string | undefined },
-          kind: RouteKind,
+          kind: RouteKind | "action",
           page: string,
         ) => {
+          // A Server Action of a module that no page of the test imports: the
+          // id of an action starts with its module.
+          if (kind === "action") return relatedRoutes.loaded(context.testPath, [page]);
           routeWatch.command(context, kind, page);
-          relatedRoutes.loaded(context.testPath, kind, page);
+          relatedRoutes.loaded(context.testPath, modulesOf(kind, page));
         };
 
         return {
@@ -846,9 +868,8 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
         relatedRoutes.start(vitest, testProject, isIncluded);
       },
       // Vitest looks up the test files of a changed file in this environment.
-      async transform(code, id) {
-        const imports = await relatedRoutes.imports(this.environment.name, id.split("?")[0]!);
-        if (imports) return { code: code + imports, map: null };
+      transform(_, id) {
+        return relatedRoutes.lookup(this.environment.name, id.split("?")[0]!);
       },
       resolveId(source) {
         if (source === manifestId || routeModules.some(isRouteModule(source))) return `\0${source}`;
