@@ -28,8 +28,8 @@ export async function start(): Promise<{ unmount(): void }> {
   ReactDOMClient.hydrateRoot = (...args) => (root = hydrateRoot(...args));
   ReactDOMClient.createRoot = (...args) => (root = createRoot(...args));
 
-  // Next's entry starts to read the Flight payload in the document as it
-  // loads, so it loads here, once Client Components can be loaded.
+  // Next's entry reads the Flight payload in the document when it loads, so
+  // it loads here, once Client Components can be loaded.
   const { hydrate } = await import("next/dist/client/app-index");
   // Next reads its asset prefix off the URL of the script that is running,
   // which for a deployment is the bootstrap script in the server's HTML.

@@ -54,12 +54,13 @@ test("navigates on the client with next/link", async () => {
   await expect.poll(() => document.title).toBe("Inbox triage | Notes");
 });
 
-test("streams a page behind its loading.tsx", async () => {
+test("shows loading.tsx while the next page waits for its data", async () => {
+  db.notes.set("1", { id: "1", title: "Inbox triage", body: "Sort the inbox" });
+  await renderServer({ url: "/notes" });
   let resolveNote!: (note: Note) => void;
   vi.spyOn(db, "getNote").mockReturnValue(new Promise((resolve) => (resolveNote = resolve)));
 
-  // The document arrives in parts: what the server has, then the page.
-  await renderServer({ url: "/notes/1" });
+  await page.getByRole("link", { name: "Inbox triage" }).click();
   await expect.element(page.getByText("Loading note…")).toBeVisible();
 
   resolveNote({ id: "1", title: "Inbox triage", body: "Sort the inbox" });

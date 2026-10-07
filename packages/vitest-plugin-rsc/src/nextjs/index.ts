@@ -251,14 +251,13 @@ async function loadPage(
             `A browser would show or download it, which this tab cannot do.`,
     );
   }
-  const { interactive } = loadDocument(response.body);
+  // The whole document, then the app: what a browser has once the page has
+  // loaded.
+  const html = await response.text();
+  superseded();
+  loadDocument(html);
   // Where the browser ended up, after any redirects.
   window.history.replaceState(null, "", response.url);
-
-  // The app starts when its bootstrap script is there, which is with the
-  // first part of the document: the server can still be sending the rest.
-  await interactive;
-  superseded();
   // A page load runs the app's scripts from scratch, so every page gets a
   // module graph of its own for the browser layer.
   const runner = createEnvironmentRunner("react_client");

@@ -13,7 +13,13 @@ let consoleError: MockInstance<typeof console.error>;
 beforeEach(() => {
   vi.restoreAllMocks();
   consoleError = vi.spyOn(console, "error");
-  Object.assign(reports, { author: "nobody", duration: 0, waitFor: undefined, written: 0 });
+  Object.assign(reports, {
+    author: "nobody",
+    duration: 0,
+    waitFor: undefined,
+    started: 0,
+    written: 0,
+  });
 });
 
 afterEach(() => {
@@ -125,11 +131,12 @@ test("does not keep what a cached function computes after its test has ended", a
   reports.author = "ada";
   let finishReport = () => {};
   reports.waitFor = new Promise((resolve) => (finishReport = resolve));
-  await renderServer({ url: "/reports/7" });
-  await expect.element(page.getByText("Writing the report…")).toBeVisible();
+  const opening = renderServer({ url: "/reports/7" });
+  await expect.poll(() => reports.started).toBe(1);
 
   // What runs between two tests, while the report is still being written.
   await cleanup();
+  await expect(opening).rejects.toThrow("The page was left");
   finishReport();
   await expect.poll(() => reports.written).toBe(1);
   // Both reports are in before the next page is asked for.
