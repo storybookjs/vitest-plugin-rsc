@@ -1,4 +1,4 @@
-import { handleRequest, renderServer } from "vitest-plugin-rsc/nextjs";
+import { cleanup, handleRequest, renderServer } from "vitest-plugin-rsc/nextjs";
 import { afterEach, beforeEach, expect, test, vi, type MockInstance } from "vitest";
 import { page } from "vitest/browser";
 import { cookies, headers } from "next/headers";
@@ -219,6 +219,45 @@ test("loads the page when the app navigates without its router", async () => {
 
   await expect.element(page.getByRole("heading", { name: "Notes" })).toBeVisible();
   expect(window.location.pathname).toBe("/notes");
+});
+
+test("rejects a page load that the test leaves before the server has responded", async () => {
+  // The notes page has no loading.tsx: the server sends nothing until it has
+  // the notes, which do not come.
+  const listNotes = vi.spyOn(db, "listNotes").mockReturnValue(new Promise(() => {}));
+  const load = renderServer({ url: "/notes" });
+  const left = expect(load).rejects.toThrow("The page was left before it had loaded.");
+  await expect.poll(() => listNotes).toHaveBeenCalled();
+
+  // What runs between two tests.
+  await cleanup();
+
+  await left;
+});
+
+test("does not report the render of a page that the test left before it had its data", async () => {
+  // Next reports the render that goes on without its request.
+  consoleError.mockImplementation(() => {});
+  await renderServer({ url: "/" });
+  let resolveNotes = (_: Note[]) => {};
+  const listNotes = vi
+    .spyOn(db, "listNotes")
+    .mockReturnValue(new Promise((resolve) => (resolveNotes = resolve)));
+  // An uncaught error, which would fail this test run too.
+  const reportError = vi.spyOn(window, "reportError").mockImplementation(() => {});
+  await page.getByRole("link", { name: "All notes, the long way" }).click();
+  await expect.poll(() => listNotes).toHaveBeenCalled();
+
+  await cleanup();
+  resolveNotes([]);
+
+  // The render goes on without its request until Next gives up on it.
+  await expect
+    .poll(() => consoleError.mock.calls.flat().map(String).join("\n"))
+    .toContain("Expected workStore to be initialized");
+  await new Promise((resolve) => setTimeout(resolve));
+  consoleError.mockClear();
+  expect(reportError).not.toHaveBeenCalled();
 });
 
 test("reports a navigation to another origin and stays on the page", async () => {

@@ -61,6 +61,30 @@ function leftTheApp(url: URL): Error {
   );
 }
 
+// As with `fetch`, a request rejects as soon as its signal aborts. The server
+// may still answer, or fail: a render that goes on without its request fails
+// in its own ways. Nobody reads that answer.
+function unlessAborted(answer: Promise<Response>, signal: AbortSignal): Promise<Response> {
+  return new Promise((resolve, reject) => {
+    const abort = () => {
+      reject(signal.reason);
+      answer.then((response) => response.body?.cancel()).catch(() => {});
+    };
+    if (signal.aborted) return abort();
+    signal.addEventListener("abort", abort, { once: true });
+    answer.then(
+      (response) => {
+        signal.removeEventListener("abort", abort);
+        resolve(response);
+      },
+      (error: unknown) => {
+        signal.removeEventListener("abort", abort);
+        reject(error);
+      },
+    );
+  });
+}
+
 // The network between a browser and the Next.js server in this tab. It does
 // what a browser does for a same-origin request: send the cookies, store the
 // ones that come back, follow redirects. A page load, a `navigation`, that is
@@ -79,13 +103,10 @@ async function browserFetch(request: Request, navigation = false): Promise<Respo
     if (method !== "GET" && method !== "HEAD") headers.set("origin", url.origin);
     if (!headers.has("cookie") && document.cookie) headers.set("cookie", document.cookie);
 
-    const response = await ssr.handleRequest({
-      url: url.href,
-      method,
-      headers,
-      body,
-      signal: request.signal,
-    });
+    const response = await unlessAborted(
+      ssr.handleRequest({ url: url.href, method, headers, body, signal: request.signal }),
+      request.signal,
+    );
     for (const cookie of response.headers.getSetCookie()) {
       // A script cannot store an HttpOnly cookie, and `document.cookie` is the
       // cookie jar of this tab, so store it as a regular one.
