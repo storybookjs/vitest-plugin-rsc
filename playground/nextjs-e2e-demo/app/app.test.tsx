@@ -1,9 +1,10 @@
 import { cleanup, handleRequest, renderServer } from "vitest-plugin-rsc/nextjs";
 import { afterEach, beforeEach, expect, test, vi, type MockInstance } from "vitest";
-import { page } from "vitest/browser";
+import { cdp, page } from "vitest/browser";
 import { cookies, headers } from "next/headers";
 import { Counter } from "./components/counter.tsx";
 import { FavoriteButton } from "./components/favorite-button.tsx";
+import { Shortcuts } from "./components/shortcuts.tsx";
 import { Widget } from "./components/widget.tsx";
 import { db, type Note } from "./lib/notes.ts";
 
@@ -412,6 +413,80 @@ test("leaves the page when a Client Component makes a React root of its own", as
 
   window.removeEventListener("widget-unmount", widgetUnmount);
   expect(widgetUnmount).toHaveBeenCalledOnce();
+});
+
+test("lets go of a page that the test has left, with all of its modules", async () => {
+  const tab = globalThis as { __viteRscCallServer?: object };
+  await renderServer({ url: "/" });
+  // A function of the page's own modules.
+  const callServer = new WeakRef(tab.__viteRscCallServer!);
+
+  await renderServer({ url: "/" });
+
+  // Once the tasks it had queued have run.
+  await expect
+    .poll(
+      async () => {
+        await cdp().send("HeapProfiler.collectGarbage");
+        // Not the function itself: the assertion would keep it.
+        return callServer.deref() === undefined;
+      },
+      { timeout: 4000, interval: 100 },
+    )
+    .toBe(true);
+});
+
+test("removes the listeners that React added to the document", async () => {
+  const added = vi.spyOn(document, "addEventListener");
+  const removed = vi.spyOn(document, "removeEventListener");
+
+  const { unmount } = await renderServer({ url: "/" });
+  // One for every event React knows.
+  expect(added.mock.calls.length).toBeGreaterThan(50);
+  await unmount();
+
+  expect(removed.mock.calls).toEqual(expect.arrayContaining(added.mock.calls));
+});
+
+test("keeps the listeners that the test adds while a page is open", async () => {
+  await renderServer({ url: "/" });
+  const listener = vi.fn();
+  window.addEventListener("test-event", listener);
+
+  await renderServer({ url: "/" });
+
+  window.dispatchEvent(new Event("test-event"));
+  window.removeEventListener("test-event", listener);
+  expect(listener).toHaveBeenCalledOnce();
+});
+
+test("keeps the listeners that the app's own code adds", async () => {
+  const { unmount } = await renderServer(<Shortcuts />, { url: "/" });
+  await unmount();
+  const answer = vi.fn();
+  window.addEventListener("shortcuts-answer", answer, { once: true });
+
+  window.dispatchEvent(new Event("shortcuts-ask"));
+
+  expect(answer).toHaveBeenCalledOnce();
+});
+
+test("leaves an error that the test handles to the test", async () => {
+  const handle = vi.fn((event: ErrorEvent) => event.preventDefault());
+  window.addEventListener("error", handle);
+  const { unmount } = await renderServer({ url: "/" });
+  await unmount();
+
+  reportError(new Error("Handled by the test"));
+
+  window.removeEventListener("error", handle);
+  expect(handle).toHaveBeenCalledOnce();
+  // Vitest fails the run on an error that the test has no listener for. One
+  // that it has a listener for, it logs.
+  expect(consoleError).toHaveBeenCalledExactlyOnceWith(
+    new Error("Uncaught Error: Handled by the test"),
+  );
+  consoleError.mockClear();
 });
 
 test("replaces the page when a component redirects in the render after a Server Action", async () => {

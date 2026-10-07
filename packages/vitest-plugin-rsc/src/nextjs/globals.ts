@@ -97,9 +97,6 @@ class ServerResponse extends NativeResponse {
 registry.Request = ServerRequest;
 registry.Response = ServerResponse;
 registry.enterRequestScope = enterAmbientScope;
-// The browser's Flight client reads properties off `__webpack_require__` when
-// it loads, which is before the browser layer can say how it loads a module.
-registry.browserRequire = (id) => registry.loadBrowserModule(id);
 
 // Next patches the `fetch` of its server to cache and dedupe. That must not
 // be the `fetch` of the page, which is the browser's.

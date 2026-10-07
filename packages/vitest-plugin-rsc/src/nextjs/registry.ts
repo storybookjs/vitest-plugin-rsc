@@ -46,7 +46,7 @@ export type NextRegistry = {
   loadSsrModule(id: string): Promise<unknown>;
   /**
    * `__webpack_require__` for the Flight client of the browser layer: loads a
-   * Client Component by its module id, in that layer.
+   * Client Component by its module id, in that layer. One for every page.
    */
   browserRequire(id: string): Promise<unknown>;
   loadBrowserModule(id: string): Promise<unknown>;
