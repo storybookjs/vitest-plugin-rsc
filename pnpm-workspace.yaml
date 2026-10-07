@@ -5,3 +5,5 @@ allowBuilds:
   esbuild: true
   msw: true
   sharp: true
+patchedDependencies:
+  "@vitest/browser@5.0.2": patches/@vitest__browser@5.0.2.patch

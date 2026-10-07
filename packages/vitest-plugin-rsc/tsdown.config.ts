@@ -3,7 +3,6 @@ import { defineConfig } from "tsdown";
 export default defineConfig({
   entry: [
     "src/index.ts",
-    "src/setup-mocks.ts",
     "src/async-local-storage.ts",
     "src/async-hooks.ts",
     "src/testing-library.tsx",

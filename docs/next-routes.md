@@ -75,7 +75,7 @@ And for the browser side, a page load: the tab cannot navigate away from the tes
 
 The mocks of app modules go in a setup file. With `isolate: false` the test files of a tab share their modules, so a module is mocked for all of them or for none, and the file that loads it first decides. A setup file runs before every test file. A bare `vi.mock("./app/lib/weather.ts")` there is enough, and a test says what the mock does with `vi.mocked(getForecast).mockResolvedValue("sunny")`.
 
-`vitestPluginRSC()` adds a last setup file of its own that waits until those mocks are in place. In browser mode, Vitest does not wait for that before it imports a test file (since 5.0.0-beta.7, still in 5.0.3), so a test file with no `vi.mock()` of its own would get the real module. That is [vitest-dev/vitest#11450](https://github.com/vitest-dev/vitest/issues/11450), which its reporter closed without a fix. It needs the default `sequence.setupFiles: "list"`: with `"parallel"` the setup files run together, and nothing comes last.
+In browser mode, Vitest 5.0 has a bug here: it does not wait for the mocks of a setup file before it imports a test file, so a test file with no `vi.mock()` of its own gets the real module ([vitest-dev/vitest#11450](https://github.com/vitest-dev/vitest/issues/11450)). Until Vitest fixes it, import the mocked module in the setup file after the `vi.mock()` call. This repository patches Vitest instead, see `patches/`.
 
 ## Not Yet
 

@@ -759,6 +759,8 @@ test("shows the forecast", async () => {
 });
 ```
 
+Vitest 5.0 has a bug that gives such a test file the real module, see [Mocks](docs/next-routes.md#mocks) for the way around it.
+
 A mock replaces the module your Server Components and Server Actions import. It does not reach Client Components, which load in module graphs of their own.
 
 `handleRequest(url, init)` sends a single request and resolves with the response, for when the response is what you assert on: a status, a header, the HTML or the Flight payload.
