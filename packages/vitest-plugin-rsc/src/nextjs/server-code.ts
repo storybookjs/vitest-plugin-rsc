@@ -43,18 +43,11 @@ export async function compileServerCode(
 
 export type ServerCodeOptions = {
   /**
-   * Modules that have to see the browser they really run in: glob patterns,
-   * relative to the project root. They keep the tab's `window` and `fetch`,
-   * as the test files and setup files of the Vitest config do.
-   *
-   * Server code asks `typeof window` to know its role: is this the server
-   * side of the app? There the answer has to be yes. A module asks the same
-   * to know what it can do: is there a DOM to query, a `document.cookie` to
-   * set? There the answer has to be the truth, unless the module gets by
-   * without a DOM too. The code cannot say which of the two it is. So what
-   * is not a test file gets the first answer, and this option lists what
-   * needs the second: a helper of the tests, or a package they use on the
-   * page.
+   * Modules that have to know they run in a browser: glob patterns, relative
+   * to the project root. They keep the tab's `typeof window` and `fetch`, as
+   * the test files and setup files of the Vitest config do. List a helper of
+   * the tests, or a package they use on the page, that asks `typeof window`
+   * before it works on the page.
    *
    * Files are matched by their real path, which for a package is seldom
    * `node_modules/<name>` under the root. So start a pattern for one with `**`.
@@ -64,14 +57,9 @@ export type ServerCodeOptions = {
   browserModules?: string | RegExp | (string | RegExp)[];
 };
 
-// The directory of this package. Its own runtime knows where it runs.
-function findOwnDir(): string {
-  let dir = path.dirname(fileURLToPath(import.meta.url));
-  while (!fs.existsSync(path.join(dir, "package.json")) && dir !== path.dirname(dir)) {
-    dir = path.dirname(dir);
-  }
-  return normalizePath(dir);
-}
+// The files of this package, in `src` or in `dist`. Its own runtime knows
+// where it runs.
+const ownDir = normalizePath(fileURLToPath(new URL("..", import.meta.url)));
 
 // Every `node_modules` a file in `from` can import from, nearest first.
 function* nodeModulesOf(from: string): Generator<string> {
@@ -122,7 +110,6 @@ function packageDirOf(file: string): string | undefined {
 const name = "vitest-plugin-rsc:next-server-code";
 
 export function createServerCode(registry: string, options: ServerCodeOptions = {}) {
-  const ownDir = findOwnDir();
   const patterns = [options.browserModules ?? []].flat();
   let isBrowserModule: (file: string) => boolean = () => false;
   // One for every Vitest project this plugin is in.
@@ -130,14 +117,14 @@ export function createServerCode(registry: string, options: ServerCodeOptions = 
   let testRunnerPackages = new Set<string>();
 
   /**
-   * Whether a file is server code in a layer. Everything in the ssr layer is.
-   * The rsc layer shares its environment with the test: the test files, what
-   * runs them and the `browserModules` of the options are not.
+   * Whether a file is server code in a layer. The rsc layer shares its
+   * environment with the test: the test files, what runs them and the
+   * `browserModules` of the options are not.
    */
   function isServerCode(file: string, layer: NextLayer): boolean {
     if (layer === "browser" || !path.isAbsolute(file)) return false;
     file = normalizePath(file);
-    if (file.startsWith(`${ownDir}/`)) return false;
+    if (file.startsWith(ownDir)) return false;
     if (layer === "ssr") return true;
     if (isBrowserModule(file) || testFileMatchers.some((matches) => matches(file))) return false;
     const packageDir = packageDirOf(file);
@@ -146,10 +133,7 @@ export function createServerCode(registry: string, options: ServerCodeOptions = 
 
   return {
     isServerCode,
-    /**
-     * Vite keys its cache of pre-bundled dependencies on the `define` of the
-     * optimizer, among other things. What is compiled into them is part of it.
-     */
+    /** For the `define` of the optimizer, which Vite keys its cache on. */
     cacheKey: { __vitest_plugin_rsc_browser_modules__: JSON.stringify(patterns.map(String)) },
     /** For a module this plugin generates, with the constants of its layer. */
     compile: async (code: string, id: string, define: Record<string, string>) =>
@@ -157,8 +141,7 @@ export function createServerCode(registry: string, options: ServerCodeOptions = 
     /** Call once the root of the project is known. */
     configure(root: string): void {
       if (patterns.length > 0) isBrowserModule = createFilter(patterns, null, { resolve: root });
-      // Vitest pre-bundles its own runtime for the tab, in the environment of
-      // the test, which is the one of the rsc layer.
+      // Vitest pre-bundles its own runtime in the environment of the rsc layer.
       testRunnerPackages = findPackagesWithDependencies(testRunnerPackageNames(root), root);
     },
     /** Call with what a Vitest config says is a test file or a setup file. */
@@ -195,12 +178,9 @@ export function createServerCode(registry: string, options: ServerCodeOptions = 
         applyToEnvironment: (environment) => Object.hasOwn(environments, environment.name),
         async transform(code, id) {
           const file = id.split("?")[0]!;
-          // JavaScript and TypeScript, which is JavaScript by now. Not a
-          // stylesheet, and not what another plugin compiles to JavaScript.
+          // Not a stylesheet, and not what another plugin compiles to JavaScript.
           if (!/\.[cm]?[jt]sx?$/.test(file) || !fs.existsSync(file)) return;
-          // A dependency is compiled when it is pre-bundled, and is not
-          // compiled again when it is served from Vite's cache. One that is
-          // left out of pre-bundling is served as it is.
+          // A dependency is compiled when it is pre-bundled, or not at all.
           if (file.includes("/node_modules/")) return;
           if (file.startsWith(`${normalizePath(this.environment.config.cacheDir)}/`)) return;
           const layer = environments[this.environment.name]!;
