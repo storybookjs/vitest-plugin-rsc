@@ -5,6 +5,7 @@ import { defineConfig, defineProject } from "vitest/config";
 import { vitestPluginRSC } from "vitest-plugin-rsc";
 import { vitestPluginNext } from "vitest-plugin-rsc/nextjs/plugin";
 import { vitestPluginRscSourceConditions } from "../../vitest.conditions.ts";
+import { ignoreWatchedOnlyModules } from "./test/ignore-watched-only-modules.ts";
 
 // Make Vitest UI trace/source clicks a no-op instead of opening Cursor.
 // oxlint-disable-next-line no-process-env
@@ -43,7 +44,7 @@ function createSharedProjectConfig() {
 export const nextjsNotesProjects = [
   defineProject({
     ...createSharedProjectConfig(),
-    plugins: [vitestPluginRSC(), vitestPluginNext()],
+    plugins: [vitestPluginRSC(), vitestPluginNext(), ignoreWatchedOnlyModules()],
     test: {
       name: "nextjs-notes-demo-browser",
       include: ["**/*.test.{ts,tsx}"],
