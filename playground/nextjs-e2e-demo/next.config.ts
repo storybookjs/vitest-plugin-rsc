@@ -10,6 +10,35 @@ const nextConfig: NextConfig = {
     remotePatterns: [{ protocol: "http", hostname: "localhost", pathname: "/photos/**" }],
     dangerouslyAllowLocalIP: true,
   },
+  // What the server does before it looks for a route: app/routing.test.tsx.
+  async redirects() {
+    return [{ source: "/guide/:slug", destination: "/docs/:slug", permanent: true }];
+  },
+  async rewrites() {
+    return {
+      // Before a route is looked for: also at a URL that a page has.
+      beforeFiles: [{ source: "/docs/start", destination: "/docs/getting-started" }],
+      // After the routes with a fixed path, and before the dynamic ones.
+      afterFiles: [
+        { source: "/docs", destination: "/help" },
+        { source: "/docs/echo", destination: "/api/echo/docs" },
+      ],
+      // For a URL that no route has.
+      fallback: [
+        { source: "/docs/:slug/:rest+", destination: "/docs/:slug" },
+        // Another server. Its origin comes with the request, for the tests:
+        // they do not know the port of theirs up front.
+        {
+          source: "/elsewhere/:path*",
+          has: [{ type: "header", key: "x-elsewhere", value: "(?<origin>.*)" }],
+          destination: "http://:origin/:path*",
+        },
+      ],
+    };
+  },
+  async headers() {
+    return [{ source: "/docs/:slug", headers: [{ key: "x-docs", value: ":slug" }] }];
+  },
 };
 
 export default nextConfig;

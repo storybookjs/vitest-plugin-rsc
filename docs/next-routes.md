@@ -2,7 +2,7 @@
 
 `vitest-plugin-rsc/nextjs/testing-library`, with the plugin from `vitest-plugin-rsc/nextjs/plugin`, runs a Next.js App Router app in the test's browser tab: the server that answers a request, the HTML it renders, and the client that hydrates it. This page explains how, and what it does not do yet. The [README](../README.md#nextjs) shows how to use it.
 
-It needs `next@16.4` or later. That is where Next's request stores became one per realm, which is what lets the three layers below run as separate module graphs.
+It needs `next@16.4` or later. That is where Next's request stores became one per realm, which is what lets the three layers below run as separate module graphs. And it needs `@next/routing`, the package of Next.js that finds the route of a request, at the version of `next`: see [The Server In Front Of The App](#the-server-in-front-of-the-app).
 
 ## The Idea: Port The Build, Run The Runtime
 
@@ -10,20 +10,23 @@ Next.js is two things. A build, written for webpack and Turbopack, that turns `a
 
 Only the build is tied to a bundler. So this plugin does the build with Vite, and asks Next's own build code for everything that is not bundling:
 
-| What                                         | Where it comes from                                               |
-| -------------------------------------------- | ----------------------------------------------------------------- |
-| The routes of the app                        | `next/dist/build/route-discovery`, `normalizeCatchAllRoutes()`    |
-| A route's loader tree: page, layouts, errors | `next-app-loader`, Next's webpack loader, called as-is            |
-| A page's request handler                     | `next/dist/build/templates/app-page-runtime`: `handler(req, res)` |
-| A route handler's route module               | `next-app-loader` again, which expands `templates/app-route`      |
-| A route handler's request handler            | In the same template, `templates/app-route`: `handler(req, res)`  |
-| Compile-time constants                       | `getDefineEnv()`                                                  |
-| Module aliases, per layer                    | `createWebpackAliases()` and the other alias tables               |
-| React                                        | The React that Next ships, through `createVendoredReactAliases()` |
-| The compile of a source file of the app      | Next's SWC transform, with `getLoaderSWCOptions()` for its layer  |
-| A call of a `next/font` function             | `next-font-loader` and Next's `css-loader`, called as-is          |
-| An imported image                            | `next-image-loader`, called as-is                                 |
-| An image behind `/_next/image`               | Next's image optimizer, `next/dist/server/image-optimizer`        |
+| What                                         | Where it comes from                                                                |
+| -------------------------------------------- | ---------------------------------------------------------------------------------- |
+| The routes of the app                        | `next/dist/build/route-discovery`, `normalizeCatchAllRoutes()`                     |
+| What the server does before a route          | `handleBuildComplete()`: what Next's build hands a deployment adapter              |
+| Which route a request gets                   | `resolveRoutes()` of `@next/routing`, see [below](#the-server-in-front-of-the-app) |
+| The request handler of `proxy.ts`            | `next-middleware-loader`, Next's webpack loader, called as-is                      |
+| A route's loader tree: page, layouts, errors | `next-app-loader`, Next's webpack loader, called as-is                             |
+| A page's request handler                     | `next/dist/build/templates/app-page-runtime`: `handler(req, res)`                  |
+| A route handler's route module               | `next-app-loader` again, which expands `templates/app-route`                       |
+| A route handler's request handler            | In the same template, `templates/app-route`: `handler(req, res)`                   |
+| Compile-time constants                       | `getDefineEnv()`                                                                   |
+| Module aliases, per layer                    | `createWebpackAliases()` and the other alias tables                                |
+| React                                        | The React that Next ships, through `createVendoredReactAliases()`                  |
+| The compile of a source file of the app      | Next's SWC transform, with `getLoaderSWCOptions()` for its layer                   |
+| A call of a `next/font` function             | `next-font-loader` and Next's `css-loader`, called as-is                           |
+| An imported image                            | `next-image-loader`, called as-is                                                  |
+| An image behind `/_next/image`               | Next's image optimizer, `next/dist/server/image-optimizer`                         |
 
 Everything behind those is Next's runtime, unchanged: what it writes to the response of its server is the `Response` the tab gets.
 
@@ -39,6 +42,10 @@ That file checks what the plugin relies on when a run starts, or for a loader wh
 | ------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
 | Every file and export of the build code that is called                                                                                | A `TypeError` somewhere in the plugin                                        |
 | `discoverRoutes()` returns `mappedAppPages`                                                                                           | An app without routes: every URL is a 404                                    |
+| `@next/routing` is installed, at the version of `next`                                                                                | Routes that Next's build hands out and its resolver does not read            |
+| `handleBuildComplete()` calls the adapter, without a build on disk, with every phase of the routes                                    | A `TypeError`, or a server that skips a phase                                |
+| The build has an output for every route, and `resolveRoutes()` finds it for a URL of that route                                       | Every URL is a 404, and nothing says why                                     |
+| `getEdgeServerEntry()` loads the middleware with `next-middleware-loader`, whose template calls `require(`                            | A `require` that the tab does not have                                       |
 | `getDefineEnv()` sets `process.env.NEXT_RUNTIME` to `nodejs` for the server layers                                                    | Next's code takes the branches of another runtime                            |
 | The alias tables have `react-server-dom-webpack/server$`                                                                              | A `TypeError` on a path                                                      |
 | `IncrementalCache` takes `fs`, `serverDistDir` and `fetchCacheKeyPrefix`                                                              | Nothing is cached, or a test finds another's entries                         |
@@ -110,6 +117,9 @@ What Next's build does that the plugin does not, is under [Not Yet](#not-yet).
 renderServer({ url: "/notes/1" })
   │  GET /notes/1                          the browser's fetch, with its cookies
   ▼
+ssr      resolveRoutes()                   Next's route resolution: redirects, proxy.ts, rewrites
+  │        └─ rsc: proxy(request)          the proxy of the app, if its matcher takes the request
+  ▼
 rsc      handler(req, res)                 Next's request handler for the route
   ▼
 ssr      prepare(), render()               Next's route module
@@ -125,7 +135,7 @@ browser  the HTML goes into the document   once all of it has arrived
          Next's client entry hydrates it   in a module graph of its own, like a page load
 ```
 
-After that, Next's router is in charge. A `<Link>` navigation is an RSC request to the same handler. A Server Action is a `POST` with a `Next-Action` header.
+After that, Next's router is in charge. A `<Link>` navigation is an RSC request to the same handler. A Server Action is a `POST` with a `Next-Action` header. Each of them goes through the route resolution first: see [The Server In Front Of The App](#the-server-in-front-of-the-app).
 
 ## A Component
 
@@ -174,7 +184,7 @@ For `/notes/7`, where the app has `app/notes/[id]/page.tsx`:
 ];
 ```
 
-- **The segments** are those of the app's route for the URL, so Next finds the same params. The plugin matches the URL against the routes of the app, as it does for every request. A URL of no route gets the tree of `/`, which has no params. A route handler's pathname has a tree too.
+- **The segments** are those of the app's route for the URL, so Next finds the same params. Next's route resolution says which route that is, as for every request. A URL of no route gets the tree of `/`, which has no params. A route handler's pathname has a tree too.
 - **The page name** is the one of the pathname, like `/notes/[id]/page`. Next derives the tags of `revalidatePath()` from it.
 - **No layout**, also not a pass-through one. So the HTML has no `<html>` or `<body>`, and it fits in a `<div>`.
 - **Next's builtin boundaries** are the only other modules, at the root: `global-error`, which Next's renderer throws without, and `not-found`, `forbidden` and `unauthorized`. `next-app-loader` gives them to a root that has none of its own. They are Next's, not the app's.
@@ -249,14 +259,79 @@ The request handler is Next's own, the one `next start` calls: it finds the para
 
 What Next does for a request after it has responded, like the callbacks of `after()`, it hands to `waitUntil`. The request lasts until that work is done, so the callbacks read the stores of their own request, and the next request waits for it, for one second at most.
 
+## The Server In Front Of The App
+
+Before a route gets a request, a server has decided which route that is. In a deployment that is `next start`, or the platform the app is deployed to. It applies the `redirects`, `headers` and `rewrites` of `next.config`, redirects a URL with a trailing slash, runs `proxy.ts`, and then looks for the route. Here that server is in the tab too, in front of the request handlers above.
+
+Next has a contract for a platform that does this itself: a deployment adapter. `next build` hands an adapter the routes of that server, in the order they apply, and what it built for each pathname. And Next ships the resolution that goes with them as a package of its own, `@next/routing`. The plugin is such an adapter:
+
+| What                                                                | Where it comes from                                                                                         |
+| ------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| The redirects, rewrites and headers of `next.config`                | `loadCustomRoutes()`, which adds Next's own redirect of a trailing slash                                    |
+| An interception route, which is a rewrite to Next                   | `generateInterceptionRoutesRewrites()`                                                                      |
+| The routes manifest of a build, which Next's route module reads too | `generateRoutesManifest()`                                                                                  |
+| The file of the proxy, and its matcher                              | `getFilesInDir()` with Next's names for the file, `createPagesMapping()`, `getStaticInfoIncludingLayouts()` |
+| The routes of the server, in their phases, and the outputs          | `handleBuildComplete()`, which calls `onBuildComplete()` of the adapter in `adapter.ts`                     |
+| Which route a request gets, a redirect, or a rewrite                | `resolveRoutes()` of `@next/routing`, in the tab                                                            |
+| The request handler of the proxy                                    | `getEdgeServerEntry()` and `next-middleware-loader`, which expands `templates/middleware`                   |
+| What the response of the proxy means for the request                | `responseToMiddlewareResult()` of `@next/routing`                                                           |
+
+An interception route, like `@modal/(.)photo/[id]`, needs no code of the plugin for this: Next's build makes a rewrite of it, for a request of the router that says which page it comes from.
+
+`handleBuildComplete()` is the end of `next build`. It runs here without a build: on the manifests of one whose routes read no files, with an empty directory for the rest. The patterns of the dynamic routes, the conversion of a redirect to a `Location` header and the matcher of the proxy are what Next computes for an adapter. The plugin writes the manifests it computes them from: a function for each route, and for a proxy without a matcher of its own the matcher for every path, as Next's build writes it.
+
+Two settings of `next.config` are left out for this. `i18n` is the Pages Router's: a URL of the App Router has no locale, and the resolution would look for one in every URL. And with `output: "export"` Next's build reads the files it exported. The routes of the app are the same without them.
+
+### `@next/routing`
+
+`resolveRoutes()` takes a URL, the headers of the request, the routes and the pathnames of the outputs, and says what the request becomes: a redirect, a rewrite to another server, a response of the proxy, or a route with its params. It is a function of web APIs only, without a dependency, so it runs in the tab as it is. The phases, in its order:
+
+```
+beforeMiddleware    the headers and the redirects of next.config, the trailing slash
+proxy.ts            if its matcher takes the request
+beforeFiles         rewrites, also at a URL that a route has
+the outputs         the routes with a fixed path
+afterFiles          rewrites
+dynamicRoutes       the routes with a dynamic segment
+fallback            rewrites, for a URL that no route has
+```
+
+This is the server of a deployment through an adapter, and it differs from `next start` in two ways. `resolveRoutes()` also runs the proxy for a request that `next.config` redirects, or whose trailing slash is redirected, and answers with the redirect after it: `next start` answers with the redirect first. And it holds a URL against the pattern of a dynamic route in any letter case: `/Docs/Routing` is the route `/docs/[slug]` with `Routing` for the slug, where `next start` has no route for it.
+
+It is not a part of `next`: a project installs it next to `next`, at the same version. The two are released together, and what one version of Next hands an adapter is what that version of the package reads. Next's docs call the adapter API experimental, so the plugin does not take another version for close enough. A run stops when the versions differ, or when the package is not there, with the version to install. It also resolves a URL of every route of the app when it starts, with the routes it got: a build and a resolver that no longer fit would make every URL a 404.
+
+### What The Adapter Does Itself
+
+`@next/routing` finds the route. What happens then is the adapter's, and Next's own adapters have code for each of these too. Here it is in `handle()` of `ssr.ts`:
+
+- **A redirect** is a response with the status and the headers the resolution gives.
+- **A rewrite to another server** is a `fetch` to it, which `next start` proxies. The tab makes the request, so the browser's rules for one apply: CORS, a redirect is followed, and the `host`, `cookie` and `origin` of the request are the browser's to set. A destination with the origin of the app itself is the dev server's to answer, not the app's.
+- **A route** is called with the URL the browser asked for, also after a rewrite, as `next start` calls it: `usePathname()` says where the browser is, not where the rewrite went. The route is told the rest in the meta of the request, where a deployment adapter puts it: the query the resolution ends with. That has the query of the destination, and the params of the route under the names Next gives them for a server in front of its own, like `nxtPid`. Next's route module takes those over what the pathname says, and out of the query. A request that was not rewritten is told the same way: the resolution has the last word on the params of a route.
+- **`x-nextjs-rewritten-path` and `x-nextjs-rewritten-query`**, for a request of Next's router that was rewritten. `next start` sets them for a rewrite of `next.config`, and Next's own code for a rewrite of the proxy. The query is without `_rsc`, which the router adds to its own requests.
+- **The headers** the resolution has for the response, of `next.config` and of the proxy, go under the ones of the route. A cookie of either is set. The resolution has none for a request that the proxy answers itself, so that response is without the headers of `next.config`, which `next start` does set.
+- **The ways a request has a pathname.** `resolveRoutes()` compares a pathname with the outputs as it is. So an output is listed percent-encoded too, as a URL has `/release notes`, and with `trailingSlash: true` with the slash. A dynamic route is found by its pattern, which has the folders as they are named. So `resolveRoutes()` does not find one under a folder with a name that a URL percent-encodes, and a run warns about those routes when it starts.
+- **A request that resolves to nothing** gets the not-found page, or goes to the network: see [below](#which-requests-are-the-apps). That is also a rewrite to a path that no route has, like a file of `public/`. The resolution does not say where such a rewrite went, so the network is asked for the URL of the request.
+
+### The Proxy
+
+`proxy.ts`, or the `middleware.ts` it was before Next.js 16, is a module of the `rsc` layer, which the test shares. So it is the instance the test imports, with the modules it imports, and `vi.mock()` replaces them for both. In a deployment it is a bundle of its own.
+
+Its request handler is Next's: the template Next's build expands for it, around `adapter()`, which makes the `NextRequest`, enters the request stores, and turns `NextResponse.next()`, `rewrite()` and `redirect()` into the headers the resolution reads. It takes a `Request` and answers with a `Response`, on Node.js too. For Node.js the template loads two modules with the `require` of Next's bundler, which is `import()` here.
+
+The proxy is done before the route starts, so it has a scope of its own for Next's request stores: see [What Stands In For A Server](#what-stands-in-for-a-server). A proxy that throws is answered with `500`, and the error is logged with `console.error`. `next start` answers with its error page.
+
 ### Which Requests Are The App's
 
 The origin of the app is also the origin of the Vite dev server, which serves the modules of the test and of the app. So the `fetch` of the tab has to choose. A same-origin request goes to the Next.js server when:
 
-- its path matches a route of the app, a page or a route handler, by Next's own route list and matcher, or
-- Next's router or a Server Action sent it, which mark their requests with a header.
+- Next's router or a Server Action sent it, which mark their requests with a header, or
+- the server has something for it: a route of the app, a redirect or a rewrite of `next.config`, or a proxy whose matcher takes it.
 
-Everything else goes to the network: Vite's modules, files in `public/`, a service worker.
+The server answers that with its route resolution, without running anything. Only running the proxy tells what it does with a request, so a request that its matcher takes goes to the server. If the proxy lets it through and no route has it, a deployment looks for a file. Here the request then goes to the network after all, which has the files of `public/`.
+
+Everything else goes to the network right away: Vite's modules, files in `public/`, a service worker. A page load is always the app's: `renderServer()`, `handleRequest()` and a navigation get the not-found page for a URL that resolves to nothing.
+
+A `fetch` that the server makes to its own origin, while it renders, is chosen the same way, and goes through the proxy too. The server handles it right away, inside the request that waits for it.
 
 ## What Stands In For A Server
 
@@ -390,7 +465,7 @@ What a Node.js server has and a tab does not:
 | What                                                         | Here                                                                                                                                                                                                                                            |
 | ------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `http.IncomingMessage`, `http.ServerResponse`                | Two objects in `node-server.ts` with what Next reads and writes. The response becomes a `Response` at its first byte, and a reader that cancels its body closes it, as a browser that leaves does                                               |
-| The manifests in `.next/`                                    | `load-manifest.external`, the module Next keeps out of its bundle to read them, answers from memory                                                                                                                                             |
+| The manifests in `.next/`                                    | `load-manifest.external`, the module Next keeps out of its bundle to read them, answers from memory. The routes manifest is the one Next's build makes, with `generateRoutesManifest()`                                                         |
 | The request handler of a route handler                       | Next's own, `templates/app-route`, as `next start` calls it: `handler(req, res, ctx)`                                                                                                                                                           |
 | The request handler of a page                                | Next's own, `templates/app-page-runtime`, as `next start` calls it: `handler(req, res, ctx)`. It makes the route module in the `rsc` layer, and gets the class of the `ssr` layer for it                                                        |
 | `node:stream`, `stream/promises`                             | `next/dist/compiled/stream-browserify`, which Next ships, with `Readable.toWeb()` and `fromWeb()` added                                                                                                                                         |
@@ -409,7 +484,7 @@ What is still to do on it:
 
 - Cache Components and `"use cache"`. Their code is reached only with `cacheComponents`, and needs what a tab does not have at all: `AsyncLocalStorage` for more than one scope at a time, the order of `process.nextTick` and `setImmediate` in Node's event loop, and Next's patched `Date` and `Math.random`. The stand-in for `fast-set-immediate.external` throws where that starts.
 - Prerendered pages. Next's request handler of a page has the response cache of a build around a render, and here no page is in it: every request renders its page.
-- `proxy.ts`, `instrumentation.ts`, draft mode, a `cacheHandler` of the app: `load-manifest.external` and its neighbours are where they would go.
+- `instrumentation.ts`, draft mode, a `cacheHandler` of the app: `load-manifest.external` and its neighbours are where they would go.
 
 ## Watch Mode
 
@@ -466,8 +541,13 @@ At the next lookup the plugin answers for a test file itself. It belongs to the 
 - The font preloads: Next puts a `<link rel="preload">` in the HTML for the fonts of a route, from a manifest of its build. The fonts load when the CSS asks for them.
 - Sass needs the `sass` package, as it does for Vite, and `sassOptions` of `next.config` does not apply. Not tested.
 - An asset prefix with an origin of its own, like a CDN: the files of fonts and images are only served by the dev server.
-- `middleware.ts` / `proxy.ts`, and the redirects, rewrites and headers of `next.config`.
-- `trailingSlash`. A URL with a trailing slash, like `/notes/7/`, is served as it is, for a page and for a node. A deployment redirects it to `/notes/7`, or the other way around with `trailingSlash: true`: that redirect is one of Next's config routes.
+- The headers of `next.config`, and the ones the proxy sets, for a request the app does not answer itself: a file of `public/`, which the dev server serves. And the headers of `next.config` for a request that the proxy answers itself.
+- A rewrite, of `next.config` or of the proxy, to a path that no route has, like a file of `public/`: the network is asked for the URL of the request, and not for where the rewrite went.
+- A dynamic route under a folder with a name that a URL percent-encodes, like `app/release notes/[id]`: `@next/routing` does not find it. A run warns about it when it starts.
+- `i18n` of `next.config`, which is the Pages Router's: the server in front of the app routes as without it. An app with `output: "export"` is served like any other, with its proxy and the redirects of `next.config`.
+- What the proxy hands to `waitUntil()` goes on after the proxy has returned, without its request stores. Next's `instrumentation.ts` is not run, for the proxy or for a route.
+- A route handler does not see the query that a rewrite adds, as with `next start`: its `request.url` is the URL the browser asked for.
+- `basePath`, and `trailingSlash: true` in a tab: both are passed to Next's route resolution, and neither is tested with a page.
 - A route with `export const runtime = "edge"` runs on Node.js like the others: see [The Node.js Runtime](#the-nodejs-runtime). Static generation of a `GET` route handler and `revalidate` do not apply: every request runs the handler. `process.env.NEXT_RUNTIME` is a constant in Next's own code and is not set for the code of the app.
 - `"use cache"`. Next compiles such a function with the part of its SWC transform that also compiles Server Actions, which is Vite RSC's here. And it would not be enough: the function is called after Next has awaited, so it would never read the store of its cache scope. `cacheTag()` and `cacheLife()` need that store, and so does collecting the tags of the `fetch` calls in it. See [Caching](#a-cache-scope-ends-at-its-first-await).
 - Inside a function cached with `unstable_cache`, after its first `await`, the request's store is read instead of the cache's. See [Caching](#a-cache-scope-ends-at-its-first-await).

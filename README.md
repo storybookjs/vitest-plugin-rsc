@@ -83,7 +83,7 @@ Agents do better when wrapped in a self-healing loop with fast unit tests — ed
 
 ## What You Get
 
-- **Real Next.js behaviour**: the request goes through Next's own request handler, renderer and router. Layouts, `loading.tsx`, error boundaries, redirects, cookies, Server Actions, route handlers and the Data Cache do what they do in your app.
+- **Real Next.js behaviour**: the request goes through Next's own route resolution, request handler, renderer and router. Layouts, `loading.tsx`, error boundaries, redirects, cookies, Server Actions, route handlers and the Data Cache do what they do in your app. So do `proxy.ts` and the redirects, rewrites and headers of `next.config`.
 - **Next's own compiler**: your source files go through Next's SWC transform and its font and image loaders, so `next/font`, `next/image`, `next/dynamic` and styled-jsx work, and a mistake that `next build` stops at fails the test with Next's error.
 - **Focused scope**: Test a whole route, or one component on its own.
 - **White-box inputs**: The server runs in the test's tab. The `db` your test seeds is the module instance your Server Components read. Mock IO, fake clocks, set cookies and headers.
@@ -96,7 +96,7 @@ Agents do better when wrapped in a self-healing loop with fast unit tests — ed
 ## Requirements
 
 - Vitest 5.0.3 or later, in [Browser Mode](https://vitest.dev/guide/browser/). The examples use Playwright as the browser provider.
-- For Next.js: the App Router, and `next@16.4` or later. CI runs the two Next.js playgrounds against the pinned `next@16.4.0`, against `next@latest` and against `next@canary`. With a Next.js whose build code the plugin does not know, a run stops when it starts, with the version and what changed: see [When Next Changes](docs/next-routes.md#when-next-changes).
+- For Next.js: the App Router, `next@16.4` or later, and [`@next/routing`](https://www.npmjs.com/package/@next/routing) at the version of `next`. That is the package of Next.js that finds the route of a request. CI runs the two Next.js playgrounds against the pinned `next@16.4.0`, against `next@latest` and against `next@canary`. With a Next.js whose build code the plugin does not know, a run stops when it starts, with the version and what changed: see [When Next Changes](docs/next-routes.md#when-next-changes).
 
 ## Next.js
 
@@ -104,6 +104,8 @@ Agents do better when wrapped in a self-healing loop with fast unit tests — ed
 
 ```bash
 npm install -D vitest-plugin-rsc vitest @vitest/browser-playwright playwright
+# The package of Next.js that finds the route of a request, at the version of your `next`.
+npm install -D @next/routing@$(node -p "require('next/package.json').version")
 ```
 
 ```ts
@@ -128,7 +130,7 @@ export default defineConfig({
 });
 ```
 
-`vitestPluginNext()` reads the app from the root of the Vitest project: its `next.config`, its `app` directory, and the `next` package it has installed. It needs no setup file. It registers its own, which leaves the page and clears the tab before and after every test.
+`vitestPluginNext()` reads the app from the root of the Vitest project: its `next.config`, its `app` directory, its `proxy.ts`, and the `next` package it has installed. It needs no setup file. It registers its own, which leaves the page and clears the tab before and after every test.
 
 `isolate: false` is the configuration this is tested with: both Next.js playgrounds of this repository run with it. Without isolation the test files of a tab share their modules, so the server of the app loads once per tab and not once per test file. It also means a mock is for every test file of the tab, which is why mocks belong in a setup file, see [Mocks](#mocks).
 
@@ -411,9 +413,63 @@ test("gives a route handler the body of a request and the cookies of the tab", a
 });
 ```
 
-A `fetch` from a Client Component to a route handler reaches it too, with the tab's cookies. A same-origin `fetch` goes to the app when its path is one of the app's routes, or when Next's router or a Server Action sends it. Anything else goes to the Vite dev server.
+A `fetch` from a Client Component to a route handler reaches it too, with the tab's cookies. A same-origin `fetch` goes to the app when the server has something for its URL: a route, a redirect or a rewrite of `next.config`, or a proxy whose matcher takes it. So does one that Next's router or a Server Action sends. Anything else goes to the Vite dev server.
 
 A handler that throws answers `500` and logs the error with `console.error`, as `next start` does.
+
+### The Proxy, Redirects And Rewrites
+
+What a server does before a route gets a request happens here too, by Next's own route resolution: the `redirects`, `rewrites` and `headers` of `next.config`, the redirect of a trailing slash, and `proxy.ts`, or the `middleware.ts` it was before Next.js 16. A page load, a navigation of Next's router, a Server Action and a `fetch` of the page all go through it.
+
+```ts
+// proxy.ts
+import { NextResponse, type NextRequest } from "next/server";
+
+export function proxy(request: NextRequest) {
+  const { pathname } = request.nextUrl;
+  // Sends a visitor without a session elsewhere.
+  if (pathname === "/team" && !request.cookies.has("session")) {
+    const account = new URL("/account", request.url);
+    account.searchParams.set("from", pathname);
+    return NextResponse.redirect(account);
+  }
+  // Serves another route at this URL.
+  if (pathname.startsWith("/go/")) {
+    return NextResponse.rewrite(new URL(`/docs/${pathname.slice("/go/".length)}`, request.url));
+  }
+}
+```
+
+```tsx
+import { expect, test } from "vitest";
+import { page } from "vitest/browser";
+import { handleRequest, renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
+
+test("follows a redirect of the proxy", async () => {
+  const response = await handleRequest("/team", { redirect: "manual" });
+
+  expect(response.status).toBe(307);
+  expect(response.headers.get("location")).toBe("/account?from=%2Fteam");
+
+  await renderServer({ url: "/team" });
+
+  await expect.element(page.getByRole("heading", { name: "Account" })).toBeVisible();
+  expect(window.location.pathname + window.location.search).toBe("/account?from=%2Fteam");
+});
+
+test("serves the route the proxy rewrites to, at the URL that was asked for", async () => {
+  await renderServer({ url: "/go/routing" });
+
+  await expect.element(page.getByRole("heading", { name: "Docs: routing" })).toBeVisible();
+  expect(window.location.pathname).toBe("/go/routing");
+});
+```
+
+The proxy runs in the tab, in the same modules as the test. So a module it imports is the instance the test imports, and `vi.mock()` replaces it for both: mock the session it reads, or assert on what it wrote.
+
+After a rewrite the app is still at the URL the browser asked for: `usePathname()` says so on the server and in the browser, and the page gets the params of the route it was rewritten to. [The Server In Front Of The App](docs/next-routes.md#the-server-in-front-of-the-app) describes where all of this comes from.
+
+The server is the one of a deployment through a Next.js adapter, which is not `next start` in every detail. The proxy also runs for a request that `next.config` redirects. And a dynamic route is found for a URL in another letter case, like `/Docs/Routing` for `app/docs/[slug]`.
 
 ### Caching
 
@@ -728,6 +784,8 @@ export default defineConfig({
 
 Next.js is a build and a runtime. Only the build is tied to a bundler. The plugin does the build with Vite, and asks Next's own build code for everything that is not bundling: the routes, the loader tree of a route, its request handler, the compile-time constants, the module aliases, and the compile of your source files with Next's SWC transform and its font and image loaders. Behind those, Next's runtime runs unchanged.
 
+What a server does before a route gets a request comes from Next too. The plugin is a deployment adapter to Next: it gets the routes that `next build` hands an adapter, the redirects, rewrites and headers of `next.config` and the matcher of `proxy.ts` among them, and Next's own `@next/routing` finds the route of a request with them, in the tab.
+
 Next compiles an app into three layers, each with its own module graph and its own build of React. Each is a Vite environment here, and all three run in the test's tab:
 
 | Layer     | Runs                                              | Vite environment |
@@ -746,7 +804,7 @@ The test runs in `client`, the Vite environment of the `rsc` layer. That is why 
 - A `webpack` function or `turbopack` rules in `next.config`, like `@svgr/webpack` and `@next/mdx`, a Babel config, and the React Compiler.
 - A CommonJS source file in the app.
 - The files of `.env` and `NEXT_PUBLIC_` variables: `process.env` in the tab is empty unless a test or a setup file fills it.
-- `middleware.ts` / `proxy.ts`, and the redirects, rewrites and headers of `next.config`.
+- The headers of `next.config` and of `proxy.ts` for a file of `public/`, which the dev server serves, and a rewrite to such a file. And `instrumentation.ts`.
 - `"use cache"`. And inside a function cached with `unstable_cache`, after its first `await`, the request's store is read instead of the cache's.
 - A mock for Client Components.
 - Next's edge runtime, which Next has deprecated. The server runs as on Node.js, Next's default, also for a route with `export const runtime = "edge"`.

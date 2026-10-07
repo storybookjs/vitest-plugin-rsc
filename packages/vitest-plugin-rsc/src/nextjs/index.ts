@@ -17,17 +17,37 @@ const ssr = await importEnvironment<typeof import("./ssr.ts")>(
 const nativeFetch = globalThis.fetch;
 
 // The origin of the app is also the origin of the dev server, which serves the
-// modules of the test and of the app. A `fetch` is the app's when its path is
-// a route of the app, a page or a route handler, or when Next's router or a
-// Server Action sends it, which mark their requests. Everything else goes to
-// the network.
-function isAppRequest(input: RequestInfo | URL, init: RequestInit | undefined): boolean {
+// modules of the test and of the app. So a same-origin `fetch` is the app's
+// when Next's router or a Server Action sends it, which mark their requests,
+// or when the server in front of the app has something for it: see
+// `takesRequest()`. Everything else goes to the network.
+type AppRequest = {
+  url: URL;
+  method: string;
+  headers: Headers;
+  /** Sent by Next itself: it gets the not-found page where the app has no route. */
+  marked: boolean;
+};
+
+function sameOriginRequest(
+  input: RequestInfo | URL,
+  init: RequestInit | undefined,
+): AppRequest | undefined {
   const request = input instanceof Request ? input : undefined;
   const url = new URL(request ? request.url : String(input), window.location.href);
-  if (url.origin !== window.location.origin) return false;
-  if (ssr.isRoute(url.pathname)) return true;
+  if (url.origin !== window.location.origin) return;
   const headers = new Headers(init?.headers ?? request?.headers);
-  return headers.has("rsc") || headers.has("next-action");
+  const method = (init?.method ?? request?.method ?? "GET").toUpperCase();
+  return { url, method, headers, marked: headers.has("rsc") || headers.has("next-action") };
+}
+
+// What a browser adds to a request for the app's origin.
+function browserHeaders(headers: Headers, url: URL, method: string): Headers {
+  headers.set("host", url.host);
+  if (!headers.has("user-agent")) headers.set("user-agent", navigator.userAgent);
+  if (method !== "GET" && method !== "HEAD") headers.set("origin", url.origin);
+  if (!headers.has("cookie") && document.cookie) headers.set("cookie", document.cookie);
+  return headers;
 }
 
 // A test's own timers may be fake.
@@ -66,11 +86,14 @@ function leftTheApp(url: URL): Error {
 // As with `fetch`, a request rejects as soon as its signal aborts. The server
 // may still answer, or fail: a render that goes on without its request fails
 // in its own ways. Nobody reads that answer.
-function unlessAborted(answer: Promise<Response>, signal: AbortSignal): Promise<Response> {
+function unlessAborted<T extends Response | undefined>(
+  answer: Promise<T>,
+  signal: AbortSignal,
+): Promise<T> {
   return new Promise((resolve, reject) => {
     const abort = () => {
       reject(signal.reason);
-      answer.then((response) => response.body?.cancel()).catch(() => {});
+      answer.then((response) => response?.body?.cancel()).catch(() => {});
     };
     if (signal.aborted) return abort();
     signal.addEventListener("abort", abort, { once: true });
@@ -90,8 +113,12 @@ function unlessAborted(answer: Promise<Response>, signal: AbortSignal): Promise<
 // The network between a browser and the Next.js server in this tab. It does
 // what a browser does for a same-origin request: send the cookies, store the
 // ones that come back, follow redirects. A page load, a `navigation`, that is
-// redirected to another origin leaves the app.
-async function browserFetch(request: Request, navigation = false): Promise<Response> {
+// redirected to another origin leaves the app. With `network`, a request that
+// the server has nothing for is the network's: see `HandleOptions.unrouted`.
+async function browserFetch(
+  request: Request,
+  { navigation = false, network }: { navigation?: boolean; network?: () => Promise<Response> } = {},
+): Promise<Response> {
   let url = new URL(request.url);
   let method = request.method;
   // Read once: a 307 or 308 sends the body again.
@@ -101,16 +128,20 @@ async function browserFetch(request: Request, navigation = false): Promise<Respo
   let redirects = 0;
 
   for (;;) {
-    const headers = new Headers(request.headers);
-    headers.set("host", url.host);
-    if (!headers.has("user-agent")) headers.set("user-agent", navigator.userAgent);
-    if (method !== "GET" && method !== "HEAD") headers.set("origin", url.origin);
-    if (!headers.has("cookie") && document.cookie) headers.set("cookie", document.cookie);
-
+    const headers = browserHeaders(new Headers(request.headers), url, method);
     const response = await unlessAborted(
-      ssr.handleRequest({ url: url.href, method, headers, body, signal: request.signal }),
+      ssr.handleRequest(
+        { url: url.href, method, headers, body, signal: request.signal },
+        { unrouted: network ? "pass" : "not-found" },
+      ),
       request.signal,
     );
+    if (!response) {
+      // After a redirect it is another request than the one that was passed in.
+      return redirected
+        ? nativeFetch(url, { method, headers: request.headers, body, signal: request.signal })
+        : network!();
+    }
     for (const cookie of response.headers.getSetCookie()) {
       // A script cannot store an HttpOnly cookie, and `document.cookie` is the
       // cookie jar of this tab, so store it as a regular one.
@@ -164,17 +195,36 @@ export function handleRequest(input: RequestInfo | URL, init?: RequestInit): Pro
 }
 
 // The browser's `fetch`: what Next's client router and Client Components call.
-globalThis.fetch = (input, init) =>
-  isAppRequest(input, init) ? browserFetch(new Request(input, init)) : nativeFetch(input, init);
+globalThis.fetch = async (input, init) => {
+  const sent = sameOriginRequest(input, init);
+  if (!sent) return nativeFetch(input, init);
+  const headers = browserHeaders(new Headers(sent.headers), sent.url, sent.method);
+  if (!sent.marked && !(await ssr.takesRequest({ url: sent.url.href, headers }, true))) {
+    return nativeFetch(input, init);
+  }
+  // The request, for the network: a body can be read once.
+  const spare = input instanceof Request && input.body ? input.clone() : input;
+  return browserFetch(new Request(input, init), {
+    network: sent.marked ? undefined : () => nativeFetch(spare, init),
+  });
+};
 
 // The server's `fetch`. A request to the app itself is one the server makes
 // while it handles another: Next renders the page a Server Action redirects
 // to that way. It carries the headers Next gave it, cookies included, and
 // does not go through the browser's cookie jar.
-registry.fetch = (input, init) => {
-  if (!isAppRequest(input, init)) return nativeFetch(input, init);
+registry.fetch = async (input, init) => {
+  const sent = sameOriginRequest(input, init);
+  if (!sent) return nativeFetch(input, init);
+  if (
+    !sent.marked &&
+    !(await ssr.takesRequest({ url: sent.url.href, headers: sent.headers }, true))
+  ) {
+    return nativeFetch(input, init);
+  }
+  const spare = input instanceof Request && input.body ? input.clone() : input;
   const request = new registry.Request(input, init);
-  return ssr.handleRequest(
+  const response = await ssr.handleRequest(
     {
       url: request.url,
       method: request.method,
@@ -182,8 +232,9 @@ registry.fetch = (input, init) => {
       body: request.body,
       signal: request.signal,
     },
-    true,
+    { nested: true, unrouted: sent.marked ? "not-found" : "pass" },
   );
+  return response ?? nativeFetch(spare, init);
 };
 // Where the server reaches itself, which `next start` sets too. Next reads it
 // when it needs it, from the `process` of the tab.
@@ -369,7 +420,9 @@ async function openPage(
   };
 
   // Not the browser's Request, which drops a `cookie` header.
-  const response = await browserFetch(new registry.Request(url, { ...init, signal }), true);
+  const response = await browserFetch(new registry.Request(url, { ...init, signal }), {
+    navigation: true,
+  });
   superseded();
   // A route handler can answer with anything. A browser would show it or
   // download it; there is no app in it to start.

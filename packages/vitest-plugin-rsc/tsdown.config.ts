@@ -8,6 +8,7 @@ export default defineConfig({
     "src/testing-library-client.tsx",
     "src/nextjs/index.ts",
     "src/nextjs/plugin.ts",
+    "src/nextjs/adapter.ts",
     "src/nextjs/setup.ts",
     "src/nextjs/rsc.ts",
     "src/nextjs/ssr.ts",

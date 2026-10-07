@@ -78,6 +78,9 @@ importers:
         specifier: '>=5.0.3'
         version: 5.0.3(@opentelemetry/api@1.9.1)(@types/node@24.12.4)(@vitest/browser-playwright@5.0.3)(@vitest/coverage-v8@5.0.3)(@vitest/ui@5.0.3)(msw@2.14.6(@types/node@24.12.4)(typescript@6.0.3))(vite@8.3.1(@types/node@24.12.4)(esbuild@0.27.7)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))
     devDependencies:
+      '@next/routing':
+        specifier: 16.4.0
+        version: 16.4.0
       '@types/convert-source-map':
         specifier: ^2.0.3
         version: 2.0.3
@@ -111,6 +114,9 @@ importers:
 
   playground/nextjs-e2e-demo:
     dependencies:
+      '@next/routing':
+        specifier: 16.4.0
+        version: 16.4.0
       '@t3-oss/env-core':
         specifier: 0.13.11
         version: 0.13.11(typescript@6.0.3)(zod@4.4.3)
@@ -185,6 +191,9 @@ importers:
         specifier: ^1.1.0
         version: 1.1.0
       '@next/env':
+        specifier: 16.4.0
+        version: 16.4.0
+      '@next/routing':
         specifier: 16.4.0
         version: 16.4.0
       '@t3-oss/env-core':
@@ -1399,6 +1408,9 @@ packages:
 
   '@next/env@16.4.0':
     resolution: {integrity: sha512-pyLlT5oafGlX8X7xjgGNXz5dNIDSxREm+qD6i9VLSZiZFopA/XWl8NM/KPmLx/8EG/++c49iid3gNWSQW1+2dQ==}
+
+  '@next/routing@16.4.0':
+    resolution: {integrity: sha512-ki3B6L7QaX0jf7wm3nAVP/vefJ8kt4jp2bRPMymKBp+hqCrMoJMZ5aEDIkpeR2DEvIbVlhRrZSPj4W05w6MoDw==}
 
   '@next/swc-darwin-arm64@16.4.0':
     resolution: {integrity: sha512-yyZ+9MgViAKLLb5l1gPBGjRwnq3teNLb5Zx6JEw8LzNSTjlsnp+baUHFxTgl7PpjCmKf48VQfyipG1eBflb48Q==}
@@ -5219,6 +5231,8 @@ snapshots:
   '@neondatabase/serverless@1.1.0': {}
 
   '@next/env@16.4.0': {}
+
+  '@next/routing@16.4.0': {}
 
   '@next/swc-darwin-arm64@16.4.0':
     optional: true

@@ -1,4 +1,5 @@
-import { nextConfig } from "virtual:vitest-plugin-rsc/next-manifest";
+import type { RequestMeta } from "next/dist/server/request-meta";
+import { nextConfig, routesManifest } from "virtual:vitest-plugin-rsc/next-manifest";
 import { Readable } from "virtual:vitest-plugin-rsc/node-stream";
 import { preview } from "./cache.ts";
 import { registry, type RequestHandler, type ServerRequest } from "./registry.ts";
@@ -48,18 +49,8 @@ const buildManifest = {
 // The files of `.next/` that the route module of a page reads, by the end of
 // their path. What is not here is a file a build does not always write.
 const manifests: [suffix: string, manifest: () => unknown][] = [
-  [
-    "routes-manifest.json",
-    () => ({
-      version: 4,
-      caseSensitive: false,
-      basePath: nextConfig.basePath ?? "",
-      rewrites: { beforeFiles: [], afterFiles: [], fallback: [] },
-      redirects: [],
-      headers: [],
-      onMatchHeaders: [],
-    }),
-  ],
+  // The one Next's build makes: see `routesManifest` in project.ts.
+  ["routes-manifest.json", () => routesManifest],
   [
     "prerender-manifest.json",
     () => ({ version: 4, routes: {}, dynamicRoutes: {}, notFoundRoutes: [], preview }),
@@ -279,10 +270,21 @@ function respond(res: NodeResponse, written: Promise<unknown>): Promise<Response
   return Promise.race([res.toResponse(toHeaders), settled]);
 }
 
+/**
+ * What the server in front of a route knows of a request that it routed: see
+ * `handle()` in ssr.ts.
+ */
+export type RoutedRequestMeta = Pick<RequestMeta, "query">;
+
 // What `next start` knows of a request before a route gets it: the URL the
-// browser asked for. Without it Next takes the server to be `localhost`.
-function requestMetaOf(request: ServerRequest) {
-  return { initURL: request.url, initProtocol: new URL(request.url).protocol.slice(0, -1) };
+// browser asked for, and what it made of that URL. Without the first Next
+// takes the server to be `localhost`.
+function requestMetaOf(request: ServerRequest, routed: RoutedRequestMeta = {}) {
+  return {
+    ...(routed.query && { query: routed.query }),
+    initURL: request.url,
+    initProtocol: new URL(request.url).protocol.slice(0, -1),
+  };
 }
 
 // Next's build lists the Server Actions of the app in a manifest. Here the
@@ -301,6 +303,7 @@ export async function handleRequest(
   request: ServerRequest,
   context: { waitUntil?: (promise: Promise<unknown>) => void },
   handler: RequestHandler,
+  routed?: RoutedRequestMeta,
 ): Promise<Response> {
   const req = createNodeRequest(request);
   const res = createNodeResponse();
@@ -310,7 +313,7 @@ export async function handleRequest(
   const cache = globalThis.__incrementalCache;
   const handled = handler(req, res, {
     waitUntil: context.waitUntil,
-    requestMeta: { ...requestMetaOf(request), incrementalCache: cache },
+    requestMeta: { ...requestMetaOf(request, routed), incrementalCache: cache },
   }).finally(() => (globalThis.__incrementalCache = cache));
   return respond(res, handled);
 }

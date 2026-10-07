@@ -101,8 +101,8 @@ jobs:
       # release the tag names now.
       - name: Install Next.js ${{ matrix.next }}
         run: |
-          pnpm --filter nextjs-e2e-demo add --config.minimum-release-age=0 next@${{ matrix.next }}
-          pnpm --filter nextjs-notes-demo add --config.minimum-release-age=0 next@${{ matrix.next }} @next/env@${{ matrix.next }}
+          pnpm --filter nextjs-e2e-demo add --config.minimum-release-age=0 next@${{ matrix.next }} @next/routing@${{ matrix.next }}
+          pnpm --filter nextjs-notes-demo add --config.minimum-release-age=0 next@${{ matrix.next }} @next/env@${{ matrix.next }} @next/routing@${{ matrix.next }}
           pnpm --filter nextjs-e2e-demo exec node -p "'next@' + require('next/package.json').version"
       - run: pnpm exec playwright install --with-deps --only-shell chromium
       - run: pnpm build

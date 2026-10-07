@@ -7,6 +7,16 @@ declare module "virtual:vitest-plugin-rsc/next-manifest" {
     component?: string;
   }[];
   export const nextConfig: import("next/dist/server/config-shared").NextConfigComplete;
+  export const routing: import("./project.ts").NextRouting;
+  export const routesManifest: import("next/dist/build").RoutesManifest;
+}
+
+declare module "virtual:vitest-plugin-rsc/next-middleware" {
+  /** Nothing for an app without a `proxy.ts` or a `middleware.ts`. */
+  const loadMiddleware:
+    | (() => Promise<{ handler: import("./registry.ts").MiddlewareHandler }>)
+    | undefined;
+  export default loadMiddleware;
 }
 
 declare module "virtual:vitest-plugin-rsc/node-stream" {
