@@ -30,6 +30,8 @@ export type NextRegistry = {
   /** Loads the rsc-layer module of a route, into `appPages`. */
   loadAppPage(page: string): Promise<unknown>;
   appPages: Record<string, unknown>;
+  /** What a test renders in place of the page of a route, by page name. */
+  pageOverrides: Record<string, unknown>;
   /** Loads a Client Component by its module id, in the ssr layer. */
   loadSsrModule(id: string): Promise<unknown>;
   /**
@@ -45,6 +47,7 @@ const scope = globalThis as { __vitest_plugin_rsc_next__?: Partial<NextRegistry>
 
 export const registry = (scope.__vitest_plugin_rsc_next__ ??= {
   appPages: {},
+  pageOverrides: {},
 }) as NextRegistry;
 
 /**

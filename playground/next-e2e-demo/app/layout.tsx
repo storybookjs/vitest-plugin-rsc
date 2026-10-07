@@ -8,7 +8,8 @@ export const metadata: Metadata = {
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="en">
+    // A theme script of a page may set attributes on it before React hydrates.
+    <html lang="en" suppressHydrationWarning>
       <body>
         <nav aria-label="Main">
           <Link href="/">Home</Link> <Link href="/notes">Notes</Link>

@@ -1,4 +1,5 @@
 import "./globals.ts";
+import type { ReactNode } from "react";
 import { resetAsyncLocalStorage } from "../async-local-storage.ts";
 import { createEnvironmentRunner, importEnvironment } from "../utilts.ts";
 import { loadDocument, unloadDocument } from "./document.ts";
@@ -134,21 +135,70 @@ registry.fetch = (input, init) => {
 // when it needs it, from the `process` of the tab.
 process.env.__NEXT_PRIVATE_ORIGIN = window.location.origin;
 
-let page: { unmount(): void } | undefined;
+let page: { started: Promise<unknown>; unmount(): void } | undefined;
 // Tells a page load that the tab has moved on: to another page, or to the
 // next test.
 let currentLoad: AbortController | undefined;
 
+export type RenderServerOptions = {
+  /** The URL to open. Defaults to `/`. */
+  url?: string;
+  /** Headers for the request of the document, next to the ones a browser sends. */
+  headers?: HeadersInit;
+};
+
+export type RenderServerResult = {
+  /** The server's response to the request of the document. */
+  response: Response;
+  /** Leaves the page. */
+  unmount(): Promise<void>;
+};
+
 /**
- * Opens a page of the Next.js app in this tab, as a browser does: it requests
+ * Opens a route of the Next.js app in this tab, as a browser does: it requests
  * the document from the server, shows the HTML it gets back, and starts the
  * app's client code, which hydrates it. From there Next's own router is in
  * charge, so links, forms and Server Actions work as they do in the app.
  *
- * Resolves once the page has hydrated, with the server's response.
+ * With a node, the route renders that node where it has its page: one slice of
+ * the app, inside the layouts, the request and the router of a real route.
+ *
+ * Resolves once the page has hydrated.
  */
-export function visit(url: string): Promise<Response> {
-  return loadPage(new URL(url, window.location.origin), { headers: { accept: "text/html" } });
+export function renderServer(options: RenderServerOptions): Promise<RenderServerResult>;
+export function renderServer(
+  ui: ReactNode,
+  options?: RenderServerOptions,
+): Promise<RenderServerResult>;
+export async function renderServer(
+  ...args: [RenderServerOptions] | [ReactNode, RenderServerOptions?]
+): Promise<RenderServerResult> {
+  const [ui, options = {}] = isOptions(args) ? [undefined, args[0]] : args;
+  const url = new URL(options.url ?? "/", window.location.origin);
+
+  registry.pageOverrides = {};
+  // A URL that is not a route has no page to render the node in: it gets the
+  // not-found page, like any other request for it.
+  const page = isOptions(args) ? undefined : ssr.pageOf(url.pathname);
+  if (page) registry.pageOverrides[page] = ui;
+
+  const headers = new Headers(options.headers);
+  if (!headers.has("accept")) headers.set("accept", "text/html");
+  return { response: await loadPage(url, { headers }), unmount: leavePage };
+}
+
+function isOptions(args: unknown[]): args is [RenderServerOptions] {
+  const [first] = args;
+  // A React element is an object too, but one with a `$$typeof`.
+  return (
+    args.length === 1 &&
+    typeof first === "object" &&
+    first !== null &&
+    !("$$typeof" in first) &&
+    !Array.isArray(first) &&
+    !(Symbol.iterator in first) &&
+    !("then" in first)
+  );
 }
 
 async function loadPage(url: URL, init: RequestInit): Promise<Response> {
@@ -180,14 +230,16 @@ async function loadPage(url: URL, init: RequestInit): Promise<Response> {
   // while it hydrates.
   let unmount: (() => void) | undefined;
   let left = false;
+  const started = client.start();
   page = {
+    started: started.catch(() => {}),
     unmount() {
       left = true;
       unmount?.();
     },
   };
   try {
-    ({ unmount } = await client.start());
+    ({ unmount } = await started);
   } catch (error) {
     // Starting an app whose page is gone fails in its own ways.
     superseded();
@@ -198,21 +250,28 @@ async function loadPage(url: URL, init: RequestInit): Promise<Response> {
   return response;
 }
 
-function leavePage(): Promise<void> {
+async function leavePage(): Promise<void> {
   currentLoad?.abort(new DOMException("The page was left before it had loaded.", "AbortError"));
   currentLoad = undefined;
-  page?.unmount();
+  const leaving = page;
   page = undefined;
+  // An app that is still starting cannot be stopped, and would go on to
+  // hydrate the next page with the client code of this one. It is about done:
+  // the document it starts from is already there.
+  await Promise.race([leaving?.started, new Promise((resolve) => setTimeout(resolve, 1000))]);
+  leaving?.unmount();
   unloadDocument();
-  return ssr.settleRequests().then(resetAsyncLocalStorage);
+  await ssr.settleRequests();
+  resetAsyncLocalStorage();
 }
 
 /**
- * Leaves the page that `visit()` opened and forgets the tab's cookies, like a
+ * Leaves the page that `renderServer()` opened and forgets the tab's cookies, like a
  * new browser context. Runs after every test.
  */
 export async function cleanup(): Promise<void> {
   await leavePage();
+  registry.pageOverrides = {};
   clearCookies();
 }
 
@@ -220,7 +279,7 @@ export async function cleanup(): Promise<void> {
 // `<form>` or an `<a>` that React does not handle, Next's own fallback when a
 // client-side navigation is not possible. For a browser that is a page load.
 // For this tab it would replace the test with the app, so load the page the
-// way `visit()` does instead.
+// way `renderServer()` does instead.
 type NavigateEvent = Event & {
   destination: { url: string; sameDocument: boolean };
   hashChange: boolean;

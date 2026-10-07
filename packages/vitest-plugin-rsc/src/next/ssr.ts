@@ -43,7 +43,7 @@ Object.assign(globalThis, {
   __BUILD_MANIFEST: {
     polyfillFiles: [],
     // The script that starts the app in the browser. Next requires one and
-    // puts it in the HTML. Nothing loads it here: `visit()` starts the app.
+    // puts it in the HTML. Nothing loads it here: `renderServer()` starts the app.
     rootMainFiles: ["static/chunks/main-app.js"],
     devFiles: [],
     lowPriorityFiles: [],
@@ -59,6 +59,11 @@ const matchers = getSortedRoutes(
   page: routes.find((route) => route.pathname === pathname)!.page,
   match: getRouteMatcher(getRouteRegex(pathname)),
 }));
+
+/** The page of the route that serves a pathname, if there is one. */
+export function pageOf(pathname: string): string | undefined {
+  return matchers.find(({ match }) => match(pathname))?.page;
+}
 
 // One request at a time: see `enterAmbientScope`.
 let queue: Promise<unknown> = Promise.resolve();
@@ -108,7 +113,7 @@ export async function settleRequests(): Promise<void> {
 
 async function handle(request: ServerRequest): Promise<Response> {
   const { pathname } = new URL(request.url);
-  const matched = matchers.find(({ match }) => match(pathname))?.page;
+  const matched = pageOf(pathname);
   const page = matched ?? notFoundPage;
   const endRequestScope = registry.enterRequestScope();
 

@@ -5,7 +5,7 @@ import { registerModuleLoader } from "./client-modules.ts";
 
 // The browser layer. This module is the app's client entry: what Next's
 // `main-app.js` chunk is for a deployment. Like that chunk, it runs once per
-// page load, in a module graph of its own (see `visit()`), and starts the app
+// page load, in a module graph of its own (see `renderServer()`), and starts the app
 // from the document the server sent.
 
 declare global {
@@ -13,13 +13,15 @@ declare global {
   var __NEXT_HYDRATED_CB: (() => void) | undefined;
 }
 
-registerModuleLoader("browser");
-// A Server Action imported by a Client Component calls the server the way
-// Next's router does: a POST to the current page.
-globalThis.__viteRscCallServer = callServer;
-
 /** Hydrates the document. Resolves once it has, with how to leave the page. */
 export async function start(): Promise<{ unmount(): void }> {
+  // Not when this module loads: a page that was left while it loaded must not
+  // take over from the page that is there now.
+  registerModuleLoader("browser");
+  // A Server Action imported by a Client Component calls the server the way
+  // Next's router does: a POST to the current page.
+  globalThis.__viteRscCallServer = callServer;
+
   // Next's entry does not hand out the root it creates.
   let root: Root | undefined;
   const { hydrateRoot, createRoot } = ReactDOMClient;

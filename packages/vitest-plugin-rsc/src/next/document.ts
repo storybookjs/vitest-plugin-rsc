@@ -86,7 +86,7 @@ export function loadDocument(html: ReadableStream<Uint8Array> | null): PageLoad 
     // bytes: React's, which move streamed content into place, and Next's,
     // which carry the Flight payload to hydrate with. Run them in document
     // order, as the parser would have. The scripts with a `src` are the app's
-    // chunks, which `visit()` stands in for.
+    // chunks, which `renderServer()` stands in for.
     for (const script of document.querySelectorAll("script")) {
       if (before.has(script) || ran.has(script)) continue;
       ran.add(script);

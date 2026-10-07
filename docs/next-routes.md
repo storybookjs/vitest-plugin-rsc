@@ -38,7 +38,7 @@ Where Next's bundler config moves a module to another layer, the plugin does the
 ## A Request
 
 ```
-visit("/notes/1")
+renderServer({ url: "/notes/1" })
   │  GET /notes/1                          the browser's fetch, with its cookies
   ▼
 ssr      handler(Request)                  Next's edge entry for the route
@@ -53,6 +53,8 @@ ssr      Flight → HTML                     Next's own stream, with the Flight 
 browser  the HTML goes into the document   as it streams in
          Next's client entry hydrates it   in a module graph of its own, like a page load
 ```
+
+With a node, `renderServer(<Node />, { url })`, the request is the same one. The only difference is in the route's loader tree: where Next loads the page module of that route, it gets a component that returns the node. Layouts, params, cookies and the router are the route's own.
 
 After that, Next's router is in charge. A `<Link>` navigation is an RSC request to the same handler. A Server Action is a `POST` with a `Next-Action` header.
 
@@ -73,7 +75,8 @@ And for the browser side, a page load: the tab cannot navigate away from the tes
 - Route handlers (`route.ts`), `middleware.ts` / `proxy.ts`, and the redirects, rewrites and headers of `next.config`.
 - `"use cache"` and `unstable_cache`. The store a request entered first is the one a later task reads, so code that resumes after an `await` inside a cache scope reads the request's store instead of the cache's.
 - `fetch` in your own server code is the browser's `fetch`, without Next's cache options. And `typeof window` is `"object"` there: only Next's own server code is compiled as server code.
+- `vi.mock()` replaces a module in the `rsc` layer, where the test runs. The other two layers load their modules themselves, so a mock does not reach a Client Component.
 - One request at a time. A request that waits for another one that the test has not sent yet will wait forever.
 - A same-origin `fetch` is only the app's when Next's router or a Server Action sends it. Other requests go to the dev server.
 - A navigation that leaves the page without Next's router, like `location.assign()`, is turned into a page load with the Navigation API, which today means Chromium.
-- Every `visit()` loads React and the app's client code again, as a page load does. The listeners React adds to the document stay, so a tab that visits thousands of pages grows.
+- Every `renderServer()` loads React and the app's client code again, as a page load does. The listeners React adds to the document stay, so a tab that visits thousands of pages grows.

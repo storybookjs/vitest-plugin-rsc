@@ -26,3 +26,7 @@ export async function toggleFavorite(id: string): Promise<boolean> {
   note.favorite = !note.favorite;
   return note.favorite;
 }
+
+export async function setLanguage(language: string) {
+  (await cookies()).set("language", language);
+}

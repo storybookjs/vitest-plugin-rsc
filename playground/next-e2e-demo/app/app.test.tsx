@@ -1,6 +1,9 @@
-import { visit } from "vitest-plugin-rsc/next";
+import { renderServer } from "vitest-plugin-rsc/next";
 import { afterEach, beforeEach, expect, test, vi, type MockInstance } from "vitest";
 import { page } from "vitest/browser";
+import { cookies, headers } from "next/headers";
+import { Counter } from "./components/counter.tsx";
+import { FavoriteButton } from "./components/favorite-button.tsx";
 import { db, type Note } from "./lib/notes.ts";
 
 let consoleError: MockInstance<typeof console.error>;
@@ -17,7 +20,7 @@ afterEach(() => {
 });
 
 test("server-renders a page and hydrates it", async () => {
-  const response = await visit("/");
+  const { response } = await renderServer({ url: "/" });
 
   expect(response.status).toBe(200);
   expect(document.documentElement.lang).toBe("en");
@@ -30,7 +33,7 @@ test("server-renders a page and hydrates it", async () => {
 test("renders a dynamic route with its metadata", async () => {
   db.notes.set("1", { id: "1", title: "Inbox triage", body: "Sort the inbox" });
 
-  await visit("/notes/1");
+  await renderServer({ url: "/notes/1" });
 
   await expect.element(page.getByRole("heading", { name: "Inbox triage" })).toBeVisible();
   expect(document.title).toBe("Inbox triage | Notes");
@@ -39,7 +42,7 @@ test("renders a dynamic route with its metadata", async () => {
 
 test("navigates on the client with next/link", async () => {
   db.notes.set("1", { id: "1", title: "Inbox triage", body: "Sort the inbox" });
-  await visit("/");
+  await renderServer({ url: "/" });
 
   await page.getByRole("link", { name: "Notes", exact: true }).click();
   await expect.element(page.getByRole("heading", { name: "Notes" })).toBeVisible();
@@ -56,7 +59,7 @@ test("streams a page behind its loading.tsx", async () => {
   vi.spyOn(db, "getNote").mockReturnValue(new Promise((resolve) => (resolveNote = resolve)));
 
   // The document arrives in parts: what the server has, then the page.
-  await visit("/notes/1");
+  await renderServer({ url: "/notes/1" });
   await expect.element(page.getByText("Loading note…")).toBeVisible();
 
   resolveNote({ id: "1", title: "Inbox triage", body: "Sort the inbox" });
@@ -65,7 +68,7 @@ test("streams a page behind its loading.tsx", async () => {
 });
 
 test("follows a redirect() from a page", async () => {
-  const response = await visit("/old");
+  const { response } = await renderServer({ url: "/old" });
 
   expect(response.redirected).toBe(true);
   expect(window.location.pathname).toBe("/notes");
@@ -73,7 +76,7 @@ test("follows a redirect() from a page", async () => {
 });
 
 test("renders the not-found boundary when a page calls notFound()", async () => {
-  const response = await visit("/notes/404");
+  const { response } = await renderServer({ url: "/notes/404" });
 
   // The route has a loading.tsx, so the response had started when the page
   // called notFound(): the status is the 200 it started with.
@@ -82,14 +85,14 @@ test("renders the not-found boundary when a page calls notFound()", async () => 
 });
 
 test("serves a path that is not a route with the not-found page", async () => {
-  const response = await visit("/nope");
+  const { response } = await renderServer({ url: "/nope" });
 
   expect(response.status).toBe(404);
   await expect.element(page.getByRole("heading", { name: "Nothing here" })).toBeVisible();
 });
 
 test("runs a Server Action that sets a cookie, revalidates and redirects", async () => {
-  await visit("/notes/new");
+  await renderServer({ url: "/notes/new" });
 
   await page.getByRole("textbox", { name: "Title" }).fill("Plan the week");
   await page.getByRole("button", { name: "Create" }).click();
@@ -109,7 +112,7 @@ test("runs a Server Action that sets a cookie, revalidates and redirects", async
 test("rerenders the page after a Server Action with bound arguments", async () => {
   db.notes.set("1", { id: "1", title: "Inbox triage", body: "" });
   db.notes.set("2", { id: "2", title: "Plan the week", body: "" });
-  await visit("/notes");
+  await renderServer({ url: "/notes" });
 
   await page.getByRole("button", { name: "Delete Inbox triage" }).click();
 
@@ -120,7 +123,7 @@ test("rerenders the page after a Server Action with bound arguments", async () =
 
 test("calls a Server Action from a Client Component and uses what it returns", async () => {
   db.notes.set("1", { id: "1", title: "Inbox triage", body: "" });
-  await visit("/notes/1");
+  await renderServer({ url: "/notes/1" });
 
   await page.getByRole("button", { name: "Favorite" }).click();
 
@@ -131,7 +134,7 @@ test("calls a Server Action from a Client Component and uses what it returns", a
 test("renders parallel routes", async () => {
   db.notes.set("1", { id: "1", title: "Inbox triage", body: "" });
 
-  await visit("/dashboard");
+  await renderServer({ url: "/dashboard" });
 
   await expect.element(page.getByRole("heading", { name: "Dashboard" })).toBeVisible();
   await expect
@@ -143,7 +146,7 @@ test("shows the error boundary of a route, and recovers from it", async () => {
   // Next logs the error on the server and React logs it in the browser.
   consoleError.mockImplementation(() => {});
 
-  const response = await visit("/broken");
+  const { response } = await renderServer({ url: "/broken" });
   expect(response.status).toBe(500);
   await expect.element(page.getByRole("heading", { name: "Something went wrong" })).toBeVisible();
 
@@ -154,28 +157,131 @@ test("shows the error boundary of a route, and recovers from it", async () => {
   consoleError.mockClear();
 });
 
+test("rerenders the page after a Server Action that only sets a cookie", async () => {
+  await renderServer({ url: "/settings" });
+  await expect.element(page.getByText("Language: en")).toBeVisible();
+
+  await page.getByRole("button", { name: "Use Dutch" }).click();
+
+  await expect.element(page.getByText("Language: nl")).toBeVisible();
+  expect(document.cookie).toBe("language=nl");
+  expect(window.location.pathname).toBe("/settings");
+});
+
+test("renders and hydrates a Client Component from a package", async () => {
+  await renderServer({ url: "/settings" });
+
+  await page.getByRole("button", { name: "Theme: light" }).click();
+
+  await expect.element(page.getByRole("button", { name: "Theme: dark" })).toBeVisible();
+  expect(document.documentElement.classList.contains("dark")).toBe(false);
+  expect(document.documentElement.dataset.theme).toBe("dark");
+});
+
 test("starts every test without the cookies of the one before", async () => {
   // The Server Action test above left `last-created` behind.
   expect(document.cookie).toBe("");
 
-  await visit("/notes");
+  await renderServer({ url: "/notes" });
   await expect.element(page.getByRole("heading", { name: "Notes" })).toBeVisible();
   await expect.element(page.getByText(/Last created/)).not.toBeInTheDocument();
 });
 
-test("sends the cookies the test sets before it visits", async () => {
+test("sends the cookies the test sets before it opens a page", async () => {
   document.cookie = "last-created=7";
 
-  await visit("/notes");
+  await renderServer({ url: "/notes" });
 
   await expect.element(page.getByText("Last created: 7")).toBeVisible();
 });
 
 test("loads the page when the app navigates without its router", async () => {
-  await visit("/");
+  await renderServer({ url: "/" });
 
   await page.getByRole("link", { name: "All notes, the long way" }).click();
 
   await expect.element(page.getByRole("heading", { name: "Notes" })).toBeVisible();
   expect(window.location.pathname).toBe("/notes");
+});
+
+async function RequestInfo() {
+  return (
+    <dl>
+      <dt>Tenant</dt>
+      <dd>{(await headers()).get("x-tenant")}</dd>
+      <dt>Last created</dt>
+      <dd>{(await cookies()).get("last-created")?.value}</dd>
+    </dl>
+  );
+}
+
+test("renders a node in place of the page of a route", async () => {
+  const { response } = await renderServer(
+    <>
+      <h1>Just a counter</h1>
+      <Counter />
+    </>,
+    { url: "/notes" },
+  );
+
+  expect(response.status).toBe(200);
+  expect(window.location.pathname).toBe("/notes");
+  // The layouts of the route are there, its page is not.
+  await expect.element(page.getByRole("navigation", { name: "Main" })).toBeVisible();
+  await expect.element(page.getByRole("heading", { name: "Just a counter" })).toBeVisible();
+  await expect.element(page.getByRole("heading", { name: "Notes" })).not.toBeInTheDocument();
+
+  await page.getByRole("button", { name: "Count: 0" }).click();
+  await expect.element(page.getByRole("button", { name: "Count: 1" })).toBeVisible();
+});
+
+test("renders a node at / when it gets no url", async () => {
+  await renderServer(<h1>On its own</h1>);
+
+  expect(window.location.pathname).toBe("/");
+  await expect.element(page.getByRole("heading", { name: "On its own" })).toBeVisible();
+  await expect.element(page.getByRole("heading", { name: "Home" })).not.toBeInTheDocument();
+});
+
+test("gives a node the request: its headers and cookies", async () => {
+  document.cookie = "last-created=7";
+
+  await renderServer(<RequestInfo />, { url: "/notes", headers: { "x-tenant": "acme" } });
+
+  await expect.element(page.getByText("acme")).toBeVisible();
+  await expect.element(page.getByText("7", { exact: true })).toBeVisible();
+});
+
+test("calls a Server Action from a node", async () => {
+  db.notes.set("1", { id: "1", title: "Inbox triage", body: "" });
+
+  await renderServer(<FavoriteButton id="1" favorite={false} />, { url: "/notes/1" });
+
+  await page.getByRole("button", { name: "Favorite" }).click();
+  await expect.element(page.getByRole("button", { name: "Favorite", pressed: true })).toBeVisible();
+  expect(db.notes.get("1")?.favorite).toBe(true);
+});
+
+test("renders the page again once a test renders the route itself", async () => {
+  await renderServer(<h1>Not the notes</h1>, { url: "/notes" });
+  await expect.element(page.getByRole("heading", { name: "Not the notes" })).toBeVisible();
+
+  await renderServer({ url: "/notes" });
+  await expect.element(page.getByRole("heading", { name: "Notes" })).toBeVisible();
+});
+
+test("renders the not-found page for a node at a url that is not a route", async () => {
+  const { response } = await renderServer(<h1>Nowhere</h1>, { url: "/nope" });
+
+  expect(response.status).toBe(404);
+  await expect.element(page.getByRole("heading", { name: "Nowhere" })).not.toBeInTheDocument();
+});
+
+test("leaves the page with unmount()", async () => {
+  const { unmount } = await renderServer({ url: "/" });
+  await expect.element(page.getByRole("heading", { name: "Home" })).toBeVisible();
+
+  await unmount();
+
+  await expect.element(page.getByRole("heading", { name: "Home" })).not.toBeInTheDocument();
 });
