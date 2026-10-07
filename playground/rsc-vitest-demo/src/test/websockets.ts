@@ -1,13 +1,14 @@
 // The first setup file: records the websockets the tab opens from here on,
 // for client-counter/vite-client.test.tsx. The list is on the global: the tab
 // gets this module once as a setup file and once more for a test's import.
-const scope = globalThis as { __opened_websockets__?: URL[] };
+type Opened = { url: string; protocols: unknown };
+const scope = globalThis as { __opened_websockets__?: Opened[] };
 
 if (!scope.__opened_websockets__) {
-  const opened: URL[] = (scope.__opened_websockets__ = []);
+  const opened: Opened[] = (scope.__opened_websockets__ = []);
   globalThis.WebSocket = new Proxy(globalThis.WebSocket, {
     construct(target, args: ConstructorParameters<typeof WebSocket>, newTarget) {
-      opened.push(new URL(args[0]));
+      opened.push({ url: String(args[0]), protocols: args[1] });
       return Reflect.construct(target, args, newTarget);
     },
   });

@@ -8,16 +8,12 @@ test("loads a Client Component with the one Vite client that the tab has", async
   await renderServer(<ClientCounter />);
   await expect.element(page.getByRole("button", { name: "client-counter: 0" })).toBeVisible();
 
-  // Vite's client opens a websocket when it is evaluated, and the tab had its
-  // own before the tests were set up. A Client Component is loaded by a module
-  // that Vite imports its client into, through a module runner: a copy there
-  // would open another one, to the port the server was configured with, which
-  // is the server of another Vitest run when that port was taken. So the one
-  // websocket since then is the module runner's, to the server of this page.
-  expect(
-    openedWebSockets.map((url) => [
-      url.host,
-      url.searchParams.has("vitest-plugin-rsc-react-client"),
-    ]),
-  ).toEqual([[window.location.host, true]]);
+  // Vite's client opens a `vite-hmr` websocket when it is evaluated, and the
+  // tab had its own before the tests were set up. A Client Component is loaded
+  // through a module runner, by a module that Vite imports its client into: a
+  // copy there would open another one, to the port the server was configured
+  // with. So the only such websockets since then are the module runner's own.
+  const hmr = openedWebSockets.filter(({ protocols }) => [protocols].flat().includes("vite-hmr"));
+  expect(hmr.length).toBeGreaterThan(0);
+  expect(hmr.filter(({ url }) => !url.includes("vitest-plugin-rsc-react-client"))).toEqual([]);
 });

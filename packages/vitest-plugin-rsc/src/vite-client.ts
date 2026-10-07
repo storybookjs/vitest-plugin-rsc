@@ -1,24 +1,20 @@
 import fs from "node:fs";
 import path from "node:path";
-import { normalizePath, parseAstAsync, type Plugin } from "vite";
+import { parseAstAsync, type Plugin } from "vite";
 
 // Vite adds an import of its client, `/@vite/client`, to a module that uses
-// `import.meta.hot`, to CSS, which the client puts in the document, and to a
-// module with a dynamic import it cannot analyse, like the one that loads a
-// Client Component by its id (testing-library-client.tsx).
+// `import.meta.hot`, to CSS, and to a module with a dynamic import it cannot
+// analyse, like the one that loads a Client Component by its id
+// (testing-library-client.tsx).
 //
-// A page has one such client, with one websocket to the dev server, and finds
-// that server by the URL it was loaded from. A module runner would evaluate
-// another copy for every module graph it creates. Such a copy has a file URL,
-// so it falls back to the address Vite wrote into it: the port the server was
-// configured with, written before the server listens. When that port is taken,
-// say by another Vitest run, the server listens on the next free one, and the
-// copy connects to the other run's server. That one refuses it, which Vite's
-// client reports with `console.error`, or drops it later, on which Vite's
-// client reloads the tab.
+// The page's client finds the dev server by the URL it was loaded from. A copy
+// that a module runner evaluates has a file URL, so it falls back to the port
+// Vite wrote into it before the server listened: the configured one. When that
+// port was taken, say by another Vitest run, that is the other run's server,
+// which refuses the copy. Vite's client reports that with `console.error`, and
+// reloads the tab when a replaced `WebSocket` (MSW's) first reported `open`.
 //
-// So the environments that load through a module runner get the client of the
-// page, and nothing in the page depends on a port that was known up front.
+// So an environment that loads through a module runner gets the page's client.
 
 /** The page's own instance of Vite's client. */
 const pageViteClientId = "virtual:vitest-plugin-rsc/vite-client";
@@ -26,6 +22,7 @@ const pageViteClientId = "virtual:vitest-plugin-rsc/vite-client";
 const pageViteClientGlobal = "globalThis.__vitest_plugin_rsc_vite_client__";
 
 export function pageViteClientPlugin(): Plugin {
+  let clientFile: string | undefined;
   return {
     name: "rsc:page-vite-client",
     enforce: "pre",
@@ -41,17 +38,18 @@ export function pageViteClientPlugin(): Plugin {
         return `export * from ${JSON.stringify(url)};`;
       }
 
-      // The page loads `client` itself, and every other environment for a
-      // browser through a module runner.
-      const { name, config } = this.environment;
-      if (name === "client" || config.consumer !== "client") return;
-      // Vite resolves `/@vite/client` to this file itself, with an alias.
-      const file = id.split("?")[0]!;
-      if (!normalizePath(file).endsWith("/vite/dist/client/client.mjs")) return;
-      const names = await exportNames(fs.readFileSync(file, "utf8"));
+      // The environments this plugin runs in the page through a module runner.
+      const { consumer, dev } = this.environment.config;
+      if (consumer !== "client" || !dev.moduleRunnerTransform) return;
+      clientFile ??= (await this.resolve("/@vite/client"))?.id;
+      if (id !== clientFile) return;
+      const names = await exportNames(fs.readFileSync(id, "utf8"));
+      if (names.length === 0) throw new Error(`Found no exports in Vite's client, ${id}.`);
       return (
         `const client = ${pageViteClientGlobal};\n` +
-        names.map((name) => `export const ${name} = client.${name};`).join("\n")
+        names
+          .map((name, i) => `const _${i} = client.${name};\nexport { _${i} as ${name} };`)
+          .join("\n")
       );
     },
   };
@@ -61,6 +59,7 @@ export function pageViteClientPlugin(): Plugin {
 async function exportNames(code: string): Promise<string[]> {
   const names: string[] = [];
   for (const node of (await parseAstAsync(code)).body) {
+    if (node.type === "ExportDefaultDeclaration") names.push("default");
     if (node.type !== "ExportNamedDeclaration") continue;
     for (const specifier of node.specifiers) {
       if (specifier.exported.type === "Identifier") names.push(specifier.exported.name);

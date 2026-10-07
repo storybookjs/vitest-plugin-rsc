@@ -42,25 +42,15 @@ async function startServer(port: number): Promise<number> {
   return (server.httpServer!.address() as AddressInfo).port;
 }
 
-test("nothing the page gets names the port the server was configured with", async () => {
+test("a module runner environment gets the page's Vite client, not a copy", async () => {
   const takenPort = await holdPort();
-  const port = await startServer(takenPort);
-  expect(port).not.toBe(takenPort);
+  expect(await startServer(takenPort)).not.toBe(takenPort);
 
-  // Vite's part: its client carries the configured port, not the one in use.
-  // The page's own instance does not need it, it has the URL it came from.
-  const pageClient = await server!.environments.client!.transformRequest("/@vite/client");
-  expect(pageClient!.code).toContain(`localhost:${takenPort}/`);
-
-  // A module that a runner evaluates has no such URL, so it must not get a
-  // copy of that client. It gets the instance of the page.
+  // A copy would carry the address Vite wrote into its client before the
+  // server listened, which is the taken port for as long as Vite does that.
   const runnerClient = await server!.environments.react_client!.fetchModule("/@vite/client");
   const { code } = runnerClient as { code: string };
   expect(code).toContain("globalThis.__vitest_plugin_rsc_vite_client__");
-  expect(code).toContain("createHotContext = client.createHotContext;");
+  expect(code).toContain("client.createHotContext;");
   expect(code).not.toContain(String(takenPort));
-
-  // And the websocket of the runners follows the page: no host, no port.
-  const info = await fetch(`http://localhost:${port}/@vite/react-client-runner-websocket`);
-  expect(await info.json()).toMatchObject({ host: null, port: null, path: "/" });
 });

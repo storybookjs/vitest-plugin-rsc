@@ -107,6 +107,8 @@ server.ws.on("connection", (socket) => {
 });
 ```
 
+A module in `react_client` that Vite imports its client (`/@vite/client`) into gets the page's own instance of it, not a copy with a second HMR websocket (`src/vite-client.ts`).
+
 That is the key bridge. The test is rendering a Server Component, but when React needs a Client Component, Vite resolves it with the browser/client conditions it would have in the app.
 
 ## The Full Loop
