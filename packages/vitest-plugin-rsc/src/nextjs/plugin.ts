@@ -320,14 +320,6 @@ function nextClientBoundaryPlugin(getProject: () => NextProject, resolver: Layer
   };
 }
 
-function encodePage(page: string): string {
-  return Buffer.from(page).toString("hex");
-}
-
-function decodePage(encoded: string): string {
-  return Buffer.from(encoded, "hex").toString();
-}
-
 // Next's templates carry Turbopack-only import attributes. They mean nothing
 // to Vite and are a syntax error in a browser.
 function stripTurbopackTransitions(code: string): string {
@@ -445,12 +437,9 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
   const resolvers = Object.fromEntries(
     layers.map((layer) => [layer, createLayerResolver(getProject, layer)]),
   ) as Record<NextLayer, LayerResolver>;
-  const findRoute = (id: string, prefix: string): NextRoute => {
-    const page = decodePage(id.slice(prefix.length + 1));
-    const route = project.routes.find((candidate) => candidate.page === page);
-    if (!route) throw new Error(`vitest-plugin-rsc: unknown Next.js app page ${page}`);
-    return route;
-  };
+  // The module of a route is named by its place in the list of routes.
+  const findRoute = (id: string, prefix: string): NextRoute =>
+    project.routes[Number(id.slice(prefix.length + 1))]!;
 
   return [
     ...createRunnerEnvironmentPlugins(environmentOf.ssr),
@@ -640,12 +629,13 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
         ).find(([listId]) => id === `\0${listId}`);
         if (list) {
           const [, prefix, kind] = list;
-          const entries = project.routes
-            .filter((route) => route.kind === kind)
-            .map(
-              ({ page }) =>
-                `  ${JSON.stringify(page)}: () => import(${JSON.stringify(prefix + encodePage(page))}),`,
-            );
+          const entries = project.routes.flatMap((route, index) =>
+            route.kind === kind
+              ? [
+                  `  ${JSON.stringify(route.page)}: () => import(${JSON.stringify(prefix + index)}),`,
+                ]
+              : [],
+          );
           return `export default {\n${entries.join("\n")}\n};\n`;
         }
 
@@ -706,7 +696,10 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
         // module, which is in this layer too.
         if (id.startsWith(`\0${routeHandlerPrefix}`)) {
           const route = findRoute(id, routeHandlerPrefix);
-          const code = await project.loadEdgeEntry(route, appPagePrefix + encodePage(route.page));
+          const code = await project.loadEdgeEntry(
+            route,
+            appPagePrefix + project.routes.indexOf(route),
+          );
           return compileRouteEntry(stripTurbopackTransitions(code), id, "rsc");
         }
       },

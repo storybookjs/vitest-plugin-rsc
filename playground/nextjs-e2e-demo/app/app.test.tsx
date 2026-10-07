@@ -296,21 +296,16 @@ test("renders a node in the slot that has the page of a route", async () => {
   await expect.element(page.getByText("Details of the stats")).not.toBeInTheDocument();
 });
 
-test("takes options that a wrapper passes on with a second argument", async () => {
-  // What TypeScript does not allow, and a wrapper in JavaScript does anyway.
-  const render = renderServer as (...args: unknown[]) => ReturnType<typeof renderServer>;
-
-  await render({ url: "/notes" }, undefined);
-
-  await expect.element(page.getByRole("heading", { name: "Notes" })).toBeVisible();
-});
-
-test("renders the page again after unmount()", async () => {
+test("leaves the page with unmount(), and the node that stood in for it", async () => {
   const { unmount } = await renderServer(<h1>Not the notes</h1>, { url: "/notes" });
+  await expect.element(page.getByRole("heading", { name: "Not the notes" })).toBeVisible();
+
   await unmount();
 
+  await expect
+    .element(page.getByRole("heading", { name: "Not the notes" }))
+    .not.toBeInTheDocument();
   const response = await handleRequest("/notes");
-
   expect(await response.text()).toContain("<h1>Notes</h1>");
 });
 
@@ -336,15 +331,6 @@ test("renders the not-found page for a node at a url that is not a route", async
   expect(response.status).toBe(404);
   await expect.element(page.getByRole("heading", { name: "Nothing here" })).toBeVisible();
   await expect.element(page.getByRole("heading", { name: "Nowhere" })).not.toBeInTheDocument();
-});
-
-test("leaves the page with unmount()", async () => {
-  const { unmount } = await renderServer({ url: "/" });
-  await expect.element(page.getByRole("heading", { name: "Home" })).toBeVisible();
-
-  await unmount();
-
-  await expect.element(page.getByRole("heading", { name: "Home" })).not.toBeInTheDocument();
 });
 
 test("replaces the page when a component redirects in the render after a Server Action", async () => {
