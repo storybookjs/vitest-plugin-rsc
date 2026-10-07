@@ -131,12 +131,13 @@ test("does not keep what a cached function computes after its test has ended", a
   reports.author = "ada";
   let finishReport = () => {};
   reports.waitFor = new Promise((resolve) => (finishReport = resolve));
-  const opening = renderServer({ url: "/reports/7" });
+  // Leaving the page stops it from opening.
+  const opening = expect(renderServer({ url: "/reports/7" })).rejects.toThrow("The page was left");
   await expect.poll(() => reports.started).toBe(1);
 
   // What runs between two tests, while the report is still being written.
   await cleanup();
-  await expect(opening).rejects.toThrow("The page was left");
+  await opening;
   finishReport();
   await expect.poll(() => reports.written).toBe(1);
   // Both reports are in before the next page is asked for.
