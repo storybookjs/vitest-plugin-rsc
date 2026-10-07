@@ -4,5 +4,5 @@ import { vi } from "vitest";
 // mock is for all of them: it goes here, not in a test file.
 //
 // Needs patches/@vitest__browser@*.patch: Vitest 5.0 imports a test file
-// without waiting for this mock.
+// without waiting for this mock (vitest-dev/vitest#11520).
 vi.mock("./app/lib/weather.ts");
