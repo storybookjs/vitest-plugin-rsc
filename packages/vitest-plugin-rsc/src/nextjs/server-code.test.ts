@@ -22,39 +22,29 @@ afterEach(() => {
 });
 
 // What a module leaves in `result`, compiled as server code.
-async function run(source: string, options?: { bundled: boolean }): Promise<unknown> {
-  const compiled = await compileServerCode(source, "/app/module.js", registry, options);
+async function run(source: string): Promise<unknown> {
+  const compiled = await compileServerCode(source, "/app/module.js", registry);
   return runInThisContext(`(() => { ${compiled?.code ?? source}\nreturn result; })()`);
 }
 
-test("hides the globals of a tab from a source file", async () => {
+test("answers typeof window as a server does, and replaces nothing else of it", async () => {
   expect(await run(`var result = [typeof window, typeof document, typeof location];`)).toEqual([
     "undefined",
     "undefined",
     "undefined",
   ]);
-  await expect(run(`var result = window.innerWidth;`)).rejects.toThrow(TypeError);
-});
-
-test("leaves a module its own bindings", async () => {
-  expect(await run(`const location = "Utrecht"; var result = location;`)).toBe("Utrecht");
-  expect(await run(`const { document = "passport" } = {}; var result = document;`)).toBe(
-    "passport",
+  expect(await run(`function f(window) { return typeof window; } var result = f(1);`)).toBe(
+    "number",
   );
-  expect(await run(`function measure(window) { return window; } var result = measure(1);`)).toBe(1);
-  // An import is a binding of the module too.
+  // As in a server bundle of Next, the name itself is left alone.
+  expect(await run(`var result = window.innerWidth;`)).toBe(390);
+  // A CommonJS module can return at its top level.
   const compiled = await compileServerCode(
-    `import { document } from "./document.js";\nexport const title = document.title + window;`,
-    "/app/module.js",
+    `if (typeof window === "undefined") return;\nmodule.exports = 1;`,
+    "/dependency/index.js",
     registry,
   );
-  expect(compiled?.code).toMatch(/\nvar window, location, localStorage, sessionStorage;\n$/);
-});
-
-test("keeps the text of a function in a source file, for an app that sends it to the browser", async () => {
-  const source = `function setTheme() { if (typeof document !== "undefined") document.title = localStorage.getItem("theme"); }`;
-
-  expect(await run(`${source} var result = setTheme.toString();`)).toBe(source);
+  expect(compiled?.code).toContain(`"undefined" === "undefined"`);
 });
 
 test("keeps what is first in a module first", async () => {
@@ -84,28 +74,6 @@ test("leaves code alone that names none of them", async () => {
   expect(
     await compileServerCode(`export const answer = 42;`, "/app/module.js", registry),
   ).toBeUndefined();
-});
-
-test("replaces typeof window in a module that will be bundled, and nothing else of it", async () => {
-  const bundled = { bundled: true };
-
-  expect(await run(`var result = [typeof window, typeof document];`, bundled)).toEqual([
-    "undefined",
-    "undefined",
-  ]);
-  expect(
-    await run(`function f(window) { return typeof window; } var result = f(1);`, bundled),
-  ).toBe("number");
-  // Not hidden: a bundler would rename a variable that hides it.
-  expect(await run(`var result = window.innerWidth;`, bundled)).toBe(390);
-  // A CommonJS module can return at its top level.
-  const compiled = await compileServerCode(
-    `if (typeof window === "undefined") return;\nmodule.exports = 1;`,
-    "/dependency/index.js",
-    registry,
-    bundled,
-  );
-  expect(compiled?.code).toContain(`"undefined" === "undefined"`);
 });
 
 // Pre-bundles modules the way Vite's dependency optimizer does: Rolldown, with
