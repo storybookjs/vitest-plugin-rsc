@@ -269,6 +269,8 @@ The server layers are written for an edge runtime, which is close to a browser: 
 
 And for the browser side, a page load: the tab cannot navigate away from the test, so the server's document is moved into the test's document once all of it has arrived, its inline scripts are run in order, and the URL is set with the History API. So the document has loaded when Next's client starts, and the page's first load does not show a `loading.tsx` or a Suspense fallback: a navigation in the app does, see the README.
 
+For a `redirect()` in a response that had started, Next sends a `<meta http-equiv="refresh">` for a browser without JavaScript, and its router loads the page it redirects to when it finds that tag. A browser drops a refresh that is still pending with the page. This document stays, so the plugin takes the `http-equiv` off the tag before it moves it in: the router still finds the tag, and nothing comes due a second later, in the page that is there by then.
+
 Two things that a build knows and a request has to find out here:
 
 - **Server Actions.** Next's build lists every action of the app. Here an action is the module and the export its id names (`<module>#<export>`), so for a `POST` with a `next-action` header the server looks whether that id names a Server Action, and lists only that one. An id that names none gets the response Next gives when it has no such action: `409`, with `x-nextjs-action-not-found`. Next answers an id that cannot be one of its own with `400`; that does not happen here, because an id here is not shaped like Next's. When the module of the action fails to load, that error is the response, a `500`.
