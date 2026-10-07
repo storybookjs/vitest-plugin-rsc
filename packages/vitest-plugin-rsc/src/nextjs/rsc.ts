@@ -2,10 +2,12 @@ import { createServerManifest } from "@vitejs/plugin-rsc/core/rsc";
 import * as ReactServer from "@vitejs/plugin-rsc/react/rsc";
 import { prerender } from "@vitejs/plugin-rsc/react/rsc/static";
 import * as FlightServer from "@vitejs/plugin-rsc/vendor/react-server-dom/server.edge";
+import { commands } from "vitest/browser";
 import appPages from "virtual:vitest-plugin-rsc/next-app-pages";
 import routeHandlers from "virtual:vitest-plugin-rsc/next-route-handlers";
 import type { FlightAdapters } from "./flight.ts";
 import { actionModulePrefix, registry } from "./registry.ts";
+import { routeLoadedCommand, type RouteKind } from "./watch.ts";
 
 // The rsc layer: Server Components, Server Actions, route handlers and the
 // Flight encoder.
@@ -74,9 +76,17 @@ registry.flightClient = {
   createTemporaryReferenceSet: ReactServer.createClientTemporaryReferenceSet,
 } satisfies FlightAdapters<"client">;
 
+// Tells the plugin which route the test file that runs now has loaded: see
+// watch.ts.
+type RouteLoaded = (kind: RouteKind, page: string) => Promise<void>;
+const routeLoaded = (commands as unknown as Partial<Record<string, RouteLoaded>>)[
+  routeLoadedCommand
+];
+
 registry.loadAppPage = async (page) => {
   const load = (appPages as Record<string, () => Promise<unknown>>)[page];
   if (!load) throw new Error(`vitest-plugin-rsc: unknown Next.js app page ${page}`);
+  void routeLoaded?.("page", page).catch(() => {});
   return (registry.appPages[page] ??= await load());
 };
 
@@ -94,6 +104,7 @@ export async function loadComponent(): Promise<{ default: () => unknown }> {
 registry.loadRouteHandler = async (page) => {
   const load = routeHandlers[page];
   if (!load) throw new Error(`vitest-plugin-rsc: unknown Next.js route handler ${page}`);
+  void routeLoaded?.("route", page).catch(() => {});
   return (await load()).handler;
 };
 

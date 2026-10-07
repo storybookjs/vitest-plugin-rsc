@@ -3,12 +3,13 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { hasDirective, transformDirectiveProxyExport } from "@vitejs/plugin-rsc/transforms";
 import { createFilter, normalizePath, parseAst, parseAstAsync, type Plugin } from "vite";
-import type { TestProject } from "vitest/node";
+import type { TestProject, Vitest } from "vitest/node";
 import { createRunnerEnvironmentPlugins } from "../runner-environment.ts";
 import { flightBridge, type FlightEntry } from "./flight.ts";
 import { createCompilePlugin, createDependencyCompilePlugin } from "./compile.ts";
 import { loadNextProject, nextRuntime, type NextLayer, type NextProject } from "./project.ts";
 import { createServerCode, type ServerCodeOptions } from "./server-code.ts";
+import { createRouteWatch, routeLoadedCommand } from "./watch.ts";
 
 // Each layer of Next is a Vite environment, and all three run in the test's
 // tab (docs/next-routes.md). Where Next's own bundler config says a module
@@ -623,6 +624,19 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
   let project: NextProject;
   const serverCode = createServerCode(registry, options);
   const getProject = () => project;
+  // Watch mode runs the test files that loaded a route, see watch.ts.
+  const routeWatch = createRouteWatch({
+    environment: environmentOf.rsc,
+    lists: routeModules.map(({ list }) => `\0${list}`),
+    modulesOf: (kind, page) =>
+      [...project.routes, ...project.componentRoutes].flatMap((route, index) =>
+        route.kind === kind && entryOf(route) === page
+          ? routeModules
+              .filter((modules) => modules.layer === "rsc")
+              .map(({ prefix }) => `\0${prefix}${index}`)
+          : [],
+      ),
+  });
   const resolvers = Object.fromEntries(
     layers.map((layer) => [layer, createLayerResolver(getProject, layer)]),
   ) as Record<NextLayer, LayerResolver>;
@@ -741,8 +755,17 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
 
         // Before the project's own setup files: one that imports a module of
         // Next's server needs the server's platform to be there.
-        const test = ((config as { test?: { setupFiles?: string | string[] } }).test ??= {});
+        const test = ((
+          config as {
+            test?: {
+              setupFiles?: string | string[];
+              browser?: { commands?: Record<string, unknown> };
+            };
+          }
+        ).test ??= {});
         test.setupFiles = [setupFile, ...[test.setupFiles ?? []].flat()];
+        // Vitest lists the commands for the tab when the project starts.
+        ((test.browser ??= {}).commands ??= {})[routeLoadedCommand] = routeWatch.command;
 
         return {
           // Next's build resolves the `paths` of the tsconfig.
@@ -796,7 +819,9 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
       },
       // Vitest's hook for a plugin of a project: what its config says is a
       // test file or a setup file is not server code.
-      configureVitest({ project: { config: test } }: { project: TestProject }) {
+      configureVitest({ vitest, project: testProject }: { vitest: Vitest; project: TestProject }) {
+        const test = testProject.config;
+        routeWatch.start(vitest, testProject);
         const setupFiles = new Set(test.setupFiles.map((file) => normalizePath(file)));
         // `test.include`, matched the way Vitest does. Not `includeSource`:
         // a file with tests in its source is a file of the app.

@@ -17,7 +17,7 @@ export default defineConfig({
   format: ["esm"],
   fixedExtension: false,
   deps: {
-    neverBundle: [/^virtual:/, /^@vitejs\/plugin-rsc\/vendor\//, "vitest"],
+    neverBundle: [/^virtual:/, /^@vitejs\/plugin-rsc\/vendor\//, /^vitest(\/|$)/],
   },
   dts: {
     sourcemap: process.argv.slice(2).includes("--sourcemap"),

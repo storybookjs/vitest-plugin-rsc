@@ -413,6 +413,27 @@ What it does not show yet:
 - `proxy.ts`, `instrumentation.ts`, draft mode, a `cacheHandler` of the app: `load-manifest.external` and its neighbours are where they would go.
 - `Uint8Array.prototype` gets `latin1Slice()` and the like in the tab, which Node's `Buffer` has and busboy calls. That is a global of the page too.
 
+## Watch Mode
+
+Vitest finds the test files to run again in Vite's module graph: it walks from the file that changed to what imports it, up to the test files. A test that opens a route with `renderServer({ url })` does not import `page.tsx`. The plugin does, in one module that lists every route, and every test file ends up importing that module. So in the graph every test file imports every route, and an edit of one page would run them all.
+
+The tab knows better, and says so: when the server in it loads the modules of a route, it calls a browser command of the plugin, and Vitest adds the test file that runs. Right before Vitest looks up the test files for a change, the plugin makes the graph say the same (`watch.ts`): the list no longer imports the modules of the routes, and a test file imports the ones of the routes it loaded. The lookup is still Vitest's, so a component deep in a page finds the test files of that page, and a module that a test file imports itself still finds that test file.
+
+```
+app/profile/page.tsx changes
+  -> the module of the route /profile       imports it
+  -> app/profile/page.test.tsx              loaded that route
+```
+
+- **The hook** is `watchTriggerPatterns` of Vitest's config, with a pattern for every file and a function that returns nothing: Vitest calls it for a file that changes, before its own lookup.
+- **A layout** is in the modules of every route under it, so it runs the test files of all of them.
+- **A route that no test file has loaded** runs nothing. Neither does a test file that has not run since Vitest started: what it loads is not known yet.
+- **A test file that changes** is forgotten until it has run again.
+- **Tailwind** has to be told apart: it registers every file it scans as a dependency of the stylesheet, and Vitest follows that too, so a save of any file runs every test file whose page has the stylesheet. `playground/nextjs-notes-demo/test/ignore-watched-only-modules.ts` takes those out with the same hook.
+- `vitest related` and `vitest --changed` do not run the app, so they do not know the routes: see [Not Yet](#not-yet).
+
+`scripts/watch-probe.mjs` says which test files a change runs.
+
 ## Not Yet
 
 - Metadata files like `icon.png` and `sitemap.ts`. Next's metadata loaders still have to be run. A run warns once when it starts about the metadata files of the app, apart from `favicon.ico`: a page renders without them, and their routes are not served.
