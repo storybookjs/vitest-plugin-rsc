@@ -22,11 +22,17 @@ export async function start(): Promise<{ unmount(): void }> {
   // Next's router does: a POST to the current page.
   globalThis.__viteRscCallServer = callServer;
 
-  // Next's entry does not hand out the root it creates.
+  // Next's entry does not hand out the root it creates. Its root is the one of
+  // the document, the `appElement` of `app-index.js`: a Client Component can
+  // create roots of its own.
   let root: Root | undefined;
   const { hydrateRoot, createRoot } = ReactDOMClient;
-  ReactDOMClient.hydrateRoot = (...args) => (root = hydrateRoot(...args));
-  ReactDOMClient.createRoot = (...args) => (root = createRoot(...args));
+  const keep = (container: unknown, created: Root): Root => {
+    if (container === document) root = created;
+    return created;
+  };
+  ReactDOMClient.hydrateRoot = (...args) => keep(args[0], hydrateRoot(...args));
+  ReactDOMClient.createRoot = (...args) => keep(args[0], createRoot(...args));
 
   // Next's entry reads the Flight payload in the document when it loads, so
   // it loads here, once Client Components can be loaded.
@@ -56,9 +62,18 @@ export async function start(): Promise<{ unmount(): void }> {
     ReactDOMClient.hydrateRoot = hydrateRoot;
     ReactDOMClient.createRoot = createRoot;
   }
+  // A contract with Next's entry. Without the root the app runs on, and the
+  // page cannot be left.
+  const app = root;
+  if (!app) {
+    throw new Error(
+      "vitest-plugin-rsc: Next.js did not create a React root on the document, " +
+        "which the plugin needs to leave the page.",
+    );
+  }
   return {
     unmount() {
-      root?.unmount();
+      app.unmount();
     },
   };
 }
