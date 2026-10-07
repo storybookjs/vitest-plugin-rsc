@@ -6,7 +6,7 @@ import { createFilter, normalizePath, parseAst, parseAstAsync, type Plugin } fro
 import type { TestProject } from "vitest/node";
 import { createRunnerEnvironmentPlugins } from "../runner-environment.ts";
 import { flightBridge, type FlightEntry } from "./flight.ts";
-import { createCompilePlugin } from "./compile.ts";
+import { createCompilePlugin, createDependencyCompilePlugin } from "./compile.ts";
 import { loadNextProject, type NextLayer, type NextProject } from "./project.ts";
 import { createServerCode, type ServerCodeOptions } from "./server-code.ts";
 
@@ -484,6 +484,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
           rolldownOptions: {
             plugins: [
               resolvers[layer].plugin(),
+              createDependencyCompilePlugin(getProject, layer),
               ...(layer === "rsc" ? [nextClientBoundaryPlugin(getProject, resolvers.rsc)] : []),
               ...(layer === "browser" ? [] : [serverCode.optimizerPlugin(layer)]),
             ],

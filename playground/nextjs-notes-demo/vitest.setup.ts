@@ -17,8 +17,6 @@ import * as authSessionModule from "#lib/auth-session.ts";
 import * as dbModule from "#lib/db.ts";
 import * as flashCookieModule from "#lib/flash-cookie.ts";
 import { nextCacheProbeFetchHandler } from "#components/next-cache-msw.ts";
-import "@fontsource-variable/geist";
-import "@fontsource-variable/geist-mono";
 
 vi.mock("#lib/db.ts");
 
@@ -40,22 +38,6 @@ vi.mock("#lib/auth.ts", () => ({
 }));
 vi.mock("#lib/auth-session.ts");
 vi.mock("#lib/flash-cookie.ts");
-vi.mock("next/font/google", () => ({
-  Geist: () => ({ variable: "font-geist-sans" }),
-  Geist_Mono: () => ({ variable: "font-geist-mono" }),
-}));
-
-// next/font/google is mocked above, so the --font-geist-* CSS variables that
-// RootLayout's className would normally define are absent in tests. Bind the
-// fontsource font-family names to those variables on :root so `font-sans`
-// resolves to real Geist instead of the browser's serif fallback.
-const fontVarsStyle = document.createElement("style");
-fontVarsStyle.textContent = `:root {
-  --font-geist-sans: "Geist Variable", ui-sans-serif, system-ui, sans-serif;
-  --font-geist-mono: "Geist Mono Variable", ui-monospace, monospace;
-}`;
-document.head.appendChild(fontVarsStyle);
-
 const disableMotionStyle = document.createElement("style");
 disableMotionStyle.textContent = `
   *,

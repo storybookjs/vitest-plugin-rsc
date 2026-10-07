@@ -20,6 +20,15 @@ test("renders sign-in form with email, passkey, and link to sign up", async () =
     .toHaveAttribute("href", "/auth/sign-up");
 });
 
+test("sets the page in the Geist of next/font/google", async () => {
+  await renderServer({ url: "/auth/sign-in" });
+
+  const heading = page.getByRole("heading", { level: 1 });
+  await expect.element(heading).toHaveStyle({ fontFamily: 'Geist, "Geist Fallback"' });
+  const [face] = await document.fonts.load("16px Geist");
+  expect(face?.status).toBe("loaded");
+});
+
 test("shows the magic link sent confirmation banner", async () => {
   await renderServer({ url: "/auth/sign-in?sent=magic-link" });
 

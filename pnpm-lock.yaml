@@ -148,6 +148,9 @@ importers:
       '@vitest/browser-playwright':
         specifier: 5.0.3
         version: 5.0.3(msw@2.14.6(@types/node@24.12.4)(typescript@6.0.3))(playwright@1.60.0)(vite@8.3.1(@types/node@24.12.4)(esbuild@0.27.7)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))(vitest@5.0.3)
+      geist:
+        specifier: ^1.7.2
+        version: 1.7.2(next@16.4.0(@opentelemetry/api@1.9.1)(@types/node@24.12.4)(babel-plugin-react-compiler@1.0.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6))
       playwright:
         specifier: ^1.60.0
         version: 1.60.0
@@ -2948,6 +2951,11 @@ packages:
 
   fuzzysort@3.1.0:
     resolution: {integrity: sha512-sR9BNCjBg6LNgwvxlBd0sBABvQitkLzoVY9MYYROQVX/FvfJ4Mai9LsGhDgd8qYdds0bY77VzYd5iuB+v5rwQQ==}
+
+  geist@1.7.2:
+    resolution: {integrity: sha512-Gu5lDFa3pLRyoBlBPf0QIFHVdWAnpco7fS1bJm41jyLPFoguBgiubseUN2oLXMgqZ7uxAxDoXcHMhCY/fOTTgg==}
+    peerDependencies:
+      next: '>=13.2.0'
 
   gensync@1.0.0-beta.2:
     resolution: {integrity: sha512-3hN7NaskYvMDLQY55gnW3NQ+mesEAepTqlg+VEbj7zzqEMBVNhzcGYYeqFo/TlYz6eQiFcp1HcsCZO+nGgS8zg==}
@@ -6467,6 +6475,10 @@ snapshots:
   function-bind@1.1.2: {}
 
   fuzzysort@3.1.0: {}
+
+  geist@1.7.2(next@16.4.0(@opentelemetry/api@1.9.1)(@types/node@24.12.4)(babel-plugin-react-compiler@1.0.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)):
+    dependencies:
+      next: 16.4.0(@babel/core@7.29.0)(@opentelemetry/api@1.9.1)(@types/node@24.12.4)(babel-plugin-react-compiler@1.0.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
 
   gensync@1.0.0-beta.2: {}
 

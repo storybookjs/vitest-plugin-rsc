@@ -530,16 +530,82 @@ test("stops at `metadata` in a Client Component, in the layers that run it", asy
   expect(compiled?.code).toContain("export { _ as metadata };\nexport default undefined;");
 });
 
+test("compiles a package for its calls of next/font, where Next's checks leave a package alone", async () => {
+  const project = await loadNextProject(root);
+  const source = [
+    'import "client-only";',
+    'import localFont from "next/font/local";',
+    'export const font = localFont({ src: "./font.woff2" });',
+  ].join("\n");
+
+  const compiled = await project.compile(
+    source,
+    path.join(root, "node_modules/fonts/index.js"),
+    "rsc",
+  );
+
+  expect(compiled?.code).toContain('import "client-only";');
+  expect(compiled?.code).toContain("import font from 'next/font/local/target.css?{");
+});
+
+test("needs the transform that turns a call of a font function into an import", async () => {
+  const next = nextWith({
+    "next/dist/build/swc/index.js": { transform: async (code: string) => ({ code }) },
+  });
+
+  await expect(loadNextProject(root, next)).rejects.toThrow(
+    changed("the SWC transform no longer turns a call of a `next/font` function into an import"),
+  );
+});
+
 test("needs the transform to say which module of the rsc layer is a client module", async () => {
   const next = nextWith({
     "next/dist/build/swc/index.js": {
       transform: async (code: string) => ({
-        code,
+        code: `import "next/font/google/target.css?{}";\n${code}`,
       }),
     },
   });
 
   await expect(loadNextProject(root, next)).rejects.toThrow(
     changed('the SWC transform no longer marks a `"use client"` module of the rsc layer'),
+  );
+});
+
+test("loads a font with Next's font loaders, and has its file where the CSS says it is", async () => {
+  const project = await loadNextProject(root);
+  const compiled = await project.compile(
+    sourceOf("fonts/fonts.ts"),
+    appFile("fonts/fonts.ts"),
+    "rsc",
+  );
+  const [request] = /next\/font\/local\/target\.css\?[^']+(?=')/.exec(compiled!.code)!;
+
+  const { css, exports } = await project.loadFont(request);
+
+  expect(exports).toEqual({
+    className: expect.stringMatching(/^__className_\w{6}$/),
+    variable: expect.stringMatching(/^__variable_\w{6}$/),
+    style: { fontFamily: "'geist', 'geist Fallback'" },
+  });
+  expect(css).toContain(`.${String(exports.variable)} {--font-geist: 'geist', 'geist Fallback'`);
+  const [, url] = /src: url\(([^)]+)\) format\('woff2'\)/.exec(css)!;
+  expect(url).toMatch(/^\/_next\/static\/media\/\w+-s\.p\.woff2$/);
+  expect(project.readEmittedFile(url!)).toEqual({
+    body: fs.readFileSync(appFile("fonts/geist-latin.woff2")),
+    contentType: "font/woff2",
+  });
+  expect(project.readEmittedFile("/_next/static/media/none.woff2")).toBeUndefined();
+});
+
+test("needs the loaders that Next's build has for a font", async () => {
+  const next = nextWith({
+    "next/dist/build/webpack/config/blocks/css/loaders/next-font.js": {
+      getNextFontLoader: () => [],
+    },
+  });
+
+  await expect(loadNextProject(root, next)).rejects.toThrow(
+    changed("`getNextFontLoader()` no longer uses css-loader and next-font-loader"),
   );
 });

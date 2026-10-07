@@ -10,6 +10,12 @@ import { vitestPluginRscSourceConditions } from "../../vitest.conditions.ts";
 // oxlint-disable-next-line no-process-env
 process.env.LAUNCH_EDITOR = "/usr/bin/true";
 
+// Google Fonts, without the network: see the file.
+// oxlint-disable-next-line no-process-env
+process.env.NEXT_FONT_GOOGLE_MOCKED_RESPONSES = fileURLToPath(
+  new URL("../../vitest.google-fonts.cjs", import.meta.url),
+);
+
 const root = fileURLToPath(new URL("./", import.meta.url));
 const nextNotesRequire = createRequire(new URL("./package.json", import.meta.url));
 

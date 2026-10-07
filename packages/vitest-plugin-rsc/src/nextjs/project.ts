@@ -3,6 +3,7 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import { init as initCjsLexer, parse as parseCjs } from "cjs-module-lexer";
 import { stripVTControlCharacters } from "node:util";
+import { compileFunction } from "node:vm";
 import type { AppLoaderOptions } from "next/dist/build/webpack/loaders/next-app-loader/index.js";
 import { parseAst, transformWithOxc } from "vite";
 import { rscFlightCodec, type FlightEntry } from "./flight.ts";
@@ -94,9 +95,48 @@ export type NextProject = {
    * client module in the rsc layer: Vite RSC turns it into references.
    */
   compile(code: string, file: string, layer: NextLayer): Promise<Compiled | undefined>;
+  /**
+   * A call of a `next/font` function, by the import the SWC transform turns it
+   * into: the CSS of the font, and what the call returns.
+   */
+  loadFont(request: string): Promise<{ css: string; exports: Record<string, unknown> }>;
+  /** A file the loaders emitted for the browser, by the path the browser asks for. */
+  readEmittedFile(pathname: string): { body: Buffer; contentType: string } | undefined;
 };
 
 export type Compiled = { code: string; map?: string };
+
+// What Next's webpack loaders use of their context. Each loader here is
+// called the way webpack calls it.
+type LoaderContext = {
+  getOptions(): unknown;
+  async(): (error: Error | null, ...result: unknown[]) => void;
+  currentTraceSpan: TraceSpan;
+  resourcePath: string;
+  resourceQuery: string;
+  context: string;
+  rootContext: string;
+  emitFile(name: string, content: Buffer): void;
+  emitWarning(warning: Error): void;
+  emitError(error: Error): void;
+  addDependency(file: string): void;
+  resolve(
+    directory: string,
+    request: string,
+    callback: (error: Error | null, file?: string) => void,
+  ): void;
+  getResolve(): () => Promise<never>;
+  fs: typeof fs;
+  utils: { contextify(context: string, request: string): string };
+  sourceMap: boolean;
+};
+type TraceSpan = {
+  traceChild(): TraceSpan;
+  traceFn<T>(fn: () => T): T;
+  traceAsyncFn<T>(fn: () => T): T;
+  setAttribute(): void;
+};
+type Loader = (this: LoaderContext, ...input: unknown[]) => unknown;
 
 // What next-app-loader uses of webpack's loader context.
 type AppLoaderContext = {
@@ -380,6 +420,15 @@ export async function loadNextProject(
   const { getRSCModuleInformation } = load<
     typeof import("next/dist/build/analysis/get-page-static-info.js")
   >("build/analysis/get-page-static-info");
+  const { getNextFontLoader } = load<
+    typeof import("next/dist/build/webpack/config/blocks/css/loaders/next-font.js")
+  >("build/webpack/config/blocks/css/loaders/next-font");
+  const nextFontLoader = load<
+    typeof import("next/dist/build/webpack/loaders/next-font-loader/index.js")
+  >("build/webpack/loaders/next-font-loader/index").default as unknown as Loader;
+  const { getContentType } =
+    load<typeof import("next/dist/server/serve-static.js")>("server/serve-static");
+
   // The app is served the way a deployment serves it: production Next on its
   // edge runtime. React itself stays a development build, see plugin.ts.
   const config = await inDirectory(root, () =>
@@ -908,9 +957,139 @@ export async function loadNextProject(
     return output;
   };
   // What the plugin relies on of the transform.
+  const fontCall = await compile(
+    `import { Inter } from "next/font/google";\nexport const inter = Inter({});\n`,
+    path.join(appDir, "layout.js"),
+    "rsc",
+  );
+  if (!fontCall?.code.includes("next/font/google/target.css?")) {
+    fail("the SWC transform no longer turns a call of a `next/font` function into an import");
+  }
   if (await compile(`"use client";\nexport const a = 1;\n`, path.join(appDir, "a.ts"), "rsc")) {
     fail('the SWC transform no longer marks a `"use client"` module of the rsc layer');
   }
+
+  // Calls a webpack loader of Next for one module.
+  const emitted = new Map<string, Buffer>();
+  const span: TraceSpan = {
+    traceChild: () => span,
+    traceFn: (fn) => fn(),
+    traceAsyncFn: (fn) => fn(),
+    setAttribute: () => {},
+  };
+  const runLoader = (
+    loader: Loader,
+    options: unknown,
+    resource: string,
+    ...input: unknown[]
+  ): Promise<unknown[]> =>
+    new Promise((resolve, reject) => {
+      const queryAt = resource.indexOf("?");
+      const resourcePath = queryAt < 0 ? resource : resource.slice(0, queryAt);
+      // A loader either calls back, or returns its result, as a promise or not.
+      let callsBack = false;
+      const context: LoaderContext = {
+        getOptions: () => options,
+        async: () => {
+          callsBack = true;
+          return (error, ...result) => (error ? reject(error) : resolve(result));
+        },
+        currentTraceSpan: span,
+        resourcePath,
+        resourceQuery: queryAt < 0 ? "" : resource.slice(queryAt),
+        context: path.dirname(resourcePath),
+        rootContext: root,
+        // Where the browser finds it: under `/_next/`.
+        emitFile: (name, content) => emitted.set(name.replace(/^\//, ""), content),
+        emitWarning: (warning) => console.warn(warning),
+        emitError: reject,
+        addDependency: () => {},
+        resolve: (directory, request, callback) => {
+          const file = path.resolve(directory, request);
+          if (fs.existsSync(file)) callback(null, file);
+          else callback(new Error(`Can't resolve '${request}' in '${directory}'`));
+        },
+        getResolve: () => () => Promise.reject(new Error("Not resolved by vitest-plugin-rsc")),
+        fs,
+        utils: { contextify: (_context, request) => request },
+        sourceMap: false,
+      };
+      Promise.resolve(loader.call(context, ...input)).then(
+        (result) => callsBack || resolve([result]),
+        reject,
+      );
+    });
+
+  // next/font: next-font-loader runs the font loader of `@next/font`, and
+  // css-loader makes a module of its CSS, as Next's rule for the font does.
+  const resolve = (id: string) => {
+    try {
+      return require.resolve(id);
+    } catch (error) {
+      return fail(`${id} is not there`, error);
+    }
+  };
+  // Next's own postcss, which is not a dependency of the app.
+  let postcss: unknown;
+  try {
+    postcss = createRequire(path.join(nextDir, "package.json"))("postcss");
+  } catch (error) {
+    fail("it no longer depends on `postcss`", error);
+  }
+  const fontLoaders = (["google", "local"] as const).map((name) => {
+    const target = resolve(`next/font/${name}/target.css`);
+    const loaders = getNextFontLoader(
+      {
+        hasAppDir: true,
+        isClient: true,
+        isServer: false,
+        // As `next dev` loads them: without the network, a font of Google
+        // Fonts is its fallback font, and Next logs why.
+        isDevelopment: true,
+        assetPrefix: config.assetPrefix,
+        deploymentId: config.deploymentId,
+        experimental: config.experimental,
+      } as Parameters<typeof getNextFontLoader>[0],
+      async () => ({ postcss }),
+      resolve(`next/dist/compiled/@next/font/${name}/loader`),
+    ) as { loader?: string; options?: unknown }[];
+    const cssLoader = loaders.find((entry) => entry.loader?.includes("css-loader"));
+    const fontLoader = loaders.find((entry) => entry.loader === "next-font-loader");
+    if (!cssLoader?.loader || !fontLoader) {
+      fail("`getNextFontLoader()` no longer uses css-loader and next-font-loader");
+    }
+    return {
+      prefix: `next/font/${name}/target.css?`,
+      target,
+      cssLoader: require(cssLoader!.loader!).default as Loader,
+      cssOptions: cssLoader!.options,
+      fontOptions: fontLoader!.options,
+    };
+  });
+  const fonts = new Map<string, Promise<{ css: string; exports: Record<string, unknown> }>>();
+  const loadFont = async (request: string) => {
+    const font = fontLoaders.find((candidate) => request.startsWith(candidate.prefix))!;
+    const resource = font.target + request.slice(font.prefix.length - 1);
+    const [css, map, meta] = await runLoader(nextFontLoader, font.fontOptions, resource);
+    const [code] = await runLoader(font.cssLoader, font.cssOptions, resource, css, map, meta);
+    // The CommonJS module css-loader makes: a list of the CSS of the module,
+    // with what it exports as `locals`.
+    const cssModule = { id: resource, exports: {} as unknown };
+    compileFunction(code as string, ["module", "exports", "require"])(
+      cssModule,
+      cssModule.exports,
+      require,
+    );
+    const list = cssModule.exports as unknown[] & { locals?: Record<string, unknown> };
+    if (!Array.isArray(list) || !list.locals) {
+      fail("css-loader no longer makes a list of CSS with `locals` of a `next/font` call");
+    }
+    return { css: String(list), exports: list.locals! };
+  };
+
+  // Where the browser asks for the files the loaders emit. An asset prefix
+  // with an origin is another server.
+  const emittedPath = `${config.assetPrefix.startsWith("/") ? config.assetPrefix : ""}/_next/`;
 
   // next-app-loader keys its per-build caches on the compilation object.
   const compilation = {};
@@ -1011,5 +1190,21 @@ export async function loadNextProject(
         : code;
     },
     compile,
+    loadFont(request) {
+      let font = fonts.get(request);
+      if (!font) {
+        fonts.set(request, (font = loadFont(request)));
+        // A font that failed may load the next time, like a download.
+        font.catch(() => fonts.delete(request));
+      }
+      return font;
+    },
+    readEmittedFile(pathname) {
+      if (!pathname.startsWith(emittedPath)) return;
+      const name = pathname.slice(emittedPath.length);
+      const body = emitted.get(name);
+      if (!body) return;
+      return { body, contentType: getContentType(path.extname(name).slice(1)) ?? "" };
+    },
   };
 }

@@ -24,6 +24,11 @@ function hitsService(): Plugin {
   };
 }
 
+// Google Fonts, without the network: see the file.
+process.env.NEXT_FONT_GOOGLE_MOCKED_RESPONSES = fileURLToPath(
+  new URL("../../vitest.google-fonts.cjs", import.meta.url),
+);
+
 export default defineProject({
   root: fileURLToPath(new URL("./", import.meta.url)),
   plugins: [
