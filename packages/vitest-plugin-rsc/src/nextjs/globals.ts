@@ -69,6 +69,22 @@ class ServerResponse extends NativeResponse {
     });
   }
 
+  // The browser's `json()` makes a browser Response, which drops `set-cookie`.
+  // This lets the browser check and build it, then makes it one of these.
+  // Like the browser's, it makes one of this class also when a subclass calls
+  // it: NextResponse.json() wraps it itself. `redirect()` takes no headers to
+  // drop, so it stays the browser's, with the headers it cannot change.
+  static override json(data: unknown, init?: ResponseInit): ServerResponse {
+    const json = NativeResponse.json(data, init);
+    const headers = headersOf(init);
+    if (!headers.has("content-type")) headers.set("content-type", "application/json");
+    return new ServerResponse(json.body, {
+      status: json.status,
+      statusText: json.statusText,
+      headers,
+    });
+  }
+
   // Any response is one of these; subclasses keep the regular check.
   static override [Symbol.hasInstance](value: unknown): boolean {
     return Function.prototype[Symbol.hasInstance].call(
