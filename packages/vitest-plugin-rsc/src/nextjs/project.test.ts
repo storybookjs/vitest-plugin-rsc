@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import { createRequire } from "node:module";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { onTestFinished, expect, test } from "vitest";
@@ -9,15 +10,32 @@ const root = fileURLToPath(new URL("../../../../playground/nextjs-e2e-demo", imp
 const installed = createRequire(path.join(root, "package.json"));
 const { version } = installed("next/package.json") as { version: string };
 
-// The installed Next, with some exports of its build code replaced: a Next
-// that has changed.
-function nextWith(changes: Record<string, object | Error>): NodeJS.Require {
+// The installed Next, with some exports of its build code replaced, or the
+// source of a file replaced: a Next that has changed.
+function nextWith(changes: Record<string, object | Error | string>): NodeJS.Require {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "next-"));
+  onTestFinished(() => fs.rmSync(dir, { recursive: true, force: true }));
   const require = (id: string) => {
     const change = changes[id];
     if (change instanceof Error) throw change;
-    return change ? { ...installed(id), ...change } : installed(id);
+    return typeof change === "object" ? { ...installed(id), ...change } : installed(id);
   };
-  return Object.assign(require, { resolve: installed.resolve }) as NodeJS.Require;
+  const resolve = (id: string) => {
+    const change = changes[id];
+    if (change instanceof Error) throw change;
+    if (typeof change !== "string") return installed.resolve(id);
+    const file = path.join(dir, id.replaceAll("/", "_"));
+    fs.writeFileSync(file, change);
+    return file;
+  };
+  return Object.assign(require, { resolve }) as NodeJS.Require;
+}
+
+// The source of a file of the installed Next, with a piece of it replaced.
+function sourceWith(id: string, piece: string, replacement: string): string {
+  const source = fs.readFileSync(installed.resolve(id), "utf8");
+  expect(source).toContain(piece);
+  return source.replaceAll(piece, replacement);
 }
 
 const changed = (what: string) =>
@@ -179,5 +197,65 @@ test("needs the import of the page that it replaces in the edge template", async
 
   await expect(project.loadEdgeEntry(route(project.routes, "/notes"), "page")).rejects.toThrow(
     changed("the edge-ssr-app template has no `import * as pageMod from"),
+  );
+});
+
+// A file of Next's runtime, which runs in the tab.
+const runtime = (file: string) => `next/dist/esm/${file}.js`;
+
+test("says which file of Next's runtime is gone", async () => {
+  const next = nextWith({ [runtime("client/app-index")]: new Error("Cannot find module") });
+
+  await expect(loadNextProject(root, next)).rejects.toThrow(
+    changed(`${runtime("client/app-index")} is not there`),
+  );
+});
+
+test.for([
+  [
+    "client/app-index",
+    "export async function hydrate(",
+    "export async function start(",
+    "has no export `hydrate`",
+  ],
+  ["client/app-index", "__NEXT_HYDRATED_CB", "__NEXT_ON_HYDRATED", "has no `__NEXT_HYDRATED_CB`"],
+  [
+    "client/asset-prefix",
+    "document.currentScript",
+    "self.__next_script",
+    "has no `document.currentScript`",
+  ],
+  [
+    "shared/lib/server-reference-info",
+    "function mightBeServerReferenceId(",
+    "function isServerReferenceId(",
+    "has no export `mightBeServerReferenceId`",
+  ],
+  [
+    "server/route-modules/route-module",
+    "self.__BUILD_MANIFEST",
+    "self.__NEXT_BUILD",
+    "has no `self.__BUILD_MANIFEST`",
+  ],
+  [
+    "server/route-modules/route-module",
+    "self.__RSC_MANIFEST",
+    "self.__NEXT_CLIENT_REFERENCES",
+    "has no `self.__RSC_MANIFEST`",
+  ],
+])("needs what the tab assumes of %s: %s", async ([file, piece, replacement, what]) => {
+  const next = nextWith({ [runtime(file!)]: sourceWith(runtime(file!), piece!, replacement!) });
+
+  await expect(loadNextProject(root, next)).rejects.toThrow(changed(`${runtime(file!)} ${what}`));
+});
+
+test("needs the manifests that the server is given for each request", async () => {
+  const file = runtime("server/app-render/manifests-singleton");
+  const next = nextWith({
+    [file]: sourceWith(file, "serverActionsManifest: raw", "actionsManifest: raw"),
+  });
+
+  await expect(loadNextProject(root, next)).rejects.toThrow(
+    changed("`setManifestsSingleton()` takes no `serverActionsManifest`"),
   );
 });

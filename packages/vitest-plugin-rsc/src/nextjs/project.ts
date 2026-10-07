@@ -2,12 +2,13 @@ import fs from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import type { AppLoaderOptions } from "next/dist/build/webpack/loaders/next-app-loader/index.js";
+import { parseAst } from "vite";
 
 // The one file that calls the build code of the project's own `next`. The
 // routes, the route entries, the compile-time constants and the alias tables
-// are what `next build` computes. What the plugin assumes about them is
-// checked here, so that another Next fails when a run starts, with its
-// version and what changed.
+// are what `next build` computes. What the plugin assumes about them, and
+// about the runtime it runs them on, is checked here, so that another Next
+// fails when a run starts, with its version and what changed.
 
 /** The layers Next compiles an App Router app into, each with its own React. */
 export type NextLayer = "rsc" | "ssr" | "browser";
@@ -80,6 +81,100 @@ function inDirectory<T>(directory: string, load: () => Promise<T>): Promise<T> {
   });
   directoryQueue = result.catch(() => {});
   return result;
+}
+
+// An exported name: an identifier or a string.
+function nameOf(node: object): string {
+  return "name" in node ? String(node.name) : "value" in node ? String(node.value) : "";
+}
+
+// An import of an ES module of Next by its path, which leaves out `.js`.
+function resolveImport(file: string, specifier: string): string | undefined {
+  if (!specifier.startsWith(".") && !path.isAbsolute(specifier)) return;
+  const base = path.resolve(path.dirname(file), specifier);
+  return [base, `${base}.js`, path.join(base, "index.js")].find((candidate) =>
+    fs.statSync(candidate, { throwIfNoEntry: false })?.isFile(),
+  );
+}
+
+/** An export of an ES module: the code that declares it, and the function, if it is one. */
+type Declared = { code: string; params?: object[] };
+
+/**
+ * The declaration of an export of an ES module: also when it is exported apart
+ * from its declaration, or comes from another module with `export ... from`
+ * or `export *`. Empty for one whose declaration is not found, like an import
+ * that is exported again. `undefined` when the module has no such export.
+ */
+function declarationOf(file: string, name: string, seen = new Set<string>()): Declared | undefined {
+  if (seen.has(file)) return;
+  seen.add(file);
+  const code = fs.readFileSync(file, "utf8");
+  const declared = new Map<string, Declared>();
+  const exported = new Map<string, string>();
+  const stars: string[] = [];
+  for (const node of parseAst(code).body) {
+    const isExport = node.type === "ExportNamedDeclaration";
+    const declaration = isExport ? node.declaration : node;
+    if (declaration?.type === "VariableDeclaration") {
+      for (const declarator of declaration.declarations) {
+        if (declarator.id.type !== "Identifier") continue;
+        const { init } = declarator;
+        declared.set(declarator.id.name, {
+          code: code.slice(declarator.start, declarator.end),
+          params: init && "params" in init ? init.params : undefined,
+        });
+        if (isExport) exported.set(declarator.id.name, declarator.id.name);
+      }
+    } else if (
+      (declaration?.type === "FunctionDeclaration" || declaration?.type === "ClassDeclaration") &&
+      declaration.id
+    ) {
+      declared.set(declaration.id.name, {
+        code: code.slice(declaration.start, declaration.end),
+        params: "params" in declaration ? declaration.params : undefined,
+      });
+      if (isExport) exported.set(declaration.id.name, declaration.id.name);
+    }
+    if (isExport) {
+      for (const specifier of node.specifiers) {
+        if (nameOf(specifier.exported) !== name) continue;
+        if (!node.source) exported.set(name, nameOf(specifier.local));
+        else {
+          const from = resolveImport(file, node.source.value);
+          return (from && declarationOf(from, nameOf(specifier.local))) || { code: "" };
+        }
+      }
+    } else if (node.type === "ExportAllDeclaration" && !node.exported) {
+      stars.push(node.source.value);
+    }
+  }
+  const local = exported.get(name);
+  if (local !== undefined) return declared.get(local) ?? { code: "" };
+  for (const star of stars) {
+    const from = resolveImport(file, star);
+    const found = from && declarationOf(from, name, seen);
+    if (found) return found;
+  }
+}
+
+// The keys of the options object that a function takes, however it reads them:
+// in its parameter, or off the parameter in its body.
+function optionKeys({ code, params = [] }: Declared): string[] {
+  const [param] = params as { type: string; name?: string; properties?: object[] }[];
+  if (param?.type === "ObjectPattern") {
+    return param.properties!.flatMap((property) =>
+      "key" in property && property.key ? [nameOf(property.key)] : [],
+    );
+  }
+  if (param?.type !== "Identifier") return [];
+  const options = param.name!;
+  return [
+    ...Array.from(code.matchAll(new RegExp(`\\b${options}\\.(\\w+)`, "g")), (match) => match[1]!),
+    ...Array.from(code.matchAll(new RegExp(`\\{([^}]*)\\}\\s*=\\s*${options}\\b`, "g")), (match) =>
+      match[1]!.split(",").map((part) => part.split(":")[0]!.trim()),
+    ).flat(),
+  ];
 }
 
 // Next's templates carry Turbopack-only import attributes. They mean nothing
@@ -404,6 +499,66 @@ export async function loadNextProject(
   });
   if (!cache.cacheHandler || cache.fetchCacheKeyPrefix !== "prefix") {
     fail("`IncrementalCache` no longer takes `fs`, `serverDistDir` and `fetchCacheKeyPrefix`");
+  }
+
+  // What the modules of this package in the tab assume about Next's runtime,
+  // where a Next that differs would not fail, or not with a message that says
+  // why. (A static import of a name that is gone fails when its module links,
+  // naming it.) The runtime runs in the tab, so here its files are read, not
+  // loaded.
+  const runtimeFile = (file: string) => {
+    const id = `next/dist/esm/${file}.js`;
+    let resolved: string;
+    let code: string;
+    try {
+      resolved = require.resolve(id);
+      code = fs.readFileSync(resolved, "utf8");
+    } catch (error) {
+      return fail(`${id} is not there`, error);
+    }
+    return {
+      export: (name: string) =>
+        declarationOf(resolved, name) ?? fail(`${id} has no export \`${name}\``),
+      contains: (...pieces: string[]) => {
+        for (const piece of pieces) if (!code.includes(piece)) fail(`${id} has no \`${piece}\``);
+      },
+    };
+  };
+
+  // client.tsx imports Next's client entry once the page is there.
+  const appIndex = runtimeFile("client/app-index");
+  appIndex.export("hydrate");
+  // It knows that the app has hydrated from Next's own e2e hook, which the
+  // plugin turns on with this define.
+  appIndex.contains("process.env.__NEXT_TEST_MODE", "__NEXT_HYDRATED_CB");
+  // It hands Next the bootstrap script as the one that is running.
+  runtimeFile("client/asset-prefix").contains("document.currentScript", "/_next/");
+  // The shim in plugin.ts reads these, and replaces the functions for Vite
+  // RSC's ids.
+  const serverReferenceInfo = runtimeFile("shared/lib/server-reference-info");
+  for (const name of [
+    "SERVER_REFERENCE_ID_LENGTH",
+    "mightBeServerReferenceId",
+    "extractInfoFromServerReferenceId",
+  ]) {
+    serverReferenceInfo.export(name);
+  }
+  // ssr.ts provides the manifests of a build: as the globals an edge function
+  // reads them from, and for each request.
+  runtimeFile("server/route-modules/route-module").contains(
+    "self.__BUILD_MANIFEST",
+    "self.__SERVER_FILES_MANIFEST",
+    "self.__RSC_MANIFEST",
+  );
+  const setManifests = runtimeFile("server/app-render/manifests-singleton").export(
+    "setManifestsSingleton",
+  );
+  // Unless its declaration is in a module that is not read here.
+  const manifestKeys = optionKeys(setManifests);
+  for (const key of ["page", "clientReferenceManifest", "serverActionsManifest"]) {
+    if (setManifests.code && !manifestKeys.includes(key)) {
+      fail(`\`setManifestsSingleton()\` takes no \`${key}\``);
+    }
   }
 
   // next-app-loader keys its per-build caches on the compilation object.

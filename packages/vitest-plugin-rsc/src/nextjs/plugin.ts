@@ -83,12 +83,12 @@ const rscFlightBridges: Record<string, string> = {
 };
 
 // Next's server reference ids are 42 hex characters whose first byte says
-// which arguments the function uses. Vite RSC's are `<module>#<export>`.
+// which arguments the function uses. Vite RSC's are `<module>#<export>`. The
+// rest of the module stays as it is.
 const serverReferenceInfoShim = `
 import * as original from ${JSON.stringify(serverReferenceInfo)};
-export const SERVER_REFERENCE_ID_LENGTH = original.SERVER_REFERENCE_ID_LENGTH;
-export const omitUnusedArgs = original.omitUnusedArgs;
-const isNextId = (id) => id.length === SERVER_REFERENCE_ID_LENGTH && /^[0-9a-f]+$/i.test(id);
+export * from ${JSON.stringify(serverReferenceInfo)};
+const isNextId = (id) => id.length === original.SERVER_REFERENCE_ID_LENGTH && /^[0-9a-f]+$/i.test(id);
 export function mightBeServerReferenceId(id) {
   return typeof id === "string" && id.length > 0;
 }
