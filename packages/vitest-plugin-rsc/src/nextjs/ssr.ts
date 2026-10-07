@@ -11,9 +11,7 @@ import { actionModulePrefix, registry, type ServerRequest } from "./registry.ts"
 
 export { resetCaches } from "./cache.ts";
 
-// The ssr layer: Next's request handler and HTML renderer. Each route is the
-// edge entry Next builds for a deployment: `handler(Request)` in, `Response`
-// out.
+// The ssr layer: Next's request handler and HTML renderer.
 
 registry.ssr = { AppPageRouteModule: appPageModule.AppPageRouteModule as never };
 registerModuleLoader("ssr");
@@ -24,9 +22,8 @@ const anyKey = <T>(create: (key: string) => T) =>
     has: () => true,
   });
 
-// Next's build writes a manifest of every client reference: which chunk it is
-// in for the browser, which module it is for the HTML renderer. Vite RSC needs
-// neither, a reference is its module id, so this one answers for any id.
+// Next's build writes a manifest of every client reference. For Vite RSC a
+// reference is its module id, so this one answers for any id.
 const clientReference = anyKey((id) => anyKey((name) => ({ id, name, chunks: [], async: true })));
 const clientReferenceManifest = {
   moduleLoading: { prefix: "", crossOrigin: null },
@@ -39,14 +36,13 @@ const clientReferenceManifest = {
   entryJSFiles: anyKey(() => []),
 };
 
-// What Next's build writes into every edge bundle: the config and the
-// manifests the route module reads when it prepares a request.
+// What Next's build writes into every edge bundle.
 Object.assign(globalThis, {
   __SERVER_FILES_MANIFEST: { config: nextConfig },
   __BUILD_MANIFEST: {
     polyfillFiles: [],
-    // The script that starts the app in the browser. Next requires one and
-    // puts it in the HTML. Nothing loads it here: `renderServer()` starts the app.
+    // Next requires a script that starts the app and puts it in the HTML.
+    // Nothing loads it: `renderServer()` starts the app.
     rootMainFiles: ["static/chunks/main-app.js"],
     devFiles: [],
     lowPriorityFiles: [],
@@ -65,8 +61,6 @@ const matchers = getSortedRoutes(
 
 type RouteParams = Record<string, string | string[] | undefined>;
 
-// The route that serves a pathname, a page or a route handler, and the
-// params of its dynamic segments.
 function matchRoute(pathname: string) {
   for (const { route, match } of matchers) {
     const params = match(pathname) as RouteParams | false;
@@ -90,20 +84,15 @@ const setTimeout = globalThis.setTimeout;
 
 // One request at a time: see `enterAmbientScope`.
 let queue: Promise<unknown> = Promise.resolve();
-// The renders whose response is still being written, and how to stop them.
+// How to stop the renders whose response is still being written.
 const rendering = new Set<() => void>();
 // Changes when the test moves on, for the requests that were still waiting.
 let generation = 0;
-// How long a request waits, after its response, for the work Next does then.
 const backgroundWorkTimeout = 1000;
 
 /**
- * The Next.js server of this app: its pages and its route handlers. A
- * pathname that is not a route gets the app's not-found page, as it does from
- * a deployment.
- *
- * `nested` is for a request the server makes to itself while it handles one,
- * which cannot wait for that one to finish.
+ * The Next.js server of this app. `nested` is for a request the server makes
+ * to itself while it handles one, which cannot wait for that one to finish.
  */
 export function handleRequest(request: ServerRequest, nested = false): Promise<Response> {
   if (nested) return handle(request);
@@ -124,9 +113,8 @@ export function handleRequest(request: ServerRequest, nested = false): Promise<R
 }
 
 /**
- * Ends the requests the server is still handling: a short wait for the ones
- * that are about done, then a stop. A test can end while a page is still
- * streaming, on data that will never come.
+ * Ends the requests the server is still handling: a short wait, then a stop.
+ * A test can end while a page streams, on data that will never come.
  */
 export async function settleRequests(): Promise<void> {
   generation++;
@@ -143,10 +131,8 @@ async function handle(request: ServerRequest): Promise<Response> {
   const page = matched?.route.page ?? notFoundPage;
   const endRequestScope = registry.enterRequestScope();
   shareIncrementalCache(request.headers);
-  // What Next still does for a request after it has responded, like the
-  // callbacks of `after()`. The request lasts until that is done, so that
-  // they still read its stores. Not forever: the next request waits for this
-  // one, and work that a test holds up, or its fake timers, must not stop it.
+  // What Next does after it has responded, like `after()`, still reads the
+  // stores of the request. Not forever: the next request waits for this one.
   const background: Promise<unknown>[] = [];
   const context = {
     waitUntil: (promise: Promise<unknown>) => void background.push(promise),
@@ -162,9 +148,8 @@ async function handle(request: ServerRequest): Promise<Response> {
 
   try {
     if (matched?.route.kind === "route") {
-      // An edge function of Next does not match its own route. It gets the
-      // params of the dynamic segments from whoever routes the request to it,
-      // in the query of the URL. This is what `next start` does.
+      // An edge function gets the params of its dynamic segments from
+      // whoever routes to it, in the query of the URL, as `next start` does.
       const url = new URL(request.url);
       for (const [name, value] of Object.entries(matched.params)) {
         url.searchParams.delete(name);
@@ -176,19 +161,17 @@ async function handle(request: ServerRequest): Promise<Response> {
         response = await handler({ ...request, url: url.href }, context);
       } catch (error) {
         if (request.signal?.aborted) throw error;
-        // Next's route module rethrows what a handler throws, and the edge
-        // entry does not catch it: the server in front of it logs the error
-        // and answers 500, which is what `next start` does.
+        // Next's edge entry does not catch what a handler throws. The
+        // server in front of it does, as `next start`: log it, answer 500.
         console.error(error);
         response = new registry.Response("Internal Server Error", { status: 500 });
       }
       return finishWithBody(request, response, response.status, endRequest);
     }
 
-    // Next's build lists every Server Action. Here an action is its module id
-    // and export, so the only one to list is the one this request calls, if
-    // the app has it. An id that names no action stays out, and Next answers
-    // it the way it answers a request from another deployment.
+    // Next's build lists every Server Action. Here the only one to list is
+    // the one this request calls, if the app has it. Next copies the list, so
+    // it cannot answer for any id, and answers 409 for one that is not in it.
     const actionId = request.method === "POST" ? request.headers.get("next-action") : null;
     const actions =
       actionId && (await registry.hasServerAction(actionId))
@@ -208,8 +191,7 @@ async function handle(request: ServerRequest): Promise<Response> {
     await registry.loadAppPage(page);
     const { handler } = await edgeEntries[page]!();
     const response = await handler(request, context);
-    // The not-found page does not know it is one: whoever routes a request to
-    // it sets the status. For a deployment that is the platform's router.
+    // Whoever routes a request to the not-found page sets its status.
     return finishWithBody(request, response, matched ? response.status : 404, endRequest);
   } catch (error) {
     endRequestScope();
@@ -217,51 +199,38 @@ async function handle(request: ServerRequest): Promise<Response> {
   }
 }
 
-// Calls `onFinish` once the server has written the whole body, whether or not
-// anyone reads it.
+// Calls `onFinish` once the server has written the whole body, read or not.
 function finishWithBody(
   request: ServerRequest,
   response: Response,
   status: number,
   onFinish: () => Promise<void>,
 ): Response {
-  let finished: Promise<void> = Promise.resolve();
+  let finished: Promise<void>;
   let body: ReadableStream<Uint8Array> | null = null;
   if (response.body) {
-    const reader = response.body.getReader();
-    // Cancelling the body stops the render that writes it.
+    // Without a limit on what waits to be read: the server writes on, read or not.
+    const pipe = new TransformStream<Uint8Array, Uint8Array>(undefined, undefined, {
+      highWaterMark: Infinity,
+    });
+    const stopping = new AbortController();
+    // Stops the render that writes the body. So does cancelling the body.
     const stop = () =>
-      void reader
-        .cancel(new Error("The page was left before the server had sent it."))
-        .catch(() => {});
-    let controller!: ReadableStreamDefaultController<Uint8Array>;
-    body = new ReadableStream({ start: (c) => void (controller = c), cancel: stop });
+      stopping.abort(new Error("The page was left before the server had sent it."));
     rendering.add(stop);
-    finished = (async () => {
-      try {
-        for (;;) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          controller.enqueue(value);
-        }
-        controller.close();
-      } catch (error) {
-        try {
-          controller.error(error);
-        } catch {
-          // The reader of the body has left.
-        }
-      } finally {
+    body = pipe.readable;
+    finished = response.body
+      .pipeTo(pipe.writable, { signal: stopping.signal })
+      .catch(() => {})
+      .finally(() => {
         rendering.delete(stop);
-        await onFinish();
-      }
-    })();
+        return onFinish();
+      });
   } else {
     finished = onFinish();
   }
 
-  // Next answers HEAD with the response to a GET. Its edge wrapper leaves
-  // dropping the body to the server in front of it.
+  // Next leaves dropping the body of a HEAD to the server in front of it.
   const result = new registry.Response(request.method === "HEAD" ? null : body, {
     status,
     statusText: response.statusText,
