@@ -229,17 +229,21 @@ function finishWithBody(
       highWaterMark: Infinity,
     });
     const stopping = new AbortController();
-    // Stops the render that writes the body. So does cancelling the body. As
-    // an abort, which is what a browser that leaves a page is to a server:
-    // Next does not report it as an error of the app.
-    const stop = () =>
-      stopping.abort(
-        new DOMException("The page was left before the server had sent it.", "AbortError"),
-      );
+    // Stops the render that writes the body. So does cancelling the body.
+    const stop = () => stopping.abort();
     rendering.add(stop);
     body = pipe.readable;
-    finished = response.body
-      .pipeTo(pipe.writable, { signal: stopping.signal })
+    const source = response.body;
+    finished = source
+      .pipeTo(pipe.writable, { signal: stopping.signal, preventCancel: true })
+      // Either way the render ends as an abort, which is what a browser that
+      // leaves a page is to a server: Next does not report it as an error of
+      // the app.
+      .catch(() =>
+        source.cancel(
+          new DOMException("The page was left before the server had sent it.", "AbortError"),
+        ),
+      )
       .catch(() => {})
       .finally(() => {
         rendering.delete(stop);
