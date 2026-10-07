@@ -1,9 +1,7 @@
-import { endOfCompleteScripts } from "./html-stream.ts";
-
 // A page load, for a tab that cannot load a page: the test runs in this
 // document and has to stay in it. So the document the server sends is moved
-// into this one as it arrives. What the test runner needs stays, its scripts
-// and styles. The rest of what is in the document steps aside for as long as
+// into this one. What the test runner needs stays, its scripts and styles. The
+// rest of what is in the document steps aside for as long as
 // the page is there: a second `<title>` would hide the page's, and text in
 // `<body>` is not what React expects to hydrate.
 
@@ -34,20 +32,15 @@ function setAttributes(element: Element, attributes: Iterable<readonly [string, 
   for (const [name, value] of attributes) element.setAttribute(name, value);
 }
 
-export type PageLoad = {
-  /** The document has what it takes to start the app: its bootstrap script. */
-  interactive: Promise<void>;
-};
-
 /**
- * Replaces the page in this document with the one the server streams as
- * `html`, and runs its inline scripts.
+ * Replaces the page in this document with the one the server sent as `html`,
+ * and runs its inline scripts, as the parser would have.
  *
- * The server sends a page in parts: first what it has, then each part that
- * was waiting for data, with a script that moves it into place. They show up
- * here as they arrive, like in a browser.
+ * The page is there in full before the app starts, so the document has loaded
+ * by the time Next's client looks: it reads the Flight payload that Next's
+ * inline scripts left in `self.__next_f`, and hydrates.
  */
-export function loadDocument(html: ReadableStream<Uint8Array> | null): PageLoad {
+export function loadDocument(html: string): void {
   unloadDocument();
 
   // What was here before the page. Everything else is the page's to lose.
@@ -59,53 +52,7 @@ export function loadDocument(html: ReadableStream<Uint8Array> | null): PageLoad 
     node.parentNode.removeChild(node);
   }
 
-  // A parser to write to. Its document has no scripting, so its scripts do
-  // not run, also not once they are moved.
-  const page = document.implementation.createHTMLDocument();
-  const copied = new Set<Element>();
-  const ran = new WeakSet<HTMLScriptElement>();
-  const interactive = Promise.withResolvers<void>();
-  const reader = html?.getReader();
-  let unloaded = false;
-
-  function moveIntoDocument(): void {
-    // The parser may not be past `<html>` or `<head>` yet.
-    if (!page.head) return;
-    elements(page).forEach((element, index) => {
-      // Nor past `<body>`, which it has made up if it is still in `<head>`.
-      if (!element || copied.has(element) || (index === 2 && !element.hasChildNodes())) return;
-      copied.add(element);
-      setAttributes(elements(document)[index]!, attributesOf(element));
-    });
-    // The parser keeps writing into an element it has not closed, also after
-    // the element has moved.
-    document.head.append(...page.head.childNodes);
-    if (page.body) document.body.append(...page.body.childNodes);
-
-    // The inline scripts are how the server's HTML continues after its first
-    // bytes: React's, which move streamed content into place, and Next's,
-    // which carry the Flight payload to hydrate with. Run them in document
-    // order, as the parser would have. The scripts with a `src` are the app's
-    // chunks, which `renderServer()` stands in for.
-    for (const script of document.querySelectorAll("script")) {
-      if (before.has(script) || ran.has(script)) continue;
-      ran.add(script);
-      if (script.src) interactive.resolve();
-      else if (!script.type || script.type === "text/javascript" || script.type === "module") {
-        (0, eval)(script.textContent ?? "");
-      }
-    }
-  }
-
-  // Next's client entry reads the Flight payload until the document has
-  // loaded, which it asks the document.
-  Object.defineProperty(document, "readyState", { configurable: true, get: () => "loading" });
-
   unload = () => {
-    unloaded = true;
-    void reader?.cancel().catch(() => {});
-    delete (document as { readyState?: unknown }).readyState;
-
     for (const parent of [document.head, document.body]) {
       for (const node of Array.from(parent.childNodes)) {
         if (!before.has(node) && !isViteStyle(node)) node.remove();
@@ -122,36 +69,29 @@ export function loadDocument(html: ReadableStream<Uint8Array> | null): PageLoad 
     if (window.location.href !== runnerUrl) window.history.replaceState(null, "", runnerUrl);
   };
 
-  void (async () => {
-    const decoder = new TextDecoder();
-    let pending = "";
-    try {
-      while (reader) {
-        const { done, value } = await reader.read();
-        if (done || unloaded) break;
-        pending += decoder.decode(value, { stream: true });
-        const end = endOfCompleteScripts(pending);
-        page.write(pending.slice(0, end));
-        pending = pending.slice(end);
-        moveIntoDocument();
-      }
-    } catch {
-      // The server stopped in the middle of the document. It has reported
-      // why; the browser has the part that arrived.
-    }
-    if (unloaded) return;
-    try {
-      page.write(pending + decoder.decode());
-      page.close();
-      moveIntoDocument();
-    } finally {
-      interactive.resolve();
-      delete (document as { readyState?: unknown }).readyState;
-      document.dispatchEvent(new Event("DOMContentLoaded", { bubbles: true }));
-    }
-  })().catch(reportError);
+  // A parsed document has no scripting, so its scripts do not run, also not
+  // once they are moved.
+  const page = new DOMParser().parseFromString(html, "text/html");
+  elements(page).forEach((element, index) =>
+    setAttributes(elements(document)[index]!, attributesOf(element)),
+  );
+  document.head.append(...page.head.childNodes);
+  document.body.append(...page.body.childNodes);
 
-  return { interactive: interactive.promise };
+  // The inline scripts: React's, which move content that was waiting for
+  // data into place, and Next's, which carry the Flight payload. The scripts
+  // with a `src` are the app's chunks, which `renderServer()` stands in for.
+  for (const script of document.querySelectorAll("script")) {
+    if (before.has(script) || script.src) continue;
+    if (!script.type || script.type === "text/javascript" || script.type === "module") {
+      // A script that throws is reported, and the page goes on, as in a browser.
+      try {
+        (0, eval)(script.textContent ?? "");
+      } catch (error) {
+        reportError(error);
+      }
+    }
+  }
 }
 
 /** Leaves the page: the document is as it was before the page. */

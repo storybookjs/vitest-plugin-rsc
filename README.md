@@ -131,7 +131,7 @@ export default defineConfig({
 
 ### Open A Route
 
-`renderServer({ url })` opens a route the way a browser does. The request goes to Next's request handler, the HTML it sends is shown in the tab, and Next's client code hydrates it. It resolves once the page has hydrated. From there Next's router is in charge, so links, forms, redirects and `loading.tsx` behave as they do in your app.
+`renderServer({ url })` opens a route the way a browser does. The request goes to Next's request handler, the HTML it sends is shown in the tab, and Next's client code hydrates it. It resolves once the page has hydrated. The first load waits for the whole page, data included, so it does not show `loading.tsx`. From there Next's router is in charge, so links, forms, redirects and `loading.tsx` behave as they do in your app.
 
 ```tsx
 import { expect, test } from "vitest";

@@ -52,7 +52,7 @@ rsc      Server Components → Flight        your page, layouts, data
 ssr      Flight → HTML                     Next's own stream, with the Flight payload inlined
   │  200 text/html
   ▼
-browser  the HTML goes into the document   as it streams in
+browser  the HTML goes into the document   once all of it has arrived
          Next's client entry hydrates it   in a module graph of its own, like a page load
 ```
 
@@ -102,7 +102,7 @@ The server layers are written for an edge runtime, which is close to a browser: 
 - **`AsyncLocalStorage`**. A browser cannot carry a store across `await`. Requests are handled one at a time, and the store a request entered first stays readable until the request ends. A store that Next enters for a part of a request, like the one of a cached function, lasts until that part first awaits: see [Caching](#caching).
 - **`Buffer`**, **`process`**, and the Node modules an edge runtime has.
 
-And for the browser side, a page load: the tab cannot navigate away from the test, so the server's document is moved into the test's document as it streams, its inline scripts are run in order, and the URL is set with the History API.
+And for the browser side, a page load: the tab cannot navigate away from the test, so the server's document is moved into the test's document once all of it has arrived, its inline scripts are run in order, and the URL is set with the History API. So the document has loaded when Next's client starts, and the page's first load does not show a `loading.tsx` or a Suspense fallback: a navigation in the app does, see the README.
 
 Two things that a build knows and a request has to find out here:
 
