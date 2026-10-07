@@ -62,16 +62,19 @@ function inspect(value: unknown): string {
   }
 }
 
-for (const [method, source] of Object.entries(sources)) {
-  const original = console[method as keyof typeof sources];
-  console[method as keyof typeof sources] = (...args: unknown[]) => {
+type Method = keyof typeof sources;
+const originals = {} as Record<Method, (...args: unknown[]) => void>;
+
+for (const [method, source] of Object.entries(sources) as [Method, string][]) {
+  const original = (originals[method] = console[method].bind(console));
+  console[method] = (...args: unknown[]) => {
     if (args.length > 0) {
       const message = format(args);
       logs.push({ source, message, args });
       output += `${message}\n`;
       for (const listener of listeners) listener(`${message}\n`, source);
     }
-    original.apply(console, args);
+    original(...args);
   };
 }
 
@@ -85,6 +88,10 @@ export const consoleCapture = {
   },
   get output(): string {
     return output;
+  },
+  /** Logs for whoever reads the output of the run, not for the test. */
+  aside(method: Method, ...args: unknown[]): void {
+    originals[method](...args);
   },
   listen(listener: (chunk: string, source: string) => void): () => void {
     listeners.add(listener);

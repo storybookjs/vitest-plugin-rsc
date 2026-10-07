@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { importedNames, rewriteGates } from "./vite-plugin.ts";
+import { exportedNames, importedNames, rewriteGates } from "./vite-plugin.ts";
 
 await test("rewrites a gate pragma into a call on the line of the test, as Next's transform does", () => {
   const code = ["  // @gate !cacheComponents", "  it('does a thing', async () => {})", ""].join(
@@ -55,11 +55,23 @@ await test("finds the names a test file imports from a module", () => {
     "import * as http from 'http'",
   ].join("\n");
 
-  assert.deepEqual(importedNames(code, "fs-extra"), {
-    names: ["readFile", "writeFile"],
-    hasDefault: true,
-  });
-  assert.deepEqual(importedNames(code, "playwright"), { names: ["chromium"], hasDefault: false });
-  assert.deepEqual(importedNames(code, "http"), { names: [], hasDefault: true });
-  assert.deepEqual(importedNames(code, "fs"), { names: [], hasDefault: false });
+  assert.deepEqual(importedNames(code, "fs-extra"), ["readFile", "writeFile"]);
+  assert.deepEqual(importedNames(code, "playwright"), ["chromium"]);
+  assert.deepEqual(importedNames(code, "http"), []);
+  assert.deepEqual(importedNames(code, "fs"), []);
+});
+
+await test("finds the names a module exports, also the ones it lists", () => {
+  const code = [
+    "export function retry() {}",
+    "export async function check() {}",
+    "export const waitFor = () => {}",
+    "export class File {}",
+    "export type Query = string",
+    "export { gate, type Gate } from './gate/runtime'",
+    "export { internal as renamed }",
+    "const hidden = 1",
+  ].join("\n");
+
+  assert.deepEqual(exportedNames(code), ["retry", "check", "waitFor", "File", "gate", "renamed"]);
 });

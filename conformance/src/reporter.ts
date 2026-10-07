@@ -40,11 +40,33 @@ function reported(test: TestCase): ReportedTest {
   const name = test.fullName;
   const result = test.result();
   const duration = test.diagnostic()?.duration;
+  // A test under a `// @gate` of Next that does not hold for this run: Next
+  // expects it to fail, and shim/gate.ts has Vitest expect the same. So it
+  // "passes" when it fails, which is no pass of the plugin.
+  if (test.options.fails) {
+    return result.state === "failed"
+      ? {
+          file,
+          name,
+          state: "failed",
+          message: `Gated test passed unexpectedly: its \`// @gate\` does not hold for this run, so Next expects it to fail.`,
+        }
+      : {
+          file,
+          name,
+          state: "skipped",
+          message: "A `// @gate` of Next does not hold for this run: the test is expected to fail.",
+        };
+  }
   if (result.state === "passed") return { file, name, state: "passed", duration };
   if (result.state === "failed") {
     return { file, name, state: "failed", message: messageOf(result.errors?.[0]), duration };
   }
-  const failedHook = test.options.mode === "run" ? hookError(test) : undefined;
+  // A test that was to run and did not: a hook of its `describe` failed.
+  const failedHook =
+    test.options.mode === "run" && result.state === "skipped" && !result.note
+      ? hookError(test)
+      : undefined;
   return failedHook
     ? { file, name, state: "failed", message: failedHook }
     : {
@@ -63,8 +85,10 @@ export class ConformanceReporter implements Reporter {
     this.file = file;
   }
 
+  // In one step: the runner stops a fixture that takes too long, at any moment.
   private write(report: Report): void {
-    fs.writeFileSync(this.file, JSON.stringify(report, null, 2));
+    fs.writeFileSync(`${this.file}.part`, JSON.stringify(report, null, 2));
+    fs.renameSync(`${this.file}.part`, this.file);
   }
 
   // As it goes: a fixture that hangs is stopped by the runner, and what it

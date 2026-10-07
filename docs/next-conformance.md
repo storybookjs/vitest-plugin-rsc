@@ -110,11 +110,12 @@ Of the 444 tests that apply, 317 pass: **71%**.
 
 ### Not Yet: 115 Tests
 
-<details><summary>32 × `middleware.ts` or `proxy.ts` does not run.</summary>
+<details><summary>33 × `middleware.ts` or `proxy.ts` does not run.</summary>
 
 - `navigation`: app dir - navigation › redirect › middleware redirects › should redirect from middleware
 - `navigation`: app dir - navigation › redirect › middleware redirects › should redirect from middleware with link navigation
 - `navigation`: app dir - navigation › middleware redirect › should change browser location when router.refresh() gets a redirect response
+- `hooks`: app dir - hooks › useSelectedLayoutSegments › should have the correct layout segments at /hooks/use-selected-layout-segment/rewr… #2
 - `actions`: app-dir action handling › should handle action correctly with middleware rewrite
 - `actions-navigation`: app-dir action handling › should handle actions correctly after navigation / redirection events
 - `app-middleware`: app-dir with middleware › should warn when deprecated middleware file is used
@@ -147,14 +148,13 @@ Of the 444 tests that apply, 317 pass: **71%**.
 
 </details>
 
-<details><summary>18 × The redirects and rewrites of `next.config` do not apply.</summary>
+<details><summary>17 × The redirects and rewrites of `next.config` do not apply.</summary>
 
 - `navigation`: app dir - navigation › redirect › next.config.js redirects › should redirect from next.config.js
 - `navigation`: app dir - navigation › redirect › next.config.js redirects › should redirect from next.config.js with link navigation
 - `hooks`: app dir - hooks › usePathname › should have the canonical url pathname on rewrite
 - `hooks`: app dir - hooks › useSearchParams › should have the canonical url search params on rewrite
 - `hooks`: app dir - hooks › useSelectedLayoutSegments › should have the correct layout segments at /hooks/use-selected-layout-segment/rewr…
-- `hooks`: app dir - hooks › useSelectedLayoutSegments › should have the correct layout segments at /hooks/use-selected-layout-segment/rewr… #2
 - `rewrites-redirects`: redirects and rewrites › navigation using link › should rewrite from next.config.js correctly
 - `rewrites-redirects`: redirects and rewrites › navigation using link › should redirect from next.config.js correctly
 - `rewrites-redirects`: redirects and rewrites › navigation using link › should redirect using catchall from next.config.js correctly
@@ -380,7 +380,7 @@ Where the plugin runs something, it mostly runs it as Next does: 317 of the 329 
 
 **Bugs: 12 tests, 5 causes.** All are in the list above. Two of them are about what a page leaves in the tab that a browser drops with the page: the history, which a page load replaces an entry of, and global CSS, which stays.
 
-**Not Yet: 115 tests.** Middleware (32) and the redirects and rewrites of `next.config` (18) are the selection's own doing: five fixtures are there to measure them. The rest was not asked for, and three of them are not in the list of `docs/next-routes.md`:
+**Not Yet: 115 tests.** Middleware (33) and the redirects and rewrites of `next.config` (17) are the selection's own doing: five fixtures are there to measure them. The rest was not asked for, and three of them are not in the list of `docs/next-routes.md`:
 
 - **React's development build**, 16 tests. A deployment sends the client a digest for an error of a Server Component, and the message is minified. Here the client gets the message, and Strict Mode runs an effect twice. That is `next dev` without its overlay, for errors, and `next start` for the rest.
 - **The Pages Router**, 14 tests. Fixtures of the App Router have a `pages/` directory to test the two together.
@@ -390,11 +390,12 @@ Where the plugin runs something, it mostly runs it as Next does: 317 of the 329 
 
 ### Found Along The Way
 
-What no test of the selection pins down, because the runner had to get past it first:
+What no test of the selection pins down:
 
 - **A pending refresh outlived its page.** Fixed with the runner: see "What Stands In For A Server" in `docs/next-routes.md`. Next sends a `<meta http-equiv="refresh">` with a `redirect()` in a response that had started. It came due a second later, in the page of the next test, or between two tests, where nothing stopped the tab from leaving and the rest of the test file did not run.
 - **`renderServer({ url })` rejects for a page that redirects while it loads**, with "The page was left before it had loaded". A `redirect()` under a `loading.tsx` does that: Next's router loads the page it redirects to before the first one has hydrated. `/moved` in `playground/nextjs-e2e-demo` is such a page.
 - **`history.back()` past the entry a page was opened in leaves the test.** The tab goes back to the test runner's own entry, and Vitest loses the tab.
+- **The first run of an app can fail where the second passes.** With a cold cache, Vite finds `next/legacy/image` for the `ssr` layer while a test runs, and pre-bundles again. The page that asked for it gets a 404. Two tests of `next-image` fail that way on a fresh checkout, and pass from then on. The runner runs such a fixture again and says so.
 - **`handleRequest()` answers 404 for `/_next/image` and the files of fonts and images.** The dev server serves those, and `handleRequest()` only reaches the routes of the app, where a `fetch` of the page finds both.
 
 ## Running It
@@ -417,7 +418,9 @@ FAILED, and expectations.json does not say so: navigation > navigation.test.ts >
 PASSED, and expectations.json says it fails (middleware): hooks > hooks.test.ts > ...
 ```
 
-The output of each fixture is in `conformance/.work/logs`, and the results of the run in `conformance/.results`.
+A fixture whose run is not what the file says runs once more, and the second run counts. So a test that waited just too short on a busy machine does not pass for a change of the plugin. The run names every test that ended otherwise the second time: such a test has no result to rely on.
+
+With `--grep` only the tests that ran are compared. The output of each fixture is in `conformance/.work/logs`, and the results of the run in `conformance/.results`.
 
 ### Another Plugin
 
@@ -447,7 +450,7 @@ The plugin runs the app in the tab of the test. So the test file runs there too,
 
 What a test asks for that a tab cannot give, the shim throws as `Unsupported`, with what it was. The runner reports such a test as not applicable, with that reason.
 
-The 32 fixtures have 34 test files, 9100 lines. They use 17 members of `next`, 29 methods of the browser and 15 helpers of `next-test-utils`. Of `next`, 13 work and 4 are refused with a reason: `patchFile`, `renameFile` and `deleteFile`, which change a file of the app, and `getPrerenderFilePath`. All 29 methods of the browser work. Of the helpers, 12 work; refused are the two that read the dev overlay, and `listClientChunks`, which reads a build.
+The 32 fixtures have 34 test files, 9100 lines. They use 17 members of `next`, 29 methods of the browser and 15 helpers of `next-test-utils`. Of `next`, 13 work and 4 are refused with a reason: `patchFile`, `renameFile` and `deleteFile`, which change a file of the app, and `getPrerenderFilePath`. All 29 of those methods of the browser work. Of the helpers, 12 work; refused are the two that read the dev overlay, and `listClientChunks`, which reads a build.
 
 ### The Fixtures Come From Next's Repository
 
@@ -479,16 +482,24 @@ It is not quite `next start`: React is a development build here. See the results
 
 ### Expectations
 
-`conformance/expectations.json` has every test that fails, with the key of a reason, and the reasons with their kind:
+`conformance/expectations.json` has, for every fixture, how many of its tests pass and every test that fails with the key of a reason, and the reasons with their kind:
 
 ```json
 {
   "reasons": {
-    "middleware": { "category": "not-yet", "text": "`middleware.ts` or `proxy.ts` does not run." }
+    "middleware": { "category": "not-yet", "text": "`middleware.ts` or `proxy.ts` does not run." },
+    "javascript-off": {
+      "category": "not-applicable",
+      "text": "Opens the page with JavaScript off. The test runs in the tab of the page.",
+      "match": "a page with JavaScript off"
+    }
   },
   "fixtures": {
-    "hooks": {
-      "hooks.test.ts > app dir - hooks > usePathname > should have the canonical url pathname on rewrite": "middleware"
+    "actions-navigation": {
+      "passed": 1,
+      "failed": {
+        "index.test.ts > app-dir action handling > should handle actions correctly after navigation / redirection events": "middleware"
+      }
     }
   }
 }
@@ -500,7 +511,14 @@ There are three kinds:
 - **Not Yet**: something the plugin does not do, like middleware. Most of these are in the list of `docs/next-routes.md`.
 - **Not applicable**: a test of something that is not there to test. The output of `next build`, what the CLI prints, the dev overlay, a prerendered file, or a test that needs a browser of its own.
 
-A test that fails and is not in the file fails the run, and so does one that is in the file and passes. `--update` writes the file anew from a run: a test that still fails keeps its reason, one that passes is taken out, and a new failure gets the first reason whose `match` fits its message, or `untriaged`.
+A run fails on every result that the file does not have:
+
+- a test that fails and is not in the file, or that is in the file and passes, is skipped or is gone,
+- a test that fails with a message that the `match` of its reason does not fit: it fails for another reason now,
+- a fixture with another number of passing tests, which is how a test that passed and is skipped or gone since is seen,
+- a fixture whose run did not get to its end.
+
+`--update` writes the file anew from a run: a test that still fails keeps its reason, one that passes is taken out, and a new failure gets the first reason whose `match` fits its message, or `untriaged`. A fixture whose run did not get to its end stays as it was.
 
 ## What A Test In The Page's Own Tab Cannot Do
 
@@ -530,6 +548,7 @@ A test of Next expects a browser and a server. Where the tab is neither, the run
 - **`back()` stays in the page.** `history.back()` past the entry a page was opened in would leave the test. The shim throws instead.
 - **`/_next/` goes to the dev server.** `next.fetch()` is `handleRequest()`, which reaches the routes of the app. Fonts, images and Next's image optimizer are the dev server's here, so those requests are the tab's `fetch`.
 - **A moment for React.** A call of Playwright is a round trip, and React has rendered what was scheduled by the time it arrives. The shim waits a tick before each call.
+- **A second run.** A fixture whose run is not what the expectations say runs again, and the second run counts. That takes a cold cache and a busy machine out of the results, and it would take a test that fails one time in two out of them as well. The run names every test that ended otherwise the second time.
 
 ## Adding A Fixture
 

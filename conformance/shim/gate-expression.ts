@@ -9,8 +9,14 @@
 /** What a condition comes to, for the conditions of a run by name. */
 export function evaluateGate(source: string, conditions: Record<string, unknown>): unknown {
   const unparsable = () => new Error(`Unparsable @gate pragma: ${source}`);
-  const tokens = source.match(/===|!==|==|!=|&&|\|\||[!()]|'[^']*'|"[^"]*"|[\w$]+/g) ?? [];
-  if (tokens.length === 0 || tokens.join("") !== source.replace(/\s+/g, "")) throw unparsable();
+  const tokens: string[] = [];
+  const token = /\s*(===|!==|==|!=|&&|\|\||[!()]|'[^']*'|"[^"]*"|[\w$]+)\s*/y;
+  while (token.lastIndex < source.length) {
+    const match = token.exec(source);
+    if (!match) throw unparsable();
+    tokens.push(match[1]!);
+  }
+  if (tokens.length === 0) throw unparsable();
 
   let at = 0;
   const primary = (): unknown => {

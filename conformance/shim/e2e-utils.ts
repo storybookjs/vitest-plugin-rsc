@@ -2,7 +2,7 @@
 // `e2e-utils`: `nextTestSetup()` and the mode a run is in.
 import { afterAll, beforeAll } from "vitest";
 import { mode, packages, prepared, root } from "virtual:next-conformance/config";
-import { NextInstance } from "./next-instance.ts";
+import { NextInstance, setCurrentNext } from "./next-instance.ts";
 
 export type { NextInstance };
 export type { Browser as Playwright } from "./browser.ts";
@@ -107,6 +107,7 @@ export function nextTestSetup(options: Options) {
   // The variables of the server's process. The server is in the tab.
   const previous = new Map<string, string | undefined>();
   beforeAll(() => {
+    setCurrentNext(next);
     for (const [name, value] of Object.entries(options.env ?? {})) {
       previous.set(name, process.env[name]);
       process.env[name] = value;
@@ -117,6 +118,7 @@ export function nextTestSetup(options: Options) {
       if (value === undefined) delete process.env[name];
       else process.env[name] = value;
     }
+    setCurrentNext(undefined);
     await next.destroy();
   });
   return { next, isNextDev, isNextDeploy, isNextStart, isTurbopack, isRspack, skipped: false };

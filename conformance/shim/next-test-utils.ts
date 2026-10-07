@@ -6,15 +6,15 @@
 // The bodies follow Next's own, so that a test waits and retries as it does
 // there.
 import type * as cheerio from "cheerio";
-import { handleRequest } from "vitest-plugin-rsc/nextjs/testing-library";
 import { expect } from "vitest";
 import type { Browser } from "./browser.ts";
+import { currentNext, withQuery, type Query } from "./next-instance.ts";
 import { isUnsupported } from "./unsupported.ts";
 
 // A test's own timers may be fake.
 const setTimeout = globalThis.setTimeout;
 
-type Query = Record<string, unknown> | string | null | undefined;
+export { withQuery };
 
 export const debugPrint = (..._args: unknown[]) => {};
 export const shouldUseTurbopack = () => false;
@@ -40,33 +40,19 @@ export function getFullUrl(appPortOrUrl: string | number, url?: string, hostname
   return fullUrl;
 }
 
-export function withQuery(pathname: string, query: Record<string, unknown> | string): string {
-  const querystring =
-    typeof query === "string"
-      ? query
-      : new URLSearchParams(
-          Object.entries(query).flatMap(([key, value]) =>
-            Array.isArray(value)
-              ? value.map((item) => [key, String(item)])
-              : [[key, String(value)]],
-          ),
-        ).toString();
-  if (querystring.length === 0) return pathname;
-  if (querystring.startsWith("?") || pathname.endsWith("?")) return `${pathname}${querystring}`;
-  return `${pathname}?${querystring}`;
-}
-
 export function getFetchUrl(appPort: string | number, pathname: string, query?: Query): string {
   return getFullUrl(appPort, query ? withQuery(pathname, query) : pathname);
 }
 
+// Of the app of the test: its port is the tab's. So the request is the app's
+// `next.fetch()`, with what that refuses and where that sends it.
 export function fetchViaHTTP(
   appPort: string | number,
   pathname: string,
   query?: Query,
   init?: RequestInit,
 ): Promise<Response> {
-  return handleRequest(getFetchUrl(appPort, pathname, query), init);
+  return currentNext().fetch(getFetchUrl(appPort, pathname, query), init);
 }
 
 export function renderViaHTTP(

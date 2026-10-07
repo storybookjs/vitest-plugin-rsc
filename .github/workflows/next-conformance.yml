@@ -50,7 +50,9 @@ jobs:
       - name: Run the fixtures
         run: |
           set -o pipefail
-          pnpm conformance | tee conformance.log
+          # Two fixtures at a time: a runner has four cores, and a fixture is
+          # a browser and a dev server.
+          pnpm conformance --concurrency 2 | tee conformance.log
       - name: Summary
         if: always()
         run: |

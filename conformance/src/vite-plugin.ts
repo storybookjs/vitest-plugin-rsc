@@ -19,37 +19,40 @@ const stubPrefix = "\0next-conformance/stub/";
 // A test file, or a module of `test/lib` that one imports.
 const isTestFile = (id: string) => /\.test\.[cm]?[jt]sx?$/.test(id.replace(/[?#].*$/, ""));
 
-const exportedNames = (code: string) =>
-  Array.from(
+// The names a module exports: its declarations, and what it exports in a list,
+// its own or another module's.
+export function exportedNames(code: string): string[] {
+  const declared = Array.from(
     code.matchAll(
       /^export\s+(?:declare\s+)?(?:async\s+)?(?:function\*?|const|let|class)\s+([A-Za-z_$][\w$]*)/gm,
     ),
     (match) => match[1]!,
   );
+  const listed = Array.from(code.matchAll(/^export\s+\{([^}]*)\}/gm)).flatMap(([, list]) =>
+    list!
+      .split(",")
+      .map((part) => part.trim())
+      .filter((part) => part && !part.startsWith("type "))
+      .map((part) => part.split(/\s+as\s+/).at(-1)!),
+  );
+  return Array.from(new Set([...declared, ...listed])).filter((name) => name !== "default");
+}
 
 // The names an import statement takes from a module: `import a, { b as c }`.
-export function importedNames(
-  code: string,
-  source: string,
-): { names: string[]; hasDefault: boolean } {
+export function importedNames(code: string, source: string): string[] {
   const names = new Set<string>();
-  let hasDefault = false;
   const quoted = source.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const statement = new RegExp(`import\\s+(?!type\\b)([^;'"]*?)\\s+from\\s*['"]${quoted}['"]`, "g");
   for (const [, clause] of code.matchAll(statement)) {
-    const named = /\{([^}]*)\}/.exec(clause!);
-    for (const part of named?.[1]?.split(",") ?? []) {
+    for (const part of /\{([^}]*)\}/.exec(clause!)?.[1]?.split(",") ?? []) {
       const name = part
         .trim()
         .replace(/^type\s+.*$/, "")
         .split(/\s+as\s+/)[0]!;
-      if (name) names.add(name);
-    }
-    if (/^[A-Za-z_$]/.test(clause!.replace(/\{[^}]*\}/, "").trim()) || /\*\s+as\s+/.test(clause!)) {
-      hasDefault = true;
+      if (name && name !== "default") names.add(name);
     }
   }
-  return { names: Array.from(names).filter((name) => name !== "default"), hasDefault };
+  return Array.from(names);
 }
 
 // A module that has nothing to offer a tab. Importing it is fine: a test file
@@ -142,7 +145,7 @@ export function conformance(options: ConformanceOptions): Plugin {
     enforce: "pre",
     async resolveId(source, importer, resolveOptions) {
       if (source === configId) return `\0${configId}`;
-      if (aliases[source]) return aliases[source];
+      if (Object.hasOwn(aliases, source)) return aliases[source];
       if (/^(\.\.\/)+lib\/next-test-utils$/.test(source)) return testUtilsId;
 
       // The plugin of another checkout: its modules for the tab are the ones
@@ -164,8 +167,8 @@ export function conformance(options: ConformanceOptions): Plugin {
           skipSelf: true,
         });
       }
-      if (testAliases[source]) {
-        return this.resolve(testAliases[source], shim("setup.ts"), {
+      if (Object.hasOwn(testAliases, source)) {
+        return this.resolve(testAliases[source]!, shim("setup.ts"), {
           ...resolveOptions,
           skipSelf: true,
         });
@@ -179,10 +182,7 @@ export function conformance(options: ConformanceOptions): Plugin {
       // uses, like `playwright` or `http-proxy`.
       const resolved = await this.resolve(source, importer, { ...resolveOptions, skipSelf: true });
       if (resolved) return resolved;
-      const { names } = importedNames(
-        fs.readFileSync(importer.replace(/[?#].*$/, ""), "utf8"),
-        source,
-      );
+      const names = importedNames(fs.readFileSync(importer.replace(/[?#].*$/, ""), "utf8"), source);
       return `${stubPrefix}${source}?names=${names.join(",")}`;
     },
     async load(id) {
@@ -265,10 +265,12 @@ export function conformance(options: ConformanceOptions): Plugin {
     transform(code, id) {
       const file = id.replace(/[?#].*$/, "");
       if (!isTestFile(file) && !file.startsWith(options.nextTestLib)) return;
-      let result = isTestFile(file) ? rewriteGates(code) : code;
-      // A test file that runs another one again, after it has set a variable.
-      result = result.replace(/^(\s*)require\((['"]\.[^'"]+['"])\)/gm, "$1await import($2)");
-      result = result.replace(/\brequire\(['"]console['"]\)/g, "console");
+      // Next's own transform for its pragmas, and what Jest gives a test
+      // file that a module of the browser has not.
+      const result = (isTestFile(file) ? rewriteGates(code) : code).replace(
+        /\brequire\(['"]console['"]\)/g,
+        "console",
+      );
       const prelude =
         (/\b__dirname\b/.test(result)
           ? `const __dirname = ${JSON.stringify(path.dirname(file))};`
@@ -281,14 +283,27 @@ export function conformance(options: ConformanceOptions): Plugin {
   };
 }
 
+// A file of the app, by its path in the app. Not one outside of it.
+function fileOfApp(root: string, file: string): string | undefined {
+  const target = path.resolve(root, file);
+  return path.relative(root, target).startsWith("..") ? undefined : target;
+}
+
 /** Reads a file of the app for `next.readFile()`: a command of Vitest's browser mode. */
 export function readFileCommand(root: string): BrowserCommand<[file: string]> {
   return (_context, file): string | null => {
-    const target = path.resolve(root, file);
-    if (path.relative(root, target).startsWith("..")) return null;
-    return fs.existsSync(target) && fs.statSync(target).isFile()
+    const target = fileOfApp(root, file);
+    return target && fs.statSync(target, { throwIfNoEntry: false })?.isFile()
       ? fs.readFileSync(target, "utf8")
       : null;
+  };
+}
+
+/** Whether the app has a file or a directory, for `next.hasFile()`. */
+export function fileExistsCommand(root: string): BrowserCommand<[file: string]> {
+  return (_context, file): boolean => {
+    const target = fileOfApp(root, file);
+    return target !== undefined && fs.existsSync(target);
   };
 }
 

@@ -6,7 +6,12 @@ import { searchForWorkspaceRoot } from "vite";
 import { defineConfig } from "vitest/config";
 import { vitestPluginRscSourceConditions } from "../vitest.conditions.ts";
 import { ConformanceReporter } from "./src/reporter.ts";
-import { conformance, readFileCommand, serverNetworkCommand } from "./src/vite-plugin.ts";
+import {
+  conformance,
+  fileExistsCommand,
+  readFileCommand,
+  serverNetworkCommand,
+} from "./src/vite-plugin.ts";
 
 // The Vitest project of one fixture of Next's own e2e tests. `src/run.ts`
 // starts a run of it per fixture, and says which through the environment.
@@ -83,6 +88,7 @@ export default defineConfig({
       instances: [{ browser: "chromium" }],
       commands: {
         conformanceReadFile: readFileCommand(root),
+        conformanceFileExists: fileExistsCommand(root),
         conformanceServerNetwork: serverNetworkCommand(),
       },
       screenshotFailures: false,

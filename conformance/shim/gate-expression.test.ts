@@ -29,6 +29,7 @@ await test("compares a condition with a string", () => {
   assert.equal(holds("mode === 'start'"), true);
   assert.equal(holds('mode !== "start"'), false);
   assert.equal(holds("mode == 'dev' || !deploy"), true);
+  assert.equal(evaluateGate("output === 'a b'", { output: "a b" }), true);
 });
 
 await test("binds && and || from left to right, like Next's parser", () => {

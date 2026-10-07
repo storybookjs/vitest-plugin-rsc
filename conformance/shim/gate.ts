@@ -8,7 +8,7 @@ import { gateConfig, mode } from "virtual:next-conformance/config";
 import { evaluateGate } from "./gate-expression.ts";
 
 type Pragma = { force: boolean; source: string };
-type Body = (...args: never[]) => unknown;
+type Callee = ((...args: never[]) => unknown) & { skip: (...args: never[]) => unknown };
 
 const conditions: Record<string, unknown> = {
   mode,
@@ -41,88 +41,56 @@ const conditions: Record<string, unknown> = {
 
 const holds = ({ source }: Pragma) => Boolean(evaluateGate(source, conditions));
 
-// The gates of the `describe` blocks that are being collected.
-const enclosing: Pragma[] = [];
-
-// A test under a `@gate` that does not hold is expected to fail, and Next
-// fails it when it passes. Here it is reported as skipped, with the pragma.
-function expectFailure(pragma: Pragma, body: Body | undefined): Body | undefined {
-  if (!body) return body;
-  return (async (context: { skip(note: string): never }, ...rest: never[]) => {
-    try {
-      await (body as (...args: unknown[]) => unknown)(context, ...rest);
-    } catch {
-      context.skip(`@gate ${pragma.source}: fails, as Next expects of this run`);
-    }
-    throw new Error(
-      `Gated test passed unexpectedly: \`// @gate ${pragma.source}\` does not hold for this run.`,
-    );
-  }) as Body;
+// A test of Jest is `(name, fn, timeout)`. Vitest takes its options before
+// the function.
+function withOptions(rest: unknown[], options: Record<string, unknown>): unknown[] {
+  const [first, second] = rest;
+  if (typeof first === "object" && first !== null) return [{ ...first, ...options }, second];
+  return [{ ...options, ...(typeof second === "number" && { timeout: second }) }, first];
 }
 
-function gated(pragmas: Pragma[], callee: (...args: never[]) => unknown, isSuite: boolean) {
-  const skip = pragmas.find((pragma) => pragma.force && !holds(pragma));
-  const failing = pragmas.find((pragma) => !pragma.force && !holds(pragma));
+// A `@force-gate` that does not hold skips the test, or every test of the
+// `describe`. A `@gate` that does not hold still runs it: Next expects it to
+// fail, and fails it when it passes. That is Vitest's `fails`, which the tests
+// of a `describe` inherit, and which src/reporter.ts reads to report such a
+// test as skipped by the test itself, not as a pass.
+function gated(pragmas: Pragma[], callee: Callee) {
+  const skip = pragmas.some((pragma) => pragma.force && !holds(pragma));
+  const fails = pragmas.some((pragma) => !pragma.force && !holds(pragma));
   return (name: string, ...rest: unknown[]) => {
-    if (skip)
-      return (callee as unknown as { skip: Body }).skip(name as never, ...(rest as never[]));
-    if (!failing) return callee(name as never, ...(rest as never[]));
-    const index = rest.findIndex((argument) => typeof argument === "function");
-    const body = rest[index] as Body;
-    if (isSuite) {
-      rest[index] = () => {
-        enclosing.push(failing);
-        try {
-          return (body as () => unknown)();
-        } finally {
-          enclosing.pop();
-        }
-      };
-    } else {
-      rest[index] = expectFailure(failing, body);
-    }
-    return callee(name as never, ...(rest as never[]));
+    if (skip) return callee.skip(name as never, ...(rest as never[]));
+    if (!fails) return callee(name as never, ...(rest as never[]));
+    return callee(name as never, ...(withOptions(rest, { fails: true }) as never[]));
   };
 }
 
-const callees: Record<string, (...args: never[]) => unknown> = {
+const only = (callee: typeof it | typeof describe): Callee =>
+  Object.assign((...args: never[]) => (callee.only as Callee)(...args), {
+    skip: callee.skip as Callee,
+  });
+
+const callees: Record<string, Callee> = {
   it,
   test: it,
-  fit: it.only,
-  "it.only": it.only,
-  "test.only": it.only,
+  fit: only(it),
+  "it.only": only(it),
+  "test.only": only(it),
   describe,
-  "describe.only": describe.only,
+  "describe.only": only(describe),
 };
 
 export function installGate(): void {
-  // A test inside a gated `describe` is not rewritten itself.
-  const inSuite = (callee: typeof it) =>
-    new Proxy(callee, {
-      apply(target, self, args: unknown[]) {
-        const failing = enclosing.at(-1);
-        if (failing) {
-          const index = args.findIndex((argument) => typeof argument === "function");
-          if (index >= 0) args[index] = expectFailure(failing, args[index] as Body);
-        }
-        return Reflect.apply(target, self, args);
-      },
-    });
   Object.assign(globalThis, {
-    it: inSuite(it),
-    test: inSuite(it),
-    _test_gate: (pragmas: Pragma[], kind: string) =>
-      gated(pragmas, callees[kind]!, kind.startsWith("describe")),
-    _test_gate_describe_each:
-      (pragmas: Pragma[], ...table: unknown[]) =>
-      (name: string, body: Body) => {
-        const each = (describe.each as (...table: unknown[]) => (...args: never[]) => unknown)(
-          ...table,
-        );
-        const skip = (describe.skip.each as (...table: unknown[]) => (...args: never[]) => unknown)(
-          ...table,
-        );
-        return gated(pragmas, Object.assign(each, { skip }), true)(name, body);
-      },
+    _test_gate(pragmas: Pragma[], kind: string) {
+      const callee = callees[kind];
+      if (!callee) throw new Error(`A @gate pragma on ${kind}(), which this runner does not know.`);
+      return gated(pragmas, callee);
+    },
+    _test_gate_describe_each(pragmas: Pragma[], ...table: unknown[]) {
+      type Each = { each(...table: unknown[]): Callee };
+      const each = (describe as unknown as Each).each(...table);
+      const skip = (describe.skip as unknown as Each).each(...table);
+      return gated(pragmas, Object.assign(each, { skip }));
+    },
   });
 }

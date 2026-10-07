@@ -2,8 +2,8 @@ import fs from "node:fs";
 import { areas, type Fixture } from "./fixtures.ts";
 
 // What a run comes to next to `expectations.json`, the file that says which
-// tests fail and why. A test that fails without being in it, or passes while
-// it is, is what a run is for: it fails the run.
+// tests fail and why. A result that is not what the file says is what a run
+// is for: it fails the run.
 
 export type TestRun = {
   /** The test file and the names of the `describe` blocks and of the test, joined by " > ". */
@@ -15,12 +15,19 @@ export type TestRun = {
   duration?: number;
 };
 
+type State = TestRun["state"] | "not run";
+
 export type FixtureRun = {
   fixture: Fixture;
   duration: number;
-  /** Why the fixture, or a test file of it, did not get to its tests. */
+  /**
+   * Why the run is not all of the fixture: it did not start, it was stopped,
+   * or a test file of it did not load. Its tests are the ones that did end.
+   */
   failure?: string;
   tests: TestRun[];
+  /** The tests that ended otherwise in the run before this one, of the same fixture. */
+  unstable?: { id: string; before: State; now: State }[];
 };
 
 export const categories = ["plugin-bug", "not-yet", "not-applicable", "untriaged"] as const;
@@ -38,25 +45,43 @@ export type Reason = {
   category: Category;
   text: string;
   /**
-   * A regular expression for the message of a failure. `--update` gives a new
-   * failure the first reason that matches it.
+   * A regular expression for the message of the failure. A test with this
+   * reason has to fail with a message that matches, and `--update` gives a
+   * new failure the first reason that matches it.
    */
   match?: string;
 };
 
 export type Expectations = {
   reasons: Record<string, Reason>;
-  /** Per fixture: the tests that fail, each with the key of its reason. */
-  fixtures: Record<string, Record<string, string>>;
+  fixtures: Record<
+    string,
+    {
+      /** How many of its tests pass. */
+      passed: number;
+      /** The tests that fail, each with the key of its reason. */
+      failed: Record<string, string>;
+    }
+  >;
 };
 
 const untriaged = "untriaged";
 
 export function readExpectations(file: string): Expectations {
   const expectations = JSON.parse(fs.readFileSync(file, "utf8")) as Expectations;
-  for (const [fixture, tests] of Object.entries(expectations.fixtures)) {
-    for (const [test, reason] of Object.entries(tests)) {
-      if (!expectations.reasons[reason]) {
+  for (const [key, reason] of Object.entries(expectations.reasons)) {
+    if (!categories.includes(reason.category)) {
+      throw new Error(
+        `expectations.json: the reason "${key}" has the category "${reason.category}". ` +
+          `It is one of ${categories.join(", ")}.`,
+      );
+    }
+    // Throws for one that is no regular expression.
+    if (reason.match !== undefined) new RegExp(reason.match);
+  }
+  for (const [fixture, { failed }] of Object.entries(expectations.fixtures)) {
+    for (const [test, reason] of Object.entries(failed)) {
+      if (!Object.hasOwn(expectations.reasons, reason)) {
         throw new Error(
           `expectations.json: ${fixture} > ${test} has the reason "${reason}", which is not in "reasons".`,
         );
@@ -70,34 +95,43 @@ export function writeExpectations(file: string, expectations: Expectations): voi
   fs.writeFileSync(file, `${JSON.stringify(expectations, null, 2)}\n`);
 }
 
+const messageOf = (test: TestRun) => test.unsupported ?? test.message ?? "";
+const matches = (reason: Reason, test: TestRun) =>
+  reason.match === undefined || new RegExp(reason.match, "i").test(messageOf(test));
+const passedOf = (run: FixtureRun) => run.tests.filter((test) => test.state === "passed").length;
+
 function reasonFor(expectations: Expectations, test: TestRun): string {
-  const message = test.unsupported ?? test.message ?? "";
   for (const [key, reason] of Object.entries(expectations.reasons)) {
-    if (reason.match && new RegExp(reason.match, "i").test(message)) return key;
+    if (reason.match !== undefined && matches(reason, test)) return key;
   }
   return untriaged;
 }
 
-/** The expectations as the runs say they are. A test that still fails keeps its reason. */
+/**
+ * The expectations as the runs say they are. A test that still fails keeps
+ * its reason, unless it now fails with a message that its reason does not
+ * have. A fixture whose run is not all of it stays as it was.
+ */
 export function updateExpectations(expectations: Expectations, runs: FixtureRun[]): Expectations {
   const fixtures = { ...expectations.fixtures };
   for (const run of runs) {
-    const before = fixtures[run.fixture.id] ?? {};
-    const failing = run.tests
+    if (run.failure) continue;
+    const before = fixtures[run.fixture.id]?.failed ?? {};
+    const failed = run.tests
       .filter((test) => test.state === "failed")
       .map((test) => {
         const known = before[test.id];
-        return [
-          test.id,
-          known && known !== untriaged ? known : reasonFor(expectations, test),
-        ] as const;
+        const reason = known === undefined ? undefined : expectations.reasons[known];
+        const stays = known !== untriaged && reason !== undefined && matches(reason, test);
+        return [test.id, stays ? known! : reasonFor(expectations, test)] as const;
       });
-    if (failing.length > 0) fixtures[run.fixture.id] = Object.fromEntries(failing);
-    else delete fixtures[run.fixture.id];
+    fixtures[run.fixture.id] = { passed: passedOf(run), failed: Object.fromEntries(failed) };
   }
   // The reason of a failure that nobody has looked at is there while one has it.
   const { [untriaged]: _, ...reasons } = expectations.reasons;
-  const isUsed = Object.values(fixtures).some((tests) => Object.values(tests).includes(untriaged));
+  const isUsed = Object.values(fixtures).some(({ failed }) =>
+    Object.values(failed).includes(untriaged),
+  );
   return {
     reasons: isUsed
       ? { ...reasons, [untriaged]: { category: "untriaged", text: "Not looked at yet." } }
@@ -117,48 +151,79 @@ export type Verdict = {
 export type Comparison = {
   expectations: Expectations;
   verdicts: Verdict[];
-  unexpected: string[];
+  unexpected: { fixture: Fixture; text: string }[];
 };
 
-export function compare(expectations: Expectations, runs: FixtureRun[]): Comparison {
+/**
+ * The runs next to the expectations. With `partial`, the runs are of the
+ * tests that `--grep` picked: what did not run says nothing then.
+ */
+export function compare(
+  expectations: Expectations,
+  runs: FixtureRun[],
+  { partial = false }: { partial?: boolean } = {},
+): Comparison {
   const verdicts: Verdict[] = [];
-  const unexpected: string[] = [];
-  for (const { fixture, tests } of runs) {
-    const expected = expectations.fixtures[fixture.id] ?? {};
+  const unexpected: Comparison["unexpected"] = [];
+  for (const run of runs) {
+    const { fixture, tests } = run;
+    const differences = unexpected.length;
+    const differs = (text: string) => unexpected.push({ fixture, text });
+    const expected = expectations.fixtures[fixture.id];
+    const failing = expected?.failed ?? {};
+    if (run.failure) {
+      differs(`DID NOT RUN TO ITS END: ${fixture.id}\n    ${run.failure.split("\n")[0]}`);
+    }
+    // Whether what did not run, or did not pass, says something.
+    const isWhole = !partial && !run.failure;
+
     const seen = new Set<string>();
     for (const test of tests) {
       seen.add(test.id);
-      const reason = expected[test.id];
-      if (test.state === "failed") {
-        verdicts.push({
-          fixture,
-          test,
-          kind: reason ? "expected-failure" : "unexpected-failure",
-          reason,
-        });
-        if (!reason) {
-          unexpected.push(
-            `FAILED, and expectations.json does not say so: ${fixture.id} > ${test.id}\n    ${(test.message ?? "").split("\n")[0]}`,
+      const key = failing[test.id];
+      const reason = key === undefined ? undefined : expectations.reasons[key];
+      const first = (test.message ?? "").split("\n")[0];
+      if (test.state === "failed" && reason && matches(reason, test)) {
+        verdicts.push({ fixture, test, kind: "expected-failure", reason: key });
+      } else if (test.state === "failed") {
+        verdicts.push({ fixture, test, kind: "unexpected-failure" });
+        differs(
+          reason
+            ? `FAILED, and not the way expectations.json says (${key}): ${fixture.id} > ${test.id}\n    ${first}`
+            : `FAILED, and expectations.json does not say so: ${fixture.id} > ${test.id}\n    ${first}`,
+        );
+      } else if (test.state === "passed") {
+        verdicts.push({ fixture, test, kind: key ? "unexpected-pass" : "passed" });
+        if (key) {
+          differs(
+            `PASSED, and expectations.json says it fails (${key}): ${fixture.id} > ${test.id}`,
           );
         }
-      } else if (reason) {
-        verdicts.push({
-          fixture,
-          test,
-          kind: test.state === "passed" ? "unexpected-pass" : "skipped",
-        });
-        unexpected.push(
-          test.state === "passed"
-            ? `PASSED, and expectations.json says it fails (${reason}): ${fixture.id} > ${test.id}`
-            : `SKIPPED, and expectations.json says it fails (${reason}): ${fixture.id} > ${test.id}`,
-        );
       } else {
-        verdicts.push({ fixture, test, kind: test.state });
+        verdicts.push({ fixture, test, kind: "skipped" });
+        if (key && isWhole) {
+          differs(
+            `SKIPPED, and expectations.json says it fails (${key}): ${fixture.id} > ${test.id}`,
+          );
+        }
       }
     }
-    for (const id of Object.keys(expected)) {
-      if (!seen.has(id))
-        unexpected.push(`NOT RUN, and expectations.json says it fails: ${fixture.id} > ${id}`);
+    if (!isWhole) continue;
+    if (!expected) {
+      differs(`NOT IN expectations.json: ${fixture.id}`);
+      continue;
+    }
+    for (const id of Object.keys(failing)) {
+      if (!seen.has(id)) {
+        differs(`NOT RUN, and expectations.json says it fails: ${fixture.id} > ${id}`);
+      }
+    }
+    // The tests that pass are not in the file one by one. Their number is: a
+    // test that is skipped or gone since must not go unseen. It says nothing
+    // new when a test of the fixture is already named.
+    const passed = passedOf(run);
+    if (passed !== expected.passed && unexpected.length === differences) {
+      differs(`${passed} TESTS PASS, and expectations.json says ${expected.passed}: ${fixture.id}`);
     }
   }
   return { expectations, verdicts, unexpected };
@@ -179,9 +244,7 @@ function count(comparison: Comparison, of: (verdict: Verdict) => boolean = () =>
     if (verdict.kind === "passed" || verdict.kind === "unexpected-pass") counts.passed++;
     else if (verdict.kind === "skipped") counts.skipped++;
     else
-      counts[
-        comparison.expectations.reasons[verdict.reason ?? untriaged]?.category ?? "untriaged"
-      ]++;
+      counts[comparison.expectations.reasons[verdict.reason ?? untriaged]?.category ?? untriaged]++;
   }
   return counts;
 }
@@ -200,6 +263,7 @@ function score(counts: Counts) {
 export function renderSummary(comparison: Comparison, runs: FixtureRun[]): string {
   const counts = count(comparison);
   const { run, applicable } = score(counts);
+  const time = runs.reduce((total, run) => total + run.duration, 0);
   const lines = [
     "",
     `${counts.passed} of ${run} tests pass (${percent(counts.passed, run)}). ` +
@@ -207,19 +271,30 @@ export function renderSummary(comparison: Comparison, runs: FixtureRun[]): strin
     `  a bug in the plugin: ${counts["plugin-bug"]}, Not Yet: ${counts["not-yet"]}, ` +
       `not applicable: ${counts["not-applicable"]}, not looked at yet: ${counts.untriaged}, ` +
       `skipped by the test itself: ${counts.skipped}`,
+    `  ${runs.length} fixtures, ${(time / 1000).toFixed(0)}s of fixture time`,
   ];
-  const slow = runs.reduce((total, run) => total + run.duration, 0);
-  lines.push(`  ${runs.length} fixtures, ${(slow / 1000).toFixed(0)}s of fixture time`);
+
+  // A fixture runs again when its run was not what the expectations say. A
+  // test that ends otherwise the second time has no result to rely on.
+  const unstable = runs.flatMap((run) =>
+    (run.unstable ?? []).map(
+      ({ id, before, now }) => `  ${before} at first, then ${now}: ${run.fixture.id} > ${id}`,
+    ),
+  );
+  if (unstable.length > 0) {
+    lines.push(
+      "",
+      `${unstable.length} tests ended otherwise when their fixture ran again. The second run counts:`,
+      "",
+      ...unstable,
+    );
+  }
   if (comparison.unexpected.length > 0) {
     lines.push(
       "",
       `${comparison.unexpected.length} results are not what expectations.json says:`,
       "",
-    );
-    lines.push(...comparison.unexpected.map((line) => `  ${line}`));
-    lines.push(
-      "",
-      "If they are right, run again with --update and give the new failures a reason.",
+      ...comparison.unexpected.map(({ text }) => `  ${text}`),
     );
   } else {
     lines.push("", "Every result is what expectations.json says.");
@@ -229,8 +304,6 @@ export function renderSummary(comparison: Comparison, runs: FixtureRun[]): strin
 
 const start = "<!-- conformance:results:start -->";
 const end = "<!-- conformance:results:end -->";
-
-const escapeCell = (text: string) => text.replaceAll("|", "\\|");
 
 /** The document, with what is between its two markers written anew. */
 export function renderDocument(
@@ -300,7 +373,7 @@ export function renderDocument(
       .filter(({ tests }) => tests.length > 0)
       .sort((a, b) => b.tests.length - a.tests.length);
     for (const { reason, tests } of byCount) {
-      lines.push(`<details><summary>${tests.length} × ${escapeCell(reason.text)}</summary>`, "");
+      lines.push(`<details><summary>${tests.length} × ${reason.text}</summary>`, "");
       for (const { fixture, test } of tests) {
         lines.push(`- \`${fixture.id}\`: ${test.id.split(" > ").slice(1).join(" › ")}`);
       }

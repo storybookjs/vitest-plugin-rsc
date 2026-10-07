@@ -45,35 +45,53 @@ function query(selector: string, root: ParentNode = document): Element[] {
   }
 }
 
-async function waitForSelector(
-  selector: string,
-  state: ElementState,
+// Looks again until `look` finds what it is waiting for, as Playwright does.
+async function poll<T>(
+  look: () => T | undefined | Promise<T | undefined>,
   timeout: number,
-  root: ParentNode = document,
-): Promise<Element | undefined> {
+  waitingFor: () => string,
+): Promise<T> {
   const started = performance.now();
   for (;;) {
-    const [element] = query(selector, root);
-    if (state === "attached" && element) return element;
-    if (state === "visible" && element && isVisible(element)) return element;
-    if (state === "hidden" && (!element || !isVisible(element))) return element;
+    const found = await look();
+    if (found !== undefined) return found;
     if (performance.now() - started > timeout) {
-      throw new Error(
-        `waitForSelector: Timeout ${timeout}ms exceeded.\n` +
-          `waiting for ${selector} to be ${state}` +
-          (element ? `\n  it is in the document, and not ${state}` : ""),
-      );
+      throw new Error(`Timeout ${timeout}ms exceeded.\nwaiting for ${waitingFor()}`);
     }
     await sleep(30);
   }
+}
+
+// Whether an element, or the lack of one, is in a state that Playwright waits for.
+function isIn(state: ElementState | "detached", element: Element | undefined): boolean {
+  if (state === "detached") return !element;
+  if (state === "attached") return Boolean(element);
+  const visible = element !== undefined && isVisible(element);
+  return state === "visible" ? visible : !visible;
+}
+
+function waitForSelector(
+  selector: string,
+  state: ElementState,
+  timeout: number,
+): Promise<{ element: Element | undefined }> {
+  return poll(
+    () => {
+      const [element] = query(selector);
+      return isIn(state, element) ? { element } : undefined;
+    },
+    timeout,
+    () => `${selector} to be ${state}`,
+  );
 }
 
 // `userEvent.type` reads `{Enter}` and `[KeyA]` as keys. Playwright's `type`
 // takes text.
 const literal = (text: string) => text.replace(/[{[]/g, (bracket) => bracket + bracket);
 
-// As long as Playwright waits for an element to be ready for an action.
-const actionTimeout = 10_000;
+// How long Playwright waits where a test gives no timeout: Next's setup gives
+// its pages a minute, with `page.setDefaultTimeout()`.
+const actionTimeout = 60_000;
 
 /** What Playwright's `ElementHandle` has, for the element of this document. */
 export class ElementHandle {
@@ -189,24 +207,23 @@ export class Locator {
     this.description = description;
   }
 
-  private async one(state: ElementState = "attached"): Promise<ElementHandle> {
-    const started = performance.now();
-    for (;;) {
-      const elements = this.resolve();
-      if (elements.length > 1) {
-        throw new Error(
-          `strict mode violation: ${this.description} resolved to ${elements.length} elements`,
-        );
-      }
-      const [element] = elements;
-      if (element && (state === "attached" || isVisible(element))) {
-        return new ElementHandle(element, this.description);
-      }
-      if (performance.now() - started > actionTimeout) {
-        throw new Error(`Timeout ${actionTimeout}ms exceeded.\nwaiting for ${this.description}`);
-      }
-      await sleep(30);
-    }
+  private one(state: ElementState = "attached"): Promise<ElementHandle> {
+    return poll(
+      () => {
+        const elements = this.resolve();
+        if (elements.length > 1) {
+          throw new Error(
+            `strict mode violation: ${this.description} resolved to ${elements.length} elements`,
+          );
+        }
+        const [element] = elements;
+        return element && isIn(state, element)
+          ? new ElementHandle(element, this.description)
+          : undefined;
+      },
+      actionTimeout,
+      () => this.description,
+    );
   }
 
   first(): Locator {
@@ -244,26 +261,11 @@ export class Locator {
     options: { state?: ElementState | "detached"; timeout?: number } = {},
   ): Promise<void> {
     const { state = "visible", timeout = actionTimeout } = options;
-    const started = performance.now();
-    for (;;) {
-      const [element] = this.resolve();
-      if (
-        state === "detached"
-          ? !element
-          : state === "attached"
-            ? element
-            : state === "visible"
-              ? element && isVisible(element)
-              : !element || !isVisible(element)
-      )
-        return;
-      if (performance.now() - started > timeout) {
-        throw new Error(
-          `Timeout ${timeout}ms exceeded.\nwaiting for ${this.description} to be ${state}`,
-        );
-      }
-      await sleep(30);
-    }
+    await poll(
+      () => isIn(state, this.resolve()[0]) || undefined,
+      timeout,
+      () => `${this.description} to be ${state}`,
+    );
   }
   async click(): Promise<void> {
     return (await this.one("visible")).click();
@@ -387,37 +389,54 @@ function emit(event: NetworkEvent, subject: NetworkRequest | NetworkResponse): v
 }
 const listening = () => Array.from(browsers).some((browser) => browser.listens());
 
-// After the plugin's own `fetch`, which sends the app's requests to the
-// server in the tab: this one only watches.
-const pluginFetch = globalThis.fetch;
-globalThis.fetch = async (input, init) => {
-  if (!listening()) {
-    inFlight++;
-    try {
-      return await pluginFetch(input, init);
-    } finally {
-      inFlight--;
-      lastSettled = performance.now();
-    }
-  }
-  const sent = new Request(input instanceof Request ? input.clone() : input, init);
-  const body =
-    sent.method === "GET" || sent.method === "HEAD" ? null : await sent.text().catch(() => null);
-  const request = new NetworkRequest(
-    { url: sent.url, method: sent.method, headers: sent.headers, body },
-    "fetch",
-  );
-  emit("request", request);
-  inFlight++;
+// A request is in flight until its body has ended: a response of Next's
+// router streams, long after its headers are there.
+async function inFlightUntilRead(response: Response): Promise<void> {
   try {
-    const response = await pluginFetch(input, init);
-    request.answer = new NetworkResponse(request, response, response.clone());
-    emit("response", request.answer);
-    return response;
+    await response.clone().arrayBuffer();
+  } catch {
+    // The page left, or the body was not to be read twice.
   } finally {
     inFlight--;
     lastSettled = performance.now();
   }
+}
+
+// After the plugin's own `fetch`, which sends the app's requests to the
+// server in the tab: this one only watches.
+const pluginFetch = globalThis.fetch;
+globalThis.fetch = async (input, init) => {
+  let request: NetworkRequest | undefined;
+  if (listening()) {
+    // Not a body that is a stream: reading it here would take it from the server.
+    const streams = init?.body instanceof ReadableStream;
+    const sent = new Request(
+      input instanceof Request ? input.clone() : input,
+      streams ? { ...init, body: undefined } : init,
+    );
+    const hasText = !streams && sent.method !== "GET" && sent.method !== "HEAD";
+    const body = hasText ? await sent.text().catch(() => null) : null;
+    request = new NetworkRequest(
+      { url: sent.url, method: sent.method, headers: sent.headers, body },
+      "fetch",
+    );
+    emit("request", request);
+  }
+  inFlight++;
+  let response: Response;
+  try {
+    response = await pluginFetch(input, init);
+  } catch (error) {
+    inFlight--;
+    lastSettled = performance.now();
+    throw error;
+  }
+  if (request) {
+    request.answer = new NetworkResponse(request, response, response.clone());
+    emit("response", request.answer);
+  }
+  void inFlightUntilRead(response);
+  return response;
 };
 
 // A page that the app loads itself: a link or a redirect that Next's router
@@ -485,18 +504,21 @@ new MutationObserver((records) => {
   pageGlobals.clear();
 }).observe(document.documentElement, { childList: true });
 
-function evaluate(snippet: string | ((...args: unknown[]) => unknown), args: unknown[]): unknown {
-  if (typeof snippet === "function") return snippet(...args);
+// What Playwright's `page.evaluate()` does: a function is called, a string is
+// an expression in the global scope. A function is not a value that crosses
+// to the test, so an expression that is one comes to nothing.
+function evaluate(
+  snippet: string | ((...args: unknown[]) => unknown),
+  args: unknown[],
+  globals: Set<string> = pageGlobals,
+): unknown {
   const before = new Set(Object.keys(window));
   try {
-    // As Playwright does: in the global scope, and an expression that is a
-    // function is called.
+    if (typeof snippet === "function") return snippet(...args);
     const value: unknown = (0, eval)(snippet);
-    return typeof value === "function"
-      ? (value as (...args: unknown[]) => unknown)(...args)
-      : value;
+    return typeof value === "function" ? undefined : value;
   } finally {
-    for (const name of Object.keys(window)) if (!before.has(name)) pageGlobals.add(name);
+    for (const name of Object.keys(window)) if (!before.has(name)) globals.add(name);
   }
 }
 
@@ -509,7 +531,9 @@ type LoadOptions = {
 /** Stands in for the wrapper of `test/lib/browsers/playwright.ts`. */
 export class Browser<TCurrent = undefined> {
   private logStart = consoleCapture.length;
-  private errors: PageLog[] = [];
+  // The errors of `pushErrorAsConsoleLog`, each with how many lines the
+  // console had when it happened.
+  private errors: { after: number; log: PageLog }[] = [];
   private listeners: Record<NetworkEvent, Set<NetworkListener>> = {
     request: new Set(),
     response: new Set(),
@@ -520,14 +544,26 @@ export class Browser<TCurrent = undefined> {
   private firstEntry: string | undefined;
   // What the page listens to outside of itself, to stop when it is closed.
   private stops: (() => void)[] = [];
+  // What `beforePageLoad` put on the window for every page of this browser.
+  private globals = new Set<string>();
 
+  // Playwright's `pageerror`: an error that nothing caught, and a rejection
+  // that nothing handled.
   private onPageError(listener: (error: unknown, message: string) => void): void {
     const onError = (event: ErrorEvent) => listener(event.error, event.message);
+    const onRejection = (event: PromiseRejectionEvent) =>
+      listener(event.reason, String((event.reason as Error | undefined)?.message ?? event.reason));
     window.addEventListener("error", onError);
-    this.stops.push(() => window.removeEventListener("error", onError));
+    window.addEventListener("unhandledrejection", onRejection);
+    this.stops.push(() => {
+      window.removeEventListener("error", onError);
+      window.removeEventListener("unhandledrejection", onRejection);
+    });
   }
   private stopListening(): void {
     for (const stop of this.stops.splice(0)) stop();
+    for (const name of this.globals) delete (window as unknown as Record<string, unknown>)[name];
+    this.globals.clear();
   }
 
   listens(): boolean {
@@ -565,13 +601,14 @@ export class Browser<TCurrent = undefined> {
       url: () => window.location.href,
       evaluate: (snippet: string | ((...args: unknown[]) => unknown), ...args: unknown[]) =>
         evaluate(snippet, args),
+      // For every page of this browser, in Playwright. So not what a page
+      // load takes off the window: these go when the browser is closed.
       addInitScript: (script: string | (() => unknown) | { content?: string }) => {
-        if (typeof script === "object") return evaluate(script.content ?? "", []);
-        return evaluate(script, []);
+        evaluate(typeof script === "object" ? (script.content ?? "") : script, [], this.globals);
       },
       exposeFunction: (name: string, fn: unknown) => {
         (window as unknown as Record<string, unknown>)[name] = fn;
-        pageGlobals.add(name);
+        this.globals.add(name);
       },
     };
     return new Proxy(facade, {
@@ -595,9 +632,12 @@ export class Browser<TCurrent = undefined> {
     if (options.pushErrorAsConsoleLog) {
       this.onPageError((error, message) => {
         this.errors.push({
-          source: "error",
-          message: String((error as Error | undefined)?.message ?? message),
-          args: [],
+          after: consoleCapture.length,
+          log: {
+            source: "error",
+            message: String((error as Error | undefined)?.message ?? message),
+            args: [],
+          },
         });
       });
     }
@@ -707,26 +747,25 @@ export class Browser<TCurrent = undefined> {
     } = typeof options === "number" ? { timeout: options } : options;
     const waitUntil = typeof options === "number" ? undefined : options.waitUntil;
     return this.startChain(async () => {
-      let element = await waitForSelector(selector, state, timeout);
+      let { element } = await waitForSelector(selector, state, timeout);
       // As Next's wrapper does: the page that is loading has to be there. The
       // element can be one of the page that is going.
       if (waitUntil !== false && loading) {
         await pageLoaded();
-        element = await waitForSelector(selector, state, timeout);
+        ({ element } = await waitForSelector(selector, state, timeout));
       }
       // `state: "hidden"` is also met by an element that is not there.
       return new ElementHandle(element ?? document.createElement("missing"), selector);
     });
   }
-  waitForCondition(snippet: string, timeout = 10_000) {
-    return this.startOrPreserveChain(async () => {
-      const started = performance.now();
-      while (!(await evaluate(snippet, []))) {
-        if (performance.now() - started > timeout)
-          throw new Error(`waitForCondition: Timeout ${timeout}ms exceeded.`);
-        await sleep(30);
-      }
-    });
+  waitForCondition(snippet: string, timeout = actionTimeout) {
+    return this.startOrPreserveChain(() =>
+      poll(
+        async () => (await evaluate(snippet, [])) || undefined,
+        timeout,
+        () => `the condition ${snippet}`,
+      ),
+    );
   }
 
   getValue(this: Browser<ElementHandle>) {
@@ -784,8 +823,9 @@ export class Browser<TCurrent = undefined> {
       try {
         return (await evaluate(snippet as never, args)) as T;
       } catch (error) {
-        // What Next's wrapper does with an error of the page.
-        console.error("eval error:", error);
+        // What Next's wrapper does with an error of the page. It logs it in
+        // the test's process, not in the page.
+        consoleCapture.aside("error", "eval error:", error);
         return null as T;
       } finally {
         await pageLoaded();
@@ -794,12 +834,16 @@ export class Browser<TCurrent = undefined> {
   }
 
   log(options?: { includeArgs?: boolean }) {
-    return this.startChain(async () =>
-      [...consoleCapture.logsSince(this.logStart), ...this.errors].map(
-        ({ source, message, args }) =>
-          options?.includeArgs ? { source, message, args } : { source, message },
-      ),
-    );
+    return this.startChain(async () => {
+      const logs = consoleCapture.logsSince(this.logStart);
+      // From the last one, so that the places of the ones before it hold.
+      for (const { after, log } of this.errors.toReversed()) {
+        logs.splice(Math.max(0, after - this.logStart), 0, log);
+      }
+      return logs.map(({ source, message, args }) =>
+        options?.includeArgs ? { source, message, args } : { source, message },
+      );
+    });
   }
   url() {
     return this.startChain(async () => window.location.href);

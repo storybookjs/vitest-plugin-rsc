@@ -14,13 +14,15 @@ import { unsupported } from "./unsupported.ts";
 declare module "vitest/browser" {
   interface BrowserCommands {
     conformanceReadFile(file: string): Promise<string | null>;
+    conformanceFileExists(file: string): Promise<boolean>;
     conformanceServerNetwork(): Promise<void>;
   }
 }
 
-type Query = Record<string, unknown> | string | null | undefined;
+export type Query = Record<string, unknown> | string | null | undefined;
 
-function withQuery(pathname: string, query: Query): string {
+/** Next's `withQuery()` of `next-test-utils`. */
+export function withQuery(pathname: string, query: Query): string {
   if (!query) return pathname;
   const search =
     typeof query === "string"
@@ -157,7 +159,7 @@ export class NextInstance {
   }
   async hasFile(file: string): Promise<boolean> {
     if (buildOutput.test(file)) unsupported(`the build output: ${file}`);
-    return (await commands.conformanceReadFile(file)) !== null;
+    return commands.conformanceFileExists(file);
   }
   getPrerenderFilePath(): never {
     return unsupported("a prerendered file: nothing is prerendered");
@@ -190,4 +192,17 @@ export class NextInstance {
     for (const stop of this.stopListening.values()) stop();
     this.stopListening.clear();
   }
+}
+
+// The app that the tests of a `describe` got from `nextTestSetup()`. The
+// helpers of `next-test-utils` that take the port of an app, and
+// `next-webdriver`, mean this one.
+let current: NextInstance | undefined;
+
+export function setCurrentNext(next: NextInstance | undefined): void {
+  current = next;
+}
+
+export function currentNext(): NextInstance {
+  return current ?? new NextInstance();
 }
