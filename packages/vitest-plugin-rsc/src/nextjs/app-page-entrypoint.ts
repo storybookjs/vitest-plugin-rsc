@@ -16,10 +16,11 @@ type LoaderTree = [
 // Stands in for `next/dist/build/templates/app-page-runtime`, which the
 // route entry of Next's app loader imports to create its route module.
 //
-// That file also holds the request handler for the Node.js server. The edge
-// entry has its own, so only the route module is created here: the same way,
-// with the class from the ssr layer, which is where Next's bundler config
-// puts it.
+// That file also holds the request handler of a page for the Node.js server,
+// with the response cache of prerendered pages around a render. Here
+// node-server.ts calls the route module, so only that is created: the same
+// way, with the class from the ssr layer, which is where Next's bundler
+// config puts it.
 export function createAppPageEntrypoint({
   tree,
   page,

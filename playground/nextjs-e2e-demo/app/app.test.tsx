@@ -14,7 +14,6 @@ import { Shortcuts } from "./components/shortcuts.tsx";
 import { Widget } from "./components/widget.tsx";
 import { db, type Note } from "./lib/notes.ts";
 import NotesPage from "./notes/page.tsx";
-import { nextRuntime } from "../test/runtime.ts";
 
 let consoleError: MockInstance<typeof console.error>;
 
@@ -276,11 +275,7 @@ test("does not report the render of a page that the test left before it had its 
   // The render goes on without its request until Next gives up on it.
   await expect
     .poll(() => consoleError.mock.calls.flat().map(String).join("\n"))
-    .toContain(
-      nextRuntime === "edge"
-        ? "Expected workStore to be initialized"
-        : "`cookies` was called outside a request scope",
-    );
+    .toContain("`cookies` was called outside a request scope");
   await new Promise((resolve) => setTimeout(resolve));
   consoleError.mockClear();
   expect(reportError).not.toHaveBeenCalled();

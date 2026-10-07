@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createFilter, normalizePath, transformWithOxc, type Plugin } from "vite";
-import { nextRuntime, type NextLayer } from "./project.ts";
+import type { NextLayer } from "./project.ts";
 
 // The server layers run in a browser tab, which has a `window` and a `fetch`
 // of its own. A tab cannot lose its globals, but a module can be compiled not
@@ -18,7 +18,8 @@ const serverGlobals = [
   "Response",
   "fetch",
   // Node.js has these and a tab does not: see globals.ts.
-  ...(nextRuntime === "nodejs" ? ["setImmediate", "clearImmediate"] : []),
+  "setImmediate",
+  "clearImmediate",
 ];
 
 const mentionsServerGlobal = new RegExp(`\\b(?:${serverGlobals.join("|")})\\b`);

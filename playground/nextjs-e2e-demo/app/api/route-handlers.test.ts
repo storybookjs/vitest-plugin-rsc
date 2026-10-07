@@ -4,7 +4,6 @@ import { page } from "vitest/browser";
 import { auditLog } from "../lib/audit.ts";
 import { db } from "../lib/notes.ts";
 import { getForecast } from "../lib/weather.ts";
-import { nextRuntime } from "../../test/runtime.ts";
 
 let consoleError: MockInstance<typeof console.error>;
 
@@ -29,8 +28,7 @@ test("serves a route handler with a dynamic segment", async () => {
     note: { id: "1", title: "Inbox triage", body: "Sort the inbox" },
     // NextRequest and headers() are the request's.
     pathname: "/api/notes/1",
-    // On Next's edge runtime the params are in the query too.
-    search: nextRuntime === "edge" ? "?id=1" : "",
+    search: "",
     client: "test",
   });
 });
@@ -56,8 +54,8 @@ test("answers 500 when a route handler throws, and logs the error", async () => 
   const response = await handleRequest("/api/notes/broken");
 
   expect(response.status).toBe(500);
-  // Next's request handler for Node.js answers without a body.
-  expect(await response.text()).toBe(nextRuntime === "edge" ? "Internal Server Error" : "");
+  // Next's request handler answers without a body.
+  expect(await response.text()).toBe("");
   expect(consoleError.mock.calls).toEqual([[new Error("The database is down")]]);
   consoleError.mockClear();
 
@@ -277,6 +275,14 @@ test("serves the fetch() of a Server Component with a route handler", async () =
   await renderServer({ url: "/status" });
 
   await expect.element(page.getByRole("heading", { name: "Status of status" })).toBeVisible();
+});
+
+test("serves a route handler that asks for the edge runtime", async () => {
+  // `export const runtime = "edge"`. It runs on Node.js like the others, and
+  // the run warns about it when it starts.
+  const response = await handleRequest("/api/runtime");
+
+  expect(await response.json()).toEqual({ asked: "edge" });
 });
 
 test("keeps the Set-Cookie of a plain Response in a route handler", async () => {

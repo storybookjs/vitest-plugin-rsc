@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { onTestFinished, expect, test, vi } from "vitest";
 import { flightBridge } from "./flight.ts";
 import { vitestPluginNext } from "./plugin.ts";
-import { loadNextProject, nextRuntime, type NextRoute } from "./project.ts";
+import { loadNextProject, type NextRoute } from "./project.ts";
 
 const root = fileURLToPath(new URL("../../../../playground/nextjs-e2e-demo", import.meta.url));
 const installed = createRequire(path.join(root, "package.json"));
@@ -198,13 +198,17 @@ test("does not take a route discovery without app pages for an app without route
   );
 });
 
-test("needs the define that makes Next's modules pick the build of their runtime", async () => {
+test("lists the route files that ask for Next's edge runtime", async () => {
+  const { edgeRouteFiles } = await loadNextProject(root);
+
+  expect(edgeRouteFiles).toEqual(["app/api/runtime/route.ts"]);
+});
+
+test("needs the define that makes Next's code take the branches of its Node.js server", async () => {
   const next = nextWith({ "next/dist/build/define-env.js": { getDefineEnv: () => ({}) } });
 
   await expect(loadNextProject(root, next)).rejects.toThrow(
-    changed(
-      `\`getDefineEnv()\` does not define \`process.env.NEXT_RUNTIME\` as \`${nextRuntime}\``,
-    ),
+    changed("`getDefineEnv()` does not define `process.env.NEXT_RUNTIME` as `nodejs`"),
   );
 });
 
@@ -240,17 +244,6 @@ test.for([
 
   await expect(project.loadAppPageEntry(route(project.routes, pathname!))).rejects.toThrow(
     new RegExp(`next@${version} differs .* the output of next-app-loader has no \`.*${piece}`),
-  );
-});
-
-test("needs the import of the page that it replaces in the edge template", async () => {
-  const next = nextWith({
-    "next/dist/build/load-entrypoint.js": { loadEntrypoint: async () => "export {};" },
-  });
-  const project = await loadNextProject(root, next);
-
-  await expect(project.loadEdgeEntry(route(project.routes, "/notes"), "page")).rejects.toThrow(
-    changed("the edge-ssr-app template has no `import * as pageMod from"),
   );
 });
 
@@ -386,15 +379,15 @@ test.for([
   ],
   [
     "server/route-modules/route-module",
-    "self.__BUILD_MANIFEST",
-    "self.__NEXT_BUILD",
-    "has no `self.__BUILD_MANIFEST`",
+    "load-manifest.external",
+    "load-manifest",
+    "has no `load-manifest.external`",
   ],
   [
-    "server/route-modules/route-module",
-    "self.__RSC_MANIFEST",
-    "self.__NEXT_CLIENT_REFERENCES",
-    "has no `self.__RSC_MANIFEST`",
+    "server/app-render/stream-ops",
+    "process.env.__NEXT_USE_NODE_STREAMS",
+    "process.env.__NEXT_NODE_STREAMS",
+    "has no `process.env.__NEXT_USE_NODE_STREAMS`",
   ],
 ])("needs what the tab assumes of %s: %s", async ([file, piece, replacement, what]) => {
   const next = nextWith({ [runtime(file!)]: sourceWith(runtime(file!), piece!, replacement!) });

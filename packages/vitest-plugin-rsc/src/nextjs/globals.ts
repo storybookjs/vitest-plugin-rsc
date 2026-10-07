@@ -1,11 +1,10 @@
 import { Buffer } from "node:buffer";
 import { enterAmbientScope, SequentialAsyncLocalStorage } from "../async-local-storage.ts";
-import { runtime } from "virtual:vitest-plugin-rsc/next-manifest";
 import { registry } from "./registry.ts";
 
-// Next's server runs here as it does on an edge runtime, which is close to a
-// browser tab: web streams, `fetch`, `crypto`. This file is the rest of that
-// platform. It has to load before any module of Next's server does.
+// Next's server runs here as it does on Node.js, with the web APIs that
+// Node.js and a browser tab share: web streams, `fetch`, `crypto`. This file
+// is the rest of that platform. It has to load before any module of Next's server does.
 
 // A browser drops `cookie` from the headers of a Request and `set-cookie` from
 // those of a Response. A server has to see both, so the server layers get
@@ -126,7 +125,7 @@ registry.enterRequestScope = enterAmbientScope;
 const nativeFetch = globalThis.fetch;
 registry.fetch = (input, init) => nativeFetch(input, init);
 
-// An edge runtime has these as globals. A browser tab has none of them.
+// Node.js has these as globals. A browser tab has none of them.
 const scope = globalThis as Record<string, any>;
 
 scope.process ??= { env: {} };
@@ -148,10 +147,10 @@ for (const method of ["indexOf", "lastIndexOf"] as const) {
 }
 scope.AsyncLocalStorage ??= SequentialAsyncLocalStorage;
 
-// Spike: what Next's Node.js runtime needs on top of that. Only then, because
-// the tab is the page's and the test's too: a library that finds a
-// `setImmediate` or a `process.nextTick` takes itself to be on Node.js.
-if (runtime === "nodejs") {
+// What Next's Node.js server asks of its process. The tab is the page's and
+// the test's too, so as little as it needs: a library that finds a
+// `setImmediate` or a full `process` takes itself to be on Node.js.
+{
   const { process } = scope;
   process.cwd ??= () => "/";
   process.on ??= () => process;

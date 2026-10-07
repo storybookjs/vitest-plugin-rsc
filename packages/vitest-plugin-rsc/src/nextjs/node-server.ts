@@ -8,31 +8,47 @@ import { getBotType } from "next/dist/shared/lib/router/utils/is-bot";
 import { parseMaxPostponedStateSize } from "next/dist/shared/lib/size-limit";
 import { nextConfig } from "virtual:vitest-plugin-rsc/next-manifest";
 import { Readable } from "virtual:vitest-plugin-rsc/node-stream";
-import { registry, type ServerRequest } from "./registry.ts";
+import { preview } from "./cache.ts";
+import { registry, type RouteHandler, type ServerRequest } from "./registry.ts";
 
-// Spike: Next's Node.js server in the tab, in place of its edge runtime, which
-// Next has deprecated. The renderer is the same one; it takes the branches of
-// `process.env.NEXT_RUNTIME === "nodejs"`, with web streams
-// (`__NEXT_USE_NODE_STREAMS` is off) and without Cache Components.
-//
-// What a Node.js server has and a tab does not, and where it comes from:
-//   - `http.IncomingMessage` and `http.ServerResponse`: made here.
+// Next's server runs here as it does on Node.js, its default runtime. (Its
+// edge runtime, which is closer to a tab, is deprecated.) The renderer takes
+// the branches of `process.env.NEXT_RUNTIME === "nodejs"`, with web streams:
+// `__NEXT_USE_NODE_STREAMS` is off. This file is what a Node.js server has
+// around a request and a tab does not:
+//   - `http.IncomingMessage` and `http.ServerResponse`.
 //   - The manifests of a build, which Next reads from `.next/`: given here,
 //     through `load-manifest.external`, the module Next keeps out of its own
 //     bundle for it.
-//   - `node:stream` and busboy, for the body of a Server Action: the polyfill
-//     Next ships, see the bridges in plugin.ts.
+// The Node modules that Next's server imports are in plugin.ts, and its
+// globals in globals.ts.
 
-const anyKey = <T>(create: (key: string) => T) =>
+export const anyKey = <T>(create: (key: string) => T) =>
   new Proxy({} as Record<string, T>, {
     get: (_, key) => (typeof key === "string" ? create(key) : undefined),
     has: () => true,
   });
 
-const preview = {
-  previewModeId: process.env.__NEXT_PREVIEW_MODE_ID ?? "",
-  previewModeSigningKey: process.env.__NEXT_PREVIEW_MODE_SIGNING_KEY ?? "",
-  previewModeEncryptionKey: process.env.__NEXT_PREVIEW_MODE_ENCRYPTION_KEY ?? "",
+// Next's build writes a manifest of every client reference. For Vite RSC a
+// reference is its module id, so this one answers for any id.
+const clientReference = anyKey((id) => anyKey((name) => ({ id, name, chunks: [], async: true })));
+export const clientReferenceManifest = {
+  moduleLoading: { prefix: "", crossOrigin: null },
+  clientModules: anyKey((id) => ({ id, name: "*", chunks: [], async: true })),
+  ssrModuleMapping: clientReference,
+  rscModuleMapping: clientReference,
+  entryCSSFiles: anyKey(() => []),
+  entryJSFiles: anyKey(() => []),
+};
+
+const buildManifest = {
+  polyfillFiles: [],
+  // Next requires a script that starts the app and puts it in the HTML.
+  // Nothing loads it: `renderServer()` starts the app.
+  rootMainFiles: ["static/chunks/main-app.js"],
+  devFiles: [],
+  lowPriorityFiles: [],
+  pages: {},
 };
 
 // The files of `.next/` that the route module of a page reads, by the end of
@@ -56,14 +72,14 @@ const manifests: [suffix: string, manifest: () => unknown][] = [
   ],
   ["preview-props.json", () => preview],
   ["fallback-build-manifest.json", () => ({})],
-  ["build-manifest.json", () => (globalThis as Record<string, unknown>).__BUILD_MANIFEST],
+  ["build-manifest.json", () => buildManifest],
   [
     "next-font-manifest.json",
     () => ({ pages: {}, app: {}, appUsingSizeAdjust: false, pagesUsingSizeAdjust: false }),
   ],
   [
     "_client-reference-manifest.js",
-    () => ({ __RSC_MANIFEST: (globalThis as Record<string, unknown>).__RSC_MANIFEST }),
+    () => ({ __RSC_MANIFEST: anyKey(() => clientReferenceManifest) }),
   ],
   ["server-reference-manifest.json", () => ({ node: {}, edge: {}, encryptionKey: "" })],
   ["required-server-files.json", () => ({ config: nextConfig })],
@@ -223,21 +239,14 @@ function toHeaders(values: Record<string, unknown>, init?: HeadersInit): Headers
   return headers;
 }
 
-/** The request handler of a route of Next's Node.js server: `(req, res, ctx)`. */
-export type NodeHandler = (
-  req: unknown,
-  res: unknown,
-  context: { waitUntil?: (promise: Promise<unknown>) => void; requestMeta?: object },
-) => Promise<unknown>;
-
 /**
  * One request for a route handler, by the request handler Next's build makes
  * for it: `templates/app-route`, as `next start` calls it.
  */
-export async function handleNodeRoute(
+export async function handleRouteHandler(
   request: ServerRequest,
   context: { waitUntil?: (promise: Promise<unknown>) => void },
-  handler: NodeHandler,
+  handler: RouteHandler,
 ): Promise<Response> {
   const req = createNodeRequest(request);
   const res = createNodeResponse();
@@ -267,10 +276,11 @@ type RenderResult = {
  * One request for a page, by Next's Node.js route module: `prepare()`, then
  * `render()`, as the request handler of `next start` calls them.
  *
- * That handler, `templates/app-page-runtime`, is not used yet: around these two
- * calls it has the response cache of static pages, which nothing fills here.
+ * Not that handler itself, `templates/app-page-runtime`: around these two
+ * calls it has the response cache of prerendered pages, and nothing is
+ * prerendered here.
  */
-export async function handleNodePage(
+export async function handlePage(
   request: ServerRequest,
   context: { waitUntil?: (promise: Promise<unknown>) => void },
   page: string,
