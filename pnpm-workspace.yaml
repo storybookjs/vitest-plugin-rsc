@@ -6,4 +6,4 @@ allowBuilds:
   msw: true
   sharp: true
 patchedDependencies:
-  "@vitest/browser@5.0.2": patches/@vitest__browser@5.0.2.patch
+  "@vitest/browser@5.0.3": patches/@vitest__browser@5.0.3.patch

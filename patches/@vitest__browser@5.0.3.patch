@@ -1,7 +1,7 @@
-diff --git a/dist/client/__vitest_browser__/tester-COH68OX9.js b/dist/client/__vitest_browser__/tester-COH68OX9.js
-index b46df55dd85896f8daf09456da0fc73667155d01..4dd73359ead1ab6d4896fe7651222e6f66eeeb89 100644
---- a/dist/client/__vitest_browser__/tester-COH68OX9.js
-+++ b/dist/client/__vitest_browser__/tester-COH68OX9.js
+diff --git a/dist/client/__vitest_browser__/tester-C2LTsndn.js b/dist/client/__vitest_browser__/tester-C2LTsndn.js
+index 54aeba9a4b8e65e95bbc2267427a91118eabc197..ae0840886e9d19fd57b7a253da61b22e0581f9d4 100644
+--- a/dist/client/__vitest_browser__/tester-C2LTsndn.js
++++ b/dist/client/__vitest_browser__/tester-C2LTsndn.js
 @@ -1001,6 +1001,7 @@ function createBrowserRunner(mocker, state, coverageModule) {
  				const trace = this.config.browser.trace;
  				if (mode === "collect" && trace !== "off") await this.commands.triggerCommand("__vitest_startTracing", []);

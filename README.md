@@ -92,7 +92,7 @@ Agents do better when wrapped in a self-healing loop with fast unit tests — ed
 
 ## Requirements
 
-- Vitest 5 or later, in [Browser Mode](https://vitest.dev/guide/browser/). The examples use Playwright as the browser provider.
+- Vitest 5.0.3 or later, in [Browser Mode](https://vitest.dev/guide/browser/). The examples use Playwright as the browser provider.
 - For Next.js: the App Router, and `next@16.4` or later. CI runs the two Next.js playgrounds against the pinned `next@16.4.0`, against `next@latest` and against `next@canary`. With a Next.js whose build code the plugin does not know, a run stops when it starts, with the version and what changed: see [When Next Changes](docs/next-routes.md#when-next-changes).
 
 ## Next.js
@@ -307,7 +307,7 @@ import { vi } from "vitest";
 vi.mock("./app/lib/weather.ts");
 ```
 
-On Vitest 5.0 as published this is not enough: in browser mode it imports a test file without waiting for the mocks of a setup file, so a test file with only static imports gets the real module ([vitest-dev/vitest#11450](https://github.com/vitest-dev/vitest/issues/11450)). Until Vitest has fixed it, import the mocked module in the setup file after the `vi.mock()` call: `await import("./app/lib/weather.ts");`. This repository patches `@vitest/browser` instead (`patches/`), which is why its own setup files do not have that line.
+On Vitest 5.0 as published this is not enough: in browser mode it imports a test file without waiting for the mocks of a setup file, so a test file with only static imports gets the real module ([vitest-dev/vitest#11450](https://github.com/vitest-dev/vitest/issues/11450), fixed by [#11520](https://github.com/vitest-dev/vitest/pull/11520) but not released yet). Until a release has the fix, import the mocked module in the setup file after the `vi.mock()` call: `await import("./app/lib/weather.ts");`. This repository patches `@vitest/browser` instead (`patches/`), which is why its own setup files do not have that line.
 
 ```ts
 // vitest.config.ts
