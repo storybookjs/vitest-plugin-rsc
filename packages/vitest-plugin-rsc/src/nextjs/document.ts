@@ -96,12 +96,15 @@ export function loadDocument(html: string, container?: Element): void {
   // once they are moved.
   const page = new DOMParser().parseFromString(html, "text/html");
   // For a `redirect()` in a response that had started, Next sends a
-  // `<meta http-equiv="refresh">` for a browser without JavaScript. Its router
-  // finds the tag by its id and loads the page it redirects to. A browser
-  // drops the refresh with the page. This document stays, so the refresh
-  // would come due a second later, in whatever page is there by then. The tag
-  // stays for the router, without what makes it a refresh.
-  page.getElementById("__next-page-redirect")?.removeAttribute("http-equiv");
+  // `<meta http-equiv="refresh">` for a browser without JavaScript, one for
+  // every redirect of the render. Its router finds the tag by its id and
+  // loads the page it redirects to. A browser drops the refresh with the
+  // page. This document stays, so the refresh would come due a second later,
+  // in whatever page is there by then. The tag stays for the router, without
+  // what makes it a refresh.
+  for (const redirect of page.querySelectorAll('[id="__next-page-redirect"]')) {
+    redirect.removeAttribute("http-equiv");
+  }
   if (container) {
     document.head.append(...page.head.childNodes);
     container.append(...page.body.childNodes);
