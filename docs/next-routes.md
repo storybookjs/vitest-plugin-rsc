@@ -211,6 +211,14 @@ What this does not cover:
 - Dependencies in files other than `.js`, `.mjs` and `.cjs`, and a dependency that is left out of pre-bundling with `optimizeDeps.exclude`: those are served as they are. Vitest leaves out `msw`.
 - With `resolve.preserveSymlinks`, the packages of Vitest are not recognized.
 
+## Mocks
+
+`vi.mock()` replaces a module in the `rsc` layer, where the test runs: the module your Server Components and Server Actions import. The other two layers load their modules themselves, so a mock does not reach a Client Component.
+
+The mocks of app modules go in a setup file. With `isolate: false` the test files of a tab share their modules, so a module is mocked for all of them or for none, and the file that loads it first decides. A setup file runs before every test file. A bare `vi.mock("./app/lib/weather.ts")` there is enough, and a test says what the mock does with `vi.mocked(getForecast).mockResolvedValue("sunny")`.
+
+In browser mode, Vitest 5.0 has a bug here: it does not wait for the mocks of a setup file before it imports a test file, so a test file with no `vi.mock()` of its own gets the real module ([vitest-dev/vitest#11450](https://github.com/vitest-dev/vitest/issues/11450)). Until Vitest fixes it, import the mocked module in the setup file after the `vi.mock()` call. This repository patches Vitest instead, see `patches/`.
+
 ## Not Yet
 
 - `next/font`, `next/image` optimization, and metadata files like `icon.png` and `sitemap.ts`. These are build-time loaders that still have to be ported.
@@ -223,7 +231,7 @@ What this does not cover:
 - An `after()` callback that takes longer than a second goes on without the stores of its request, so `cookies()` and `headers()` fail in it from then on. Under `vi.useFakeTimers()` a response without a body never tells Next it was sent, so its `after()` callbacks do not run while the request lasts, and the next request starts a second late.
 - A navigation without Next's router to a route handler that does not answer with HTML, like a download link, is an uncaught error: there is nothing for the tab to show.
 - Hiding the tab from server code has gaps: see [Server Code In A Tab](#server-code-in-a-tab).
-- `vi.mock()` replaces a module in the `rsc` layer, where the test runs. The other two layers load their modules themselves, so a mock does not reach a Client Component.
+- A mock for Client Components: see [Mocks](#mocks).
 - One request at a time. A request that waits for another one that the test has not sent yet will wait forever. A response that streams without end, like server-sent events, holds up every request after it.
 - A same-origin `fetch` for a path that a dynamic route matches goes to the app, also when it is for a file in `public/`, which a deployment serves before it looks at the routes. With `app/[locale]/page.tsx` that is every path of one segment, like `/data.json`. With a catch-all at the root, like `app/[...slug]`, it is every path.
 - A form that is posted without JavaScript, before the page has hydrated. Such a request names its action in the form data and not in a `next-action` header, and the server does not look there: it renders the page and does not run the action.

@@ -695,7 +695,7 @@ import { vitestPluginNext } from "vitest-plugin-rsc/next/plugin";
 
 export default defineConfig({
   plugins: [vitestPluginRSC(), vitestPluginNext()],
-  // ...browser mode, as in Quick Start. There is no setup file to add.
+  // ...browser mode, as in Quick Start. The plugin needs no setup file.
 });
 ```
 
@@ -740,7 +740,30 @@ Without a `url` the node renders at `/`. The page module itself is not loaded, s
 
 `renderServer` resolves with `{ response, unmount }`: the server's `Response` to the document request, and a function that leaves the page.
 
-`vi.mock()` works on the modules your Server Components, Server Actions and route handlers import. It does not reach Client Components, which load in module graphs of their own.
+With `isolate: false`, mock the modules of your app in a setup file, not in a test file. The test files of a tab then share their modules, so the file that loads a module first decides whether the others get the mock. A bare `vi.mock()` is enough, and each test says what the mock does, through `vi.mocked()`:
+
+```ts
+// vitest.setup.ts
+import { vi } from "vitest";
+
+vi.mock("./app/lib/weather.ts");
+```
+
+```tsx
+import { getForecast } from "../lib/weather.ts";
+
+test("shows the forecast", async () => {
+  vi.mocked(getForecast).mockResolvedValue("sunny");
+
+  await renderServer({ url: "/forecast" });
+
+  await expect.element(page.getByText("Today: sunny")).toBeVisible();
+});
+```
+
+Vitest 5.0 has a bug that gives such a test file the real module, see [Mocks](docs/next-routes.md#mocks) for the way around it.
+
+A mock replaces the module your Server Components, Server Actions and route handlers import. It does not reach Client Components, which load in module graphs of their own.
 
 The server runs in a tab, but your server code does not see the tab. In Server Components, Server Actions and the modules and packages they import, and in Client Components while they render to HTML, `typeof window` is `"undefined"` and `fetch` is the one Next patches. Test files and setup files keep the tab's `window` and `fetch`. A module that has to see the browser it really runs in, like a helper of your tests that sets `document.cookie`, is listed in `browserModules`:
 

@@ -1,0 +1,12 @@
+diff --git a/dist/client/__vitest_browser__/tester-COH68OX9.js b/dist/client/__vitest_browser__/tester-COH68OX9.js
+index b46df55dd85896f8daf09456da0fc73667155d01..4dd73359ead1ab6d4896fe7651222e6f66eeeb89 100644
+--- a/dist/client/__vitest_browser__/tester-COH68OX9.js
++++ b/dist/client/__vitest_browser__/tester-COH68OX9.js
+@@ -1001,6 +1001,7 @@ function createBrowserRunner(mocker, state, coverageModule) {
+ 				const trace = this.config.browser.trace;
+ 				if (mode === "collect" && trace !== "off") await this.commands.triggerCommand("__vitest_startTracing", []);
+ 				try {
++					await mocker.prepare();
+ 					await __vitePreload(() => import(
+ 						/* @vite-ignore */
+ 						importpath
