@@ -17,12 +17,34 @@ function headersOf(init: { headers?: HeadersInit } | undefined, input?: unknown)
   return new Headers(input instanceof NativeRequest ? input.headers : undefined);
 }
 
+type NodeReadable = {
+  on(event: string, listener: (value: any) => void): void;
+  pipe: unknown;
+  destroy?(reason?: unknown): void;
+};
+
 class ServerRequest extends NativeRequest {
   #headers: Headers;
 
   constructor(input: RequestInfo | URL, init?: RequestInit) {
     // A browser wants `duplex` for a streamed body. Server runtimes, which
     // Next's code is written for, do not.
+    // Node's `Request` also takes a Node.js stream for a body, and Next's
+    // Node.js server gives it the request it got.
+    const body = init?.body as unknown as NodeReadable | undefined;
+    if (body && typeof body.on === "function" && typeof body.pipe === "function") {
+      init = {
+        ...init,
+        body: new ReadableStream<Uint8Array>({
+          start(controller) {
+            body.on("data", (chunk) => controller.enqueue(new Uint8Array(chunk)));
+            body.on("end", () => controller.close());
+            body.on("error", (error) => controller.error(error));
+          },
+          cancel: (reason) =>  body.destroy?.(reason),
+        }),
+      };
+    }
     super(input, init?.body ? ({ duplex: "half", ...init } as RequestInit) : init);
     this.#headers = headersOf(init, input);
   }
@@ -139,5 +161,19 @@ for (const method of ["indexOf", "lastIndexOf"] as const) {
     }
     return original.call(this, value, ...rest);
   } as never;
+}
+// Node's own `Buffer` has these, and busboy reads the parts of a form with
+// them. Every layer has its own copy of the `Buffer` polyfill, and each is a
+// Uint8Array.
+const decoders = { latin1: "latin1", ascii: "latin1", utf8: "utf-8", ucs2: "utf-16le" };
+for (const [encoding, label] of Object.entries(decoders)) {
+  if (`${encoding}Slice` in Uint8Array.prototype) continue;
+  Object.defineProperty(Uint8Array.prototype, `${encoding}Slice`, {
+    configurable: true,
+    writable: true,
+    value(this: Uint8Array, start?: number, end?: number) {
+      return new TextDecoder(label).decode(this.subarray(start, end));
+    },
+  });
 }
 scope.AsyncLocalStorage ??= SequentialAsyncLocalStorage;

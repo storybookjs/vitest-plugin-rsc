@@ -640,6 +640,12 @@ export async function loadNextProject(
     }
     if (layer !== "browser" && nextRuntime === "nodejs") {
       aliases.path$ = aliases["node:path$"] = "next/dist/compiled/path-browserify";
+      // Next's route modules load a bundle of Next's own for Node.js. The
+      // module that bundle is made of, as on edge.
+      for (const kind of ["app-page", "app-route"]) {
+        const file = `next/dist/server/route-modules/${kind}/module`;
+        aliases[`${file}.compiled$`] = aliases[`${file}.compiled.js$`] = file;
+      }
       // Next's own module for `react-dom/server` takes React's build for
       // Node.js streams by the runtime. The one for web streams, as on edge.
       for (const channel of ["", "-experimental"]) {

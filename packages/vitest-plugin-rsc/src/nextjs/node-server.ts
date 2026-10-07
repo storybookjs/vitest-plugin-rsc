@@ -122,11 +122,21 @@ function createNodeRequest(request: ServerRequest) {
 function createNodeResponse() {
   const headers = new Map<string, number | string | string[]>();
   const listeners = new Map<string, Set<Listener>>();
+  let controller!: ReadableStreamDefaultController<Uint8Array>;
+  const body = new ReadableStream<Uint8Array>({ start: (c) => void (controller = c) });
+  let wrote = false;
+  let sendHead!: () => void;
+  // Resolves when the status and the headers are final: at the first byte.
+  const head = new Promise<void>((resolve) => (sendHead = resolve));
+  const encoder = new TextEncoder();
+
   const response = {
     statusCode: 200,
     statusMessage: "",
     finished: false,
     headersSent: false,
+    errored: null,
+    destroyed: false,
     setHeader(name: string, value: number | string | string[]) {
       headers.set(name.toLowerCase(), value);
       return response;
@@ -148,19 +158,95 @@ function createNodeResponse() {
       return response;
     },
     emit(event: string, ...args: unknown[]) {
-      for (const listener of listeners.get(event) ?? []) listener(...args);
+      const set = listeners.get(event);
       listeners.delete(event);
+      for (const listener of set ?? []) listener(...args);
     },
-    text: undefined as string | undefined,
-    write() {
+    flushHeaders() {
+      response.headersSent = true;
+      sendHead();
+    },
+    write(chunk: string | Uint8Array) {
+      response.flushHeaders();
+      wrote = true;
+      controller.enqueue(typeof chunk === "string" ? encoder.encode(chunk) : new Uint8Array(chunk));
       return true;
     },
-    end(text?: string) {
-      response.text = text;
+    end(chunk?: string | Uint8Array) {
+      if (response.finished) return;
+      if (chunk !== undefined && chunk !== null) response.write(chunk);
+      response.flushHeaders();
       response.finished = true;
+      controller.close();
+      response.emit("finish");
+      response.emit("close");
+    },
+    destroy(error?: unknown) {
+      if (response.finished) return;
+      response.destroyed = response.finished = true;
+      sendHead();
+      controller.error(error);
+      response.emit("close");
+    },
+    /** The response as the tab gets it, once its head is there. */
+    async toResponse(headersOf: (headers: Record<string, unknown>) => Headers): Promise<Response> {
+      await head;
+      const status = response.statusCode;
+      // A status without a body, and an `end()` without a byte before it.
+      const empty = (response.finished && !wrote) || [101, 204, 205, 304].includes(status);
+      return new registry.Response(empty ? null : body, {
+        status,
+        statusText: response.statusMessage,
+        headers: headersOf(response.getHeaders()),
+      });
     },
   };
   return response;
+}
+
+function toHeaders(values: Record<string, unknown>, init?: HeadersInit): Headers {
+  const headers = new Headers(init);
+  for (const [name, value] of Object.entries(values)) {
+    if (value === undefined) continue;
+    if (Array.isArray(value)) {
+      headers.delete(name);
+      for (const item of value) headers.append(name, String(item));
+    } else {
+      headers.set(name, String(value));
+    }
+  }
+  return headers;
+}
+
+/** The request handler of a route of Next's Node.js server: `(req, res, ctx)`. */
+export type NodeHandler = (
+  req: unknown,
+  res: unknown,
+  context: { waitUntil?: (promise: Promise<unknown>) => void; requestMeta?: object },
+) => Promise<unknown>;
+
+/**
+ * One request for a route handler, by the request handler Next's build makes
+ * for it: `templates/app-route`, as `next start` calls it.
+ */
+export async function handleNodeRoute(
+  request: ServerRequest,
+  context: { waitUntil?: (promise: Promise<unknown>) => void },
+  handler: NodeHandler,
+): Promise<Response> {
+  const req = createNodeRequest(request);
+  const res = createNodeResponse();
+  request.signal?.addEventListener("abort", () => res.destroy(request.signal?.reason));
+  const handled = handler(req, res, {
+    waitUntil: context.waitUntil,
+    // The cache of the server: see cache.ts.
+    requestMeta: { incrementalCache: globalThis.__incrementalCache },
+  });
+  // A handler that fails before it has answered. After that, the body ends.
+  const failed = new Promise<never>((_, reject) =>
+    handled.catch((error) => (res.headersSent ? res.destroy(error) : reject(error))),
+  );
+  return Promise.race([res.toResponse((headers) => toHeaders(headers)), failed]);
 }
 
 type RenderResult = {
@@ -318,18 +404,12 @@ export async function handleNodePage(
     return new registry.Response(null, { status: 500 });
   }
 
-  const headers = new Headers({ "content-type": result.contentType || "text/html; charset=utf-8" });
+  const headers = toHeaders(
+    { ...res.getHeaders(), ...result.metadata.headers },
+    { "content-type": result.contentType || "text/html; charset=utf-8" },
+  );
   const vary = routeModule.getVaryHeader(resolvedPathname, interceptionRoutePatterns);
   if (vary) headers.set("vary", vary);
-  for (const [name, value] of Object.entries({ ...res.getHeaders(), ...result.metadata.headers })) {
-    if (value === undefined) continue;
-    if (Array.isArray(value)) {
-      headers.delete(name);
-      for (const item of value) headers.append(name, String(item));
-    } else {
-      headers.set(name, String(value));
-    }
-  }
   const status = result.metadata.statusCode || res.statusCode || 200;
 
   if (!result.isDynamic) {

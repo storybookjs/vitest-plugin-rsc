@@ -7,7 +7,7 @@ import edgeEntries from "virtual:vitest-plugin-rsc/next-edge-entries";
 import { nextConfig, routes as allRoutes, runtime } from "virtual:vitest-plugin-rsc/next-manifest";
 import { shareIncrementalCache } from "./cache.ts";
 import { registerModuleLoader } from "./client-modules.ts";
-import { handleNodePage } from "./node-server.ts";
+import { handleNodePage, handleNodeRoute, type NodeHandler } from "./node-server.ts";
 import { actionModulePrefix, registry, type ServerRequest } from "./registry.ts";
 
 export { resetCaches } from "./cache.ts";
@@ -162,6 +162,12 @@ async function handle(request: ServerRequest): Promise<Response> {
   };
 
   try {
+    if (!component && matched?.route.kind === "route" && runtime === "nodejs") {
+      // Next's own request handler for Node.js finds the params of the route.
+      const handler = (await registry.loadRouteHandler(page)) as unknown as NodeHandler;
+      const response = await handleNodeRoute(request, context, handler);
+      return finishWithBody(request, response, response.status, endRequest);
+    }
     if (!component && matched?.route.kind === "route") {
       // An edge function gets the params of its dynamic segments from
       // whoever routes to it, in the query of the URL, as `next start` does.

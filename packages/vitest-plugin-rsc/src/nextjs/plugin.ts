@@ -173,8 +173,59 @@ export const randomUUID = () => web.randomUUID();
 export const randomFillSync = (buffer) => (web.getRandomValues(buffer), buffer);
 export const randomBytes = (size) => web.getRandomValues(Buffer.alloc(size));
 export const getRandomValues = (buffer) => web.getRandomValues(buffer);
-export const createHash = () => {
-  throw new Error("vitest-plugin-rsc: node:crypto's createHash() is not there in a tab");
+// Web Crypto hashes asynchronously. Next's cache keys are SHA-256, at once.
+const K = new Uint32Array(64);
+for (let n = 2, i = 0; i < 64; n++) {
+  let prime = true;
+  for (let d = 2; d * d <= n; d++) if (n % d === 0) { prime = false; break; }
+  if (prime) K[i++] = (Math.cbrt(n) % 1) * 2 ** 32;
+}
+function sha256(bytes) {
+  const h = new Uint32Array([0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19]);
+  const length = bytes.length;
+  const padded = new Uint8Array(((length + 9 + 63) >> 6) << 6);
+  padded.set(bytes);
+  padded[length] = 0x80;
+  const view = new DataView(padded.buffer);
+  view.setUint32(padded.length - 8, Math.floor((length * 8) / 2 ** 32));
+  view.setUint32(padded.length - 4, (length * 8) >>> 0);
+  const w = new Uint32Array(64);
+  const rotr = (x, n) => (x >>> n) | (x << (32 - n));
+  for (let offset = 0; offset < padded.length; offset += 64) {
+    for (let i = 0; i < 16; i++) w[i] = view.getUint32(offset + i * 4);
+    for (let i = 16; i < 64; i++) {
+      const s0 = rotr(w[i - 15], 7) ^ rotr(w[i - 15], 18) ^ (w[i - 15] >>> 3);
+      const s1 = rotr(w[i - 2], 17) ^ rotr(w[i - 2], 19) ^ (w[i - 2] >>> 10);
+      w[i] = (w[i - 16] + s0 + w[i - 7] + s1) | 0;
+    }
+    let [a, b, c, d, e, f, g, hh] = h;
+    for (let i = 0; i < 64; i++) {
+      const t1 = (hh + (rotr(e, 6) ^ rotr(e, 11) ^ rotr(e, 25)) + ((e & f) ^ (~e & g)) + K[i] + w[i]) | 0;
+      const t2 = ((rotr(a, 2) ^ rotr(a, 13) ^ rotr(a, 22)) + ((a & b) ^ (a & c) ^ (b & c))) | 0;
+      hh = g; g = f; f = e; e = (d + t1) | 0; d = c; c = b; b = a; a = (t1 + t2) | 0;
+    }
+    h[0] += a; h[1] += b; h[2] += c; h[3] += d; h[4] += e; h[5] += f; h[6] += g; h[7] += hh;
+  }
+  const out = new Uint8Array(32);
+  h.forEach((word, i) => new DataView(out.buffer).setUint32(i * 4, word));
+  return out;
+}
+export const createHash = (algorithm) => {
+  if (!/^sha-?256$/i.test(algorithm)) {
+    throw new Error("vitest-plugin-rsc: node:crypto's createHash(" + JSON.stringify(algorithm) + ") is not there in a tab");
+  }
+  const chunks = [];
+  const hash = {
+    update(data) {
+      chunks.push(typeof data === "string" ? new TextEncoder().encode(data) : new Uint8Array(data.buffer ?? data, data.byteOffset ?? 0, data.byteLength));
+      return hash;
+    },
+    digest(encoding) {
+      const digest = Buffer.from(sha256(Buffer.concat(chunks)));
+      return encoding ? digest.toString(encoding) : digest;
+    },
+  };
+  return hash;
 };
 export default { webcrypto, randomUUID, randomFillSync, randomBytes, getRandomValues, createHash };
 `,
@@ -793,12 +844,17 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
         } else {
           // The page a request handler serves is in the other environment.
           // The route module of a route handler is in this one.
-          code = await project.loadEdgeEntry(
-            route,
-            modules === edgeEntries
-              ? `${registry}.appPages[${JSON.stringify(entryOf(route))}]`
-              : appPages.prefix + index,
-          );
+          code =
+            nextRuntime === "nodejs" && modules !== edgeEntries
+              ? // The route module that Next's app loader makes of a route
+                // handler has its request handler for Node.js.
+                `export * from ${JSON.stringify(appPages.prefix + index)};\n`
+              : await project.loadEdgeEntry(
+                  route,
+                  modules === edgeEntries
+                    ? `${registry}.appPages[${JSON.stringify(entryOf(route))}]`
+                    : appPages.prefix + index,
+                );
         }
         // A generated module: Vite only replaces `define` keys in pre-bundled
         // dependencies.
