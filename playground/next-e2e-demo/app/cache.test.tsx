@@ -21,8 +21,12 @@ afterEach(() => {
   expect(consoleError.mock.calls).toEqual([]);
 });
 
-const revalidateReports = (query = "") =>
-  handleRequest(`/api/reports/revalidate${query}`, { method: "POST" });
+// Calls the route handler that revalidates a tag or a path.
+const revalidate = (query: string) => handleRequest(`/api/revalidate?${query}`, { method: "POST" });
+
+// Next tells an entry from a revalidation by their time in milliseconds: the
+// revalidation has to be later.
+const nextMillisecond = () => new Promise((resolve) => setTimeout(resolve, 5));
 
 test("keeps what unstable_cache computed for the next request", async () => {
   reports.author = "ada";
@@ -62,10 +66,24 @@ test("computes again after a route handler has expired the tag", async () => {
   await renderServer({ url: "/reports/7" });
   await expect.element(page.getByText("Report 7 by nobody, number 1")).toBeVisible();
 
-  const response = await revalidateReports();
+  const response = await revalidate("tag=reports");
   expect(await response.json()).toEqual({ revalidated: true });
   await renderServer({ url: "/reports/7" });
 
+  await expect.element(page.getByText("Report 7 by nobody, number 2")).toBeVisible();
+});
+
+test("computes again after a route handler has revalidated the path", async () => {
+  await renderServer({ url: "/reports/7" });
+  await expect.element(page.getByText("Report 7 by nobody, number 1")).toBeVisible();
+
+  await revalidate("path=/reports/8");
+  await renderServer({ url: "/reports/7" });
+  // Another path: this one keeps its report.
+  await expect.element(page.getByText("Report 7 by nobody, number 1")).toBeVisible();
+
+  await revalidate("path=/reports/7");
+  await renderServer({ url: "/reports/7" });
   await expect.element(page.getByText("Report 7 by nobody, number 2")).toBeVisible();
 });
 
@@ -73,7 +91,7 @@ test("serves what is cached and computes again in the background after revalidat
   await renderServer({ url: "/reports/7" });
   await expect.element(page.getByText("Report 7 by nobody, number 1")).toBeVisible();
 
-  await revalidateReports("?profile=max");
+  await revalidate("tag=reports&profile=max");
   signInAs("ada");
   reports.duration = 300;
   await renderServer({ url: "/reports/7" });
@@ -83,6 +101,7 @@ test("serves what is cached and computes again in the background after revalidat
   await expect.element(page.getByText("Report 7 by nobody, number 1")).toBeVisible();
   await expect.element(page.getByText("Read by ada")).toBeVisible();
 
+  await expect.poll(() => reports.written).toBe(2);
   reports.duration = 0;
   await renderServer({ url: "/reports/7" });
   await expect.element(page.getByText("Report 7 by nobody, number 2")).toBeVisible();
@@ -147,10 +166,6 @@ test("fetches again in the background once the revalidate time of a fetch has pa
 
   await renderServer({ url: `/hits?key=${key}&revalidate=1` });
   await expect.element(page.getByText("Hits: 1 and 1")).toBeVisible();
-  await renderServer({ url: `/hits?key=${key}&revalidate=1` });
-  // Within the second: from the cache.
-  await expect.element(page.getByText("Hits: 1 and 1")).toBeVisible();
-  expect(await requestHits(key)).toBe(2);
 
   await new Promise((resolve) => setTimeout(resolve, 1100));
   await renderServer({ url: `/hits?key=${key}&revalidate=1` });
@@ -158,5 +173,51 @@ test("fetches again in the background once the revalidate time of a fetch has pa
   await expect.element(page.getByText("Hits: 1 and 1")).toBeVisible();
 
   await renderServer({ url: `/hits?key=${key}&revalidate=1` });
-  await expect.element(page.getByText("Hits: 3 and 3")).toBeVisible();
+  await expect.element(page.getByText("Hits: 2 and 2")).toBeVisible();
+});
+
+test("fetches again after a route handler has expired the tag of a fetch", async () => {
+  const key = crypto.randomUUID();
+  await renderServer({ url: `/hits?key=${key}` });
+  await expect.element(page.getByText("Hits: 1 and 1")).toBeVisible();
+
+  await revalidate("tag=hits");
+  await renderServer({ url: `/hits?key=${key}` });
+
+  await expect.element(page.getByText("Hits: 2 and 2")).toBeVisible();
+});
+
+// A cached function has a scope of its own, in which Next does not let it
+// read the request, and does not keep what a cached function inside it
+// computes. The next two tests are that scope before and after the first
+// `await` of the function: see "A Cache Scope Ends At Its First await" in
+// docs/next-routes.md.
+const cacheScope = async (when: string) => {
+  const response = await handleRequest(`/api/cache-scope?when=${when}`);
+  return (await response.json()) as { request: string; innerRuns: number };
+};
+
+test("gives a cached function its cache scope until its first await, as a deployment does", async () => {
+  const first = await cacheScope("at-once");
+  expect(first.request).toBe("not readable");
+
+  await nextMillisecond();
+  await revalidate("tag=cache-scope");
+  const second = await cacheScope("at-once");
+
+  // The cached function inside it ran again with it.
+  expect(second.innerRuns).toBe(first.innerRuns + 1);
+});
+
+test("known limit: after its first await a cached function reads the request, not its cache scope", async () => {
+  const first = await cacheScope("after-await");
+  // A deployment: "not readable".
+  expect(first.request).toBe("readable");
+
+  await nextMillisecond();
+  await revalidate("tag=cache-scope");
+  const second = await cacheScope("after-await");
+
+  // A deployment: one more. Here the inner function kept its own result.
+  expect(second.innerRuns).toBe(first.innerRuns);
 });

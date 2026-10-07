@@ -280,7 +280,7 @@ test("ends a run inside an ambient scope when its callback returns, not when its
   leaveScope();
 });
 
-test("ends a snapshot and an exit inside an ambient scope when their callback returns", async () => {
+test("ends a snapshot inside an ambient scope when its callback returns", async () => {
   const storage = new AsyncLocalStorage<string>();
   const leaveScope = enterAmbientScope();
   storage.run("request", () => {});
@@ -293,17 +293,40 @@ test("ends a snapshot and an exit inside an ambient scope when their callback re
     return [before, storage.getStore()];
   });
   expect(storage.getStore()).toBe("request");
-  const exited = storage.exit(async () => {
-    const before = storage.getStore();
-    await pending.promise;
-    return [before, storage.getStore()];
-  });
-  expect(storage.getStore()).toBe("request");
 
   pending.resolve();
   await expect(inSnapshot).resolves.toEqual(["cache", "request"]);
-  await expect(exited).resolves.toEqual([undefined, "request"]);
   leaveScope();
+});
+
+test("leaves a storage for the rest of an ambient scope when exit() starts async work", async () => {
+  const storage = new AsyncLocalStorage<string>();
+  const leaveScope = enterAmbientScope();
+  storage.run("action", () => {});
+  // A callback that does not return a promise is done when it returns.
+  expect(storage.exit(() => storage.getStore())).toBeUndefined();
+  expect(storage.getStore()).toBe("action");
+  const pending = deferred<void>();
+
+  // What Next does for the page it renders after a Server Action.
+  const result = storage.exit(async () => {
+    await pending.promise;
+    return storage.getStore();
+  });
+
+  expect(storage.getStore()).toBeUndefined();
+  pending.resolve();
+  await expect(result).resolves.toBeUndefined();
+  // The render that started in it goes on after the promise.
+  expect(storage.getStore()).toBeUndefined();
+  // A store that is entered in the meantime still has its synchronous part.
+  expect(storage.run("nested", () => storage.getStore())).toBe("nested");
+
+  leaveScope();
+  const leaveNext = enterAmbientScope();
+  storage.run("next request", () => {});
+  expect(storage.getStore()).toBe("next request");
+  leaveNext();
 });
 
 test("has no ambient store outside an ambient scope", () => {

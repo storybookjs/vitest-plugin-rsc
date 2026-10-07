@@ -106,15 +106,19 @@ And for the browser side, a page load: the tab cannot navigate away from the tes
 
 ## Caching
 
-Next's Data Cache works: what `unstable_cache` computes and what a `fetch` with `cache: "force-cache"` or `next: { revalidate, tags }` gets is kept for the next request. `revalidateTag()`, `updateTag()`, `revalidatePath()` and `refresh()` do what they do in a deployment, from a Server Action and from a route handler. A `fetch` for the same URL twice in one render is one request.
+Next's Data Cache works. What `unstable_cache` computes is kept for the next request, and so is what a `fetch` gets with `cache: "force-cache"` or `next: { revalidate }`, with or without `next: { tags }`. A `fetch` for the same URL twice in one render is one request.
 
-An edge function of Next has no cache of its own. The server in front of it has one and shares it: `next start` makes an `IncrementalCache` for a request and hands it to the edge function through `globalThis.__incrementalCache`. The plugin does that too, with the classes and the options of Next: `IncrementalCache`, and `FileSystemCache` as its handler, which keeps the entries in memory and has no disk here. It is one cache for the pages and the route handlers. `cacheMaxMemorySize` and `experimental.fetchCacheKeyPrefix` of `next.config` apply. A `cacheHandler` of your own does not: it is written for Node.js.
+What invalidates it does what it does in a deployment: `revalidateTag()` and `revalidatePath()` from a Server Action or a route handler, `updateTag()` and `refresh()` from a Server Action, which is the only place Next allows those two.
 
-Every test starts with an empty cache. `cleanup()` removes the entries and the revalidated tags. Work that a test left behind can still finish afterwards and store its result: it does so under a key that no later test asks for.
+An edge function of Next has no cache of its own. The server in front of it has one and shares it: `next start` makes an `IncrementalCache` for a request and hands it to the edge function through `globalThis.__incrementalCache`. The plugin does that too. The class is Next's, and so is the handler it picks, the one `next start` uses, which keeps the entries in memory. The options are the ones Next's server passes, without a disk to write to. It is one cache for the pages and the route handlers.
 
-Between requests there is a cache too, so a test can call a cached function itself and share what it computes with the page.
+Of `next.config`, `experimental.fetchCacheKeyPrefix` and `cacheMaxMemorySize` apply. With `cacheMaxMemorySize: 0` nothing is cached here, where `next start` still has its disk. The plugin does not load a `cacheHandler` or `cacheHandlers` of your own.
 
-Next compares the time of an entry with the time of a revalidation, in milliseconds from `Date.now()` and from `performance.now()`. With a `Date` that a test has frozen or moved, as `vi.setSystemTime()` does, a tag that is revalidated in a later request than the one that stored an entry is not newer than that entry, so the entry stays. And the age of an entry is off by the difference with the real clock.
+Every test starts with an empty cache: `cleanup()` forgets the revalidated tags and gives the cache a new key prefix, so no test finds what an earlier one stored. That also goes for a cached function that was still running when its test ended and stores its result afterwards. A cached function that only starts after its test has ended stores its result for the next test.
+
+Between requests there is a cache too, so a test can call a cached function itself and share what it computes with the page. Await it before the next request: a cached function that is still running when a request starts hands that request its cache scope.
+
+Next tells an entry from a revalidation by their time in milliseconds, from `Date.now()`. With a clock that stands still, which `vi.useFakeTimers()` gives and `vi.setSystemTime()` on its own too, a tag that is revalidated in a later request than the one that stored the entry is not newer than the entry, so the entry stays. The age of an entry, for `revalidate`, is off by the difference with the real clock.
 
 ### A Cache Scope Ends At Its First `await`
 
@@ -122,12 +126,14 @@ While a cached function runs, Next keeps a store for it in `AsyncLocalStorage`. 
 
 Node carries that store to the code after an `await` in the cached function, and to nothing else. A tab cannot tell the two apart: when code runs after an `await`, nothing says whether it belongs to the cached function or to a component next to it that is rendering in the meantime. So one of the two reads the wrong store. Here the cached function does: its store lasts for the synchronous part of the function, and after the first `await` it reads the store of the request. The other choice breaks pages that work: with the store kept until the function is done, a component that renders during a cache miss reads the cache's store, and its `cookies()` throws.
 
-What a test sees of a cached function from the outside is right: its value, whether it ran again, and what invalidates it. What differs is what happens inside it, after its first `await`:
+So inside a function cached with `unstable_cache`, after its first `await`:
 
-- `cookies()`, `headers()` and `revalidateTag()` work there. In a deployment they throw.
-- A `fetch` with `cache: "force-cache"` or `next: { revalidate }` is cached on its own there, and a nested `unstable_cache` too. In a deployment both run again whenever the outer function does.
+- `cookies()` and `headers()` work. In a deployment they throw.
+- A nested `unstable_cache` keeps its own result, and so does a `fetch` with `cache: "force-cache"` or `next: { revalidate }`. In a deployment both run again whenever the outer function does. Here, when the outer function runs again because its tag was revalidated, it can get the old result of the inner one.
 
-Before the first `await` all of these are as in a deployment.
+Before the first `await` all of these are as in a deployment. For a cached function that has no cached function or cached `fetch` inside it, what a test sees is right: its value, whether it ran again, and what invalidates it.
+
+The same rule decides what `redirect()` does in the render after a Server Action. Next leaves the store of the action for that render, and the plugin keeps it left for the rest of the request, so a `redirect()` in a component replaces the page, as in a deployment.
 
 ## Server Code In A Tab
 
@@ -185,6 +191,7 @@ What this does not cover:
 - `"use cache"`. Next compiles such a function with its SWC transform, which the plugin does not run yet. And it would not be enough: the function is called after Next has awaited, so it would never read the store of its cache scope. `cacheTag()` and `cacheLife()` need that store, and so does collecting the tags of the `fetch` calls in it. See [Caching](#a-cache-scope-ends-at-its-first-await).
 - Inside a function cached with `unstable_cache`, after its first `await`, the request's store is read instead of the cache's. See [Caching](#a-cache-scope-ends-at-its-first-await).
 - A `cacheHandler` or `cacheHandlers` of `next.config`. The cache is Next's own, in memory.
+- Code that leaves a store with `AsyncLocalStorage.exit()` for work that awaits, and reads the store again after it: the store stays left for the rest of the request. Next does this for the render after a Server Action, where nothing reads it again.
 - An `after()` callback that takes longer than a second goes on without the stores of its request, so `cookies()` and `headers()` fail in it from then on. Under `vi.useFakeTimers()` a response without a body never tells Next it was sent, so its `after()` callbacks do not run while the request lasts, and the next request starts a second late.
 - A navigation without Next's router to a route handler that does not answer with HTML, like a download link, is an uncaught error: there is nothing for the tab to show.
 - Hiding the tab from server code has gaps: see [Server Code In A Tab](#server-code-in-a-tab).

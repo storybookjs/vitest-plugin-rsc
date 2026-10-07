@@ -413,8 +413,6 @@ const runtimeImports: Record<NextLayer, string[]> = {
     "next/dist/server/route-modules/app-page/module",
     "next/dist/server/app-render/manifests-singleton",
     "next/dist/server/lib/incremental-cache",
-    "next/dist/server/lib/incremental-cache/file-system-cache",
-    "next/dist/server/lib/incremental-cache/memory-cache.external",
     "next/dist/server/lib/incremental-cache/tags-manifest.external",
     "next/dist/server/web/get-edge-preview-props",
     "next/dist/shared/lib/router/utils/route-regex",

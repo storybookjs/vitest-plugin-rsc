@@ -110,7 +110,14 @@ export class SequentialAsyncLocalStorage<Store> {
     const previousFrame = currentFrame;
     const frame = createFrame(previousFrame, previousFrame.stores);
     frame.stores.set(this as SequentialAsyncLocalStorage<unknown>, exited);
-    return runInFrame(frame, callback, args);
+    const scope = ambientScope;
+    const result = runInFrame(frame, callback, args);
+    // See enterAmbientScope(): the work that starts here goes on outside the
+    // store, for longer than this frame and than the promise.
+    if (scope && isPromiseLike(result)) {
+      scope.stores.set(this as SequentialAsyncLocalStorage<unknown>, exited);
+    }
+    return result;
   }
 
   enterWith(store: Store): void {
@@ -174,7 +181,9 @@ export function createSnapshot(): <R, TArgs extends unknown[]>(
  * - The first store a storage is entered with stays readable after its
  *   `run()` has returned.
  * - A `run()` lasts for the synchronous part of its callback, also when the
- *   callback returns a promise.
+ *   callback returns a promise. So does a snapshot.
+ * - An `exit()` whose callback returns a promise leaves the storage for the
+ *   rest of the scope.
  *
  * A server enters its request stores once and then does the work from
  * scheduled tasks: React renders a tree that way, and an async component
@@ -187,6 +196,15 @@ export function createSnapshot(): <R, TArgs extends unknown[]>(
  * in that part reads the store of the request. The alternative is worse.
  * Keeping such a store until the promise of its callback settles hands it to
  * everything else that runs in the meantime, which is the rest of the page.
+ *
+ * The same goes for `exit()`: the work that its callback starts goes on after
+ * the promise has settled, and has to stay outside the store. Next renders
+ * the page after a Server Action that way, outside the store of the action,
+ * and nothing of the action runs after it. It is wrong for code that awaits
+ * such an `exit()` and then reads the store again.
+ *
+ * A `run()` that started before the scope keeps its own rule: it lasts until
+ * its promise settles, and the request reads its store until then.
  */
 export function enterAmbientScope(): () => void {
   // A server can make a request to itself while it handles one. The inner

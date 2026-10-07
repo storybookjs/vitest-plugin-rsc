@@ -15,8 +15,8 @@ import { nextCacheProbeFetchHandler } from "./next-cache-msw.ts";
 import { NextCacheProbe, resetNextCacheProbe } from "./next-cache-probe.tsx";
 
 // The cache tests of playground/nextjs-notes-demo, with the same probe. The
-// assertions are the same too, but for the no-store fetches: those are exact
-// here. The service the probe fetches from is MSW, in this tab.
+// assertions are the same too, but for the no-store fetches, which are exact
+// here, and for two tests that go on where the ones of the notes demo stop. The service the probe fetches from is MSW, in this tab.
 
 const worker = setupWorker(...nextCacheProbeFetchHandler);
 let consoleError: MockInstance<typeof console.error>;
@@ -102,6 +102,13 @@ test("server actions without refresh or invalidation do not rerender the current
 
   await expect.element(page.getByText("render: 1")).toBeVisible();
   await expect.element(page.getByText("action writes: 0")).toBeVisible();
+
+  // Not in the notes demo: the page still shows this when the action has not
+  // run yet. Next runs actions in order, so after a refresh the first one has
+  // run, and it shows that it rendered once more, not twice.
+  await page.getByRole("button", { name: "Refresh", exact: true }).click();
+  await expect.element(page.getByText("action writes: 1")).toBeVisible();
+  await expect.element(page.getByText("render: 2")).toBeVisible();
 });
 
 test("refresh renders uncached action writes while preserving cached reads", async () => {
@@ -164,10 +171,22 @@ test("revalidateTag with max updates cache metadata without rendering immediatel
 
   await expect.element(page.getByText("render: 1")).toBeVisible();
   await expect.element(page.getByText("cached data: default data 1")).toBeVisible();
+  await waitPastCacheTimestamp();
   await page.getByRole("button", { name: "Revalidate data tag" }).click();
 
   await expect.element(page.getByText("render: 1")).toBeVisible();
   await expect.element(page.getByText("cached data: default data 1")).toBeVisible();
+  await expect.element(page.getByText("cached fetch: default fetch 1")).toBeVisible();
+
+  // Not in the notes demo: the page still shows this when the action has not
+  // run yet. The render after it gets the stale data and makes Next compute
+  // it again, for the render after that.
+  await page.getByRole("button", { name: "Refresh", exact: true }).click();
+  await expect.element(page.getByText("render: 2")).toBeVisible();
+  await expect.element(page.getByText("cached data: default data 1")).toBeVisible();
+  await page.getByRole("button", { name: "Refresh", exact: true }).click();
+  await expect.element(page.getByText("render: 3")).toBeVisible();
+  await expect.element(page.getByText("cached data: default data 2")).toBeVisible();
   await expect.element(page.getByText("cached fetch: default fetch 1")).toBeVisible();
 });
 

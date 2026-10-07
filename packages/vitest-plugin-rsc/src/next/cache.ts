@@ -1,6 +1,4 @@
 import { IncrementalCache } from "next/dist/server/lib/incremental-cache";
-import FileSystemCache from "next/dist/server/lib/incremental-cache/file-system-cache";
-import { getMemoryCache } from "next/dist/server/lib/incremental-cache/memory-cache.external";
 import { tagsManifest } from "next/dist/server/lib/incremental-cache/tags-manifest.external";
 import { getEdgePreviewProps } from "next/dist/server/web/get-edge-preview-props";
 import { nextConfig } from "virtual:vitest-plugin-rsc/next-manifest";
@@ -26,25 +24,49 @@ const config = nextConfig as {
   experimental?: { fetchCacheKeyPrefix?: string; allowedRevalidateHeaderKeys?: string[] };
 };
 
-// Changes when the caches are reset. Work of a test that has ended can still
-// finish and store its result. Under the prefix of its own test, no later
-// test finds it.
+type PreviewProps = ReturnType<typeof getEdgePreviewProps>;
+
+// The options of IncrementalCache in next@16.4. The package is type-checked
+// against the Next of its older helpers, where some had other names.
+type IncrementalCacheOptions = {
+  fs: object;
+  serverDistDir: string;
+  dev: boolean;
+  minimalMode: boolean;
+  flushToDisk: boolean;
+  requestHeaders: Record<string, string>;
+  allowedRevalidateHeaderKeys: string[] | undefined;
+  fetchCacheKeyPrefix: string;
+  maxMemoryCacheSize: number | undefined;
+  previewProps: PreviewProps;
+  prerenderManifest: {
+    version: number;
+    routes: object;
+    dynamicRoutes: object;
+    notFoundRoutes: string[];
+    preview: PreviewProps;
+  };
+};
+
+// Changes when the caches are reset, and is part of every key from then on:
+// no test finds what an earlier one stored. That also goes for a cached
+// function that was still running when its test ended, and stores its result
+// afterwards under the key it already had.
 let generation = 0;
 
 /**
- * Gives a request the cache of the server, the way `getIncrementalCache()` of
- * Next's server does. Its handler is the one `next start` uses, which keeps
- * the entries in memory. It has no disk here to write them to as well.
- *
- * Without headers it is the cache between requests, for a test that calls a
- * cached function itself.
+ * Gives a request the cache of the server, with the options that
+ * `getIncrementalCache()` of Next's server passes. Without headers it is the
+ * cache between requests, for a test that calls a cached function itself.
  */
 export function shareIncrementalCache(headers = new Headers()): void {
   const previewProps = getEdgePreviewProps();
-  globalThis.__incrementalCacheShared = true;
-  // These are the options of next@16.4. The package is type-checked against
-  // the Next of its older helpers, where they had other names.
-  const options = {
+  const options: IncrementalCacheOptions = {
+    // With these two Next takes its own handler, the one `next start` uses,
+    // which keeps the entries in memory. It only reads or writes files on
+    // Node.js and with `flushToDisk`, so the file system is never asked.
+    fs: {},
+    serverDistDir: "/",
     dev: false,
     minimalMode: false,
     flushToDisk: false,
@@ -62,20 +84,19 @@ export function shareIncrementalCache(headers = new Headers()): void {
       notFoundRoutes: [],
       preview: previewProps,
     },
-    CurCacheHandler: FileSystemCache,
   };
+  globalThis.__incrementalCacheShared = true;
   globalThis.__incrementalCache = new IncrementalCache(
     options as unknown as ConstructorParameters<typeof IncrementalCache>[0],
   );
 }
 
-/** Forgets what the server has cached, and which tags were revalidated. */
+/**
+ * Makes the server forget what it has cached and which tags were revalidated.
+ * The entries of before stay in Next's memory store, which is bounded by
+ * `cacheMaxMemorySize`, under keys that are not asked for again.
+ */
 export function resetCaches(): void {
-  // The entries are in a store of Next's that lives as long as the module.
-  if (config.cacheMaxMemorySize) {
-    const entries = getMemoryCache(config.cacheMaxMemorySize);
-    for (const key of Array.from(entries, ([key]) => key)) entries.remove(key);
-  }
   tagsManifest.clear();
   generation++;
   shareIncrementalCache();

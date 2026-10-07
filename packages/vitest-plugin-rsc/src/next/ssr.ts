@@ -5,9 +5,11 @@ import { getRouteRegex } from "next/dist/shared/lib/router/utils/route-regex";
 import { getSortedRoutes } from "next/dist/shared/lib/router/utils/sorted-routes";
 import edgeEntries from "virtual:vitest-plugin-rsc/next-edge-entries";
 import { nextConfig, routes } from "virtual:vitest-plugin-rsc/next-manifest";
-import { resetCaches, shareIncrementalCache } from "./cache.ts";
+import { shareIncrementalCache } from "./cache.ts";
 import { registerModuleLoader } from "./client-modules.ts";
 import { actionModulePrefix, registry, type ServerRequest } from "./registry.ts";
+
+export { resetCaches } from "./cache.ts";
 
 // The ssr layer: Next's request handler and HTML renderer. Each route is the
 // edge entry Next builds for a deployment: `handler(Request)` in, `Response`
@@ -82,8 +84,6 @@ export function pageOf(pathname: string): string | undefined {
   const route = matchRoute(pathname)?.route;
   return route?.kind === "page" ? route.page : undefined;
 }
-
-export { resetCaches };
 
 // A test's own timers may be fake.
 const setTimeout = globalThis.setTimeout;

@@ -719,7 +719,7 @@ test("creates a note", async () => {
 });
 ```
 
-Before and after every test the page is left, and the tab's cookies and what the app put in `localStorage` and `sessionStorage` are cleared, like a new browser context. The server forgets what it has cached. That also goes for a page a `beforeAll` opened. Cookies you set on `document.cookie` before `renderServer()` are sent with the request, and so are the `headers` you pass it.
+Before and after every test the page is left, and the tab's cookies and what the app put in `localStorage` and `sessionStorage` are cleared, like a new browser context. That also goes for a page a `beforeAll` opened. Cookies you set on `document.cookie` before `renderServer()` are sent with the request, and so are the `headers` you pass it. The server forgets what it has cached, also before and after every test.
 
 To test one slice of a route, pass a node. The route renders it where it has its page, inside its layouts, with the request, the cookies and the router of that route:
 
@@ -770,7 +770,7 @@ test("renames a note", async () => {
 
 A same-origin `fetch` goes to the app when its path is one of the app's routes, or when Next's router or a Server Action sends it. Anything else goes to the Vite dev server. A handler that throws answers `500` and logs the error with `console.error`, as `next start` does.
 
-Next's Data Cache works across requests: `unstable_cache`, a `fetch` with `cache: "force-cache"` or `next: { revalidate, tags }`, and `revalidateTag()`, `updateTag()`, `revalidatePath()` and `refresh()` from a Server Action or a route handler. Every test starts with an empty cache. `"use cache"` does not work yet.
+Next's Data Cache works across requests: `unstable_cache`, and a `fetch` with `cache: "force-cache"` or `next: { revalidate }`. So do `revalidateTag()` and `revalidatePath()` from a Server Action or a route handler, and `updateTag()` and `refresh()` from a Server Action. Every test starts with an empty cache. `"use cache"` does not work yet.
 
 ```tsx
 test("shows the new price after the webhook", async () => {
