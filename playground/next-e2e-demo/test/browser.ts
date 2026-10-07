@@ -1,5 +1,7 @@
-// A module of the test that is not a test file. It is `testModules` in
-// vitest.config.ts that tells it from a module of the app: it needs the tab.
+// A helper of the tests that works on the page: it has to see the browser it
+// runs in. It is not a test file or a setup file, so `browserModules` in
+// vitest.config.ts says so. Without that it is server code, like every other
+// module here, and has no `document`.
 export function signInAs(user: string): void {
   document.cookie = `session=${user}; path=/`;
 }

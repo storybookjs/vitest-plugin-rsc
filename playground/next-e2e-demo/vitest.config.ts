@@ -28,8 +28,9 @@ export default defineProject({
   root: fileURLToPath(new URL("./", import.meta.url)),
   plugins: [
     vitestPluginRSC(),
-    // What is in `test/` helps the tests. It is not code of the app's server.
-    vitestPluginNext({ testModules: ["test/**"] }),
+    // The helpers in `test/` work on the page, so they have to see the browser.
+    // Every other module that is not a test file is server code.
+    vitestPluginNext({ browserModules: ["test/**"] }),
     hitsService(),
   ],
   resolve: {

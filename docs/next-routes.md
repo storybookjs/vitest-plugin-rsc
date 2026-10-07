@@ -127,20 +127,41 @@ The `rsc` layer shares its Vite environment with the test, and a test needs the 
 
 - the test files and setup files of your Vitest config: `test.include` and `test.setupFiles`,
 - Vitest, Vite and the `@vitest/*` packages you have installed, and the packages those depend on,
-- what you list in `testModules`: a helper that reads `document.cookie`, or a package the test runs in the tab.
+- what you list in `browserModules`.
+
+Everything else in that environment is server code, including a module that only a test imports and a file with in-source tests. A component that is defined in a test file is code of that test file, and sees the tab.
+
+### `browserModules`
+
+Code asks `typeof window` for one of two reasons, and they need opposite answers here.
+
+- **Role.** Am I the server side of this app? `@t3-oss/env-core` asks, and only hands out a server variable if the answer is yes. `next-themes` asks, and reads no theme from storage on the server. The answer has to be: you are the server.
+- **Capability.** Is there a DOM here that I can work on? Testing Library asks before it binds `screen` to `document.body`. A helper of yours that sets `document.cookie` does not even ask. The answer has to be the truth: you are in a browser. Unless the module also gets by without a DOM: PGlite asks to pick how it loads, is told it is not in a browser, and works all the same.
+
+Nothing in the code says which of the two a module means. So every other module of the `rsc` environment gets the first answer, and `browserModules` lists the ones that need the second:
 
 ```ts
 vitestPluginNext({
   // Glob patterns, relative to the project root. One for a package starts
   // with `**`: files are matched by their real path, which package managers
   // put elsewhere than in `node_modules/<name>` under the root.
-  testModules: ["test/**", "**/node_modules/@testing-library/**"],
+  browserModules: ["test/**", "**/node_modules/@testing-library/**"],
 });
 ```
 
-Packages that need this are the ones a test uses in the tab and that ask `typeof window` or `typeof document`: `@testing-library/dom` does, for `screen`. The locators of `vitest/browser` need nothing.
+When you need it, as far as this was tried:
 
-Everything else in that environment is server code, including a module that only a test imports and a file with in-source tests. A component that is defined in a test file is code of that test file, and sees the tab. A package that a test or a setup file uses in the tab, and that is not one of Vitest's, has to be in `testModules` if it asks `typeof window`.
+- A source file that is not a test file or a setup file and that works on the page: a helper that reads `window`, `document`, `location` or storage. Without an entry it fails with a `TypeError`, as `document` is `undefined` in it. The demo has one in `test/`.
+- A package that the tests use on the page and that asks `typeof window` or `typeof document` first. `@testing-library/dom` is one: without an entry `screen.getByRole()` throws "For queries bound to document.body a global document has to be available".
+
+When you do not:
+
+- The locators, `userEvent` and `expect.element` of `vitest/browser`, and the rest of Vitest.
+- MSW. Vitest leaves it out of pre-bundling, so it is served as it is.
+- PGlite, in memory and on IndexedDB. It is told that it is not in a browser, and works all the same.
+- A package that touches `document` without asking first. Only `typeof` is replaced in packages.
+
+A package that both the tests and the app use can only get one of the two answers. If it needs both, it cannot be used on both sides. And an entry does not help a package of the app that, told it is on a server, takes a path only Node.js has.
 
 What this does not cover:
 
