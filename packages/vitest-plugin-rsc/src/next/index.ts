@@ -5,6 +5,11 @@ import { createEnvironmentRunner, importEnvironment } from "../utilts.ts";
 import { loadDocument, unloadDocument } from "./document.ts";
 import { registry } from "./registry.ts";
 
+// The page's own copy of Vite's client, which the browser has loaded by now.
+// The other two layers use it too: see vite-client.ts.
+const { BASE_URL = "/" } = (import.meta as { env?: { BASE_URL?: string } }).env ?? {};
+registry.viteClient = await import(/* @vite-ignore */ `${BASE_URL}@vite/client`);
+
 // The server's platform (globals.ts) has to be there before a module of Next's
 // server loads, so the layers load from here on, in order: rsc, then ssr.
 await import("./rsc.ts");

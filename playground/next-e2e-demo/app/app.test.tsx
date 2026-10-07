@@ -331,3 +331,14 @@ test("leaves the page with unmount()", async () => {
 
   await expect.element(page.getByRole("heading", { name: "Home" })).not.toBeInTheDocument();
 });
+
+test("loads a page over the connections to the dev server that the tab has", async () => {
+  await renderServer({ url: "/settings" });
+  // Vite's client opens a websocket when it is evaluated. The tab has one.
+  const WebSocket = vi.spyOn(globalThis, "WebSocket");
+
+  await renderServer({ url: "/settings" });
+
+  await expect.element(page.getByRole("button", { name: "Theme: light" })).toBeVisible();
+  expect(WebSocket).not.toHaveBeenCalled();
+});

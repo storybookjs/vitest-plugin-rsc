@@ -49,6 +49,27 @@ type AppLoaderContext = {
   addContextDependency(dir: string): void;
 };
 
+// Next compiles a `next.config.ts` and runs it as a module without a file, so
+// what it imports by a relative path is looked up from the working directory.
+// For `next build` that is the project. Vitest loads the projects of a
+// workspace side by side, in one process with one working directory, so they
+// take turns.
+let directoryQueue: Promise<unknown> = Promise.resolve();
+
+function inDirectory<T>(directory: string, load: () => Promise<T>): Promise<T> {
+  const result = directoryQueue.then(async () => {
+    const cwd = process.cwd();
+    process.chdir(directory);
+    try {
+      return await load();
+    } finally {
+      process.chdir(cwd);
+    }
+  });
+  directoryQueue = result.catch(() => {});
+  return result;
+}
+
 export async function loadNextProject(root: string): Promise<NextProject> {
   const require = createRequire(path.join(root, "package.json"));
   const nextDir = path.dirname(require.resolve("next/package.json"));
@@ -96,7 +117,9 @@ export async function loadNextProject(root: string): Promise<NextProject> {
 
   // The app is served the way a deployment serves it: production Next on its
   // edge runtime. React itself stays a development build, see plugin.ts.
-  const config = await loadConfig(PHASE_PRODUCTION_BUILD, root, { silent: true });
+  const config = await inDirectory(root, () =>
+    loadConfig(PHASE_PRODUCTION_BUILD, root, { silent: true }),
+  );
   const { appDir } = findPagesDir(root) as { appDir?: string };
   if (!appDir) {
     throw new Error(`vitest-plugin-rsc: no \`app\` directory found in ${root}`);

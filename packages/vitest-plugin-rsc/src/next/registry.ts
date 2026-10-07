@@ -30,6 +30,8 @@ export type NextRegistry = {
   /** Loads the rsc-layer module of a route, into `appPages`. */
   loadAppPage(page: string): Promise<unknown>;
   appPages: Record<string, unknown>;
+  /** Whether an id names a Server Action of the app, in the rsc layer. */
+  hasServerAction(id: string): Promise<boolean>;
   /** What a test renders in place of the page of a route, by page name. */
   pageOverrides: Record<string, unknown>;
   /** Loads a Client Component by its module id, in the ssr layer. */
@@ -41,6 +43,8 @@ export type NextRegistry = {
   browserRequire(id: string): Promise<unknown>;
   loadBrowserModule(id: string): Promise<unknown>;
   ssr: { AppPageRouteModule: new (options: unknown) => unknown };
+  /** Vite's client of the page, `/@vite/client`, for the layers a module runner loads. */
+  viteClient: Record<string, unknown>;
 };
 
 const scope = globalThis as { __vitest_plugin_rsc_next__?: Partial<NextRegistry> };

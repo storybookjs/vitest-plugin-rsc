@@ -72,6 +72,14 @@ export function requireModule(id: string): Promise<unknown> {
   return loading;
 }
 
+// An action id is `<module>#<export>`, and it comes from a request: the module
+// may not be there, or not have the export.
+registry.hasServerAction = (id) =>
+  requireModule(actionModulePrefix + id).then(
+    (module) => typeof (module as Record<string, unknown>)[id] === "function",
+    () => false,
+  );
+
 async function loadModule(id: string): Promise<unknown> {
   if (id.startsWith(actionModulePrefix)) {
     const actionId = id.slice(actionModulePrefix.length);

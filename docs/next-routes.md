@@ -69,11 +69,18 @@ The server layers are written for an edge runtime, which is close to a browser: 
 
 And for the browser side, a page load: the tab cannot navigate away from the test, so the server's document is moved into the test's document as it streams, its inline scripts are run in order, and the URL is set with the History API.
 
+Two things that a build knows and a request has to find out here:
+
+- **Server Actions.** Next's build lists every action of the app. Here an action is the module and the export its id names, so the server looks whether the id of a request names one. An id that does not gets the response Next gives a request from another deployment: `409`, with `x-nextjs-action-not-found`.
+- **Vite's client.** Vite imports `/@vite/client` into modules with CSS or `import.meta.hot`. The `ssr` and `browser` layers load through a module runner, and get the client the page already has. A copy of their own would open a websocket per page load, to the port the dev server was configured with, which is another server when that port was taken.
+
+`next.config.ts` is loaded by Next, from the project directory: Next looks up what the config imports by a relative path from the working directory.
+
 ## Not Yet
 
 - `next/font`, `next/image` optimization, and metadata files like `icon.png` and `sitemap.ts`. These are build-time loaders that still have to be ported.
 - Route handlers (`route.ts`), `middleware.ts` / `proxy.ts`, and the redirects, rewrites and headers of `next.config`.
-- `"use cache"` and `unstable_cache`. The store a request entered first is the one a later task reads, so code that resumes after an `await` inside a cache scope reads the request's store instead of the cache's.
+- `"use cache"` and `unstable_cache`. The store a request entered first is the one a later task reads, so code that resumes after an `await` inside a cache scope reads the request's store instead of the cache's. And nothing stores what `unstable_cache` computed for the next request.
 - `fetch` in your own server code is the browser's `fetch`, without Next's cache options. And `typeof window` is `"object"` there: only Next's own server code is compiled as server code.
 - `vi.mock()` replaces a module in the `rsc` layer, where the test runs. The other two layers load their modules themselves, so a mock does not reach a Client Component.
 - One request at a time. A request that waits for another one that the test has not sent yet will wait forever.

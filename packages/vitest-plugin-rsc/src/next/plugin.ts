@@ -5,6 +5,7 @@ import { transformProxyExport } from "@vitejs/plugin-rsc/transforms";
 import { normalizePath, parseAstAsync, transformWithOxc, type Plugin } from "vite";
 import { createRunnerEnvironmentPlugins } from "../runner-environment.ts";
 import { loadNextProject, type NextLayer, type NextProject, type NextRoute } from "./project.ts";
+import { pageViteClientPlugin } from "./vite-client.ts";
 
 // Next compiles an App Router app into three layers, each with its own module
 // graph: `rsc` (Server Components, the `react-server` React), `ssr` (the
@@ -116,6 +117,8 @@ function createLayerResolver(getProject: () => NextProject, layer: NextLayer) {
     files.set(specifier, file);
     return file;
   }
+
+  const projectFile = () => path.join(getProject().root, "package.json");
 
   function toSpecifier(file: string): string {
     return `next/${path.relative(getProject().nextDir, file).split(path.sep).join("/")}`;
@@ -247,8 +250,14 @@ function createLayerResolver(getProject: () => NextProject, layer: NextLayer) {
         if (target === source) return;
         // Not found as a file of the `next` package: leave the import alone.
         if (specifier !== source && target === specifier && !nextFile(target)) return;
-        // Keep it a bare specifier, so Vite maps it to the pre-bundled dependency.
-        return this.resolve(target, importer, { ...options, skipSelf: true });
+        // Keep it a bare specifier, so Vite maps it to the pre-bundled
+        // dependency. It is a file of the project's `next`, so look it up from
+        // the project: a package like `next-themes` may see no `next` from
+        // where it is installed, or another copy of it.
+        return this.resolve(target, target.startsWith("next/") ? projectFile() : importer, {
+          ...options,
+          skipSelf: true,
+        });
       },
       load(id) {
         if (id === emptyModuleId) return "export {};";
@@ -459,6 +468,7 @@ export function vitestPluginNext(): Plugin[] {
 
   return [
     ...createRunnerEnvironmentPlugins(environmentOf.ssr),
+    pageViteClientPlugin(registry, [environmentOf.ssr, environmentOf.browser]),
     {
       name: "vitest-plugin-rsc:next",
       enforce: "pre",
