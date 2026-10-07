@@ -52,10 +52,20 @@ function clearCookies(): void {
   cookiesToClear.clear();
 }
 
+// A page of another origin is not the app's: a browser would leave the app for
+// it, and this tab has the test to keep.
+function leftTheApp(url: URL): Error {
+  return new Error(
+    `vitest-plugin-rsc: the app navigated to another origin: ${url.href}. ` +
+      `A browser would leave the app for it, which this tab cannot do.`,
+  );
+}
+
 // The network between a browser and the Next.js server in this tab. It does
 // what a browser does for a same-origin request: send the cookies, store the
-// ones that come back, follow redirects.
-async function browserFetch(request: Request): Promise<Response> {
+// ones that come back, follow redirects. A page load, a `navigation`, that is
+// redirected to another origin leaves the app.
+async function browserFetch(request: Request, navigation = false): Promise<Response> {
   let url = new URL(request.url);
   let method = request.method;
   // Read once: a 307 or 308 sends the body again.
@@ -96,6 +106,7 @@ async function browserFetch(request: Request): Promise<Response> {
       }
       redirected = true;
       if (url.origin !== window.location.origin) {
+        if (navigation) throw leftTheApp(url);
         return nativeFetch(url, { method, headers: request.headers, body });
       }
       continue;
@@ -230,7 +241,10 @@ async function loadPage(
   if (pageOverrides) registry.pageOverrides = pageOverrides;
 
   // Not the browser's Request, which drops a `cookie` header.
-  const response = await browserFetch(new registry.Request(url, { ...init, signal: load.signal }));
+  const response = await browserFetch(
+    new registry.Request(url, { ...init, signal: load.signal }),
+    true,
+  );
   superseded();
   // A route handler can answer with anything. A browser would show it or
   // download it; there is no app in it to start.
@@ -338,9 +352,11 @@ type NavigateEvent = Event & {
   const { destination, hashChange, formData } = event as NavigateEvent;
   if (!page || destination.sameDocument || hashChange || !event.cancelable) return;
   const url = new URL(destination.url);
-  if (url.origin !== window.location.origin) return;
-
   event.preventDefault();
+  if (url.origin !== window.location.origin) {
+    reportError(leftTheApp(url));
+    return;
+  }
   loadPage(url, {
     method: formData ? "POST" : "GET",
     headers: { accept: "text/html" },

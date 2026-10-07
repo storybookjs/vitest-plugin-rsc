@@ -220,6 +220,21 @@ test("loads the page when the app navigates without its router", async () => {
   expect(window.location.pathname).toBe("/notes");
 });
 
+test("reports a navigation to another origin and stays on the page", async () => {
+  await renderServer({ url: "/" });
+  // An uncaught error, which would fail this test run too.
+  const reportError = vi.spyOn(window, "reportError").mockImplementation(() => {});
+
+  // Where a sign-in or a checkout sends the user.
+  window.location.assign("https://example.com/checkout");
+
+  await expect.poll(() => reportError.mock.calls).toHaveLength(1);
+  expect(String(reportError.mock.calls[0]![0])).toMatch(
+    "the app navigated to another origin: https://example.com/checkout",
+  );
+  await expect.element(page.getByRole("heading", { name: "Home" })).toBeVisible();
+});
+
 async function RequestInfo() {
   return (
     <dl>

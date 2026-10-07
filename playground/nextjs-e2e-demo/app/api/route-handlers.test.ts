@@ -84,6 +84,12 @@ test("opens the page a route handler redirects to", async () => {
   await expect.element(page.getByRole("heading", { name: "Plan the week" })).toBeVisible();
 });
 
+test("does not open a page of another origin that a route handler redirects to", async () => {
+  await expect(renderServer({ url: "/api/sign-in" })).rejects.toThrow(
+    "the app navigated to another origin: https://example.com/sign-in?return_to=/notes",
+  );
+});
+
 test("does not open the response of a route handler that is not a document", async () => {
   await expect(renderServer({ url: "/api/echo/a" })).rejects.toThrow(
     /\/api\/echo\/a responded with application\/json, which is not a page to open/,
