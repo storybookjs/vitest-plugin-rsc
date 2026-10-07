@@ -71,17 +71,27 @@ And for the browser side, a page load: the tab cannot navigate away from the tes
 
 ## Server Code In A Tab
 
-A tab has a `window`, and a `fetch` that knows nothing of Next's cache. Server code must see neither. A tab cannot lose its globals, but a module can be compiled not to see them, so that is what happens to every module of a server layer:
+A tab has a `window`, and a `fetch` that Next has not patched. Server code must see neither. A tab cannot lose its globals, but a module can be compiled not to see them, so that is what happens to the modules of a server layer: your JavaScript and TypeScript source files, and the dependencies Vite pre-bundles.
 
-- `window`, `document`, `location`, `localStorage` and `sessionStorage` are `undefined`. They become variables of the module, which nothing assigns. So `typeof window` is `"undefined"`, which is how libraries tell a server from a browser, and `window.innerWidth` throws.
-- `fetch`, `Request` and `Response` are the server's, also when they are written `globalThis.fetch`. A `fetch` with `cache` or `next: { tags }` goes through Next.
+`fetch`, `Request` and `Response` are the server's in both, also when they are written `globalThis.fetch`. So a `fetch` in your server code is the one Next patches: two calls for the same URL in one render are one request. It is still a request the tab makes, so the browser's rules for one apply, like CORS.
 
-This is the tab's version of what `next build` does, which replaces `typeof window` in the bundles it makes for a server. It applies to your source files and to the dependencies Vite pre-bundles, in both server layers. A Client Component is a module of two layers: it has no `window` while Next renders it to HTML in `ssr`, and has one in `browser`.
+The globals only a browser has are `window`, `document`, `location`, `localStorage` and `sessionStorage`. How they are hidden differs:
+
+|                        | Your source files                                      | Pre-bundled dependencies                     |
+| ---------------------- | ------------------------------------------------------ | -------------------------------------------- |
+| How                    | The five names are declared as variables of the module | `typeof window` is replaced by `"undefined"` |
+| `typeof window`        | `"undefined"`                                          | `"undefined"`                                |
+| `window.innerWidth`    | Throws a `TypeError`                                   | Reads the tab's `window`                     |
+| The text of a function | Unchanged                                              | `typeof window` in it is replaced            |
+
+The second column is what `next build` does to the bundles it makes for a server, and what libraries rely on to tell a server from a browser. The first goes further, and cannot be used for dependencies: a bundler puts many modules in one scope and renames the variables that clash, inside functions too. That matters for a function that is sent to the browser as text. `next-themes` does that with its theme script, `` `(${script.toString()})()` ``, and in the page that text has to find the tab's `document`.
+
+A Client Component is a module of two layers: it has no `window` while Next renders it to HTML in `ssr`, and has one in `browser`.
 
 The `rsc` layer shares its Vite environment with the test, and a test needs the tab. So in that environment these are not server code:
 
 - the test files and setup files of your Vitest config: `test.include` and `test.setupFiles`,
-- Vitest and Vite, and the packages they depend on,
+- Vitest, Vite and the `@vitest/*` packages you have installed, and the packages those depend on,
 - what you list in `testModules`: a helper that reads `document.cookie`, or a package the test runs in the tab.
 
 ```ts
@@ -91,21 +101,24 @@ vitestPluginNext({
 });
 ```
 
-Everything else in that environment is server code, including a module that only a test imports. A component that is defined in a test file is code of that test file, and sees the tab.
+Everything else in that environment is server code, including a module that only a test imports and a file with in-source tests. A component that is defined in a test file is code of that test file, and sees the tab. A package that a test or a setup file uses in the tab, and that is not one of Vitest's, has to be in `testModules` if it asks `typeof window`.
 
 What this does not cover:
 
-- Code that looks a global up at runtime: `self.window`, `"window" in globalThis`, a `globalThis` that is passed to a function. `navigator` is left alone, since servers have one too, so it is the browser's.
-- Reading `window` where there is none throws a `ReferenceError` on a server. Here it gives `undefined`: `window.innerWidth` throws a `TypeError`, and `if (window)` is false where a server would throw.
-- A dependency that is left out of pre-bundling with `optimizeDeps.exclude` is served as it is.
-- The text of a function is not changed, on purpose. `next-themes` sends its theme script to the browser as `` `(${script.toString()})()` ``, and there it has to find the tab's `document`.
+- Everything else a browser has: `navigator`, `self`, `history`, `XMLHttpRequest`, `HTMLElement`, `indexedDB`, `matchMedia`, `requestAnimationFrame`. A library that asks for one of those to tell a browser from a server still finds it.
+- Code that looks a global up at runtime: `globalThis.window`, `self.window`, `"window" in globalThis`.
+- A dependency that reads `window` without asking `typeof window` first. On a server that throws. Here it reads the tab's.
+- In your source files, reading `window` throws a `ReferenceError` on a server. Here it gives `undefined`: `window.innerWidth` throws a `TypeError`, and `if (window)` is false where a server would throw.
+- Files that are not JavaScript or TypeScript when Vite loads them, like `.vue` or `.mdx`, and modules that another plugin generates.
+- Dependencies in files other than `.js`, `.mjs` and `.cjs`, and a dependency that is left out of pre-bundling with `optimizeDeps.exclude`: those are served as they are. Vitest leaves out `msw`.
+- With `resolve.preserveSymlinks`, the packages of Vitest are not recognized.
 
 ## Not Yet
 
 - `next/font`, `next/image` optimization, and metadata files like `icon.png` and `sitemap.ts`. These are build-time loaders that still have to be ported.
 - Route handlers (`route.ts`), `middleware.ts` / `proxy.ts`, and the redirects, rewrites and headers of `next.config`.
 - `"use cache"` and `unstable_cache`. The store a request entered first is the one a later task reads, so code that resumes after an `await` inside a cache scope reads the request's store instead of the cache's.
-- Next's `fetch` cache within one render only. A `fetch` with `cache: "force-cache"` is deduped while a page renders. Whether its result is kept for the next request, and when a test starts without it, is not settled.
+- Next's `fetch` cache across requests. A `fetch` in server code goes through Next, which dedupes it while a page renders. Whether `cache: "force-cache"` and `next: { tags }` keep a result for the next request, and when a test starts without it, is not settled or tested.
 - Hiding the tab from server code has gaps: see [Server Code In A Tab](#server-code-in-a-tab).
 - `vi.mock()` replaces a module in the `rsc` layer, where the test runs. The other two layers load their modules themselves, so a mock does not reach a Client Component.
 - One request at a time. A request that waits for another one that the test has not sent yet will wait forever.

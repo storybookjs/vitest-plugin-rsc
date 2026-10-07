@@ -20,7 +20,7 @@ afterEach(() => {
 
 // The requests the service in vitest.config.ts has had for a key, this one included.
 async function requestHits(key: string): Promise<number> {
-  const response = await fetch(`/service/hits?key=${key}`, { cache: "force-cache" });
+  const response = await fetch(`/service/hits?key=${key}`);
   const { hits } = (await response.json()) as { hits: number };
   return hits;
 }
@@ -46,10 +46,13 @@ test("hides the window of the tab from a Server Component", async () => {
   await expect.element(page.getByText("Viewport: unknown")).toBeVisible();
 });
 
-test("leaves the window of the tab to a test file", () => {
+test("leaves the tab to a test file", () => {
   expect(typeof window).toBe("object");
   expect(typeof document).toBe("object");
   expect(window.location.origin).toBe(new URL(import.meta.url).origin);
+  // The tab's Response, which drops the header a server's keeps.
+  const response = new Response(null, { headers: { "set-cookie": "session=ada" } });
+  expect(response.headers.getSetCookie()).toEqual([]);
 });
 
 test("leaves the tab to a module that the config lists in testModules", async () => {
@@ -61,7 +64,7 @@ test("leaves the tab to a module that the config lists in testModules", async ()
   await expect.element(page.getByText("Signed in as grace")).toBeVisible();
 });
 
-test("makes one request for a cached fetch that a Server Component calls twice", async () => {
+test("sends the fetch of a Server Component through Next: two calls in a render are one request", async () => {
   const key = crypto.randomUUID();
 
   await renderServer({ url: `/hits?key=${key}` });
@@ -69,14 +72,6 @@ test("makes one request for a cached fetch that a Server Component calls twice",
   // Both calls got the answer to the first request.
   await expect.element(page.getByText("Hits: 1 and 1")).toBeVisible();
   // And it was the only one: this is the second.
-  expect(await requestHits(key)).toBe(2);
-});
-
-test("leaves the fetch of the tab to a test file", async () => {
-  const key = crypto.randomUUID();
-
-  // Not Next's fetch, which would answer the second call from its cache.
-  expect(await requestHits(key)).toBe(1);
   expect(await requestHits(key)).toBe(2);
 });
 

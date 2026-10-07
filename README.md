@@ -740,7 +740,7 @@ Without a `url` the node renders at `/`. The page module itself is not loaded, s
 
 `vi.mock()` works on the modules your Server Components and Server Actions import. It does not reach Client Components, which load in module graphs of their own.
 
-The server runs in a tab, but your server code does not see the tab. In Server Components, Server Actions and the modules and packages they import, and in Client Components while they render to HTML, `typeof window` is `"undefined"` and `fetch` is the server's, with Next's `cache` and `next: { tags }` options. Test files and setup files keep the tab's `window` and `fetch`. A helper module or a package that the test needs in the tab as well is listed in `testModules`:
+The server runs in a tab, but your server code does not see the tab. In Server Components, Server Actions and the modules and packages they import, and in Client Components while they render to HTML, `typeof window` is `"undefined"` and `fetch` is the one Next patches. Test files and setup files keep the tab's `window` and `fetch`. A helper module or a package that the test needs in the tab as well is listed in `testModules`:
 
 ```ts
 vitestPluginNext({ testModules: ["test/**"] });

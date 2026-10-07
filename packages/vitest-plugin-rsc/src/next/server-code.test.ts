@@ -1,6 +1,7 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { runInThisContext } from "node:vm";
+import { rolldown } from "rolldown";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { compileServerCode, createServerCode } from "./server-code.ts";
 
@@ -21,22 +22,18 @@ afterEach(() => {
 });
 
 // What a module leaves in `result`, compiled as server code.
-async function run(source: string): Promise<unknown> {
-  const compiled = await compileServerCode(source, "/app/module.js", registry);
+async function run(source: string, options?: { bundled: boolean }): Promise<unknown> {
+  const compiled = await compileServerCode(source, "/app/module.js", registry, options);
   return runInThisContext(`(() => { ${compiled?.code ?? source}\nreturn result; })()`);
 }
 
-test("hides the globals of a tab", async () => {
+test("hides the globals of a tab from a source file", async () => {
   expect(await run(`var result = [typeof window, typeof document, typeof location];`)).toEqual([
     "undefined",
     "undefined",
     "undefined",
   ]);
   await expect(run(`var result = window.innerWidth;`)).rejects.toThrow(TypeError);
-  expect(await run(`var result = [globalThis.window, typeof globalThis.document];`)).toEqual([
-    undefined,
-    "undefined",
-  ]);
 });
 
 test("leaves a module its own bindings", async () => {
@@ -54,8 +51,8 @@ test("leaves a module its own bindings", async () => {
   expect(compiled?.code).toMatch(/\nvar window, location, localStorage, sessionStorage;\n$/);
 });
 
-test("keeps the code of a function, for an app that sends it to the browser as text", async () => {
-  const source = `function setTheme() { document.title = localStorage.getItem("theme"); }`;
+test("keeps the text of a function in a source file, for an app that sends it to the browser", async () => {
+  const source = `function setTheme() { if (typeof document !== "undefined") document.title = localStorage.getItem("theme"); }`;
 
   expect(await run(`${source} var result = setTheme.toString();`)).toBe(source);
 });
@@ -77,6 +74,10 @@ test("reads fetch, Request and Response from the server", async () => {
   ]);
   expect(await run(`var result = new Response().constructor.name;`)).toBe("ServerResponse");
   expect(await run(`function load(fetch) { return fetch(); } var result = load(() => 1);`)).toBe(1);
+  // Next patches the server's fetch by assigning to it.
+  expect(await run(`globalThis.fetch = () => "patched"; var result = __server__.fetch();`)).toBe(
+    "patched",
+  );
 });
 
 test("leaves code alone that names none of them", async () => {
@@ -85,12 +86,89 @@ test("leaves code alone that names none of them", async () => {
   ).toBeUndefined();
 });
 
+test("replaces typeof window in a module that will be bundled, and nothing else of it", async () => {
+  const bundled = { bundled: true };
+
+  expect(await run(`var result = [typeof window, typeof document];`, bundled)).toEqual([
+    "undefined",
+    "undefined",
+  ]);
+  expect(
+    await run(`function f(window) { return typeof window; } var result = f(1);`, bundled),
+  ).toBe("number");
+  // Not hidden: a bundler would rename a variable that hides it.
+  expect(await run(`var result = window.innerWidth;`, bundled)).toBe(390);
+  // A CommonJS module can return at its top level.
+  const compiled = await compileServerCode(
+    `if (typeof window === "undefined") return;\nmodule.exports = 1;`,
+    "/dependency/index.js",
+    registry,
+    bundled,
+  );
+  expect(compiled?.code).toContain(`"undefined" === "undefined"`);
+});
+
+// Pre-bundles modules the way Vite's dependency optimizer does: Rolldown, with
+// the plugin of a server layer.
+async function prebundle(modules: Record<string, string>): Promise<string> {
+  const serverCode = createServerCode(registry);
+  const build = await rolldown({
+    input: Object.keys(modules)[0]!,
+    plugins: [
+      {
+        name: "modules",
+        resolveId: (source, importer) =>
+          importer ? path.posix.join(path.posix.dirname(importer), source) : source,
+        load: (id) => modules[id],
+      },
+      serverCode.optimizerPlugin("ssr"),
+    ],
+  });
+  const { output } = await build.generate({ format: "esm" });
+  return output[0].code;
+}
+
+test("keeps the text of a function in a pre-bundled package of several modules", async () => {
+  const script = `function script() { document.title = window.name; }`;
+  const code = await prebundle({
+    "/dependency/index.js": `
+      import { other } from "./other.js";
+      ${script}
+      globalThis.result = [typeof window, other(), script.toString()];`,
+    "/dependency/other.js": `
+      export const other = () => (typeof window === "undefined" ? "server" : window.name);`,
+  });
+
+  runInThisContext(code);
+
+  const [first, second, text] = (globalThis as unknown as { result: string[] }).result;
+  expect([first, second]).toEqual(["undefined", "server"]);
+  // The bundler prints it again, with its own whitespace and the same names.
+  expect(text!.replace(/\s+/g, " ")).toBe(script);
+});
+
+test("pre-bundles a file that is not plain JavaScript as it is, with a warning", async () => {
+  const warn = vi.fn();
+  const { transform } = createServerCode(registry).optimizerPlugin("ssr");
+
+  const result = await transform.call(
+    { warn },
+    `export const Width = () => <p>{typeof window}</p>;`,
+    "/dependency/width.js",
+  );
+
+  expect(result).toBeUndefined();
+  expect(warn).toHaveBeenCalledWith(expect.stringContaining("/dependency/width.js"));
+});
+
 test("tells the server code of a layer from the code of the test", () => {
   const serverCode = createServerCode(registry, { testModules: ["test/**"] });
   serverCode.configure(root);
-  serverCode.setTestFiles((file) => file.endsWith(".test.tsx"));
+  serverCode.addTestFiles((file) => file.endsWith(".test.tsx"));
+  // A second project that shares the plugin.
+  serverCode.addTestFiles((file) => file.endsWith("vitest.setup.ts"));
   const file = (name: string) => path.join(root, name);
-  const vitest = fileURLToPath(import.meta.resolve("vitest"));
+  const packageOf = (name: string) => fileURLToPath(import.meta.resolve(name));
 
   // Everything in the ssr layer is server code, but nothing in the browser's.
   expect(serverCode.isServerCode(file("app/page.test.tsx"), "ssr")).toBe(true);
@@ -100,8 +178,11 @@ test("tells the server code of a layer from the code of the test", () => {
   expect(serverCode.isServerCode(file("app/page.tsx"), "rsc")).toBe(true);
   expect(serverCode.isServerCode(file("node_modules/zod/index.js"), "rsc")).toBe(true);
   expect(serverCode.isServerCode(file("app/page.test.tsx"), "rsc")).toBe(false);
+  expect(serverCode.isServerCode(file("vitest.setup.ts"), "rsc")).toBe(false);
   expect(serverCode.isServerCode(file("test/render.tsx"), "rsc")).toBe(false);
-  expect(serverCode.isServerCode(vitest, "rsc")).toBe(false);
+  // Vitest, and the provider that drives the browser for it.
+  expect(serverCode.isServerCode(packageOf("vitest"), "rsc")).toBe(false);
+  expect(serverCode.isServerCode(packageOf("@vitest/browser-playwright"), "rsc")).toBe(false);
 
   // The runtime of this package is written for where it runs.
   const ownRuntime = fileURLToPath(new URL("./ssr.ts", import.meta.url));

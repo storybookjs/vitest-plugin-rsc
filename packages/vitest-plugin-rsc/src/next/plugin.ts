@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { transformProxyExport } from "@vitejs/plugin-rsc/transforms";
-import { normalizePath, parseAstAsync, transformWithOxc, type Plugin } from "vite";
+import { createFilter, normalizePath, parseAstAsync, transformWithOxc, type Plugin } from "vite";
 import type { TestProject } from "vitest/node";
 import { createRunnerEnvironmentPlugins } from "../runner-environment.ts";
 import { loadNextProject, type NextLayer, type NextProject, type NextRoute } from "./project.ts";
@@ -517,7 +517,12 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
             // such an import undefined.
             shimMissingExports: true,
             // Vite only defines NODE_ENV for dependencies.
-            transform: { define: definesOf(project, layer) },
+            transform: {
+              define: {
+                ...definesOf(project, layer),
+                ...(layer !== "browser" && serverCode.cacheKey),
+              },
+            },
           },
         });
 
@@ -564,14 +569,14 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
       },
       // Vitest's hook for a plugin of a project: what its config says is a
       // test file or a setup file is not server code.
-      configureVitest({ project: testProject }: { project: TestProject }) {
-        const setupFiles = new Set(
-          testProject.config.setupFiles.map((file) => normalizePath(file)),
-        );
-        serverCode.setTestFiles(
-          // Not a file with in-source tests, which is a file of the app.
-          (file) => setupFiles.has(file) || testProject.matchesTestGlob(file, () => ""),
-        );
+      configureVitest({ project: { config: test } }: { project: TestProject }) {
+        const setupFiles = new Set(test.setupFiles.map((file) => normalizePath(file)));
+        // `test.include`, matched the way Vitest does. Not `includeSource`:
+        // a file with tests in its source is a file of the app.
+        const isIncluded = createFilter(test.include, test.exclude, {
+          resolve: test.dir || test.root,
+        });
+        serverCode.addTestFiles((file) => setupFiles.has(file) || isIncluded(file));
       },
       resolveId(source) {
         if (
