@@ -426,9 +426,21 @@ app/profile/page.tsx changes
 - **A route that no test file has loaded** runs nothing. Neither does a test file that has not run since Vitest started: what it loads is not known yet.
 - **A test file that changes** is forgotten until it has run again.
 - **Tailwind** has to be told apart: it registers every file it scans as a dependency of the stylesheet, and Vitest follows that too, so a save of any file runs every test file whose page has the stylesheet. `playground/nextjs-notes-demo/test/ignore-watched-only-modules.ts` takes those out with the same hook.
-- `vitest related` and `vitest --changed` do not run the app, so they do not know the routes: see [Not Yet](#not-yet).
+  `scripts/watch-probe.mjs` says which test files a change runs.
 
-`scripts/watch-probe.mjs` says which test files a change runs.
+### `vitest --changed` And `vitest related`
+
+These pick the test files of a change before anything has run, so the tab cannot say what they load. Vitest answers from the imports of each test file: it transforms the file in the `ssr` environment, follows the imports that are files of the project, and keeps the test files that reach a changed file. For an app of Next that fails twice. A test file does not import the page it opens. And the `ssr` environment is none of the three layers: it has no compiler of Next, so it cannot read a file of the app that needs one, like a `.js` file with JSX.
+
+A run does know (`related.ts`). When a test file has passed, the files it depends on are in Vite's module graphs: what it imports, and what the routes it loaded import, in each layer, since a Client Component has its imports in the browser layer. They are written to `vitest-plugin-rsc/related.json` in Vite's cache directory. At the next lookup, the plugin adds the changed files among them to the test file as imports that never run, and gives each file a test file depends on an empty result in the `ssr` environment, so that Vitest does not transform it.
+
+- **Never too few.** A test file that is not written down depends on every file of the project. That is one that failed, one that ran in part (a name pattern, a line, a tag), and every test file of a checkout without the cache.
+- **A file that comes to the `app` directory or goes** can change which route a URL gets and which layouts a route has, without a change to a file that is written down. Then nothing that is written down counts.
+- **`next.config` and `tsconfig.json`** are files every test file depends on.
+- **The `ssr` environment is only Vitest's lookup** for a project in browser mode: its own code and the global setup run in another one. That is why its results can be empty.
+- **Not known:** a test that loads a route only some of the time, like one behind a condition on the date, and a file outside the project root that no module imports.
+
+`scripts/related-probe.mjs` says which test files `vitest related` picks.
 
 ## Not Yet
 
