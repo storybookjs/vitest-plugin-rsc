@@ -4,6 +4,7 @@ import { page } from "vitest/browser";
 import { cookies, headers } from "next/headers";
 import { Counter } from "./components/counter.tsx";
 import { FavoriteButton } from "./components/favorite-button.tsx";
+import { Widget } from "./components/widget.tsx";
 import { db, type Note } from "./lib/notes.ts";
 
 let consoleError: MockInstance<typeof console.error>;
@@ -347,6 +348,18 @@ test("renders the not-found page for a node at a url that is not a route", async
   expect(response.status).toBe(404);
   await expect.element(page.getByRole("heading", { name: "Nothing here" })).toBeVisible();
   await expect.element(page.getByRole("heading", { name: "Nowhere" })).not.toBeInTheDocument();
+});
+
+test("leaves the page when a Client Component makes a React root of its own", async () => {
+  const { unmount } = await renderServer(<Widget />, { url: "/" });
+  await expect.element(page.getByText("Widget")).toBeVisible();
+  const widgetUnmount = vi.fn();
+  window.addEventListener("widget-unmount", widgetUnmount);
+
+  await unmount();
+
+  window.removeEventListener("widget-unmount", widgetUnmount);
+  expect(widgetUnmount).toHaveBeenCalledOnce();
 });
 
 test("replaces the page when a component redirects in the render after a Server Action", async () => {
