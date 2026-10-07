@@ -3,12 +3,16 @@ import { page } from "vitest/browser";
 import { cleanup, renderServer } from "vitest-plugin-rsc/next";
 import { NextCacheProbe, resetNextCacheProbe } from "./next-cache-probe.tsx";
 
-// Next's caches do not work on `vitest-plugin-rsc/next` yet (package 2a): `fetch`
+// Next's caches do not work on `vitest-plugin-rsc/next` on this branch: `fetch`
 // in the app's server code is the browser's, and nothing stores what
 // `unstable_cache` computes between requests. The tests that need them are
-// skipped, each with what it runs into. Their assertions are unchanged.
+// skipped, each with what it fails on. Their assertions are unchanged.
+// Pull request #62 (`kasper/next-caching`) is what un-skips them.
+//
+// The three tests that run assert nothing that needs a cache: they pass
+// without one.
 
-// Package 2a: identical `force-cache` fetches in one render are two requests: no request memoization.
+// #62: identical `force-cache` fetches in one render are two requests: no request memoization.
 test.skip("server refresh rerenders without invalidating cached data or fetches", async () => {
   await renderNextCacheProbe();
 
@@ -25,7 +29,7 @@ test.skip("server refresh rerenders without invalidating cached data or fetches"
   await expect.element(page.getByText("cached fetch duplicate: default fetch 1")).toBeVisible();
 });
 
-// Package 2a: identical `force-cache` fetches in one render are two requests: no request memoization.
+// #62: identical `force-cache` fetches in one render are two requests: no request memoization.
 test.skip("identical force-cache fetches are deduped in one render and reused on refresh", async () => {
   await renderNextCacheProbe();
 
@@ -72,7 +76,7 @@ test("server actions without refresh or invalidation do not rerender the current
   await expect.element(page.getByText("action writes: 0")).toBeVisible();
 });
 
-// Package 2a: `unstable_cache` computes again on the next request: no Data Cache between requests.
+// #62: `unstable_cache` computes again on the next request: no Data Cache between requests.
 test.skip("refresh renders uncached action writes while preserving cached reads", async () => {
   await renderNextCacheProbe();
 
@@ -89,7 +93,7 @@ test.skip("refresh renders uncached action writes while preserving cached reads"
   await expect.element(page.getByText("cached fetch: default fetch 1")).toBeVisible();
 });
 
-// Package 2a: a `force-cache` fetch is requested again on the next render: no Data Cache for `fetch`.
+// #62: a `force-cache` fetch is requested again on the next render: no Data Cache for `fetch`.
 test.skip("updateTag invalidates unstable_cache data for the next server render", async () => {
   await renderNextCacheProbe();
 
@@ -103,7 +107,7 @@ test.skip("updateTag invalidates unstable_cache data for the next server render"
   await expect.element(page.getByText("cached fetch: default fetch 1")).toBeVisible();
 });
 
-// Package 2a: a `force-cache` fetch is requested again on the next render: no Data Cache for `fetch`.
+// #62: no request memoization: the duplicate fetch of the first render got "fetch 2", so this render gets 3.
 test.skip("updateTag invalidates cached fetches for the next server render", async () => {
   await renderNextCacheProbe();
 
@@ -117,7 +121,7 @@ test.skip("updateTag invalidates cached fetches for the next server render", asy
   await expect.element(page.getByText("cached data: default data 1")).toBeVisible();
 });
 
-// Package 2a: a `force-cache` fetch is requested again on the next render: no Data Cache for `fetch`.
+// #62: no request memoization: the duplicate fetch of the first render got "fetch 2", so this render gets 3.
 test.skip("updating multiple tags invalidates unstable_cache and cached fetch together", async () => {
   await renderNextCacheProbe();
 
@@ -143,7 +147,7 @@ test("revalidateTag with max updates cache metadata without rendering immediatel
   await expect.element(page.getByText("cached fetch: default fetch 1")).toBeVisible();
 });
 
-// Package 2a: a `force-cache` fetch is requested again on the next render: no Data Cache for `fetch`.
+// #62: a `force-cache` fetch is requested again on the next render: no Data Cache for `fetch`.
 test.skip("revalidateTag with expire 0 invalidates cached data for the next server render", async () => {
   await renderNextCacheProbe();
 
@@ -157,7 +161,7 @@ test.skip("revalidateTag with expire 0 invalidates cached data for the next serv
   await expect.element(page.getByText("cached fetch: default fetch 1")).toBeVisible();
 });
 
-// Package 2a: a `force-cache` fetch is requested again on the next render: no Data Cache for `fetch`.
+// #62: no request memoization: the duplicate fetch of the first render got "fetch 2", so this render gets 3.
 test.skip("revalidatePath rerenders the current path with fresh cached reads", async () => {
   await renderNextCacheProbe();
 
@@ -174,7 +178,7 @@ test.skip("revalidatePath rerenders the current path with fresh cached reads", a
   await expect.element(page.getByText("cached fetch: default fetch 2")).toBeVisible();
 });
 
-// Package 2a: identical `force-cache` fetches in one render are two requests: no request memoization.
+// #62: identical `force-cache` fetches in one render are two requests: no request memoization.
 test.skip("Next cache state is reset by cleanup", async () => {
   await renderNextCacheProbe("first");
 

@@ -87,15 +87,13 @@ test("HTTP access fallback action errors keep their status and Flight payload", 
 test("an action id that names no action gets Next's unrecognized-action response", async () => {
   await renderServer(<NextActionProtocolProbe />, { url: "/fixtures" });
 
-  // Shaped like an id of Next's own build, which is what an older deployment
-  // of the app would send.
   const response = await ignoreExpectedConsoleWarn(() =>
     handleRequest("/fixtures", {
       method: "POST",
       headers: {
-        [ACTION_HEADER]: "00".repeat(21),
+        [ACTION_HEADER]: "missing-action-id",
       },
-      body: "[]",
+      body: "",
     }),
   );
 

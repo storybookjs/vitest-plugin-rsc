@@ -117,15 +117,23 @@ test("an optional catch-all route matches without extra segments", async () => {
   });
 });
 
+test("a catch-all route does not match without extra segments", async () => {
+  const { response } = await renderServer(<NextRouterProbe />, { url: "/fixtures/docs" });
+
+  expect(response.status).toBe(404);
+  await expect.element(page.getByText("This page could not be found.")).toBeVisible();
+  await expect.element(page.getByText("pathname: /fixtures/docs")).not.toBeInTheDocument();
+});
+
 test("server actions without refresh leave the current server tree stale", async () => {
   resetServerRefreshProbe();
 
   await renderServer(<ServerRefreshProbe shouldRefresh={false} />, { url: "/fixtures" });
 
   await expect.element(page.getByText("server count: 0")).toBeVisible();
-  await page.getByRole("button", { name: "Increment" }).click();
+  await untilActionResponse(() => page.getByRole("button", { name: "Increment" }).click());
 
-  await expect.poll(() => readServerRefreshProbe()).toBe(1);
+  expect(readServerRefreshProbe()).toBe(1);
   await expect.element(page.getByText("server count: 0")).toBeVisible();
 });
 
@@ -152,13 +160,33 @@ test("client router.refresh updates the current server tree", async () => {
   );
 
   await expect.element(page.getByText("server count: 0")).toBeVisible();
-  await page.getByRole("button", { name: "Increment" }).click();
-  await expect.poll(() => readServerRefreshProbe()).toBe(1);
+  await untilActionResponse(() => page.getByRole("button", { name: "Increment" }).click());
+  expect(readServerRefreshProbe()).toBe(1);
   await expect.element(page.getByText("server count: 0")).toBeVisible();
 
   await page.getByRole("button", { name: "Refresh router" }).click();
   await expect.element(page.getByText("server count: 1")).toBeVisible();
 });
+
+// Runs a Server Action and waits until the router has its whole response and
+// a frame has passed: a tree that is still stale then was not refreshed.
+async function untilActionResponse(trigger: () => Promise<unknown>) {
+  const fetch = globalThis.fetch;
+  const bodies: Promise<string>[] = [];
+  globalThis.fetch = async (input, init) => {
+    const response = await fetch(input, init);
+    if (new Request(input, init).headers.has("next-action")) bodies.push(response.clone().text());
+    return response;
+  };
+  try {
+    await trigger();
+    await expect.poll(() => bodies.length).toBe(1);
+    await Promise.all(bodies);
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+  } finally {
+    globalThis.fetch = fetch;
+  }
+}
 
 async function expectRouterState({
   pathname,

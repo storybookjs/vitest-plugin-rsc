@@ -598,7 +598,7 @@ export async function FlashProbe() {
 
 ### Cache And Revalidation
 
-Server Components can use tagged cached `fetch` calls, and Server Actions can refresh the current tree or invalidate those tags. The outbound `fetch` is normally intercepted by MSW in tests — see the setup file of [`playground/nextjs-notes-demo`](playground/nextjs-notes-demo) for a worker that does.
+Server Components can use tagged cached `fetch` calls, and Server Actions can refresh the current tree or invalidate those tags. The outbound `fetch` is normally intercepted by MSW in tests — the setup file of [`playground/nextjs-notes-demo`](playground/nextjs-notes-demo) starts such a worker, though that demo itself runs on [Whole Next.js Routes](#whole-nextjs-routes) and not on these helpers.
 
 ```tsx
 import { refresh, revalidatePath, revalidateTag, updateTag } from "next/cache";

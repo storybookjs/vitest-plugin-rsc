@@ -1,4 +1,13 @@
-import { vi, beforeAll, beforeEach, afterEach, afterAll, expect, inject } from "vitest";
+import {
+  vi,
+  beforeAll,
+  beforeEach,
+  afterEach,
+  afterAll,
+  expect,
+  inject,
+  type MockInstance,
+} from "vitest";
 import { page } from "vitest/browser";
 import { PGlite } from "@electric-sql/pglite";
 import { drizzle } from "drizzle-orm/pglite";
@@ -106,15 +115,11 @@ beforeAll(async () => {
   await base.exec(inject("testSchemaSQL"));
 });
 
-const consoleErrors: unknown[][] = [];
-const consoleError = console.error;
-console.error = (...args: unknown[]) => {
-  consoleErrors.push(args);
-  consoleError(...args);
-};
+let consoleError: MockInstance<typeof console.error>;
 
 beforeEach(async () => {
-  consoleErrors.length = 0;
+  consoleError = vi.spyOn(console, "error");
+  consoleError.mockClear();
   // The plugin has left the page of the previous test by now, so the pointer
   // moves in a document that no longer changes.
   await resetInteractiveState();
@@ -140,7 +145,7 @@ afterEach(async () => {
   await page.viewport(MOBILE_VIEWPORT.width, MOBILE_VIEWPORT.height);
   // React reports a hydration mismatch with console.error, and Next a render
   // that failed on the server. A test that expects one silences it with a spy.
-  expect(consoleErrors).toEqual([]);
+  expect(consoleError.mock.calls).toEqual([]);
 });
 
 afterAll(async () => {

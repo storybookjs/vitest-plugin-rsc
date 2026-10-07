@@ -107,7 +107,7 @@ jobs:
         run: |
           pnpm --filter vitest-plugin-rsc add -D "next@${NEXT_VERSION}"
           pnpm --filter nextjs-no-msw-demo add "next@${NEXT_VERSION}"
-      - run: pnpm --dir playground/nextjs-notes-demo exec playwright install --with-deps --only-shell chromium
+      - run: pnpm --dir playground/nextjs-no-msw-demo exec playwright install --with-deps --only-shell chromium
       - run: pnpm build
       - name: Test Next.js surfaces
         run: |
