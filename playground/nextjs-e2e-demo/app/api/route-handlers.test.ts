@@ -269,6 +269,21 @@ test("keeps the Set-Cookie of a plain Response in a route handler", async () => 
   expect(document.cookie).toBe("plain=1");
 });
 
+test("keeps the Set-Cookie of Response.json() in a route handler", async () => {
+  const response = await handleRequest("/api/plain/json");
+
+  expect(response.headers.get("content-type")).toBe("application/json");
+  expect(response.headers.getSetCookie()).toEqual(["plain=json; Path=/"]);
+  expect(await response.json()).toEqual({ plain: true });
+});
+
+test("keeps a Set-Cookie header of NextResponse.json() in a route handler", async () => {
+  const response = await handleRequest("/api/session", { method: "POST" });
+
+  expect(response.headers.getSetCookie()).toEqual(["session=ada; Path=/"]);
+  expect(await response.json()).toEqual({ user: "ada" });
+});
+
 test("leaves a same-origin fetch() that is not a route of the app to the dev server", async () => {
   // The source of this module's neighbour, which only the dev server has.
   const response = await fetch(new URL("../lib/weather.ts", import.meta.url));
