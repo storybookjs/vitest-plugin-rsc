@@ -324,6 +324,32 @@ test("lets go of a page that the test has left, with all of its modules", async 
     .toBe(true);
 });
 
+test("lets go of a page that rendered a portal in the body", async () => {
+  const tab = globalThis as { __viteRscCallServer?: object };
+  await renderServer({ url: "/help" });
+  // React adds its listeners to where a portal renders: the body.
+  await page.getByRole("button", { name: "Help" }).click();
+  await page.getByRole("dialog", { name: "Help" }).getByRole("button", { name: "Close" }).click();
+  await expect.element(page.getByRole("dialog")).not.toBeInTheDocument();
+  // A function of the page's own modules.
+  const callServer = new WeakRef(tab.__viteRscCallServer!);
+
+  await renderServer({ url: "/" });
+  // The browser keeps the element that was clicked last, and with it its
+  // page, until the pointer is somewhere else.
+  await page.getByRole("heading", { name: "Home" }).hover();
+
+  await expect
+    .poll(
+      async () => {
+        await cdp().send("HeapProfiler.collectGarbage");
+        return callServer.deref() === undefined;
+      },
+      { timeout: 4000, interval: 100 },
+    )
+    .toBe(true);
+});
+
 test("lets go of a node that the test has left, also in a container of the test's", async () => {
   const tab = globalThis as { __viteRscCallServer?: object };
   // The test keeps this container, and React adds its listeners to it, not

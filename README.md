@@ -180,6 +180,8 @@ A URL that is not a route gets the app's not-found page, with status `404`.
 
 Before and after every test the page is left, the tab's cookies are cleared, and so is what the app put in `localStorage` and `sessionStorage`. The server forgets what it has cached. A test starts like a new browser context.
 
+A page has a `<body>` of its own, as in a browser. So read `document.body` when you need it: an element you kept from before the page is not the page's. Testing Library's `screen` is bound to the body at import, use `within(document.body)` or Vitest's `page`.
+
 ### Render One Component
 
 Pass a node to test one component instead of a whole page. It renders like Testing Library renders a component: in a `<div>` container in `document.body`, without the layouts of your app. Everything around it is still Next: the request, the cookies, Server Actions, the cache and the router.

@@ -4,6 +4,10 @@
 // rest of what is in the document steps aside for as long as the page is
 // there: a second `<title>` would hide the page's, and text in `<body>` is not
 // what React expects to hydrate.
+//
+// A page gets a `<body>` of its own, as it does in a browser. What the page
+// leaves on its body goes with it: React adds its listeners to the body when
+// a portal renders there, and they would keep the page.
 
 const runnerUrl = window.location.href;
 const elements = (of: Document) => [of.documentElement, of.head, of.body];
@@ -49,12 +53,19 @@ export function loadDocument(html: string, container?: Element): void {
   unloadDocument();
 
   // What was here before the page. Everything else is the page's to lose.
-  const before = new Set<Node>([...document.head.childNodes, ...document.body.childNodes]);
-  const parked: { node: Node; parent: Node }[] = [];
-  for (const node of container ? [] : before) {
-    if (staysDuringPage(node) || !node.parentNode) continue;
-    parked.push({ node, parent: node.parentNode });
-    node.parentNode.removeChild(node);
+  const runnerBody = document.body;
+  const before = new Set<Node>([...document.head.childNodes, ...runnerBody.childNodes]);
+  const parked: Node[] = [];
+  for (const node of container ? [] : document.head.childNodes) {
+    if (!staysDuringPage(node)) parked.push(node);
+  }
+  for (const node of parked) document.head.removeChild(node);
+  // The body of the page. What the runner needs moves into it, and back.
+  const pageBody = container ? undefined : document.createElement("body");
+  if (pageBody) {
+    const staying = Array.from(runnerBody.childNodes).filter(staysDuringPage);
+    document.documentElement.replaceChild(pageBody, runnerBody);
+    pageBody.append(...staying);
   }
 
   unload = () => {
@@ -64,7 +75,12 @@ export function loadDocument(html: string, container?: Element): void {
         if (!before.has(node) && !isViteStyle(node)) node.remove();
       }
     }
-    for (const { node, parent } of parked) parent.appendChild(node);
+    document.head.append(...parked);
+    if (pageBody) {
+      // In the order they are in: what stayed, and the CSS Vite added.
+      runnerBody.append(...pageBody.childNodes);
+      pageBody.replaceWith(runnerBody);
+    }
     elements(document).forEach((element, index) =>
       setAttributes(element, runnerAttributes[index]!),
     );
