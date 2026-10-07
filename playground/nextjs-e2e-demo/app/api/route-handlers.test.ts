@@ -1,11 +1,9 @@
-import { handleRequest, renderServer } from "vitest-plugin-rsc/next";
+import { handleRequest, renderServer } from "vitest-plugin-rsc/nextjs";
 import { afterEach, beforeEach, expect, test, vi, type MockInstance } from "vitest";
 import { page } from "vitest/browser";
 import { auditLog } from "../lib/audit.ts";
 import { db } from "../lib/notes.ts";
 import { getForecast } from "../lib/weather.ts";
-
-vi.mock("../lib/weather.ts");
 
 let consoleError: MockInstance<typeof console.error>;
 

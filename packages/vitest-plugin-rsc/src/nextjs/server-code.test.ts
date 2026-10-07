@@ -7,7 +7,7 @@ import { compileServerCode, createServerCode } from "./server-code.ts";
 
 const registry = "globalThis.__server__";
 // A project that has Vitest, for the packages of the test runner.
-const root = fileURLToPath(new URL("../../../../playground/next-e2e-demo", import.meta.url));
+const root = fileURLToPath(new URL("../../../../playground/nextjs-e2e-demo", import.meta.url));
 
 // A tab, as far as server code can tell.
 beforeEach(() => {

@@ -4,7 +4,7 @@ import { createEnv, type StandardSchemaV1 } from "@t3-oss/env-core";
 const text: StandardSchemaV1<unknown, string> = {
   "~standard": {
     version: 1,
-    vendor: "next-e2e-demo",
+    vendor: "nextjs-e2e-demo",
     validate: (value) => ({ value: String(value) }),
   },
 };

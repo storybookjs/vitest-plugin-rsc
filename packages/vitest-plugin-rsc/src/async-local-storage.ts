@@ -158,22 +158,6 @@ export class SequentialAsyncLocalStorage<Store> {
   }
 }
 
-export function createAsyncLocalStorage<Store>(): SequentialAsyncLocalStorage<Store> {
-  return new SequentialAsyncLocalStorage<Store>();
-}
-
-export function bindSnapshot<T>(fn: T): T {
-  if (typeof fn !== "function") return fn;
-  return SequentialAsyncLocalStorage.bind(fn as (...args: unknown[]) => unknown) as T;
-}
-
-export function createSnapshot(): <R, TArgs extends unknown[]>(
-  fn: RunCallback<R, TArgs>,
-  ...args: TArgs
-) => R {
-  return SequentialAsyncLocalStorage.snapshot();
-}
-
 /**
  * Starts the scope of one request on a server. Until the returned function is
  * called:

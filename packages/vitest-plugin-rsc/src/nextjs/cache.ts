@@ -1,6 +1,7 @@
 import { IncrementalCache } from "next/dist/server/lib/incremental-cache";
 import { tagsManifest } from "next/dist/server/lib/incremental-cache/tags-manifest.external";
 import { getEdgePreviewProps } from "next/dist/server/web/get-edge-preview-props";
+import type { CacheFs } from "next/dist/shared/lib/utils";
 import { nextConfig } from "virtual:vitest-plugin-rsc/next-manifest";
 
 // Next's Data Cache: what `unstable_cache` and a cached `fetch` keep between
@@ -24,30 +25,6 @@ const config = nextConfig as {
   experimental?: { fetchCacheKeyPrefix?: string; allowedRevalidateHeaderKeys?: string[] };
 };
 
-type PreviewProps = ReturnType<typeof getEdgePreviewProps>;
-
-// The options of IncrementalCache in next@16.4. The package is type-checked
-// against the Next of its older helpers, where some had other names.
-type IncrementalCacheOptions = {
-  fs: object;
-  serverDistDir: string;
-  dev: boolean;
-  minimalMode: boolean;
-  flushToDisk: boolean;
-  requestHeaders: Record<string, string>;
-  allowedRevalidateHeaderKeys: string[] | undefined;
-  fetchCacheKeyPrefix: string;
-  maxMemoryCacheSize: number | undefined;
-  previewProps: PreviewProps;
-  prerenderManifest: {
-    version: number;
-    routes: object;
-    dynamicRoutes: object;
-    notFoundRoutes: string[];
-    preview: PreviewProps;
-  };
-};
-
 // Changes when the caches are reset, and is part of every key from then on:
 // no test finds what an earlier one stored. That also goes for a cached
 // function that was still running when its test ended, and stores its result
@@ -61,11 +38,12 @@ let generation = 0;
  */
 export function shareIncrementalCache(headers = new Headers()): void {
   const previewProps = getEdgePreviewProps();
-  const options: IncrementalCacheOptions = {
+  globalThis.__incrementalCacheShared = true;
+  globalThis.__incrementalCache = new IncrementalCache({
     // With these two Next takes its own handler, the one `next start` uses,
     // which keeps the entries in memory. It only reads or writes files on
     // Node.js and with `flushToDisk`, so the file system is never asked.
-    fs: {},
+    fs: {} as CacheFs,
     serverDistDir: "/",
     dev: false,
     minimalMode: false,
@@ -76,19 +54,15 @@ export function shareIncrementalCache(headers = new Headers()): void {
     maxMemoryCacheSize: config.cacheMaxMemorySize,
     previewProps,
     // An edge function has no prerendered routes: this is the manifest Next's
-    // edge adapter passes.
+    // edge adapter passes, with a version its type does not have.
     prerenderManifest: {
-      version: -1,
+      version: -1 as never,
       routes: {},
       dynamicRoutes: {},
       notFoundRoutes: [],
       preview: previewProps,
     },
-  };
-  globalThis.__incrementalCacheShared = true;
-  globalThis.__incrementalCache = new IncrementalCache(
-    options as unknown as ConstructorParameters<typeof IncrementalCache>[0],
-  );
+  });
 }
 
 /**

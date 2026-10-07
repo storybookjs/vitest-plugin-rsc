@@ -1,12 +1,14 @@
 {
   "name": "vitest-plugin-rsc",
   "version": "0.2.5",
-  "description": "React Server Components (RSC) support for Vitest.",
+  "description": "Test React Server Components and Next.js App Router apps in Vitest Browser Mode.",
   "keywords": [
+    "nextjs",
     "react",
     "react-server-components",
     "rsc",
-    "vite"
+    "vite",
+    "vitest"
   ],
   "homepage": "https://github.com/storybookjs/vitest-plugin-rsc#readme",
   "bugs": {
@@ -35,11 +37,6 @@
       "vitest-plugin-rsc-source": "./src/async-hooks.ts",
       "default": "./dist/async-hooks.js"
     },
-    "./async-local-storage": {
-      "types": "./dist/async-local-storage.d.ts",
-      "vitest-plugin-rsc-source": "./src/async-local-storage.ts",
-      "default": "./dist/async-local-storage.js"
-    },
     "./testing-library": {
       "types": "./dist/testing-library.d.ts",
       "vitest-plugin-rsc-source": "./src/testing-library.tsx",
@@ -50,79 +47,35 @@
       "vitest-plugin-rsc-source": "./src/testing-library-client.tsx",
       "default": "./dist/testing-library-client.js"
     },
-    "./nextjs/client": {
-      "types": "./dist/nextjs/client.d.ts",
-      "vitest-plugin-rsc-source": "./src/nextjs/client.tsx",
-      "default": "./dist/nextjs/client.js"
-    },
-    "./nextjs/testing-library-client": {
-      "types": "./dist/nextjs/testing-library-client.d.ts",
-      "vitest-plugin-rsc-source": "./src/nextjs/testing-library-client.ts",
-      "default": "./dist/nextjs/testing-library-client.js"
-    },
-    "./nextjs/testing-library": {
-      "types": "./dist/nextjs/testing-library.d.ts",
-      "vitest-plugin-rsc-source": "./src/nextjs/testing-library.tsx",
-      "default": "./dist/nextjs/testing-library.js"
-    },
-    "./nextjs/msw": {
-      "types": "./dist/nextjs/msw.d.ts",
-      "vitest-plugin-rsc-source": "./src/nextjs/msw.ts",
-      "default": "./dist/nextjs/msw.js"
-    },
-    "./nextjs/os-browser": {
-      "types": "./dist/nextjs/os-browser.d.ts",
-      "vitest-plugin-rsc-source": "./src/nextjs/os-browser.ts",
-      "default": "./dist/nextjs/os-browser.js"
-    },
-    "./nextjs/request-context": {
-      "types": "./dist/nextjs/request-context.d.ts",
-      "vitest-plugin-rsc-source": "./src/nextjs/request-context.ts",
-      "default": "./dist/nextjs/request-context.js"
+    "./nextjs": {
+      "types": "./dist/nextjs/index.d.ts",
+      "vitest-plugin-rsc-source": "./src/nextjs/index.ts",
+      "default": "./dist/nextjs/index.js"
     },
     "./nextjs/plugin": {
       "types": "./dist/nextjs/plugin.d.ts",
       "vitest-plugin-rsc-source": "./src/nextjs/plugin.ts",
       "default": "./dist/nextjs/plugin.js"
     },
-    "./next": {
-      "types": "./dist/next/index.d.ts",
-      "vitest-plugin-rsc-source": "./src/next/index.ts",
-      "default": "./dist/next/index.js"
+    "./nextjs/rsc": {
+      "types": "./dist/nextjs/rsc.d.ts",
+      "vitest-plugin-rsc-source": "./src/nextjs/rsc.ts",
+      "default": "./dist/nextjs/rsc.js"
     },
-    "./next/plugin": {
-      "types": "./dist/next/plugin.d.ts",
-      "vitest-plugin-rsc-source": "./src/next/plugin.ts",
-      "default": "./dist/next/plugin.js"
+    "./nextjs/ssr": {
+      "types": "./dist/nextjs/ssr.d.ts",
+      "vitest-plugin-rsc-source": "./src/nextjs/ssr.ts",
+      "default": "./dist/nextjs/ssr.js"
     },
-    "./next/setup": {
-      "types": "./dist/next/setup.d.ts",
-      "vitest-plugin-rsc-source": "./src/next/setup.ts",
-      "default": "./dist/next/setup.js"
+    "./nextjs/client": {
+      "types": "./dist/nextjs/client.d.ts",
+      "vitest-plugin-rsc-source": "./src/nextjs/client.tsx",
+      "default": "./dist/nextjs/client.js"
     },
-    "./next/rsc": {
-      "types": "./dist/next/rsc.d.ts",
-      "vitest-plugin-rsc-source": "./src/next/rsc.ts",
-      "default": "./dist/next/rsc.js"
-    },
-    "./next/ssr": {
-      "types": "./dist/next/ssr.d.ts",
-      "vitest-plugin-rsc-source": "./src/next/ssr.ts",
-      "default": "./dist/next/ssr.js"
-    },
-    "./next/client": {
-      "types": "./dist/next/client.d.ts",
-      "vitest-plugin-rsc-source": "./src/next/client.tsx",
-      "default": "./dist/next/client.js"
-    },
-    "./next/app-page-entrypoint": {
-      "types": "./dist/next/app-page-entrypoint.d.ts",
-      "vitest-plugin-rsc-source": "./src/next/app-page-entrypoint.ts",
-      "default": "./dist/next/app-page-entrypoint.js"
-    },
-    "./*": {
-      "types": "./dist/*.d.ts",
-      "default": "./dist/*.js"
+    "./nextjs/app-page-entrypoint": {
+      "types": "./dist/nextjs/app-page-entrypoint.d.ts",
+      "vitest-plugin-rsc-source": "./src/nextjs/app-page-entrypoint.ts",
+      "default": "./dist/nextjs/app-page-entrypoint.js"
     }
   },
   "publishConfig": {
@@ -139,17 +92,14 @@
   "dependencies": {
     "@jridgewell/gen-mapping": "^0.3.13",
     "@vitejs/plugin-rsc": "0.5.36",
-    "@vitest/spy": "^5.0.2",
     "convert-source-map": "^2.0.0"
   },
   "devDependencies": {
     "@types/convert-source-map": "^2.0.3",
-    "@types/estree": "^1.0.9",
     "@types/node": "^24.12.4",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
-    "msw": "^2.14.6",
-    "next": "^16.2.6",
+    "next": "16.4.0",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
     "rolldown": "^1.0.0",
@@ -157,16 +107,13 @@
     "vite": "^8.3.1"
   },
   "peerDependencies": {
-    "msw": "^2",
-    "next": "*",
+    "next": ">=16.4.0-0",
     "react": "*",
     "react-dom": "*",
-    "vite": "*"
+    "vite": "*",
+    "vitest": ">=5.0.0"
   },
   "peerDependenciesMeta": {
-    "msw": {
-      "optional": true
-    },
     "next": {
       "optional": true
     }

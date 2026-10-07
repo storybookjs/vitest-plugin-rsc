@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 import { playwright } from "@vitest/browser-playwright";
 import { defineConfig, defineProject } from "vitest/config";
 import { vitestPluginRSC } from "vitest-plugin-rsc";
-import { vitestPluginNext } from "vitest-plugin-rsc/next/plugin";
+import { vitestPluginNext } from "vitest-plugin-rsc/nextjs/plugin";
 import { vitestPluginRscSourceConditions } from "../../vitest.conditions.ts";
 
 // Make Vitest UI trace/source clicks a no-op instead of opening Cursor.

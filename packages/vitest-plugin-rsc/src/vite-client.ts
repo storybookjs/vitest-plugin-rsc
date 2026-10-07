@@ -43,35 +43,17 @@ export function pageViteClientPlugin(): Plugin {
       if (consumer !== "client" || !dev.moduleRunnerTransform) return;
       clientFile ??= (await this.resolve("/@vite/client"))?.id;
       if (id !== clientFile) return;
-      const names = await exportNames(fs.readFileSync(id, "utf8"));
+      const names = (await parseAstAsync(fs.readFileSync(id, "utf8"))).body.flatMap((node) =>
+        node.type === "ExportNamedDeclaration"
+          ? node.specifiers.map(({ exported }) => (exported as { name: string }).name)
+          : [],
+      );
       if (names.length === 0) throw new Error(`Found no exports in Vite's client, ${id}.`);
       return (
         `const client = ${pageViteClientGlobal};\n` +
-        names
-          .map((name, i) => `const _${i} = client.${name};\nexport { _${i} as ${name} };`)
-          .join("\n")
+        `if (!client) throw new Error("vitest-plugin-rsc: the page has no Vite client to share.");\n` +
+        names.map((name) => `export const ${name} = client.${name};`).join("\n")
       );
     },
   };
-}
-
-// What this version of Vite's client exports, read from the file itself.
-async function exportNames(code: string): Promise<string[]> {
-  const names: string[] = [];
-  for (const node of (await parseAstAsync(code)).body) {
-    if (node.type === "ExportDefaultDeclaration") names.push("default");
-    if (node.type !== "ExportNamedDeclaration") continue;
-    for (const specifier of node.specifiers) {
-      if (specifier.exported.type === "Identifier") names.push(specifier.exported.name);
-    }
-    const declaration = node.declaration;
-    if (declaration?.type === "FunctionDeclaration" || declaration?.type === "ClassDeclaration") {
-      if (declaration.id) names.push(declaration.id.name);
-    } else if (declaration?.type === "VariableDeclaration") {
-      for (const { id } of declaration.declarations) {
-        if (id.type === "Identifier") names.push(id.name);
-      }
-    }
-  }
-  return names;
 }

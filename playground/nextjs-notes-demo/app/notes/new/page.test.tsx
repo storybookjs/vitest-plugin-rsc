@@ -1,7 +1,7 @@
 import { expect, test } from "vitest";
 import { page } from "vitest/browser";
 import { signInAs } from "#test/auth.ts";
-import { renderServer } from "vitest-plugin-rsc/next";
+import { renderServer } from "vitest-plugin-rsc/nextjs";
 
 test("renders the new note form with empty fields", async () => {
   await signInAs();

@@ -15,16 +15,10 @@ export type FetchRsc = (actionRequest?: {
   reply: string | FormData;
 }) => Promise<ReadableStream<Uint8Array>>;
 
-export type ServerActionCaller = {
-  call: (id: string, args: unknown[]) => Promise<unknown>;
-  cleanup: () => void;
-};
-
 export async function createTestingLibraryClientRoot(options: {
   container: HTMLElement;
   config: RenderConfiguration;
   fetchRsc: FetchRsc;
-  serverActionCaller?: ServerActionCaller;
 }) {
   let setPayload: (v: RscPayload) => void;
 
@@ -43,9 +37,6 @@ export async function createTestingLibraryClientRoot(options: {
   }
 
   ReactClient.setServerCallback(async (id, args) => {
-    if (options.serverActionCaller) {
-      return options.serverActionCaller.call(id, args);
-    }
     const temporaryReferences = ReactClient.createTemporaryReferenceSet();
     const reply = await ReactClient.encodeReply(args, { temporaryReferences });
     const payload = await ReactClient.createFromReadableStream<RscPayload>(
@@ -73,7 +64,6 @@ export async function createTestingLibraryClientRoot(options: {
   }
 
   function unmount() {
-    options.serverActionCaller?.cleanup();
     reactRoot.unmount();
   }
 

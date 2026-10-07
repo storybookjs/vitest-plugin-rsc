@@ -1,8 +1,17 @@
 {
   "files": [],
   "references": [
-    { "path": "./packages/vitest-plugin-rsc" },
-    { "path": "./playground/nextjs-notes-demo" },
-    { "path": "./playground/rsc-vitest-demo" }
+    {
+      "path": "./packages/vitest-plugin-rsc"
+    },
+    {
+      "path": "./playground/nextjs-e2e-demo"
+    },
+    {
+      "path": "./playground/nextjs-notes-demo"
+    },
+    {
+      "path": "./playground/rsc-vitest-demo"
+    }
   ]
 }

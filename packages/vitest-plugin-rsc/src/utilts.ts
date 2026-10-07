@@ -1,10 +1,10 @@
 import { ESModulesEvaluator, ModuleRunner, type ModuleRunnerTransport } from "vite/module-runner";
-import * as viteClient from "virtual:vitest-plugin-rsc/vite-client";
+import * as pageClient from "virtual:vitest-plugin-rsc/vite-client";
 
 // The page's own instance of Vite's client, for the modules that the runners
 // below evaluate: see vite-client.ts.
 (globalThis as { __vitest_plugin_rsc_vite_client__?: unknown }).__vitest_plugin_rsc_vite_client__ =
-  viteClient;
+  pageClient;
 
 const reactClientCoverageModulePath = "/@vite/react-client-coverage-module";
 const reactClientWebSocketInfoPath = "/@vite/react-client-runner-websocket";

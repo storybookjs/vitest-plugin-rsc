@@ -2,7 +2,7 @@ import { expect, test, vi } from "vitest";
 import { page } from "vitest/browser";
 import { auth } from "#lib/auth.ts";
 import { signInAs, testUser } from "#test/auth.ts";
-import { renderServer } from "vitest-plugin-rsc/next";
+import { renderServer } from "vitest-plugin-rsc/nextjs";
 
 test("shows the empty passkeys hint when the user has none", async () => {
   await signInAs();

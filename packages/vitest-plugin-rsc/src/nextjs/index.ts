@@ -10,7 +10,7 @@ import { registry } from "./registry.ts";
 await import("./rsc.ts");
 const ssr = await importEnvironment<typeof import("./ssr.ts")>(
   "next_ssr",
-  "vitest-plugin-rsc/next/ssr",
+  "vitest-plugin-rsc/nextjs/ssr",
 );
 
 const nativeFetch = globalThis.fetch;
@@ -258,7 +258,7 @@ async function loadPage(
   // module graph of its own for the browser layer.
   const runner = createEnvironmentRunner("react_client");
   const client = await runner.import<typeof import("./client.tsx")>(
-    "vitest-plugin-rsc/next/client",
+    "vitest-plugin-rsc/nextjs/client",
   );
   superseded();
   // The page counts as open from here, so that leaving it stops it, also

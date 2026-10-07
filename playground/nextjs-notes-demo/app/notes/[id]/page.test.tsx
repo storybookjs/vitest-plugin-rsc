@@ -3,7 +3,7 @@ import { page } from "vitest/browser";
 import { db } from "#lib/db.ts";
 import { notes } from "#db/schema.ts";
 import { signInAs, testUser } from "#test/auth.ts";
-import { renderServer } from "vitest-plugin-rsc/next";
+import { renderServer } from "vitest-plugin-rsc/nextjs";
 
 const noteId = "00000000-0000-4000-8000-000000000001";
 const databaseGeneratedNoteId = "70458a4b-ecef-4a2a-00e1-53f5b00c951e";
