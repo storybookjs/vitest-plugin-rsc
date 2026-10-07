@@ -20,11 +20,6 @@ declare global {
   var __incrementalCacheShared: boolean | undefined;
 }
 
-const config = nextConfig as {
-  cacheMaxMemorySize?: number;
-  experimental?: { fetchCacheKeyPrefix?: string; allowedRevalidateHeaderKeys?: string[] };
-};
-
 // Changes when the caches are reset, and is part of every key from then on:
 // no test finds what an earlier one stored. That also goes for a cached
 // function that was still running when its test ended, and stores its result
@@ -49,9 +44,9 @@ export function shareIncrementalCache(headers = new Headers()): void {
     minimalMode: false,
     flushToDisk: false,
     requestHeaders: Object.fromEntries(headers),
-    allowedRevalidateHeaderKeys: config.experimental?.allowedRevalidateHeaderKeys,
-    fetchCacheKeyPrefix: `${config.experimental?.fetchCacheKeyPrefix ?? ""}${generation}`,
-    maxMemoryCacheSize: config.cacheMaxMemorySize,
+    allowedRevalidateHeaderKeys: nextConfig.experimental.allowedRevalidateHeaderKeys,
+    fetchCacheKeyPrefix: `${nextConfig.experimental.fetchCacheKeyPrefix ?? ""}${generation}`,
+    maxMemoryCacheSize: nextConfig.cacheMaxMemorySize,
     previewProps,
     // An edge function has no prerendered routes: this is the manifest Next's
     // edge adapter passes, with a version its type does not have.

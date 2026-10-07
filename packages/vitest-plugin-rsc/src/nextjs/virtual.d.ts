@@ -1,6 +1,6 @@
 declare module "virtual:vitest-plugin-rsc/next-manifest" {
   export const routes: { kind: "page" | "route"; page: string; pathname: string }[];
-  export const nextConfig: Record<string, unknown>;
+  export const nextConfig: import("next/dist/server/config-shared").NextConfigComplete;
 }
 
 declare module "virtual:vitest-plugin-rsc/next-route-handlers" {
@@ -26,14 +26,6 @@ declare module "virtual:vitest-plugin-rsc/next-edge-entries" {
     () => Promise<{ handler: import("./registry.ts").EdgeHandler }>
   >;
   export default edgeEntries;
-}
-
-declare module "@vitejs/plugin-rsc/vendor/react-server-dom/static.edge" {
-  export function prerender(
-    model: unknown,
-    clientManifest: unknown,
-    options?: object,
-  ): Promise<{ prelude: ReadableStream<Uint8Array> }>;
 }
 
 declare module "@vitejs/plugin-rsc/vendor/react-server-dom/server.edge" {

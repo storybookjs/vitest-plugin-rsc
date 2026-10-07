@@ -1,7 +1,7 @@
-import { createClientManifest, createServerManifest } from "@vitejs/plugin-rsc/core/rsc";
+import { createServerManifest } from "@vitejs/plugin-rsc/core/rsc";
 import * as ReactServer from "@vitejs/plugin-rsc/react/rsc";
+import { prerender } from "@vitejs/plugin-rsc/react/rsc/static";
 import * as FlightServer from "@vitejs/plugin-rsc/vendor/react-server-dom/server.edge";
-import * as FlightStatic from "@vitejs/plugin-rsc/vendor/react-server-dom/static.edge";
 import appPages from "virtual:vitest-plugin-rsc/next-app-pages";
 import routeHandlers from "virtual:vitest-plugin-rsc/next-route-handlers";
 import { actionModulePrefix, registry } from "./registry.ts";
@@ -37,7 +37,7 @@ registry.flightServer = {
 };
 registry.flightStatic = {
   prerender: (model: unknown, _clientModules: unknown, options?: object) =>
-    FlightStatic.prerender(model, createClientManifest(), options),
+    prerender(model, options),
 };
 registry.flightClient = {
   createFromReadableStream: (
