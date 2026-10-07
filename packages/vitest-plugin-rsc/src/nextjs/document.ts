@@ -1,9 +1,9 @@
 // A page load, for a tab that cannot load a page: the test runs in this
 // document and has to stay in it. So the document the server sends is moved
 // into this one. What the test runner needs stays, its scripts and styles. The
-// rest of what is in the document steps aside for as long as
-// the page is there: a second `<title>` would hide the page's, and text in
-// `<body>` is not what React expects to hydrate.
+// rest of what is in the document steps aside for as long as the page is
+// there: a second `<title>` would hide the page's, and text in `<body>` is not
+// what React expects to hydrate.
 
 const runnerUrl = window.location.href;
 const elements = (of: Document) => [of.documentElement, of.head, of.body];
@@ -34,7 +34,7 @@ function setAttributes(element: Element, attributes: Iterable<readonly [string, 
 
 /**
  * Replaces the page in this document with the one the server sent as `html`,
- * and runs its inline scripts, as the parser would have.
+ * and runs its inline scripts in document order.
  *
  * The page is there in full before the app starts, so the document has loaded
  * by the time Next's client looks: it reads the Flight payload that Next's
