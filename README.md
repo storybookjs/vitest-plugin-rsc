@@ -95,7 +95,9 @@ The base `vitestPluginRSC()` runtime is framework-agnostic. The `vitest-plugin-r
 - `next@16.0`: older pinned stable line.
 - `next@canary`: early warning when a private App Router internal changes.
 
-For each target, CI builds the plugin and runs the package-level Next tests plus the Next.js playgrounds.
+For each target, CI builds the plugin and runs the package-level Next tests plus `playground/nextjs-no-msw-demo`.
+
+[Whole Next.js Routes](#whole-nextjs-routes), `vitest-plugin-rsc/next`, needs `next@16.4` or later. CI runs `playground/next-e2e-demo` and `playground/nextjs-notes-demo` against the pinned `next@16.4` and against `next@canary`.
 
 ## Quick Start
 
@@ -596,7 +598,7 @@ export async function FlashProbe() {
 
 ### Cache And Revalidation
 
-Server Components can use tagged cached `fetch` calls, and Server Actions can refresh the current tree or invalidate those tags. The outbound `fetch` is normally intercepted by MSW in tests — see [`playground/nextjs-notes-demo`](playground/nextjs-notes-demo) for a worked setup.
+Server Components can use tagged cached `fetch` calls, and Server Actions can refresh the current tree or invalidate those tags. The outbound `fetch` is normally intercepted by MSW in tests — see the setup file of [`playground/nextjs-notes-demo`](playground/nextjs-notes-demo) for a worker that does.
 
 ```tsx
 import { refresh, revalidatePath, revalidateTag, updateTag } from "next/cache";
@@ -742,7 +744,7 @@ Without a `url` the node renders at `/`. The page module itself is not loaded, s
 
 `handleRequest(url, init)` sends a single request and resolves with the response, for when the response is what you assert on: a status, a header, the HTML or the Flight payload.
 
-See [docs/next-routes.md](docs/next-routes.md) for how it works and what it does not cover yet, and `playground/next-e2e-demo` for a running example.
+See [docs/next-routes.md](docs/next-routes.md) for how it works and what it does not cover yet, `playground/next-e2e-demo` for a small running example, and `playground/nextjs-notes-demo` for a full app: auth, a database, forms and Server Actions.
 
 ## Playgrounds
 
@@ -751,7 +753,7 @@ This repository ships four reference apps under `playground/`:
 - `playground/rsc-vitest-demo` — a minimal non-Next RSC app. Use this as the smallest end-to-end example of `vitest-plugin-rsc` on its own.
 - `playground/nextjs-no-msw-demo` — a Next.js App Router setup that calls Server Actions directly inside the test runtime. Use this when you want the simplest Next setup.
 - `playground/next-e2e-demo` — a small Next.js App Router app tested route by route. See [Whole Next.js Routes](#whole-nextjs-routes).
-- `playground/nextjs-notes-demo` — a fuller Next.js App Router notes app with Better Auth, Drizzle, PGlite test databases, shadcn/ui, MSW-routed Server Actions, mocked email, and per-test seeding. This is the larger reference for the patterns in this README.
+- `playground/nextjs-notes-demo` — a fuller Next.js App Router notes app with Better Auth, Drizzle, PGlite test databases, shadcn/ui, mocked email, and per-test seeding. Its tests open whole routes too, with the database and the session mocked in the tab. This is the acceptance app of this repository.
 
 Vitest suites are wired through the root workspace, while each package or playground owns its local config:
 

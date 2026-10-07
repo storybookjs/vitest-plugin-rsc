@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 import { playwright } from "@vitest/browser-playwright";
 import { defineConfig, defineProject } from "vitest/config";
 import { vitestPluginRSC } from "vitest-plugin-rsc";
-import { vitestPluginNext } from "vitest-plugin-rsc/nextjs/plugin";
+import { vitestPluginNext } from "vitest-plugin-rsc/next/plugin";
 import { vitestPluginRscSourceConditions } from "../../vitest.conditions.ts";
 
 // Make Vitest UI trace/source clicks a no-op instead of opening Cursor.
@@ -30,16 +30,6 @@ function createSharedProjectConfig() {
     resolve: {
       tsconfigPaths: true,
       conditions: [...vitestPluginRscSourceConditions, "test"],
-    },
-    optimizeDeps: {
-      include: [
-        "next/dist/client/components/http-access-fallback/http-access-fallback.js",
-        "next/dist/client/components/redirect-error.js",
-        "next/dist/client/components/redirect-status-code.js",
-        "next/dist/client/components/redirect.js",
-        "next/dist/client/components/router-reducer/create-href-from-url.js",
-        "next/dist/server/lib/server-action-request-meta.js",
-      ],
     },
   };
 }

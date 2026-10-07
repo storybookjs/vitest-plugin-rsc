@@ -6,6 +6,10 @@ export function resetServerRefreshProbe() {
   count = 0;
 }
 
+export function readServerRefreshProbe() {
+  return count;
+}
+
 export function ServerRefreshProbe({ shouldRefresh }: { shouldRefresh: boolean }) {
   return (
     <form

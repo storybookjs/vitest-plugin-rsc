@@ -77,9 +77,7 @@ async function AuthNav() {
   );
 }
 
-// Shared app shell: page tests can wrap routes in this without rendering
-// RootLayout's <html>/<body> document tags into the Vitest mount node.
-export function AppShell({ children }: { children: ReactNode }) {
+function AppShell({ children }: { children: ReactNode }) {
   return (
     <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
       <ProgressBarProvider>
