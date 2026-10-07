@@ -92,8 +92,6 @@ export function vitestPluginRSC(): Plugin[] {
       },
       config(config) {
         return {
-          // Appended, so after the project's own setup files: see setup-mocks.ts.
-          test: { setupFiles: [setupMocksFile] },
           resolve: {
             alias: {
               "node:async_hooks": "vitest-plugin-rsc/async-hooks",
@@ -150,6 +148,15 @@ export function vitestPluginRSC(): Plugin[] {
       },
     },
     createReactClientCoveragePlugin(),
+    {
+      name: "rsc:setup-mocks",
+      // After the setup files of the project and of other plugins: see
+      // setup-mocks.ts.
+      enforce: "post",
+      config() {
+        return { test: { setupFiles: [setupMocksFile] } };
+      },
+    },
     ...createRunnerEnvironmentPlugins("react_client"),
   ];
 }

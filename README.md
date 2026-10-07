@@ -693,7 +693,7 @@ import { vitestPluginNext } from "vitest-plugin-rsc/next/plugin";
 
 export default defineConfig({
   plugins: [vitestPluginRSC(), vitestPluginNext()],
-  // ...browser mode, as in Quick Start. There is no setup file to add.
+  // ...browser mode, as in Quick Start. The plugin needs no setup file.
 });
 ```
 
@@ -738,7 +738,7 @@ Without a `url` the node renders at `/`. The page module itself is not loaded, s
 
 `renderServer` resolves with `{ response, unmount }`: the server's `Response` to the document request, and a function that leaves the page.
 
-Mock the modules of your app in a setup file, not in a test file. With `isolate: false` the test files of a tab share their modules, so the file that loads a module first decides whether the others get the mock. A bare `vi.mock()` is enough, and each test says what the mock does with `vi.mocked()`:
+With `isolate: false`, mock the modules of your app in a setup file, not in a test file. The test files of a tab then share their modules, so the file that loads a module first decides whether the others get the mock. A bare `vi.mock()` is enough, and each test says what the mock does, through `vi.mocked()`:
 
 ```ts
 // vitest.setup.ts
