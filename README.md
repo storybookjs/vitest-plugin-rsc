@@ -29,6 +29,7 @@ Seed exactly the state a route needs, open it, use the hydrated page in a real b
   - [Mocks](#mocks)
   - [Requests And Route Handlers](#requests-and-route-handlers)
   - [Caching](#caching)
+  - [Fonts, Images And Styles](#fonts-images-and-styles)
   - [Server Code In A Tab](#server-code-in-a-tab)
   - [Example: Drizzle + PGlite](#example-drizzle--pglite)
   - [API](#api)
@@ -83,6 +84,7 @@ Agents do better when wrapped in a self-healing loop with fast unit tests — ed
 ## What You Get
 
 - **Real Next.js behaviour**: the request goes through Next's own request handler, renderer and router. Layouts, `loading.tsx`, error boundaries, redirects, cookies, Server Actions, route handlers and the Data Cache do what they do in your app.
+- **Next's own compiler**: your source files go through Next's SWC transform and its font and image loaders, so `next/font`, `next/image`, `next/dynamic` and styled-jsx work, and a mistake that `next build` stops at fails the test with Next's error.
 - **Focused scope**: Test a whole route, or one component on its own.
 - **White-box inputs**: The server runs in the test's tab. The `db` your test seeds is the module instance your Server Components read. Mock IO, fake clocks, set cookies and headers.
 - **Black-box output**: Assert what the user sees and does via `vitest/browser` — Playwright locators (`getByRole`, `getByText`, etc.) and `expect.element` matchers.
@@ -452,6 +454,42 @@ test("computes again after a route handler has expired the tag", async () => {
 
 `"use cache"` does not work yet. See [Caching](docs/next-routes.md#caching) for the details, and for what differs inside a cached function after its first `await`.
 
+### Fonts, Images And Styles
+
+The source files of your app are compiled by Next's own compiler, in each of Next's three layers.
+
+```tsx
+// app/fonts/fonts.ts
+import { Inter } from "next/font/google";
+import localFont from "next/font/local";
+
+export const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
+export const geist = localFont({ src: "./geist-latin.woff2", variable: "--font-geist" });
+```
+
+```tsx
+import { geist } from "./fonts.ts";
+
+test("sets text in a font of next/font/local, a file of the app", async () => {
+  await renderServer({ url: "/fonts" });
+
+  const text = page.getByText("Set in Geist", { exact: true });
+  await expect.element(text).toHaveClass(geist.className);
+  await expect.element(text).toHaveStyle({ fontFamily: geist.style.fontFamily });
+  // Served where Next's build puts it.
+  const [face] = await document.fonts.load(`16px ${geist.style.fontFamily}`);
+  expect(face?.status).toBe("loaded");
+});
+```
+
+- **`next/font/local` and `next/font/google`**, also in a package that calls them, like `geist`. The class names, the CSS variable and the fallback font are the ones Next makes, and the font files are served. `next/font/google` downloads the font when a run first loads it, as `next dev` does. [The Compiler](docs/next-routes.md#the-compiler) says how to keep a run off the network.
+- **`next/image`.** `import logo from "./logo.png"` is the object Next makes of an image, with its size and its blurred placeholder. `/_next/image` is answered by Next's image optimizer, for an imported image, a file in `public/` and an image of a server that `images.remotePatterns` allows.
+- **`next/dynamic`**, also with `ssr: false`, **`next/script`**, **styled-jsx**, global CSS and CSS modules.
+- **The checks of `next build`.** A client hook in a Server Component, or `server-only` code in a Client Component, fails the test with the error `next build` gives.
+- **`paths` of your `tsconfig.json`**, like `@/components/button`.
+
+Call `next/font` in a module of the app, not in a test file: Next's compiler does not run on test files. What Next's build does and the plugin does not, like the React Compiler and a `webpack` function in `next.config`, is under [What Does Not Work Yet](#what-does-not-work-yet).
+
 ### Server Code In A Tab
 
 The server runs in a tab, and your server code is told it is on a server, the way Next's own build tells it. In Server Components, Server Actions, route handlers and the modules and packages they import, and in Client Components while they render to HTML, `typeof window` is `"undefined"` and `fetch` is the one Next patches. Test files and setup files keep the tab's `typeof window` and `fetch`.
@@ -685,7 +723,7 @@ export default defineConfig({
 
 ## How It Works
 
-Next.js is a build and a runtime. Only the build is tied to a bundler. The plugin does the build with Vite, and asks Next's own build code for everything that is not bundling: the routes, the loader tree of a route, its request handler, the compile-time constants and the module aliases. Behind those, Next's runtime runs unchanged.
+Next.js is a build and a runtime. Only the build is tied to a bundler. The plugin does the build with Vite, and asks Next's own build code for everything that is not bundling: the routes, the loader tree of a route, its request handler, the compile-time constants, the module aliases, and the compile of your source files with Next's SWC transform and its font and image loaders. Behind those, Next's runtime runs unchanged.
 
 Next compiles an app into three layers, each with its own module graph and its own build of React. Each is a Vite environment here, and all three run in the test's tab:
 
@@ -697,11 +735,14 @@ Next compiles an app into three layers, each with its own module graph and its o
 
 The test runs in `client`, the Vite environment of the `rsc` layer. That is why a module your test imports is the instance your Server Components read.
 
-[docs/next-routes.md](docs/next-routes.md) is the full description: what comes from Next, how a request travels, what stands in for a server, caching, how server code is told it is on a server, and what is checked of the installed Next.js. [docs/architecture.md](docs/architecture.md) describes the part without Next.js: the two environments and the module runner between them.
+[docs/next-routes.md](docs/next-routes.md) is the full description: what comes from Next, what its compiler does to your code, how a request travels, what stands in for a server, caching, how server code is told it is on a server, and what is checked of the installed Next.js. [docs/architecture.md](docs/architecture.md) describes the part without Next.js: the two environments and the module runner between them.
 
 ## What Does Not Work Yet
 
-- `next/font`, `next/image` optimization, and metadata files like `icon.png` and `sitemap.ts`. A run warns about the metadata files of the app, apart from `favicon.ico`, when it starts.
+- Metadata files like `icon.png` and `sitemap.ts`. A run warns about the metadata files of the app, apart from `favicon.ico`, when it starts.
+- A `webpack` function or `turbopack` rules in `next.config`, like `@svgr/webpack` and `@next/mdx`, a Babel config, and the React Compiler.
+- A CommonJS source file in the app.
+- The files of `.env` and `NEXT_PUBLIC_` variables: `process.env` in the tab is empty unless a test or a setup file fills it.
 - `middleware.ts` / `proxy.ts`, and the redirects, rewrites and headers of `next.config`.
 - `"use cache"`. And inside a function cached with `unstable_cache`, after its first `await`, the request's store is read instead of the cache's.
 - A mock for Client Components.

@@ -20,6 +20,10 @@ Only the build is tied to a bundler. So this plugin does the build with Vite, an
 | Compile-time constants                       | `getDefineEnv()`                                                  |
 | Module aliases, per layer                    | `createWebpackAliases()` and the other alias tables               |
 | React                                        | The React that Next ships, through `createVendoredReactAliases()` |
+| The compile of a source file of the app      | Next's SWC transform, with `getLoaderSWCOptions()` for its layer  |
+| A call of a `next/font` function             | `next-font-loader` and Next's `css-loader`, called as-is          |
+| An imported image                            | `next-image-loader`, called as-is                                 |
+| An image behind `/_next/image`               | Next's image optimizer, `next/dist/server/image-optimizer`        |
 
 Everything behind those is Next's runtime, unchanged: `handler(Request)` returns the `Response` a deployment would send.
 
@@ -29,7 +33,7 @@ The routes are listed the way `next build` lists its entries. The pages with the
 
 All of this is internal to Next, and it changes between minor versions. The output of the build code names the runtime it was made for: the constants the runtime reads, the files an alias leads to, the arguments a template passes. So the plugin does not bring a copy of Next's build code. It calls the one of the installed `next`, from one file, `project.ts`, which is typed against Next's own declarations.
 
-That file checks what the plugin relies on when a run starts: of the build code, and of the runtime that the plugin's own modules call in the tab. Of the runtime it checks what would fail silently, or without saying why: a hook, a global, `document.currentScript`, what the shim of `server-reference-info` replaces, the manifests. A static import of a name that is gone needs no check: the module fails to link, with a `SyntaxError` that names it. The files of the runtime are only read for it, not loaded: they run in the tab. A Next.js that differs stops the run with one message: the version, and what is different.
+That file checks what the plugin relies on when a run starts, or for a loader when it is first used: of the build code, and of the runtime that the plugin's own modules call in the tab. Of the runtime it checks what would fail silently, or without saying why: a hook, a global, `document.currentScript`, what the shim of `server-reference-info` replaces, the manifests. A static import of a name that is gone needs no check: the module fails to link, with a `SyntaxError` that names it. The files of the runtime are only read for it, not loaded: they run in the tab. A Next.js that differs stops the run with one message: the version, and what is different.
 
 | What is checked                                                                                                           | Without the check                                                       |
 | ------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
@@ -38,6 +42,10 @@ That file checks what the plugin relies on when a run starts: of the build code,
 | `getDefineEnv()` sets `process.env.NEXT_RUNTIME` to `edge` for the server layers                                          | Next's modules load their Node.js builds in the tab                     |
 | The alias tables have `react-server-dom-webpack/server$`                                                                  | A `TypeError` on a path                                                 |
 | `IncrementalCache` takes `fs`, `serverDistDir` and `fetchCacheKeyPrefix`                                                  | Nothing is cached, or a test finds another's entries                    |
+| The SWC transform turns a call of a `next/font` function into an import of `next/font/.../target.css?`                    | A font function that throws, without a message                          |
+| The SWC transform marks a `"use client"` module of the `rsc` layer                                                        | A client module that asks for the `require` of Next's bundler           |
+| `getNextFontLoader()` uses css-loader and next-font-loader, and css-loader makes a list of CSS with `locals`              | A font without CSS, or without class names                              |
+| `next-image-loader` makes a module that starts with `export default {`                                                    | An imported image that is not what `next/image` takes                   |
 | The app loader's output has `__webpack_require__` and imports `app-page-runtime`                                          | Next's Node.js request handler loads in the tab                         |
 | The `app-route` template loads `route.ts` with `userland: () => require(`                                                 | A `require` that the tab does not have                                  |
 | The `edge-ssr-app` template imports the page as `pageMod`                                                                 | An import of a module that does not exist                               |
@@ -65,6 +73,36 @@ Next compiles an App Router app into three layers. Each has its own module graph
 Each layer is a Vite environment here, with the aliases and constants Next gives that layer. All three run in the test's tab. That is what keeps the test white-box: the `db` your test seeds is the module instance the Server Component reads.
 
 Where Next's bundler config moves a module to another layer, the plugin does the same. The route module is created by the `rsc` layer but belongs to `ssr`. The route's request handler is in `ssr` and imports the page from `rsc`. Client Components load once for `ssr`, to render HTML, and once for `browser`. A route handler is `rsc` as a whole: its `route.ts`, its route module and its request handler.
+
+## The Compiler
+
+Before Next bundles a source file of the app, it compiles it: with its SWC transform, and with webpack loaders for fonts and images. The plugin runs those for the source files of the app, in each of the three layers, with the options Next's build gives that layer. Next's transform takes the types out of TypeScript, as in Next's build. JSX is still Vite's to compile, and so is CSS. JSX in a `.js` file, which Vite does not take, is compiled by Next's transform too.
+
+| What Next's build does                                                                                                                           | Here                                                                                                                                        |
+| ------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| The checks of what a layer may do: a client hook in a Server Component, `server-only` in a Client Component, `metadata` in a `"use client"` page | Next's SWC transform. The module throws Next's error when it loads, see below                                                               |
+| `next/font/google` and `next/font/local`, also when a package calls them, like `geist`                                                           | Next's SWC transform and font loaders                                                                                                       |
+| `import logo from "./logo.png"`, also an SVG                                                                                                     | Next's image loader: `{ src, width, height, blurDataURL }`                                                                                  |
+| `next/image`                                                                                                                                     | Next's runtime, and Next's image optimizer behind `/_next/image`                                                                            |
+| `next/dynamic`, also with `ssr: false`                                                                                                           | Next's SWC transform, which leaves the import out of the server's code. `next/dynamic` also works without it                                |
+| styled-jsx                                                                                                                                       | Next's SWC transform, with the `styled-jsx` that Next depends on                                                                            |
+| `compiler` of `next.config`: `removeConsole`, `reactRemoveProperties`, `styledComponents`, `relay`, and `experimental.swcPlugins`                | Passed to Next's SWC transform. Only `removeConsole` is tested                                                                              |
+| `"use client"`, `"use server"`                                                                                                                   | Vite RSC                                                                                                                                    |
+| `typeof window` in server code                                                                                                                   | A define, see [Server Code In A Tab](#server-code-in-a-tab)                                                                                 |
+| `server-only`, `client-only`                                                                                                                     | Next's SWC transform stops at the wrong one in a source file. In a package, Next's aliases make it a module that throws. That is not tested |
+| The `paths` of `tsconfig.json`                                                                                                                   | Vite's `resolve.tsconfigPaths`, which the plugin turns on unless your config sets it                                                        |
+| Global CSS, CSS modules, PostCSS                                                                                                                 | Vite's. A class name of a CSS module is not the one Next makes                                                                              |
+| `next/script`                                                                                                                                    | Next's runtime, nothing to compile                                                                                                          |
+
+**Fonts.** A call like `Inter({ subsets: ["latin"] })` becomes an import of the font's CSS, which Next's font loader writes: the `@font-face` rules, a fallback font with adjusted metrics, and the class names that the call returns. The font files are served under `/_next/static/media/`, where the CSS says they are. `next/font/google` downloads a font from Google Fonts when a run first loads it, as `next dev` does, and without a network it sets the fallback font and logs the error of the download. That is not tested. To keep a test run off the network, set `NEXT_FONT_GOOGLE_MOCKED_RESPONSES` to a file with the answers of Google Fonts, which is how Next tests `next/font/google` itself: see `vitest.google-fonts.cjs` in this repository.
+
+**Images.** An imported image is the object `next/image` takes, with the file under `/_next/static/media/`. `/_next/image` is answered by Next's image optimizer in the Vitest process, as `next start` answers it, with the `images` of `next.config`, like `remotePatterns`. It keeps no cache, and tells the browser not to keep the image either. It needs `sharp`, which Next installs as an optional dependency. An image of another server is downloaded when the tab asks for it.
+
+**Build errors.** What `next build` stops at, the plugin finds when a test loads the module, since nothing is built up front. The module then throws Next's error, as a module does in webpack's development build. In the `rsc` layer that fails the request, so `renderServer()` rejects with the error. In a Client Component it fails the render on the server and in the browser: Next shows its error page, and the error is logged and reported as uncaught, which fails the test run. A module that only a test imports is a module of the `rsc` layer too: one that calls a client hook without `"use client"` throws when the test imports it, unless it is in `browserModules`.
+
+A source file of the app is every JavaScript or TypeScript file that Vite serves and that is not in `node_modules`. A package is pre-bundled as it is, except for a file of it that names `next/font`: that one goes through Next's transform, as in Next's build, for a package like `geist`. In the `rsc` layer, which shares its environment with the test, the test files, setup files and `browserModules` are not compiled: see [Server Code In A Tab](#server-code-in-a-tab).
+
+What Next's build does that the plugin does not, is under [Not Yet](#not-yet).
 
 ## A Request
 
@@ -339,11 +377,22 @@ In browser mode, Vitest 5.0 has a bug here: it does not wait for the mocks of a 
 
 ## Not Yet
 
-- `next/font`, `next/image` optimization, and metadata files like `icon.png` and `sitemap.ts`. These are build-time loaders that still have to be ported. A run warns once when it starts about the metadata files of the app, apart from `favicon.ico`: a page renders without them, and their routes are not served.
+- Metadata files like `icon.png` and `sitemap.ts`. Next's metadata loaders still have to be run. A run warns once when it starts about the metadata files of the app, apart from `favicon.ico`: a page renders without them, and their routes are not served.
+- Next's compiler for a package in `node_modules`, apart from a file that names `next/font`. Next also compiles the packages of `transpilePackages`, and a package that uses `next/dynamic`. Here a package is pre-bundled as it is. Not tested.
+- A font in a test file. Next's compiler does not run on the test files, so call `next/font` in a module of the app. An image that a test file imports is the object Next makes of it.
+- A `webpack` function or `turbopack` rules in `next.config`: loaders of your own, like `@svgr/webpack` or `@next/mdx`. And a Babel config, which makes Next compile with Babel.
+- `compiler.emotion`: Next's transform gets the option, but JSX is Vite's to compile, with its own import source, so the `css` prop needs `jsxImportSource` in your tsconfig. Not tested.
+- The React Compiler, `reactCompiler` in `next.config`. Components run as they are written.
+- The optimizations of a bundle: `optimizePackageImports`, `modularizeImports`, `experimental.optimizeServerReact`, the browser targets. They do not change what the app does.
+- A CommonJS source file in the app, with `require` or `module.exports`. Vite serves source files as ES modules.
+- The files of `.env`, `NEXT_PUBLIC_` variables and `env` of `next.config`. `process.env` in the tab is empty unless a test or a setup file fills it.
+- The font preloads: Next puts a `<link rel="preload">` in the HTML for the fonts of a route, from a manifest of its build. The fonts load when the CSS asks for them.
+- Sass needs the `sass` package, as it does for Vite, and `sassOptions` of `next.config` does not apply. Not tested.
+- An asset prefix with an origin of its own, like a CDN: the files of fonts and images are only served by the dev server.
 - `middleware.ts` / `proxy.ts`, and the redirects, rewrites and headers of `next.config`.
 - `trailingSlash`. A URL with a trailing slash, like `/notes/7/`, is served as it is, for a page and for a node. A deployment redirects it to `/notes/7`, or the other way around with `trailingSlash: true`: that redirect is one of Next's config routes.
 - Route handlers run as they do on Next's edge runtime, also the ones a deployment runs on Node.js. The params of the dynamic segments are in the query of `request.url` too, where they replace a query parameter of the same name. Static generation of a `GET` handler and `revalidate` do not apply: every request runs the handler.
-- `"use cache"`. Next compiles such a function with its SWC transform, which the plugin does not run yet. And it would not be enough: the function is called after Next has awaited, so it would never read the store of its cache scope. `cacheTag()` and `cacheLife()` need that store, and so does collecting the tags of the `fetch` calls in it. See [Caching](#a-cache-scope-ends-at-its-first-await).
+- `"use cache"`. Next compiles such a function with the part of its SWC transform that also compiles Server Actions, which is Vite RSC's here. And it would not be enough: the function is called after Next has awaited, so it would never read the store of its cache scope. `cacheTag()` and `cacheLife()` need that store, and so does collecting the tags of the `fetch` calls in it. See [Caching](#a-cache-scope-ends-at-its-first-await).
 - Inside a function cached with `unstable_cache`, after its first `await`, the request's store is read instead of the cache's. See [Caching](#a-cache-scope-ends-at-its-first-await).
 - A `cacheHandler` or `cacheHandlers` of `next.config`. The cache is Next's own, in memory.
 - Code that leaves a store with `AsyncLocalStorage.exit()` for work that awaits, and reads the store again after it: the store stays left for the rest of the request. Next does this for the render after a Server Action, where nothing reads it again.
