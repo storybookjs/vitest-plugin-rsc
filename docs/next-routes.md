@@ -63,18 +63,50 @@ After that, Next's router is in charge. A `<Link>` navigation is an RSC request 
 The server layers are written for an edge runtime, which is close to a browser: web streams, `fetch`, `crypto`. The plugin adds the rest of that platform:
 
 - **`Request` and `Response`** that keep `Cookie` and `Set-Cookie`, which a browser drops from its own.
-- **`fetch`**, so that Next patches the server's `fetch`, not the page's.
+- **`fetch`**, so that Next patches the server's `fetch`, not the page's. Both reach the same network.
 - **`AsyncLocalStorage`**. A browser cannot carry a store across `await`. Requests are handled one at a time, and the store a request entered first stays readable until the request ends.
 - **`Buffer`**, **`process`**, and the Node modules an edge runtime has.
 
 And for the browser side, a page load: the tab cannot navigate away from the test, so the server's document is moved into the test's document as it streams, its inline scripts are run in order, and the URL is set with the History API.
+
+## Server Code In A Tab
+
+A tab has a `window`, and a `fetch` that knows nothing of Next's cache. Server code must see neither. A tab cannot lose its globals, but a module can be compiled not to see them, so that is what happens to every module of a server layer:
+
+- `window`, `document`, `location`, `localStorage` and `sessionStorage` are `undefined`. They become variables of the module, which nothing assigns. So `typeof window` is `"undefined"`, which is how libraries tell a server from a browser, and `window.innerWidth` throws.
+- `fetch`, `Request` and `Response` are the server's, also when they are written `globalThis.fetch`. A `fetch` with `cache` or `next: { tags }` goes through Next.
+
+This is the tab's version of what `next build` does, which replaces `typeof window` in the bundles it makes for a server. It applies to your source files and to the dependencies Vite pre-bundles, in both server layers. A Client Component is a module of two layers: it has no `window` while Next renders it to HTML in `ssr`, and has one in `browser`.
+
+The `rsc` layer shares its Vite environment with the test, and a test needs the tab. So in that environment these are not server code:
+
+- the test files and setup files of your Vitest config: `test.include` and `test.setupFiles`,
+- Vitest and Vite, and the packages they depend on,
+- what you list in `testModules`: a helper that reads `document.cookie`, or a package the test runs in the tab.
+
+```ts
+vitestPluginNext({
+  // Glob patterns, relative to the project root.
+  testModules: ["test/**", "**/node_modules/@electric-sql/pglite/**"],
+});
+```
+
+Everything else in that environment is server code, including a module that only a test imports. A component that is defined in a test file is code of that test file, and sees the tab.
+
+What this does not cover:
+
+- Code that looks a global up at runtime: `self.window`, `"window" in globalThis`, a `globalThis` that is passed to a function. `navigator` is left alone, since servers have one too, so it is the browser's.
+- Reading `window` where there is none throws a `ReferenceError` on a server. Here it gives `undefined`: `window.innerWidth` throws a `TypeError`, and `if (window)` is false where a server would throw.
+- A dependency that is left out of pre-bundling with `optimizeDeps.exclude` is served as it is.
+- The text of a function is not changed, on purpose. `next-themes` sends its theme script to the browser as `` `(${script.toString()})()` ``, and there it has to find the tab's `document`.
 
 ## Not Yet
 
 - `next/font`, `next/image` optimization, and metadata files like `icon.png` and `sitemap.ts`. These are build-time loaders that still have to be ported.
 - Route handlers (`route.ts`), `middleware.ts` / `proxy.ts`, and the redirects, rewrites and headers of `next.config`.
 - `"use cache"` and `unstable_cache`. The store a request entered first is the one a later task reads, so code that resumes after an `await` inside a cache scope reads the request's store instead of the cache's.
-- `fetch` in your own server code is the browser's `fetch`, without Next's cache options. And `typeof window` is `"object"` there: only Next's own server code is compiled as server code.
+- Next's `fetch` cache within one render only. A `fetch` with `cache: "force-cache"` is deduped while a page renders. Whether its result is kept for the next request, and when a test starts without it, is not settled.
+- Hiding the tab from server code has gaps: see [Server Code In A Tab](#server-code-in-a-tab).
 - `vi.mock()` replaces a module in the `rsc` layer, where the test runs. The other two layers load their modules themselves, so a mock does not reach a Client Component.
 - One request at a time. A request that waits for another one that the test has not sent yet will wait forever.
 - A same-origin `fetch` is only the app's when Next's router or a Server Action sends it. Other requests go to the dev server.

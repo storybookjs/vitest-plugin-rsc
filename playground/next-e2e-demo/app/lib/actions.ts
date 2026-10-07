@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { db } from "./notes.ts";
+import { createSession } from "./session.ts";
 
 export async function createNote(formData: FormData) {
   const title = String(formData.get("title") ?? "").trim();
@@ -29,4 +30,14 @@ export async function toggleFavorite(id: string): Promise<boolean> {
 
 export async function setLanguage(language: string) {
   (await cookies()).set("language", language);
+}
+
+export async function signIn(user: string) {
+  const response = createSession(user);
+  const cookieStore = await cookies();
+  // A server reads `Set-Cookie` off a Response. A browser hides it.
+  for (const cookie of response.headers.getSetCookie()) {
+    const [name, value] = cookie.split(";")[0]!.split("=");
+    cookieStore.set(name!, value!);
+  }
 }
