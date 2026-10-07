@@ -2,8 +2,9 @@ import fs from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { init as initCjsLexer, parse as parseCjs } from "cjs-module-lexer";
+import { stripVTControlCharacters } from "node:util";
 import type { AppLoaderOptions } from "next/dist/build/webpack/loaders/next-app-loader/index.js";
-import { parseAst } from "vite";
+import { parseAst, transformWithOxc } from "vite";
 import { rscFlightCodec, type FlightEntry } from "./flight.ts";
 
 // The one file that calls the build code of the project's own `next`. The
@@ -88,7 +89,14 @@ export type NextProject = {
    * expression for its rsc-layer module, which lives in another environment.
    */
   loadEdgeEntry(route: NextRoute | ComponentRoute, userland: string): Promise<string>;
+  /**
+   * Next's SWC transform of a module of the app, for a layer. Nothing for a
+   * client module in the rsc layer: Vite RSC turns it into references.
+   */
+  compile(code: string, file: string, layer: NextLayer): Promise<Compiled | undefined>;
 };
+
+export type Compiled = { code: string; map?: string };
 
 // What next-app-loader uses of webpack's loader context.
 type AppLoaderContext = {
@@ -219,6 +227,48 @@ function optionKeys({ code, params = [] }: Declared): string[] {
 // The parentheses make it a route group for Next, so it never shows in a
 // pathname.
 const componentRoot = "(vitest-plugin-rsc)";
+// The exports of a module of the app, without what they are: `undefined`.
+async function exportStubs(code: string, file: string): Promise<string> {
+  const compiled = await transformWithOxc(code, file, { sourcemap: false });
+  const names = new Set<string>();
+  const stars: string[] = [];
+  // The names a pattern binds, like `{ a, b: [c] }`.
+  const bound = (pattern: object | null): void => {
+    if (!pattern || !("type" in pattern)) return;
+    if (pattern.type === "Identifier") names.add(nameOf(pattern));
+    for (const key of ["properties", "elements", "value", "argument", "left"] as const) {
+      const child = (pattern as Record<string, unknown>)[key];
+      for (const part of [child].flat()) if (typeof part === "object") bound(part);
+    }
+  };
+  for (const node of parseAst(compiled.code).body) {
+    if (node.type === "ExportDefaultDeclaration") names.add("default");
+    else if (node.type === "ExportAllDeclaration") {
+      if (node.exported) names.add(nameOf(node.exported));
+      // Its names are in the other module, which this one has to load for them.
+      else stars.push(`export * from ${JSON.stringify(node.source.value)};\n`);
+    } else if (node.type === "ExportNamedDeclaration") {
+      for (const specifier of node.specifiers) names.add(nameOf(specifier.exported));
+      const { declaration } = node;
+      if (declaration?.type === "VariableDeclaration") {
+        for (const { id } of declaration.declarations) bound(id);
+      } else if (declaration && "id" in declaration && declaration.id) {
+        names.add(nameOf(declaration.id));
+      }
+    }
+  }
+  const named = [...names].filter((name) => /^[\w$]+$/.test(name) && name !== "default");
+  return (
+    (named.length > 0
+      ? `const _ = undefined;\nexport { ${named.map((name) => `_ as ${name}`).join(", ")} };\n`
+      : "") +
+    (names.has("default") ? "export default undefined;\n" : "") +
+    stars.join("")
+  );
+}
+
+// The source files whose TypeScript and JSX Vite compiles: not a `.js` file.
+const compiledByVite = /\.(?:m?ts|[jt]sx)$/;
 
 // Next's templates carry Turbopack-only import attributes. They mean nothing
 // to Vite and are a syntax error in a browser.
@@ -321,7 +371,15 @@ export async function loadNextProject(
   const { IncrementalCache } = load<
     typeof import("next/dist/server/lib/incremental-cache/index.js")
   >("server/lib/incremental-cache/index");
-
+  const swc = load<typeof import("next/dist/build/swc/index.js")>("build/swc/index");
+  const { getLoaderSWCOptions } =
+    load<typeof import("next/dist/build/swc/options.js")>("build/swc/options");
+  const { WEBPACK_LAYERS } = load<typeof import("next/dist/lib/constants.js")>("lib/constants");
+  const loadJsConfig =
+    load<typeof import("next/dist/build/load-jsconfig.js")>("build/load-jsconfig").default;
+  const { getRSCModuleInformation } = load<
+    typeof import("next/dist/build/analysis/get-page-static-info.js")
+  >("build/analysis/get-page-static-info");
   // The app is served the way a deployment serves it: production Next on its
   // edge runtime. React itself stays a development build, see plugin.ts.
   const config = await inDirectory(root, () =>
@@ -745,6 +803,115 @@ export async function loadNextProject(
     );
   }
 
+  // Next's SWC transform, with the options next-swc-loader gives it for a
+  // module of the app in a layer.
+  await swc.loadBindings(config.experimental.useWasmBinary);
+  const { jsConfig } = await loadJsConfig(root, config);
+  const bundleLayers = {
+    rsc: WEBPACK_LAYERS.reactServerComponents,
+    ssr: WEBPACK_LAYERS.serverSideRendering,
+    browser: WEBPACK_LAYERS.appPagesBrowser,
+  };
+  const swcOptions = (file: string, layer: NextLayer) => {
+    const {
+      // "use server" and "use cache": Vite RSC compiles server functions.
+      serverActions: _serverActions,
+      // An optimization of a bundle, like `modularizeImports` and
+      // `optimizePackageImports` below. They import a package by other paths
+      // than the app does, and Vite pre-bundles what the app imports.
+      cjsRequireOptimizer: _cjsRequireOptimizer,
+      // The targets, Node.js or the browsers: the tab runs the code as it is.
+      env: _env,
+      ...options
+    } = getLoaderSWCOptions({
+      filename: file,
+      development: false,
+      isServer: layer !== "browser",
+      pagesDir: undefined,
+      appDir,
+      isPageFile: false,
+      isCacheComponents: config.cacheComponents,
+      hasReactRefresh: false,
+      configDir: root,
+      modularizeImports: undefined,
+      optimizePackageImports: undefined,
+      swcPlugins: config.experimental.swcPlugins,
+      compilerOptions: config.compiler,
+      jsConfig,
+      supportedBrowsers: undefined,
+      swcCacheDir: path.join(distDir, "cache", "swc"),
+      relativeFilePathFromRoot: path.relative(root, file),
+      serverComponents: true,
+      serverReferenceHashSalt: "",
+      bundleLayer: bundleLayers[layer],
+      esm: true,
+      cacheHandlers: config.cacheHandlers,
+      useCacheEnabled: config.experimental.useCache,
+      taintEnabled: config.experimental.taint,
+      pageExtensions,
+    }) as Record<string, unknown> & {
+      jsc: { transform: Record<string, unknown>; experimental: object };
+    };
+    // `typeof window` and `process.env.NODE_ENV` are defines here, see
+    // plugin.ts and server-code.ts.
+    const {
+      optimizer: _optimizer,
+      regenerator: _regenerator,
+      react,
+      ...transform
+    } = options.jsc.transform;
+    return {
+      ...options,
+      jsc: {
+        ...options.jsc,
+        target: "esnext",
+        // Not imports of `@swc/helpers`, which is Next's dependency.
+        externalHelpers: false,
+        // For webpack's parser, which reads `assert`.
+        experimental: { ...options.jsc.experimental, emitAssertForImportAttributes: false },
+        transform: {
+          ...transform,
+          // Vite compiles JSX as it does without this plugin, for React's
+          // development runtime. Not in a `.js` file, which Next takes JSX
+          // in too.
+          react: compiledByVite.test(file) ? { ...(react as object), runtime: "preserve" } : react,
+        },
+      },
+      filename: file,
+      sourceFileName: file,
+      sourceMaps: true,
+    };
+  };
+  const compile = async (code: string, file: string, layer: NextLayer) => {
+    const options = swcOptions(file, layer);
+    let output: Compiled;
+    try {
+      output = await swc.transform(code, options);
+    } catch (error) {
+      // What `next build` stops at, like a client hook in a Server Component.
+      // The module throws Next's error when it loads, as in webpack's
+      // development build, so that the test gets it: a module that does not
+      // compile only tells a browser that its import failed. It has no
+      // imports, which would run first, apart from an `export *`, and it
+      // keeps its exports, for the modules that import it to link.
+      const exports = await exportStubs(code, file).catch(() => Promise.reject(error));
+      const message = stripVTControlCharacters((error as Error).message ?? String(error)).trim();
+      return { code: `throw new Error(${JSON.stringify(message)});\n${exports}` };
+    }
+    // In the rsc layer Next turns a client module into its own proxy. Vite
+    // RSC makes the references from the source, which it has to parse: where
+    // Vite does not compile the JSX, from the module as the other layers get it.
+    if (layer === "rsc" && getRSCModuleInformation(output.code, true).type === "client") {
+      if (compiledByVite.test(file)) return;
+      return swc.transform(code, { ...options, serverComponents: undefined });
+    }
+    return output;
+  };
+  // What the plugin relies on of the transform.
+  if (await compile(`"use client";\nexport const a = 1;\n`, path.join(appDir, "a.ts"), "rsc")) {
+    fail('the SWC transform no longer marks a `"use client"` module of the rsc layer');
+  }
+
   // next-app-loader keys its per-build caches on the compilation object.
   const compilation = {};
 
@@ -843,5 +1010,6 @@ export async function loadNextProject(
           )
         : code;
     },
+    compile,
   };
 }

@@ -135,6 +135,16 @@ export function createServerCode(registry: string, options: ServerCodeOptions = 
 
   return {
     isServerCode,
+    /**
+     * Whether a source file is code of the app in a layer: what Next's build
+     * compiles. Not in the rsc layer: what is the tab's there, the test files
+     * and the `browserModules`.
+     */
+    isAppCode(file: string, layer: NextLayer): boolean {
+      if (!path.isAbsolute(file) || file.includes("/node_modules/")) return false;
+      if (layer !== "rsc") return !normalizePath(file).startsWith(ownDir);
+      return testFileMatchers.length > 0 && isServerCode(file, layer);
+    },
     /** For the `define` of the optimizer, which Vite keys its cache on. */
     cacheKey: { __vitest_plugin_rsc_browser_modules__: JSON.stringify(patterns.map(String)) },
     /** For a module this plugin generates, with the constants of its layer. */

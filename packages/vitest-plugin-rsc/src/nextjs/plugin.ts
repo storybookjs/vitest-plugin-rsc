@@ -6,6 +6,7 @@ import { createFilter, normalizePath, parseAst, parseAstAsync, type Plugin } fro
 import type { TestProject } from "vitest/node";
 import { createRunnerEnvironmentPlugins } from "../runner-environment.ts";
 import { flightBridge, type FlightEntry } from "./flight.ts";
+import { createCompilePlugin } from "./compile.ts";
 import { loadNextProject, type NextLayer, type NextProject } from "./project.ts";
 import { createServerCode, type ServerCodeOptions } from "./server-code.ts";
 
@@ -132,11 +133,23 @@ function createLayerResolver(getProject: () => NextProject, layer: NextLayer) {
 
   function applyAlias(source: string): string | false | undefined {
     for (const { key, exact, target } of getAliases()) {
-      if (source === key) return target;
-      if (!exact && source.startsWith(`${key}/`)) {
-        return target && target + source.slice(key.length);
-      }
+      if (source !== key && (exact || !source.startsWith(`${key}/`))) continue;
+      const aliased = target && target + source.slice(key.length);
+      // Like webpack, not when nothing is there. Next sends all of
+      // `next/dist/compiled/server-only` to `.../server-only/index`, also the
+      // request for that file itself.
+      if (aliased && source !== key && aliased.startsWith("next/") && !nextFile(aliased)) continue;
+      return aliased;
     }
+  }
+
+  // The target of an alias like `styled-jsx$`: a file of another package.
+  function isDependencyOfNext(target: string): boolean {
+    return (
+      path.isAbsolute(target) &&
+      normalizePath(target).includes("/node_modules/") &&
+      path.relative(getProject().nextDir, target).startsWith("..")
+    );
   }
 
   function bridgeOf(source: string): string | undefined {
@@ -210,6 +223,14 @@ function createLayerResolver(getProject: () => NextProject, layer: NextLayer) {
         if (target === source) return;
         // Not found as a file of the `next` package: leave the import alone.
         if (specifier !== source && target === specifier && !nextFile(target)) return;
+        // A package that Next depends on and the app may not, like
+        // `styled-jsx`: found from Next, as a dependency that Vite pre-bundles.
+        if (isDependencyOfNext(target) && importer && !importer.includes("/node_modules/")) {
+          return this.resolve(source, path.join(getProject().nextDir, "package.json"), {
+            ...options,
+            skipSelf: true,
+          });
+        }
         // Keep it a bare specifier, so Vite maps it to the pre-bundled dependency.
         // Next is the project's: a package of the app that imports `react`
         // can have another `next` closer by, as in a pnpm workspace.
@@ -230,7 +251,7 @@ function createLayerResolver(getProject: () => NextProject, layer: NextLayer) {
     };
   }
 
-  return { normalize, nextFile, toSpecifier, plugin };
+  return { normalize, nextFile, toSpecifier, isDependencyOfNext, plugin };
 }
 
 type LayerResolver = ReturnType<typeof createLayerResolver>;
@@ -448,9 +469,18 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
           ]),
         };
 
+        // What Next's compiler makes app code import, like `styled-jsx/style`
+        // for a `<style jsx>`: not an import the dependency scan finds.
+        const dependenciesOfNext = (layer: NextLayer) =>
+          Object.entries(project.aliases[layer]).flatMap(([key, target]) =>
+            key.endsWith("$") && target && resolvers[layer].isDependencyOfNext(target)
+              ? [`next > ${key.slice(0, -1)}`]
+              : [],
+          );
+
         const appEntries = normalizePath(path.join(project.appDir, "**/*.{js,jsx,ts,tsx}"));
         const optimizeDeps = (layer: NextLayer) => ({
-          include: include[layer],
+          include: [...include[layer], ...dependenciesOfNext(layer)],
           rolldownOptions: {
             plugins: [
               resolvers[layer].plugin(),
@@ -461,6 +491,9 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
             // has, like `useRouter` of `next/navigation` in the rsc layer (the
             // notes demo). webpack leaves such an import undefined.
             shimMissingExports: true,
+            // Next takes JSX in a `.js` file, so the dependency scan of the
+            // app has to as well.
+            moduleTypes: { ".js": "jsx" as const },
             // Vite does not apply `define` to dependencies. NODE_ENV is all
             // it defines for them, as the "test" of Vitest. Not in the rsc
             // layer: there Vitest keeps `process.env`, so it is read as the
@@ -603,6 +636,11 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
       },
     },
     serverCode.plugin({ [environmentOf.rsc]: "rsc", [environmentOf.ssr]: "ssr" }),
+    createCompilePlugin(
+      getProject,
+      (environment) => layers.find((layer) => environmentOf[layer] === environment),
+      serverCode.isAppCode,
+    ),
     ...layers.map((layer) => ({
       ...resolvers[layer].plugin(),
       applyToEnvironment: (environment: { name: string }) =>

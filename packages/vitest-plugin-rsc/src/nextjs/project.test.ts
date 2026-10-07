@@ -59,9 +59,15 @@ test("lists the routes of the app, one for each pathname", async () => {
 });
 
 // An app of its own, next to the demo so that it finds the same Next.
-function appWith(files: string[]): string {
+function appWith(files: string[], config?: object): string {
   const dir = fs.mkdtempSync(path.join(root, ".app-"));
   onTestFinished(() => fs.rmSync(dir, { recursive: true, force: true }));
+  if (config) {
+    fs.writeFileSync(
+      path.join(dir, "next.config.mjs"),
+      `export default ${JSON.stringify(config)};`,
+    );
+  }
   for (const file of files) {
     fs.mkdirSync(path.dirname(path.join(dir, "app", file)), { recursive: true });
     const isRoute = path.basename(file).startsWith("route.");
@@ -451,5 +457,89 @@ test("gives the rsc layer every export of the Flight codec, one without an adapt
   expect(prerender!("page")).toEqual(["prerendered", "page"]);
   expect(() => resumeAndPrerender!()).toThrow(
     `vitest-plugin-rsc: \`resumeAndPrerender\` of Next's Flight codec is not supported in the rsc layer (next@${version}).`,
+  );
+});
+
+const appFile = (file: string) => path.join(root, "app", file);
+const sourceOf = (file: string) => fs.readFileSync(appFile(file), "utf8");
+
+test("compiles a module of the app with Next's SWC transform, for its layer", async () => {
+  const project = await loadNextProject(root);
+  const file = "styled-jsx/scoped-note.tsx";
+
+  const compiled = await project.compile(sourceOf(file), appFile(file), "ssr");
+  expect(compiled?.code).toContain('import _JSXStyle from "styled-jsx/style";');
+  // JSX is left for Vite to compile.
+  expect(compiled?.code).toContain("<_JSXStyle id=");
+  expect(compiled?.map).toContain(file);
+  // A client module in the rsc layer is Vite RSC's to turn into references.
+  expect(await project.compile(sourceOf(file), appFile(file), "rsc")).toBeUndefined();
+});
+
+test("compiles with the `compiler` options of next.config", async () => {
+  const app = appWith(["layout.js", "page.js"], { compiler: { removeConsole: true } });
+  const project = await loadNextProject(app, installed);
+
+  const compiled = await project.compile(
+    'console.log("debug");\nexport const a = 1;\n',
+    path.join(app, "app/a.js"),
+    "rsc",
+  );
+
+  expect(compiled?.code).toContain("export const a = 1;");
+  expect(compiled?.code).not.toContain("console.log");
+});
+
+test("makes a module that `next build` stops at throw Next's error, with its exports and without its imports", async () => {
+  const project = await loadNextProject(root);
+  const source = [
+    'import { useState } from "react";',
+    'import "./side-effect.ts";',
+    "export type Count = number;",
+    "export const a: Count = 1;",
+    "export const { x, y: [z = 2] } = { x: 1, y: [] as number[] };",
+    "export default function Page() {",
+    "  return useState(a);",
+    "}",
+    'export { b as c } from "./b.ts";',
+    'export * from "./d.ts";',
+  ].join("\n");
+
+  const compiled = await project.compile(source, appFile("page.tsx"), "rsc");
+
+  const [first, ...rest] = compiled!.code.split("\n");
+  expect(first).toMatch(
+    /^throw new Error\("x You're importing a module that depends on `useState` into a React Server Component module\./,
+  );
+  expect(first).toContain(`${path.join("app", "page.tsx")}:1:1`);
+  expect(rest.join("\n")).toBe(
+    "const _ = undefined;\nexport { _ as a, _ as x, _ as z, _ as c };\n" +
+      'export default undefined;\nexport * from "./d.ts";\n',
+  );
+});
+
+test("stops at `metadata` in a Client Component, in the layers that run it", async () => {
+  const project = await loadNextProject(root);
+  const source = '"use client";\nexport const metadata = {};\nexport default () => null;\n';
+
+  const compiled = await project.compile(source, appFile("page.tsx"), "ssr");
+
+  expect(compiled?.code).toMatch(
+    /^throw new Error\("x You are attempting to export \\"metadata\\" from a component marked with \\"use client\\"/,
+  );
+  expect(compiled?.code).toContain("export { _ as metadata };\nexport default undefined;");
+});
+
+test("needs the transform to say which module of the rsc layer is a client module", async () => {
+  const next = nextWith({
+    "next/dist/build/swc/index.js": {
+      transform: async (code: string) => ({
+        code,
+      }),
+    },
+  });
+
+  await expect(loadNextProject(root, next)).rejects.toThrow(
+    changed('the SWC transform no longer marks a `"use client"` module of the rsc layer'),
   );
 });
