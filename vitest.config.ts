@@ -2,6 +2,7 @@ import { defineConfig } from "vitest/config";
 import { vitestPluginRscSourceConditions } from "./vitest.conditions.ts";
 import vitestPluginRscProject from "./packages/vitest-plugin-rsc/vitest.config.ts";
 import nextjsE2eDemoProject from "./playground/nextjs-e2e-demo/vitest.config.ts";
+import nextjsHostDemoProject from "./playground/nextjs-host-demo/vitest.config.ts";
 import { nextjsNotesProjects } from "./playground/nextjs-notes-demo/vitest.config.ts";
 import rscVitestDemoProject from "./playground/rsc-vitest-demo/vitest.config.ts";
 
@@ -25,7 +26,7 @@ export default defineConfig({
         "**/*.{test,test-fixture,mock,config}.{ts,tsx}",
         "**/*.d.ts",
         "**/vitest*.{ts,tsx}",
-        "playground/nextjs-notes-demo/{db,env,scripts,test}/**/*.{ts,tsx}",
+        "playground/nextjs-notes-demo/{db,env,host,scripts,test}/**/*.{ts,tsx}",
         "playground/nextjs-notes-demo/lib/db{,.dev}.ts",
       ],
     },
@@ -35,6 +36,7 @@ export default defineConfig({
       vitestPluginRscProject,
       rscVitestDemoProject,
       nextjsE2eDemoProject,
+      nextjsHostDemoProject,
       ...nextjsNotesProjects,
     ],
   },
