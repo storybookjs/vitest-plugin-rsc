@@ -1,4 +1,4 @@
-import { createFilter, type Plugin } from "vite";
+import { createFilter, normalizePath, type Plugin } from "vite";
 import type { TestProject, Vitest } from "vitest/node";
 import { loadedCommand, type LoadedKind } from "./command.ts";
 import { relatedLookup } from "./related.ts";
@@ -75,7 +75,7 @@ export function affectedTests(options: AffectedTestsOptions): Plugin {
         if (!testPath) return;
         // The id of a Server Action starts with its module.
         const modules = kind === "action" ? [id] : options.modulesOf(kind, id);
-        for (const part of parts) part.loaded(testPath, modules);
+        for (const part of parts) part.loaded(normalizePath(testPath), modules);
       };
     },
     // Vitest's hook for a plugin of a project.

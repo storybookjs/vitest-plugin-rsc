@@ -15,7 +15,8 @@ export const vitestEnvironment = "__vitest__";
  * Watch mode: calls `prepare` for every file that changes, before Vitest
  * looks up its test files in Vite's module graph.
  *
- * Leans on: `watchTriggerPatterns` is asked first, for every file.
+ * Leans on: `watchTriggerPatterns` is asked first, for every file. And for
+ * what watch.ts does then: the lookup walks the `importers` of the modules.
  */
 export function beforeWatchLookup(vitest: Vitest, prepare: (file: string) => void): void {
   (vitest.config.watchTriggerPatterns ??= []).push({
@@ -75,14 +76,18 @@ export function answerLookup(
  * The runs of the test files of a project.
  *
  * Leans on: Vitest makes its reporters of `config.reporters` after
- * `configureVitest`, and `--tags` is not on the specification.
+ * `configureVitest`, `--tags` is not on the specification, and a run that
+ * was cut short ends as "interrupted".
  */
 export function onRuns(
   vitest: Vitest,
   project: TestProject,
   listener: {
     runStart(testFiles: string[]): void;
-    /** `complete`: every test of the file ran, and passed. */
+    /**
+     * `complete`: every test of the file ran, and passed. Once more, and not
+     * complete, for each file of a run that was cut short.
+     */
     testFileEnd(testFile: string, complete: boolean): void;
     runEnd(): void;
   },
@@ -100,19 +105,31 @@ export function onRuns(
       vitest.getGlobalTestNamePattern(),
     );
 
+  // The test files of this run that ended complete.
+  const complete = new Set<string>();
+
   vitest.config.reporters.push({
     onTestRunStart(specifications: readonly TestSpecification[]) {
       const own = specifications.filter((spec) => spec.project === project);
       partial.clear();
+      complete.clear();
       for (const spec of own) if (isFiltered(spec)) partial.add(spec.moduleId);
       listener.runStart(own.map((spec) => spec.moduleId));
     },
     onTestModuleEnd(module: TestModule) {
       if (module.project !== project) return;
       // Not one with a test that was skipped by a filter, a bail or a stop.
-      const complete = module.state() === "passed" && !partial.has(module.moduleId);
-      listener.testFileEnd(module.moduleId, complete);
+      const whole = module.state() === "passed" && !partial.has(module.moduleId);
+      if (whole) complete.add(module.moduleId);
+      listener.testFileEnd(module.moduleId, whole);
     },
-    onTestRunEnd: () => listener.runEnd(),
+    onTestRunEnd(_: unknown, __: unknown, reason: "passed" | "interrupted" | "failed") {
+      // A bail or a stop skips the tests that are left of a file that runs,
+      // and that file still passes.
+      if (reason === "interrupted") {
+        for (const testFile of complete) listener.testFileEnd(testFile, false);
+      }
+      listener.runEnd();
+    },
   } as never);
 }

@@ -48,6 +48,9 @@ async function start(options: { related?: string[]; watch?: boolean }, hooks?: H
     { root, config: false, include: ["*.test.ts"], watch: false, reporters: [{}], ...options },
     { plugins: hooks && [plugin(hooks)] },
   );
+  // Not the disk: a test says itself that a file changed, and a late event
+  // for a file it wrote would be a change of its own.
+  vitest.vite.watcher.unwatch(root);
   return vitest;
 }
 
@@ -140,6 +143,31 @@ test("onRuns: says when a test file ran whole, and when in part", async () => {
   expect(calls).toContainEqual(["testFileEnd", "a.test.ts", false]);
 });
 
+test("onRuns: a test file of a run that was cut short is not complete", async () => {
+  const ended: boolean[] = [];
+  const vitest = await start(
+    {},
+    {
+      configureVitest({ vitest, project }) {
+        onRuns(vitest, project, {
+          runStart() {},
+          testFileEnd: (_, complete) => ended.push(complete),
+          runEnd() {},
+        });
+        // What a bail does, and the `q` key: the tests that are left are
+        // skipped, and the file still passes.
+        vitest.config.reporters.push({
+          onTestCaseResult: () => void vitest.cancelCurrentRun("test-failure"),
+        } as never);
+      },
+    },
+  );
+
+  await vitest.start(["a.test.ts"]);
+
+  expect(ended.at(-1)).toBe(false);
+});
+
 test("beforeWatchLookup: is asked before Vitest looks up the test files of a change", async () => {
   // Both test files import one module.
   fs.writeFileSync(at("shared.ts"), "export {};\n");
@@ -176,6 +204,9 @@ test("beforeWatchLookup: is asked before Vitest looks up the test files of a cha
 
   vitest.vite.watcher.emit("change", at("shared.ts"));
 
-  await expect.poll(() => runs).toEqual([["a.test.ts", "b.test.ts"], ["b.test.ts"]]);
+  // A run of its own, in a process that may be busy.
+  await expect
+    .poll(() => runs, { timeout: 20_000 })
+    .toEqual([["a.test.ts", "b.test.ts"], ["b.test.ts"]]);
   expect(asked).toEqual(["shared.ts"]);
-});
+}, 30_000);

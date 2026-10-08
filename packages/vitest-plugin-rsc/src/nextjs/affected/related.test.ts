@@ -89,13 +89,17 @@ function start(related?: string[]) {
   const reporter = config.reporters[0] as {
     onTestRunStart(specifications: TestSpecification[]): void;
     onTestModuleEnd(module: TestModule): void;
-    onTestRunEnd(): void;
+    onTestRunEnd(modules: unknown, errors: unknown, reason: string): void;
   };
   return {
     vitest,
     tagsFilter,
     /** A run of a test file that loads these modules. */
-    run(testFile: string, loads: string[], run: { state?: string; testNamePattern?: RegExp } = {}) {
+    run(
+      testFile: string,
+      loads: string[],
+      run: { state?: string; testNamePattern?: RegExp; reason?: string } = {},
+    ) {
       const moduleId = at(testFile);
       reporter.onTestRunStart([{ project, moduleId, ...run } as unknown as TestSpecification]);
       routes.loaded(moduleId, loads);
@@ -104,7 +108,7 @@ function start(related?: string[]) {
         moduleId,
         state: () => run.state ?? "passed",
       } as unknown as TestModule);
-      reporter.onTestRunEnd();
+      reporter.onTestRunEnd([], [], run.reason ?? "passed");
     },
     /** Whether Vitest's lookup keeps a test file: it is in the list afterwards. */
     belongs(testFile: string) {
@@ -189,6 +193,11 @@ test("forgets a test file that did not pass, or that ran in part", () => {
 
   start().run("notes.test.tsx", ["route/notes"]);
   start().run("notes.test.tsx", [], { testNamePattern: /one test/ });
+  expect(unknown()).toBe(true);
+
+  start().run("notes.test.tsx", ["route/notes"]);
+  // A bail in another file: the tests that were left are skipped, it passes.
+  start().run("notes.test.tsx", [], { reason: "interrupted" });
   expect(unknown()).toBe(true);
 
   start().run("notes.test.tsx", ["route/notes"]);
