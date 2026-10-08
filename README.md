@@ -87,7 +87,7 @@ Agents do dramatically better when wrapped in a self-healing loop with fast unit
 
 ## Requirements
 
-- Vitest 5.0.3 or later, in [Browser Mode](https://vitest.dev/guide/browser/). The examples use Playwright as the browser provider.
+- Vite 8 or later, and Vitest 5.0.3 or later in [Browser Mode](https://vitest.dev/guide/browser/). The examples use Playwright as the browser provider.
 - For Next.js: the App Router, `next@16.4` or later, and [`@next/routing`](https://www.npmjs.com/package/@next/routing), Next's own route resolution, at the same version as `next`.
 
 The plugin calls Next.js internals, so CI tests against `next@16.4.0`, `next@latest`, and `next@canary`.

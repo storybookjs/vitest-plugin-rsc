@@ -108,7 +108,7 @@
     "next": ">=16.4.0-0",
     "react": "*",
     "react-dom": "*",
-    "vite": "*",
+    "vite": ">=8.0.0",
     "vitest": ">=5.0.3"
   },
   "peerDependenciesMeta": {
