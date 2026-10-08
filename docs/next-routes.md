@@ -607,7 +607,7 @@ A Flight payload names a Client Component by an id, so a build has to have every
 3. the `rsc` layer, which gives each Client Component the id it has in a Flight payload,
 4. the `browser` and the `ssr` layer, with the modules of those ids.
 
-The first two cut every module down to its imports, so they are quick. A host that calls Vite's `build()`, like `storybook build`, builds only its own environment, so the plugin builds the others around it, with a builder of the same config and the same plugins.
+The first two cut every module down to its imports, so they are quick. The plugin's `buildApp()` hook builds them in that order, so the app is built with Vite's app builder: `vite build`, or `createBuilder()` and `buildApp()`. The config of the plugin has a `builder`, so `createBuilder(config, null)` makes the app builder too. Vite's `build()` builds one environment, the host's, and the plugin stops it with an error before anything is built. `@storybook/builder-vite` calls `build()`: the Storybook proof of concept patches that call, see `playground/storybook-nextjs-vite-rsc`.
 
 - React is its development build, as in a test run.
 - `images.unoptimized` is on: there is no image optimizer behind `/_next/image`.

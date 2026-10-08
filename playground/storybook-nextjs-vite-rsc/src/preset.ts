@@ -13,6 +13,19 @@ import { vitestPluginNext } from "vitest-plugin-rsc/nextjs/plugin";
 
 const frameworkDir = path.dirname(fileURLToPath(new URL(".", import.meta.url)));
 
+// `storybook build` has to build with Vite's app builder, which builds the
+// three layers of the app. `@storybook/builder-vite` calls Vite's `build()`,
+// which builds one environment, so this repository patches that call
+// (patches/@storybook__builder-vite@10.6.1.patch). It is the change to
+// upstream to Storybook, an import and this line:
+//
+//   - await viteBuild(finalConfig)
+//   + await (await createBuilder(finalConfig, null)).buildApp()
+//
+// With `null`, a config without a `builder` still builds one environment.
+// Two things change for another framework: the `buildApp` hooks of its
+// plugins run, and a config whose plugins ask for the app builder with a
+// `builder`, like this plugin, gets it and builds all of its environments.
 export const core: PresetProperty<"core"> = {
   builder: import.meta.resolve("@storybook/builder-vite"),
 };

@@ -13,18 +13,6 @@ import {
   withBuiltFiles,
 } from "./build.ts";
 
-// A builder that builds nothing: `nextBuild()` asks Vite for one when a host
-// only builds its own environment. And a config file, which it loads for that.
-const { createBuilder, loadConfigFromFile } = vi.hoisted(() => ({
-  createBuilder: vi.fn(),
-  loadConfigFromFile: vi.fn(),
-}));
-vi.mock("vite", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("vite")>()),
-  createBuilder,
-  loadConfigFromFile,
-}));
-
 const names = { rsc: "client", ssr: "next_ssr", browser: "react_client" };
 const clientReferences = "\0virtual:vitest-plugin-rsc/next-client-references";
 
@@ -40,16 +28,14 @@ const call = (hook: unknown, environment: string, ...args: unknown[]) =>
   ) as unknown;
 
 // The plugin as a build has it, in a project of its own: the config of Vite
-// that it asks for, and a builder that says what it was asked to build. A
-// build of a layer leaves the bundle of `bundles` for that layer.
+// that it asks for, and an app builder that says what it was asked to build.
+// A build of a layer starts as Vite starts it, and leaves the bundle of
+// `bundles` for that layer. The host's build goes to `dist`, as the config
+// has it: relative to the root, which is not the directory of the process.
 function setup(
   bundles: Record<string, Bundle> = {},
   emitted: Record<string, string> = {},
-  {
-    configFile,
-    plugins = [],
-    onwarn,
-  }: { configFile?: string; plugins?: object[]; onwarn?: (...args: any[]) => void } = {},
+  { onwarn }: { onwarn?: (...args: any[]) => void } = {},
 ) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "build-"));
   onTestFinished(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -66,8 +52,9 @@ function setup(
       Object.entries(emitted).map(([pathname, body]) => ({ pathname, body: Buffer.from(body) })),
     host: references,
   });
-  const userConfig = { plugins, build: { rolldownOptions: { onwarn } } };
+  const userConfig = { build: { rolldownOptions: { onwarn } } };
   const config = (plugin.config as Hook)(userConfig, { command: "build" }) as {
+    builder: object;
     build: { rolldownOptions: { onwarn(warning: Warning, warn: (w: Warning) => void): void } };
     environments: Record<
       string,
@@ -75,38 +62,38 @@ function setup(
     >;
   };
   const layers = Object.fromEntries(
-    [names.ssr, names.browser].map((name) => [name, { build: { outDir, emptyOutDir: false } }]),
+    [names.ssr, names.browser].map((name) => [
+      name,
+      { build: { outDir: "dist", emptyOutDir: false } },
+    ]),
   );
   (plugin.configResolved as Hook)({
     command: "build",
-    mode: "production",
     root,
-    configFile,
-    inlineConfig: { root, configLoader: "native" },
     plugins: [{ name: "rsc:minimal", api: { manager } }],
     environments: layers,
   });
 
-  const host = { name: names.rsc, config: { build: { outDir } } };
-  const builds: { name: string; scan: boolean; outDir: string; stale: boolean }[] = [];
+  const environments = Object.fromEntries(
+    Object.values(names).map((name) => [
+      name,
+      { name, config: { build: { outDir: "dist", write: true } } },
+    ]),
+  );
+  const builds: { name: string; scan: boolean; write: boolean }[] = [];
   const builder = {
-    config: { root, plugins: [plugin] as object[] },
-    environments: {
-      [names.rsc]: host,
-      [names.ssr]: { name: names.ssr },
-      [names.browser]: { name: names.browser },
-    },
+    config: { root },
+    environments,
     async build({ name }: { name: string }) {
       builds.push({
         name,
         scan: manager.isScanBuild,
-        outDir: path.relative(root, host.config.build.outDir),
-        stale: fs.existsSync(path.join(outDir, "stale.txt")),
+        write: environments[name]!.config.build.write,
       });
+      (plugin.buildStart as Hook).call({ environment: { name, mode: "build" }, emitFile() {} });
       call(plugin.generateBundle, name, {}, bundles[name] ?? {});
     },
   };
-  createBuilder.mockResolvedValue(builder);
   const warnings = (warning: Warning) => {
     const shown: Warning[] = [];
     config.build.rolldownOptions.onwarn(warning, (shownWarning) => shown.push(shownWarning));
@@ -120,7 +107,6 @@ function setup(
     manager,
     references,
     layers,
-    host,
     builder,
     builds,
     warnings,
@@ -128,21 +114,18 @@ function setup(
 }
 
 test("builds the layers in the order that gives every reference its id", async () => {
-  const { outDir, plugin, builder, builds } = setup();
-  // What an earlier build left: Vite empties the directory before the first
-  // build of an environment, which for the host is the one that only looks.
-  fs.mkdirSync(outDir, { recursive: true });
-  fs.writeFileSync(path.join(outDir, "stale.txt"), "");
+  const { plugin, builder, builds } = setup();
 
   await (plugin.buildApp as Hook)(builder);
 
-  const scratch = "node_modules/.vitest-plugin-rsc/scan";
+  // The builds that only look write nothing. So Vite empties the directory
+  // of the host's build, and copies `public/` into it, with the next one.
   expect(builds).toEqual([
-    { name: "client", scan: true, outDir: scratch, stale: true },
-    { name: "react_client", scan: true, outDir: scratch, stale: true },
-    { name: "client", scan: false, outDir: "dist", stale: false },
-    { name: "react_client", scan: false, outDir: "dist", stale: false },
-    { name: "next_ssr", scan: false, outDir: "dist", stale: false },
+    { name: "client", scan: true, write: false },
+    { name: "react_client", scan: true, write: false },
+    { name: "client", scan: false, write: true },
+    { name: "react_client", scan: false, write: true },
+    { name: "next_ssr", scan: false, write: true },
   ]);
 });
 
@@ -177,7 +160,7 @@ test("builds the layers somewhere of their own, whatever directory the host gave
 });
 
 test("ends a scan as it started, also one that fails", async () => {
-  const { outDir, plugin, host, builder, manager } = setup();
+  const { plugin, builder, manager } = setup();
   builder.build = async () => {
     throw new Error("The build failed");
   };
@@ -185,86 +168,61 @@ test("ends a scan as it started, also one that fails", async () => {
   await expect((plugin.buildApp as Hook)(builder)).rejects.toThrow("The build failed");
 
   expect(manager.isScanBuild).toBe(false);
-  expect(host.config.build.outDir).toBe(outDir);
+  expect(builder.environments.client!.config.build.write).toBe(true);
+  expect(builder.environments.react_client!.config.build.write).toBe(true);
+  // A build of the host after it is outside `buildApp()` again.
+  expect(() =>
+    (plugin.buildStart as Hook).call({ environment: { name: "client", mode: "build" } }),
+  ).toThrow("outside the plugin's `buildApp()`");
 });
 
-test("builds the other layers around the build of a host that only builds its own", async () => {
-  const { plugin, builds } = setup();
+test("asks for Vite's app builder, which `vite build` uses", () => {
+  const { config } = setup();
 
-  // Not for a layer that this plugin builds, and not for a dev server.
-  await call(plugin.buildStart, "react_client");
-  await (plugin.buildStart as { handler: Hook }).handler.call({
-    environment: { name: "client", mode: "dev" },
-  });
-  expect(builds).toEqual([]);
-
-  await call(plugin.buildStart, "client");
-  expect(builds.map(({ name, scan }) => [name, scan])).toEqual([
-    ["client", true],
-    ["react_client", true],
-  ]);
-
-  builds.length = 0;
-  await call(plugin.closeBundle, "client");
-  expect(builds.map(({ name, scan }) => [name, scan])).toEqual([
-    ["react_client", false],
-    ["next_ssr", false],
-  ]);
-
-  // Once for a build: the layers are not built again without a new start.
-  builds.length = 0;
-  await call(plugin.closeBundle, "client");
-  expect(builds).toEqual([]);
+  // With a `builder` in the config, `createBuilder(config, null)` makes one.
+  expect(config.builder).toEqual({ sharedPlugins: true, sharedConfigBuild: true });
 });
 
-test("builds the layers around a build of a config file with the plugins of that build", async () => {
-  const own = { name: "own" };
-  const { root, plugin, builds } = setup(
-    {},
-    {},
-    { configFile: "/app/vite.config.ts", plugins: [own] },
-  );
-  // A config file makes new plugins each time it is loaded.
-  loadConfigFromFile.mockResolvedValue({
-    config: { base: "/site/", plugins: [{ name: "own" }] },
-  });
-
-  await call(plugin.buildStart, "client");
-
-  expect(loadConfigFromFile.mock.calls[0]?.slice(0, 2)).toEqual([
-    { command: "build", mode: "production", isSsrBuild: false, isPreview: false },
-    "/app/vite.config.ts",
-  ]);
-  expect(createBuilder).toHaveBeenLastCalledWith({
-    base: "/site/",
-    root,
-    configLoader: "native",
-    configFile: false,
-    plugins: [own],
-  });
-  expect(builds.map(({ name }) => name)).toEqual(["client", "react_client"]);
-});
-
-test("says so when the builder of the layers has plugins of its own, and builds nothing", async () => {
+test("says to build with the app builder when the host's environment is built outside buildApp()", async () => {
   const { plugin, builder, builds } = setup();
-  // It would start the build of the layers again, and again.
-  builder.config.plugins = [{ name: "vitest-plugin-rsc:next-build" }];
+  const buildStart = (name: string, mode: string) =>
+    (plugin.buildStart as Hook).call({ environment: { name, mode }, emitFile() {} });
 
-  await expect(call(plugin.buildStart, "client")).rejects.toThrow(
-    "the build of the layers needs a builder with the plugins of the build of the host",
+  // As Vite's `build()` does: the site would have no ssr and browser layer.
+  expect(() => buildStart("client", "build")).toThrow(
+    "vitest-plugin-rsc: the app is built outside the plugin's `buildApp()`, which builds its " +
+      "three layers. Vite's `build()` does that: it builds one environment. Build with Vite's " +
+      "app builder: `vite build`, or `await (await createBuilder(config, null)).buildApp()`.",
   );
-  expect(builds).toEqual([]);
+  // Not for a dev server, and not in `buildApp()`, which builds every layer.
+  expect(() => buildStart("client", "dev")).not.toThrow();
+  await (plugin.buildApp as Hook)(builder);
+  expect(builds.map(({ name }) => name)).toEqual([
+    "client",
+    "react_client",
+    "client",
+    "react_client",
+    "next_ssr",
+  ]);
+  // And again after it.
+  expect(() => buildStart("client", "build")).toThrow("outside the plugin's `buildApp()`");
 });
 
-test("does not build the layers after a build of the host that failed", async () => {
-  const { plugin, builds } = setup();
+test("says that a static build cannot watch", () => {
+  const plugin = nextBuild({
+    environments: names,
+    entries: { ssr: "ssr", browser: "client" },
+    emittedFiles: () => [],
+    host: createHostReferences(),
+  });
 
-  await call(plugin.buildStart, "client");
-  builds.length = 0;
-  call(plugin.buildEnd, "client", new Error("The build failed"));
-  await call(plugin.closeBundle, "client");
-
-  expect(builds).toEqual([]);
+  expect(() => (plugin.config as Hook)({ build: { watch: {} } }, { command: "build" })).toThrow(
+    "vitest-plugin-rsc: a static build of the app cannot watch. Build it again instead of " +
+      "`vite build --watch`.",
+  );
+  expect(() =>
+    (plugin.config as Hook)({ build: { watch: null } }, { command: "build" }),
+  ).not.toThrow();
 });
 
 test("writes the layers and what Next's loaders made into the build of the host", async () => {
@@ -398,7 +356,7 @@ test("has the client files of the host in the browser layer, each in the file it
   references.clientFiles.set(file, id);
   const emitFile = vi.fn();
 
-  await (plugin.buildStart as { handler: Hook }).handler.call({
+  (plugin.buildStart as Hook).call({
     environment: { name: "react_client", mode: "build" },
     emitFile,
   });

@@ -873,7 +873,7 @@ Outside Vitest, `cleanup()` forgets only what the app added: the cookies its ser
 
 ### A Static Build
 
-`vite build` builds the app into a static site: the three layers, with the server in the browser of whoever opens the page, and no server behind it. A host that builds with Vite's `build()`, like `storybook build`, gets the same.
+`vite build` builds the app into a static site: the three layers, with the server in the browser of whoever opens the page, and no server behind it. A host builds it with Vite's app builder, `await (await createBuilder(config, null)).buildApp()`, as `vite build` does. Vite's `build()` builds one environment, so the plugin stops it with an error. `storybook build` calls `build()` today: the Storybook proof of concept patches that call in `@storybook/builder-vite`.
 
 - React is its development build, as in a test run.
 - `images.unoptimized` is on: there is no image optimizer to ask.

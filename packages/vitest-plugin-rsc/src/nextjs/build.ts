@@ -3,17 +3,10 @@ import fs from "node:fs";
 import path from "node:path";
 import { getPluginApi } from "@vitejs/plugin-rsc/plugin";
 import {
-  createBuilder,
-  loadConfigFromFile,
-  mergeConfig,
   moduleRunnerTransform,
   normalizePath,
-  type InlineConfig,
   type Plugin,
-  type PluginOption,
-  type ResolvedConfig,
   type Rolldown,
-  type UserConfig,
   type ViteBuilder,
 } from "vite";
 import { hostModulePrefix, hostModuleUrl } from "../host-module.ts";
@@ -21,7 +14,8 @@ import { builtClientFileDir, builtLiveModuleDir, clientNodeReference } from "./c
 
 // A static build of the app: the three layers as files of a site, with no dev
 // server next to the browser. `vite build` makes it, and so does a host that
-// builds with Vite, like Storybook.
+// builds with Vite's app builder, `createBuilder()` and `buildApp()`. Vite's
+// `build()` builds one environment, which is not enough: see `buildStart`.
 //
 // The rsc layer shares its environment with the host, so it is the host's
 // build: its HTML, with its scripts. The other two run through a module
@@ -191,31 +185,6 @@ export async function toRunnerModule(
     : code;
 }
 
-// The config of a builder for the layers around the build of a host: the
-// config of that build, with the same instances of the plugins. What the
-// builds find is kept in the plugins, Vite RSC's references too, so a builder
-// with plugins of its own would build the layers without it. The plugins of a
-// config file are made anew each time the file is loaded, so the file's
-// config is loaded here with the plugins that the build of the host has.
-async function sameConfig(config: ResolvedConfig, plugins: PluginOption[]): Promise<InlineConfig> {
-  const inline = config.inlineConfig;
-  if (inline.configFile === false || !config.configFile) return inline;
-  const withoutPlugins = ({ plugins: _, ...rest }: UserConfig) => rest;
-  const loaded = await loadConfigFromFile(
-    { command: "build", mode: config.mode, isSsrBuild: !!inline.build?.ssr, isPreview: false },
-    config.configFile,
-    inline.root,
-    inline.logLevel,
-    inline.customLogger,
-    inline.configLoader,
-  );
-  return {
-    ...mergeConfig(withoutPlugins(loaded?.config ?? {}), withoutPlugins(inline)),
-    configFile: false,
-    plugins,
-  };
-}
-
 export function nextBuild(options: BuildOptions): Plugin {
   const { rsc, ssr, browser } = options.environments;
   // The runtime knows where the client files are without this plugin: see
@@ -229,103 +198,33 @@ export function nextBuild(options: BuildOptions): Plugin {
   };
   // Set once the config is resolved, which is before anything is built.
   let manager!: Manager;
-  let config: ResolvedConfig;
   // The files of the layers that run through a module runner, by environment.
   // A module is there once it is rewritten for the runner, which the build of
   // its layer does not wait for.
   const built = new Map<string, Map<string, string | Uint8Array | Promise<string>>>();
-  // What Next's loaders made for the browser, fonts and images, by the path
-  // it asks for. Kept as each layer is built: a builder of the same config
-  // loads the project again, and with it the loaders.
-  const emitted = new Map<string, Uint8Array>();
-  // While this plugin builds the environments itself, in `buildApp()` or for a
-  // host that only builds its own.
-  let building = false;
-  // For a host that only builds its own environment: whether steps 1 and 2
-  // were done for the build that is ending.
-  let prepared = false;
+  // While `buildApp()` builds the environments.
+  let buildingApp = false;
   // The modules of the page that the build of the host lists, once it has.
   let listedHostModules: Set<string> | undefined;
-  // The plugins of the config, as the user gave them: see `sameConfig()`.
-  let userPlugins: PluginOption[] = [];
 
   const environment = (builder: ViteBuilder, name: string) => {
     const found = builder.environments[name];
     if (!found) throw new Error(`vitest-plugin-rsc: the build has no environment "${name}"`);
     return found;
   };
-  const scratch = (root: string, name: string) =>
-    path.join(root, "node_modules/.vitest-plugin-rsc", name);
 
-  // A builder for the layers around the build of a host that only builds its
-  // own environment.
-  async function createLayersBuilder(): Promise<ViteBuilder> {
-    const builder = await createBuilder(await sameConfig(config, userPlugins));
-    // A builder with plugins of its own would start the build of the layers
-    // again, and again.
-    if (!builder.config.plugins.includes(plugin)) {
-      throw new Error(
-        "vitest-plugin-rsc: the build of the layers needs a builder with the plugins of the " +
-          "build of the host, and Vite made new ones. Build with `createBuilder()` and " +
-          "`buildApp()`, or pass the plugins in the config of `build()`.",
-      );
-    }
-    return builder;
-  }
-
-  // Steps 1 and 2: what the build of the host has to know.
-  async function findReferences(builder: ViteBuilder): Promise<void> {
-    const host = environment(builder, rsc).config.build;
-    const hostOutDir = host.outDir;
-    // What a build before this one found.
-    options.host.clientFiles.clear();
-    options.host.hostModules.clear();
-    listedHostModules = undefined;
-    manager.isScanBuild = true;
-    // Not where the host's build goes: this one is thrown away.
-    host.outDir = scratch(builder.config.root, "scan");
-    try {
-      await builder.build(environment(builder, rsc));
-      await builder.build(environment(builder, browser));
-    } finally {
-      manager.isScanBuild = false;
-      host.outDir = hostOutDir;
-    }
-  }
-
-  // Step 4, and the files it makes, in the directory of the host's build.
-  async function buildLayers(builder: ViteBuilder): Promise<void> {
-    await builder.build(environment(builder, browser));
-    // A module of the page that only this build of the browser layer imports
-    // is not in the build of the host. Not likely, as step 2 had the same
-    // modules, but the page would only say so when it is asked for.
-    const unlisted = [...options.host.hostModules.keys()].filter(
-      (url) => listedHostModules && !listedHostModules.has(url),
-    );
-    if (unlisted.length > 0) {
-      throw new Error(
-        `vitest-plugin-rsc: the browser layer imports modules of the page that the build of ` +
-          `the host does not have: ${unlisted.join(", ")}`,
-      );
-    }
-    await builder.build(environment(builder, ssr));
-    const { outDir } = environment(builder, rsc).config.build;
-    const write = (file: string, content: string | Uint8Array) => {
-      fs.mkdirSync(path.dirname(file), { recursive: true });
-      fs.writeFileSync(file, content);
-    };
-    for (const files of built.values()) {
-      for (const [fileName, content] of files) write(path.join(outDir, fileName), await content);
-    }
-    for (const [pathname, body] of emitted) write(path.join(outDir, pathname), body);
-  }
-
-  const plugin: Plugin = {
+  return {
     name: "vitest-plugin-rsc:next-build",
     enforce: "pre",
     config(userConfig, { command }) {
       if (command !== "build") return;
-      userPlugins = userConfig.plugins ?? [];
+      // A change would build one environment again, outside `buildApp()`.
+      if (userConfig.build?.watch) {
+        throw new Error(
+          "vitest-plugin-rsc: a static build of the app cannot watch. Build it again instead " +
+            "of `vite build --watch`.",
+        );
+      }
       // The config's own, which this one replaces: it gets what is left.
       const userOnwarn = userConfig.build?.rolldownOptions?.onwarn;
       const layer = (name: string) => ({
@@ -353,8 +252,9 @@ export function nextBuild(options: BuildOptions): Plugin {
         },
       });
       return {
-        // One set of plugins for the environments: what the build of one
-        // finds, the build of the next one has.
+        // Vite's app builder, also for `createBuilder(config, null)`, which
+        // `vite build` calls. One set of plugins for the environments: what
+        // the build of one finds, the build of the next one has.
         builder: { sharedPlugins: true, sharedConfigBuild: true },
         build: {
           rolldownOptions: {
@@ -406,7 +306,6 @@ export function nextBuild(options: BuildOptions): Plugin {
       const api = getPluginApi(resolved);
       if (!api) throw new Error("vitest-plugin-rsc: vitestPluginNext() needs vitestPluginRSC().");
       manager = api.manager;
-      config = resolved;
       if (resolved.command !== "build") return;
       // The layers are built somewhere of their own, and copied from there.
       // Not in the directory of the host's build, which they would empty.
@@ -415,75 +314,95 @@ export function nextBuild(options: BuildOptions): Plugin {
       for (const name of [ssr, browser]) {
         const layer = resolved.environments[name]?.build;
         if (!layer) continue;
-        layer.outDir = scratch(resolved.root, name);
+        layer.outDir = path.join(resolved.root, "node_modules/.vitest-plugin-rsc", name);
         layer.emptyOutDir = true;
       }
     },
-    // `vite build`, and a host that builds with Vite's builder.
+    // Steps 1 to 4, and the files of the layers in the directory of the
+    // host's build.
     async buildApp(builder) {
-      building = true;
+      const build = (name: string) => builder.build(environment(builder, name));
+      const scanned = [rsc, browser].map((name) => environment(builder, name).config.build);
+      buildingApp = true;
       try {
-        await findReferences(builder);
-        // Vite empties the directory of an environment before its first
-        // build, which for the host was the one that only looked.
-        const host = environment(builder, rsc).config.build;
-        const inRoot = !path.relative(builder.config.root, host.outDir).startsWith("..");
-        if (host.emptyOutDir ?? inRoot) {
-          for (const name of fs.existsSync(host.outDir) ? fs.readdirSync(host.outDir) : []) {
-            if (name !== ".git") fs.rmSync(path.join(host.outDir, name), { recursive: true });
-          }
+        // What a build before this one found.
+        options.host.clientFiles.clear();
+        options.host.hostModules.clear();
+        listedHostModules = undefined;
+
+        // Steps 1 and 2, which only look: they write nothing, so Vite empties
+        // the directory of the host's build, and copies `public/` into it,
+        // with step 3.
+        manager.isScanBuild = true;
+        for (const scan of scanned) scan.write = false;
+        try {
+          await build(rsc);
+          await build(browser);
+        } finally {
+          manager.isScanBuild = false;
+          for (const scan of scanned) scan.write = true;
         }
-        await builder.build(environment(builder, rsc));
-        await buildLayers(builder);
+
+        // Step 3.
+        await build(rsc);
+
+        // Step 4.
+        await build(browser);
+        // A module of the page that only this build of the browser layer
+        // imports is not in the build of the host. Not likely, as step 2 had
+        // the same modules, but the page would only say so when it is asked
+        // for.
+        const unlisted = [...options.host.hostModules.keys()].filter(
+          (url) => listedHostModules && !listedHostModules.has(url),
+        );
+        if (unlisted.length > 0) {
+          throw new Error(
+            `vitest-plugin-rsc: the browser layer imports modules of the page that the build ` +
+              `of the host does not have: ${unlisted.join(", ")}`,
+          );
+        }
+        await build(ssr);
+
+        // Vite keeps the directory as the config has it, which can be relative
+        // to the root.
+        const outDir = path.resolve(
+          builder.config.root,
+          environment(builder, rsc).config.build.outDir,
+        );
+        const write = (fileName: string, content: string | Uint8Array) => {
+          const file = path.join(outDir, fileName);
+          fs.mkdirSync(path.dirname(file), { recursive: true });
+          fs.writeFileSync(file, content);
+        };
+        for (const files of built.values()) {
+          for (const [fileName, content] of files) write(fileName, await content);
+        }
+        // What Next's loaders made for the browser, fonts and images, by the
+        // path it asks for.
+        for (const { pathname, body } of options.emittedFiles()) write(pathname, body);
       } finally {
-        building = false;
+        buildingApp = false;
       }
     },
-    // A host that calls Vite's `build()`, as Storybook does, builds only its
-    // own environment, and no `buildApp()` runs. So this plugin does the rest
-    // around that build, with a builder of the same config: steps 1 and 2
-    // before it starts, and step 4 once it is done.
-    buildStart: {
-      sequential: true,
-      order: "pre",
-      async handler() {
-        if (this.environment.mode !== "build") return;
-        // The client files of the host, each in the file its id names.
-        if (this.environment.name === browser) {
-          for (const [file, id] of options.host.clientFiles) {
-            this.emitFile({ type: "chunk", id: file, fileName: id.slice(1) });
-          }
-          return;
+    buildStart() {
+      if (this.environment.mode !== "build") return;
+      // The client files of the host, each in the file its id names.
+      if (this.environment.name === browser) {
+        for (const [file, id] of options.host.clientFiles) {
+          this.emitFile({ type: "chunk", id: file, fileName: id.slice(1) });
         }
-        if (building || this.environment.name !== rsc) return;
-        building = true;
-        prepared = false;
-        try {
-          await findReferences(await createLayersBuilder());
-          prepared = true;
-        } finally {
-          building = false;
-        }
-      },
-    },
-    buildEnd(error) {
-      // A build that failed is not finished with the layers.
-      if (error && !building) prepared = false;
-    },
-    closeBundle: {
-      sequential: true,
-      order: "post",
-      async handler() {
-        if (building || !prepared) return;
-        if (this.environment.mode !== "build" || this.environment.name !== rsc) return;
-        building = true;
-        prepared = false;
-        try {
-          await buildLayers(await createLayersBuilder());
-        } finally {
-          building = false;
-        }
-      },
+      }
+      // Outside the plugin's `buildApp()`, like with Vite's `build()`, only
+      // the environment of the host is built: a site without the other
+      // layers, which would fail when it is opened.
+      if (this.environment.name === rsc && !buildingApp) {
+        throw new Error(
+          "vitest-plugin-rsc: the app is built outside the plugin's `buildApp()`, which builds " +
+            "its three layers. Vite's `build()` does that: it builds one environment. Build " +
+            "with Vite's app builder: `vite build`, or " +
+            "`await (await createBuilder(config, null)).buildApp()`.",
+        );
+      }
     },
     resolveId(source) {
       if (source === clientReferencesId || source === serverReferencesId) return `\0${source}`;
@@ -556,7 +475,6 @@ export function nextBuild(options: BuildOptions): Plugin {
       handler(_options, bundle) {
         const { name } = this.environment;
         if (manager.isScanBuild) return;
-        for (const { pathname, body } of options.emittedFiles()) emitted.set(pathname, body);
         // Where the directory of the build is, from a file of CSS.
         for (const output of Object.values(bundle)) {
           if (output.type !== "asset" || typeof output.source !== "string") continue;
@@ -584,5 +502,4 @@ export function nextBuild(options: BuildOptions): Plugin {
       },
     },
   };
-  return plugin;
 }

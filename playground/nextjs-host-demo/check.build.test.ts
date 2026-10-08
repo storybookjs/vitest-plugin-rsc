@@ -10,18 +10,12 @@ test("the app runs in a static build", async () => {
   await runCheck(script, "--build");
 });
 
-// A script that calls Vite's `build()` with the config file builds one
-// environment, and the plugin the other layers around it.
-test("the app runs in a build of Vite's build(), from the config file", async () => {
-  await runCheck(script, "--build", "--vite-build", "--view=home,node,dynamic,styles");
-});
-
 // The checks that are about a file of the build: its fonts, images and CSS.
 test("a static build with a relative base runs from a directory of a site", async () => {
   await runCheck(script, "--build", "--base=./", "--view=home,font,image,styles,dynamic");
 });
 
-// Storybook builds with Vite's `build()`, and its stories are host files:
+// Storybook builds with Vite's app builder, and its stories are host files:
 // also the ones with `"use client"`, which the build has in its browser layer.
 test("the stories run in a static build of Storybook", { timeout: 300_000 }, async () => {
   await runCheck(storybook, "--build");

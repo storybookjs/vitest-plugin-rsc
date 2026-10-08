@@ -3,7 +3,7 @@ import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { chromium, type Page } from "playwright";
-import { build, createBuilder, createServer, type InlineConfig } from "vite";
+import { createBuilder, createServer, type InlineConfig } from "vite";
 
 // Opens the host page of a playground in a browser and checks that the app
 // runs in it: against the dev server, or with `--build` against a static
@@ -14,9 +14,6 @@ import { build, createBuilder, createServer, type InlineConfig } from "vite";
 // is not caught, a `console.error`, a request that fails or gets a 4xx or 5xx.
 //
 //   --build          a static build, served by a server of files
-//   --vite-build     with `--build`: built with Vite's `build()`, as a script
-//                    or a host like Storybook calls it, which builds one
-//                    environment, from the config file
 //   --no-build       with `--build`: the build that is there
 //   --base=<base>    with `--build`: the base of the build
 //   --view=<names>   only these checks, separated by commas
@@ -96,8 +93,7 @@ async function start({ root, configFile, page = "index.html" }: ChecksOptions): 
     const base = option("base");
     if (!flag("no-build")) {
       const config: InlineConfig = { root, configFile, configLoader, logLevel: "warn", base };
-      if (flag("vite-build")) await build(config);
-      else await (await createBuilder(config)).buildApp();
+      await (await createBuilder(config)).buildApp();
     }
     // Where a build with a base is served: at that base, or for one that is
     // relative at a path of its own.

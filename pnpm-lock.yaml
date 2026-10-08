@@ -5,6 +5,7 @@ settings:
   excludeLinksFromLockfile: false
 
 patchedDependencies:
+  '@storybook/builder-vite@10.6.1': 5a544ce33b2e1d9678d6e22108a61930e3911ae2ef599b55de09e8d72712358e
   '@vitest/browser@5.0.3': 009246ebee024860c81d97900103ade33800dbc0348ac9cec16c2e5313ecf540
 
 importers:
@@ -493,7 +494,7 @@ importers:
     dependencies:
       '@storybook/builder-vite':
         specifier: 10.6.1
-        version: 10.6.1(storybook@10.6.1(@types/react@19.2.14)(react@19.2.6))(vite@8.3.1(@types/node@24.12.4)(esbuild@0.27.7)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))
+        version: 10.6.1(patch_hash=5a544ce33b2e1d9678d6e22108a61930e3911ae2ef599b55de09e8d72712358e)(storybook@10.6.1(@types/react@19.2.14)(react@19.2.6))(vite@8.3.1(@types/node@24.12.4)(esbuild@0.27.7)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))
       vitest-plugin-rsc:
         specifier: workspace:*
         version: link:../../packages/vitest-plugin-rsc
@@ -6485,7 +6486,7 @@ snapshots:
 
   '@standard-schema/spec@1.1.0': {}
 
-  '@storybook/builder-vite@10.6.1(storybook@10.6.1(@types/react@19.2.14)(react@19.2.6))(vite@8.3.1(@types/node@24.12.4)(esbuild@0.27.7)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))':
+  '@storybook/builder-vite@10.6.1(patch_hash=5a544ce33b2e1d9678d6e22108a61930e3911ae2ef599b55de09e8d72712358e)(storybook@10.6.1(@types/react@19.2.14)(react@19.2.6))(vite@8.3.1(@types/node@24.12.4)(esbuild@0.27.7)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))':
     dependencies:
       storybook: 10.6.1(@types/react@19.2.14)(react@19.2.6)
       ts-dedent: 2.3.0
