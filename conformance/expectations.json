@@ -16,14 +16,6 @@
       "category": "plugin-bug",
       "text": "The not-found page of a path that is no route has no `<meta name=\"robots\" content=\"noindex\">`."
     },
-    "not-found-route-status": {
-      "category": "plugin-bug",
-      "text": "A request for `/_not-found` itself, the route Next makes for its not-found page, is answered with 200. Next answers 404, as it does here for a path that is no route."
-    },
-    "draft-mode": {
-      "category": "plugin-bug",
-      "text": "`draftMode().enable()` in a route handler is answered with a 500: Next finds no `previewModeId`. The keys of draft mode that the plugin has do not reach Next's route module."
-    },
     "internal-request-headers": {
       "category": "plugin-bug",
       "text": "A header that only Next's own server sets on a request, like `x-middleware-set-cookie`, is not taken off a request that comes in. `next start` drops those."
@@ -155,7 +147,7 @@
       }
     },
     "hooks": {
-      "passed": 18,
+      "passed": 19,
       "failed": {
         "hooks.test.ts > app dir - hooks > from pages > should have the correct hooks at /adapter-hooks/static": "pages-router",
         "hooks.test.ts > app dir - hooks > from pages > should have the correct hooks at /adapter-hooks/1": "pages-router",
@@ -164,8 +156,7 @@
         "hooks.test.ts > app dir - hooks > from pages > should have the correct hooks at /adapter-hooks/static #2": "pages-router",
         "hooks.test.ts > app dir - hooks > from pages > should have the correct hooks at /adapter-hooks/1 #2": "pages-router",
         "hooks.test.ts > app dir - hooks > from pages > should have the correct hooks at /adapter-hooks/2 #2": "pages-router",
-        "hooks.test.ts > app dir - hooks > from pages > should have the correct hooks at /adapter-hooks/1/account #2": "pages-router",
-        "hooks.test.ts > app dir - hooks > useDraftMode > should generate rand when draft mode enabled": "draft-mode"
+        "hooks.test.ts > app dir - hooks > from pages > should have the correct hooks at /adapter-hooks/1/account #2": "pages-router"
       }
     },
     "use-params": {
@@ -270,10 +261,8 @@
       "failed": {}
     },
     "not-found-default": {
-      "passed": 6,
-      "failed": {
-        "index.test.ts > app dir - not found with default 404 page > should return 404 status code for default not-found page": "not-found-route-status"
-      }
+      "passed": 7,
+      "failed": {}
     },
     "error-boundary-navigation": {
       "passed": 6,

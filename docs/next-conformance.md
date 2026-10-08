@@ -13,13 +13,13 @@ Measured against `next@16.4.0`, with `pnpm conformance --docs`.
 |                                                     |         Tests |
 | --------------------------------------------------- | ------------: |
 | Run                                                 |           484 |
-| **Pass**                                            | **360** (74%) |
-| Fail: a bug in the plugin                           |            14 |
+| **Pass**                                            | **362** (75%) |
+| Fail: a bug in the plugin                           |            12 |
 | Fail: Not Yet                                       |            69 |
 | Fail: not applicable                                |            41 |
 | Skipped by the test itself, for a run like this one |             4 |
 
-Of the 443 tests that apply, 360 pass: **81%**.
+Of the 443 tests that apply, 362 pass: **82%**.
 
 ### Per Fixture
 
@@ -30,7 +30,7 @@ Of the 443 tests that apply, 360 pass: **81%**.
 | **Navigation**                                    |          |     |         |     |         |
 | `navigation`                                      | 38 of 53 |   1 |      10 |   4 |         |
 | `shallow-routing`                                 | 16 of 17 |   1 |         |     |         |
-| `hooks`                                           | 18 of 27 |   1 |       8 |     |         |
+| `hooks`                                           | 19 of 27 |     |       8 |     |         |
 | `use-params`                                      |   6 of 7 |     |       1 |     |         |
 | **Server Actions**                                |          |     |         |     |         |
 | `actions`                                         | 59 of 87 |     |       8 |  20 |       3 |
@@ -47,7 +47,7 @@ Of the 443 tests that apply, 360 pass: **81%**.
 | `parallel-routes-breadcrumbs`                     |   4 of 4 |     |         |     |         |
 | `parallel-routes-not-found`                       |   2 of 2 |     |         |     |         |
 | **not-found and error boundaries**                |          |     |         |     |         |
-| `not-found-default`                               |   6 of 7 |   1 |         |     |         |
+| `not-found-default`                               |   7 of 7 |     |         |     |         |
 | `error-boundary-navigation`                       |   6 of 7 |   1 |         |     |         |
 | `global-error/basic`                              |  6 of 10 |     |       4 |     |         |
 | `errors`                                          |  9 of 16 |     |       7 |     |         |
@@ -69,7 +69,7 @@ Of the 443 tests that apply, 360 pass: **81%**.
 | `app-routes-trailing-slash`                       |   2 of 2 |     |         |     |         |
 | `redirect-rewrite-dynamic`                        |   1 of 2 |     |         |   1 |         |
 
-### A Bug In The Plugin: 14 Tests
+### A Bug In The Plugin: 12 Tests
 
 <details><summary>6 × A Server Action request to a path that is no route gets the not-found page, a 404. Next answers for the action: 400 or 409.</summary>
 
@@ -98,18 +98,6 @@ Of the 443 tests that apply, 360 pass: **81%**.
 <details><summary>1 × The not-found page of a path that is no route has no `<meta name="robots" content="noindex">`.</summary>
 
 - `metadata-navigation`: app dir - metadata navigation › navigation › should render root not-found with default metadata
-
-</details>
-
-<details><summary>1 × A request for `/_not-found` itself, the route Next makes for its not-found page, is answered with 200. Next answers 404, as it does here for a path that is no route.</summary>
-
-- `not-found-default`: app dir - not found with default 404 page › should return 404 status code for default not-found page
-
-</details>
-
-<details><summary>1 × `draftMode().enable()` in a route handler is answered with a 500: Next finds no `previewModeId`. The keys of draft mode that the plugin has do not reach Next's route module.</summary>
-
-- `hooks`: app dir - hooks › useDraftMode › should generate rand when draft mode enabled
 
 </details>
 
@@ -338,9 +326,9 @@ Of the 443 tests that apply, 360 pass: **81%**.
 
 ## What The Results Say
 
-Where the plugin runs something, it mostly runs it as Next does: 360 of the 374 tests that are neither a missing feature nor out of reach pass. What does not pass is, for nine tests out of ten, something the plugin does not do at all, or something a test in a tab cannot see.
+Where the plugin runs something, it mostly runs it as Next does: 362 of the 374 tests that are neither a missing feature nor out of reach pass. What does not pass is, for nine tests out of ten, something the plugin does not do at all, or something a test in a tab cannot see.
 
-**Bugs: 14 tests, 8 causes.** All are in the list above. Two of them are about what a page leaves in the tab that a browser drops with the page: the history, which a page load replaces an entry of, and global CSS, which stays. Two are about the server in front of the app: a header of Next's own that a request brings along, and a proxy that answers with a `Location` header, which `@next/routing` reads as a proxy that let the request through.
+**Bugs: 12 tests, 6 causes.** All are in the list above. Two of them are about what a page leaves in the tab that a browser drops with the page: the history, which a page load replaces an entry of, and global CSS, which stays. Two are about the server in front of the app: a header of Next's own that a request brings along, and a proxy that answers with a `Location` header, which `@next/routing` reads as a proxy that let the request through.
 
 **Not Yet: 69 tests.** Three of the causes are not in the list of `docs/next-routes.md`:
 
@@ -356,9 +344,7 @@ Where the plugin runs something, it mostly runs it as Next does: 360 of the 374 
 
 What the list above does not have:
 
-- **The name of an uploaded file.** Fixed with the runner, and a test of the selection did pin it down. A Server Action got no file when the name of the file has a character like `テ`: the stand-in for `latin1Slice()` of Node's `Buffer`, which Next's busboy reads the headers of a part with, decoded windows-1252.
 - **A pending refresh outlived its page.** Fixed with the runner: see "What Stands In For A Server" in `docs/next-routes.md`. Next sends a `<meta http-equiv="refresh">` with a `redirect()` in a response that had started. It came due a second later, in the page of the next test, or between two tests, where nothing stopped the tab from leaving and the rest of the test file did not run.
-- **`renderServer({ url })` rejects for a page that redirects while it loads**, with "The page was left before it had loaded". A `redirect()` under a `loading.tsx` does that: Next's router loads the page it redirects to before the first one has hydrated. `/moved` in `playground/nextjs-e2e-demo` is such a page.
 - **`history.back()` past the entry a page was opened in leaves the test.** The tab goes back to the test runner's own entry, and Vitest loses the tab.
 - **The first run of an app can fail where the second passes.** With a cold cache, Vite finds `next/legacy/image` for the `ssr` layer while a test runs, and pre-bundles again. The page that asked for it gets a 404. Two tests of `next-image` fail that way on a fresh checkout, and pass from then on. The runner runs such a fixture again and says so.
 - **`handleRequest()` answers 404 for `/_next/image` and the files of fonts and images.** The dev server serves those, and `handleRequest()` only reaches the routes of the app, where a `fetch` of the page finds both.
@@ -514,7 +500,7 @@ And these are tests of something that is not there:
 A test of Next expects a browser and a server. Where the tab is neither, the runner fills in, and each of these is a place where a passing test says less about the plugin than it seems to:
 
 - **A request without CORS.** The server's `fetch` is the tab's, so a Server Component that fetches from a server without CORS headers gets nothing: see "Server Code In A Tab" in `docs/next-routes.md`. Many of Next's fixtures fetch from `next-data-api-endpoint.vercel.app`, which has none. The runner has Playwright answer for that host with the headers added, so that a test of the Data Cache measures the cache.
-- **A page that redirects while it loads.** `renderServer()` rejects when the page goes on to another page before it has hydrated, as it does for a `redirect()` in a response that had started. `next.browser()` waits for the page it ends up on instead, like Playwright's `goto`.
+- **A page that redirects while it loads.** `renderServer()` is done when the first page has hydrated, which can be before a `redirect()` in a response that had started has taken the router to the next page, and it rejects when the app left the page before that. `next.browser()` waits for the page it ends up on instead, like Playwright's `goto`.
 - **`back()` stays in the page.** `history.back()` past the entry a page was opened in would leave the test. The shim throws instead.
 - **`/_next/` goes to the dev server.** `next.fetch()` is `handleRequest()`, which reaches the routes of the app. Fonts, images and Next's image optimizer are the dev server's here, so those requests are the tab's `fetch`.
 - **A moment for React.** A call of Playwright is a round trip, and React has rendered what was scheduled by the time it arrives. The shim waits a tick before each call.
