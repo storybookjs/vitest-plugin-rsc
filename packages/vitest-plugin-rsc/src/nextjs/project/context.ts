@@ -4,8 +4,9 @@ import type { AppLoaderContext } from "./entries.ts";
 import type { Loader } from "./loaders.ts";
 
 // The project, and the build code of its own `next`: what the other files in
-// this directory work with. Every file and export of Next's build that the
-// plugin calls is named here, so one that is gone fails when a run starts.
+// this directory work with. The modules of Next's build that the plugin calls
+// are loaded with `load()` here, so one that is gone fails when a run starts,
+// and an export that is gone fails with the same message where it is read.
 
 // Next runs a compiled `next.config.ts` as a module without a filename, so
 // Node looks up a relative import of the config, like `./env/server.ts`, from

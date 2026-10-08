@@ -8,6 +8,10 @@
       "category": "plugin-bug",
       "text": "The global CSS of a page that an earlier test opened still applies. Vite adds a stylesheet once, and it outlives its page."
     },
+    "form-post-keeps-tab-query": {
+      "category": "plugin-bug",
+      "text": "A form without a Server Action that the browser posts to `/` ends at `/?sessionId=…`: the page gets the query of the test's tab."
+    },
     "proxy-location-header": {
       "category": "plugin-bug",
       "text": "A proxy that answers itself with a `Location` header and a status that is no redirect gets the not-found page. `responseToMiddlewareResult()` of `@next/routing` does not say that the proxy answered, so the request goes on to a route."
@@ -154,7 +158,7 @@
       }
     },
     "actions": {
-      "passed": 59,
+      "passed": 58,
       "failed": {
         "app-action-form-state.test.ts > app-dir action useActionState > should support submitting form state without JS": "javascript-off",
         "app-action-form-state.test.ts > app-dir action useActionState > should support hydrating the app from progressively enhanced form request": "form-without-javascript",
@@ -170,6 +174,7 @@
         "app-action.test.ts > app-dir action handling > should error if server action arguments list is too long": "react-development-build",
         "app-action.test.ts > app-dir action handling > should support setting cookies when redirecting (no javascript)": "javascript-off",
         "app-action.test.ts > app-dir action handling > should replace current route when redirecting with type set to replace": "shared-history",
+        "app-action.test.ts > app-dir action handling > should not log errors for non-action form POSTs": "form-post-keeps-tab-query",
         "app-action.test.ts > app-dir action handling > should support notFound (javascript disabled)": "javascript-off",
         "app-action.test.ts > app-dir action handling > should support hoc auth wrappers": "react-development-build",
         "app-action.test.ts > app-dir action handling > should not block navigation events while a server action is in flight": "one-request-at-a-time",

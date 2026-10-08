@@ -13,13 +13,13 @@ Measured against `next@16.4.0`, with `pnpm conformance --docs`.
 |                                                     |         Tests |
 | --------------------------------------------------- | ------------: |
 | Run                                                 |           484 |
-| **Pass**                                            | **370** (76%) |
-| Fail: a bug in the plugin                           |             4 |
+| **Pass**                                            | **369** (76%) |
+| Fail: a bug in the plugin                           |             5 |
 | Fail: Not Yet                                       |            69 |
 | Fail: not applicable                                |            41 |
 | Skipped by the test itself, for a run like this one |             4 |
 
-Of the 443 tests that apply, 370 pass: **84%**.
+Of the 443 tests that apply, 369 pass: **83%**.
 
 ### Per Fixture
 
@@ -33,7 +33,7 @@ Of the 443 tests that apply, 370 pass: **84%**.
 | `hooks`                                           | 19 of 27 |     |       8 |     |         |
 | `use-params`                                      |   6 of 7 |     |       1 |     |         |
 | **Server Actions**                                |          |     |         |     |         |
-| `actions`                                         | 59 of 87 |     |       8 |  20 |       3 |
+| `actions`                                         | 58 of 87 |   1 |       8 |  20 |       3 |
 | `actions-navigation`                              |   2 of 2 |     |         |     |         |
 | `actions-revalidate-remount`                      |   1 of 1 |     |         |     |         |
 | `actions-unrecognized`                            | 14 of 20 |     |       4 |   2 |         |
@@ -69,7 +69,7 @@ Of the 443 tests that apply, 370 pass: **84%**.
 | `app-routes-trailing-slash`                       |   2 of 2 |     |         |     |         |
 | `redirect-rewrite-dynamic`                        |   1 of 2 |     |         |   1 |         |
 
-### A Bug In The Plugin: 4 Tests
+### A Bug In The Plugin: 5 Tests
 
 <details><summary>2 × A page that the app loads itself, like a link to a path that is no route, replaces the entry of the history where a browser adds one. `back()` does not return to the page before it.</summary>
 
@@ -81,6 +81,12 @@ Of the 443 tests that apply, 370 pass: **84%**.
 <details><summary>1 × The global CSS of a page that an earlier test opened still applies. Vite adds a stylesheet once, and it outlives its page.</summary>
 
 - `navigation`: app dir - navigation › hash-link-back-to-same-page › should scroll to the specified hash
+
+</details>
+
+<details><summary>1 × A form without a Server Action that the browser posts to `/` ends at `/?sessionId=…`: the page gets the query of the test's tab.</summary>
+
+- `actions`: app-dir action handling › should not log errors for non-action form POSTs
 
 </details>
 
@@ -324,7 +330,7 @@ What the list above does not have:
 
 - **A pending refresh outlived its page.** Fixed with the runner: see "What Stands In For A Server" in `docs/next-routes.md`. Next sends a `<meta http-equiv="refresh">` with a `redirect()` in a response that had started. It came due a second later, in the page of the next test, or between two tests, where nothing stopped the tab from leaving and the rest of the test file did not run.
 - **`history.back()` past the entry a page was opened in leaves the test.** The tab goes back to the test runner's own entry, and Vitest loses the tab.
-- **The first run of an app failed where the second passed.** Fixed with the plugin. With a cold cache, Vite found a dependency while a test ran, pre-bundled again and reloaded the tab, and the page that asked for it got a 404. Two tests of `next-image` failed that way on a fresh checkout: the app imports `next/legacy/image`, and a Flight payload names that Client Component by its file. And the proxy of `app-middleware` is the only module that imports `next/cache`. The plugin now pre-bundles every Client Component of Next by its file, and has Vite scan the proxy with the app. The runner still runs a fixture again whose run is not what the expectations say.
+- **The first run of an app can fail where the second passes.** With a cold cache, Vite finds `next/legacy/image` for the `ssr` layer while a test runs, and pre-bundles again. The page that asked for it gets a 404. Two tests of `next-image` fail that way on a fresh checkout, and pass from then on. The runner runs such a fixture again and says so.
 - **`handleRequest()` answers 404 for `/_next/image` and the files of fonts and images.** The dev server serves those, and `handleRequest()` only reaches the routes of the app, where a `fetch` of the page finds both.
 
 ## Running It

@@ -24,6 +24,25 @@ function hitsService(): Plugin {
   };
 }
 
+// Stands in for a service of another origin, which the tests reach at
+// `elsewhere.localhost`: it answers with the headers it got.
+function headersService(): Plugin {
+  return {
+    name: "nextjs-e2e-demo:headers-service",
+    configureServer(server) {
+      server.middlewares.use("/service/headers", (request, response) => {
+        response.setHeader("access-control-allow-origin", "*");
+        response.setHeader(
+          "access-control-allow-headers",
+          request.headers["access-control-request-headers"] ?? "*",
+        );
+        response.setHeader("content-type", "application/json");
+        response.end(request.method === "OPTIONS" ? "" : JSON.stringify(request.headers));
+      });
+    },
+  };
+}
+
 // Google Fonts, without the network: see the file.
 process.env.NEXT_FONT_GOOGLE_MOCKED_RESPONSES = fileURLToPath(
   new URL("../../vitest.google-fonts.cjs", import.meta.url),
@@ -37,6 +56,7 @@ export default defineProject({
     // Every other module that is not a test file is server code.
     vitestPluginNext({ browserModules: ["test/**"], affectedTests: true }),
     hitsService(),
+    headersService(),
   ],
   resolve: {
     conditions: vitestPluginRscSourceConditions,

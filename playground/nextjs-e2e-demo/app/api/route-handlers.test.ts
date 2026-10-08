@@ -88,6 +88,44 @@ test("answers with the redirect() of a route handler", async () => {
   expect(response.headers.get("location")).toBe("/notes/3");
 });
 
+test.for([
+  [301, "POST", "GET"],
+  [301, "PUT", "PUT"],
+  [302, "POST", "GET"],
+  [302, "DELETE", "DELETE"],
+  [303, "PUT", "GET"],
+  [307, "POST", "POST"],
+] as const)(
+  "follows a %i redirect of a %s with a %s, as fetch does",
+  async ([status, method, followedWith]) => {
+    const response = await handleRequest(`/api/redirect?status=${status}&to=/api/echo/next`, {
+      method,
+      body: "sent",
+    });
+
+    expect(response.redirected).toBe(true);
+    expect(await response.json()).toMatchObject({
+      method: followedWith,
+      // With the body, or without it when it is a GET.
+      body: followedWith === "GET" ? "" : "sent",
+    });
+  },
+);
+
+test("drops the authorization header on a redirect to another origin, as fetch does", async () => {
+  // The dev server by another name: another origin, to the tab and to Next.
+  const elsewhere = `http://elsewhere.localhost:${window.location.port}/service/headers`;
+
+  const response = await handleRequest(
+    `/api/redirect?status=302&to=${encodeURIComponent(elsewhere)}`,
+    { headers: { authorization: "Bearer secret", "x-client": "test" } },
+  );
+
+  const headers = await response.json();
+  expect(headers).toMatchObject({ "x-client": "test" });
+  expect(headers).not.toHaveProperty("authorization");
+});
+
 test("opens the page a route handler redirects to", async () => {
   db.notes.set("3", { id: "3", title: "Plan the week", body: "" });
   document.cookie = "last-created=3";
@@ -128,6 +166,27 @@ test("gives a route handler the body of a request and the cookies of the tab", a
   expect(db.notes.get("1")?.title).toBe("Inbox zero");
   // Set with cookies() in the handler.
   expect(document.cookie).toContain("last-renamed=1");
+});
+
+test("gives a route handler a form body with the content type it was sent with", async () => {
+  const form = new FormData();
+  form.set("title", "Inbox zero");
+  form.set("file", new File(["notes"], "notes.txt"));
+
+  // Multipart, whose content type has the boundary of the parts.
+  const multipart = await handleRequest("/api/form", { method: "POST", body: form });
+  const encoded = await handleRequest("/api/form", {
+    method: "POST",
+    body: new URLSearchParams({ title: "Inbox zero" }),
+  });
+
+  expect(await multipart.json()).toEqual({
+    fields: [
+      ["title", "Inbox zero"],
+      ["file", "notes.txt"],
+    ],
+  });
+  expect(await encoded.json()).toEqual({ fields: [["title", "Inbox zero"]] });
 });
 
 test("answers with a response that has no body", async () => {
