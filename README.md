@@ -28,6 +28,7 @@ Seed exactly the state a route needs, open it, use the hydrated page in a real b
   - [Server Actions](#server-actions)
   - [Mocks](#mocks)
   - [Requests And Route Handlers](#requests-and-route-handlers)
+  - [The Proxy, Redirects And Rewrites](#the-proxy-redirects-and-rewrites)
   - [Caching](#caching)
   - [Fonts, Images And Styles](#fonts-images-and-styles)
   - [Server Code In A Tab](#server-code-in-a-tab)
@@ -569,7 +570,7 @@ export function scrollToTop(): void {
 vitestPluginNext({ browserModules: ["test/**"] });
 ```
 
-A Client Component that renders something else on the server than in the browser fails the way it does in production, with a hydration mismatch. React reports one with `console.error`. Both playgrounds fail a test on any `console.error`:
+A Client Component that renders something else on the server than in the browser fails the way it does in production, with a hydration mismatch. React reports one with `console.error`. The tests of the playgrounds fail on any `console.error`:
 
 ```ts
 let consoleError: MockInstance<typeof console.error>;
@@ -807,8 +808,11 @@ The test runs in `client`, the Vite environment of the `rsc` layer. That is why 
 - A CommonJS source file in the app.
 - The files of `.env` and `NEXT_PUBLIC_` variables: `process.env` in the tab is empty unless a test or a setup file fills it.
 - The headers of `next.config` and of `proxy.ts` for a file of `public/`, which the dev server serves, and a rewrite to such a file. And `instrumentation.ts`.
-- `"use cache"`. And inside a function cached with `unstable_cache`, after its first `await`, the request's store is read instead of the cache's.
+- `"use cache"`, and an app with `cacheComponents: true` in `next.config`. And inside a function cached with `unstable_cache`, after its first `await`, the request's store is read instead of the cache's.
 - A mock for Client Components.
+- A production build of React: the client gets the message of an error that a Server Component throws, where a deployment sends a digest.
+- A cookie that is `HttpOnly` can be read by a script of the page, and the `Path` of a cookie is matched against the URL of the test runner.
+- Anything but `fetch` as a request to the app: `XMLHttpRequest`, `EventSource` and `sendBeacon()` go to the dev server.
 - Next's edge runtime, which Next has deprecated. The server runs as on Node.js, Next's default, also for a route with `export const runtime = "edge"`.
 - More than one request at a time. A response that streams without end holds up every request after it.
 - A navigation that leaves the page without Next's router, like `location.assign()`, needs the Navigation API, which today means Chromium.
@@ -817,7 +821,7 @@ The full list, with the reasons, is under [Not Yet](docs/next-routes.md#not-yet)
 
 ## Playgrounds
 
-- `playground/nextjs-e2e-demo` — a small Next.js app with a test for every feature of the Next.js support. The samples above come from its tests.
+- `playground/nextjs-e2e-demo` — a small Next.js app with a test for every feature of the Next.js support. Most samples above come from its tests.
 - `playground/nextjs-notes-demo` — a fuller Next.js notes app with Better Auth, Drizzle, PGlite test databases and shadcn/ui. Its tests open whole routes with the database and the session mocked in the tab. This is the acceptance app of this repository.
 - `playground/rsc-vitest-demo` — React Server Components without Next.js.
 
