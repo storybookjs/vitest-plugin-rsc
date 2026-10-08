@@ -404,8 +404,9 @@ const runtimeImports: Record<NextLayer, string[]> = {
     "next/dist/server/lib/is-rsc-request",
     "next/dist/shared/lib/router/utils/route-matcher",
     "next/dist/shared/lib/router/utils/route-regex",
-    // node-server.ts, and ssr.ts for the last one
+    // node-server.ts
     "next/dist/server/lib/mock-request",
+    // node-server.ts and ssr.ts
     "next/dist/server/web/utils",
     "next/dist/compiled/stream-browserify",
     vendoredFlight("client.edge"),

@@ -132,6 +132,7 @@ async function sendRequest(
 ): Promise<Response> {
   let url = new URL(request.url);
   let method = request.method;
+  const sent = new Headers(request.headers);
   // Read once: a 307 or 308 sends the body again.
   let body = request.body ? new Uint8Array(await request.arrayBuffer()) : null;
   let redirected = false;
@@ -139,9 +140,7 @@ async function sendRequest(
   let redirects = 0;
 
   for (;;) {
-    const headers = server
-      ? new Headers(request.headers)
-      : browserHeaders(new Headers(request.headers), url, method);
+    const headers = server ? new Headers(sent) : browserHeaders(new Headers(sent), url, method);
     const response = await unlessAborted(
       ssr.handleRequest(
         { url: url.href, method, headers, body, signal: request.signal },
@@ -152,7 +151,7 @@ async function sendRequest(
     if (!response) {
       // After a redirect it is another request than the one that was passed in.
       return redirected
-        ? nativeFetch(url, { method, headers: request.headers, body, signal: request.signal })
+        ? nativeFetch(url, { method, headers: sent, body, signal: request.signal })
         : network!();
     }
     for (const cookie of server ? [] : response.headers.getSetCookie()) {
@@ -166,12 +165,24 @@ async function sendRequest(
 
     const location = response.headers.get("location");
     if (response.status >= 300 && response.status < 400 && location) {
-      if (request.redirect === "manual") return response;
+      if (request.redirect === "manual") {
+        Object.defineProperties(response, { url: { value: url.href } });
+        return response;
+      }
+      if (request.redirect === "error") {
+        throw new TypeError("fetch failed", {
+          cause: new Error(`unexpected redirect of ${url.href} to ${location}`),
+        });
+      }
       url = new URL(location, url);
-      // 307 and 308 repeat the request; the others turn it into a GET.
+      // 307 and 308 repeat the request; the others turn it into a GET, and
+      // the headers of a body go with the body.
       if (response.status !== 307 && response.status !== 308) {
         method = "GET";
         body = null;
+        for (const name of ["encoding", "language", "location", "type"]) {
+          sent.delete(`content-${name}`);
+        }
       }
       redirected = true;
       if (++redirects > 20) {
@@ -182,7 +193,7 @@ async function sendRequest(
       }
       if (url.origin !== window.location.origin) {
         if (navigation) throw leftTheApp(url);
-        return nativeFetch(url, { method, headers: request.headers, body });
+        return nativeFetch(url, { method, headers: sent, body });
       }
       continue;
     }

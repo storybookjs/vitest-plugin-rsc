@@ -33,6 +33,9 @@ test("redirects a URL that next.config redirects", async () => {
 
   expect(response.status).toBe(308);
   expect(response.headers.get("location")).toBe("/docs/routing");
+  expect(response.url).toBe(new URL("/guide/routing", window.location.href).href);
+  // As with `fetch`.
+  await expect(handleRequest("/guide/routing", { redirect: "error" })).rejects.toThrow(TypeError);
 
   // A browser follows it.
   await renderServer({ url: "/guide/routing?tab=api" });
@@ -165,6 +168,18 @@ test("gives a route the params of its URL as Next's own matcher reads them", asy
 
   await expect.element(page.getByRole("heading", { name: "Docs: a%2Bb" })).toBeVisible();
   await expect.element(page.getByText('Search params: {"tab":"a b"}')).toBeVisible();
+
+  // A query with the name Next gives a param, for a server in front of its
+  // own, is not the param.
+  const named = await handleRequest("/api/echo/a?nxtPpath=other&q=1");
+
+  expect(await named.json()).toMatchObject({ path: ["a"], query: "1" });
+
+  // Not as a page in the tab: Next leaves such a query out on the server,
+  // and the browser has it.
+  const html = await (await handleRequest("/docs/a?nxtPslug=other")).text();
+
+  expect(html).toMatch(/<h1>Docs: (<!-- -->)?a<\/h1>/);
 });
 
 test("sets the headers that next.config has for a path", async () => {

@@ -111,7 +111,8 @@ type Query = Record<string, string | string[]>;
 // which are in the query that the resolution ends with, under the names Next
 // gives them for a server in front of its own, like `nxtPid`.
 function appQuery(query: Iterable<[string, string | string[]]>): Query {
-  const result: Query = {};
+  // Without a prototype, as the query Node.js parses: a key can be `constructor`.
+  const result: Query = Object.create(null);
   for (const [name, value] of query) {
     if (normalizeNextQueryParam(name) !== null) continue;
     result[name] = name in result ? [result[name]!, value].flat() : value;
@@ -144,9 +145,17 @@ function paramsOf(route: string, pathname: string) {
   try {
     return match(pathname) || undefined;
   } catch {
-    // A pathname that does not decode. Next's handler answers that itself.
+    // A pathname that does not decode, which Next's handler fails on too.
     return undefined;
   }
+}
+
+// A pathname of the app as Next's router has it: without the base path.
+function withoutBasePath(pathname: string): string {
+  const { basePath } = routing;
+  return basePath && pathname.startsWith(basePath)
+    ? pathname.slice(basePath.length) || "/"
+    : pathname;
 }
 
 // A test's own timers may be fake.
@@ -331,19 +340,26 @@ async function handle(request: ServerRequest, unrouted: "not-found" | "pass"): P
     const rewrittenPath = target !== undefined && target.pathname !== url.pathname;
     const rewrittenQuery =
       query !== undefined && searchOf(query) !== searchOf(appQuery(url.searchParams));
+    // Also for a URL that has a query named like a param of the resolution:
+    // Next would take it for one, where `next start` takes it for what it is.
+    const namesParam = [...url.searchParams.keys()].some(
+      (name) => normalizeNextQueryParam(name) !== null,
+    );
     const requestMeta = {
       params:
         target && matched?.pathname.includes("[")
-          ? paramsOf(matched.pathname, target.pathname.slice(routing.basePath.length) || "/")
+          ? paramsOf(matched.pathname, withoutBasePath(target.pathname))
           : undefined,
-      query: rewrittenPath || rewrittenQuery ? query : undefined,
+      query: rewrittenPath || rewrittenQuery || namesParam ? query : undefined,
     };
     // Next's router asks where a rewrite took its request. `next start` says
     // so for a rewrite of `next.config`, which is the adapter's to do here.
     // Next's own code says it for one of the middleware, with these headers:
     // a rewrite of `next.config` after it changes the pathname once more.
     if (target && query && isRSCRequestHeader(headers.get(RSC_HEADER) ?? undefined)) {
-      if (rewrittenPath) routedHeaders.set(NEXT_REWRITTEN_PATH_HEADER, target.pathname);
+      if (rewrittenPath) {
+        routedHeaders.set(NEXT_REWRITTEN_PATH_HEADER, withoutBasePath(target.pathname));
+      }
       if (rewrittenQuery && !routedHeaders.has(NEXT_REWRITTEN_QUERY_HEADER)) {
         routedHeaders.set(NEXT_REWRITTEN_QUERY_HEADER, searchOf(query));
       }
