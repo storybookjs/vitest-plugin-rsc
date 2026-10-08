@@ -226,6 +226,12 @@ export function handleRequest(input: RequestInfo | URL, init?: RequestInit): Pro
 const appFetch =
   (server: boolean): typeof fetch =>
   async (input, init) => {
+    // A server has no page to resolve a path against: Node's `fetch` rejects it.
+    if (server && !(input instanceof Request) && !URL.canParse(String(input))) {
+      throw new TypeError(`Failed to parse URL from ${String(input)}`, {
+        cause: new TypeError("Invalid URL"),
+      });
+    }
     const sent = sameOriginRequest(input, init);
     if (!sent) return nativeFetch(input, init);
     const headers = server

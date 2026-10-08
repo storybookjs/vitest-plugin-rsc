@@ -74,6 +74,16 @@ test("sends the fetch of a Server Component through Next: two calls in a render 
   expect(await requestHits(key)).toBe(2);
 });
 
+test("rejects a fetch of the server by a path alone, as Node.js does", async () => {
+  // A page resolves it against its URL. A server has none, so `next start`
+  // fails on it, and so does the test.
+  const response = await handleRequest("/api/relative");
+
+  expect(await response.json()).toEqual({
+    error: "TypeError: Failed to parse URL from /api/echo/relative",
+  });
+});
+
 test("gives a Server Action the Response of a server, which keeps Set-Cookie", async () => {
   await renderServer({ url: "/account" });
   await expect.element(page.getByText("Signed out")).toBeVisible();
