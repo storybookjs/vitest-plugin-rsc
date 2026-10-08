@@ -88,6 +88,30 @@ test("answers with the redirect() of a route handler", async () => {
   expect(response.headers.get("location")).toBe("/notes/3");
 });
 
+test.for([
+  [301, "POST", "GET"],
+  [301, "PUT", "PUT"],
+  [302, "POST", "GET"],
+  [302, "DELETE", "DELETE"],
+  [303, "PUT", "GET"],
+  [307, "POST", "POST"],
+] as const)(
+  "follows a %i redirect of a %s with a %s, as fetch does",
+  async ([status, method, followedWith]) => {
+    const response = await handleRequest(`/api/redirect?status=${status}&to=/api/echo/next`, {
+      method,
+      body: "sent",
+    });
+
+    expect(response.redirected).toBe(true);
+    expect(await response.json()).toMatchObject({
+      method: followedWith,
+      // With the body, or without it when it is a GET.
+      body: followedWith === "GET" ? "" : "sent",
+    });
+  },
+);
+
 test("opens the page a route handler redirects to", async () => {
   db.notes.set("3", { id: "3", title: "Plan the week", body: "" });
   document.cookie = "last-created=3";

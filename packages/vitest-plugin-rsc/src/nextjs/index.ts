@@ -175,9 +175,14 @@ async function sendRequest(
         });
       }
       url = new URL(location, url);
-      // 307 and 308 repeat the request; the others turn it into a GET, and
-      // the headers of a body go with the body.
-      if (response.status !== 307 && response.status !== 308) {
+      // As in `fetch`: a 301 or 302 turns a POST into a GET, a 303 anything
+      // but a GET or HEAD. The rest repeat the request. The headers of a body
+      // go with the body.
+      const { status } = response;
+      if (
+        ((status === 301 || status === 302) && method === "POST") ||
+        (status === 303 && method !== "GET" && method !== "HEAD")
+      ) {
         method = "GET";
         body = null;
         for (const name of ["encoding", "language", "location", "type"]) {
