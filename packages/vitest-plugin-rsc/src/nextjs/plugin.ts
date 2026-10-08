@@ -342,6 +342,10 @@ function findImports(code: string): string[] {
   ].map((match) => match[1]!);
 }
 
+// The scan reads every file of Next's ESM build, so it is done once for an
+// installation of Next, and not for every project that uses it.
+const clientBoundaryFiles = new Map<string, string[]>();
+
 // The modules of Next a Flight payload can refer to: every file of its ESM
 // build with a `"use client"` directive, which is what
 // `nextClientBoundaryPlugin` makes a client reference of. The other two layers
@@ -350,21 +354,25 @@ function findImports(code: string): string[] {
 // app does not, like `next/legacy/image`, so the dependency scan finds another
 // spelling. This is what Next's client entry plugin does for its own bundles.
 function findClientBoundaries(nextDir: string, resolver: LayerResolver): string[] {
-  const files = fs.readdirSync(path.join(nextDir, "dist/esm"), {
-    recursive: true,
-    withFileTypes: true,
-  });
-  const boundaries = files.flatMap((entry) => {
-    if (!entry.isFile() || !entry.name.endsWith(".js")) return [];
-    const file = path.join(entry.parentPath, entry.name);
-    const code = fs.readFileSync(file, "utf8");
-    return code.includes("use client") && hasDirective(parseAst(code).body, "use client")
-      ? [resolver.toSpecifier(file)]
-      : [];
-  });
+  let files = clientBoundaryFiles.get(nextDir);
+  if (!files) {
+    const entries = fs.readdirSync(path.join(nextDir, "dist/esm"), {
+      recursive: true,
+      withFileTypes: true,
+    });
+    files = entries.flatMap((entry) => {
+      if (!entry.isFile() || !entry.name.endsWith(".js")) return [];
+      const file = path.join(entry.parentPath, entry.name);
+      const code = fs.readFileSync(file, "utf8");
+      return code.includes("use client") && hasDirective(parseAst(code).body, "use client")
+        ? [file]
+        : [];
+    });
+    clientBoundaryFiles.set(nextDir, files);
+  }
   // Vite keeps the pre-bundled dependencies by a hash of this list, and a
   // directory is listed in the order of its disk.
-  return boundaries.sort();
+  return files.map((file) => resolver.toSpecifier(file)).sort();
 }
 
 // What the runtime modules of this package, and the modules Vite and Vite RSC

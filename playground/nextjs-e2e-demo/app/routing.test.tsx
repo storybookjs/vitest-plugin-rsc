@@ -269,8 +269,11 @@ test("takes a header that only Next's own server sets off a request that comes i
     headers: { "x-middleware-set-cookie": "last-created=3" },
   });
 
+  const body = await response.text();
+
   expect(response.status).toBe(200);
-  expect(await response.text()).not.toContain("Last created");
+  expect(body).toContain("<h1>Notes</h1>");
+  expect(body).not.toContain("Last created");
 });
 
 test("answers 500 when the proxy throws, and logs the error", async () => {

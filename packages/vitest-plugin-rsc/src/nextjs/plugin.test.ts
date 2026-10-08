@@ -18,7 +18,8 @@ const nextDir = path.dirname(installed.resolve("next/package.json"));
 type OptimizeDeps = { entries?: string[]; include: string[] };
 type Config = { environments: Record<string, { optimizeDeps: OptimizeDeps }> };
 
-async function optimizeDeps() {
+// The config loads the project, and Next's config with it: once for the file.
+const optimizeDeps = (async () => {
   const plugin = vitestPluginNext().find(({ name }) => name === "vitest-plugin-rsc:next")!;
   const { environments } = await (plugin.config as (config: object) => Promise<Config>)({ root });
   return {
@@ -26,10 +27,10 @@ async function optimizeDeps() {
     ssr: environments.next_ssr!.optimizeDeps,
     browser: environments.react_client!.optimizeDeps,
   };
-}
+})();
 
 test("has Vite scan the proxy of the app, next to its routes", async () => {
-  const { rsc } = await optimizeDeps();
+  const { rsc } = await optimizeDeps;
 
   // No file of `app/` imports the proxy, so the scan of `app/` does not find
   // what only the proxy imports.
@@ -40,7 +41,7 @@ test("has Vite scan the proxy of the app, next to its routes", async () => {
 });
 
 test("pre-bundles every Client Component of Next for the layers that render one", async () => {
-  const { rsc, ssr, browser } = await optimizeDeps();
+  const { rsc, ssr, browser } = await optimizeDeps;
 
   // A Flight payload names a Client Component of Next by its file. The app
   // imports this one as `next/legacy/image`, which is all the scan finds.
@@ -88,7 +89,7 @@ function preBundledAs(specifier: string): string {
 }
 
 test("pre-bundles every module of Next that a module of the plugin imports in the tab", async () => {
-  const deps = await optimizeDeps();
+  const deps = await optimizeDeps;
 
   for (const [layer, files] of Object.entries(runtimeFiles)) {
     const imported = files.flatMap(nextImportsOf);
