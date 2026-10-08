@@ -1,4 +1,15 @@
+import clientReferences from "virtual:vitest-plugin-rsc/next-client-references";
 import { registry } from "./registry.ts";
+
+// How a module is loaded by the id a Flight payload has for it. With a dev
+// server that id is the one Vite imports the module by. A static build has a
+// list of the modules that can be referred to: see build.ts.
+function importModule(id: string): Promise<unknown> {
+  if (!clientReferences) return import(/* @vite-ignore */ id);
+  const load = clientReferences[id];
+  if (!load) throw new Error(`vitest-plugin-rsc: the build has no Client Component "${id}"`);
+  return load();
+}
 
 // A Client Component in a Flight payload is loaded by its module id, in the
 // module graph of the layer whose Flight client asks for it. With `ready`, no
@@ -10,7 +21,7 @@ function createModuleLoader(ready?: Promise<void>): (id: string) => Promise<unkn
     id = id.split("$$cache=")[0]!;
     let loading = modules.get(id);
     if (!loading) {
-      const load = () => import(/* @vite-ignore */ id);
+      const load = () => importModule(id);
       modules.set(id, (loading = ready ? ready.then(load) : load()));
     }
     return loading;

@@ -21,7 +21,9 @@ type Config = { environments: Record<string, { optimizeDeps: OptimizeDeps }> };
 // The config loads the project, and Next's config with it: once for the file.
 const optimizeDeps = (async () => {
   const plugin = vitestPluginNext().find(({ name }) => name === "vitest-plugin-rsc:next")!;
-  const { environments } = await (plugin.config as (config: object) => Promise<Config>)({ root });
+  // As Vite calls the hook for a dev server.
+  const configure = plugin.config as (config: object, env: object) => Promise<Config>;
+  const { environments } = await configure({ root }, { command: "serve" });
   return {
     rsc: environments.client!.optimizeDeps,
     ssr: environments.next_ssr!.optimizeDeps,
@@ -100,3 +102,31 @@ test("pre-bundles every module of Next that a module of the plugin imports in th
     );
   }
 });
+
+test("in a build, gives a dependency the constants of its layer, and a source file none", async () => {
+  const plugins = vitestPluginNext();
+  const main = plugins.find(({ name }) => name === "vitest-plugin-rsc:next")!;
+  const configure = main.config as (config: object, env: object) => Promise<BuildConfig>;
+  const { environments } = await configure({ root }, { command: "build" });
+  type Transform = (this: object, code: string, id: string) => Promise<{ code: string } | void>;
+  const transformOf = (layer: string) =>
+    plugins.find(({ name }) => name === `vitest-plugin-rsc:next-build-dependency:${layer}`)!
+      .transform as Transform;
+  const code = `export const runtime = process.env.NEXT_RUNTIME;\n`;
+
+  // With a dev server a source file has none, also a test file or a story.
+  for (const environment of Object.values(environments)) {
+    expect(Object.keys(environment.define)).toEqual([
+      "process.env.NODE_ENV",
+      "global.process.env.NODE_ENV",
+      "globalThis.process.env.NODE_ENV",
+      ...(environment === environments.react_client ? ["__vite_rsc_require__"] : []),
+    ]);
+  }
+  const dependency = path.join(root, "node_modules/some-package/index.js");
+  expect((await transformOf("rsc").call({}, code, dependency))?.code).toContain(`"nodejs"`);
+  expect((await transformOf("browser").call({}, code, dependency))?.code).not.toContain(`"nodejs"`);
+  expect(await transformOf("rsc").call({}, code, path.join(root, "app/page.tsx"))).toBeUndefined();
+});
+
+type BuildConfig = { environments: Record<string, { define: Record<string, string> }> };

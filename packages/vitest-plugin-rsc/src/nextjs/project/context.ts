@@ -38,7 +38,11 @@ export function moduleFileAt(base: string): string | undefined {
 /** The project and its `next`, as `openNextProject()` loads them. */
 export type NextContext = Awaited<ReturnType<typeof openNextProject>>;
 
-export async function openNextProject(root: string, projectRequire: NodeJS.Require) {
+export async function openNextProject(
+  root: string,
+  projectRequire: NodeJS.Require,
+  options: { static?: boolean } = {},
+) {
   const nextDir = path.dirname(projectRequire.resolve("next/package.json"));
   const { version } = projectRequire("next/package.json") as { version: string };
   const [major = 0, minor = 0] = version.split(".").map(Number);
@@ -195,7 +199,12 @@ export async function openNextProject(root: string, projectRequire: NodeJS.Requi
   // Without `i18n`, which is the Pages Router's: a URL of the App Router has
   // no locale. With it, Next's route resolution and its proxy look for one in
   // every URL, and find no route of the app.
-  const config = { ...loadedConfig, i18n: null };
+  const config = {
+    ...loadedConfig,
+    i18n: null,
+    // A static build has no server to optimize an image.
+    ...(options.static && { images: { ...loadedConfig.images, unoptimized: true } }),
+  };
   const { appDir } = findPagesDir(root);
   if (!appDir) {
     throw new Error(`vitest-plugin-rsc: no \`app\` directory found in ${root}`);

@@ -1,4 +1,10 @@
-import { ESModulesEvaluator, ModuleRunner, type ModuleRunnerTransport } from "vite/module-runner";
+import {
+  createDefaultImportMeta,
+  ESModulesEvaluator,
+  ModuleRunner,
+  type ModuleRunnerTransport,
+} from "vite/module-runner";
+import builtLayers, { type BuiltLayer } from "virtual:vitest-plugin-rsc/layers";
 import * as pageClient from "virtual:vitest-plugin-rsc/vite-client";
 
 // The page's own instance of Vite's client, for the modules that the runners
@@ -62,24 +68,80 @@ function getRunner(environment: string): ModuleRunner {
  * evaluated again, the way a page load evaluates a page's scripts again.
  */
 export function createEnvironmentRunner(environment: string): ModuleRunner {
+  const built = builtLayers?.[environment];
   return new ModuleRunner(
     {
       sourcemapInterceptor: false,
       transport: {
-        invoke: (payload) => invokeEnvironment(environment, payload),
+        invoke: (payload) =>
+          built ? invokeBuilt(built, payload) : invokeEnvironment(environment, payload),
       },
       hmr: false,
+      // A module of a build is a file of it, and says so.
+      ...(built && {
+        createImportMeta: (file) => ({
+          ...createDefaultImportMeta(file),
+          url: builtUrl(built, file),
+        }),
+      }),
     },
     new ESModulesEvaluator(),
   );
 }
 
+/**
+ * What a runner imports a module of an environment by: its id, or in a build
+ * the file that the module is the entry of.
+ */
+export function environmentModule(environment: string, id: string): string {
+  const entry = builtLayers?.[environment]?.entries[id];
+  return entry ? `/${entry}` : id;
+}
+
 export function importEnvironment<T = any>(environment: string, id: string): Promise<T> {
-  return getRunner(environment).import<T>(id);
+  return getRunner(environment).import<T>(environmentModule(environment, id));
 }
 
 export function importReactClient<T = any>(id: string): Promise<T> {
   return importEnvironment<T>("react_client", id);
+}
+
+// A static build has no dev server to ask for a module. The environments that
+// run through a module runner were built into files of the format the runner
+// evaluates, and those are fetched like any file of the site: see
+// nextjs/build.ts. A module is a file, and its id the path of that file in
+// the directory of its environment.
+const builtModules = new Map<string, Promise<string>>();
+
+function builtUrl(layer: BuiltLayer, file: string): string {
+  return new URL(file.replace(/^\/+/, ""), layer.base).href;
+}
+
+async function invokeBuilt(layer: BuiltLayer, payload: InvokePayload): Promise<InvokeResult> {
+  const { name, data } = (payload as { data: { name: string; data: unknown[] } }).data;
+  if (name === "getBuiltins") return { result: [] } as InvokeResult;
+  if (name !== "fetchModule") {
+    return { error: { message: `vitest-plugin-rsc: a build has no "${name}"` } } as InvokeResult;
+  }
+  const [id] = data as [string];
+  const url = builtUrl(layer, id);
+  let code = builtModules.get(url);
+  if (!code) {
+    builtModules.set(
+      url,
+      (code = nativeFetch(url).then((response) => {
+        if (!response.ok) throw new Error(`vitest-plugin-rsc: ${url} responded with ${response.status}`);
+        return response.text();
+      })),
+    );
+    // Not kept when it fails: the next page load asks again.
+    code.catch(() => builtModules.delete(url));
+  }
+  try {
+    return { result: { code: await code, file: id, id, url: id, invalidate: false } } as InvokeResult;
+  } catch (error) {
+    return { error: { message: String(error instanceof Error ? error.message : error) } } as InvokeResult;
+  }
 }
 
 // What a browser's HTTP cache is to a page load: a module graph that is

@@ -9,6 +9,8 @@
 // node. What it leaves on its body goes with it: React adds its listeners to
 // the body when a portal renders there, and they would keep the page.
 
+import builtLayers from "virtual:vitest-plugin-rsc/layers";
+
 const runnerUrl = window.location.href;
 const elements = (of: Document) => [of.documentElement, of.head, of.body];
 const attributesOf = (element: Element) =>
@@ -16,18 +18,36 @@ const attributesOf = (element: Element) =>
 
 let unload: (() => void) | undefined;
 
+// In a static build, the CSS a module imports is a stylesheet that Vite links
+// when the module loads: in the HTML of the host, or from a script, both with
+// a `crossorigin` attribute. Not a stylesheet React renders, which has a
+// precedence.
+function isBuiltStyle(node: Node): boolean {
+  return (
+    builtLayers !== undefined &&
+    node instanceof HTMLLinkElement &&
+    node.rel === "stylesheet" &&
+    node.hasAttribute("crossorigin") &&
+    !node.hasAttribute("data-precedence")
+  );
+}
+
 function staysDuringPage(node: Node): boolean {
   return (
     node instanceof HTMLScriptElement ||
     node instanceof HTMLStyleElement ||
-    (node instanceof HTMLLinkElement && node.rel === "modulepreload")
+    (node instanceof HTMLLinkElement && node.rel === "modulepreload") ||
+    isBuiltStyle(node)
   );
 }
 
 // Vite puts the CSS a module imports in a `<style>`, once. It is the app's,
 // but it has to outlive the page: the module will not load again.
 function isViteStyle(node: Node): boolean {
-  return node instanceof HTMLStyleElement && node.hasAttribute("data-vite-dev-id");
+  return (
+    (node instanceof HTMLStyleElement && node.hasAttribute("data-vite-dev-id")) ||
+    isBuiltStyle(node)
+  );
 }
 
 function setAttributes(element: Element, attributes: Iterable<readonly [string, string]>): void {

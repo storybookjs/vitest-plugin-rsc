@@ -1,7 +1,7 @@
 import "./globals.ts";
 import { createElement, type JSXElementConstructor, type ReactNode } from "react";
 import { resetAsyncLocalStorage } from "../async-local-storage.ts";
-import { createEnvironmentRunner, importEnvironment } from "../utils.ts";
+import { createEnvironmentRunner, environmentModule, importEnvironment } from "../utils.ts";
 import { loadDocument, unloadDocument } from "./document.ts";
 import { recordListeners, recordMessageChannels } from "./leftovers.ts";
 import { registry, type Opened } from "./registry.ts";
@@ -632,7 +632,7 @@ async function openPage(
   };
   const started = (async () => {
     const client = await runner.import<typeof import("./client.tsx")>(
-      "vitest-plugin-rsc/nextjs/client",
+      environmentModule("react_client", "vitest-plugin-rsc/nextjs/client"),
     );
     superseded();
     return client.start(loaded, container);

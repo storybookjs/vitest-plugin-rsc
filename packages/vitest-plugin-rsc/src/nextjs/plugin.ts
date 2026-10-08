@@ -2,15 +2,23 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { hasDirective, transformDirectiveProxyExport } from "@vitejs/plugin-rsc/transforms";
-import { createFilter, normalizePath, parseAst, parseAstAsync, type Plugin } from "vite";
+import {
+  createFilter,
+  normalizePath,
+  parseAst,
+  parseAstAsync,
+  transformWithOxc,
+  type Plugin,
+} from "vite";
 import type { TestProject } from "vitest/node";
 import { createRunnerEnvironmentPlugins } from "../runner-environment.ts";
+import { nextBuild } from "./build.ts";
 import { flightBridge, type FlightEntry } from "./flight.ts";
 import { createCompilePlugin, createDependencyCompilePlugin } from "./compile.ts";
 import { createNodePlatform } from "./node-platform.ts";
 import { loadNextProject, type NextLayer, type NextProject } from "./project.ts";
 import { moduleFileAt } from "./project/context.ts";
-import { createServerCode, type ServerCodeOptions } from "./server-code.ts";
+import { compileServerCode, createServerCode, type ServerCodeOptions } from "./server-code.ts";
 import { affectedTests } from "./affected/index.ts";
 import { createPathsPlugin } from "./paths.ts";
 
@@ -217,6 +225,9 @@ function createLayerResolver(getProject: () => NextProject, layer: NextLayer) {
       name: `vitest-plugin-rsc:next-resolve:${layer}`,
       enforce: "pre",
       async resolveId(source, importer, options) {
+        // One bridge module imports another by its id. A dev server takes
+        // such an id as it is, and a build asks.
+        if (source.startsWith(bridgePrefix) || source === emptyModuleId) return source;
         if (source.startsWith("\0")) return;
         // The shim wraps the module it replaces.
         if (importer === `${bridgePrefix}server-reference-info`) {
@@ -466,8 +477,11 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
     {
       name: "vitest-plugin-rsc:next",
       enforce: "pre",
-      async config(config) {
-        project = await loadNextProject(path.resolve(config.root ?? process.cwd()));
+      async config(config, { command }) {
+        const isBuild = command === "build";
+        project = await loadNextProject(path.resolve(config.root ?? process.cwd()), undefined, {
+          static: isBuild,
+        });
         serverCode.configure(project.root);
 
         // What the route entries import from Next, to pre-bundle it. Every
@@ -569,9 +583,33 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
         const test = ((config as { test?: { setupFiles?: string | string[] } }).test ??= {});
         test.setupFiles = [setupFile, ...[test.setupFiles ?? []].flat()];
 
+        // A build has no dependency optimizer: a dependency goes through
+        // the plugins like a source file, and gets the constants of its layer
+        // there, see `dependencyBuildPlugin()`. Not every module: with a dev
+        // server a source file has none of them, also a file of the host.
+        // `process.env` stays the one of the page, which Next's server reads
+        // as it runs, and which Vite would make an empty object. React is its
+        // development build, as with a dev server: the aliases of a layer
+        // name that build.
+        const nodeEnv = JSON.stringify("development");
+        const build = (layer: NextLayer) =>
+          isBuild && {
+            keepProcessEnv: true,
+            define: {
+              "process.env.NODE_ENV": nodeEnv,
+              "global.process.env.NODE_ENV": nodeEnv,
+              "globalThis.process.env.NODE_ENV": nodeEnv,
+              // The name Vite RSC gives the `__webpack_require__` of a
+              // Flight client, before Vite replaces the constants.
+              ...(layer === "browser" && { __vite_rsc_require__: `${registry}.browserRequire` }),
+            },
+            build: { rolldownOptions: { shimMissingExports: true } },
+          };
+
         return {
           environments: {
             [environmentOf.rsc]: {
+              ...build("rsc"),
               optimizeDeps: {
                 ...optimizeDeps("rsc"),
                 // A route loads when it is first requested, and so does the
@@ -581,6 +619,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
               },
             },
             [environmentOf.ssr]: {
+              ...build("ssr"),
               consumer: "client",
               resolve: {
                 // Vite's conditions for a browser, which this is.
@@ -601,7 +640,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
                 exclude: ["vitest-plugin-rsc", "@vitejs/plugin-rsc"],
               },
             },
-            [environmentOf.browser]: { optimizeDeps: optimizeDeps("browser") },
+            [environmentOf.browser]: { ...build("browser"), optimizeDeps: optimizeDeps("browser") },
           },
         };
       },
@@ -726,5 +765,56 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
       applyToEnvironment: (environment: { name: string }) =>
         environment.name === environmentOf[layer],
     })),
+    ...layers.map((layer) => dependencyBuildPlugin(getProject, serverCode, layer)),
+    nextBuild({
+      environments: environmentOf,
+      entries: { ssr: "vitest-plugin-rsc/nextjs/ssr", browser: "vitest-plugin-rsc/nextjs/client" },
+      emittedFiles: () => project.emittedFiles(),
+    }),
   ];
+}
+
+// What the dependency optimizer does to a package for a layer, for a build,
+// which has no optimizer: Next's compiler for a package that calls
+// `next/font`, the constants of the layer, and for a server layer what makes
+// a module server code.
+function dependencyBuildPlugin(
+  getProject: () => NextProject,
+  serverCode: ReturnType<typeof createServerCode>,
+  layer: NextLayer,
+): Plugin {
+  const compile = createDependencyCompilePlugin(getProject, layer);
+  return {
+    name: `vitest-plugin-rsc:next-build-dependency:${layer}`,
+    apply: "build",
+    applyToEnvironment: (environment) => environment.name === environmentOf[layer],
+    async transform(code, id) {
+      const file = id.split("?")[0]!;
+      if (!normalizePath(file).includes("/node_modules/") || !/\.[cm]?js$/.test(file)) return;
+      const compiled = await compile.transform(code, file);
+      const source = compiled?.code ?? code;
+      // The ones it names: most modules name none.
+      const define = Object.fromEntries(
+        Object.entries(definesOf(getProject(), layer)).filter(([key]) =>
+          source.includes(key.replace(/^typeof /, "")),
+        ),
+      );
+      const isServerCode = layer !== "browser" && serverCode.isServerCode(file, layer);
+      if (!isServerCode && Object.keys(define).length === 0) return compiled;
+      try {
+        const defined = isServerCode
+          ? await compileServerCode(source, file, registry, define)
+          : await transformWithOxc(source, file, { lang: "js", define });
+        return defined ?? compiled;
+      } catch (error) {
+        // JSX in a `.js` file, for one. The bundler may still take it.
+        const reason = String(error instanceof Error ? error.message : error);
+        this.warn(
+          `vitest-plugin-rsc: ${file} keeps the constants of Next's ${layer} layer, it does not ` +
+            `parse as JavaScript. ${reason.replace(/\s+/g, " ")}`,
+        );
+        return compiled;
+      }
+    },
+  };
 }

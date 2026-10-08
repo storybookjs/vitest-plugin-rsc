@@ -5,6 +5,7 @@ import * as FlightServer from "@vitejs/plugin-rsc/vendor/react-server-dom/server
 import appPages from "virtual:vitest-plugin-rsc/next-app-pages";
 import loadMiddleware from "virtual:vitest-plugin-rsc/next-middleware";
 import routeHandlers from "virtual:vitest-plugin-rsc/next-route-handlers";
+import serverReferences from "virtual:vitest-plugin-rsc/next-server-references";
 import type { FlightAdapters } from "./flight.ts";
 import { actionModulePrefix, registry } from "./registry.ts";
 
@@ -13,8 +14,16 @@ import { actionModulePrefix, registry } from "./registry.ts";
 
 declare let __vite_rsc_raw_import__: (id: string) => Promise<unknown>;
 
+// The module of a server reference, by the id Vite RSC gives it. With a dev
+// server that is what Vite imports the module by. A static build has a list
+// of them: see build.ts.
 ReactServer.setRequireModule({
-  load: (id) => __vite_rsc_raw_import__(id),
+  load: (id) => {
+    if (!serverReferences) return __vite_rsc_raw_import__(id);
+    const load = serverReferences[id];
+    if (!load) throw new Error(`vitest-plugin-rsc: the build has no Server Action module "${id}"`);
+    return load();
+  },
 });
 
 // Next passes its client and server reference manifests to the Flight codec.

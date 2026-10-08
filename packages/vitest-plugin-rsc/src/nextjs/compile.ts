@@ -2,6 +2,7 @@ import fs from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import path from "node:path";
 import { normalizePath, type Plugin } from "vite";
+import { withBuiltFiles } from "./build.ts";
 import type { NextLayer, NextProject, ServeFile } from "./project.ts";
 
 // Before Next bundles the code of the app, its build compiles it: with its SWC
@@ -85,11 +86,20 @@ export function createCompilePlugin(
       return `${fontPrefix}${Buffer.from(source).toString("base64url")}.js`;
     },
     async load(id) {
+      // The loaders name a file they emit by the path the dev server has it
+      // at. A build has it at the same path, from wherever it is served.
+      const built = (code: string, language: "js" | "css") => {
+        if (this.environment.mode !== "build") return code;
+        const pathnames = getProject()
+          .emittedFiles()
+          .map((file) => file.pathname);
+        return withBuiltFiles(code, pathnames, language);
+      };
       if (id.startsWith(fontPrefix)) {
         const key = id.slice(fontPrefix.length).replace(/\.(?:js|css)$/, "");
         const request = Buffer.from(key, "base64url").toString();
         const { css, exports } = await getProject().loadFont(request);
-        if (id.endsWith(".css")) return css;
+        if (id.endsWith(".css")) return built(css, "css");
         return (
           `import ${JSON.stringify(`${fontPrefix}${key}.css`)};\n` +
           `export default ${JSON.stringify(exports)};\n`
@@ -98,7 +108,7 @@ export function createCompilePlugin(
       // With a query it is Vite's: `?url`, `?raw`.
       if (!layerOf(this.environment.name) || id.includes("?")) return;
       if (!getProject().isImage(id) || !fs.existsSync(id)) return;
-      return getProject().loadImage(id);
+      return built(await getProject().loadImage(id), "js");
     },
     async transform(code, id) {
       const layer = layerOf(this.environment.name);

@@ -1,6 +1,9 @@
+import fs from "node:fs";
+import http from "node:http";
+import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium, type Page } from "playwright";
-import { build, createServer, preview } from "vite";
+import { createBuilder, createServer } from "vite";
 
 // Opens the host page in a browser and checks that the app runs in it: against
 // the dev server, or with `--build` against a static build.
@@ -10,11 +13,49 @@ const configLoader = "native";
 const built = process.argv.includes("--build");
 const only = process.argv.find((arg) => arg.startsWith("--view="))?.slice("--view=".length);
 
+const contentTypes: Record<string, string> = {
+  ".html": "text/html",
+  ".js": "text/javascript",
+  ".css": "text/css",
+  ".json": "application/json",
+  ".svg": "image/svg+xml",
+  ".png": "image/png",
+  ".woff2": "font/woff2",
+};
+
+// A server of files and nothing else, like the host of a static site: a URL
+// without a file is a 404.
+function serveFiles(directory: string): Promise<{ url: string; close(): Promise<void> }> {
+  const server = http.createServer((request, response) => {
+    const { pathname } = new URL(request.url ?? "/", "http://localhost");
+    const file = path.join(directory, pathname.endsWith("/") ? `${pathname}index.html` : pathname);
+    if (!file.startsWith(directory) || !fs.statSync(file, { throwIfNoEntry: false })?.isFile()) {
+      response.writeHead(404).end("Not found");
+      return;
+    }
+    response.writeHead(200, {
+      "content-type": contentTypes[path.extname(file)] ?? "application/octet-stream",
+    });
+    fs.createReadStream(file).pipe(response);
+  });
+  return new Promise((resolve) => {
+    server.listen(0, () => {
+      const { port } = server.address() as { port: number };
+      resolve({
+        url: `http://localhost:${port}/`,
+        close: () => new Promise((closed) => server.close(() => closed())),
+      });
+    });
+  });
+}
+
 async function start(): Promise<{ url: string; close(): Promise<void> }> {
   if (built) {
-    if (!process.argv.includes("--no-build")) await build({ root, configLoader });
-    const server = await preview({ root, configLoader, preview: { port: 0 } });
-    return { url: server.resolvedUrls!.local[0]!, close: () => server.close() };
+    if (!process.argv.includes("--no-build")) {
+      const builder = await createBuilder({ root, configLoader, logLevel: "warn" });
+      await builder.buildApp();
+    }
+    return serveFiles(path.join(root, "dist"));
   }
   const server = await createServer({ root, configLoader, server: { port: 0 } });
   await server.listen();

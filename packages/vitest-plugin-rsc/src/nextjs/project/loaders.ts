@@ -53,7 +53,7 @@ export type RunLoader = (
  */
 export function createLoaders(context: NextContext): Pick<
   NextProject,
-  "isImage" | "loadImage" | "loadFont" | "readEmittedFile" | "optimizeImage"
+  "isImage" | "loadImage" | "loadFont" | "readEmittedFile" | "emittedFiles" | "optimizeImage"
 > & {
   runLoader: RunLoader;
 } {
@@ -223,6 +223,8 @@ export function createLoaders(context: NextContext): Pick<
       }
       return font;
     },
+    emittedFiles: () =>
+      [...emitted].map(([name, body]) => ({ pathname: `${emittedPath}${name}`, body })),
     readEmittedFile(pathname) {
       if (!pathname.startsWith(emittedPath)) return;
       const name = pathname.slice(emittedPath.length);
