@@ -130,6 +130,27 @@ test("gives a route handler the body of a request and the cookies of the tab", a
   expect(document.cookie).toContain("last-renamed=1");
 });
 
+test("gives a route handler a form body with the content type it was sent with", async () => {
+  const form = new FormData();
+  form.set("title", "Inbox zero");
+  form.set("file", new File(["notes"], "notes.txt"));
+
+  // Multipart, whose content type has the boundary of the parts.
+  const multipart = await handleRequest("/api/form", { method: "POST", body: form });
+  const encoded = await handleRequest("/api/form", {
+    method: "POST",
+    body: new URLSearchParams({ title: "Inbox zero" }),
+  });
+
+  expect(await multipart.json()).toEqual({
+    fields: [
+      ["title", "Inbox zero"],
+      ["file", "notes.txt"],
+    ],
+  });
+  expect(await encoded.json()).toEqual({ fields: [["title", "Inbox zero"]] });
+});
+
 test("answers with a response that has no body", async () => {
   db.notes.set("1", { id: "1", title: "Inbox triage", body: "Sort the inbox" });
 

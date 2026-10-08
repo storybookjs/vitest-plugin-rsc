@@ -47,6 +47,11 @@ class ServerRequest extends NativeRequest {
     }
     super(input, init?.body ? ({ duplex: "half", ...init } as RequestInit) : init);
     this.#headers = headersOf(init, input);
+    // The content type of a body like FormData, with the boundary of its parts.
+    const contentType = super.headers.get("content-type");
+    if (contentType && !this.#headers.has("content-type")) {
+      this.#headers.set("content-type", contentType);
+    }
   }
 
   override get headers(): Headers {
