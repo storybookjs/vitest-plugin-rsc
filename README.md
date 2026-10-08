@@ -459,6 +459,23 @@ test("creating a note invalidates the notes cache", async () => {
 });
 ```
 
+A function with `"use cache"` is cached too, in an app with `cacheComponents` in its `next.config`: a function, a component, or every function of a module with the directive at its top. `cacheTag()` and `cacheLife()` can be called in it, also after an `await`. This one is from `playground/nextjs-cache-components-demo`:
+
+```ts
+// app/lib/quotes.ts
+import { cacheLife, cacheTag } from "next/cache";
+
+export async function getQuote(topic: string) {
+  "use cache";
+  await delay(1);
+  cacheTag("quotes", `quote-${topic}`);
+  cacheLife("hours");
+  return { topic, runs: ++runs, author: await getAuthor(topic.length) };
+}
+```
+
+A cached function has a scope of its own, as in a deployment: `cookies()` throws in it. A component that a cached component renders is not in that scope here, and reads the request. So is a cached component that it renders, whose tags do not reach the outer entry. With Cache Components, Cached Navigations is off and nothing is prerendered, so a page that reads the request outside a `<Suspense>` boundary renders. See [Caching](docs/next-routes.md#caching) for the details.
+
 ### Open A Whole Route
 
 `renderServer({ url })` opens a route the way a browser does. The request goes to Next's request handler, the tab shows the HTML it sends back, and Next's client code hydrates it. It resolves once the page has hydrated. From there, Next's router is in charge, so links, forms, and redirects behave as they do in your app.
@@ -906,6 +923,7 @@ For the full walkthrough, see [docs/next-routes.md](docs/next-routes.md). [docs/
 ## Playgrounds
 
 - `playground/nextjs-e2e-demo` — a small Next.js app with a test for every feature of the Next.js support. Most samples above come from its tests.
+- `playground/nextjs-cache-components-demo` — a small Next.js app with `cacheComponents`, for `"use cache"`.
 - `playground/nextjs-notes-demo` — a fuller Next.js notes app with Better Auth, Drizzle, PGlite test databases, and shadcn/ui. Its tests open whole routes with the database and the session mocked in the tab. This is the repository's acceptance app.
 - `playground/rsc-vitest-demo` — a minimal non-Next RSC app. Use this as the smallest end-to-end example of `vitest-plugin-rsc` on its own.
 
