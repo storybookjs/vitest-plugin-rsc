@@ -1,7 +1,7 @@
 import "./globals.ts";
 import { createElement, type JSXElementConstructor, type ReactNode } from "react";
 import { resetAsyncLocalStorage } from "../async-local-storage.ts";
-import { createEnvironmentRunner, importEnvironment } from "../utils.ts";
+import { checkFetchedModules, createEnvironmentRunner } from "../utils.ts";
 import { loadDocument, unloadDocument } from "./document.ts";
 import { recordListeners, recordMessageChannels } from "./leftovers.ts";
 import { registry, type Opened } from "./registry.ts";
@@ -9,8 +9,8 @@ import { registry, type Opened } from "./registry.ts";
 // The server's platform (globals.ts) has to be there before a module of Next's
 // server loads, so the layers load from here on, in order: rsc, then ssr.
 await import("./rsc.ts");
-const ssr = await importEnvironment<typeof import("./ssr.ts")>(
-  "next_ssr",
+// One module graph for the tab: the server stays, where a page is loaded anew.
+const ssr = await createEnvironmentRunner("next_ssr").import<typeof import("./ssr.ts")>(
   "vitest-plugin-rsc/nextjs/ssr",
 );
 
@@ -664,6 +664,10 @@ async function openPage(
   // The test has moved on: to another page, or to the next test.
   const superseded = () => signal.throwIfAborted();
 
+  // A page load gets the modules of the server and of the browser layer as
+  // the dev server has them now.
+  await checkFetchedModules();
+  superseded();
   // Not the browser's Request, which drops a `cookie` header.
   const response = await sendRequest(new registry.Request(url, { ...init, signal }), {
     navigation: true,

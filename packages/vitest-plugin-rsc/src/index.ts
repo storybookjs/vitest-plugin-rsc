@@ -1,4 +1,4 @@
-import { type Plugin, type ViteDevServer } from "vite";
+import { type DevEnvironment, type Plugin, type ViteDevServer } from "vite";
 import { vitePluginRscMinimal } from "@vitejs/plugin-rsc/plugin";
 import { createReactClientCoveragePlugin } from "./coverage.ts";
 import { createRunnerEnvironmentPlugins } from "./runner-environment.ts";
@@ -77,7 +77,7 @@ export function vitestPluginRSC(): Plugin[] {
             const result = !invoke.payload
               ? (moduleVersions.get(invoke.environment) ?? 0)
               : environment && invoke.environment !== "client"
-                ? await environment.hot.handleInvoke(invoke.payload)
+                ? describeModule(environment, await environment.hot.handleInvoke(invoke.payload))
                 : {
                     error: { message: `No environment "${invoke.environment}" to run in the page` },
                   };
@@ -163,9 +163,53 @@ export function vitestPluginRSC(): Plugin[] {
         };
       },
     },
+    dependencySourceMapPlugin(),
     createReactClientCoveragePlugin(),
     ...createRunnerEnvironmentPlugins("react_client"),
   ];
+}
+
+// With the answer for a module, what that module imports: the page asks for
+// those right away, where Vite's module runner asks for each once the one
+// before it has run. Not what it imports with `import()`, which it may never
+// load. And whether it is a dependency, which has no source map to collect
+// coverage with.
+function describeModule<Result extends object>(
+  environment: DevEnvironment,
+  result: Result,
+): Result {
+  const fetched = (result as { result?: { id?: unknown; code?: unknown } }).result;
+  if (typeof fetched?.id !== "string" || typeof fetched.code !== "string") return result;
+  const imports = environment.moduleGraph.getModuleById(fetched.id)?.transformResult?.deps;
+  return { ...result, imports, dependency: isDependency(environment, fetched.id) };
+}
+
+function isDependency(environment: DevEnvironment, id: string): boolean {
+  return id.includes("/node_modules/") || !!environment.depsOptimizer?.isOptimizedDepFile(id);
+}
+
+// The page gets a module of a layer it runs through a module runner with its
+// source map in it, and a dependency has megabytes of those: more than its
+// code. They are also what takes Vite longest when it compiles a pre-bundled
+// dependency for a module runner. So a dependency goes without. An error in
+// one is reported at its place in the compiled dependency.
+function dependencySourceMapPlugin(): Plugin {
+  return {
+    name: "rsc:dependency-source-map",
+    // Before a plugin with a source map of its own, which Vite then drops
+    // without combining the two.
+    enforce: "pre",
+    transform(code, id) {
+      const { environment } = this;
+      const { consumer, dev } = environment.config;
+      if (environment.mode !== "dev" || consumer !== "client" || !dev.moduleRunnerTransform) return;
+      if (!isDependency(environment, id)) return;
+      // What Rollup takes for a module without a source map. Vite keeps the
+      // source map of the file when a module comes out of its plugins as it
+      // went in, so it does not: a line more at the end moves nothing.
+      return { code: `${code}\n`, map: { mappings: "" } };
+    },
+  };
 }
 
 function parseWebSocketInvoke(raw: unknown): ReactClientWebSocketInvoke | undefined {
