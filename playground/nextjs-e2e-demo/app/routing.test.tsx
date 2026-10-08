@@ -194,6 +194,14 @@ test("sets the headers that next.config has for a path", async () => {
   expect((await handleRequest("/notes")).headers.has("x-docs")).toBe(false);
 });
 
+test("keeps a header of next.config over the one of a route handler, as next start does", async () => {
+  const response = await handleRequest("/api/plain");
+
+  // Next sets a header of the handler's response only where there is none.
+  expect(response.headers.get("x-served-by")).toBe("next.config");
+  expect(response.headers.get("set-cookie")).toBe("plain=1; Path=/");
+});
+
 test("redirects a URL with a trailing slash to the one without", async () => {
   const response = await handleRequest("/docs/routing/", { redirect: "manual" });
 
@@ -264,6 +272,14 @@ test("gives the app the headers and the cookies the proxy sets", async () => {
   expect(document.cookie).toContain("last-team=core");
   // A header of the response.
   expect(response.headers.get("x-proxy")).toBe("team");
+});
+
+test("keeps a header of the proxy that the route adds to", async () => {
+  const response = await handleRequest("/styles");
+
+  const link = response.headers.get("link");
+  expect(link).toContain('<https://example.com/styles>; rel="alternate"; hreflang="en"');
+  expect(link).toMatch(/\/_next\/static\/css\//);
 });
 
 test("takes a header that only Next's own server sets off a request that comes in", async () => {

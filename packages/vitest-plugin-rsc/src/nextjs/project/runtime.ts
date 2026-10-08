@@ -121,6 +121,20 @@ export function checkRuntime(context: NextContext) {
   runtimeFile("build/templates/app-page-runtime").contains(
     "server/route-modules/app-page/module.compiled",
   );
+  // node-server.ts lists the stylesheets of a route where Next's renderer
+  // looks for those of a segment: in `entryCSSFiles` of the client reference
+  // manifest, by the file of the segment without its extension. Next links
+  // each by its path under `/_next/`. Without this a page has no CSS, and
+  // nothing says why.
+  runtimeFile("server/app-render/get-css-inlined-link-tags").contains(
+    "filePath.replace(/\\.[^.]+$/, '')",
+    "entryCSSFiles[filePathWithoutExt]",
+  );
+  runtimeFile("server/app-render/render-css-resource").contains(
+    "entryCssFile.inlined",
+    "entryCssFile.content",
+    "/_next/${encodeURIPath(entryCssFile.path)}",
+  );
   // The plugin turns Next's renderer to web streams with this.
   runtimeFile("server/app-render/stream-ops").contains("process.env.__NEXT_USE_NODE_STREAMS");
 

@@ -2,6 +2,7 @@ import { renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
 import { afterEach, beforeEach, expect, test, vi, type MockInstance } from "vitest";
 import { page } from "vitest/browser";
 import { GeistMono } from "geist/font/mono";
+import { cssRules } from "../../test/browser.ts";
 import { geist, inter } from "./fonts.ts";
 
 // next/font: Next's font loaders make the CSS of a font and serve its files.
@@ -45,11 +46,12 @@ test("sets text in a font of next/font/google, which Next hosts itself", async (
   const [face] = await loadFont(inter.style.fontFamily);
   expect(face?.family).toBe("Inter");
   expect(face?.status).toBe("loaded");
-  const sources = [...document.querySelectorAll("style")].flatMap(
-    (style) => style.textContent?.match(/url\([^)]+\)/g) ?? [],
-  );
+  // Its CSS is a stylesheet of the page, as Next links it.
+  const sources = cssRules()
+    .filter((rule) => rule instanceof CSSFontFaceRule)
+    .flatMap((rule) => rule.style.getPropertyValue("src").match(/url\([^)]+\)/g) ?? []);
   expect(sources).not.toEqual([]);
-  for (const source of sources) expect(source).toMatch(/^url\(\/_next\/static\/media\//);
+  for (const source of sources) expect(source).toMatch(/^url\("\/_next\/static\/media\//);
 });
 
 test("sets text in the font of a package that calls next/font itself, like geist", async () => {

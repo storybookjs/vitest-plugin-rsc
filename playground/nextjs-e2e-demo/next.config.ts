@@ -37,7 +37,10 @@ const nextConfig: NextConfig = {
     };
   },
   async headers() {
-    return [{ source: "/docs/:slug", headers: [{ key: "x-docs", value: ":slug" }] }];
+    return [
+      { source: "/docs/:slug", headers: [{ key: "x-docs", value: ":slug" }] },
+      { source: "/api/plain", headers: [{ key: "x-served-by", value: "next.config" }] },
+    ];
   },
 };
 

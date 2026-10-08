@@ -30,6 +30,7 @@ export const areas = {
   metadata: "Metadata",
   font: "next/font",
   image: "next/image",
+  css: "CSS",
   cache: "The Data Cache",
   routing: "The proxy, rewrites, redirects, trailingSlash",
 } as const;
@@ -91,6 +92,38 @@ export const fixtures: Fixture[] = [
   // `@next/font` is the old name of `next/font`. The app imports `next/font`.
   appDir("next-font", "font", ["next-font.test.ts"], { assumeInstalled: ["@next/font"] }),
   appDir("next-image", "image", ["next-image.test.ts"]),
+
+  // Next's own tests of CSS. Not `scss`, a directory of 40 apps of their own,
+  // for Sass. A fixture whose app needs a package the runner does not install
+  // stops before its tests run, so these are not here either:
+  // - `app-css`, its config needs `@next/mdx`.
+  // - `css-modules-rsc-postcss`, its PostCSS config needs `postcss-nested`.
+  // - `tailwind-css`, its PostCSS config needs Tailwind 3.
+  // - `no-double-tailwind-execution`, its PostCSS config needs Tailwind 4.
+  // - `css-order`, it builds its app with `nextTestSetup({ files })`, which the runner does not.
+  // - `turbopack-postcss-multiple-configs` and `css-modules-data-urls`, which only Turbopack runs.
+  appDir("app-css-pageextensions", "css", ["index.test.ts"]),
+  appDir("app-inline-css", "css", ["index.test.ts"]),
+  appDir("autoscroll-with-css-modules", "css", ["index.test.ts"]),
+  appDir("css-bom", "css", ["css-bom.test.ts"]),
+  appDir("css-chunking", "css", ["css-chunking.test.ts"]),
+  appDir("css-client-side-nav-parallel-routes", "css", [
+    "css-client-side-nav-parallel-routes.test.ts",
+  ]),
+  appDir("css-media-query", "css", ["css-media-query.test.ts"]),
+  appDir("css-modules-pure-no-check", "css", ["css-modules-pure-no-check.test.ts"]),
+  appDir("css-modules-scoping", "css", ["css-modules-scoping.test.ts"]),
+  appDir("css-server-chunks", "css", ["css-server-chunks.test.ts"]),
+  appDir("cssnano-colormin", "css", ["index.test.ts"]),
+  appDir("dynamic-css", "css", ["index.test.ts"]),
+  appDir("experimental-lightningcss-features", "css", [
+    "experimental-lightningcss-features.test.ts",
+  ]),
+  appDir("initial-css-not-found", "css", ["initial-css-not-found.test.ts"]),
+  appDir("initial-css-order", "css", ["initial-css-order.test.ts"]),
+  appDir("next-dynamic-css", "css", ["next-dynamic-css.test.ts"]),
+  appDir("parallel-routes-css", "css", ["parallel-routes-css.test.ts"]),
+  appDir("random-in-sass", "css", ["random-in-sass.test.ts"]),
 
   appDir("revalidate-dynamic", "cache", ["revalidate-dynamic.test.ts"]),
   appDir("revalidatetag-rsc", "cache", ["revalidatetag-rsc.test.ts"]),

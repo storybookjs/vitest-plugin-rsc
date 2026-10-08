@@ -249,8 +249,9 @@ test("sends the cookies the test sets before it opens a page", async () => {
 test("keeps the CSS of a page whose module loaded while another page was there", async () => {
   await renderServer({ url: "/" });
 
-  // The module of the page loads for this navigation, and Vite adds its CSS
-  // to the document then. The module does not load again.
+  // Next's router links the CSS of the page it navigates to. A page load
+  // after it links it again, though the module of the page does not load
+  // again.
   await page.getByRole("link", { name: "Notice" }).click();
   const notice = page.getByText("The office is closed on Friday.");
   await expect.element(notice).toHaveStyle({ color: "rgb(0, 128, 0)" });

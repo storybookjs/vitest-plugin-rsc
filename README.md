@@ -157,7 +157,7 @@ test("wraps a node in a wrapper, which can be a Server Component", async () => {
 });
 ```
 
-`layouts: true` renders the node inside your app's layouts for that `url`, with everything they give it: providers, global CSS, and the data a layout reads.
+`layouts: true` renders the node inside your app's layouts for that `url`, with everything they give it: providers, global CSS, and the data a layout reads. Without it, a node has the CSS of what its test file and the setup files import: import the global CSS of your root layout in a setup file to have it there.
 
 ```tsx
 import { RouterState } from "./components/router-state.tsx";

@@ -4,10 +4,6 @@
       "category": "plugin-bug",
       "text": "A page that the app loads itself, like a link to a path that is no route, replaces the entry of the history where a browser adds one. `back()` does not return to the page before it."
     },
-    "global-css-stays": {
-      "category": "plugin-bug",
-      "text": "The global CSS of a page that an earlier test opened still applies. Vite adds a stylesheet once, and it outlives its page."
-    },
     "form-post-keeps-tab-query": {
       "category": "plugin-bug",
       "text": "A form without a Server Action that the browser posts to `/` ends at `/?sessionId=…`: the page gets the query of the test's tab."
@@ -105,6 +101,19 @@
       "category": "not-applicable",
       "text": "Reads Next's dev overlay, which only `next dev` has.",
       "match": "Next's dev overlay"
+    },
+    "dynamic-css-manifest": {
+      "category": "not-yet",
+      "text": "The CSS of a component of `next/dynamic`, which Next links from its manifest of dynamic imports, with `precedence=\"dynamic\"`, next to a preload of its JavaScript. Here it is a stylesheet of the segment that imports the component."
+    },
+    "npm-packages": {
+      "category": "not-applicable",
+      "text": "The app needs an npm package that its test installs, and the runner does not: Sass, Lightning CSS, a CSS framework.",
+      "match": "the fixture needs npm packages that are not installed"
+    },
+    "css-not-minified": {
+      "category": "not-applicable",
+      "text": "Expects the CSS that Next's build minified. Here it is the CSS that Vite compiles, as it is."
     }
   },
   "fixtures": {
@@ -113,11 +122,10 @@
       "failed": {}
     },
     "navigation": {
-      "passed": 38,
+      "passed": 39,
       "failed": {
         "navigation.test.ts > app dir - navigation > query string > useParams identity between renders > should be stable in app": "react-development-build",
         "navigation.test.ts > app dir - navigation > query string > useParams identity between renders > should be stable in pages": "pages-router",
-        "navigation.test.ts > app dir - navigation > hash-link-back-to-same-page > should scroll to the specified hash": "global-css-stays",
         "navigation.test.ts > app dir - navigation > redirect > components > should redirect to external url": "another-origin",
         "navigation.test.ts > app dir - navigation > redirect > components > should redirect to external url, initiating only once": "another-origin",
         "navigation.test.ts > app dir - navigation > redirect > components > should only trigger the redirect once (/redirect/servercomponent)": "page-load-requests",
@@ -367,6 +375,94 @@
       "passed": 1,
       "failed": {
         "redirect-rewrite-dynamic.test.ts > redirect to a rewritten dynamic route (#95195) > client-side navigation to /a should update the URL to /": "playwright-page"
+      }
+    },
+    "app-css-pageextensions": {
+      "passed": 0,
+      "failed": {
+        "index.test.ts > app dir - css with pageextensions > css support with pageextensions > page in app directory with pageextention, css should work > should support global css inside layout": "npm-packages"
+      }
+    },
+    "app-inline-css": {
+      "passed": 6,
+      "failed": {}
+    },
+    "autoscroll-with-css-modules": {
+      "passed": 2,
+      "failed": {}
+    },
+    "css-bom": {
+      "passed": 1,
+      "failed": {
+        "css-bom.test.ts > app dir - css with a UTF-8 BOM > keeps the BOM in the fixture": "node-in-test"
+      }
+    },
+    "css-chunking": {
+      "passed": 1,
+      "failed": {}
+    },
+    "css-client-side-nav-parallel-routes": {
+      "passed": 1,
+      "failed": {}
+    },
+    "css-media-query": {
+      "passed": 2,
+      "failed": {}
+    },
+    "css-modules-pure-no-check": {
+      "passed": 1,
+      "failed": {
+        "css-modules-pure-no-check.test.ts > css-modules-pure-no-check > should have emitted a CSS file": "css-not-minified"
+      }
+    },
+    "css-modules-scoping": {
+      "passed": 2,
+      "failed": {}
+    },
+    "css-server-chunks": {
+      "passed": 0,
+      "failed": {
+        "css-server-chunks.test.ts > css-server-chunks > should not write CSS chunks for the server": "pages-router"
+      }
+    },
+    "cssnano-colormin": {
+      "passed": 1,
+      "failed": {}
+    },
+    "dynamic-css": {
+      "passed": 4,
+      "failed": {
+        "index.test.ts > app dir - dynamic css > should preload all chunks of dynamic component during SSR": "dynamic-css-manifest"
+      }
+    },
+    "experimental-lightningcss-features": {
+      "passed": 0,
+      "failed": {
+        "experimental-lightningcss-features.test.ts > experimental-lightningcss-features > include > should transpile light-dark() when included in lightningCssFeatures": "npm-packages",
+        "experimental-lightningcss-features.test.ts > experimental-lightningcss-features > custom-media-queries > should substitute @custom-media when custom-media-queries is included": "npm-packages",
+        "experimental-lightningcss-features.test.ts > experimental-lightningcss-features > exclude > should preserve light-dark() when excluded from lightningCssFeatures": "npm-packages"
+      }
+    },
+    "initial-css-not-found": {
+      "passed": 1,
+      "failed": {}
+    },
+    "initial-css-order": {
+      "passed": 2,
+      "failed": {}
+    },
+    "next-dynamic-css": {
+      "passed": 4,
+      "failed": {}
+    },
+    "parallel-routes-css": {
+      "passed": 1,
+      "failed": {}
+    },
+    "random-in-sass": {
+      "passed": 0,
+      "failed": {
+        "random-in-sass.test.ts > random-in-sass > should work using browser": "npm-packages"
       }
     }
   }
