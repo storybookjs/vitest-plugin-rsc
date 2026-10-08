@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createFilter, normalizePath, transformWithOxc, type Plugin } from "vite";
+import { transformAsyncFunctions } from "../async-local-storage-transform.ts";
 import type { NextLayer } from "./project.ts";
 
 // The server layers run in a browser tab, which has a `window` and a `fetch`
@@ -20,6 +21,8 @@ const serverGlobals = [
   // Node.js has these and a tab does not: see globals.ts.
   "setImmediate",
   "clearImmediate",
+  // On Node.js its callback has the stores of `AsyncLocalStorage`.
+  "queueMicrotask",
 ];
 
 const mentionsServerGlobal = new RegExp(`\\b(?:${serverGlobals.join("|")})\\b`);
@@ -117,6 +120,11 @@ function packageDirOf(file: string): string | undefined {
 }
 
 const name = "vitest-plugin-rsc:next-server-code";
+const asyncFunctionsName = "vitest-plugin-rsc:next-async-functions";
+
+// Next's wrapper of a `"use cache"` function. It enters the scope of the
+// function and awaits before it has React call the function.
+const useCacheWrapper = /\/next\/dist\/(?:esm\/)?server\/use-cache\/[^/]+\.js$/;
 
 export function createServerCode(registry: string, options: ServerCodeOptions = {}) {
   const patterns = [options.browserModules ?? []].flat();
@@ -138,6 +146,19 @@ export function createServerCode(registry: string, options: ServerCodeOptions = 
     if (isBrowserModule(file) || testFileMatchers.some((matches) => matches(file))) return false;
     const packageDir = packageDirOf(file);
     return !packageDir || !testRunnerPackages.has(packageDir);
+  }
+
+  /** The file of a module, if it is a source file that is server code in a layer. */
+  function sourceFileOf(id: string, cacheDir: string, layer: NextLayer): string | undefined {
+    const file = id.split("?")[0]!;
+    // Not a stylesheet, and not what another plugin compiles to JavaScript.
+    if (!/\.[cm]?[jt]sx?$/.test(file) || !fs.existsSync(file)) return;
+    // A dependency is compiled when it is pre-bundled, or not at all.
+    if (file.includes("/node_modules/") || file.startsWith(`${cacheDir}/`)) return;
+    // Without Vitest's config there is no telling a test file from a
+    // file of the app, and a test file must keep the tab.
+    if (layer === "rsc" && testFileMatchers.length === 0) return;
+    if (isServerCode(file, layer)) return file;
   }
 
   return {
@@ -190,23 +211,41 @@ export function createServerCode(registry: string, options: ServerCodeOptions = 
         },
       };
     },
+    /**
+     * The async functions that have to read, after an `await`, a store Next
+     * entered for them: see async-local-storage-transform.ts. That is the
+     * scope of a cached function, which the `rsc` layer runs: for the
+     * dependency optimizer, Next's wrapper of a `"use cache"` function.
+     */
+    asyncFunctionsOptimizerPlugin() {
+      return {
+        name: asyncFunctionsName,
+        transform: (code: string, id: string) =>
+          useCacheWrapper.test(normalizePath(id))
+            ? transformAsyncFunctions(code, id, `${registry}.asyncFunctionHooks`)
+            : undefined,
+      };
+    },
+    /** And the source files of the app in the `rsc` layer, by the name of its environment. */
+    asyncFunctionsPlugin(environment: string): Plugin {
+      return {
+        name: asyncFunctionsName,
+        applyToEnvironment: ({ name }) => name === environment,
+        transform(code, id) {
+          const file = sourceFileOf(id, normalizePath(this.environment.config.cacheDir), "rsc");
+          if (file) return transformAsyncFunctions(code, file, `${registry}.asyncFunctionHooks`);
+        },
+      };
+    },
     /** For the source files of the server layers, by the name of their environment. */
     plugin(environments: Record<string, NextLayer>): Plugin {
       return {
         name,
         applyToEnvironment: (environment) => Object.hasOwn(environments, environment.name),
         async transform(code, id) {
-          const file = id.split("?")[0]!;
-          // Not a stylesheet, and not what another plugin compiles to JavaScript.
-          if (!/\.[cm]?[jt]sx?$/.test(file) || !fs.existsSync(file)) return;
-          // A dependency is compiled when it is pre-bundled, or not at all.
-          if (file.includes("/node_modules/")) return;
-          if (file.startsWith(`${normalizePath(this.environment.config.cacheDir)}/`)) return;
           const layer = environments[this.environment.name]!;
-          // Without Vitest's config there is no telling a test file from a
-          // file of the app, and a test file must keep the tab.
-          if (layer === "rsc" && testFileMatchers.length === 0) return;
-          if (!isServerCode(file, layer)) return;
+          const file = sourceFileOf(id, normalizePath(this.environment.config.cacheDir), layer);
+          if (!file) return;
           return compileServerCode(code, file, registry);
         },
       };

@@ -1,5 +1,9 @@
 import { Buffer } from "node:buffer";
-import { enterAmbientScope, SequentialAsyncLocalStorage } from "../async-local-storage.ts";
+import {
+  asyncFunctionHooks,
+  enterAmbientScope,
+  SequentialAsyncLocalStorage,
+} from "../async-local-storage.ts";
 import { registry } from "./registry.ts";
 
 // Next's server runs here as it does on Node.js, with the web APIs that
@@ -119,6 +123,14 @@ class ServerResponse extends NativeResponse {
 registry.Request = ServerRequest;
 registry.Response = ServerResponse;
 registry.enterRequestScope = enterAmbientScope;
+registry.asyncFunctionHooks = asyncFunctionHooks;
+
+// A microtask has the stores of the code that queued it, as on Node.js. React
+// starts a render in one, and Next has React call the function of a
+// `"use cache"` that way, in the scope it entered for the function.
+const nativeQueueMicrotask = globalThis.queueMicrotask;
+registry.queueMicrotask = (callback) =>
+  nativeQueueMicrotask(SequentialAsyncLocalStorage.bind(callback));
 
 // Next patches the `fetch` of its server to cache and dedupe. That must not
 // be the `fetch` of the page, which is the browser's.

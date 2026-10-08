@@ -23,6 +23,8 @@ declare global {
 // function that was still running when its test ended, and stores its result
 // afterwards under the key it already had.
 let generation = 0;
+/** For the keys of a `"use cache"` function, which are not of this cache: node-server.ts. */
+export const cacheGeneration = (): number => generation;
 // The cache of the server now: of the request it handles, or between requests.
 let current: IncrementalCache | undefined;
 

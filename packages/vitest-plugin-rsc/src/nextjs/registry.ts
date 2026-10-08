@@ -48,6 +48,10 @@ export type NextRegistry = {
   clearImmediate(id: unknown): void;
   /** Starts the scope of one request, see `enterAmbientScope`. Returns its end. */
   enterRequestScope(): () => void;
+  /** What an async function of server code is compiled to call: server-code.ts. */
+  asyncFunctionHooks: object;
+  /** The server's `queueMicrotask`: the callback has the stores of the code that queued it. */
+  queueMicrotask(callback: () => void): void;
   /** The rsc layer's Flight codec, behind the signatures Next calls. */
   flightServer: Record<string, AnyFunction>;
   flightStatic: Record<string, AnyFunction>;

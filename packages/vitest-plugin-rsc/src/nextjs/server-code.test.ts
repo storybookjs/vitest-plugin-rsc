@@ -71,6 +71,15 @@ test("reads fetch, Request and Response from the server", async () => {
   );
 });
 
+test("queues a microtask with the server's queueMicrotask", async () => {
+  vi.stubGlobal("__server__", { queueMicrotask: () => "server microtask" });
+
+  expect(await run(`var result = [typeof queueMicrotask, queueMicrotask(() => {})];`)).toEqual([
+    "function",
+    "server microtask",
+  ]);
+});
+
 test("leaves code alone that names none of them", async () => {
   expect(
     await compileServerCode(`export const answer = 42;`, "/app/module.js", registry),
@@ -162,4 +171,41 @@ test("tells the server code of a layer from the code of the test", () => {
   const ownRuntime = fileURLToPath(new URL("./ssr.ts", import.meta.url));
   expect(serverCode.isServerCode(ownRuntime, "ssr")).toBe(false);
   expect(serverCode.isServerCode("\0virtual:module", "ssr")).toBe(false);
+});
+
+test("compiles the async functions of Next's wrapper of a cached function, and of no other package", () => {
+  const { transform } = createServerCode(registry).asyncFunctionsOptimizerPlugin();
+  const code = `export async function cache() { await generate(); }`;
+
+  for (const file of [
+    "esm/server/use-cache/use-cache-wrapper.js",
+    "server/use-cache/cache-tag.js",
+  ]) {
+    expect(transform(code, `/app/node_modules/next/dist/${file}`)?.code).toContain(
+      `await ${registry}.asyncFunctionHooks.s(`,
+    );
+  }
+  expect(transform(code, "/app/node_modules/next/dist/esm/server/app-render/app-render.js")).toBe(
+    undefined,
+  );
+  expect(transform(code, "/app/node_modules/zod/index.js")).toBeUndefined();
+});
+
+test("compiles the async functions of the app's server code in the rsc layer, not of a test file", () => {
+  const serverCode = createServerCode(registry);
+  serverCode.configure(root);
+  serverCode.addTestFiles((file) => file.endsWith(".test.tsx"));
+  const { transform } = serverCode.asyncFunctionsPlugin("client") as unknown as {
+    transform(this: object, code: string, id: string): { code: string } | undefined;
+  };
+  const context = { environment: { config: { cacheDir: path.join(root, "node_modules/.vite") } } };
+  const code = `export async function load() { await data(); }`;
+
+  expect(transform.call(context, code, path.join(root, "app/page.tsx"))?.code).toContain(
+    `await ${registry}.asyncFunctionHooks.s(`,
+  );
+  expect(transform.call(context, code, path.join(root, "app/app.test.tsx"))).toBeUndefined();
+  // A dependency is compiled when it is pre-bundled, or not at all.
+  const dependency = path.join(root, "node_modules/next/dist/server/next.js");
+  expect(transform.call(context, code, dependency)).toBeUndefined();
 });
