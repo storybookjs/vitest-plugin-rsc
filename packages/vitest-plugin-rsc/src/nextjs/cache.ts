@@ -1,7 +1,7 @@
 import { IncrementalCache } from "next/dist/server/lib/incremental-cache";
 import { tagsManifest } from "next/dist/server/lib/incremental-cache/tags-manifest.external";
 import type { CacheFs } from "next/dist/shared/lib/utils";
-import { nextConfig } from "virtual:vitest-plugin-rsc/next-manifest";
+import { nextConfig, preview } from "virtual:vitest-plugin-rsc/next-manifest";
 
 // Next's Data Cache: what `unstable_cache` and a cached `fetch` keep between
 // requests. This is a module of the ssr layer, and its cache serves both
@@ -17,13 +17,6 @@ import { nextConfig } from "virtual:vitest-plugin-rsc/next-manifest";
 declare global {
   var __incrementalCache: IncrementalCache | undefined;
 }
-
-/** The keys of draft mode, which a build writes to `.next/`: see project.ts. */
-export const preview = {
-  previewModeId: process.env.__NEXT_PREVIEW_MODE_ID ?? "",
-  previewModeSigningKey: process.env.__NEXT_PREVIEW_MODE_SIGNING_KEY ?? "",
-  previewModeEncryptionKey: process.env.__NEXT_PREVIEW_MODE_ENCRYPTION_KEY ?? "",
-};
 
 // Changes when the caches are reset, and is part of every key from then on:
 // no test finds what an earlier one stored. That also goes for a cached

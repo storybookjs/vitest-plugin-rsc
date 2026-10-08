@@ -11,6 +11,7 @@ import { createNodePlatform } from "./node-platform.ts";
 import { loadNextProject, type NextLayer, type NextProject } from "./project.ts";
 import { createServerCode, type ServerCodeOptions } from "./server-code.ts";
 import { affectedTests } from "./affected/index.ts";
+import { createPathsPlugin } from "./paths.ts";
 
 // Each layer of Next is a Vite environment, and all three run in the test's
 // tab (docs/next-routes.md). Where Next's own bundler config says a module
@@ -444,6 +445,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
 
   return [
     ...createRunnerEnvironmentPlugins(environmentOf.ssr),
+    createPathsPlugin(getProject),
     // Watch mode and `vitest --changed` find the test files of a route. On
     // its own: nothing else here knows of it.
     ...(options.affectedTests
@@ -672,7 +674,8 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
             `export const routes = ${JSON.stringify([...routes, ...project.componentRoutes])};\n` +
             `export const nextConfig = ${JSON.stringify(project.config)};\n` +
             `export const routing = ${JSON.stringify(project.routing)};\n` +
-            `export const routesManifest = ${JSON.stringify(project.routesManifest)};\n`
+            `export const routesManifest = ${JSON.stringify(project.routesManifest)};\n` +
+            `export const preview = ${JSON.stringify(project.preview)};\n`
           );
         }
 

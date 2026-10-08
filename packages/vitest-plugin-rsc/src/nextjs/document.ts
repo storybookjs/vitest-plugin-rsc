@@ -48,7 +48,7 @@ function setAttributes(element: Element, attributes: Iterable<readonly [string, 
  * the HTML parser puts in `<body>` goes in the container: the node, with the
  * scripts it renders, and after it the scripts of Next and React.
  */
-export function loadDocument(html: string, container?: Element): void {
+export function loadDocument(html: string, url: string, container?: Element): void {
   unloadDocument();
 
   // What was here before the page. Everything else is the page's to lose.
@@ -106,6 +106,10 @@ export function loadDocument(html: string, container?: Element): void {
     document.body.append(...page.body.childNodes);
   }
 
+  // Where the browser ended up, after any redirects. Before the scripts of
+  // the page run: one of them may read `location`.
+  window.history.replaceState(null, "", url);
+
   // The inline scripts: React's, which move content that was waiting for
   // data into place, and Next's, which carry the Flight payload. The scripts
   // with a `src` are the app's chunks, which `renderServer()` stands in for.
@@ -124,6 +128,8 @@ export function loadDocument(html: string, container?: Element): void {
 
 /** Leaves the page: the document is as it was before the page. */
 export function unloadDocument(): void {
-  unload?.();
+  // Once, also when it throws: the next page is not to find this one.
+  const leave = unload;
   unload = undefined;
+  leave?.();
 }

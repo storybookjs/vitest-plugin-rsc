@@ -9,6 +9,7 @@ declare module "virtual:vitest-plugin-rsc/next-manifest" {
   export const nextConfig: import("next/dist/server/config-shared").NextConfigComplete;
   export const routing: import("./project.ts").NextRouting;
   export const routesManifest: import("next/dist/build").RoutesManifest;
+  export const preview: import("./project.ts").NextProject["preview"];
 }
 
 declare module "virtual:vitest-plugin-rsc/next-middleware" {

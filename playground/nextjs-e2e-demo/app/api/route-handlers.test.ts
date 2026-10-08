@@ -350,3 +350,12 @@ test("leaves a same-origin fetch() that is not a route of the app to the dev ser
   expect(response.status).toBe(200);
   expect(response.headers.get("content-type")).toContain("javascript");
 });
+
+test("turns draft mode on in a route handler", async () => {
+  const response = await handleRequest("/api/draft");
+
+  expect(response.status).toBe(200);
+  expect(await response.json()).toEqual({ draft: true });
+  // Next signs the cookie with the keys of the build.
+  expect(document.cookie).toContain("__prerender_bypass=");
+});

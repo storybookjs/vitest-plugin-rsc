@@ -472,9 +472,7 @@ async function openPage(
     container = undefined;
   }
   if (/^\s*<!doctype/i.test(html)) container = undefined;
-  loadDocument(html, container);
-  // Where the browser ended up, after any redirects.
-  window.history.replaceState(null, "", response.url);
+  loadDocument(html, response.url, container);
   // A page load runs the app's scripts from scratch, so every page gets a
   // module graph of its own for the browser layer.
   const runner = createEnvironmentRunner("react_client");
@@ -530,25 +528,35 @@ function leavePage(): Promise<void> {
   currentLoad = undefined;
   const left = page;
   page = undefined;
-  leaving = leaving.then(async () => {
-    // An app that is still starting cannot be stopped, and would go on to
-    // hydrate the next page with the client code of this one. It is about
-    // done: the document it starts from is already there.
-    let timeout: ReturnType<typeof setTimeout> | undefined;
-    await Promise.race([
-      left?.started,
-      new Promise((resolve) => (timeout = setTimeout(resolve, 5000))),
-    ]);
-    // A timer that is still set keeps the page until it fires.
-    clearTimeout(timeout);
-    left?.unmount();
-    unloadDocument();
-    await ssr.settleRequests();
-    // The route of a node goes with its page.
-    registry.component = undefined;
-    resetAsyncLocalStorage();
-  });
-  return leaving;
+  // Also after a page that could not be left: that one fails its own test.
+  const gone = leaving
+    .catch(() => {})
+    .then(async () => {
+      // An app that is still starting cannot be stopped, and would go on to
+      // hydrate the next page with the client code of this one. It is about
+      // done: the document it starts from is already there.
+      let timeout: ReturnType<typeof setTimeout> | undefined;
+      await Promise.race([
+        left?.started,
+        new Promise((resolve) => (timeout = setTimeout(resolve, 5000))),
+      ]);
+      // A timer that is still set keeps the page until it fires.
+      clearTimeout(timeout);
+      try {
+        left?.unmount();
+      } finally {
+        try {
+          unloadDocument();
+        } finally {
+          await ssr.settleRequests();
+          // The route of a node goes with its page.
+          registry.component = undefined;
+          resetAsyncLocalStorage();
+        }
+      }
+    });
+  leaving = gone;
+  return gone;
 }
 
 /**
