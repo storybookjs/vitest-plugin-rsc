@@ -87,13 +87,16 @@ function createRunner(
  * evaluated again, the way a page load evaluates a page's scripts again.
  */
 export function createEnvironmentRunner(environment: string): ModuleRunner {
-  // Asked once for the graph, when it loads its first module.
-  let modules: Promise<FetchedModules> | undefined;
-  return createRunner(
-    async (payload) =>
-      invokeForPageLoad(environment, payload, await (modules ??= fetchedModules(environment))),
-    pageLoadEvaluator,
-  );
+  // What the tab has fetched, looked up when the runner loads its first
+  // module. Again after a request that failed: the socket may be back.
+  let fetched: Promise<FetchedModules> | undefined;
+  return createRunner(async (payload) => {
+    fetched ??= fetchedModulesFor(environment).catch((error: unknown) => {
+      fetched = undefined;
+      throw error;
+    });
+    return invokeForPageLoad(environment, payload, await fetched);
+  }, pageLoadEvaluator);
 }
 
 export function importEnvironment<T = any>(environment: string, id: string): Promise<T> {
@@ -121,31 +124,45 @@ type FetchedModules = { version: unknown; results: Map<string, InvokeResult> };
 
 const fetchedModulesOf = new Map<string, FetchedModules>();
 
-async function fetchedModules(environment: string): Promise<FetchedModules> {
+// What the tab has fetched of an environment, or nothing when the server has
+// invalidated a module since.
+async function fetchedModulesFor(environment: string): Promise<FetchedModules> {
   const version = await requestOverWebSocket(reactClientWebSocketVersionEvent, { environment });
-  const fetched = fetchedModulesOf.get(environment);
-  if (fetched && fetched.version === version) return fetched;
-  const modules = { version, results: new Map<string, InvokeResult>() };
-  fetchedModulesOf.set(environment, modules);
-  return modules;
+  const known = fetchedModulesOf.get(environment);
+  if (known && known.version === version) return known;
+  const fetched = { version, results: new Map<string, InvokeResult>() };
+  fetchedModulesOf.set(environment, fetched);
+  return fetched;
 }
 
 async function invokeForPageLoad(
   environment: string,
   payload: InvokePayload,
-  modules: FetchedModules,
+  fetched: FetchedModules,
 ): Promise<InvokeResult> {
   // An invoke of the runner: `fetchModule` with a URL, its importer and
   // whether the runner has the module, or `getBuiltins`.
   const { name, data } = (payload as { data: { name: string; data: unknown[] } }).data;
+  if (name !== "fetchModule" && name !== "getBuiltins") {
+    return invokeEnvironment(environment, payload);
+  }
   const [url, importer, options] = data as [string?, string?, { cached?: boolean }?];
   // The server resolves a path by itself, and anything else from its importer.
   const key = [name, url, url && /^[./]/.test(url) ? undefined : importer].join("\n");
-  let result = modules.results.get(key);
+  let result = fetched.results.get(key);
   if (!result) {
     result = await invokeEnvironment(environment, payload);
     // Not what the runner already has: that is an answer to this one request.
-    if (isInvokeSuccess(result) && !isCachedResult(result.result)) modules.results.set(key, result);
+    if (isInvokeSuccess(result) && !isCachedResult(result.result)) {
+      // The server says so when it had to transform the module for this
+      // request, and the runner then evaluates a module it has again. That
+      // was this once: a module can have two URLs, and the second one is
+      // asked for as a module the runner does not have.
+      if (isViteFetchResult(result.result)) {
+        (result.result as { invalidate?: boolean }).invalidate = false;
+      }
+      fetched.results.set(key, result);
+    }
   }
   // As the server answers for a module that the runner says it has.
   return options?.cached && isInvokeSuccess(result) && isViteFetchResult(result.result)
@@ -170,10 +187,11 @@ const contextKeys = [
 ] as const;
 const strict = '"use strict";';
 
-// Runs a module like Vite's own evaluator, and compiles it once: a page load
-// gets its modules from `fetchedModules`, and a module that was fetched once
-// is the same code for every page. What a module is, its exports and its
-// state, is in what it is called with, so every page still gets its own.
+// Runs a module as Vite's own evaluator does, and compiles it once: a page
+// load gets its modules from what the tab has fetched, and a module that was
+// fetched once is the same code for every page. What a module is, its exports
+// and its state, is in what it is called with, so every page still gets its
+// own. The code follows `"use strict";` on its line, as in coverage.ts.
 const compiledModules = new WeakMap<object, (...args: unknown[]) => Promise<unknown>>();
 
 const pageLoadEvaluator: ModuleEvaluator = {
@@ -184,11 +202,12 @@ const pageLoadEvaluator: ModuleEvaluator = {
   })(),
   async runInlinedModule(context, code, module) {
     // The answer of the server, which the pages share.
-    const fetched = module.meta;
-    let run = fetched && compiledModules.get(fetched);
+    const fetched = module.meta as { code?: string } | undefined;
+    const shared = fetched?.code === code ? fetched : undefined;
+    let run = shared && compiledModules.get(shared);
     if (!run) {
       run = new AsyncFunction(...contextKeys, strict + code);
-      if (fetched) compiledModules.set(fetched, run);
+      if (shared) compiledModules.set(shared, run);
     }
     await run(...contextKeys.map((key) => context[key]));
     Object.seal(context[ssrModuleExportsKey]);

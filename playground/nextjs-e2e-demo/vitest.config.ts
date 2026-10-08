@@ -1,7 +1,7 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { playwright } from "@vitest/browser-playwright";
-import type { Plugin } from "vite";
+import { normalizePath, type Plugin } from "vite";
 import { defineProject } from "vitest/config";
 import { vitestPluginRSC } from "vitest-plugin-rsc";
 import { vitestPluginNext } from "vitest-plugin-rsc/nextjs/plugin";
@@ -55,7 +55,7 @@ function fileChangeService(): Plugin {
       server.middlewares.use("/service/file-change", (request, response) => {
         const file = new URL(request.url ?? "/", "http://localhost").searchParams.get("file") ?? "";
         for (const environment of Object.values(server.environments)) {
-          environment.moduleGraph.onFileChange(path.join(server.config.root, file));
+          environment.moduleGraph.onFileChange(normalizePath(path.join(server.config.root, file)));
         }
         response.end();
       });

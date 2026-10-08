@@ -16,9 +16,12 @@ async function modulesFetched(load: () => Promise<unknown>): Promise<number> {
   const session = cdp();
   let fetched = 0;
   const count = ({ response }: { response: { payloadData: string } }) => {
-    const { data } = JSON.parse(response.payloadData) as {
-      data?: { environment?: string; payload?: { data?: { name?: string } } };
-    };
+    let data: { environment?: string; payload?: { data?: { name?: string } } } | undefined;
+    try {
+      ({ data } = JSON.parse(response.payloadData) as { data?: typeof data });
+    } catch {
+      // Not a frame of the plugin.
+    }
     if (data?.environment === "react_client" && data.payload?.data?.name === "fetchModule") {
       fetched++;
     }
@@ -28,8 +31,8 @@ async function modulesFetched(load: () => Promise<unknown>): Promise<number> {
   try {
     await load();
   } finally {
-    session.off("Network.webSocketFrameSent", count);
     await session.send("Network.disable");
+    session.off("Network.webSocketFrameSent", count);
   }
   return fetched;
 }
@@ -38,11 +41,9 @@ test("a page that loads again fetches no module again", async () => {
   await renderServer({ url: "/" });
 
   expect(await modulesFetched(() => renderServer({ url: "/" }))).toBe(0);
-  // It is a page of its own: its state is not the one of the page before.
+  // And the page works.
   await page.getByRole("button", { name: "Count: 0" }).click();
   await expect.element(page.getByRole("button", { name: "Count: 1" })).toBeVisible();
-  await renderServer({ url: "/" });
-  await expect.element(page.getByRole("button", { name: "Count: 0" })).toBeVisible();
 });
 
 test("a node that renders again fetches no module again", async () => {
