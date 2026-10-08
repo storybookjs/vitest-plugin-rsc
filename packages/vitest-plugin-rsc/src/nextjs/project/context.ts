@@ -156,6 +156,9 @@ export async function openNextProject(root: string, projectRequire: NodeJS.Requi
   const { generateInterceptionRoutesRewrites } = load<
     typeof import("next/dist/lib/generate-interception-routes-rewrites.js")
   >("lib/generate-interception-routes-rewrites");
+  const { NEXT_URL } = load<typeof import("next/dist/client/components/app-router-headers.js")>(
+    "client/components/app-router-headers",
+  );
   const { generateRoutesManifest } = load<
     typeof import("next/dist/build/generate-routes-manifest.js")
   >("build/generate-routes-manifest");
@@ -271,6 +274,7 @@ export async function openNextProject(root: string, projectRequire: NodeJS.Requi
       imageOptimizer,
       loadCustomRoutes,
       generateInterceptionRoutesRewrites,
+      NEXT_URL,
       generateRoutesManifest,
       handleBuildComplete,
       Bundler,

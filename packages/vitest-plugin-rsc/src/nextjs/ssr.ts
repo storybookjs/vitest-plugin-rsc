@@ -58,23 +58,11 @@ const pathnames = Object.keys(routing.outputs);
 
 type InvokeMiddleware = (context: MiddlewareContext) => Promise<MiddlewareResult>;
 
-// The routes of the app without the server in front of it: no redirect,
-// rewrite or header of `next.config`, and no middleware. What is left is
-// Next's own matching of a pathname to a route, and the headers Next adds to
-// a response once it has one.
-const appRoutes: typeof routing.routes = {
-  ...routing.routes,
-  beforeMiddleware: [],
-  middlewareMatchers: [],
-  beforeFiles: [],
-  afterFiles: [],
-  fallback: [],
-};
-
 // The server in front of the app: Next's own route resolution, with the
 // routes its build hands a deployment adapter. It goes through the redirects,
 // rewrites and headers of `next.config`, the middleware, and the routes of the
-// app, in the order of a deployment. Without `proxy`, only through the routes.
+// app, in the order of a deployment. Without `proxy`, only through the routes
+// of the app: see `NextRouting.appRoutes`.
 function resolve(
   request: Pick<ServerRequest, "url" | "headers">,
   requestBody: ReadableStream<Uint8Array>,
@@ -88,7 +76,7 @@ function resolve(
     basePath: routing.basePath,
     buildId: routing.buildId,
     pathnames,
-    routes: proxy ? routing.routes : appRoutes,
+    routes: proxy ? routing.routes : routing.appRoutes,
     invokeMiddleware,
   });
 }

@@ -437,9 +437,55 @@ test("sends a Server Action of a page opened with `proxy: false` past the proxy,
   await page.getByRole("button", { name: "Create" }).click();
 
   await expect.element(page.getByRole("heading", { name: "Plan the week" })).toBeVisible();
-  // Only the request the server makes to itself for the page: another route.
+  // The first request the proxy sees is the one the server makes to itself
+  // for the page, which is another route. The action is not among them.
   expect(seenByProxy[0]).toBe("/notes/1");
   expect(seenByProxy).not.toContain("/notes/new");
+});
+
+test("refreshes a page opened with `proxy: false` past the proxy, and sends its fetch through it", async () => {
+  db.notes.set("1", { id: "1", title: "Inbox triage", body: "" });
+  await renderServer({ url: "/notes/1", proxy: false });
+
+  await page.getByRole("textbox", { name: "New title" }).fill("Inbox zero");
+  await page.getByRole("button", { name: "Rename" }).click();
+
+  // The route handler, then `router.refresh()`, which renders the page again.
+  await expect.element(page.getByRole("heading", { name: "Inbox zero" })).toBeVisible();
+  expect(seenByProxy).toEqual(["/api/notes/1"]);
+});
+
+test("keeps Next's interception routes with `proxy: false`", async () => {
+  await renderServer({ url: "/gallery/photo/1", proxy: false });
+
+  // What Next's router asks for when it comes from the gallery: the photo
+  // over the gallery, as an interception route has it.
+  const intercepted = await handleRequest("/gallery/photo/1", {
+    headers: { rsc: "1", "next-url": "/gallery" },
+  });
+
+  expect(await intercepted.text()).toContain("over the gallery");
+  expect(seenByProxy).toEqual([]);
+});
+
+test("forgets `proxy: false` with the page it opened", async () => {
+  // The test's own requests to the pathname are the page's while it is open.
+  await renderServer({ url: "/team", proxy: false });
+  expect((await handleRequest("/team", { redirect: "manual" })).status).toBe(200);
+
+  // The next page of the test has the proxy again.
+  await renderServer({ url: "/team" });
+
+  await expect.element(page.getByRole("heading", { name: "Account" })).toBeVisible();
+  expect((await handleRequest("/team", { redirect: "manual" })).status).toBe(307);
+
+  // So does the pathname of a page that redirects elsewhere, once it has.
+  await renderServer({ url: "/old", proxy: false });
+
+  await expect.element(page.getByRole("heading", { name: "Notes" })).toBeVisible();
+  expect(seenByProxy).not.toContain("/old");
+  await handleRequest("/old", { redirect: "manual" });
+  expect(seenByProxy).toContain("/old");
 });
 
 test("renders a node without the proxy by default", async () => {

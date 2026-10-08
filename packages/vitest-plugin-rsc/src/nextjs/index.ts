@@ -212,6 +212,9 @@ async function sendRequest(
  * headers, its HTML or Flight body.
  *
  * The request carries the tab's cookies, unless it has a `cookie` header.
+ * One to the pathname of what `renderServer()` opened is that page's, as a
+ * `fetch` of the page is: it gets the route of the node, and skips the proxy
+ * if the page does.
  */
 export function handleRequest(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
   // Not the browser's Request, which drops a `cookie` header.
@@ -257,11 +260,15 @@ let page: { started: Promise<unknown>; unmount(): void } | undefined;
 // next test.
 let currentLoad: AbortController | undefined;
 
-export type RenderServerOptions = {
+// What both forms of `renderServer()` send. They differ in what is around it.
+type RequestOptions = {
   /** The URL to open. Defaults to `/`. */
   url?: string;
   /** Headers for the request of the document, next to the ones a browser sends. */
   headers?: HeadersInit;
+};
+
+export type RenderServerOptions = RequestOptions & {
   /**
    * Whether the server in front of the app takes the request: `proxy.ts`, and
    * the `redirects`, `rewrites` and `headers` of `next.config`. Defaults to
@@ -273,8 +280,8 @@ export type RenderServerOptions = {
   proxy?: boolean;
   /**
    * Whether the layouts of the app render around the page. Defaults to
-   * `true`. To render a page on its own, pass it as a node:
-   * `renderServer(<Page />, { url })`.
+   * `true`, and `false` is not supported yet: to render a page on its own,
+   * pass it as a node, `renderServer(<Page />, { url })`.
    */
   layouts?: boolean;
 };
@@ -286,7 +293,7 @@ export type RenderServerResult = {
   unmount(): Promise<void>;
 };
 
-export type RenderComponentOptions = Omit<RenderServerOptions, "proxy" | "layouts"> & {
+export type RenderComponentOptions = RequestOptions & {
   /**
    * Where the node renders. Defaults to a `<div>` appended to `baseElement`,
    * which `cleanup()` removes. A container of the test's is only emptied.

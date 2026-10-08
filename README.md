@@ -613,7 +613,7 @@ test("serves the route the proxy rewrites to, at the URL that was asked for", as
 });
 ```
 
-`proxy: false` opens the route at exactly the URL you give, without any of it. A protected page opens without signing in first:
+`proxy: false` opens the route at exactly the URL you give, without the proxy or the redirects, rewrites, and headers of `next.config`. A protected page opens without signing in first:
 
 ```tsx
 test("opens a page without the proxy", async () => {

@@ -69,6 +69,13 @@ export type NextRouting = Pick<ResolveRoutesParams, "routes" | "basePath" | "bui
    * it at, like `/notes/[id]`: the page name of its route.
    */
   outputs: Record<string, string>;
+  /**
+   * The routes of the app alone, without the server in front of it: no
+   * redirect, rewrite or header of `next.config`, and no middleware. What is
+   * left is Next's own: the routes of the app, its interception routes, and
+   * the headers it adds once it has a route.
+   */
+  appRoutes: ResolveRoutesParams["routes"];
 };
 
 export type NextProject = {
