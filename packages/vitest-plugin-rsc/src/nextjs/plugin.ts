@@ -13,6 +13,7 @@ import {
 import type { TestProject } from "vitest/node";
 import { createRunnerEnvironmentPlugins } from "../runner-environment.ts";
 import { nextBuild } from "./build.ts";
+import { clientFiles } from "./client-files.ts";
 import { flightBridge, type FlightEntry } from "./flight.ts";
 import { createCompilePlugin, createDependencyCompilePlugin } from "./compile.ts";
 import { createNodePlatform } from "./node-platform.ts";
@@ -70,6 +71,13 @@ const setupFile = fileURLToPath(
 const affectedSetupFile = fileURLToPath(
   new URL(`./affected/browser${path.extname(import.meta.url)}`, import.meta.url),
 );
+// What a test imports `renderServer()` from, and the file that is.
+const testingLibrary = {
+  specifier: "vitest-plugin-rsc/nextjs/testing-library",
+  file: normalizePath(
+    fileURLToPath(new URL(`./index${path.extname(import.meta.url)}`, import.meta.url)),
+  ),
+};
 
 // Next's server reference ids are 42 hex characters whose first byte says
 // which arguments the function uses. Vite RSC's are `<module>#<export>`. An
@@ -754,6 +762,12 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
         );
       },
     },
+    clientFiles({
+      environments: { rsc: environmentOf.rsc, browser: environmentOf.browser },
+      testingLibrary,
+      isHostFile: serverCode.isHostFile,
+      isHostPackage: serverCode.isHostPackage,
+    }),
     serverCode.plugin({ [environmentOf.rsc]: "rsc", [environmentOf.ssr]: "ssr" }),
     createCompilePlugin(
       getProject,

@@ -14,6 +14,7 @@ export default defineConfig({
     "src/nextjs/rsc.ts",
     "src/nextjs/ssr.ts",
     "src/nextjs/client.tsx",
+    "src/nextjs/client-node.tsx",
   ],
   format: ["esm"],
   fixedExtension: false,

@@ -43,6 +43,32 @@ export type Opened = {
   node?: { ui: unknown; layouts: boolean };
 };
 
+/**
+ * A node of the browser layer: what a test or a story with `"use client"`
+ * renders. It is not sent through Flight. The server renders a page with one
+ * Client Component, client-node.tsx, and that one renders this, which it
+ * finds here. So a prop can be anything, also a function.
+ */
+export type ClientNode = (
+  | {
+      /** A node the test made, with the modules of the page: see client-graph.ts. */
+      ui: unknown;
+    }
+  | {
+      /** What the browser layer imports the module by. */
+      module: string;
+      /** The export of it to render. */
+      name: string;
+      /** The props of that export, as they are. */
+      props: Record<string, unknown>;
+    }
+) & {
+  /** A component around it, which gets it as its children. */
+  wrapper?: unknown;
+  /** Called once the page has rendered the node, or has failed to. */
+  rendered?: () => void;
+};
+
 export type NextRegistry = {
   /** A `Request` and `Response` that keep the headers a browser drops. */
   Request: typeof Request;
@@ -77,6 +103,14 @@ export type NextRegistry = {
    * node as its page.
    */
   opened: Opened | undefined;
+  /** The node of the browser layer that the page has, and who to tell when it changes. */
+  clientNode: ClientNode | undefined;
+  clientNodeListeners: Set<() => void>;
+  /**
+   * Where an export of a test file or a story file with `"use client"` is
+   * from: the module the browser layer imports it by, and its name.
+   */
+  clientExports: WeakMap<object, { module: string; name: string }>;
   /** Loads a Client Component by its module id, in the ssr layer. */
   loadSsrModule(id: string): Promise<unknown>;
   /**
@@ -100,7 +134,15 @@ const scope = globalThis as { __vitest_plugin_rsc_next__?: Partial<NextRegistry>
 
 export const registry = (scope.__vitest_plugin_rsc_next__ ??= {
   appPages: {},
+  clientNodeListeners: new Set(),
+  clientExports: new WeakMap(),
 }) as NextRegistry;
+
+/** Sets the node of the browser layer, and has the page render it. */
+export function setClientNode(node: ClientNode | undefined): void {
+  registry.clientNode = node;
+  for (const changed of registry.clientNodeListeners) changed();
+}
 
 /**
  * Next's build gives the module of a Server Action an id. Here the id of the

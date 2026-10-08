@@ -2,10 +2,12 @@ import {
   createDefaultImportMeta,
   ESModulesEvaluator,
   ModuleRunner,
+  type ModuleEvaluator,
   type ModuleRunnerTransport,
 } from "vite/module-runner";
 import builtLayers, { type BuiltLayer } from "virtual:vitest-plugin-rsc/layers";
 import * as pageClient from "virtual:vitest-plugin-rsc/vite-client";
+import { isHostModule } from "./host-module.ts";
 
 // The page's own instance of Vite's client, for the modules that the runners
 // below evaluate: see vite-client.ts.
@@ -67,14 +69,22 @@ function getRunner(environment: string): ModuleRunner {
  * A module runner with a module graph of its own: every module it imports is
  * evaluated again, the way a page load evaluates a page's scripts again.
  */
-export function createEnvironmentRunner(environment: string): ModuleRunner {
+export function createEnvironmentRunner(
+  environment: string,
+  evaluator: ModuleEvaluator = createEvaluator(),
+  { sourcemaps = false } = {},
+): ModuleRunner {
   const built = builtLayers?.[environment];
   return new ModuleRunner(
     {
-      sourcemapInterceptor: false,
+      // With `sourcemaps`, the stack of an error has the lines of the source
+      // for a module of this runner, where it has the lines of what the
+      // runner evaluates. For that every stack is formatted as Vite does it.
+      sourcemapInterceptor: sourcemaps && !built ? "prepareStackTrace" : false,
       transport: {
-        invoke: (payload) =>
-          built ? invokeBuilt(built, payload) : invokeEnvironment(environment, payload),
+        invoke: async (payload) =>
+          hostModule(payload) ??
+          (built ? invokeBuilt(built, payload) : invokeEnvironment(environment, payload)),
       },
       hmr: false,
       // A module of a build is a file of it, and says so.
@@ -85,8 +95,31 @@ export function createEnvironmentRunner(environment: string): ModuleRunner {
         }),
       }),
     },
-    new ESModulesEvaluator(),
+    evaluator,
   );
+}
+
+// A module of the page is not the environment's to serve: the runner imports
+// it as the page does. See host-module.ts.
+function hostModule(payload: InvokePayload): InvokeResult | undefined {
+  const { name, data } = (payload as { data: { name: string; data: unknown[] } }).data;
+  if (name !== "fetchModule" || !isHostModule(String(data[0]))) return;
+  return { result: { externalize: data[0], type: "module" } } as InvokeResult;
+}
+
+/** How a runner of the page evaluates a module. */
+export function createEvaluator(): ModuleEvaluator {
+  const evaluator = new ESModulesEvaluator();
+  return {
+    startOffset: evaluator.startOffset,
+    runInlinedModule: (context, code) => evaluator.runInlinedModule(context, code),
+    async runExternalModule(file) {
+      const loaded = (await evaluator.runExternalModule(file)) as { default?: unknown };
+      // What the page serves for a module of its own has that module as its
+      // default export.
+      return isHostModule(file) ? loaded.default : loaded;
+    },
+  };
 }
 
 /**
@@ -130,7 +163,8 @@ async function invokeBuilt(layer: BuiltLayer, payload: InvokePayload): Promise<I
     builtModules.set(
       url,
       (code = nativeFetch(url).then((response) => {
-        if (!response.ok) throw new Error(`vitest-plugin-rsc: ${url} responded with ${response.status}`);
+        if (!response.ok)
+          throw new Error(`vitest-plugin-rsc: ${url} responded with ${response.status}`);
         return response.text();
       })),
     );
@@ -138,9 +172,13 @@ async function invokeBuilt(layer: BuiltLayer, payload: InvokePayload): Promise<I
     code.catch(() => builtModules.delete(url));
   }
   try {
-    return { result: { code: await code, file: id, id, url: id, invalidate: false } } as InvokeResult;
+    return {
+      result: { code: await code, file: id, id, url: id, invalidate: false },
+    } as InvokeResult;
   } catch (error) {
-    return { error: { message: String(error instanceof Error ? error.message : error) } } as InvokeResult;
+    return {
+      error: { message: String(error instanceof Error ? error.message : error) },
+    } as InvokeResult;
   }
 }
 

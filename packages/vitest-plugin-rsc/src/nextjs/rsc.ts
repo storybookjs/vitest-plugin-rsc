@@ -7,6 +7,7 @@ import loadMiddleware from "virtual:vitest-plugin-rsc/next-middleware";
 import routeHandlers from "virtual:vitest-plugin-rsc/next-route-handlers";
 import serverReferences from "virtual:vitest-plugin-rsc/next-server-references";
 import type { FlightAdapters } from "./flight.ts";
+import { clientNodeReference } from "./client-ids.ts";
 import { actionModulePrefix, registry } from "./registry.ts";
 
 // The rsc layer: Server Components, Server Actions, route handlers and the
@@ -93,6 +94,18 @@ registry.loadAppPage = async (page) => {
   registry.reportLoaded?.("page", page);
   return (registry.appPages[page] ??= await load());
 };
+
+/**
+ * client-node.tsx, as the server has it: a reference. The page of a node of
+ * the browser layer is this one Client Component.
+ */
+export const ClientNode: unknown = ReactServer.registerClientReference(
+  () => {
+    throw new Error("vitest-plugin-rsc: a node of the browser layer does not render on the server");
+  },
+  clientNodeReference,
+  "ClientNode",
+);
 
 /** The page module of the route of a node: see `loadNodeEntry()` in project/entries.ts. */
 export async function loadComponent(): Promise<{ default: () => unknown }> {

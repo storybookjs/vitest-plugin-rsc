@@ -130,11 +130,15 @@ function findPackagesWithDependencies(names: Iterable<string>, root: string): Se
   return dirs;
 }
 
+// The packages of the test runner, and of another host: see
+// `ServerCodeOptions.host`. Their own modules have state that is the page's.
+const hostPackages = (packages: string[]) => ["vitest", "@vitest/*", ...packages];
+
 // Vitest, Vite, and the packages of Vitest's scope that the project has: its
 // browser mode, the provider that drives the browser, coverage. And the
-// packages of another host: see `ServerCodeOptions.host`.
+// packages of another host.
 function* hostPackageNames(root: string, packages: string[]): Generator<string> {
-  for (const name of ["vitest", "vite", "@vitest/*", ...packages]) {
+  for (const name of ["vite", ...hostPackages(packages)]) {
     if (!name.endsWith("/*")) {
       yield name;
       continue;
@@ -157,12 +161,21 @@ const name = "vitest-plugin-rsc:next-server-code";
 export function createServerCode(registry: string, options: ServerCodeOptions = {}) {
   const patterns = [options.browserModules ?? []].flat();
   const hostFiles = [options.host?.files ?? []].flat();
-  const hostPackages = options.host?.packages ?? [];
+  const packages = options.host?.packages ?? [];
   let isBrowserModule: (file: string) => boolean = () => false;
   // One for every Vitest project this plugin is in, and one for the files of
   // another host.
   const testFileMatchers: ((file: string) => boolean)[] = [];
   let testRunnerPackages = new Set<string>();
+
+  /**
+   * Whether a file is one of the host's: a test file or a setup file of
+   * Vitest, or a file of another host, like a story.
+   */
+  function isHostFile(file: string): boolean {
+    file = normalizePath(file);
+    return testFileMatchers.some((matches) => matches(file));
+  }
 
   /**
    * Whether a file is server code in a layer. The rsc layer shares its
@@ -181,14 +194,27 @@ export function createServerCode(registry: string, options: ServerCodeOptions = 
 
   return {
     isServerCode,
+    isHostFile,
+    /**
+     * Whether an import is of a package of the host, by its name: `vitest`,
+     * `vitest/browser`, `@vitest/spy`. Not what such a package depends on.
+     */
+    isHostPackage(specifier: string): boolean {
+      return hostPackages(packages).some((name) =>
+        name.endsWith("/*")
+          ? specifier.startsWith(name.slice(0, -1))
+          : specifier === name || specifier.startsWith(`${name}/`),
+      );
+    },
     /**
      * Whether a source file is code of the app in a layer: what Next's build
      * compiles. Not in the rsc layer: what is the browser's there, the test
-     * files and the `browserModules`.
+     * files and the `browserModules`. And in no layer a file of the host,
+     * which with `"use client"` is a module of the browser layer.
      */
     isAppCode(file: string, layer: NextLayer): boolean {
       if (!path.isAbsolute(file) || file.includes("/node_modules/")) return false;
-      if (layer !== "rsc") return !normalizePath(file).startsWith(ownDir);
+      if (layer !== "rsc") return !normalizePath(file).startsWith(ownDir) && !isHostFile(file);
       return testFileMatchers.length > 0 && isServerCode(file, layer);
     },
     /** For the `define` of the optimizer, which Vite keys its cache on. */
@@ -196,7 +222,7 @@ export function createServerCode(registry: string, options: ServerCodeOptions = 
       __vitest_plugin_rsc_browser_modules__: JSON.stringify([
         patterns.map(String),
         hostFiles.map(String),
-        hostPackages,
+        packages,
       ]),
     },
     /** For a module this plugin generates, with the constants of its layer. */
@@ -209,7 +235,7 @@ export function createServerCode(registry: string, options: ServerCodeOptions = 
         testFileMatchers.push(createFilter(hostFiles, null, { resolve: root }));
       }
       // Vitest pre-bundles its own runtime in the environment of the rsc layer.
-      testRunnerPackages = findPackagesWithDependencies(hostPackageNames(root, hostPackages), root);
+      testRunnerPackages = findPackagesWithDependencies(hostPackageNames(root, packages), root);
     },
     /** Call with what a Vitest config says is a test file or a setup file. */
     addTestFiles(matches: (file: string) => boolean): void {
