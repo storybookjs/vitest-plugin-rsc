@@ -430,6 +430,8 @@ pnpm conformance --plugin ../vitest-plugin-rsc-other --label other
 
 runs the plugin of another checkout of this repository, with the runner, the fixtures and the expectations of this one. That checkout needs `pnpm install`. What the run prints is the comparison: the tests that pass there and fail here, and the other way around.
 
+The plugin looks for the packages of Next.js from the app, which is a copy of a fixture under `conformance/`. So `conformance/package.json` has `@next/routing` next to `next`, at the same version, for a plugin that resolves the route of a request with it.
+
 ## How It Works
 
 ### The Tests Run In The Tab

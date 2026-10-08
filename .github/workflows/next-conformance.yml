@@ -39,11 +39,12 @@ jobs:
       - run: pnpm install --frozen-lockfile
       # The fixtures are fetched at the tag of the Next.js that is installed.
       # The expectations are of the pinned one: against another Next.js, what
-      # differs is what the run is for.
+      # differs is what the run is for. `@next/routing` is released with
+      # `next`, under the same version.
       - name: Install Next.js ${{ env.NEXT }}
         if: env.NEXT != ''
         run: |
-          pnpm --filter next-conformance add --config.minimum-release-age=0 "next@$NEXT"
+          pnpm --filter next-conformance add --config.minimum-release-age=0 "next@$NEXT" "@next/routing@$NEXT"
           pnpm --filter next-conformance exec node -p "'next@' + require('next/package.json').version"
       - run: pnpm exec playwright install --with-deps --only-shell chromium
       - run: pnpm --filter next-conformance test
