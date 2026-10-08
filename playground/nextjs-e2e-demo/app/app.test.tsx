@@ -614,6 +614,61 @@ test("gives a node the params that the app's route has for its url", async () =>
   expect(window.location.pathname).toBe("/notes/7");
 });
 
+test("renders a node in the layouts of the route of its url, with `layouts`", async () => {
+  const { container, baseElement } = await renderServer(<RouterState />, {
+    url: "/notes/7?q=1",
+    layouts: true,
+  });
+
+  // The root layout of the app, around the node.
+  await expect.element(page.getByRole("navigation", { name: "Main" })).toBeVisible();
+  const router = page.getByRole("main").getByRole("definition");
+  await expect.element(router.nth(0)).toHaveTextContent("/notes/7");
+  await expect.element(router.nth(1)).toHaveTextContent('{"id":"7"}');
+  await expect.element(router.nth(2)).toHaveTextContent("q=1");
+  // Not the page of the route: that one has no note 7 to show.
+  await expect.element(page.getByText("Nothing here")).not.toBeInTheDocument();
+  // The document is the one of the route.
+  expect(container).toBe(document.body);
+  expect(baseElement).toBe(document.body);
+  expect(document.documentElement.lang).toBe("en");
+  expect(document.title).toBe("Notes");
+});
+
+test("gives a node in the layouts of a route its `wrapper` too, and its slots", async () => {
+  function Tenant({ children }: { children: ReactNode }) {
+    return <section aria-label="Tenant">{children}</section>;
+  }
+
+  // `app/dashboard/layout.tsx` renders a slot next to its page.
+  await renderServer(<Counter />, { url: "/dashboard", layouts: true, wrapper: Tenant });
+
+  const tenant = page.getByRole("main").getByRole("region", { name: "Tenant" });
+  await tenant.getByRole("button", { name: "Count: 0" }).click();
+  await expect.element(tenant.getByRole("button", { name: "Count: 1" })).toBeVisible();
+  await expect
+    .element(page.getByRole("complementary", { name: "Stats" }))
+    .toHaveTextContent("0 notes");
+});
+
+test("says so when `layouts` is asked for a url that is no page of the app", async () => {
+  await expect(renderServer(<RouterState />, { url: "/nope", layouts: true })).rejects.toThrow(
+    "/nope is no page of the app",
+  );
+  // A route handler has no layouts either.
+  await expect(
+    renderServer(<RouterState />, { url: "/api/echo/a", layouts: true }),
+  ).rejects.toThrow("/api/echo/a is no page of the app");
+});
+
+test("takes no container for a node in the layouts of a route", async () => {
+  const container = document.body.appendChild(document.createElement("div"));
+
+  await expect(
+    renderServer(<RouterState />, { url: "/notes", layouts: true, container }),
+  ).rejects.toThrow("There is no `container` or `baseElement` to pass");
+});
+
 test("gives a node the params of a catch-all route, also of a route handler", async () => {
   await renderServer(<RouterState />, { url: "/api/echo/a/b" });
 

@@ -285,6 +285,13 @@ export type RenderComponentOptions = RenderServerOptions & {
   baseElement?: HTMLElement;
   /** Wraps the node on the server. It can be a Server Component. */
   wrapper?: JSXElementConstructor<{ children: ReactNode }>;
+  /**
+   * Renders the node as the page of the route of `url`, in the layouts of
+   * that route and with its `loading`, `error` and `not-found`. The document
+   * is the one of the route then, so there is no `container` to pass, and the
+   * `container` of the result is its `<body>`.
+   */
+  layouts?: boolean;
 };
 
 export type RenderComponentResult = RenderServerResult & {
@@ -329,6 +336,29 @@ export async function renderServer(
   }
 
   const { wrapper } = options;
+  if (options.layouts) {
+    if (options.container || options.baseElement) {
+      throw new Error(
+        "vitest-plugin-rsc: with `layouts` a node renders in the document of its route, whose " +
+          "root layout has the <html> and the <body>. There is no `container` or `baseElement` " +
+          "to pass.",
+      );
+    }
+    const ui = wrapper ? createElement(wrapper, null, first) : first;
+    const component = { pathname: url.pathname, ui, layouts: true };
+    const response = await loadPage(url, { headers }, { component });
+    return {
+      response,
+      get container() {
+        return document.body;
+      },
+      get baseElement() {
+        return document.body;
+      },
+      asFragment: () => fragmentOf(document.body),
+      unmount: leavePage,
+    };
+  }
   // The container becomes the node's: React hydrates all of it, and leaving
   // the node empties it. The document is the test's to keep, and so is a
   // container with content: see `loadPage()`.
@@ -366,18 +396,20 @@ export async function renderServer(
     get baseElement() {
       return base ?? (options.baseElement ? document.body : (options.container ?? document.body));
     },
-    asFragment() {
-      const fragment = document.createRange().createContextualFragment(container.innerHTML);
-      // Not the scripts that run: they are how Next and React bring the page
-      // to the tab, with a Flight payload that differs on every run. A script
-      // of data, like JSON-LD, is content.
-      for (const script of fragment.querySelectorAll("script")) {
-        if (!script.type || /^(text\/javascript|module)$/i.test(script.type)) script.remove();
-      }
-      return fragment;
-    },
+    asFragment: () => fragmentOf(container),
     unmount: leavePage,
   };
+}
+
+function fragmentOf(container: HTMLElement): DocumentFragment {
+  const fragment = document.createRange().createContextualFragment(container.innerHTML);
+  // Not the scripts that run: they are how Next and React bring the page to
+  // the tab, with a Flight payload that differs on every run. A script of
+  // data, like JSON-LD, is content.
+  for (const script of fragment.querySelectorAll("script")) {
+    if (!script.type || /^(text\/javascript|module)$/i.test(script.type)) script.remove();
+  }
+  return fragment;
 }
 
 // The containers `renderServer()` made for a node, which `cleanup()` removes.

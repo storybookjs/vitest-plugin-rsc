@@ -57,6 +57,11 @@ export type ComponentRoute = {
   pathname: string;
   /** What its modules are listed by, which no page of the app has as its name. */
   component: string;
+  /**
+   * With the layouts of the app's route `page`: the node is the page of that
+   * route, in its layouts and with its `loading`, `error` and `not-found`.
+   */
+  layouts?: true;
 };
 
 /**
@@ -317,6 +322,8 @@ function declarationOf(file: string, name: string, seen = new Set<string>()): De
 // The parentheses make it a route group for Next, so it never shows in a
 // pathname.
 const componentRoot = "(vitest-plugin-rsc)";
+// What the routes of a node with the layouts of the app are listed by.
+const componentLayouts = "(vitest-plugin-rsc-layouts)";
 // The exports of a module of the app, without what they are: `undefined`.
 async function exportStubs(code: string, file: string): Promise<string> {
   const compiled = await transformWithOxc(code, file, { sourcemap: false });
@@ -1560,6 +1567,57 @@ export async function loadNextProject(
   // next-app-loader keys its per-build caches on the compilation object.
   const compilation = {};
 
+  // The entry of a route of the app, from Next's own loader of one.
+  const loadRouteEntry = async (route: NextRoute) => {
+    const watchFiles = new Set<string>();
+    const context: AppLoaderContext = {
+      // What `createEntrypoints` of `next build` passes.
+      getOptions: () => ({
+        name: `app${route.page}`,
+        page: route.page,
+        pagePath: route.pagePath,
+        appDir,
+        appPaths: route.appPaths,
+        allNormalizedAppPaths: Object.keys(appPathsPerRoute),
+        pageExtensions,
+        rootDir: root,
+        basePath: config.basePath,
+        assetPrefix: config.assetPrefix,
+        // Loader options are a query string for webpack, where an option
+        // that is not set is empty. The template of a route handler needs
+        // a value to inject.
+        nextConfigOutput: config.output ?? ("" as never),
+        preferredRegion: undefined,
+        middlewareConfig: Buffer.from("{}").toString("base64"),
+        isGlobalNotFoundEnabled: config.experimental.globalNotFound || undefined,
+        explicitParallelRouteChildren:
+          config.experimental.explicitParallelRouteChildren || undefined,
+        strictRouteMatching,
+        // Every route here is the one entry `next build` keeps for its pathname.
+        isFinalRouteMatcher: strictRouteMatching,
+      }),
+      _module: { buildInfo: {} },
+      _compilation: compilation,
+      _compiler: { context: root },
+      addDependency: (file) => watchFiles.add(file),
+      addMissingDependency: (file) => watchFiles.add(file),
+      // Vite takes a watched file for an import of the module, and a
+      // directory is not one.
+      addContextDependency: () => {},
+    };
+    let code = stripTurbopackTransitions(await nextAppLoader.call(context));
+    const where = "the output of next-app-loader";
+    if (route.kind === "route") {
+      // Next's template loads `route.ts` when the first request comes in,
+      // with the `require` of its bundler. Here that is `import()`: Next
+      // waits for a module that loads asynchronously.
+      code = replace(code, /(\buserland: \(\)\s*=>\s*)require\(/, "$1import(", where);
+    } else {
+      code = bindPageEntry(code, where);
+    }
+    return { code, watchFiles: [...watchFiles].filter((file) => fs.existsSync(file)) };
+  };
+
   return {
     root,
     appDir,
@@ -1567,14 +1625,30 @@ export async function loadNextProject(
     version,
     routes,
     // Not for Next's own pages, `/_not-found` and `/_global-error`.
-    componentRoutes: [...new Set(["/", ...routes.map((route) => route.pathname)])]
-      .filter((pathname) => !/^\/_(not-found|global-error)$/.test(pathname))
-      .map((pathname) => ({
-        kind: "page",
-        page: `${pathname === "/" ? "" : pathname}/page`,
-        pathname,
-        component: `${componentRoot}${pathname}`,
-      })),
+    componentRoutes: [
+      ...[...new Set(["/", ...routes.map((route) => route.pathname)])]
+        .filter((pathname) => !/^\/_(not-found|global-error)$/.test(pathname))
+        .map(
+          (pathname): ComponentRoute => ({
+            kind: "page",
+            page: `${pathname === "/" ? "" : pathname}/page`,
+            pathname,
+            component: `${componentRoot}${pathname}`,
+          }),
+        ),
+      // And one with the layouts of each page of the app.
+      ...routes
+        .filter((route) => route.kind === "page" && route.pagePath.startsWith(APP_DIR_ALIAS))
+        .map(
+          (route): ComponentRoute => ({
+            kind: "page",
+            page: route.page,
+            pathname: route.pathname,
+            component: `${componentLayouts}${route.page}`,
+            layouts: true,
+          }),
+        ),
+    ],
     metadataFiles,
     edgeRouteFiles,
     unmatchedRoutes,
@@ -1588,55 +1662,24 @@ export async function loadNextProject(
     aliases,
     flightExports,
     async loadAppPageEntry(route) {
-      if ("component" in route)
-        return { code: await loadComponentPageEntry(route), watchFiles: [] };
-      const watchFiles = new Set<string>();
-      const context: AppLoaderContext = {
-        // What `createEntrypoints` of `next build` passes.
-        getOptions: () => ({
-          name: `app${route.page}`,
-          page: route.page,
-          pagePath: route.pagePath,
-          appDir,
-          appPaths: route.appPaths,
-          allNormalizedAppPaths: Object.keys(appPathsPerRoute),
-          pageExtensions,
-          rootDir: root,
-          basePath: config.basePath,
-          assetPrefix: config.assetPrefix,
-          // Loader options are a query string for webpack, where an option
-          // that is not set is empty. The template of a route handler needs
-          // a value to inject.
-          nextConfigOutput: config.output ?? ("" as never),
-          preferredRegion: undefined,
-          middlewareConfig: Buffer.from("{}").toString("base64"),
-          isGlobalNotFoundEnabled: config.experimental.globalNotFound || undefined,
-          explicitParallelRouteChildren:
-            config.experimental.explicitParallelRouteChildren || undefined,
-          strictRouteMatching,
-          // Every route here is the one entry `next build` keeps for its pathname.
-          isFinalRouteMatcher: strictRouteMatching,
-        }),
-        _module: { buildInfo: {} },
-        _compilation: compilation,
-        _compiler: { context: root },
-        addDependency: (file) => watchFiles.add(file),
-        addMissingDependency: (file) => watchFiles.add(file),
-        // Vite takes a watched file for an import of the module, and a
-        // directory is not one.
-        addContextDependency: () => {},
+      if (!("component" in route)) return loadRouteEntry(route);
+      if (!route.layouts) return { code: await loadComponentPageEntry(route), watchFiles: [] };
+      // The entry of the app's route, with the node for its page: the tree
+      // of Next's app loader names the page by its file.
+      const of = routes.find((candidate) => candidate.page === route.page)!;
+      const file = path.join(appDir, of.pagePath.slice(APP_DIR_ALIAS.length));
+      const page = JSON.stringify(file).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const entry = await loadRouteEntry(of);
+      const code = replace(
+        entry.code,
+        new RegExp(`\\bpage: \\[\\w+, ${page}\\]`),
+        `page: [__next_component__, "vitest-plugin-rsc/component"]`,
+        "the output of next-app-loader",
+      );
+      return {
+        code: `import { loadComponent as __next_component__ } from "vitest-plugin-rsc/nextjs/rsc";\n${code}`,
+        watchFiles: entry.watchFiles,
       };
-      let code = stripTurbopackTransitions(await nextAppLoader.call(context));
-      const where = "the output of next-app-loader";
-      if (route.kind === "route") {
-        // Next's template loads `route.ts` when the first request comes in,
-        // with the `require` of its bundler. Here that is `import()`: Next
-        // waits for a module that loads asynchronously.
-        code = replace(code, /(\buserland: \(\)\s*=>\s*)require\(/, "$1import(", where);
-      } else {
-        code = bindPageEntry(code, where);
-      }
-      return { code, watchFiles: [...watchFiles].filter((file) => fs.existsSync(file)) };
     },
     async loadMiddlewareEntry() {
       if (!middleware || !middlewareFile) return;

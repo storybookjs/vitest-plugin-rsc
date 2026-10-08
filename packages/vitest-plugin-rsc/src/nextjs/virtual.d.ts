@@ -5,6 +5,8 @@ declare module "virtual:vitest-plugin-rsc/next-manifest" {
     pathname: string;
     /** For a route of a node: what its modules are listed by, in place of `page`. */
     component?: string;
+    /** For a route of a node: with the layouts of the app's route `page`. */
+    layouts?: true;
   }[];
   export const nextConfig: import("next/dist/server/config-shared").NextConfigComplete;
   export const routing: import("./project.ts").NextRouting;

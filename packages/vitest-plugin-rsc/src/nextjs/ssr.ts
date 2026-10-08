@@ -41,7 +41,13 @@ const routes = new Map(
   allRoutes.filter((route) => !route.component).map((route) => [route.page, route]),
 );
 const componentRoutes = new Map(
-  allRoutes.filter((route) => route.component).map((route) => [route.pathname, route]),
+  allRoutes
+    .filter((route) => route.component && !route.layouts)
+    .map((route) => [route.pathname, route]),
+);
+// And the route of a node with the layouts of a page, by the name of that page.
+const componentLayoutRoutes = new Map(
+  allRoutes.filter((route) => route.layouts).map((route) => [route.page, route]),
 );
 
 const notFoundPage = "/_not-found/page";
@@ -321,10 +327,17 @@ async function handle(request: ServerRequest, unrouted: "not-found" | "pass"): P
     // Of the routes of a node, the one with the segments of the app's route, so
     // that Next finds the params the app's route has. A URL of no route has
     // none, like `/`.
-    const component =
-      registry.component?.pathname === url.pathname
-        ? (componentRoutes.get(matched?.pathname ?? "/") ?? componentRoutes.get("/"))
-        : undefined;
+    const node = registry.component?.pathname === url.pathname ? registry.component : undefined;
+    const withLayouts = node?.layouts ? componentLayoutRoutes.get(matched?.page ?? "") : undefined;
+    if (node?.layouts && !withLayouts) {
+      throw new Error(
+        `vitest-plugin-rsc: \`layouts\` renders a node in the layouts of the route of its URL, ` +
+          `and ${url.pathname} is no page of the app.`,
+      );
+    }
+    const component = node
+      ? (withLayouts ?? componentRoutes.get(matched?.pathname ?? "/") ?? componentRoutes.get("/"))
+      : undefined;
     if (!matched && !component && unrouted === "pass") return { finished: endRequest() };
     const page = component?.page ?? matched?.page ?? notFoundPage;
     // What the modules of the route are listed by.

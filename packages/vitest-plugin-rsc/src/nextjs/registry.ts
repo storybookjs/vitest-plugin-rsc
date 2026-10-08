@@ -63,9 +63,10 @@ export type NextRegistry = {
   hasServerAction(id: string): Promise<boolean>;
   /**
    * The node that `renderServer(<Node />, { url })` renders, and the pathname
-   * of its URL. While it is there, that pathname is the node's route.
+   * of its URL. While it is there, that pathname is the node's route. With
+   * `layouts`, the node is the page of the app's route for that pathname.
    */
-  component: { pathname: string; ui: unknown } | undefined;
+  component: { pathname: string; ui: unknown; layouts?: boolean } | undefined;
   /** Loads a Client Component by its module id, in the ssr layer. */
   loadSsrModule(id: string): Promise<unknown>;
   /**

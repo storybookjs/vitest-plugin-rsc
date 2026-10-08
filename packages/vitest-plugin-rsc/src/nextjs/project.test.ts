@@ -260,7 +260,32 @@ test("gives a node a route for each pathname of the app, and one for /", async (
       pathname: "/notes/[id]",
       component: "(vitest-plugin-rsc)/notes/[id]",
     },
+    // And one with the layouts of each page of the app, for `layouts: true`.
+    {
+      kind: "page",
+      page: "/notes/[id]/page",
+      pathname: "/notes/[id]",
+      component: "(vitest-plugin-rsc-layouts)/notes/[id]/page",
+      layouts: true,
+    },
   ]);
+});
+
+test("gives the route of a node with layouts the entry of the app's route, with the node for its page", async () => {
+  const project = await loadNextProject(
+    appWith(["layout.js", "notes/layout.js", "notes/[id]/page.js", "notes/[id]/loading.js"]),
+  );
+  const route = project.componentRoutes.find((candidate) => candidate.layouts)!;
+
+  const { code } = await project.loadAppPageEntry(route);
+
+  expect(code).toContain(`page: [__next_component__, "vitest-plugin-rsc/component"]`);
+  expect(code).toContain(`import { loadComponent as __next_component__ }`);
+  // The rest of the tree is the app's.
+  expect(code).toMatch(/'layout': \[\w+, "[^"]*app\/layout\.js"\]/);
+  expect(code).toMatch(/'layout': \[\w+, "[^"]*app\/notes\/layout\.js"\]/);
+  expect(code).toMatch(/'loading': \[\w+, "[^"]*app\/notes\/\[id\]\/loading\.js"\]/);
+  expect(code).not.toMatch(/page: \[\w+, "[^"]*page\.js"\]/);
 });
 
 test("gives the route of a node the segments of its pathname, and nothing of the app", async () => {

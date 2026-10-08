@@ -191,6 +191,23 @@ For `/notes/7`, where the app has `app/notes/[id]/page.tsx`:
 
 There is one such route for each pathname of the app, and one for `/`. They are in the same lists as the app's pages, and load when they are first requested.
 
+### A Node In The Layouts Of A Route
+
+`renderServer(<Node />, { url, layouts: true })` is the other kind of route for a node: the route of the app for that URL, with the node for its page. The entry is the one Next's `next-app-loader` writes for the app's route. In its loader tree the page is named by its file, and that one module is replaced by the node:
+
+```js
+// what next-app-loader writes for app/notes/[id]/page.tsx
+children: ["__PAGE__", {}, { page: [page8, "/…/app/notes/[id]/page.tsx"] }];
+// what the route of the node has
+children: ["__PAGE__", {}, { page: [__next_component__, "vitest-plugin-rsc/component"] }];
+```
+
+Everything else of the tree is the app's: the layouts, `loading`, `error`, `not-found`, the slots of parallel routes, and the root segment. So the response is a document, with the `<html>` and `<body>` of the root layout, and it loads as a page does and not in a container. A navigation from it to a page of the app is a client-side one, since both have the app's root layout.
+
+- A URL that is no page of the app is an error: there are no layouts to render in. That goes for a route handler and for a path of no route.
+- The route has the name of the app's page, so `revalidatePath()` and the params are the page's.
+- While the node is there, its pathname is the node's, as for a node without layouts.
+
 ### Next's Router In A `<div>`
 
 Next's client entry, `app-index.js`, builds the app and calls `hydrateRoot(document, …)`. There is no option for another root. The plugin already wraps `ReactDOMClient.hydrateRoot` and `createRoot` for the duration of that call, to keep the root, which Next does not hand out. For a node, the same wrapper passes the container where Next passes `document`. Nothing else differs: Next's own `hydrate()` creates the router state from the Flight payload in the page and renders its own `AppRouter`. So `Link`, `useRouter()`, `usePathname()`, `useParams()`, `useSearchParams()`, `router.refresh()` and Server Actions are Next's. No router state is made up.

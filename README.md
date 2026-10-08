@@ -274,7 +274,22 @@ test("wraps a node in a wrapper, which can be a Server Component", async () => {
 });
 ```
 
-What to know:
+`layouts: true` renders the node as the page of the route of its `url`: in the layouts of that route, from the root layout down, with its `loading`, `error` and `not-found`, and with the slots of its parallel routes. That is for a node that needs what your layouts give it: providers, global CSS, the data a layout reads.
+
+```tsx
+test("renders a node in the layouts of the route of its url", async () => {
+  await renderServer(<RouterState />, { url: "/notes/7?q=1", layouts: true });
+
+  // The root layout of the app, around the node.
+  await expect.element(page.getByRole("navigation", { name: "Main" })).toBeVisible();
+  const router = page.getByRole("main").getByRole("definition");
+  await expect.element(router.nth(1)).toHaveTextContent('{"id":"7"}');
+});
+```
+
+With `layouts`, the `url` has to be a page of your app, and the document is the one your root layout renders. So there is no `container` or `baseElement` to pass, and the `container` of the result is the `<body>`. A layout does what it does in your app: one that redirects without a session redirects here. A `wrapper` goes inside the layouts, around the node.
+
+What to know, for a node without `layouts`:
 
 - **Global CSS is not there.** Your root layout imports it, and the node does not render in your layouts. Import it in the setup file of the test project or in the `wrapper`, as with Testing Library.
 - **Leaving the node's URL loads a page.** A `<Link>`, a `router.push()` or a `redirect()` to another pathname is a page load of that route of your app, with its layouts. The node is gone after it. A change of search params stays with the node.
@@ -689,6 +704,7 @@ The options for a node, all optional:
 | `url`         | The URL of the request. Defaults to `/`. The params are those of your app's route for it.           |
 | `headers`     | Headers for the request, next to the ones a browser sends.                                          |
 | `wrapper`     | A component that wraps the node on the server. It can be a Server Component.                        |
+| `layouts`     | `true` renders the node as the page of the route of `url`, in the layouts of that route.            |
 | `container`   | An empty element for the node. Defaults to a new `<div>` in `baseElement`, which `cleanup` removes. |
 | `baseElement` | Defaults to `container` if you pass one, or else to `document.body`, whichever body that is.        |
 
