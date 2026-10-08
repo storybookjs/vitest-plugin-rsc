@@ -3,7 +3,7 @@ import type { RequestMeta } from "next/dist/server/request-meta";
 import { fromNodeOutgoingHttpHeaders, toNodeOutgoingHttpHeaders } from "next/dist/server/web/utils";
 import { nextConfig, routesManifest } from "virtual:vitest-plugin-rsc/next-manifest";
 import { Readable } from "virtual:vitest-plugin-rsc/node-stream";
-import { preview } from "./cache.ts";
+import { preview, restoreIncrementalCache } from "./cache.ts";
 import { registry, type RequestHandler, type ServerRequest } from "./registry.ts";
 
 // Next's server runs here as it does on Node.js, its default runtime. (Its
@@ -17,8 +17,8 @@ import { registry, type RequestHandler, type ServerRequest } from "./registry.ts
 //     bundle for it.
 // The request handlers are Next's own, the ones its build makes for a page
 // and for a route handler and `next start` calls: `handler(req, res, ctx)`.
-// The Node modules that Next's server imports are in plugin.ts, and its
-// globals in globals.ts.
+// The Node modules that Next's server imports are in node-platform.ts, and
+// its globals in globals.ts.
 
 export const anyKey = <T>(create: (key: string) => T) =>
   new Proxy({} as Record<string, T>, {
@@ -29,7 +29,7 @@ export const anyKey = <T>(create: (key: string) => T) =>
 // Next's build writes a manifest of every client reference. For Vite RSC a
 // reference is its module id, so this one answers for any id.
 const clientReference = anyKey((id) => anyKey((name) => ({ id, name, chunks: [], async: true })));
-export const clientReferenceManifest = {
+const clientReferenceManifest = {
   moduleLoading: { prefix: "", crossOrigin: null },
   clientModules: anyKey((id) => ({ id, name: "*", chunks: [], async: true })),
   ssrModuleMapping: clientReference,
@@ -141,7 +141,8 @@ function createNodeResponse(request: ServerRequest) {
     resWriter(chunk: string | Uint8Array) {
       if (res.destroyed) return false;
       sendHead();
-      wrote = headSent = true;
+      // As Node says once the first byte is out. Next asks, where it fails.
+      wrote = headSent = res.headersSent = true;
       controller.enqueue(typeof chunk === "string" ? encoder.encode(chunk) : new Uint8Array(chunk));
       return true;
     },
@@ -160,8 +161,10 @@ function createNodeResponse(request: ServerRequest) {
   });
   // Closed before all of it went out: by an error, or because whoever asked
   // has left. A reader that cancelled the body has ended it already.
+  let failure: unknown;
+  res.on("error", (error) => (failure ??= error));
   res.on("close", () => {
-    if (headSent && !finished && !cancelled) controller.error(res.errored ?? leftBeforeSent());
+    if (headSent && !finished && !cancelled) controller.error(failure ?? leftBeforeSent());
   });
   // Next's stand-in rejects this for a response that ends with an error.
   // Nobody waits for it here: the body ends with the error.
@@ -170,7 +173,9 @@ function createNodeResponse(request: ServerRequest) {
 
   const response = (written: Promise<unknown>): Promise<Response> => {
     const settled = written.then(
-      () => (headSent ? pending : Promise.reject(leftBeforeSent())),
+      // Without a head: Next ended the response with an error before its
+      // first byte, or whoever asked has left.
+      () => (headSent ? pending : Promise.reject(failure ?? leftBeforeSent())),
       (error) => {
         // What fails before the head is the failure of the request. After
         // it, the body ends with the error.
@@ -230,12 +235,14 @@ export async function handleRequest(
   routed?: RoutedRequestMeta,
 ): Promise<Response> {
   const { res, response } = createNodeResponse(request);
-  // The cache of the server: see cache.ts. Next's route module makes one of
-  // its own when it stores a response, and leaves it in this global.
-  const cache = globalThis.__incrementalCache;
+  // Next's route module makes a cache of its own for every request, and
+  // leaves it in the global of the server's: see cache.ts.
   const handled = handler(createNodeRequest(request), res, {
     waitUntil: context.waitUntil,
-    requestMeta: { ...requestMetaOf(request, routed), incrementalCache: cache },
-  }).finally(() => (globalThis.__incrementalCache = cache));
+    requestMeta: {
+      ...requestMetaOf(request, routed),
+      incrementalCache: globalThis.__incrementalCache,
+    },
+  }).finally(restoreIncrementalCache);
   return response(handled);
 }

@@ -392,27 +392,6 @@ test.for([
   await expect(loadNextProject(root, next)).rejects.toThrow(changed(`${runtime(file!)} ${what}`));
 });
 
-test("needs the manifests that the server is given for each request", async () => {
-  const file = runtime("server/app-render/manifests-singleton");
-  const next = nextWith({
-    [file]: sourceWith(file, "serverActionsManifest: raw", "actionsManifest: raw"),
-  });
-
-  await expect(loadNextProject(root, next)).rejects.toThrow(
-    changed("`setManifestsSingleton()` takes no `serverActionsManifest`"),
-  );
-});
-
-test.for([
-  "export const setManifestsSingleton = (options) =>\n  set(options.page, options.clientReferenceManifest, options.serverActionsManifest);",
-  "function setManifestsSingleton({ page, clientReferenceManifest, serverActionsManifest }) {}\nexport { setManifestsSingleton };",
-  `export * from ${JSON.stringify(installed.resolve(runtime("server/app-render/manifests-singleton")))};`,
-])("takes the manifests however Next declares the function that gets them: %s", async (source) => {
-  const next = nextWith({ [runtime("server/app-render/manifests-singleton")]: source });
-
-  await expect(loadNextProject(root, next)).resolves.toBeDefined();
-});
-
 test("reads the exports of the Flight codec of the rsc layer", async () => {
   const { flightExports } = await loadNextProject(root);
 
