@@ -5,13 +5,13 @@ export function NextActionProtocolProbe() {
   async function defaultRedirectAction() {
     "use server";
 
-    redirect("/action-protocol-default-target?from=action");
+    redirect("/auth/sign-up?from=action");
   }
 
   async function redirectAction() {
     "use server";
 
-    redirect("/action-protocol-target?from=action", "push");
+    redirect("/auth/sign-in?from=action", "push");
   }
 
   async function throwAction() {

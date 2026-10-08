@@ -10,7 +10,6 @@ test("headers and cookies follow the documented request API methods", async () =
   requestHeaders.set("cookie", "flash=initial");
 
   await renderServer(<FlashCookieProbe />, {
-    url: "/flash-cookie-probe",
     headers: requestHeaders,
   });
 

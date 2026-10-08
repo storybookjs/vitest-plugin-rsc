@@ -1,5 +1,5 @@
 import { expect, test } from "vitest";
-import { resetAsyncLocalStorage } from "./async-local-storage.ts";
+import { enterAmbientScope, resetAsyncLocalStorage } from "./async-local-storage.ts";
 import {
   AsyncLocalStorage,
   AsyncResource,
@@ -188,4 +188,151 @@ test("exposes async_hooks compatibility noops", () => {
   expect(executionAsyncId()).toBe(0);
   expect(triggerAsyncId()).toBe(0);
   expect(executionAsyncResource()).toEqual({});
+});
+
+test("keeps the outermost store of an ambient scope readable after run() returns", async () => {
+  const storage = new AsyncLocalStorage<string>();
+  const leaveScope = enterAmbientScope();
+
+  storage.run("request", () => {});
+  // What a server does after it entered its request store: more work, from a
+  // task that nothing carried the store into.
+  await Promise.resolve();
+  expect(storage.getStore()).toBe("request");
+
+  expect(storage.run("nested", () => storage.getStore())).toBe("nested");
+  expect(storage.getStore()).toBe("request");
+  expect(storage.exit(() => storage.getStore())).toBeUndefined();
+
+  leaveScope();
+  expect(storage.getStore()).toBeUndefined();
+});
+
+test("restores the outer ambient scope when a nested one ends", () => {
+  const storage = new AsyncLocalStorage<string>();
+  const leaveOuter = enterAmbientScope();
+  storage.run("outer request", () => {});
+
+  const leaveInner = enterAmbientScope();
+  storage.run("inner request", () => {});
+  expect(storage.getStore()).toBe("inner request");
+
+  leaveInner();
+  expect(storage.getStore()).toBe("outer request");
+  leaveOuter();
+  expect(storage.getStore()).toBeUndefined();
+});
+
+test("reads the store of the outer scope until the nested one enters its own", () => {
+  const storage = new AsyncLocalStorage<string>();
+  const leaveOuter = enterAmbientScope();
+  storage.run("outer request", () => {});
+
+  const leaveInner = enterAmbientScope();
+  expect(storage.getStore()).toBe("outer request");
+  storage.run("inner request", () => {});
+  expect(storage.getStore()).toBe("inner request");
+
+  leaveInner();
+  leaveOuter();
+});
+
+test("leaves nothing behind when a nested scope ends after its outer one", () => {
+  const storage = new AsyncLocalStorage<string>();
+  const leaveOuter = enterAmbientScope();
+  storage.run("outer request", () => {});
+  const leaveInner = enterAmbientScope();
+  storage.run("inner request", () => {});
+
+  leaveOuter();
+  expect(storage.getStore()).toBe("inner request");
+  leaveInner();
+  expect(storage.getStore()).toBeUndefined();
+
+  // The next request does not get the stores of the ones before it.
+  const leaveNext = enterAmbientScope();
+  expect(storage.getStore()).toBeUndefined();
+  leaveNext();
+});
+
+test("ends a run inside an ambient scope when its callback returns, not when its promise settles", async () => {
+  const storage = new AsyncLocalStorage<string>();
+  const leaveScope = enterAmbientScope();
+  storage.run("request", () => {});
+  const pending = deferred<void>();
+
+  // What Next does for a cached function: a store for a part of the work.
+  const result = storage.run("cache", async () => {
+    const before = storage.getStore();
+    await pending.promise;
+    return [before, storage.getStore()];
+  });
+
+  // What else the server does in the meantime reads the store of the request.
+  expect(storage.getStore()).toBe("request");
+  await Promise.resolve();
+  expect(storage.getStore()).toBe("request");
+
+  pending.resolve();
+  // And so does the callback itself once it has awaited: the known limit.
+  await expect(result).resolves.toEqual(["cache", "request"]);
+  expect(storage.getStore()).toBe("request");
+  leaveScope();
+});
+
+test("ends a snapshot inside an ambient scope when its callback returns", async () => {
+  const storage = new AsyncLocalStorage<string>();
+  const leaveScope = enterAmbientScope();
+  storage.run("request", () => {});
+  const runInSnapshot = storage.run("cache", () => AsyncLocalStorage.snapshot());
+  const pending = deferred<void>();
+
+  const inSnapshot = runInSnapshot(async () => {
+    const before = storage.getStore();
+    await pending.promise;
+    return [before, storage.getStore()];
+  });
+  expect(storage.getStore()).toBe("request");
+
+  pending.resolve();
+  await expect(inSnapshot).resolves.toEqual(["cache", "request"]);
+  leaveScope();
+});
+
+test("leaves a storage for the rest of an ambient scope when exit() starts async work", async () => {
+  const storage = new AsyncLocalStorage<string>();
+  const leaveScope = enterAmbientScope();
+  storage.run("action", () => {});
+  // A callback that does not return a promise is done when it returns.
+  expect(storage.exit(() => storage.getStore())).toBeUndefined();
+  expect(storage.getStore()).toBe("action");
+  const pending = deferred<void>();
+
+  // What Next does for the page it renders after a Server Action.
+  const result = storage.exit(async () => {
+    await pending.promise;
+    return storage.getStore();
+  });
+
+  expect(storage.getStore()).toBeUndefined();
+  pending.resolve();
+  await expect(result).resolves.toBeUndefined();
+  // The render that started in it goes on after the promise.
+  expect(storage.getStore()).toBeUndefined();
+  // A store that is entered in the meantime still has its synchronous part.
+  expect(storage.run("nested", () => storage.getStore())).toBe("nested");
+
+  leaveScope();
+  const leaveNext = enterAmbientScope();
+  storage.run("next request", () => {});
+  expect(storage.getStore()).toBe("next request");
+  leaveNext();
+});
+
+test("has no ambient store outside an ambient scope", () => {
+  const storage = new AsyncLocalStorage<string>();
+
+  storage.run("request", () => {});
+
+  expect(storage.getStore()).toBeUndefined();
 });

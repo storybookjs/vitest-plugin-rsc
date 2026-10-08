@@ -5,10 +5,17 @@ import { defineConfig, defineProject } from "vitest/config";
 import { vitestPluginRSC } from "vitest-plugin-rsc";
 import { vitestPluginNext } from "vitest-plugin-rsc/nextjs/plugin";
 import { vitestPluginRscSourceConditions } from "../../vitest.conditions.ts";
+import { ignoreWatchedOnlyModules } from "./test/ignore-watched-only-modules.ts";
 
 // Make Vitest UI trace/source clicks a no-op instead of opening Cursor.
 // oxlint-disable-next-line no-process-env
 process.env.LAUNCH_EDITOR = "/usr/bin/true";
+
+// Google Fonts, without the network: see the file.
+// oxlint-disable-next-line no-process-env
+process.env.NEXT_FONT_GOOGLE_MOCKED_RESPONSES = fileURLToPath(
+  new URL("../../vitest.google-fonts.cjs", import.meta.url),
+);
 
 const root = fileURLToPath(new URL("./", import.meta.url));
 const nextNotesRequire = createRequire(new URL("./package.json", import.meta.url));
@@ -31,23 +38,17 @@ function createSharedProjectConfig() {
       tsconfigPaths: true,
       conditions: [...vitestPluginRscSourceConditions, "test"],
     },
-    optimizeDeps: {
-      include: [
-        "next/dist/client/components/http-access-fallback/http-access-fallback.js",
-        "next/dist/client/components/redirect-error.js",
-        "next/dist/client/components/redirect-status-code.js",
-        "next/dist/client/components/redirect.js",
-        "next/dist/client/components/router-reducer/create-href-from-url.js",
-        "next/dist/server/lib/server-action-request-meta.js",
-      ],
-    },
   };
 }
 
 export const nextjsNotesProjects = [
   defineProject({
     ...createSharedProjectConfig(),
-    plugins: [vitestPluginRSC(), vitestPluginNext()],
+    plugins: [
+      vitestPluginRSC(),
+      vitestPluginNext({ affectedTests: true }),
+      ignoreWatchedOnlyModules(),
+    ],
     test: {
       name: "nextjs-notes-demo-browser",
       include: ["**/*.test.{ts,tsx}"],
@@ -82,6 +83,10 @@ export const nextjsNotesProjects = [
 
 export default defineConfig({
   test: {
+    // Every tab loads Next's runtime for three layers before its first test.
+    // With a tab per core those loads take longer than a test may: the first
+    // test of a file times out. The root config has a limit of its own.
+    maxWorkers: 4,
     projects: nextjsNotesProjects,
   },
 });

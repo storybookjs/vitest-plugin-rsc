@@ -1,7 +1,8 @@
-import { createServer } from "node:net";
-import { type EnvironmentOptions, type Plugin, type ViteDevServer } from "vite";
+import { type Plugin, type ViteDevServer } from "vite";
 import { vitePluginRscMinimal } from "@vitejs/plugin-rsc/plugin";
 import { createReactClientCoveragePlugin } from "./coverage.ts";
+import { createRunnerEnvironmentPlugins } from "./runner-environment.ts";
+import { pageViteClientPlugin } from "./vite-client.ts";
 
 const reactClientWebSocketInfoPath = "/@vite/react-client-runner-websocket";
 const reactClientWebSocketQuery = "vitest-plugin-rsc-react-client";
@@ -12,8 +13,15 @@ type ReactClientInvokePayload = Parameters<
 >[0];
 type ReactClientWebSocketInvoke = {
   id: string;
+  environment: string;
   payload: ReactClientInvokePayload;
 };
+
+// The Flight codec that Vite RSC brings, to pre-bundle. It is a dependency of
+// this package and not of the project, so Vite is told to look for it from
+// here: a package manager like pnpm does not put it where the project finds it.
+const vendoredFlight = (entry: string) =>
+  `vitest-plugin-rsc > @vitejs/plugin-rsc/vendor/react-server-dom/${entry}`;
 
 function withConfiguredSourceConditions(
   config: { resolve?: { conditions?: string[] } },
@@ -27,7 +35,7 @@ function withConfiguredSourceConditions(
 
 export function vitestPluginRSC(): Plugin[] {
   return [
-    createBrowserApiPortPlugin(),
+    pageViteClientPlugin(),
     ...vitePluginRscMinimal({
       environment: {
         browser: "react_client",
@@ -47,9 +55,15 @@ export function vitestPluginRSC(): Plugin[] {
             const invoke = parseWebSocketInvoke(raw);
             if (!invoke) return;
 
-            const result = await server.environments["react_client"]!.hot.handleInvoke(
-              invoke.payload,
-            );
+            // The page runs every environment but `client` through a module
+            // runner of its own, see utils.ts.
+            const environment = server.environments[invoke.environment];
+            const result =
+              environment && invoke.environment !== "client"
+                ? await environment.hot.handleInvoke(invoke.payload)
+                : {
+                    error: { message: `No environment "${invoke.environment}" to run in the page` },
+                  };
 
             socket.send(
               JSON.stringify({
@@ -99,8 +113,8 @@ export function vitestPluginRSC(): Plugin[] {
                   "react-dom/client",
                   "react/jsx-runtime",
                   "react/jsx-dev-runtime",
-                  "@vitejs/plugin-rsc/vendor/react-server-dom/server.edge",
-                  "@vitejs/plugin-rsc/vendor/react-server-dom/client.edge",
+                  vendoredFlight("server.edge"),
+                  vendoredFlight("client.edge"),
                 ],
                 exclude: ["vite", "vitest-plugin-rsc", "@vitejs/plugin-rsc"],
               },
@@ -123,7 +137,7 @@ export function vitestPluginRSC(): Plugin[] {
                   "react-dom/client",
                   "react/jsx-runtime",
                   "react/jsx-dev-runtime",
-                  "@vitejs/plugin-rsc/vendor/react-server-dom/client.browser",
+                  vendoredFlight("client.browser"),
                 ],
                 exclude: ["vitest-plugin-rsc", "@vitejs/plugin-rsc"],
               },
@@ -133,132 +147,8 @@ export function vitestPluginRSC(): Plugin[] {
       },
     },
     createReactClientCoveragePlugin(),
-    ...createReactClientOptimizerPlugins(),
+    ...createRunnerEnvironmentPlugins("react_client"),
   ];
-}
-
-// react_client runs in the page through this plugin's module runner, so it has
-// its own dependency optimizer next to the one of the browser tests (`client`).
-function createReactClientOptimizerPlugins(): Plugin[] {
-  // Vitest 5 serves browser tests from the project's Vite server, where its
-  // `vitest:environments-module-runner` plugin configures every environment but
-  // `client` for Node and disables their optimizer. React's CommonJS entries
-  // would then reach the page raw. So take react_client's optimizeDeps from right
-  // before that hook and put them back after it. (Its other overrides, like
-  // keepProcessEnv, are harmless: the page defines `process`.) Once Vitest leaves
-  // browser-consumed environments alone, this round trip changes nothing.
-  let optimizeDeps: EnvironmentOptions["optimizeDeps"];
-
-  return [
-    {
-      name: "rsc:react-client-optimizer:before-vitest",
-      // The first post hook, so it includes what earlier hooks contributed.
-      enforce: "pre",
-      configEnvironment: {
-        order: "post",
-        handler(name, config) {
-          if (name === "react_client") optimizeDeps = config.optimizeDeps;
-        },
-      },
-    },
-    {
-      name: "rsc:react-client-optimizer",
-      enforce: "post",
-      configEnvironment: {
-        order: "post",
-        handler(name, config) {
-          if (name === "react_client") config.optimizeDeps = optimizeDeps;
-        },
-      },
-      configureServer(server) {
-        // Vitest seeds the browser optimizer with the test and setup files once
-        // the config is resolved. react_client later imports client components
-        // from those files, so scan them too, or Vite discovers their deps
-        // mid-test and reloads the page. Optimizers start on listen, after this.
-        const client = server.config.environments.client!;
-        const reactClient = server.config.environments.react_client!;
-        reactClient.optimizeDeps.entries ??= client.optimizeDeps.entries;
-        reactClient.optimizeDeps.exclude = [
-          ...new Set([
-            ...(client.optimizeDeps.exclude ?? []),
-            ...(reactClient.optimizeDeps.exclude ?? []),
-          ]),
-        ];
-      },
-    },
-  ];
-}
-
-function createBrowserApiPortPlugin(): Plugin {
-  return {
-    name: "rsc:browser-api-port",
-    async configureServer(server) {
-      if (
-        !isVitestBrowserServer(server) ||
-        server.config.server.strictPort ||
-        typeof server.config.server.port !== "number"
-      ) {
-        return;
-      }
-
-      // Vite injects /@vite/client before listen(). Avoid Vite's later port
-      // fallback path so the browser receives the final server port up front.
-      server.config.server.port = await resolveBrowserApiPort(
-        server.config.server.port,
-        server.config.server.host,
-      );
-    },
-  };
-}
-
-function isVitestBrowserServer(server: ViteDevServer): boolean {
-  return server.config.plugins.some((plugin) => plugin.name === "vitest:browser:config");
-}
-
-async function resolveBrowserApiPort(
-  port: number,
-  host: ViteDevServer["config"]["server"]["host"],
-) {
-  const listenHost = resolveViteListenHost(host);
-  try {
-    return await listenOnAvailablePort(port, listenHost);
-  } catch (error) {
-    if (!isAddressInUse(error)) {
-      throw error;
-    }
-    return await listenOnAvailablePort(0, listenHost);
-  }
-}
-
-function resolveViteListenHost(host: ViteDevServer["config"]["server"]["host"]) {
-  // Match Vite's default listen call. Checking "localhost" can miss ports that
-  // are unavailable for wildcard binds, which lets Vite fall back after
-  // /@vite/client has already captured the old port.
-  if (host === undefined || host === false) {
-    return undefined;
-  }
-  if (host === true) {
-    return undefined;
-  }
-  return host;
-}
-
-function isAddressInUse(error: unknown): boolean {
-  return (
-    typeof error === "object" && error !== null && "code" in error && error.code === "EADDRINUSE"
-  );
-}
-
-function listenOnAvailablePort(port: number, host: string | undefined) {
-  return new Promise<number>((resolve, reject) => {
-    const server = createServer();
-    server.unref();
-    server.once("error", reject);
-    server.listen({ port, host }, () => {
-      const address = server.address();
-      server.close(() => resolve(typeof address === "object" && address ? address.port : port));
-    });
-  });
 }
 
 function parseWebSocketInvoke(raw: unknown): ReactClientWebSocketInvoke | undefined {
@@ -278,6 +168,8 @@ function parseWebSocketInvoke(raw: unknown): ReactClientWebSocketInvoke | undefi
     }
     return {
       id: message.data.id,
+      environment:
+        typeof message.data.environment === "string" ? message.data.environment : "react_client",
       payload: message.data.payload,
     };
   } catch {
@@ -285,29 +177,8 @@ function parseWebSocketInvoke(raw: unknown): ReactClientWebSocketInvoke | undefi
   }
 }
 
+// Vitest sets `server.hmr` to `false`, so the socket goes to the page's own
+// host and port, and only needs the token and the base.
 function getReactClientWebSocketInfo(server: ViteDevServer) {
-  const hmr = getHmrOptions(server);
-
-  return {
-    token: server.config.webSocketToken,
-    protocol: hmr?.protocol ?? null,
-    host: hmr?.host ?? null,
-    port: hmr?.clientPort ?? hmr?.port ?? null,
-    path: getWebSocketPath(server),
-    timeout: hmr?.timeout ?? 30_000,
-  };
-}
-
-function getWebSocketPath(server: ViteDevServer) {
-  const hmr = getHmrOptions(server);
-
-  if (!hmr?.path) {
-    return server.config.base;
-  }
-
-  return `${server.config.base.replace(/\/$/, "")}/${hmr.path.replace(/^\//, "")}`;
-}
-
-function getHmrOptions(server: ViteDevServer) {
-  return typeof server.config.server.hmr === "object" ? server.config.server.hmr : undefined;
+  return { token: server.config.webSocketToken, path: server.config.base };
 }

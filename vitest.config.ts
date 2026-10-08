@@ -1,7 +1,7 @@
 import { defineConfig } from "vitest/config";
 import { vitestPluginRscSourceConditions } from "./vitest.conditions.ts";
 import vitestPluginRscProject from "./packages/vitest-plugin-rsc/vitest.config.ts";
-import nextjsNoMswDemoProject from "./playground/nextjs-no-msw-demo/vitest.config.ts";
+import nextjsE2eDemoProject from "./playground/nextjs-e2e-demo/vitest.config.ts";
 import { nextjsNotesProjects } from "./playground/nextjs-notes-demo/vitest.config.ts";
 import rscVitestDemoProject from "./playground/rsc-vitest-demo/vitest.config.ts";
 
@@ -16,7 +16,7 @@ export default defineConfig({
       include: [
         "packages/vitest-plugin-rsc/src/**/*.{ts,tsx}",
         "playground/rsc-vitest-demo/src/**/*.{ts,tsx}",
-        "playground/nextjs-no-msw-demo/**/*.{ts,tsx}",
+        "playground/nextjs-e2e-demo/**/*.{ts,tsx}",
         "playground/nextjs-notes-demo/**/*.{ts,tsx}",
       ],
       exclude: [
@@ -34,7 +34,7 @@ export default defineConfig({
     projects: [
       vitestPluginRscProject,
       rscVitestDemoProject,
-      nextjsNoMswDemoProject,
+      nextjsE2eDemoProject,
       ...nextjsNotesProjects,
     ],
   },

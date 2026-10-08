@@ -75,18 +75,20 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - run: pnpm --dir playground/rsc-vitest-demo exec playwright install --with-deps --only-shell chromium
-      - run: pnpm --dir playground/nextjs-notes-demo exec playwright install --with-deps --only-shell chromium
+      - run: pnpm exec playwright install --with-deps --only-shell chromium
       - run: pnpm build
-      - run: pnpm test:dist --project rsc-vitest-demo
+      - run: pnpm test:dist
 
-  next-compat:
-    name: Next.js ${{ matrix.next-version }} Compatibility
+  next:
+    name: Next.js ${{ matrix.next }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        next-version: ["canary", "latest", "16.1", "16.0"]
+        # The Test job runs the pinned Next.js. `latest` tells when a release
+        # changes something of Next that the plugin calls, `canary` tells it
+        # before the release.
+        next: [latest, canary]
     steps:
       - uses: actions/checkout@v6
       - uses: pnpm/action-setup@v6
@@ -95,19 +97,21 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: Install Next.js ${{ matrix.next-version }}
-        env:
-          NEXT_VERSION: ${{ matrix.next-version }}
+      # pnpm waits a day before it installs a new release; this job is for the
+      # release the tag names now. The packages that go with `next` are at
+      # the version of that release: while Next publishes one, their tags
+      # name different releases for a moment.
+      - name: Install Next.js ${{ matrix.next }}
         run: |
-          pnpm --filter vitest-plugin-rsc add -D "next@${NEXT_VERSION}"
-          pnpm --filter nextjs-no-msw-demo add "next@${NEXT_VERSION}"
-          pnpm --filter nextjs-notes-demo add "next@${NEXT_VERSION}" "@next/env@${NEXT_VERSION}"
-      - run: pnpm --dir playground/nextjs-notes-demo exec playwright install --with-deps --only-shell chromium
+          version=$(npm view next@${{ matrix.next }} version)
+          pnpm --filter nextjs-e2e-demo add --config.minimum-release-age=0 next@$version @next/routing@$version
+          pnpm --filter nextjs-notes-demo add --config.minimum-release-age=0 next@$version @next/env@$version @next/routing@$version
+          pnpm --filter nextjs-e2e-demo exec node -p "'next@' + require('next/package.json').version"
+      - run: pnpm exec playwright install --with-deps --only-shell chromium
       - run: pnpm build
-      - name: Test Next.js surfaces
+      - name: Test the Next.js playgrounds
         run: |
           pnpm test:dist \
-            --project vitest-plugin-rsc \
-            --project nextjs-no-msw-demo \
+            --project nextjs-e2e-demo \
             --project nextjs-notes-demo-browser \
             --project nextjs-notes-demo-node

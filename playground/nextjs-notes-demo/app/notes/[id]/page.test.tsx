@@ -3,8 +3,7 @@ import { page } from "vitest/browser";
 import { db } from "#lib/db.ts";
 import { notes } from "#db/schema.ts";
 import { signInAs, testUser } from "#test/auth.ts";
-import { renderServer } from "#test/render.tsx";
-import NotePage from "./page.tsx";
+import { renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
 
 const noteId = "00000000-0000-4000-8000-000000000001";
 const databaseGeneratedNoteId = "70458a4b-ecef-4a2a-00e1-53f5b00c951e";
@@ -20,10 +19,7 @@ test("renders the note title and content with metadata", async () => {
     updatedAt,
   });
 
-  await renderServer(<NotePage params={Promise.resolve({ id: noteId })} />, {
-    route: "/notes/[id]",
-    url: `/notes/${noteId}`,
-  });
+  await renderServer({ url: `/notes/${noteId}` });
 
   await expect
     .element(page.getByRole("heading", { level: 1, name: "Roadmap thoughts" }))
@@ -45,10 +41,7 @@ test("renders note when id matches database-stored uuid", async () => {
     updatedAt,
   });
 
-  await renderServer(<NotePage params={Promise.resolve({ id: databaseGeneratedNoteId })} />, {
-    route: "/notes/[id]",
-    url: `/notes/${databaseGeneratedNoteId}`,
-  });
+  await renderServer({ url: `/notes/${databaseGeneratedNoteId}` });
 
   await expect
     .element(page.getByRole("heading", { level: 1, name: "Seeded note" }))
@@ -68,10 +61,7 @@ test("shows an empty content placeholder when the note has no body", async () =>
     updatedAt,
   });
 
-  await renderServer(<NotePage params={Promise.resolve({ id: noteId })} />, {
-    route: "/notes/[id]",
-    url: `/notes/${noteId}`,
-  });
+  await renderServer({ url: `/notes/${noteId}` });
 
   await expect.element(page.getByText("No content yet.")).toBeInTheDocument();
 });
@@ -87,10 +77,7 @@ test("renders the favorite badge for favorited notes", async () => {
     updatedAt,
   });
 
-  await renderServer(<NotePage params={Promise.resolve({ id: noteId })} />, {
-    route: "/notes/[id]",
-    url: `/notes/${noteId}`,
-  });
+  await renderServer({ url: `/notes/${noteId}` });
 
   await expect
     .element(page.getByRole("heading", { level: 1, name: "Starred idea" }))

@@ -1,522 +1,717 @@
-import { createRequire } from "node:module";
+import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import type { Alias, Plugin } from "vite";
+import { hasDirective, transformDirectiveProxyExport } from "@vitejs/plugin-rsc/transforms";
+import { createFilter, normalizePath, parseAst, parseAstAsync, type Plugin } from "vite";
+import type { TestProject } from "vitest/node";
+import { createRunnerEnvironmentPlugins } from "../runner-environment.ts";
+import { flightBridge, type FlightEntry } from "./flight.ts";
+import { createCompilePlugin, createDependencyCompilePlugin } from "./compile.ts";
+import { createNodePlatform } from "./node-platform.ts";
+import { loadNextProject, type NextLayer, type NextProject } from "./project.ts";
+import { moduleFileAt } from "./project/context.ts";
+import { createServerCode, type ServerCodeOptions } from "./server-code.ts";
+import { affectedTests } from "./affected/index.ts";
+import { createPathsPlugin } from "./paths.ts";
 
-const supportedEdgeNativeModules = ["buffer", "events", "assert", "util"] as const;
-// Begin copy: Next.js ACTION_ID_EXPECTED_LENGTH
-// Source: https://github.com/vercel/next.js/blob/4588a7354283f97e2124e3d82f55733ca4eb9373/packages/next/src/server/app-render/action-handler.ts#L1372-L1375
-const ACTION_ID_EXPECTED_LENGTH = 42;
-// End copy
-const virtualServerReferenceInfoId = "\0vitest-plugin-rsc:next-server-reference-info";
+// Each layer of Next is a Vite environment, and all three run in the test's
+// tab (docs/next-routes.md). Where Next's own bundler config says a module
+// belongs to another layer, it is bridged to that environment through
+// `registry` (registry.ts).
+const environmentOf: Record<NextLayer, string> = {
+  rsc: "client",
+  ssr: "next_ssr",
+  browser: "react_client",
+};
+const layers = Object.keys(environmentOf) as NextLayer[];
 
-// Vite equivalents of the Next webpack aliases we rely on. Keep these aligned
-// with Next's app-router API and React Server Components alias layers:
-// https://github.com/vercel/next.js/blob/4588a7354283f97e2124e3d82f55733ca4eb9373/packages/next/src/build/create-compiler-aliases.ts#L203-L246
-// https://github.com/vercel/next.js/blob/4588a7354283f97e2124e3d82f55733ca4eb9373/packages/next/src/build/create-compiler-aliases.ts#L449-L477
+const registry = "globalThis.__vitest_plugin_rsc_next__";
+// Shared by the layers: the routes and the `next.config`.
+const manifestId = "virtual:vitest-plugin-rsc/next-manifest";
+// The modules of the routes, all in the rsc layer: one for each route, by its
+// place in the list of routes, and two that say how to load them, the pages
+// and the route handlers. The ssr layer handles the requests of a page
+// (node-server.ts). A route handler is in the rsc layer as a whole, as Next's
+// bundler config has it. The routes of a node are pages too, listed after the
+// ones of the app.
+const virtual = (name: string) => `virtual:vitest-plugin-rsc/next-${name}`;
+const routeEntryPrefix = virtual("route/");
+const routeLists = { page: virtual("app-pages"), route: virtual("route-handlers") } as const;
+type RouteKind = keyof typeof routeLists;
+const routeKinds = Object.keys(routeLists) as RouteKind[];
+// The middleware of the app, in the rsc layer: a module that says how to load
+// it, if the app has one, and its request handler.
+const middlewareId = virtual("middleware");
+const middlewareEntryId = virtual("middleware-entry");
+// Next's route resolution, which the server in front of the app runs in the
+// ssr layer. Not a part of `next`: it is the project's, next to its `next`.
+const nextRouting = "@next/routing";
+// What the modules of a route are listed by: its page name, which the route
+// of a node shares with a page of the app.
+const entryOf = (route: { page: string; component?: string }) => route.component ?? route.page;
+const isRouteModule = (id: string) =>
+  id.startsWith(routeEntryPrefix) || routeKinds.some((kind) => id === routeLists[kind]);
+const bridgePrefix = "\0vitest-plugin-rsc/next-bridge/";
+const emptyModuleId = "\0vitest-plugin-rsc/next-empty";
+const serverReferenceInfo = "next/dist/esm/shared/lib/server-reference-info.js";
+const vendoredFlight = (entry: string) => `@vitejs/plugin-rsc/vendor/react-server-dom/${entry}`;
+// Vitest wants a file path for a setup file, not a package specifier.
+const setupFile = fileURLToPath(
+  new URL(`./setup${path.extname(import.meta.url)}`, import.meta.url),
+);
 
-function appRouterApiPlugin(environmentName: string, isServerOnlyLayer: boolean): Plugin {
-  let aliases: Record<string, string> = {};
-
-  return {
-    name: `next-rsc-app-router-api:${environmentName}`,
-    enforce: "pre",
-    applyToEnvironment(environment) {
-      return environment.name === environmentName;
-    },
-    configResolved(config) {
-      aliases = createAppRouterApiAliasesFromNext(getProjectRoot(config), isServerOnlyLayer);
-    },
-    async resolveId(source, importer, options) {
-      const replacement = aliases[source];
-      if (!replacement) {
-        return;
-      }
-
-      return this.resolve(replacement, importer, {
-        ...options,
-        skipSelf: true,
-      });
-    },
-  };
+// Next's server reference ids are 42 hex characters whose first byte says
+// which arguments the function uses. Vite RSC's are `<module>#<export>`. The
+// rest of the module stays as it is.
+const serverReferenceInfoShim = `
+import * as original from ${JSON.stringify(serverReferenceInfo)};
+export * from ${JSON.stringify(serverReferenceInfo)};
+const isNextId = (id) => id.length === original.SERVER_REFERENCE_ID_LENGTH && /^[0-9a-f]+$/i.test(id);
+export function mightBeServerReferenceId(id) {
+  return typeof id === "string" && id.length > 0;
 }
-
-function getProjectRoot(config: { root?: string }): string {
-  return path.resolve(config.root ?? process.cwd());
-}
-
-function createProjectRequire(root: string): NodeJS.Require {
-  return createRequire(path.join(root, "package.json"));
-}
-
-function createAppRouterApiAliasesFromNext(
-  root: string,
-  isServerOnlyLayer: boolean,
-): Record<string, string> {
-  const appRouterEntrypoints = isServerOnlyLayer
-    ? {
-        "next/link": "next/dist/client/app-dir/link.react-server",
-        "next/link.js": "next/dist/client/app-dir/link.react-server",
-        "next/navigation": "next/dist/client/components/navigation.react-server",
-        "next/navigation.js": "next/dist/client/components/navigation.react-server",
-      }
-    : {
-        "next/link": "next/dist/client/app-dir/link",
-        "next/link.js": "next/dist/client/app-dir/link",
-        "next/navigation": "next/dist/client/components/navigation",
-        "next/navigation.js": "next/dist/client/components/navigation",
-      };
-
-  try {
-    const { createAppRouterApiAliases } = createProjectRequire(root)(
-      "next/dist/build/create-compiler-aliases.js",
-    ) as typeof import("next/dist/build/create-compiler-aliases.js");
-    const aliases = createAppRouterApiAliases(isServerOnlyLayer);
-    const result: Record<string, string> = {};
-
-    for (const [source, replacement] of Object.entries(aliases)) {
-      const match = source.match(/[/\\]next[/\\]([^/\\]+)\.js$/);
-      if (!match) continue;
-
-      result[`next/${match[1]}`] = replacement;
-      result[`next/${match[1]}.js`] = replacement;
-    }
-
-    // Next's webpack aliases target resolved `next/*.js` API files. In Vite
-    // we alias bare package IDs directly, so keep the same app-router layer
-    // but point `link` and `navigation` at the implementation modules those
-    // wrappers load.
-    return { ...result, ...appRouterEntrypoints };
-  } catch {
-    return appRouterEntrypoints;
-  }
-}
-
-function tryResolveFromProject(root: string, id: string): string | undefined {
-  try {
-    return createProjectRequire(root).resolve(id);
-  } catch {
-    return;
-  }
-}
-
-function resolveVersionDependentNextModules(root: string): string[] {
-  // Next moves these internals between minors: 16.4 dropped ppr-navigations.js
-  // and replaced create-flight-router-state-from-loader-tree.js with the
-  // transport-tree pipeline. Only pre-bundle what the installed Next ships, so
-  // Vite does not warn about (or fail on) modules that are not there.
-  return [
-    "next/dist/client/components/router-reducer/ppr-navigations.js",
-    "next/dist/server/app-render/create-flight-router-state-from-loader-tree.js",
-    "next/dist/server/app-render/create-transport-tree-from-loader-tree.js",
-    "next/dist/shared/lib/rsc-transport.js",
-  ].filter((id) => tryResolveFromProject(root, id));
-}
-
-function createNextEdgeNativeAliases(root: string): Alias[] {
-  // Next's edge/client webpack builds polyfill these Node builtins with
-  // Next-compiled browser packages. Vite does not run that webpack layer, so
-  // resolve the same compiled packages from the user's Next installation:
-  // https://github.com/vercel/next.js/blob/4588a7354283f97e2124e3d82f55733ca4eb9373/packages/next/src/build/webpack-config.ts#L2028-L2035
-  const aliases: Alias[] = [
-    { find: "node:async_hooks", replacement: "vitest-plugin-rsc/async-hooks" },
-    { find: "async_hooks", replacement: "vitest-plugin-rsc/async-hooks" },
-  ];
-
-  // `next/dist/server/config-shared.js` is importable, but it touches `os.cpus`
-  // during module evaluation. Alias `os` to a small browser shim so we can keep
-  // importing Next's config defaults instead of copying them.
-  const osBrowserShimExtension = import.meta.url.endsWith(".ts") ? ".ts" : ".js";
-  const osBrowserShim = fileURLToPath(
-    new URL(`./os-browser${osBrowserShimExtension}`, import.meta.url),
-  );
-  aliases.push(
-    { find: "node:os", replacement: osBrowserShim },
-    { find: "os", replacement: osBrowserShim },
-  );
-
-  for (const mod of supportedEdgeNativeModules) {
-    const replacement = tryResolveFromProject(root, `next/dist/compiled/${mod}`);
-    if (!replacement) continue;
-
-    aliases.push({ find: `node:${mod}`, replacement }, { find: mod, replacement });
-  }
-
-  const processPolyfill = tryResolveFromProject(root, "next/dist/compiled/process");
-  if (processPolyfill) {
-    aliases.push({ find: "process", replacement: processPolyfill });
-  }
-
-  aliases.push({
-    find: "@opentelemetry/api",
-    replacement: "next/dist/compiled/@opentelemetry/api",
-  });
-
-  return aliases;
-}
-
-function createOptimizeDepsResolveAliases(
-  edgeNativeAliases: Alias[],
-  aliases: Record<string, string>,
-) {
-  return {
-    ...Object.fromEntries(
-      edgeNativeAliases
-        .filter((alias): alias is Alias & { find: string } => typeof alias.find === "string")
-        .map((alias) => [alias.find, alias.replacement]),
-    ),
-    ...aliases,
-  };
-}
-
-function createReactServerDomWebpackAliases(root: string) {
-  return {
-    browser:
-      tryResolveFromProject(root, "@vitejs/plugin-rsc/vendor/react-server-dom/client.browser") ??
-      "@vitejs/plugin-rsc/vendor/react-server-dom/client.browser",
-    edge:
-      tryResolveFromProject(root, "@vitejs/plugin-rsc/vendor/react-server-dom/client.edge") ??
-      "@vitejs/plugin-rsc/vendor/react-server-dom/client.edge",
-  };
-}
-
-function useNextCompiledOpenTelemetryApi(root: string): Plugin {
-  const replacement = tryResolveFromProject(root, "next/dist/compiled/@opentelemetry/api");
-
-  return {
-    name: "next-rsc-edge-compiled-opentelemetry-api",
-    enforce: "pre",
-    resolveId(source) {
-      if (source !== "@opentelemetry/api" || !replacement) {
-        return;
-      }
-
-      return replacement;
-    },
-  };
-}
-
-function useVitestServerReferenceInfo(root = process.cwd()): Plugin {
-  const original = tryResolveFromProject(root, "next/dist/shared/lib/server-reference-info.js");
-
-  return {
-    name: "next-rsc-server-reference-info",
-    enforce: "pre",
-    async resolveId(source, importer, options) {
-      // Next's server-action reducer imports this helper to omit unused action
-      // arguments from hex-encoded Next action IDs. Vite RSC action IDs are not
-      // Next hex IDs, so we alias the helper and preserve all args for those
-      // IDs while copying Next's behavior for real hex IDs.
-      if (
-        source !== "next/dist/shared/lib/server-reference-info.js" &&
-        source !== "next/dist/shared/lib/server-reference-info" &&
-        !(source.endsWith("/shared/lib/server-reference-info") && importer?.includes("/next/dist/"))
-      ) {
-        return;
-      }
-
-      return virtualServerReferenceInfoId;
-    },
-    load(id) {
-      if (id !== virtualServerReferenceInfoId) return;
-      if (!original) {
-        throw new Error("Could not resolve next/dist/shared/lib/server-reference-info.js");
-      }
-
-      return `
-import {
-  extractInfoFromServerReferenceId as extractNextInfoFromServerReferenceId,
-  omitUnusedArgs,
-} from ${JSON.stringify(original)};
-
-export { omitUnusedArgs };
-
 export function extractInfoFromServerReferenceId(id) {
-  // Begin copy: Next.js action ID shape check
-  // Source: https://github.com/vercel/next.js/blob/4588a7354283f97e2124e3d82f55733ca4eb9373/packages/next/src/server/app-render/action-handler.ts#L1433-L1464
-  // Adaptation: Vite's RSC action IDs are not Next action IDs, so only delegate
-  // to Next's imported parser for hex IDs with Next's expected length.
-  const isNextActionId = id.length === ${ACTION_ID_EXPECTED_LENGTH} && /^[0-9a-fA-F]+$/.test(id);
-  // End copy
-  return isNextActionId
-    ? extractNextInfoFromServerReferenceId(id)
-    : {
-        type: "server-action",
-        usedArgs: [true, true, true, true, true, true],
-        hasRestArgs: true,
-      };
+  return isNextId(id)
+    ? original.extractInfoFromServerReferenceId(id)
+    : { type: "server-action", usedArgs: [true, true, true, true, true, true], hasRestArgs: true };
 }
 `;
-    },
-  };
-}
 
-function provideBufferLikeNextWebpack(): Plugin {
-  return {
-    name: "next-rsc-edge-provide-buffer",
-    enforce: "pre",
-    transform(code, id) {
-      if (
-        !id.includes("/next/dist/") ||
-        id.includes("/next/dist/compiled/buffer/") ||
-        !/\bBuffer\b/.test(code)
-      ) {
-        return;
+const nodePlatform = createNodePlatform(registry, bridgePrefix);
+
+type Alias = { key: string; exact: boolean; target: string | false };
+
+// The module resolution of one layer: Next's alias tables with webpack's
+// matching rules, and the ESM build of Next in place of the CommonJS one.
+//
+// This is a function and not Vite's `resolve.alias`, which is one table for
+// every environment. And it names a file of Next one way only: Vite keeps a
+// pre-bundled dependency per specifier, so a second spelling is a second copy
+// of the module, found mid-test.
+function createLayerResolver(getProject: () => NextProject, layer: NextLayer) {
+  let aliases: Alias[] | undefined;
+  const normalized = new Map<string, string | false>();
+
+  function nextFile(specifier: string): string | undefined {
+    return moduleFileAt(path.join(getProject().nextDir, specifier.slice("next/".length)));
+  }
+
+  function toSpecifier(file: string): string {
+    return `next/${path.relative(getProject().nextDir, file).split(path.sep).join("/")}`;
+  }
+
+  function getAliases(): Alias[] {
+    if (aliases) return aliases;
+    const { nextDir } = getProject();
+    const table: Record<string, string | false> = { ...getProject().aliases[layer] };
+    // Vite RSC brings a Flight codec for the `react` of the project. The app
+    // runs on Next's React, so its runtime gets the codec that goes with it.
+    const flightDir = path.posix.dirname(table["react-server-dom-webpack/server$"] as string);
+    for (const entry of ["server.edge", "static.edge", "client.edge", "client.browser"]) {
+      table[`${vendoredFlight(entry)}$`] = `${flightDir}/${entry}`;
+    }
+    aliases = Object.entries(table).flatMap(([key, target]) => {
+      // Next's compilation for ESM sends its directories to its ESM build
+      // this way. `normalize()` does that for every layer, file by file.
+      if (/^next\/dist\/\w+$/.test(key)) return [];
+      let exact = key.endsWith("$");
+      key = key.replace(/\$$/, "");
+      // A table keyed by a file of the `next` package matches the resolved
+      // file. The public entry files, like `<next>/link.js`, also match the
+      // specifier they are imported by.
+      if (path.isAbsolute(key) && !path.relative(nextDir, key).startsWith("..")) {
+        key = toSpecifier(key);
+        exact = true;
+        if (/^next\/[\w-]+\.js$/.test(key)) {
+          return [
+            { key, exact, target },
+            { key: key.slice(0, -".js".length), exact, target },
+          ];
+        }
       }
+      return [{ key, exact, target }];
+    });
+    return aliases;
+  }
 
-      // Next's webpack compiler uses ProvidePlugin for Buffer in client and
-      // edge bundles. Vite has no direct equivalent, so apply the same import
-      // only to Next internals:
-      // https://github.com/vercel/next.js/blob/4588a7354283f97e2124e3d82f55733ca4eb9373/packages/next/src/build/webpack-config.ts#L2028-L2035
-      return {
-        code: `import { Buffer } from "node:buffer";\n${code}`,
-        map: null,
-      };
-    },
-  };
+  function applyAlias(source: string): string | false | undefined {
+    for (const { key, exact, target } of getAliases()) {
+      if (source !== key && (exact || !source.startsWith(`${key}/`))) continue;
+      const aliased = target && target + source.slice(key.length);
+      // Like webpack, not when nothing is there. Next sends all of
+      // `next/dist/compiled/server-only` to `.../server-only/index`, also the
+      // request for that file itself.
+      if (aliased && source !== key && aliased.startsWith("next/") && !nextFile(aliased)) continue;
+      return aliased;
+    }
+  }
+
+  // The target of an alias like `styled-jsx$`: a file of another package.
+  function isDependencyOfNext(target: string): boolean {
+    return (
+      path.isAbsolute(target) &&
+      normalizePath(target).includes("/node_modules/") &&
+      path.relative(getProject().nextDir, target).startsWith("..")
+    );
+  }
+
+  function bridgeOf(source: string): string | undefined {
+    if (layer === "rsc") {
+      const flight = /^react-server-dom-webpack\/(server|static|client)(\.edge)?$/.exec(source);
+      if (flight) return `${bridgePrefix}flight-${flight[1]}`;
+    }
+    if (source === serverReferenceInfo) return `${bridgePrefix}server-reference-info`;
+    // The route module of a page is made in the rsc layer, by Next's request
+    // handler for it, and belongs to the ssr layer.
+    if (
+      layer === "rsc" &&
+      /^next\/dist\/(esm\/)?server\/route-modules\/app-page\/module\.compiled(\.js)?$/.test(source)
+    ) {
+      return `${bridgePrefix}ssr-app-page-module`;
+    }
+    // The Readable that node-server.ts makes a request of.
+    if (source === "virtual:vitest-plugin-rsc/node-stream") return `${bridgePrefix}node-stream`;
+    if (layer !== "browser") return nodePlatform.moduleOf(source);
+  }
+
+  /**
+   * Where a specifier leads in this layer: another specifier, a bridge module
+   * (`\0...`), or `false` for a module the layer leaves empty.
+   */
+  function normalize(source: string): string | false {
+    const cached = normalized.get(source);
+    if (cached !== undefined) return cached;
+
+    let current: string | false = source;
+    for (let i = 0; i < 10 && current; i++) {
+      const bridge = bridgeOf(current);
+      if (bridge) {
+        current = bridge;
+        break;
+      }
+      // Next ships its runtime twice: CommonJS in `next/dist`, ESM in
+      // `next/dist/esm`. Aliases are keyed by the CommonJS file.
+      const commonJs: string = current.replace(/^next\/dist\/esm\//, "next/dist/");
+      let next: string | false | undefined = applyAlias(current) ?? applyAlias(commonJs);
+      if (next === undefined && current.startsWith("next/")) {
+        // Next's edge and Turbopack builds take the ESM file, and so does
+        // Vite, which pre-bundles ESM best. A few files only exist as
+        // CommonJS, like the polyfills its client entry imports.
+        const esm = commonJs.replace(/^next\/dist\/(?!compiled\/)/, "next/dist/esm/");
+        const file = nextFile(esm) ?? nextFile(commonJs);
+        if (file) next = toSpecifier(file);
+      }
+      if (next === undefined || next === current) break;
+      current = next;
+    }
+    normalized.set(source, current);
+    return current;
+  }
+
+  function plugin(): Plugin {
+    return {
+      name: `vitest-plugin-rsc:next-resolve:${layer}`,
+      enforce: "pre",
+      async resolveId(source, importer, options) {
+        if (source.startsWith("\0")) return;
+        // The shim wraps the module it replaces.
+        if (importer === `${bridgePrefix}server-reference-info`) {
+          return nextFile(serverReferenceInfo);
+        }
+
+        if (source === nextRouting) {
+          return this.resolve(source, path.join(getProject().root, "package.json"), {
+            ...options,
+            skipSelf: true,
+          });
+        }
+
+        let specifier = source;
+        // Relative imports between Next's own files, and the absolute paths
+        // the dependency optimizer names its entries with.
+        if (source.startsWith(".") && importer) {
+          specifier = path.resolve(path.dirname(importer.split("?")[0]!), source);
+        }
+        if (path.isAbsolute(specifier)) {
+          const relative = path.relative(getProject().nextDir, specifier.split("?")[0]!);
+          if (relative.startsWith("..")) return;
+          specifier = `next/${relative.split(path.sep).join("/")}`;
+        }
+
+        const target = normalize(specifier);
+        if (target === false) return emptyModuleId;
+        if (target.startsWith("\0")) return target;
+        if (target === source) return;
+        // Not found as a file of the `next` package: leave the import alone.
+        if (specifier !== source && target === specifier && !nextFile(target)) return;
+        // A package that Next depends on and the app may not, like
+        // `styled-jsx`: found from Next, as a dependency that Vite pre-bundles.
+        if (isDependencyOfNext(target) && importer && !importer.includes("/node_modules/")) {
+          return this.resolve(source, path.join(getProject().nextDir, "package.json"), {
+            ...options,
+            skipSelf: true,
+          });
+        }
+        // Keep it a bare specifier, so Vite maps it to the pre-bundled dependency.
+        // Next is the project's: a package of the app that imports `react`
+        // can have another `next` closer by, as in a pnpm workspace.
+        const from = target.startsWith("next/")
+          ? path.join(getProject().root, "package.json")
+          : importer;
+        return this.resolve(target, from, { ...options, skipSelf: true });
+      },
+      load(id) {
+        if (id === emptyModuleId) return "export {};";
+        if (!id.startsWith(bridgePrefix)) return;
+        const name = id.slice(bridgePrefix.length);
+        if (name === "server-reference-info") return serverReferenceInfoShim;
+        const nodeModule = nodePlatform.load(name);
+        if (nodeModule) return nodeModule;
+        const { flightExports, version } = getProject();
+        const entry = name.slice("flight-".length) as FlightEntry;
+        return flightBridge(entry, flightExports[entry], version, registry);
+      },
+    };
+  }
+
+  return { normalize, nextFile, toSpecifier, isDependencyOfNext, plugin };
 }
 
-function treatNextInternalsAsServerInRsc(): Plugin {
+type LayerResolver = ReturnType<typeof createLayerResolver>;
+
+// Client Components of Next's own runtime: the layout router, the error
+// boundaries, `next/link`. Vite RSC turns `"use client"` modules into client
+// references while it serves source files, but dependencies are pre-bundled
+// without that step, so do it here. The reference is the module's specifier,
+// which the other two layers load as their own pre-bundled copy. (`/@id/` is
+// how Vite spells a bare specifier where a URL is expected.)
+function nextClientBoundaryPlugin(getProject: () => NextProject, resolver: LayerResolver): Plugin {
   return {
-    name: "next-rsc-server-window-checks",
-    enforce: "pre",
-    applyToEnvironment(environment) {
-      return environment.name === "client";
-    },
-    transform(code, id) {
-      if (!isNextInternalModule(id) || !/\btypeof\s+window\b/.test(code)) return;
+    name: "vitest-plugin-rsc:next-client-boundary",
+    async transform(code, id) {
+      const file = normalizePath(id.split("?")[0]!);
+      // Not `next-themes`, which is next to it in a flat `node_modules`.
+      if (!file.startsWith(`${normalizePath(getProject().nextDir)}/`)) return;
+      if (!code.includes("use client")) return;
 
-      const nextCode = rewriteTypeofWindowChecks(code);
-      if (nextCode === code) return;
-
-      return { code: nextCode, map: null };
+      const specifier = resolver.toSpecifier(file);
+      const result = transformDirectiveProxyExport(await parseAstAsync(code), {
+        directive: "use client",
+        code,
+        runtime: (name) =>
+          `$$ReactServer.registerClientReference(` +
+          `() => { throw new Error(${JSON.stringify(`${specifier}#${name} is a Client Component and cannot be called on the server`)}) }, ` +
+          `${JSON.stringify(`/@id/${specifier}`)}, ${JSON.stringify(name)})`,
+      });
+      if (!result) return;
+      result.output.prepend(
+        `import * as $$ReactServer from ${JSON.stringify(vendoredFlight("server.edge"))};\n`,
+      );
+      return { code: result.output.toString(), map: null };
     },
   };
 }
 
-function isNextInternalModule(id: string) {
-  return (
-    /[/\\]next[/\\]dist[/\\]/.test(id) &&
-    !/[/\\]next[/\\]dist[/\\]compiled[/\\]/.test(id) &&
-    !/[/\\]node_modules[/\\]\.vite[/\\]/.test(id)
-  );
+// Next's compile-time constants for a layer. A server layer gets what makes
+// a module server code on top of these: see server-code.ts.
+function definesOf(project: NextProject, layer: NextLayer): Record<string, string> {
+  // Not NODE_ENV: React stays a development build, for its warnings.
+  const { "process.env.NODE_ENV": _, ...defines } = project.defines[layer];
+  return {
+    ...defines,
+    // Next's ncc-compiled packages only build paths with it that they never
+    // read here.
+    __dirname: '""',
+    ...(layer === "browser" && {
+      // The browser's Flight client loads Client Components in its own
+      // module graph. (Vite RSC points this at one global, for a server
+      // and a browser that do not share a tab.)
+      __webpack_require__: `${registry}.browserRequire`,
+      // Makes Next's root component report that it has hydrated.
+      "process.env.__NEXT_TEST_MODE": "true",
+    }),
+  };
 }
 
-function rewriteTypeofWindowChecks(code: string) {
-  return code.replace(/\btypeof\s+window\b(?!\s*[.[\]])/g, '"undefined"');
-}
-
-export function vitestPluginNext(): Plugin[] {
+function findImports(code: string): string[] {
   return [
-    useVitestServerReferenceInfo(),
-    treatNextInternalsAsServerInRsc(),
-    appRouterApiPlugin("client", true),
-    appRouterApiPlugin("react_client", false),
+    ...code.matchAll(
+      /(?:\bfrom\s*|\bimport\s*\(?\s*|\brequire\s*\(\s*)(?:\/\*.*?\*\/\s*)?["']([^"'?!]+)["']/g,
+    ),
+  ].map((match) => match[1]!);
+}
+
+// Follows the imports of Next's rsc-layer runtime up to each `"use client"`
+// module: the modules a Flight payload can refer to. The other two layers
+// pre-bundle them up front, or Vite would discover them mid-test and reload
+// the page. This is what Next's client entry plugin does for its own bundles.
+function findClientBoundaries(resolver: LayerResolver, roots: string[]): string[] {
+  const boundaries = new Set<string>();
+  const seen = new Set<string>();
+  const queue = [...roots];
+
+  for (const specifier of queue) {
+    if (seen.has(specifier) || !specifier.startsWith("next/dist/esm/")) continue;
+    seen.add(specifier);
+    const file = resolver.nextFile(specifier);
+    if (!file) continue;
+    const code = fs.readFileSync(file, "utf8");
+    if (code.includes("use client") && hasDirective(parseAst(code).body, "use client")) {
+      boundaries.add(specifier);
+      continue;
+    }
+    for (const source of findImports(code)) {
+      const target = resolver.normalize(
+        source.startsWith(".")
+          ? resolver.toSpecifier(path.resolve(path.dirname(file), source))
+          : source,
+      );
+      if (target) queue.push(target);
+    }
+  }
+  return [...boundaries];
+}
+
+// What the runtime modules of this package, and the modules Vite and Vite RSC
+// generate, import from Next and from React, per layer.
+const react = ["react", "react/jsx-runtime", "react/jsx-dev-runtime", "react/compiler-runtime"];
+const runtimeImports: Record<NextLayer, string[]> = {
+  rsc: [
+    ...react,
+    "react-dom",
+    "next/dist/compiled/buffer",
+    "next/dist/server/route-kind",
+    vendoredFlight("server.edge"),
+    vendoredFlight("static.edge"),
+    vendoredFlight("client.edge"),
+  ],
+  ssr: [
+    ...react,
+    "react-dom",
+    "next/dist/server/route-modules/app-page/module",
+    "next/dist/server/lib/incremental-cache",
+    "next/dist/server/lib/incremental-cache/tags-manifest.external",
+    // ssr.ts, for the server in front of the app
+    "next/dist/client/components/app-router-headers",
+    "next/dist/server/lib/is-rsc-request",
+    "next/dist/shared/lib/router/utils/route-matcher",
+    "next/dist/shared/lib/router/utils/route-regex",
+    // node-server.ts
+    "next/dist/server/lib/mock-request",
+    // node-server.ts and ssr.ts
+    "next/dist/server/web/utils",
+    "next/dist/compiled/stream-browserify",
+    vendoredFlight("client.edge"),
+  ],
+  browser: [
+    ...react,
+    "react-dom",
+    "react-dom/client",
+    "next/dist/client/app-bootstrap",
+    "next/dist/client/app-call-server",
+    "next/dist/client/app-index",
+    vendoredFlight("client.browser"),
+  ],
+};
+
+export type VitestPluginNextOptions = ServerCodeOptions & {
+  /**
+   * Lets watch mode, `vitest --changed` and `vitest related` find the test
+   * files of a route: a test that opens a route does not import its files.
+   * Off unless set. It leans on how Vitest works inside, so an update of
+   * Vitest can break it: see docs/next-routes.md, "Watch Mode".
+   *
+   * Without it an edit in watch mode runs every test file that opens a route,
+   * and `--changed` does not find the test files of a route.
+   */
+  affectedTests?: boolean;
+};
+
+export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[] {
+  let project: NextProject;
+  const serverCode = createServerCode(registry, options);
+  const getProject = () => project;
+  const resolvers = Object.fromEntries(
+    layers.map((layer) => [layer, createLayerResolver(getProject, layer)]),
+  ) as Record<NextLayer, LayerResolver>;
+
+  return [
+    ...createRunnerEnvironmentPlugins(environmentOf.ssr),
+    createPathsPlugin(getProject),
+    // Watch mode and `vitest --changed` find the test files of a route. On
+    // its own: nothing else here knows of it.
+    ...(options.affectedTests
+      ? [
+          affectedTests({
+            environments: layers.map((layer) => environmentOf[layer]),
+            lists: routeKinds.map((kind) => `\0${routeLists[kind]}`),
+            modulesOf: (kind, entry) =>
+              [...project.routes, ...project.componentRoutes].flatMap((route, index) =>
+                route.kind === kind && entryOf(route) === entry
+                  ? [`\0${routeEntryPrefix}${index}`]
+                  : [],
+              ),
+            next: getProject,
+          }),
+        ]
+      : []),
     {
-      name: "next-rsc-plugin",
-      config(config) {
-        const root = getProjectRoot(config);
-        const edgeNativeAliases = createNextEdgeNativeAliases(root);
-        const rscAppRouterAliases = createAppRouterApiAliasesFromNext(root, true);
-        const reactClientAppRouterAliases = createAppRouterApiAliasesFromNext(root, false);
-        const reactServerDomWebpackAliases = createReactServerDomWebpackAliases(root);
-        const versionDependentNextModules = resolveVersionDependentNextModules(root);
+      name: "vitest-plugin-rsc:next",
+      enforce: "pre",
+      async config(config) {
+        project = await loadNextProject(path.resolve(config.root ?? process.cwd()));
+        serverCode.configure(project.root);
+
+        // What the route entries import from Next, to pre-bundle it. Every
+        // route is read: which of Next's builtin boundaries a loader tree
+        // imports depends on what the app leaves out. And one route of a
+        // node, for Next's own global error page, which an app with one of
+        // its own does not import.
+        const appPageEntries = await Promise.all(
+          [...project.routes, ...project.componentRoutes.slice(0, 1)].map((candidate) =>
+            project.loadRouteEntry(candidate),
+          ),
+        );
+        const entryImports = [
+          ...appPageEntries.flatMap(({ code }) => findImports(code)),
+          ...findImports((await project.loadMiddlewareEntry()) ?? ""),
+        ];
+        // `next/og` renders images with wasm: not something to pre-bundle for
+        // every project.
+        const apiImports = (layer: NextLayer) =>
+          Object.entries(project.aliases[layer]).flatMap(([file, target]) =>
+            path.dirname(file) === project.nextDir && target && !file.endsWith("og.js")
+              ? [target]
+              : [],
+          );
+        const toInclude = (layer: NextLayer, sources: string[]) => [
+          ...new Set(
+            sources.flatMap((source) => {
+              const target = resolvers[layer].normalize(source);
+              return target && target.startsWith("next/dist/") ? [target] : [];
+            }),
+          ),
+        ];
+
+        const rscInclude = toInclude("rsc", [
+          ...entryImports,
+          ...apiImports("rsc"),
+          ...runtimeImports.rsc,
+        ]);
+        const clientBoundaries = findClientBoundaries(resolvers.rsc, rscInclude);
+        const include: Record<NextLayer, string[]> = {
+          rsc: rscInclude,
+          ssr: [
+            ...toInclude("ssr", [...apiImports("ssr"), ...runtimeImports.ssr, ...clientBoundaries]),
+            nextRouting,
+          ],
+          browser: toInclude("browser", [
+            ...apiImports("browser"),
+            ...runtimeImports.browser,
+            ...clientBoundaries,
+          ]),
+        };
+
+        // What Next's compiler makes app code import, like `styled-jsx/style`
+        // for a `<style jsx>`: not an import the dependency scan finds.
+        const dependenciesOfNext = (layer: NextLayer) =>
+          Object.entries(project.aliases[layer]).flatMap(([key, target]) =>
+            key.endsWith("$") && target && resolvers[layer].isDependencyOfNext(target)
+              ? [`next > ${key.slice(0, -1)}`]
+              : [],
+          );
+
+        const appEntries = normalizePath(path.join(project.appDir, "**/*.{js,jsx,ts,tsx}"));
+        const optimizeDeps = (layer: NextLayer) => ({
+          include: [...include[layer], ...dependenciesOfNext(layer)],
+          rolldownOptions: {
+            plugins: [
+              resolvers[layer].plugin(),
+              createDependencyCompilePlugin(getProject, layer),
+              ...(layer === "rsc" ? [nextClientBoundaryPlugin(getProject, resolvers.rsc)] : []),
+              ...(layer === "browser" ? [] : [serverCode.optimizerPlugin(layer)]),
+            ],
+            // A package can import what only another layer's build of a module
+            // has, like `useRouter` of `next/navigation` in the rsc layer (the
+            // notes demo). webpack leaves such an import undefined.
+            shimMissingExports: true,
+            // Next takes JSX in a `.js` file, so the dependency scan of the
+            // app has to as well.
+            moduleTypes: { ".js": "jsx" as const },
+            // Vite does not apply `define` to dependencies. NODE_ENV is all
+            // it defines for them, as the "test" of Vitest. Not in the rsc
+            // layer: there Vitest keeps `process.env`, so it is read as the
+            // code runs.
+            transform: {
+              define: {
+                ...definesOf(project, layer),
+                ...(layer !== "browser" && serverCode.cacheKey),
+              },
+            },
+          },
+        });
+
+        // Before the project's own setup files: one that imports a module of
+        // Next's server needs the server's platform to be there.
+        const test = ((config as { test?: { setupFiles?: string | string[] } }).test ??= {});
+        test.setupFiles = [setupFile, ...[test.setupFiles ?? []].flat()];
 
         return {
-          define: {
-            "process.env": JSON.stringify({ NEXT_RUNTIME: "edge" }),
-            __dirname: JSON.stringify(null),
-          },
-          resolve: {
-            alias: [
-              ...edgeNativeAliases,
-              {
-                find: "@vercel/turbopack-ecmascript-runtime/browser/dev/hmr-client/hmr-client.ts",
-                replacement: "next/dist/client/dev/noop-turbopack-hmr",
-              },
-            ],
-          },
           environments: {
-            client: {
-              resolve: {
-                conditions: ["edge-light", "react-server"],
-                alias: [
-                  {
-                    find: "react-server-dom-webpack/client",
-                    replacement: reactServerDomWebpackAliases.edge,
-                  },
-                ],
-              },
+            [environmentOf.rsc]: {
               optimizeDeps: {
-                include: [
-                  "next/dist/compiled/@opentelemetry/api",
-                  "next/cache",
-                  "next/headers",
-                  "next/dist/compiled/@edge-runtime/cookies/index.js",
-                  "next/dist/server/node-environment-baseline.js",
-                  "next/dist/server/app-render/action-async-storage.external.js",
-                  "next/dist/server/app-render/async-local-storage.js",
-                  "next/dist/server/app-render/work-async-storage.external.js",
-                  "next/dist/server/app-render/work-unit-async-storage.external.js",
-                  "next/dist/server/async-storage/request-store.js",
-                  "next/dist/server/async-storage/work-store.js",
-                  "next/dist/server/config-shared.js",
-                  "next/dist/server/lib/implicit-tags.js",
-                  "next/dist/server/lib/incremental-cache/index.js",
-                  "next/dist/server/lib/incremental-cache/file-system-cache.js",
-                  "next/dist/server/lib/incremental-cache/memory-cache.external.js",
-                  "next/dist/server/lib/incremental-cache/tags-manifest.external.js",
-                  "next/dist/server/lib/patch-fetch.js",
-                  "next/dist/server/revalidation-utils.js",
-                  "next/dist/client/components/is-next-router-error.js",
-                  "next/dist/client/app-dir/link.react-server",
-                  "next/dist/client/app-dir/link.react-server.js",
-                  "next/dist/server/request/cookies.js",
-                  "next/dist/server/request/draft-mode.js",
-                  "next/dist/server/request/headers.js",
-                  "next/dist/server/web/spec-extension/adapters/headers.js",
-                  "next/dist/server/web/spec-extension/adapters/request-cookies.js",
-                  "next/dist/shared/lib/server-inserted-html.shared-runtime.js",
-                  "node:buffer",
-                  "vitest-plugin-rsc/async-local-storage",
-                  "next/dist/client/app-call-server.js",
-                  "next/dist/client/route-params.js",
-                  "next/dist/client/components/app-router.js",
-                  "next/dist/client/app-dir/link",
-                  "next/dist/client/app-dir/link.js",
-                  "next/dist/client/components/navigation",
-                  "next/dist/client/components/navigation.react-server",
-                  "next/dist/client/components/app-router-instance.js",
-                  "next/dist/client/components/navigation.js",
-                  "next/dist/client/components/navigation.react-server.js",
-                  "next/dist/client/components/redirect-boundary.js",
-                  "next/dist/client/components/router-reducer/compute-changed-path.js",
-                  "next/dist/client/components/router-reducer/create-href-from-url.js",
-                  "next/dist/client/components/router-reducer/create-initial-router-state.js",
-                  "next/dist/client/components/router-reducer/router-reducer.js",
-                  "next/dist/client/components/router-reducer/router-reducer-types.js",
-                  "next/dist/client/components/router-reducer/reducers/server-action-reducer.js",
-                  "next/dist/client/components/unresolved-thenable.js",
-                  "next/dist/shared/lib/server-reference-info.js",
-                  "next/dist/client/components/app-router-headers.js",
-                  "next/dist/client/components/http-access-fallback/http-access-fallback.js",
-                  "next/dist/client/components/redirect-error.js",
-                  "next/dist/client/components/redirect-status-code.js",
-                  "next/dist/client/components/redirect.js",
-                  "next/dist/client/flight-data-helpers.js",
-                  "next/dist/server/lib/server-action-request-meta.js",
-                  "next/dist/client/components/use-action-queue.js",
-                  ...versionDependentNextModules,
-                  "next/dist/server/app-render/get-short-dynamic-param-type.js",
-                  "next/dist/server/app-render/parse-and-validate-flight-router-state.js",
-                  "next/dist/server/request/draft-mode.js",
-                  "next/dist/shared/lib/segment.js",
-                  "next/dist/shared/lib/is-thenable.js",
-                  "next/dist/shared/lib/router/utils/get-dynamic-param.js",
-                  "next/dist/shared/lib/router/utils/get-segment-param.js",
-                  "next/dist/shared/lib/app-router-context.shared-runtime.js",
-                  "next/dist/shared/lib/hooks-client-context.shared-runtime.js",
-                  "next/dist/shared/lib/server-inserted-html.shared-runtime.js",
-                ],
-                needsInterop: ["next/cache"],
-                rolldownOptions: {
-                  plugins: [
-                    useVitestServerReferenceInfo(root),
-                    treatNextInternalsAsServerInRsc(),
-                    useNextCompiledOpenTelemetryApi(root),
-                  ],
-                  resolve: {
-                    alias: {
-                      ...createOptimizeDepsResolveAliases(edgeNativeAliases, rscAppRouterAliases),
-                      "react-server-dom-webpack/client": reactServerDomWebpackAliases.edge,
-                    },
-                  },
-                },
+                ...optimizeDeps("rsc"),
+                // A route loads when it is first requested. Scan the app up
+                // front, or Vite finds the dependencies of a page mid-test
+                // and reloads the tab.
+                entries: [appEntries],
               },
             },
-            react_client: {
+            [environmentOf.ssr]: {
+              consumer: "client",
               resolve: {
-                conditions: ["edge-light", "browser"],
-                alias: [
-                  {
-                    find: "react-server-dom-webpack/client",
-                    replacement: reactServerDomWebpackAliases.browser,
-                  },
-                  {
-                    find: "react-server-dom-webpack/client.browser",
-                    replacement: reactServerDomWebpackAliases.browser,
-                  },
+                // Vite's conditions for a browser, which this is.
+                conditions: [
+                  ...(config.resolve?.conditions ?? []).filter(
+                    (condition) => condition === "vitest-plugin-rsc-source",
+                  ),
+                  "module",
+                  "browser",
+                  "development|production",
                 ],
               },
+              dev: { moduleRunnerTransform: true },
               optimizeDeps: {
-                include: [
-                  "node:buffer",
-                  "vitest-plugin-rsc/async-local-storage",
-                  // nextjs/client.tsx mocks navigation with @vitest/spy. The plugin
-                  // itself is excluded, so pre-bundle its dependency up front
-                  // instead of discovering it (and reloading) mid-run.
-                  "vitest-plugin-rsc > @vitest/spy",
-                  "next/dist/client/app-call-server.js",
-                  "next/dist/client/route-params.js",
-                  "next/dist/client/components/app-router.js",
-                  "next/dist/client/app-dir/link",
-                  "next/dist/client/app-dir/link.js",
-                  "next/dist/client/components/navigation",
-                  "next/dist/client/components/navigation.react-server",
-                  "next/dist/client/components/app-router-instance.js",
-                  "next/dist/client/components/navigation.js",
-                  "next/dist/client/components/navigation.react-server.js",
-                  "next/dist/client/components/redirect-boundary.js",
-                  "next/dist/client/components/router-reducer/compute-changed-path.js",
-                  "next/dist/client/components/router-reducer/create-href-from-url.js",
-                  "next/dist/client/components/router-reducer/create-initial-router-state.js",
-                  "next/dist/client/components/router-reducer/router-reducer.js",
-                  "next/dist/client/components/router-reducer/router-reducer-types.js",
-                  "next/dist/client/components/router-reducer/reducers/server-action-reducer.js",
-                  "next/dist/client/components/unresolved-thenable.js",
-                  "next/dist/shared/lib/server-reference-info.js",
-                  "next/dist/client/components/app-router-headers.js",
-                  "next/dist/client/components/http-access-fallback/http-access-fallback.js",
-                  "next/dist/client/components/redirect-error.js",
-                  "next/dist/client/components/redirect-status-code.js",
-                  "next/dist/client/components/redirect.js",
-                  "next/dist/client/flight-data-helpers.js",
-                  "next/dist/server/lib/server-action-request-meta.js",
-                  "next/dist/client/components/use-action-queue.js",
-                  ...versionDependentNextModules,
-                  "next/dist/server/app-render/get-short-dynamic-param-type.js",
-                  "next/dist/server/app-render/parse-and-validate-flight-router-state.js",
-                  "next/dist/shared/lib/segment.js",
-                  "next/dist/shared/lib/is-thenable.js",
-                  "next/dist/shared/lib/router/utils/get-dynamic-param.js",
-                  "next/dist/shared/lib/router/utils/get-segment-param.js",
-                  "next/dist/shared/lib/app-router-context.shared-runtime.js",
-                  "next/dist/shared/lib/hooks-client-context.shared-runtime.js",
-                  "next/dist/shared/lib/server-inserted-html.shared-runtime.js",
-                ],
-                rolldownOptions: {
-                  plugins: [
-                    useVitestServerReferenceInfo(root),
-                    useNextCompiledOpenTelemetryApi(root),
-                  ],
-                  resolve: {
-                    alias: {
-                      ...createOptimizeDepsResolveAliases(
-                        edgeNativeAliases,
-                        reactClientAppRouterAliases,
-                      ),
-                      "react-server-dom-webpack/client": reactServerDomWebpackAliases.browser,
-                      "react-server-dom-webpack/client.browser":
-                        reactServerDomWebpackAliases.browser,
-                    },
-                  },
-                },
+                ...optimizeDeps("ssr"),
+                // The Client Components it renders are the app's.
+                entries: [appEntries],
+                exclude: ["vitest-plugin-rsc", "@vitejs/plugin-rsc"],
               },
             },
+            [environmentOf.browser]: { optimizeDeps: optimizeDeps("browser") },
           },
         };
       },
+      // What the app has and does not get here: said once, when a run starts.
+      configResolved(config) {
+        if (project.edgeRouteFiles.length > 0) {
+          config.logger.warnOnce(
+            `vitest-plugin-rsc: Next.js has deprecated its edge runtime. These routes ask for ` +
+              `it with \`export const runtime = "edge"\` and run on Node.js here, like the ` +
+              `others: ${project.edgeRouteFiles.join(", ")}`,
+          );
+        }
+        if (project.unmatchedRoutes.length > 0) {
+          config.logger.warnOnce(
+            `vitest-plugin-rsc: @next/routing does not find a dynamic route under a folder with ` +
+              `a name that a URL percent-encodes. These routes get the not-found page: ` +
+              project.unmatchedRoutes.join(", "),
+          );
+        }
+        // An app with metadata files still runs, as it would without them.
+        // Not `favicon.ico`, which only adds a `<link rel="icon">`, and which
+        // every new app has.
+        const files = project.metadataFiles.filter((file) => path.basename(file) !== "favicon.ico");
+        if (files.length === 0) return;
+        const app = path.relative(process.cwd(), project.root) || path.basename(project.root);
+        config.logger.warnOnce(
+          `vitest-plugin-rsc: Next.js metadata files are not supported yet. The pages of ` +
+            `${app} leave them out, and their routes are not served: ${files.join(", ")}`,
+        );
+      },
+      // Vitest's hook for a plugin of a project: what its config says is a
+      // test file or a setup file is not server code.
+      configureVitest({ project: testProject }: { project: TestProject }) {
+        const test = testProject.config;
+        const setupFiles = new Set(test.setupFiles.map((file) => normalizePath(file)));
+        // `test.include`, matched the way Vitest does. Not `includeSource`:
+        // a file with tests in its source is a file of the app.
+        const isIncluded = createFilter(test.include, test.exclude, {
+          resolve: test.dir || test.root,
+        });
+        serverCode.addTestFiles((file) => setupFiles.has(file) || isIncluded(file));
+      },
+      resolveId(source) {
+        if (source === manifestId || isRouteModule(source)) return `\0${source}`;
+        if (source === middlewareId || source === middlewareEntryId) return `\0${source}`;
+        // TODO: run Next's metadata loaders for these inline loader requests.
+        // Until then a page has no metadata from files: see configResolved.
+        if (/^next-metadata-(image|route)-loader\?/.test(source)) return `${bridgePrefix}metadata`;
+      },
+      async load(id) {
+        if (id === `${bridgePrefix}metadata`) {
+          return `export default async function metadata() { return []; }`;
+        }
+
+        if (id === `\0${manifestId}`) {
+          const routes = project.routes.map(({ kind, page, pathname }) => ({
+            kind,
+            page,
+            pathname,
+          }));
+          return (
+            `export const routes = ${JSON.stringify([...routes, ...project.componentRoutes])};\n` +
+            `export const nextConfig = ${JSON.stringify(project.config)};\n` +
+            `export const routing = ${JSON.stringify(project.routing)};\n` +
+            `export const routesManifest = ${JSON.stringify(project.routesManifest)};\n` +
+            `export const preview = ${JSON.stringify(project.preview)};\n`
+          );
+        }
+
+        // Only the rsc layer has the middleware: see the route modules below.
+        const hasMiddleware =
+          project.middlewareFile !== undefined && this.environment.name === environmentOf.rsc;
+        if (id === `\0${middlewareId}`) {
+          const load = `() => import(${JSON.stringify(middlewareEntryId)})`;
+          return `export default ${hasMiddleware ? load : "undefined"};\n`;
+        }
+        if (id === `\0${middlewareEntryId}`) {
+          const code = hasMiddleware && (await project.loadMiddlewareEntry());
+          if (!code) return "export {};";
+          return serverCode.compile(code, "next-middleware-entry.js", definesOf(project, "rsc"));
+        }
+
+        if (!id.startsWith("\0") || !isRouteModule(id.slice(1))) return;
+        // Vite's dependency scan follows the test's imports in every
+        // environment, also into the modules of another layer.
+        if (this.environment.name !== environmentOf.rsc) return "export default {};";
+        const routes = [...project.routes, ...project.componentRoutes];
+
+        const listed = routeKinds.find((kind) => id === `\0${routeLists[kind]}`);
+        if (listed) {
+          const entries = routes.flatMap((route, index) =>
+            route.kind === listed
+              ? [
+                  `  ${JSON.stringify(entryOf(route))}: ` +
+                    `() => import(${JSON.stringify(routeEntryPrefix + index)}),`,
+                ]
+              : [],
+          );
+          return `export default {\n${entries.join("\n")}\n};\n`;
+        }
+
+        const route = routes[Number(id.slice(routeEntryPrefix.length + 1))]!;
+        const entry = await project.loadRouteEntry(route);
+        for (const file of entry.watchFiles) this.addWatchFile(file);
+        // A generated module: Vite only replaces `define` keys in pre-bundled
+        // dependencies.
+        return serverCode.compile(
+          entry.code,
+          `${id.replace(/\W+/g, "-")}.js`,
+          definesOf(project, "rsc"),
+        );
+      },
     },
-    provideBufferLikeNextWebpack(),
+    serverCode.plugin({ [environmentOf.rsc]: "rsc", [environmentOf.ssr]: "ssr" }),
+    createCompilePlugin(
+      getProject,
+      (environment) => layers.find((layer) => environmentOf[layer] === environment),
+      serverCode.isAppCode,
+    ),
+    ...layers.map((layer) => ({
+      ...resolvers[layer].plugin(),
+      applyToEnvironment: (environment: { name: string }) =>
+        environment.name === environmentOf[layer],
+    })),
   ];
 }

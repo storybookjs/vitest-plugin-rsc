@@ -1,7 +1,11 @@
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 import { page } from "vitest/browser";
 import { cleanup, renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
 import { NextCacheProbe, resetNextCacheProbe } from "./next-cache-probe.tsx";
+
+// Next's Data Cache, seen through a probe that renders on its own:
+// `unstable_cache`, cached and uncached `fetch`, and what invalidates them.
+// The service the probe fetches from is MSW, which vitest.setup.ts starts.
 
 test("server refresh rerenders without invalidating cached data or fetches", async () => {
   await renderNextCacheProbe();
@@ -38,18 +42,17 @@ test("no-store fetches bypass the persistent Next fetch cache", async () => {
 
   await expect.element(page.getByText("render: 1")).toBeVisible();
   await expect.element(page.getByText("no-store fetch: default no-store fetch 1")).toBeVisible();
+  // The same request twice in one render is one request: Next sends it once.
   await expect
-    .element(page.getByText(/^no-store fetch duplicate: default no-store fetch [12]$/))
+    .element(page.getByText("no-store fetch duplicate: default no-store fetch 1"))
     .toBeVisible();
 
   await page.getByRole("button", { name: "Refresh", exact: true }).click();
 
   await expect.element(page.getByText("render: 2")).toBeVisible();
+  await expect.element(page.getByText("no-store fetch: default no-store fetch 2")).toBeVisible();
   await expect
-    .element(page.getByText(/^no-store fetch: default no-store fetch [23]$/))
-    .toBeVisible();
-  await expect
-    .element(page.getByText(/^no-store fetch duplicate: default no-store fetch [24]$/))
+    .element(page.getByText("no-store fetch duplicate: default no-store fetch 2"))
     .toBeVisible();
 });
 
@@ -63,6 +66,13 @@ test("server actions without refresh or invalidation do not rerender the current
 
   await expect.element(page.getByText("render: 1")).toBeVisible();
   await expect.element(page.getByText("action writes: 0")).toBeVisible();
+
+  // The page still shows this when the action has not run yet. Next runs
+  // actions in order, so after a refresh the first one has run, and the page
+  // shows that it rendered once more, not twice.
+  await page.getByRole("button", { name: "Refresh", exact: true }).click();
+  await expect.element(page.getByText("action writes: 1")).toBeVisible();
+  await expect.element(page.getByText("render: 2")).toBeVisible();
 });
 
 test("refresh renders uncached action writes while preserving cached reads", async () => {
@@ -125,10 +135,24 @@ test("revalidateTag with max updates cache metadata without rendering immediatel
 
   await expect.element(page.getByText("render: 1")).toBeVisible();
   await expect.element(page.getByText("cached data: default data 1")).toBeVisible();
+  // The setup file stops the clock. Move it, so the tag is revalidated after
+  // the data was cached and not at the same millisecond.
+  vi.setSystemTime(Date.now() + 1000);
   await page.getByRole("button", { name: "Revalidate data tag" }).click();
 
   await expect.element(page.getByText("render: 1")).toBeVisible();
   await expect.element(page.getByText("cached data: default data 1")).toBeVisible();
+  await expect.element(page.getByText("cached fetch: default fetch 1")).toBeVisible();
+
+  // The page still shows this when the action has not run yet. The render
+  // after it gets the stale data and makes Next compute it again, for the
+  // render after that.
+  await page.getByRole("button", { name: "Refresh", exact: true }).click();
+  await expect.element(page.getByText("render: 2")).toBeVisible();
+  await expect.element(page.getByText("cached data: default data 1")).toBeVisible();
+  await page.getByRole("button", { name: "Refresh", exact: true }).click();
+  await expect.element(page.getByText("render: 3")).toBeVisible();
+  await expect.element(page.getByText("cached data: default data 2")).toBeVisible();
   await expect.element(page.getByText("cached fetch: default fetch 1")).toBeVisible();
 });
 
@@ -180,7 +204,7 @@ test("Next cache state is reset by cleanup", async () => {
 
 async function renderNextCacheProbe(label?: string) {
   resetNextCacheProbe(label);
-  await renderServer(<NextCacheProbe />, { url: "/next-cache-probe" });
+  await renderServer(<NextCacheProbe />);
 }
 
 function waitPastCacheTimestamp() {

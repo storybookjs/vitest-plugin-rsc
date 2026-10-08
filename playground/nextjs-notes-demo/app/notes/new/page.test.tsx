@@ -1,12 +1,11 @@
 import { expect, test } from "vitest";
 import { page } from "vitest/browser";
 import { signInAs } from "#test/auth.ts";
-import { renderServer } from "#test/render.tsx";
-import NewNotePage from "./page.tsx";
+import { renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
 
 test("renders the new note form with empty fields", async () => {
   await signInAs();
-  await renderServer(<NewNotePage />, { url: "/notes/new" });
+  await renderServer({ url: "/notes/new" });
 
   await expect
     .element(page.getByRole("heading", { level: 1, name: "New note" }))
@@ -22,7 +21,7 @@ test("renders the new note form with empty fields", async () => {
 
 test("renders server validation errors and keeps old input", async () => {
   await signInAs();
-  await renderServer(<NewNotePage />, { url: "/notes/new" });
+  await renderServer({ url: "/notes/new" });
 
   await page.getByLabelText("Content").fill("Keep this body");
   await page.getByRole("button", { name: "Create note" }).click();

@@ -1,0 +1,12 @@
+diff --git a/dist/client/__vitest_browser__/tester-C2LTsndn.js b/dist/client/__vitest_browser__/tester-C2LTsndn.js
+index 54aeba9a4b8e65e95bbc2267427a91118eabc197..ae0840886e9d19fd57b7a253da61b22e0581f9d4 100644
+--- a/dist/client/__vitest_browser__/tester-C2LTsndn.js
++++ b/dist/client/__vitest_browser__/tester-C2LTsndn.js
+@@ -1001,6 +1001,7 @@ function createBrowserRunner(mocker, state, coverageModule) {
+ 				const trace = this.config.browser.trace;
+ 				if (mode === "collect" && trace !== "off") await this.commands.triggerCommand("__vitest_startTracing", []);
+ 				try {
++					await mocker.prepare();
+ 					await __vitePreload(() => import(
+ 						/* @vite-ignore */
+ 						importpath

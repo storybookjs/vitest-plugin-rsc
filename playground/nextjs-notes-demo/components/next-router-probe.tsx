@@ -1,22 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import {
-  useParams,
-  usePathname,
-  useRouter,
-  useSearchParams,
-  useSelectedLayoutSegment,
-  useSelectedLayoutSegments,
-} from "next/navigation";
+import { useParams, usePathname, useRouter, useSearchParams } from "next/navigation";
 
 export function NextRouterProbe() {
   const params = useParams();
   const pathname = usePathname();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const selectedSegment = useSelectedLayoutSegment();
-  const selectedSegments = useSelectedLayoutSegments();
 
   return (
     <section>
@@ -25,15 +16,13 @@ export function NextRouterProbe() {
       <p>search q all: {searchParams.getAll("q").join(",")}</p>
       <p>search has missing: {String(searchParams.has("missing"))}</p>
       <p>params: {JSON.stringify(params)}</p>
-      <p>selected segment: {selectedSegment ?? "null"}</p>
-      <p>selected segments: {selectedSegments.join(",") || "empty"}</p>
-      <button type="button" onClick={() => router.push("/note/next")}>
-        Push route
+      <button type="button" onClick={() => router.push(`${pathname}?q=pushed`)}>
+        Push search
       </button>
-      <button type="button" onClick={() => router.replace("/note/replaced")}>
-        Replace route
+      <button type="button" onClick={() => router.replace(`${pathname}?q=replaced`)}>
+        Replace search
       </button>
-      <Link href={{ pathname: "/note/link", query: { q: "linked" } }} prefetch={false}>
+      <Link href={{ pathname: "/auth/sign-in", query: { q: "linked" } }} prefetch={false}>
         Link route
       </Link>
     </section>
