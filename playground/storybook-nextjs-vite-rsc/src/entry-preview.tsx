@@ -30,6 +30,8 @@ type StoryContext = {
   originalStoryFn: unknown;
   /** What the story file exports for the story. */
   moduleExport: unknown;
+  /** Aborted when Storybook leaves the story while it renders. */
+  abortSignal: AbortSignal;
 };
 
 type RenderContext = {
@@ -91,16 +93,52 @@ function projectDecorators(context: StoryContext) {
   };
 }
 
+// Storybook aborts the render of a story that is left while it renders, and
+// then waits a few tasks for the render to stop before it tears the story
+// down. A render that has not stopped by then gets a reload of the preview,
+// and Storybook waits for the reload. The URL of the preview is the page's by
+// then, so the plugin loads the app's page at that URL instead, and the
+// preview stops there. A page load takes longer than those few tasks, so the
+// render stops as soon as it is aborted, and the teardown leaves the page
+// that may still be loading.
+const abortOf = (signal: AbortSignal) =>
+  new Promise<void>((resolve) => {
+    if (signal.aborted) resolve();
+    else signal.addEventListener("abort", () => resolve(), { once: true });
+  });
+
 export async function renderToCanvas(
-  { storyContext, storyFn, showMain }: RenderContext,
+  context: RenderContext,
   canvasElement: HTMLElement,
 ): Promise<() => Promise<void>> {
+  const rendering = renderStory(context, canvasElement);
+  // Nobody waits for a render that was aborted: it fails once the page it
+  // loads is left.
+  rendering.catch(() => {});
+  await Promise.race([rendering, abortOf(context.storyContext.abortSignal)]);
+  return async () => {
+    await cleanup();
+    // Storybook names the story in the query of the iframe's URL, also while
+    // the page of a story was there.
+    if (window.location.pathname !== previewPath) {
+      window.history.replaceState(null, "", previewPath + window.location.search);
+    }
+  };
+}
+
+async function renderStory(
+  { storyContext, storyFn, showMain }: RenderContext,
+  canvasElement: HTMLElement,
+): Promise<void> {
   const { url, headers, layouts } = storyContext.parameters.nextjs ?? {};
   const isPage = !storyContext.component && storyContext.originalStoryFn === render;
   // The story file of a client story, and the story in it.
   const file = isPage ? undefined : clientFileOf(storyContext.moduleExport);
+  // Set once Storybook has left the story.
+  const { abortSignal: signal } = storyContext;
   // A story before this one that was not torn down, and what it left.
   await cleanup();
+  if (signal.aborted) return;
   // A page has the `<body>` of the document, which React hydrates. Storybook
   // sets its classes on the body when it shows a story, so that comes first:
   // in between, React would find a class the server did not render.
@@ -114,6 +152,7 @@ export async function renderToCanvas(
     // The context is passed as it is, not through Flight: a spy in the args
     // is the one the play function asserts on.
     const { module, name } = await loadClientStory();
+    if (signal.aborted) return;
     const story = clientNode(module, name, {
       file: file.module,
       name: file.name,
@@ -131,13 +170,5 @@ export async function renderToCanvas(
     const Story = () => storyFn();
     await renderServer(<Story />, { url, headers, ...where });
   }
-  if (!ownsDocument) showMain();
-  return async () => {
-    await cleanup();
-    // Storybook names the story in the query of the iframe's URL, also while
-    // the page of a story was there.
-    if (window.location.pathname !== previewPath) {
-      window.history.replaceState(null, "", previewPath + window.location.search);
-    }
-  };
+  if (!ownsDocument && !signal.aborted) showMain();
 }

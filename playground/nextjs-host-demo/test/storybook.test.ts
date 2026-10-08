@@ -38,6 +38,20 @@ async function select(canvas: Frame, story: string): Promise<void> {
   }, story);
 }
 
+// Another story, selected while the story that is there is still rendering:
+// before its page has loaded.
+async function selectWhileRendering(canvas: Frame, story: string): Promise<void> {
+  type Preview = { channel: Channel; currentRender?: { phase?: string } };
+  await canvas.waitForFunction(
+    () =>
+      (window as unknown as { __STORYBOOK_PREVIEW__?: Preview }).__STORYBOOK_PREVIEW__
+        ?.currentRender?.phase === "rendering",
+    undefined,
+    { polling: 1 },
+  );
+  await select(canvas, story);
+}
+
 // What the Actions panel has logged, by the name of the action.
 async function actions(page: Page, name: string): Promise<number> {
   await page.getByRole("tab", { name: /Actions/ }).click();
@@ -135,6 +149,17 @@ const checks: Record<string, Check> = {
     await canvas.getByRole("button", { name: "Press at /notes/7: 2" }).waitFor();
     await select(canvas, "server-greeting--other-name");
     await canvas.getByRole("heading", { name: "Hello from a story with other args" }).waitFor();
+  },
+  // A story that is selected while the one before it is still rendering
+  // takes its place, and the preview goes on with the next one.
+  async "to another story while one renders"(page, site) {
+    const canvas = await open(page, site, "server-greeting--default");
+    await selectWhileRendering(canvas, "client-button--counting");
+    await canvas.getByRole("button", { name: "Press at /notes/7: 2" }).waitFor();
+    await select(canvas, "server-greeting--other-name");
+    await canvas.getByRole("heading", { name: "Hello from a story with other args" }).waitFor();
+    await canvas.getByRole("button", { name: "Count: 0" }).click();
+    await canvas.getByRole("button", { name: "Count: 1" }).waitFor();
   },
 };
 
