@@ -39,6 +39,30 @@ registry.flightServer = {
   registerClientReference: ReactServer.registerClientReference,
   createClientModuleProxy: FlightServer.createClientModuleProxy,
 } satisfies FlightAdapters<"server">;
+// Next's Node.js server reads the body of a Server Action with busboy, and
+// React decodes it as the parts come in. Here the parts are collected first.
+type Busboy = { on(event: string, listener: (...args: any[]) => void): void };
+registry.flightServer.decodeReplyFromBusboy = (
+  busboy: Busboy,
+  _serverModules: unknown,
+  options?: object,
+) =>
+  new Promise((resolve, reject) => {
+    const form = new FormData();
+    busboy.on("field", (name: string, value: string) => form.append(name, value));
+    busboy.on(
+      "file",
+      (name: string, file: Busboy, info: { filename: string; mimeType: string }) => {
+        const chunks: BlobPart[] = [];
+        file.on("data", (chunk: Uint8Array) => chunks.push(new Uint8Array(chunk)));
+        file.on("end", () =>
+          form.append(name, new File(chunks, info.filename, { type: info.mimeType })),
+        );
+      },
+    );
+    busboy.on("error", reject);
+    busboy.on("finish", () => resolve(ReactServer.decodeReply(form, options)));
+  });
 registry.flightStatic = {
   prerender: (model: unknown, _clientModules: unknown, options?: object) =>
     prerender(model, options),

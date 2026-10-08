@@ -64,6 +64,8 @@ export type NextProject = {
   componentRoutes: ComponentRoute[];
   /** The metadata files of the app, like `app/icon.png`, which are not served yet. */
   metadataFiles: string[];
+  /** The route files of the app that ask for Next's edge runtime, which they do not get. */
+  edgeRouteFiles: string[];
   /** The resolved `next.config`, as far as it serializes. */
   config: Record<string, unknown>;
   /** Next's compile-time constants per layer, as code strings. */
@@ -86,12 +88,6 @@ export type NextProject = {
   loadAppPageEntry(
     route: NextRoute | ComponentRoute,
   ): Promise<{ code: string; watchFiles: string[] }>;
-  /**
-   * Next's edge `handler(Request)` of a route. `userland` is what it serves:
-   * for a route handler the specifier of its route module, for a page an
-   * expression for its rsc-layer module, which lives in another environment.
-   */
-  loadEdgeEntry(route: NextRoute | ComponentRoute, userland: string): Promise<string>;
   /**
    * Next's SWC transform of a module of the app, for a layer. Nothing for a
    * client module in the rsc layer: Vite RSC turns it into references.
@@ -263,25 +259,6 @@ function declarationOf(file: string, name: string, seen = new Set<string>()): De
   }
 }
 
-// The keys of the options object that a function takes, however it reads them:
-// in its parameter, or off the parameter in its body.
-function optionKeys({ code, params = [] }: Declared): string[] {
-  const [param] = params as { type: string; name?: string; properties?: object[] }[];
-  if (param?.type === "ObjectPattern") {
-    return param.properties!.flatMap((property) =>
-      "key" in property && property.key ? [nameOf(property.key)] : [],
-    );
-  }
-  if (param?.type !== "Identifier") return [];
-  const options = param.name!;
-  return [
-    ...Array.from(code.matchAll(new RegExp(`\\b${options}\\.(\\w+)`, "g")), (match) => match[1]!),
-    ...Array.from(code.matchAll(new RegExp(`\\{([^}]*)\\}\\s*=\\s*${options}\\b`, "g")), (match) =>
-      match[1]!.split(",").map((part) => part.split(":")[0]!.trim()),
-    ).flat(),
-  ];
-}
-
 // The root segment of the routes of a node: see `loadComponentPageEntry()`.
 // The parentheses make it a route group for Next, so it never shows in a
 // pathname.
@@ -438,7 +415,7 @@ export async function loadNextProject(
     load<typeof import("next/dist/shared/lib/constants.js")>("shared/lib/constants");
   const loadJsConfig =
     load<typeof import("next/dist/build/load-jsconfig.js")>("build/load-jsconfig").default;
-  const { getRSCModuleInformation } = load<
+  const { getRSCModuleInformation, getAppPageStaticInfo } = load<
     typeof import("next/dist/build/analysis/get-page-static-info.js")
   >("build/analysis/get-page-static-info");
   const { nextImageLoaderRegex } =
@@ -458,7 +435,7 @@ export async function loadNextProject(
     load<typeof import("next/dist/server/serve-static.js")>("server/serve-static");
 
   // The app is served the way a deployment serves it: production Next on its
-  // edge runtime. React itself stays a development build, see plugin.ts.
+  // Node.js runtime. React itself stays a development build, see plugin.ts.
   const config = await inDirectory(root, () =>
     loadConfig(PHASE_PRODUCTION_BUILD, root, { silent: true }),
   );
@@ -566,11 +543,33 @@ export async function loadNextProject(
     if (kind) routes.push({ kind, page, pathname, appPaths, pagePath });
   }
 
+  // Next's edge runtime is deprecated, and a route that asks for it with
+  // `export const runtime = "edge"` runs on Node.js here, like every other
+  // route. Read the way Next's build reads it, from the file of the route.
+  const edgeRouteFiles: string[] = [];
+  for (const route of routes) {
+    // Not a page of Next's own, like its not-found page.
+    if (!route.pagePath.startsWith(APP_DIR_ALIAS)) continue;
+    const file = path.join(appDir, route.pagePath.slice(APP_DIR_ALIAS.length));
+    const { runtime } = await getAppPageStaticInfo({
+      pageFilePath: file,
+      nextConfig: config,
+      isDev: false,
+      page: route.page,
+      // Next types this as an enum, which only its own build can read.
+      pageType: "app" as never,
+    });
+    if (runtime === "edge") {
+      edgeRouteFiles.push(path.relative(root, file).split(path.sep).join("/"));
+    }
+  }
+
   const buildId = await generateBuildId(config.generateBuildId, () => "vitest");
-  // The environment variables Next's build gives every edge function. A build
-  // makes up the keys; here they are the same on every run, so that the
-  // pre-bundled dependencies they are compiled into stay cached.
-  const edgeEnvironment = {
+  // What a build writes to `.next/` for its server: the build id and the keys
+  // of draft mode. A build makes up the keys; here they are the same on every
+  // run, so that the pre-bundled dependencies they are compiled into stay
+  // cached. cache.ts gives them to Next's server.
+  const buildEnvironment = {
     __NEXT_BUILD_ID: buildId,
     __NEXT_PREVIEW_MODE_ID: "vitest-preview-mode-id",
     __NEXT_PREVIEW_MODE_SIGNING_KEY: "vitest-preview-mode-signing-key",
@@ -587,20 +586,23 @@ export async function loadNextProject(
       fetchCacheKeyPrefix: config.experimental.fetchCacheKeyPrefix,
       hasRewrites: false,
       isClient: layer === "browser",
-      isEdgeServer: layer !== "browser",
-      isNodeServer: false,
+      isEdgeServer: false,
+      isNodeServer: layer !== "browser",
       clientRouterFilters: undefined,
       middlewareMatchers: undefined,
       rewrites: { beforeFiles: [], afterFiles: [], fallback: [] },
     });
-    // Next's own modules pick their edge build with it, like `module.compiled`.
-    if (layer !== "browser" && defines["process.env.NEXT_RUNTIME"] !== '"edge"') {
-      fail("`getDefineEnv()` does not define `process.env.NEXT_RUNTIME` as `edge`");
+    // Next's code takes the branches of its Node.js server with it.
+    if (layer !== "browser" && defines["process.env.NEXT_RUNTIME"] !== '"nodejs"') {
+      fail("`getDefineEnv()` does not define `process.env.NEXT_RUNTIME` as `nodejs`");
     }
+    // Next's Node.js server renders to Node.js streams unless this is off:
+    // a compile-time switch of its own. A tab has web streams.
+    if (layer !== "browser") defines["process.env.__NEXT_USE_NODE_STREAMS"] = "false";
     return {
       ...(layer !== "browser" &&
         Object.fromEntries(
-          Object.entries(edgeEnvironment).map(([name, value]) => [
+          Object.entries(buildEnvironment).map(([name, value]) => [
             `process.env.${name}`,
             JSON.stringify(value),
           ]),
@@ -618,15 +620,34 @@ export async function loadNextProject(
     const aliases: Record<string, string | false> = {
       "@opentelemetry/api$": "next/dist/compiled/@opentelemetry/api",
     };
-    // The Node modules an edge runtime provides. A browser tab has none of
-    // them, so use the polyfills Next ships for its own client bundles.
+    // The Node modules that Next's edge runtime has too. A browser tab has
+    // none of them, so use the polyfills Next ships for its own client
+    // bundles. The others that Next's server asks for are in plugin.ts.
     for (const name of SUPPORTED_NATIVE_MODULES) {
       if (name === "async_hooks") continue;
       aliases[`${name}$`] = aliases[`node:${name}$`] = `next/dist/compiled/${name}`;
     }
+    if (layer !== "browser") {
+      aliases.path$ = aliases["node:path$"] = "next/dist/compiled/path-browserify";
+      // Next's route modules load a bundle of Next's own for Node.js. The
+      // module that bundle is made of, as Next's edge build takes it.
+      for (const kind of ["app-page", "app-route"]) {
+        const file = `next/dist/server/route-modules/${kind}/module`;
+        aliases[`${file}.compiled$`] = aliases[`${file}.compiled.js$`] = file;
+      }
+      // Next's own module for `react-dom/server` takes React's build for
+      // Node.js streams by the runtime. The one for web streams.
+      for (const channel of ["", "-experimental"]) {
+        aliases[`next/dist/build/webpack/alias/react-dom-server${channel}.js$`] =
+          `next/dist/compiled/react-dom${channel}/cjs/react-dom-server.edge.development.js`;
+      }
+    }
     const base = compilerAliases.createWebpackAliases({
       distDir,
       isClient: layer === "browser",
+      // Not the runtime: Next's name for a server compilation that takes the
+      // ESM files of Next, and here also the builds of React for web
+      // streams, which is what a tab has.
       isEdgeServer: layer !== "browser",
       dev: false,
       config,
@@ -764,24 +785,20 @@ export async function loadNextProject(
   ]) {
     serverReferenceInfo.export(name);
   }
-  // ssr.ts provides the manifests of a build: as the globals an edge function
-  // reads them from, and for each request.
+  // node-server.ts provides the manifests of a build: through the module
+  // Next's server reads the files of `.next/` with, and for each request.
   runtimeFile("server/route-modules/route-module").contains(
-    "self.__BUILD_MANIFEST",
-    "self.__SERVER_FILES_MANIFEST",
-    "self.__RSC_MANIFEST",
+    "load-manifest.external",
+    "loadManifestFromRelativePath",
+    "evalManifestFromRelativePath",
   );
-  const setManifests = runtimeFile("server/app-render/manifests-singleton").export(
-    "setManifestsSingleton",
+  // Next's request handler of a page makes the route module, in the rsc
+  // layer. The plugin gives it the class of the ssr layer for this import.
+  runtimeFile("build/templates/app-page-runtime").contains(
+    "server/route-modules/app-page/module.compiled",
   );
-  // Unless its declaration is in a module that is not read here.
-  const manifestKeys = optionKeys(setManifests);
-  for (const key of ["page", "clientReferenceManifest", "serverActionsManifest"]) {
-    if (setManifests.code && !manifestKeys.includes(key)) {
-      fail(`\`setManifestsSingleton()\` takes no \`${key}\``);
-    }
-  }
-
+  // The plugin turns Next's renderer to web streams with this.
+  runtimeFile("server/app-render/stream-ops").contains("process.env.__NEXT_USE_NODE_STREAMS");
   const aliases = {
     rsc: aliasesFor("rsc"),
     ssr: aliasesFor("ssr"),
@@ -814,16 +831,13 @@ export async function loadNextProject(
   }
 
   // The route entry of a page binds Next's renderer to its bundler: its module
-  // loader, and a runtime that also holds the request handler for Node.js.
-  // Here both are this package's: rsc.ts, app-page-entrypoint.ts.
+  // loader, which here is this package's (rsc.ts). It imports Next's runtime
+  // for a page, which has the request handler for Node.js.
   const bindPageEntry = (code: string, where: string) => {
     code = replace(code, /\b__webpack_require__\b/g, "__next_require__", where);
-    code = replace(
-      code,
-      /(["'])next\/dist\/build\/templates\/app-page-runtime\1/,
-      `"vitest-plugin-rsc/nextjs/app-page-entrypoint"`,
-      where,
-    );
+    if (!/(["'])next\/dist\/build\/templates\/app-page-runtime\1/.test(code)) {
+      fail(`${where} has no \`next/dist/build/templates/app-page-runtime\``);
+    }
     return `import { requireModule as __next_require__ } from "vitest-plugin-rsc/nextjs/rsc";\n${code}`;
   };
 
@@ -1139,6 +1153,7 @@ export async function loadNextProject(
         component: `${componentRoot}${pathname}`,
       })),
     metadataFiles,
+    edgeRouteFiles,
     config: JSON.parse(JSON.stringify(config)),
     defines: { rsc: definesFor("rsc"), ssr: definesFor("ssr"), browser: definesFor("browser") },
     aliases,
@@ -1193,30 +1208,6 @@ export async function loadNextProject(
         code = bindPageEntry(code, where);
       }
       return { code, watchFiles: [...watchFiles].filter((file) => fs.existsSync(file)) };
-    },
-    async loadEdgeEntry(route, userland) {
-      // The two templates name the same injection differently.
-      const [template, registration] =
-        route.kind === "page"
-          ? (["edge-ssr-app", "cacheHandlerRegistration"] as const)
-          : (["edge-app-route", "edgeCacheHandlersRegistration"] as const);
-      const placeholder = "vitest-plugin-rsc/next-userland";
-      const code = stripTurbopackTransitions(
-        await loadEntrypoint(
-          template,
-          { VAR_USERLAND: route.kind === "page" ? placeholder : userland, VAR_PAGE: route.page },
-          { cacheHandlerImports: "\n", [registration]: "\n" },
-          { incrementalCacheHandler: null },
-        ),
-      );
-      return route.kind === "page"
-        ? replace(
-            code,
-            `import * as pageMod from ${JSON.stringify(placeholder)};`,
-            `const pageMod = ${userland};`,
-            "the edge-ssr-app template",
-          )
-        : code;
     },
     compile,
     isImage: (file) => !images.disableStaticImages && nextImageLoaderRegex.test(file),

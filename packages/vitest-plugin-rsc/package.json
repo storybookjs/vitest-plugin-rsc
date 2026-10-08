@@ -71,11 +71,6 @@
       "types": "./dist/nextjs/client.d.ts",
       "vitest-plugin-rsc-source": "./src/nextjs/client.tsx",
       "default": "./dist/nextjs/client.js"
-    },
-    "./nextjs/app-page-entrypoint": {
-      "types": "./dist/nextjs/app-page-entrypoint.d.ts",
-      "vitest-plugin-rsc-source": "./src/nextjs/app-page-entrypoint.ts",
-      "default": "./dist/nextjs/app-page-entrypoint.js"
     }
   },
   "publishConfig": {

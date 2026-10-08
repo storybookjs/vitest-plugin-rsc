@@ -13,7 +13,14 @@ import type { NextLayer } from "./project.ts";
 /** Globals of a tab that a server does not have. */
 const browserGlobals = ["window", "document", "location", "localStorage", "sessionStorage"];
 /** Globals a server has too, but its own. */
-const serverGlobals = ["Request", "Response", "fetch"];
+const serverGlobals = [
+  "Request",
+  "Response",
+  "fetch",
+  // Node.js has these and a tab does not: see globals.ts.
+  "setImmediate",
+  "clearImmediate",
+];
 
 const mentionsServerGlobal = new RegExp(`\\b(?:${serverGlobals.join("|")})\\b`);
 // Also `typeof(window)`: which `typeof` the defines replace is up to oxc.

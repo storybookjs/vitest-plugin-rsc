@@ -37,10 +37,11 @@ export async function PUT(request: NextRequest, { params }: Context) {
   return NextResponse.json({ note, editor: cookieStore.get("editor")?.value ?? null });
 }
 
-export async function DELETE(_request: NextRequest, { params }: Context) {
+export async function DELETE(request: NextRequest, { params }: Context) {
   const { id } = await params;
   db.notes.delete(id);
   // Runs once the response has been sent.
-  after(() => audit(`deleted note ${id}`));
+  // The request was answered, not left: its signal is not aborted.
+  after(() => audit(`deleted note ${id}${request.signal.aborted ? ", aborted" : ""}`));
   return new Response(null, { status: 204 });
 }

@@ -198,11 +198,17 @@ test("does not take a route discovery without app pages for an app without route
   );
 });
 
-test("needs the define that makes Next's modules pick their edge build", async () => {
+test("lists the route files that ask for Next's edge runtime", async () => {
+  const { edgeRouteFiles } = await loadNextProject(root);
+
+  expect(edgeRouteFiles).toEqual(["app/api/runtime/route.ts"]);
+});
+
+test("needs the define that makes Next's code take the branches of its Node.js server", async () => {
   const next = nextWith({ "next/dist/build/define-env.js": { getDefineEnv: () => ({}) } });
 
   await expect(loadNextProject(root, next)).rejects.toThrow(
-    changed("`getDefineEnv()` does not define `process.env.NEXT_RUNTIME` as `edge`"),
+    changed("`getDefineEnv()` does not define `process.env.NEXT_RUNTIME` as `nodejs`"),
   );
 });
 
@@ -238,17 +244,6 @@ test.for([
 
   await expect(project.loadAppPageEntry(route(project.routes, pathname!))).rejects.toThrow(
     new RegExp(`next@${version} differs .* the output of next-app-loader has no \`.*${piece}`),
-  );
-});
-
-test("needs the import of the page that it replaces in the edge template", async () => {
-  const next = nextWith({
-    "next/dist/build/load-entrypoint.js": { loadEntrypoint: async () => "export {};" },
-  });
-  const project = await loadNextProject(root, next);
-
-  await expect(project.loadEdgeEntry(route(project.routes, "/notes"), "page")).rejects.toThrow(
-    changed("the edge-ssr-app template has no `import * as pageMod from"),
   );
 });
 
@@ -289,8 +284,8 @@ test("gives the route of a node the segments of its pathname, and nothing of the
       `}, {}, null] }, {}, null] }, { ${boundaries.join(", ")} }, null]`,
   );
   expect(code).toContain('page: "/notes/[id]/page"');
-  // Bound to this package like the entry of a page of the app.
-  expect(code).toContain('from "vitest-plugin-rsc/nextjs/app-page-entrypoint"');
+  // Next's own request handler, like the entry of a page of the app.
+  expect(code).toContain('from "next/dist/build/templates/app-page-runtime"');
   expect(code).not.toContain("__webpack_require__");
   expect(code).not.toContain(project.appDir);
   expect(watchFiles).toEqual([]);
@@ -384,41 +379,20 @@ test.for([
   ],
   [
     "server/route-modules/route-module",
-    "self.__BUILD_MANIFEST",
-    "self.__NEXT_BUILD",
-    "has no `self.__BUILD_MANIFEST`",
+    "load-manifest.external",
+    "load-manifest",
+    "has no `load-manifest.external`",
   ],
   [
-    "server/route-modules/route-module",
-    "self.__RSC_MANIFEST",
-    "self.__NEXT_CLIENT_REFERENCES",
-    "has no `self.__RSC_MANIFEST`",
+    "server/app-render/stream-ops",
+    "process.env.__NEXT_USE_NODE_STREAMS",
+    "process.env.__NEXT_NODE_STREAMS",
+    "has no `process.env.__NEXT_USE_NODE_STREAMS`",
   ],
 ])("needs what the tab assumes of %s: %s", async ([file, piece, replacement, what]) => {
   const next = nextWith({ [runtime(file!)]: sourceWith(runtime(file!), piece!, replacement!) });
 
   await expect(loadNextProject(root, next)).rejects.toThrow(changed(`${runtime(file!)} ${what}`));
-});
-
-test("needs the manifests that the server is given for each request", async () => {
-  const file = runtime("server/app-render/manifests-singleton");
-  const next = nextWith({
-    [file]: sourceWith(file, "serverActionsManifest: raw", "actionsManifest: raw"),
-  });
-
-  await expect(loadNextProject(root, next)).rejects.toThrow(
-    changed("`setManifestsSingleton()` takes no `serverActionsManifest`"),
-  );
-});
-
-test.for([
-  "export const setManifestsSingleton = (options) =>\n  set(options.page, options.clientReferenceManifest, options.serverActionsManifest);",
-  "function setManifestsSingleton({ page, clientReferenceManifest, serverActionsManifest }) {}\nexport { setManifestsSingleton };",
-  `export * from ${JSON.stringify(installed.resolve(runtime("server/app-render/manifests-singleton")))};`,
-])("takes the manifests however Next declares the function that gets them: %s", async (source) => {
-  const next = nextWith({ [runtime("server/app-render/manifests-singleton")]: source });
-
-  await expect(loadNextProject(root, next)).resolves.toBeDefined();
 });
 
 test("reads the exports of the Flight codec of the rsc layer", async () => {

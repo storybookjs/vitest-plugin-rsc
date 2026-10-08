@@ -9,10 +9,14 @@ declare module "virtual:vitest-plugin-rsc/next-manifest" {
   export const nextConfig: import("next/dist/server/config-shared").NextConfigComplete;
 }
 
+declare module "virtual:vitest-plugin-rsc/node-stream" {
+  export { Readable } from "node:stream";
+}
+
 declare module "virtual:vitest-plugin-rsc/next-route-handlers" {
   const routeHandlers: Record<
     string,
-    () => Promise<{ handler: import("./registry.ts").EdgeHandler }>
+    () => Promise<{ handler: import("./registry.ts").RequestHandler }>
   >;
   export default routeHandlers;
 }
@@ -20,14 +24,6 @@ declare module "virtual:vitest-plugin-rsc/next-route-handlers" {
 declare module "virtual:vitest-plugin-rsc/next-app-pages" {
   const appPages: Record<string, () => Promise<unknown>>;
   export default appPages;
-}
-
-declare module "virtual:vitest-plugin-rsc/next-edge-entries" {
-  const edgeEntries: Record<
-    string,
-    () => Promise<{ handler: import("./registry.ts").EdgeHandler }>
-  >;
-  export default edgeEntries;
 }
 
 declare module "@vitejs/plugin-rsc/vendor/react-server-dom/server.edge" {

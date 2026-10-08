@@ -637,7 +637,7 @@ A node resolves with `{ container, baseElement, asFragment, unmount, response }`
 
 The types are `RenderServerOptions`, `RenderServerResult`, `RenderComponentOptions`, `RenderComponentResult` and `VitestPluginNextOptions`.
 
-The package also exports `vitest-plugin-rsc/nextjs/rsc`, `/ssr`, `/client` and `/app-page-entrypoint`. Those are internal: the plugin imports them itself, and Vite has to be able to resolve them.
+The package also exports `vitest-plugin-rsc/nextjs/rsc`, `/ssr` and `/client`. Those are internal: the plugin imports them itself, and Vite has to be able to resolve them.
 
 ## React Server Components Without Next.js
 
@@ -695,10 +695,10 @@ This `renderServer` takes `{ container, baseElement, wrapper }` and resolves wit
 
 ## Server Code That Runs In A Browser
 
-The plugin runs server code in a browser tab. The surface is closer than it looks: edge runtimes like Vercel Edge and Cloudflare Workers also lack most of the Node API, and server code written for the edge can usually run in a tab too.
+The plugin runs server code in a browser tab. The surface is closer than it looks: Node.js has most of the web APIs a tab has, and server code that keeps to those runs in a tab too.
 
 - `vitestPluginRSC()` provides `node:async_hooks`, with an `AsyncLocalStorage` that works for one request at a time.
-- `vitestPluginNext()` adds what Next's edge runtime has: `Buffer`, `process.env`, and the modules `buffer`, `events`, `assert` and `util`, from the builds Next ships.
+- `vitestPluginNext()` adds what Next's own server needs of Node.js: `Buffer`, `process.env`, the modules `buffer`, `events`, `assert`, `util`, `path` and `stream` from the builds Next ships, and of `crypto` the random values and SHA-256.
 
 A fast test should not touch the real database, file system or network. Keep IO inside the tab:
 
@@ -706,7 +706,7 @@ A fast test should not touch the real database, file system or network. Keep IO 
 - **File system**: an in-memory implementation like [`memfs` via Vitest](https://vitest.dev/guide/mocking/file-system).
 - **HTTP**: a request interceptor like [MSW in Vitest browser mode](https://mswjs.io/docs/recipes/vitest-browser-mode), or a mocked module.
 
-Where you have a choice, use the APIs that edge runtimes, Node and browsers share: Web Streams, `Uint8Array`, Web Crypto, `Blob` and `File`, and `fetch`, `Request`, `Response`, `Headers`, `URL` and `FormData`.
+Where you have a choice, use the APIs that Node and browsers share: Web Streams, `Uint8Array`, Web Crypto, `Blob` and `File`, and `fetch`, `Request`, `Response`, `Headers`, `URL` and `FormData`.
 
 If a dependency imports a Node module that is not there, [`vite-plugin-node-polyfills`](https://github.com/davidmyersdev/vite-plugin-node-polyfills) covers the rest:
 
@@ -749,7 +749,7 @@ The test runs in `client`, the Vite environment of the `rsc` layer. That is why 
 - `middleware.ts` / `proxy.ts`, and the redirects, rewrites and headers of `next.config`.
 - `"use cache"`. And inside a function cached with `unstable_cache`, after its first `await`, the request's store is read instead of the cache's.
 - A mock for Client Components.
-- Route handlers run as they do on Next's edge runtime, also the ones a deployment runs on Node.js.
+- Next's edge runtime, which Next has deprecated. The server runs as on Node.js, Next's default, also for a route with `export const runtime = "edge"`.
 - More than one request at a time. A response that streams without end holds up every request after it.
 - A navigation that leaves the page without Next's router, like `location.assign()`, needs the Navigation API, which today means Chromium.
 

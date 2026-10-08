@@ -1,7 +1,7 @@
 // The three layers of the app are three module graphs in one browser tab.
 // Next's bundler config moves a few things across them: the route module is
-// created for the rsc layer but belongs to the ssr layer, and the edge entry
-// of the ssr layer imports the page of the rsc layer. Those cross here.
+// created for the rsc layer but belongs to the ssr layer, and the ssr layer
+// renders the page of the rsc layer. Those cross here.
 //
 // Each graph has its own copy of this module. They share the object.
 
@@ -13,11 +13,15 @@ export type ServerRequest = {
   signal?: AbortSignal;
 };
 
-/** The `handler` of an edge entry of Next: one route, as a function of a request. */
-export type EdgeHandler = (
-  request: ServerRequest,
-  context: { waitUntil?: (promise: Promise<unknown>) => void; signal?: AbortSignal },
-) => Promise<Response>;
+/**
+ * The request handler Next's build makes for a route, for Node.js: it takes
+ * an `http.IncomingMessage` and writes to an `http.ServerResponse`.
+ */
+export type RequestHandler = (
+  req: unknown,
+  res: unknown,
+  context: { waitUntil?: (promise: Promise<unknown>) => void; requestMeta?: object },
+) => Promise<unknown>;
 
 type AnyFunction = (...args: any[]) => any;
 
@@ -27,6 +31,9 @@ export type NextRegistry = {
   Response: typeof Response;
   /** The server's `fetch`: its network, which is not the browser's. */
   fetch: typeof fetch;
+  /** Node's, for Next's server: a task after the microtasks. Not globals of the tab. */
+  setImmediate(callback: (...args: any[]) => void, ...args: unknown[]): unknown;
+  clearImmediate(id: unknown): void;
   /** Starts the scope of one request, see `enterAmbientScope`. Returns its end. */
   enterRequestScope(): () => void;
   /** The rsc layer's Flight codec, behind the signatures Next calls. */
@@ -36,8 +43,8 @@ export type NextRegistry = {
   /** Loads the rsc-layer module of a route, into `appPages`. */
   loadAppPage(page: string): Promise<unknown>;
   appPages: Record<string, unknown>;
-  /** Loads the edge entry of a route handler, which is in the rsc layer. */
-  loadRouteHandler(page: string): Promise<EdgeHandler>;
+  /** Loads the request handler of a route handler, which is in the rsc layer. */
+  loadRouteHandler(page: string): Promise<RequestHandler>;
   /** Whether an id names a Server Action of the app, in the rsc layer. */
   hasServerAction(id: string): Promise<boolean>;
   /**
@@ -54,6 +61,8 @@ export type NextRegistry = {
   browserRequire(id: string): Promise<unknown>;
   loadBrowserModule(id: string): Promise<unknown>;
   ssr: { AppPageRouteModule: new (options: unknown) => unknown };
+  /** For Next's Node.js server: what stands in for the files of a build. */
+  node: Record<string, AnyFunction>;
 };
 
 const scope = globalThis as { __vitest_plugin_rsc_next__?: Partial<NextRegistry> };

@@ -2,9 +2,9 @@ import { Buffer } from "node:buffer";
 import { enterAmbientScope, SequentialAsyncLocalStorage } from "../async-local-storage.ts";
 import { registry } from "./registry.ts";
 
-// Next's server runs here as it does on an edge runtime, which is close to a
-// browser tab: web streams, `fetch`, `crypto`. This file is the rest of that
-// platform. It has to load before any module of Next's server does.
+// Next's server runs here as it does on Node.js, with the web APIs that
+// Node.js and a browser tab share: web streams, `fetch`, `crypto`. This file
+// is the rest of that platform. It has to load before any module of Next's server does.
 
 // A browser drops `cookie` from the headers of a Request and `set-cookie` from
 // those of a Response. A server has to see both, so the server layers get
@@ -17,12 +17,34 @@ function headersOf(init: { headers?: HeadersInit } | undefined, input?: unknown)
   return new Headers(input instanceof NativeRequest ? input.headers : undefined);
 }
 
+type NodeReadable = {
+  on(event: string, listener: (value: any) => void): void;
+  pipe: unknown;
+  destroy?(reason?: unknown): void;
+};
+
 class ServerRequest extends NativeRequest {
   #headers: Headers;
 
   constructor(input: RequestInfo | URL, init?: RequestInit) {
     // A browser wants `duplex` for a streamed body. Server runtimes, which
     // Next's code is written for, do not.
+    // Node's `Request` also takes a Node.js stream for a body, and Next's
+    // Node.js server gives it the request it got.
+    const body = init?.body as unknown as NodeReadable | undefined;
+    if (body && typeof body.on === "function" && typeof body.pipe === "function") {
+      init = {
+        ...init,
+        body: new ReadableStream<Uint8Array>({
+          start(controller) {
+            body.on("data", (chunk) => controller.enqueue(new Uint8Array(chunk)));
+            body.on("end", () => controller.close());
+            body.on("error", (error) => controller.error(error));
+          },
+          cancel: (reason) => body.destroy?.(reason),
+        }),
+      };
+    }
     super(input, init?.body ? ({ duplex: "half", ...init } as RequestInit) : init);
     this.#headers = headersOf(init, input);
   }
@@ -103,7 +125,7 @@ registry.enterRequestScope = enterAmbientScope;
 const nativeFetch = globalThis.fetch;
 registry.fetch = (input, init) => nativeFetch(input, init);
 
-// An edge runtime has these as globals. A browser tab has none of them.
+// Node.js has these as globals. A browser tab has none of them.
 const scope = globalThis as Record<string, any>;
 
 scope.process ??= { env: {} };
@@ -124,3 +146,42 @@ for (const method of ["indexOf", "lastIndexOf"] as const) {
   } as never;
 }
 scope.AsyncLocalStorage ??= SequentialAsyncLocalStorage;
+
+// What Next's Node.js server asks of its process. The tab is the page's and
+// the test's too, so as little as it needs: a library that finds a
+// `setImmediate` or a full `process` takes itself to be on Node.js.
+{
+  const { process } = scope;
+  process.cwd ??= () => "/";
+  process.on ??= () => process;
+  process.off ??= () => process;
+  process.nextTick ??= (callback: (...args: unknown[]) => void, ...args: unknown[]) =>
+    queueMicrotask(() => callback(...args));
+  process.hrtime ??= Object.assign(() => [0, 0], {
+    bigint: () => BigInt(Math.round(performance.now() * 1e6)),
+  });
+
+  // A task of its own, after the microtasks: what Next's Node.js server waits
+  // for between the stages of a render. Server code gets these two in place
+  // of the globals (server-code.ts), so the tab has no `setImmediate`. Not a
+  // timer of the test, which may be fake.
+  const nativeSetTimeout = globalThis.setTimeout;
+  const nativeClearTimeout = globalThis.clearTimeout;
+  registry.setImmediate = (callback, ...args) => nativeSetTimeout(callback, 0, ...args);
+  registry.clearImmediate = (id) => nativeClearTimeout(id as number);
+
+  // Node's own `Buffer` has these, and busboy reads the parts of a form with
+  // them. Every layer has its own copy of the `Buffer` polyfill, and each is a
+  // Uint8Array.
+  const decoders = { latin1: "latin1", ascii: "latin1", utf8: "utf-8", ucs2: "utf-16le" };
+  for (const [encoding, label] of Object.entries(decoders)) {
+    if (`${encoding}Slice` in Uint8Array.prototype) continue;
+    Object.defineProperty(Uint8Array.prototype, `${encoding}Slice`, {
+      configurable: true,
+      writable: true,
+      value(this: Uint8Array, start?: number, end?: number) {
+        return new TextDecoder(label).decode(this.subarray(start, end));
+      },
+    });
+  }
+}
