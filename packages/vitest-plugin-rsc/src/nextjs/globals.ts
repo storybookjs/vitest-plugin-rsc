@@ -1,5 +1,9 @@
 import { Buffer } from "node:buffer";
-import { enterAmbientScope, SequentialAsyncLocalStorage } from "../async-local-storage.ts";
+import {
+  asyncFunctionHooks,
+  enterAmbientScope,
+  SequentialAsyncLocalStorage,
+} from "../async-local-storage.ts";
 import { registry } from "./registry.ts";
 
 // Next's server runs here as it does on Node.js, with the web APIs that
@@ -119,6 +123,26 @@ class ServerResponse extends NativeResponse {
 registry.Request = ServerRequest;
 registry.Response = ServerResponse;
 registry.enterRequestScope = enterAmbientScope;
+registry.asyncFunctionHooks = asyncFunctionHooks;
+
+// What React's Flight server in the rsc layer queues a microtask with
+// (server-code.ts): the microtask has the stores of the code that queued it,
+// as on Node.js. React starts a render in one, and Next has React call the
+// function of a `"use cache"` that way, in the scope it entered for it.
+const nativeQueueMicrotask = globalThis.queueMicrotask;
+registry.queueMicrotask = (callback) =>
+  nativeQueueMicrotask(SequentialAsyncLocalStorage.bind(callback));
+
+// Each step of a render of React's Flight server has the stores of its first
+// step, which React takes in the microtask above (server-code.ts). So what a
+// cached component returns renders in the scope of that component, as on
+// Node.js, and a cached component that it renders adds its tags to it.
+const renders = new WeakMap<object, ReturnType<typeof SequentialAsyncLocalStorage.snapshot>>();
+registry.performWork = (request, performWork) => {
+  let inStores = renders.get(request);
+  if (!inStores) renders.set(request, (inStores = SequentialAsyncLocalStorage.snapshot()));
+  inStores(performWork, request);
+};
 
 // Next patches the `fetch` of its server to cache and dedupe. That must not
 // be the `fetch` of the page, which is the browser's.

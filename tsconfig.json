@@ -5,6 +5,9 @@
       "path": "./packages/vitest-plugin-rsc"
     },
     {
+      "path": "./playground/nextjs-cache-components-demo"
+    },
+    {
       "path": "./playground/nextjs-e2e-demo"
     },
     {

@@ -11,6 +11,7 @@ import { createNodePlatform } from "./node-platform.ts";
 import { loadNextProject, type NextLayer, type NextProject } from "./project.ts";
 import { moduleFileAt } from "./project/context.ts";
 import { createServerCode, type ServerCodeOptions } from "./server-code.ts";
+import { createUseCachePlugin, useCacheId, useCacheModule } from "./use-cache.ts";
 import { affectedTests } from "./affected/index.ts";
 import { createPathsPlugin } from "./paths.ts";
 
@@ -381,6 +382,8 @@ const runtimeImports: Record<NextLayer, string[]> = {
     "react-dom",
     "next/dist/compiled/buffer",
     "next/dist/server/route-kind",
+    // What a `"use cache"` function is compiled to call: use-cache.ts.
+    "next/dist/build/webpack/loaders/next-flight-loader/cache-wrapper",
     vendoredFlight("server.edge"),
     vendoredFlight("static.edge"),
     vendoredFlight("client.edge"),
@@ -530,6 +533,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
               createDependencyCompilePlugin(getProject, layer),
               ...(layer === "rsc" ? [nextClientBoundaryPlugin(getProject, resolvers.rsc)] : []),
               ...(layer === "browser" ? [] : [serverCode.optimizerPlugin(layer)]),
+              ...(layer === "rsc" ? [serverCode.asyncFunctionsOptimizerPlugin()] : []),
             ],
             // A package can import what only another layer's build of a module
             // has, like `useRouter` of `next/navigation` in the rsc layer (the
@@ -634,6 +638,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
       resolveId(source) {
         if (source === manifestId || isRouteModule(source)) return `\0${source}`;
         if (source === middlewareId || source === middlewareEntryId) return `\0${source}`;
+        if (source === useCacheId) return `\0${source}`;
         // TODO: run Next's metadata loaders for these inline loader requests.
         // Until then a page has no metadata from files: see configResolved.
         if (/^next-metadata-(image|route)-loader\?/.test(source)) return `${bridgePrefix}metadata`;
@@ -642,6 +647,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
         if (id === `${bridgePrefix}metadata`) {
           return `export default async function metadata() { return []; }`;
         }
+        if (id === `\0${useCacheId}`) return useCacheModule(registry);
 
         if (id === `\0${manifestId}`) {
           const routes = project.routes.map(({ kind, page, pathname }) => ({
@@ -703,6 +709,12 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
       },
     },
     serverCode.plugin({ [environmentOf.rsc]: "rsc", [environmentOf.ssr]: "ssr" }),
+    serverCode.asyncFunctionsPlugin(environmentOf.rsc),
+    createUseCachePlugin(
+      getProject,
+      (environment) => layers.find((layer) => environmentOf[layer] === environment),
+      serverCode.isAppCode,
+    ),
     createCompilePlugin(
       getProject,
       (environment) => layers.find((layer) => environmentOf[layer] === environment),

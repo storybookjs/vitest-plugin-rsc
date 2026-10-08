@@ -15,6 +15,9 @@ type AsyncContextFrame = {
 // the promise returned by that callback settles. Inside the scope of a request
 // it ends when the callback returns: see enterAmbientScope().
 //
+// An async function that is compiled for it gets its stores back after an
+// `await`: see asyncFunctionHooks.
+//
 // The current frame is module-global, so tests that rely on this shim must run
 // sequentially within a browser worker. Do not use `test.concurrent` for cases
 // that share this async context surface.
@@ -177,9 +180,10 @@ export class SequentialAsyncLocalStorage<Store> {
  *
  * It is wrong for a store that is entered inside the request for a part of
  * the work, like the one of a cache scope: code that resumes after an `await`
- * in that part reads the store of the request. The alternative is worse.
- * Keeping such a store until the promise of its callback settles hands it to
- * everything else that runs in the meantime, which is the rest of the page.
+ * in that part reads the store of the request, unless it is compiled to get
+ * its own back (asyncFunctionHooks). The alternative is worse. Keeping such a
+ * store until the promise of its callback settles hands it to everything else
+ * that runs in the meantime, which is the rest of the page.
  *
  * The same goes for `exit()`: the work that its callback starts goes on after
  * the promise has settled, and has to stay outside the store. Next renders
@@ -208,6 +212,55 @@ function ambientStore(storage: SequentialAsyncLocalStorage<unknown>): unknown {
   for (let scope = ambientScope; scope; scope = scope.outer) {
     if (!scope.ended && scope.stores.has(storage)) return scope.stores.get(storage);
   }
+}
+
+// One call of an async function that is compiled to call the hooks below.
+type AsyncCall = {
+  /** The stores it was called with. */
+  stores: StoreValues;
+  /** The frame it runs in after an `await`, until it waits again or is done. */
+  frame: AsyncContextFrame | undefined;
+};
+
+/**
+ * What an async function is compiled to call, to read after an `await` the
+ * stores it was called with: see async-local-storage-transform.ts. A browser
+ * runs nothing between a promise settling and the function going on, so only
+ * the function itself can put them back.
+ *
+ * The frame of the function is the current one only while its own code runs:
+ * it leaves it before it waits and when it is done. So what runs in the
+ * meantime, like the rest of the page, never reads it.
+ */
+export const asyncFunctionHooks = {
+  /** At the start of the function. */
+  e: (): AsyncCall => ({ stores: currentFrame.stores, frame: undefined }),
+  /** Right before an `await`, with what is awaited. */
+  s<T>(call: AsyncCall, value: T): T {
+    leaveAsyncCall(call);
+    return value;
+  },
+  /** Right after an `await`, with its value. */
+  r<T>(call: AsyncCall, value: T): T {
+    enterAsyncCall(call);
+    return value;
+  },
+  /** In a `catch` and a `finally`: where the function goes on after an `await` that rejected. */
+  c(call: AsyncCall): void {
+    if (!call.frame) enterAsyncCall(call);
+  },
+  /** At the end of the function. */
+  x: leaveAsyncCall,
+};
+
+function enterAsyncCall(call: AsyncCall): void {
+  currentFrame = call.frame = createFrame(currentFrame, call.stores);
+}
+
+function leaveAsyncCall(call: AsyncCall): void {
+  if (!call.frame) return;
+  closeFrame(call.frame);
+  call.frame = undefined;
 }
 
 export function resetAsyncLocalStorage(): void {

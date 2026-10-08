@@ -62,7 +62,7 @@ That code checks what the plugin relies on. It does so when a run starts, or for
 | `server-reference-info` has the functions the plugin replaces for Vite RSC's ids                                                      | Next rejects the ids of Vite RSC's Server Actions                              |
 | The route module reads the manifests through `load-manifest.external`                                                                 | Next looks for a build's files in `.next/`                                     |
 
-A function that is still there but takes other arguments is not checked. A build-code function then fails with its own error at startup, and a runtime function fails when a test calls it. The check also cannot cover what Next's runtime does with these once a request comes in: a manifest field it starts to read, or a key it starts to require in the loader tree. That shows up as a failing test. For that reason CI runs both playgrounds against `next@latest` and `next@canary`.
+A function that is still there but takes other arguments is not checked. A build-code function then fails with its own error at startup, and a runtime function fails when a test calls it. The check also cannot cover what Next's runtime does with these once a request comes in: a manifest field it starts to read, or a key it starts to require in the loader tree. That shows up as a failing test. For that reason CI runs the Next.js playgrounds against `next@latest` and `next@canary`.
 
 Next imports its Flight codec as `react-server-dom-webpack`. In the `rsc` layer that codec is Vite RSC's, through adapters that leave out Next's manifests. The layer has every export that the codec in the installed `next` has. An export that the plugin has no adapter for throws when it is called, and says so. A new export that nothing calls does not stop a run.
 
@@ -358,7 +358,7 @@ The server layers run as Next's Node.js server does, with the web APIs that Node
 
 - **`Request` and `Response`** that keep `Cookie` and `Set-Cookie`, which a browser drops from its own.
 - **`fetch`**, so that Next patches the server's `fetch`, not the page's. Next patches it from the `rsc` layer when it first renders, and both server layers call the result. The server's `fetch` and the page's reach the same network.
-- **`AsyncLocalStorage`**. A browser cannot carry a store across `await`. Requests are handled one at a time, and the store a request entered first stays readable until the request ends. A store that Next enters for part of a request, like a cached function's store, lasts until that part first awaits. See [Caching](#caching).
+- **`AsyncLocalStorage`**. A browser cannot carry a store across `await`. Requests are handled one at a time, and the store a request entered first stays readable until the request ends. A store that Next enters for part of a request, like a cached function's store, is put back after an `await` by the app's own code, which is compiled to do so. See [The Scope Of A Cached Function](#the-scope-of-a-cached-function).
 - **`Buffer`**, **`process`**, and the Node modules that Next's server imports.
 
 For the browser side, the plugin stands in for a page load. The tab cannot navigate away from the test. So once the whole server document has arrived, the plugin moves it into the test's document, runs its inline scripts in order, and sets the URL with the History API. The document has therefore loaded when Next's client starts, and a page's first load does not show a `loading.tsx` or a Suspense fallback. A navigation in the app does, see the README.
@@ -382,24 +382,68 @@ From `next.config`, `experimental.fetchCacheKeyPrefix` and `cacheMaxMemorySize` 
 
 Every test starts with an empty cache. `cleanup()` forgets the revalidated tags and gives the cache a new key prefix, so no test finds what an earlier one stored. That also holds for a cached function that was still running when its test ended and stores its result afterwards. A cached function that only starts after its test has ended stores its result for the next test.
 
-There is a cache between requests too, so a test can call a cached function itself and share what it computes with the page. Await it before the next request, because a cached function that is still running when a request starts hands that request its cache scope.
+There is a cache between requests too, so a test can call a function of `unstable_cache` itself and share what it computes with the page. Await it before the next request, because a cached function that is still running when a request starts hands that request its cache scope.
 
 Next compares an entry with a revalidation by their timestamps in milliseconds, from `Date.now()`. `vi.useFakeTimers()` stops the clock, and so does `vi.setSystemTime()` on its own. With a stopped clock, a tag that is revalidated in a later request than the one that stored the entry is not newer than the entry, so the entry stays. An entry's age, which `revalidate` uses, is off by the difference from the real clock.
 
-### A Cache Scope Ends At Its First `await`
+### `"use cache"`
 
-While a cached function runs, Next keeps a store for it in `AsyncLocalStorage`. That store is how `cookies()` knows to throw inside `unstable_cache`, and how a `fetch` inside it knows not to be cached on its own.
+A function with the `"use cache"` directive is cached, in an app with `cacheComponents` in its `next.config`. What it returns is kept for the next request with the same arguments, until one of its tags is revalidated. The directive is taken on a function, on a component, on a function that closes over a value, which is a part of its key like an argument, and at the top of a module, for every function the module exports. Two calls with the same arguments in one render are one call: Next's compiler puts React's `cache()` around the function, and so does the plugin. In the function, `cacheTag()` tags the entry, also after an `await`, `cacheLife()` is taken, and a cached function of its own works, whose tags count for the outer one too. `cookies()` throws in it, as in a deployment.
 
-Node carries that store to the code after an `await` in the cached function, and to nothing else. A tab cannot tell the two apart. When code runs after an `await`, nothing says whether it belongs to the cached function or to a component next to it that is rendering in the meantime. So one of the two reads the wrong store. Here the cached function does. Its store lasts for the synchronous part of the function, and after the first `await` the function reads the request's store. The other choice breaks pages that work: if the store were kept until the function is done, a component that renders during a cache miss would read the cache's store, and its `cookies()` would throw.
+Next's build compiles such a function with the part of its SWC transform that also compiles Server Actions, which is Vite RSC's here. So the plugin compiles the directive, with the transforms of Vite RSC, into what Next's compiler makes of it: a call of Next's own wrapper, `cache()` of `next/dist/server/use-cache/use-cache-wrapper`. The key of an entry, the cache handler, the tags and the lifetimes are that wrapper's work, which is Next's runtime. As Next's compiler does, the plugin hands it the arguments that the function declares. What a caller passes on top of those, like the index that `map()` passes, is no part of the key. And like Next's compiler, it runs on the source files of the app: a function with the directive in a test file is not cached.
 
-So inside a function cached with `unstable_cache`, after its first `await`:
+The handler is Next's default one, which keeps the entries in memory. It is not the `IncrementalCache` above, and it has no key prefix. Next keys an entry by the id of the function, its arguments, and the `deploymentId` of `next.config` or else the id of the build. So the plugin adds a number to the id of every cached function, which changes when `cleanup()` resets the caches, and a test starts without the entries of an earlier one here too.
 
-- `cookies()` and `headers()` work. In a deployment they throw.
-- A nested `unstable_cache` keeps its own result, and so does a `fetch` with `cache: "force-cache"` or `next: { revalidate }`. In a deployment both run again whenever the outer function does. Here, when the outer function runs again because its tag was revalidated, it can get the inner one's old result.
+Next stamps the revalidation of a tag with its time rounded to a millisecond, which can be half a millisecond ahead. A request in that half millisecond gets the old entry once, while Next computes the new one. That goes for a deployment too, but a test can send its next request that soon: wait a millisecond after a revalidation.
 
-Before the first `await` all of these behave as in a deployment. For a cached function with no cached function or cached `fetch` inside it, what a test sees is correct: its value, whether it ran again, and what invalidates it.
+What is not as in a deployment:
 
-The same rule decides what `redirect()` does in the render after a Server Action. Next exits the action's store for that render, and the plugin keeps it exited for the rest of the request. So a `redirect()` in a component replaces the page, as in a deployment.
+- **Cached Navigations is off.** Cache Components turns `experimental.cachedNavigations` on. With it Next renders a page in stages, so that the browser can keep the static part of a page it navigated to, and the stages lean on the order of `setImmediate` in Node's event loop: see [The Node.js Runtime](#the-nodejs-runtime). The plugin sets it to `false`, also when `next.config` sets it. What the server caches is the same.
+- **Nothing is prerendered.** `next build` stops at a page that reads the request outside a `<Suspense>` boundary: "Next.js encountered uncached or runtime data during prerendering". Here every request renders its page, so such a page renders.
+- **A test cannot call the function itself.** Next's wrapper throws without the stores of a request: call the function through a page or a route handler.
+- **A module with the directive at its top** has what it exports cached. A function in it that has the directive itself and is not exported is not cached. Next's compiler caches it.
+- **The scope of the function** is that of its own code: see [below](#the-scope-of-a-cached-function).
+
+Not tested: how long an entry lives with `cacheLife()`. `"use cache: private"` and `"use cache: remote"`, which are compiled the same way, with the name of their kind. A `page.tsx` or a `layout.tsx` with the directive. And `experimental.useCache` without `cacheComponents`, which also makes the plugin compile the directive.
+
+### The Scope Of A Cached Function
+
+While a cached function runs, Next keeps a store for it in `AsyncLocalStorage`. That store is how `cookies()` knows to throw inside a cached function, how `cacheTag()` finds the entry to tag, and how a `fetch` in it knows not to be cached on its own.
+
+Node carries that store to the code after an `await` in the cached function, and to nothing else. A tab carries nothing: when code runs after an `await`, nothing says whether it belongs to the cached function or to a component next to it that is rendering in the meantime. So an async function is compiled to say so itself. This is what [unctx](https://github.com/unjs/unctx) does for Nuxt:
+
+```js
+async function getQuote(topic) {
+  const call = h.e();
+  try {
+    const quote = h.r(call, await h.s(call, load(topic))); // await load(topic)
+    cacheTag("quotes");
+    return quote;
+  } finally {
+    h.x(call);
+  }
+}
+```
+
+`e` remembers the stores the function was called with. `s` leaves them right before the function waits, and `r` puts them back when it goes on. A `catch` and a `finally` put them back too, for an `await` that rejects, and `x` leaves them when the function is done. So the stores of a cached function are the current ones only while its own code runs. React renders the rest of the page in the meantime, and reads the store of the request. Nothing of the tab is patched: not `Promise`, not a timer.
+
+Two things are compiled this way, both in the `rsc` layer, which is where a cached function runs:
+
+- The source files of the app that are [server code](#server-code-in-a-tab) there. So not a test file.
+- Next's wrapper of a `"use cache"` function, `next/dist/server/use-cache/use-cache-wrapper.js`. It enters the scope and awaits before it has React call the function.
+
+And one callback has the stores of the code that passed it, as on Node.js: the one that React's Flight server in the `rsc` layer queues a microtask with. That module is compiled to call the server's own `queueMicrotask`, as server code calls the server's `fetch`. React starts a render in a microtask, and that is how Next has React call a cached function: in the scope it entered for the function, and in React's own store for that render. No other module calls it.
+
+React renders in steps, and starts the later ones when a promise it waits for settles, like that of an async component. On Node.js such a step has the stores of the step that waited. Here it has none, so the `performWork()` of the Flight server, which does one step, is compiled to run each step of a render with the stores of its first. So what a cached component returns renders in its scope, as in a deployment: `cookies()` throws in a component under it, `cacheTag()` tags its entry, and a cached component under it adds its tags to it. The run stops with an error when the Flight server has no `performWork()` to compile.
+
+So the code of a cached function has its scope, before and after an `await`, and so has a function of the app that it calls, and what it renders. That goes for `"use cache"` and for `unstable_cache`. What does not have it reads the store of the request, where `cookies()` works and `cacheTag()` throws:
+
+- **A callback**, of `then()`, of a timer, or of `process.nextTick()`, which is the tab's `queueMicrotask` here. Only `await` is compiled.
+- **What a thenable does in its `then()`**, like a query builder that runs its query when it is awaited. `await` calls `then()` a microtask later, after the function has left its scope to wait. The value comes back to the function, in its scope.
+- **A package.** The code in `node_modules` is not compiled, so a function of a package has no scope after an `await` of its own. Your function has it back when the package returns.
+- **A function with a `for await` or an `await using`, and an async generator.** They wait where the compile step has no call to put, so they are left as they are, and have no scope after their first `await`.
+
+A store that is left for a part of a request, with `exit()`, is kept left in code that is not compiled, like Next's own. Next leaves the store of a Server Action for the render after it, and the plugin keeps it left for the rest of the request, so a `redirect()` in a component replaces the page, as in a deployment. A compiled function that awaits an `exit()` has its store back after it, as on Node.js.
 
 ## Server Code In A Tab
 
@@ -409,6 +453,8 @@ A tab has a `window`, and a `fetch` that Next has not patched. A tab cannot lose
 - `fetch`, `Request` and `Response` are the server's, even when they are written as `globalThis.fetch`. So a `fetch` in your server code is the one Next patches: two calls for the same URL in one render are one request. The tab still makes the request, so the browser's rules for a request apply, like CORS.
 
 Nothing else is replaced. Code that reads `window.innerWidth` without checking `typeof window` first throws on a server, and reads the tab's `window` here.
+
+The async functions in the source files of the `rsc` layer are compiled as well, to keep those stores across an `await`: see [The Scope Of A Cached Function](#the-scope-of-a-cached-function).
 
 A Client Component is a module in two layers. It is told it has no `window` while Next renders it to HTML in `ssr`, and it has one in `browser`.
 
@@ -501,7 +547,7 @@ This is what a Node.js server has and a tab does not. The modules are in `node-p
 
 What is still to do here:
 
-- Cache Components and `"use cache"`. Their code is reached only with `cacheComponents`, and it needs what a tab does not have at all: `AsyncLocalStorage` for more than one scope at a time, the order of `process.nextTick` and `setImmediate` in Node's event loop, and Next's patched `Date` and `Math.random`. The stand-in for `fast-set-immediate.external` throws where that code starts.
+- Next's staged rendering, which Cache Components uses for a prerender and for Cached Navigations. It needs what a tab does not have at all: the order of `process.nextTick` and `setImmediate` in Node's event loop, and Next's patched `Date` and `Math.random`. The stand-in for `fast-set-immediate.external` throws where that code starts. So Cached Navigations is off: see [`"use cache"`](#use-cache).
 - Prerendered pages. Next's request handler for a page wraps a render in a build's response cache, and here no page is in that cache. Every request renders its page.
 - `instrumentation.ts` and the app's own `cacheHandler`. `load-manifest.external` and its neighbours are where they would go.
 
@@ -574,11 +620,11 @@ At the next lookup the plugin answers for a test file itself. The test file belo
 - A route handler does not see the query that a rewrite adds, as with `next start`. Its `request.url` is the URL the browser asked for.
 - `basePath`, and `trailingSlash: true` in a tab. Both are passed to Next's route resolution, and neither is tested with a page.
 - A route with `export const runtime = "edge"` runs on Node.js like the others: see [The Node.js Runtime](#the-nodejs-runtime). Static generation of a `GET` route handler and `revalidate` do not apply, so every request runs the handler. `process.env.NEXT_RUNTIME` is a constant in Next's own code and is not set for the app's code.
-- `"use cache"`. Next compiles such a function with the part of its SWC transform that also compiles Server Actions, and Vite RSC does that part here. Compiling it would not be enough either: the function is called after Next has awaited, so it would never read its cache scope's store. `cacheTag()` and `cacheLife()` need that store, and so does collecting the tags of the `fetch` calls in the function. See [Caching](#a-cache-scope-ends-at-its-first-await).
-- Inside a function cached with `unstable_cache`, after its first `await`, the request's store is read instead of the cache's. See [Caching](#a-cache-scope-ends-at-its-first-await).
+- Cached Navigations, and the checks of a prerender with Cache Components. A function that is not exported, with the directive, in a module that has it at its top. `"use cache: private"`, `"use cache: remote"` and a `page.tsx` with the directive are not tested. See [`"use cache"`](#use-cache).
+- The scope of a cached function in a callback, in the `then()` of a thenable, in a package, and in a function with a `for await`: the request's store is read there instead of the cache's. See [The Scope Of A Cached Function](#the-scope-of-a-cached-function).
 - A `cacheHandler` or `cacheHandlers` in `next.config`. The cache is Next's own, in memory.
-- Code that exits a store with `AsyncLocalStorage.exit()` for work that awaits, and reads the store again afterwards. The store stays exited for the rest of the request. Next does this for the render after a Server Action, where nothing reads it again.
-- An `after()` callback that takes longer than a second continues without its request's stores, so `cookies()` and `headers()` fail in it from then on. Under `vi.useFakeTimers()` a response without a body never tells Next it was sent, so its `after()` callbacks do not run while the request lasts, and the next request starts a second late.
+- Code that is not compiled, like a package's, that exits a store with `AsyncLocalStorage.exit()` for work that awaits, and reads the store again afterwards. The store stays exited for the rest of the request. Next does this for the render after a Server Action, where nothing reads it again.
+- An `after()` callback that takes longer than a second continues without its request's stores, so `cookies()` and `headers()` fail in it from then on. For a callback in a source file of the app, which is compiled to keep its stores across an `await`, this is not tested. Under `vi.useFakeTimers()` a response without a body never tells Next it was sent, so its `after()` callbacks do not run while the request lasts, and the next request starts a second late.
 - A navigation without Next's router to a route handler that does not answer with HTML, like a download link, is an uncaught error, because there is nothing for the tab to show. So is a navigation to another origin, like a redirect to a sign-in or a checkout. The tab stays where it is.
 - Server code is only told it is on a server where it checks `typeof window`: see [Server Code In A Tab](#server-code-in-a-tab).
 - A mock for Client Components: see [Mocks](#mocks).
