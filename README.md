@@ -890,7 +890,7 @@ db.notes.set("7", { id: "7", title: "Seeded by the host", body: "From the host" 
 await renderServer({ url: "/notes/7" });
 ```
 
-`playground/storybook-nextjs-vite-rsc` is a proof of concept of a Storybook framework on the plugin: `host` is the story files, `.storybook/` and the packages of Storybook, its framework and its addons. A story file is server code, as a test file is. With `"use client"` its stories render in the browser: an arg can be a spy of `storybook/test`, which the play function asserts on and the Actions panel logs, and `clientNode()` hands such a story to `renderServer()` with its props as they are.
+`playground/storybook-nextjs-vite-rsc` is a proof of concept of a Storybook framework on the plugin: `host` is the story files, `.storybook/` and the packages of Storybook, its framework and its addons. A story file is server code, as a test file is. With `"use client"` its stories render in the browser: an arg can be a spy of `storybook/test`, which the play function asserts on and the Actions panel logs, and `clientNode()` hands such a story to `renderServer()` with its props as they are. An arg that changes in the Controls renders the story again with `rerender()`, in place: the state of its Client Components stays. `parameters.nextjs` takes the `url`, `headers`, `layouts` and `proxy` of `renderServer()`.
 
 Outside Vitest, `cleanup()` forgets only what the app added: the cookies its server set, and the cookies and storage keys added while a page of the app was open. The rest is the host's, like what Storybook's manager stores on the same origin.
 
