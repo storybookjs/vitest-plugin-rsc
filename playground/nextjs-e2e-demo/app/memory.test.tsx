@@ -50,6 +50,16 @@ test("lets go of a page that the test has left, with all of its modules", async 
   await expectCollected(modules);
 });
 
+test("lets go of the last page once the test has cleaned up", async () => {
+  await renderServer({ url: "/" });
+  const modules = modulesOfPage();
+
+  // No page after it, whose globals take the place of this one's.
+  await cleanup();
+
+  await expectCollected(modules);
+});
+
 test("lets go of a page that rendered a portal in the body", async () => {
   await renderServer({ url: "/help" });
   // React adds its listeners to where a portal renders: the body.
