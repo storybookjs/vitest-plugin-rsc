@@ -125,9 +125,10 @@ registry.Response = ServerResponse;
 registry.enterRequestScope = enterAmbientScope;
 registry.asyncFunctionHooks = asyncFunctionHooks;
 
-// A microtask has the stores of the code that queued it, as on Node.js. React
-// starts a render in one, and Next has React call the function of a
-// `"use cache"` that way, in the scope it entered for the function.
+// What React's Flight server in the rsc layer queues a microtask with
+// (server-code.ts): the microtask has the stores of the code that queued it,
+// as on Node.js. React starts a render in one, and Next has React call the
+// function of a `"use cache"` that way, in the scope it entered for it.
 const nativeQueueMicrotask = globalThis.queueMicrotask;
 registry.queueMicrotask = (callback) =>
   nativeQueueMicrotask(SequentialAsyncLocalStorage.bind(callback));

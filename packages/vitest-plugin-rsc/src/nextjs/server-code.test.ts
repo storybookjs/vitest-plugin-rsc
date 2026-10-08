@@ -71,13 +71,31 @@ test("reads fetch, Request and Response from the server", async () => {
   );
 });
 
-test("queues a microtask with the server's queueMicrotask", async () => {
-  vi.stubGlobal("__server__", { queueMicrotask: () => "server microtask" });
+test("has React's Flight server in the rsc layer queue a microtask with the server's queueMicrotask", async () => {
+  const serverCode = createServerCode(registry);
+  const compile = async (layer: "rsc" | "ssr", file: string) =>
+    (
+      await serverCode
+        .optimizerPlugin(layer)
+        .transform.call({ warn: vi.fn() }, `var schedule = queueMicrotask;`, file)
+    )?.code;
+  const flightServer = (build: string) =>
+    `/app/node_modules/next/dist/compiled/react-server-dom-webpack/cjs/react-server-dom-webpack-server.edge.${build}.js`;
 
-  expect(await run(`var result = [typeof queueMicrotask, queueMicrotask(() => {})];`)).toEqual([
-    "function",
-    "server microtask",
-  ]);
+  for (const build of ["development", "production"]) {
+    expect(await compile("rsc", flightServer(build))).toContain(
+      `var schedule = ${registry}.queueMicrotask;`,
+    );
+  }
+  // No other module, and not the layer that renders HTML.
+  expect(await compile("ssr", flightServer("development"))).toBeUndefined();
+  expect(await compile("rsc", "/app/node_modules/next/dist/server/next.js")).toBeUndefined();
+  expect(
+    await compile(
+      "rsc",
+      "/app/node_modules/@vitejs/plugin-rsc/dist/vendor/react-server-dom/cjs/react-server-dom-webpack-server.edge.development.js",
+    ),
+  ).toBeUndefined();
 });
 
 test("leaves code alone that names none of them", async () => {
@@ -173,22 +191,20 @@ test("tells the server code of a layer from the code of the test", () => {
   expect(serverCode.isServerCode("\0virtual:module", "ssr")).toBe(false);
 });
 
-test("compiles the async functions of Next's wrapper of a cached function, and of no other package", () => {
+test("compiles the async functions of Next's wrapper of a cached function, and of no other module", () => {
   const { transform } = createServerCode(registry).asyncFunctionsOptimizerPlugin();
-  const code = `export async function cache() { await generate(); }`;
+  const compile = (file: string) =>
+    transform.call({ warn: vi.fn() }, `export async function cache() { await generate(); }`, file);
 
-  for (const file of [
-    "esm/server/use-cache/use-cache-wrapper.js",
-    "server/use-cache/cache-tag.js",
-  ]) {
-    expect(transform(code, `/app/node_modules/next/dist/${file}`)?.code).toContain(
-      `await ${registry}.asyncFunctionHooks.s(`,
-    );
+  for (const build of ["esm/server", "server"]) {
+    const wrapper = `/app/node_modules/next/dist/${build}/use-cache/use-cache-wrapper.js`;
+    expect(compile(wrapper)?.code).toContain(`await ${registry}.asyncFunctionHooks.s(`);
   }
-  expect(transform(code, "/app/node_modules/next/dist/esm/server/app-render/app-render.js")).toBe(
+  expect(compile("/app/node_modules/next/dist/esm/server/use-cache/cache-tag.js")).toBeUndefined();
+  expect(compile("/app/node_modules/next/dist/esm/server/app-render/app-render.js")).toBe(
     undefined,
   );
-  expect(transform(code, "/app/node_modules/zod/index.js")).toBeUndefined();
+  expect(compile("/app/node_modules/zod/index.js")).toBeUndefined();
 });
 
 test("compiles the async functions of the app's server code in the rsc layer, not of a test file", () => {
@@ -208,4 +224,21 @@ test("compiles the async functions of the app's server code in the rsc layer, no
   // A dependency is compiled when it is pre-bundled, or not at all.
   const dependency = path.join(root, "node_modules/next/dist/server/next.js");
   expect(transform.call(context, code, dependency)).toBeUndefined();
+});
+
+test("leaves the async functions of a file that does not parse as they are, with a warning", () => {
+  const serverCode = createServerCode(registry);
+  serverCode.configure(root);
+  serverCode.addTestFiles((file) => file.endsWith(".test.tsx"));
+  const { transform } = serverCode.asyncFunctionsPlugin("client") as unknown as {
+    transform(this: object, code: string, id: string): { code: string } | undefined;
+  };
+  const warn = vi.fn();
+  const context = { warn, environment: { config: { cacheDir: "/cache" } } };
+  const page = path.join(root, "app/page.tsx");
+
+  expect(
+    transform.call(context, `export const load = async () => <p>{await data()}</p>;`, page),
+  ).toBe(undefined);
+  expect(warn).toHaveBeenCalledWith(expect.stringContaining(`${page} do not keep their stores`));
 });

@@ -50,6 +50,30 @@ describe("the compile step", () => {
     );
   });
 
+  test("leaves a function as it is that would not parse with its body in a block", () => {
+    // In a block, a function declaration cannot have the name of another one, or of a `var`.
+    expect(compile(`async function f() { await 1; function g() {} function g() {} }`)).toBe(
+      undefined,
+    );
+    expect(compile(`async function f() { await 1; var g = 1; function g() {} }`)).toBeUndefined();
+    expect(
+      compile(
+        `async function f(x) { await 1; if (x) { var { a: [g] = [] } = x; } function g() {} }`,
+      ),
+    ).toBeUndefined();
+
+    // Not one whose function declarations have names of their own.
+    const code = compile(
+      `async function f(x) { await 1; var { g: a, ...b } = x; return g(a, b); function g() {} }`,
+    )!;
+    expect(code).toContain("__hooks__.e()");
+    expect(() => (0, eval)(`"use strict"; (${code})`)).not.toThrow();
+  });
+
+  test("throws for a module that does not parse", () => {
+    expect(() => compile(`export const f = async () => <p>{await g()}</p>;`)).toThrow();
+  });
+
   test("keeps the directives of a function first", () => {
     expect(compile(`async function f() { "use server"; await g(); }`)).toMatch(
       /^async function f\(\) \{ "use server";;const /,
@@ -96,6 +120,7 @@ type Scenario = (
   AsyncLocalStorage: new () => { run<R>(store: unknown, fn: () => R): R; getStore(): unknown },
   log: Log,
   sleep: (ms: number) => Promise<void>,
+  queueMicrotask: (callback: () => void) => void,
 ) => Promise<void>;
 
 // The time of a scenario: its timers fire in the order of their delay, one
@@ -121,18 +146,26 @@ function createSleep() {
     });
 }
 
-async function run(code: string, AsyncLocalStorage: unknown): Promise<string[]> {
+async function run(
+  code: string,
+  AsyncLocalStorage: unknown,
+  queue: (callback: () => void) => void,
+): Promise<string[]> {
   const logged: string[] = [];
   const scenario = (0, eval)(code) as Scenario;
   await scenario(
     AsyncLocalStorage as never,
     (...values) => logged.push(values.map(String).join(" ")),
     createSleep(),
+    queue,
   );
   return logged;
 }
 
-const runWithNode = (source: string) => run(`(${source})`, NodeAsyncLocalStorage);
+const runWithNode = (source: string) => run(`(${source})`, NodeAsyncLocalStorage, queueMicrotask);
+// The `queueMicrotask` that React's Flight server is compiled to call: globals.ts.
+const serverQueueMicrotask = (callback: () => void) =>
+  queueMicrotask(SequentialAsyncLocalStorage.bind(callback));
 
 async function runInRequest(source: string, compiled = true): Promise<string[]> {
   const code = compiled
@@ -140,7 +173,7 @@ async function runInRequest(source: string, compiled = true): Promise<string[]> 
     : `(${source})`;
   const endRequest = enterAmbientScope();
   try {
-    return await run(code, SequentialAsyncLocalStorage);
+    return await run(code, SequentialAsyncLocalStorage, serverQueueMicrotask);
   } finally {
     endRequest();
   }
@@ -224,6 +257,36 @@ const scenarios: Record<string, string> = {
       await sleep(1);
       const value = als.run("cache", () => als.getStore());
       log(value, als.getStore());
+    });
+  }`,
+
+  "a store that a part leaves": `async function (ALS, log, sleep) {
+    const als = new ALS();
+    await als.run("request", async () => {
+      const outside = als.exit(async () => {
+        log("outside", als.getStore());
+        await sleep(1);
+        log("outside", als.getStore());
+      });
+      log(als.getStore());
+      await outside;
+      log(als.getStore());
+    });
+  }`,
+
+  "a microtask": `async function (ALS, log, sleep, queueMicrotask) {
+    const als = new ALS();
+    await als.run("request", async () => {
+      await sleep(1);
+      await als.run("cache", () => new Promise((resolve) => {
+        queueMicrotask(async () => {
+          log("microtask", als.getStore());
+          await sleep(1);
+          log("microtask", als.getStore());
+          resolve();
+        });
+      }));
+      log(als.getStore());
     });
   }`,
 
@@ -371,12 +434,31 @@ describe("a store follows the awaits of a compiled function as it does on Node.j
     expect(await runInRequest(source)).toEqual(["cache request cache"]);
   });
 
+  test("and what a thenable does in its then(), like a query that runs when it is awaited", async () => {
+    const source = `async function (ALS, log) {
+      const als = new ALS();
+      const query = { then: (resolve) => resolve(als.getStore()) };
+      await als.run("request", async () => {
+        await als.run("cache", async () => log(await query, als.getStore()));
+      });
+    }`;
+
+    expect(await runWithNode(source)).toEqual(["cache cache"]);
+    expect(await runInRequest(source)).toEqual(["request cache"]);
+  });
+
   test("code that runs while a compiled function waits does not read its store", async () => {
     const als = new SequentialAsyncLocalStorage<string>();
     const sleep = createSleep();
+    // With a `catch` after an `await` that did not reject, which has nothing to put back.
     const cached = (0, eval)(
       transformAsyncFunctions(
-        `(async function (als, sleep) { await sleep(2); await sleep(2); return als.getStore(); })`,
+        `(async function (als, sleep) {
+          await sleep(2);
+          try { JSON.parse("{"); } catch {}
+          await sleep(2);
+          return als.getStore();
+        })`,
         "cached.js",
         "__hooks__",
       )!.code,

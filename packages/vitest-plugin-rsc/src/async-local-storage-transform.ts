@@ -25,6 +25,9 @@ import { parseAst } from "vite";
 //
 //   - a function that waits where no call can go: one with a `for await` or
 //     an `await using`, and an async generator, which also waits at a `yield`,
+//   - a function that would not parse with its body in the block of a `try`,
+//     where a function declaration cannot have the name of another one or of
+//     a `var`,
 //   - an `await` at the top level of a module, which was called with no store.
 
 type Node = {
@@ -45,7 +48,13 @@ type FunctionNode = Node & {
 // that opens something at the same place, and each in the order that nests.
 type Insertion = { at: number; text: string; closes: boolean; order: number };
 
-type AsyncFunction = { awaits: boolean; compiles: boolean; insertions: Insertion[] };
+type AsyncFunction = {
+  awaits: boolean;
+  compiles: boolean;
+  /** The names its `var` declarations declare. */
+  vars: Set<string>;
+  insertions: Insertion[];
+};
 
 const call = "__vitest_plugin_rsc_call__";
 
@@ -71,6 +80,19 @@ function children(node: Node): Node[] {
   return result;
 }
 
+// The names a pattern declares: of `var { a, b: [c] = [] } = value`, a and c.
+function addNames(pattern: Node | null | undefined, names: Set<string>): void {
+  if (!pattern) return;
+  if (pattern.type === "Identifier") names.add(pattern.name as string);
+  else if (pattern.type === "ObjectPattern") {
+    for (const property of pattern.properties as Node[]) {
+      addNames((property.value ?? property.argument) as Node, names);
+    }
+  } else if (pattern.type === "ArrayPattern") {
+    for (const element of pattern.elements as (Node | null)[]) addNames(element, names);
+  } else addNames((pattern.left ?? pattern.argument) as Node | undefined, names);
+}
+
 // The place right after the `=>` of an arrow function: what follows is its
 // body, with the parentheses around it that the body node leaves out.
 function afterArrow(code: string, from: number, to: number): number {
@@ -86,7 +108,7 @@ function afterArrow(code: string, from: number, to: number): number {
 /**
  * Compiles the async functions of a module to call `hooks`, an expression for
  * `asyncFunctionHooks` of async-local-storage.ts. Returns nothing for code
- * that stays as it is, or that does not parse.
+ * that stays as it is, and throws for code that does not parse.
  */
 export function transformAsyncFunctions(
   code: string,
@@ -94,12 +116,7 @@ export function transformAsyncFunctions(
   hooks: string,
 ): { code: string; map: SourceMap } | undefined {
   if (!/\bawait\b/.test(code)) return;
-  let program: Node;
-  try {
-    program = parseAst(code) as unknown as Node;
-  } catch {
-    return;
-  }
+  const program = parseAst(code) as unknown as Node;
 
   const insertions: Insertion[] = [];
   let order = 0;
@@ -116,10 +133,17 @@ export function transformAsyncFunctions(
       for (const param of node.params) visit(param, undefined);
       const own: AsyncFunction | undefined =
         node.async && !node.generator
-          ? { awaits: false, compiles: true, insertions: [] }
+          ? { awaits: false, compiles: true, vars: new Set(), insertions: [] }
           : undefined;
       visit(node.body, own);
       if (!own?.awaits || !own.compiles) return;
+      if (node.body.type === "BlockStatement") {
+        const declared = node.body.body
+          .filter((statement) => statement.type === "FunctionDeclaration")
+          .map((statement) => (statement.id as Node).name as string);
+        if (new Set(declared).size < declared.length) return;
+        if (declared.some((name) => own.vars.has(name))) return;
+      }
 
       const enter = `const ${call}=${hooks}.e();try{`;
       const exit = `}finally{${hooks}.x(${call})}`;
@@ -169,6 +193,9 @@ export function transformAsyncFunctions(
           break;
         case "VariableDeclaration":
           if (node.kind === "await using") fn.compiles = false;
+          if (node.kind === "var") {
+            for (const { id } of node.declarations as { id: Node }[]) addNames(id, fn.vars);
+          }
           break;
       }
     }

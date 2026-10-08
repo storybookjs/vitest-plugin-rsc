@@ -21,8 +21,6 @@ const serverGlobals = [
   // Node.js has these and a tab does not: see globals.ts.
   "setImmediate",
   "clearImmediate",
-  // On Node.js its callback has the stores of `AsyncLocalStorage`.
-  "queueMicrotask",
 ];
 
 const mentionsServerGlobal = new RegExp(`\\b(?:${serverGlobals.join("|")})\\b`);
@@ -119,12 +117,19 @@ function packageDirOf(file: string): string | undefined {
   return /^.*\/node_modules\/(?:@[^/]+\/)?[^/]+(?=\/)/.exec(file)?.[0];
 }
 
+type Warns = { warn(message: string): void };
+
 const name = "vitest-plugin-rsc:next-server-code";
 const asyncFunctionsName = "vitest-plugin-rsc:next-async-functions";
 
 // Next's wrapper of a `"use cache"` function. It enters the scope of the
 // function and awaits before it has React call the function.
-const useCacheWrapper = /\/next\/dist\/(?:esm\/)?server\/use-cache\/[^/]+\.js$/;
+const useCacheWrapper = /\/next\/dist\/(?:esm\/)?server\/use-cache\/use-cache-wrapper\.js$/;
+// React's Flight server, of the React that Next ships: the build for
+// development and the one for production, of React and of its experimental
+// channel.
+const flightServer =
+  /\/next\/dist\/compiled\/react-server-dom-webpack(?:-experimental)?\/cjs\/react-server-dom-webpack-server\.edge\.\w+\.js$/;
 
 export function createServerCode(registry: string, options: ServerCodeOptions = {}) {
   const patterns = [options.browserModules ?? []].flat();
@@ -146,6 +151,20 @@ export function createServerCode(registry: string, options: ServerCodeOptions = 
     if (isBrowserModule(file) || testFileMatchers.some((matches) => matches(file))) return false;
     const packageDir = packageDirOf(file);
     return !packageDir || !testRunnerPackages.has(packageDir);
+  }
+
+  // The async functions of a file, compiled. A file that does not parse stays
+  // as it is: its functions read the store of the request after an `await`.
+  function compileAsyncFunctions(context: Warns, code: string, file: string) {
+    try {
+      return transformAsyncFunctions(code, file, `${registry}.asyncFunctionHooks`);
+    } catch (error) {
+      const reason = String(error instanceof Error ? error.message : error);
+      context.warn(
+        `vitest-plugin-rsc: the async functions of ${file} do not keep their stores across an ` +
+          `await, it does not parse as JavaScript. ${reason.replace(/\s+/g, " ")}`,
+      );
+    }
   }
 
   /** The file of a module, if it is a source file that is server code in a layer. */
@@ -198,8 +217,17 @@ export function createServerCode(registry: string, options: ServerCodeOptions = 
           id: string,
         ): Promise<Compiled | undefined> {
           if (!/\.[cm]?js$/.test(id) || !isServerCode(id, layer)) return;
+          // React starts a render in a microtask. On Node.js that has the
+          // stores of the code that started the render, and here the server's
+          // own `queueMicrotask` passes them on: see globals.ts. That is how
+          // Next has React call a cached function in the scope of that
+          // function.
+          const define =
+            layer === "rsc" && flightServer.test(normalizePath(id))
+              ? { queueMicrotask: `${registry}.queueMicrotask` }
+              : undefined;
           try {
-            return await compileServerCode(code, id, registry);
+            return await compileServerCode(code, id, registry, define);
           } catch (error) {
             // JSX in a `.js` file, for one. The bundler may still take it.
             const reason = String(error instanceof Error ? error.message : error);
@@ -220,10 +248,9 @@ export function createServerCode(registry: string, options: ServerCodeOptions = 
     asyncFunctionsOptimizerPlugin() {
       return {
         name: asyncFunctionsName,
-        transform: (code: string, id: string) =>
-          useCacheWrapper.test(normalizePath(id))
-            ? transformAsyncFunctions(code, id, `${registry}.asyncFunctionHooks`)
-            : undefined,
+        transform(this: Warns, code: string, id: string) {
+          if (useCacheWrapper.test(normalizePath(id))) return compileAsyncFunctions(this, code, id);
+        },
       };
     },
     /** And the source files of the app in the `rsc` layer, by the name of its environment. */
@@ -233,7 +260,7 @@ export function createServerCode(registry: string, options: ServerCodeOptions = 
         applyToEnvironment: ({ name }) => name === environment,
         transform(code, id) {
           const file = sourceFileOf(id, normalizePath(this.environment.config.cacheDir), "rsc");
-          if (file) return transformAsyncFunctions(code, file, `${registry}.asyncFunctionHooks`);
+          if (file) return compileAsyncFunctions(this, code, file);
         },
       };
     },
