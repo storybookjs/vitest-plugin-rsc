@@ -20,6 +20,7 @@ const built = createHostReferences();
 const plugin = clientFiles({
   environments: { rsc: "client", browser: "react_client" },
   testingLibrary,
+  internal: "/plugin/nextjs/internal.js",
   isHostFile: (file) => /\.test\.tsx$|\/vitest\.setup\.ts$/.test(file),
   isHostPackage: (specifier) => /^(vitest|storybook)(\/|$)|^@storybook\//.test(specifier),
   built,
@@ -85,7 +86,7 @@ test("renders", () => {});
   const stub = await transform.call(rsc, code, "/app/frame.test.tsx");
 
   expect(stub?.code)
-    .toBe(`import { loadClientFile as $$loadClientFile } from "/plugin/nextjs/index.js";
+    .toBe(`import { loadClientFile as $$loadClientFile } from "/plugin/nextjs/internal.js";
 const $$file = await $$loadClientFile("/@fs/app/frame.test.tsx");
 export const Primary = $$file["Primary"];
 export const Frame = $$file["Frame"];

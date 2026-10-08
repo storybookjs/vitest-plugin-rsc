@@ -40,6 +40,8 @@ export type ClientFilesOptions = {
   environments: { rsc: string; browser: string };
   /** `vitest-plugin-rsc/nextjs/testing-library`, and the file it is. */
   testingLibrary: { specifier: string; file: string };
+  /** The file of `vitest-plugin-rsc/nextjs/internal`, which loads a client file. */
+  internal: string;
   /** Whether a file is the host's: a test file, a setup file, a story. */
   isHostFile(file: string): boolean;
   /** Whether an import is of a package of the host, by its name. */
@@ -49,14 +51,14 @@ export type ClientFilesOptions = {
 };
 
 /** The module of the rsc layer for a client file with these exports. */
-export function clientFileStub(id: string, exportNames: string[], testingLibrary: string): string {
+export function clientFileStub(id: string, exportNames: string[], internal: string): string {
   const exports = exportNames.map((name) =>
     name === "default"
       ? `export default $$file.default;`
       : `export const ${name} = $$file[${JSON.stringify(name)}];`,
   );
   return [
-    `import { loadClientFile as $$loadClientFile } from ${JSON.stringify(testingLibrary)};`,
+    `import { loadClientFile as $$loadClientFile } from ${JSON.stringify(internal)};`,
     `const $$file = await $$loadClientFile(${JSON.stringify(id)});`,
     ...exports,
     "",
@@ -89,7 +91,7 @@ export function hostModuleCode(
 
 export function clientFiles(options: ClientFilesOptions): Plugin {
   const { rsc, browser } = options.environments;
-  const { testingLibrary, isHostFile, isHostPackage, built } = options;
+  const { testingLibrary, internal, isHostFile, isHostPackage, built } = options;
   // The modules in between that a build of the browser layer has a file for.
   const emitted = new Set<string>();
 
@@ -223,7 +225,7 @@ export function clientFiles(options: ClientFilesOptions): Plugin {
         built.clientFiles.set(normalized, fileId);
       }
       return {
-        code: clientFileStub(fileId, exportNames, testingLibrary.file),
+        code: clientFileStub(fileId, exportNames, internal),
         map: { mappings: "" },
       };
     },

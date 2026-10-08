@@ -71,12 +71,15 @@ const setupFile = fileURLToPath(
 const affectedSetupFile = fileURLToPath(
   new URL(`./affected/browser${path.extname(import.meta.url)}`, import.meta.url),
 );
+// A file of this package, in `src` or in `dist`.
+const ownFile = (name: string) =>
+  normalizePath(
+    fileURLToPath(new URL(`./${name}${path.extname(import.meta.url)}`, import.meta.url)),
+  );
 // What a test imports `renderServer()` from, and the file that is.
 const testingLibrary = {
   specifier: "vitest-plugin-rsc/nextjs/testing-library",
-  file: normalizePath(
-    fileURLToPath(new URL(`./index${path.extname(import.meta.url)}`, import.meta.url)),
-  ),
+  file: ownFile("index"),
 };
 
 // Next's server reference ids are 42 hex characters whose first byte says
@@ -767,6 +770,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
     clientFiles({
       environments: { rsc: environmentOf.rsc, browser: environmentOf.browser },
       testingLibrary,
+      internal: ownFile("internal"),
       isHostFile: serverCode.isHostFile,
       isHostPackage: serverCode.isHostPackage,
       built: hostReferences,

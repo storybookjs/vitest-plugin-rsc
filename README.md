@@ -898,7 +898,6 @@ import { vitestPluginNext } from "vitest-plugin-rsc/nextjs/plugin";
 | `vitestPluginNext({ affectedTests })`   | `true` lets watch mode and `vitest --changed` find a route's test files. Off by default.                                        |
 | `vitestPluginNext({ host })`            | For a host that is not Vitest: its `files` and its `packages`. See [Storybook And Other Hosts](#storybook-and-other-hosts).     |
 | `clientNode(module, name, props)`       | For a host: a node for `renderServer()` that is an export of a `"use client"` module, rendered in the browser with these props. |
-| `clientFileOf(value)`                   | For a host: the `{ module, name }` of an export of a `"use client"` file of the host, for `clientNode()`.                       |
 
 The options for a node, all optional:
 

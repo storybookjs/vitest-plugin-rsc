@@ -280,7 +280,7 @@ What follows from that:
 - `vi.mock()` and `vi.hoisted()` are an error, see [Mocks](#mocks).
 - `renderServer()` resolves once the node has rendered, which can be after the page has hydrated: a Suspense boundary, like the one of a route's `loading.tsx`, hydrates later. It rejects when the node has not rendered ten seconds after the page hydrated.
 
-A host renders an export of such a file with `clientNode(module, name, props)`: `clientFileOf(value)` says which module and export a value is. That is how a story with `"use client"` renders in Storybook, with its args as they are.
+A host renders an export of such a file with `clientNode(module, name, props)`. That is how a story with `"use client"` renders in Storybook, with its args as they are: the framework of the playground asks the plugin which module and export a story is, with an internal helper.
 
 ## Route Handlers
 

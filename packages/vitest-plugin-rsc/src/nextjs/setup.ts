@@ -1,6 +1,7 @@
 import { afterAll, afterEach, beforeEach } from "vitest";
+import { cleanup } from "./index.ts";
+import { unloadClientFile } from "./client-graph.ts";
 import { clientFileId } from "./client-ids.ts";
-import { cleanup, unloadClientFile } from "./index.ts";
 
 // Registered by `vitestPluginNext()` as a setup file. Importing the entry
 // first matters: it installs the server's platform before a test file can

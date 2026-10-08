@@ -1,11 +1,7 @@
 import type { ReactNode } from "react";
 import { applyHooks, defaultDecorateStory } from "storybook/preview-api";
-import {
-  cleanup,
-  clientFileOf,
-  clientNode,
-  renderServer,
-} from "vitest-plugin-rsc/nextjs/testing-library";
+import { clientFileOf } from "vitest-plugin-rsc/nextjs/internal";
+import { cleanup, clientNode, renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
 
 // The renderer. The preview is the rsc layer of the app: a story file is
 // server code, as a test file is under Vitest. So a story renders the way a

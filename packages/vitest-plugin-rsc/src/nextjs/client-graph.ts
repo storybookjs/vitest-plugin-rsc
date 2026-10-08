@@ -200,8 +200,8 @@ function clientFileEvaluator(imported: (module: string) => Promise<object>): Mod
 }
 
 /**
- * For a host: evaluates a file with `"use client"` for the browser layer, and
- * answers with what it exports. `id` is what the browser layer imports the
+ * Evaluates a file with `"use client"` for the browser layer, and answers
+ * with what it exports. `id` is what the browser layer imports the
  * file by. The module of the rsc layer for such a file calls this, so a host
  * that imports the file gets these exports.
  */
@@ -240,7 +240,7 @@ export async function loadClientFile(id: string): Promise<Record<string, unknown
 }
 
 /**
- * For a host: forgets a client file that `loadClientFile()` loaded. The pages
+ * Forgets a client file that `loadClientFile()` loaded. The pages
  * that load from here on do not load what it imports. Its tests are done.
  */
 export function unloadClientFile(id: string): void {
@@ -251,14 +251,6 @@ export function unloadClientFile(id: string): void {
   if (!files.delete(id) || files.size > 0 || !current || current.taken) return;
   drop(current);
   current = undefined;
-}
-
-/**
- * For a host: the client file an export is of, and its name there. The module
- * is what the browser layer imports the file by.
- */
-export function clientFileOf(value: unknown): { module: string; name: string } | undefined {
-  return isObject(value) ? registry.clientExports.get(value) : undefined;
 }
 
 /**

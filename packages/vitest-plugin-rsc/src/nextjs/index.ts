@@ -13,8 +13,6 @@ import { loadDocument, unloadDocument } from "./document.ts";
 import { recordListeners, recordMessageChannels } from "./leftovers.ts";
 import { registry, setClientNode, type ClientNode, type Opened } from "./registry.ts";
 
-export { clientFileOf, loadClientFile, unloadClientFile } from "./client-graph.ts";
-
 // The server's platform (globals.ts) has to be there before a module of Next's
 // server loads, so the layers load from here on, in order: rsc, then ssr.
 const rsc = await import("./rsc.ts");
@@ -420,10 +418,10 @@ function clientNodeOf(ui: unknown): ClientNode | undefined {
  * For a host: a node for `renderServer()` that is an export of a module of the
  * browser layer, with these props. The page renders it in the browser and not
  * on the server, so the props are passed as they are: a function stays that
- * function. `module` is what the browser layer imports the module by, as
- * `clientFileOf()` gives it. A package specifier works too, with a dev
- * server: a static build has the files with `"use client"` of the host, and
- * the modules a Flight payload can refer to.
+ * function. `module` is what the browser layer imports the module by: the
+ * path of a file from the root, like `/app/components/button.tsx`. A package
+ * specifier works too, with a dev server: a static build has the files with
+ * `"use client"` of the host, and the modules a Flight payload can refer to.
  */
 export function clientNode(
   module: string,
