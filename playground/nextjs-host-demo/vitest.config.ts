@@ -10,5 +10,8 @@ export default defineProject({
     include: ["*.test.ts"],
     environment: "node",
     testTimeout: 180_000,
+    // One file at a time: a build writes into the project, where a dev server
+    // of another check would see a change and load the page again.
+    fileParallelism: false,
   },
 });

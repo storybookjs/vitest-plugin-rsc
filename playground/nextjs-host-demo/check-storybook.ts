@@ -192,6 +192,51 @@ const checks: Record<string, (page: Page, url: string) => Promise<void>> = {
     await canvas.getByRole("button", { name: "Press at /notes/7: 2" }).click();
     await canvas.getByRole("button", { name: "Press at /notes/7: 3" }).waitFor();
   },
+  // The CSS module and the image of a Client Component that a client story
+  // renders.
+  async "client-button--with-badge"(page, url) {
+    const canvas = await open(page, url, "client-button--with-badge");
+    const badge = canvas.getByTestId("badge");
+    await badge.waitFor();
+    await canvas.waitForFunction(
+      () =>
+        getComputedStyle(document.querySelector("[data-testid=badge]")!).backgroundColor ===
+        "rgb(0, 112, 243)",
+      null,
+      { timeout: 10_000 },
+    );
+    await canvas.waitForFunction(
+      () => {
+        const image = document.querySelector<HTMLImageElement>('img[alt="Badge logo"]');
+        return image?.complete && image.naturalWidth > 0;
+      },
+      null,
+      { timeout: 10_000 },
+    );
+  },
+  // A Client Component that is no story file and imports a spy of
+  // `storybook/test`: the preview's own module, also in a build.
+  async "server-spiedbutton--default"(page, url) {
+    const canvas = await open(page, url, "server-spiedbutton--default");
+    await canvas.getByRole("button", { name: "Spied presses: 0" }).click();
+    await canvas.getByRole("button", { name: "Spied presses: 1" }).waitFor();
+  },
+  // What the manager stores on the origin of the preview is its own: a story
+  // that loads does not take it.
+  async "the manager's storage"(page, url) {
+    const canvas = await open(page, url, "server-greeting--default");
+    // Once the story has rendered, which is once it has hydrated.
+    await canvas.getByRole("button", { name: "Count: 0" }).click();
+    await canvas.getByRole("button", { name: "Count: 1" }).waitFor();
+    await page.evaluate(() => localStorage.setItem("manager-setting", "kept"));
+    await select(canvas, "server-greeting--other-name");
+    await canvas.getByRole("heading", { name: "Hello from a story with other args" }).waitFor();
+    expect(
+      await page.evaluate(() => localStorage.getItem("manager-setting")),
+      "kept",
+      "what the manager stored",
+    );
+  },
   // From story to story in one preview, as in a session: every story is a
   // page load, and a client story reads its imports from the page it is on.
   // Each one has rendered before the next is selected.
@@ -227,7 +272,9 @@ try {
     });
     try {
       await check(page, server.url);
-      console.log(`ok   ${name}${errors.length ? `\n     ${errors.join("\n     ")}` : ""}`);
+      // A file the page could not load, or an error it caught, fails it too.
+      if (errors.length > 0) throw new Error("the page had errors");
+      console.log(`ok   ${name}`);
     } catch (error) {
       failed = true;
       console.log(`FAIL ${name}\n     ${String(error)}\n     ${errors.join("\n     ")}`);

@@ -3,6 +3,7 @@
 import { usePathname } from "next/navigation";
 import { useState, type MouseEvent } from "react";
 import { expect, fn, userEvent, within } from "storybook/test";
+import { Badge } from "../app/components/badge.tsx";
 import { Button } from "../app/components/button.tsx";
 
 // A story file with `"use client"` is code of the browser layer, as such a
@@ -50,4 +51,14 @@ export const Counting = {
     await expect(await canvas.findByRole("button", { name: "Press at /notes/7: 2" })).toBeVisible();
     await expect(args.onClick).toHaveBeenCalledTimes(2);
   },
+};
+
+// A Client Component with a CSS module and an image of its own: the story
+// loads its CSS, as the page of the app does.
+export const WithBadge = {
+  render: (args: Args) => (
+    <Button {...args}>
+      <Badge>New</Badge>
+    </Button>
+  ),
 };

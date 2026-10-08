@@ -63,8 +63,15 @@ export function render(args: Record<string, unknown>, context: StoryContext): Re
 const previewPath = window.location.pathname;
 
 // The module of the framework that renders a client story, as the browser
-// layer imports it.
-const clientStory = "@storybook/nextjs-vite-rsc/client-story";
+// layer imports it. It has `"use client"`, so importing it here loads it in
+// the browser layer: only once there is a client story.
+let clientStory: Promise<{ module: string; name: string }> | undefined;
+const loadClientStory = () =>
+  (clientStory ??= import("./client-story.tsx").then(({ ClientStory }) => {
+    const found = clientFileOf(ClientStory);
+    if (!found) throw new Error("client-story.tsx is not a file of the host");
+    return found;
+  }));
 
 // The decorators of the project, from `.storybook/preview` and the addons.
 // For a client story they are what the server renders around it: Server
@@ -110,7 +117,8 @@ export async function renderToCanvas(
   } else if (file) {
     // The context is passed as it is, not through Flight: a spy in the args
     // is the one the play function asserts on.
-    const story = clientNode(clientStory, "ClientStory", {
+    const { module, name } = await loadClientStory();
+    const story = clientNode(module, name, {
       file: file.module,
       name: file.name,
       context: () => storyContext,

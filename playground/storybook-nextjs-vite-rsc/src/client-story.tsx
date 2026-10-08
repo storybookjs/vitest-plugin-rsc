@@ -1,9 +1,13 @@
+"use client";
+
 import { use, useEffect, useMemo, type ComponentType, type ReactNode } from "react";
 import { HooksContext, normalizeStory, prepareStory } from "storybook/preview-api";
 import { importClientModule } from "vitest-plugin-rsc/nextjs/client-node";
 
 // A story of a file with `"use client"`, in the browser layer: what the
-// preview renders for one, see entry-preview.tsx.
+// preview renders for one, see entry-preview.tsx. With the directive, this
+// file is a module of the browser layer too, which the preview imports: a
+// static build has it, as it has the story files.
 //
 // The preview has imported the story file once, for Storybook to read. A page
 // has a module graph of its own, and CSF keeps what it imports where a story
