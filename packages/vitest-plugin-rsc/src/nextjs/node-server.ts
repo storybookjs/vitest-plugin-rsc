@@ -238,8 +238,13 @@ export async function handleRequest(
   context: { waitUntil?: (promise: Promise<unknown>) => void },
   handler: RequestHandler,
   routed?: RoutedRequestMeta,
+  statusCode?: number,
 ): Promise<Response> {
   const { res, response } = createNodeResponse(request);
+  // The status the server in front of the route has for the response, which
+  // `next start` sets the same way: `res.statusCode = 404`. The handler reads
+  // it, and can set another.
+  if (statusCode !== undefined) res.statusCode = statusCode;
   // Next's route module makes a cache of its own for every request, and
   // leaves it in the global of the server's: see cache.ts.
   const handled = handler(createNodeRequest(request), res, {

@@ -61,14 +61,15 @@ const setupFile = fileURLToPath(
 );
 
 // Next's server reference ids are 42 hex characters whose first byte says
-// which arguments the function uses. Vite RSC's are `<module>#<export>`. The
-// rest of the module stays as it is.
+// which arguments the function uses. Vite RSC's are `<module>#<export>`. An
+// id here can be either: Next answers 400 for one that can be neither, and
+// 409 for one that it does not have. The rest of the module stays as it is.
 const serverReferenceInfoShim = `
 import * as original from ${JSON.stringify(serverReferenceInfo)};
 export * from ${JSON.stringify(serverReferenceInfo)};
 const isNextId = (id) => id.length === original.SERVER_REFERENCE_ID_LENGTH && /^[0-9a-f]+$/i.test(id);
 export function mightBeServerReferenceId(id) {
-  return typeof id === "string" && id.length > 0;
+  return typeof id === "string" && (original.mightBeServerReferenceId(id) || id.includes("#"));
 }
 export function extractInfoFromServerReferenceId(id) {
   return isNextId(id)
@@ -341,35 +342,37 @@ function findImports(code: string): string[] {
   ].map((match) => match[1]!);
 }
 
-// Follows the imports of Next's rsc-layer runtime up to each `"use client"`
-// module: the modules a Flight payload can refer to. The other two layers
-// pre-bundle them up front, or Vite would discover them mid-test and reload
-// the page. This is what Next's client entry plugin does for its own bundles.
-function findClientBoundaries(resolver: LayerResolver, roots: string[]): string[] {
-  const boundaries = new Set<string>();
-  const seen = new Set<string>();
-  const queue = [...roots];
+// The scan reads every file of Next's ESM build, so it is done once for an
+// installation of Next, and not for every project that uses it.
+const clientBoundaryFiles = new Map<string, string[]>();
 
-  for (const specifier of queue) {
-    if (seen.has(specifier) || !specifier.startsWith("next/dist/esm/")) continue;
-    seen.add(specifier);
-    const file = resolver.nextFile(specifier);
-    if (!file) continue;
-    const code = fs.readFileSync(file, "utf8");
-    if (code.includes("use client") && hasDirective(parseAst(code).body, "use client")) {
-      boundaries.add(specifier);
-      continue;
-    }
-    for (const source of findImports(code)) {
-      const target = resolver.normalize(
-        source.startsWith(".")
-          ? resolver.toSpecifier(path.resolve(path.dirname(file), source))
-          : source,
-      );
-      if (target) queue.push(target);
-    }
+// The modules of Next a Flight payload can refer to: every file of its ESM
+// build with a `"use client"` directive, which is what
+// `nextClientBoundaryPlugin` makes a client reference of. The other two layers
+// pre-bundle them up front, or Vite would discover them mid-test and reload
+// the page. By the file, which is how a payload names one: an import of the
+// app does not, like `next/legacy/image`, so the dependency scan finds another
+// spelling. This is what Next's client entry plugin does for its own bundles.
+function findClientBoundaries(nextDir: string, resolver: LayerResolver): string[] {
+  let files = clientBoundaryFiles.get(nextDir);
+  if (!files) {
+    const entries = fs.readdirSync(path.join(nextDir, "dist/esm"), {
+      recursive: true,
+      withFileTypes: true,
+    });
+    files = entries.flatMap((entry) => {
+      if (!entry.isFile() || !entry.name.endsWith(".js")) return [];
+      const file = path.join(entry.parentPath, entry.name);
+      const code = fs.readFileSync(file, "utf8");
+      return code.includes("use client") && hasDirective(parseAst(code).body, "use client")
+        ? [file]
+        : [];
+    });
+    clientBoundaryFiles.set(nextDir, files);
   }
-  return [...boundaries];
+  // Vite keeps the pre-bundled dependencies by a hash of this list, and a
+  // directory is listed in the order of its disk.
+  return files.map((file) => resolver.toSpecifier(file)).sort();
 }
 
 // What the runtime modules of this package, and the modules Vite and Vite RSC
@@ -394,6 +397,7 @@ const runtimeImports: Record<NextLayer, string[]> = {
     // ssr.ts, for the server in front of the app
     "next/dist/client/components/app-router-headers",
     "next/dist/server/lib/is-rsc-request",
+    "next/dist/server/lib/server-ipc/utils",
     "next/dist/shared/lib/router/utils/route-matcher",
     "next/dist/shared/lib/router/utils/route-regex",
     // node-server.ts
@@ -498,7 +502,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
           ...apiImports("rsc"),
           ...runtimeImports.rsc,
         ]);
-        const clientBoundaries = findClientBoundaries(resolvers.rsc, rscInclude);
+        const clientBoundaries = findClientBoundaries(project.nextDir, resolvers.rsc);
         const include: Record<NextLayer, string[]> = {
           rsc: rscInclude,
           ssr: [
@@ -522,6 +526,11 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
           );
 
         const appEntries = normalizePath(path.join(project.appDir, "**/*.{js,jsx,ts,tsx}"));
+        // The proxy of the app is a module of the rsc layer that no file of
+        // `app/` imports.
+        const middlewareEntries = project.middlewareFile
+          ? [normalizePath(project.middlewareFile)]
+          : [];
         const optimizeDeps = (layer: NextLayer) => ({
           include: [...include[layer], ...dependenciesOfNext(layer)],
           rolldownOptions: {
@@ -561,10 +570,10 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
             [environmentOf.rsc]: {
               optimizeDeps: {
                 ...optimizeDeps("rsc"),
-                // A route loads when it is first requested. Scan the app up
-                // front, or Vite finds the dependencies of a page mid-test
-                // and reloads the page.
-                entries: [appEntries],
+                // A route loads when it is first requested, and so does the
+                // proxy. Scan the app up front, or Vite finds the
+                // dependencies of a page mid-test and reloads the page.
+                entries: [appEntries, ...middlewareEntries],
               },
             },
             [environmentOf.ssr]: {
