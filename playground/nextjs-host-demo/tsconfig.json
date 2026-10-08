@@ -14,7 +14,7 @@
     "isolatedModules": true,
     "jsx": "react-jsx",
     "paths": { "@/*": ["./*"] },
-    "types": ["vite/client"]
+    "types": ["node"]
   },
   "include": ["**/*.ts", "**/*.tsx"]
 }

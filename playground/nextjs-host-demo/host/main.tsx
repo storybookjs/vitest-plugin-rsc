@@ -7,20 +7,27 @@ import { db } from "../app/lib/notes.ts";
 // pages read.
 db.notes.set("7", { id: "7", title: "Seeded by the host", body: "From host/main.tsx" });
 
-const views: Record<string, () => Promise<unknown>> = {
-  home: () => renderServer({ url: "/" }),
-  note: () => renderServer({ url: "/notes/7" }),
-  node: () =>
-    renderServer(<Greeting name="the host" />, {
-      url: "/notes/7",
-      container: document.getElementById("host-root")!,
-    }),
+// What the page shows is in its query: `?url=/notes/7` for a page of the app,
+// and `?view=node` for a node in a container of the host.
+const query = new URLSearchParams(window.location.search);
+const state = window as {
+  __hostState?: string;
+  __hostError?: unknown;
+  __hostResponse?: { status: number; url: string; redirected: boolean };
 };
-
-const view = new URLSearchParams(window.location.search).get("view") ?? "home";
-const state = window as { __hostState?: string; __hostError?: unknown };
 try {
-  await views[view]!();
+  const { response } =
+    query.get("view") === "node"
+      ? await renderServer(<Greeting name="the host" />, {
+          url: "/notes/7",
+          container: document.getElementById("host-root")!,
+        })
+      : await renderServer({ url: query.get("url") ?? "/" });
+  state.__hostResponse = {
+    status: response.status,
+    url: response.url,
+    redirected: response.redirected,
+  };
   state.__hostState = "ready";
 } catch (error) {
   state.__hostState = "error";
