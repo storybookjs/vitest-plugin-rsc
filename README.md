@@ -88,8 +88,7 @@ Agents do better when wrapped in a self-healing loop with fast unit tests — ed
 - **Focused scope**: Test a whole route, or one component on its own.
 - **White-box inputs**: The server runs in the test's tab. The `db` your test seeds is the module instance your Server Components read. Mock IO, fake clocks, set cookies and headers.
 - **Black-box output**: Assert what the user sees and does via `vitest/browser` — Playwright locators (`getByRole`, `getByText`, etc.) and `expect.element` matchers.
-- **Watch mode**: Edit a page, a layout or a component, and Vitest reruns the test files that opened a route with it.
-- **Diff-scoped runs**: `vitest --changed` and `vitest related` run those same test files. What a test file depends on is written down when it passes, in Vite's cache directory. A test file that is not written down runs for every change, so keep that directory between runs of CI to make them short.
+- **Precise watch mode and diff-scoped runs, as an option**: With `vitestPluginNext({ affectedTests: true })`, an edit of a page, a layout or a component reruns only the test files that opened a route with it, and `vitest --changed` and `vitest related` run those same test files. It is off by default: without it an edit reruns every test file that opens a route, and `--changed` does not find the test files of a route. See [Watch Mode](docs/next-routes.md#watch-mode).
 - **No deployed infra**: Use in-memory infrastructure like PGlite instead of spinning up a preview server and database.
 - **Per-test isolation**: Each test starts with an empty Data Cache, without cookies, and without what the app put in `localStorage` and `sessionStorage`.
 
@@ -680,6 +679,7 @@ import { vitestPluginNext } from "vitest-plugin-rsc/nextjs/plugin";
 | `handleRequest(input, init)`           | Sends one request to the app, like `fetch`. Resolves with the `Response`.                     |
 | `cleanup()`                            | Leaves the page, clears cookies, storage and the cache. The plugin runs it around every test. |
 | `vitestPluginNext({ browserModules })` | The Vite plugin. `browserModules` are glob patterns, relative to the project root.            |
+| `vitestPluginNext({ affectedTests })`  | `true` lets watch mode and `vitest --changed` find the test files of a route. Off by default. |
 
 The options for a node, all optional:
 

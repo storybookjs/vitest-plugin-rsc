@@ -44,7 +44,11 @@ function createSharedProjectConfig() {
 export const nextjsNotesProjects = [
   defineProject({
     ...createSharedProjectConfig(),
-    plugins: [vitestPluginRSC(), vitestPluginNext(), ignoreWatchedOnlyModules()],
+    plugins: [
+      vitestPluginRSC(),
+      vitestPluginNext({ affectedTests: true }),
+      ignoreWatchedOnlyModules(),
+    ],
     test: {
       name: "nextjs-notes-demo-browser",
       include: ["**/*.test.{ts,tsx}"],
