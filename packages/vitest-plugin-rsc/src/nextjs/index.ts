@@ -1,7 +1,7 @@
 import "./globals.ts";
 import { createElement, type JSXElementConstructor, type ReactNode } from "react";
 import { resetAsyncLocalStorage } from "../async-local-storage.ts";
-import { createEnvironmentRunner, importEnvironment } from "../utilts.ts";
+import { createEnvironmentRunner, importEnvironment } from "../utils.ts";
 import { loadDocument, unloadDocument } from "./document.ts";
 import { recordListeners, recordMessageChannels } from "./leftovers.ts";
 import { registry } from "./registry.ts";
@@ -218,40 +218,36 @@ export function handleRequest(input: RequestInfo | URL, init?: RequestInit): Pro
   return sendRequest(new registry.Request(input, init));
 }
 
-// The browser's `fetch`: what Next's client router and Client Components call.
-globalThis.fetch = async (input, init) => {
-  const sent = sameOriginRequest(input, init);
-  if (!sent) return nativeFetch(input, init);
-  const headers = browserHeaders(new Headers(sent.headers), sent.url, sent.method);
-  if (!sent.marked && !(await ssr.takesRequest({ url: sent.url.href, headers }, true))) {
-    return nativeFetch(input, init);
-  }
-  // The request, for the network: a body can be read once.
-  const spare = input instanceof Request && input.body ? input.clone() : input;
-  return sendRequest(new Request(input, init), {
-    network: sent.marked ? undefined : () => nativeFetch(spare, init),
-  });
-};
+// A `fetch` that sends a same-origin request to the app when it is the app's,
+// and everything else to the network.
+const appFetch =
+  (server: boolean): typeof fetch =>
+  async (input, init) => {
+    const sent = sameOriginRequest(input, init);
+    if (!sent) return nativeFetch(input, init);
+    const headers = server
+      ? sent.headers
+      : browserHeaders(new Headers(sent.headers), sent.url, sent.method);
+    if (!sent.marked && !(await ssr.takesRequest({ url: sent.url.href, headers }))) {
+      return nativeFetch(input, init);
+    }
+    // The request, for the network: a body can be read once.
+    const spare = input instanceof Request && input.body ? input.clone() : input;
+    // The server's Request keeps a `cookie` header, which a browser's drops.
+    const request = server ? new registry.Request(input, init) : new Request(input, init);
+    return sendRequest(request, {
+      server,
+      network: sent.marked ? undefined : () => nativeFetch(spare, init),
+    });
+  };
 
+// The browser's `fetch`: what Next's client router and Client Components call.
+globalThis.fetch = appFetch(false);
 // The server's `fetch`. A request to the app itself is one the server makes
 // while it handles another: Next renders the page a Server Action redirects
 // to that way. It is chosen as the browser's is, and goes through the proxy
 // too. Its redirects are followed, as the `fetch` of a server follows them.
-registry.fetch = async (input, init) => {
-  const sent = sameOriginRequest(input, init);
-  if (!sent) return nativeFetch(input, init);
-  if (
-    !sent.marked &&
-    !(await ssr.takesRequest({ url: sent.url.href, headers: sent.headers }, true))
-  ) {
-    return nativeFetch(input, init);
-  }
-  const spare = input instanceof Request && input.body ? input.clone() : input;
-  return sendRequest(new registry.Request(input, init), {
-    server: true,
-    network: sent.marked ? undefined : () => nativeFetch(spare, init),
-  });
-};
+registry.fetch = appFetch(true);
 // Where the server reaches itself, which `next start` sets too. Next reads it
 // when it needs it, from the `process` of the tab.
 process.env.__NEXT_PRIVATE_ORIGIN = window.location.origin;
@@ -285,6 +281,13 @@ export type RenderComponentOptions = RenderServerOptions & {
   baseElement?: HTMLElement;
   /** Wraps the node on the server. It can be a Server Component. */
   wrapper?: JSXElementConstructor<{ children: ReactNode }>;
+  /**
+   * Renders the node in place of the page at `url`, inside the layouts of the
+   * app, with the `loading`, `error` and `not-found` of that route. The root
+   * layout renders the document, so `container` and `baseElement` cannot be
+   * passed, and the `container` in the result is the `<body>`.
+   */
+  layouts?: boolean;
 };
 
 export type RenderComponentResult = RenderServerResult & {
@@ -329,6 +332,29 @@ export async function renderServer(
   }
 
   const { wrapper } = options;
+  const ui = wrapper ? createElement(wrapper, null, first) : first;
+  if (options.layouts) {
+    if (options.container || options.baseElement) {
+      throw new Error(
+        "vitest-plugin-rsc: with `layouts` a node renders in the document of its route, whose " +
+          "root layout has the <html> and the <body>. There is no `container` or `baseElement` " +
+          "to pass.",
+      );
+    }
+    const component = { pathname: url.pathname, ui, layouts: true };
+    const response = await loadPage(url, { headers }, { component });
+    return {
+      response,
+      get container() {
+        return document.body;
+      },
+      get baseElement() {
+        return document.body;
+      },
+      asFragment: () => fragmentOf(document.body),
+      unmount: leavePage,
+    };
+  }
   // The container becomes the node's: React hydrates all of it, and leaving
   // the node empties it. The document is the test's to keep, and so is a
   // container with content: see `loadPage()`.
@@ -341,9 +367,11 @@ export async function renderServer(
   // Leaving the page that is there takes what was added to the document
   // since it loaded, so the container comes after that.
   await leavePage();
-  // A body is the one of the document, whichever that is: a node has a body
-  // of its own, and the page after it another.
+  // A base element of the test's own. Not a body: that is the one of the
+  // document, whichever it is by then. A node has a body of its own, and the
+  // page after it another.
   const base = options.baseElement instanceof HTMLBodyElement ? undefined : options.baseElement;
+  const defaultsToContainer = !options.baseElement && options.container;
   if (options.container && !options.container.isConnected) {
     throw new Error(
       "vitest-plugin-rsc: the container of a node has to be in the document. What is added " +
@@ -354,7 +382,6 @@ export async function renderServer(
   const container =
     options.container ?? (base ?? document.body).appendChild(document.createElement("div"));
   if (!options.container) containers.add(container);
-  const ui = wrapper ? createElement(wrapper, null, first) : first;
   const response = await loadPage(
     url,
     { headers },
@@ -364,20 +391,22 @@ export async function renderServer(
     response,
     container,
     get baseElement() {
-      return base ?? (options.baseElement ? document.body : (options.container ?? document.body));
+      return base ?? (defaultsToContainer || document.body);
     },
-    asFragment() {
-      const fragment = document.createRange().createContextualFragment(container.innerHTML);
-      // Not the scripts that run: they are how Next and React bring the page
-      // to the tab, with a Flight payload that differs on every run. A script
-      // of data, like JSON-LD, is content.
-      for (const script of fragment.querySelectorAll("script")) {
-        if (!script.type || /^(text\/javascript|module)$/i.test(script.type)) script.remove();
-      }
-      return fragment;
-    },
+    asFragment: () => fragmentOf(container),
     unmount: leavePage,
   };
+}
+
+function fragmentOf(container: HTMLElement): DocumentFragment {
+  const fragment = document.createRange().createContextualFragment(container.innerHTML);
+  // Not the scripts that run: they are how Next and React bring the page to
+  // the tab, with a Flight payload that differs on every run. A script of
+  // data, like JSON-LD, is content.
+  for (const script of fragment.querySelectorAll("script")) {
+    if (!script.type || /^(text\/javascript|module)$/i.test(script.type)) script.remove();
+  }
+  return fragment;
 }
 
 // The containers `renderServer()` made for a node, which `cleanup()` removes.
@@ -402,10 +431,7 @@ async function loadPage(url: URL, init: RequestInit, opening?: Opening): Promise
   const leaving = leavePage();
   const load = (currentLoad = new AbortController());
   await leaving;
-  const superseded = () => {
-    if (load.signal.aborted) throw load.signal.reason;
-  };
-  superseded();
+  load.signal.throwIfAborted();
 
   // Once the node that was in it is gone.
   if (opening?.container?.hasChildNodes()) {
@@ -431,9 +457,8 @@ async function openPage(
   signal: AbortSignal,
   opening: Opening | undefined,
 ): Promise<Response> {
-  const superseded = () => {
-    if (signal.aborted) throw signal.reason;
-  };
+  // The tab has moved on: to another page, or to the next test.
+  const superseded = () => signal.throwIfAborted();
 
   // Not the browser's Request, which drops a `cookie` header.
   const response = await sendRequest(new registry.Request(url, { ...init, signal }), {

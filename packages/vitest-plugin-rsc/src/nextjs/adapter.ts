@@ -2,10 +2,10 @@ import type { NextAdapter } from "next/dist/build/adapter/build-complete.js";
 
 // The deployment adapter of this plugin. Next's build hands an adapter the
 // routes of the server in front of the app, and what it built for each route.
-// project.ts calls that part of the build, and gets the two from here.
+// project/routing.ts calls that part of the build, and gets the two from here.
 //
 // Next imports this file itself, so it may be another instance of the module
-// than the one project.ts has: they share the receivers through the global.
+// than the one project/routing.ts has: they share the receivers through the global.
 
 type Receive = (context: Parameters<NonNullable<NextAdapter["onBuildComplete"]>>[0]) => void;
 

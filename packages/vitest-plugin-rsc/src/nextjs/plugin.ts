@@ -3,12 +3,13 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { hasDirective, transformDirectiveProxyExport } from "@vitejs/plugin-rsc/transforms";
 import { createFilter, normalizePath, parseAst, parseAstAsync, type Plugin } from "vite";
-import type { TestProject, Vitest } from "vitest/node";
+import type { TestProject } from "vitest/node";
 import { createRunnerEnvironmentPlugins } from "../runner-environment.ts";
 import { flightBridge, type FlightEntry } from "./flight.ts";
 import { createCompilePlugin, createDependencyCompilePlugin } from "./compile.ts";
 import { createNodePlatform } from "./node-platform.ts";
 import { loadNextProject, type NextLayer, type NextProject } from "./project.ts";
+import { moduleFileAt } from "./project/context.ts";
 import { createServerCode, type ServerCodeOptions } from "./server-code.ts";
 import { affectedTests } from "./affected/index.ts";
 import { createPathsPlugin } from "./paths.ts";
@@ -27,23 +28,17 @@ const layers = Object.keys(environmentOf) as NextLayer[];
 const registry = "globalThis.__vitest_plugin_rsc_next__";
 // Shared by the layers: the routes and the `next.config`.
 const manifestId = "virtual:vitest-plugin-rsc/next-manifest";
-// The modules of the routes, per layer: one that lists them, and one for each
-// by its place in `project.routes`. A page has a module in the rsc layer, and
-// the ssr layer handles its requests (node-server.ts). Next's bundler config
-// puts a route handler in the rsc layer as a whole: its route module, which
-// is with the modules of the pages and has its request handler. The routes
-// of a node are pages too, listed after the ones of the app.
+// The modules of the routes, all in the rsc layer: one for each route, by its
+// place in the list of routes, and two that say how to load them, the pages
+// and the route handlers. The ssr layer handles the requests of a page
+// (node-server.ts). A route handler is in the rsc layer as a whole, as Next's
+// bundler config has it. The routes of a node are pages too, listed after the
+// ones of the app.
 const virtual = (name: string) => `virtual:vitest-plugin-rsc/next-${name}`;
-const routeModules = [
-  { list: virtual("app-pages"), prefix: virtual("app-page/"), layer: "rsc", kind: "page" },
-  {
-    list: virtual("route-handlers"),
-    prefix: virtual("route-handler/"),
-    layer: "rsc",
-    kind: "route",
-  },
-] as const;
-const [appPages] = routeModules;
+const routeEntryPrefix = virtual("route/");
+const routeLists = { page: virtual("app-pages"), route: virtual("route-handlers") } as const;
+type RouteKind = keyof typeof routeLists;
+const routeKinds = Object.keys(routeLists) as RouteKind[];
 // The middleware of the app, in the rsc layer: a module that says how to load
 // it, if the app has one, and its request handler.
 const middlewareId = virtual("middleware");
@@ -54,8 +49,8 @@ const nextRouting = "@next/routing";
 // What the modules of a route are listed by: its page name, which the route
 // of a node shares with a page of the app.
 const entryOf = (route: { page: string; component?: string }) => route.component ?? route.page;
-const isRouteModule = (id: string) => (modules: (typeof routeModules)[number]) =>
-  id === modules.list || id.startsWith(modules.prefix);
+const isRouteModule = (id: string) =>
+  id.startsWith(routeEntryPrefix) || routeKinds.some((kind) => id === routeLists[kind]);
 const bridgePrefix = "\0vitest-plugin-rsc/next-bridge/";
 const emptyModuleId = "\0vitest-plugin-rsc/next-empty";
 const serverReferenceInfo = "next/dist/esm/shared/lib/server-reference-info.js";
@@ -99,10 +94,7 @@ function createLayerResolver(getProject: () => NextProject, layer: NextLayer) {
   const normalized = new Map<string, string | false>();
 
   function nextFile(specifier: string): string | undefined {
-    const base = path.join(getProject().nextDir, specifier.slice("next/".length));
-    return [base, `${base}.js`, path.join(base, "index.js")].find((candidate) =>
-      fs.statSync(candidate, { throwIfNoEntry: false })?.isFile(),
-    );
+    return moduleFileAt(path.join(getProject().nextDir, specifier.slice("next/".length)));
   }
 
   function toSpecifier(file: string): string {
@@ -448,13 +440,11 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
       ? [
           affectedTests({
             environments: layers.map((layer) => environmentOf[layer]),
-            lists: routeModules.map(({ list }) => `\0${list}`),
+            lists: routeKinds.map((kind) => `\0${routeLists[kind]}`),
             modulesOf: (kind, entry) =>
               [...project.routes, ...project.componentRoutes].flatMap((route, index) =>
                 route.kind === kind && entryOf(route) === entry
-                  ? routeModules
-                      .filter((modules) => modules.layer === "rsc")
-                      .map(({ prefix }) => `\0${prefix}${index}`)
+                  ? [`\0${routeEntryPrefix}${index}`]
                   : [],
               ),
             next: getProject,
@@ -468,25 +458,20 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
         project = await loadNextProject(path.resolve(config.root ?? process.cwd()));
         serverCode.configure(project.root);
 
-        // What the route entries import from Next. The request handler is
-        // one template per kind of route. The loader tree differs: which of
-        // Next's builtin boundaries a route needs depends on what the app
-        // leaves out.
-        // The route of a node has Next's own global error page, which an app
-        // with one of its own does not import.
+        // What the route entries import from Next, to pre-bundle it. Every
+        // route is read: which of Next's builtin boundaries a loader tree
+        // imports depends on what the app leaves out. And one route of a
+        // node, for Next's own global error page, which an app with one of
+        // its own does not import.
         const appPageEntries = await Promise.all(
           [...project.routes, ...project.componentRoutes.slice(0, 1)].map((candidate) =>
-            project.loadAppPageEntry(candidate),
+            project.loadRouteEntry(candidate),
           ),
         );
-        const entryImports = {
-          rsc: [
-            ...appPageEntries.flatMap(({ code }) => findImports(code)),
-            ...findImports((await project.loadMiddlewareEntry()) ?? ""),
-          ],
-          // What node-server.ts imports is in `runtimeImports`.
-          ssr: [] as string[],
-        };
+        const entryImports = [
+          ...appPageEntries.flatMap(({ code }) => findImports(code)),
+          ...findImports((await project.loadMiddlewareEntry()) ?? ""),
+        ];
         // `next/og` renders images with wasm: not something to pre-bundle for
         // every project.
         const apiImports = (layer: NextLayer) =>
@@ -505,7 +490,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
         ];
 
         const rscInclude = toInclude("rsc", [
-          ...entryImports.rsc,
+          ...entryImports,
           ...apiImports("rsc"),
           ...runtimeImports.rsc,
         ]);
@@ -513,12 +498,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
         const include: Record<NextLayer, string[]> = {
           rsc: rscInclude,
           ssr: [
-            ...toInclude("ssr", [
-              ...entryImports.ssr,
-              ...apiImports("ssr"),
-              ...runtimeImports.ssr,
-              ...clientBoundaries,
-            ]),
+            ...toInclude("ssr", [...apiImports("ssr"), ...runtimeImports.ssr, ...clientBoundaries]),
             nextRouting,
           ],
           browser: toInclude("browser", [
@@ -578,8 +558,6 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
         test.setupFiles = [setupFile, ...[test.setupFiles ?? []].flat()];
 
         return {
-          // Next's build resolves the `paths` of the tsconfig.
-          resolve: { tsconfigPaths: config.resolve?.tsconfigPaths ?? true },
           environments: {
             [environmentOf.rsc]: {
               optimizeDeps: {
@@ -615,9 +593,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
           },
         };
       },
-      // An app with metadata files still runs, as it would without them: say
-      // which files are left out. Not `favicon.ico`, which only adds a
-      // `<link rel="icon">`, and which every new app has.
+      // What the app has and does not get here: said once, when a run starts.
       configResolved(config) {
         if (project.edgeRouteFiles.length > 0) {
           config.logger.warnOnce(
@@ -633,6 +609,9 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
               project.unmatchedRoutes.join(", "),
           );
         }
+        // An app with metadata files still runs, as it would without them.
+        // Not `favicon.ico`, which only adds a `<link rel="icon">`, and which
+        // every new app has.
         const files = project.metadataFiles.filter((file) => path.basename(file) !== "favicon.ico");
         if (files.length === 0) return;
         const app = path.relative(process.cwd(), project.root) || path.basename(project.root);
@@ -643,7 +622,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
       },
       // Vitest's hook for a plugin of a project: what its config says is a
       // test file or a setup file is not server code.
-      configureVitest({ vitest, project: testProject }: { vitest: Vitest; project: TestProject }) {
+      configureVitest({ project: testProject }: { project: TestProject }) {
         const test = testProject.config;
         const setupFiles = new Set(test.setupFiles.map((file) => normalizePath(file)));
         // `test.include`, matched the way Vitest does. Not `includeSource`:
@@ -654,7 +633,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
         serverCode.addTestFiles((file) => setupFiles.has(file) || isIncluded(file));
       },
       resolveId(source) {
-        if (source === manifestId || routeModules.some(isRouteModule(source))) return `\0${source}`;
+        if (source === manifestId || isRouteModule(source)) return `\0${source}`;
         if (source === middlewareId || source === middlewareEntryId) return `\0${source}`;
         // TODO: run Next's metadata loaders for these inline loader requests.
         // Until then a page has no metadata from files: see configResolved.
@@ -693,40 +672,35 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
           return serverCode.compile(code, "next-middleware-entry.js", definesOf(project, "rsc"));
         }
 
-        const modules = routeModules.find(isRouteModule(id.slice(1)));
-        if (!id.startsWith("\0") || !modules) return;
-        const { list, prefix, layer, kind } = modules;
+        if (!id.startsWith("\0") || !isRouteModule(id.slice(1))) return;
         // Vite's dependency scan follows the test's imports in every
         // environment, also into the modules of another layer.
-        if (environmentOf[layer] !== this.environment.name) return "export default {};";
+        if (this.environment.name !== environmentOf.rsc) return "export default {};";
         const routes = [...project.routes, ...project.componentRoutes];
 
-        if (id === `\0${list}`) {
+        const listed = routeKinds.find((kind) => id === `\0${routeLists[kind]}`);
+        if (listed) {
           const entries = routes.flatMap((route, index) =>
-            route.kind === kind
+            route.kind === listed
               ? [
-                  `  ${JSON.stringify(entryOf(route))}: () => import(${JSON.stringify(prefix + index)}),`,
+                  `  ${JSON.stringify(entryOf(route))}: ` +
+                    `() => import(${JSON.stringify(routeEntryPrefix + index)}),`,
                 ]
               : [],
           );
           return `export default {\n${entries.join("\n")}\n};\n`;
         }
 
-        const index = id.slice(prefix.length + 1);
-        const route = routes[Number(index)]!;
-        let code: string;
-        if (modules === appPages) {
-          const entry = await project.loadAppPageEntry(route);
-          for (const file of entry.watchFiles) this.addWatchFile(file);
-          code = entry.code;
-        } else {
-          // The route module that Next's app loader makes of a route handler
-          // has its request handler for Node.js.
-          code = `export * from ${JSON.stringify(appPages.prefix + index)};\n`;
-        }
+        const route = routes[Number(id.slice(routeEntryPrefix.length + 1))]!;
+        const entry = await project.loadRouteEntry(route);
+        for (const file of entry.watchFiles) this.addWatchFile(file);
         // A generated module: Vite only replaces `define` keys in pre-bundled
         // dependencies.
-        return serverCode.compile(code, `${id.replace(/\W+/g, "-")}.js`, definesOf(project, layer));
+        return serverCode.compile(
+          entry.code,
+          `${id.replace(/\W+/g, "-")}.js`,
+          definesOf(project, "rsc"),
+        );
       },
     },
     serverCode.plugin({ [environmentOf.rsc]: "rsc", [environmentOf.ssr]: "ssr" }),

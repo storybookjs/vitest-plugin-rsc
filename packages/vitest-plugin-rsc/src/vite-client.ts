@@ -18,7 +18,7 @@ import { parseAstAsync, type Plugin } from "vite";
 
 /** The page's own instance of Vite's client. */
 const pageViteClientId = "virtual:vitest-plugin-rsc/vite-client";
-/** Where the page keeps it for its module runners, see utilts.ts. */
+/** Where the page keeps it for its module runners, see utils.ts. */
 const pageViteClientGlobal = "globalThis.__vitest_plugin_rsc_vite_client__";
 
 export function pageViteClientPlugin(): Plugin {

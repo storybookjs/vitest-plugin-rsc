@@ -39,6 +39,7 @@ registry.flightServer = {
   registerClientReference: ReactServer.registerClientReference,
   createClientModuleProxy: FlightServer.createClientModuleProxy,
 } satisfies FlightAdapters<"server">;
+
 // Next's Node.js server reads the body of a Server Action with busboy, and
 // React decodes it as the parts come in. Here the parts are collected first.
 type Busboy = { on(event: string, listener: (...args: any[]) => void): void };
@@ -63,10 +64,12 @@ registry.flightServer.decodeReplyFromBusboy = (
     busboy.on("error", reject);
     busboy.on("finish", () => resolve(ReactServer.decodeReply(form, options)));
   });
+
 registry.flightStatic = {
   prerender: (model: unknown, _clientModules: unknown, options?: object) =>
     prerender(model, options),
 } satisfies FlightAdapters<"static">;
+
 registry.flightClient = {
   createFromReadableStream: (
     stream: ReadableStream<Uint8Array>,
@@ -83,7 +86,7 @@ registry.loadAppPage = async (page) => {
   return (registry.appPages[page] ??= await load());
 };
 
-/** The page module of the route of a node: see `loadComponentPageEntry()`. */
+/** The page module of the route of a node: see `loadNodeEntry()` in project/entries.ts. */
 export async function loadComponent(): Promise<{ default: () => unknown }> {
   return {
     default: function Component() {
