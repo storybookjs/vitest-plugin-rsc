@@ -77,6 +77,12 @@ test("tells Next's router where a rewrite took its request", async () => {
       "x-nextjs-rewritten-query",
     ),
   ).toBe(false);
+  // Nor for a query that is only written in another order.
+  expect(
+    (await handleRequest("/docs/routing?a=1&b=2&a=3", { headers: { rsc: "1" } })).headers.has(
+      "x-nextjs-rewritten-query",
+    ),
+  ).toBe(false);
   // Not for a request that is not rewritten, or one for a document.
   expect(
     (await handleRequest("/docs/routing", { headers: { rsc: "1" } })).headers.has(
@@ -147,6 +153,18 @@ test("finds a dynamic route for a URL in another case, as a deployment does", as
   await expect.element(page.getByRole("heading", { name: "Docs: Routing" })).toBeVisible();
   await expect.element(page.getByText('Search params: {"tab":"api"}')).toBeVisible();
   await expect.element(router().nth(0)).toHaveTextContent("/Docs/Routing");
+});
+
+test("gives a route the params of its URL as Next's own matcher reads them", async () => {
+  // Not as a query would have them: a `+` is a plus, and `%25` a percent sign.
+  const response = await handleRequest("/api/echo/a+b/50%2525?q=1%2B1");
+
+  expect(await response.json()).toMatchObject({ path: ["a+b", "50%25"], query: "1+1" });
+
+  await renderServer({ url: "/docs/a+b?tab=a+b" });
+
+  await expect.element(page.getByRole("heading", { name: "Docs: a%2Bb" })).toBeVisible();
+  await expect.element(page.getByText('Search params: {"tab":"a b"}')).toBeVisible();
 });
 
 test("sets the headers that next.config has for a path", async () => {
@@ -285,6 +303,11 @@ test("sends a fetch of the server to itself through the proxy", async () => {
   await renderServer({ url: "/status?ask=/proxy/ping" });
 
   await expect.element(page.getByText('Answer: {"pong":true}')).toBeVisible();
+
+  // The `fetch` of a server follows a redirect: here the one of a trailing slash.
+  await renderServer({ url: "/status?ask=/api/echo/slash/" });
+
+  await expect.element(page.getByRole("heading", { name: "Status of slash" })).toBeVisible();
 });
 
 test("navigates with Next's router to a URL that the proxy rewrites", async () => {

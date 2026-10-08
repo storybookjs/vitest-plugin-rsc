@@ -618,6 +618,8 @@ const runtimeImports: Record<NextLayer, string[]> = {
     "next/dist/client/components/app-router-headers",
     "next/dist/server/lib/is-rsc-request",
     "next/dist/server/web/utils",
+    "next/dist/shared/lib/router/utils/route-matcher",
+    "next/dist/shared/lib/router/utils/route-regex",
     // node-server.ts
     "next/dist/compiled/stream-browserify",
     vendoredFlight("client.edge"),

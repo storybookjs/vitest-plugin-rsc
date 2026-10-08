@@ -110,14 +110,25 @@ function unlessAborted<T extends Response | undefined>(
   });
 }
 
-// The network between a browser and the Next.js server in this tab. It does
-// what a browser does for a same-origin request: send the cookies, store the
-// ones that come back, follow redirects. A page load, a `navigation`, that is
-// redirected to another origin leaves the app. With `network`, a request that
-// the server has nothing for is the network's: see `HandleOptions.unrouted`.
-async function browserFetch(
+type Sending = {
+  /**
+   * For a request the server makes to itself while it handles another. It
+   * carries the headers it was given, cookies included, does not go through
+   * the browser's cookie jar, and does not wait for the request it is part of.
+   */
+  server?: boolean;
+  /** A page load, which leaves the app when it is redirected to another origin. */
+  navigation?: boolean;
+  /** Who answers a request that the server has nothing for: see `HandleOptions.unrouted`. */
+  network?: () => Promise<Response>;
+};
+
+// The network between a client and the Next.js server in this tab. For the
+// browser it does what a browser does for a same-origin request: send the
+// cookies, store the ones that come back. For either it follows redirects.
+async function sendRequest(
   request: Request,
-  { navigation = false, network }: { navigation?: boolean; network?: () => Promise<Response> } = {},
+  { server = false, navigation = false, network }: Sending = {},
 ): Promise<Response> {
   let url = new URL(request.url);
   let method = request.method;
@@ -128,11 +139,13 @@ async function browserFetch(
   let redirects = 0;
 
   for (;;) {
-    const headers = browserHeaders(new Headers(request.headers), url, method);
+    const headers = server
+      ? new Headers(request.headers)
+      : browserHeaders(new Headers(request.headers), url, method);
     const response = await unlessAborted(
       ssr.handleRequest(
         { url: url.href, method, headers, body, signal: request.signal },
-        { unrouted: network ? "pass" : "not-found" },
+        { nested: server, unrouted: network ? "pass" : "not-found" },
       ),
       request.signal,
     );
@@ -142,7 +155,7 @@ async function browserFetch(
         ? nativeFetch(url, { method, headers: request.headers, body, signal: request.signal })
         : network!();
     }
-    for (const cookie of response.headers.getSetCookie()) {
+    for (const cookie of server ? [] : response.headers.getSetCookie()) {
       // A script cannot store an HttpOnly cookie, and `document.cookie` is the
       // cookie jar of this tab, so store it as a regular one.
       document.cookie = cookie.replace(/;\s*httponly/i, "");
@@ -191,7 +204,7 @@ async function browserFetch(
  */
 export function handleRequest(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
   // Not the browser's Request, which drops a `cookie` header.
-  return browserFetch(new registry.Request(input, init));
+  return sendRequest(new registry.Request(input, init));
 }
 
 // The browser's `fetch`: what Next's client router and Client Components call.
@@ -204,15 +217,15 @@ globalThis.fetch = async (input, init) => {
   }
   // The request, for the network: a body can be read once.
   const spare = input instanceof Request && input.body ? input.clone() : input;
-  return browserFetch(new Request(input, init), {
+  return sendRequest(new Request(input, init), {
     network: sent.marked ? undefined : () => nativeFetch(spare, init),
   });
 };
 
 // The server's `fetch`. A request to the app itself is one the server makes
 // while it handles another: Next renders the page a Server Action redirects
-// to that way. It carries the headers Next gave it, cookies included, and
-// does not go through the browser's cookie jar.
+// to that way. It is chosen as the browser's is, and goes through the proxy
+// too. Its redirects are followed, as the `fetch` of a server follows them.
 registry.fetch = async (input, init) => {
   const sent = sameOriginRequest(input, init);
   if (!sent) return nativeFetch(input, init);
@@ -223,18 +236,10 @@ registry.fetch = async (input, init) => {
     return nativeFetch(input, init);
   }
   const spare = input instanceof Request && input.body ? input.clone() : input;
-  const request = new registry.Request(input, init);
-  const response = await ssr.handleRequest(
-    {
-      url: request.url,
-      method: request.method,
-      headers: request.headers,
-      body: request.body,
-      signal: request.signal,
-    },
-    { nested: true, unrouted: sent.marked ? "not-found" : "pass" },
-  );
-  return response ?? nativeFetch(spare, init);
+  return sendRequest(new registry.Request(input, init), {
+    server: true,
+    network: sent.marked ? undefined : () => nativeFetch(spare, init),
+  });
 };
 // Where the server reaches itself, which `next start` sets too. Next reads it
 // when it needs it, from the `process` of the tab.
@@ -420,7 +425,7 @@ async function openPage(
   };
 
   // Not the browser's Request, which drops a `cookie` header.
-  const response = await browserFetch(new registry.Request(url, { ...init, signal }), {
+  const response = await sendRequest(new registry.Request(url, { ...init, signal }), {
     navigation: true,
   });
   superseded();

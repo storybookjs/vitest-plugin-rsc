@@ -554,9 +554,13 @@ export async function loadNextProject(
 
   // The app is served the way a deployment serves it: production Next on its
   // Node.js runtime. React itself stays a development build, see plugin.ts.
-  const config = await inDirectory(root, () =>
+  const loadedConfig = await inDirectory(root, () =>
     loadConfig(PHASE_PRODUCTION_BUILD, root, { silent: true }),
   );
+  // Without `i18n`, which is the Pages Router's: a URL of the App Router has
+  // no locale. With it, Next's route resolution and its proxy look for one in
+  // every URL, and find no route of the app.
+  const config = { ...loadedConfig, i18n: null };
   const { appDir } = findPagesDir(root);
   if (!appDir) {
     throw new Error(`vitest-plugin-rsc: no \`app\` directory found in ${root}`);
@@ -815,12 +819,10 @@ export async function loadNextProject(
     ),
   };
   type BuildComplete = Parameters<NonNullable<NextAdapter["onBuildComplete"]>>[0];
-  // The config that the server in front of the app is made from. Without two
-  // settings that are not for it. `i18n` is the Pages Router's: a URL of the
-  // App Router has no locale, and the resolution would look for one. And
-  // `output: "export"` has Next's build read the files it exported, where
-  // the routes of the app are the same as without it.
-  const routedConfig = { ...config, i18n: null, output: undefined };
+  // The config that the server in front of the app is made from. Without
+  // `output: "export"`, which has Next's build read the files it exported:
+  // the routes of the app are the same without it.
+  const routedConfig = { ...config, output: undefined };
   // `next.config` is the app's, and so is the working directory when its
   // `redirects()` runs. One project at a time, as for the config itself.
   const { built, routesManifest } = await inDirectory(root, async () => {
@@ -938,7 +940,7 @@ export async function loadNextProject(
     const isDynamic = route.pathname.includes("[");
     // A URL of the route: its pathname, with a value for each dynamic segment.
     // The page of `/` is at the base path itself.
-    const sample = route.pathname.replace(/\[\[?(?:\.\.\.)?([^\]]+)\]\]?/g, "-$1-");
+    const sample = route.pathname.replace(/\[\[?(?:\.\.\.)?[^\]]+\]\]?/g, "-x-");
     const pathname = config.basePath + (sample === "/" && config.basePath ? "" : sample);
     const url = new URL("http://localhost");
     url.pathname = pathname;

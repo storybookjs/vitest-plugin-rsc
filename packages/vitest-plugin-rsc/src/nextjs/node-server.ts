@@ -274,13 +274,14 @@ function respond(res: NodeResponse, written: Promise<unknown>): Promise<Response
  * What the server in front of a route knows of a request that it routed: see
  * `handle()` in ssr.ts.
  */
-export type RoutedRequestMeta = Pick<RequestMeta, "query">;
+export type RoutedRequestMeta = Pick<RequestMeta, "params" | "query">;
 
 // What `next start` knows of a request before a route gets it: the URL the
 // browser asked for, and what it made of that URL. Without the first Next
 // takes the server to be `localhost`.
 function requestMetaOf(request: ServerRequest, routed: RoutedRequestMeta = {}) {
   return {
+    ...(routed.params && { params: routed.params }),
     ...(routed.query && { query: routed.query }),
     initURL: request.url,
     initProtocol: new URL(request.url).protocol.slice(0, -1),

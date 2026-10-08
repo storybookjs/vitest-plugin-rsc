@@ -280,7 +280,7 @@ An interception route, like `@modal/(.)photo/[id]`, needs no code of the plugin 
 
 `handleBuildComplete()` is the end of `next build`. It runs here without a build: on the manifests of one whose routes read no files, with an empty directory for the rest. The patterns of the dynamic routes, the conversion of a redirect to a `Location` header and the matcher of the proxy are what Next computes for an adapter. The plugin writes the manifests it computes them from: a function for each route, and for a proxy without a matcher of its own the matcher for every path, as Next's build writes it.
 
-Two settings of `next.config` are left out for this. `i18n` is the Pages Router's: a URL of the App Router has no locale, and the resolution would look for one in every URL. And with `output: "export"` Next's build reads the files it exported. The routes of the app are the same without them.
+Two settings of `next.config` are left out. `i18n` is the Pages Router's, and the plugin drops it from the config altogether: a URL of the App Router has no locale, and with it the resolution and the proxy look for one in every URL. And `output: "export"` is left out for this step, since Next's build reads the files it exported then. The routes of the app are the same without them.
 
 ### `@next/routing`
 
@@ -296,7 +296,7 @@ dynamicRoutes       the routes with a dynamic segment
 fallback            rewrites, for a URL that no route has
 ```
 
-This is the server of a deployment through an adapter, and it differs from `next start` in two ways. `resolveRoutes()` also runs the proxy for a request that `next.config` redirects, or whose trailing slash is redirected, and answers with the redirect after it: `next start` answers with the redirect first. And it holds a URL against the pattern of a dynamic route in any letter case: `/Docs/Routing` is the route `/docs/[slug]` with `Routing` for the slug, where `next start` has no route for it.
+This is the server of a deployment through an adapter, which is not `next start` in every detail. Two differences are pinned by a test. `resolveRoutes()` also runs the proxy for a request that `next.config` redirects, or whose trailing slash is redirected, and answers with the redirect after it: `next start` answers with the redirect first. And it holds a URL against the pattern of a dynamic route in any letter case: `/Docs/Routing` is the route `/docs/[slug]` with `Routing` for the slug, where `next start` has no route for it.
 
 It is not a part of `next`: a project installs it next to `next`, at the same version. The two are released together, and what one version of Next hands an adapter is what that version of the package reads. Next's docs call the adapter API experimental, so the plugin does not take another version for close enough. A run stops when the versions differ, or when the package is not there, with the version to install. It also resolves a URL of every route of the app when it starts, with the routes it got: a build and a resolver that no longer fit would make every URL a 404.
 
@@ -306,10 +306,10 @@ It is not a part of `next`: a project installs it next to `next`, at the same ve
 
 - **A redirect** is a response with the status and the headers the resolution gives.
 - **A rewrite to another server** is a `fetch` to it, which `next start` proxies. The tab makes the request, so the browser's rules for one apply: CORS, a redirect is followed, and the `host`, `cookie` and `origin` of the request are the browser's to set. A destination with the origin of the app itself is the dev server's to answer, not the app's.
-- **A route** is called with the URL the browser asked for, also after a rewrite, as `next start` calls it: `usePathname()` says where the browser is, not where the rewrite went. The route is told the rest in the meta of the request, where a deployment adapter puts it: the query the resolution ends with. That has the query of the destination, and the params of the route under the names Next gives them for a server in front of its own, like `nxtPid`. Next's route module takes those over what the pathname says, and out of the query. A request that was not rewritten is told the same way: the resolution has the last word on the params of a route.
+- **A route** is called with the URL the browser asked for, also after a rewrite, as `next start` calls it: `usePathname()` says where the browser is, not where the rewrite went. The route is told the rest in the meta of the request, where `next start` and a deployment adapter put it. Its params are the ones of the pathname the resolution ends at, read with Next's own matcher for the route. Not from the query of the resolution, which also has them, under names like `nxtPid`: `@next/routing` reads a `+` or a `%25` in them as a query does. And after a rewrite, the query of where it went. A request that was not rewritten keeps the query of its URL.
 - **`x-nextjs-rewritten-path` and `x-nextjs-rewritten-query`**, for a request of Next's router that was rewritten. `next start` sets them for a rewrite of `next.config`, and Next's own code for a rewrite of the proxy. The query is without `_rsc`, which the router adds to its own requests.
 - **The headers** the resolution has for the response, of `next.config` and of the proxy, go under the ones of the route. A cookie of either is set. The resolution has none for a request that the proxy answers itself, so that response is without the headers of `next.config`, which `next start` does set.
-- **The ways a request has a pathname.** `resolveRoutes()` compares a pathname with the outputs as it is. So an output is listed percent-encoded too, as a URL has `/release notes`, and with `trailingSlash: true` with the slash. A dynamic route is found by its pattern, which has the folders as they are named. So `resolveRoutes()` does not find one under a folder with a name that a URL percent-encodes, and a run warns about those routes when it starts.
+- **The ways a request has a pathname.** `resolveRoutes()` compares a pathname with the outputs as it is. So an output is listed percent-encoded too, as a URL has `/release notes`, and with `trailingSlash: true` with the slash. Another spelling of the same path, like `%c3%bc` for `%C3%BC`, is not listed, and `next start` does find the route for it. A dynamic route is found by its pattern, which has the folders as they are named. So `resolveRoutes()` does not find one under a folder with a name that a URL percent-encodes, and a run warns about those routes when it starts.
 - **A request that resolves to nothing** gets the not-found page, or goes to the network: see [below](#which-requests-are-the-apps). That is also a rewrite to a path that no route has, like a file of `public/`. The resolution does not say where such a rewrite went, so the network is asked for the URL of the request.
 
 ### The Proxy
@@ -331,7 +331,7 @@ The server answers that with its route resolution, without running anything. Onl
 
 Everything else goes to the network right away: Vite's modules, files in `public/`, a service worker. A page load is always the app's: `renderServer()`, `handleRequest()` and a navigation get the not-found page for a URL that resolves to nothing.
 
-A `fetch` that the server makes to its own origin, while it renders, is chosen the same way, and goes through the proxy too. The server handles it right away, inside the request that waits for it.
+A `fetch` that the server makes to its own origin, while it renders, is chosen the same way, and goes through the proxy too. The server handles it right away, inside the request that waits for it, and follows a redirect, as the `fetch` of a server does.
 
 ## What Stands In For A Server
 
@@ -544,7 +544,9 @@ At the next lookup the plugin answers for a test file itself. It belongs to the 
 - The headers of `next.config`, and the ones the proxy sets, for a request the app does not answer itself: a file of `public/`, which the dev server serves. And the headers of `next.config` for a request that the proxy answers itself.
 - A rewrite, of `next.config` or of the proxy, to a path that no route has, like a file of `public/`: the network is asked for the URL of the request, and not for where the rewrite went.
 - A dynamic route under a folder with a name that a URL percent-encodes, like `app/release notes/[id]`: `@next/routing` does not find it. A run warns about it when it starts.
-- `i18n` of `next.config`, which is the Pages Router's: the server in front of the app routes as without it. An app with `output: "export"` is served like any other, with its proxy and the redirects of `next.config`.
+- `i18n` of `next.config`, which is the Pages Router's: the app runs as without it. An app with `output: "export"` is served like any other, with its proxy and the redirects of `next.config`.
+- A dynamic segment with a `&` in it, written as it is: `@next/routing` reads what follows it as a query of the request.
+- A request the server makes to itself keeps its request stores until all of it is done, which can be after its response is there: an `after()` callback, or a body that streams on. Code that awaits such a `fetch` reads the stores of that request until then, and for a proxy that is the rest of the request it runs for.
 - What the proxy hands to `waitUntil()` goes on after the proxy has returned, without its request stores. Next's `instrumentation.ts` is not run, for the proxy or for a route.
 - A route handler does not see the query that a rewrite adds, as with `next start`: its `request.url` is the URL the browser asked for.
 - `basePath`, and `trailingSlash: true` in a tab: both are passed to Next's route resolution, and neither is tested with a page.

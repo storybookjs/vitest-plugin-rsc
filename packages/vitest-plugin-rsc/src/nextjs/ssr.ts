@@ -14,6 +14,8 @@ import {
 import { isRSCRequestHeader } from "next/dist/server/lib/is-rsc-request";
 import * as appPageModule from "next/dist/server/route-modules/app-page/module";
 import { normalizeNextQueryParam } from "next/dist/server/web/utils";
+import { getRouteMatcher } from "next/dist/shared/lib/router/utils/route-matcher";
+import { getRouteRegex } from "next/dist/shared/lib/router/utils/route-regex";
 import { routes as allRoutes, routing } from "virtual:vitest-plugin-rsc/next-manifest";
 import { shareIncrementalCache } from "./cache.ts";
 import { registerModuleLoader } from "./client-modules.ts";
@@ -103,17 +105,48 @@ export async function takesRequest(
   );
 }
 
+type Query = Record<string, string | string[]>;
+
 // The query of a URL as the app has it. Without the params of the route,
 // which are in the query that the resolution ends with, under the names Next
-// gives them for a server in front of its own, like `nxtPid`. And without
-// what Next's router adds to a request of its own.
-function searchOf(query: Iterable<[string, string | string[]]>): string {
-  const search = new URLSearchParams();
+// gives them for a server in front of its own, like `nxtPid`.
+function appQuery(query: Iterable<[string, string | string[]]>): Query {
+  const result: Query = {};
   for (const [name, value] of query) {
-    if (normalizeNextQueryParam(name) !== null || name === NEXT_RSC_UNION_QUERY) continue;
+    if (normalizeNextQueryParam(name) !== null) continue;
+    result[name] = name in result ? [result[name]!, value].flat() : value;
+  }
+  return result;
+}
+
+// A query as text, to tell whether two are the same. Without what Next's
+// router adds to a request of its own.
+function searchOf(query: Query): string {
+  const search = new URLSearchParams();
+  for (const [name, value] of Object.entries(query)) {
+    if (name === NEXT_RSC_UNION_QUERY) continue;
     for (const item of [value].flat()) search.append(name, item);
   }
   return search.toString();
+}
+
+// The params of a dynamic route, read off a pathname with Next's own matcher
+// for the route: what `next start` hands its request handler too. In any
+// letter case, which is how the resolution finds a route.
+const paramMatchers = new Map<string, ReturnType<typeof getRouteMatcher>>();
+function paramsOf(route: string, pathname: string) {
+  let match = paramMatchers.get(route);
+  if (!match) {
+    const { re, groups } = getRouteRegex(route);
+    match = getRouteMatcher({ re: new RegExp(re.source, "i"), groups });
+    paramMatchers.set(route, match);
+  }
+  try {
+    return match(pathname) || undefined;
+  } catch {
+    // A pathname that does not decode. Next's handler answers that itself.
+    return undefined;
+  }
 }
 
 // A test's own timers may be fake.
@@ -289,27 +322,30 @@ async function handle(request: ServerRequest, unrouted: "not-found" | "pass"): P
     const entry = component?.component ?? page;
     const routed = { ...request, headers, body };
     // The URL of the request stays the one the browser asked for, as with
-    // `next start`: the app has to see where it is. The route is told in the
-    // meta of the request, the way a deployment adapter tells it: the query
-    // the resolution ends with, which has the query of where a rewrite went
-    // and the params of the route. Next's route module takes those params
-    // over what the pathname says, and out of the query.
+    // `next start`: the app has to see where it is. The route is told the
+    // rest in the meta of the request, the way `next start` and a deployment
+    // adapter tell it: the params of the route, which are the ones of the
+    // pathname the resolution ends at, and after a rewrite its query.
     const target = resolved.invocationTarget;
-    const requestMeta = { query: target?.query };
+    const query = target && appQuery(Object.entries(target.query));
+    const rewrittenPath = target !== undefined && target.pathname !== url.pathname;
+    const rewrittenQuery =
+      query !== undefined && searchOf(query) !== searchOf(appQuery(url.searchParams));
+    const requestMeta = {
+      params:
+        target && matched?.pathname.includes("[")
+          ? paramsOf(matched.pathname, target.pathname.slice(routing.basePath.length) || "/")
+          : undefined,
+      query: rewrittenPath || rewrittenQuery ? query : undefined,
+    };
     // Next's router asks where a rewrite took its request. `next start` says
     // so for a rewrite of `next.config`, which is the adapter's to do here.
     // Next's own code says it for one of the middleware, with these headers:
     // a rewrite of `next.config` after it changes the pathname once more.
-    if (target && isRSCRequestHeader(headers.get(RSC_HEADER) ?? undefined)) {
-      if (target.pathname !== url.pathname) {
-        routedHeaders.set(NEXT_REWRITTEN_PATH_HEADER, target.pathname);
-      }
-      const search = searchOf(Object.entries(target.query));
-      if (
-        search !== searchOf(url.searchParams) &&
-        !routedHeaders.has(NEXT_REWRITTEN_QUERY_HEADER)
-      ) {
-        routedHeaders.set(NEXT_REWRITTEN_QUERY_HEADER, search);
+    if (target && query && isRSCRequestHeader(headers.get(RSC_HEADER) ?? undefined)) {
+      if (rewrittenPath) routedHeaders.set(NEXT_REWRITTEN_PATH_HEADER, target.pathname);
+      if (rewrittenQuery && !routedHeaders.has(NEXT_REWRITTEN_QUERY_HEADER)) {
+        routedHeaders.set(NEXT_REWRITTEN_QUERY_HEADER, searchOf(query));
       }
     }
 

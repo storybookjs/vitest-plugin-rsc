@@ -59,15 +59,12 @@ test("lists the routes of the app, one for each pathname", async () => {
 });
 
 // An app of its own, next to the demo so that it finds the same Next.
-function appWith(files: string[], config?: object): string {
+function appWith(files: string[], config: object = {}): string {
   const dir = fs.mkdtempSync(path.join(root, ".app-"));
   onTestFinished(() => fs.rmSync(dir, { recursive: true, force: true }));
-  if (config) {
-    fs.writeFileSync(
-      path.join(dir, "next.config.mjs"),
-      `export default ${JSON.stringify(config)};`,
-    );
-  }
+  // Always one of its own: Next looks for a config in the folders above too,
+  // and finds the one of the demo.
+  fs.writeFileSync(path.join(dir, "next.config.mjs"), `export default ${JSON.stringify(config)};`);
   for (const file of files) {
     fs.mkdirSync(path.dirname(path.join(dir, "app", file)), { recursive: true });
     const isRoute = path.basename(file).startsWith("route.");
@@ -801,11 +798,18 @@ test("routes an app as the App Router does, whatever next.config has for the Pag
       redirects: async () => [{ source: "/old", destination: "/notes", permanent: true }],
     };`,
   );
+  fs.writeFileSync(
+    path.join(localized, "proxy.js"),
+    'export function proxy() {}\nexport const config = { matcher: "/notes" };',
+  );
   const { routing } = await loadNextProject(localized, installed);
 
-  // No locale in a URL: not looked for, and not added to a redirect.
+  // No locale in a URL: not looked for, and not added to a redirect or to
+  // the matcher of the proxy.
   expect(await resolve(routing, "/notes")).toEqual({ page: "/notes/page" });
   expect(await resolve(routing, "/old")).toMatchObject({ status: 308, location: "/notes" });
+  const [matcher] = routing.routes.middlewareMatchers ?? [];
+  expect(new RegExp(matcher!.sourceRegex).test("/notes")).toBe(true);
 
   // Next's build reads the files of an export. The routes are the same.
   const exported = appWith(["page.js", "notes/page.js"], { output: "export" });
@@ -821,6 +825,7 @@ test("resolves a URL to a route with a name that the URL percent-encodes", async
     "日本語/page.js",
     "release notes/page.js",
     "日本語/[id]/page.js",
+    "notes/[名前]/page.js",
   ]);
   const { routing, unmatchedRoutes } = await loadNextProject(app, installed);
 
@@ -832,6 +837,8 @@ test("resolves a URL to a route with a name that the URL percent-encodes", async
   // Not a dynamic route: Next's pattern for it has the folder as it is named.
   expect(unmatchedRoutes).toEqual(["/日本語/[id]"]);
   expect(await resolve(routing, "/日本語/7")).toEqual({});
+  // The name of a param is in no URL.
+  expect(await resolve(routing, "/notes/7")).toEqual({ page: "/notes/[名前]/page" });
 });
 
 test("warns about the dynamic routes that @next/routing does not find", async () => {
