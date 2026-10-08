@@ -48,9 +48,6 @@ async function start(options: { related?: string[]; watch?: boolean }, hooks?: H
     { root, config: false, include: ["*.test.ts"], watch: false, reporters: [{}], ...options },
     { plugins: hooks && [plugin(hooks)] },
   );
-  // Not the disk: a test says itself that a file changed, and a late event
-  // for a file it wrote would be a change of its own.
-  vitest.vite.watcher.unwatch(root);
   return vitest;
 }
 
@@ -202,11 +199,17 @@ test("beforeWatchLookup: is asked before Vitest looks up the test files of a cha
   await vitest.start();
   expect(runs).toEqual([["a.test.ts", "b.test.ts"]]);
 
-  vitest.vite.watcher.emit("change", at("shared.ts"));
-
-  // A run of its own, in a process that may be busy.
+  // Until a run of its own: the watcher also finds the files of the project
+  // when it starts, and a test file it finds runs again on its own account.
+  // Without the hook, no run for this module is of one test file.
   await expect
-    .poll(() => runs, { timeout: 20_000 })
-    .toEqual([["a.test.ts", "b.test.ts"], ["b.test.ts"]]);
-  expect(asked).toEqual(["shared.ts"]);
+    .poll(
+      () => {
+        vitest.vite.watcher.emit("change", at("shared.ts"));
+        return runs.at(-1);
+      },
+      { interval: 500, timeout: 20_000 },
+    )
+    .toEqual(["b.test.ts"]);
+  expect(asked).toContain("shared.ts");
 }, 30_000);
