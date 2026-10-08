@@ -706,6 +706,17 @@ test("has the routes that Next's build hands a deployment adapter", async () => 
   expect(sources(routing.routes.middlewareMatchers ?? [])).toEqual([
     "/((?!_next/static|_next/image|favicon.ico).*)",
   ]);
+
+  // Without the server in front of the app, for `proxy: false`: only Next's
+  // own routes, its interception route among them.
+  const { appRoutes } = routing;
+  expect(sources(appRoutes.beforeMiddleware)).toEqual([]);
+  expect(appRoutes.middlewareMatchers).toEqual([]);
+  expect(sources(appRoutes.beforeFiles)).toEqual(["/gallery/photo/:nxtPid"]);
+  expect(sources(appRoutes.afterFiles)).toEqual([]);
+  expect(sources(appRoutes.fallback)).toEqual([]);
+  expect(appRoutes.dynamicRoutes).toEqual(routing.routes.dynamicRoutes);
+  expect(appRoutes.onMatch).toEqual(routing.routes.onMatch);
 });
 
 test("has the routes manifest of a build, for Next's route module", async () => {

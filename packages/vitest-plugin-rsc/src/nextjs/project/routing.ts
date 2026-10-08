@@ -124,6 +124,7 @@ export async function buildRouting(
   } = context;
   const {
     Bundler,
+    NEXT_URL,
     generateInterceptionRoutesRewrites,
     generateRoutesManifest,
     getNamedMiddlewareRegex,
@@ -301,7 +302,22 @@ export async function buildRouting(
       fail(`\`handleBuildComplete()\` hands an adapter no \`routing.${phase}\``);
     }
   }
+  // The phases of the server in front of the app are the ones `next.config`
+  // and the middleware fill. Of `beforeFiles` the interception routes stay:
+  // Next's rewrites for a request of its router that says, in `Next-Url`,
+  // which page it comes from.
+  const appRoutes: NextRouting["appRoutes"] = {
+    ...built.routing,
+    beforeMiddleware: [],
+    middlewareMatchers: [],
+    beforeFiles: built.routing.beforeFiles.filter((route) =>
+      route.has?.some((has) => has.type === "header" && has.key.toLowerCase() === NEXT_URL),
+    ),
+    afterFiles: [],
+    fallback: [],
+  };
   const routing: NextRouting = {
+    appRoutes,
     routes: built.routing,
     basePath: config.basePath,
     buildId,
@@ -340,14 +356,7 @@ export async function buildRouting(
       pathnames: Object.keys(routing.outputs),
       // Only the routes of the app: not what `next.config` or the middleware
       // sends elsewhere.
-      routes: {
-        ...routing.routes,
-        beforeMiddleware: [],
-        middlewareMatchers: [],
-        beforeFiles: [],
-        afterFiles: [],
-        fallback: [],
-      },
+      routes: routing.appRoutes,
       invokeMiddleware: async () => ({}),
     });
     const page = routing.outputs[resolved.resolvedPathname ?? ""];
