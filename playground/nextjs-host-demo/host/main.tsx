@@ -1,4 +1,4 @@
-import { renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
+import { cleanup, renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
 import { Greeting } from "../app/components/greeting.tsx";
 import { db } from "../app/lib/notes.ts";
 
@@ -8,14 +8,27 @@ import { db } from "../app/lib/notes.ts";
 db.notes.set("7", { id: "7", title: "Seeded by the host", body: "From host/main.tsx" });
 
 // What the page shows is in its query: `?url=/notes/7` for a page of the app,
-// and `?view=node` for a node in a container of the host.
+// `?view=node` for a node in a container of the host, and `?view=storage` for
+// what `cleanup()` leaves of the browser's storage and cookies.
 const query = new URLSearchParams(window.location.search);
 const state = window as {
   __hostState?: string;
   __hostError?: unknown;
   __hostResponse?: { status: number; url: string; redirected: boolean };
+  __hostStorage?: { keys: string[]; cookie: string };
 };
 try {
+  if (query.get("view") === "storage") {
+    // What the host stores, with no page of the app open, and what is stored
+    // while one is.
+    localStorage.setItem("host-setting", "kept");
+    document.cookie = "host-cookie=kept; path=/";
+    await renderServer({ url: "/" });
+    localStorage.setItem("app-setting", "gone");
+    document.cookie = "app-cookie=gone; path=/";
+    await cleanup();
+    state.__hostStorage = { keys: Object.keys(localStorage).sort(), cookie: document.cookie };
+  }
   const { response } =
     query.get("view") === "node"
       ? await renderServer(<Greeting name="the host" />, {
