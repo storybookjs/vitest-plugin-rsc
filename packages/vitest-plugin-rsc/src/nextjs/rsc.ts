@@ -90,9 +90,9 @@ registry.loadAppPage = async (page) => {
 export async function loadComponent(): Promise<{ default: () => unknown }> {
   return {
     default: function Component() {
-      const { component } = registry;
-      if (!component) throw new Error("vitest-plugin-rsc: the node of the test is gone");
-      return component.ui;
+      const node = registry.opened?.node;
+      if (!node) throw new Error("vitest-plugin-rsc: the node of the test is gone");
+      return node.ui;
     },
   };
 }

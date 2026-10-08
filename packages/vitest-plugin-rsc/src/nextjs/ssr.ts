@@ -23,6 +23,7 @@ import { anyKey, handleRequest as handleWith, setServerActions } from "./node-se
 import {
   actionModulePrefix,
   registry,
+  type Opened,
   type RequestHandler,
   type ServerRequest,
 } from "./registry.ts";
@@ -60,11 +61,13 @@ type InvokeMiddleware = (context: MiddlewareContext) => Promise<MiddlewareResult
 // The server in front of the app: Next's own route resolution, with the
 // routes its build hands a deployment adapter. It goes through the redirects,
 // rewrites and headers of `next.config`, the middleware, and the routes of the
-// app, in the order of a deployment.
+// app, in the order of a deployment. Without `proxy`, only through the routes
+// of the app: see `NextRouting.appRoutes`.
 function resolve(
   request: Pick<ServerRequest, "url" | "headers">,
   requestBody: ReadableStream<Uint8Array>,
   invokeMiddleware: InvokeMiddleware,
+  proxy: boolean,
 ): Promise<ResolveRoutesResult> {
   return resolveRoutes({
     url: new URL(request.url),
@@ -73,9 +76,18 @@ function resolve(
     basePath: routing.basePath,
     buildId: routing.buildId,
     pathnames,
-    routes: routing.routes,
+    routes: proxy ? routing.routes : routing.appRoutes,
     invokeMiddleware,
   });
+}
+
+// What `renderServer()` opened, for a request that belongs to it: one to its
+// pathname. That is the document, and what the page sends there while it is
+// open: a Server Action, `router.refresh()`, a change of search params. A
+// request to another pathname is the app's, as always.
+function openedAt(url: URL): Opened | undefined {
+  const { opened } = registry;
+  return opened?.pathname === url.pathname ? opened : undefined;
 }
 
 // What the resolution answers with a redirect: one of `next.config`, of the
@@ -89,19 +101,23 @@ function redirectStatus(resolved: ResolveRoutesResult): number | undefined {
  * Whether the server has something for a request: a route of the app, a page
  * or a route handler, the route of the node a test renders, a redirect or a
  * rewrite of `next.config`, or a middleware whose matcher takes it. Only
- * running the middleware tells what it does with the request.
+ * running the middleware tells what it does with the request. At the pathname
+ * a test opened without `proxy`, only the routes count.
  *
  * Nothing runs for the answer, and nothing waits for it.
  */
 export async function takesRequest(
   request: Pick<ServerRequest, "url" | "headers">,
 ): Promise<boolean> {
-  if (registry.component?.pathname === new URL(request.url).pathname) return true;
+  const opened = openedAt(new URL(request.url));
+  if (opened?.node) return true;
   let matched = false;
-  const resolved = await resolve(request, new ReadableStream(), async () => {
+  const invokeMiddleware = async () => {
     matched = true;
     return {};
-  });
+  };
+  const proxy = opened?.proxy ?? true;
+  const resolved = await resolve(request, new ReadableStream(), invokeMiddleware, proxy);
   return (
     matched ||
     redirectStatus(resolved) !== undefined ||
@@ -241,9 +257,9 @@ type Route = (typeof allRoutes)[number];
 // its URL. Of the routes of a node, the one with the segments of the app's
 // route, so that Next finds the params the app's route has. A URL of no route
 // has none, like `/`. With `layouts`, the app's route with the node as its page.
-function nodeRouteFor(url: URL, matched: Route | undefined): Route | undefined {
-  const node = registry.component;
-  if (node?.pathname !== url.pathname) return undefined;
+function nodeRouteFor(opened: Opened | undefined, matched: Route | undefined): Route | undefined {
+  const node = opened?.node;
+  if (!node) return undefined;
   if (!node.layouts) {
     return componentRoutes.get(matched?.pathname ?? "/") ?? componentRoutes.get("/");
   }
@@ -251,7 +267,7 @@ function nodeRouteFor(url: URL, matched: Route | undefined): Route | undefined {
   if (!withLayouts) {
     throw new Error(
       `vitest-plugin-rsc: \`layouts: true\` renders a node in place of the \`page\` file ` +
-        `of its \`url\`, and the app has none for ${url.pathname}.`,
+        `of its \`url\`, and the app has none for ${opened.pathname}.`,
     );
   }
   return withLayouts;
@@ -273,6 +289,7 @@ async function serverActionsOf(method: string, headers: Headers): Promise<object
 
 async function handle(request: ServerRequest, unrouted: "not-found" | "pass"): Promise<Handled> {
   const url = new URL(request.url);
+  const opened = openedAt(url);
   const endRequestScope = registry.enterRequestScope();
   // What Next does after it has responded, like `after()`, still reads the
   // stores of the request. Not forever: the next request waits for this one.
@@ -299,7 +316,7 @@ async function handle(request: ServerRequest, unrouted: "not-found" | "pass"): P
     // request on with.
     let responded: Response | undefined;
     let { headers } = request;
-    const resolved = await resolve(request, middlewareBody, async (target) => {
+    const invokeMiddleware: InvokeMiddleware = async (target) => {
       // In a deployment the middleware is done before the route starts. So
       // it has a scope of its own here: the route is not to read the stores
       // Next enters for the middleware.
@@ -325,7 +342,9 @@ async function handle(request: ServerRequest, unrouted: "not-found" | "pass"): P
       if (result.bodySent) responded = response;
       else headers = result.requestHeaders ?? headers;
       return result;
-    });
+    };
+    const proxy = opened?.proxy ?? true;
+    const resolved = await resolve(request, middlewareBody, invokeMiddleware, proxy);
     // The cache of the server, for the route and for what follows the
     // request. Next makes the middleware one of its own, which stores nothing.
     shareIncrementalCache(headers);
@@ -358,7 +377,7 @@ async function handle(request: ServerRequest, unrouted: "not-found" | "pass"): P
     }
 
     const matched = routes.get(routing.outputs[resolved.resolvedPathname ?? ""] ?? "");
-    const component = nodeRouteFor(url, matched);
+    const component = nodeRouteFor(opened, matched);
     if (!matched && !component && unrouted === "pass") return { finished: endRequest() };
     const page = component?.page ?? matched?.page ?? notFoundPage;
     // What the modules of the route are listed by.
