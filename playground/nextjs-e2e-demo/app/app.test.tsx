@@ -614,7 +614,7 @@ test("gives a node the params that the app's route has for its url", async () =>
   expect(window.location.pathname).toBe("/notes/7");
 });
 
-test("renders a node in the layouts of the route of its url, with `layouts`", async () => {
+test("renders a node in place of a page, inside the layouts of the app, with `layouts`", async () => {
   const { container, baseElement } = await renderServer(<RouterState />, {
     url: "/notes/7?q=1",
     layouts: true,
@@ -653,12 +653,12 @@ test("gives a node in the layouts of a route its `wrapper` too, and its slots", 
 
 test("says so when `layouts` is asked for a url that is no page of the app", async () => {
   await expect(renderServer(<RouterState />, { url: "/nope", layouts: true })).rejects.toThrow(
-    "/nope is no page of the app",
+    "/nope is not one",
   );
   // A route handler has no layouts either.
   await expect(
     renderServer(<RouterState />, { url: "/api/echo/a", layouts: true }),
-  ).rejects.toThrow("/api/echo/a is no page of the app");
+  ).rejects.toThrow("/api/echo/a is not one");
 });
 
 test("takes no container for a node in the layouts of a route", async () => {

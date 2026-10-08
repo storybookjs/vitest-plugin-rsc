@@ -3,7 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { hasDirective, transformDirectiveProxyExport } from "@vitejs/plugin-rsc/transforms";
 import { createFilter, normalizePath, parseAst, parseAstAsync, type Plugin } from "vite";
-import type { TestProject, Vitest } from "vitest/node";
+import type { TestProject } from "vitest/node";
 import { createRunnerEnvironmentPlugins } from "../runner-environment.ts";
 import { flightBridge, type FlightEntry } from "./flight.ts";
 import { createCompilePlugin, createDependencyCompilePlugin } from "./compile.ts";
@@ -27,21 +27,16 @@ const layers = Object.keys(environmentOf) as NextLayer[];
 const registry = "globalThis.__vitest_plugin_rsc_next__";
 // Shared by the layers: the routes and the `next.config`.
 const manifestId = "virtual:vitest-plugin-rsc/next-manifest";
-// The modules of the routes, per layer: one that lists them, and one for each
-// by its place in `project.routes`. A page has a module in the rsc layer, and
-// the ssr layer handles its requests (node-server.ts). Next's bundler config
-// puts a route handler in the rsc layer as a whole: its route module, which
-// is with the modules of the pages and has its request handler. The routes
-// of a node are pages too, listed after the ones of the app.
+// The modules of the routes, which are all of the rsc layer: one that lists
+// them, and one for each by its place in `project.routes`. The ssr layer
+// handles the requests of a page (node-server.ts). Next's bundler config puts
+// a route handler in the rsc layer as a whole: its route module, which is with
+// the modules of the pages and has its request handler. The routes of a node
+// are pages too, listed after the ones of the app.
 const virtual = (name: string) => `virtual:vitest-plugin-rsc/next-${name}`;
 const routeModules = [
-  { list: virtual("app-pages"), prefix: virtual("app-page/"), layer: "rsc", kind: "page" },
-  {
-    list: virtual("route-handlers"),
-    prefix: virtual("route-handler/"),
-    layer: "rsc",
-    kind: "route",
-  },
+  { list: virtual("app-pages"), prefix: virtual("app-page/"), kind: "page" },
+  { list: virtual("route-handlers"), prefix: virtual("route-handler/"), kind: "route" },
 ] as const;
 const [appPages] = routeModules;
 // The middleware of the app, in the rsc layer: a module that says how to load
@@ -456,9 +451,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
             modulesOf: (kind, entry) =>
               [...project.routes, ...project.componentRoutes].flatMap((route, index) =>
                 route.kind === kind && entryOf(route) === entry
-                  ? routeModules
-                      .filter((modules) => modules.layer === "rsc")
-                      .map(({ prefix }) => `\0${prefix}${index}`)
+                  ? routeModules.map(({ prefix }) => `\0${prefix}${index}`)
                   : [],
               ),
             next: getProject,
@@ -472,25 +465,20 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
         project = await loadNextProject(path.resolve(config.root ?? process.cwd()));
         serverCode.configure(project.root);
 
-        // What the route entries import from Next. The request handler is
-        // one template per kind of route. The loader tree differs: which of
-        // Next's builtin boundaries a route needs depends on what the app
-        // leaves out.
-        // The route of a node has Next's own global error page, which an app
-        // with one of its own does not import.
+        // What the route entries import from Next, to pre-bundle it. Every
+        // route is read: which of Next's builtin boundaries a loader tree
+        // imports depends on what the app leaves out. And one route of a
+        // node, for Next's own global error page, which an app with one of
+        // its own does not import.
         const appPageEntries = await Promise.all(
           [...project.routes, ...project.componentRoutes.slice(0, 1)].map((candidate) =>
             project.loadAppPageEntry(candidate),
           ),
         );
-        const entryImports = {
-          rsc: [
-            ...appPageEntries.flatMap(({ code }) => findImports(code)),
-            ...findImports((await project.loadMiddlewareEntry()) ?? ""),
-          ],
-          // What node-server.ts imports is in `runtimeImports`.
-          ssr: [] as string[],
-        };
+        const entryImports = [
+          ...appPageEntries.flatMap(({ code }) => findImports(code)),
+          ...findImports((await project.loadMiddlewareEntry()) ?? ""),
+        ];
         // `next/og` renders images with wasm: not something to pre-bundle for
         // every project.
         const apiImports = (layer: NextLayer) =>
@@ -509,7 +497,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
         ];
 
         const rscInclude = toInclude("rsc", [
-          ...entryImports.rsc,
+          ...entryImports,
           ...apiImports("rsc"),
           ...runtimeImports.rsc,
         ]);
@@ -517,12 +505,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
         const include: Record<NextLayer, string[]> = {
           rsc: rscInclude,
           ssr: [
-            ...toInclude("ssr", [
-              ...entryImports.ssr,
-              ...apiImports("ssr"),
-              ...runtimeImports.ssr,
-              ...clientBoundaries,
-            ]),
+            ...toInclude("ssr", [...apiImports("ssr"), ...runtimeImports.ssr, ...clientBoundaries]),
             nextRouting,
           ],
           browser: toInclude("browser", [
@@ -577,8 +560,6 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
         test.setupFiles = [setupFile, ...[test.setupFiles ?? []].flat()];
 
         return {
-          // Next's build resolves the `paths` of the tsconfig.
-          resolve: { tsconfigPaths: config.resolve?.tsconfigPaths ?? true },
           environments: {
             [environmentOf.rsc]: {
               optimizeDeps: {
@@ -614,9 +595,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
           },
         };
       },
-      // An app with metadata files still runs, as it would without them: say
-      // which files are left out. Not `favicon.ico`, which only adds a
-      // `<link rel="icon">`, and which every new app has.
+      // What the app has and does not get here: said once, when a run starts.
       configResolved(config) {
         if (project.edgeRouteFiles.length > 0) {
           config.logger.warnOnce(
@@ -632,6 +611,9 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
               project.unmatchedRoutes.join(", "),
           );
         }
+        // An app with metadata files still runs, as it would without them.
+        // Not `favicon.ico`, which only adds a `<link rel="icon">`, and which
+        // every new app has.
         const files = project.metadataFiles.filter((file) => path.basename(file) !== "favicon.ico");
         if (files.length === 0) return;
         const app = path.relative(process.cwd(), project.root) || path.basename(project.root);
@@ -642,7 +624,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
       },
       // Vitest's hook for a plugin of a project: what its config says is a
       // test file or a setup file is not server code.
-      configureVitest({ vitest, project: testProject }: { vitest: Vitest; project: TestProject }) {
+      configureVitest({ project: testProject }: { project: TestProject }) {
         const test = testProject.config;
         const setupFiles = new Set(test.setupFiles.map((file) => normalizePath(file)));
         // `test.include`, matched the way Vitest does. Not `includeSource`:
@@ -694,10 +676,10 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
 
         const modules = routeModules.find(isRouteModule(id.slice(1)));
         if (!id.startsWith("\0") || !modules) return;
-        const { list, prefix, layer, kind } = modules;
+        const { list, prefix, kind } = modules;
         // Vite's dependency scan follows the test's imports in every
         // environment, also into the modules of another layer.
-        if (environmentOf[layer] !== this.environment.name) return "export default {};";
+        if (this.environment.name !== environmentOf.rsc) return "export default {};";
         const routes = [...project.routes, ...project.componentRoutes];
 
         if (id === `\0${list}`) {
@@ -725,7 +707,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
         }
         // A generated module: Vite only replaces `define` keys in pre-bundled
         // dependencies.
-        return serverCode.compile(code, `${id.replace(/\W+/g, "-")}.js`, definesOf(project, layer));
+        return serverCode.compile(code, `${id.replace(/\W+/g, "-")}.js`, definesOf(project, "rsc"));
       },
     },
     serverCode.plugin({ [environmentOf.rsc]: "rsc", [environmentOf.ssr]: "ssr" }),

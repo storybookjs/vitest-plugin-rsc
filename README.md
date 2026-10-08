@@ -89,14 +89,16 @@ Agents do better when wrapped in a self-healing loop with fast unit tests — ed
 - **Focused scope**: Test a whole route, or one component on its own.
 - **White-box inputs**: The server runs in the test's tab. The `db` your test seeds is the module instance your Server Components read. Mock IO, fake clocks, set cookies and headers.
 - **Black-box output**: Assert what the user sees and does via `vitest/browser` — Playwright locators (`getByRole`, `getByText`, etc.) and `expect.element` matchers.
-- **Precise watch mode and diff-scoped runs, as an option**: With `vitestPluginNext({ affectedTests: true })`, an edit of a page, a layout or a component reruns only the test files that opened a route with it, and `vitest --changed` and `vitest related` run those same test files. It is off by default: without it an edit reruns every test file that opens a route, and `--changed` does not find the test files of a route. See [Watch Mode](docs/next-routes.md#watch-mode).
+- **Precise watch mode, as an option**: With `vitestPluginNext({ affectedTests: true })`, an edit reruns only the test files that opened a route with that file, and `vitest --changed` and `vitest related` pick those same test files. Without it, an edit reruns every test file that opens a route. See [Watch Mode](docs/next-routes.md#watch-mode).
 - **No deployed infra**: Use in-memory infrastructure like PGlite instead of spinning up a preview server and database.
 - **Per-test isolation**: Each test starts with an empty Data Cache, without cookies, and without what the app put in `localStorage` and `sessionStorage`.
 
 ## Requirements
 
 - Vitest 5.0.3 or later, in [Browser Mode](https://vitest.dev/guide/browser/). The examples use Playwright as the browser provider.
-- For Next.js: the App Router, `next@16.4` or later, and [`@next/routing`](https://www.npmjs.com/package/@next/routing) at the version of `next`. That is the package of Next.js that finds the route of a request. CI runs the two Next.js playgrounds against the pinned `next@16.4.0`, against `next@latest` and against `next@canary`. With a Next.js whose build code the plugin does not know, a run stops when it starts, with the version and what changed: see [When Next Changes](docs/next-routes.md#when-next-changes).
+- For Next.js: the App Router, `next@16.4` or later, and [`@next/routing`](https://www.npmjs.com/package/@next/routing), Next's own route resolution, at the same version as `next`.
+
+The plugin calls internals of Next.js, which change between releases. CI tests against `next@16.4.0`, `next@latest` and `next@canary`. With a Next.js the plugin does not know, a run stops at startup and says what changed: see [When Next Changes](docs/next-routes.md#when-next-changes).
 
 ## Next.js
 
@@ -108,7 +110,7 @@ npm install -D vitest-plugin-rsc vitest @vitest/browser-playwright playwright
 npm install -D @next/routing@$(node -p "require('next/package.json').version")
 ```
 
-`@next/routing` is not a part of `next`, and it has to be at exactly the version of your `next`. What one version of Next hands a deployment adapter is what that version of the package reads, and it grows from release to release: a version that is close can route a request another way without saying so. So a run stops when the two differ, with the version to install. Upgrade them together, as you do `eslint-config-next`.
+`@next/routing` is a separate package, and it has to be exactly the version of your `next`. The two are released together, and a pair that does not match can route a request differently without an error. So a run stops when the versions differ, and says which one to install. Upgrade them together, as you do `eslint-config-next`.
 
 ```ts
 // vitest.config.ts
@@ -185,7 +187,10 @@ A URL that is not a route gets the app's not-found page, with status `404`.
 
 Before and after every test the page is left, the tab's cookies are cleared, and so is what the app put in `localStorage` and `sessionStorage`. The server forgets what it has cached. A test starts like a new browser context.
 
-A page has a `<body>` of its own, as in a browser, and so has a node: what your test has in the body moves into it, and back. A move takes the focus from an element and loads an `<iframe>` again. What is added to the document while a page or a node is open is removed when it is left. So read `document.body` when you need it: a body you kept from before the page is not the page's. Testing Library's `screen` is bound to the body at import, use `within(document.body)` or Vitest's `page`.
+A page gets a new `<body>`, as in a browser, and so does a node. What your test had in the body moves into the new one, and back when the page is left. Two consequences:
+
+- Read `document.body` when you need it, not once at the top of a file. Testing Library's `screen` is bound to the body at import, so use `within(document.body)` or Vitest's `page`.
+- What is added to the document while a page is open is removed when it is left. The move itself takes the focus from an element and reloads an `<iframe>`.
 
 ### Render One Component
 
@@ -274,10 +279,10 @@ test("wraps a node in a wrapper, which can be a Server Component", async () => {
 });
 ```
 
-`layouts: true` renders the node as the page of the route of its `url`: in the layouts of that route, from the root layout down, with its `loading`, `error` and `not-found`, and with the slots of its parallel routes. That is for a node that needs what your layouts give it: providers, global CSS, the data a layout reads.
+`layouts: true` puts the node where the `page.tsx` of its `url` would be. Everything around it is your app's: the layouts from the root layout down, `loading`, `error` and `not-found`, and the slots of parallel routes. Use it for a node that needs what your layouts give it: providers, global CSS, the data a layout reads.
 
 ```tsx
-test("renders a node in the layouts of the route of its url", async () => {
+test("renders a node in place of a page, inside the layouts of the app", async () => {
   await renderServer(<RouterState />, { url: "/notes/7?q=1", layouts: true });
 
   // The root layout of the app, around the node.
@@ -287,7 +292,7 @@ test("renders a node in the layouts of the route of its url", async () => {
 });
 ```
 
-With `layouts`, the `url` has to be a page of your app, and the document is the one your root layout renders. So there is no `container` or `baseElement` to pass, and the `container` of the result is the `<body>`. A layout does what it does in your app: one that redirects without a session redirects here. A `wrapper` goes inside the layouts, around the node.
+The `url` has to be a page of your app. Your root layout renders the document, so `container` and `baseElement` cannot be passed, and the `container` in the result is the `<body>`. Layouts behave as in your app: one that redirects without a session redirects here too. A `wrapper` goes inside the layouts, around the node.
 
 What to know, for a node without `layouts`:
 
@@ -562,7 +567,7 @@ test("sets text in a font of next/font/local, a file of the app", async () => {
 - **`next/image`.** `import logo from "./logo.png"` is the object Next makes of an image, with its size and its blurred placeholder. `/_next/image` is answered by Next's image optimizer, for an imported image, a file in `public/` and an image of a server that `images.remotePatterns` allows.
 - **`next/dynamic`**, also with `ssr: false`, **`next/script`**, **styled-jsx**, global CSS and CSS modules.
 - **The checks of `next build`.** A client hook in a Server Component, or `server-only` code in a Client Component, fails the test with the error `next build` gives.
-- **`paths` of your `tsconfig.json`**, like `@/components/button`.
+- **`paths` and `baseUrl` of your `tsconfig.json` or `jsconfig.json`**, like `@/components/button`.
 
 Call `next/font` in a module of the app, not in a test file: Next's compiler does not run on test files. What Next's build does and the plugin does not, like the React Compiler and a `webpack` function in `next.config`, is under [What Does Not Work Yet](#what-does-not-work-yet).
 
@@ -704,7 +709,7 @@ The options for a node, all optional:
 | `url`         | The URL of the request. Defaults to `/`. The params are those of your app's route for it.           |
 | `headers`     | Headers for the request, next to the ones a browser sends.                                          |
 | `wrapper`     | A component that wraps the node on the server. It can be a Server Component.                        |
-| `layouts`     | `true` renders the node as the page of the route of `url`, in the layouts of that route.            |
+| `layouts`     | `true` renders the node in place of the page at `url`, inside the layouts of your app.              |
 | `container`   | An empty element for the node. Defaults to a new `<div>` in `baseElement`, which `cleanup` removes. |
 | `baseElement` | Defaults to `container` if you pass one, or else to `document.body`, whichever body that is.        |
 

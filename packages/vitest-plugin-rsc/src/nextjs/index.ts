@@ -1,7 +1,7 @@
 import "./globals.ts";
 import { createElement, type JSXElementConstructor, type ReactNode } from "react";
 import { resetAsyncLocalStorage } from "../async-local-storage.ts";
-import { createEnvironmentRunner, importEnvironment } from "../utilts.ts";
+import { createEnvironmentRunner, importEnvironment } from "../utils.ts";
 import { loadDocument, unloadDocument } from "./document.ts";
 import { recordListeners, recordMessageChannels } from "./leftovers.ts";
 import { registry } from "./registry.ts";
@@ -218,40 +218,36 @@ export function handleRequest(input: RequestInfo | URL, init?: RequestInit): Pro
   return sendRequest(new registry.Request(input, init));
 }
 
-// The browser's `fetch`: what Next's client router and Client Components call.
-globalThis.fetch = async (input, init) => {
-  const sent = sameOriginRequest(input, init);
-  if (!sent) return nativeFetch(input, init);
-  const headers = browserHeaders(new Headers(sent.headers), sent.url, sent.method);
-  if (!sent.marked && !(await ssr.takesRequest({ url: sent.url.href, headers }, true))) {
-    return nativeFetch(input, init);
-  }
-  // The request, for the network: a body can be read once.
-  const spare = input instanceof Request && input.body ? input.clone() : input;
-  return sendRequest(new Request(input, init), {
-    network: sent.marked ? undefined : () => nativeFetch(spare, init),
-  });
-};
+// A `fetch` that sends a same-origin request to the app when it is the app's,
+// and everything else to the network.
+const appFetch =
+  (server: boolean): typeof fetch =>
+  async (input, init) => {
+    const sent = sameOriginRequest(input, init);
+    if (!sent) return nativeFetch(input, init);
+    const headers = server
+      ? sent.headers
+      : browserHeaders(new Headers(sent.headers), sent.url, sent.method);
+    if (!sent.marked && !(await ssr.takesRequest({ url: sent.url.href, headers }, true))) {
+      return nativeFetch(input, init);
+    }
+    // The request, for the network: a body can be read once.
+    const spare = input instanceof Request && input.body ? input.clone() : input;
+    // The server's Request keeps a `cookie` header, which a browser's drops.
+    const request = server ? new registry.Request(input, init) : new Request(input, init);
+    return sendRequest(request, {
+      server,
+      network: sent.marked ? undefined : () => nativeFetch(spare, init),
+    });
+  };
 
+// The browser's `fetch`: what Next's client router and Client Components call.
+globalThis.fetch = appFetch(false);
 // The server's `fetch`. A request to the app itself is one the server makes
 // while it handles another: Next renders the page a Server Action redirects
 // to that way. It is chosen as the browser's is, and goes through the proxy
 // too. Its redirects are followed, as the `fetch` of a server follows them.
-registry.fetch = async (input, init) => {
-  const sent = sameOriginRequest(input, init);
-  if (!sent) return nativeFetch(input, init);
-  if (
-    !sent.marked &&
-    !(await ssr.takesRequest({ url: sent.url.href, headers: sent.headers }, true))
-  ) {
-    return nativeFetch(input, init);
-  }
-  const spare = input instanceof Request && input.body ? input.clone() : input;
-  return sendRequest(new registry.Request(input, init), {
-    server: true,
-    network: sent.marked ? undefined : () => nativeFetch(spare, init),
-  });
-};
+registry.fetch = appFetch(true);
 // Where the server reaches itself, which `next start` sets too. Next reads it
 // when it needs it, from the `process` of the tab.
 process.env.__NEXT_PRIVATE_ORIGIN = window.location.origin;
@@ -286,10 +282,10 @@ export type RenderComponentOptions = RenderServerOptions & {
   /** Wraps the node on the server. It can be a Server Component. */
   wrapper?: JSXElementConstructor<{ children: ReactNode }>;
   /**
-   * Renders the node as the page of the route of `url`, in the layouts of
-   * that route and with its `loading`, `error` and `not-found`. The document
-   * is the one of the route then, so there is no `container` to pass, and the
-   * `container` of the result is its `<body>`.
+   * Renders the node in place of the page at `url`, inside the layouts of the
+   * app, with the `loading`, `error` and `not-found` of that route. The root
+   * layout renders the document, so `container` and `baseElement` cannot be
+   * passed, and the `container` in the result is the `<body>`.
    */
   layouts?: boolean;
 };
@@ -336,6 +332,7 @@ export async function renderServer(
   }
 
   const { wrapper } = options;
+  const ui = wrapper ? createElement(wrapper, null, first) : first;
   if (options.layouts) {
     if (options.container || options.baseElement) {
       throw new Error(
@@ -344,7 +341,6 @@ export async function renderServer(
           "to pass.",
       );
     }
-    const ui = wrapper ? createElement(wrapper, null, first) : first;
     const component = { pathname: url.pathname, ui, layouts: true };
     const response = await loadPage(url, { headers }, { component });
     return {
@@ -384,7 +380,6 @@ export async function renderServer(
   const container =
     options.container ?? (base ?? document.body).appendChild(document.createElement("div"));
   if (!options.container) containers.add(container);
-  const ui = wrapper ? createElement(wrapper, null, first) : first;
   const response = await loadPage(
     url,
     { headers },
@@ -434,10 +429,7 @@ async function loadPage(url: URL, init: RequestInit, opening?: Opening): Promise
   const leaving = leavePage();
   const load = (currentLoad = new AbortController());
   await leaving;
-  const superseded = () => {
-    if (load.signal.aborted) throw load.signal.reason;
-  };
-  superseded();
+  load.signal.throwIfAborted();
 
   // Once the node that was in it is gone.
   if (opening?.container?.hasChildNodes()) {
@@ -463,9 +455,8 @@ async function openPage(
   signal: AbortSignal,
   opening: Opening | undefined,
 ): Promise<Response> {
-  const superseded = () => {
-    if (signal.aborted) throw signal.reason;
-  };
+  // The tab has moved on: to another page, or to the next test.
+  const superseded = () => signal.throwIfAborted();
 
   // Not the browser's Request, which drops a `cookie` header.
   const response = await sendRequest(new registry.Request(url, { ...init, signal }), {

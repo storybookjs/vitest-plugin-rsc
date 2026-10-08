@@ -50,7 +50,7 @@ export function vitestPluginRSC(): Plugin[] {
             if (!invoke) return;
 
             // The page runs every environment but `client` through a module
-            // runner of its own, see utilts.ts.
+            // runner of its own, see utils.ts.
             const environment = server.environments[invoke.environment];
             const result =
               environment && invoke.environment !== "client"

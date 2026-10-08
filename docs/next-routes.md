@@ -96,7 +96,7 @@ Before Next bundles a source file of the app, it compiles it: with its SWC trans
 | `"use client"`, `"use server"`                                                                                                                   | Vite RSC                                                                                                                                    |
 | `typeof window` in server code                                                                                                                   | A define, see [Server Code In A Tab](#server-code-in-a-tab)                                                                                 |
 | `server-only`, `client-only`                                                                                                                     | Next's SWC transform stops at the wrong one in a source file. In a package, Next's aliases make it a module that throws. That is not tested |
-| The `paths` of `tsconfig.json`                                                                                                                   | Vite's `resolve.tsconfigPaths`, which the plugin turns on unless your config sets it                                                        |
+| The `paths` and `baseUrl` of `tsconfig.json` or `jsconfig.json`                                                                                  | Read with Next's `loadJsConfig()`, and resolved for every file of the app, as Next's build does                                             |
 | Global CSS, CSS modules, PostCSS                                                                                                                 | Vite's. A class name of a CSS module is not the one Next makes                                                                              |
 | `next/script`                                                                                                                                    | Next's runtime, nothing to compile                                                                                                          |
 
@@ -193,7 +193,7 @@ There is one such route for each pathname of the app, and one for `/`. They are 
 
 ### A Node In The Layouts Of A Route
 
-`renderServer(<Node />, { url, layouts: true })` is the other kind of route for a node: the route of the app for that URL, with the node for its page. The entry is the one Next's `next-app-loader` writes for the app's route. In its loader tree the page is named by its file, and that one module is replaced by the node:
+With `layouts: true` the node takes the place of a page of the app: `renderServer(<Node />, { url, layouts: true })` renders the app's route for that URL, with the node where its `page.tsx` would be. The entry is the one `next-app-loader` writes for that route. Its loader tree names the page by its file, and that one module is replaced by the node:
 
 ```js
 // what next-app-loader writes for app/notes/[id]/page.tsx
@@ -202,11 +202,11 @@ children: ["__PAGE__", {}, { page: [page8, "/…/app/notes/[id]/page.tsx"] }];
 children: ["__PAGE__", {}, { page: [__next_component__, "vitest-plugin-rsc/component"] }];
 ```
 
-Everything else of the tree is the app's: the layouts, `loading`, `error`, `not-found`, the slots of parallel routes, and the root segment. So the response is a document, with the `<html>` and `<body>` of the root layout, and it loads as a page does and not in a container. A navigation from it to a page of the app is a client-side one, since both have the app's root layout.
+The rest of the tree is the app's: the layouts, `loading`, `error`, `not-found`, the slots of parallel routes, and the root segment. So the response is a whole document, with the `<html>` and `<body>` of the root layout, and it loads like a page, not in a container. Both trees have the app's root layout, so a navigation to a page of the app stays on the client.
 
-- A URL that is no page of the app is an error: there are no layouts to render in. That goes for a route handler and for a path of no route.
-- The route has the name of the app's page, so `revalidatePath()` and the params are the page's.
-- While the node is there, its pathname is the node's, as for a node without layouts.
+- The URL has to be a page of the app. A route handler or a path without a route is an error: there are no layouts to render in.
+- The route keeps the name of the app's page, so the params and `revalidatePath()` work as for that page.
+- The node owns its pathname while it is there, as a node without layouts does.
 
 ### Next's Router In A `<div>`
 
@@ -500,7 +500,7 @@ What is still to do on it:
 
 - Cache Components and `"use cache"`. Their code is reached only with `cacheComponents`, and needs what a tab does not have at all: `AsyncLocalStorage` for more than one scope at a time, the order of `process.nextTick` and `setImmediate` in Node's event loop, and Next's patched `Date` and `Math.random`. The stand-in for `fast-set-immediate.external` throws where that starts.
 - Prerendered pages. Next's request handler of a page has the response cache of a build around a render, and here no page is in it: every request renders its page.
-- `instrumentation.ts`, draft mode, a `cacheHandler` of the app: `load-manifest.external` and its neighbours are where they would go.
+- `instrumentation.ts` and a `cacheHandler` of the app: `load-manifest.external` and its neighbours are where they would go.
 
 ## Watch Mode
 
@@ -526,7 +526,6 @@ app/profile/page.tsx changes
 - **A route that no test file has loaded** runs nothing. Neither does a test file that has not run since Vitest started: what it loads is not known yet.
 - **A test file that changes** is forgotten until it has run again.
 - **Tailwind** has to be told apart: it registers every file it scans as a dependency of the stylesheet, and Vitest follows that too, so a save of any file runs every test file whose page has the stylesheet. `playground/nextjs-notes-demo/test/ignore-watched-only-modules.ts` takes those out with the same hook.
-  `scripts/watch-probe.mjs` says which test files a change runs.
 
 ### `vitest --changed` And `vitest related`
 
@@ -547,8 +546,6 @@ At the next lookup the plugin answers for a test file itself. It belongs to the 
 - **The `ssr` environment is only Vitest's lookup** for a project in browser mode: its own code and the global setup run in another one. Vitest's static parse of a test file reads it there too, and finds no tests in it during a lookup.
 - **Not known:** a test that loads a route only some of the time, like one behind a condition on the date or one that is skipped while it runs. A file that is no module: one the app reads from disk, or one in `public/`. A file Tailwind scans is no dependency of a test, though a class in it adds to the stylesheet. And a file that is edited while a run is under way, outside watch mode: its hash is taken when its test file ends.
 - **One lookup at a time.** Vite keeps the empty test file, and the plugin lets go of it when a run starts. Code that looks up twice without a run in between gets the first answer.
-
-`scripts/related-probe.mjs` says which test files `vitest related` picks.
 
 ## Not Yet
 

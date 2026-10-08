@@ -26,10 +26,8 @@ import { watchMode } from "./watch.ts";
 //     option of that name;
 //   - in ../rsc.ts, remove the calls of `reportLoaded()`;
 //   - in docs/next-routes.md, remove "Watch Mode", and in the README the two
-//     entries that point to it.
-//
-//   - remove scripts/watch-probe.mjs and scripts/related-probe.mjs, and
-//     `affectedTests: true` from the configs of the playgrounds.
+//     entries that point to it;
+//   - remove `affectedTests: true` from the configs of the playgrounds.
 //
 // What is written down stays behind in Vite's cache directory, as
 // `vitest-plugin-rsc/related-<project>.json`.

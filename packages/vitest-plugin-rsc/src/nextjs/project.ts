@@ -324,6 +324,11 @@ function declarationOf(file: string, name: string, seen = new Set<string>()): De
 const componentRoot = "(vitest-plugin-rsc)";
 // What the routes of a node with the layouts of the app are listed by.
 const componentLayouts = "(vitest-plugin-rsc-layouts)";
+// The node as the page of a loader tree, and the import that goes with it:
+// see `loadComponent()` in rsc.ts.
+const componentPage = `page: [__next_component__, "vitest-plugin-rsc/component"]`;
+const componentImport = `import { loadComponent as __next_component__ } from "vitest-plugin-rsc/nextjs/rsc";\n`;
+
 // The exports of a module of the app, without what they are: `undefined`.
 async function exportStubs(code: string, file: string): Promise<string> {
   const compiled = await transformWithOxc(code, file, { sourcemap: false });
@@ -443,9 +448,9 @@ export async function loadNextProject(
   };
 
   const loadConfig = load<typeof import("next/dist/server/config.js")>("server/config").default;
-  const { PHASE_PRODUCTION_BUILD } =
+  const { PHASE_PRODUCTION_BUILD, COMPILER_NAMES } =
     load<typeof import("next/dist/shared/lib/constants.js")>("shared/lib/constants");
-  const { APP_DIR_ALIAS, MIDDLEWARE_FILENAME, PROXY_FILENAME } =
+  const { APP_DIR_ALIAS, MIDDLEWARE_FILENAME, PROXY_FILENAME, WEBPACK_LAYERS } =
     load<typeof import("next/dist/lib/constants.js")>("lib/constants");
   const { findPagesDir } =
     load<typeof import("next/dist/lib/find-pages-dir.js")>("lib/find-pages-dir");
@@ -501,9 +506,6 @@ export async function loadNextProject(
   const swc = load<typeof import("next/dist/build/swc/index.js")>("build/swc/index");
   const { getLoaderSWCOptions } =
     load<typeof import("next/dist/build/swc/options.js")>("build/swc/options");
-  const { WEBPACK_LAYERS } = load<typeof import("next/dist/lib/constants.js")>("lib/constants");
-  const { COMPILER_NAMES } =
-    load<typeof import("next/dist/shared/lib/constants.js")>("shared/lib/constants");
   const loadJsConfig =
     load<typeof import("next/dist/build/load-jsconfig.js")>("build/load-jsconfig").default;
   const { getRSCModuleInformation, getAppPageStaticInfo } = load<
@@ -602,13 +604,12 @@ export async function loadNextProject(
       return pages.length > 0 ? [[pathname, pages]] : [];
     }),
   );
+  const missingCanonical = strictRouteMatching
+    ? findMissingCanonicalInterceptionRoutes(pagePathsPerRoute)
+    : [];
   const routeErrors = [
-    ...(strictRouteMatching && findMissingCanonicalInterceptionRoutes(pagePathsPerRoute).length > 0
-      ? [
-          new MissingCanonicalInterceptionRoutesError(
-            findMissingCanonicalInterceptionRoutes(pagePathsPerRoute),
-          ),
-        ]
+    ...(missingCanonical.length > 0
+      ? [new MissingCanonicalInterceptionRoutesError(missingCanonical)]
       : []),
     ...(incompatibleParallelRouteSlots.length > 0
       ? [
@@ -628,6 +629,8 @@ export async function loadNextProject(
         routeErrors.map((error) => error.message).join("\n\n"),
     );
   }
+  // A file by its path from the root of the project, for a message.
+  const fromRoot = (file: string) => path.relative(root, file).split(path.sep).join("/");
   // Next also lists metadata files like `sitemap.ts` and `icon.png` as app
   // routes. Those need its metadata loaders and are not served yet.
   const fileOf = (appPath: string) => mappedAppPages[appPath]!.slice(APP_DIR_ALIAS.length);
@@ -637,12 +640,7 @@ export async function loadNextProject(
   const isRouteHandler = (appPath: string) => isAppRouteRoute(appPath) && !isMetadataFile(appPath);
   const metadataFiles = Object.keys(mappedAppPages)
     .filter(isMetadataFile)
-    .map((appPath) =>
-      path
-        .relative(root, path.join(appDir, fileOf(appPath)))
-        .split(path.sep)
-        .join("/"),
-    )
+    .map((appPath) => fromRoot(path.join(appDir, fileOf(appPath))))
     .sort();
   const routes: NextRoute[] = [];
   for (const [pathname, appPaths] of Object.entries(appPathsPerRoute)) {
@@ -666,11 +664,18 @@ export async function loadNextProject(
     if (kind) routes.push({ kind, page, pathname, appPaths, pagePath });
   }
 
+  // The file of a route of the app. Nothing for a page of Next's own, like
+  // its not-found page.
+  const routeFile = (route: NextRoute) =>
+    route.pagePath.startsWith(APP_DIR_ALIAS)
+      ? path.join(appDir, route.pagePath.slice(APP_DIR_ALIAS.length))
+      : undefined;
+
   // A page without a root layout. Next's loader of a page ends the process
   // for one, with a line that does not say whose it is.
   for (const route of routes) {
-    if (route.kind !== "page" || !route.pagePath.startsWith(APP_DIR_ALIAS)) continue;
-    const file = path.join(appDir, route.pagePath.slice(APP_DIR_ALIAS.length));
+    const file = routeFile(route);
+    if (route.kind !== "page" || !file) continue;
     const hasLayout = (directory: string): boolean =>
       pageExtensions.some((extension) =>
         fs.existsSync(path.join(directory, `layout.${extension}`)),
@@ -678,7 +683,7 @@ export async function loadNextProject(
       (directory !== appDir && hasLayout(path.dirname(directory)));
     if (!hasLayout(path.dirname(file))) {
       throw new Error(
-        `vitest-plugin-rsc: ${path.relative(root, file).split(path.sep).join("/")} does not ` +
+        `vitest-plugin-rsc: ${fromRoot(file)} does not ` +
           `have a root layout: there is no layout file in its directory or in one above it, ` +
           `up to the app directory. \`next build\` stops at that too.`,
       );
@@ -690,9 +695,8 @@ export async function loadNextProject(
   // route. Read the way Next's build reads it, from the file of the route.
   const edgeRouteFiles: string[] = [];
   for (const route of routes) {
-    // Not a page of Next's own, like its not-found page.
-    if (!route.pagePath.startsWith(APP_DIR_ALIAS)) continue;
-    const file = path.join(appDir, route.pagePath.slice(APP_DIR_ALIAS.length));
+    const file = routeFile(route);
+    if (!file) continue;
     const { runtime } = await getAppPageStaticInfo({
       pageFilePath: file,
       nextConfig: config,
@@ -701,9 +705,7 @@ export async function loadNextProject(
       // Next types this as an enum, which only its own build can read.
       pageType: "app" as never,
     });
-    if (runtime === "edge") {
-      edgeRouteFiles.push(path.relative(root, file).split(path.sep).join("/"));
-    }
+    if (runtime === "edge") edgeRouteFiles.push(fromRoot(file));
   }
 
   const buildId = await generateBuildId(config.generateBuildId, () => "vitest");
@@ -1117,15 +1119,20 @@ export async function loadNextProject(
 
   // cache.ts makes Next's cache in the tab with these options. They have to
   // give it Next's own handler, or nothing is cached and nothing says so.
-  const preview = { previewModeId: "", previewModeSigningKey: "", previewModeEncryptionKey: "" };
   const cache = new IncrementalCache({
     fs: {} as never,
     serverDistDir: "/",
     dev: false,
     requestHeaders: {},
     fetchCacheKeyPrefix: "prefix",
-    previewProps: preview,
-    prerenderManifest: { version: 4, routes: {}, dynamicRoutes: {}, notFoundRoutes: [], preview },
+    previewProps,
+    prerenderManifest: {
+      version: 4,
+      routes: {},
+      dynamicRoutes: {},
+      notFoundRoutes: [],
+      preview: previewProps,
+    },
   });
   if (!cache.cacheHandler || cache.fetchCacheKeyPrefix !== "prefix") {
     fail("`IncrementalCache` no longer takes `fs`, `serverDistDir` and `fetchCacheKeyPrefix`");
@@ -1284,7 +1291,7 @@ export async function loadNextProject(
     // client-side one into the container.
     const segment = (name: string, children: string, modules = "{}") =>
       `[${JSON.stringify(name)}, ${children}, ${modules}, null]`;
-    let tree = `["__PAGE__", {}, { page: [__next_component__, "vitest-plugin-rsc/component"] }]`;
+    let tree = `["__PAGE__", {}, { ${componentPage} }]`;
     for (const name of pathname.split("/").filter(Boolean).reverse()) {
       tree = segment(name, `{ children: ${tree} }`);
     }
@@ -1313,8 +1320,7 @@ export async function loadNextProject(
       );
     }
     return (
-      `import { loadComponent as __next_component__ } from "vitest-plugin-rsc/nextjs/rsc";\n` +
-      bindPageEntry(stripTurbopackTransitions(code), "the app-page template")
+      componentImport + bindPageEntry(stripTurbopackTransitions(code), "the app-page template")
     );
   }
 
@@ -1638,7 +1644,7 @@ export async function loadNextProject(
         ),
       // And one with the layouts of each page of the app.
       ...routes
-        .filter((route) => route.kind === "page" && route.pagePath.startsWith(APP_DIR_ALIAS))
+        .filter((route) => route.kind === "page" && routeFile(route))
         .map(
           (route): ComponentRoute => ({
             kind: "page",
@@ -1666,20 +1672,16 @@ export async function loadNextProject(
       if (!route.layouts) return { code: await loadComponentPageEntry(route), watchFiles: [] };
       // The entry of the app's route, with the node for its page: the tree
       // of Next's app loader names the page by its file.
-      const of = routes.find((candidate) => candidate.page === route.page)!;
-      const file = path.join(appDir, of.pagePath.slice(APP_DIR_ALIAS.length));
-      const page = JSON.stringify(file).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-      const entry = await loadRouteEntry(of);
+      const appRoute = routes.find((candidate) => candidate.page === route.page)!;
+      const file = JSON.stringify(routeFile(appRoute)).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const entry = await loadRouteEntry(appRoute);
       const code = replace(
         entry.code,
-        new RegExp(`\\bpage: \\[\\w+, ${page}\\]`),
-        `page: [__next_component__, "vitest-plugin-rsc/component"]`,
+        new RegExp(`\\bpage: \\[\\w+, ${file}\\]`),
+        componentPage,
         "the output of next-app-loader",
       );
-      return {
-        code: `import { loadComponent as __next_component__ } from "vitest-plugin-rsc/nextjs/rsc";\n${code}`,
-        watchFiles: entry.watchFiles,
-      };
+      return { code: componentImport + code, watchFiles: entry.watchFiles };
     },
     async loadMiddlewareEntry() {
       if (!middleware || !middlewareFile) return;
