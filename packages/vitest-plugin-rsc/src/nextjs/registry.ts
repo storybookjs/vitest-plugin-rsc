@@ -35,6 +35,14 @@ export type MiddlewareHandler = (
 
 type AnyFunction = (...args: any[]) => any;
 
+/** See `NextRegistry.opened`. */
+export type Opened = {
+  pathname: string;
+  /** Whether the server in front of the app takes the request: proxy.ts and `next.config`. */
+  proxy: boolean;
+  node?: { ui: unknown; layouts: boolean };
+};
+
 export type NextRegistry = {
   /** A `Request` and `Response` that keep the headers a browser drops. */
   Request: typeof Request;
@@ -62,11 +70,13 @@ export type NextRegistry = {
   /** Whether an id names a Server Action of the app, in the rsc layer. */
   hasServerAction(id: string): Promise<boolean>;
   /**
-   * The node that `renderServer(<Node />, { url })` renders, and the pathname
-   * of its URL. While it is there, that pathname is the node's route. With
-   * `layouts`, the node is the page of the app's route for that pathname.
+   * What `renderServer()` opened, for as long as it is open: the pathname of
+   * its URL, and how the server takes a request to that pathname. Without
+   * `proxy` it goes straight to the app's route for it. With a `node`, that
+   * pathname is the node's route, or with `layouts` the app's route with the
+   * node as its page.
    */
-  component: { pathname: string; ui: unknown; layouts?: boolean } | undefined;
+  opened: Opened | undefined;
   /** Loads a Client Component by its module id, in the ssr layer. */
   loadSsrModule(id: string): Promise<unknown>;
   /**

@@ -138,7 +138,7 @@ After that, Next's router is in charge. A `<Link>` navigation is an RSC request 
 
 ## A Component
 
-`renderServer(<Node />, { url })` renders one node the way Testing Library renders a component: in a `<div>` in `document.body`, without the app's layouts. It is not a second renderer. The node is the page of a route, and the request for it is the one above.
+`renderServer(<Node />, { url })` renders one node the way Testing Library renders a component: in a `<div>` in `document.body`, without the app's layouts, and without the server in front of the app (see [Without The Server In Front](#without-the-server-in-front)). It is not a second renderer. The node is the page of a route, and the request for it is the one above.
 
 ```
 renderServer(<Node />, { url: "/notes/7" })
@@ -183,7 +183,7 @@ For `/notes/7`, where the app has `app/notes/[id]/page.tsx`:
 ];
 ```
 
-- **The segments** are those of the app's route for the URL, so Next finds the same params. Next's route resolution says which route that is, as it does for every request. A URL that matches no route gets the tree of `/`, which has no params. A route handler's pathname has a tree too.
+- **The segments** are those of the app's route for the URL, so Next finds the same params. Next's route resolution says which route that is, as it does for every request. By default it does so from the app's routes alone, for the URL as given. With `proxy: true` it goes through the proxy and `next.config` first, so a rewrite decides. A URL that matches no route gets the tree of `/`, which has no params. A route handler's pathname has a tree too.
 - **The page name** matches the pathname, like `/notes/[id]/page`. Next derives the `revalidatePath()` tags from it.
 - **No layout**, not even a pass-through one. So the HTML has no `<html>` or `<body>`, and it fits in a `<div>`.
 - **Next's builtin boundaries** are the only other modules, and they sit at the root. They are `global-error`, without which Next's renderer throws, and `not-found`, `forbidden` and `unauthorized`. `next-app-loader` gives them to a root that has none of its own. They are Next's, not the app's.
@@ -351,6 +351,12 @@ The server answers that question with its route resolution, without running anyt
 Everything else goes to the network right away: Vite's modules, files in `public/`, a service worker. A page load always belongs to the app: `renderServer()`, `handleRequest()` and a navigation get the not-found page for a URL that resolves to nothing.
 
 A `fetch` that the server makes to its own origin while it renders is chosen the same way, and goes through the proxy too. The server handles it right away, inside the request that waits for it, and follows a redirect, as a server's `fetch` does.
+
+### Without The Server In Front
+
+`proxy` says whether a test goes through this server. `renderServer({ url })` does by default, and `renderServer(<Node />, { url })` does not. With `proxy: false` the URL is taken as it is. `resolveRoutes()` gets the routes without `beforeMiddleware`, the proxy's matchers, `beforeFiles`, `afterFiles` and `fallback`. What is left is the outputs, `dynamicRoutes` and `onMatch`: Next's own matching of a pathname to a route, with the same params. So no redirect, rewrite or header of `next.config` applies, the trailing-slash redirect included, and the proxy does not run.
+
+That holds for the requests that belong to what the test opened, which are the ones to its pathname. `renderServer()` puts the pathname in the registry, with `proxy` and the node, if there is one. `handle()` and `takesRequest()` look it up for every request. So the document, a Server Action, `router.refresh()` and a change of search params all skip the server in front. A request to another pathname is the app's, and goes through it: a navigation to another route, a `fetch` to `/api/…`, the page a Server Action redirects to. The pathname goes with the document it opened: it is forgotten when the tab loads another page, and when the document request ends at another pathname, after a redirect from the page itself.
 
 ## What Stands In For A Server
 

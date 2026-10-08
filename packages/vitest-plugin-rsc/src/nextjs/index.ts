@@ -4,7 +4,7 @@ import { resetAsyncLocalStorage } from "../async-local-storage.ts";
 import { createEnvironmentRunner, importEnvironment } from "../utils.ts";
 import { loadDocument, unloadDocument } from "./document.ts";
 import { recordListeners, recordMessageChannels } from "./leftovers.ts";
-import { registry } from "./registry.ts";
+import { registry, type Opened } from "./registry.ts";
 
 // The server's platform (globals.ts) has to be there before a module of Next's
 // server loads, so the layers load from here on, in order: rsc, then ssr.
@@ -262,6 +262,21 @@ export type RenderServerOptions = {
   url?: string;
   /** Headers for the request of the document, next to the ones a browser sends. */
   headers?: HeadersInit;
+  /**
+   * Whether the server in front of the app takes the request: `proxy.ts`, and
+   * the `redirects`, `rewrites` and `headers` of `next.config`. Defaults to
+   * `true`. With `false` the URL goes straight to the app's route for its
+   * pathname, and so do the requests the page sends there while it is open:
+   * Server Actions and `router.refresh()`. A navigation to another route goes
+   * through it, as in the app.
+   */
+  proxy?: boolean;
+  /**
+   * Whether the layouts of the app render around the page. Defaults to
+   * `true`. To render a page on its own, pass it as a node:
+   * `renderServer(<Page />, { url })`.
+   */
+  layouts?: boolean;
 };
 
 export type RenderServerResult = {
@@ -271,7 +286,7 @@ export type RenderServerResult = {
   unmount(): Promise<void>;
 };
 
-export type RenderComponentOptions = RenderServerOptions & {
+export type RenderComponentOptions = Omit<RenderServerOptions, "proxy" | "layouts"> & {
   /**
    * Where the node renders. Defaults to a `<div>` appended to `baseElement`,
    * which `cleanup()` removes. A container of the test's is only emptied.
@@ -282,10 +297,19 @@ export type RenderComponentOptions = RenderServerOptions & {
   /** Wraps the node on the server. It can be a Server Component. */
   wrapper?: JSXElementConstructor<{ children: ReactNode }>;
   /**
+   * Whether the server in front of the app takes the request: `proxy.ts`, and
+   * the `redirects`, `rewrites` and `headers` of `next.config`. Defaults to
+   * `false`: the node renders at `url` as it is given, and so do its Server
+   * Actions and `router.refresh()`. A navigation to another route goes
+   * through it, as in the app.
+   */
+  proxy?: boolean;
+  /**
    * Renders the node in place of the page at `url`, inside the layouts of the
    * app, with the `loading`, `error` and `not-found` of that route. The root
    * layout renders the document, so `container` and `baseElement` cannot be
-   * passed, and the `container` in the result is the `<body>`.
+   * passed, and the `container` in the result is the `<body>`. Defaults to
+   * `false`.
    */
   layouts?: boolean;
 };
@@ -312,6 +336,11 @@ export type RenderComponentResult = RenderServerResult & {
  * the Server Actions and the router are Next's, as for a page. A navigation
  * to a route of the app loads that page.
  *
+ * Two options say how much of the app is around it. `proxy` runs the server
+ * in front of the app, `proxy.ts` and the routing of `next.config`, and
+ * `layouts` renders the app's layouts. A route has both by default, and a
+ * node neither.
+ *
  * Resolves once the page has hydrated.
  */
 export function renderServer(options: RenderServerOptions): Promise<RenderServerResult>;
@@ -327,11 +356,20 @@ export async function renderServer(
   const url = new URL(options.url ?? "/", window.location.origin);
   const headers = new Headers(options.headers);
   if (!headers.has("accept")) headers.set("accept", "text/html");
+  const { pathname } = url;
   if (isOptions(first)) {
-    return { response: await loadPage(url, { headers }, {}), unmount: leavePage };
+    if (first.layouts === false) {
+      throw new Error(
+        "vitest-plugin-rsc: `renderServer({ url, layouts: false })` is not supported yet. " +
+          "To render a page without the layouts of the app, render it as a node: " +
+          "`renderServer(<Page />, { url })`.",
+      );
+    }
+    const opened = { pathname, proxy: first.proxy ?? true };
+    return { response: await loadPage(url, { headers }, { opened }), unmount: leavePage };
   }
 
-  const { wrapper } = options;
+  const { wrapper, proxy = false } = options;
   const ui = wrapper ? createElement(wrapper, null, first) : first;
   if (options.layouts) {
     if (options.container || options.baseElement) {
@@ -341,8 +379,8 @@ export async function renderServer(
           "to pass.",
       );
     }
-    const component = { pathname: url.pathname, ui, layouts: true };
-    const response = await loadPage(url, { headers }, { component });
+    const opened = { pathname, proxy, node: { ui, layouts: true } };
+    const response = await loadPage(url, { headers }, { opened });
     return {
       response,
       get container() {
@@ -385,7 +423,7 @@ export async function renderServer(
   const response = await loadPage(
     url,
     { headers },
-    { container, component: { pathname: url.pathname, ui } },
+    { container, opened: { pathname, proxy, node: { ui, layouts: false } } },
   );
   return {
     response,
@@ -422,10 +460,7 @@ function isOptions(value: unknown): value is RenderServerOptions {
 
 // What a test opens: a page, or a node in a container. A page load that the
 // app makes itself, a navigation, has no `opening`.
-type Opening = {
-  container?: Element;
-  component?: NonNullable<typeof registry.component>;
-};
+type Opening = { container?: Element; opened: Opened };
 
 async function loadPage(url: URL, init: RequestInit, opening?: Opening): Promise<Response> {
   const leaving = leavePage();
@@ -440,13 +475,13 @@ async function loadPage(url: URL, init: RequestInit, opening?: Opening): Promise
         "The node is hydrated in it, and leaving the node empties it.",
     );
   }
-  const component = (registry.component = opening?.component);
+  const opened = (registry.opened = opening?.opened);
   try {
     return await openPage(url, init, load.signal, opening);
   } catch (error) {
-    // A node that did not get to open has no route. Unless the tab has moved
-    // on, to a page or a node of its own.
-    if (component && registry.component === component) registry.component = undefined;
+    // What did not get to open has no requests of its own. Unless the tab has
+    // moved on, to a page or a node of its own.
+    if (opened && registry.opened === opened) registry.opened = undefined;
     throw error;
   }
 }
@@ -490,10 +525,11 @@ async function openPage(
   // The response is the node's when it comes from the node's route and is not
   // a document. A node that redirects gets the page it redirects to, and one
   // that fails to render gets Next's error page, which is a whole document.
-  // Those load as the pages they are, and the container stays empty.
+  // Those load as the pages they are, and the container stays empty. A page
+  // that was redirected is the app's, and so are the requests to it.
   let container = opening?.container;
-  if (opening?.component && new URL(response.url).pathname !== opening.component.pathname) {
-    registry.component = undefined;
+  if (opening && new URL(response.url).pathname !== opening.opened.pathname) {
+    registry.opened = undefined;
     container = undefined;
   }
   if (/^\s*<!doctype/i.test(html)) container = undefined;
@@ -574,8 +610,9 @@ function leavePage(): Promise<void> {
           unloadDocument();
         } finally {
           await ssr.settleRequests();
-          // The route of a node goes with its page.
-          registry.component = undefined;
+          // What the test opened goes with its page: the route of a node,
+          // and a pathname without the proxy.
+          registry.opened = undefined;
           resetAsyncLocalStorage();
         }
       }

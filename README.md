@@ -134,7 +134,7 @@ With `isolate: false`, the app's server loads once per tab instead of once per t
 
 Pass a node to test one component instead of a whole page. It renders the way Testing Library renders a component: in a `<div>` container in `document.body`, without your app's layouts. Everything around it is still Next: the request, the cookies, Server Actions, the cache, and the router.
 
-Without a `url`, the node renders at `/`. With a `url`, the pathname, search params, and route params come from it.
+Without a `url`, the node renders at `/`. With a `url`, the pathname, search params, and route params come from it. The URL goes straight to your route, past `proxy.ts`, so a component behind a sign-in renders without one.
 
 `wrapper` wraps the node on the server, for the providers a layout would give it. It can be a Server Component:
 
@@ -169,6 +169,32 @@ test("renders a node in place of a page, inside the layouts of the app", async (
   await expect.element(page.getByRole("navigation", { name: "Main" })).toBeVisible();
   const router = page.getByRole("main").getByRole("definition");
   await expect.element(router.nth(1)).toHaveTextContent('{"id":"7"}');
+});
+```
+
+Two options decide how much of your app is around what you render: `proxy` runs `proxy.ts`, and `layouts` renders your layouts. `proxy` covers the redirects, rewrites, and headers of `next.config` too.
+
+|                                   | `proxy` | `layouts` |
+| --------------------------------- | ------- | --------- |
+| `renderServer({ url })`           | `true`  | `true`    |
+| `renderServer(<Node />, { url })` | `false` | `false`   |
+
+Set them per test, like a component in the layouts of its route, behind the proxy that guards it:
+
+```tsx
+import { headers } from "next/headers";
+
+// Reads the header that proxy.ts adds for a signed-in visitor.
+async function Team() {
+  return <p>Team: {(await headers()).get("x-team")}</p>;
+}
+
+test("renders a node in the layouts of a route, behind the proxy", async () => {
+  document.cookie = "session=ada";
+
+  await renderServer(<Team />, { url: "/team", layouts: true, proxy: true });
+
+  await expect.element(page.getByRole("main")).toHaveTextContent("Team: core");
 });
 ```
 
@@ -587,6 +613,18 @@ test("serves the route the proxy rewrites to, at the URL that was asked for", as
 });
 ```
 
+`proxy: false` opens the route at exactly the URL you give, without any of it. A protected page opens without signing in first:
+
+```tsx
+test("opens a page without the proxy", async () => {
+  await renderServer({ url: "/team", proxy: false });
+
+  await expect.element(page.getByRole("heading", { name: "Team" })).toBeVisible();
+});
+```
+
+The page's Server Actions and `router.refresh()` skip it too. A navigation to another route goes through it, as in your app. A node skips it by default, see [Render A Component](#render-a-component).
+
 The proxy runs in the tab, in the same modules as the test. So a module it imports is the instance the test imports, and `vi.mock()` replaces it for both: mock the session it reads, or assert on what it wrote.
 
 See [The Server In Front Of The App](docs/next-routes.md#the-server-in-front-of-the-app) for how this works.
@@ -781,14 +819,14 @@ import { cleanup, handleRequest, renderServer } from "vitest-plugin-rsc/nextjs/t
 import { vitestPluginNext } from "vitest-plugin-rsc/nextjs/plugin";
 ```
 
-| Function                               | What it does                                                                                  |
-| -------------------------------------- | --------------------------------------------------------------------------------------------- |
-| `renderServer({ url, headers })`       | Opens a route. Resolves with `{ response, unmount }` once the page has hydrated.              |
-| `renderServer(<Node />, options)`      | Renders a node in a container, on a route of its own. See the options below.                  |
-| `handleRequest(input, init)`           | Sends one request to the app, like `fetch`. Resolves with the `Response`.                     |
-| `cleanup()`                            | Leaves the page, clears cookies, storage and the cache. The plugin runs it around every test. |
-| `vitestPluginNext({ browserModules })` | The Vite plugin. `browserModules` are glob patterns, relative to the project root.            |
-| `vitestPluginNext({ affectedTests })`  | `true` lets watch mode and `vitest --changed` find a route's test files. Off by default.      |
+| Function                                | What it does                                                                                  |
+| --------------------------------------- | --------------------------------------------------------------------------------------------- |
+| `renderServer({ url, headers, proxy })` | Opens a route. Resolves with `{ response, unmount }` once the page has hydrated.              |
+| `renderServer(<Node />, options)`       | Renders a node in a container, on a route of its own. See the options below.                  |
+| `handleRequest(input, init)`            | Sends one request to the app, like `fetch`. Resolves with the `Response`.                     |
+| `cleanup()`                             | Leaves the page, clears cookies, storage and the cache. The plugin runs it around every test. |
+| `vitestPluginNext({ browserModules })`  | The Vite plugin. `browserModules` are glob patterns, relative to the project root.            |
+| `vitestPluginNext({ affectedTests })`   | `true` lets watch mode and `vitest --changed` find a route's test files. Off by default.      |
 
 The options for a node, all optional:
 
@@ -797,6 +835,7 @@ The options for a node, all optional:
 | `url`         | The request URL. Defaults to `/`. The params are the ones your app's route has for it.              |
 | `headers`     | Request headers, on top of the ones a browser sends.                                                |
 | `wrapper`     | A component that wraps the node on the server. It can be a Server Component.                        |
+| `proxy`       | `true` runs `proxy.ts` and the routing of `next.config` for the request, as for a route.            |
 | `layouts`     | `true` renders the node in place of the page at `url`, inside your app's layouts.                   |
 | `container`   | An empty element for the node. Defaults to a new `<div>` in `baseElement`, which `cleanup` removes. |
 | `baseElement` | Defaults to `document.body`.                                                                        |
