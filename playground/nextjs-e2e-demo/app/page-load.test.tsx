@@ -60,3 +60,21 @@ test("fetches the modules again once a file has changed", async () => {
   expect(await modulesFetched(() => renderServer(<Counter />))).toBeGreaterThan(0);
   expect(await modulesFetched(() => renderServer(<Counter />))).toBe(0);
 });
+
+test("a page has what the server streamed in place before the app starts", async () => {
+  await renderServer({ url: "/slow-metadata" });
+
+  // React's scripts in the document put streamed content in place after a
+  // frame, or 300 ms after the last time: that was in the page before. An app
+  // that starts before that renders the metadata of the page a second time.
+  await renderServer({ url: "/slow-metadata" });
+
+  // How React marks content that still waits for that.
+  const comments = document.createTreeWalker(document.body, NodeFilter.SHOW_COMMENT);
+  const waiting: string[] = [];
+  while (comments.nextNode()) {
+    if ((comments.currentNode as Comment).data === "$~") waiting.push("$~");
+  }
+  expect(waiting).toEqual([]);
+  expect(document.querySelectorAll('meta[name="description"]')).toHaveLength(1);
+});

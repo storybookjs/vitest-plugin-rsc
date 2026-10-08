@@ -169,6 +169,20 @@ export async function loadDocument(html: string, url: string, container?: Elemen
       }
     }
   }
+  revealStreamedContent();
+}
+
+// React's scripts in the document do not move content that was streamed into
+// place right away: they wait for a frame, or for 300 ms since the last time,
+// which here was in the page before. A browser has done that by the time the
+// app starts, long after the HTML arrived. Here the app starts right away, and
+// would render what is not in place yet a second time. So it is moved now.
+function revealStreamedContent(): void {
+  const { $RB: boundaries, $RV: reveal } = self as {
+    $RB?: unknown[];
+    $RV?: (boundaries: unknown[]) => void;
+  };
+  if (boundaries?.length && reveal) reveal(boundaries);
 }
 
 /** Leaves the page: the document is as it was before the page. */
