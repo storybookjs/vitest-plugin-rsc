@@ -198,6 +198,10 @@ async function sendRequest(
       }
       if (url.origin !== window.location.origin) {
         if (navigation) throw leftTheApp(url);
+        // The credentials of the app's origin are not for another one: `fetch`
+        // drops them on such a redirect. A `cookie` header the browser's
+        // `fetch` drops itself.
+        sent.delete("authorization");
         return nativeFetch(url, { method, headers: sent, body });
       }
       continue;

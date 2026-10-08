@@ -112,6 +112,20 @@ test.for([
   },
 );
 
+test("drops the authorization header on a redirect to another origin, as fetch does", async () => {
+  // The dev server by another name: another origin, to the tab and to Next.
+  const elsewhere = `http://elsewhere.localhost:${window.location.port}/service/headers`;
+
+  const response = await handleRequest(
+    `/api/redirect?status=302&to=${encodeURIComponent(elsewhere)}`,
+    { headers: { authorization: "Bearer secret", "x-client": "test" } },
+  );
+
+  const headers = await response.json();
+  expect(headers).toMatchObject({ "x-client": "test" });
+  expect(headers).not.toHaveProperty("authorization");
+});
+
 test("opens the page a route handler redirects to", async () => {
   db.notes.set("3", { id: "3", title: "Plan the week", body: "" });
   document.cookie = "last-created=3";
