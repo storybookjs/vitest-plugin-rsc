@@ -108,6 +108,8 @@ npm install -D vitest-plugin-rsc vitest @vitest/browser-playwright playwright
 npm install -D @next/routing@$(node -p "require('next/package.json').version")
 ```
 
+`@next/routing` is not a part of `next`, and it has to be at exactly the version of your `next`. What one version of Next hands a deployment adapter is what that version of the package reads, and Next calls that API experimental: a version that is close can route a request another way without saying so. So a run stops when the two differ, with the version to install. Upgrade them together, as you do `eslint-config-next`.
+
 ```ts
 // vitest.config.ts
 import { playwright } from "@vitest/browser-playwright";
