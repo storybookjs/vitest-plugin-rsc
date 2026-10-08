@@ -12,8 +12,13 @@ import {
   RSC_HEADER,
 } from "next/dist/client/components/app-router-headers";
 import { isRSCRequestHeader } from "next/dist/server/lib/is-rsc-request";
+import { filterInternalHeaders } from "next/dist/server/lib/server-ipc/utils";
 import * as appPageModule from "next/dist/server/route-modules/app-page/module";
-import { normalizeNextQueryParam } from "next/dist/server/web/utils";
+import {
+  fromNodeOutgoingHttpHeaders,
+  normalizeNextQueryParam,
+  toNodeOutgoingHttpHeaders,
+} from "next/dist/server/web/utils";
 import { getRouteMatcher } from "next/dist/shared/lib/router/utils/route-matcher";
 import { getRouteRegex } from "next/dist/shared/lib/router/utils/route-regex";
 import { routes as allRoutes, routing } from "virtual:vitest-plugin-rsc/next-manifest";
@@ -50,6 +55,16 @@ const notFoundPage = "/_not-found/page";
 const pathnames = Object.keys(routing.outputs);
 
 type InvokeMiddleware = (context: MiddlewareContext) => Promise<MiddlewareResult>;
+
+// A request as it comes in: without the headers that only Next's own server
+// sets on one, like `x-middleware-set-cookie` for the cookies of the
+// middleware. `next start` takes them off with the same function, before
+// anything reads the request.
+function incoming<T extends Pick<ServerRequest, "headers">>(request: T): T {
+  const headers = toNodeOutgoingHttpHeaders(request.headers) as Record<string, string | string[]>;
+  filterInternalHeaders(headers);
+  return { ...request, headers: fromNodeOutgoingHttpHeaders(headers) };
+}
 
 // The server in front of the app: Next's own route resolution, with the
 // routes its build hands a deployment adapter. It goes through the redirects,
@@ -93,7 +108,7 @@ export async function takesRequest(
 ): Promise<boolean> {
   if (registry.component?.pathname === new URL(request.url).pathname) return true;
   let matched = false;
-  const resolved = await resolve(request, new ReadableStream(), async () => {
+  const resolved = await resolve(incoming(request), new ReadableStream(), async () => {
     matched = true;
     return {};
   });
@@ -230,7 +245,8 @@ export async function settleRequests(): Promise<void> {
   rendering.clear();
 }
 
-async function handle(request: ServerRequest, unrouted: "not-found" | "pass"): Promise<Handled> {
+async function handle(received: ServerRequest, unrouted: "not-found" | "pass"): Promise<Handled> {
+  const request = incoming(received);
   const url = new URL(request.url);
   const endRequestScope = registry.enterRequestScope();
   // What Next does after it has responded, like `after()`, still reads the

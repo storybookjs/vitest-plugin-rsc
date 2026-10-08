@@ -262,6 +262,17 @@ test("gives the app the headers and the cookies the proxy sets", async () => {
   expect(response.headers.get("x-proxy")).toBe("team");
 });
 
+test("takes a header that only Next's own server sets off a request that comes in", async () => {
+  // Next hands a route the cookies of the proxy in `x-middleware-set-cookie`.
+  // A request that brings that header itself sets no cookie for the app.
+  const response = await handleRequest("/notes", {
+    headers: { "x-middleware-set-cookie": "last-created=3" },
+  });
+
+  expect(response.status).toBe(200);
+  expect(await response.text()).not.toContain("Last created");
+});
+
 test("answers 500 when the proxy throws, and logs the error", async () => {
   consoleError.mockImplementation(() => {});
 

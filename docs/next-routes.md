@@ -271,6 +271,7 @@ Next has a contract for a platform that does this itself: a deployment adapter. 
 | The routes manifest of a build, which Next's route module reads too | `generateRoutesManifest()`                                                                                  |
 | The file of the proxy, and its matcher                              | `getFilesInDir()` with Next's names for the file, `createPagesMapping()`, `getStaticInfoIncludingLayouts()` |
 | The routes of the server, in their phases, and the outputs          | `handleBuildComplete()`, which calls `onBuildComplete()` of the adapter in `adapter.ts`                     |
+| The headers that a request may not bring along                      | `filterInternalHeaders()`, which `next start` calls on every request                                        |
 | Which route a request gets, a redirect, or a rewrite                | `resolveRoutes()` of `@next/routing`, in the tab                                                            |
 | The request handler of the proxy                                    | `getEdgeServerEntry()` and `next-middleware-loader`, which expands `templates/middleware`                   |
 | What the response of the proxy means for the request                | `responseToMiddlewareResult()` of `@next/routing`                                                           |
@@ -303,6 +304,7 @@ It is not a part of `next`: a project installs it next to `next`, at the same ve
 
 `@next/routing` finds the route. What happens then is the adapter's, and Next's own adapters have code for each of these too. Here it is in `handle()` of `ssr.ts`:
 
+- **The headers of Next's own server** are taken off a request when it comes in, before the resolution and the proxy read it: `x-middleware-set-cookie` and the others that Next's layers pass a request on with. A request that brings one itself would set a cookie the app never set. The proxy puts them on the request after that, for the route.
 - **A redirect** is a response with the status and the headers the resolution gives.
 - **A rewrite to another server** is a `fetch` to it, which `next start` proxies. The tab makes the request, so the browser's rules for one apply: CORS, a redirect is followed, and the `host`, `cookie` and `origin` of the request are the browser's to set. A destination with the origin of the app itself is the dev server's to answer, not the app's.
 - **A route** is called with the URL the browser asked for, also after a rewrite, as `next start` calls it: `usePathname()` says where the browser is, not where the rewrite went. The route is told the rest in the meta of the request, where `next start` and a deployment adapter put it. Its params are the ones of the pathname the resolution ends at, read with Next's own matcher for the route. Not from the query of the resolution, which also has them, under names like `nxtPid`: `@next/routing` reads a `+` or a `%25` in them as a query does. And after a rewrite, the query of where it went. A request that was not rewritten keeps the query of its URL.

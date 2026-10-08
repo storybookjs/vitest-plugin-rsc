@@ -403,6 +403,7 @@ const runtimeImports: Record<NextLayer, string[]> = {
     // ssr.ts, for the server in front of the app
     "next/dist/client/components/app-router-headers",
     "next/dist/server/lib/is-rsc-request",
+    "next/dist/server/lib/server-ipc/utils",
     "next/dist/shared/lib/router/utils/route-matcher",
     "next/dist/shared/lib/router/utils/route-regex",
     // node-server.ts
