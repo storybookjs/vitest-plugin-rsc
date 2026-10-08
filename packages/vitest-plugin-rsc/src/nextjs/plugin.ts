@@ -12,7 +12,7 @@ import {
 } from "vite";
 import type { TestProject } from "vitest/node";
 import { createRunnerEnvironmentPlugins } from "../runner-environment.ts";
-import { nextBuild } from "./build.ts";
+import { createHostReferences, nextBuild } from "./build.ts";
 import { clientFiles } from "./client-files.ts";
 import { flightBridge, type FlightEntry } from "./flight.ts";
 import { createCompilePlugin, createDependencyCompilePlugin } from "./compile.ts";
@@ -456,6 +456,8 @@ export type VitestPluginNextOptions = ServerCodeOptions & {
 export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[] {
   let project: NextProject;
   const serverCode = createServerCode(registry, options);
+  // What a static build finds of the host: see build.ts.
+  const hostReferences = createHostReferences();
   const getProject = () => project;
   const resolvers = Object.fromEntries(
     layers.map((layer) => [layer, createLayerResolver(getProject, layer)]),
@@ -767,6 +769,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
       testingLibrary,
       isHostFile: serverCode.isHostFile,
       isHostPackage: serverCode.isHostPackage,
+      built: hostReferences,
     }),
     serverCode.plugin({ [environmentOf.rsc]: "rsc", [environmentOf.ssr]: "ssr" }),
     createCompilePlugin(
@@ -784,6 +787,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
       environments: environmentOf,
       entries: { ssr: "vitest-plugin-rsc/nextjs/ssr", browser: "vitest-plugin-rsc/nextjs/client" },
       emittedFiles: () => project.emittedFiles(),
+      host: hostReferences,
     }),
   ];
 }

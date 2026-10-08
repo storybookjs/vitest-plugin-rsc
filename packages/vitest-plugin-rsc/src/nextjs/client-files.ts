@@ -2,6 +2,12 @@ import path from "node:path";
 import { transformDirectiveProxyExport } from "@vitejs/plugin-rsc/transforms";
 import { normalizePath, parseAstAsync, transformWithOxc, type Plugin } from "vite";
 import { hostModulePrefix } from "../host-module.ts";
+import {
+  builtClientFileId,
+  builtHostModuleUrl,
+  builtLiveModuleId,
+  type HostReferences,
+} from "./build.ts";
 import { clientFileId, liveModulePrefix } from "./client-ids.ts";
 
 // A test file or a story file with `"use client"` is a module of the browser
@@ -38,6 +44,8 @@ export type ClientFilesOptions = {
   isHostFile(file: string): boolean;
   /** Whether an import is of a package of the host, by its name. */
   isHostPackage(specifier: string): boolean;
+  /** For a static build: what a build of a layer finds of the host, see build.ts. */
+  built: HostReferences;
 };
 
 /** The module of the rsc layer for a client file with these exports. */
@@ -81,11 +89,16 @@ export function hostModuleCode(
 
 export function clientFiles(options: ClientFilesOptions): Plugin {
   const { rsc, browser } = options.environments;
-  const { testingLibrary, isHostFile, isHostPackage } = options;
+  const { testingLibrary, isHostFile, isHostPackage, built } = options;
+  // The modules in between that a build of the browser layer has a file for.
+  const emitted = new Set<string>();
 
   return {
     name: "vitest-plugin-rsc:next-client-files",
     enforce: "pre",
+    buildStart() {
+      if (this.environment.name === browser) emitted.clear();
+    },
     resolveId: {
       // Before the resolver of a package manager, or of the host itself.
       order: "pre",
@@ -98,29 +111,58 @@ export function clientFiles(options: ClientFilesOptions): Plugin {
         // for which Vite names the `index.html` of the root.
         const { root } = this.environment.config;
         if (!importer || importer === path.posix.join(normalizePath(root), "index.html")) return;
+        const isBuild = this.environment.mode === "build";
+        // In a build the module of the page is in the build of the host: the
+        // browser layer imports it from the page, by a URL, as a runner does
+        // with a dev server. The rsc layer is built after it and has it.
+        const hostModule = (target: string) => {
+          if (!isBuild) return hostModulePrefix + target;
+          const url = builtHostModuleUrl(root, target);
+          built.hostModules.set(url, target);
+          return { id: url, external: "absolute" as const };
+        };
         const others = { ...resolveOptions, skipSelf: true };
         // The import of a client file, from the module in between.
         if (importer.startsWith(liveModulePrefix)) {
           return this.resolve(source, liveModuleOf(importer)[0], others);
         }
         if (isHostPackage(source) || source === testingLibrary.specifier) {
-          return hostModulePrefix + source;
+          return hostModule(source);
         }
         const file = importer.split("?")[0]!;
         if (!isHostFile(file)) return;
         // Another file of the host, like a setup file, or `.storybook/preview`.
         const resolved = await this.resolve(source, file, others);
         if (resolved && !resolved.id.includes("?") && isHostFile(resolved.id)) {
-          return hostModulePrefix + normalizePath(resolved.id);
+          return hostModule(normalizePath(resolved.id));
         }
         // Not for the scan of the dependencies, which is after what the file
         // imports: a module in between hides that.
-        if (!(resolveOptions as { scan?: boolean }).scan) return liveModuleId(file, source);
+        if ((resolveOptions as { scan?: boolean }).scan) return;
+        const live = liveModuleId(file, source);
+        if (!isBuild) return live;
+        // In a build the module in between is a file of its own, which the
+        // client file imports when it runs, as it does with a dev server. The
+        // bundler does not look into the import: what the file imports by
+        // name is of the module the import is of, not of the one in between.
+        const id = builtLiveModuleId(root, file, source);
+        if (!emitted.has(id)) {
+          emitted.add(id);
+          this.emitFile({ type: "chunk", id: live, fileName: id.slice(1) });
+        }
+        return { id, external: "absolute" as const };
       },
     },
     load(id) {
       if (id.startsWith(liveModulePrefix)) {
-        return `import * as module from ${JSON.stringify(liveModuleOf(id)[1])};\nexport { module };\n`;
+        const source = JSON.stringify(liveModuleOf(id)[1]);
+        // A build loads the CSS of a chunk where it is imported with
+        // `import()`, as it does for a Client Component: with a dev server the
+        // module of the CSS adds it.
+        if (this.environment.mode === "build") {
+          return `export const module = await import(${source});\n`;
+        }
+        return `import * as module from ${source};\nexport { module };\n`;
       }
       if (!id.startsWith(hostModulePrefix)) return;
       const target = id.slice(hostModulePrefix.length);
@@ -173,8 +215,15 @@ export function clientFiles(options: ClientFilesOptions): Plugin {
           this.addWatchFile(resolved.id.split("?")[0]!);
         }
       }
+      // A build has the file in its browser layer, by an id of its own.
+      const normalized = normalizePath(file);
+      let fileId = clientFileId(normalized);
+      if (this.environment.mode === "build") {
+        fileId = builtClientFileId(this.environment.config.root, normalized);
+        built.clientFiles.set(normalized, fileId);
+      }
       return {
-        code: clientFileStub(clientFileId(normalizePath(file)), exportNames, testingLibrary.file),
+        code: clientFileStub(fileId, exportNames, testingLibrary.file),
         map: { mappings: "" },
       };
     },

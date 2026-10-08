@@ -1,5 +1,11 @@
 import { expect, test, vi } from "vitest";
 import { hostModulePrefix, isHostModule } from "../host-module.ts";
+import {
+  builtClientFileId,
+  builtHostModuleUrl,
+  builtLiveModuleId,
+  createHostReferences,
+} from "./build.ts";
 import { clientFiles } from "./client-files.ts";
 import { clientFileId, isLiveModule, liveModulePrefix } from "./client-ids.ts";
 
@@ -10,31 +16,35 @@ const testingLibrary = {
 
 // The plugin, for a project whose host files are its test files and a setup
 // file, and whose host has `vitest` and the packages of Storybook.
+const built = createHostReferences();
 const plugin = clientFiles({
   environments: { rsc: "client", browser: "react_client" },
   testingLibrary,
   isHostFile: (file) => /\.test\.tsx$|\/vitest\.setup\.ts$/.test(file),
   isHostPackage: (specifier) => /^(vitest|storybook)(\/|$)|^@storybook\//.test(specifier),
+  built,
 });
 
 type Resolved = { id: string } | null;
 type Context = {
-  environment: { name: string; config: { root: string } };
+  environment: { name: string; mode: "dev" | "build"; config: { root: string } };
   resolve(source: string, importer?: string): Promise<Resolved>;
   addWatchFile(file: string): void;
+  emitFile(file: object): string;
   error(message: string): never;
 };
 
 // What Vite's own resolver would answer: a relative import is a file next to
 // its importer, and everything else a package.
-const context = (environment: string): Context => ({
-  environment: { name: environment, config: { root: "/" } },
+const context = (environment: string, mode: "dev" | "build" = "dev"): Context => ({
+  environment: { name: environment, mode, config: { root: "/" } },
   resolve: async (source, importer) => ({
     id: source.startsWith(".")
       ? new URL(source, `file://${importer}`).pathname
       : `/node_modules/${source}/index.js`,
   }),
   addWatchFile: vi.fn(),
+  emitFile: vi.fn(() => "reference"),
   error(message) {
     throw new Error(message);
   },
@@ -183,4 +193,66 @@ test("tells the ids apart as a module runner spells them", () => {
   expect(isLiveModule("/app/counter.tsx")).toBe(false);
   expect(clientFileId("/Users/me/app/a.test.tsx")).toBe("/@fs/Users/me/app/a.test.tsx");
   expect(clientFileId("C:/app/a.test.tsx")).toBe("/@fs/C:/app/a.test.tsx");
+  // In a static build, a module in between is a file of the browser layer.
+  expect(isLiveModule("/vitest-plugin-rsc/react_client/live-modules/react-0123456789.js")).toBe(
+    true,
+  );
+  expect(isLiveModule("/vitest-plugin-rsc/react_client/assets/react-0123456789.js")).toBe(false);
+});
+
+test("in a build, has a client file loaded from the file the browser layer of the build has", async () => {
+  const code = `"use client";\nexport const Primary = {};\n`;
+
+  const stub = await transform.call(context("client", "build"), code, "/app/a.test.tsx");
+
+  const id = builtClientFileId("/", "/app/a.test.tsx");
+  expect(stub?.code).toContain(`await $$loadClientFile(${JSON.stringify(id)});`);
+  expect(id).toMatch(/^\/vitest-plugin-rsc\/react_client\/client-files\/a\.test-[\w-]{10}\.js$/);
+  // For the build of the browser layer, which has it there.
+  expect(built.clientFiles.get("/app/a.test.tsx")).toBe(id);
+});
+
+test("in a build, imports what a client file imports from files of their own", async () => {
+  const browser = context("react_client", "build");
+  // A build of the layer starts with no module in between.
+  (plugin.buildStart as (this: Context) => void).call(browser);
+  const importer = "/app/a.test.tsx";
+  const resolveInBuild = (source: string) => resolveId.call(browser, source, importer, {});
+
+  // The page's module is in the build of the host, by a URL.
+  expect(await resolveInBuild("storybook/test")).toEqual({
+    id: "/@id/__x00__vitest-plugin-rsc/host-module/storybook/test",
+    external: "absolute",
+  });
+  expect(built.hostModules.get(builtHostModuleUrl("/", "storybook/test"))).toBe("storybook/test");
+  const setup = await resolveInBuild("../vitest.setup.ts");
+  expect(setup).toEqual({ id: builtHostModuleUrl("/", "/vitest.setup.ts"), external: "absolute" });
+  expect(built.hostModules.get((setup as { id: string }).id)).toBe("/vitest.setup.ts");
+
+  // A module in between is a file of the browser layer, which the bundler
+  // builds once, and the client file imports when it runs.
+  const counter = builtLiveModuleId("/", importer, "./counter.tsx");
+  expect(await resolveInBuild("./counter.tsx")).toEqual({ id: counter, external: "absolute" });
+  expect(await resolveInBuild("./counter.tsx")).toEqual({ id: counter, external: "absolute" });
+  expect(browser.emitFile).toHaveBeenCalledOnce();
+  const [[chunk]] = vi.mocked(browser.emitFile).mock.calls as unknown as [[{ id: string }]];
+  expect(chunk).toEqual({ type: "chunk", id: chunk.id, fileName: counter.slice(1) });
+  // With `import()`, for which the build loads the CSS of what it imports.
+  expect(load.call(browser, chunk.id)).toBe(
+    `export const module = await import("./counter.tsx");\n`,
+  );
+  expect(isLiveModule(counter)).toBe(true);
+});
+
+test("in a build, gives a module of the app the page's own module for a package of the host", async () => {
+  // Like a mock of a module that a Client Component imports, with a spy of
+  // Storybook in it: with a dev server it is the page's module too.
+  const browser = context("react_client", "build");
+
+  expect(await resolveId.call(browser, "storybook/test", "/app/lib/session.mock.ts", {})).toEqual({
+    id: "/@id/__x00__vitest-plugin-rsc/host-module/storybook/test",
+    external: "absolute",
+  });
+  // The build of the host has it, for the browser layer to import.
+  expect(built.hostModules.get(builtHostModuleUrl("/", "storybook/test"))).toBe("storybook/test");
 });

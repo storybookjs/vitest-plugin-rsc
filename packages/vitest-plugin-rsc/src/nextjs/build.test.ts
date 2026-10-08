@@ -1,8 +1,17 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { normalizePath } from "vite";
 import { expect, onTestFinished, test, vi } from "vitest";
-import { nextBuild, toRunnerModule, withBuiltFiles } from "./build.ts";
+import {
+  builtClientFileId,
+  builtHostModuleUrl,
+  builtLiveModuleId,
+  createHostReferences,
+  nextBuild,
+  toRunnerModule,
+  withBuiltFiles,
+} from "./build.ts";
 
 // A builder that builds nothing: `nextBuild()` asks Vite for one when a host
 // only builds its own environment. And a config file, which it loads for that.
@@ -45,12 +54,17 @@ function setup(
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "build-"));
   onTestFinished(() => fs.rmSync(root, { recursive: true, force: true }));
   const outDir = path.join(root, "dist");
-  const manager = { isScanBuild: false };
+  const manager = {
+    isScanBuild: false,
+    clientReferenceMetaMap: {} as Record<string, { referenceKey: string; importId: string }>,
+  };
+  const references = createHostReferences();
   const plugin = nextBuild({
     environments: names,
     entries: { ssr: "vitest-plugin-rsc/nextjs/ssr", browser: "vitest-plugin-rsc/nextjs/client" },
     emittedFiles: () =>
       Object.entries(emitted).map(([pathname, body]) => ({ pathname, body: Buffer.from(body) })),
+    host: references,
   });
   const userConfig = { plugins, build: { rolldownOptions: { onwarn } } };
   const config = (plugin.config as Hook)(userConfig, { command: "build" }) as {
@@ -98,7 +112,19 @@ function setup(
     config.build.rolldownOptions.onwarn(warning, (shownWarning) => shown.push(shownWarning));
     return shown;
   };
-  return { root, outDir, plugin, config, manager, layers, host, builder, builds, warnings };
+  return {
+    root,
+    outDir,
+    plugin,
+    config,
+    manager,
+    references,
+    layers,
+    host,
+    builder,
+    builds,
+    warnings,
+  };
 }
 
 test("builds the layers in the order that gives every reference its id", async () => {
@@ -331,20 +357,131 @@ test("names a file of the build by the way from the file that asks", () => {
 });
 
 test("tells the page where the layers are from the directory of the build", () => {
-  const { plugin } = setup();
+  const { root, plugin, references } = setup();
+  // What the browser layer imports of the page, which the build of the host
+  // has: see client-files.ts.
+  const preview = path.join(root, ".storybook/preview.ts");
+  references.hostModules.set(builtHostModuleUrl(root, "storybook/test"), "storybook/test");
+  references.hostModules.set(builtHostModuleUrl(root, preview), preview);
   const id = call(plugin.resolveId, "client", "virtual:vitest-plugin-rsc/layers") as string;
   const code = call(plugin.load, "client", id) as string;
   const { code: rendered } = call(plugin.renderChunk, "client", code, {
     fileName: "assets/index.js",
   }) as { code: string };
 
+  const previewUrl = builtHostModuleUrl(root, preview);
   expect(rendered).toBe(
     `const directory = new URL("../", import.meta.url).href;\n` +
       `export default {\n` +
       `  "next_ssr": { base: directory, entries: {"vitest-plugin-rsc/nextjs/ssr":"vitest-plugin-rsc/next_ssr/entry.js"} },\n` +
       `  "react_client": { base: directory, entries: {"vitest-plugin-rsc/nextjs/client":"vitest-plugin-rsc/react_client/entry.js"} },\n` +
+      `};\n` +
+      `export const hostModules = {\n` +
+      `  "/@id/__x00__vitest-plugin-rsc/host-module/storybook/test": () => import("\\u0000vitest-plugin-rsc/host-module/storybook/test"),\n` +
+      `  ${JSON.stringify(previewUrl)}: () => import(${JSON.stringify(`\0vitest-plugin-rsc/host-module/${preview}`)}),\n` +
       `};\n`,
   );
+  // A file of the page by a name of its own, not by the path of the machine
+  // that built it.
+  expect(previewUrl).toMatch(
+    /^\/@id\/__x00__vitest-plugin-rsc\/host-module\/\.file\/preview-[\w-]{10}\.js$/,
+  );
+});
+
+test("has the client files of the host in the browser layer, each in the file its id names", async () => {
+  const { root, plugin, manager, references } = setup();
+  manager.clientReferenceMetaMap = {
+    "/app/counter.tsx": { referenceKey: "a1b2c3", importId: "/app/counter.tsx" },
+  };
+  const file = normalizePath(path.join(root, "stories/button.stories.tsx"));
+  const id = builtClientFileId(root, file);
+  references.clientFiles.set(file, id);
+  const emitFile = vi.fn();
+
+  await (plugin.buildStart as { handler: Hook }).handler.call({
+    environment: { name: "react_client", mode: "build" },
+    emitFile,
+  });
+
+  expect(emitFile.mock.calls).toEqual([[{ type: "chunk", id: file, fileName: id.slice(1) }]]);
+  // A node of the browser layer names it by that id, and the Client Component
+  // that renders the node is there too.
+  const listed = (environment: string) => {
+    const resolved = call(plugin.resolveId, environment, clientReferences.slice(1)) as string;
+    return call(plugin.load, environment, resolved) as string;
+  };
+  const clientNode =
+    `  "/@id/vitest-plugin-rsc/nextjs/client-node": ` +
+    `() => import("vitest-plugin-rsc/nextjs/client-node"),\n`;
+  expect(listed("react_client")).toBe(
+    `export default {\n` +
+      `  "a1b2c3": () => import("/app/counter.tsx"),\n` +
+      clientNode +
+      `  ${JSON.stringify(id)}: () => import(${JSON.stringify(file)}),\n` +
+      `};\n`,
+  );
+  // Not in the ssr layer, where a node of the browser layer does not render.
+  expect(listed("next_ssr")).toBe(
+    `export default {\n  "a1b2c3": () => import("/app/counter.tsx"),\n${clientNode}};\n`,
+  );
+});
+
+test("names the files of the host the same in every build of the project", () => {
+  const ids = (root: string) => [
+    builtClientFileId(root, `${root}/stories/button.stories.tsx`),
+    builtLiveModuleId(root, `${root}/stories/button.stories.tsx`, "../app/button.tsx"),
+    builtHostModuleUrl(root, `${root}/.storybook/preview.ts`),
+  ];
+
+  expect(ids("/home/me/app")).toEqual(ids("/ci/work/app"));
+  for (const id of ids("/home/me/app")) expect(id).not.toContain("/home/me");
+  expect(ids("/home/me/app")[0]).toMatch(
+    /^\/vitest-plugin-rsc\/react_client\/client-files\/button\.stories-[\w-]{10}\.js$/,
+  );
+  expect(ids("/home/me/app")[1]).toMatch(
+    /^\/vitest-plugin-rsc\/react_client\/live-modules\/button-[\w-]{10}\.js$/,
+  );
+  // A file of the page on Windows is a file too, not a package.
+  expect(builtHostModuleUrl("C:/app", "C:/app/.storybook/preview.ts")).toBe(
+    builtHostModuleUrl("/app", "/app/.storybook/preview.ts"),
+  );
+  // Two files of one name are two files of the build.
+  expect(builtClientFileId("/app", "/app/a/button.stories.tsx")).not.toBe(
+    builtClientFileId("/app", "/app/b/button.stories.tsx"),
+  );
+});
+
+test("says so when the browser layer imports a module of the page that the host's build has not", async () => {
+  const { plugin, builder, manager, references } = setup();
+  const url = "/@id/__x00__vitest-plugin-rsc/host-module/storybook/test";
+  // The build of the host lists what the scan of the browser layer found:
+  // nothing here. The last build of the browser layer finds one.
+  const build = builder.build;
+  builder.build = async (environment) => {
+    await build(environment);
+    if (environment.name === "client") {
+      const id = call(plugin.resolveId, "client", "virtual:vitest-plugin-rsc/layers") as string;
+      call(plugin.load, "client", id);
+    }
+    if (environment.name === "react_client" && !manager.isScanBuild) {
+      references.hostModules.set(url, "storybook/test");
+    }
+  };
+
+  await expect((plugin.buildApp as Hook)(builder)).rejects.toThrow(
+    `the browser layer imports modules of the page that the build of the host does not have: ${url}`,
+  );
+});
+
+test("forgets what an earlier build found of the host", async () => {
+  const { plugin, builder, references } = setup();
+  references.clientFiles.set("/app/gone.stories.tsx", "/vitest-plugin-rsc/x.js");
+  references.hostModules.set("/@id/__x00__vitest-plugin-rsc/host-module/gone", "gone");
+
+  await (plugin.buildApp as Hook)(builder);
+
+  expect(references.clientFiles.size).toBe(0);
+  expect(references.hostModules.size).toBe(0);
 });
 
 test("leaves out an import that a build which only looks cannot find", () => {

@@ -421,7 +421,9 @@ function clientNodeOf(ui: unknown): ClientNode | undefined {
  * browser layer, with these props. The page renders it in the browser and not
  * on the server, so the props are passed as they are: a function stays that
  * function. `module` is what the browser layer imports the module by, as
- * `clientFileOf()` gives it. A package specifier works too.
+ * `clientFileOf()` gives it. A package specifier works too, with a dev
+ * server: a static build has the files with `"use client"` of the host, and
+ * the modules a Flight payload can refer to.
  */
 export function clientNode(
   module: string,

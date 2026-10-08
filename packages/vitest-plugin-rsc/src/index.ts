@@ -52,7 +52,9 @@ export function vitestPluginRSC(): Plugin[] {
         if (source === builtLayersId) return `\0${builtLayersId}`;
       },
       load(id) {
-        if (id === `\0${builtLayersId}`) return "export default undefined;";
+        if (id === `\0${builtLayersId}`) {
+          return "export default undefined;\nexport const hostModules = undefined;\n";
+        }
       },
       configureServer(server) {
         server.ws.on("connection", (socket, req) => {

@@ -22,7 +22,17 @@ export const liveModulePrefix = "\0vitest-plugin-rsc/live-module/";
 // How Vite spells that id where a URL is expected.
 const liveModuleUrl = "/@id/__x00__vitest-plugin-rsc/live-module/";
 
+// A static build has a file of the browser layer for every client file of the
+// host, and one for every module in between. Its id is the path of the file in
+// the build: see build.ts, which builds the layer of this name into this
+// directory.
+const builtDir = "/vitest-plugin-rsc/react_client/";
+/** Where a build has the client files. */
+export const builtClientFileDir = `${builtDir}client-files/`;
+/** Where a build has the modules in between. */
+export const builtLiveModuleDir = `${builtDir}live-modules/`;
+
 /** Whether what a client file imports is such a module. */
 export function isLiveModule(url: string): boolean {
-  return url.includes(liveModuleUrl);
+  return url.includes(liveModuleUrl) || url.startsWith(builtLiveModuleDir);
 }

@@ -5,7 +5,7 @@ import {
   type ModuleEvaluator,
   type ModuleRunnerTransport,
 } from "vite/module-runner";
-import builtLayers, { type BuiltLayer } from "virtual:vitest-plugin-rsc/layers";
+import builtLayers, { hostModules, type BuiltLayer } from "virtual:vitest-plugin-rsc/layers";
 import * as pageClient from "virtual:vitest-plugin-rsc/vite-client";
 import { isHostModule } from "./host-module.ts";
 
@@ -114,10 +114,15 @@ export function createEvaluator(): ModuleEvaluator {
     startOffset: evaluator.startOffset,
     runInlinedModule: (context, code) => evaluator.runInlinedModule(context, code),
     async runExternalModule(file) {
-      const loaded = (await evaluator.runExternalModule(file)) as { default?: unknown };
+      if (!isHostModule(file)) return evaluator.runExternalModule(file);
       // What the page serves for a module of its own has that module as its
-      // default export.
-      return isHostModule(file) ? loaded.default : loaded;
+      // default export. A build has it in the build of the page.
+      if (!hostModules) {
+        return ((await evaluator.runExternalModule(file)) as { default?: unknown }).default;
+      }
+      const built = hostModules[file];
+      if (!built) throw new Error(`vitest-plugin-rsc: the build has no module of the page ${file}`);
+      return (await built()).default;
     },
   };
 }

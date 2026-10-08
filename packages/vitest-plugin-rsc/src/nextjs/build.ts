@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { getPluginApi } from "@vitejs/plugin-rsc/plugin";
@@ -6,6 +7,7 @@ import {
   loadConfigFromFile,
   mergeConfig,
   moduleRunnerTransform,
+  normalizePath,
   type InlineConfig,
   type Plugin,
   type PluginOption,
@@ -14,6 +16,8 @@ import {
   type UserConfig,
   type ViteBuilder,
 } from "vite";
+import { hostModulePrefix, hostModuleUrl } from "../host-module.ts";
+import { builtClientFileDir, builtLiveModuleDir, clientNodeReference } from "./client-ids.ts";
 
 // A static build of the app: the three layers as files of a site, with no dev
 // server next to the browser. `vite build` makes it, and so does a host that
@@ -29,9 +33,11 @@ import {
 // A dev server finds a module by the id a Flight payload has for it. A build
 // has to have those modules in it, under those ids, so the order matters:
 //
-//   1. the rsc layer, only to find the Client Components
+//   1. the rsc layer, only to find the Client Components, and the files of
+//      the host with `"use client"`
 //   2. the browser layer, only to find the modules with Server Actions that
-//      a Client Component imports and no Server Component does
+//      a Client Component imports and no Server Component does, and the
+//      modules of the page that it imports
 //   3. the rsc layer, which gives each Client Component the id it has in a
 //      Flight payload
 //   4. the browser layer and the ssr layer, with the modules of those ids
@@ -39,6 +45,15 @@ import {
 // The first two cut every module down to its imports, so they are quick.
 // Their ids are not the ones of step 3: Vite RSC names a module of a package
 // by how it was imported, which it only knows of all of them afterwards.
+//
+// A file of the host with `"use client"`, like a story, is a module of the
+// browser layer: see client-files.ts. The host imports it in the rsc layer,
+// so each build of that layer finds it, and the browser layer after it builds
+// it into a file of its own, with one for every module in between that it
+// imports. The id of each is the path of its file, which the rsc layer knows
+// before the browser layer is built. What such a file imports of the host is
+// not built in the browser layer: it is the page's module, in the build of the
+// host, which step 3 lists from what step 2 found.
 
 /** What the page imports for the layers that were built: see ../utils.ts. */
 const layersId = "virtual:vitest-plugin-rsc/layers";
@@ -84,6 +99,60 @@ export function withBuiltFiles(code: string, pathnames: string[], language: "js"
   return code;
 }
 
+/** What the builds of the layers find of the host, for the builds after them. */
+export type HostReferences = {
+  /**
+   * The files of the host with `"use client"` that the rsc layer imports, by
+   * their path: the id each has in the browser layer.
+   */
+  clientFiles: Map<string, string>;
+  /**
+   * The modules of the page that the browser layer imports, by the URL it has
+   * for each: what that module stands for, see ../host-module.ts.
+   */
+  hostModules: Map<string, string>;
+};
+
+export const createHostReferences = (): HostReferences => ({
+  clientFiles: new Map(),
+  hostModules: new Map(),
+});
+
+const hash = (key: string) => createHash("sha256").update(key).digest("base64url").slice(0, 10);
+
+/**
+ * The id of a module that a build has in a file of its own, in `directory`:
+ * named after `name`, and `key` tells it apart. The same in every build of
+ * the project, also on another machine.
+ */
+export function builtModuleId(directory: string, name: string, key: string): string {
+  const base = path.posix.basename(name).replace(/\.[^.]*$/, "");
+  return `${directory}${base.replace(/[^\w.-]+/g, "_") || "module"}-${hash(key)}.js`;
+}
+
+/** The id of a client file of the host in the browser layer of a build. */
+export const builtClientFileId = (root: string, file: string) =>
+  builtModuleId(builtClientFileDir, file, path.posix.relative(normalizePath(root), file));
+
+/** The id of a module in between, for what `file` imports as `source`. */
+export const builtLiveModuleId = (root: string, file: string, source: string) =>
+  builtModuleId(
+    builtLiveModuleDir,
+    source,
+    JSON.stringify([path.posix.relative(normalizePath(root), file), source]),
+  );
+
+/**
+ * The URL the browser layer of a build has for a module of the page: a
+ * package by its name, a file by a name of its own, which no package has. Not
+ * by its path, which is of the machine that built it.
+ */
+export const builtHostModuleUrl = (root: string, target: string) =>
+  hostModuleUrl +
+  (/^(?:[A-Za-z]:)?\//.test(target)
+    ? builtModuleId(".file/", target, path.posix.relative(normalizePath(root), target))
+    : target);
+
 export type BuildOptions = {
   /** The Vite environment of each layer. */
   environments: { rsc: string; ssr: string; browser: string };
@@ -91,6 +160,8 @@ export type BuildOptions = {
   entries: { ssr: string; browser: string };
   /** The files Next's loaders made for the browser, by the path it asks for. */
   emittedFiles(): { pathname: string; body: Uint8Array }[];
+  /** What the builds find of the host: client-files.ts fills it in. */
+  host: HostReferences;
 };
 
 type Manager = NonNullable<ReturnType<typeof getPluginApi>>["manager"];
@@ -147,6 +218,11 @@ async function sameConfig(config: ResolvedConfig, plugins: PluginOption[]): Prom
 
 export function nextBuild(options: BuildOptions): Plugin {
   const { rsc, ssr, browser } = options.environments;
+  // The runtime knows where the client files are without this plugin: see
+  // client-ids.ts.
+  if (!builtClientFileDir.startsWith(`/${layersDir}/${browser}/`)) {
+    throw new Error(`vitest-plugin-rsc: the browser layer is "react_client", not "${browser}"`);
+  }
   const entryOf: Record<string, string> = {
     [ssr]: options.entries.ssr,
     [browser]: options.entries.browser,
@@ -168,6 +244,8 @@ export function nextBuild(options: BuildOptions): Plugin {
   // For a host that only builds its own environment: whether steps 1 and 2
   // were done for the build that is ending.
   let prepared = false;
+  // The modules of the page that the build of the host lists, once it has.
+  let listedHostModules: Set<string> | undefined;
   // The plugins of the config, as the user gave them: see `sameConfig()`.
   let userPlugins: PluginOption[] = [];
 
@@ -199,6 +277,10 @@ export function nextBuild(options: BuildOptions): Plugin {
   async function findReferences(builder: ViteBuilder): Promise<void> {
     const host = environment(builder, rsc).config.build;
     const hostOutDir = host.outDir;
+    // What a build before this one found.
+    options.host.clientFiles.clear();
+    options.host.hostModules.clear();
+    listedHostModules = undefined;
     manager.isScanBuild = true;
     // Not where the host's build goes: this one is thrown away.
     host.outDir = scratch(builder.config.root, "scan");
@@ -214,6 +296,18 @@ export function nextBuild(options: BuildOptions): Plugin {
   // Step 4, and the files it makes, in the directory of the host's build.
   async function buildLayers(builder: ViteBuilder): Promise<void> {
     await builder.build(environment(builder, browser));
+    // A module of the page that only this build of the browser layer imports
+    // is not in the build of the host. Not likely, as step 2 had the same
+    // modules, but the page would only say so when it is asked for.
+    const unlisted = [...options.host.hostModules.keys()].filter(
+      (url) => listedHostModules && !listedHostModules.has(url),
+    );
+    if (unlisted.length > 0) {
+      throw new Error(
+        `vitest-plugin-rsc: the browser layer imports modules of the page that the build of ` +
+          `the host does not have: ${unlisted.join(", ")}`,
+      );
+    }
     await builder.build(environment(builder, ssr));
     const { outDir } = environment(builder, rsc).config.build;
     const write = (file: string, content: string | Uint8Array) => {
@@ -353,7 +447,15 @@ export function nextBuild(options: BuildOptions): Plugin {
       sequential: true,
       order: "pre",
       async handler() {
-        if (building || this.environment.mode !== "build" || this.environment.name !== rsc) return;
+        if (this.environment.mode !== "build") return;
+        // The client files of the host, each in the file its id names.
+        if (this.environment.name === browser) {
+          for (const [file, id] of options.host.clientFiles) {
+            this.emitFile({ type: "chunk", id: file, fileName: id.slice(1) });
+          }
+          return;
+        }
+        if (building || this.environment.name !== rsc) return;
         building = true;
         prepared = false;
         try {
@@ -393,10 +495,20 @@ export function nextBuild(options: BuildOptions): Plugin {
       if (id === `\0${clientReferencesId}`) {
         if (!isBuild) return "export default undefined;";
         const references = Object.values(manager.clientReferenceMetaMap).map(
-          (meta) =>
-            `  ${JSON.stringify(meta.referenceKey)}: () => import(${JSON.stringify(meta.importId)}),`,
+          (meta) => [meta.referenceKey, meta.importId] as const,
         );
-        return `export default {\n${references.join("\n")}\n};\n`;
+        // The Client Component of a node of the browser layer, which is no
+        // reference that Vite RSC knows of: see rsc.ts.
+        references.push([clientNodeReference, clientNodeReference.slice("/@id/".length)]);
+        // The client files of the host, which such a node can name: see
+        // `clientNode()` in index.ts. In the browser layer only, where it renders.
+        if (this.environment.name === browser) {
+          for (const [file, fileId] of options.host.clientFiles) references.push([fileId, file]);
+        }
+        const loaders = references.map(
+          ([key, module]) => `  ${JSON.stringify(key)}: () => import(${JSON.stringify(module)}),`,
+        );
+        return `export default {\n${loaders.join("\n")}\n};\n`;
       }
       if (id === `\0${serverReferencesId}`) {
         if (!isBuild) return "export default undefined;";
@@ -414,9 +526,19 @@ export function nextBuild(options: BuildOptions): Plugin {
               [entryOf[name]!]: `${layersDir}/${name}/${entryFile}`,
             })} },`,
         );
+        // The modules of the page that the browser layer imports, found when
+        // it was built to look: in this build, they are the host's own.
+        if (this.environment.name === rsc) {
+          listedHostModules = new Set(options.host.hostModules.keys());
+        }
+        const hostModules = [...options.host.hostModules].map(
+          ([url, target]) =>
+            `  ${JSON.stringify(url)}: () => import(${JSON.stringify(hostModulePrefix + target)}),`,
+        );
         return (
           `const directory = new URL(${buildDirPlaceholder}, import.meta.url).href;\n` +
-          `export default {\n${layers.join("\n")}\n};\n`
+          `export default {\n${layers.join("\n")}\n};\n` +
+          `export const hostModules = {\n${hostModules.join("\n")}\n};\n`
         );
       }
     },
