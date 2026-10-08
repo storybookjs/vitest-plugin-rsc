@@ -239,7 +239,7 @@ test.for([
   });
   const project = await loadNextProject(root, next);
 
-  await expect(project.loadAppPageEntry(route(project.routes, pathname!))).rejects.toThrow(
+  await expect(project.loadRouteEntry(route(project.routes, pathname!))).rejects.toThrow(
     new RegExp(`next@${version} differs .* the output of next-app-loader has no \`.*${piece}`),
   );
 });
@@ -277,7 +277,7 @@ test("gives the route of a node with layouts the entry of the app's route, with 
   );
   const route = project.componentRoutes.find((candidate) => candidate.layouts)!;
 
-  const { code } = await project.loadAppPageEntry(route);
+  const { code } = await project.loadRouteEntry(route);
 
   expect(code).toContain(`page: [__next_component__, "vitest-plugin-rsc/component"]`);
   expect(code).toContain(`import { loadComponent as __next_component__ }`);
@@ -292,7 +292,7 @@ test("gives the route of a node the segments of its pathname, and nothing of the
   const project = await loadNextProject(root);
   const node = project.componentRoutes.find((candidate) => candidate.pathname === "/notes/[id]")!;
 
-  const { code, watchFiles } = await project.loadAppPageEntry(node);
+  const { code, watchFiles } = await project.loadRouteEntry(node);
 
   const tree = /^const tree = (.*)$/m.exec(code)![1];
   // Next's own boundaries at the root, and no layout.
@@ -323,7 +323,7 @@ test("needs the page template to take what Next's app loader puts in it", async 
   });
   const project = await loadNextProject(root, next);
 
-  await expect(project.loadAppPageEntry(project.componentRoutes[0]!)).rejects.toThrow(
+  await expect(project.loadRouteEntry(project.componentRoutes[0]!)).rejects.toThrow(
     changed("the app-page template does not take the injections of next-app-loader"),
   );
 });

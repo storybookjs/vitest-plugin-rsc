@@ -87,15 +87,14 @@ function redirectStatus(resolved: ResolveRoutesResult): number | undefined {
 
 /**
  * Whether the server has something for a request: a route of the app, a page
- * or a route handler, the route of the node a test renders, or a redirect or a
- * rewrite of `next.config`. And, with `middleware`, whether the matcher of the
- * middleware takes it: only running it tells what it does.
+ * or a route handler, the route of the node a test renders, a redirect or a
+ * rewrite of `next.config`, or a middleware whose matcher takes it. Only
+ * running the middleware tells what it does with the request.
  *
  * Nothing runs for the answer, and nothing waits for it.
  */
 export async function takesRequest(
   request: Pick<ServerRequest, "url" | "headers">,
-  middleware: boolean,
 ): Promise<boolean> {
   if (registry.component?.pathname === new URL(request.url).pathname) return true;
   let matched = false;
@@ -104,7 +103,7 @@ export async function takesRequest(
     return {};
   });
   return (
-    (matched && middleware) ||
+    matched ||
     redirectStatus(resolved) !== undefined ||
     resolved.externalRewrite !== undefined ||
     routing.outputs[resolved.resolvedPathname ?? ""] !== undefined

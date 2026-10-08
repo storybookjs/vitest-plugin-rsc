@@ -10,7 +10,7 @@ import { Counter } from "./components/counter.tsx";
 import { FavoriteButton } from "./components/favorite-button.tsx";
 import { RouterState } from "./components/router-state.tsx";
 import { Widget } from "./components/widget.tsx";
-import { db, type Note } from "./lib/notes.ts";
+import { db } from "./lib/notes.ts";
 import NotesPage from "./notes/page.tsx";
 
 let consoleError: MockInstance<typeof console.error>;
@@ -105,14 +105,15 @@ test("renders a node in place of a page, inside the layouts of the app, with `la
 });
 
 test("gives a node in the layouts of a route its `wrapper` too, and its slots", async () => {
-  function Tenant({ children }: { children: ReactNode }) {
-    return <section aria-label="Tenant">{children}</section>;
-  }
-
   // `app/dashboard/layout.tsx` renders a slot next to its page.
-  await renderServer(<Counter />, { url: "/dashboard", layouts: true, wrapper: Tenant });
+  await renderServer(<Counter />, {
+    url: "/dashboard",
+    layouts: true,
+    wrapper: Tenant,
+    headers: { "x-tenant": "acme" },
+  });
 
-  const tenant = page.getByRole("main").getByRole("region", { name: "Tenant" });
+  const tenant = page.getByRole("main").getByRole("region", { name: "Tenant acme" });
   await tenant.getByRole("button", { name: "Count: 0" }).click();
   await expect.element(tenant.getByRole("button", { name: "Count: 1" })).toBeVisible();
   await expect
@@ -180,6 +181,52 @@ test("renders a node at a url that is no route, without params", async () => {
   await expect.element(router.nth(0)).toHaveTextContent("/nowhere/at/all");
   await expect.element(router.nth(1)).toHaveTextContent("{}");
   await expect.element(router.nth(2)).toHaveTextContent("q=1");
+});
+
+test("gives the body of the document as the base element, also after the node is left", async () => {
+  const result = await renderServer(<Link href="/notes">All notes</Link>, {
+    baseElement: document.body,
+  });
+  expect(result.baseElement === document.body).toBe(true);
+  expect(result.baseElement.contains(result.container)).toBe(true);
+
+  await page.getByRole("link", { name: "All notes" }).click();
+
+  await expect.element(page.getByRole("heading", { name: "Notes" })).toBeVisible();
+  expect(result.baseElement === document.body).toBe(true);
+});
+
+test("gives the body as the base element when the test asks for it, next to a container", async () => {
+  const container = document.body.appendChild(document.createElement("section"));
+  const result = await renderServer(<h1>Hello</h1>, { container, baseElement: document.body });
+
+  expect(result.baseElement === document.body).toBe(true);
+  await cleanup();
+  container.remove();
+});
+
+test("keeps the attributes that the test gave the document before a node", async () => {
+  document.documentElement.dataset.theme = "dark";
+  document.body.dataset.density = "compact";
+  const { unmount } = await renderServer(<h1>Hello</h1>);
+  expect(document.body.dataset.density).toBe("compact");
+
+  await unmount();
+
+  expect(document.documentElement.dataset.theme).toBe("dark");
+  expect(document.body.dataset.density).toBe("compact");
+  delete document.documentElement.dataset.theme;
+  delete document.body.dataset.density;
+});
+
+test("says that a container which went with a page is not in the document", async () => {
+  await renderServer({ url: "/" });
+  // Added to the page, so it is left with the page.
+  const container = document.body.appendChild(document.createElement("section"));
+
+  await expect(renderServer(<h1>Hello</h1>, { container })).rejects.toThrow(
+    "the container of a node has to be in the document",
+  );
 });
 
 test("gives a node the request: its headers and cookies", async () => {

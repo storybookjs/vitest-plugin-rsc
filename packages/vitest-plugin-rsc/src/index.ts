@@ -17,6 +17,12 @@ type ReactClientWebSocketInvoke = {
   payload: ReactClientInvokePayload;
 };
 
+// The Flight codec that Vite RSC brings, to pre-bundle. It is a dependency of
+// this package and not of the project, so Vite is told to look for it from
+// here: a package manager like pnpm does not put it where the project finds it.
+const vendoredFlight = (entry: string) =>
+  `vitest-plugin-rsc > @vitejs/plugin-rsc/vendor/react-server-dom/${entry}`;
+
 function withConfiguredSourceConditions(
   config: { resolve?: { conditions?: string[] } },
   conditions: string[],
@@ -107,8 +113,8 @@ export function vitestPluginRSC(): Plugin[] {
                   "react-dom/client",
                   "react/jsx-runtime",
                   "react/jsx-dev-runtime",
-                  "@vitejs/plugin-rsc/vendor/react-server-dom/server.edge",
-                  "@vitejs/plugin-rsc/vendor/react-server-dom/client.edge",
+                  vendoredFlight("server.edge"),
+                  vendoredFlight("client.edge"),
                 ],
                 exclude: ["vite", "vitest-plugin-rsc", "@vitejs/plugin-rsc"],
               },
@@ -131,7 +137,7 @@ export function vitestPluginRSC(): Plugin[] {
                   "react-dom/client",
                   "react/jsx-runtime",
                   "react/jsx-dev-runtime",
-                  "@vitejs/plugin-rsc/vendor/react-server-dom/client.browser",
+                  vendoredFlight("client.browser"),
                 ],
                 exclude: ["vitest-plugin-rsc", "@vitejs/plugin-rsc"],
               },

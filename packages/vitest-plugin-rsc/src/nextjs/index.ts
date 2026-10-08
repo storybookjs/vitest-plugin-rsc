@@ -228,7 +228,7 @@ const appFetch =
     const headers = server
       ? sent.headers
       : browserHeaders(new Headers(sent.headers), sent.url, sent.method);
-    if (!sent.marked && !(await ssr.takesRequest({ url: sent.url.href, headers }, true))) {
+    if (!sent.marked && !(await ssr.takesRequest({ url: sent.url.href, headers }))) {
       return nativeFetch(input, init);
     }
     // The request, for the network: a body can be read once.
@@ -367,9 +367,11 @@ export async function renderServer(
   // Leaving the page that is there takes what was added to the document
   // since it loaded, so the container comes after that.
   await leavePage();
-  // A body is the one of the document, whichever that is: a node has a body
-  // of its own, and the page after it another.
+  // A base element of the test's own. Not a body: that is the one of the
+  // document, whichever it is by then. A node has a body of its own, and the
+  // page after it another.
   const base = options.baseElement instanceof HTMLBodyElement ? undefined : options.baseElement;
+  const defaultsToContainer = !options.baseElement && options.container;
   if (options.container && !options.container.isConnected) {
     throw new Error(
       "vitest-plugin-rsc: the container of a node has to be in the document. What is added " +
@@ -389,7 +391,7 @@ export async function renderServer(
     response,
     container,
     get baseElement() {
-      return base ?? (options.baseElement ? document.body : (options.container ?? document.body));
+      return base ?? (defaultsToContainer || document.body);
     },
     asFragment: () => fragmentOf(container),
     unmount: leavePage,

@@ -138,7 +138,7 @@ export type NextProject = {
    * For a route of a node: Next's page template around a loader tree that has
    * the segments of the pathname, and the node as its page. Nothing of the app.
    */
-  loadAppPageEntry(
+  loadRouteEntry(
     route: NextRoute | ComponentRoute,
   ): Promise<{ code: string; watchFiles: string[] }>;
   /**
@@ -248,77 +248,45 @@ function nameOf(node: object): string {
   return "name" in node ? String(node.name) : "value" in node ? String(node.value) : "";
 }
 
-// An import of an ES module of Next by its path, which leaves out `.js`.
-function resolveImport(file: string, specifier: string): string | undefined {
-  if (!specifier.startsWith(".") && !path.isAbsolute(specifier)) return;
-  const base = path.resolve(path.dirname(file), specifier);
+/** The file of a module of Next by its path, which may leave out `.js` or `/index.js`. */
+export function moduleFileAt(base: string): string | undefined {
   return [base, `${base}.js`, path.join(base, "index.js")].find((candidate) =>
     fs.statSync(candidate, { throwIfNoEntry: false })?.isFile(),
   );
 }
 
-/** An export of an ES module: the code that declares it, and the function, if it is one. */
-type Declared = { code: string; params?: object[] };
-
 /**
- * The declaration of an export of an ES module: also when it is exported apart
- * from its declaration, or comes from another module with `export ... from`
- * or `export *`. Empty for one whose declaration is not found, like an import
- * that is exported again. `undefined` when the module has no such export.
+ * Whether an ES module of Next exports a name: declared there, exported apart
+ * from its declaration, or from another module with `export ... from` or
+ * `export *`.
  */
-function declarationOf(file: string, name: string, seen = new Set<string>()): Declared | undefined {
-  if (seen.has(file)) return;
+function hasExport(file: string, name: string, seen = new Set<string>()): boolean {
+  if (seen.has(file)) return false;
   seen.add(file);
-  const code = fs.readFileSync(file, "utf8");
-  const declared = new Map<string, Declared>();
-  const exported = new Map<string, string>();
   const stars: string[] = [];
-  for (const node of parseAst(code).body) {
-    const isExport = node.type === "ExportNamedDeclaration";
-    const declaration = isExport ? node.declaration : node;
-    if (declaration?.type === "VariableDeclaration") {
-      for (const declarator of declaration.declarations) {
-        if (declarator.id.type !== "Identifier") continue;
-        const { init } = declarator;
-        declared.set(declarator.id.name, {
-          code: code.slice(declarator.start, declarator.end),
-          params: init && "params" in init ? init.params : undefined,
-        });
-        if (isExport) exported.set(declarator.id.name, declarator.id.name);
-      }
-    } else if (
-      (declaration?.type === "FunctionDeclaration" || declaration?.type === "ClassDeclaration") &&
-      declaration.id
-    ) {
-      declared.set(declaration.id.name, {
-        code: code.slice(declaration.start, declaration.end),
-        params: "params" in declaration ? declaration.params : undefined,
-      });
-      if (isExport) exported.set(declaration.id.name, declaration.id.name);
-    }
-    if (isExport) {
-      for (const specifier of node.specifiers) {
-        if (nameOf(specifier.exported) !== name) continue;
-        if (!node.source) exported.set(name, nameOf(specifier.local));
-        else {
-          const from = resolveImport(file, node.source.value);
-          return (from && declarationOf(from, nameOf(specifier.local))) || { code: "" };
-        }
-      }
-    } else if (node.type === "ExportAllDeclaration" && !node.exported) {
-      stars.push(node.source.value);
+  for (const node of parseAst(fs.readFileSync(file, "utf8")).body) {
+    if (node.type === "ExportAllDeclaration") {
+      if (!node.exported) stars.push(node.source.value);
+      else if (nameOf(node.exported) === name) return true;
+    } else if (node.type === "ExportNamedDeclaration") {
+      if (node.specifiers.some((specifier) => nameOf(specifier.exported) === name)) return true;
+      const { declaration } = node;
+      const declared =
+        declaration?.type === "VariableDeclaration"
+          ? declaration.declarations.map(({ id }) => id)
+          : declaration && "id" in declaration
+            ? [declaration.id]
+            : [];
+      if (declared.some((id) => id?.type === "Identifier" && id.name === name)) return true;
     }
   }
-  const local = exported.get(name);
-  if (local !== undefined) return declared.get(local) ?? { code: "" };
-  for (const star of stars) {
-    const from = resolveImport(file, star);
-    const found = from && declarationOf(from, name, seen);
-    if (found) return found;
-  }
+  return stars.some((star) => {
+    const from = star.startsWith(".") && moduleFileAt(path.resolve(path.dirname(file), star));
+    return Boolean(from) && hasExport(from as string, name, seen);
+  });
 }
 
-// The root segment of the routes of a node: see `loadComponentPageEntry()`.
+// The root segment of the routes of a node: see `loadNodeEntry()`.
 // The parentheses make it a route group for Next, so it never shows in a
 // pathname.
 const componentRoot = "(vitest-plugin-rsc)";
@@ -538,10 +506,11 @@ export async function loadNextProject(
   const { Bundler } = load<typeof import("next/dist/lib/bundler.js")>("lib/bundler");
   const { getFilesInDir } =
     load<typeof import("next/dist/lib/get-files-in-dir.js")>("lib/get-files-in-dir");
-  // Next types this as a const enum, which only its own build can read.
-  const { PAGE_TYPES } = load<{ PAGE_TYPES: { ROOT: undefined } }>("lib/page-types");
-  const rootPageType =
-    PAGE_TYPES.ROOT ?? fail("next/dist/lib/page-types.js has no `PAGE_TYPES.ROOT`");
+  // Next types this as a const enum, which only its own build can read: so
+  // the value is read as it is, and passed on as whatever Next asks for.
+  const { PAGE_TYPES } = load<{ PAGE_TYPES: { ROOT?: string } }>("lib/page-types");
+  const rootPageType = (PAGE_TYPES.ROOT ??
+    fail("next/dist/lib/page-types.js has no `PAGE_TYPES.ROOT`")) as never;
   const { getStaticInfoIncludingLayouts } = load<
     typeof import("next/dist/build/get-static-info-including-layouts.js")
   >("build/get-static-info-including-layouts");
@@ -1154,8 +1123,9 @@ export async function loadNextProject(
       return fail(`${id} is not there`, error);
     }
     return {
-      export: (name: string) =>
-        declarationOf(resolved, name) ?? fail(`${id} has no export \`${name}\``),
+      export: (name: string) => {
+        if (!hasExport(resolved, name)) fail(`${id} has no export \`${name}\``);
+      },
       contains: (...pieces: string[]) => {
         for (const piece of pieces) if (!code.includes(piece)) fail(`${id} has no \`${piece}\``);
       },
@@ -1272,7 +1242,7 @@ export async function loadNextProject(
     return `import { requireModule as __next_require__ } from "vitest-plugin-rsc/nextjs/rsc";\n${code}`;
   };
 
-  async function loadComponentPageEntry({ page, pathname }: ComponentRoute): Promise<string> {
+  async function loadNodeEntry({ page, pathname }: ComponentRoute): Promise<string> {
     // A loader tree the way Next's app loader writes one: a segment, its
     // slots, its modules, and the static segments next to it, which only
     // a build knows. It has a segment for each one of the pathname, so
@@ -1573,8 +1543,9 @@ export async function loadNextProject(
   // next-app-loader keys its per-build caches on the compilation object.
   const compilation = {};
 
-  // The entry of a route of the app, from Next's own loader of one.
-  const loadRouteEntry = async (route: NextRoute) => {
+  // The entry of a route of the app, a page or a route handler, from Next's
+  // own loader of one.
+  const loadAppRouteEntry = async (route: NextRoute) => {
     const watchFiles = new Set<string>();
     const context: AppLoaderContext = {
       // What `createEntrypoints` of `next build` passes.
@@ -1668,14 +1639,14 @@ export async function loadNextProject(
     defines: { rsc: definesFor("rsc"), ssr: definesFor("ssr"), browser: definesFor("browser") },
     aliases,
     flightExports,
-    async loadAppPageEntry(route) {
-      if (!("component" in route)) return loadRouteEntry(route);
-      if (!route.layouts) return { code: await loadComponentPageEntry(route), watchFiles: [] };
+    async loadRouteEntry(route) {
+      if (!("component" in route)) return loadAppRouteEntry(route);
+      if (!route.layouts) return { code: await loadNodeEntry(route), watchFiles: [] };
       // The entry of the app's route, with the node for its page: the tree
       // of Next's app loader names the page by its file.
       const appRoute = routes.find((candidate) => candidate.page === route.page)!;
       const file = JSON.stringify(routeFile(appRoute)).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-      const entry = await loadRouteEntry(appRoute);
+      const entry = await loadAppRouteEntry(appRoute);
       const code = replace(
         entry.code,
         new RegExp(`\\bpage: \\[\\w+, ${file}\\]`),
