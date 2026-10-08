@@ -8,13 +8,13 @@
 [![Node](https://img.shields.io/badge/node-%3E%3D24-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
 [![pnpm](https://img.shields.io/badge/pnpm-11-F69220?logo=pnpm&logoColor=white)](https://pnpm.io/)
 
-`vitest-plugin-rsc` runs your server code in the browser tab of a Vitest Browser Mode test, next to your assertions. For a Next.js app that is the whole app: Next's own request handler renders a route, the tab shows the HTML, and Next's own client code hydrates it.
+`vitest-plugin-rsc` runs your server code in Vitest Browser Mode, in the same browser tab as your assertions. For a Next.js app, that's the whole app: Next's own request handler renders a route, the tab shows the HTML, and Next's own client code hydrates it.
 
-That gives a kind of test that unit tests and E2E tests can't easily reach:
+That unlocks a kind of test unit tests and E2E tests can't easily reach:
 
 **DB → RSC → pixels → actions → DB → pixels. One slice at a time.**
 
-Seed exactly the state a route needs, open it, use the hydrated page in a real browser, run its Server Actions, and assert on what the user sees and on what the server stored.
+Pick one piece of the app — a wishlist carousel, a notes form, a settings panel, or a whole route. Seed exactly the state that piece needs, render it, interact with the hydrated UI in a real browser, run Server Actions, and assert what the user sees and what the server stored.
 
 ## Table Of Contents
 
@@ -23,13 +23,15 @@ Seed exactly the state a route needs, open it, use the hydrated page in a real b
 - [Requirements](#requirements)
 - [Next.js](#nextjs)
   - [Set Up](#set-up)
-  - [Open A Route](#open-a-route)
-  - [Render One Component](#render-one-component)
-  - [Server Actions](#server-actions)
-  - [Mocks](#mocks)
-  - [Requests And Route Handlers](#requests-and-route-handlers)
+  - [Render A Component](#render-a-component)
+  - [Example: Server Action Form](#example-server-action-form)
+  - [Router Hooks And Links](#router-hooks-and-links)
+  - [Request Headers And Cookies](#request-headers-and-cookies)
+  - [Cache And Revalidation](#cache-and-revalidation)
+  - [Open A Whole Route](#open-a-whole-route)
+  - [Route Handlers](#route-handlers)
   - [The Proxy, Redirects And Rewrites](#the-proxy-redirects-and-rewrites)
-  - [Caching](#caching)
+  - [Mocks](#mocks)
   - [Fonts, Images And Styles](#fonts-images-and-styles)
   - [Server Code In A Tab](#server-code-in-a-tab)
   - [Example: Drizzle + PGlite](#example-drizzle--pglite)
@@ -38,7 +40,6 @@ Seed exactly the state a route needs, open it, use the hydrated page in a real b
 - [Server Code That Runs In A Browser](#server-code-that-runs-in-a-browser)
 - [Test Concurrency](#test-concurrency)
 - [How It Works](#how-it-works)
-- [What Does Not Work Yet](#what-does-not-work-yet)
 - [Playgrounds](#playgrounds)
 
 ## Why This Exists
@@ -51,54 +52,45 @@ Covering every state with only E2E is usually impractical. E2E runs are slow bec
 
 For React Server Components, that base has been missing. Rendering Server Components inside a unit-style test process has been [an open problem since 2023](https://github.com/testing-library/react-testing-library/issues/1209), so the whole RSC pipeline got pushed up to E2E — exactly where broad variant coverage doesn't fit.
 
-`vitest-plugin-rsc` fills the missing base. A route, a form or a single component runs through the full pipeline — server render, Flight, HTML, hydration, Server Action, rerender — with white-box control over the inputs and assertions on the rendered page.
+`vitest-plugin-rsc` fills the missing base. A single component, form, or whole route runs through the full RSC pipeline — server render, Flight, HTML, hydration, Server Action, rerender — with white-box control over the inputs and assertions on the rendered DOM.
 
 Your assertions stay user-facing and your setup stays direct:
 
 ```tsx
-test("favorite toggle updates stored favorite state", async () => {
+test("archive a note", async () => {
   // seed DB
   await signInAs(testUser);
-  const [inserted] = await db
-    .insert(notes)
-    .values({ ownerId: testUser.id, title: "Toggle me", isFavorite: false })
-    .returning({ id: notes.id });
-  if (!inserted) throw new Error("Failed to insert note");
+  await db.insert(notes).values({ ownerId: testUser.id, title: "Inbox triage" });
 
   // RSC -> pixels
-  await renderServer({ url: "/notes" });
+  await renderServer(<NotesPage />, { url: "/notes" });
+  await expect.element(page.getByText("Inbox triage")).toBeVisible();
 
   // action -> DB -> pixels
-  await page.getByRole("button", { name: "Favorite note" }).click();
-  await expect
-    .poll(async () => {
-      const [row] = await db.select().from(notes).where(eq(notes.id, inserted.id));
-      return row?.isFavorite;
-    })
-    .toBe(true);
-  await expect.element(page.getByRole("button", { name: "Unfavorite note" })).toBeInTheDocument();
+  await page.getByRole("button", { name: "Archive Inbox triage" }).click();
+  await expect.element(page.getByText("Inbox triage")).not.toBeInTheDocument();
 });
 ```
 
-Agents do better when wrapped in a self-healing loop with fast unit tests — edit, run tests, repair, repeat — and RSC has been the hardest React surface to put in that loop.
+Agents do dramatically better when wrapped in a self-healing loop with fast unit tests — edit, run tests, repair, repeat — and RSC has been the hardest React surface to put in that loop.
 
 ## What You Get
 
-- **Real Next.js behaviour**: the request goes through Next's own route resolution, request handler, renderer and router. Layouts, `loading.tsx`, error boundaries, redirects, cookies, Server Actions, route handlers and the Data Cache do what they do in your app. So do `proxy.ts` and the redirects, rewrites and headers of `next.config`.
-- **Next's own compiler**: your source files go through Next's SWC transform and its font and image loaders, so `next/font`, `next/image`, `next/dynamic` and styled-jsx work, and a mistake that `next build` stops at fails the test with Next's error.
-- **Focused scope**: Test a whole route, or one component on its own.
-- **White-box inputs**: The server runs in the test's tab. The `db` your test seeds is the module instance your Server Components read. Mock IO, fake clocks, set cookies and headers.
+- **Real Next.js behavior**: The request goes through Next's own route resolution, request handler, renderer, and router. Layouts, `loading.tsx`, error boundaries, redirects, cookies, Server Actions, route handlers, and the Data Cache do what they do in your app, and so do `proxy.ts` and the redirects, rewrites, and headers in `next.config`.
+- **Next's own compiler**: Your source files go through Next's SWC transform and its font and image loaders, so `next/font`, `next/image`, `next/dynamic`, and styled-jsx work, and a mistake that would stop `next build` fails the test with Next's error.
+- **Focused scope**: Test a whole route, a single component, a form, or a flow without booting the whole deployed app.
+- **White-box inputs**: The server runs in the test's tab, so the `db` your test seeds is the module instance your Server Components read. Set auth/session state, mock IO, fake clocks, and set cookies/headers.
 - **Black-box output**: Assert what the user sees and does via `vitest/browser` — Playwright locators (`getByRole`, `getByText`, etc.) and `expect.element` matchers.
-- **Precise watch mode, as an option**: With `vitestPluginNext({ affectedTests: true })`, an edit reruns only the test files that opened a route with that file, and `vitest --changed` and `vitest related` pick those same test files. Without it, an edit reruns every test file that opens a route. See [Watch Mode](docs/next-routes.md#watch-mode).
+- **Watch mode**: With `vitestPluginNext({ affectedTests: true })`, an edit reruns just the tests that use that file. See [Watch Mode](docs/next-routes.md#watch-mode).
 - **No deployed infra**: Use in-memory infrastructure like PGlite instead of spinning up a preview server and database.
-- **Per-test isolation**: Each test starts with an empty Data Cache, without cookies, and without what the app put in `localStorage` and `sessionStorage`.
+- **Per-test isolation**: Each test starts with an empty Data Cache, no cookies, and none of what the app put in `localStorage` or `sessionStorage`.
 
 ## Requirements
 
 - Vitest 5.0.3 or later, in [Browser Mode](https://vitest.dev/guide/browser/). The examples use Playwright as the browser provider.
 - For Next.js: the App Router, `next@16.4` or later, and [`@next/routing`](https://www.npmjs.com/package/@next/routing), Next's own route resolution, at the same version as `next`.
 
-The plugin calls internals of Next.js, which change between releases. CI tests against `next@16.4.0`, `next@latest` and `next@canary`. With a Next.js the plugin does not know, a run stops at startup and says what changed: see [When Next Changes](docs/next-routes.md#when-next-changes).
+The plugin calls Next.js internals, so CI tests against `next@16.4.0`, `next@latest`, and `next@canary`.
 
 ## Next.js
 
@@ -106,11 +98,11 @@ The plugin calls internals of Next.js, which change between releases. CI tests a
 
 ```bash
 npm install -D vitest-plugin-rsc vitest @vitest/browser-playwright playwright
-# The package of Next.js that finds the route of a request, at the version of your `next`.
+# Next's own route resolution, at the same version as your `next`.
 npm install -D @next/routing@$(node -p "require('next/package.json').version")
 ```
 
-`@next/routing` is a separate package, and it has to be exactly the version of your `next`. The two are released together, and a pair that does not match can route a request differently without an error. So a run stops when the versions differ, and says which one to install. Upgrade them together, as you do `eslint-config-next`.
+`@next/routing` has to be the same version as your `next`, so upgrade them together, like `eslint-config-next`.
 
 ```ts
 // vitest.config.ts
@@ -134,13 +126,342 @@ export default defineConfig({
 });
 ```
 
-`vitestPluginNext()` reads the app from the root of the Vitest project: its `next.config`, its `app` directory, its `proxy.ts`, and the `next` package it has installed. It needs no setup file. It registers its own, which leaves the page and clears the tab before and after every test.
+`vitestPluginNext()` reads your app from the project root. You don't need a setup file: the plugin cleans up the tab before and after every test.
 
-`isolate: false` is the configuration this is tested with: both Next.js playgrounds of this repository run with it. Without isolation the test files of a tab share their modules, so the server of the app loads once per tab and not once per test file. It also means a mock is for every test file of the tab, which is why mocks belong in a setup file, see [Mocks](#mocks).
+With `isolate: false`, the app's server loads once per tab instead of once per test file. It also means mocks are shared, which is why they belong in a setup file — see [Mocks](#mocks).
 
-### Open A Route
+### Render A Component
 
-`renderServer({ url })` opens a route the way a browser does. The request goes to Next's request handler, the HTML it sends is shown in the tab, and Next's client code hydrates it. It resolves once the page has hydrated. The first load waits for the whole page, data included, so it does not show `loading.tsx`. From there Next's router is in charge, so links, forms, redirects and `loading.tsx` behave as they do in your app.
+Pass a node to test one component instead of a whole page. It renders the way Testing Library renders a component: in a `<div>` container in `document.body`, without your app's layouts. Everything around it is still Next: the request, the cookies, Server Actions, the cache, and the router.
+
+Without a `url`, the node renders at `/`. With a `url`, the pathname, search params, and route params come from it.
+
+`wrapper` wraps the node on the server, for the providers a layout would give it. It can be a Server Component:
+
+```tsx
+import { headers } from "next/headers";
+import type { ReactNode } from "react";
+import { Counter } from "./components/counter.tsx";
+
+async function Tenant({ children }: { children: ReactNode }) {
+  const tenant = (await headers()).get("x-tenant");
+  return <section aria-label={`Tenant ${tenant}`}>{children}</section>;
+}
+
+test("wraps a node in a wrapper, which can be a Server Component", async () => {
+  await renderServer(<Counter />, { wrapper: Tenant, headers: { "x-tenant": "acme" } });
+
+  const tenant = page.getByRole("region", { name: "Tenant acme" });
+  await tenant.getByRole("button", { name: "Count: 0" }).click();
+  await expect.element(tenant.getByRole("button", { name: "Count: 1" })).toBeVisible();
+});
+```
+
+`layouts: true` renders the node inside your app's layouts for that `url`, with everything they give it: providers, global CSS, and the data a layout reads.
+
+```tsx
+import { RouterState } from "./components/router-state.tsx";
+
+test("renders a node in place of a page, inside the layouts of the app", async () => {
+  await renderServer(<RouterState />, { url: "/notes/7?q=1", layouts: true });
+
+  // The root layout of the app, around the node.
+  await expect.element(page.getByRole("navigation", { name: "Main" })).toBeVisible();
+  const router = page.getByRole("main").getByRole("definition");
+  await expect.element(router.nth(1)).toHaveTextContent('{"id":"7"}');
+});
+```
+
+### Example: Server Action Form
+
+A full `page.tsx` route here; the same pattern works for any component, form, or flow.
+
+The page is a Server Component with a Server Action. On a validation error, the action writes the message to a cookie and calls `refresh()`.
+
+```tsx
+// app/notes/new/page.tsx
+import { refresh } from "next/cache";
+import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
+
+import { notes } from "#db/schema.ts";
+import { requireUser } from "#lib/auth-session.ts";
+import { db } from "#lib/db.ts";
+
+export default async function NewNotePage() {
+  const user = await requireUser();
+  const error = (await cookies()).get("note-error")?.value;
+
+  return (
+    <form
+      action={async (formData) => {
+        "use server";
+
+        const title = String(formData.get("title") ?? "").trim();
+        const content = String(formData.get("content") ?? "");
+
+        if (!title) {
+          (await cookies()).set("note-error", "Title is required.");
+          refresh();
+          return;
+        }
+
+        await db.insert(notes).values({ ownerId: user.id, title, content });
+        redirect("/notes");
+      }}
+    >
+      <label htmlFor="title">Title</label>
+      <input id="title" name="title" />
+      {error && <p>{error}</p>}
+
+      <label htmlFor="content">Content</label>
+      <textarea id="content" name="content" />
+
+      <button>Create note</button>
+    </form>
+  );
+}
+```
+
+The test seeds both server-side state (auth, database) and browser-side state (`localStorage`), renders the page, interacts with the form, and asserts the rerendered UI:
+
+```tsx
+import { expect, test } from "vitest";
+import { page } from "vitest/browser";
+import { renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
+
+import { db } from "#lib/db.ts";
+import { notes } from "#db/schema.ts";
+import { signInAs, testUser } from "#test/auth.ts";
+import NewNotePage from "./page.tsx";
+
+test("validates a new note without losing entered content", async () => {
+  await signInAs(testUser);
+  localStorage.setItem("theme", "dark");
+
+  await db.insert(notes).values({
+    ownerId: testUser.id,
+    title: "Inbox triage",
+    content: "Existing note body",
+  });
+
+  await renderServer(<NewNotePage />, { url: "/notes/new" });
+
+  await page.getByLabelText("Content").fill("Keep this body");
+  await page.getByRole("button", { name: "Create note" }).click();
+
+  await expect.element(page.getByText("Title is required.")).toBeInTheDocument();
+  await expect.element(page.getByDisplayValue("Keep this body")).toBeInTheDocument();
+});
+```
+
+That single test sets up:
+
+- **Server-side state**: the signed-in user (`signInAs`) and a seeded database row (`db.insert`)
+- **Browser-side state**: a client-side preference written to `localStorage`
+
+Setting server and browser state in the same setup is something a pure unit test cannot reach and a full E2E test can only do through the real UI.
+
+`vi.mock("#lib/db.ts")` in the setup file replaces the production database adapter with the Vitest `__mocks__` version next to it (`lib/__mocks__/db.ts`). The mock exposes a `db` reference and a `resetDb` helper that the setup file points at a fresh PGlite clone per test. See [Drizzle + PGlite](#example-drizzle--pglite) below for the wiring.
+
+### Router Hooks And Links
+
+Many tests can omit routing options:
+
+```tsx
+await renderServer(<CreateNoteForm />);
+```
+
+Pass `url` when the component needs location-aware behavior — `usePathname`, `useSearchParams`, `useParams`, `next/link`, or request URL-dependent code. The params come from your app's route for that URL:
+
+```tsx
+import { expect, test } from "vitest";
+import { page } from "vitest/browser";
+import { renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
+
+import { NoteToolbar } from "./note-toolbar";
+
+test("reads router state and navigates", async () => {
+  await renderServer(<NoteToolbar />, { url: "/notes/123?tab=activity" });
+
+  await expect.element(page.getByText("pathname: /notes/123")).toBeVisible();
+  await expect.element(page.getByText("note id: 123")).toBeVisible();
+  await expect.element(page.getByText("tab: activity")).toBeVisible();
+
+  await page.getByRole("button", { name: "Go to notes" }).click();
+  await expect.poll(() => window.location.pathname).toBe("/notes");
+});
+```
+
+Navigating to another route of your app opens that page, with its layouts, like a click in the browser does.
+
+For example, a client component can use normal Next APIs:
+
+```tsx
+"use client";
+
+import Link from "next/link";
+import { useParams, usePathname, useRouter, useSearchParams } from "next/navigation";
+
+export function NoteToolbar() {
+  const router = useRouter();
+  const pathname = usePathname();
+  const params = useParams<{ id: string }>();
+  const searchParams = useSearchParams();
+
+  return (
+    <>
+      <p>pathname: {pathname}</p>
+      <p>note id: {params.id}</p>
+      <p>tab: {searchParams.get("tab")}</p>
+      <button onClick={() => router.push("/notes")}>Go to notes</button>
+      <Link href={{ pathname: "/notes/new", query: { from: params.id } }}>New note</Link>
+    </>
+  );
+}
+```
+
+### Request Headers And Cookies
+
+Pass request headers into `renderServer`. Inside Server Components and Server Actions, use Next's `headers()` and `cookies()` APIs as you normally would:
+
+```tsx
+import { expect, test } from "vitest";
+import { page } from "vitest/browser";
+import { renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
+
+import { FlashProbe } from "./flash-probe";
+
+test("reads request headers and mutates cookies from an action", async () => {
+  const requestHeaders = new Headers();
+  requestHeaders.set("x-test-request", "from-test");
+  requestHeaders.set("cookie", "flash=initial");
+
+  await renderServer(<FlashProbe />, {
+    url: "/flash",
+    headers: requestHeaders,
+  });
+
+  await expect.element(page.getByText("request id: from-test")).toBeVisible();
+  await expect.element(page.getByText("flash: initial")).toBeVisible();
+
+  await page.getByRole("button", { name: "Save flash" }).click();
+  await expect.element(page.getByText("flash: saved")).toBeVisible();
+});
+```
+
+```tsx
+import { refresh } from "next/cache";
+import { cookies, headers } from "next/headers";
+
+export async function FlashProbe() {
+  const requestId = (await headers()).get("x-test-request");
+  const flash = (await cookies()).get("flash")?.value ?? "empty";
+
+  return (
+    <form
+      action={async () => {
+        "use server";
+
+        (await cookies()).set("flash", "saved", { path: "/" });
+        refresh();
+      }}
+    >
+      <p>request id: {requestId}</p>
+      <p>flash: {flash}</p>
+      <button>Save flash</button>
+    </form>
+  );
+}
+```
+
+### Cache And Revalidation
+
+Server Components can use tagged cached `fetch` calls, and Server Actions can refresh the current tree or invalidate those tags. The outbound `fetch` is intercepted by MSW in tests — see [`playground/nextjs-notes-demo`](playground/nextjs-notes-demo) for a worked setup.
+
+```tsx
+import { refresh, revalidatePath, revalidateTag, updateTag } from "next/cache";
+
+import { createNote } from "#lib/notes";
+
+async function readNotes() {
+  const response = await fetch("https://example.test/api/notes", {
+    cache: "force-cache",
+    next: { tags: ["notes"] },
+  });
+  return response.json() as Promise<Array<{ id: string; title: string }>>;
+}
+
+export async function NotesPanel() {
+  const notes = await readNotes();
+
+  return (
+    <section>
+      <p>notes: {notes.length}</p>
+      <form
+        action={async () => {
+          "use server";
+
+          await createNote({ title: "New note" });
+          updateTag("notes");
+        }}
+      >
+        <button>Create note</button>
+      </form>
+      <form
+        action={async () => {
+          "use server";
+
+          revalidateTag("notes", "max");
+          refresh();
+        }}
+      >
+        <button>Refresh stale notes</button>
+      </form>
+      <form
+        action={async () => {
+          "use server";
+
+          revalidateTag("notes", { expire: 0 });
+        }}
+      >
+        <button>Expire notes cache</button>
+      </form>
+      <form
+        action={async () => {
+          "use server";
+
+          revalidatePath("/notes", "page");
+        }}
+      >
+        <button>Revalidate notes page</button>
+      </form>
+    </section>
+  );
+}
+```
+
+The test still looks like a unit test. After the click, `updateTag("notes")` invalidates the cached fetch, the panel re-renders, and the assertion sees the new count:
+
+```tsx
+import { expect, test } from "vitest";
+import { page } from "vitest/browser";
+import { renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
+
+import { NotesPanel } from "./notes-panel";
+
+test("creating a note invalidates the notes cache", async () => {
+  await renderServer(<NotesPanel />, { url: "/notes" });
+
+  await expect.element(page.getByText("notes: 0")).toBeVisible();
+  await page.getByRole("button", { name: "Create note" }).click();
+  await expect.element(page.getByText("notes: 1")).toBeVisible();
+});
+```
+
+### Open A Whole Route
+
+`renderServer({ url })` opens a route the way a browser does. The request goes to Next's request handler, the tab shows the HTML it sends back, and Next's client code hydrates it. It resolves once the page has hydrated. From there, Next's router is in charge, so links, forms, and redirects behave as they do in your app.
 
 ```tsx
 import { expect, test } from "vitest";
@@ -163,7 +484,7 @@ test("navigates on the client with next/link", async () => {
 });
 ```
 
-`renderServer` resolves with `{ response, unmount }`: the server's `Response` to the request of the document, and a function that leaves the page.
+`renderServer` resolves with `{ response, unmount }`: the server's `Response` to the document request, and a function that leaves the page.
 
 ```tsx
 const { response } = await renderServer({ url: "/" });
@@ -171,7 +492,7 @@ const { response } = await renderServer({ url: "/" });
 expect(response.status).toBe(200);
 ```
 
-Cookies you set on `document.cookie` before `renderServer()` are sent with the request. So are the `headers` you pass. A `cookie` header replaces the tab's cookies for that request.
+Cookies you set on `document.cookie` are sent with the request, and so are the `headers` you pass.
 
 ```tsx
 test("sends the cookies the test sets before it opens a page", async () => {
@@ -183,230 +504,11 @@ test("sends the cookies the test sets before it opens a page", async () => {
 });
 ```
 
-A URL that is not a route gets the app's not-found page, with status `404`.
+A URL that isn't a route gets your app's not-found page, with status `404`.
 
-Before and after every test the page is left, the tab's cookies are cleared, and so is what the app put in `localStorage` and `sessionStorage`. The server forgets what it has cached. A test starts like a new browser context.
+### Route Handlers
 
-A page gets a new `<body>`, as in a browser, and so does a node. What your test had in the body moves into the new one, and back when the page is left. Two consequences:
-
-- Read `document.body` when you need it, not once at the top of a file. Testing Library's `screen` is bound to the body at import, so use `within(document.body)` or Vitest's `page`.
-- What is added to the document while a page is open is removed when it is left. The move itself takes the focus from an element and reloads an `<iframe>`.
-
-### Render One Component
-
-Pass a node to test one component instead of a whole page. It renders like Testing Library renders a component: in a `<div>` container in `document.body`, without the layouts of your app. Everything around it is still Next: the request, the cookies, Server Actions, the cache and the router.
-
-```tsx
-import { Counter } from "./components/counter.tsx";
-
-test("renders a node in a container, without the layouts of the app", async () => {
-  const { container, response } = await renderServer(
-    <>
-      <h1>Just a counter</h1>
-      <Counter />
-    </>,
-  );
-
-  expect(response.status).toBe(200);
-  expect(container.parentElement).toBe(document.body);
-  await expect.element(page.getByRole("heading", { name: "Just a counter" })).toBeVisible();
-  // No layout of the app.
-  await expect.element(page.getByRole("navigation", { name: "Main" })).not.toBeInTheDocument();
-
-  await page.getByRole("button", { name: "Count: 0" }).click();
-  await expect.element(page.getByRole("button", { name: "Count: 1" })).toBeVisible();
-});
-```
-
-The node is the page of a route that exists for as long as the node is there, and that has nothing of your app: no layout, no `loading`, no `error`. Next serves it the way it serves your pages.
-
-Without a `url` the request is `GET /`, whether or not your app has a page there. With a `url`, `usePathname()` and `useSearchParams()` come from it, and the params are the ones your app's route for that URL has. You do not name the route: the plugin knows the routes of your app.
-
-```tsx
-import { RouterState } from "./components/router-state.tsx";
-
-test("gives a node the params that the app's route has for its url", async () => {
-  // The app has `app/notes/[id]/page.tsx`.
-  await renderServer(<RouterState />, { url: "/notes/7?q=1" });
-
-  await expect.element(page.getByText('{"id":"7"}')).toBeVisible();
-  expect(window.location.pathname).toBe("/notes/7");
-});
-```
-
-A URL that is no route of your app is not an error. The node renders there with no params.
-
-A node can be a Server Component that reads the request:
-
-```tsx
-import { cookies, headers } from "next/headers";
-
-async function RequestInfo() {
-  return (
-    <dl>
-      <dt>Tenant</dt>
-      <dd>{(await headers()).get("x-tenant")}</dd>
-      <dt>Last created</dt>
-      <dd>{(await cookies()).get("last-created")?.value}</dd>
-    </dl>
-  );
-}
-
-test("gives a node the request: its headers and cookies", async () => {
-  document.cookie = "last-created=7";
-
-  await renderServer(<RequestInfo />, { headers: { "x-tenant": "acme" } });
-
-  await expect.element(page.getByText("acme")).toBeVisible();
-  await expect.element(page.getByText("7", { exact: true })).toBeVisible();
-});
-```
-
-`wrapper` wraps the node on the server, for the providers a layout would give it. It can be a Server Component:
-
-```tsx
-async function Tenant({ children }: { children: ReactNode }) {
-  const tenant = (await headers()).get("x-tenant");
-  return <section aria-label={`Tenant ${tenant}`}>{children}</section>;
-}
-
-test("wraps a node in a wrapper, which can be a Server Component", async () => {
-  await renderServer(<Counter />, { wrapper: Tenant, headers: { "x-tenant": "acme" } });
-
-  const tenant = page.getByRole("region", { name: "Tenant acme" });
-  await tenant.getByRole("button", { name: "Count: 0" }).click();
-  await expect.element(tenant.getByRole("button", { name: "Count: 1" })).toBeVisible();
-});
-```
-
-`layouts: true` puts the node where the `page.tsx` of its `url` would be. Everything around it is your app's: the layouts from the root layout down, `loading`, `error` and `not-found`, and the slots of parallel routes. Use it for a node that needs what your layouts give it: providers, global CSS, the data a layout reads.
-
-```tsx
-test("renders a node in place of a page, inside the layouts of the app", async () => {
-  await renderServer(<RouterState />, { url: "/notes/7?q=1", layouts: true });
-
-  // The root layout of the app, around the node.
-  await expect.element(page.getByRole("navigation", { name: "Main" })).toBeVisible();
-  const router = page.getByRole("main").getByRole("definition");
-  await expect.element(router.nth(1)).toHaveTextContent('{"id":"7"}');
-});
-```
-
-The `url` has to be one your app has a `page` file for, and that file's own exports, like `generateMetadata`, are not used. Your root layout renders the document, so `container` and `baseElement` cannot be passed, and the `container` in the result is the `<body>`. Layouts behave as in your app: one that redirects without a session redirects here too. A `wrapper` goes inside the layouts, around the node.
-
-What to know, for a node without `layouts`:
-
-- **Global CSS is not there.** Your root layout imports it, and the node does not render in your layouts. Import it in the setup file of the test project or in the `wrapper`, as with Testing Library.
-- **Leaving the node's URL loads a page.** A `<Link>`, a `router.push()` or a `redirect()` to another pathname is a page load of that route of your app, with its layouts. The node is gone after it. A change of search params stays with the node.
-- **The node owns its URL.** While it is there, a request for its pathname gets the node, also from `handleRequest`, and a link to it goes nowhere. Without a `url` that pathname is `/`, so a `<Link href="/">` in a node does not open your home page. Give the node another `url` to test such a link. The same goes for a route handler: with `url: "/api/notes"`, a `fetch("/api/notes")` from the tab gets the node's HTML and not the handler's response. `unmount()` and the end of the test give the pathname back to your app.
-- **The container is the node's.** It has to be empty, and it cannot be `document.body`. It also holds what Next renders around a page: a hidden `<div>` and a few comments, where metadata streams in, and Next's scripts. `asFragment()` leaves out the scripts that run, and keeps a script of data like JSON-LD.
-- **`useSelectedLayoutSegments()` is empty**, as it is in a page: a node has no segments below it.
-- **A node that throws, or calls `notFound()`, gets Next's own page for it**: the global error page with status `500`, where the error is also reported as uncaught, or the not-found page with status `404`. Next renders those as a document, so they are not in the container. Your `app/global-error.tsx` and `app/not-found.tsx` are not used: they belong to your app's layouts.
-- **A node that calls `redirect()` while it renders** loads the page it redirects to, like a page does. The container stays empty.
-
-### Server Actions
-
-A Server Action is what it is in your app: a `POST` from Next's router to Next's request handler. What the action does to cookies, to the cache and to the router happens for real.
-
-```ts
-// app/lib/actions.ts
-"use server";
-
-import { revalidatePath } from "next/cache";
-import { cookies } from "next/headers";
-import { redirect } from "next/navigation";
-import { db } from "./notes.ts";
-
-export async function createNote(formData: FormData) {
-  const title = String(formData.get("title") ?? "").trim();
-  if (!title) return;
-  const id = String(db.notes.size + 1);
-  db.notes.set(id, { id, title, body: "" });
-  (await cookies()).set("last-created", id);
-  revalidatePath("/notes");
-  redirect(`/notes/${id}`);
-}
-```
-
-```tsx
-test("runs a Server Action that sets a cookie, revalidates and redirects", async () => {
-  await renderServer({ url: "/notes/new" });
-
-  await page.getByRole("textbox", { name: "Title" }).fill("Plan the week");
-  await page.getByRole("button", { name: "Create" }).click();
-
-  // redirect() in the action: the router lands on the new note.
-  await expect.element(page.getByRole("heading", { name: "Plan the week" })).toBeVisible();
-  expect(window.location.pathname).toBe("/notes/1");
-  await expect.poll(() => document.title).toBe("Plan the week | Notes");
-  expect(db.notes.get("1")?.title).toBe("Plan the week");
-  expect(document.cookie).toContain("last-created=1");
-
-  // The cookie reaches the next server render.
-  await page.getByRole("link", { name: "Notes", exact: true }).click();
-  await expect.element(page.getByText("Last created: 1")).toBeVisible();
-});
-```
-
-A Client Component that imports an action calls the server the same way, also when it is the node of the test:
-
-```tsx
-import { FavoriteButton } from "./components/favorite-button.tsx";
-
-test("calls a Server Action from a node", async () => {
-  db.notes.set("1", { id: "1", title: "Inbox triage", body: "" });
-
-  await renderServer(<FavoriteButton id="1" favorite={false} />);
-
-  await page.getByRole("button", { name: "Favorite" }).click();
-  await expect.element(page.getByRole("button", { name: "Favorite", pressed: true })).toBeVisible();
-  expect(db.notes.get("1")?.favorite).toBe(true);
-});
-```
-
-### Mocks
-
-`vi.mock()` replaces the module that your Server Components, Server Actions and route handlers import. Put the mocks of app modules in a setup file. With `isolate: false` the test files of a tab share their modules, so the file that loads a module first decides whether the others get the mock. A setup file runs before every test file.
-
-A bare `vi.mock()` is enough. Each test says what the mock does, through `vi.mocked()`:
-
-```ts
-// vitest.setup.ts
-import { vi } from "vitest";
-
-vi.mock("./app/lib/weather.ts");
-```
-
-On Vitest 5.0 as published this is not enough: in browser mode it imports a test file without waiting for the mocks of a setup file, so a test file with only static imports gets the real module ([vitest-dev/vitest#11450](https://github.com/vitest-dev/vitest/issues/11450), fixed by [#11520](https://github.com/vitest-dev/vitest/pull/11520) but not released yet). Until a release has the fix, import the mocked module in the setup file after the `vi.mock()` call: `await import("./app/lib/weather.ts");`. This repository patches `@vitest/browser` instead (`patches/`), which is why its own setup files do not have that line.
-
-```ts
-// vitest.config.ts
-test: {
-  setupFiles: ["./vitest.setup.ts"],
-}
-```
-
-```tsx
-import { expect, test, vi } from "vitest";
-import { page } from "vitest/browser";
-import { renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
-import { getForecast } from "../lib/weather.ts";
-
-test("renders a route with a server module mocked in the setup file", async () => {
-  vi.mocked(getForecast).mockResolvedValue("sunny");
-
-  await renderServer({ url: "/forecast" });
-
-  await expect.element(page.getByText("Today: sunny")).toBeVisible();
-  expect(getForecast).toHaveBeenCalledOnce();
-});
-```
-
-A mock does not reach a Client Component. Client Components load in module graphs of their own.
-
-### Requests And Route Handlers
-
-`handleRequest(url, init)` sends one request to the app and resolves with the response. It takes what `fetch` takes. Use it when the response is what you assert on: a status, a header, the HTML or the Flight payload. The request carries the tab's cookies, and the cookies the server sets go into the tab.
+`handleRequest(url, init)` sends one request to the app and resolves with the response. It takes what `fetch` takes. Use it when the response is what you assert on: a status, a header, the HTML, or the Flight payload. The request carries the tab's cookies, and the cookies the server sets go into the tab.
 
 Route handlers (`app/**/route.ts`) are served too, and `handleRequest` is how a test calls one:
 
@@ -435,13 +537,11 @@ test("gives a route handler the body of a request and the cookies of the tab", a
 });
 ```
 
-A `fetch` from a Client Component to a route handler reaches it too, with the tab's cookies. A same-origin `fetch` goes to the app when the server has something for its URL: a route, a redirect or a rewrite of `next.config`, or a proxy whose matcher takes it. So does one that Next's router or a Server Action sends. Anything else goes to the Vite dev server.
-
-A handler that throws answers `500` and logs the error with `console.error`, as `next start` does.
+A `fetch` from a Client Component to a route handler reaches it too, with the tab's cookies.
 
 ### The Proxy, Redirects And Rewrites
 
-What a server does before a route gets a request happens here too, by Next's own route resolution: the `redirects`, `rewrites` and `headers` of `next.config`, the redirect of a trailing slash, and `proxy.ts`, or the `middleware.ts` it was before Next.js 16. A page load, a navigation of Next's router, a Server Action and a `fetch` of the page all go through it.
+`proxy.ts` and the `redirects`, `rewrites`, and `headers` in `next.config` run here too, through Next's own route resolution.
 
 ```ts
 // proxy.ts
@@ -489,55 +589,49 @@ test("serves the route the proxy rewrites to, at the URL that was asked for", as
 
 The proxy runs in the tab, in the same modules as the test. So a module it imports is the instance the test imports, and `vi.mock()` replaces it for both: mock the session it reads, or assert on what it wrote.
 
-After a rewrite the app is still at the URL the browser asked for: `usePathname()` says so on the server and in the browser, and the page gets the params of the route it was rewritten to. [The Server In Front Of The App](docs/next-routes.md#the-server-in-front-of-the-app) describes where all of this comes from.
+See [The Server In Front Of The App](docs/next-routes.md#the-server-in-front-of-the-app) for how this works.
 
-The server is the one of a deployment through a Next.js adapter, which is not `next start` in every detail. The proxy also runs for a request that `next.config` redirects. And a dynamic route is found for a URL in another letter case, like `/Docs/Routing` for `app/docs/[slug]`.
+### Mocks
 
-### Caching
+`vi.mock()` replaces the module that your Server Components, Server Actions, and route handlers import. Put mocks of app modules in a setup file, so every test file gets them.
 
-Next's Data Cache works across requests: `unstable_cache`, and a `fetch` with `cache: "force-cache"` or `next: { revalidate }`. So do `revalidateTag()` and `revalidatePath()` from a Server Action or a route handler, and `updateTag()` and `refresh()` from a Server Action. Every test starts with an empty cache.
+A bare `vi.mock()` is enough. Each test says what the mock does, through `vi.mocked()`:
 
 ```ts
-// app/lib/reports.ts
-import { unstable_cache } from "next/cache";
+// vitest.setup.ts
+import { vi } from "vitest";
 
-// What a test sets and reads: who writes the reports, how long one takes, and
-// how many were written.
-export const reports = { author: "nobody", duration: 0, written: 0 };
+vi.mock("./app/lib/weather.ts");
+```
 
-const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+Until [vitest-dev/vitest#11520](https://github.com/vitest-dev/vitest/pull/11520) is released, also add `await import("./app/lib/weather.ts");` after the `vi.mock()` call.
 
-// A slow computation that Next's Data Cache keeps, under the tag "reports".
-export const getReport = unstable_cache(
-  async (id: string) => {
-    await delay(reports.duration);
-    reports.written += 1;
-    return `Report ${id} by ${reports.author}, number ${reports.written}`;
-  },
-  ["report"],
-  { tags: ["reports"] },
-);
+```ts
+// vitest.config.ts
+test: {
+  setupFiles: ["./vitest.setup.ts"],
+}
 ```
 
 ```tsx
-test("computes again after a route handler has expired the tag", async () => {
-  await renderServer({ url: "/reports/7" });
-  await expect.element(page.getByText("Report 7 by nobody, number 1")).toBeVisible();
+import { expect, test, vi } from "vitest";
+import { page } from "vitest/browser";
+import { renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
+import { getForecast } from "../lib/weather.ts";
 
-  // The route handler calls revalidateTag("reports", { expire: 0 }).
-  const response = await handleRequest("/api/revalidate?tag=reports", { method: "POST" });
-  expect(await response.json()).toEqual({ revalidated: true });
-  await renderServer({ url: "/reports/7" });
+test("renders a route with a server module mocked in the setup file", async () => {
+  vi.mocked(getForecast).mockResolvedValue("sunny");
 
-  await expect.element(page.getByText("Report 7 by nobody, number 2")).toBeVisible();
+  await renderServer({ url: "/forecast" });
+
+  await expect.element(page.getByText("Today: sunny")).toBeVisible();
+  expect(getForecast).toHaveBeenCalledOnce();
 });
 ```
 
-`"use cache"` does not work yet. See [Caching](docs/next-routes.md#caching) for the details, and for what differs inside a cached function after its first `await`.
-
 ### Fonts, Images And Styles
 
-The source files of your app are compiled by Next's own compiler, in each of Next's three layers.
+Your app's source files are compiled by Next's own compiler, in each of Next's three layers.
 
 ```tsx
 // app/fonts/fonts.ts
@@ -563,21 +657,17 @@ test("sets text in a font of next/font/local, a file of the app", async () => {
 });
 ```
 
-- **`next/font/local` and `next/font/google`**, also in a package that calls them, like `geist`. The class names, the CSS variable and the fallback font are the ones Next makes, and the font files are served. `next/font/google` downloads the font when a run first loads it, as `next dev` does. [The Compiler](docs/next-routes.md#the-compiler) says how to keep a run off the network.
-- **`next/image`.** `import logo from "./logo.png"` is the object Next makes of an image, with its size and its blurred placeholder. `/_next/image` is answered by Next's image optimizer, for an imported image, a file in `public/` and an image of a server that `images.remotePatterns` allows.
-- **`next/dynamic`**, also with `ssr: false`, **`next/script`**, **styled-jsx**, global CSS and CSS modules.
-- **The checks of `next build`.** A client hook in a Server Component, or `server-only` code in a Client Component, fails the test with the error `next build` gives.
-- **`paths` and `baseUrl` of your `tsconfig.json` or `jsconfig.json`**, like `@/components/button`.
-
-Call `next/font` in a module of the app, not in a test file: Next's compiler does not run on test files. What Next's build does and the plugin does not, like the React Compiler and a `webpack` function in `next.config`, is under [What Does Not Work Yet](#what-does-not-work-yet).
+- **`next/font/local` and `next/font/google`**, with the class names and font files Next makes.
+- **`next/image`**, including imported images and Next's image optimizer.
+- **`next/dynamic`**, **`next/script`**, **styled-jsx**, global CSS, and CSS modules.
+- **`next build`'s checks**: a client hook in a Server Component, or `server-only` code in a Client Component, fails the test with Next's error.
+- **`paths`** from your `tsconfig.json`, like `@/components/button`.
 
 ### Server Code In A Tab
 
-The server runs in a tab, and your server code is told it is on a server, the way Next's own build tells it. In Server Components, Server Actions, route handlers and the modules and packages they import, and in Client Components while they render to HTML, `typeof window` is `"undefined"` and `fetch` is the one Next patches. Test files and setup files keep the tab's `typeof window` and `fetch`.
+The server runs in a tab, but your server code is told it's on a server, the way Next's build tells it: `typeof window` is `"undefined"`, and `fetch` is the one Next patches. Test files keep the tab's `window` and `fetch`.
 
-Only `typeof` is answered that way. Server code that reads `window.innerWidth` without asking first throws on a server, and reads the tab's `window` here.
-
-A module that has to know it is in a browser is listed in `browserModules`. A helper of your tests that asks before it touches the page is one:
+If a module needs to know it's in a browser, list it in `browserModules`:
 
 ```ts
 // test/browser.ts
@@ -590,7 +680,7 @@ export function scrollToTop(): void {
 vitestPluginNext({ browserModules: ["test/**"] });
 ```
 
-A Client Component that renders something else on the server than in the browser fails the way it does in production, with a hydration mismatch. React reports one with `console.error`. The tests of the playgrounds fail on any `console.error`:
+A Client Component that renders something different on the server than in the browser fails the way it does in production, with a hydration mismatch. React reports that with `console.error`, and the playgrounds' tests fail on any `console.error`:
 
 ```ts
 let consoleError: MockInstance<typeof console.error>;
@@ -604,16 +694,14 @@ afterEach(() => {
 });
 ```
 
-See [Server Code In A Tab](docs/next-routes.md#server-code-in-a-tab) for what is replaced, where that has gaps, and when a package needs an entry in `browserModules`.
-
 ### Example: Drizzle + PGlite
 
-PGlite runs Postgres in the tab, so every test can have a database of its own. This is how `playground/nextjs-notes-demo` does it.
+PGlite runs Postgres in-process, so it works inside the tab, and every test can have its own database. This is how `playground/nextjs-notes-demo` does it.
 
 Two files sit next to each other:
 
-- `lib/db.ts` is the database adapter the app imports.
-- `lib/__mocks__/db.ts` is what `vi.mock("#lib/db.ts")` puts in its place. It exports `db` and a `resetDb` function, so the setup file can point `db` at a new database for every test.
+- `lib/db.ts` — the database adapter your app code imports.
+- `lib/__mocks__/db.ts` — the test stand-in that `vi.mock("#lib/db.ts")` swaps in. Exposes `db` plus a `resetDb` setter so the setup file can point it at a fresh PGlite clone per test.
 
 ```ts
 // lib/__mocks__/db.ts
@@ -628,7 +716,7 @@ function resetDb(value: DB) {
 export { db, resetDb };
 ```
 
-Global setup generates the SQL of the current Drizzle schema, in Node:
+Global setup generates SQL from the current Drizzle schema, in Node:
 
 ```ts
 // vitest.global-setup.ts
@@ -684,7 +772,7 @@ afterAll(async () => {
 });
 ```
 
-App code keeps importing `db` from `#lib/db.ts`. A test seeds rows with the same `db.insert(...)` calls the app uses, as in the test under [Why This Exists](#why-this-exists).
+App code keeps importing `db` from `#lib/db.ts`. Tests then seed rows with the same `db.insert(...)` calls the app uses, like the test under [Why This Exists](#why-this-exists).
 
 ### API
 
@@ -700,28 +788,24 @@ import { vitestPluginNext } from "vitest-plugin-rsc/nextjs/plugin";
 | `handleRequest(input, init)`           | Sends one request to the app, like `fetch`. Resolves with the `Response`.                     |
 | `cleanup()`                            | Leaves the page, clears cookies, storage and the cache. The plugin runs it around every test. |
 | `vitestPluginNext({ browserModules })` | The Vite plugin. `browserModules` are glob patterns, relative to the project root.            |
-| `vitestPluginNext({ affectedTests })`  | `true` lets watch mode and `vitest --changed` find the test files of a route. Off by default. |
+| `vitestPluginNext({ affectedTests })`  | `true` lets watch mode and `vitest --changed` find a route's test files. Off by default.      |
 
 The options for a node, all optional:
 
 | Option        | What it does                                                                                        |
 | ------------- | --------------------------------------------------------------------------------------------------- |
-| `url`         | The URL of the request. Defaults to `/`. The params are those of your app's route for it.           |
-| `headers`     | Headers for the request, next to the ones a browser sends.                                          |
+| `url`         | The request URL. Defaults to `/`. The params are the ones your app's route has for it.              |
+| `headers`     | Request headers, on top of the ones a browser sends.                                                |
 | `wrapper`     | A component that wraps the node on the server. It can be a Server Component.                        |
-| `layouts`     | `true` renders the node in place of the page at `url`, inside the layouts of your app.              |
+| `layouts`     | `true` renders the node in place of the page at `url`, inside your app's layouts.                   |
 | `container`   | An empty element for the node. Defaults to a new `<div>` in `baseElement`, which `cleanup` removes. |
-| `baseElement` | Defaults to `container` if you pass one, or else to `document.body`, whichever body that is.        |
+| `baseElement` | Defaults to `document.body`.                                                                        |
 
 A node resolves with `{ container, baseElement, asFragment, unmount, response }`.
 
-The types are `RenderServerOptions`, `RenderServerResult`, `RenderComponentOptions`, `RenderComponentResult` and `VitestPluginNextOptions`.
-
-The package also exports `vitest-plugin-rsc/nextjs/rsc`, `/ssr` and `/client`. Those are internal: the plugin imports them itself, and Vite has to be able to resolve them.
-
 ## React Server Components Without Next.js
 
-`vitestPluginRSC()` on its own renders Server Components for any React app. There is no request and no router: `renderServer` renders a node to a Flight stream and reads it back in the same tab.
+`vitestPluginRSC()` on its own renders Server Components for any React app. There's no request and no router: `renderServer` renders a node to a Flight stream and reads it back in the same tab.
 
 ```ts
 // vitest.config.ts
@@ -775,20 +859,19 @@ This `renderServer` takes `{ container, baseElement, wrapper }` and resolves wit
 
 ## Server Code That Runs In A Browser
 
-The plugin runs server code in a browser tab. The surface is closer than it looks: Node.js has most of the web APIs a tab has, and server code that keeps to those runs in a tab too.
+The plugin runs server code inside a browser tab. That sounds wrong, but the surface is closer than it looks: Node.js has most of the web APIs a tab has, and server code that sticks to those runs in a tab too.
 
-- `vitestPluginRSC()` provides `node:async_hooks`, with an `AsyncLocalStorage` that works for one request at a time.
-- `vitestPluginNext()` adds what Next's own server needs of Node.js: `Buffer`, `process.env`, the modules `buffer`, `events`, `assert`, `util`, `path` and `stream` from the builds Next ships, and of `crypto` the random values and SHA-256.
+The plugin shims what Next's server needs from Node.js, like `AsyncLocalStorage`, `Buffer`, and `process.env`.
 
-A fast test should not touch the real database, file system or network. Keep IO inside the tab:
+A fast unit test shouldn't touch the real database, filesystem, or network — those make tests slow and flaky. Standard practice is to keep IO inside the test runtime, which here is the tab:
 
 - **Database**: an in-memory implementation like [PGlite](https://pglite.dev/) for Postgres or [sql.js](https://github.com/sql-js/sql.js) for SQLite.
 - **File system**: an in-memory implementation like [`memfs` via Vitest](https://vitest.dev/guide/mocking/file-system).
 - **HTTP**: a request interceptor like [MSW in Vitest browser mode](https://mswjs.io/docs/recipes/vitest-browser-mode), or a mocked module.
 
-Where you have a choice, use the APIs that Node and browsers share: Web Streams, `Uint8Array`, Web Crypto, `Blob` and `File`, and `fetch`, `Request`, `Response`, `Headers`, `URL` and `FormData`.
+When you have a choice, prefer the APIs that Node and browsers share: Web Streams, `Uint8Array`, Web Crypto, `Blob` and `File`, and `fetch`, `Request`, `Response`, `Headers`, `URL`, and `FormData`.
 
-If a dependency imports a Node module that is not there, [`vite-plugin-node-polyfills`](https://github.com/davidmyersdev/vite-plugin-node-polyfills) covers the rest:
+If a dependency still imports a Node module that isn't shimmed, drop in [`vite-plugin-node-polyfills`](https://github.com/davidmyersdev/vite-plugin-node-polyfills) for the rest:
 
 ```ts
 import { nodePolyfills } from "vite-plugin-node-polyfills";
@@ -802,49 +885,29 @@ export default defineConfig({
 
 ## Test Concurrency
 
-[`test.concurrent`](https://vitest.dev/api/#test-concurrent) does not work for tests that read `AsyncLocalStorage`. That is every test of a Next.js app: `headers()`, `cookies()`, `next/cache` and Server Actions all read it. A tab cannot carry a store across `await`, so the server handles one request at a time, and two tests at once would read each other's request. Tests in a file run one after another, and test files still run in parallel, each in a tab of its own.
+[`test.concurrent`](https://vitest.dev/api/#test-concurrent) doesn't work for tests that read `AsyncLocalStorage`, which includes anything that touches Next.js App Router internals (`headers()`, `cookies()`, `next/cache`, Server Actions). The plugin's `AsyncLocalStorage` shim is sequential, so concurrent tests would leak context between each other. Sequential tests within a file are fine; test files still run in parallel.
 
 ## How It Works
 
-Next.js is a build and a runtime. Only the build is tied to a bundler. The plugin does the build with Vite, and asks Next's own build code for everything that is not bundling: the routes, the loader tree of a route, its request handler, the compile-time constants, the module aliases, and the compile of your source files with Next's SWC transform and its font and image loaders. Behind those, Next's runtime runs unchanged.
-
-What a server does before a route gets a request comes from Next too. The plugin is a deployment adapter to Next: it gets the routes that `next build` hands an adapter, the redirects, rewrites and headers of `next.config` and the matcher of `proxy.ts` among them, and Next's own `@next/routing` finds the route of a request with them, in the tab.
+Next.js is a build and a runtime, and only the build is tied to a bundler. So the plugin does the build with Vite, asks Next's own build code for everything else, and runs Next's runtime unchanged. Routing, the proxy, and `next.config` redirects come from Next's own `@next/routing`.
 
 Next compiles an app into three layers, each with its own module graph and its own build of React. Each is a Vite environment here, and all three run in the test's tab:
 
 | Layer     | Runs                                              | Vite environment |
 | --------- | ------------------------------------------------- | ---------------- |
 | `rsc`     | Server Components, Server Actions, route handlers | `client`         |
-| `ssr`     | The request handler of a page, the HTML renderer  | `next_ssr`       |
+| `ssr`     | A page's request handler, the HTML renderer       | `next_ssr`       |
 | `browser` | Next's router, your Client Components             | `react_client`   |
 
-The test runs in `client`, the Vite environment of the `rsc` layer. That is why a module your test imports is the instance your Server Components read.
+The test runs in `client`, the `rsc` layer's Vite environment. That's why a module your test imports is the instance your Server Components read.
 
-[docs/next-routes.md](docs/next-routes.md) is the full description: what comes from Next, what its compiler does to your code, how a request travels, what stands in for a server, caching, how server code is told it is on a server, and what is checked of the installed Next.js. [docs/architecture.md](docs/architecture.md) describes the part without Next.js: the two environments and the module runner between them.
-
-## What Does Not Work Yet
-
-- Metadata files like `icon.png` and `sitemap.ts`. A run warns about the metadata files of the app, apart from `favicon.ico`, when it starts.
-- A `webpack` function or `turbopack` rules in `next.config`, like `@svgr/webpack` and `@next/mdx`, a Babel config, and the React Compiler.
-- A CommonJS source file in the app.
-- The files of `.env` and `NEXT_PUBLIC_` variables: `process.env` in the tab is empty unless a test or a setup file fills it.
-- The headers of `next.config` and of `proxy.ts` for a file of `public/`, which the dev server serves, and a rewrite to such a file. And `instrumentation.ts`.
-- `"use cache"`, and an app with `cacheComponents: true` in `next.config`. And inside a function cached with `unstable_cache`, after its first `await`, the request's store is read instead of the cache's.
-- A mock for Client Components.
-- A production build of React: the client gets the message of an error that a Server Component throws, where a deployment sends a digest.
-- A cookie that is `HttpOnly` can be read by a script of the page, and the `Path` of a cookie is matched against the URL of the test runner.
-- Anything but `fetch` as a request to the app: `XMLHttpRequest`, `EventSource` and `sendBeacon()` go to the dev server.
-- Next's edge runtime, which Next has deprecated. The server runs as on Node.js, Next's default, also for a route with `export const runtime = "edge"`.
-- More than one request at a time. A response that streams without end holds up every request after it.
-- A navigation that leaves the page without Next's router, like `location.assign()`, needs the Navigation API, which today means Chromium.
-
-The full list, with the reasons, is under [Not Yet](docs/next-routes.md#not-yet).
+For the full walkthrough, see [docs/next-routes.md](docs/next-routes.md). [docs/architecture.md](docs/architecture.md) covers the part without Next.js: the two environments and the Module Runner bridge between them.
 
 ## Playgrounds
 
 - `playground/nextjs-e2e-demo` — a small Next.js app with a test for every feature of the Next.js support. Most samples above come from its tests.
-- `playground/nextjs-notes-demo` — a fuller Next.js notes app with Better Auth, Drizzle, PGlite test databases and shadcn/ui. Its tests open whole routes with the database and the session mocked in the tab. This is the acceptance app of this repository.
-- `playground/rsc-vitest-demo` — React Server Components without Next.js.
+- `playground/nextjs-notes-demo` — a fuller Next.js notes app with Better Auth, Drizzle, PGlite test databases, and shadcn/ui. Its tests open whole routes with the database and the session mocked in the tab. This is the repository's acceptance app.
+- `playground/rsc-vitest-demo` — a minimal non-Next RSC app. Use this as the smallest end-to-end example of `vitest-plugin-rsc` on its own.
 
 Vitest suites are wired through the root workspace, while each package or playground owns its local config:
 
