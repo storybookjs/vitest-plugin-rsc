@@ -1,5 +1,4 @@
 import fs from "node:fs";
-import path from "node:path";
 import querystring from "node:querystring";
 import type { AppLoaderOptions } from "next/dist/build/webpack/loaders/next-app-loader/index.js";
 import type { ComponentRoute, NextProject, NextRoute } from "../project.ts";

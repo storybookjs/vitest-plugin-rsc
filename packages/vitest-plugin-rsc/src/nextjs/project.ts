@@ -181,10 +181,10 @@ const adapterPath = fileURLToPath(
 
 export async function loadNextProject(
   root: string,
-  require: NodeJS.Require = createRequire(path.join(root, "package.json")),
+  projectRequire: NodeJS.Require = createRequire(path.join(root, "package.json")),
 ): Promise<NextProject> {
   // The project, its `next.config`, and the build code of its `next`.
-  const context = await openNextProject(root, require);
+  const context = await openNextProject(root, projectRequire);
   // The app: its routes, its middleware, and the server in front of them.
   const app = await discoverAppRoutes(context);
   const middleware = await findMiddleware(context);

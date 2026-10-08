@@ -235,6 +235,42 @@ export async function settleRequests(): Promise<void> {
   rendering.clear();
 }
 
+type Route = (typeof allRoutes)[number];
+
+// The route of the node that a test renders, for a request to the pathname of
+// its URL. Of the routes of a node, the one with the segments of the app's
+// route, so that Next finds the params the app's route has. A URL of no route
+// has none, like `/`. With `layouts`, the app's route with the node as its page.
+function nodeRouteFor(url: URL, matched: Route | undefined): Route | undefined {
+  const node = registry.component;
+  if (node?.pathname !== url.pathname) return undefined;
+  if (!node.layouts) {
+    return componentRoutes.get(matched?.pathname ?? "/") ?? componentRoutes.get("/");
+  }
+  const withLayouts = componentLayoutRoutes.get(matched?.page ?? "");
+  if (!withLayouts) {
+    throw new Error(
+      `vitest-plugin-rsc: \`layouts: true\` renders a node in place of the \`page\` file ` +
+        `of its \`url\`, and the app has none for ${url.pathname}.`,
+    );
+  }
+  return withLayouts;
+}
+
+// Next's build lists every Server Action. Here the only one to list is the
+// one a request calls, if the app has it. Next copies the list, so it cannot
+// answer for any id, and answers 409 for one that is not in it.
+async function serverActionsOf(method: string, headers: Headers): Promise<object> {
+  const actionId = method === "POST" ? headers.get("next-action") : null;
+  if (!actionId || !(await registry.hasServerAction(actionId))) return {};
+  return {
+    [actionId]: {
+      workers: anyKey(() => ({ moduleId: actionModulePrefix + actionId, async: true })),
+      layer: {},
+    },
+  };
+}
+
 async function handle(request: ServerRequest, unrouted: "not-found" | "pass"): Promise<Handled> {
   const url = new URL(request.url);
   const endRequestScope = registry.enterRequestScope();
@@ -322,21 +358,7 @@ async function handle(request: ServerRequest, unrouted: "not-found" | "pass"): P
     }
 
     const matched = routes.get(routing.outputs[resolved.resolvedPathname ?? ""] ?? "");
-    // While a test renders a node, the pathname of its URL is the node's route.
-    // Of the routes of a node, the one with the segments of the app's route, so
-    // that Next finds the params the app's route has. A URL of no route has
-    // none, like `/`.
-    const node = registry.component?.pathname === url.pathname ? registry.component : undefined;
-    const withLayouts = node?.layouts ? componentLayoutRoutes.get(matched?.page ?? "") : undefined;
-    if (node?.layouts && !withLayouts) {
-      throw new Error(
-        `vitest-plugin-rsc: \`layouts: true\` renders a node in place of the \`page\` file ` +
-          `of its \`url\`, and the app has none for ${url.pathname}.`,
-      );
-    }
-    const component = node
-      ? (withLayouts ?? componentRoutes.get(matched?.pathname ?? "/") ?? componentRoutes.get("/"))
-      : undefined;
+    const component = nodeRouteFor(url, matched);
     if (!matched && !component && unrouted === "pass") return { finished: endRequest() };
     const page = component?.page ?? matched?.page ?? notFoundPage;
     // What the modules of the route are listed by.
@@ -385,20 +407,7 @@ async function handle(request: ServerRequest, unrouted: "not-found" | "pass"): P
       return finishWithBody(request, response, response.status, endRequest, routedHeaders);
     }
 
-    // Next's build lists every Server Action. Here the only one to list is
-    // the one this request calls, if the app has it. Next copies the list, so
-    // it cannot answer for any id, and answers 409 for one that is not in it.
-    const actionId = request.method === "POST" ? headers.get("next-action") : null;
-    const actions =
-      actionId && (await registry.hasServerAction(actionId))
-        ? {
-            [actionId]: {
-              workers: anyKey(() => ({ moduleId: actionModulePrefix + actionId, async: true })),
-              layer: {},
-            },
-          }
-        : {};
-    setServerActions(actions);
+    setServerActions(await serverActionsOf(request.method, headers));
 
     const { handler } = (await registry.loadAppPage(entry)) as { handler: RequestHandler };
     const response = await handleWith(routed, context, handler, requestMeta);
