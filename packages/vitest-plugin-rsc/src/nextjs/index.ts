@@ -566,7 +566,7 @@ async function openPage(
   // The browser's Flight client reads properties off `__webpack_require__`
   // when it loads, which is before the page can say how it loads a module,
   // and wraps some of them. One that the pages shared would keep every page.
-  registry.browserRequire = (id) => registry.loadBrowserModule(id);
+  registry.browserRequire = newBrowserRequire();
   // React's scheduler, Next's router and Next's dev overlay each leave
   // something on the tab when they load: see leftovers.ts. That is from here
   // until `start()` says that Next's client has loaded.
@@ -611,6 +611,31 @@ async function openPage(
   return response;
 }
 
+// What Next's client and the plugin put on the tab for a page: its router, how
+// it calls the server, loads a module or a style, its hook for when it has
+// hydrated. The next page sets its own; until then they would keep this one,
+// with all of its modules.
+function forgetPageGlobals(): void {
+  const scope = globalThis as { next?: { router?: unknown } } & Record<string, unknown>;
+  for (const name of ["nd", "__NEXT_HYDRATED_CB", "_N_E_STYLE_LOAD"]) delete scope[name];
+  // `window.next` itself stays: what is left of the page may still write to it.
+  delete scope.next?.router;
+  // A Server Action or a module that the page asks for after it was left
+  // never answers. One that failed instead would fail that page's code, which
+  // can still run.
+  const never = () => new Promise<never>(() => {});
+  scope.__viteRscCallServer = never;
+  registry.loadBrowserModule = never;
+  // The Flight client of the page wrapped properties of the one it had.
+  registry.browserRequire = newBrowserRequire();
+}
+
+// Made out here: a function made in `openPage()` would keep what that call
+// has in scope, the page included.
+function newBrowserRequire(): typeof registry.browserRequire {
+  return (id) => registry.loadBrowserModule(id);
+}
+
 // One at a time: a page that is being left is left before the next one is.
 let leaving: Promise<void> = Promise.resolve();
 
@@ -627,9 +652,9 @@ function leavePage(): Promise<void> {
       // hydrate the next page with the client code of this one. It is about
       // done: the document it starts from is already there.
       let timeout: ReturnType<typeof setTimeout> | undefined;
-      await Promise.race([
-        left?.started,
-        new Promise((resolve) => (timeout = setTimeout(resolve, 5000))),
+      const started = await Promise.race([
+        left?.started.then(() => true),
+        new Promise<false>((resolve) => (timeout = setTimeout(() => resolve(false), 5000))),
       ]);
       // A timer that is still set keeps the page until it fires.
       clearTimeout(timeout);
@@ -637,6 +662,9 @@ function leavePage(): Promise<void> {
         left?.unmount();
       } finally {
         try {
+          // Not those of an app that is still starting, which needs them to
+          // get to where it can be left.
+          if (started !== false) forgetPageGlobals();
           unloadDocument();
         } finally {
           await ssr.settleRequests();
