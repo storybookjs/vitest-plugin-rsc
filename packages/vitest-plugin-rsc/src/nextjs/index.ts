@@ -130,6 +130,8 @@ type Sending = {
   navigation?: boolean;
   /** Who answers a request that the server has nothing for: see `HandleOptions.unrouted`. */
   network?: () => Promise<Response>;
+  /** What the request opens, not after a redirect: see `HandleOptions.opened`. */
+  opened?: Opened;
 };
 
 // The network between a client and the Next.js server in the browser. For the
@@ -137,7 +139,7 @@ type Sending = {
 // cookies, store the ones that come back. For either it follows redirects.
 async function sendRequest(
   request: Request,
-  { server = false, navigation = false, network }: Sending = {},
+  { server = false, navigation = false, network, opened }: Sending = {},
 ): Promise<Response> {
   let url = new URL(request.url);
   let method = request.method;
@@ -153,7 +155,11 @@ async function sendRequest(
     const response = await unlessAborted(
       ssr.handleRequest(
         { url: url.href, method, headers, body, signal: request.signal },
-        { nested: server, unrouted: network ? "pass" : "not-found" },
+        {
+          nested: server,
+          unrouted: network ? "pass" : "not-found",
+          opened: redirected ? undefined : opened,
+        },
       ),
       request.signal,
     );
@@ -238,6 +244,120 @@ async function sendRequest(
 export function handleRequest(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
   // Not the browser's Request, which drops a `cookie` header.
   return sendRequest(new registry.Request(input, init));
+}
+
+export type RunInServerActionOptions = {
+  /**
+   * The URL of the page the action is of. Defaults to `/`. For this request
+   * its pathname gets a route of its own that renders nothing, with the params
+   * the app's route for it has.
+   */
+  url?: string;
+  /**
+   * Whether the server in front of the app takes the request: `proxy.ts`, and
+   * the `redirects`, `rewrites` and `headers` of `next.config`. Defaults to
+   * `false`, as for a node. A redirect there rejects: the action did not run.
+   */
+  proxy?: boolean;
+  /**
+   * Headers for the request of the action, next to the ones a browser sends.
+   * The ones that make it a Server Action are the plugin's: `accept`,
+   * `content-type` and `next-action`.
+   */
+  headers?: HeadersInit;
+};
+
+// The functions that `runInServerAction()` runs, by a number of their own.
+let serverActionKeys = 0;
+
+/**
+ * Runs `action` as a Server Action of the page at `url`, the way Next runs
+ * one: in the request of the action, where `cookies()` can be set and
+ * `redirect()`, `refresh()` and `after()` work. Resolves with what it
+ * returns, and rejects with what it throws, also the error of a `redirect()`.
+ * Its arguments and its result are the test's own, not sent through Flight.
+ *
+ * It sends a Server Action request like the one of Next's router, to a route
+ * at `url` that renders nothing, and opens no page: there is no app to start.
+ * After a `redirect()` Next renders the page it redirects to, on the server.
+ * A page that is open stays open. The request carries the browser's cookies,
+ * the `headers` of what `renderServer()` opened and the ones passed here, and
+ * the browser keeps the cookies the action sets. For code that a Server
+ * Action calls; test a form of a page through the page.
+ *
+ * The function runs in the request, so it cannot send a request to the app
+ * itself, which would wait for this one: call the app's code instead.
+ */
+export async function runInServerAction<T>(
+  action: () => T,
+  options: RunInServerActionOptions = {},
+): Promise<Awaited<T>> {
+  const url = new URL(options.url ?? "/", window.location.origin);
+  if (url.origin !== window.location.origin) {
+    throw new Error(
+      `vitest-plugin-rsc: a Server Action is of a page of the app, not of ${url.href}`,
+    );
+  }
+  const { runInServerActionOfTest } = await import("./server-action.ts");
+  const key = serverActionKeys++;
+  const ran: { outcome?: { value: Awaited<T> } | { error: unknown } } = {};
+  registry.serverActions.set(key, async () => {
+    try {
+      ran.outcome = { value: await action() };
+    } catch (error) {
+      ran.outcome = { error };
+      // Next acts on what a Server Action throws: a `redirect()`, a `notFound()`.
+      throw error;
+    }
+  });
+  try {
+    const headers = new Headers(options.headers);
+    headers.set("accept", "text/x-component");
+    headers.set("content-type", "text/plain;charset=UTF-8");
+    headers.set("next-action", serverActionId(runInServerActionOfTest));
+    // Its one argument, encoded as Next's router encodes the arguments of a
+    // call: the number of the function to run.
+    const request = new registry.Request(url, {
+      method: "POST",
+      headers,
+      body: JSON.stringify([key]),
+      // A Server Action answers a `redirect()` itself, without a 3xx.
+      redirect: "manual",
+    });
+    const response = await sendRequest(request, {
+      opened: {
+        pathname: url.pathname,
+        proxy: options.proxy ?? false,
+        node: { ui: null, layouts: false },
+      },
+    });
+    // What Next renders after the action, which no page is there to show.
+    await response.body?.cancel();
+    if (!ran.outcome) {
+      const location = response.headers.get("location");
+      throw new Error(
+        `vitest-plugin-rsc: the Server Action did not run: ${response.url} ` +
+          (location ? `redirected to ${location}.` : `responded with ${response.status}.`),
+      );
+    }
+  } finally {
+    registry.serverActions.delete(key);
+  }
+  if ("error" in ran.outcome) throw ran.outcome.error;
+  return ran.outcome.value;
+}
+
+// The id of a Server Action, which React's server reference carries: what
+// Next's router sends in the `next-action` header.
+function serverActionId(action: unknown): string {
+  const id: unknown = Reflect.get(Object(action), "$$id");
+  if (typeof id !== "string") {
+    throw new Error(
+      "vitest-plugin-rsc: Vite RSC did not compile the plugin's own Server Action. " +
+        "Is `vitest-plugin-rsc` excluded from `optimizeDeps`?",
+    );
+  }
+  return id;
 }
 
 // A `fetch` that sends a same-origin request to the app when it is the app's,

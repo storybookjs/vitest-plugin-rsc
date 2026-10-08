@@ -7,6 +7,8 @@ import type { Stylesheets } from "./styles-command.ts";
 //
 // Each graph has its own copy of this module. They share the object.
 
+import type { SequentialAsyncLocalStorage } from "../async-local-storage.ts";
+
 export type ServerRequest = {
   url: string;
   method: string;
@@ -76,6 +78,14 @@ export type NextRegistry = {
   loadMiddleware(): Promise<MiddlewareHandler>;
   /** Whether an id names a Server Action of the app, in the rsc layer. */
   hasServerAction(id: string): Promise<boolean>;
+  /** What the Server Action of `runInServerAction()` runs, by the number it is called with. */
+  serverActions: Map<number, () => Promise<void>>;
+  /**
+   * The route of a node that a request brings for itself, like the one of
+   * `runInServerAction()`, for as long as it is handled. The page of the route of
+   * a node reads it, and else `opened`.
+   */
+  openedByRequest: SequentialAsyncLocalStorage<Opened | undefined>;
   /**
    * What `renderServer()` opened, for as long as it is open: the pathname of
    * its URL, and how the server takes a request to that pathname. Without
@@ -101,6 +111,7 @@ const scope = globalThis as { __vitest_plugin_rsc_next__?: Partial<NextRegistry>
 
 export const registry = (scope.__vitest_plugin_rsc_next__ ??= {
   appPages: {},
+  serverActions: new Map(),
 }) as NextRegistry;
 
 /**

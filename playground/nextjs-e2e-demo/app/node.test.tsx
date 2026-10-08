@@ -8,6 +8,7 @@ import type { ReactNode } from "react";
 import { ClientFrame } from "./components/client-frame.tsx";
 import { Counter } from "./components/counter.tsx";
 import { FavoriteButton } from "./components/favorite-button.tsx";
+import { LingerButton } from "./components/linger-button.tsx";
 import { RouterState } from "./components/router-state.tsx";
 import { Widget } from "./components/widget.tsx";
 import { db } from "./lib/notes.ts";
@@ -509,6 +510,20 @@ test("gives the container as a fragment, without the scripts that run", async ()
   );
   // Next's and React's, which carry the Flight payload.
   expect(fragment.querySelectorAll("script")).toHaveLength(1);
+});
+
+test("renders the node again after its action called a route whose after() is still running", async () => {
+  await renderServer(
+    <>
+      <p>Node here</p>
+      <LingerButton />
+    </>,
+  );
+
+  await page.getByRole("button", { name: "Result: none" }).click();
+
+  await expect.element(page.getByRole("button", { name: 'Result: {"ok":true}' })).toBeVisible();
+  await expect.element(page.getByText("Node here")).toBeVisible();
 });
 
 test("renders a node in a container of the test's, which it leaves in the document", async () => {
