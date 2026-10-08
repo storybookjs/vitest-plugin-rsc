@@ -292,12 +292,12 @@ async function handle(request: ServerRequest, unrouted: "not-found" | "pass"): P
     const routedHeaders = resolved.resolvedHeaders ?? new Headers();
 
     if (responded) {
-      return finishWithBody(request, responded, responded.status, endRequest);
+      return finishWithBody(request, responded, endRequest);
     }
     const redirect = redirectStatus(resolved);
     if (redirect !== undefined) {
       const response = new registry.Response(null, { status: redirect, headers: routedHeaders });
-      return finishWithBody(request, response, redirect, endRequest);
+      return finishWithBody(request, response, endRequest);
     }
     if (resolved.externalRewrite) {
       // A rewrite to another server, which `next start` proxies. The tab
@@ -313,7 +313,7 @@ async function handle(request: ServerRequest, unrouted: "not-found" | "pass"): P
         body: hasBody ? await new registry.Response(body as BodyInit).arrayBuffer() : undefined,
         signal: request.signal,
       });
-      return finishWithBody(request, response, response.status, endRequest, routedHeaders);
+      return finishWithBody(request, response, endRequest, routedHeaders);
     }
 
     const matched = routes.get(routing.outputs[resolved.resolvedPathname ?? ""] ?? "");
@@ -370,7 +370,7 @@ async function handle(request: ServerRequest, unrouted: "not-found" | "pass"): P
       // answers 500 for a route handler that throws.
       const handler = await registry.loadRouteHandler(page);
       const response = await handleWith(routed, context, handler, requestMeta);
-      return finishWithBody(request, response, response.status, endRequest, routedHeaders);
+      return finishWithBody(request, response, endRequest, routedHeaders);
     }
 
     // Next's build lists every Server Action. Here the only one to list is
@@ -389,11 +389,13 @@ async function handle(request: ServerRequest, unrouted: "not-found" | "pass"): P
     setServerActions(actions);
 
     const { handler } = (await registry.loadAppPage(entry)) as { handler: RequestHandler };
-    const response = await handleWith(routed, context, handler, requestMeta);
     // Whoever routes a request to the not-found page sets its status, also
-    // for a request to `/_not-found` itself.
-    const status = page === notFoundPage ? 404 : response.status;
-    return finishWithBody(request, response, status, endRequest, routedHeaders);
+    // for a request to `/_not-found` itself. Before the route runs, as
+    // `next start` does: Next reads the status while it renders, for the
+    // `noindex` tag, and its action handler answers with one of its own.
+    const status = page === notFoundPage ? 404 : undefined;
+    const response = await handleWith(routed, context, handler, requestMeta, status);
+    return finishWithBody(request, response, endRequest, routedHeaders);
   } catch (error) {
     endRequestScope();
     throw error;
@@ -404,7 +406,6 @@ async function handle(request: ServerRequest, unrouted: "not-found" | "pass"): P
 function finishWithBody(
   request: ServerRequest,
   response: Response,
-  status: number,
   onFinish: () => Promise<void>,
   routedHeaders?: Headers,
 ): Handled {
@@ -452,7 +453,7 @@ function finishWithBody(
   }
   // Next leaves dropping the body of a HEAD to the server in front of it.
   const result = new registry.Response(request.method === "HEAD" ? null : body, {
-    status,
+    status: response.status,
     statusText: response.statusText,
     headers,
   });

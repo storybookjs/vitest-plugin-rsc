@@ -24,6 +24,56 @@ test("responds to a document request with HTML", async () => {
   expect(body).toContain("<h1>Inbox triage</h1>");
 });
 
+test("keeps the not-found page of a path that is no route out of a search index", async () => {
+  const response = await handleRequest("/nope");
+
+  expect(response.status).toBe(404);
+  // Next renders the tag for a response that is a 404 when the render starts.
+  expect(await response.text()).toContain('<meta name="robots" content="noindex"/>');
+  expect(await (await handleRequest("/notes")).text()).not.toContain("noindex");
+});
+
+test("answers a Server Action for a path that is no route as Next does", async () => {
+  const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+  const call = (id: string) =>
+    handleRequest("/nope", { method: "POST", headers: { "next-action": id }, body: "[]" });
+
+  // Not with the not-found page. An id that cannot be one is a bad request.
+  const invalid = await call("123");
+
+  expect(invalid.status).toBe(400);
+  expect(invalid.headers.get("x-nextjs-action-not-found")).toBe("1");
+  expect(await invalid.text()).toBe("Invalid Server Action request.");
+
+  // An id that could be one, of Next's build or of Vite RSC, is an action
+  // that another deployment may have.
+  const unknown = await call("00".repeat(21));
+
+  expect(unknown.status).toBe(409);
+  expect(await unknown.text()).toBe("Server Action unavailable.");
+  expect((await call("/app/lib/actions.ts#gone")).status).toBe(409);
+  expect(warn).toHaveBeenCalledTimes(3);
+  warn.mockRestore();
+});
+
+test("answers a Server Action with an id that cannot be one with a 400", async () => {
+  const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+
+  // Not 42 characters, as an id of Next's build, and not `<module>#<export>`.
+  const response = await handleRequest("/notes", {
+    method: "POST",
+    headers: { "next-action": "toString" },
+    body: "[]",
+  });
+
+  expect(response.status).toBe(400);
+  expect(await response.text()).toBe("Invalid Server Action request.");
+  expect(String(warn.mock.calls[0]?.[0])).toContain(
+    'The Server Reference ID did not match the expected format. Received "toString".',
+  );
+  warn.mockRestore();
+});
+
 test("answers a Server Action that the app does not have the way Next does", async () => {
   // Next warns that it does not know the action.
   const warn = vi.spyOn(console, "warn").mockImplementation(() => {});

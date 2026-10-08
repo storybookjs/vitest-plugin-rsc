@@ -66,14 +66,15 @@ const setupFile = fileURLToPath(
 );
 
 // Next's server reference ids are 42 hex characters whose first byte says
-// which arguments the function uses. Vite RSC's are `<module>#<export>`. The
-// rest of the module stays as it is.
+// which arguments the function uses. Vite RSC's are `<module>#<export>`. An
+// id here can be either: Next answers 400 for one that can be neither, and
+// 409 for one that it does not have. The rest of the module stays as it is.
 const serverReferenceInfoShim = `
 import * as original from ${JSON.stringify(serverReferenceInfo)};
 export * from ${JSON.stringify(serverReferenceInfo)};
 const isNextId = (id) => id.length === original.SERVER_REFERENCE_ID_LENGTH && /^[0-9a-f]+$/i.test(id);
 export function mightBeServerReferenceId(id) {
-  return typeof id === "string" && id.length > 0;
+  return typeof id === "string" && (original.mightBeServerReferenceId(id) || id.includes("#"));
 }
 export function extractInfoFromServerReferenceId(id) {
   return isNextId(id)
