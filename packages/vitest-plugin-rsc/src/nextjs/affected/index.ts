@@ -24,7 +24,9 @@ import { watchMode } from "./watch.ts";
 //   - remove this directory;
 //   - in ../plugin.ts, remove `affectedTests()` from the plugins, and the
 //     option of that name;
-//   - in ../rsc.ts, remove the calls of `reportLoaded()`;
+//   - in ../rsc.ts, remove the calls of `registry.reportLoaded()`, and that
+//     property in ../registry.ts;
+//   - in tsdown.config.ts, remove the entry of browser.ts;
 //   - in docs/next-routes.md, remove "Watch Mode", and in the README the two
 //     entries that point to it;
 //   - remove `affectedTests: true` from the configs of the playgrounds.
@@ -45,6 +47,8 @@ export type AffectedTestsOptions = {
   modulesOf(kind: "page" | "route", entry: string): string[];
   /** The project of Next. */
   next(): { root: string; appDir: string };
+  /** The file of browser.ts, which is a setup file of Vitest. */
+  setupFile: string;
 };
 
 type Part = {
@@ -61,8 +65,16 @@ export function affectedTests(options: AffectedTestsOptions): Plugin {
     enforce: "pre",
     config(config) {
       const test = ((
-        config as { test?: { browser?: { commands?: Record<string, unknown> } } }
+        config as {
+          test?: {
+            setupFiles?: string | string[];
+            browser?: { commands?: Record<string, unknown> };
+          };
+        }
       ).test ??= {});
+      // The browser's side. Not an import of a layer: that would have every
+      // host of the plugin import Vitest.
+      test.setupFiles = [options.setupFile, ...[test.setupFiles ?? []].flat()];
       // Here, and not later: Vitest lists the commands for the browser when the
       // project starts.
       ((test.browser ??= {}).commands ??= {})[loadedCommand] = (

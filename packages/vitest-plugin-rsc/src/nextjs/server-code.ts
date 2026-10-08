@@ -64,6 +64,29 @@ export type ServerCodeOptions = {
    * @example ["test/**", "**\/node_modules/@testing-library/**"]
    */
   browserModules?: string | RegExp | (string | RegExp)[];
+  /**
+   * What the app runs in, when that is not Vitest. Vitest's config says which
+   * files are its test files and setup files, and its packages are known.
+   * Another host, like Storybook, says here what is its own. Like a test file,
+   * that is not server code: it keeps the browser's `typeof window` and `fetch`,
+   * and Next's compiler does not run on it.
+   */
+  host?: {
+    /**
+     * The files of the host, like its stories: glob patterns, relative to the
+     * project root. What a test file is to Vitest.
+     */
+    files?: string | RegExp | (string | RegExp)[];
+    /**
+     * The packages of the host, by name. A name that ends in `/*` is every
+     * package of that scope the project has. What they depend on is the
+     * host's too, but for this plugin and Vite RSC, which a framework of the
+     * host can depend on.
+     *
+     * @example ["storybook", "@storybook/addon-docs"]
+     */
+    packages?: string[];
+  };
 };
 
 // The files of this package, in `src` or in `dist`. Its own runtime knows
@@ -85,10 +108,16 @@ function findPackage(name: string, from: string): string | undefined {
   }
 }
 
+// What a host can depend on that is never the host's: this plugin, and what
+// it is built on. A framework of a host, like Storybook's, brings the plugin,
+// and Vite RSC's Flight server is server code.
+const ownPackages = new Set(["vitest-plugin-rsc", "@vitejs/plugin-rsc"]);
+
 // The directories of these packages and of everything they depend on.
 function findPackagesWithDependencies(names: Iterable<string>, root: string): Set<string> {
   const dirs = new Set<string>();
   const visit = (name: string, from: string) => {
+    if (ownPackages.has(name)) return;
     const dir = findPackage(name, from);
     if (!dir || dirs.has(normalizePath(dir))) return;
     dirs.add(normalizePath(dir));
@@ -102,12 +131,19 @@ function findPackagesWithDependencies(names: Iterable<string>, root: string): Se
 }
 
 // Vitest, Vite, and the packages of Vitest's scope that the project has: its
-// browser mode, the provider that drives the browser, coverage.
-function* testRunnerPackageNames(root: string): Generator<string> {
-  yield* ["vitest", "vite"];
-  for (const nodeModules of nodeModulesOf(root)) {
-    const scope = path.join(nodeModules, "@vitest");
-    if (fs.existsSync(scope)) for (const name of fs.readdirSync(scope)) yield `@vitest/${name}`;
+// browser mode, the provider that drives the browser, coverage. And the
+// packages of another host: see `ServerCodeOptions.host`.
+function* hostPackageNames(root: string, packages: string[]): Generator<string> {
+  for (const name of ["vitest", "vite", "@vitest/*", ...packages]) {
+    if (!name.endsWith("/*")) {
+      yield name;
+      continue;
+    }
+    const scope = name.slice(0, -"/*".length);
+    for (const nodeModules of nodeModulesOf(root)) {
+      const dir = path.join(nodeModules, scope);
+      if (fs.existsSync(dir)) for (const child of fs.readdirSync(dir)) yield `${scope}/${child}`;
+    }
   }
 }
 
@@ -120,8 +156,11 @@ const name = "vitest-plugin-rsc:next-server-code";
 
 export function createServerCode(registry: string, options: ServerCodeOptions = {}) {
   const patterns = [options.browserModules ?? []].flat();
+  const hostFiles = [options.host?.files ?? []].flat();
+  const hostPackages = options.host?.packages ?? [];
   let isBrowserModule: (file: string) => boolean = () => false;
-  // One for every Vitest project this plugin is in.
+  // One for every Vitest project this plugin is in, and one for the files of
+  // another host.
   const testFileMatchers: ((file: string) => boolean)[] = [];
   let testRunnerPackages = new Set<string>();
 
@@ -153,15 +192,24 @@ export function createServerCode(registry: string, options: ServerCodeOptions = 
       return testFileMatchers.length > 0 && isServerCode(file, layer);
     },
     /** For the `define` of the optimizer, which Vite keys its cache on. */
-    cacheKey: { __vitest_plugin_rsc_browser_modules__: JSON.stringify(patterns.map(String)) },
+    cacheKey: {
+      __vitest_plugin_rsc_browser_modules__: JSON.stringify([
+        patterns.map(String),
+        hostFiles.map(String),
+        hostPackages,
+      ]),
+    },
     /** For a module this plugin generates, with the constants of its layer. */
     compile: async (code: string, id: string, define: Record<string, string>) =>
       (await compileServerCode(code, id, registry, define))?.code ?? code,
     /** Call once the root of the project is known. */
     configure(root: string): void {
       if (patterns.length > 0) isBrowserModule = createFilter(patterns, null, { resolve: root });
+      if (hostFiles.length > 0) {
+        testFileMatchers.push(createFilter(hostFiles, null, { resolve: root }));
+      }
       // Vitest pre-bundles its own runtime in the environment of the rsc layer.
-      testRunnerPackages = findPackagesWithDependencies(testRunnerPackageNames(root), root);
+      testRunnerPackages = findPackagesWithDependencies(hostPackageNames(root, hostPackages), root);
     },
     /** Call with what a Vitest config says is a test file or a setup file. */
     addTestFiles(matches: (file: string) => boolean): void {
@@ -203,8 +251,9 @@ export function createServerCode(registry: string, options: ServerCodeOptions = 
           if (file.includes("/node_modules/")) return;
           if (file.startsWith(`${normalizePath(this.environment.config.cacheDir)}/`)) return;
           const layer = environments[this.environment.name]!;
-          // Without Vitest's config there is no telling a test file from a
-          // file of the app, and a test file must keep the browser.
+          // Without Vitest's config, or the files of another host, there is
+          // no telling a test file from a file of the app, and a test file
+          // must keep the browser.
           if (layer === "rsc" && testFileMatchers.length === 0) return;
           if (!isServerCode(file, layer)) return;
           return compileServerCode(code, file, registry);

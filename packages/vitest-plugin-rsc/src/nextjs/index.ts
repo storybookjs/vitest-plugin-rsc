@@ -54,11 +54,25 @@ function browserHeaders(headers: Headers, url: URL, method: string): Headers {
 const setTimeout = globalThis.setTimeout;
 const clearTimeout = globalThis.clearTimeout;
 
-// What was in the browser's storage before the app ran, which is the test
-// runner's to keep.
-const storages = [localStorage, sessionStorage].map(
-  (storage) => [storage, new Set(Object.keys(storage))] as const,
-);
+// What a test leaves behind is the app's to forget: a test runs as a new
+// browser context. Another host runs the app next to state of its own, on the
+// same origin, like the manager of Storybook. There only what a page of the
+// app added is the app's.
+const isVitest = "__vitest_worker__" in globalThis;
+
+// What was in the browser's storage before the app ran, and what another
+// document of the origin stores in it, like Vitest's UI or Storybook's
+// manager: the host's to keep.
+const storages = [localStorage, sessionStorage].map((storage) => ({
+  storage,
+  kept: new Set(Object.keys(storage)),
+  /** What was added while a page of the app was open. */
+  added: new Set<string>(),
+}));
+window.addEventListener("storage", ({ key, storageArea }) => {
+  const changed = storages.find(({ storage }) => storage === storageArea);
+  if (changed && key !== null) changed.kept.add(key);
+});
 
 // What Vitest's UI stores on this origin as its settings change, also
 // while the tests run: its panels, and its dark mode through VueUse.
@@ -66,16 +80,46 @@ const isVitestKey = (key: string) => key.startsWith("vitest-") || key === "vueus
 
 // The cookies the server has set, to forget them when the test ends.
 const cookiesToClear = new Set<string>();
+const cookieNames = () =>
+  document.cookie.split(";").flatMap((cookie) => cookie.split("=")[0]!.trim() || []);
+
+// What the browser had when a page of the app opened, to tell what it added
+// once the page is left.
+let atOpen: { cookies: Set<string>; keys: Set<string>[] } | undefined;
+
+function openedPage(): void {
+  atOpen ??= {
+    cookies: new Set(cookieNames()),
+    keys: storages.map(({ storage }) => new Set(Object.keys(storage))),
+  };
+}
+
+function leftPage(): void {
+  if (!atOpen) return;
+  const { cookies, keys } = atOpen;
+  atOpen = undefined;
+  for (const name of cookieNames()) if (!cookies.has(name)) cookiesToClear.add(`${name}=; path=/`);
+  storages.forEach(({ storage, added }, index) => {
+    for (const key of Object.keys(storage)) if (!keys[index]!.has(key)) added.add(key);
+  });
+}
 
 function clearCookies(): void {
-  for (const cookie of document.cookie.split(";")) {
-    const name = cookie.split("=")[0]!.trim();
-    if (name) cookiesToClear.add(`${name}=; path=/`);
+  if (isVitest) {
+    for (const name of cookieNames()) cookiesToClear.add(`${name}=; path=/`);
   }
   for (const cookie of cookiesToClear) {
     document.cookie = `${cookie}; expires=Thu, 01 Jan 1970 00:00:00 GMT`;
   }
   cookiesToClear.clear();
+}
+
+function clearStorage(): void {
+  for (const { storage, kept, added } of storages) {
+    const keys = isVitest ? Object.keys(storage) : [...added];
+    for (const key of keys) if (!kept.has(key) && !isVitestKey(key)) storage.removeItem(key);
+    added.clear();
+  }
 }
 
 // A page of another origin is not the app's: a browser would leave the app for
@@ -493,6 +537,7 @@ async function loadPage(url: URL, init: RequestInit, opening?: Opening): Promise
   const load = (currentLoad = new AbortController());
   await leaving;
   load.signal.throwIfAborted();
+  openedPage();
 
   // Once the node that was in it is gone.
   if (opening?.container?.hasChildNodes()) {
@@ -644,6 +689,7 @@ function leavePage(): Promise<void> {
           // and a pathname without the proxy.
           registry.opened = undefined;
           resetAsyncLocalStorage();
+          leftPage();
         }
       }
     });
@@ -656,6 +702,10 @@ function leavePage(): Promise<void> {
  * and forgets the browser's cookies and what the app put in its storage, like a
  * new browser context. The server forgets what it has cached. Runs before and
  * after every test.
+ *
+ * Outside Vitest it forgets only what the app added: the cookies its server
+ * set, and the cookies and the keys of the storage that were added while a
+ * page of the app was open. The rest is the host's, like Storybook's.
  */
 export async function cleanup(): Promise<void> {
   await leavePage();
@@ -663,11 +713,7 @@ export async function cleanup(): Promise<void> {
   containers.clear();
   ssr.resetCaches();
   clearCookies();
-  for (const [storage, keys] of storages) {
-    for (const key of Object.keys(storage)) {
-      if (!keys.has(key) && !isVitestKey(key)) storage.removeItem(key);
-    }
-  }
+  clearStorage();
 }
 
 // The app can leave its page without its router: `location.assign()`, a

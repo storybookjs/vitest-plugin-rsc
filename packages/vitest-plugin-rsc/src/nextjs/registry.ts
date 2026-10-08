@@ -88,6 +88,12 @@ export type NextRegistry = {
   ssr: { AppPageRouteModule: new (options: unknown) => unknown };
   /** For Next's Node.js server: what stands in for the files of a build. */
   node: Record<string, AnyFunction>;
+  /**
+   * Told what the server loads without an import of the test: a page or a
+   * route handler, by its entry, or the module of a Server Action. Only there
+   * with the `affectedTests` option: see affected/browser.ts.
+   */
+  reportLoaded?(kind: "page" | "route" | "action", id: string): void;
 };
 
 const scope = globalThis as { __vitest_plugin_rsc_next__?: Partial<NextRegistry> };

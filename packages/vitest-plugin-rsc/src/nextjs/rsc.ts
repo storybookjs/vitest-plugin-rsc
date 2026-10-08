@@ -7,7 +7,6 @@ import loadMiddleware from "virtual:vitest-plugin-rsc/next-middleware";
 import routeHandlers from "virtual:vitest-plugin-rsc/next-route-handlers";
 import type { FlightAdapters } from "./flight.ts";
 import { actionModulePrefix, registry } from "./registry.ts";
-import { reportLoaded } from "./affected/browser.ts";
 
 // The rsc layer: Server Components, Server Actions, route handlers and the
 // Flight encoder.
@@ -82,7 +81,7 @@ registry.flightClient = {
 registry.loadAppPage = async (page) => {
   const load = (appPages as Record<string, () => Promise<unknown>>)[page];
   if (!load) throw new Error(`vitest-plugin-rsc: unknown Next.js app page ${page}`);
-  reportLoaded("page", page);
+  registry.reportLoaded?.("page", page);
   return (registry.appPages[page] ??= await load());
 };
 
@@ -100,7 +99,7 @@ export async function loadComponent(): Promise<{ default: () => unknown }> {
 registry.loadRouteHandler = async (page) => {
   const load = routeHandlers[page];
   if (!load) throw new Error(`vitest-plugin-rsc: unknown Next.js route handler ${page}`);
-  reportLoaded("route", page);
+  registry.reportLoaded?.("route", page);
   return (await load()).handler;
 };
 
@@ -126,7 +125,7 @@ const modules = new Map<string, Promise<unknown>>();
 export function requireModule(id: string): Promise<unknown> {
   if (id.startsWith(actionModulePrefix)) {
     const [module] = id.slice(actionModulePrefix.length).split("#");
-    reportLoaded("action", module!);
+    registry.reportLoaded?.("action", module!);
   }
   let loading = modules.get(id);
   if (!loading) modules.set(id, (loading = loadModule(id)));

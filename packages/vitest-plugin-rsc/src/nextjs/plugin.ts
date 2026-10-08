@@ -59,6 +59,9 @@ const vendoredFlight = (entry: string) => `@vitejs/plugin-rsc/vendor/react-serve
 const setupFile = fileURLToPath(
   new URL(`./setup${path.extname(import.meta.url)}`, import.meta.url),
 );
+const affectedSetupFile = fileURLToPath(
+  new URL(`./affected/browser${path.extname(import.meta.url)}`, import.meta.url),
+);
 
 // Next's server reference ids are 42 hex characters whose first byte says
 // which arguments the function uses. Vite RSC's are `<module>#<export>`. An
@@ -456,6 +459,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
                   : [],
               ),
             next: getProject,
+            setupFile: affectedSetupFile,
           }),
         ]
       : []),

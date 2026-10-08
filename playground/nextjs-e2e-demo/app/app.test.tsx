@@ -246,6 +246,17 @@ test("sends the cookies the test sets before it opens a page", async () => {
   await expect.element(page.getByText("Last created: 7")).toBeVisible();
 });
 
+test("starts every test without what the test before stored itself", async () => {
+  // The test above set a cookie before it opened a page: a test runs as a
+  // new browser context, also for what it does itself.
+  expect(document.cookie).toBe("");
+  localStorage.setItem("stored-by-the-test", "1");
+
+  await cleanup();
+
+  expect(localStorage.getItem("stored-by-the-test")).toBeNull();
+});
+
 test("keeps the CSS of a page whose module loaded while another page was there", async () => {
   await renderServer({ url: "/" });
 
