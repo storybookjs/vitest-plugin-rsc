@@ -396,6 +396,13 @@ test.for([
     "has no `document.currentScript`",
   ],
   [
+    "client/components/app-router-instance",
+    "export const publicAppRouterInstance =",
+    "export const appRouterInstance =",
+    "has no export `publicAppRouterInstance`",
+  ],
+  ["client/app-index", "onUncaughtError", "reportUncaught", "has no `onUncaughtError`"],
+  [
     "shared/lib/server-reference-info",
     "function mightBeServerReferenceId(",
     "function isServerReferenceId(",

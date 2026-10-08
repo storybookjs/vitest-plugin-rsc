@@ -439,6 +439,7 @@ const runtimeImports: Record<NextLayer, string[]> = {
     "next/dist/client/app-bootstrap",
     "next/dist/client/app-call-server",
     "next/dist/client/app-index",
+    "next/dist/client/components/app-router-instance",
     vendoredFlight("client.browser"),
   ],
 };

@@ -24,6 +24,7 @@ Pick one piece of the app — a wishlist carousel, a notes form, a settings pane
 - [Next.js](#nextjs)
   - [Set Up](#set-up)
   - [Render A Component](#render-a-component)
+  - [Render It Again](#render-it-again)
   - [A Test File With `"use client"`](#a-test-file-with-use-client)
   - [Example: Server Action Form](#example-server-action-form)
   - [Router Hooks And Links](#router-hooks-and-links)
@@ -200,6 +201,28 @@ test("renders a node in the layouts of a route, behind the proxy", async () => {
   await expect.element(page.getByRole("main")).toHaveTextContent("Team: core");
 });
 ```
+
+### Render It Again
+
+`rerender()` renders another node in place of the node, like Testing Library's `rerender`, and without a page load. The server renders it in one request of Next's router, as `router.refresh()` does, and React updates the page in place. So the state of the Client Components in it stays:
+
+```tsx
+import { Greeting } from "./components/greeting.tsx";
+
+test("keeps the count of the counter when the name changes", async () => {
+  const { rerender } = await renderServer(<Greeting name="Ada" />);
+  await page.getByRole("button", { name: "Count: 0" }).click();
+
+  await rerender(<Greeting name="Grace" />);
+
+  await expect.element(page.getByRole("heading", { name: "Hello Grace" })).toBeVisible();
+  await expect.element(page.getByRole("button", { name: "Count: 1" })).toBeVisible();
+});
+```
+
+It resolves once the page shows the new node. The rest stays as `renderServer()` got it: the `url`, the `wrapper`, `proxy`, `layouts` and the `headers`, which every request of Next's router for the node sends, also a `router.refresh()` of the app. For another URL or other headers, call `renderServer()` again: that is a new request. In a test file with `"use client"` the node renders again in the browser, without a request.
+
+A node that throws while it renders again resolves with an error page in its place, as a page shows it. From there `rerender()` rejects: the page no longer has the node. So it does after `unmount()`, after a navigation that loaded another page, and when a not-found page or another route took the node's place. A page that `renderServer({ url })` opened has no node to replace, and no `rerender()`.
 
 ### A Test File With `"use client"`
 
@@ -911,7 +934,7 @@ The options for a node, all optional:
 | `container`   | An empty element for the node. Defaults to a new `<div>` in `baseElement`, which `cleanup` removes. |
 | `baseElement` | Defaults to `container` if you pass one, else `document.body`.                                      |
 
-A node resolves with `{ container, baseElement, asFragment, unmount, response }`.
+A node resolves with `{ container, baseElement, asFragment, rerender, unmount, response }`. `rerender(<Node />)` renders it again in place, without a page load: see [Render It Again](#render-it-again).
 
 ## React Server Components Without Next.js
 

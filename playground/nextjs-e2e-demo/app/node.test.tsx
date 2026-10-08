@@ -13,6 +13,7 @@ import type { ReactNode } from "react";
 import { ClientFrame } from "./components/client-frame.tsx";
 import { Counter } from "./components/counter.tsx";
 import { FavoriteButton } from "./components/favorite-button.tsx";
+import { RefreshButton } from "./components/refresh-button.tsx";
 import { RouterState } from "./components/router-state.tsx";
 import { Widget } from "./components/widget.tsx";
 import { db } from "./lib/notes.ts";
@@ -504,6 +505,171 @@ test("leaves the node when a Client Component makes a React root of its own", as
   expect(widgetUnmount).toHaveBeenCalledOnce();
 });
 
+// How many times the server has rendered it.
+let greetings = 0;
+
+async function Greeting({ name }: { name: string }) {
+  greetings++;
+  return (
+    <section aria-label="Greeting">
+      <h2>Hello {name}</h2>
+      <Counter />
+    </section>
+  );
+}
+
+// What the page has asked the app for: the pathname, and whether it was a
+// request of Next's router.
+function requestsOf(fetch: MockInstance<typeof window.fetch>) {
+  return fetch.mock.calls.map(([input, init]) => {
+    const request = input instanceof Request ? input : undefined;
+    const url = new URL(request?.url ?? String(input), window.location.href);
+    const headers = new Headers(init?.headers ?? request?.headers);
+    return { pathname: url.pathname, router: headers.has("rsc") };
+  });
+}
+
+test("renders a node again with rerender(), in one request of the router and without a page load", async () => {
+  greetings = 0;
+  const { container, rerender } = await renderServer(<Greeting name="Ada" />);
+  await page.getByRole("button", { name: "Count: 0" }).click();
+  await expect.element(page.getByRole("button", { name: "Count: 1" })).toBeVisible();
+  const button = container.querySelector("button");
+  const fetch = vi.spyOn(window, "fetch");
+
+  await rerender(<Greeting name="Grace" />);
+
+  // The page has the new node once rerender() resolves.
+  expect(container.querySelector("h2")?.textContent).toBe("Hello Grace");
+  // The same element, with the state of its Client Component.
+  expect(container.querySelector("button")).toBe(button);
+  expect(button?.textContent).toBe("Count: 1");
+  expect(requestsOf(fetch)).toEqual([{ pathname: "/", router: true }]);
+  // Once for the document, once for the rerender.
+  expect(greetings).toBe(2);
+});
+
+test("renders a node again with the wrapper and the headers it was rendered with", async () => {
+  greetings = 0;
+  const { rerender } = await renderServer(
+    <>
+      <Greeting name="Ada" />
+      <RefreshButton />
+    </>,
+    { url: "/notes/7", wrapper: Tenant, headers: { "x-tenant": "acme" } },
+  );
+  await page.getByRole("button", { name: "Count: 0" }).click();
+
+  await rerender(
+    <>
+      <Greeting name="Grace" />
+      <RefreshButton />
+    </>,
+  );
+
+  const tenant = page.getByRole("region", { name: "Tenant acme" });
+  await expect.element(tenant.getByRole("heading", { name: "Hello Grace" })).toBeVisible();
+  await expect.element(tenant.getByRole("button", { name: "Count: 1" })).toBeVisible();
+  expect(window.location.pathname).toBe("/notes/7");
+  // And so does a refresh of the app's own.
+  await tenant.getByRole("button", { name: "Refresh" }).click();
+  await expect.poll(() => greetings).toBe(3);
+  await expect.element(tenant.getByRole("heading", { name: "Hello Grace" })).toBeVisible();
+});
+
+test("renders a node in the layouts of a route again", async () => {
+  const { rerender } = await renderServer(<Greeting name="Ada" />, {
+    url: "/notes",
+    layouts: true,
+  });
+  await page.getByRole("button", { name: "Count: 0" }).click();
+
+  await rerender(<Greeting name="Grace" />);
+
+  const main = page.getByRole("main");
+  expect(main.getByRole("heading", { name: "Hello Grace" }).query()).not.toBeNull();
+  expect(main.getByRole("button", { name: "Count: 1" }).query()).not.toBeNull();
+  await expect.element(page.getByRole("navigation", { name: "Main" })).toBeVisible();
+  // Still the node, and not the page of the route.
+  await expect.element(page.getByRole("heading", { name: "Notes" })).not.toBeInTheDocument();
+});
+
+const hydrated = (element: Element | null) =>
+  Object.keys(element ?? {}).some((key) => key.startsWith("__reactFiber$"));
+
+test("renders a node again while its route still hydrates, and the last of two rerenders", async () => {
+  // `/notes/7` has a `loading.tsx`, whose boundary hydrates after the page.
+  const { rerender } = await renderServer(<Greeting name="Ada" />, {
+    url: "/notes/7",
+    layouts: true,
+  });
+  expect(hydrated(document.querySelector("main h2")), "the node has hydrated").toBe(false);
+
+  await Promise.all([rerender(<Greeting name="Grace" />), rerender(<Greeting name="Linus" />)]);
+
+  const main = page.getByRole("main");
+  expect(main.getByRole("heading", { name: "Hello Linus" }).query()).not.toBeNull();
+  await main.getByRole("button", { name: "Count: 0" }).click();
+  await expect.element(main.getByRole("button", { name: "Count: 1" })).toBeVisible();
+});
+
+test("does not render a node again once it has navigated to another page, or was left", async () => {
+  const left = "renders the node again on its page, which was left";
+  const first = await renderServer(<Link href="/notes">All notes</Link>, { url: "/notes/7" });
+  await page.getByRole("link", { name: "All notes" }).click();
+  await expect.element(page.getByRole("heading", { name: "Notes" })).toBeVisible();
+
+  await expect(first.rerender(<p>Again</p>)).rejects.toThrow(left);
+
+  const second = await renderServer(<p>Second</p>);
+  await second.unmount();
+  await expect(second.rerender(<p>Again</p>)).rejects.toThrow(left);
+
+  const third = await renderServer(<p>Third</p>);
+  const rendering = third.rerender(<p>Again</p>);
+  await cleanup();
+  await expect(rendering).rejects.toThrow("The page was left before the node had rendered again");
+});
+
+test("does not render a node in the layouts of a route again once the app shows another page", async () => {
+  const { rerender } = await renderServer(<Greeting name="Ada" />, {
+    url: "/notes",
+    layouts: true,
+  });
+
+  // A page of the app with the same root layout, which Next's router renders
+  // on the client.
+  await page.getByRole("link", { name: "Notice" }).click();
+  await expect.element(page.getByText("The office is closed on Friday.")).toBeVisible();
+
+  await expect(rerender(<Greeting name="Grace" />)).rejects.toThrow(
+    "the page has something else there",
+  );
+  // A node of the browser layer for one of the server is another node.
+  await expect(
+    rerender(clientNode("/app/components/press-button.tsx", "PressButton", {})),
+  ).rejects.toThrow("rerender() takes a node of the server");
+});
+
+test("shows the error of a node that throws when it renders again, and renders it no more", async () => {
+  // Next logs the error on the server, and reports it as uncaught: Next's
+  // own global error page is the one boundary of a node.
+  consoleError.mockImplementation(() => {});
+  const reportError = vi.spyOn(window, "reportError").mockImplementation(() => {});
+  const { rerender } = await renderServer(<Greeting name="Ada" />);
+
+  await rerender(<Broken />);
+
+  await expect
+    .element(page.getByRole("heading", { name: "This page couldn’t load" }))
+    .toBeVisible();
+  expect(reportError).toHaveBeenCalledWith(expect.objectContaining({ message: "Broken node" }));
+  await expect(rerender(<Greeting name="Grace" />)).rejects.toThrow(
+    "the page has something else there: an error or a not-found page",
+  );
+  consoleError.mockClear();
+});
+
 // What a host like Storybook renders for a story with `"use client"`: an
 // export of a module of the browser layer, with the props as they are. This
 // file is of the server, and cannot make such a node itself.
@@ -527,4 +693,28 @@ test("renders an export of a module of the browser layer, with a function as a p
   await page.getByRole("region", { name: "Tenant acme" }).getByRole("button").click();
   expect(onPress).toHaveBeenCalledOnce();
   expect(window.location.pathname).toBe("/notes/7");
+});
+
+test("renders a node of the browser layer again in the browser, without a request", async () => {
+  const press = (props: Record<string, unknown>) =>
+    clientNode("/app/components/press-button.tsx", "PressButton", props);
+  const { container, rerender } = await renderServer(
+    press({ onPress: vi.fn(), children: "Press" }),
+    { wrapper: Tenant, headers: { "x-tenant": "acme" } },
+  );
+  const button = container.querySelector("button");
+  const fetch = vi.spyOn(window, "fetch");
+  const onPress = vi.fn();
+
+  await rerender(press({ onPress, children: "Press again" }));
+
+  expect(container.querySelector("button")).toBe(button);
+  expect(button?.textContent).toBe("Press again");
+  await page.getByRole("region", { name: "Tenant acme" }).getByRole("button").click();
+  expect(onPress).toHaveBeenCalledOnce();
+  expect(fetch).not.toHaveBeenCalled();
+  // A node of the server for one of the browser layer is another node.
+  await expect(rerender(<p>Server</p>)).rejects.toThrow(
+    "rerender() takes a node of the browser layer",
+  );
 });

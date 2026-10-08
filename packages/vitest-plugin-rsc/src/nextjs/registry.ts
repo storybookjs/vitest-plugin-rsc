@@ -35,12 +35,33 @@ export type MiddlewareHandler = (
 
 type AnyFunction = (...args: any[]) => any;
 
+/** See `NextRegistry.nodeReporter`. */
+export type NodeReporter = {
+  shown(shown: boolean): void;
+  rendered(version: number): void;
+};
+
 /** See `NextRegistry.opened`. */
 export type Opened = {
   pathname: string;
   /** Whether the server in front of the app takes the request: proxy.ts and `next.config`. */
   proxy: boolean;
-  node?: { ui: unknown; layouts: boolean };
+  /**
+   * For a node: the headers the test gave its request, which the requests
+   * of Next's router that render the node again send too.
+   */
+  headers?: Headers;
+  node?: {
+    ui: unknown;
+    layouts: boolean;
+    /**
+     * For a node of the server: which render of it the server sends, which
+     * `rerender()` counts up. The page says when it has committed it: see
+     * `NodeRendered` in client-node.tsx. A node of the browser layer renders
+     * again in the browser, and has none.
+     */
+    version?: number;
+  };
 };
 
 /**
@@ -106,6 +127,13 @@ export type NextRegistry = {
   /** The node of the browser layer that the page has, and who to tell when it changes. */
   clientNode: ClientNode | undefined;
   clientNodeListeners: Set<() => void>;
+  /**
+   * Who to tell what the page that is open does with the node of the test,
+   * for `rerender()`: that the node is on the page or has left it, and which
+   * render of a node of the server it has committed. A page asks once, so
+   * that a page that was left tells nobody.
+   */
+  nodeReporter?(): NodeReporter | undefined;
   /**
    * Where an export of a test file or a story file with `"use client"` is
    * from: the module the browser layer imports it by, and its name.
