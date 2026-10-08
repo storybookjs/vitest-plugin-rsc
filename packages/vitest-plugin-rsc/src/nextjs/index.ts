@@ -60,6 +60,10 @@ const storages = [localStorage, sessionStorage].map(
   (storage) => [storage, new Set(Object.keys(storage))] as const,
 );
 
+// What Vitest's UI stores in the tab's origin as its settings change, also
+// while the tests run: its panels, and its dark mode through VueUse.
+const isVitestKey = (key: string) => key.startsWith("vitest-") || key === "vueuse-color-scheme";
+
 // The cookies the server has set, to forget them when the test ends.
 const cookiesToClear = new Set<string>();
 
@@ -684,7 +688,9 @@ export async function cleanup(): Promise<void> {
   ssr.resetCaches();
   clearCookies();
   for (const [storage, keys] of storages) {
-    for (const key of Object.keys(storage)) if (!keys.has(key)) storage.removeItem(key);
+    for (const key of Object.keys(storage)) {
+      if (!keys.has(key) && !isVitestKey(key)) storage.removeItem(key);
+    }
   }
 }
 
