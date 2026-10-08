@@ -1642,9 +1642,10 @@ export async function loadNextProject(
             component: `${componentRoot}${pathname}`,
           }),
         ),
-      // And one with the layouts of each page of the app.
+      // And one with the layouts of each page of the app. Not of a route
+      // that only has slots: there is no page for the node to stand in for.
       ...routes
-        .filter((route) => route.kind === "page" && routeFile(route))
+        .filter((route) => route.kind === "page" && routeFile(route) && !route.page.includes("/@"))
         .map(
           (route): ComponentRoute => ({
             kind: "page",

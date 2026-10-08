@@ -331,8 +331,8 @@ async function handle(request: ServerRequest, unrouted: "not-found" | "pass"): P
     const withLayouts = node?.layouts ? componentLayoutRoutes.get(matched?.page ?? "") : undefined;
     if (node?.layouts && !withLayouts) {
       throw new Error(
-        `vitest-plugin-rsc: \`layouts: true\` needs a \`url\` that is a page of the app, for ` +
-          `its layouts. ${url.pathname} is not one.`,
+        `vitest-plugin-rsc: \`layouts: true\` renders a node in place of the \`page\` file ` +
+          `of its \`url\`, and the app has none for ${url.pathname}.`,
       );
     }
     const component = node

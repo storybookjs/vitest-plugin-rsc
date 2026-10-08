@@ -204,7 +204,8 @@ children: ["__PAGE__", {}, { page: [__next_component__, "vitest-plugin-rsc/compo
 
 The rest of the tree is the app's: the layouts, `loading`, `error`, `not-found`, the slots of parallel routes, and the root segment. So the response is a whole document, with the `<html>` and `<body>` of the root layout, and it loads like a page, not in a container. Both trees have the app's root layout, so a navigation to a page of the app stays on the client.
 
-- The URL has to be a page of the app. A route handler or a path without a route is an error: there are no layouts to render in.
+- The app has to have a `page` file for the URL. A route handler, a path without a route and a route of slots only are an error: there is no page for the node to stand in for.
+- The page file is still a module of the entry, though nothing calls it. Its own exports, like `generateMetadata` and `revalidate`, are not used.
 - The route keeps the name of the app's page, so the params and `revalidatePath()` work as for that page.
 - The node owns its pathname while it is there, as a node without layouts does.
 

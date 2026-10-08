@@ -292,7 +292,7 @@ test("renders a node in place of a page, inside the layouts of the app", async (
 });
 ```
 
-The `url` has to be a page of your app. Your root layout renders the document, so `container` and `baseElement` cannot be passed, and the `container` in the result is the `<body>`. Layouts behave as in your app: one that redirects without a session redirects here too. A `wrapper` goes inside the layouts, around the node.
+The `url` has to be one your app has a `page` file for, and that file's own exports, like `generateMetadata`, are not used. Your root layout renders the document, so `container` and `baseElement` cannot be passed, and the `container` in the result is the `<body>`. Layouts behave as in your app: one that redirects without a session redirects here too. A `wrapper` goes inside the layouts, around the node.
 
 What to know, for a node without `layouts`:
 
