@@ -307,6 +307,103 @@ test("sends a cookie header instead of the browser's cookies", async () => {
   await expect.element(page.getByText("9", { exact: true })).toBeVisible();
 });
 
+test("sends the headers of a node with every request after it, like a Server Action", async () => {
+  db.notes.set("1", { id: "1", title: "Inbox triage", body: "" });
+  db.notes.set("2", { id: "2", title: "Plan the week", body: "" });
+  await renderServer(
+    <>
+      <RequestInfo />
+      <NotesPage />
+    </>,
+    { url: "/notes", headers: { "x-tenant": "acme", "x-client": "test" } },
+  );
+
+  // The action calls revalidatePath("/notes"): its request renders the node again.
+  await page.getByRole("button", { name: "Delete Inbox triage" }).click();
+  await expect.element(page.getByRole("link", { name: "Inbox triage" })).not.toBeInTheDocument();
+  await expect.element(page.getByText("acme")).toBeVisible();
+
+  // A `fetch` of the page, and a request of the test.
+  expect(await (await fetch("/api/notes/2")).json()).toMatchObject({ client: "test" });
+  expect(await (await handleRequest("/api/notes/2")).json()).toMatchObject({ client: "test" });
+  // A request keeps the header it sets itself.
+  const own = await fetch("/api/notes/2", { headers: { "x-client": "own" } });
+  expect(await own.json()).toMatchObject({ client: "own" });
+});
+
+test("sends the headers of a node with the page that the app loads from it", async () => {
+  db.notes.set("1", { id: "1", title: "Inbox triage", body: "" });
+  await renderServer(<Link href="/notes">All notes</Link>, {
+    url: "/notes/7",
+    headers: { "x-client": "test" },
+  });
+
+  // A page load, which the test did not open: see the test of it below.
+  await page.getByRole("link", { name: "All notes" }).click();
+  await expect.element(page.getByRole("navigation", { name: "Main" })).toBeVisible();
+
+  expect(await (await fetch("/api/notes/1")).json()).toMatchObject({ client: "test" });
+});
+
+test("runs a Server Action behind a forwarded host, with the origin of that host", async () => {
+  db.notes.set("1", { id: "1", title: "Inbox triage", body: "" });
+  // Next takes the host of a Server Action from `x-forwarded-host`, and wants
+  // the origin of the request to be that host.
+  await renderServer(<FavoriteButton id="1" favorite={false} />, {
+    headers: { "x-forwarded-host": "notes.example.com", origin: "https://notes.example.com" },
+  });
+
+  await page.getByRole("button", { name: "Favorite" }).click();
+  await expect.element(page.getByRole("button", { name: "Favorite", pressed: true })).toBeVisible();
+});
+
+test("sends the headers until the test opens something else, or ends", async () => {
+  db.notes.set("1", { id: "1", title: "Inbox triage", body: "" });
+  const { unmount } = await renderServer(<Counter />, { headers: { "x-client": "test" } });
+
+  // Like the cookies, they stay when the node is left.
+  await unmount();
+  expect(await (await fetch("/api/notes/1")).json()).toMatchObject({ client: "test" });
+
+  await renderServer(<Counter />);
+  expect(await (await fetch("/api/notes/1")).json()).toMatchObject({ client: null });
+
+  await renderServer(<Counter />, { headers: { "x-client": "test" } });
+  await cleanup();
+  expect(await (await fetch("/api/notes/1")).json()).toMatchObject({ client: null });
+});
+
+test("sends the headers of what the test asked to open, also when it did not open", async () => {
+  db.notes.set("1", { id: "1", title: "Inbox triage", body: "" });
+
+  // A route handler, which is no page.
+  await expect(
+    renderServer({ url: "/api/plain", headers: { "x-client": "test" } }),
+  ).rejects.toThrow("which is not a page to open");
+
+  expect(await (await fetch("/api/notes/1")).json()).toMatchObject({ client: "test" });
+});
+
+test("leaves a Server Action the content type of its own body", async () => {
+  db.notes.set("1", { id: "1", title: "Inbox triage", body: "" });
+  await renderServer(<FavoriteButton id="1" favorite={false} />, {
+    headers: { "content-type": "text/plain" },
+  });
+
+  await page.getByRole("button", { name: "Favorite" }).click();
+  await expect.element(page.getByRole("button", { name: "Favorite", pressed: true })).toBeVisible();
+});
+
+test("sends a cookie header with the document alone, and the browser's cookies after it", async () => {
+  await renderServer(<RequestInfo />, { headers: { cookie: "last-created=9" } });
+  await expect.element(page.getByText("9", { exact: true })).toBeVisible();
+
+  document.cookie = "last-created=7";
+  // `/api/notes/latest` redirects to the note of the `last-created` cookie.
+  const response = await handleRequest("/api/notes/latest", { redirect: "manual" });
+  expect(response.headers.get("location")).toBe("/notes/7");
+});
+
 async function Tenant({ children }: { children: ReactNode }) {
   const tenant = (await headers()).get("x-tenant");
   return <section aria-label={`Tenant ${tenant}`}>{children}</section>;

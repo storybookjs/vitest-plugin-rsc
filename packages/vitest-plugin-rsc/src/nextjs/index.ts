@@ -41,11 +41,20 @@ function sameOriginRequest(
   return { url, method, headers, marked: headers.has("rsc") || headers.has("next-action") };
 }
 
+// The `headers` of `renderServer()`, which go with every request the browser
+// sends to the app from then on: until the test opens something else, or ends.
+let pageHeaders: Headers | undefined;
+
 // What a browser adds to a request for the app's origin.
 function browserHeaders(headers: Headers, url: URL, method: string): Headers {
   headers.set("host", url.host);
+  pageHeaders?.forEach((value, name) => {
+    if (!headers.has(name)) headers.set(name, value);
+  });
   if (!headers.has("user-agent")) headers.set("user-agent", navigator.userAgent);
-  if (method !== "GET" && method !== "HEAD") headers.set("origin", url.origin);
+  if (method !== "GET" && method !== "HEAD" && !headers.has("origin")) {
+    headers.set("origin", url.origin);
+  }
   if (!headers.has("cookie") && document.cookie) headers.set("cookie", document.cookie);
   return headers;
 }
@@ -224,7 +233,8 @@ async function sendRequest(
  * of the app would. Use it to assert on a response itself: its status, its
  * headers, its HTML or Flight body.
  *
- * The request carries the browser's cookies, unless it has a `cookie` header.
+ * The request carries the browser's cookies, unless it has a `cookie` header,
+ * and the `headers` of what `renderServer()` opened, under its own.
  * One to the pathname of what `renderServer()` opened is that page's, as a
  * `fetch` of the page is: it gets the route of the node, and skips the proxy
  * if the page does.
@@ -283,7 +293,14 @@ let currentLoad: AbortController | undefined;
 type RequestOptions = {
   /** The URL to open. Defaults to `/`. */
   url?: string;
-  /** Headers for the request of the document, next to the ones a browser sends. */
+  /**
+   * Headers for the requests of the browser to the app, next to the ones a
+   * browser sends: the request of the document, and every one after it, like
+   * a Server Action, a `router.refresh()`, a navigation or a `fetch`. Until
+   * the test opens something else, or ends. A request keeps the headers it
+   * sets itself. A `cookie` and an `accept` header are for the document alone:
+   * after it the browser's cookies are sent, and what each request accepts.
+   */
   headers?: HeadersInit;
 };
 
@@ -308,7 +325,7 @@ export type RenderServerOptions = RequestOptions & {
 export type RenderServerResult = {
   /** The server's response to the request of the document. */
   response: Response;
-  /** Leaves the page. The cookies stay until the test ends. */
+  /** Leaves the page. The cookies and the `headers` stay until the test ends. */
   unmount(): Promise<void>;
 };
 
@@ -381,6 +398,11 @@ export async function renderServer(
   const options: RenderComponentOptions = (isOptions(first) ? first : second) ?? {};
   const url = new URL(options.url ?? "/", window.location.origin);
   const headers = new Headers(options.headers);
+  // The cookies of the requests after the document are the browser's, and
+  // each of them says itself what it accepts.
+  const sticky = new Headers(headers);
+  sticky.delete("cookie");
+  sticky.delete("accept");
   if (!headers.has("accept")) headers.set("accept", "text/html");
   const { pathname } = url;
   if (isOptions(first)) {
@@ -392,7 +414,10 @@ export async function renderServer(
       );
     }
     const opened = { pathname, proxy: first.proxy ?? true };
-    return { response: await loadPage(url, { headers }, { opened }), unmount: leavePage };
+    return {
+      response: await loadPage(url, { headers }, { opened, headers: sticky }),
+      unmount: leavePage,
+    };
   }
 
   const { wrapper, proxy = false } = options;
@@ -406,7 +431,7 @@ export async function renderServer(
       );
     }
     const opened = { pathname, proxy, node: { ui, layouts: true } };
-    const response = await loadPage(url, { headers }, { opened });
+    const response = await loadPage(url, { headers }, { opened, headers: sticky });
     return {
       response,
       get container() {
@@ -449,7 +474,7 @@ export async function renderServer(
   const response = await loadPage(
     url,
     { headers },
-    { container, opened: { pathname, proxy, node: { ui, layouts: false } } },
+    { container, opened: { pathname, proxy, node: { ui, layouts: false } }, headers: sticky },
   );
   return {
     response,
@@ -486,7 +511,7 @@ function isOptions(value: unknown): value is RenderServerOptions {
 
 // What a test opens: a page, or a node in a container. A page load that the
 // app makes itself, a navigation, has no `opening`.
-type Opening = { container?: Element; opened: Opened };
+type Opening = { container?: Element; opened: Opened; headers: Headers };
 
 async function loadPage(url: URL, init: RequestInit, opening?: Opening): Promise<Response> {
   const leaving = leavePage();
@@ -502,6 +527,8 @@ async function loadPage(url: URL, init: RequestInit, opening?: Opening): Promise
     );
   }
   const opened = (registry.opened = opening?.opened);
+  // A page the app loads itself keeps the headers of what the test opened.
+  if (opening) pageHeaders = opening.headers;
   try {
     return await openPage(url, init, load.signal, opening);
   } catch (error) {
@@ -654,14 +681,15 @@ function leavePage(): Promise<void> {
 
 /**
  * Leaves the page that `renderServer()` opened, removes the containers it made
- * and forgets the browser's cookies and what the app put in its storage, like a
- * new browser context. The server forgets what it has cached. Runs before and
+ * and forgets its `headers`, the browser's cookies and what the app put in its
+ * storage, like a new browser context. The server forgets what it has cached. Runs before and
  * after every test.
  */
 export async function cleanup(): Promise<void> {
   await leavePage();
   for (const container of containers) container.remove();
   containers.clear();
+  pageHeaders = undefined;
   ssr.resetCaches();
   clearCookies();
   for (const [storage, keys] of storages) {
