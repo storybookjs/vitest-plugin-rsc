@@ -1,4 +1,15 @@
-import { ESModulesEvaluator, ModuleRunner, type ModuleRunnerTransport } from "vite/module-runner";
+import {
+  ESModulesEvaluator,
+  ModuleRunner,
+  ssrDynamicImportKey,
+  ssrExportAllKey,
+  ssrExportNameKey,
+  ssrImportKey,
+  ssrImportMetaKey,
+  ssrModuleExportsKey,
+  type ModuleEvaluator,
+  type ModuleRunnerTransport,
+} from "vite/module-runner";
 import * as pageClient from "virtual:vitest-plugin-rsc/vite-client";
 
 // The page's own instance of Vite's client, for the modules that the runners
@@ -12,6 +23,7 @@ const reactClientWebSocketQuery = "vitest-plugin-rsc-react-client";
 const reactClientCoverageQuery = "vitest-plugin-rsc-react-client-coverage";
 const reactClientWebSocketInvokeEvent = "vitest-plugin-rsc:react-client:invoke";
 const reactClientWebSocketInvokeResultEvent = "vitest-plugin-rsc:react-client:invoke-result";
+const reactClientWebSocketVersionEvent = "vitest-plugin-rsc:react-client:version";
 const sourceUrlRE = /\/\/# sourceURL=[^\n\r]*/;
 
 type InvokePayload = Parameters<NonNullable<ModuleRunnerTransport["invoke"]>>[0];
@@ -23,7 +35,7 @@ type ViteFetchResult = {
 
 type WebSocketInfo = { token: string; path: string };
 type PendingInvoke = {
-  resolve: (result: InvokeResult) => void;
+  resolve: (result: unknown) => void;
   reject: (error: unknown) => void;
   timeoutId: ReturnType<typeof setTimeout>;
 };
@@ -32,7 +44,7 @@ type InvokeResultMessage = {
   event?: string;
   data?: {
     id?: string;
-    result?: InvokeResult;
+    result?: unknown;
   };
 };
 
@@ -53,8 +65,21 @@ const runners = new Map<string, ModuleRunner>();
 // browser tests. All of them share this websocket.
 function getRunner(environment: string): ModuleRunner {
   let runner = runners.get(environment);
-  if (!runner) runners.set(environment, (runner = createEnvironmentRunner(environment)));
+  if (!runner) {
+    const invoke = (payload: InvokePayload) => invokeEnvironment(environment, payload);
+    runners.set(environment, (runner = createRunner(invoke, new ESModulesEvaluator())));
+  }
   return runner;
+}
+
+function createRunner(
+  invoke: NonNullable<ModuleRunnerTransport["invoke"]>,
+  evaluator: ModuleEvaluator,
+): ModuleRunner {
+  return new ModuleRunner(
+    { sourcemapInterceptor: false, transport: { invoke }, hmr: false },
+    evaluator,
+  );
 }
 
 /**
@@ -62,15 +87,12 @@ function getRunner(environment: string): ModuleRunner {
  * evaluated again, the way a page load evaluates a page's scripts again.
  */
 export function createEnvironmentRunner(environment: string): ModuleRunner {
-  return new ModuleRunner(
-    {
-      sourcemapInterceptor: false,
-      transport: {
-        invoke: (payload) => invokeEnvironment(environment, payload),
-      },
-      hmr: false,
-    },
-    new ESModulesEvaluator(),
+  // Asked once for the graph, when it loads its first module.
+  let modules: Promise<FetchedModules> | undefined;
+  return createRunner(
+    async (payload) =>
+      invokeForPageLoad(environment, payload, await (modules ??= fetchedModules(environment))),
+    pageLoadEvaluator,
   );
 }
 
@@ -82,28 +104,97 @@ export function importReactClient<T = any>(id: string): Promise<T> {
   return importEnvironment<T>("react_client", id);
 }
 
-// What a browser's HTTP cache is to a page load: a module graph that is
-// evaluated again (see createEnvironmentRunner) does not have to fetch the
-// code of a dependency again. Source files are fetched every time, since they
-// change while the tests are being watched.
-const dependencyModules = new Map<string, InvokeResult>();
-
 async function invokeEnvironment(environment: string, payload: InvokePayload) {
-  const key = environment + JSON.stringify(payload);
-  let result = dependencyModules.get(key);
-  if (!result) {
-    result = await invokeOverWebSocket(environment, payload);
-    if (
-      isInvokeSuccess(result) &&
-      isViteFetchResult(result.result) &&
-      isNodeModuleFile(result.result.file)
-    ) {
-      dependencyModules.set(key, result);
-    }
-  }
+  const result = await invokeOverWebSocket(environment, payload);
   // Coverage is collected for the modules the browser itself runs.
   return environment === "react_client" ? await withReactClientCoverage(result) : result;
 }
+
+// What a browser's HTTP cache is to a page load: a module graph that is
+// evaluated again (see createEnvironmentRunner) does not have to ask the dev
+// server for a module again. Vite's module runner asks for every import of
+// every module, also for a module it already has, which is hundreds of
+// requests for one page. They are answered here, for as long as the server
+// says that its modules are the ones that were fetched: see `moduleVersions`
+// in index.ts.
+type FetchedModules = { version: unknown; results: Map<string, InvokeResult> };
+
+const fetchedModulesOf = new Map<string, FetchedModules>();
+
+async function fetchedModules(environment: string): Promise<FetchedModules> {
+  const version = await requestOverWebSocket(reactClientWebSocketVersionEvent, { environment });
+  const fetched = fetchedModulesOf.get(environment);
+  if (fetched && fetched.version === version) return fetched;
+  const modules = { version, results: new Map<string, InvokeResult>() };
+  fetchedModulesOf.set(environment, modules);
+  return modules;
+}
+
+async function invokeForPageLoad(
+  environment: string,
+  payload: InvokePayload,
+  modules: FetchedModules,
+): Promise<InvokeResult> {
+  // An invoke of the runner: `fetchModule` with a URL, its importer and
+  // whether the runner has the module, or `getBuiltins`.
+  const { name, data } = (payload as { data: { name: string; data: unknown[] } }).data;
+  const [url, importer, options] = data as [string?, string?, { cached?: boolean }?];
+  // The server resolves a path by itself, and anything else from its importer.
+  const key = [name, url, url && /^[./]/.test(url) ? undefined : importer].join("\n");
+  let result = modules.results.get(key);
+  if (!result) {
+    result = await invokeEnvironment(environment, payload);
+    // Not what the runner already has: that is an answer to this one request.
+    if (isInvokeSuccess(result) && !isCachedResult(result.result)) modules.results.set(key, result);
+  }
+  // As the server answers for a module that the runner says it has.
+  return options?.cached && isInvokeSuccess(result) && isViteFetchResult(result.result)
+    ? { result: { cache: true } }
+    : result;
+}
+
+function isCachedResult(value: unknown): boolean {
+  return typeof value === "object" && value !== null && "cache" in value;
+}
+
+const AsyncFunction = async function () {}.constructor as new (
+  ...args: string[]
+) => (...args: unknown[]) => Promise<unknown>;
+const contextKeys = [
+  ssrModuleExportsKey,
+  ssrImportMetaKey,
+  ssrImportKey,
+  ssrDynamicImportKey,
+  ssrExportAllKey,
+  ssrExportNameKey,
+] as const;
+const strict = '"use strict";';
+
+// Runs a module like Vite's own evaluator, and compiles it once: a page load
+// gets its modules from `fetchedModules`, and a module that was fetched once
+// is the same code for every page. What a module is, its exports and its
+// state, is in what it is called with, so every page still gets its own.
+const compiledModules = new WeakMap<object, (...args: unknown[]) => Promise<unknown>>();
+
+const pageLoadEvaluator: ModuleEvaluator = {
+  // The lines of the function before the code of the module.
+  startOffset: (() => {
+    const source = String(new AsyncFunction("a", "b", `${strict}/*code*/`));
+    return source.slice(0, source.indexOf("/*code*/")).split("\n").length - 1;
+  })(),
+  async runInlinedModule(context, code, module) {
+    // The answer of the server, which the pages share.
+    const fetched = module.meta;
+    let run = fetched && compiledModules.get(fetched);
+    if (!run) {
+      run = new AsyncFunction(...contextKeys, strict + code);
+      if (fetched) compiledModules.set(fetched, run);
+    }
+    await run(...contextKeys.map((key) => context[key]));
+    Object.seal(context[ssrModuleExportsKey]);
+  },
+  runExternalModule: (file) => import(/* @vite-ignore */ file),
+};
 
 async function withReactClientCoverage(result: InvokeResult) {
   if (
@@ -189,11 +280,18 @@ function toBrowserCoverageFileUrl(file: string) {
   return url.href;
 }
 
-async function invokeOverWebSocket(environment: string, payload: InvokePayload) {
+function invokeOverWebSocket(environment: string, payload: InvokePayload) {
+  return requestOverWebSocket(reactClientWebSocketInvokeEvent, {
+    environment,
+    payload,
+  }) as Promise<InvokeResult>;
+}
+
+async function requestOverWebSocket(event: string, data: object): Promise<unknown> {
   const socket = await getReactClientWebSocket();
   const id = String(++nextInvokeId);
 
-  return new Promise<InvokeResult>((resolve, reject) => {
+  return new Promise((resolve, reject) => {
     const timeoutId = setTimeout(() => {
       pendingInvokes.delete(id);
       reject(new Error(`React client websocket invoke timed out: ${id}`));
@@ -201,13 +299,7 @@ async function invokeOverWebSocket(environment: string, payload: InvokePayload) 
 
     pendingInvokes.set(id, { resolve, reject, timeoutId });
     try {
-      socket.send(
-        JSON.stringify({
-          type: "custom",
-          event: reactClientWebSocketInvokeEvent,
-          data: { id, environment, payload },
-        }),
-      );
+      socket.send(JSON.stringify({ type: "custom", event, data: { id, ...data } }));
     } catch (error) {
       clearTimeout(timeoutId);
       pendingInvokes.delete(id);
@@ -298,10 +390,7 @@ function parseInvokeResultMessage(raw: unknown) {
     ) {
       return undefined;
     }
-    return {
-      id: message.data.id,
-      result: message.data.result as InvokeResult,
-    };
+    return { id: message.data.id, result: message.data.result };
   } catch {
     return undefined;
   }
