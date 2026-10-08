@@ -879,7 +879,7 @@ Outside Vitest, `cleanup()` forgets only what the app added: the cookies its ser
 - `images.unoptimized` is on: there is no image optimizer to ask.
 - `vitest-plugin-rsc/*/entry.js` is the one file whose name does not change with its content. Serve it without a long cache, like `index.html`.
 
-`playground/nextjs-host-demo` builds an app with fonts, images, CSS modules, `next/dynamic`, `loading.tsx`, a route handler, `proxy.ts`, redirects and cookies, and its checks open the build in a browser.
+`playground/nextjs-host-demo` builds an app with fonts, images, CSS modules, `next/dynamic`, `loading.tsx`, a route handler, `proxy.ts`, redirects, cookies, Server Actions, a module the host stands in for, Drizzle on PGlite, a menu of Base UI and a file of `public/`, and its tests open the build in a browser.
 
 ### API
 
@@ -1017,7 +1017,7 @@ For the full walkthrough, see [docs/next-routes.md](docs/next-routes.md). [docs/
 
 - `playground/nextjs-e2e-demo` — a small Next.js app with a test for every feature of the Next.js support. Most samples above come from its tests.
 - `playground/nextjs-notes-demo` — a fuller Next.js notes app with Better Auth, Drizzle, PGlite test databases, and shadcn/ui. Its tests open whole routes with the database and the session mocked in the test runtime. This is the repository's acceptance app.
-- `playground/nextjs-host-demo` — a Next.js app hosted outside Vitest: in a page of Vite, with a dev server and as a static build, and in Storybook. Its checks open each in a browser.
+- `playground/nextjs-host-demo` — a Next.js app hosted outside Vitest: in a page of Vite, with a dev server and as a static build, and in Storybook. Its tests start each with the CLI of Vite or Storybook and open it in a browser.
 - `playground/storybook-nextjs-vite-rsc` — a proof of concept of a Storybook framework on the plugin.
 - `playground/rsc-vitest-demo` — a minimal non-Next RSC app. Use this as the smallest end-to-end example of `vitest-plugin-rsc` on its own.
 

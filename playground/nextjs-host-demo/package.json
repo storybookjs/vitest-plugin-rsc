@@ -6,13 +6,14 @@
     "dev": "NODE_OPTIONS='--conditions=vitest-plugin-rsc-source' vite --configLoader native",
     "build": "NODE_OPTIONS='--conditions=vitest-plugin-rsc-source' vite build --configLoader native",
     "preview": "vite preview",
-    "check": "NODE_OPTIONS='--conditions=vitest-plugin-rsc-source' node check.ts",
-    "check:storybook": "NODE_OPTIONS='--conditions=vitest-plugin-rsc-source' node check-storybook.ts",
     "storybook": "NODE_OPTIONS='--conditions=vitest-plugin-rsc-source' storybook dev -p 6016 --no-open",
     "build-storybook": "NODE_OPTIONS='--conditions=vitest-plugin-rsc-source' storybook build"
   },
   "dependencies": {
+    "@base-ui/react": "^1.4.1",
+    "@electric-sql/pglite": "^0.4.5",
     "@next/routing": "16.4.0",
+    "drizzle-orm": "^0.45.2",
     "next": "16.4.0",
     "react": "19.2.6",
     "react-dom": "19.2.6"

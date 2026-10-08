@@ -11,5 +11,7 @@ export default defineConfig({
   plugins: [vitestPluginRSC(), vitestPluginNext({ host: { files: ["host/**"] } })],
   resolve: {
     conditions: vitestPluginRscSourceConditions,
+    // What a test would mock, the host stands in for: who is signed in.
+    alias: { "@/app/lib/session.ts": fileURLToPath(new URL("./host/session.ts", import.meta.url)) },
   },
 });

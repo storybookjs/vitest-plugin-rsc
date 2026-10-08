@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { cookies } from "next/headers";
 import { setTheme } from "../actions.ts";
+import { DensityMenu } from "../components/density-menu.tsx";
 
 export const metadata: Metadata = { title: "Settings" };
 
@@ -15,6 +16,7 @@ export default async function SettingsPage() {
         <input type="hidden" name="theme" value={theme === "dark" ? "light" : "dark"} />
         <button>Use the {theme === "dark" ? "light" : "dark"} theme</button>
       </form>
+      <DensityMenu />
     </>
   );
 }

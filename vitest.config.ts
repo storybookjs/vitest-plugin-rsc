@@ -26,7 +26,7 @@ export default defineConfig({
         "**/*.{test,test-fixture,mock,config}.{ts,tsx}",
         "**/*.d.ts",
         "**/vitest*.{ts,tsx}",
-        "playground/nextjs-notes-demo/{db,env,host,scripts,test}/**/*.{ts,tsx}",
+        "playground/nextjs-notes-demo/{db,env,scripts,test}/**/*.{ts,tsx}",
         "playground/nextjs-notes-demo/lib/db{,.dev}.ts",
       ],
     },

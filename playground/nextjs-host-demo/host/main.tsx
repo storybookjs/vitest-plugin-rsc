@@ -1,6 +1,7 @@
 import { cleanup, renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
 import { Greeting } from "../app/components/greeting.tsx";
 import { db } from "../app/lib/notes.ts";
+import { signIn } from "./session.ts";
 
 // The host of the app: what a test file is to Vitest, and a story to
 // Storybook. It runs in the rsc layer, so the `db` it seeds is the one the
@@ -8,9 +9,11 @@ import { db } from "../app/lib/notes.ts";
 db.notes.set("7", { id: "7", title: "Seeded by the host", body: "From host/main.tsx" });
 
 // What the page shows is in its query: `?url=/notes/7` for a page of the app,
-// `?view=node` for a node in a container of the host, and `?view=storage` for
-// what `cleanup()` leaves of the browser's storage and cookies.
+// `?view=node` for a node in a container of the host, `?view=storage` for
+// what `cleanup()` leaves of the browser's storage and cookies, and
+// `?user=none` for a visitor who is not signed in.
 const query = new URLSearchParams(window.location.search);
+signIn(query.get("user") === "none" ? undefined : "Ada");
 const state = window as {
   __hostState?: string;
   __hostError?: unknown;
