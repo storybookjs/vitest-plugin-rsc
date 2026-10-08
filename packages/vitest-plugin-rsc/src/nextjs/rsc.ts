@@ -86,7 +86,7 @@ registry.loadAppPage = async (page) => {
   return (registry.appPages[page] ??= await load());
 };
 
-/** The page module of the route of a node: see `loadNodeEntry()` in project.ts. */
+/** The page module of the route of a node: see `loadNodeEntry()` in project/entries.ts. */
 export async function loadComponent(): Promise<{ default: () => unknown }> {
   return {
     default: function Component() {
