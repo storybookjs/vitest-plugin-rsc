@@ -12,8 +12,13 @@ import {
   RSC_HEADER,
 } from "next/dist/client/components/app-router-headers";
 import { isRSCRequestHeader } from "next/dist/server/lib/is-rsc-request";
+import { filterInternalHeaders } from "next/dist/server/lib/server-ipc/utils";
 import * as appPageModule from "next/dist/server/route-modules/app-page/module";
-import { normalizeNextQueryParam } from "next/dist/server/web/utils";
+import {
+  fromNodeOutgoingHttpHeaders,
+  normalizeNextQueryParam,
+  toNodeOutgoingHttpHeaders,
+} from "next/dist/server/web/utils";
 import { getRouteMatcher } from "next/dist/shared/lib/router/utils/route-matcher";
 import { getRouteRegex } from "next/dist/shared/lib/router/utils/route-regex";
 import { routes as allRoutes, routing } from "virtual:vitest-plugin-rsc/next-manifest";
@@ -57,6 +62,16 @@ const notFoundPage = "/_not-found/page";
 const pathnames = Object.keys(routing.outputs);
 
 type InvokeMiddleware = (context: MiddlewareContext) => Promise<MiddlewareResult>;
+
+// A request as it comes in: without the headers that only Next's own server
+// sets on one, like `x-middleware-set-cookie` for the cookies of the
+// middleware. `next start` takes them off with the same function, before
+// anything reads the request.
+function incoming<T extends Pick<ServerRequest, "headers">>(request: T): T {
+  const headers = toNodeOutgoingHttpHeaders(request.headers) as Record<string, string | string[]>;
+  filterInternalHeaders(headers);
+  return { ...request, headers: fromNodeOutgoingHttpHeaders(headers) };
+}
 
 // The server in front of the app: Next's own route resolution, with the
 // routes its build hands a deployment adapter. It goes through the redirects,
@@ -117,7 +132,7 @@ export async function takesRequest(
     return {};
   };
   const proxy = opened?.proxy ?? true;
-  const resolved = await resolve(request, new ReadableStream(), invokeMiddleware, proxy);
+  const resolved = await resolve(incoming(request), new ReadableStream(), invokeMiddleware, proxy);
   return (
     matched ||
     redirectStatus(resolved) !== undefined ||
@@ -287,7 +302,8 @@ async function serverActionsOf(method: string, headers: Headers): Promise<object
   };
 }
 
-async function handle(request: ServerRequest, unrouted: "not-found" | "pass"): Promise<Handled> {
+async function handle(received: ServerRequest, unrouted: "not-found" | "pass"): Promise<Handled> {
+  const request = incoming(received);
   const url = new URL(request.url);
   const opened = openedAt(url);
   const endRequestScope = registry.enterRequestScope();
@@ -352,12 +368,12 @@ async function handle(request: ServerRequest, unrouted: "not-found" | "pass"): P
     const routedHeaders = resolved.resolvedHeaders ?? new Headers();
 
     if (responded) {
-      return finishWithBody(request, responded, responded.status, endRequest);
+      return finishWithBody(request, responded, endRequest);
     }
     const redirect = redirectStatus(resolved);
     if (redirect !== undefined) {
       const response = new registry.Response(null, { status: redirect, headers: routedHeaders });
-      return finishWithBody(request, response, redirect, endRequest);
+      return finishWithBody(request, response, endRequest);
     }
     if (resolved.externalRewrite) {
       // A rewrite to another server, which `next start` proxies. The tab
@@ -373,7 +389,7 @@ async function handle(request: ServerRequest, unrouted: "not-found" | "pass"): P
         body: hasBody ? await new registry.Response(body as BodyInit).arrayBuffer() : undefined,
         signal: request.signal,
       });
-      return finishWithBody(request, response, response.status, endRequest, routedHeaders);
+      return finishWithBody(request, response, endRequest, routedHeaders);
     }
 
     const matched = routes.get(routing.outputs[resolved.resolvedPathname ?? ""] ?? "");
@@ -423,17 +439,19 @@ async function handle(request: ServerRequest, unrouted: "not-found" | "pass"): P
       // answers 500 for a route handler that throws.
       const handler = await registry.loadRouteHandler(page);
       const response = await handleWith(routed, context, handler, requestMeta);
-      return finishWithBody(request, response, response.status, endRequest, routedHeaders);
+      return finishWithBody(request, response, endRequest, routedHeaders);
     }
 
     setServerActions(await serverActionsOf(request.method, headers));
 
     const { handler } = (await registry.loadAppPage(entry)) as { handler: RequestHandler };
-    const response = await handleWith(routed, context, handler, requestMeta);
     // Whoever routes a request to the not-found page sets its status, also
-    // for a request to `/_not-found` itself.
-    const status = page === notFoundPage ? 404 : response.status;
-    return finishWithBody(request, response, status, endRequest, routedHeaders);
+    // for a request to `/_not-found` itself. Before the route runs, as
+    // `next start` does: Next reads the status while it renders, for the
+    // `noindex` tag, and its action handler answers with one of its own.
+    const status = page === notFoundPage ? 404 : undefined;
+    const response = await handleWith(routed, context, handler, requestMeta, status);
+    return finishWithBody(request, response, endRequest, routedHeaders);
   } catch (error) {
     endRequestScope();
     throw error;
@@ -444,7 +462,6 @@ async function handle(request: ServerRequest, unrouted: "not-found" | "pass"): P
 function finishWithBody(
   request: ServerRequest,
   response: Response,
-  status: number,
   onFinish: () => Promise<void>,
   routedHeaders?: Headers,
 ): Handled {
@@ -492,7 +509,7 @@ function finishWithBody(
   }
   // Next leaves dropping the body of a HEAD to the server in front of it.
   const result = new registry.Response(request.method === "HEAD" ? null : body, {
-    status,
+    status: response.status,
     statusText: response.statusText,
     headers,
   });

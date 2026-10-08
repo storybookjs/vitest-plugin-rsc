@@ -94,7 +94,8 @@ test("an action id that names no action gets Next's unrecognized-action response
     handleRequest("/", {
       method: "POST",
       headers: {
-        [ACTION_HEADER]: "missing-action-id",
+        // An id of Next's own build, as another deployment of the app sends.
+        [ACTION_HEADER]: "0".repeat(42),
       },
       body: "",
     }),
@@ -104,6 +105,24 @@ test("an action id that names no action gets Next's unrecognized-action response
   expect(response.headers.get(NEXT_ACTION_NOT_FOUND_HEADER)).toBe("1");
   expect(response.headers.get("content-type")).toContain("text/plain");
   await expect(response.text()).resolves.toBe("Server Action unavailable.");
+});
+
+test("an action id that cannot be one gets Next's invalid-action response", async () => {
+  await renderServer(<NextActionProtocolProbe />);
+
+  const response = await ignoreExpectedConsoleWarn(() =>
+    handleRequest("/", {
+      method: "POST",
+      headers: {
+        [ACTION_HEADER]: "missing-action-id",
+      },
+      body: "",
+    }),
+  );
+
+  expect(response.status).toBe(400);
+  expect(response.headers.get(NEXT_ACTION_NOT_FOUND_HEADER)).toBe("1");
+  await expect(response.text()).resolves.toBe("Invalid Server Action request.");
 });
 
 test("incoming next-url does not mark route payloads as interceptable", async () => {
