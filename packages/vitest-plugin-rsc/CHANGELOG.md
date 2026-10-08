@@ -1,5 +1,31 @@
 # Changelog
 
+## [0.3.0](https://github.com/storybookjs/vitest-plugin-rsc/compare/v0.2.5...v0.3.0) (2026-10-08)
+
+
+### ⚠ BREAKING CHANGES
+
+* Next.js support now runs Next's own server and router in the browser, next to your test, so a few things change when you upgrade from 0.2.5:
+    * **Requirements**: Next.js 16.4 or later, with `@next/routing` installed at the same version as `next`. Vitest 5.0.3 and Vite 8 are the new minimums.
+    * **Setup**: remove `initialize()` and your own `afterEach(cleanup)` for the Next.js helpers. `vitestPluginNext()` adds a setup file that calls `cleanup()` before and after every test.
+    * **MSW**: remove `nextRscRequestHandlers` (`vitest-plugin-rsc/nextjs/msw`) and `nextRscRequestsViaMsw`. Server Actions go straight to Next's server. MSW still works for your app's own outbound requests.
+    * **`route`**: `renderServer(<Page />, { url, route })` no longer takes `route`. The plugin knows your app's routes, so the `url` is enough to get `params`.
+    * **Navigation**: `expectToHaveBeenNavigatedTo()` is gone. A navigation opens the real page of your app now, so assert on what's on screen or on `window.location`.
+    * **`rerender`**: gone from the result. Call `renderServer` again instead.
+    * **`screen`**: an open page has its own `<body>`, so Testing Library's `screen` doesn't see it. Use `page` from `vitest/browser`, or `within(document.body)`.
+    * **Imports**: `vitest-plugin-rsc/nextjs/testing-library` exports `renderServer`, `handleRequest` and `cleanup`. The old internal entry points (`./async-local-storage`, `./nextjs/os-browser`, `./nextjs/request-context`, `./nextjs/testing-library-client` and `./*`) are no longer exported, and `node:os` is no longer shimmed: add `vite-plugin-node-polyfills` if your server code imports it.
+
+### Features
+
+* add proxy and layouts flags to renderServer ([#75](https://github.com/storybookjs/vitest-plugin-rsc/issues/75)) ([e0c60b9](https://github.com/storybookjs/vitest-plugin-rsc/commit/e0c60b9313562a413c70684a3dcf6bf7d6f06efd))
+* run Next.js App Router apps in Vitest Browser Mode ([#57](https://github.com/storybookjs/vitest-plugin-rsc/issues/57)) ([7b8d249](https://github.com/storybookjs/vitest-plugin-rsc/commit/7b8d2495db4bbaa3ada631d15fc5f51fc5565526))
+
+
+### Bug Fixes
+
+* send requests the way fetch does ([#77](https://github.com/storybookjs/vitest-plugin-rsc/issues/77)) ([ad046c3](https://github.com/storybookjs/vitest-plugin-rsc/commit/ad046c31e6eb1f33f5d01504cb82162465a941cc))
+* three conformance bugs of the Next.js server ([#73](https://github.com/storybookjs/vitest-plugin-rsc/issues/73)) ([a401ed9](https://github.com/storybookjs/vitest-plugin-rsc/commit/a401ed93058753d2c8f51a8b41d50fa96f8a53f4))
+
 ## [0.2.5](https://github.com/storybookjs/vitest-plugin-rsc/compare/v0.2.4...v0.2.5) (2026-09-28)
 
 
