@@ -30,3 +30,8 @@ artifacts/perf/
 *.njsproj
 *.sln
 *.sw?
+
+# Next's own tests, fetched by the conformance runner, and what its runs leave
+conformance/.next-repo/
+conformance/.work/
+conformance/.results/

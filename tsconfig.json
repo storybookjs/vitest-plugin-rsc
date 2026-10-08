@@ -5,6 +5,9 @@
       "path": "./packages/vitest-plugin-rsc"
     },
     {
+      "path": "./conformance"
+    },
+    {
       "path": "./playground/nextjs-e2e-demo"
     },
     {

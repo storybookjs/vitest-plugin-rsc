@@ -13,6 +13,7 @@
     "test:run": "NODE_OPTIONS='--conditions=vitest-plugin-rsc-source' vitest run --configLoader native",
     "test:watch": "NODE_OPTIONS='--conditions=vitest-plugin-rsc-source' vitest --configLoader native",
     "test:dist": "vitest run --configLoader runner",
+    "conformance": "pnpm --filter next-conformance run conformance",
     "perf": "pnpm perf:commands",
     "perf:ci": "pnpm perf",
     "perf:commands": "node scripts/perf/run-command-benchmarks.ts",

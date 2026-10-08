@@ -1,0 +1,20 @@
+{
+  "compilerOptions": {
+    "target": "ES2023",
+    "lib": ["DOM", "DOM.Iterable", "ES2023"],
+    "skipLibCheck": true,
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noEmit": true,
+    "module": "preserve",
+    "moduleDetection": "force",
+    "allowImportingTsExtensions": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+    // Node.js runs `src/` as it is written, with the types taken out.
+    "erasableSyntaxOnly": true,
+    "types": ["node", "vitest/globals"]
+  },
+  "include": ["src/**/*.ts", "shim/**/*.ts", "vitest.config.ts"]
+}

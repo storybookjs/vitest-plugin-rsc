@@ -73,6 +73,22 @@ test("follows a redirect() from a page", async () => {
   await expect.element(page.getByRole("heading", { name: "Notes" })).toBeVisible();
 });
 
+test("follows a redirect() of a response that had started, once", async () => {
+  await renderServer({ url: "/" });
+
+  // The route has a loading.tsx, so the response has started when the page
+  // calls redirect(). Next's router does the redirect, with a page load.
+  window.location.assign("/moved");
+  await expect.element(page.getByRole("heading", { name: "Notes" })).toBeVisible();
+  expect(window.location.pathname).toBe("/notes");
+
+  // Next also sends a `<meta http-equiv="refresh">`, for a browser without
+  // JavaScript. It is due a second later, when the page it was for is gone.
+  const body = document.body;
+  await new Promise((resolve) => setTimeout(resolve, 1500));
+  expect(document.body).toBe(body);
+});
+
 test("renders the not-found boundary when a page calls notFound()", async () => {
   const { response } = await renderServer({ url: "/notes/404" });
 
