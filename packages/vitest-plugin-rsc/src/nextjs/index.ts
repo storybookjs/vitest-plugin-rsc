@@ -569,8 +569,12 @@ async function openPage(
   registry.browserRequire = newBrowserRequire();
   // React's scheduler, Next's router and Next's dev overlay each leave
   // something on the tab when they load: see leftovers.ts. That is from here
-  // until `start()` says that Next's client has loaded. No module of the app
-  // loads in that time.
+  // until `start()` says that Next's client has loaded.
+  // This assumes that only the plugin's, React's and Next's code runs in that
+  // window, and no module of the app: the modules of the app wait for Next's
+  // client (see `start()` in client.tsx). A listener or channel
+  // of the app's that was added in it would be taken from the app when the
+  // page is left.
   const leftovers = [recordListeners(window), recordMessageChannels()];
   const loaded = () => leftovers.forEach((leftover) => leftover.stop());
   // The page counts as open from here, so that leaving it stops it, also
