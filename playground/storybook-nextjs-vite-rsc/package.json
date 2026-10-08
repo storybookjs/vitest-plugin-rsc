@@ -8,6 +8,7 @@
     ".": "./src/index.ts",
     "./preset": "./src/preset.ts",
     "./entry-preview": "./src/entry-preview.tsx",
+    "./client-story": "./src/client-story.tsx",
     "./package.json": "./package.json"
   },
   "dependencies": {

@@ -93,8 +93,11 @@ export function clientFiles(options: ClientFilesOptions): Plugin {
         if (source.startsWith(hostModulePrefix) || source.startsWith(liveModulePrefix)) {
           return source;
         }
-        // What the page asks a layer for has no importer, and is that layer's.
-        if (this.environment.name !== browser || !importer) return;
+        if (this.environment.name !== browser) return;
+        // What the page asks a layer for is that layer's. It has no importer,
+        // for which Vite names the `index.html` of the root.
+        const { root } = this.environment.config;
+        if (!importer || importer === path.posix.join(normalizePath(root), "index.html")) return;
         const others = { ...resolveOptions, skipSelf: true };
         // The import of a client file, from the module in between.
         if (importer.startsWith(liveModulePrefix)) {

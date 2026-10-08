@@ -7,6 +7,7 @@
     "build": "NODE_OPTIONS='--conditions=vitest-plugin-rsc-source' vite build --configLoader native",
     "preview": "vite preview",
     "check": "NODE_OPTIONS='--conditions=vitest-plugin-rsc-source' node check.ts",
+    "check:storybook": "NODE_OPTIONS='--conditions=vitest-plugin-rsc-source' node check-storybook.ts",
     "storybook": "NODE_OPTIONS='--conditions=vitest-plugin-rsc-source' storybook dev -p 6016 --no-open",
     "build-storybook": "NODE_OPTIONS='--conditions=vitest-plugin-rsc-source' storybook build"
   },
