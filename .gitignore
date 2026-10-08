@@ -35,3 +35,7 @@ artifacts/perf/
 conformance/.next-repo/
 conformance/.work/
 conformance/.results/
+
+# Storybook
+storybook-static
+debug-storybook.log
