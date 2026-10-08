@@ -8,7 +8,7 @@ import {
   routing,
 } from "virtual:vitest-plugin-rsc/next-manifest";
 import { Readable } from "virtual:vitest-plugin-rsc/node-stream";
-import { cacheGeneration, restoreIncrementalCache } from "./cache.ts";
+import { restoreIncrementalCache } from "./cache.ts";
 import { registry, type RequestHandler, type ServerRequest } from "./registry.ts";
 
 // Next's server runs here as it does on Node.js, its default runtime. (Its
@@ -78,10 +78,7 @@ const manifests: [suffix: string, manifest: () => unknown][] = [
     () => ({ node: serverActions, edge: serverActions, encryptionKey: "" }),
   ],
   ["required-server-files.json", () => ({ config: nextConfig })],
-  // Next keys what a `"use cache"` function returns by the build, and reads
-  // the id of the build for every request. So the id changes when the caches
-  // are reset: no test finds what an earlier one cached.
-  ["BUILD_ID", () => `${routing.buildId}${cacheGeneration()}`],
+  ["BUILD_ID", () => routing.buildId],
 ];
 
 function loadManifest(file: string): unknown {

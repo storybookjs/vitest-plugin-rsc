@@ -2,6 +2,7 @@ import { IncrementalCache } from "next/dist/server/lib/incremental-cache";
 import { tagsManifest } from "next/dist/server/lib/incremental-cache/tags-manifest.external";
 import type { CacheFs } from "next/dist/shared/lib/utils";
 import { nextConfig, preview } from "virtual:vitest-plugin-rsc/next-manifest";
+import { registry } from "./registry.ts";
 
 // Next's Data Cache: what `unstable_cache` and a cached `fetch` keep between
 // requests. This is a module of the ssr layer, and its cache serves both
@@ -23,8 +24,9 @@ declare global {
 // function that was still running when its test ended, and stores its result
 // afterwards under the key it already had.
 let generation = 0;
-/** For the keys of a `"use cache"` function, which are not of this cache: node-server.ts. */
-export const cacheGeneration = (): number => generation;
+// Also for the keys of a `"use cache"` function, which Next keeps in a cache
+// of its own, in the rsc layer: use-cache.ts.
+registry.cacheGeneration = () => generation;
 // The cache of the server now: of the request it handles, or between requests.
 let current: IncrementalCache | undefined;
 

@@ -14,8 +14,10 @@ import type { NextLayer, NextProject } from "./project.ts";
 export const useCacheId = "virtual:vitest-plugin-rsc/next-use-cache";
 
 // The wrapper is Next's. Next's compiler also puts React's `cache()` around
-// it, so that two calls with the same arguments in one render are one.
-export const useCacheModule = `
+// it, so that two calls with the same arguments in one render are one, and
+// gives the result the name of the function, which React shows for a
+// component.
+export const useCacheModule = (registry: string): string => `
 import { cache } from "next/dist/build/webpack/loaders/next-flight-loader/cache-wrapper";
 import { cache as reactCache } from "react";
 export function useCache(kind, id, fn, undeclared) {
@@ -25,11 +27,11 @@ export function useCache(kind, id, fn, undeclared) {
     // no part of the key. \`fn.length\` also counts what the function closes
     // over, which comes first: it is passed like an argument of the call,
     // not as a bound argument, and is part of the key like one.
-    const args =
-      undeclared === null
-        ? arguments
-        : Array.prototype.slice.call(arguments, 0, fn.length + undeclared);
-    return cache(kind, id, 0, fn, args);
+    const end = undeclared === null ? undefined : fn.length + undeclared;
+    const args = Array.prototype.slice.call(arguments, 0, end);
+    // The id is a part of the key. It changes when the caches are reset, so
+    // that no test finds what an earlier one cached: see cache.ts.
+    return cache(kind, id + ":" + ${registry}.cacheGeneration(), 0, fn, args);
   });
   Object.defineProperty(cached, "name", { value: fn.name });
   return cached;

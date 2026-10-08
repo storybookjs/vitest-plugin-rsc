@@ -647,7 +647,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
         if (id === `${bridgePrefix}metadata`) {
           return `export default async function metadata() { return []; }`;
         }
-        if (id === `\0${useCacheId}`) return useCacheModule;
+        if (id === `\0${useCacheId}`) return useCacheModule(registry);
 
         if (id === `\0${manifestId}`) {
           const routes = project.routes.map(({ kind, page, pathname }) => ({

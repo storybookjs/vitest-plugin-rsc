@@ -52,6 +52,8 @@ export type NextRegistry = {
   asyncFunctionHooks: object;
   /** The server's `queueMicrotask`: the callback has the stores of the code that queued it. */
   queueMicrotask(callback: () => void): void;
+  /** Changes when the caches are reset. A part of every key of a cache, see cache.ts. */
+  cacheGeneration(): number;
   /** The rsc layer's Flight codec, behind the signatures Next calls. */
   flightServer: Record<string, AnyFunction>;
   flightStatic: Record<string, AnyFunction>;

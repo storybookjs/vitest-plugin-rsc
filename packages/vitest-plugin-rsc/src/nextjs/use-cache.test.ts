@@ -1,7 +1,8 @@
 import { fileURLToPath } from "node:url";
+import { runInThisContext } from "node:vm";
 import { expect, test } from "vitest";
 import type { NextLayer, NextProject } from "./project.ts";
-import { createUseCachePlugin } from "./use-cache.ts";
+import { createUseCachePlugin, useCacheModule } from "./use-cache.ts";
 
 // A file that is there: a module of the plugin is one of a file.
 const file = fileURLToPath(import.meta.url);
@@ -67,6 +68,56 @@ test("says which parameters the length of a function does not count", async () =
   expect(calls(await compile(`export async function f(a, ...rest) { "use cache"; }`))).toEqual([
     ["default", "$$hoist_0_f", "null"],
   ]);
+});
+
+test("known limit: leaves a function with the directive in a module that has it at its top", async () => {
+  // Next's compiler caches both: the module's directive is for what it exports.
+  const code = await compile(
+    `"use cache";\nexport async function a() { return b(); }\nasync function b() { "use cache"; }`,
+  );
+
+  expect(calls(code)).toEqual([["default", "a", "0"]]);
+});
+
+// The module that compiled code imports `useCache()` from, with what it
+// imports itself: Next's wrapper, which says what it was called with here,
+// and React's `cache()`.
+function loadUseCache(generation: number) {
+  const source = useCacheModule("registry")
+    .replace(/^import .*$/gm, "")
+    .replace("export function", "return function");
+  return runInThisContext(`(function (cache, reactCache, registry) { ${source} })`)(
+    (...args: unknown[]) => args,
+    (fn: unknown) => fn,
+    { cacheGeneration: () => generation },
+  ) as (kind: string, id: string, fn: unknown, undeclared: number | null) => Function;
+}
+
+test("hands Next's wrapper the arguments that the function declares", () => {
+  const useCache = loadUseCache(0);
+  const quote = function quote(_topic: string, _language = "en") {};
+  const all = function all(..._topics: string[]) {};
+
+  // `map()` also passes an index and the array.
+  expect(useCache("default", "id", quote, 1)("a", "nl", 0, ["a"])).toEqual([
+    "default",
+    "id:0",
+    0,
+    quote,
+    ["a", "nl"],
+  ]);
+  expect(useCache("remote", "id", all, null)("a", "b", "c").at(-1)).toEqual(["a", "b", "c"]);
+});
+
+test("gives the cached function the name of the function", () => {
+  expect(loadUseCache(0)("default", "id", function quote() {}, 0).name).toBe("quote");
+});
+
+test("keys a cached function by the reset of the caches it was called after", () => {
+  const key = (generation: number) => loadUseCache(generation)("default", "id", () => {}, 0)()[1];
+
+  expect(key(1)).toBe("id:1");
+  expect(key(2)).toBe("id:2");
 });
 
 test("leaves the directive where Next's compiler does not take it", async () => {
