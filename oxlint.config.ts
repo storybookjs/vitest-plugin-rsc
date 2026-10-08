@@ -22,7 +22,7 @@ export default defineConfig({
     correctness: "error",
   },
   rules: {
-    "eslint/no-unused-vars": "off",
+    "eslint/no-unused-vars": "error",
     "import/extensions": [
       "error",
       "always",
@@ -40,4 +40,20 @@ export default defineConfig({
   env: {
     builtin: true,
   },
+  overrides: [
+    {
+      // The source of the package is ES modules. A bare `require` type-checks
+      // as Node's global, which a module does not have: it has to come from
+      // `createRequire()`.
+      files: ["packages/vitest-plugin-rsc/src/**"],
+      rules: {
+        "eslint/no-restricted-globals": [
+          "error",
+          { name: "require", message: "An ES module has no `require`. Use `createRequire()`." },
+          { name: "module", message: "An ES module has no `module`." },
+          { name: "exports", message: "An ES module has no `exports`." },
+        ],
+      },
+    },
+  ],
 });

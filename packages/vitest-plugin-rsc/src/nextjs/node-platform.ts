@@ -9,7 +9,6 @@
  * `prefix` that their module ids start with.
  */
 export function createNodePlatform(registry: string, prefix: string) {
-  const bridgePrefix = prefix;
   const forward = (owner: string, names: string[]) =>
     names
       .map((name) => `export const ${name} = (...args) => ${registry}.${owner}.${name}(...args);`)
@@ -45,7 +44,7 @@ export function createNodePlatform(registry: string, prefix: string) {
   const modules: Record<string, string> = {
     "node-stream": nodeStream,
     "node-stream-promises": `
-  import stream from ${JSON.stringify(`${bridgePrefix}node-stream`)};
+  import stream from ${JSON.stringify(`${prefix}node-stream`)};
   const isStream = (value) => value && (typeof value.pipe === "function" || typeof value.write === "function");
   export const pipeline = (...streams) => {
     // The options, with a signal: the request ends with the test here.
