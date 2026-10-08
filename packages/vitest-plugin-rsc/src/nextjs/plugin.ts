@@ -601,6 +601,8 @@ const runtimeImports: Record<NextLayer, string[]> = {
     "next/dist/server/lib/incremental-cache",
     "next/dist/server/lib/incremental-cache/tags-manifest.external",
     // node-server.ts
+    "next/dist/server/lib/mock-request",
+    "next/dist/server/web/utils",
     "next/dist/compiled/stream-browserify",
     "next/dist/shared/lib/router/utils/route-regex",
     "next/dist/shared/lib/router/utils/route-matcher",

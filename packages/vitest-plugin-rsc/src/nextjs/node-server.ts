@@ -1,3 +1,5 @@
+import { MockedResponse } from "next/dist/server/lib/mock-request";
+import { fromNodeOutgoingHttpHeaders, toNodeOutgoingHttpHeaders } from "next/dist/server/web/utils";
 import { nextConfig } from "virtual:vitest-plugin-rsc/next-manifest";
 import { Readable } from "virtual:vitest-plugin-rsc/node-stream";
 import { preview } from "./cache.ts";
@@ -94,189 +96,110 @@ registry.node = {
   evalManifestFromRelativePath: ({ manifest }: { manifest: string }) => loadManifest(manifest),
 };
 
-type Listener = (...args: unknown[]) => void;
-
 // A test's own timers may be fake.
 const nativeSetTimeout = globalThis.setTimeout;
-
-/** As much of an `http.IncomingMessage` as Next's server reads. */
-function createNodeRequest(request: ServerRequest) {
-  const url = new URL(request.url);
-  const headers: Record<string, string> = {};
-  request.headers.forEach((value, name) => (headers[name] = value));
-  headers.host ??= url.host;
-
-  const incoming = new Readable({ read() {} });
-  Object.assign(incoming, {
-    method: request.method,
-    url: url.pathname + url.search,
-    headers,
-    httpVersion: "1.1",
-    socket: { encrypted: url.protocol === "https:" },
-  });
-
-  const { body } = request;
-  if (body instanceof Uint8Array) {
-    incoming.push(body);
-    incoming.push(null);
-  } else if (body) {
-    const reader = body.getReader();
-    const pump = (): Promise<void> =>
-      reader.read().then(({ done, value }) => {
-        if (done) return void incoming.push(null);
-        incoming.push(value);
-        return pump();
-      });
-    pump().catch((error) => incoming.destroy(error));
-  } else {
-    incoming.push(null);
-  }
-  return incoming as typeof incoming & { headers: Record<string, string>; method: string };
-}
-
-/** As much of an `http.ServerResponse` as Next's server writes to. */
-function createNodeResponse() {
-  const headers = new Map<string, number | string | string[]>();
-  const listeners = new Map<string, Set<Listener>>();
-  let controller!: ReadableStreamDefaultController<Uint8Array>;
-  const body = new ReadableStream<Uint8Array>({
-    start: (c) => void (controller = c),
-    // Whoever reads the response has left, like a browser that leaves a page.
-    cancel() {
-      cancelled = true;
-      response.destroy();
-    },
-  });
-  let wrote = false;
-  let cancelled = false;
-  let sendHead!: () => void;
-  // Resolves when the status and the headers are final: at the first byte.
-  const head = new Promise<void>((resolve) => (sendHead = resolve));
-  const encoder = new TextEncoder();
-
-  const response = {
-    statusCode: 200,
-    statusMessage: "",
-    finished: false,
-    headersSent: false,
-    writableEnded: false,
-    writableFinished: false,
-    errored: null,
-    destroyed: false,
-    setHeader(name: string, value: number | string | string[]) {
-      headers.set(name.toLowerCase(), value);
-      return response;
-    },
-    getHeader: (name: string) => headers.get(name.toLowerCase()),
-    hasHeader: (name: string) => headers.has(name.toLowerCase()),
-    getHeaders: () => Object.fromEntries(headers),
-    getHeaderNames: () => [...headers.keys()],
-    removeHeader: (name: string) => void headers.delete(name.toLowerCase()),
-    on(event: string, listener: Listener) {
-      let set = listeners.get(event);
-      if (!set) listeners.set(event, (set = new Set()));
-      set.add(listener);
-      return response;
-    },
-    once: (event: string, listener: Listener) => response.on(event, listener),
-    off(event: string, listener: Listener) {
-      listeners.get(event)?.delete(listener);
-      return response;
-    },
-    emit(event: string, ...args: unknown[]) {
-      const set = listeners.get(event);
-      listeners.delete(event);
-      for (const listener of set ?? []) listener(...args);
-    },
-    flushHeaders() {
-      response.headersSent = true;
-      sendHead();
-    },
-    write(chunk: string | Uint8Array) {
-      if (response.destroyed || response.writableEnded) return false;
-      response.flushHeaders();
-      wrote = true;
-      controller.enqueue(typeof chunk === "string" ? encoder.encode(chunk) : new Uint8Array(chunk));
-      return true;
-    },
-    end(chunk?: string | Uint8Array | null) {
-      if (response.destroyed || response.writableEnded) return;
-      if (chunk !== undefined && chunk !== null) response.write(chunk);
-      response.flushHeaders();
-      // All of it went out: Next takes a `close` before that for a client
-      // that left, and aborts the signal of the request.
-      response.writableEnded = response.writableFinished = response.finished = true;
-      controller.close();
-      response.emit("finish");
-      // A socket closes after the response has gone out: what Next runs then,
-      // like `after()`, comes after whoever asked has its answer.
-      nativeSetTimeout(() => response.emit("close"));
-    },
-    /**
-     * Ends the response before all of it went out: with an error, or without
-     * one when whoever asked has left. Before its head there is no response
-     * to end: see `respond()`.
-     */
-    destroy(error?: unknown) {
-      if (response.destroyed || response.writableEnded) return;
-      response.destroyed = true;
-      // A reader that cancelled the body has ended it already.
-      if (response.headersSent && !cancelled) controller.error(error ?? leftBeforeSent());
-      response.emit("close");
-    },
-    /** The response as the tab gets it, once its head is there. */
-    async toResponse(headersOf: (headers: Record<string, unknown>) => Headers): Promise<Response> {
-      await head;
-      const status = response.statusCode;
-      // A status without a body, and an `end()` without a byte before it.
-      const empty = (response.finished && !wrote) || [101, 204, 205, 304].includes(status);
-      return new registry.Response(empty ? null : body, {
-        status,
-        statusText: response.statusMessage,
-        headers: headersOf(response.getHeaders()),
-      });
-    },
-  };
-  return response;
-}
-
-function toHeaders(values: Record<string, unknown>, init?: HeadersInit): Headers {
-  const headers = new Headers(init);
-  for (const [name, value] of Object.entries(values)) {
-    if (value === undefined) continue;
-    if (Array.isArray(value)) {
-      headers.delete(name);
-      for (const item of value) headers.append(name, String(item));
-    } else {
-      headers.set(name, String(value));
-    }
-  }
-  return headers;
-}
-
-type NodeResponse = ReturnType<typeof createNodeResponse>;
 
 const leftBeforeSent = () =>
   new DOMException("The page was left before the server had sent it.", "AbortError");
 const pending = new Promise<never>(() => {});
 
-// The response of the server once its head is there, while `written` goes on
-// to write the body. What fails before that is the failure of the request;
-// after it, the body ends with the error.
-//
-// A request that is left before its head has no response. It lasts until
-// Next's handler is done with it, which can be much later, when the data it
-// waited for comes: its stores have to be there until then.
-function respond(res: NodeResponse, written: Promise<unknown>): Promise<Response> {
-  const settled = written.then(
-    () => (res.headersSent ? pending : Promise.reject(leftBeforeSent())),
-    (error) => {
-      if (!res.headersSent) throw error;
-      res.destroy(error ?? new Error("The request handler failed."));
-      return pending;
+/** The `http.IncomingMessage` of a request: a stream of its body, with what Next reads of it. */
+function createNodeRequest(request: ServerRequest) {
+  const url = new URL(request.url);
+  const { body } = request;
+  const stream =
+    body instanceof Uint8Array ? Readable.from([body]) : body && Readable.fromWeb(body as never);
+  return Object.assign(stream || Readable.from([]), {
+    method: request.method,
+    url: url.pathname + url.search,
+    headers: { host: url.host, ...toNodeOutgoingHttpHeaders(request.headers) },
+    httpVersion: "1.1",
+    socket: { encrypted: url.protocol === "https:" },
+  });
+}
+
+/**
+ * The `http.ServerResponse` of a request, which is Next's own stand-in for
+ * one, and the `Response` the tab gets of it: once its head is there, while
+ * Next goes on to write the body.
+ *
+ * A request that is left before its head has no response. It lasts until
+ * Next's handler is done with it, which can be much later, when the data it
+ * waited for comes: its stores have to be there until then.
+ */
+function createNodeResponse(request: ServerRequest) {
+  let controller!: ReadableStreamDefaultController<Uint8Array>;
+  let headSent = false;
+  let wrote = false;
+  let finished = false;
+  let cancelled = false;
+  let sendHead!: () => void;
+  // Resolves when the status and the headers are final: at the first byte.
+  const head = new Promise<void>((resolve) => (sendHead = resolve)).then(() => (headSent = true));
+  const encoder = new TextEncoder();
+  const body = new ReadableStream<Uint8Array>({
+    start: (c) => void (controller = c),
+    // Whoever reads the response has left, like a browser that leaves a page.
+    cancel() {
+      cancelled = true;
+      res.destroy();
     },
-  );
-  return Promise.race([res.toResponse(toHeaders), settled]);
+  });
+
+  const res = new MockedResponse({
+    resWriter(chunk: string | Uint8Array) {
+      if (res.destroyed) return false;
+      sendHead();
+      wrote = headSent = true;
+      controller.enqueue(typeof chunk === "string" ? encoder.encode(chunk) : new Uint8Array(chunk));
+      return true;
+    },
+  });
+  res.on("finish", () => {
+    finished = headSent = true;
+    // Node's stream says so itself; the older one of the polyfill does not.
+    // Next takes a `close` without it for a client that left, and aborts
+    // the signal of the request.
+    Object.defineProperty(res, "writableFinished", { value: true, configurable: true });
+    sendHead();
+    controller.close();
+    // A socket closes after the response has gone out: what Next runs then,
+    // like `after()`, comes after whoever asked has its answer.
+    nativeSetTimeout(() => res.destroy());
+  });
+  // Closed before all of it went out: by an error, or because whoever asked
+  // has left. A reader that cancelled the body has ended it already.
+  res.on("close", () => {
+    if (headSent && !finished && !cancelled) controller.error(res.errored ?? leftBeforeSent());
+  });
+  // Next's stand-in rejects this for a response that ends with an error.
+  // Nobody waits for it here: the body ends with the error.
+  (res as unknown as { hasStreamed: Promise<unknown> }).hasStreamed.catch(() => {});
+  request.signal?.addEventListener("abort", () => res.destroy(), { once: true });
+
+  const response = (written: Promise<unknown>): Promise<Response> => {
+    const settled = written.then(
+      () => (headSent ? pending : Promise.reject(leftBeforeSent())),
+      (error) => {
+        // What fails before the head is the failure of the request. After
+        // it, the body ends with the error.
+        if (!headSent) throw error;
+        res.destroy(error ?? new Error("The request handler failed."));
+        return pending;
+      },
+    );
+    const sent = head.then(() => {
+      // A status without a body, and an `end()` without a byte before it.
+      const empty = (finished && !wrote) || [101, 204, 205, 304].includes(res.statusCode);
+      return new registry.Response(empty ? null : body, {
+        status: res.statusCode,
+        statusText: res.statusMessage,
+        headers: fromNodeOutgoingHttpHeaders(res.getHeaders()),
+      });
+    });
+    return Promise.race([sent, settled]);
+  };
+  return { res, response };
 }
 
 // What `next start` knows of a request before a route gets it: the URL the
@@ -302,15 +225,13 @@ export async function handleRequest(
   context: { waitUntil?: (promise: Promise<unknown>) => void },
   handler: RequestHandler,
 ): Promise<Response> {
-  const req = createNodeRequest(request);
-  const res = createNodeResponse();
-  request.signal?.addEventListener("abort", () => res.destroy(), { once: true });
+  const { res, response } = createNodeResponse(request);
   // The cache of the server: see cache.ts. Next's route module makes one of
   // its own when it stores a response, and leaves it in this global.
   const cache = globalThis.__incrementalCache;
-  const handled = handler(req, res, {
+  const handled = handler(createNodeRequest(request), res, {
     waitUntil: context.waitUntil,
     requestMeta: { ...requestMetaOf(request), incrementalCache: cache },
   }).finally(() => (globalThis.__incrementalCache = cache));
-  return respond(res, handled);
+  return response(handled);
 }
