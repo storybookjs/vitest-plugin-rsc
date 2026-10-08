@@ -2,7 +2,10 @@ import { handleRequest, renderServer } from "vitest-plugin-rsc/nextjs/testing-li
 import { afterEach, beforeEach, expect, test, vi, type MockInstance } from "vitest";
 import { page } from "vitest/browser";
 import { headers } from "next/headers";
+import Link from "next/link";
 import { signInAs } from "../test/browser.ts";
+import { FavoriteButton } from "./components/favorite-button.tsx";
+import { RenameNote } from "./components/rename-note.tsx";
 import { RouterState } from "./components/router-state.tsx";
 import { db } from "./lib/notes.ts";
 import { readByProxy, seenByProxy } from "./lib/proxy-log.ts";
@@ -10,6 +13,7 @@ import { readByProxy, seenByProxy } from "./lib/proxy-log.ts";
 // What the server does with a request before a route gets it: the redirects,
 // rewrites and headers of next.config.ts, and proxy.ts. Next's own route
 // resolution decides, with the routes its build hands a deployment adapter.
+// And at the end, how a test opens a URL without it.
 
 let consoleError: MockInstance<typeof console.error>;
 
@@ -362,18 +366,24 @@ test("navigates with Next's router to a URL that is rewritten", async () => {
   await expect.element(router().nth(1)).toHaveTextContent('{"slug":"getting-started"}');
 });
 
-test("renders a node behind the proxy, with the params of the route it rewrites to", async () => {
-  async function Team() {
-    return <p>Team of the node: {(await headers()).get("x-team")}</p>;
-  }
-  signInAs("ada");
+// `app/team/page.tsx` as a node: it reads the header that the proxy adds.
+async function Team() {
+  return <p>Team of the node: {(await headers()).get("x-team") ?? "none"}</p>;
+}
 
-  await renderServer(<Team />, { url: "/team" });
+test("renders a node behind the proxy with `proxy: true`, with the params of the route it rewrites to", async () => {
+  // The proxy sends a visitor without a session elsewhere, before the node.
+  await renderServer(<Team />, { url: "/team", proxy: true });
+
+  await expect.element(page.getByRole("heading", { name: "Account" })).toBeVisible();
+
+  signInAs("ada");
+  await renderServer(<Team />, { url: "/team", proxy: true });
 
   await expect.element(page.getByText("Team of the node: core")).toBeVisible();
 
   // The route of the node has the segments of the route the URL is rewritten to.
-  await renderServer(<RouterState />, { url: "/go/routing" });
+  await renderServer(<RouterState />, { url: "/go/routing", proxy: true });
 
   await expect.element(router().nth(0)).toHaveTextContent("/go/routing");
   await expect.element(router().nth(1)).toHaveTextContent('{"slug":"routing"}');
@@ -401,4 +411,168 @@ test("intercepts a route for a visitor who comes from the page it intercepts on"
 
   await expect.element(page.getByRole("heading", { name: "Photo 1" })).toBeVisible();
   expect(page.getByRole("dialog").query()).toBeNull();
+});
+
+// `proxy: false` opens a URL without the server in front of the app: its
+// pathname goes straight to the app's route, and so do the requests the page
+// sends to it. A node has that by default.
+
+test("opens a page without the proxy, with `proxy: false`", async () => {
+  // Without a session, which the proxy wants for this page.
+  const { response } = await renderServer({ url: "/team", proxy: false });
+
+  await expect.element(page.getByRole("heading", { name: "Team" })).toBeVisible();
+  await expect.element(page.getByText("Team: none")).toBeVisible();
+  expect(window.location.pathname).toBe("/team");
+  expect(response.headers.has("x-proxy")).toBe(false);
+  expect(seenByProxy).toEqual([]);
+});
+
+test("opens a page without the redirects, rewrites and headers of next.config, with `proxy: false`", async () => {
+  // A rewrite would serve the page for `getting-started`, with a header.
+  const { response } = await renderServer({ url: "/docs/start", proxy: false });
+
+  await expect.element(page.getByRole("heading", { name: "Docs: start" })).toBeVisible();
+  await expect.element(router().nth(1)).toHaveTextContent('{"slug":"start"}');
+  expect(response.headers.has("x-docs")).toBe(false);
+
+  // A redirect would send this URL to `/docs/routing`. No route has it.
+  const redirected = await renderServer({ url: "/guide/routing", proxy: false });
+
+  expect(redirected.response.status).toBe(404);
+  expect(window.location.pathname).toBe("/guide/routing");
+  expect(seenByProxy).toEqual([]);
+});
+
+test("sends a Server Action of a page opened with `proxy: false` past the proxy, and the page it redirects to through it", async () => {
+  await renderServer({ url: "/notes/new", proxy: false });
+
+  await page.getByRole("textbox", { name: "Title" }).fill("Plan the week");
+  await page.getByRole("button", { name: "Create" }).click();
+
+  await expect.element(page.getByRole("heading", { name: "Plan the week" })).toBeVisible();
+  // The first request the proxy sees is the one the server makes to itself
+  // for the page, which is another route. The action is not among them.
+  expect(seenByProxy[0]).toBe("/notes/1");
+  expect(seenByProxy).not.toContain("/notes/new");
+});
+
+test("refreshes a page opened with `proxy: false` past the proxy, and sends its fetch through it", async () => {
+  db.notes.set("1", { id: "1", title: "Inbox triage", body: "" });
+  await renderServer({ url: "/notes/1", proxy: false });
+
+  await page.getByRole("textbox", { name: "New title" }).fill("Inbox zero");
+  await page.getByRole("button", { name: "Rename" }).click();
+
+  // The route handler, then `router.refresh()`, which renders the page again.
+  await expect.element(page.getByRole("heading", { name: "Inbox zero" })).toBeVisible();
+  expect(seenByProxy).toEqual(["/api/notes/1"]);
+});
+
+test("keeps Next's interception routes with `proxy: false`", async () => {
+  await renderServer({ url: "/gallery/photo/1", proxy: false });
+
+  // What Next's router asks for when it comes from the gallery: the photo
+  // over the gallery, as an interception route has it.
+  const intercepted = await handleRequest("/gallery/photo/1", {
+    headers: { rsc: "1", "next-url": "/gallery" },
+  });
+
+  expect(await intercepted.text()).toContain("over the gallery");
+  expect(seenByProxy).toEqual([]);
+});
+
+test("forgets `proxy: false` with the page it opened", async () => {
+  // The test's own requests to the pathname are the page's while it is open.
+  await renderServer({ url: "/team", proxy: false });
+  expect((await handleRequest("/team", { redirect: "manual" })).status).toBe(200);
+
+  // The next page of the test has the proxy again.
+  await renderServer({ url: "/team" });
+
+  await expect.element(page.getByRole("heading", { name: "Account" })).toBeVisible();
+  expect((await handleRequest("/team", { redirect: "manual" })).status).toBe(307);
+
+  // So does the pathname of a page that redirects elsewhere, once it has.
+  await renderServer({ url: "/old", proxy: false });
+
+  await expect.element(page.getByRole("heading", { name: "Notes" })).toBeVisible();
+  expect(seenByProxy).not.toContain("/old");
+  await handleRequest("/old", { redirect: "manual" });
+  expect(seenByProxy).toContain("/old");
+});
+
+test("renders a node without the proxy by default", async () => {
+  // Without a session: the proxy would send the visitor to `/account`.
+  const { response } = await renderServer(<Team />, { url: "/team" });
+
+  await expect.element(page.getByText("Team of the node: none")).toBeVisible();
+  expect(window.location.pathname).toBe("/team");
+  expect(response.headers.has("x-proxy")).toBe(false);
+  expect(seenByProxy).toEqual([]);
+});
+
+test("renders a node in the layouts of a route without the proxy", async () => {
+  await renderServer(<Team />, { url: "/team", layouts: true });
+
+  await expect.element(page.getByRole("navigation", { name: "Main" })).toBeVisible();
+  await expect.element(page.getByRole("main")).toHaveTextContent("Team of the node: none");
+  expect(seenByProxy).toEqual([]);
+});
+
+test("renders a node in the layouts of a route behind the proxy, with both", async () => {
+  signInAs("ada");
+
+  const { response } = await renderServer(<Team />, { url: "/team", layouts: true, proxy: true });
+
+  await expect.element(page.getByRole("navigation", { name: "Main" })).toBeVisible();
+  await expect.element(page.getByRole("main")).toHaveTextContent("Team of the node: core");
+  expect(response.headers.get("x-proxy")).toBe("team");
+  expect(seenByProxy).toEqual(["/team"]);
+});
+
+test("sends a Server Action of a node past the proxy too", async () => {
+  db.notes.set("1", { id: "1", title: "Inbox triage", body: "" });
+
+  // At this URL the proxy would redirect the action of a visitor without a session.
+  await renderServer(<FavoriteButton id="1" favorite={false} />, { url: "/team" });
+
+  await page.getByRole("button", { name: "Favorite" }).click();
+  await expect.element(page.getByRole("button", { name: "Favorite", pressed: true })).toBeVisible();
+  expect(db.notes.get("1")?.favorite).toBe(true);
+  expect(seenByProxy).toEqual([]);
+});
+
+test("refreshes a node past the proxy, and sends its fetch to another path through it", async () => {
+  db.notes.set("1", { id: "1", title: "Inbox triage", body: "" });
+  async function NoteTitle() {
+    return <h1>{(await db.getNote("1"))?.title}</h1>;
+  }
+
+  await renderServer(
+    <>
+      <NoteTitle />
+      <RenameNote id="1" />
+    </>,
+    { url: "/notes/1" },
+  );
+
+  await page.getByRole("textbox", { name: "New title" }).fill("Inbox zero");
+  await page.getByRole("button", { name: "Rename" }).click();
+
+  // The route handler, then `router.refresh()`, which renders the node again.
+  await expect.element(page.getByRole("heading", { name: "Inbox zero" })).toBeVisible();
+  expect(seenByProxy).toEqual(["/api/notes/1"]);
+});
+
+test("sends a navigation from a node to another route through the proxy", async () => {
+  await renderServer(<Link href="/team">Team</Link>, { url: "/notes" });
+  expect(seenByProxy).toEqual([]);
+
+  await page.getByRole("link", { name: "Team" }).click();
+
+  // Without a session.
+  await expect.element(page.getByRole("heading", { name: "Account" })).toBeVisible();
+  expect(window.location.pathname + window.location.search).toBe("/account?from=%2Fteam");
+  expect(seenByProxy).toContain("/team");
 });

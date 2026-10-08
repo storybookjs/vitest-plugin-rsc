@@ -27,7 +27,8 @@ afterEach(() => {
 });
 
 // A node renders on its own, the way Testing Library renders a component: in
-// a container, without the app's layouts.
+// a container, without the app's layouts. And without the proxy: see
+// routing.test.tsx.
 
 async function RequestInfo() {
   return (
@@ -147,6 +148,12 @@ test("says so when `layouts` is asked for a url without a page file", async () =
   // `app/board` only has slots: no page for the node to stand in for.
   await expect(renderServer(<RouterState />, { url: "/board", layouts: true })).rejects.toThrow(
     none("/board"),
+  );
+});
+
+test("points to a node for a page without the layouts of its route", async () => {
+  await expect(renderServer({ url: "/notes", layouts: false })).rejects.toThrow(
+    "render it as a node: `renderServer(<Page />, { url })`",
   );
 });
 
