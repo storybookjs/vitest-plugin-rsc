@@ -412,9 +412,13 @@ What is still to do on it:
 
 ## Watch Mode
 
+Watch mode, `vitest --changed` and `vitest related` are one addition to the plugin, in `src/nextjs/affected/`, with a plugin of its own. Nothing else knows of it: `plugin.ts` lists it, and `rsc.ts` tells it what a test file loads. Its `index.ts` says how to take it out, and what is left then: every test passes as before, an edit in watch mode runs every test file that opens a route, and `--changed` does not find the test files of a route.
+
+What leans on the inside of Vitest, rather than on something Vitest offers a plugin, is in `affected/vitest.ts` and nowhere else: three functions, each with what it leans on. `affected/vitest.test.ts` runs them against the real Vitest, so an update that changes one of those fails a test.
+
 Vitest finds the test files to run again in Vite's module graph: it walks from the file that changed to what imports it, up to the test files. A test that opens a route with `renderServer({ url })` does not import `page.tsx`. The plugin does, in one module that lists every route, and every test file ends up importing that module. So in the graph every test file imports every route, and an edit of one page would run them all.
 
-The tab knows better, and says so: when the server in it loads the modules of a route, it calls a browser command of the plugin, and Vitest adds the test file that runs. Right before Vitest looks up the test files for a change, the plugin makes the graph say the same (`watch.ts`): the list no longer imports the modules of the routes, and a test file imports the ones of the routes it loaded. The lookup is still Vitest's, so a component deep in a page finds the test files of that page, and a module that a test file imports itself still finds that test file.
+The tab knows better, and says so: when the server in it loads the modules of a route, it calls a browser command of the plugin, and Vitest adds the test file that runs. Right before Vitest looks up the test files for a change, the plugin makes the graph say the same (`affected/watch.ts`): the list no longer imports the modules of the routes, and a test file imports the ones of the routes it loaded. The lookup is still Vitest's, so a component deep in a page finds the test files of that page, and a module that a test file imports itself still finds that test file.
 
 ```
 app/profile/page.tsx changes
@@ -424,6 +428,7 @@ app/profile/page.tsx changes
 
 - **The hook** is `watchTriggerPatterns` of Vitest's config, with a pattern for every file and a function that returns nothing: Vitest calls it for a file that changes, before its own lookup.
 - **A layout** is in the modules of every route under it, so it runs the test files of all of them.
+- **The module of a Server Action** that no page imports runs the test files that called an action of it: the tab says so too.
 - **A route that no test file has loaded** runs nothing. Neither does a test file that has not run since Vitest started: what it loads is not known yet.
 - **A test file that changes** is forgotten until it has run again.
 - **Tailwind** has to be told apart: it registers every file it scans as a dependency of the stylesheet, and Vitest follows that too, so a save of any file runs every test file whose page has the stylesheet. `playground/nextjs-notes-demo/test/ignore-watched-only-modules.ts` takes those out with the same hook.
@@ -433,7 +438,7 @@ app/profile/page.tsx changes
 
 These pick the test files of a change before anything has run, so the tab cannot say what they load. Vitest answers from the imports of each test file: it transforms the file in the `ssr` environment, follows the imports that are files of the project, and keeps the test files that reach a changed file. For an app of Next that fails twice. A test file does not import the page it opens. And the `ssr` environment is none of the three layers: it has no compiler of Next, so it cannot read a file of the app that needs one, like a `.js` file with JSX.
 
-A run does know (`related.ts`). When a test file has passed, the files it depends on are in Vite's module graphs, and the plugin writes them down, each with a hash of what is in it, in `vitest-plugin-rsc/related-<project>.json` in Vite's cache directory:
+A run does know (`affected/related.ts`). When a test file has passed, the files it depends on are in Vite's module graphs, and the plugin writes them down, each with a hash of what is in it, in `vitest-plugin-rsc/related-<project>.json` in Vite's cache directory:
 
 - what the test file and the setup files import;
 - what the routes it loaded import, and the modules of the Server Actions it called;

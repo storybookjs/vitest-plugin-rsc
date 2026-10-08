@@ -10,8 +10,7 @@ import { createCompilePlugin, createDependencyCompilePlugin } from "./compile.ts
 import { createNodePlatform } from "./node-platform.ts";
 import { loadNextProject, type NextLayer, type NextProject } from "./project.ts";
 import { createServerCode, type ServerCodeOptions } from "./server-code.ts";
-import { createRelatedRoutes } from "./related.ts";
-import { createRouteWatch, routeLoadedCommand, type RouteKind } from "./watch.ts";
+import { affectedTests } from "./affected/index.ts";
 
 // Each layer of Next is a Vite environment, and all three run in the test's
 // tab (docs/next-routes.md). Where Next's own bundler config says a module
@@ -411,54 +410,27 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
   let project: NextProject;
   const serverCode = createServerCode(registry, options);
   const getProject = () => project;
-  // `vitest --changed` knows the routes a test file loaded, see related.ts.
-  // The modules of the routes, for what follows.
-  const lists = routeModules.map(({ list }) => `\0${list}`);
-  const modulesOf = (kind: RouteKind, page: string) =>
-    [...project.routes, ...project.componentRoutes].flatMap((route, index) =>
-      route.kind === kind && entryOf(route) === page
-        ? routeModules
-            .filter((modules) => modules.layer === "rsc")
-            .map(({ prefix }) => `\0${prefix}${index}`)
-        : [],
-    );
-  const relatedRoutes = createRelatedRoutes({
-    environments: layers.map((layer) => environmentOf[layer]),
-    lists,
-    appDir: () => project.appDir,
-    // What Next reads next to the `app` directory, in the root or in `src`,
-    // and the mocks of packages, which Vitest reads from the root.
-    shared: () => {
-      const mocks = path.join(project.root, "__mocks__");
-      return [
-        ...nextFiles(),
-        ...(fs.existsSync(mocks)
-          ? (fs.readdirSync(mocks, { recursive: true }) as string[])
-              .map((name) => path.join(mocks, name))
-              .filter((file) => fs.statSync(file).isFile())
-          : []),
-      ];
-    },
-  });
-  const nextFiles = () =>
-    [...new Set([project.root, path.dirname(project.appDir)])].flatMap((directory) =>
-      fs
-        .readdirSync(directory)
-        .filter((name) =>
-          /^(next\.config|middleware|proxy|instrumentation(-client)?)\.\w+$|^[tj]sconfig(\.[\w-]+)?\.json$|^\.env(\.|$)/.test(
-            name,
-          ),
-        )
-        .map((name) => path.join(directory, name)),
-    );
-  // Watch mode runs the test files that loaded a route, see watch.ts.
-  const routeWatch = createRouteWatch({ environment: environmentOf.rsc, lists, modulesOf });
   const resolvers = Object.fromEntries(
     layers.map((layer) => [layer, createLayerResolver(getProject, layer)]),
   ) as Record<NextLayer, LayerResolver>;
 
   return [
     ...createRunnerEnvironmentPlugins(environmentOf.ssr),
+    // Watch mode and `vitest --changed` find the test files of a route. On
+    // its own: nothing else here knows of it.
+    affectedTests({
+      environments: layers.map((layer) => environmentOf[layer]),
+      lists: routeModules.map(({ list }) => `\0${list}`),
+      modulesOf: (kind, entry) =>
+        [...project.routes, ...project.componentRoutes].flatMap((route, index) =>
+          route.kind === kind && entryOf(route) === entry
+            ? routeModules
+                .filter((modules) => modules.layer === "rsc")
+                .map(({ prefix }) => `\0${prefix}${index}`)
+            : [],
+        ),
+      next: getProject,
+    }),
     {
       name: "vitest-plugin-rsc:next",
       enforce: "pre",
@@ -561,27 +533,8 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
 
         // Before the project's own setup files: one that imports a module of
         // Next's server needs the server's platform to be there.
-        const test = ((
-          config as {
-            test?: {
-              setupFiles?: string | string[];
-              browser?: { commands?: Record<string, unknown> };
-            };
-          }
-        ).test ??= {});
+        const test = ((config as { test?: { setupFiles?: string | string[] } }).test ??= {});
         test.setupFiles = [setupFile, ...[test.setupFiles ?? []].flat()];
-        // Vitest lists the commands for the tab when the project starts.
-        ((test.browser ??= {}).commands ??= {})[routeLoadedCommand] = (
-          context: { testPath: string | undefined },
-          kind: RouteKind | "action",
-          page: string,
-        ) => {
-          // A Server Action of a module that no page of the test imports: the
-          // id of an action starts with its module.
-          if (kind === "action") return relatedRoutes.loaded(context.testPath, [page]);
-          routeWatch.command(context, kind, page);
-          relatedRoutes.loaded(context.testPath, modulesOf(kind, page));
-        };
 
         return {
           // Next's build resolves the `paths` of the tsconfig.
@@ -644,7 +597,6 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
       // test file or a setup file is not server code.
       configureVitest({ vitest, project: testProject }: { vitest: Vitest; project: TestProject }) {
         const test = testProject.config;
-        routeWatch.start(vitest, testProject);
         const setupFiles = new Set(test.setupFiles.map((file) => normalizePath(file)));
         // `test.include`, matched the way Vitest does. Not `includeSource`:
         // a file with tests in its source is a file of the app.
@@ -652,11 +604,6 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
           resolve: test.dir || test.root,
         });
         serverCode.addTestFiles((file) => setupFiles.has(file) || isIncluded(file));
-        relatedRoutes.start(vitest, testProject, isIncluded);
-      },
-      // Vitest looks up the test files of a changed file in this environment.
-      transform(_, id) {
-        return relatedRoutes.lookup(this.environment.name, id.split("?")[0]!);
       },
       resolveId(source) {
         if (source === manifestId || routeModules.some(isRouteModule(source))) return `\0${source}`;
