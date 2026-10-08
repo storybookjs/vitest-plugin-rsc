@@ -27,10 +27,7 @@ const modulesOfPage = () =>
   new WeakRef((globalThis as { __viteRscCallServer?: object }).__viteRscCallServer!);
 
 // Passes once the tab has let go of what `modules` refers to: after the tasks
-// that the page had queued have run. A full collection of a tab that has run
-// many tests takes a while on a slow machine, like the runners of CI.
-const collected = { timeout: 15_000 };
-
+// that the page had queued have run.
 async function expectCollected(modules: WeakRef<object>): Promise<void> {
   await expect
     .poll(
@@ -39,12 +36,12 @@ async function expectCollected(modules: WeakRef<object>): Promise<void> {
         // Not the object itself: the assertion would keep it.
         return modules.deref() === undefined;
       },
-      { timeout: 12_000, interval: 100 },
+      { timeout: 4000, interval: 100 },
     )
     .toBe(true);
 }
 
-test("lets go of a page that the test has left, with all of its modules", collected, async () => {
+test("lets go of a page that the test has left, with all of its modules", async () => {
   await renderServer({ url: "/" });
   const modules = modulesOfPage();
 
@@ -53,7 +50,7 @@ test("lets go of a page that the test has left, with all of its modules", collec
   await expectCollected(modules);
 });
 
-test("lets go of the last page once the test has cleaned up", collected, async () => {
+test("lets go of the last page once the test has cleaned up", async () => {
   await renderServer({ url: "/" });
   const modules = modulesOfPage();
 
@@ -63,7 +60,7 @@ test("lets go of the last page once the test has cleaned up", collected, async (
   await expectCollected(modules);
 });
 
-test("lets go of a page that rendered a portal in the body", collected, async () => {
+test("lets go of a page that rendered a portal in the body", async () => {
   await renderServer({ url: "/help" });
   // React adds its listeners to where a portal renders: the body.
   await page.getByRole("button", { name: "Help" }).click();
@@ -79,7 +76,7 @@ test("lets go of a page that rendered a portal in the body", collected, async ()
   await expectCollected(modules);
 });
 
-test("lets go of a node that rendered a portal in the body", collected, async () => {
+test("lets go of a node that rendered a portal in the body", async () => {
   // What the test has in the body stays there for the node.
   const mine = document.body.appendChild(document.createElement("aside"));
   await renderServer(<HelpDialog />);
@@ -99,22 +96,18 @@ test("lets go of a node that rendered a portal in the body", collected, async ()
   mine.remove();
 });
 
-test(
-  "lets go of a node that the test has left, also in a container of the test's",
-  collected,
-  async () => {
-    // The test keeps this container, and React adds its listeners to it, not
-    // to the document.
-    const container = document.body.appendChild(document.createElement("section"));
-    await renderServer(<Counter />, { container });
-    const modules = modulesOfPage();
+test("lets go of a node that the test has left, also in a container of the test's", async () => {
+  // The test keeps this container, and React adds its listeners to it, not
+  // to the document.
+  const container = document.body.appendChild(document.createElement("section"));
+  await renderServer(<Counter />, { container });
+  const modules = modulesOfPage();
 
-    await renderServer(<Counter />);
+  await renderServer(<Counter />);
 
-    await expectCollected(modules);
-    container.remove();
-  },
-);
+  await expectCollected(modules);
+  container.remove();
+});
 
 test("removes the listeners that React added to the document", async () => {
   const added = vi.spyOn(document, "addEventListener");
