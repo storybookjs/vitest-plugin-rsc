@@ -117,6 +117,28 @@ test("serves a path that is not a route with the not-found page", async () => {
   await expect.element(page.getByRole("heading", { name: "Nothing here" })).toBeVisible();
 });
 
+test("has the URL of the page when an inline script of the page runs", async () => {
+  await renderServer({ url: "/script/location" });
+
+  expect((window as { loadedAt?: string }).loadedAt).toBe("/script/location");
+});
+
+test("answers a request for the not-found page itself with a 404", async () => {
+  expect((await handleRequest("/_not-found")).status).toBe(404);
+});
+
+test("uploads a file to a Server Action, with a name that is not ASCII", async () => {
+  await renderServer({ url: "/upload" });
+  const files = new DataTransfer();
+  // The UTF-8 of `テ` has bytes that are no latin1 character in a browser.
+  files.items.add(new File(["hello"], "hello你好テスト.txt", { type: "text/plain" }));
+  (page.getByLabelText("File").element() as HTMLInputElement).files = files.files;
+
+  await page.getByRole("button", { name: "Upload" }).click();
+
+  await expect.poll(() => db.notes.get("hello你好テスト.txt")?.body).toBe("hello");
+});
+
 test("runs a Server Action that sets a cookie, revalidates and redirects", async () => {
   await renderServer({ url: "/notes/new" });
 

@@ -1,9 +1,14 @@
 import { MockedResponse } from "next/dist/server/lib/mock-request";
 import type { RequestMeta } from "next/dist/server/request-meta";
 import { fromNodeOutgoingHttpHeaders, toNodeOutgoingHttpHeaders } from "next/dist/server/web/utils";
-import { nextConfig, routesManifest } from "virtual:vitest-plugin-rsc/next-manifest";
+import {
+  nextConfig,
+  preview,
+  routesManifest,
+  routing,
+} from "virtual:vitest-plugin-rsc/next-manifest";
 import { Readable } from "virtual:vitest-plugin-rsc/node-stream";
-import { preview, restoreIncrementalCache } from "./cache.ts";
+import { restoreIncrementalCache } from "./cache.ts";
 import { registry, type RequestHandler, type ServerRequest } from "./registry.ts";
 
 // Next's server runs here as it does on Node.js, its default runtime. (Its
@@ -73,7 +78,7 @@ const manifests: [suffix: string, manifest: () => unknown][] = [
     () => ({ node: serverActions, edge: serverActions, encryptionKey: "" }),
   ],
   ["required-server-files.json", () => ({ config: nextConfig })],
-  ["BUILD_ID", () => process.env.__NEXT_BUILD_ID ?? "vitest"],
+  ["BUILD_ID", () => routing.buildId],
 ];
 
 function loadManifest(file: string): unknown {

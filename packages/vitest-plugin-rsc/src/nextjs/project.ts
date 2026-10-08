@@ -101,6 +101,19 @@ export type NextProject = {
   routing: NextRouting;
   /** What a build writes to `.next/routes-manifest.json`, which Next's route module reads. */
   routesManifest: RoutesManifest;
+  /** The keys of draft mode, which a build makes and writes to `.next/`. */
+  preview: {
+    previewModeId: string;
+    previewModeSigningKey: string;
+    previewModeEncryptionKey: string;
+  };
+  /**
+   * The `paths` of the app's tsconfig or jsconfig, as Next's build reads
+   * them, and the directory they are from. Nothing for an app without either.
+   */
+  paths:
+    | { baseUrl: string; explicitBaseUrl: boolean; patterns: Record<string, string[]> }
+    | undefined;
   /** The resolved `next.config`, as far as it serializes. */
   config: Record<string, unknown>;
   /** Next's compile-time constants per layer, as code strings. */
@@ -644,6 +657,25 @@ export async function loadNextProject(
     // What the route is, is what Next builds for it: the file it selects.
     const kind = page.endsWith("/page") ? "page" : isRouteHandler(page) ? "route" : undefined;
     if (kind) routes.push({ kind, page, pathname, appPaths, pagePath });
+  }
+
+  // A page without a root layout. Next's loader of a page ends the process
+  // for one, with a line that does not say whose it is.
+  for (const route of routes) {
+    if (route.kind !== "page" || !route.pagePath.startsWith(APP_DIR_ALIAS)) continue;
+    const file = path.join(appDir, route.pagePath.slice(APP_DIR_ALIAS.length));
+    const hasLayout = (directory: string): boolean =>
+      pageExtensions.some((extension) =>
+        fs.existsSync(path.join(directory, `layout.${extension}`)),
+      ) ||
+      (directory !== appDir && hasLayout(path.dirname(directory)));
+    if (!hasLayout(path.dirname(file))) {
+      throw new Error(
+        `vitest-plugin-rsc: ${path.relative(root, file).split(path.sep).join("/")} does not ` +
+          `have a root layout: there is no layout file in its directory or in one above it, ` +
+          `up to the app directory. \`next build\` stops at that too.`,
+      );
+    }
   }
 
   // Next's edge runtime is deprecated, and a route that asks for it with
@@ -1282,7 +1314,12 @@ export async function loadNextProject(
   // Next's SWC transform, with the options next-swc-loader gives it for a
   // module of the app in a layer.
   await swc.loadBindings(config.experimental.useWasmBinary);
-  const { jsConfig } = await loadJsConfig(root, config);
+  const { jsConfig, resolvedBaseUrl } = await loadJsConfig(root, config);
+  const paths = resolvedBaseUrl && {
+    baseUrl: resolvedBaseUrl.baseUrl,
+    explicitBaseUrl: !resolvedBaseUrl.isImplicit,
+    patterns: (jsConfig?.compilerOptions?.paths ?? {}) as Record<string, string[]>,
+  };
   const bundleLayers = {
     rsc: WEBPACK_LAYERS.reactServerComponents,
     ssr: WEBPACK_LAYERS.serverSideRendering,
@@ -1544,6 +1581,8 @@ export async function loadNextProject(
     middlewareFile,
     routing,
     routesManifest,
+    preview: previewProps,
+    paths,
     config: JSON.parse(JSON.stringify(config)),
     defines: { rsc: definesFor("rsc"), ssr: definesFor("ssr"), browser: definesFor("browser") },
     aliases,

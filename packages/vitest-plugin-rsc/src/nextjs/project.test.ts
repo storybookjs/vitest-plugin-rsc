@@ -707,13 +707,13 @@ test("finds the proxy of the app, and loads it with Next's template", async () =
 });
 
 test("has no middleware for an app without one, and a matcher for every path without a config", async () => {
-  const plain = await loadNextProject(appWith(["page.js"]), installed);
+  const plain = await loadNextProject(appWith(["layout.js", "page.js"]), installed);
 
   expect(plain.middlewareFile).toBeUndefined();
   expect(await plain.loadMiddlewareEntry()).toBeUndefined();
   expect(plain.routing.routes.middlewareMatchers).toEqual([]);
 
-  const app = appWith(["page.js"]);
+  const app = appWith(["layout.js", "page.js"]);
   fs.writeFileSync(path.join(app, "middleware.js"), "export function middleware() {}");
   const { routing, middlewareFile } = await loadNextProject(app, installed);
 
@@ -722,7 +722,7 @@ test("has no middleware for an app without one, and a matcher for every path wit
 });
 
 test("does not take a folder with the name of the proxy for it, as `next build` does not", async () => {
-  const app = appWith(["page.js"]);
+  const app = appWith(["layout.js", "page.js"]);
   fs.mkdirSync(path.join(app, "middleware"));
   fs.writeFileSync(path.join(app, "middleware/index.js"), "export const helper = 1;");
 
@@ -735,7 +735,7 @@ test("does not take a folder with the name of the proxy for it, as `next build` 
 });
 
 test("rejects an app with both a proxy and a middleware, as `next build` does", async () => {
-  const app = appWith(["page.js"]);
+  const app = appWith(["layout.js", "page.js"]);
   fs.writeFileSync(path.join(app, "proxy.js"), "export function proxy() {}");
   fs.writeFileSync(path.join(app, "middleware.js"), "export function middleware() {}");
 
@@ -745,7 +745,9 @@ test("rejects an app with both a proxy and a middleware, as `next build` does", 
 });
 
 test("resolves a URL with a trailing slash to its route when next.config asks for the slash", async () => {
-  const app = appWith(["page.js", "notes/page.js", "notes/[id]/page.js"], { trailingSlash: true });
+  const app = appWith(["layout.js", "page.js", "notes/page.js", "notes/[id]/page.js"], {
+    trailingSlash: true,
+  });
   const { routing } = await loadNextProject(app, installed);
 
   // Next redirects to the URL with the slash.
@@ -759,7 +761,7 @@ test("resolves a URL with a trailing slash to its route when next.config asks fo
 });
 
 test("resolves the routes of an app with a base path", async () => {
-  const app = appWith(["page.js", "notes/[id]/page.js"], { basePath: "/shop" });
+  const app = appWith(["layout.js", "page.js", "notes/[id]/page.js"], { basePath: "/shop" });
   const { routing } = await loadNextProject(app, installed);
 
   // The page of `/` is at the base path itself.
@@ -769,7 +771,7 @@ test("resolves the routes of an app with a base path", async () => {
 });
 
 test("routes an app as the App Router does, whatever next.config has for the Pages Router or an export", async () => {
-  const localized = appWith(["page.js", "notes/page.js"]);
+  const localized = appWith(["layout.js", "page.js", "notes/page.js"]);
   fs.writeFileSync(
     path.join(localized, "next.config.mjs"),
     `export default {
@@ -791,7 +793,7 @@ test("routes an app as the App Router does, whatever next.config has for the Pag
   expect(new RegExp(matcher!.sourceRegex).test("/notes")).toBe(true);
 
   // Next's build reads the files of an export. The routes are the same.
-  const exported = appWith(["page.js", "notes/page.js"], { output: "export" });
+  const exported = appWith(["layout.js", "page.js", "notes/page.js"], { output: "export" });
 
   expect(await resolve((await loadNextProject(exported, installed)).routing, "/notes")).toEqual({
     page: "/notes/page",
@@ -800,6 +802,7 @@ test("routes an app as the App Router does, whatever next.config has for the Pag
 
 test("resolves a URL to a route with a name that the URL percent-encodes", async () => {
   const app = appWith([
+    "layout.js",
     "page.js",
     "日本語/page.js",
     "release notes/page.js",
@@ -965,4 +968,11 @@ test("needs Next's build to have a page for the proxy file", async () => {
   await expect(loadNextProject(root, next)).rejects.toThrow(
     changed(`\`createPagesMapping()\` has no page for ${path.join(root, "proxy.ts")}`),
   );
+});
+
+test("stops for a page without a root layout, which Next's loader ends the process for", async () => {
+  // Two root layouts in route groups, and a page that is in neither.
+  const dir = appWith(["(shop)/layout.tsx", "(shop)/cart/page.tsx", "page.tsx"]);
+
+  await expect(loadNextProject(dir)).rejects.toThrow("app/page.tsx does not have a root layout");
 });

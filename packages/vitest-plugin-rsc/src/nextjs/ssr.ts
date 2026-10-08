@@ -390,8 +390,9 @@ async function handle(request: ServerRequest, unrouted: "not-found" | "pass"): P
 
     const { handler } = (await registry.loadAppPage(entry)) as { handler: RequestHandler };
     const response = await handleWith(routed, context, handler, requestMeta);
-    // Whoever routes a request to the not-found page sets its status.
-    const status = component || matched ? response.status : 404;
+    // Whoever routes a request to the not-found page sets its status, also
+    // for a request to `/_not-found` itself.
+    const status = page === notFoundPage ? 404 : response.status;
     return finishWithBody(request, response, status, endRequest, routedHeaders);
   } catch (error) {
     endRequestScope();
