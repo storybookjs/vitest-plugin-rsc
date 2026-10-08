@@ -259,25 +259,6 @@ function declarationOf(file: string, name: string, seen = new Set<string>()): De
   }
 }
 
-// The keys of the options object that a function takes, however it reads them:
-// in its parameter, or off the parameter in its body.
-function optionKeys({ code, params = [] }: Declared): string[] {
-  const [param] = params as { type: string; name?: string; properties?: object[] }[];
-  if (param?.type === "ObjectPattern") {
-    return param.properties!.flatMap((property) =>
-      "key" in property && property.key ? [nameOf(property.key)] : [],
-    );
-  }
-  if (param?.type !== "Identifier") return [];
-  const options = param.name!;
-  return [
-    ...Array.from(code.matchAll(new RegExp(`\\b${options}\\.(\\w+)`, "g")), (match) => match[1]!),
-    ...Array.from(code.matchAll(new RegExp(`\\{([^}]*)\\}\\s*=\\s*${options}\\b`, "g")), (match) =>
-      match[1]!.split(",").map((part) => part.split(":")[0]!.trim()),
-    ).flat(),
-  ];
-}
-
 // The root segment of the routes of a node: see `loadComponentPageEntry()`.
 // The parentheses make it a route group for Next, so it never shows in a
 // pathname.
@@ -818,17 +799,6 @@ export async function loadNextProject(
   );
   // The plugin turns Next's renderer to web streams with this.
   runtimeFile("server/app-render/stream-ops").contains("process.env.__NEXT_USE_NODE_STREAMS");
-  const setManifests = runtimeFile("server/app-render/manifests-singleton").export(
-    "setManifestsSingleton",
-  );
-  // Unless its declaration is in a module that is not read here.
-  const manifestKeys = optionKeys(setManifests);
-  for (const key of ["page", "clientReferenceManifest", "serverActionsManifest"]) {
-    if (setManifests.code && !manifestKeys.includes(key)) {
-      fail(`\`setManifestsSingleton()\` takes no \`${key}\``);
-    }
-  }
-
   const aliases = {
     rsc: aliasesFor("rsc"),
     ssr: aliasesFor("ssr"),

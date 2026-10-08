@@ -383,7 +383,6 @@ const runtimeImports: Record<NextLayer, string[]> = {
     ...react,
     "react-dom",
     "next/dist/server/route-modules/app-page/module",
-    "next/dist/server/app-render/manifests-singleton",
     "next/dist/server/lib/incremental-cache",
     "next/dist/server/lib/incremental-cache/tags-manifest.external",
     // node-server.ts

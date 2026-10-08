@@ -225,6 +225,25 @@ test("streams the response of a route handler, which reads a mocked module", asy
   expect(await reader.read()).toEqual({ done: true, value: undefined });
 });
 
+test("ends the streamed response of a route handler with the error that stopped it", async () => {
+  consoleError.mockImplementation(() => {});
+  let rejectForecast!: (error: Error) => void;
+  vi.mocked(getForecast).mockReturnValue(new Promise((_, reject) => (rejectForecast = reject)));
+
+  const response = await handleRequest("/api/forecast");
+  const reader = response.body!.pipeThrough(new TextDecoderStream()).getReader();
+  expect(await reader.read()).toEqual({ done: false, value: "Today: " });
+
+  rejectForecast(new Error("The service is down"));
+  // Not as a request that the test left.
+  await expect(reader.read()).rejects.toThrow("The service is down");
+  // Next logs that it could not send the rest.
+  await expect
+    .poll(() => consoleError.mock.calls.flat().map(String))
+    .toEqual(["Error: failed to pipe response"]);
+  consoleError.mockClear();
+});
+
 test("stops a route handler whose streamed response is no longer read", async () => {
   let resolveForecast!: (forecast: string) => void;
   vi.mocked(getForecast).mockReturnValue(new Promise((resolve) => (resolveForecast = resolve)));

@@ -30,6 +30,17 @@ export const preview = {
 // function that was still running when its test ended, and stores its result
 // afterwards under the key it already had.
 let generation = 0;
+// The cache of the server now: of the request it handles, or between requests.
+let current: IncrementalCache | undefined;
+
+/**
+ * Puts the cache of the server back in the global Next reads it from. Next's
+ * route module leaves one of its own there. A request that was left can end
+ * long after its test: the cache is the one of now, not of that request.
+ */
+export function restoreIncrementalCache(): void {
+  globalThis.__incrementalCache = current;
+}
 
 /**
  * Gives a request the cache of the server, with the options that
@@ -37,7 +48,7 @@ let generation = 0;
  * cache between requests, for a test that calls a cached function itself.
  */
 export function shareIncrementalCache(headers = new Headers()): void {
-  globalThis.__incrementalCache = new IncrementalCache({
+  globalThis.__incrementalCache = current = new IncrementalCache({
     // With these two Next takes its own handler, the one `next start` uses,
     // which keeps the entries in memory. It only reads or writes files on
     // Node.js and with `flushToDisk`, so the file system is never asked.
