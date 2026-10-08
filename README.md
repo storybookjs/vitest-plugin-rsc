@@ -838,7 +838,7 @@ The options for a node, all optional:
 | `proxy`       | `true` runs `proxy.ts` and the routing of `next.config` for the request, as for a route.            |
 | `layouts`     | `true` renders the node in place of the page at `url`, inside your app's layouts.                   |
 | `container`   | An empty element for the node. Defaults to a new `<div>` in `baseElement`, which `cleanup` removes. |
-| `baseElement` | Defaults to `document.body`.                                                                        |
+| `baseElement` | Defaults to `container` if you pass one, else `document.body`.                                      |
 
 A node resolves with `{ container, baseElement, asFragment, unmount, response }`.
 
@@ -932,11 +932,11 @@ Next.js is a build and a runtime, and only the build is tied to a bundler. So th
 
 Next compiles an app into three layers, each with its own module graph and its own build of React. Each is a Vite environment here, and all three run in the test's tab:
 
-| Layer     | Runs                                              | Vite environment |
-| --------- | ------------------------------------------------- | ---------------- |
-| `rsc`     | Server Components, Server Actions, route handlers | `client`         |
-| `ssr`     | A page's request handler, the HTML renderer       | `next_ssr`       |
-| `browser` | Next's router, your Client Components             | `react_client`   |
+| Layer     | Runs                                                                   | Vite environment |
+| --------- | ---------------------------------------------------------------------- | ---------------- |
+| `rsc`     | Server Components, Server Actions, route handlers                      | `client`         |
+| `ssr`     | Next's route module, the HTML renderer, the server in front of the app | `next_ssr`       |
+| `browser` | Next's router, your Client Components                                  | `react_client`   |
 
 The test runs in `client`, the `rsc` layer's Vite environment. That's why a module your test imports is the instance your Server Components read.
 
