@@ -300,7 +300,7 @@ There is no HTML to render, so the `ssr` layer plays no part. A module that `rou
 
 The request handler is Next's own, the one `next start` calls. It finds the route params in the URL, makes the `NextRequest`, and writes the handler's `Response` to the server's response. A handler that throws is answered with `500` and no body, and Next logs the error with `console.error`.
 
-Next hands the work it does for a request after responding, like `after()` callbacks, to `waitUntil`. The request lasts until that work is done, so the callbacks read their own request's stores. The next request waits for that work, for one second at most.
+Next hands the work it does for a request after responding, like `after()` callbacks, to `waitUntil`. The request lasts until that work is done, so the callbacks read their own request's stores. A request that comes in meanwhile waits for that work, for one second at most. A nested one, which the server makes to itself while it handles another, lasts one second at most after its response. Leaving a page waits for all of it, also at the end of a test: five seconds at most, with a warning when it has to stop waiting.
 
 ## The Server In Front Of The App
 

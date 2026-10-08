@@ -59,10 +59,6 @@ function browserHeaders(headers: Headers, url: URL, method: string): Headers {
   return headers;
 }
 
-// A test's own timers may be fake.
-const setTimeout = globalThis.setTimeout;
-const clearTimeout = globalThis.clearTimeout;
-
 // What was in the browser's storage before the app ran, which is the test
 // runner's to keep.
 const storages = [localStorage, sessionStorage].map(
@@ -618,7 +614,7 @@ async function openPage(
       "vitest-plugin-rsc/nextjs/client",
     );
     superseded();
-    return client.start(loaded, container);
+    return client.start(loaded, container, signal);
   })();
   page = { started: started.catch(() => {}), unmount: () => leave() };
   try {
@@ -641,6 +637,12 @@ async function openPage(
 
 // One at a time: a page that is being left is left before the next one is.
 let leaving: Promise<void> = Promise.resolve();
+// How long leaving a page waits for it to stop starting, at most: less than
+// the 30 seconds of a hook in Browser Mode, so that this says why it waits.
+const startTimeout = 20_000;
+// A test's own timers may be fake.
+const setTimeout = globalThis.setTimeout;
+const clearTimeout = globalThis.clearTimeout;
 
 function leavePage(): Promise<void> {
   currentLoad?.abort(new DOMException("The page was left before it had loaded.", "AbortError"));
@@ -651,16 +653,23 @@ function leavePage(): Promise<void> {
   const gone = leaving
     .catch(() => {})
     .then(async () => {
-      // An app that is still starting cannot be stopped, and would go on to
-      // hydrate the next page with the client code of this one. It is about
-      // done: the document it starts from is already there.
+      // An app that is still starting would go on to hydrate the next page
+      // with the client code of this one. The abort above stops it, and it is
+      // gone once `started` has settled: see `start()` in client.tsx. Until
+      // then it may still load Next's client, which reads the payload of the
+      // document it finds. Only a load that hangs takes long.
       let timeout: ReturnType<typeof setTimeout> | undefined;
-      await Promise.race([
-        left?.started,
-        new Promise((resolve) => (timeout = setTimeout(resolve, 5000))),
+      const stopped = await Promise.race([
+        left?.started.then(() => true),
+        new Promise<false>((resolve) => (timeout = setTimeout(resolve, startTimeout, false))),
       ]);
-      // A timer that is still set keeps the page until it fires.
       clearTimeout(timeout);
+      if (stopped === false) {
+        console.warn(
+          `vitest-plugin-rsc: the page that was left was still loading its client code ` +
+            `${startTimeout / 1000}s later. The next page loads anyway.`,
+        );
+      }
       try {
         left?.unmount();
       } finally {
