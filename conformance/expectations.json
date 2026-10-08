@@ -4,21 +4,9 @@
       "category": "plugin-bug",
       "text": "A page that the app loads itself, like a link to a path that is no route, replaces the entry of the history where a browser adds one. `back()` does not return to the page before it."
     },
-    "action-to-no-route": {
-      "category": "plugin-bug",
-      "text": "A Server Action request to a path that is no route gets the not-found page, a 404. Next answers for the action: 400 or 409."
-    },
     "global-css-stays": {
       "category": "plugin-bug",
       "text": "The global CSS of a page that an earlier test opened still applies. Vite adds a stylesheet once, and it outlives its page."
-    },
-    "not-found-noindex": {
-      "category": "plugin-bug",
-      "text": "The not-found page of a path that is no route has no `<meta name=\"robots\" content=\"noindex\">`."
-    },
-    "internal-request-headers": {
-      "category": "plugin-bug",
-      "text": "A header that only Next's own server sets on a request, like `x-middleware-set-cookie`, is not taken off a request that comes in. `next start` drops those."
     },
     "proxy-location-header": {
       "category": "plugin-bug",
@@ -54,7 +42,7 @@
     },
     "server-action-ids": {
       "category": "not-yet",
-      "text": "A request for a Server Action that is not there. The ids are Vite RSC's, so the server does not tell a malformed id (400) from an unknown one (409), and does not log Next's error for it."
+      "text": "A form without JavaScript for a Server Action that is not there, which names it in a `$ACTION_ID_` field. The server answers 409 for an id that cannot be one, where Next answers 400, and logs Next's error without the id."
     },
     "form-without-javascript": {
       "category": "not-yet",
@@ -207,14 +195,8 @@
       "failed": {}
     },
     "actions-unrecognized": {
-      "passed": 8,
+      "passed": 14,
       "failed": {
-        "actions-unrecognized.test.ts > unrecognized server actions > with a malformed id > should reject a server action POST to a nonexistent page: plaintext": "action-to-no-route",
-        "actions-unrecognized.test.ts > unrecognized server actions > with a malformed id > should reject a server action POST to a nonexistent page: form-data/multipart": "action-to-no-route",
-        "actions-unrecognized.test.ts > unrecognized server actions > with a plausible but missing id > should reject a server action POST to a nonexistent page: plaintext": "action-to-no-route",
-        "actions-unrecognized.test.ts > unrecognized server actions > with a plausible but missing id > should reject a server action POST to a nonexistent page: form-data/multipart": "action-to-no-route",
-        "actions-unrecognized.test.ts > unrecognized server actions > with a well-known property name id > should reject a server action POST to a nonexistent page: plaintext": "action-to-no-route",
-        "actions-unrecognized.test.ts > unrecognized server actions > with a well-known property name id > should reject a server action POST to a nonexistent page: form-data/multipart": "action-to-no-route",
         "actions-unrecognized.test.ts > unrecognized server actions > should error and log a warning when submitting a server action with an unrecognized ID - nodejs > should reject an MPA action with a malformed ID": "server-action-ids",
         "actions-unrecognized.test.ts > unrecognized server actions > should error and log a warning when submitting a server action with an unrecognized ID - nodejs > should reject an MPA action with a plausible but missing ID": "server-action-ids",
         "actions-unrecognized.test.ts > unrecognized server actions > should error and log a warning when submitting a server action with an unrecognized ID - nodejs > server action invoked via form - js disabled": "javascript-off",
@@ -311,10 +293,8 @@
       }
     },
     "metadata-navigation": {
-      "passed": 6,
-      "failed": {
-        "metadata-navigation.test.ts > app dir - metadata navigation > navigation > should render root not-found with default metadata": "not-found-noindex"
-      }
+      "passed": 7,
+      "failed": {}
     },
     "next-font": {
       "passed": 10,
@@ -350,7 +330,7 @@
       }
     },
     "app-middleware": {
-      "passed": 12,
+      "passed": 13,
       "failed": {
         "app-middleware.test.ts > app-dir with middleware > should warn when deprecated middleware file is used": "cli-output",
         "app-middleware.test.ts > app-dir with middleware > Mutate request headers for Serverless Functions > Adds new headers": "pages-router",
@@ -360,7 +340,6 @@
         "app-middleware.test.ts > app-dir with middleware > Mutate request headers for Edge Functions > Deletes headers": "pages-router",
         "app-middleware.test.ts > app-dir with middleware > Mutate request headers for Edge Functions > Updates headers": "pages-router",
         "app-middleware.test.ts > app-dir with middleware > should respect cookie options of merged middleware cookies": "http-only-cookie",
-        "app-middleware.test.ts > app-dir with middleware > should ignore x-middleware-set-cookie as a request header": "internal-request-headers",
         "app-middleware.test.ts > app-dir with middleware > should not incorrectly treat a Location header as a rewrite": "proxy-location-header"
       }
     },

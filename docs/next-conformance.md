@@ -13,13 +13,13 @@ Measured against `next@16.4.0`, with `pnpm conformance --docs`.
 |                                                     |         Tests |
 | --------------------------------------------------- | ------------: |
 | Run                                                 |           484 |
-| **Pass**                                            | **362** (75%) |
-| Fail: a bug in the plugin                           |            12 |
+| **Pass**                                            | **370** (76%) |
+| Fail: a bug in the plugin                           |             4 |
 | Fail: Not Yet                                       |            69 |
 | Fail: not applicable                                |            41 |
 | Skipped by the test itself, for a run like this one |             4 |
 
-Of the 443 tests that apply, 362 pass: **82%**.
+Of the 443 tests that apply, 370 pass: **84%**.
 
 ### Per Fixture
 
@@ -36,7 +36,7 @@ Of the 443 tests that apply, 362 pass: **82%**.
 | `actions`                                         | 59 of 87 |     |       8 |  20 |       3 |
 | `actions-navigation`                              |   2 of 2 |     |         |     |         |
 | `actions-revalidate-remount`                      |   1 of 1 |     |         |     |         |
-| `actions-unrecognized`                            |  8 of 20 |   6 |       4 |   2 |         |
+| `actions-unrecognized`                            | 14 of 20 |     |       4 |   2 |         |
 | `server-actions-relative-redirect`                |   5 of 5 |     |         |     |         |
 | **Route handlers**                                |          |     |         |     |         |
 | `app-simple-routes`                               |   2 of 2 |     |         |     |         |
@@ -53,7 +53,7 @@ Of the 443 tests that apply, 362 pass: **82%**.
 | `errors`                                          |  9 of 16 |     |       7 |     |         |
 | **Metadata**                                      |          |     |         |     |         |
 | `metadata`                                        | 35 of 49 |     |      12 |   2 |         |
-| `metadata-navigation`                             |   6 of 7 |   1 |         |     |         |
+| `metadata-navigation`                             |   7 of 7 |     |         |     |         |
 | **next/font**                                     |          |     |         |     |         |
 | `next-font`                                       | 10 of 16 |     |       6 |     |         |
 | **next/image**                                    |          |     |         |     |         |
@@ -63,24 +63,13 @@ Of the 443 tests that apply, 362 pass: **82%**.
 | `revalidatetag-rsc`                               |   3 of 3 |     |         |     |         |
 | `unstable-rethrow`                                |   3 of 4 |     |         |   1 |         |
 | **The proxy, rewrites, redirects, trailingSlash** |          |     |         |     |         |
-| `app-middleware`                                  | 12 of 22 |   2 |       7 |   1 |         |
+| `app-middleware`                                  | 13 of 22 |   1 |       7 |   1 |         |
 | `rewrites-redirects`                              | 14 of 14 |     |         |     |         |
 | `trailingslash`                                   |   6 of 8 |     |       2 |     |         |
 | `app-routes-trailing-slash`                       |   2 of 2 |     |         |     |         |
 | `redirect-rewrite-dynamic`                        |   1 of 2 |     |         |   1 |         |
 
-### A Bug In The Plugin: 12 Tests
-
-<details><summary>6 × A Server Action request to a path that is no route gets the not-found page, a 404. Next answers for the action: 400 or 409.</summary>
-
-- `actions-unrecognized`: unrecognized server actions › with a malformed id › should reject a server action POST to a nonexistent page: plaintext
-- `actions-unrecognized`: unrecognized server actions › with a malformed id › should reject a server action POST to a nonexistent page: form-data/multipart
-- `actions-unrecognized`: unrecognized server actions › with a plausible but missing id › should reject a server action POST to a nonexistent page: plaintext
-- `actions-unrecognized`: unrecognized server actions › with a plausible but missing id › should reject a server action POST to a nonexistent page: form-data/multipart
-- `actions-unrecognized`: unrecognized server actions › with a well-known property name id › should reject a server action POST to a nonexistent page: plaintext
-- `actions-unrecognized`: unrecognized server actions › with a well-known property name id › should reject a server action POST to a nonexistent page: form-data/multipart
-
-</details>
+### A Bug In The Plugin: 4 Tests
 
 <details><summary>2 × A page that the app loads itself, like a link to a path that is no route, replaces the entry of the history where a browser adds one. `back()` does not return to the page before it.</summary>
 
@@ -92,18 +81,6 @@ Of the 443 tests that apply, 362 pass: **82%**.
 <details><summary>1 × The global CSS of a page that an earlier test opened still applies. Vite adds a stylesheet once, and it outlives its page.</summary>
 
 - `navigation`: app dir - navigation › hash-link-back-to-same-page › should scroll to the specified hash
-
-</details>
-
-<details><summary>1 × The not-found page of a path that is no route has no `<meta name="robots" content="noindex">`.</summary>
-
-- `metadata-navigation`: app dir - metadata navigation › navigation › should render root not-found with default metadata
-
-</details>
-
-<details><summary>1 × A header that only Next's own server sets on a request, like `x-middleware-set-cookie`, is not taken off a request that comes in. `next start` drops those.</summary>
-
-- `app-middleware`: app-dir with middleware › should ignore x-middleware-set-cookie as a request header
 
 </details>
 
@@ -198,7 +175,7 @@ Of the 443 tests that apply, 362 pass: **82%**.
 
 </details>
 
-<details><summary>4 × A request for a Server Action that is not there. The ids are Vite RSC's, so the server does not tell a malformed id (400) from an unknown one (409), and does not log Next's error for it.</summary>
+<details><summary>4 × A form without JavaScript for a Server Action that is not there, which names it in a `$ACTION_ID_` field. The server answers 409 for an id that cannot be one, where Next answers 400, and logs Next's error without the id.</summary>
 
 - `actions-unrecognized`: unrecognized server actions › should error and log a warning when submitting a server action with an unrecognized ID - nodejs › should reject an MPA action with a malformed ID
 - `actions-unrecognized`: unrecognized server actions › should error and log a warning when submitting a server action with an unrecognized ID - nodejs › should reject an MPA action with a plausible but missing ID
