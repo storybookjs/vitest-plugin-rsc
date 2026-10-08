@@ -1,4 +1,7 @@
-/** What each test file has loaded without an import of its own: see tab.ts. */
+/**
+ * What each test file has loaded without an import of its own: see
+ * browser.ts.
+ */
 export function loadedModules() {
   const loaded = new Map<string, Set<string>>();
   return {

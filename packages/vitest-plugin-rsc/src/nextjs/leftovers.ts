@@ -1,8 +1,8 @@
-// What React and Next leave on the tab when they load and start: listeners on
+// What React and Next leave behind when they load and start: listeners on
 // `window` and `document`, and the message channels of their schedulers. They
 // have no way to take them back: a browser drops them with the document. This
-// tab stays, and each of them keeps the page that added it, with all of its
-// modules. So they are recorded while the plugin loads and starts Next's
+// document stays, and each of them keeps the page that added it, with all of
+// its modules. So they are recorded while the plugin loads and starts Next's
 // client, and only then, to be removed when the page is left.
 
 export type Leftovers = {

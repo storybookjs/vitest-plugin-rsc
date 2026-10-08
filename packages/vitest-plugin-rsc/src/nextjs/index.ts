@@ -54,13 +54,13 @@ function browserHeaders(headers: Headers, url: URL, method: string): Headers {
 const setTimeout = globalThis.setTimeout;
 const clearTimeout = globalThis.clearTimeout;
 
-// What was in the tab's storage before the app ran, which is the test
+// What was in the browser's storage before the app ran, which is the test
 // runner's to keep.
 const storages = [localStorage, sessionStorage].map(
   (storage) => [storage, new Set(Object.keys(storage))] as const,
 );
 
-// What Vitest's UI stores in the tab's origin as its settings change, also
+// What Vitest's UI stores on this origin as its settings change, also
 // while the tests run: its panels, and its dark mode through VueUse.
 const isVitestKey = (key: string) => key.startsWith("vitest-") || key === "vueuse-color-scheme";
 
@@ -79,11 +79,11 @@ function clearCookies(): void {
 }
 
 // A page of another origin is not the app's: a browser would leave the app for
-// it, and this tab has the test to keep.
+// it, and this document has the test to keep.
 function leftTheApp(url: URL): Error {
   return new Error(
     `vitest-plugin-rsc: the app navigated to another origin: ${url.href}. ` +
-      `A browser would leave the app for it, which this tab cannot do.`,
+      `A browser would leave the app for it, which a test cannot do.`,
   );
 }
 
@@ -127,7 +127,7 @@ type Sending = {
   network?: () => Promise<Response>;
 };
 
-// The network between a client and the Next.js server in this tab. For the
+// The network between a client and the Next.js server in the browser. For the
 // browser it does what a browser does for a same-origin request: send the
 // cookies, store the ones that come back. For either it follows redirects.
 async function sendRequest(
@@ -160,7 +160,7 @@ async function sendRequest(
     }
     for (const cookie of server ? [] : response.headers.getSetCookie()) {
       // A script cannot store an HttpOnly cookie, and `document.cookie` is the
-      // cookie jar of this tab, so store it as a regular one.
+      // cookie jar here, so store it as a regular one.
       document.cookie = cookie.replace(/;\s*httponly/i, "");
       const [pair, ...attributes] = cookie.split(";");
       const scope = attributes.filter((attribute) => /^\s*(path|domain)=/i.test(attribute));
@@ -224,7 +224,7 @@ async function sendRequest(
  * of the app would. Use it to assert on a response itself: its status, its
  * headers, its HTML or Flight body.
  *
- * The request carries the tab's cookies, unless it has a `cookie` header.
+ * The request carries the browser's cookies, unless it has a `cookie` header.
  * One to the pathname of what `renderServer()` opened is that page's, as a
  * `fetch` of the page is: it gets the route of the node, and skips the proxy
  * if the page does.
@@ -271,11 +271,11 @@ globalThis.fetch = appFetch(false);
 // too. Its redirects are followed, as the `fetch` of a server follows them.
 registry.fetch = appFetch(true);
 // Where the server reaches itself, which `next start` sets too. Next reads it
-// when it needs it, from the `process` of the tab.
+// when it needs it, from the global `process`.
 process.env.__NEXT_PRIVATE_ORIGIN = window.location.origin;
 
 let page: { started: Promise<unknown>; unmount(): void } | undefined;
-// Tells a page load that the tab has moved on: to another page, or to the
+// Tells a page load that the test has moved on: to another page, or to the
 // next test.
 let currentLoad: AbortController | undefined;
 
@@ -308,7 +308,7 @@ export type RenderServerOptions = RequestOptions & {
 export type RenderServerResult = {
   /** The server's response to the request of the document. */
   response: Response;
-  /** Leaves the page. The tab keeps its cookies until the test ends. */
+  /** Leaves the page. The cookies stay until the test ends. */
   unmount(): Promise<void>;
 };
 
@@ -351,7 +351,7 @@ export type RenderComponentResult = RenderServerResult & {
 };
 
 /**
- * Opens a route of the Next.js app in this tab, as a browser does: it requests
+ * Opens a route of the Next.js app, as a browser does: it requests
  * the document from the server, shows the HTML it gets back, and starts the
  * app's client code, which hydrates it. From there Next's own router is in
  * charge, so links, forms and Server Actions work as they do in the app.
@@ -465,7 +465,7 @@ export async function renderServer(
 function fragmentOf(container: HTMLElement): DocumentFragment {
   const fragment = document.createRange().createContextualFragment(container.innerHTML);
   // Not the scripts that run: they are how Next and React bring the page to
-  // the tab, with a Flight payload that differs on every run. A script of
+  // the browser, with a Flight payload that differs on every run. A script of
   // data, like JSON-LD, is content.
   for (const script of fragment.querySelectorAll("script")) {
     if (!script.type || /^(text\/javascript|module)$/i.test(script.type)) script.remove();
@@ -505,7 +505,7 @@ async function loadPage(url: URL, init: RequestInit, opening?: Opening): Promise
   try {
     return await openPage(url, init, load.signal, opening);
   } catch (error) {
-    // What did not get to open has no requests of its own. Unless the tab has
+    // What did not get to open has no requests of its own. Unless the test has
     // moved on, to a page or a node of its own.
     if (opened && registry.opened === opened) registry.opened = undefined;
     throw error;
@@ -518,7 +518,7 @@ async function openPage(
   signal: AbortSignal,
   opening: Opening | undefined,
 ): Promise<Response> {
-  // The tab has moved on: to another page, or to the next test.
+  // The test has moved on: to another page, or to the next test.
   const superseded = () => signal.throwIfAborted();
 
   // Not the browser's Request, which drops a `cookie` header.
@@ -537,7 +537,7 @@ async function openPage(
         ? `vitest-plugin-rsc: ${what}, which is not a page to open. ` +
             `Use handleRequest() to assert on the response itself.`
         : `vitest-plugin-rsc: the app navigated to a URL that is not a page: ${what}. ` +
-            `A browser would show or download it, which this tab cannot do.`,
+            `A browser would show or download it, which a test cannot do.`,
     );
   }
   // The whole document, then the app: what a browser has once the page has
@@ -568,7 +568,7 @@ async function openPage(
   // and wraps some of them. One that the pages shared would keep every page.
   registry.browserRequire = (id) => registry.loadBrowserModule(id);
   // React's scheduler, Next's router and Next's dev overlay each leave
-  // something on the tab when they load: see leftovers.ts. That is from here
+  // something behind when they load: see leftovers.ts. That is from here
   // until `start()` says that Next's client has loaded.
   // This assumes that only the plugin's, React's and Next's code runs in that
   // window, and no module of the app: the modules of the app wait for Next's
@@ -653,7 +653,7 @@ function leavePage(): Promise<void> {
 
 /**
  * Leaves the page that `renderServer()` opened, removes the containers it made
- * and forgets the tab's cookies and what the app put in its storage, like a
+ * and forgets the browser's cookies and what the app put in its storage, like a
  * new browser context. The server forgets what it has cached. Runs before and
  * after every test.
  */
@@ -673,7 +673,7 @@ export async function cleanup(): Promise<void> {
 // The app can leave its page without its router: `location.assign()`, a
 // `<form>` or an `<a>` that React does not handle, Next's own fallback when a
 // client-side navigation is not possible. For a browser that is a page load.
-// For this tab it would replace the test with the app, so load the page the
+// Here it would replace the test with the app, so load the page the
 // way `renderServer()` does instead.
 type NavigateEvent = Event & {
   destination: { url: string; sameDocument: boolean };

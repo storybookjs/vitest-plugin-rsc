@@ -209,7 +209,7 @@ test("forgets a test file that did not pass, or that ran in part", () => {
 
   start().run("notes.test.tsx", ["route/notes"]);
   const tagged = start();
-  // `--tags`: the tab leaves out the tests without the tag.
+  // `--tags`: the browser leaves out the tests without the tag.
   tagged.tagsFilter.push("smoke");
   tagged.run("notes.test.tsx", []);
   expect(unknown()).toBe(true);

@@ -5,8 +5,8 @@ import { Counter } from "./components/counter.tsx";
 import { HelpDialog } from "./components/help-dialog.tsx";
 import { Shortcuts } from "./components/shortcuts.tsx";
 
-// Every `renderServer()` is a page load, in a tab that stays. What a page
-// leaves on the tab would keep it in memory, with all of its modules: so the
+// Every `renderServer()` is a page load, in a document that stays. What a page
+// leaves behind would keep it in memory, with all of its modules: so the
 // plugin takes back what React and Next added, and only that.
 
 let consoleError: MockInstance<typeof console.error>;
@@ -26,8 +26,8 @@ afterEach(() => {
 const modulesOfPage = () =>
   new WeakRef((globalThis as { __viteRscCallServer?: object }).__viteRscCallServer!);
 
-// Passes once the tab has let go of what `modules` refers to: after the tasks
-// that the page had queued have run.
+// Passes once the browser has let go of what `modules` refers to: after the
+// tasks that the page had queued have run.
 async function expectCollected(modules: WeakRef<object>): Promise<void> {
   await expect
     .poll(

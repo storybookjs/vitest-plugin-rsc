@@ -1,4 +1,4 @@
-// A page load, for a tab that cannot load a page: the test runs in this
+// A page load, without loading a page: the test runs in this
 // document and has to stay in it. So the document the server sends is moved
 // into this one. What the test runner needs stays, its scripts and styles. The
 // rest of what is in the document steps aside for as long as the page is

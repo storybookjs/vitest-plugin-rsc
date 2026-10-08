@@ -12,7 +12,7 @@ import { parseAstAsync, type Plugin } from "vite";
 // Vite wrote into it before the server listened: the configured one. When that
 // port was taken, say by another Vitest run, that is the other run's server,
 // which refuses the copy. Vite's client reports that with `console.error`, and
-// reloads the tab when a replaced `WebSocket` (MSW's) first reported `open`.
+// reloads the page when a replaced `WebSocket` (MSW's) first reported `open`.
 //
 // So an environment that loads through a module runner gets the page's client.
 

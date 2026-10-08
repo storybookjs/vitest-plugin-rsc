@@ -245,7 +245,7 @@ test("gives a node the request: its headers and cookies", async () => {
   await expect.element(page.getByText("7", { exact: true })).toBeVisible();
 });
 
-test("sends a cookie header instead of the tab's cookies", async () => {
+test("sends a cookie header instead of the browser's cookies", async () => {
   document.cookie = "last-created=7";
 
   await renderServer(<RequestInfo />, { headers: { cookie: "last-created=9" } });
@@ -437,8 +437,8 @@ test("shows Next's own not-found page for a node that calls notFound()", async (
   const { container, response } = await renderServer(<Missing />);
 
   expect(response.status).toBe(404);
-  // Next sends a document for it and renders the page in the tab, as it does
-  // for a route without a root layout to put it in.
+  // Next sends a document for it and renders the page in the browser, as it
+  // does for a route without a root layout to put it in.
   await expect.element(page.getByText("This page could not be found.")).toBeVisible();
   expect(container).toBeEmptyDOMElement();
 });

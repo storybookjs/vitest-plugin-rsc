@@ -306,7 +306,7 @@ test("reports a navigation to another origin and stays on the page", async () =>
   await expect.element(page.getByRole("heading", { name: "Home" })).toBeVisible();
 });
 
-test("starts every test without what the app stored in the tab", async () => {
+test("starts every test without what the app stored in the browser", async () => {
   // The theme test above stored its theme.
   expect(localStorage.getItem("theme")).toBeNull();
 
@@ -314,7 +314,7 @@ test("starts every test without what the app stored in the tab", async () => {
   await expect.element(page.getByRole("button", { name: "Theme: light" })).toBeVisible();
 });
 
-test("keeps what Vitest stores in the tab while the tests run", async () => {
+test("keeps what Vitest stores in the browser while the tests run", async () => {
   // The dark mode of Vitest's UI may be set already: it is the developer's.
   const colorScheme = localStorage.getItem("vueuse-color-scheme");
   onTestFinished(() => {
@@ -346,16 +346,17 @@ test("replaces the page when a component redirects in the render after a Server 
   expect(window.history.length).toBe(entries);
 });
 
-test("loads a page with the one Vite client that the tab has", async () => {
+test("loads a page with the one Vite client that the browser has", async () => {
   await renderServer({ url: "/settings" });
-  // Vite's client opens a websocket when it is evaluated. The tab has one.
+  // Vite's client opens a websocket when it is evaluated. The browser has one.
   const WebSocket = vi.spyOn(globalThis, "WebSocket");
 
   await renderServer({ url: "/settings" });
 
   await expect.element(page.getByRole("button", { name: "Theme: light" })).toBeVisible();
   expect(WebSocket).not.toHaveBeenCalled();
-  // And the tab has loaded it from one URL: another URL is another instance.
+  // And the browser has loaded it from one URL: another URL is another
+  // instance.
   const clients = performance
     .getEntriesByType("resource")
     .map((entry) => new URL(entry.name))

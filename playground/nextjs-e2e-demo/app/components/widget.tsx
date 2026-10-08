@@ -4,7 +4,7 @@ import { useEffect, useRef } from "react";
 import { createRoot } from "react-dom/client";
 
 // Renders into a React root of its own, as a widget of a third party does. It
-// tells the tab when the app's root unmounts it.
+// tells `window` when the app's root unmounts it.
 export function Widget() {
   const container = useRef<HTMLDivElement>(null);
   useEffect(() => {

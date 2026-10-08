@@ -1,7 +1,7 @@
 /**
- * The browser command the tab calls for what a test file loads without an
- * import of its own: see tab.ts. Not a name with `__vitest` in front: Vitest
- * keeps those from the tab.
+ * The browser command that reports what a test file loads without an
+ * import of its own: see browser.ts. Not a name with `__vitest` in front:
+ * Vitest keeps those from the browser.
  */
 export const loadedCommand = "vitestPluginRscLoaded";
 

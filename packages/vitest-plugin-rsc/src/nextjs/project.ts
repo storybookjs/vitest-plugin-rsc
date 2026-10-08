@@ -201,7 +201,7 @@ export async function loadNextProject(
     middleware,
     adapterPath,
   );
-  // What the modules of this package in the tab assume of Next's runtime.
+  // What the modules of this package in the browser assume of Next's runtime.
   const { builtinBoundaries } = checkRuntime(context);
   // What Next's build gives each layer, and its compiler and loaders for the
   // files of the app.

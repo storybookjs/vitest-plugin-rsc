@@ -12,10 +12,10 @@ import { restoreIncrementalCache } from "./cache.ts";
 import { registry, type RequestHandler, type ServerRequest } from "./registry.ts";
 
 // Next's server runs here as it does on Node.js, its default runtime. (Its
-// edge runtime, which is closer to a tab, is deprecated.) The renderer takes
-// the branches of `process.env.NEXT_RUNTIME === "nodejs"`, with web streams:
-// `__NEXT_USE_NODE_STREAMS` is off. This file is what a Node.js server has
-// around a request and a tab does not:
+// edge runtime, which is closer to a browser, is deprecated.) The renderer
+// takes the branches of `process.env.NEXT_RUNTIME === "nodejs"`, with web
+// streams: `__NEXT_USE_NODE_STREAMS` is off. This file is what a Node.js server
+// has around a request and a browser does not:
 //   - `http.IncomingMessage` and `http.ServerResponse`.
 //   - The manifests of a build, which Next reads from `.next/`: given here,
 //     through `load-manifest.external`, the module Next keeps out of its own
@@ -116,7 +116,7 @@ function createNodeRequest(request: ServerRequest) {
 
 /**
  * The `http.ServerResponse` of a request, which is Next's own stand-in for
- * one, and the `Response` the tab gets of it: once its head is there, while
+ * one, and the `Response` the browser gets of it: once its head is there, while
  * Next goes on to write the body.
  *
  * A request that is left before its head has no response. It lasts until

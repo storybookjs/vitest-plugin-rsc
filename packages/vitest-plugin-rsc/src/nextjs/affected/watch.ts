@@ -12,9 +12,10 @@ import { beforeWatchLookup } from "./vitest.ts";
 // So in the graph every test file imports every route, and an edit of one
 // page would run them all.
 //
-// The tab says which routes a test file has loaded. Right before Vitest looks
-// up the test files for a change, the graph is made to say the same: the list
-// no longer imports the routes, and a test file imports the ones it loaded.
+// The browser says which routes a test file has loaded. Right before Vitest
+// looks up the test files for a change, the graph is made to say the same: the
+// list no longer imports the routes, and a test file imports the ones it
+// loaded.
 
 export function watchMode(
   vitest: Vitest,

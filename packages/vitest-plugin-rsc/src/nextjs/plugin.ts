@@ -14,8 +14,8 @@ import { createServerCode, type ServerCodeOptions } from "./server-code.ts";
 import { affectedTests } from "./affected/index.ts";
 import { createPathsPlugin } from "./paths.ts";
 
-// Each layer of Next is a Vite environment, and all three run in the test's
-// tab (docs/next-routes.md). Where Next's own bundler config says a module
+// Each layer of Next is a Vite environment, and all three run in the
+// browser (docs/next-routes.md). Where Next's own bundler config says a module
 // belongs to another layer, it is bridged to that environment through
 // `registry` (registry.ts).
 const environmentOf: Record<NextLayer, string> = {
@@ -325,7 +325,7 @@ function definesOf(project: NextProject, layer: NextLayer): Record<string, strin
     ...(layer === "browser" && {
       // The browser's Flight client loads Client Components in its own
       // module graph. (Vite RSC points this at one global, for a server
-      // and a browser that do not share a tab.)
+      // and a browser that do not share globals.)
       __webpack_require__: `${registry}.browserRequire`,
       // Makes Next's root component report that it has hydrated.
       "process.env.__NEXT_TEST_MODE": "true",
@@ -563,7 +563,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
                 ...optimizeDeps("rsc"),
                 // A route loads when it is first requested. Scan the app up
                 // front, or Vite finds the dependencies of a page mid-test
-                // and reloads the tab.
+                // and reloads the page.
                 entries: [appEntries],
               },
             },

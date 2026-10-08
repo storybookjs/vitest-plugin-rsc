@@ -100,7 +100,7 @@ export function onRuns(
       spec.testIds?.length ||
       spec.testNamePattern ||
       spec.testTagsFilter?.length ||
-      // The tab filters by it.
+      // The browser filters by it.
       project.config.tagsFilter?.length ||
       vitest.getGlobalTestNamePattern(),
     );

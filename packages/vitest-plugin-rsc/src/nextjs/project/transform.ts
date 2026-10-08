@@ -35,7 +35,8 @@ export async function createCompiler(
       // `optimizePackageImports` below. They import a package by other paths
       // than the app does, and Vite pre-bundles what the app imports.
       cjsRequireOptimizer: _cjsRequireOptimizer,
-      // The targets, Node.js or the browsers: the tab runs the code as it is.
+      // The targets, Node.js or the browsers: the browser runs the code as it
+      // is.
       env: _env,
       ...options
     } = getLoaderSWCOptions({
