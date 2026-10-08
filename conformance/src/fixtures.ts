@@ -31,7 +31,7 @@ export const areas = {
   font: "next/font",
   image: "next/image",
   cache: "The Data Cache",
-  "not-yet": "Not Yet: middleware, rewrites, redirects, trailingSlash",
+  routing: "The proxy, rewrites, redirects, trailingSlash",
 } as const;
 export type Area = keyof typeof areas;
 
@@ -96,15 +96,15 @@ export const fixtures: Fixture[] = [
   appDir("revalidatetag-rsc", "cache", ["revalidatetag-rsc.test.ts"]),
   appDir("unstable-rethrow", "cache", ["unstable-rethrow.test.ts"]),
 
-  appDir("app-middleware", "not-yet", ["app-middleware.test.ts"]),
-  appDir("rewrites-redirects", "not-yet", ["rewrites-redirects.test.ts"], {
+  appDir("app-middleware", "routing", ["app-middleware.test.ts"]),
+  appDir("rewrites-redirects", "routing", ["rewrites-redirects.test.ts"], {
     assumeInstalled: ["@types/react"],
   }),
   // The test builds without the page that needs `cacheComponents`, with
   // `--debug-build-paths`.
-  appDir("trailingslash", "not-yet", ["trailingslash.test.ts"], {
+  appDir("trailingslash", "routing", ["trailingslash.test.ts"], {
     prepared: { options: ["buildArgs"], remove: ["app/[lang]/cache-components"] },
   }),
-  appDir("app-routes-trailing-slash", "not-yet", ["app-routes-trailing-slash.test.ts"]),
-  appDir("redirect-rewrite-dynamic", "not-yet", ["redirect-rewrite-dynamic.test.ts"]),
+  appDir("app-routes-trailing-slash", "routing", ["app-routes-trailing-slash.test.ts"]),
+  appDir("redirect-rewrite-dynamic", "routing", ["redirect-rewrite-dynamic.test.ts"]),
 ];

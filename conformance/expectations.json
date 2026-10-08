@@ -8,10 +8,6 @@
       "category": "plugin-bug",
       "text": "A Server Action request to a path that is no route gets the not-found page, a 404. Next answers for the action: 400 or 409."
     },
-    "route-handler-error-body": {
-      "category": "plugin-bug",
-      "text": "A route handler that throws is answered with the text `Internal Server Error`. `next start` sends a 500 without a body."
-    },
     "global-css-stays": {
       "category": "plugin-bug",
       "text": "The global CSS of a page that an earlier test opened still applies. Vite adds a stylesheet once, and it outlives its page."
@@ -20,25 +16,33 @@
       "category": "plugin-bug",
       "text": "The not-found page of a path that is no route has no `<meta name=\"robots\" content=\"noindex\">`."
     },
-    "middleware": {
-      "category": "not-yet",
-      "text": "`middleware.ts` or `proxy.ts` does not run."
+    "not-found-route-status": {
+      "category": "plugin-bug",
+      "text": "A request for `/_not-found` itself, the route Next makes for its not-found page, is answered with 200. Next answers 404, as it does here for a path that is no route."
     },
-    "config-routes": {
-      "category": "not-yet",
-      "text": "The redirects and rewrites of `next.config` do not apply."
+    "draft-mode": {
+      "category": "plugin-bug",
+      "text": "`draftMode().enable()` in a route handler is answered with a 500: Next finds no `previewModeId`. The keys of draft mode that the plugin has do not reach Next's route module."
     },
-    "trailing-slash": {
-      "category": "not-yet",
-      "text": "`trailingSlash`: a URL is served as it is, without the redirect to its other form."
+    "internal-request-headers": {
+      "category": "plugin-bug",
+      "text": "A header that only Next's own server sets on a request, like `x-middleware-set-cookie`, is not taken off a request that comes in. `next start` drops those."
+    },
+    "proxy-location-header": {
+      "category": "plugin-bug",
+      "text": "A proxy that answers itself with a `Location` header and a status that is no redirect gets the not-found page. `responseToMiddlewareResult()` of `@next/routing` does not say that the proxy answered, so the request goes on to a route."
     },
     "pages-router": {
       "category": "not-yet",
-      "text": "A page of the Pages Router. The plugin runs the routes of `app/`."
+      "text": "A page or an API route of the Pages Router. The plugin runs the routes of `app/`."
     },
-    "interception-routes": {
+    "prerendered-pages": {
       "category": "not-yet",
-      "text": "An interception route, like `(.)test`. Next matches one with a rewrite, on the `Next-URL` header of a navigation."
+      "text": "A page that a build prerenders, like one with `generateStaticParams`. Next keeps it between two requests, and here every request renders its page."
+    },
+    "http-only-cookie": {
+      "category": "not-yet",
+      "text": "An `HttpOnly` cookie. The cookies of the server are the cookies of the tab, and a script of the page reads every one of them."
     },
     "metadata-files": {
       "category": "not-yet",
@@ -52,9 +56,9 @@
       "category": "not-yet",
       "text": "A production build of React. The plugin runs React's development build: an error of the server reaches the client with its message, where production sends a digest and a minified message, and Strict Mode runs an effect twice."
     },
-    "node-runtime": {
+    "node-builtin": {
       "category": "not-yet",
-      "text": "Server code that needs Node.js: a builtin module like `node:timers/promises`, or what Next's Node.js runtime does differently from its edge runtime. The server layers run on the edge runtime."
+      "text": "Server code that imports a builtin module of Node.js that has no stand-in here, like `node:timers/promises`."
     },
     "server-action-ids": {
       "category": "not-yet",
@@ -84,7 +88,7 @@
     },
     "cli-output": {
       "category": "not-applicable",
-      "text": "Reads what `next build` prints: its table of routes."
+      "text": "Reads what the Next.js CLI prints: the table of routes of a build, or a warning when it starts."
     },
     "playwright-page": {
       "category": "not-applicable",
@@ -125,7 +129,7 @@
       "failed": {}
     },
     "navigation": {
-      "passed": 33,
+      "passed": 38,
       "failed": {
         "navigation.test.ts > app dir - navigation > query string > useParams identity between renders > should be stable in app": "react-development-build",
         "navigation.test.ts > app dir - navigation > query string > useParams identity between renders > should be stable in pages": "pages-router",
@@ -134,19 +138,14 @@
         "navigation.test.ts > app dir - navigation > redirect > components > should redirect to external url, initiating only once": "another-origin",
         "navigation.test.ts > app dir - navigation > redirect > components > should only trigger the redirect once (/redirect/servercomponent)": "page-load-requests",
         "navigation.test.ts > app dir - navigation > redirect > components > should only trigger the redirect once (redirect/redirect-with-loading)": "page-load-requests",
-        "navigation.test.ts > app dir - navigation > redirect > next.config.js redirects > should redirect from next.config.js": "config-routes",
-        "navigation.test.ts > app dir - navigation > redirect > next.config.js redirects > should redirect from next.config.js with link navigation": "config-routes",
-        "navigation.test.ts > app dir - navigation > redirect > middleware redirects > should redirect from middleware": "middleware",
-        "navigation.test.ts > app dir - navigation > redirect > middleware redirects > should redirect from middleware with link navigation": "middleware",
         "navigation.test.ts > app dir - navigation > external push > should push external url without affecting hooks": "another-origin",
         "navigation.test.ts > app dir - navigation > navigation between pages and app > should not contain _rsc query while navigating from app to pages": "pages-router",
         "navigation.test.ts > app dir - navigation > navigation between pages and app > should not contain _rsc query while navigating from pages to app": "pages-router",
         "navigation.test.ts > app dir - navigation > navigation between pages and app > should not omit the hash while navigating from app to pages": "pages-router",
         "navigation.test.ts > app dir - navigation > navigation between pages and app > should not continously initiate a mpa navigation to the same URL when router state changes": "page-load-requests",
-        "navigation.test.ts > app dir - navigation > navigating to a page with async metadata > shows a fallback when prefetch was pending": "node-runtime",
-        "navigation.test.ts > app dir - navigation > navigating to a page with async metadata > shows a fallback when prefetch completed": "node-runtime",
-        "navigation.test.ts > app dir - navigation > browser back after a push followed by a refresh > should load the previous page": "shared-history",
-        "navigation.test.ts > app dir - navigation > middleware redirect > should change browser location when router.refresh() gets a redirect response": "middleware"
+        "navigation.test.ts > app dir - navigation > navigating to a page with async metadata > shows a fallback when prefetch was pending": "node-builtin",
+        "navigation.test.ts > app dir - navigation > navigating to a page with async metadata > shows a fallback when prefetch completed": "node-builtin",
+        "navigation.test.ts > app dir - navigation > browser back after a push followed by a refresh > should load the previous page": "shared-history"
       }
     },
     "shallow-routing": {
@@ -156,7 +155,7 @@
       }
     },
     "hooks": {
-      "passed": 15,
+      "passed": 18,
       "failed": {
         "hooks.test.ts > app dir - hooks > from pages > should have the correct hooks at /adapter-hooks/static": "pages-router",
         "hooks.test.ts > app dir - hooks > from pages > should have the correct hooks at /adapter-hooks/1": "pages-router",
@@ -166,10 +165,7 @@
         "hooks.test.ts > app dir - hooks > from pages > should have the correct hooks at /adapter-hooks/1 #2": "pages-router",
         "hooks.test.ts > app dir - hooks > from pages > should have the correct hooks at /adapter-hooks/2 #2": "pages-router",
         "hooks.test.ts > app dir - hooks > from pages > should have the correct hooks at /adapter-hooks/1/account #2": "pages-router",
-        "hooks.test.ts > app dir - hooks > usePathname > should have the canonical url pathname on rewrite": "config-routes",
-        "hooks.test.ts > app dir - hooks > useSearchParams > should have the canonical url search params on rewrite": "config-routes",
-        "hooks.test.ts > app dir - hooks > useSelectedLayoutSegments > should have the correct layout segments at /hooks/use-selected-layout-segment/rewr…": "config-routes",
-        "hooks.test.ts > app dir - hooks > useSelectedLayoutSegments > should have the correct layout segments at /hooks/use-selected-layout-segment/rewr… #2": "middleware"
+        "hooks.test.ts > app dir - hooks > useDraftMode > should generate rand when draft mode enabled": "draft-mode"
       }
     },
     "use-params": {
@@ -179,7 +175,7 @@
       }
     },
     "actions": {
-      "passed": 57,
+      "passed": 59,
       "failed": {
         "app-action-form-state.test.ts > app-dir action useActionState > should support submitting form state without JS": "javascript-off",
         "app-action-form-state.test.ts > app-dir action useActionState > should support hydrating the app from progressively enhanced form request": "form-without-javascript",
@@ -189,7 +185,6 @@
         "app-action-progressive-enhancement.test.ts > app-dir action progressive enhancement > should support headers and cookies without JS (runtime: edge)": "javascript-off",
         "app-action-progressive-enhancement.test.ts > app-dir action progressive enhancement > should support headers and cookies without JS (runtime: node)": "javascript-off",
         "app-action.test.ts > app-dir action handling > should output exportName and filename info in manifest": "build-output",
-        "app-action.test.ts > app-dir action handling > should handle action correctly with middleware rewrite": "middleware",
         "app-action.test.ts > app-dir action handling > should report errors with bad inputs correctly": "react-development-build",
         "app-action.test.ts > app-dir action handling > should propagate errors from a `text/plain` response to an error boundary": "playwright-page",
         "app-action.test.ts > app-dir action handling > should trigger an error boundary for action responses with an invalid content-type": "playwright-page",
@@ -206,7 +201,6 @@
         "app-action.test.ts > app-dir action handling > fetch actions > should handle calls to redirect() with external URLs": "another-origin",
         "app-action.test.ts > app-dir action handling > fetch actions > should handle redirects to routes that provide an invalid RSC response": "playwright-page",
         "app-action.test.ts > app-dir action handling > fetch actions > should revalidate when cookies.set is called in a client action": "state-between-tests",
-        "app-action.test.ts > app-dir action handling > should work with interception routes": "interception-routes",
         "app-action.test.ts > app-dir action handling > redirects > redirects properly when route handler uses `redirect`": "page-load-requests",
         "app-action.test.ts > app-dir action handling > redirects > redirects properly when route handler uses `permanentRedirect`": "page-load-requests",
         "app-action.test.ts > app-dir action handling > redirects > redirects properly when route handler redirects with a 307 status code": "page-load-requests",
@@ -214,10 +208,8 @@
       }
     },
     "actions-navigation": {
-      "passed": 1,
-      "failed": {
-        "index.test.ts > app-dir action handling > should handle actions correctly after navigation / redirection events": "middleware"
-      }
+      "passed": 2,
+      "failed": {}
     },
     "actions-revalidate-remount": {
       "passed": 1,
@@ -249,7 +241,7 @@
       "failed": {}
     },
     "app-routes": {
-      "passed": 56,
+      "passed": 59,
       "failed": {
         "app-custom-routes.test.ts > app-custom-routes > works with api prefix correctly > statically generates correctly with no dynamic usage": "build-output",
         "app-custom-routes.test.ts > app-custom-routes > works with api prefix correctly > does not statically generate with dynamic usage": "build-output",
@@ -258,10 +250,7 @@
         "app-custom-routes.test.ts > app-custom-routes > works with generateStaticParams correctly > responds correctly on /static/three/data.json": "build-output",
         "app-custom-routes.test.ts > app-custom-routes > works with generateStaticParams correctly > revalidates correctly on /revalidate-1/first/data.json": "build-output",
         "app-custom-routes.test.ts > app-custom-routes > works with generateStaticParams correctly > revalidates correctly on /revalidate-1/second/data.json": "build-output",
-        "app-custom-routes.test.ts > app-custom-routes > works with generateStaticParams correctly > revalidates correctly on /revalidate-1/three/data.json": "build-output",
-        "app-custom-routes.test.ts > app-custom-routes > context > does not provide params to routes without dynamic parameters": "node-runtime",
-        "app-custom-routes.test.ts > app-custom-routes > error conditions > responds with 500 (Internal Server Error) when the handler throws an error": "route-handler-error-body",
-        "app-custom-routes.test.ts > app-custom-routes > error conditions > responds with 500 (Internal Server Error) when the handler calls NextResponse.next()": "route-handler-error-body"
+        "app-custom-routes.test.ts > app-custom-routes > works with generateStaticParams correctly > revalidates correctly on /revalidate-1/three/data.json": "build-output"
       }
     },
     "parallel-routes-layouts": {
@@ -281,8 +270,10 @@
       "failed": {}
     },
     "not-found-default": {
-      "passed": 7,
-      "failed": {}
+      "passed": 6,
+      "failed": {
+        "index.test.ts > app dir - not found with default 404 page > should return 404 status code for default not-found page": "not-found-route-status"
+      }
     },
     "error-boundary-navigation": {
       "passed": 6,
@@ -370,70 +361,38 @@
       }
     },
     "app-middleware": {
-      "passed": 0,
+      "passed": 12,
       "failed": {
-        "app-middleware.test.ts > app-dir with middleware > should warn when deprecated middleware file is used": "middleware",
-        "app-middleware.test.ts > app-dir with middleware > should filter correctly after middleware rewrite": "middleware",
-        "app-middleware.test.ts > app-dir with middleware > Mutate request headers for Serverless Functions > Adds new headers": "middleware",
-        "app-middleware.test.ts > app-dir with middleware > Mutate request headers for Serverless Functions > Deletes headers": "middleware",
-        "app-middleware.test.ts > app-dir with middleware > Mutate request headers for Serverless Functions > Updates headers": "middleware",
-        "app-middleware.test.ts > app-dir with middleware > Mutate request headers for Serverless Functions > Supports draft mode": "middleware",
-        "app-middleware.test.ts > app-dir with middleware > Mutate request headers for Edge Functions > Adds new headers": "middleware",
-        "app-middleware.test.ts > app-dir with middleware > Mutate request headers for Edge Functions > Deletes headers": "middleware",
-        "app-middleware.test.ts > app-dir with middleware > Mutate request headers for Edge Functions > Updates headers": "middleware",
-        "app-middleware.test.ts > app-dir with middleware > Mutate request headers for Edge Functions > Supports draft mode": "middleware",
-        "app-middleware.test.ts > app-dir with middleware > Mutate request headers for next/headers > Adds new headers": "middleware",
-        "app-middleware.test.ts > app-dir with middleware > Mutate request headers for next/headers > Deletes headers": "middleware",
-        "app-middleware.test.ts > app-dir with middleware > Mutate request headers for next/headers > Updates headers": "middleware",
-        "app-middleware.test.ts > app-dir with middleware > Mutate request headers for next/headers > Supports draft mode": "middleware",
-        "app-middleware.test.ts > app-dir with middleware > retains a link response header from the middleware": "middleware",
-        "app-middleware.test.ts > app-dir with middleware > should support unstable_cache in middleware": "middleware",
-        "app-middleware.test.ts > app-dir with middleware > should be possible to modify cookies & read them in an RSC in a single request": "middleware",
-        "app-middleware.test.ts > app-dir with middleware > should respect cookie options of merged middleware cookies": "middleware",
-        "app-middleware.test.ts > app-dir with middleware > should omit internal headers for middleware cookies": "middleware",
-        "app-middleware.test.ts > app-dir with middleware > should ignore x-middleware-set-cookie as a request header": "middleware",
-        "app-middleware.test.ts > app-dir with middleware > should be possible to read cookies that are set during the middleware handling of a server action": "middleware",
-        "app-middleware.test.ts > app-dir with middleware > should not incorrectly treat a Location header as a rewrite": "middleware"
+        "app-middleware.test.ts > app-dir with middleware > should warn when deprecated middleware file is used": "cli-output",
+        "app-middleware.test.ts > app-dir with middleware > Mutate request headers for Serverless Functions > Adds new headers": "pages-router",
+        "app-middleware.test.ts > app-dir with middleware > Mutate request headers for Serverless Functions > Deletes headers": "pages-router",
+        "app-middleware.test.ts > app-dir with middleware > Mutate request headers for Serverless Functions > Updates headers": "pages-router",
+        "app-middleware.test.ts > app-dir with middleware > Mutate request headers for Edge Functions > Adds new headers": "pages-router",
+        "app-middleware.test.ts > app-dir with middleware > Mutate request headers for Edge Functions > Deletes headers": "pages-router",
+        "app-middleware.test.ts > app-dir with middleware > Mutate request headers for Edge Functions > Updates headers": "pages-router",
+        "app-middleware.test.ts > app-dir with middleware > should respect cookie options of merged middleware cookies": "http-only-cookie",
+        "app-middleware.test.ts > app-dir with middleware > should ignore x-middleware-set-cookie as a request header": "internal-request-headers",
+        "app-middleware.test.ts > app-dir with middleware > should not incorrectly treat a Location header as a rewrite": "proxy-location-header"
       }
     },
     "rewrites-redirects": {
-      "passed": 0,
-      "failed": {
-        "rewrites-redirects.test.ts > redirects and rewrites > navigation using link > should rewrite from middleware correctly": "middleware",
-        "rewrites-redirects.test.ts > redirects and rewrites > navigation using link > should redirect from middleware correctly": "middleware",
-        "rewrites-redirects.test.ts > redirects and rewrites > navigation using link > should rewrite from next.config.js correctly": "config-routes",
-        "rewrites-redirects.test.ts > redirects and rewrites > navigation using link > should redirect from next.config.js correctly": "config-routes",
-        "rewrites-redirects.test.ts > redirects and rewrites > navigation using link > should redirect using catchall from next.config.js correctly": "config-routes",
-        "rewrites-redirects.test.ts > redirects and rewrites > navigation using link > should redirect from next.config.js correctly with empty query params": "config-routes",
-        "rewrites-redirects.test.ts > redirects and rewrites > navigation using button > should rewrite from middleware correctly": "middleware",
-        "rewrites-redirects.test.ts > redirects and rewrites > navigation using button > should redirect from middleware correctly": "middleware",
-        "rewrites-redirects.test.ts > redirects and rewrites > navigation using button > should rewrite from next.config.js correctly": "config-routes",
-        "rewrites-redirects.test.ts > redirects and rewrites > navigation using button > should redirect from next.config.js correctly": "config-routes",
-        "rewrites-redirects.test.ts > redirects and rewrites > navigation using button > should redirect using catchall from next.config.js correctly": "config-routes",
-        "rewrites-redirects.test.ts > redirects and rewrites > navigation using button > should redirect from next.config.js correctly with empty query params": "config-routes",
-        "rewrites-redirects.test.ts > redirects and rewrites > redirects to exotic url schemes preserving slashes": "config-routes",
-        "rewrites-redirects.test.ts > redirects and rewrites > redirects to exotic url schemes without adding unwanted slashes": "config-routes"
-      }
+      "passed": 14,
+      "failed": {}
     },
     "trailingslash": {
-      "passed": 5,
+      "passed": 6,
       "failed": {
-        "trailingslash.test.ts > app-dir trailingSlash handling > should redirect route when requesting it directly": "trailing-slash",
-        "trailingslash.test.ts > app-dir trailingSlash handling > should revalidate a page with generated static params (withSlash=true)": "config-routes",
-        "trailingslash.test.ts > app-dir trailingSlash handling > should revalidate a page with generated static params (withSlash=false)": "config-routes"
+        "trailingslash.test.ts > app-dir trailingSlash handling > should revalidate a page with generated static params (withSlash=true)": "prerendered-pages",
+        "trailingslash.test.ts > app-dir trailingSlash handling > should revalidate a page with generated static params (withSlash=false)": "prerendered-pages"
       }
     },
     "app-routes-trailing-slash": {
-      "passed": 0,
-      "failed": {
-        "app-routes-trailing-slash.test.ts > app-routes-trailing-slash > should handle trailing slash for edge runtime": "trailing-slash",
-        "app-routes-trailing-slash.test.ts > app-routes-trailing-slash > should handle trailing slash for node runtime": "trailing-slash"
-      }
+      "passed": 2,
+      "failed": {}
     },
     "redirect-rewrite-dynamic": {
-      "passed": 0,
+      "passed": 1,
       "failed": {
-        "redirect-rewrite-dynamic.test.ts > redirect to a rewritten dynamic route (#95195) > hard navigation to /a redirects to /": "middleware",
         "redirect-rewrite-dynamic.test.ts > redirect to a rewritten dynamic route (#95195) > client-side navigation to /a should update the URL to /": "playwright-page"
       }
     }

@@ -13,63 +13,63 @@ Measured against `next@16.4.0`, with `pnpm conformance --docs`.
 |                                                     |         Tests |
 | --------------------------------------------------- | ------------: |
 | Run                                                 |           484 |
-| **Pass**                                            | **317** (65%) |
-| Fail: a bug in the plugin                           |            12 |
-| Fail: Not Yet                                       |           115 |
-| Fail: not applicable                                |            40 |
+| **Pass**                                            | **360** (74%) |
+| Fail: a bug in the plugin                           |            14 |
+| Fail: Not Yet                                       |            69 |
+| Fail: not applicable                                |            41 |
 | Skipped by the test itself, for a run like this one |             4 |
 
-Of the 444 tests that apply, 317 pass: **71%**.
+Of the 443 tests that apply, 360 pass: **81%**.
 
 ### Per Fixture
 
-| Fixture                                                     |     Pass | Bug | Not Yet | N/A | Skipped |
-| ----------------------------------------------------------- | -------: | --: | ------: | --: | ------: |
-| **Pages and rendering**                                     |          |     |         |     |         |
-| `hello-world`                                               |   4 of 4 |     |         |     |         |
-| **Navigation**                                              |          |     |         |     |         |
-| `navigation`                                                | 33 of 53 |   1 |      15 |   4 |         |
-| `shallow-routing`                                           | 16 of 17 |   1 |         |     |         |
-| `hooks`                                                     | 15 of 27 |     |      12 |     |         |
-| `use-params`                                                |   6 of 7 |     |       1 |     |         |
-| **Server Actions**                                          |          |     |         |     |         |
-| `actions`                                                   | 57 of 87 |     |      10 |  20 |       3 |
-| `actions-navigation`                                        |   1 of 2 |     |       1 |     |         |
-| `actions-revalidate-remount`                                |   1 of 1 |     |         |     |         |
-| `actions-unrecognized`                                      |  8 of 20 |   6 |       4 |   2 |         |
-| `server-actions-relative-redirect`                          |   5 of 5 |     |         |     |         |
-| **Route handlers**                                          |          |     |         |     |         |
-| `app-simple-routes`                                         |   2 of 2 |     |         |     |         |
-| `app-routes`                                                | 56 of 67 |   2 |       1 |   8 |       1 |
-| **Parallel routes**                                         |          |     |         |     |         |
-| `parallel-routes-layouts`                                   |   1 of 1 |     |         |     |         |
-| `parallel-routes-catchall`                                  |   4 of 4 |     |         |     |         |
-| `parallel-routes-breadcrumbs`                               |   4 of 4 |     |         |     |         |
-| `parallel-routes-not-found`                                 |   2 of 2 |     |         |     |         |
-| **not-found and error boundaries**                          |          |     |         |     |         |
-| `not-found-default`                                         |   7 of 7 |     |         |     |         |
-| `error-boundary-navigation`                                 |   6 of 7 |   1 |         |     |         |
-| `global-error/basic`                                        |  6 of 10 |     |       4 |     |         |
-| `errors`                                                    |  9 of 16 |     |       7 |     |         |
-| **Metadata**                                                |          |     |         |     |         |
-| `metadata`                                                  | 35 of 49 |     |      12 |   2 |         |
-| `metadata-navigation`                                       |   6 of 7 |   1 |         |     |         |
-| **next/font**                                               |          |     |         |     |         |
-| `next-font`                                                 | 10 of 16 |     |       6 |     |         |
-| **next/image**                                              |          |     |         |     |         |
-| `next-image`                                                | 10 of 11 |     |         |   1 |         |
-| **The Data Cache**                                          |          |     |         |     |         |
-| `revalidate-dynamic`                                        |   2 of 3 |     |         |   1 |         |
-| `revalidatetag-rsc`                                         |   3 of 3 |     |         |     |         |
-| `unstable-rethrow`                                          |   3 of 4 |     |         |   1 |         |
-| **Not Yet: middleware, rewrites, redirects, trailingSlash** |          |     |         |     |         |
-| `app-middleware`                                            |  0 of 22 |     |      22 |     |         |
-| `rewrites-redirects`                                        |  0 of 14 |     |      14 |     |         |
-| `trailingslash`                                             |   5 of 8 |     |       3 |     |         |
-| `app-routes-trailing-slash`                                 |   0 of 2 |     |       2 |     |         |
-| `redirect-rewrite-dynamic`                                  |   0 of 2 |     |       1 |   1 |         |
+| Fixture                                           |     Pass | Bug | Not Yet | N/A | Skipped |
+| ------------------------------------------------- | -------: | --: | ------: | --: | ------: |
+| **Pages and rendering**                           |          |     |         |     |         |
+| `hello-world`                                     |   4 of 4 |     |         |     |         |
+| **Navigation**                                    |          |     |         |     |         |
+| `navigation`                                      | 38 of 53 |   1 |      10 |   4 |         |
+| `shallow-routing`                                 | 16 of 17 |   1 |         |     |         |
+| `hooks`                                           | 18 of 27 |   1 |       8 |     |         |
+| `use-params`                                      |   6 of 7 |     |       1 |     |         |
+| **Server Actions**                                |          |     |         |     |         |
+| `actions`                                         | 59 of 87 |     |       8 |  20 |       3 |
+| `actions-navigation`                              |   2 of 2 |     |         |     |         |
+| `actions-revalidate-remount`                      |   1 of 1 |     |         |     |         |
+| `actions-unrecognized`                            |  8 of 20 |   6 |       4 |   2 |         |
+| `server-actions-relative-redirect`                |   5 of 5 |     |         |     |         |
+| **Route handlers**                                |          |     |         |     |         |
+| `app-simple-routes`                               |   2 of 2 |     |         |     |         |
+| `app-routes`                                      | 59 of 67 |     |         |   8 |       1 |
+| **Parallel routes**                               |          |     |         |     |         |
+| `parallel-routes-layouts`                         |   1 of 1 |     |         |     |         |
+| `parallel-routes-catchall`                        |   4 of 4 |     |         |     |         |
+| `parallel-routes-breadcrumbs`                     |   4 of 4 |     |         |     |         |
+| `parallel-routes-not-found`                       |   2 of 2 |     |         |     |         |
+| **not-found and error boundaries**                |          |     |         |     |         |
+| `not-found-default`                               |   6 of 7 |   1 |         |     |         |
+| `error-boundary-navigation`                       |   6 of 7 |   1 |         |     |         |
+| `global-error/basic`                              |  6 of 10 |     |       4 |     |         |
+| `errors`                                          |  9 of 16 |     |       7 |     |         |
+| **Metadata**                                      |          |     |         |     |         |
+| `metadata`                                        | 35 of 49 |     |      12 |   2 |         |
+| `metadata-navigation`                             |   6 of 7 |   1 |         |     |         |
+| **next/font**                                     |          |     |         |     |         |
+| `next-font`                                       | 10 of 16 |     |       6 |     |         |
+| **next/image**                                    |          |     |         |     |         |
+| `next-image`                                      | 10 of 11 |     |         |   1 |         |
+| **The Data Cache**                                |          |     |         |     |         |
+| `revalidate-dynamic`                              |   2 of 3 |     |         |   1 |         |
+| `revalidatetag-rsc`                               |   3 of 3 |     |         |     |         |
+| `unstable-rethrow`                                |   3 of 4 |     |         |   1 |         |
+| **The proxy, rewrites, redirects, trailingSlash** |          |     |         |     |         |
+| `app-middleware`                                  | 12 of 22 |   2 |       7 |   1 |         |
+| `rewrites-redirects`                              | 14 of 14 |     |         |     |         |
+| `trailingslash`                                   |   6 of 8 |     |       2 |     |         |
+| `app-routes-trailing-slash`                       |   2 of 2 |     |         |     |         |
+| `redirect-rewrite-dynamic`                        |   1 of 2 |     |         |   1 |         |
 
-### A Bug In The Plugin: 12 Tests
+### A Bug In The Plugin: 14 Tests
 
 <details><summary>6 × A Server Action request to a path that is no route gets the not-found page, a 404. Next answers for the action: 400 or 409.</summary>
 
@@ -89,13 +89,6 @@ Of the 444 tests that apply, 317 pass: **71%**.
 
 </details>
 
-<details><summary>2 × A route handler that throws is answered with the text `Internal Server Error`. `next start` sends a 500 without a body.</summary>
-
-- `app-routes`: app-custom-routes › error conditions › responds with 500 (Internal Server Error) when the handler throws an error
-- `app-routes`: app-custom-routes › error conditions › responds with 500 (Internal Server Error) when the handler calls NextResponse.next()
-
-</details>
-
 <details><summary>1 × The global CSS of a page that an earlier test opened still applies. Vite adds a stylesheet once, and it outlives its page.</summary>
 
 - `navigation`: app dir - navigation › hash-link-back-to-same-page › should scroll to the specified hash
@@ -108,65 +101,54 @@ Of the 444 tests that apply, 317 pass: **71%**.
 
 </details>
 
-### Not Yet: 115 Tests
+<details><summary>1 × A request for `/_not-found` itself, the route Next makes for its not-found page, is answered with 200. Next answers 404, as it does here for a path that is no route.</summary>
 
-<details><summary>33 × `middleware.ts` or `proxy.ts` does not run.</summary>
-
-- `navigation`: app dir - navigation › redirect › middleware redirects › should redirect from middleware
-- `navigation`: app dir - navigation › redirect › middleware redirects › should redirect from middleware with link navigation
-- `navigation`: app dir - navigation › middleware redirect › should change browser location when router.refresh() gets a redirect response
-- `hooks`: app dir - hooks › useSelectedLayoutSegments › should have the correct layout segments at /hooks/use-selected-layout-segment/rewr… #2
-- `actions`: app-dir action handling › should handle action correctly with middleware rewrite
-- `actions-navigation`: app-dir action handling › should handle actions correctly after navigation / redirection events
-- `app-middleware`: app-dir with middleware › should warn when deprecated middleware file is used
-- `app-middleware`: app-dir with middleware › should filter correctly after middleware rewrite
-- `app-middleware`: app-dir with middleware › Mutate request headers for Serverless Functions › Adds new headers
-- `app-middleware`: app-dir with middleware › Mutate request headers for Serverless Functions › Deletes headers
-- `app-middleware`: app-dir with middleware › Mutate request headers for Serverless Functions › Updates headers
-- `app-middleware`: app-dir with middleware › Mutate request headers for Serverless Functions › Supports draft mode
-- `app-middleware`: app-dir with middleware › Mutate request headers for Edge Functions › Adds new headers
-- `app-middleware`: app-dir with middleware › Mutate request headers for Edge Functions › Deletes headers
-- `app-middleware`: app-dir with middleware › Mutate request headers for Edge Functions › Updates headers
-- `app-middleware`: app-dir with middleware › Mutate request headers for Edge Functions › Supports draft mode
-- `app-middleware`: app-dir with middleware › Mutate request headers for next/headers › Adds new headers
-- `app-middleware`: app-dir with middleware › Mutate request headers for next/headers › Deletes headers
-- `app-middleware`: app-dir with middleware › Mutate request headers for next/headers › Updates headers
-- `app-middleware`: app-dir with middleware › Mutate request headers for next/headers › Supports draft mode
-- `app-middleware`: app-dir with middleware › retains a link response header from the middleware
-- `app-middleware`: app-dir with middleware › should support unstable_cache in middleware
-- `app-middleware`: app-dir with middleware › should be possible to modify cookies & read them in an RSC in a single request
-- `app-middleware`: app-dir with middleware › should respect cookie options of merged middleware cookies
-- `app-middleware`: app-dir with middleware › should omit internal headers for middleware cookies
-- `app-middleware`: app-dir with middleware › should ignore x-middleware-set-cookie as a request header
-- `app-middleware`: app-dir with middleware › should be possible to read cookies that are set during the middleware handling of a server action
-- `app-middleware`: app-dir with middleware › should not incorrectly treat a Location header as a rewrite
-- `rewrites-redirects`: redirects and rewrites › navigation using link › should rewrite from middleware correctly
-- `rewrites-redirects`: redirects and rewrites › navigation using link › should redirect from middleware correctly
-- `rewrites-redirects`: redirects and rewrites › navigation using button › should rewrite from middleware correctly
-- `rewrites-redirects`: redirects and rewrites › navigation using button › should redirect from middleware correctly
-- `redirect-rewrite-dynamic`: redirect to a rewritten dynamic route (#95195) › hard navigation to /a redirects to /
+- `not-found-default`: app dir - not found with default 404 page › should return 404 status code for default not-found page
 
 </details>
 
-<details><summary>17 × The redirects and rewrites of `next.config` do not apply.</summary>
+<details><summary>1 × `draftMode().enable()` in a route handler is answered with a 500: Next finds no `previewModeId`. The keys of draft mode that the plugin has do not reach Next's route module.</summary>
 
-- `navigation`: app dir - navigation › redirect › next.config.js redirects › should redirect from next.config.js
-- `navigation`: app dir - navigation › redirect › next.config.js redirects › should redirect from next.config.js with link navigation
-- `hooks`: app dir - hooks › usePathname › should have the canonical url pathname on rewrite
-- `hooks`: app dir - hooks › useSearchParams › should have the canonical url search params on rewrite
-- `hooks`: app dir - hooks › useSelectedLayoutSegments › should have the correct layout segments at /hooks/use-selected-layout-segment/rewr…
-- `rewrites-redirects`: redirects and rewrites › navigation using link › should rewrite from next.config.js correctly
-- `rewrites-redirects`: redirects and rewrites › navigation using link › should redirect from next.config.js correctly
-- `rewrites-redirects`: redirects and rewrites › navigation using link › should redirect using catchall from next.config.js correctly
-- `rewrites-redirects`: redirects and rewrites › navigation using link › should redirect from next.config.js correctly with empty query params
-- `rewrites-redirects`: redirects and rewrites › navigation using button › should rewrite from next.config.js correctly
-- `rewrites-redirects`: redirects and rewrites › navigation using button › should redirect from next.config.js correctly
-- `rewrites-redirects`: redirects and rewrites › navigation using button › should redirect using catchall from next.config.js correctly
-- `rewrites-redirects`: redirects and rewrites › navigation using button › should redirect from next.config.js correctly with empty query params
-- `rewrites-redirects`: redirects and rewrites › redirects to exotic url schemes preserving slashes
-- `rewrites-redirects`: redirects and rewrites › redirects to exotic url schemes without adding unwanted slashes
-- `trailingslash`: app-dir trailingSlash handling › should revalidate a page with generated static params (withSlash=true)
-- `trailingslash`: app-dir trailingSlash handling › should revalidate a page with generated static params (withSlash=false)
+- `hooks`: app dir - hooks › useDraftMode › should generate rand when draft mode enabled
+
+</details>
+
+<details><summary>1 × A header that only Next's own server sets on a request, like `x-middleware-set-cookie`, is not taken off a request that comes in. `next start` drops those.</summary>
+
+- `app-middleware`: app-dir with middleware › should ignore x-middleware-set-cookie as a request header
+
+</details>
+
+<details><summary>1 × A proxy that answers itself with a `Location` header and a status that is no redirect gets the not-found page. `responseToMiddlewareResult()` of `@next/routing` does not say that the proxy answered, so the request goes on to a route.</summary>
+
+- `app-middleware`: app-dir with middleware › should not incorrectly treat a Location header as a rewrite
+
+</details>
+
+### Not Yet: 69 Tests
+
+<details><summary>20 × A page or an API route of the Pages Router. The plugin runs the routes of `app/`.</summary>
+
+- `navigation`: app dir - navigation › query string › useParams identity between renders › should be stable in pages
+- `navigation`: app dir - navigation › navigation between pages and app › should not contain \_rsc query while navigating from app to pages
+- `navigation`: app dir - navigation › navigation between pages and app › should not contain \_rsc query while navigating from pages to app
+- `navigation`: app dir - navigation › navigation between pages and app › should not omit the hash while navigating from app to pages
+- `hooks`: app dir - hooks › from pages › should have the correct hooks at /adapter-hooks/static
+- `hooks`: app dir - hooks › from pages › should have the correct hooks at /adapter-hooks/1
+- `hooks`: app dir - hooks › from pages › should have the correct hooks at /adapter-hooks/2
+- `hooks`: app dir - hooks › from pages › should have the correct hooks at /adapter-hooks/1/account
+- `hooks`: app dir - hooks › from pages › should have the correct hooks at /adapter-hooks/static #2
+- `hooks`: app dir - hooks › from pages › should have the correct hooks at /adapter-hooks/1 #2
+- `hooks`: app dir - hooks › from pages › should have the correct hooks at /adapter-hooks/2 #2
+- `hooks`: app dir - hooks › from pages › should have the correct hooks at /adapter-hooks/1/account #2
+- `use-params`: use-params › should work on pages router
+- `metadata`: app dir - metadata › should not effect metadata images convention like files under pages directory
+- `app-middleware`: app-dir with middleware › Mutate request headers for Serverless Functions › Adds new headers
+- `app-middleware`: app-dir with middleware › Mutate request headers for Serverless Functions › Deletes headers
+- `app-middleware`: app-dir with middleware › Mutate request headers for Serverless Functions › Updates headers
+- `app-middleware`: app-dir with middleware › Mutate request headers for Edge Functions › Adds new headers
+- `app-middleware`: app-dir with middleware › Mutate request headers for Edge Functions › Deletes headers
+- `app-middleware`: app-dir with middleware › Mutate request headers for Edge Functions › Updates headers
 
 </details>
 
@@ -188,25 +170,6 @@ Of the 444 tests that apply, 317 pass: **71%**.
 - `errors`: app-dir - errors › error component › should trigger error component when a string is thrown during server components rendering
 - `errors`: app-dir - errors › error component › should display error digest for error in server component with default error boundary
 - `errors`: app-dir - errors › error component › retry › should recover Server Component error after retry
-
-</details>
-
-<details><summary>14 × A page of the Pages Router. The plugin runs the routes of `app/`.</summary>
-
-- `navigation`: app dir - navigation › query string › useParams identity between renders › should be stable in pages
-- `navigation`: app dir - navigation › navigation between pages and app › should not contain \_rsc query while navigating from app to pages
-- `navigation`: app dir - navigation › navigation between pages and app › should not contain \_rsc query while navigating from pages to app
-- `navigation`: app dir - navigation › navigation between pages and app › should not omit the hash while navigating from app to pages
-- `hooks`: app dir - hooks › from pages › should have the correct hooks at /adapter-hooks/static
-- `hooks`: app dir - hooks › from pages › should have the correct hooks at /adapter-hooks/1
-- `hooks`: app dir - hooks › from pages › should have the correct hooks at /adapter-hooks/2
-- `hooks`: app dir - hooks › from pages › should have the correct hooks at /adapter-hooks/1/account
-- `hooks`: app dir - hooks › from pages › should have the correct hooks at /adapter-hooks/static #2
-- `hooks`: app dir - hooks › from pages › should have the correct hooks at /adapter-hooks/1 #2
-- `hooks`: app dir - hooks › from pages › should have the correct hooks at /adapter-hooks/2 #2
-- `hooks`: app dir - hooks › from pages › should have the correct hooks at /adapter-hooks/1/account #2
-- `use-params`: use-params › should work on pages router
-- `metadata`: app dir - metadata › should not effect metadata images convention like files under pages directory
 
 </details>
 
@@ -256,25 +219,23 @@ Of the 444 tests that apply, 317 pass: **71%**.
 
 </details>
 
-<details><summary>3 × `trailingSlash`: a URL is served as it is, without the redirect to its other form.</summary>
+<details><summary>2 × A page that a build prerenders, like one with `generateStaticParams`. Next keeps it between two requests, and here every request renders its page.</summary>
 
-- `trailingslash`: app-dir trailingSlash handling › should redirect route when requesting it directly
-- `app-routes-trailing-slash`: app-routes-trailing-slash › should handle trailing slash for edge runtime
-- `app-routes-trailing-slash`: app-routes-trailing-slash › should handle trailing slash for node runtime
+- `trailingslash`: app-dir trailingSlash handling › should revalidate a page with generated static params (withSlash=true)
+- `trailingslash`: app-dir trailingSlash handling › should revalidate a page with generated static params (withSlash=false)
 
 </details>
 
-<details><summary>3 × Server code that needs Node.js: a builtin module like `node:timers/promises`, or what Next's Node.js runtime does differently from its edge runtime. The server layers run on the edge runtime.</summary>
+<details><summary>2 × Server code that imports a builtin module of Node.js that has no stand-in here, like `node:timers/promises`.</summary>
 
 - `navigation`: app dir - navigation › navigating to a page with async metadata › shows a fallback when prefetch was pending
 - `navigation`: app dir - navigation › navigating to a page with async metadata › shows a fallback when prefetch completed
-- `app-routes`: app-custom-routes › context › does not provide params to routes without dynamic parameters
 
 </details>
 
-<details><summary>1 × An interception route, like `(.)test`. Next matches one with a rewrite, on the `Next-URL` header of a navigation.</summary>
+<details><summary>1 × An `HttpOnly` cookie. The cookies of the server are the cookies of the tab, and a script of the page reads every one of them.</summary>
 
-- `actions`: app-dir action handling › should work with interception routes
+- `app-middleware`: app-dir with middleware › should respect cookie options of merged middleware cookies
 
 </details>
 
@@ -290,7 +251,7 @@ Of the 444 tests that apply, 317 pass: **71%**.
 
 </details>
 
-### Not Applicable: 40 Tests
+### Not Applicable: 41 Tests
 
 <details><summary>12 × Reads the output of `next build`: a manifest, a chunk or a prerendered file in `.next`.</summary>
 
@@ -346,10 +307,11 @@ Of the 444 tests that apply, 317 pass: **71%**.
 
 </details>
 
-<details><summary>2 × Reads what `next build` prints: its table of routes.</summary>
+<details><summary>3 × Reads what the Next.js CLI prints: the table of routes of a build, or a warning when it starts.</summary>
 
 - `revalidate-dynamic`: app-dir revalidate-dynamic › should correctly mark a route handler that uses revalidateTag as dynamic
 - `unstable-rethrow`: unstable-rethrow › should correctly mark the dynamic page as dynamic
+- `app-middleware`: app-dir with middleware › should warn when deprecated middleware file is used
 
 </details>
 
@@ -376,22 +338,25 @@ Of the 444 tests that apply, 317 pass: **71%**.
 
 ## What The Results Say
 
-Where the plugin runs something, it mostly runs it as Next does: 317 of the 329 tests that are neither a missing feature nor out of reach pass. What does not pass is, for nine tests out of ten, something the plugin does not do at all.
+Where the plugin runs something, it mostly runs it as Next does: 360 of the 374 tests that are neither a missing feature nor out of reach pass. What does not pass is, for nine tests out of ten, something the plugin does not do at all, or something a test in a tab cannot see.
 
-**Bugs: 12 tests, 5 causes.** All are in the list above. Two of them are about what a page leaves in the tab that a browser drops with the page: the history, which a page load replaces an entry of, and global CSS, which stays.
+**Bugs: 14 tests, 8 causes.** All are in the list above. Two of them are about what a page leaves in the tab that a browser drops with the page: the history, which a page load replaces an entry of, and global CSS, which stays. Two are about the server in front of the app: a header of Next's own that a request brings along, and a proxy that answers with a `Location` header, which `@next/routing` reads as a proxy that let the request through.
 
-**Not Yet: 115 tests.** Middleware (33) and the redirects and rewrites of `next.config` (17) are the selection's own doing: five fixtures are there to measure them. The rest was not asked for, and three of them are not in the list of `docs/next-routes.md`:
+**Not Yet: 69 tests.** Three of the causes are not in the list of `docs/next-routes.md`:
 
+- **The Pages Router**, 20 tests. Fixtures of the App Router have a `pages/` directory to test the two together: its pages, and its API routes.
 - **React's development build**, 16 tests. A deployment sends the client a digest for an error of a Server Component, and the message is minified. Here the client gets the message, and Strict Mode runs an effect twice. That is `next dev` without its overlay, for errors, and `next start` for the rest.
-- **The Pages Router**, 14 tests. Fixtures of the App Router have a `pages/` directory to test the two together.
-- **Interception routes**, 1 test. A route like `(.)photo` needs a rewrite on the `Next-URL` header.
+- **An `HttpOnly` cookie**, 1 test. The cookies of the server are the cookies of the tab, and a script of the page reads every one of those.
 
-**Not applicable: 40 tests.** Half of them are JavaScript off (10) and the output of a build (12).
+**Not applicable: 41 tests.** Half of them are JavaScript off (10) and the output of a build (12).
+
+**The server in front of the app.** Five fixtures are there for the proxy, the redirects and rewrites of `next.config`, and `trailingSlash`. 35 of their 48 tests pass. Of the 13 that do not, 6 ask for an API route of the Pages Router, 2 expect a prerendered page, 2 cannot run in a tab, 1 expects an `HttpOnly` cookie, and 2 are the two bugs above.
 
 ### Found Along The Way
 
-What no test of the selection pins down:
+What the list above does not have:
 
+- **The name of an uploaded file.** Fixed with the runner, and a test of the selection did pin it down. A Server Action got no file when the name of the file has a character like `テ`: the stand-in for `latin1Slice()` of Node's `Buffer`, which Next's busboy reads the headers of a part with, decoded windows-1252.
 - **A pending refresh outlived its page.** Fixed with the runner: see "What Stands In For A Server" in `docs/next-routes.md`. Next sends a `<meta http-equiv="refresh">` with a `redirect()` in a response that had started. It came due a second later, in the page of the next test, or between two tests, where nothing stopped the tab from leaving and the rest of the test file did not run.
 - **`renderServer({ url })` rejects for a page that redirects while it loads**, with "The page was left before it had loaded". A `redirect()` under a `loading.tsx` does that: Next's router loads the page it redirects to before the first one has hydrated. `/moved` in `playground/nextjs-e2e-demo` is such a page.
 - **`history.back()` past the entry a page was opened in leaves the test.** The tab goes back to the test runner's own entry, and Vitest loses the tab.
@@ -415,7 +380,7 @@ A run ends with what is different from `conformance/expectations.json`, and fail
 
 ```
 FAILED, and expectations.json does not say so: navigation > navigation.test.ts > app dir - navigation > ...
-PASSED, and expectations.json says it fails (middleware): hooks > hooks.test.ts > ...
+PASSED, and expectations.json says it fails (pages-router): hooks > hooks.test.ts > ...
 ```
 
 A fixture whose run is not what the file says runs once more, and the second run counts. So a test that waited just too short on a busy machine does not pass for a change of the plugin. The run names every test that ended otherwise the second time: such a test has no result to rely on.
@@ -489,7 +454,10 @@ It is not quite `next start`: React is a development build here. See the results
 ```json
 {
   "reasons": {
-    "middleware": { "category": "not-yet", "text": "`middleware.ts` or `proxy.ts` does not run." },
+    "pages-router": {
+      "category": "not-yet",
+      "text": "A page or an API route of the Pages Router. The plugin runs the routes of `app/`."
+    },
     "javascript-off": {
       "category": "not-applicable",
       "text": "Opens the page with JavaScript off. The test runs in the tab of the page.",
@@ -497,10 +465,10 @@ It is not quite `next start`: React is a development build here. See the results
     }
   },
   "fixtures": {
-    "actions-navigation": {
-      "passed": 1,
+    "use-params": {
+      "passed": 6,
       "failed": {
-        "index.test.ts > app-dir action handling > should handle actions correctly after navigation / redirection events": "middleware"
+        "use-params.test.ts > use-params > should work on pages router": "pages-router"
       }
     }
   }
@@ -510,7 +478,7 @@ It is not quite `next start`: React is a development build here. See the results
 There are three kinds:
 
 - **A bug in the plugin**: something the plugin runs, and runs differently than Next.
-- **Not Yet**: something the plugin does not do, like middleware. Most of these are in the list of `docs/next-routes.md`.
+- **Not Yet**: something the plugin does not do, like the Pages Router. Most of these are in the list of `docs/next-routes.md`.
 - **Not applicable**: a test of something that is not there to test. The output of `next build`, what the CLI prints, the dev overlay, a prerendered file, or a test that needs a browser of its own.
 
 A run fails on every result that the file does not have:
