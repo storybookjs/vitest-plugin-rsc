@@ -1,11 +1,11 @@
-// What Next's Node.js server imports that a tab does not have: Node's own
+// What Next's Node.js server imports that a browser does not have: Node's own
 // modules, and the modules of Next that set a Node.js process up or read the
 // files of a build. Each of Next's is one module that Next itself keeps
 // apart. This is the build side of it: the modules, as code for Vite. The
-// tab's side is node-server.ts, and globals.ts for the globals.
+// browser's side is node-server.ts, and globals.ts for the globals.
 
 /**
- * The stand-ins, for a `registry` of the tab that some of them call and a
+ * The stand-ins, for a `registry` in the browser that some of them call and a
  * `prefix` that their module ids start with.
  */
 export function createNodePlatform(registry: string, prefix: string) {
@@ -78,7 +78,7 @@ export function createNodePlatform(registry: string, prefix: string) {
   `,
     // What Next's Node.js server patches when it starts: \`console\`, \`Date\`,
     // \`Math.random\`, \`crypto\`, \`setImmediate\`, the handlers of its process.
-    // The tab is the test's too. (Cache Components reads these patches.)
+    // The globals are the test's too. (Cache Components reads these patches.)
     "node-environment": `export const installProcessErrorHandlers = () => {};`,
     // Next's bundle for Node.js brings React for both server layers, and its
     // route module hands them to those patches. Here a layer has its own.
@@ -141,7 +141,7 @@ export function createNodePlatform(registry: string, prefix: string) {
   }
   export const createHash = (algorithm) => {
     if (!/^sha-?256$/i.test(algorithm)) {
-      throw new Error("vitest-plugin-rsc: node:crypto's createHash(" + JSON.stringify(algorithm) + ") is not there in a tab");
+      throw new Error("vitest-plugin-rsc: node:crypto's createHash(" + JSON.stringify(algorithm) + ") is not there in a browser");
     }
     const chunks = [];
     const hash = {
@@ -160,7 +160,7 @@ export function createNodePlatform(registry: string, prefix: string) {
   `,
     // Next patches the global \`setImmediate\` when this loads, to run the
     // stages of a prerender in one task. That is for Cache Components, and the
-    // tab's globals are the page's too.
+    // globals are the page's too.
     "fast-set-immediate": `
   export const unpatchedSetImmediate = (...args) => ${registry}.setImmediate(...args);
   export function DANGEROUSLY_runPendingImmediatesAfterCurrentTask() {

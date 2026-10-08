@@ -1,6 +1,7 @@
-// The first setup file: records the websockets the tab opens from here on,
-// for client-counter/vite-client.test.tsx. The list is on the global: the tab
-// gets this module once as a setup file and once more for a test's import.
+// The first setup file: records the websockets the browser opens from here on,
+// for client-counter/vite-client.test.tsx. The list is on the global: the
+// browser gets this module once as a setup file and once more for a test's
+// import.
 type Opened = { url: string; protocols: unknown };
 const scope = globalThis as { __opened_websockets__?: Opened[] };
 

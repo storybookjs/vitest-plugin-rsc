@@ -1,4 +1,4 @@
-// The three layers of the app are three module graphs in one browser tab.
+// The three layers of the app are three module graphs with one `window`.
 // Next's bundler config moves a few things across them: the route module is
 // created for the rsc layer but belongs to the ssr layer, and the ssr layer
 // renders the page of the rsc layer. Those cross here.
@@ -51,7 +51,7 @@ export type NextRegistry = {
   fetch: typeof fetch;
   /** The network itself: no request of it is the app's, and Next caches none. */
   network: typeof fetch;
-  /** Node's, for Next's server: a task after the microtasks. Not globals of the tab. */
+  /** Node's, for Next's server: a task after the microtasks. Not globals. */
   setImmediate(callback: (...args: any[]) => void, ...args: unknown[]): unknown;
   clearImmediate(id: unknown): void;
   /** Starts the scope of one request, see `enterAmbientScope`. Returns its end. */

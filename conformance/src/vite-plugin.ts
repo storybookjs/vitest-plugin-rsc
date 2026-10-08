@@ -310,8 +310,9 @@ export function fileExistsCommand(root: string): BrowserCommand<[file: string]> 
 // The servers that the apps of Next's fixtures fetch from while they render.
 // A server is not held to CORS and a tab is, so here the request of a Server
 // Component is one that the browser refuses: the plugin's own limit, see
-// "Server Code In A Tab" in docs/next-routes.md. These hosts answer the tab as
-// they answer a server, so that a test of the Data Cache measures the cache.
+// "Server Code In The Browser" in docs/next-routes.md. These hosts answer the
+// tab as they answer a server, so that a test of the Data Cache measures the
+// cache.
 const serverHosts = ["next-data-api-endpoint.vercel.app"];
 const allowed = {
   "access-control-allow-origin": "*",

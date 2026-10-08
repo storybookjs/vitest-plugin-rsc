@@ -219,7 +219,7 @@ test("needs the alias that says where Next keeps its Flight codec", async () => 
   );
 });
 
-test("needs a cache that takes the options the tab gives it", async () => {
+test("needs a cache that takes the options the plugin gives it", async () => {
   const next = nextWith({
     "next/dist/server/lib/incremental-cache/index.js": { IncrementalCache: class {} },
   });
@@ -338,7 +338,7 @@ test.for(["global-error", "not-found", "forbidden", "unauthorized"])(
   },
 );
 
-// A file of Next's runtime, which runs in the tab.
+// A file of Next's runtime, which runs in the browser.
 const runtime = (file: string) => `next/dist/esm/${file}.js`;
 
 test("says which file of Next's runtime is gone", async () => {
@@ -411,7 +411,7 @@ test.for([
     "process.env.__NEXT_NODE_STREAMS",
     "has no `process.env.__NEXT_USE_NODE_STREAMS`",
   ],
-])("needs what the tab assumes of %s: %s", async ([file, piece, replacement, what]) => {
+])("needs what the plugin assumes of %s: %s", async ([file, piece, replacement, what]) => {
   const next = nextWith({ [runtime(file!)]: sourceWith(runtime(file!), piece!, replacement!) });
 
   await expect(loadNextProject(root, next)).rejects.toThrow(changed(`${runtime(file!)} ${what}`));
@@ -650,7 +650,8 @@ test("needs the image loader to export the data of an image", async () => {
   );
 });
 
-// A request, by the route resolution the tab runs, with the routes of a project.
+// A request, by the route resolution the browser runs, with the routes of a
+// project.
 async function resolve(
   routing: Awaited<ReturnType<typeof loadNextProject>>["routing"],
   url: string,

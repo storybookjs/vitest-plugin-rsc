@@ -3,7 +3,7 @@ import { enterAmbientScope, SequentialAsyncLocalStorage } from "../async-local-s
 import { registry } from "./registry.ts";
 
 // Next's server runs here as it does on Node.js, with the web APIs that
-// Node.js and a browser tab share: web streams, `fetch`, `crypto`. This file
+// Node.js and a browser share: web streams, `fetch`, `crypto`. This file
 // is the rest of that platform. It has to load before any module of Next's server does.
 
 // A browser drops `cookie` from the headers of a Request and `set-cookie` from
@@ -131,7 +131,7 @@ const nativeFetch = globalThis.fetch;
 registry.fetch = (input, init) => nativeFetch(input, init);
 registry.network = (input, init) => nativeFetch(input, init);
 
-// Node.js has these as globals. A browser tab has none of them.
+// Node.js has these as globals. A browser has none of them.
 const scope = globalThis as Record<string, any>;
 
 scope.process ??= { env: {} };
@@ -153,8 +153,8 @@ for (const method of ["indexOf", "lastIndexOf"] as const) {
 }
 scope.AsyncLocalStorage ??= SequentialAsyncLocalStorage;
 
-// What Next's Node.js server asks of its process. The tab is the page's and
-// the test's too, so as little as it needs: a library that finds a
+// What Next's Node.js server asks of its process. The `process` is the page's
+// and the test's too, so as little as it needs: a library that finds a
 // `setImmediate` or a full `process` takes itself to be on Node.js.
 {
   const { process } = scope;
@@ -169,8 +169,8 @@ scope.AsyncLocalStorage ??= SequentialAsyncLocalStorage;
 
   // A task of its own, after the microtasks: what Next's Node.js server waits
   // for between the stages of a render. Server code gets these two in place
-  // of the globals (server-code.ts), so the tab has no `setImmediate`. Not a
-  // timer of the test, which may be fake.
+  // of the globals (server-code.ts), so there is no global `setImmediate`. Not
+  // a timer of the test, which may be fake.
   const nativeSetTimeout = globalThis.setTimeout;
   const nativeClearTimeout = globalThis.clearTimeout;
   registry.setImmediate = (callback, ...args) => nativeSetTimeout(callback, 0, ...args);

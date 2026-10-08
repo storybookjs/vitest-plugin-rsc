@@ -8,7 +8,7 @@ import { vitestPluginNext } from "./plugin.ts";
 
 // What the plugin has Vite scan and pre-bundle for the demo, per layer. A
 // dependency that is missing here is one Vite finds while a test runs, with a
-// cold cache: it pre-bundles again and reloads the tab.
+// cold cache: it pre-bundles again and reloads the page.
 
 const here = fileURLToPath(new URL("./", import.meta.url));
 const root = fileURLToPath(new URL("../../../../playground/nextjs-e2e-demo", import.meta.url));
@@ -66,7 +66,7 @@ test("pre-bundles every Client Component of Next for the layers that render one"
   expect(browser.include).toEqual(expect.arrayContaining(boundaries));
 });
 
-// The modules of this package that run in a layer of the tab and import a
+// The modules of this package that run in a layer in the browser and import a
 // module of Next: the entry of the layer, and what it imports from here.
 const runtimeFiles = {
   ssr: ["ssr.ts", "cache.ts", "node-server.ts"],
@@ -88,7 +88,7 @@ function preBundledAs(specifier: string): string {
   return `next/${normalizePath(file).replace(/^dist\/(?!compiled\/|esm\/)/, "dist/esm/")}`;
 }
 
-test("pre-bundles every module of Next that a module of the plugin imports in the tab", async () => {
+test("pre-bundles every module of Next that a module of the plugin imports in the browser", async () => {
   const deps = await optimizeDeps;
 
   for (const [layer, files] of Object.entries(runtimeFiles)) {

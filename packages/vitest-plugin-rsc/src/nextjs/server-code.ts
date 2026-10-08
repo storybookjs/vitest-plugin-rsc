@@ -4,20 +4,20 @@ import { fileURLToPath } from "node:url";
 import { createFilter, normalizePath, transformWithOxc, type Plugin } from "vite";
 import type { NextLayer } from "./project.ts";
 
-// The server layers run in a browser tab, which has a `window` and a `fetch`
-// of its own. A tab cannot lose its globals, but a module can be compiled not
-// to see them: `typeof window` becomes `"undefined"`, which is what Next's
+// The server layers run in a browser, which has a `window` and a `fetch`
+// of its own. A browser cannot lose its globals, but a module can be compiled
+// not to see them: `typeof window` becomes `"undefined"`, which is what Next's
 // build does to server code, and `fetch`, `Request` and `Response` become the
 // server's, which are in `registry` (globals.ts). See docs/next-routes.md.
 
-/** Globals of a tab that a server does not have. */
+/** Globals of a browser that a server does not have. */
 const browserGlobals = ["window", "document", "location", "localStorage", "sessionStorage"];
 /** Globals a server has too, but its own. */
 const serverGlobals = [
   "Request",
   "Response",
   "fetch",
-  // Node.js has these and a tab does not: see globals.ts.
+  // Node.js has these and a browser does not: see globals.ts.
   "setImmediate",
   "clearImmediate",
 ];
@@ -53,8 +53,8 @@ export async function compileServerCode(
 export type ServerCodeOptions = {
   /**
    * Modules that have to know they run in a browser: glob patterns, relative
-   * to the project root. They keep the tab's `typeof window` and `fetch`, as
-   * the test files and setup files of the Vitest config do. List a helper of
+   * to the project root. They keep the browser's `typeof window` and `fetch`,
+   * as the test files and setup files of the Vitest config do. List a helper of
    * the tests, or a package they use on the page, that asks `typeof window`
    * before it works on the page.
    *
@@ -144,8 +144,8 @@ export function createServerCode(registry: string, options: ServerCodeOptions = 
     isServerCode,
     /**
      * Whether a source file is code of the app in a layer: what Next's build
-     * compiles. Not in the rsc layer: what is the tab's there, the test files
-     * and the `browserModules`.
+     * compiles. Not in the rsc layer: what is the browser's there, the test
+     * files and the `browserModules`.
      */
     isAppCode(file: string, layer: NextLayer): boolean {
       if (!path.isAbsolute(file) || file.includes("/node_modules/")) return false;
@@ -204,7 +204,7 @@ export function createServerCode(registry: string, options: ServerCodeOptions = 
           if (file.startsWith(`${normalizePath(this.environment.config.cacheDir)}/`)) return;
           const layer = environments[this.environment.name]!;
           // Without Vitest's config there is no telling a test file from a
-          // file of the app, and a test file must keep the tab.
+          // file of the app, and a test file must keep the browser.
           if (layer === "rsc" && testFileMatchers.length === 0) return;
           if (!isServerCode(file, layer)) return;
           return compileServerCode(code, file, registry);

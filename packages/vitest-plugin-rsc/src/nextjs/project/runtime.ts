@@ -3,13 +3,13 @@ import type { NextContext } from "./context.ts";
 import { hasExport } from "./module-exports.ts";
 
 /**
- * What the modules of this package in the tab assume about Next's runtime.
+ * What the modules of this package in the browser assume about Next's runtime.
  * Returns the files of Next's own boundaries, for the route of a node.
  */
 export function checkRuntime(context: NextContext) {
   const { projectRequire, fail, previewProps, next } = context;
   const { IncrementalCache } = next;
-  // cache.ts makes Next's cache in the tab with these options. They have to
+  // cache.ts makes Next's cache in the browser with these options. They have to
   // give it Next's own handler, or nothing is cached and nothing says so.
   const cache = new IncrementalCache({
     fs: {} as never,
@@ -30,11 +30,11 @@ export function checkRuntime(context: NextContext) {
     fail("`IncrementalCache` no longer takes `fs`, `serverDistDir` and `fetchCacheKeyPrefix`");
   }
 
-  // What the modules of this package in the tab assume about Next's runtime,
-  // where a Next that differs would not fail, or not with a message that says
-  // why. (A static import of a name that is gone fails when its module links,
-  // naming it.) The runtime runs in the tab, so here its files are read, not
-  // loaded.
+  // What the modules of this package in the browser assume about Next's
+  // runtime, where a Next that differs would not fail, or not with a message
+  // that says why. (A static import of a name that is gone fails when its
+  // module links, naming it.) The runtime runs in the browser, so here its
+  // files are read, not loaded.
   const runtimeFile = (file: string) => {
     const id = `next/dist/esm/${file}.js`;
     let resolved: string;

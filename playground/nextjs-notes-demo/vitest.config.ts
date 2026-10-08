@@ -83,8 +83,8 @@ export const nextjsNotesProjects = [
 
 export default defineConfig({
   test: {
-    // Every tab loads Next's runtime for three layers before its first test.
-    // With a tab per core those loads take longer than a test may: the first
+    // Every worker loads Next's runtime for three layers before its first test.
+    // With a worker per core those loads take longer than a test may: the first
     // test of a file times out. The root config has a limit of its own.
     maxWorkers: 4,
     projects: nextjsNotesProjects,

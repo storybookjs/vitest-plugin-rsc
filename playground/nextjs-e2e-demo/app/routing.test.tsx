@@ -120,7 +120,7 @@ test("applies a fallback rewrite to a URL that no route has", async () => {
 });
 
 test("rewrites to another server, and answers with its response", async () => {
-  // The dev server by another name: another origin, to the tab and to Next.
+  // The dev server by another name: another origin, to the browser and to Next.
   const elsewhere = `elsewhere.localhost:${window.location.port}`;
 
   const response = await handleRequest("/elsewhere/photos/hill.png", {
@@ -132,7 +132,7 @@ test("rewrites to another server, and answers with its response", async () => {
 });
 
 test("leaves a rewrite to the origin of the app itself to the dev server", async () => {
-  // Not a request to the server in this tab, which waits for this one.
+  // Not a request to the server in the browser, which waits for this one.
   const response = await handleRequest("/elsewhere/photos/hill.png", {
     headers: { "x-elsewhere": window.location.host },
   });
@@ -179,7 +179,7 @@ test("gives a route the params of its URL as Next's own matcher reads them", asy
 
   expect(await named.json()).toMatchObject({ path: ["a"], query: "1" });
 
-  // Not as a page in the tab: Next leaves such a query out on the server,
+  // Not as a page in the browser: Next leaves such a query out on the server,
   // and the browser has it.
   const html = await (await handleRequest("/docs/a?nxtPslug=other")).text();
 

@@ -8,8 +8,8 @@ import { watchMode } from "./watch.ts";
 //
 // Vitest reads that off the imports of a test file, and a test that opens a
 // route with `renderServer({ url })` does not import the files of the route.
-// So the tab says what a test file loads (tab.ts), and this plugin uses that
-// twice:
+// So the browser says what a test file loads (browser.ts), and this plugin uses
+// that twice:
 //
 //   watch.ts    watch mode: an edit runs the test files that loaded the file
 //   related.ts  `vitest --changed` and `vitest related`: the same, between
@@ -63,7 +63,7 @@ export function affectedTests(options: AffectedTestsOptions): Plugin {
       const test = ((
         config as { test?: { browser?: { commands?: Record<string, unknown> } } }
       ).test ??= {});
-      // Here, and not later: Vitest lists the commands for the tab when the
+      // Here, and not later: Vitest lists the commands for the browser when the
       // project starts.
       ((test.browser ??= {}).commands ??= {})[loadedCommand] = (
         { testPath }: { testPath: string | undefined },

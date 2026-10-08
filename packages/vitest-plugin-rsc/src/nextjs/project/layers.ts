@@ -44,7 +44,7 @@ export async function layerTables(context: NextContext) {
       fail("`getDefineEnv()` does not define `process.env.NEXT_RUNTIME` as `nodejs`");
     }
     // Next's Node.js server renders to Node.js streams unless this is off:
-    // a compile-time switch of its own. A tab has web streams.
+    // a compile-time switch of its own. A browser has web streams.
     if (layer !== "browser") defines["process.env.__NEXT_USE_NODE_STREAMS"] = "false";
     return {
       ...(layer !== "browser" &&
@@ -67,7 +67,7 @@ export async function layerTables(context: NextContext) {
     const aliases: Record<string, string | false> = {
       "@opentelemetry/api$": "next/dist/compiled/@opentelemetry/api",
     };
-    // The Node modules that Next's edge runtime has too. A browser tab has
+    // The Node modules that Next's edge runtime has too. A browser has
     // none of them, so use the polyfills Next ships for its own client
     // bundles. The others that Next's server asks for are in plugin.ts.
     for (const name of SUPPORTED_NATIVE_MODULES) {
@@ -94,7 +94,7 @@ export async function layerTables(context: NextContext) {
       isClient: layer === "browser",
       // Not the runtime: Next's name for a server compilation that takes the
       // ESM files of Next, and here also the builds of React for web
-      // streams, which is what a tab has.
+      // streams, which is what a browser has.
       isEdgeServer: layer !== "browser",
       dev: false,
       config,

@@ -7,7 +7,7 @@ import loadMiddleware from "virtual:vitest-plugin-rsc/next-middleware";
 import routeHandlers from "virtual:vitest-plugin-rsc/next-route-handlers";
 import type { FlightAdapters } from "./flight.ts";
 import { actionModulePrefix, registry } from "./registry.ts";
-import { reportLoaded } from "./affected/tab.ts";
+import { reportLoaded } from "./affected/browser.ts";
 
 // The rsc layer: Server Components, Server Actions, route handlers and the
 // Flight encoder.

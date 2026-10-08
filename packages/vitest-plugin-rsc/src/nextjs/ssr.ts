@@ -36,7 +36,7 @@ import {
 export { resetCaches } from "./cache.ts";
 
 // The ssr layer: Next's request handler and HTML renderer. node-server.ts is
-// what Next's Node.js server has around them, and a tab does not.
+// what Next's Node.js server has around them, and a browser does not.
 
 registry.ssr = { AppPageRouteModule: appPageModule.AppPageRouteModule as never };
 registerModuleLoader("ssr");
@@ -376,7 +376,7 @@ async function handle(received: ServerRequest, unrouted: "not-found" | "pass"): 
       return finishWithBody(request, response, endRequest);
     }
     if (resolved.externalRewrite) {
-      // A rewrite to another server, which `next start` proxies. The tab
+      // A rewrite to another server, which `next start` proxies. The browser
       // makes the request, so the browser's rules for one apply: CORS, the
       // headers a script may not set, and a redirect is followed. Not with
       // the `fetch` of the server, which is Next's to cache. And not as a

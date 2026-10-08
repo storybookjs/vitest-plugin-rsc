@@ -248,7 +248,7 @@ export async function buildRouting(
           buildId,
           nextVersion: version,
           // Not webpack: for that one Next traces the files of its Node.js
-          // server here, which the tab does not run.
+          // server here, which the browser does not run.
           bundler: Bundler.Turbopack,
           routesManifest,
           middlewareManifest,

@@ -17,7 +17,7 @@ export function watchPageLoad(): () => Promise<void> {
   return async () => {
     await expect
       // A page load starts the app's client code from scratch, which takes
-      // a while when every core runs a tab.
+      // a while when every core runs a worker.
       .poll(hydratedAt, {
         message: "the app did not load and hydrate another page",
         timeout: 10_000,

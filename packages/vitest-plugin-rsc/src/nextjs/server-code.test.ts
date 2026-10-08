@@ -9,11 +9,11 @@ const registry = "globalThis.__server__";
 // A project that has Vitest, for the packages of the test runner.
 const root = fileURLToPath(new URL("../../../../playground/nextjs-e2e-demo", import.meta.url));
 
-// A tab, as far as server code can tell.
+// A browser, as far as server code can tell.
 beforeEach(() => {
   vi.stubGlobal("window", { innerWidth: 390 });
-  vi.stubGlobal("document", { title: "Tab" });
-  vi.stubGlobal("location", { href: "http://tab.test/" });
+  vi.stubGlobal("document", { title: "Browser" });
+  vi.stubGlobal("location", { href: "http://browser.test/" });
   vi.stubGlobal("__server__", { fetch: () => "server fetch", Response: class ServerResponse {} });
 });
 

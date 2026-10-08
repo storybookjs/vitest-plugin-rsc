@@ -8,7 +8,7 @@
 [![Node](https://img.shields.io/badge/node-%3E%3D24-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
 [![pnpm](https://img.shields.io/badge/pnpm-11-F69220?logo=pnpm&logoColor=white)](https://pnpm.io/)
 
-`vitest-plugin-rsc` runs your server code in Vitest Browser Mode, in the same browser tab as your assertions. For a Next.js app, that's the whole app: Next's own request handler renders a route, the tab shows the HTML, and Next's own client code hydrates it.
+`vitest-plugin-rsc` runs your server code in Vitest Browser Mode, in the same browser test runtime as your assertions. For a Next.js app, that's the whole app: Next's own request handler renders a route, the browser shows the HTML, and Next's own client code hydrates it.
 
 That unlocks a kind of test unit tests and E2E tests can't easily reach:
 
@@ -33,7 +33,7 @@ Pick one piece of the app — a wishlist carousel, a notes form, a settings pane
   - [The Proxy, Redirects And Rewrites](#the-proxy-redirects-and-rewrites)
   - [Mocks](#mocks)
   - [Fonts, Images And Styles](#fonts-images-and-styles)
-  - [Server Code In A Tab](#server-code-in-a-tab)
+  - [Server Code In The Browser](#server-code-in-the-browser)
   - [Example: Drizzle + PGlite](#example-drizzle--pglite)
   - [API](#api)
 - [React Server Components Without Next.js](#react-server-components-without-nextjs)
@@ -79,7 +79,7 @@ Agents do dramatically better when wrapped in a self-healing loop with fast unit
 - **Real Next.js behavior**: The request goes through Next's own route resolution, request handler, renderer, and router. Layouts, `loading.tsx`, error boundaries, redirects, cookies, Server Actions, route handlers, and the Data Cache do what they do in your app, and so do `proxy.ts` and the redirects, rewrites, and headers in `next.config`.
 - **Next's own compiler**: Your source files go through Next's SWC transform and its font and image loaders, so `next/font`, `next/image`, `next/dynamic`, and styled-jsx work, and a mistake that would stop `next build` fails the test with Next's error.
 - **Focused scope**: Test a whole route, a single component, a form, or a flow without booting the whole deployed app.
-- **White-box inputs**: The server runs in the test's tab, so the `db` your test seeds is the module instance your Server Components read. Set auth/session state, mock IO, fake clocks, and set cookies/headers.
+- **White-box inputs**: The server runs in the test runtime, so the `db` your test seeds is the module instance your Server Components read. Set auth/session state, mock IO, fake clocks, and set cookies/headers.
 - **Black-box output**: Assert what the user sees and does via `vitest/browser` — Playwright locators (`getByRole`, `getByText`, etc.) and `expect.element` matchers.
 - **Watch mode**: With `vitestPluginNext({ affectedTests: true })`, an edit reruns just the tests that use that file. See [Watch Mode](docs/next-routes.md#watch-mode).
 - **No deployed infra**: Use in-memory infrastructure like PGlite instead of spinning up a preview server and database.
@@ -126,9 +126,9 @@ export default defineConfig({
 });
 ```
 
-`vitestPluginNext()` reads your app from the project root. You don't need a setup file: the plugin cleans up the tab before and after every test.
+`vitestPluginNext()` reads your app from the project root. You don't need a setup file: the plugin cleans up before and after every test.
 
-With `isolate: false`, the app's server loads once per tab instead of once per test file. It also means mocks are shared, which is why they belong in a setup file — see [Mocks](#mocks).
+With `isolate: false`, the app's server loads once per worker instead of once per test file. It also means mocks are shared, which is why they belong in a setup file — see [Mocks](#mocks).
 
 ### Render A Component
 
@@ -487,7 +487,7 @@ test("creating a note invalidates the notes cache", async () => {
 
 ### Open A Whole Route
 
-`renderServer({ url })` opens a route the way a browser does. The request goes to Next's request handler, the tab shows the HTML it sends back, and Next's client code hydrates it. It resolves once the page has hydrated. From there, Next's router is in charge, so links, forms, and redirects behave as they do in your app.
+`renderServer({ url })` opens a route the way a browser does. The request goes to Next's request handler, the browser shows the HTML it sends back, and Next's client code hydrates it. It resolves once the page has hydrated. From there, Next's router is in charge, so links, forms, and redirects behave as they do in your app.
 
 ```tsx
 import { expect, test } from "vitest";
@@ -534,7 +534,7 @@ A URL that isn't a route gets your app's not-found page, with status `404`.
 
 ### Route Handlers
 
-`handleRequest(url, init)` sends one request to the app and resolves with the response. It takes what `fetch` takes. Use it when the response is what you assert on: a status, a header, the HTML, or the Flight payload. The request carries the tab's cookies, and the cookies the server sets go into the tab.
+`handleRequest(url, init)` sends one request to the app and resolves with the response. It takes what `fetch` takes. Use it when the response is what you assert on: a status, a header, the HTML, or the Flight payload. The request carries the browser's cookies, and the browser stores the cookies the server sets.
 
 Route handlers (`app/**/route.ts`) are served too, and `handleRequest` is how a test calls one:
 
@@ -543,7 +543,7 @@ import { expect, test } from "vitest";
 import { handleRequest } from "vitest-plugin-rsc/nextjs/testing-library";
 import { db } from "../lib/notes.ts";
 
-test("gives a route handler the body of a request and the cookies of the tab", async () => {
+test("gives a route handler the body of a request and the cookies of the browser", async () => {
   db.notes.set("1", { id: "1", title: "Inbox triage", body: "Sort the inbox" });
   document.cookie = "editor=kasper";
 
@@ -563,7 +563,7 @@ test("gives a route handler the body of a request and the cookies of the tab", a
 });
 ```
 
-A `fetch` from a Client Component to a route handler reaches it too, with the tab's cookies.
+A `fetch` from a Client Component to a route handler reaches it too, with the browser's cookies.
 
 ### The Proxy, Redirects And Rewrites
 
@@ -625,7 +625,7 @@ test("opens a page without the proxy", async () => {
 
 The page's Server Actions and `router.refresh()` skip it too. A navigation to another route goes through it, as in your app. A node skips it by default, see [Render A Component](#render-a-component).
 
-The proxy runs in the tab, in the same modules as the test. So a module it imports is the instance the test imports, and `vi.mock()` replaces it for both: mock the session it reads, or assert on what it wrote.
+The proxy runs in the test runtime, in the same modules as the test. So a module it imports is the instance the test imports, and `vi.mock()` replaces it for both: mock the session it reads, or assert on what it wrote.
 
 See [The Server In Front Of The App](docs/next-routes.md#the-server-in-front-of-the-app) for how this works.
 
@@ -701,9 +701,9 @@ test("sets text in a font of next/font/local, a file of the app", async () => {
 - **`next build`'s checks**: a client hook in a Server Component, or `server-only` code in a Client Component, fails the test with Next's error.
 - **`paths`** from your `tsconfig.json`, like `@/components/button`.
 
-### Server Code In A Tab
+### Server Code In The Browser
 
-The server runs in a tab, but your server code is told it's on a server, the way Next's build tells it: `typeof window` is `"undefined"`, and `fetch` is the one Next patches. Test files keep the tab's `window` and `fetch`.
+The server runs in the browser, but your server code is told it's on a server, the way Next's build tells it: `typeof window` is `"undefined"`, and `fetch` is the one Next patches. Test files keep the browser's `window` and `fetch`.
 
 If a module needs to know it's in a browser, list it in `browserModules`:
 
@@ -734,7 +734,7 @@ afterEach(() => {
 
 ### Example: Drizzle + PGlite
 
-PGlite runs Postgres in-process, so it works inside the tab, and every test can have its own database. This is how `playground/nextjs-notes-demo` does it.
+PGlite runs Postgres in-process, so it works inside the browser test runtime, and every test can have its own database. This is how `playground/nextjs-notes-demo` does it.
 
 Two files sit next to each other:
 
@@ -844,7 +844,7 @@ A node resolves with `{ container, baseElement, asFragment, unmount, response }`
 
 ## React Server Components Without Next.js
 
-`vitestPluginRSC()` on its own renders Server Components for any React app. There's no request and no router: `renderServer` renders a node to a Flight stream and reads it back in the same tab.
+`vitestPluginRSC()` on its own renders Server Components for any React app. There's no request and no router: `renderServer` renders a node to a Flight stream and reads it back in the same test runtime.
 
 ```ts
 // vitest.config.ts
@@ -898,11 +898,11 @@ This `renderServer` takes `{ container, baseElement, wrapper }` and resolves wit
 
 ## Server Code That Runs In A Browser
 
-The plugin runs server code inside a browser tab. That sounds wrong, but the surface is closer than it looks: Node.js has most of the web APIs a tab has, and server code that sticks to those runs in a tab too.
+The plugin runs server code inside the browser test runtime. That sounds wrong, but the surface is closer than it looks: Node.js has most of the web APIs a browser has, and server code that sticks to those runs in a browser too.
 
 The plugin shims what Next's server needs from Node.js, like `AsyncLocalStorage`, `Buffer`, and `process.env`.
 
-A fast unit test shouldn't touch the real database, filesystem, or network — those make tests slow and flaky. Standard practice is to keep IO inside the test runtime, which here is the tab:
+A fast unit test shouldn't touch the real database, filesystem, or network — those make tests slow and flaky. Standard practice is to keep IO inside the test runtime, which here is the browser:
 
 - **Database**: an in-memory implementation like [PGlite](https://pglite.dev/) for Postgres or [sql.js](https://github.com/sql-js/sql.js) for SQLite.
 - **File system**: an in-memory implementation like [`memfs` via Vitest](https://vitest.dev/guide/mocking/file-system).
@@ -930,7 +930,7 @@ export default defineConfig({
 
 Next.js is a build and a runtime, and only the build is tied to a bundler. So the plugin does the build with Vite, asks Next's own build code for everything else, and runs Next's runtime unchanged. Routing, the proxy, and `next.config` redirects come from Next's own `@next/routing`.
 
-Next compiles an app into three layers, each with its own module graph and its own build of React. Each is a Vite environment here, and all three run in the test's tab:
+Next compiles an app into three layers, each with its own module graph and its own build of React. Each is a Vite environment here, and all three run in the browser test runtime:
 
 | Layer     | Runs                                                                   | Vite environment |
 | --------- | ---------------------------------------------------------------------- | ---------------- |
@@ -945,7 +945,7 @@ For the full walkthrough, see [docs/next-routes.md](docs/next-routes.md). [docs/
 ## Playgrounds
 
 - `playground/nextjs-e2e-demo` — a small Next.js app with a test for every feature of the Next.js support. Most samples above come from its tests.
-- `playground/nextjs-notes-demo` — a fuller Next.js notes app with Better Auth, Drizzle, PGlite test databases, and shadcn/ui. Its tests open whole routes with the database and the session mocked in the tab. This is the repository's acceptance app.
+- `playground/nextjs-notes-demo` — a fuller Next.js notes app with Better Auth, Drizzle, PGlite test databases, and shadcn/ui. Its tests open whole routes with the database and the session mocked in the test runtime. This is the repository's acceptance app.
 - `playground/rsc-vitest-demo` — a minimal non-Next RSC app. Use this as the smallest end-to-end example of `vitest-plugin-rsc` on its own.
 
 Vitest suites are wired through the root workspace, while each package or playground owns its local config:

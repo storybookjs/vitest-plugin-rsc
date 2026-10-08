@@ -7,7 +7,7 @@ import { normalizePath, type EnvironmentModuleGraph, type EnvironmentModuleNode 
 
 const stylesheet = /\.(css|scss|sass|less|styl|stylus|pcss|postcss)$/;
 
-/** The modules by a name the tab has for them: an id, a URL or a file. */
+/** The modules by a name the browser has for them: an id, a URL or a file. */
 export function modulesNamed(
   graph: EnvironmentModuleGraph,
   name: string,

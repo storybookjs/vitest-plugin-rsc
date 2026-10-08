@@ -37,7 +37,7 @@ test("gives each of two requests sent at once its own request stores", async () 
   db.notes.set("1", { id: "1", title: "Inbox triage", body: "Sort the inbox" });
   db.notes.set("2", { id: "2", title: "Plan the week", body: "" });
 
-  // The handler reads headers() after it has awaited: in a tab only one
+  // The handler reads headers() after it has awaited: in a browser only one
   // request at a time can have its stores there.
   const [first, second] = await Promise.all([
     handleRequest("/api/notes/1", { headers: { "x-client": "first" } }),
@@ -113,7 +113,7 @@ test.for([
 );
 
 test("drops the authorization header on a redirect to another origin, as fetch does", async () => {
-  // The dev server by another name: another origin, to the tab and to Next.
+  // The dev server by another name: another origin, to the browser and to Next.
   const elsewhere = `http://elsewhere.localhost:${window.location.port}/service/headers`;
 
   const response = await handleRequest(
@@ -149,7 +149,7 @@ test("does not open the response of a route handler that is not a document", asy
   );
 });
 
-test("gives a route handler the body of a request and the cookies of the tab", async () => {
+test("gives a route handler the body of a request and the cookies of the browser", async () => {
   db.notes.set("1", { id: "1", title: "Inbox triage", body: "Sort the inbox" });
   document.cookie = "editor=kasper";
 
@@ -324,7 +324,8 @@ test("serves the fetch() of a Client Component with a route handler", async () =
   await page.getByRole("textbox", { name: "New title" }).fill("Inbox zero");
   await page.getByRole("button", { name: "Rename" }).click();
 
-  // The handler got the cookie of the tab, and the tab the cookie it set.
+  // The handler got the cookie of the browser, and the browser the cookie it
+  // set.
   await expect
     .element(page.getByRole("status"))
     .toHaveTextContent("Renamed to Inbox zero by kasper");
@@ -334,7 +335,7 @@ test("serves the fetch() of a Client Component with a route handler", async () =
   await expect.element(page.getByRole("heading", { name: "Inbox zero" })).toBeVisible();
 });
 
-test("serves a fetch() with a Request, its body and the cookies of the tab", async () => {
+test("serves a fetch() with a Request, its body and the cookies of the browser", async () => {
   document.cookie = "editor=kasper";
   const request = new Request("/api/notes/7", {
     method: "PUT",
@@ -375,7 +376,7 @@ test("serves a route handler that asks for the edge runtime", async () => {
 
   expect(await response.json()).toEqual({
     asked: "edge",
-    // The URL the tab asked for, with its origin.
+    // The URL the browser asked for, with its origin.
     url: `${location.origin}/api/runtime?x=1`,
   });
 });

@@ -2,7 +2,7 @@
 
 This playground is a small Next.js App Router notes app used to exercise React Server Components with `vitest-plugin-rsc`. It is the acceptance app of this repository.
 
-A browser test opens a route with `renderServer({ url })` from `vitest-plugin-rsc/nextjs/testing-library`, and Next's own request handler, renderer and router do the rest, in the test's tab. The tests mock the modules the server reads there, in `vitest.setup.ts`: the database (a PGlite clone per test), the session and the auth API.
+A browser test opens a route with `renderServer({ url })` from `vitest-plugin-rsc/nextjs/testing-library`, and Next's own request handler, renderer and router do the rest, in the browser test runtime. The tests mock the modules the server reads there, in `vitest.setup.ts`: the database (a PGlite clone per test), the session and the auth API.
 
 - `app/**/page.test.tsx` open the pages of the app.
 - `components/*.test.tsx` render a probe component on its own, with `renderServer(<Probe />, { url })`: in a container, without the layouts of the app, with the params the app's route for the URL has.

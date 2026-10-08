@@ -4,7 +4,7 @@ import { page } from "vitest/browser";
 import { signInAs, whereAmI } from "../test/browser.ts";
 import { requestHits } from "../test/service.ts";
 
-// The app's server code runs in this tab, compiled as server code: `typeof
+// The app's server code runs in the browser, compiled as server code: `typeof
 // window` is "undefined", and `fetch`, `Request` and `Response` are a server's.
 
 let consoleError: MockInstance<typeof console.error>;
@@ -45,16 +45,16 @@ test("tells a package of the app that it is on the server", async () => {
   await expect.element(page.getByText("Server variable: hello from the server")).toBeVisible();
 });
 
-test("leaves the tab to a test file", () => {
+test("leaves the browser to a test file", () => {
   expect(typeof window).toBe("object");
   expect(typeof document).toBe("object");
   expect(window.location.origin).toBe(new URL(import.meta.url).origin);
-  // The tab's Response, which drops the header a server's keeps.
+  // The browser's Response, which drops the header a server's keeps.
   const response = new Response(null, { headers: { "set-cookie": "session=ada" } });
   expect(response.headers.getSetCookie()).toEqual([]);
 });
 
-test("leaves the tab to a module that the config lists in browserModules", async () => {
+test("leaves the browser to a module that the config lists in browserModules", async () => {
   expect(whereAmI()).toBe("browser");
   signInAs("grace");
 
