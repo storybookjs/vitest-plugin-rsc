@@ -1,6 +1,6 @@
 import { Buffer } from "node:buffer";
 import { enterAmbientScope, SequentialAsyncLocalStorage } from "../async-local-storage.ts";
-import { registry } from "./registry.ts";
+import { registry, type Opened } from "./registry.ts";
 
 // Next's server runs here as it does on Node.js, with the web APIs that
 // Node.js and a browser share: web streams, `fetch`, `crypto`. This file
@@ -124,6 +124,7 @@ class ServerResponse extends NativeResponse {
 registry.Request = ServerRequest;
 registry.Response = ServerResponse;
 registry.enterRequestScope = enterAmbientScope;
+registry.openedByRequest = new SequentialAsyncLocalStorage<Opened | undefined>();
 
 // Next patches the `fetch` of its server to cache and dedupe. That must not
 // be the `fetch` of the page, which is the browser's.
