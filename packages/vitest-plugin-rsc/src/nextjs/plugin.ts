@@ -350,35 +350,29 @@ function findImports(code: string): string[] {
   ].map((match) => match[1]!);
 }
 
-// Follows the imports of Next's rsc-layer runtime up to each `"use client"`
-// module: the modules a Flight payload can refer to. The other two layers
+// The modules of Next a Flight payload can refer to: every file of its ESM
+// build with a `"use client"` directive, which is what
+// `nextClientBoundaryPlugin` makes a client reference of. The other two layers
 // pre-bundle them up front, or Vite would discover them mid-test and reload
-// the page. This is what Next's client entry plugin does for its own bundles.
-function findClientBoundaries(resolver: LayerResolver, roots: string[]): string[] {
-  const boundaries = new Set<string>();
-  const seen = new Set<string>();
-  const queue = [...roots];
-
-  for (const specifier of queue) {
-    if (seen.has(specifier) || !specifier.startsWith("next/dist/esm/")) continue;
-    seen.add(specifier);
-    const file = resolver.nextFile(specifier);
-    if (!file) continue;
+// the page. By the file, which is how a payload names one: an import of the
+// app does not, like `next/legacy/image`, so the dependency scan finds another
+// spelling. This is what Next's client entry plugin does for its own bundles.
+function findClientBoundaries(nextDir: string, resolver: LayerResolver): string[] {
+  const files = fs.readdirSync(path.join(nextDir, "dist/esm"), {
+    recursive: true,
+    withFileTypes: true,
+  });
+  const boundaries = files.flatMap((entry) => {
+    if (!entry.isFile() || !entry.name.endsWith(".js")) return [];
+    const file = path.join(entry.parentPath, entry.name);
     const code = fs.readFileSync(file, "utf8");
-    if (code.includes("use client") && hasDirective(parseAst(code).body, "use client")) {
-      boundaries.add(specifier);
-      continue;
-    }
-    for (const source of findImports(code)) {
-      const target = resolver.normalize(
-        source.startsWith(".")
-          ? resolver.toSpecifier(path.resolve(path.dirname(file), source))
-          : source,
-      );
-      if (target) queue.push(target);
-    }
-  }
-  return [...boundaries];
+    return code.includes("use client") && hasDirective(parseAst(code).body, "use client")
+      ? [resolver.toSpecifier(file)]
+      : [];
+  });
+  // Vite keeps the pre-bundled dependencies by a hash of this list, and a
+  // directory is listed in the order of its disk.
+  return boundaries.sort();
 }
 
 // What the runtime modules of this package, and the modules Vite and Vite RSC
@@ -515,7 +509,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
           ...apiImports("rsc"),
           ...runtimeImports.rsc,
         ]);
-        const clientBoundaries = findClientBoundaries(resolvers.rsc, rscInclude);
+        const clientBoundaries = findClientBoundaries(project.nextDir, resolvers.rsc);
         const include: Record<NextLayer, string[]> = {
           rsc: rscInclude,
           ssr: [
@@ -544,6 +538,11 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
           );
 
         const appEntries = normalizePath(path.join(project.appDir, "**/*.{js,jsx,ts,tsx}"));
+        // The proxy of the app is a module of the rsc layer that no file of
+        // `app/` imports.
+        const middlewareEntries = project.middlewareFile
+          ? [normalizePath(project.middlewareFile)]
+          : [];
         const optimizeDeps = (layer: NextLayer) => ({
           include: [...include[layer], ...dependenciesOfNext(layer)],
           rolldownOptions: {
@@ -585,10 +584,10 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
             [environmentOf.rsc]: {
               optimizeDeps: {
                 ...optimizeDeps("rsc"),
-                // A route loads when it is first requested. Scan the app up
-                // front, or Vite finds the dependencies of a page mid-test
-                // and reloads the tab.
-                entries: [appEntries],
+                // A route loads when it is first requested, and so does the
+                // proxy. Scan the app up front, or Vite finds the
+                // dependencies of a page mid-test and reloads the tab.
+                entries: [appEntries, ...middlewareEntries],
               },
             },
             [environmentOf.ssr]: {
