@@ -133,6 +133,17 @@ const nativeQueueMicrotask = globalThis.queueMicrotask;
 registry.queueMicrotask = (callback) =>
   nativeQueueMicrotask(SequentialAsyncLocalStorage.bind(callback));
 
+// Each step of a render of React's Flight server has the stores of its first
+// step, which React takes in the microtask above (server-code.ts). So what a
+// cached component returns renders in the scope of that component, as on
+// Node.js, and a cached component that it renders adds its tags to it.
+const renders = new WeakMap<object, ReturnType<typeof SequentialAsyncLocalStorage.snapshot>>();
+registry.performWork = (request, performWork) => {
+  let inStores = renders.get(request);
+  if (!inStores) renders.set(request, (inStores = SequentialAsyncLocalStorage.snapshot()));
+  inStores(performWork, request);
+};
+
 // Next patches the `fetch` of its server to cache and dedupe. That must not
 // be the `fetch` of the page, which is the browser's.
 const nativeFetch = globalThis.fetch;

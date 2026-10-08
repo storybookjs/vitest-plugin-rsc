@@ -77,7 +77,11 @@ test("has React's Flight server in the rsc layer queue a microtask with the serv
     (
       await serverCode
         .optimizerPlugin(layer)
-        .transform.call({ warn: vi.fn() }, `var schedule = queueMicrotask;`, file)
+        .transform.call(
+          { warn: vi.fn() },
+          `var schedule = queueMicrotask; function performWork(request) {}`,
+          file,
+        )
     )?.code;
   const flightServer = (build: string) =>
     `/app/node_modules/next/dist/compiled/react-server-dom-webpack/cjs/react-server-dom-webpack-server.edge.${build}.js`;
@@ -96,6 +100,21 @@ test("has React's Flight server in the rsc layer queue a microtask with the serv
       "/app/node_modules/@vitejs/plugin-rsc/dist/vendor/react-server-dom/cjs/react-server-dom-webpack-server.edge.development.js",
     ),
   ).toBeUndefined();
+});
+
+test("has each step of a render of React's Flight server run with the stores of its first", async () => {
+  const { transform } = createServerCode(registry).optimizerPlugin("rsc");
+  const file =
+    "/app/node_modules/next/dist/compiled/react-server-dom-webpack/cjs/react-server-dom-webpack-server.edge.production.js";
+  const code = `function performWork(request) { retryTask(request); }`;
+
+  expect((await transform.call({ warn: vi.fn() }, code, file))?.code).toContain(
+    `${registry}.performWork(request, performWorkOfReact)`,
+  );
+  // A React that renders some other way.
+  await expect(
+    transform.call({ warn: vi.fn() }, `function work(request) {}`, file),
+  ).rejects.toThrow("has no `function performWork(request) {`");
 });
 
 test("leaves code alone that names none of them", async () => {

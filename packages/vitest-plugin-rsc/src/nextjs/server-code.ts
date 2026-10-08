@@ -130,6 +130,7 @@ const useCacheWrapper = /\/next\/dist\/(?:esm\/)?server\/use-cache\/use-cache-wr
 // channel.
 const flightServer =
   /\/next\/dist\/compiled\/react-server-dom-webpack(?:-experimental)?\/cjs\/react-server-dom-webpack-server\.edge\.\w+\.js$/;
+const performWork = "function performWork(request) {";
 
 export function createServerCode(registry: string, options: ServerCodeOptions = {}) {
   const patterns = [options.browserModules ?? []].flat();
@@ -222,10 +223,25 @@ export function createServerCode(registry: string, options: ServerCodeOptions = 
           // own `queueMicrotask` passes them on: see globals.ts. That is how
           // Next has React call a cached function in the scope of that
           // function.
-          const define =
-            layer === "rsc" && flightServer.test(normalizePath(id))
-              ? { queueMicrotask: `${registry}.queueMicrotask` }
-              : undefined;
+          const isFlightServer = layer === "rsc" && flightServer.test(normalizePath(id));
+          const define = isFlightServer
+            ? { queueMicrotask: `${registry}.queueMicrotask` }
+            : undefined;
+          // And it renders in steps, each a `performWork()`: the later ones
+          // when a promise it waits for settles. On Node.js such a step has
+          // the stores of the step that waited, so what a cached component
+          // returns renders in its scope. Here each step gets the stores of
+          // the first: see globals.ts.
+          if (isFlightServer) {
+            if (!code.includes(performWork)) {
+              throw new Error(`vitest-plugin-rsc: ${id} has no \`${performWork}\` to compile.`);
+            }
+            code = code.replace(
+              performWork,
+              `function performWork(request) { ${registry}.performWork(request, performWorkOfReact); }\n` +
+                `function performWorkOfReact(request) {`,
+            );
+          }
           try {
             return await compileServerCode(code, id, registry, define);
           } catch (error) {

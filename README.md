@@ -474,7 +474,7 @@ export async function getQuote(topic: string) {
 }
 ```
 
-A cached function has a scope of its own, as in a deployment: `cookies()` throws in it. A component that a cached component renders is not in that scope here, and reads the request. So is a cached component that it renders, whose tags do not reach the outer entry. With Cache Components, Cached Navigations is off and nothing is prerendered, so a page that reads the request outside a `<Suspense>` boundary renders. See [Caching](docs/next-routes.md#caching) for the details.
+A cached function has a scope of its own, as in a deployment: `cookies()` throws in it, and in a component it renders. A cached component that it renders adds its tags to its entry. With Cache Components, Cached Navigations is off and nothing is prerendered, so a page that reads the request outside a `<Suspense>` boundary renders. See [Caching](docs/next-routes.md#caching) for the details.
 
 ### Open A Whole Route
 

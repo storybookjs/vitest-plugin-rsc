@@ -170,24 +170,14 @@ test("does not let a cached function read the request, as Next does not", async 
     .toBeVisible();
 });
 
-test("known limit: renders a page that reads the request outside a Suspense boundary", async () => {
-  document.cookie = "name=Ada";
-  // `next build` stops at this page: "Next.js encountered uncached or runtime
-  // data during prerendering". Nothing is prerendered here.
-  await renderServer({ url: "/blocking" });
-
-  await expect.element(page.getByRole("heading", { name: "Hello Ada" })).toBeVisible();
-});
-
-test("known limit: a component that a cached component renders reads the request", async () => {
+test("renders what a cached component returns in its scope, as next start does", async () => {
   document.cookie = "name=Ada";
   await renderServer({ url: "/nested" });
 
-  // `next start`: "Child of nobody, cookies() throws, tagged".
-  await expect.element(page.getByText("Child of Ada, not tagged")).toBeVisible();
+  await expect.element(page.getByText("Child of nobody, cookies() throws, tagged")).toBeVisible();
 });
 
-test("known limit: a cached component that a cached component renders does not pass its tags on", async () => {
+test("runs a cached component again when the tag of a cached component it renders is revalidated", async () => {
   const text = () => page.getByText(/^outer \d+ inner \d+$/).element().textContent;
   await renderServer({ url: "/outer" });
   await expect.element(page.getByText(/^outer/)).toBeVisible();
@@ -198,8 +188,18 @@ test("known limit: a cached component that a cached component renders does not p
   await revalidate("inner");
   await renderServer({ url: "/outer" });
 
-  // `next start` runs both again: "outer 2 inner 2" after "outer 1 inner 1".
-  expect(text()).toBe(first);
+  // Next adds the tags of the inner entry to the outer one.
+  const [outer, inner] = first!.match(/\d+/g)!.map(Number);
+  expect(text()).toBe(`outer ${outer! + 1} inner ${inner! + 1}`);
+});
+
+test("known limit: renders a page that reads the request outside a Suspense boundary", async () => {
+  document.cookie = "name=Ada";
+  // `next build` stops at this page: "Next.js encountered uncached or runtime
+  // data during prerendering". Nothing is prerendered here.
+  await renderServer({ url: "/blocking" });
+
+  await expect.element(page.getByRole("heading", { name: "Hello Ada" })).toBeVisible();
 });
 
 test("known limit: a test cannot call a cached function itself", async () => {
