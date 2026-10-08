@@ -1,13 +1,24 @@
 import fs from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { createRequire } from "node:module";
+import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { init as initCjsLexer, parse as parseCjs } from "cjs-module-lexer";
 import querystring from "node:querystring";
 import { stripVTControlCharacters } from "node:util";
 import { compileFunction } from "node:vm";
+import type { ResolveRoutesParams } from "@next/routing";
+import type { AdapterOutputs, NextAdapter } from "next/dist/build/adapter/build-complete.js";
+import type { RoutesManifest } from "next/dist/build/index.js";
+import type { ProxyMatcher } from "next/dist/build/analysis/get-page-static-info.js";
 import type { AppLoaderOptions } from "next/dist/build/webpack/loaders/next-app-loader/index.js";
+import type {
+  EdgeFunctionDefinition,
+  MiddlewareManifest,
+} from "next/dist/build/webpack/plugins/middleware-plugin.js";
 import { parseAst, transformWithOxc } from "vite";
+import { receivers } from "./adapter.ts";
 import { rscFlightCodec, type FlightEntry } from "./flight.ts";
 
 // The one file that calls the build code of the project's own `next`. The
@@ -48,6 +59,19 @@ export type ComponentRoute = {
   component: string;
 };
 
+/**
+ * What the server in front of the app goes by: the routes that Next's build
+ * hands a deployment adapter, as `resolveRoutes()` of `@next/routing` takes
+ * them.
+ */
+export type NextRouting = Pick<ResolveRoutesParams, "routes" | "basePath" | "buildId"> & {
+  /**
+   * What the build has to answer a request with, by the pathname Next serves
+   * it at, like `/notes/[id]`: the page name of its route.
+   */
+  outputs: Record<string, string>;
+};
+
 export type NextProject = {
   root: string;
   appDir: string;
@@ -64,6 +88,19 @@ export type NextProject = {
   componentRoutes: ComponentRoute[];
   /** The metadata files of the app, like `app/icon.png`, which are not served yet. */
   metadataFiles: string[];
+  /** The route files of the app that ask for Next's edge runtime, which they do not get. */
+  edgeRouteFiles: string[];
+  /**
+   * The dynamic routes that `resolveRoutes()` does not find for a request: the
+   * ones under a folder with a name that a URL percent-encodes.
+   */
+  unmatchedRoutes: string[];
+  /** The `proxy.ts` of the app, or its `middleware.ts`: its file, if it has one. */
+  middlewareFile: string | undefined;
+  /** What the server does with a request before a route gets it. */
+  routing: NextRouting;
+  /** What a build writes to `.next/routes-manifest.json`, which Next's route module reads. */
+  routesManifest: RoutesManifest;
   /** The resolved `next.config`, as far as it serializes. */
   config: Record<string, unknown>;
   /** Next's compile-time constants per layer, as code strings. */
@@ -87,11 +124,10 @@ export type NextProject = {
     route: NextRoute | ComponentRoute,
   ): Promise<{ code: string; watchFiles: string[] }>;
   /**
-   * Next's edge `handler(Request)` of a route. `userland` is what it serves:
-   * for a route handler the specifier of its route module, for a page an
-   * expression for its rsc-layer module, which lives in another environment.
+   * Next's request handler of the middleware: its template around the file.
+   * Nothing for an app without one.
    */
-  loadEdgeEntry(route: NextRoute | ComponentRoute, userland: string): Promise<string>;
+  loadMiddlewareEntry(): Promise<string | undefined>;
   /**
    * Next's SWC transform of a module of the app, for a layer. Nothing for a
    * client module in the rsc layer: Vite RSC turns it into references.
@@ -129,6 +165,7 @@ export type ServeFile = (request: IncomingMessage, response: ServerResponse) => 
 // called the way webpack calls it.
 type LoaderContext = {
   getOptions(): unknown;
+  _module: { buildInfo: Record<string, unknown> };
   async(): (error: Error | null, ...result: unknown[]) => void;
   currentTraceSpan: TraceSpan;
   resourcePath: string;
@@ -263,25 +300,6 @@ function declarationOf(file: string, name: string, seen = new Set<string>()): De
   }
 }
 
-// The keys of the options object that a function takes, however it reads them:
-// in its parameter, or off the parameter in its body.
-function optionKeys({ code, params = [] }: Declared): string[] {
-  const [param] = params as { type: string; name?: string; properties?: object[] }[];
-  if (param?.type === "ObjectPattern") {
-    return param.properties!.flatMap((property) =>
-      "key" in property && property.key ? [nameOf(property.key)] : [],
-    );
-  }
-  if (param?.type !== "Identifier") return [];
-  const options = param.name!;
-  return [
-    ...Array.from(code.matchAll(new RegExp(`\\b${options}\\.(\\w+)`, "g")), (match) => match[1]!),
-    ...Array.from(code.matchAll(new RegExp(`\\{([^}]*)\\}\\s*=\\s*${options}\\b`, "g")), (match) =>
-      match[1]!.split(",").map((part) => part.split(":")[0]!.trim()),
-    ).flat(),
-  ];
-}
-
 // The root segment of the routes of a node: see `loadComponentPageEntry()`.
 // The parentheses make it a route group for Next, so it never shows in a
 // pathname.
@@ -335,6 +353,35 @@ function stripTurbopackTransitions(code: string): string {
   return code.replace(/\s+with\s*\{\s*['"]turbopack-transition['"]\s*:\s*['"][^'"]*['"]\s*\}/g, "");
 }
 
+// The adapter that Next's build hands the routes to: see adapter.ts.
+const adapterPath = fileURLToPath(
+  new URL(`./adapter${path.extname(import.meta.url)}`, import.meta.url),
+);
+
+// A pathname the way a URL has it: `/%C3%BCber` for `/über`.
+function urlPathname(pathname: string): string {
+  const url = new URL("http://localhost");
+  url.pathname = pathname;
+  return url.pathname;
+}
+
+// What the build has to answer a request with, by the pathname Next serves it
+// at: the app pages and the route handlers, which is all this build makes.
+// `resolveRoutes()` compares the pathname of a request with these as it is,
+// so each one is there in the ways a request has it: percent-encoded, as a
+// URL has `/über`, and with `trailingSlash` with the slash. That is the
+// adapter's part, and Next's own adapters do the same.
+function outputPagesOf(outputs: AdapterOutputs, trailingSlash: boolean): Record<string, string> {
+  const pages: Record<string, string> = {};
+  for (const { pathname, sourcePage } of [...outputs.appPages, ...outputs.appRoutes]) {
+    for (const requested of new Set([pathname, urlPathname(pathname)])) {
+      pages[requested] = sourcePage;
+      if (trailingSlash && !requested.endsWith("/")) pages[`${requested}/`] = sourcePage;
+    }
+  }
+  return pages;
+}
+
 export async function loadNextProject(
   root: string,
   require: NodeJS.Require = createRequire(path.join(root, "package.json")),
@@ -378,10 +425,11 @@ export async function loadNextProject(
   const loadConfig = load<typeof import("next/dist/server/config.js")>("server/config").default;
   const { PHASE_PRODUCTION_BUILD } =
     load<typeof import("next/dist/shared/lib/constants.js")>("shared/lib/constants");
-  const { APP_DIR_ALIAS } = load<typeof import("next/dist/lib/constants.js")>("lib/constants");
+  const { APP_DIR_ALIAS, MIDDLEWARE_FILENAME, PROXY_FILENAME } =
+    load<typeof import("next/dist/lib/constants.js")>("lib/constants");
   const { findPagesDir } =
     load<typeof import("next/dist/lib/find-pages-dir.js")>("lib/find-pages-dir");
-  const { discoverRoutes } =
+  const { discoverRoutes, createPagesMapping } =
     load<typeof import("next/dist/build/route-discovery.js")>("build/route-discovery");
   const { normalizeCatchAllRoutes } = load<
     typeof import("next/dist/build/normalize-catchall-routes.js")
@@ -438,7 +486,7 @@ export async function loadNextProject(
     load<typeof import("next/dist/shared/lib/constants.js")>("shared/lib/constants");
   const loadJsConfig =
     load<typeof import("next/dist/build/load-jsconfig.js")>("build/load-jsconfig").default;
-  const { getRSCModuleInformation } = load<
+  const { getRSCModuleInformation, getAppPageStaticInfo } = load<
     typeof import("next/dist/build/analysis/get-page-static-info.js")
   >("build/analysis/get-page-static-info");
   const { nextImageLoaderRegex } =
@@ -454,14 +502,46 @@ export async function loadNextProject(
   >("build/webpack/loaders/next-font-loader/index").default as unknown as Loader;
   const imageOptimizer =
     load<typeof import("next/dist/server/image-optimizer.js")>("server/image-optimizer");
+  const loadCustomRoutes =
+    load<typeof import("next/dist/lib/load-custom-routes.js")>("lib/load-custom-routes").default;
+  const { generateInterceptionRoutesRewrites } = load<
+    typeof import("next/dist/lib/generate-interception-routes-rewrites.js")
+  >("lib/generate-interception-routes-rewrites");
+  const { generateRoutesManifest } = load<
+    typeof import("next/dist/build/generate-routes-manifest.js")
+  >("build/generate-routes-manifest");
+  const { handleBuildComplete } = load<typeof import("next/dist/build/adapter/build-complete.js")>(
+    "build/adapter/build-complete",
+  );
+  const { Bundler } = load<typeof import("next/dist/lib/bundler.js")>("lib/bundler");
+  const { getFilesInDir } =
+    load<typeof import("next/dist/lib/get-files-in-dir.js")>("lib/get-files-in-dir");
+  // Next types this as a const enum, which only its own build can read.
+  const { PAGE_TYPES } = load<{ PAGE_TYPES: { ROOT: undefined } }>("lib/page-types");
+  const rootPageType =
+    PAGE_TYPES.ROOT ?? fail("next/dist/lib/page-types.js has no `PAGE_TYPES.ROOT`");
+  const { getStaticInfoIncludingLayouts } = load<
+    typeof import("next/dist/build/get-static-info-including-layouts.js")
+  >("build/get-static-info-including-layouts");
+  const { getEdgeServerEntry } = load<typeof import("next/dist/build/entries.js")>("build/entries");
+  const { getNamedMiddlewareRegex } = load<
+    typeof import("next/dist/shared/lib/router/utils/route-regex.js")
+  >("shared/lib/router/utils/route-regex");
+  const nextMiddlewareLoader = load<
+    typeof import("next/dist/build/webpack/loaders/next-middleware-loader.js")
+  >("build/webpack/loaders/next-middleware-loader").default as unknown as Loader;
   const { getContentType, getExtension } =
     load<typeof import("next/dist/server/serve-static.js")>("server/serve-static");
 
   // The app is served the way a deployment serves it: production Next on its
-  // edge runtime. React itself stays a development build, see plugin.ts.
-  const config = await inDirectory(root, () =>
+  // Node.js runtime. React itself stays a development build, see plugin.ts.
+  const loadedConfig = await inDirectory(root, () =>
     loadConfig(PHASE_PRODUCTION_BUILD, root, { silent: true }),
   );
+  // Without `i18n`, which is the Pages Router's: a URL of the App Router has
+  // no locale. With it, Next's route resolution and its proxy look for one in
+  // every URL, and find no route of the app.
+  const config = { ...loadedConfig, i18n: null };
   const { appDir } = findPagesDir(root);
   if (!appDir) {
     throw new Error(`vitest-plugin-rsc: no \`app\` directory found in ${root}`);
@@ -566,16 +646,320 @@ export async function loadNextProject(
     if (kind) routes.push({ kind, page, pathname, appPaths, pagePath });
   }
 
+  // Next's edge runtime is deprecated, and a route that asks for it with
+  // `export const runtime = "edge"` runs on Node.js here, like every other
+  // route. Read the way Next's build reads it, from the file of the route.
+  const edgeRouteFiles: string[] = [];
+  for (const route of routes) {
+    // Not a page of Next's own, like its not-found page.
+    if (!route.pagePath.startsWith(APP_DIR_ALIAS)) continue;
+    const file = path.join(appDir, route.pagePath.slice(APP_DIR_ALIAS.length));
+    const { runtime } = await getAppPageStaticInfo({
+      pageFilePath: file,
+      nextConfig: config,
+      isDev: false,
+      page: route.page,
+      // Next types this as an enum, which only its own build can read.
+      pageType: "app" as never,
+    });
+    if (runtime === "edge") {
+      edgeRouteFiles.push(path.relative(root, file).split(path.sep).join("/"));
+    }
+  }
+
   const buildId = await generateBuildId(config.generateBuildId, () => "vitest");
-  // The environment variables Next's build gives every edge function. A build
-  // makes up the keys; here they are the same on every run, so that the
-  // pre-bundled dependencies they are compiled into stay cached.
-  const edgeEnvironment = {
+  // What a build writes to `.next/` for its server: the build id and the keys
+  // of draft mode. A build makes up the keys; here they are the same on every
+  // run, so that the pre-bundled dependencies they are compiled into stay
+  // cached. cache.ts gives them to Next's server.
+  const buildEnvironment = {
     __NEXT_BUILD_ID: buildId,
     __NEXT_PREVIEW_MODE_ID: "vitest-preview-mode-id",
     __NEXT_PREVIEW_MODE_SIGNING_KEY: "vitest-preview-mode-signing-key",
     __NEXT_PREVIEW_MODE_ENCRYPTION_KEY: "vitest-preview-mode-encryption-key".padEnd(64, "0"),
   };
+  const previewProps = {
+    previewModeId: buildEnvironment.__NEXT_PREVIEW_MODE_ID,
+    previewModeSigningKey: buildEnvironment.__NEXT_PREVIEW_MODE_SIGNING_KEY,
+    previewModeEncryptionKey: buildEnvironment.__NEXT_PREVIEW_MODE_ENCRYPTION_KEY,
+  };
+
+  // The `proxy.ts` of the app, or the `middleware.ts` it was before Next.js
+  // 16: the file next to `app/` that Next's build looks for. A file, and not
+  // a folder of that name. Of two with the name, the first page extension.
+  const rootDir = path.dirname(appDir);
+  const rootFiles = await getFilesInDir(rootDir);
+  const middlewareFiles = [PROXY_FILENAME, MIDDLEWARE_FILENAME].flatMap((name) => {
+    const file = pageExtensions
+      .map((extension) => `${name}.${extension}`)
+      .find((candidate) => rootFiles.has(candidate));
+    return file ? [path.join(rootDir, file)] : [];
+  });
+  // `next build` fails on this too.
+  if (middlewareFiles.length > 1) {
+    const files = middlewareFiles.map((file) => path.relative(root, file));
+    throw new Error(
+      `vitest-plugin-rsc: the app has both ${files.join(" and ")}. Next.js takes one of them.`,
+    );
+  }
+  const [middlewareFile] = middlewareFiles;
+  const middleware = middlewareFile
+    ? await (async () => {
+        // Its page name, like `/proxy` or `/src/proxy`, and where Next's build
+        // imports it from.
+        const mapped = await createPagesMapping({
+          isDev: false,
+          pageExtensions,
+          pagePaths: [middlewareFile.replace(root, "")],
+          pagesType: rootPageType,
+          pagesDir: undefined,
+          appDir,
+          appDirOnly: true,
+        });
+        const [entry] = Object.entries(mapped);
+        const [page, pagePath] =
+          entry ?? fail(`\`createPagesMapping()\` has no page for ${middlewareFile}`);
+        // What Next's build reads in the file: its `config`, with the matcher.
+        const staticInfo = await getStaticInfoIncludingLayouts({
+          isInsideAppDir: false,
+          pageExtensions,
+          pageFilePath: middlewareFile,
+          appDir,
+          config,
+          isDev: false,
+          page,
+        });
+        return { page, pagePath, staticInfo };
+      })()
+    : undefined;
+
+  // The server in front of the app goes by what `next build` hands a
+  // deployment adapter: the redirects, rewrites and headers of `next.config`,
+  // the matcher of the middleware, a pattern for each dynamic route, and what
+  // the build has for each pathname. That part of the build runs here, and
+  // `resolveRoutes()` of `@next/routing` takes the outcome as it is.
+  //
+  // That package is not a part of `next`. It reads what one version of Next
+  // hands an adapter, so it has to be the one of that version.
+  let routingVersion: string;
+  try {
+    ({ version: routingVersion } = require("@next/routing/package.json") as { version: string });
+  } catch (error) {
+    throw new Error(
+      `vitest-plugin-rsc/nextjs needs @next/routing, the package of Next.js that resolves ` +
+        `the route of a request. Install it at the version of next: @next/routing@${version}.`,
+      { cause: error },
+    );
+  }
+  if (routingVersion !== version) {
+    throw new Error(
+      `vitest-plugin-rsc/nextjs needs @next/routing at the version of next, and found ` +
+        `@next/routing@${routingVersion} next to next@${version}. Install @next/routing@${version}.`,
+    );
+  }
+  // What the build made, for that part of it: a function for every route and
+  // one for the middleware. They are listed as the kind Next reads no files
+  // of a build for, an edge function, though they run as on Node.js. Only the
+  // pathname of an output and the matcher of the middleware come back.
+  const edgeFunction = (
+    name: string,
+    page: string,
+    matchers: ProxyMatcher[] = [],
+  ): EdgeFunctionDefinition => ({
+    name,
+    page,
+    matchers,
+    env: buildEnvironment,
+    // What a bundler writes: there are no files.
+    entrypoint: "",
+    files: [],
+    wasm: [],
+    assets: [],
+  });
+  const middlewareManifest: MiddlewareManifest = {
+    version: 3,
+    sortedMiddleware: middleware ? ["/"] : [],
+    middleware: middleware
+      ? {
+          "/": edgeFunction(
+            middleware.page.slice(1),
+            "/",
+            // Without a matcher of its own it is for every path, as Next's
+            // build writes that.
+            middleware.staticInfo.middleware?.matchers ?? [
+              {
+                regexp: getNamedMiddlewareRegex("/", { catchAll: true }).namedRegex,
+                originalSource: "/:path*",
+              },
+            ],
+          ),
+        }
+      : {},
+    functions: Object.fromEntries(
+      routes.map((route) => [route.page, edgeFunction(`app${route.page}`, route.page)]),
+    ),
+  };
+  type BuildComplete = Parameters<NonNullable<NextAdapter["onBuildComplete"]>>[0];
+  // The config that the server in front of the app is made from. Without
+  // `output: "export"`, which has Next's build read the files it exported:
+  // the routes of the app are the same without it.
+  const routedConfig = { ...config, output: undefined };
+  // `next.config` is the app's, and so is the working directory when its
+  // `redirects()` runs. One project at a time, as for the config itself.
+  const { built, routesManifest } = await inDirectory(root, async () => {
+    const { redirects, headers, onMatchHeaders, rewrites } = await loadCustomRoutes(routedConfig);
+    const appPaths = Object.keys(appPathsPerRoute);
+    // An interception route is a rewrite to Next: for a request that comes
+    // from the page it intercepts on.
+    rewrites.beforeFiles.push(...generateInterceptionRoutesRewrites(appPaths, config.basePath));
+    const { routesManifest } = generateRoutesManifest({
+      appType: "app",
+      pageKeys: { pages: [], app: appPaths },
+      config: routedConfig,
+      redirects,
+      headers,
+      onMatchHeaders,
+      rewrites,
+      restrictedRedirectPaths: [`${config.basePath}/_next`],
+      isAppPPREnabled: Boolean(config.cacheComponents),
+      deploymentId: config.deploymentId,
+    });
+    // Next reads the directory of a build for what it calls static files. This
+    // build has none: an empty one.
+    const buildDir = fs.mkdtempSync(path.join(os.tmpdir(), "vitest-plugin-rsc-"));
+    fs.mkdirSync(path.join(buildDir, "static"));
+    // Next logs that it runs the adapter, which is no news for a test run.
+    const { log } = console;
+    console.log = (...message) => {
+      if (!String(message[0]).includes("onBuildComplete")) log(...message);
+    };
+    try {
+      const built = await new Promise<BuildComplete>((resolve, reject) => {
+        receivers.set(buildDir, resolve);
+        handleBuildComplete({
+          adapterPath,
+          dir: root,
+          distDir: buildDir,
+          configOutDir: path.join(root, "out"),
+          repoRoot: config.repoRoot,
+          outputFileTracingRoot: config.outputFileTracingRoot || root,
+          config: routedConfig,
+          appType: "app",
+          buildId,
+          nextVersion: version,
+          // Not webpack: for that one Next traces the files of its Node.js
+          // server here, which the tab does not run.
+          bundler: Bundler.Turbopack,
+          routesManifest,
+          middlewareManifest,
+          // No page is prerendered, and no route is listed as one for
+          // Node.js: see `edgeFunction`.
+          prerenderManifest: {
+            version: 4,
+            routes: {},
+            dynamicRoutes: {},
+            notFoundRoutes: [],
+            preview: previewProps,
+          },
+          functionsConfigManifest: { version: 1, functions: {} },
+          previewProps,
+          pageKeys: [],
+          appPageKeys: routes.map((route) => route.page),
+          staticPages: new Set(),
+          serverPropsPages: new Set(),
+          requiredServerFiles: [],
+          hasNodeMiddleware: false,
+          hasInstrumentationHook: false,
+          hasStatic404: false,
+          hasStatic500: false,
+        }).then(
+          () => reject(new Error("it does not call `onBuildComplete` of the adapter")),
+          reject,
+        );
+      });
+      return { built, routesManifest };
+    } catch (error) {
+      return fail(
+        `\`handleBuildComplete()\` does not hand an adapter the routes of an app without a ` +
+          `build on disk (${(error as Error).message})`,
+        error,
+      );
+    } finally {
+      console.log = log;
+      receivers.delete(buildDir);
+      fs.rmSync(buildDir, { recursive: true, force: true });
+    }
+  });
+  for (const phase of [
+    "beforeMiddleware",
+    "beforeFiles",
+    "afterFiles",
+    "dynamicRoutes",
+    "onMatch",
+    "fallback",
+  ] as const) {
+    if (!Array.isArray(built.routing?.[phase])) {
+      fail(`\`handleBuildComplete()\` hands an adapter no \`routing.${phase}\``);
+    }
+  }
+  const routing: NextRouting = {
+    routes: built.routing,
+    basePath: config.basePath,
+    buildId,
+    outputs: outputPagesOf(built.outputs, config.trailingSlash),
+  };
+  // Without these two every URL is a 404, and nothing says why: the build has
+  // an output for every route, and `resolveRoutes()` finds it for a URL of
+  // that route.
+  const { resolveRoutes } = require("@next/routing") as typeof import("@next/routing");
+  const outputPages = new Set(Object.values(routing.outputs));
+  const unmatchedRoutes: string[] = [];
+  for (const route of routes) {
+    if (!outputPages.has(route.page)) {
+      fail(`\`handleBuildComplete()\` has no output for ${route.page}`);
+    }
+    const isDynamic = route.pathname.includes("[");
+    // A URL of the route: its pathname, with a value for each dynamic segment.
+    // The page of `/` is at the base path itself.
+    const sample = route.pathname.replace(/\[\[?(?:\.\.\.)?[^\]]+\]\]?/g, "-x-");
+    const pathname = config.basePath + (sample === "/" && config.basePath ? "" : sample);
+    const url = new URL("http://localhost");
+    url.pathname = pathname;
+    // Next's pattern for a dynamic route has the folders as they are named,
+    // and `resolveRoutes()` holds the pathname of a URL against it, which has
+    // `über` percent-encoded. So it does not find such a route, in any Next.
+    if (isDynamic && url.pathname !== pathname) {
+      unmatchedRoutes.push(route.pathname);
+      continue;
+    }
+    const resolved = await resolveRoutes({
+      url,
+      headers: new Headers(),
+      requestBody: new ReadableStream(),
+      basePath: routing.basePath,
+      buildId: routing.buildId,
+      pathnames: Object.keys(routing.outputs),
+      // Only the routes of the app: not what `next.config` or the middleware
+      // sends elsewhere.
+      routes: {
+        ...routing.routes,
+        beforeMiddleware: [],
+        middlewareMatchers: [],
+        beforeFiles: [],
+        afterFiles: [],
+        fallback: [],
+      },
+      invokeMiddleware: async () => ({}),
+    });
+    const page = routing.outputs[resolved.resolvedPathname ?? ""];
+    // A URL of a dynamic route can be another route's as well.
+    if (isDynamic ? page === undefined : page !== route.page) {
+      fail(
+        `\`resolveRoutes()\` of @next/routing@${routingVersion} does not find ${route.pathname} ` +
+          `in the routes that \`handleBuildComplete()\` hands an adapter`,
+      );
+    }
+  }
 
   const definesFor = (layer: NextLayer) => {
     const defines = getDefineEnv({
@@ -587,20 +971,23 @@ export async function loadNextProject(
       fetchCacheKeyPrefix: config.experimental.fetchCacheKeyPrefix,
       hasRewrites: false,
       isClient: layer === "browser",
-      isEdgeServer: layer !== "browser",
-      isNodeServer: false,
+      isEdgeServer: false,
+      isNodeServer: layer !== "browser",
       clientRouterFilters: undefined,
       middlewareMatchers: undefined,
       rewrites: { beforeFiles: [], afterFiles: [], fallback: [] },
     });
-    // Next's own modules pick their edge build with it, like `module.compiled`.
-    if (layer !== "browser" && defines["process.env.NEXT_RUNTIME"] !== '"edge"') {
-      fail("`getDefineEnv()` does not define `process.env.NEXT_RUNTIME` as `edge`");
+    // Next's code takes the branches of its Node.js server with it.
+    if (layer !== "browser" && defines["process.env.NEXT_RUNTIME"] !== '"nodejs"') {
+      fail("`getDefineEnv()` does not define `process.env.NEXT_RUNTIME` as `nodejs`");
     }
+    // Next's Node.js server renders to Node.js streams unless this is off:
+    // a compile-time switch of its own. A tab has web streams.
+    if (layer !== "browser") defines["process.env.__NEXT_USE_NODE_STREAMS"] = "false";
     return {
       ...(layer !== "browser" &&
         Object.fromEntries(
-          Object.entries(edgeEnvironment).map(([name, value]) => [
+          Object.entries(buildEnvironment).map(([name, value]) => [
             `process.env.${name}`,
             JSON.stringify(value),
           ]),
@@ -618,15 +1005,34 @@ export async function loadNextProject(
     const aliases: Record<string, string | false> = {
       "@opentelemetry/api$": "next/dist/compiled/@opentelemetry/api",
     };
-    // The Node modules an edge runtime provides. A browser tab has none of
-    // them, so use the polyfills Next ships for its own client bundles.
+    // The Node modules that Next's edge runtime has too. A browser tab has
+    // none of them, so use the polyfills Next ships for its own client
+    // bundles. The others that Next's server asks for are in plugin.ts.
     for (const name of SUPPORTED_NATIVE_MODULES) {
       if (name === "async_hooks") continue;
       aliases[`${name}$`] = aliases[`node:${name}$`] = `next/dist/compiled/${name}`;
     }
+    if (layer !== "browser") {
+      aliases.path$ = aliases["node:path$"] = "next/dist/compiled/path-browserify";
+      // Next's route modules load a bundle of Next's own for Node.js. The
+      // module that bundle is made of, as Next's edge build takes it.
+      for (const kind of ["app-page", "app-route"]) {
+        const file = `next/dist/server/route-modules/${kind}/module`;
+        aliases[`${file}.compiled$`] = aliases[`${file}.compiled.js$`] = file;
+      }
+      // Next's own module for `react-dom/server` takes React's build for
+      // Node.js streams by the runtime. The one for web streams.
+      for (const channel of ["", "-experimental"]) {
+        aliases[`next/dist/build/webpack/alias/react-dom-server${channel}.js$`] =
+          `next/dist/compiled/react-dom${channel}/cjs/react-dom-server.edge.development.js`;
+      }
+    }
     const base = compilerAliases.createWebpackAliases({
       distDir,
       isClient: layer === "browser",
+      // Not the runtime: Next's name for a server compilation that takes the
+      // ESM files of Next, and here also the builds of React for web
+      // streams, which is what a tab has.
       isEdgeServer: layer !== "browser",
       dev: false,
       config,
@@ -764,24 +1170,20 @@ export async function loadNextProject(
   ]) {
     serverReferenceInfo.export(name);
   }
-  // ssr.ts provides the manifests of a build: as the globals an edge function
-  // reads them from, and for each request.
+  // node-server.ts provides the manifests of a build: through the module
+  // Next's server reads the files of `.next/` with, and for each request.
   runtimeFile("server/route-modules/route-module").contains(
-    "self.__BUILD_MANIFEST",
-    "self.__SERVER_FILES_MANIFEST",
-    "self.__RSC_MANIFEST",
+    "load-manifest.external",
+    "loadManifestFromRelativePath",
+    "evalManifestFromRelativePath",
   );
-  const setManifests = runtimeFile("server/app-render/manifests-singleton").export(
-    "setManifestsSingleton",
+  // Next's request handler of a page makes the route module, in the rsc
+  // layer. The plugin gives it the class of the ssr layer for this import.
+  runtimeFile("build/templates/app-page-runtime").contains(
+    "server/route-modules/app-page/module.compiled",
   );
-  // Unless its declaration is in a module that is not read here.
-  const manifestKeys = optionKeys(setManifests);
-  for (const key of ["page", "clientReferenceManifest", "serverActionsManifest"]) {
-    if (setManifests.code && !manifestKeys.includes(key)) {
-      fail(`\`setManifestsSingleton()\` takes no \`${key}\``);
-    }
-  }
-
+  // The plugin turns Next's renderer to web streams with this.
+  runtimeFile("server/app-render/stream-ops").contains("process.env.__NEXT_USE_NODE_STREAMS");
   const aliases = {
     rsc: aliasesFor("rsc"),
     ssr: aliasesFor("ssr"),
@@ -814,16 +1216,13 @@ export async function loadNextProject(
   }
 
   // The route entry of a page binds Next's renderer to its bundler: its module
-  // loader, and a runtime that also holds the request handler for Node.js.
-  // Here both are this package's: rsc.ts, app-page-entrypoint.ts.
+  // loader, which here is this package's (rsc.ts). It imports Next's runtime
+  // for a page, which has the request handler for Node.js.
   const bindPageEntry = (code: string, where: string) => {
     code = replace(code, /\b__webpack_require__\b/g, "__next_require__", where);
-    code = replace(
-      code,
-      /(["'])next\/dist\/build\/templates\/app-page-runtime\1/,
-      `"vitest-plugin-rsc/nextjs/app-page-entrypoint"`,
-      where,
-    );
+    if (!/(["'])next\/dist\/build\/templates\/app-page-runtime\1/.test(code)) {
+      fail(`${where} has no \`next/dist/build/templates/app-page-runtime\``);
+    }
     return `import { requireModule as __next_require__ } from "vitest-plugin-rsc/nextjs/rsc";\n${code}`;
   };
 
@@ -1018,6 +1417,7 @@ export async function loadNextProject(
       let callsBack = false;
       const context: LoaderContext = {
         getOptions: () => options,
+        _module: { buildInfo: {} },
         async: () => {
           callsBack = true;
           return (error, ...result) => (error ? reject(error) : resolve(result));
@@ -1139,6 +1539,11 @@ export async function loadNextProject(
         component: `${componentRoot}${pathname}`,
       })),
     metadataFiles,
+    edgeRouteFiles,
+    unmatchedRoutes,
+    middlewareFile,
+    routing,
+    routesManifest,
     config: JSON.parse(JSON.stringify(config)),
     defines: { rsc: definesFor("rsc"), ssr: definesFor("ssr"), browser: definesFor("browser") },
     aliases,
@@ -1194,29 +1599,42 @@ export async function loadNextProject(
       }
       return { code, watchFiles: [...watchFiles].filter((file) => fs.existsSync(file)) };
     },
-    async loadEdgeEntry(route, userland) {
-      // The two templates name the same injection differently.
-      const [template, registration] =
-        route.kind === "page"
-          ? (["edge-ssr-app", "cacheHandlerRegistration"] as const)
-          : (["edge-app-route", "edgeCacheHandlersRegistration"] as const);
-      const placeholder = "vitest-plugin-rsc/next-userland";
-      const code = stripTurbopackTransitions(
-        await loadEntrypoint(
-          template,
-          { VAR_USERLAND: route.kind === "page" ? placeholder : userland, VAR_PAGE: route.page },
-          { cacheHandlerImports: "\n", [registration]: "\n" },
-          { incrementalCacheHandler: null },
-        ),
+    async loadMiddlewareEntry() {
+      if (!middleware || !middlewareFile) return;
+      // The entry the way `createEntrypoints` of `next build` makes it: a
+      // request for Next's middleware loader, with its options as a query.
+      const entry = getEdgeServerEntry({
+        rootDir: root,
+        absolutePagePath: middleware.pagePath,
+        buildId,
+        bundlePath: middleware.page.slice(1),
+        config,
+        isDev: false,
+        isServerComponent: false,
+        page: middleware.page,
+        pages: {},
+        pagesType: rootPageType,
+        middleware: middleware.staticInfo.middleware,
+        middlewareConfig: middleware.staticInfo.middleware,
+        preferredRegion: middleware.staticInfo.preferredRegion,
+      });
+      const [loader, options = ""] = entry.import.replace(/!$/, "").split("?");
+      if (loader !== "next-middleware-loader") {
+        fail("`getEdgeServerEntry()` no longer loads the middleware with next-middleware-loader");
+      }
+      const [code] = await runLoader(
+        nextMiddlewareLoader,
+        querystring.parse(options),
+        middlewareFile,
       );
-      return route.kind === "page"
-        ? replace(
-            code,
-            `import * as pageMod from ${JSON.stringify(placeholder)};`,
-            `const pageMod = ${userland};`,
-            "the edge-ssr-app template",
-          )
-        : code;
+      // For Node.js the template loads two modules with the `require` of
+      // Next's bundler, in an async function. Here that is `import()`.
+      return replace(
+        stripTurbopackTransitions(code as string),
+        /\brequire\(/g,
+        "await import(",
+        "the middleware template",
+      );
     },
     compile,
     isImage: (file) => !images.disableStaticImages && nextImageLoaderRegex.test(file),

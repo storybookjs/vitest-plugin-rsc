@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, expect, test } from "vitest";
 import type { TestModule, TestProject, TestSpecification, Vitest } from "vitest/node";
-import { createRelatedRoutes } from "./related.ts";
+import { relatedLookup } from "./related.ts";
 
 // A project on disk, and Vite's module graphs as far as they are read: a
 // module, its file and what it imports.
@@ -69,12 +69,6 @@ function start(related?: string[]) {
     [at("app/actions.ts")]: [],
   });
   const browser = createGraph({ [at("app/profile/page.tsx")]: [at("app/profile/avatar.tsx")] });
-  const routes = createRelatedRoutes({
-    environments: ["rsc", "browser"],
-    lists: ["list"],
-    appDir: () => at("app"),
-    shared: () => [at("next.config.ts")],
-  });
   const config = { reporters: [] as unknown[], related: related && [...related] };
   const tagsFilter: string[] = [];
   const vitest = { config, getGlobalTestNamePattern: () => undefined as RegExp | undefined };
@@ -86,17 +80,26 @@ function start(related?: string[]) {
       environments: { rsc: { moduleGraph: rsc }, browser: { moduleGraph: browser } },
     },
   } as unknown as TestProject;
-  routes.start(vitest as unknown as Vitest, project, (file) => file.endsWith(".test.tsx"));
+  const routes = relatedLookup(vitest as unknown as Vitest, project, {
+    environments: ["rsc", "browser"],
+    lists: ["list"],
+    next: () => ({ root, appDir: at("app") }),
+    isTestFile: (file) => file.endsWith(".test.tsx"),
+  });
   const reporter = config.reporters[0] as {
     onTestRunStart(specifications: TestSpecification[]): void;
     onTestModuleEnd(module: TestModule): void;
-    onTestRunEnd(): void;
+    onTestRunEnd(modules: unknown, errors: unknown, reason: string): void;
   };
   return {
     vitest,
     tagsFilter,
     /** A run of a test file that loads these modules. */
-    run(testFile: string, loads: string[], run: { state?: string; testNamePattern?: RegExp } = {}) {
+    run(
+      testFile: string,
+      loads: string[],
+      run: { state?: string; testNamePattern?: RegExp; reason?: string } = {},
+    ) {
       const moduleId = at(testFile);
       reporter.onTestRunStart([{ project, moduleId, ...run } as unknown as TestSpecification]);
       routes.loaded(moduleId, loads);
@@ -105,14 +108,14 @@ function start(related?: string[]) {
         moduleId,
         state: () => run.state ?? "passed",
       } as unknown as TestModule);
-      reporter.onTestRunEnd();
+      reporter.onTestRunEnd([], [], run.reason ?? "passed");
     },
     /** Whether Vitest's lookup keeps a test file: it is in the list afterwards. */
     belongs(testFile: string) {
-      expect(routes.lookup("ssr", at(testFile))).toEqual({ code: "export {};\n", map: null });
+      expect(routes.transform("ssr", at(testFile))).toEqual({ code: "export {};\n", map: null });
       return config.related!.includes(at(testFile));
     },
-    lookup: routes.lookup,
+    transform: routes.transform,
   };
 }
 
@@ -193,6 +196,11 @@ test("forgets a test file that did not pass, or that ran in part", () => {
   expect(unknown()).toBe(true);
 
   start().run("notes.test.tsx", ["route/notes"]);
+  // A bail in another file: the tests that were left are skipped, it passes.
+  start().run("notes.test.tsx", [], { reason: "interrupted" });
+  expect(unknown()).toBe(true);
+
+  start().run("notes.test.tsx", ["route/notes"]);
   const { vitest, run } = start();
   // What the `t` key of watch mode sets.
   vitest.getGlobalTestNamePattern = () => /one test/;
@@ -230,7 +238,7 @@ test("forgets every test file when a file comes to the app directory, or next to
 });
 
 test("leaves a test file as it is when Vitest does not look up, and in another environment", () => {
-  expect(start().lookup("ssr", at("notes.test.tsx"))).toBeUndefined();
-  expect(start(changed("lib/db.ts")).lookup("client", at("notes.test.tsx"))).toBeUndefined();
-  expect(start(changed("lib/db.ts")).lookup("ssr", at("lib/db.ts"))).toBeUndefined();
+  expect(start().transform("ssr", at("notes.test.tsx"))).toBeUndefined();
+  expect(start(changed("lib/db.ts")).transform("client", at("notes.test.tsx"))).toBeUndefined();
+  expect(start(changed("lib/db.ts")).transform("ssr", at("lib/db.ts"))).toBeUndefined();
 });

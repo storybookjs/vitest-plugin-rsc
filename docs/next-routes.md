@@ -2,7 +2,7 @@
 
 `vitest-plugin-rsc/nextjs/testing-library`, with the plugin from `vitest-plugin-rsc/nextjs/plugin`, runs a Next.js App Router app in the test's browser tab: the server that answers a request, the HTML it renders, and the client that hydrates it. This page explains how, and what it does not do yet. The [README](../README.md#nextjs) shows how to use it.
 
-It needs `next@16.4` or later. That is where Next's request stores became one per realm, which is what lets the three layers below run as separate module graphs.
+It needs `next@16.4` or later. That is where Next's request stores became one per realm, which is what lets the three layers below run as separate module graphs. And it needs `@next/routing`, the package of Next.js that finds the route of a request, at the version of `next`: see [The Server In Front Of The App](#the-server-in-front-of-the-app).
 
 ## The Idea: Port The Build, Run The Runtime
 
@@ -10,22 +10,25 @@ Next.js is two things. A build, written for webpack and Turbopack, that turns `a
 
 Only the build is tied to a bundler. So this plugin does the build with Vite, and asks Next's own build code for everything that is not bundling:
 
-| What                                         | Where it comes from                                               |
-| -------------------------------------------- | ----------------------------------------------------------------- |
-| The routes of the app                        | `next/dist/build/route-discovery`, `normalizeCatchAllRoutes()`    |
-| A route's loader tree: page, layouts, errors | `next-app-loader`, Next's webpack loader, called as-is            |
-| A page's request handler                     | `next/dist/build/templates/edge-ssr-app`, expanded by Next        |
-| A route handler's route module               | `next-app-loader` again, which expands `templates/app-route`      |
-| A route handler's request handler            | `next/dist/build/templates/edge-app-route`, expanded by Next      |
-| Compile-time constants                       | `getDefineEnv()`                                                  |
-| Module aliases, per layer                    | `createWebpackAliases()` and the other alias tables               |
-| React                                        | The React that Next ships, through `createVendoredReactAliases()` |
-| The compile of a source file of the app      | Next's SWC transform, with `getLoaderSWCOptions()` for its layer  |
-| A call of a `next/font` function             | `next-font-loader` and Next's `css-loader`, called as-is          |
-| An imported image                            | `next-image-loader`, called as-is                                 |
-| An image behind `/_next/image`               | Next's image optimizer, `next/dist/server/image-optimizer`        |
+| What                                         | Where it comes from                                                                |
+| -------------------------------------------- | ---------------------------------------------------------------------------------- |
+| The routes of the app                        | `next/dist/build/route-discovery`, `normalizeCatchAllRoutes()`                     |
+| What the server does before a route          | `handleBuildComplete()`: what Next's build hands a deployment adapter              |
+| Which route a request gets                   | `resolveRoutes()` of `@next/routing`, see [below](#the-server-in-front-of-the-app) |
+| The request handler of `proxy.ts`            | `next-middleware-loader`, Next's webpack loader, called as-is                      |
+| A route's loader tree: page, layouts, errors | `next-app-loader`, Next's webpack loader, called as-is                             |
+| A page's request handler                     | `next/dist/build/templates/app-page-runtime`: `handler(req, res)`                  |
+| A route handler's route module               | `next-app-loader` again, which expands `templates/app-route`                       |
+| A route handler's request handler            | In the same template, `templates/app-route`: `handler(req, res)`                   |
+| Compile-time constants                       | `getDefineEnv()`                                                                   |
+| Module aliases, per layer                    | `createWebpackAliases()` and the other alias tables                                |
+| React                                        | The React that Next ships, through `createVendoredReactAliases()`                  |
+| The compile of a source file of the app      | Next's SWC transform, with `getLoaderSWCOptions()` for its layer                   |
+| A call of a `next/font` function             | `next-font-loader` and Next's `css-loader`, called as-is                           |
+| An imported image                            | `next-image-loader`, called as-is                                                  |
+| An image behind `/_next/image`               | Next's image optimizer, `next/dist/server/image-optimizer`                         |
 
-Everything behind those is Next's runtime, unchanged: `handler(Request)` returns the `Response` a deployment would send.
+Everything behind those is Next's runtime, unchanged: what it writes to the response of its server is the `Response` the tab gets.
 
 The routes are listed the way `next build` lists its entries. The pages with the same pathname are one route, a catch-all page in a slot is added to the routes it also matches, and an app whose routes `next build` rejects is rejected here, with Next's own errors: pages no route matches, slots that cannot render the same URLs, and, with `strictRouteMatching`, an interception route without the route it intercepts. The loader gets the options a build passes, so a layout of slots only has no `children`, as in a deployment.
 
@@ -35,28 +38,31 @@ All of this is internal to Next, and it changes between minor versions. The outp
 
 That file checks what the plugin relies on when a run starts, or for a loader when it is first used: of the build code, and of the runtime that the plugin's own modules call in the tab. Of the runtime it checks what would fail silently, or without saying why: a hook, a global, `document.currentScript`, what the shim of `server-reference-info` replaces, the manifests. A static import of a name that is gone needs no check: the module fails to link, with a `SyntaxError` that names it. The files of the runtime are only read for it, not loaded: they run in the tab. A Next.js that differs stops the run with one message: the version, and what is different.
 
-| What is checked                                                                                                           | Without the check                                                       |
-| ------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
-| Every file and export of the build code that is called                                                                    | A `TypeError` somewhere in the plugin                                   |
-| `discoverRoutes()` returns `mappedAppPages`                                                                               | An app without routes: every URL is a 404                               |
-| `getDefineEnv()` sets `process.env.NEXT_RUNTIME` to `edge` for the server layers                                          | Next's modules load their Node.js builds in the tab                     |
-| The alias tables have `react-server-dom-webpack/server$`                                                                  | A `TypeError` on a path                                                 |
-| `IncrementalCache` takes `fs`, `serverDistDir` and `fetchCacheKeyPrefix`                                                  | Nothing is cached, or a test finds another's entries                    |
-| The SWC transform turns a call of a `next/font` function into an import of `next/font/.../target.css?`                    | A font function that throws, without a message                          |
-| The SWC transform marks a `"use client"` module of the `rsc` layer                                                        | A client module that asks for the `require` of Next's bundler           |
-| `getNextFontLoader()` uses css-loader and next-font-loader, and css-loader makes a list of CSS with `locals`              | A font without CSS, or without class names                              |
-| `next-image-loader` makes a module that starts with `export default {`                                                    | An imported image that is not what `next/image` takes                   |
-| The app loader's output has `__webpack_require__` and imports `app-page-runtime`                                          | Next's Node.js request handler loads in the tab                         |
-| The `app-route` template loads `route.ts` with `userland: () => require(`                                                 | A `require` that the tab does not have                                  |
-| The `edge-ssr-app` template imports the page as `pageMod`                                                                 | An import of a module that does not exist                               |
-| The client entry has `hydrate()`, which the plugin imports once the page is there                                         | A `TypeError` when a page loads                                         |
-| Next's root component calls `__NEXT_HYDRATED_CB` under `process.env.__NEXT_TEST_MODE`                                     | `renderServer()` waits for the page to hydrate until the test times out |
-| Next takes its asset prefix from the `/_next/` URL of `document.currentScript`                                            | The app does not start in the tab                                       |
-| `server-reference-info` has the functions the plugin replaces for Vite RSC's ids                                          | Next rejects the ids of Vite RSC's Server Actions                       |
-| The edge route module reads the globals `self.__BUILD_MANIFEST`, `self.__SERVER_FILES_MANIFEST` and `self.__RSC_MANIFEST` | Manifests that Next does not read                                       |
-| `setManifestsSingleton()` takes `page`, `clientReferenceManifest` and `serverActionsManifest`                             | Manifests that Next does not read                                       |
+| What is checked                                                                                                                       | Without the check                                                            |
+| ------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| Every file and export of the build code that is called                                                                                | A `TypeError` somewhere in the plugin                                        |
+| `discoverRoutes()` returns `mappedAppPages`                                                                                           | An app without routes: every URL is a 404                                    |
+| `@next/routing` is installed, at the version of `next`                                                                                | Routes that Next's build hands out and its resolver does not read            |
+| `handleBuildComplete()` calls the adapter, without a build on disk, with every phase of the routes                                    | A `TypeError`, or a server that skips a phase                                |
+| The build has an output for every route, and `resolveRoutes()` finds it for a URL of that route                                       | Every URL is a 404, and nothing says why                                     |
+| `getEdgeServerEntry()` loads the middleware with `next-middleware-loader`, whose template calls `require(`                            | A `require` that the tab does not have                                       |
+| `getDefineEnv()` sets `process.env.NEXT_RUNTIME` to `nodejs` for the server layers                                                    | Next's code takes the branches of another runtime                            |
+| The alias tables have `react-server-dom-webpack/server$`                                                                              | A `TypeError` on a path                                                      |
+| `IncrementalCache` takes `fs`, `serverDistDir` and `fetchCacheKeyPrefix`                                                              | Nothing is cached, or a test finds another's entries                         |
+| The SWC transform turns a call of a `next/font` function into an import of `next/font/.../target.css?`                                | A font function that throws, without a message                               |
+| The SWC transform marks a `"use client"` module of the `rsc` layer                                                                    | A client module that asks for the `require` of Next's bundler                |
+| `getNextFontLoader()` uses css-loader and next-font-loader, and css-loader makes a list of CSS with `locals`                          | A font without CSS, or without class names                                   |
+| `next-image-loader` makes a module that starts with `export default {`                                                                | An imported image that is not what `next/image` takes                        |
+| The app loader's output has `__webpack_require__` and imports `app-page-runtime`, which imports the route module as `module.compiled` | A `require` that the tab does not have, or a route module of the wrong layer |
+| The `app-route` template loads `route.ts` with `userland: () => require(`                                                             | A `require` that the tab does not have                                       |
+| `stream-ops` reads `process.env.__NEXT_USE_NODE_STREAMS`                                                                              | Next renders to Node.js streams, which a tab does not have                   |
+| The client entry has `hydrate()`, which the plugin imports once the page is there                                                     | A `TypeError` when a page loads                                              |
+| Next's root component calls `__NEXT_HYDRATED_CB` under `process.env.__NEXT_TEST_MODE`                                                 | `renderServer()` waits for the page to hydrate until the test times out      |
+| Next takes its asset prefix from the `/_next/` URL of `document.currentScript`                                                        | The app does not start in the tab                                            |
+| `server-reference-info` has the functions the plugin replaces for Vite RSC's ids                                                      | Next rejects the ids of Vite RSC's Server Actions                            |
+| The route module reads the manifests through `load-manifest.external`                                                                 | Next looks for the files of a build in `.next/`                              |
 
-Apart from the options of `setManifestsSingleton()`, a function that is still there but takes other arguments is not checked: a function of the build code fails with its own error, at startup, one of the runtime when a test calls it. What it cannot check either is what Next's runtime does with all of that once a request comes in: a manifest field it starts to read, or a key it starts to require in the loader tree. That shows up as a failing test. CI runs both playgrounds against `next@latest` and `next@canary` for it.
+A function that is still there but takes other arguments is not checked: a function of the build code fails with its own error, at startup, one of the runtime when a test calls it. What it cannot check either is what Next's runtime does with all of that once a request comes in: a manifest field it starts to read, or a key it starts to require in the loader tree. That shows up as a failing test. CI runs both playgrounds against `next@latest` and `next@canary` for it.
 
 The Flight codec that Next imports as `react-server-dom-webpack` is Vite RSC's in the `rsc` layer, through adapters that leave out Next's manifests. The layer has every export of Next's codec, as the installed `next` has it. One that the plugin has no adapter for throws when it is called, and says so; a new export that nothing calls does not stop a run.
 
@@ -110,7 +116,12 @@ What Next's build does that the plugin does not, is under [Not Yet](#not-yet).
 renderServer({ url: "/notes/1" })
   │  GET /notes/1                          the browser's fetch, with its cookies
   ▼
-ssr      handler(Request)                  Next's edge entry for the route
+ssr      resolveRoutes()                   Next's route resolution: redirects, proxy.ts, rewrites
+  │        └─ rsc: proxy(request)          the proxy of the app, if its matcher takes the request
+  ▼
+rsc      handler(req, res)                 Next's request handler for the route
+  ▼
+ssr      prepare(), render()               Next's route module
   │        └─ app-render
   ▼
 rsc      Server Components → Flight        your page, layouts, data
@@ -123,7 +134,7 @@ browser  the HTML goes into the document   once all of it has arrived
          Next's client entry hydrates it   in a module graph of its own, like a page load
 ```
 
-After that, Next's router is in charge. A `<Link>` navigation is an RSC request to the same handler. A Server Action is a `POST` with a `Next-Action` header.
+After that, Next's router is in charge. A `<Link>` navigation is an RSC request to the same handler. A Server Action is a `POST` with a `Next-Action` header. Each of them goes through the route resolution first: see [The Server In Front Of The App](#the-server-in-front-of-the-app).
 
 ## A Component
 
@@ -133,7 +144,7 @@ After that, Next's router is in charge. A `<Link>` navigation is an RSC request 
 renderServer(<Node />, { url: "/notes/7" })
   │  GET /notes/7                          the same request, with the tab's cookies
   ▼
-ssr      handler(Request)                  the same edge-ssr-app handler, for the route of the node
+rsc      handler(req, res)                 the same request handler, for the route of the node
   ▼
 rsc      loader tree → Flight              a tree with the node as its page, and no layout
   ▼
@@ -172,7 +183,7 @@ For `/notes/7`, where the app has `app/notes/[id]/page.tsx`:
 ];
 ```
 
-- **The segments** are those of the app's route for the URL, so Next finds the same params. The plugin matches the URL against the routes of the app, as it does for every request. A URL of no route gets the tree of `/`, which has no params. A route handler's pathname has a tree too.
+- **The segments** are those of the app's route for the URL, so Next finds the same params. Next's route resolution says which route that is, as for every request. A URL of no route gets the tree of `/`, which has no params. A route handler's pathname has a tree too.
 - **The page name** is the one of the pathname, like `/notes/[id]/page`. Next derives the tags of `revalidatePath()` from it.
 - **No layout**, also not a pass-through one. So the HTML has no `<html>` or `<body>`, and it fits in a `<div>`.
 - **Next's builtin boundaries** are the only other modules, at the root: `global-error`, which Next's renderer throws without, and `not-found`, `forbidden` and `unauthorized`. `next-app-loader` gives them to a root that has none of its own. They are Next's, not the app's.
@@ -233,7 +244,7 @@ An `app/**/route.ts` is a route like a page is, with a request handler from anot
 handleRequest("/api/notes/1", { method: "PUT", body })     or fetch() in a Client Component
   │  PUT /api/notes/1                      with the tab's cookies
   ▼
-rsc      handler(Request)                  Next's edge entry for the route handler
+rsc      handler(req, res)                 Next's request handler for the route handler
            └─ AppRouteRouteModule          Next's route module: the request stores, cookies(),
               └─ PUT(request, { params })  redirect(), notFound(), HEAD and OPTIONS, 405
   │  200 application/json                  Set-Cookie goes into the tab's cookies
@@ -243,29 +254,92 @@ the caller gets the Response               its body as the handler writes it
 
 There is no HTML to render, so the `ssr` layer has no part in it. The module that `route.ts` imports is the instance the test imports, and `vi.mock()` replaces it for both.
 
-An edge function of Next does not match its own route. Whoever routes a request to it adds the params of the dynamic segments to the query of the URL, and Next's wrapper reads them from there. The plugin does what `next start` does for an edge function. So `GET /api/notes/1` reaches the handler with `params.id` set to `"1"` and with `?id=1` in `request.url`, as it would for a handler with `export const runtime = "edge"`.
-
-Next's route module rethrows what a handler throws, and its edge entry does not catch it. The server in front of it does: like `next start`, the plugin logs the error with `console.error` and answers `500 Internal Server Error`.
+The request handler is Next's own, the one `next start` calls: it finds the params of the route in the URL, makes the `NextRequest`, and writes the `Response` of the handler to the response of the server. A handler that throws is answered with `500` and no body, and Next logs the error with `console.error`.
 
 What Next does for a request after it has responded, like the callbacks of `after()`, it hands to `waitUntil`. The request lasts until that work is done, so the callbacks read the stores of their own request, and the next request waits for it, for one second at most.
+
+## The Server In Front Of The App
+
+Before a route gets a request, a server has decided which route that is. In a deployment that is `next start`, or the platform the app is deployed to. It applies the `redirects`, `headers` and `rewrites` of `next.config`, redirects a URL with a trailing slash, runs `proxy.ts`, and then looks for the route. Here that server is in the tab too, in front of the request handlers above.
+
+Next has a contract for a platform that does this itself: a deployment adapter. `next build` hands an adapter the routes of that server, in the order they apply, and what it built for each pathname. And Next ships the resolution that goes with them as a package of its own, `@next/routing`. The plugin is such an adapter:
+
+| What                                                                | Where it comes from                                                                                         |
+| ------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| The redirects, rewrites and headers of `next.config`                | `loadCustomRoutes()`, which adds Next's own redirect of a trailing slash                                    |
+| An interception route, which is a rewrite to Next                   | `generateInterceptionRoutesRewrites()`                                                                      |
+| The routes manifest of a build, which Next's route module reads too | `generateRoutesManifest()`                                                                                  |
+| The file of the proxy, and its matcher                              | `getFilesInDir()` with Next's names for the file, `createPagesMapping()`, `getStaticInfoIncludingLayouts()` |
+| The routes of the server, in their phases, and the outputs          | `handleBuildComplete()`, which calls `onBuildComplete()` of the adapter in `adapter.ts`                     |
+| Which route a request gets, a redirect, or a rewrite                | `resolveRoutes()` of `@next/routing`, in the tab                                                            |
+| The request handler of the proxy                                    | `getEdgeServerEntry()` and `next-middleware-loader`, which expands `templates/middleware`                   |
+| What the response of the proxy means for the request                | `responseToMiddlewareResult()` of `@next/routing`                                                           |
+
+An interception route, like `@modal/(.)photo/[id]`, needs no code of the plugin for this: Next's build makes a rewrite of it, for a request of the router that says which page it comes from.
+
+`handleBuildComplete()` is the end of `next build`. It runs here without a build: on the manifests of one whose routes read no files, with an empty directory for the rest. The patterns of the dynamic routes, the conversion of a redirect to a `Location` header and the matcher of the proxy are what Next computes for an adapter. The plugin writes the manifests it computes them from: a function for each route, and for a proxy without a matcher of its own the matcher for every path, as Next's build writes it.
+
+Two settings of `next.config` are left out. `i18n` is the Pages Router's, and the plugin drops it from the config altogether: a URL of the App Router has no locale, and with it the resolution and the proxy look for one in every URL. And `output: "export"` is left out for this step, since Next's build reads the files it exported then. The routes of the app are the same without them.
+
+### `@next/routing`
+
+`resolveRoutes()` takes a URL, the headers of the request, the routes and the pathnames of the outputs, and says what the request becomes: a redirect, a rewrite to another server, a response of the proxy, or a route with its params. It is a function of web APIs only, without a dependency, so it runs in the tab as it is. The phases, in its order:
+
+```
+beforeMiddleware    the headers and the redirects of next.config, the trailing slash
+proxy.ts            if its matcher takes the request
+beforeFiles         rewrites, also at a URL that a route has
+the outputs         the routes with a fixed path
+afterFiles          rewrites
+dynamicRoutes       the routes with a dynamic segment
+fallback            rewrites, for a URL that no route has
+```
+
+This is the server of a deployment through an adapter, which is not `next start` in every detail. Two differences are pinned by a test. `resolveRoutes()` also runs the proxy for a request that `next.config` redirects, or whose trailing slash is redirected, and answers with the redirect after it: `next start` answers with the redirect first. And it holds a URL against the pattern of a dynamic route in any letter case: `/Docs/Routing` is the route `/docs/[slug]` with `Routing` for the slug, where `next start` has no route for it.
+
+It is not a part of `next`: a project installs it next to `next`, at the same version. The two are released together, and what one version of Next hands an adapter is what that version of the package reads. The adapter API is stable since Next.js 16.2, but what it hands an adapter has no version of its own and grows from release to release: between 16.2 and 16.4 it got the matchers of the proxy. So the plugin does not take another version for close enough. A run stops when the versions differ, or when the package is not there, with the version to install. It also resolves a URL of every route of the app when it starts, with the routes it got: a build and a resolver that no longer fit would make every URL a 404.
+
+### What The Adapter Does Itself
+
+`@next/routing` finds the route. What happens then is the adapter's, and Next's own adapters have code for each of these too. Here it is in `handle()` of `ssr.ts`:
+
+- **A redirect** is a response with the status and the headers the resolution gives.
+- **A rewrite to another server** is a `fetch` to it, which `next start` proxies. The tab makes the request, so the browser's rules for one apply: CORS, a redirect is followed, and the `host`, `cookie` and `origin` of the request are the browser's to set. A destination with the origin of the app itself is the dev server's to answer, not the app's.
+- **A route** is called with the URL the browser asked for, also after a rewrite, as `next start` calls it: `usePathname()` says where the browser is, not where the rewrite went. The route is told the rest in the meta of the request, where `next start` and a deployment adapter put it. Its params are the ones of the pathname the resolution ends at, read with Next's own matcher for the route. Not from the query of the resolution, which also has them, under names like `nxtPid`: `@next/routing` reads a `+` or a `%25` in them as a query does. And after a rewrite, the query of where it went. A request that was not rewritten keeps the query of its URL.
+- **`x-nextjs-rewritten-path` and `x-nextjs-rewritten-query`**, for a request of Next's router that was rewritten. `next start` sets them for a rewrite of `next.config`, and Next's own code for a rewrite of the proxy. The query is without `_rsc`, which the router adds to its own requests.
+- **The headers** the resolution has for the response, of `next.config` and of the proxy, go under the ones of the route. A cookie of either is set. The resolution has none for a request that the proxy answers itself, so that response is without the headers of `next.config`, which `next start` does set.
+- **The ways a request has a pathname.** `resolveRoutes()` compares a pathname with the outputs as it is. So an output is listed percent-encoded too, as a URL has `/release notes`, and with `trailingSlash: true` with the slash. Another spelling of the same path, like `%c3%bc` for `%C3%BC`, is not listed, and `next start` does find the route for it. A dynamic route is found by its pattern, which has the folders as they are named. So `resolveRoutes()` does not find one under a folder with a name that a URL percent-encodes, and a run warns about those routes when it starts.
+- **A request that resolves to nothing** gets the not-found page, or goes to the network: see [below](#which-requests-are-the-apps). That is also a rewrite to a path that no route has, like a file of `public/`. The resolution does not say where such a rewrite went, so the network is asked for the URL of the request.
+
+### The Proxy
+
+`proxy.ts`, or the `middleware.ts` it was before Next.js 16, is a module of the `rsc` layer, which the test shares. So it is the instance the test imports, with the modules it imports, and `vi.mock()` replaces them for both. In a deployment it is a bundle of its own.
+
+Its request handler is Next's: the template Next's build expands for it, around `adapter()`, which makes the `NextRequest`, enters the request stores, and turns `NextResponse.next()`, `rewrite()` and `redirect()` into the headers the resolution reads. It takes a `Request` and answers with a `Response`, on Node.js too. For Node.js the template loads two modules with the `require` of Next's bundler, which is `import()` here.
+
+The proxy is done before the route starts, so it has a scope of its own for Next's request stores: see [What Stands In For A Server](#what-stands-in-for-a-server). A proxy that throws is answered with `500`, and the error is logged with `console.error`. `next start` answers with its error page.
 
 ### Which Requests Are The App's
 
 The origin of the app is also the origin of the Vite dev server, which serves the modules of the test and of the app. So the `fetch` of the tab has to choose. A same-origin request goes to the Next.js server when:
 
-- its path matches a route of the app, a page or a route handler, by Next's own route list and matcher, or
-- Next's router or a Server Action sent it, which mark their requests with a header.
+- Next's router or a Server Action sent it, which mark their requests with a header, or
+- the server has something for it: a route of the app, a redirect or a rewrite of `next.config`, or a proxy whose matcher takes it.
 
-Everything else goes to the network: Vite's modules, files in `public/`, a service worker.
+The server answers that with its route resolution, without running anything. Only running the proxy tells what it does with a request, so a request that its matcher takes goes to the server. If the proxy lets it through and no route has it, a deployment looks for a file. Here the request then goes to the network after all, which has the files of `public/`.
+
+Everything else goes to the network right away: Vite's modules, files in `public/`, a service worker. A page load is always the app's: `renderServer()`, `handleRequest()` and a navigation get the not-found page for a URL that resolves to nothing.
+
+A `fetch` that the server makes to its own origin, while it renders, is chosen the same way, and goes through the proxy too. The server handles it right away, inside the request that waits for it, and follows a redirect, as the `fetch` of a server does.
 
 ## What Stands In For A Server
 
-The server layers are written for an edge runtime, which is close to a browser: web streams, `fetch`, `crypto`. The plugin adds the rest of that platform:
+The server layers run as Next's Node.js server does, with the web APIs that Node.js and a browser share: web streams, `fetch`, `crypto`. The plugin adds the rest of that platform. What is Node's own is under [The Node.js Runtime](#the-nodejs-runtime).
 
 - **`Request` and `Response`** that keep `Cookie` and `Set-Cookie`, which a browser drops from its own.
 - **`fetch`**, so that Next patches the server's `fetch`, not the page's. Next does that from the `rsc` layer when it first renders, and both server layers call the result. Both reach the same network.
 - **`AsyncLocalStorage`**. A browser cannot carry a store across `await`. Requests are handled one at a time, and the store a request entered first stays readable until the request ends. A store that Next enters for a part of a request, like the one of a cached function, lasts until that part first awaits: see [Caching](#caching).
-- **`Buffer`**, **`process`**, and the Node modules an edge runtime has.
+- **`Buffer`**, **`process`**, and the Node modules that Next's server imports.
 
 And for the browser side, a page load: the tab cannot navigate away from the test, so the server's document is moved into the test's document once all of it has arrived, its inline scripts are run in order, and the URL is set with the History API. So the document has loaded when Next's client starts, and the page's first load does not show a `loading.tsx` or a Suspense fallback: a navigation in the app does, see the README.
 
@@ -284,7 +358,7 @@ Next's Data Cache works. What `unstable_cache` computes is kept for the next req
 
 What invalidates it does what it does in a deployment: `revalidateTag()` and `revalidatePath()` from a Server Action or a route handler, `updateTag()` and `refresh()` from a Server Action, which is the only place Next allows those two.
 
-An edge function of Next has no cache of its own. The server in front of it has one and shares it: `next start` makes an `IncrementalCache` for a request and hands it to the edge function through `globalThis.__incrementalCache`. The plugin does that too. The class is Next's, and so is the handler it picks, the one `next start` uses, which keeps the entries in memory. The options are the ones Next's server passes, without a disk to write to. It is one cache for the pages and the route handlers.
+Next's server makes an `IncrementalCache` for a request. The plugin makes it, and gives it to Next for every request. The class is Next's, and so is the handler it picks, the one `next start` uses, which keeps the entries in memory. The options are the ones Next's server passes, without a disk to read or write. It is one cache for the pages and the route handlers.
 
 Of `next.config`, `experimental.fetchCacheKeyPrefix` and `cacheMaxMemorySize` apply. With `cacheMaxMemorySize: 0` nothing is cached here, where `next start` still has its disk. The plugin does not load a `cacheHandler` or `cacheHandlers` of your own.
 
@@ -377,11 +451,53 @@ The mocks of app modules go in a setup file. With `isolate: false` the test file
 
 In browser mode, Vitest 5.0 has a bug here: it does not wait for the mocks of a setup file before it imports a test file, so a test file with no `vi.mock()` of its own gets the real module ([vitest-dev/vitest#11450](https://github.com/vitest-dev/vitest/issues/11450), fixed by [#11520](https://github.com/vitest-dev/vitest/pull/11520) but not released yet). Until a release has the fix, import the mocked module in the setup file after the `vi.mock()` call. This repository patches Vitest instead, see `patches/`.
 
+## The Node.js Runtime
+
+Next has two server runtimes. A route picks one with `export const runtime`, and without it gets `nodejs`. The other one, `edge`, is closer to a tab, but Next has deprecated it: `next build` of 16.4 warns about it, and Cache Components, `"use cache"` and `proxy.ts` only exist for Node.js. So the server layers are compiled for Node.js, for every route. A route that asks for `edge` runs on Node.js too, and a run says so once when it starts, with the files.
+
+`process.env.NEXT_RUNTIME` is a compile-time constant, and with `nodejs` Next's code takes the branches of its Node.js server. Three things are not as `next start` has them, because a tab has web APIs and no Node.js ones:
+
+- Web streams. `process.env.__NEXT_USE_NODE_STREAMS` is Next's own compile-time switch between `renderToPipeableStream` and `renderToReadableStream`. `getDefineEnv()` turns it on for Node.js, and the plugin turns it off.
+- React's builds for web streams: `react-dom/server.edge`, and Vite RSC's Flight codec.
+- The ESM files of Next, and its route modules as modules. For Node.js Next loads one bundle of its own, `next/dist/compiled/next-server/app-page.runtime`, with React for both server layers in it.
+
+What a Node.js server has and a tab does not. The modules are in `node-platform.ts`, the request and the response in `node-server.ts`, and the globals in `globals.ts`:
+
+| What                                                         | Here                                                                                                                                                                                                                                                                                                                                  |
+| ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `http.IncomingMessage`, `http.ServerResponse`                | The request is a stream of its body with what Next reads of it. The response is Next's own stand-in for one, `MockedResponse` of `server/lib/mock-request`, which it uses for the requests it makes to itself. It becomes a `Response` at its first byte, and a reader that cancels its body closes it, as a browser that leaves does |
+| The manifests in `.next/`                                    | `load-manifest.external`, the module Next keeps out of its bundle to read them, answers from memory. The routes manifest is the one Next's build makes, with `generateRoutesManifest()`                                                                                                                                               |
+| The request handler of a route handler                       | Next's own, `templates/app-route`, as `next start` calls it: `handler(req, res, ctx)`                                                                                                                                                                                                                                                 |
+| The request handler of a page                                | Next's own, `templates/app-page-runtime`, as `next start` calls it: `handler(req, res, ctx)`. It makes the route module in the `rsc` layer, and gets the class of the `ssr` layer for it                                                                                                                                              |
+| `node:stream`, `stream/promises`                             | `next/dist/compiled/stream-browserify`, which Next ships, with `Readable.toWeb()` and `fromWeb()` added                                                                                                                                                                                                                               |
+| The body of a Server Action: busboy, `decodeReplyFromBusboy` | Next's busboy on that stream. The parts are collected into a `FormData` for Vite RSC's `decodeReply`                                                                                                                                                                                                                                  |
+| `node:crypto`                                                | Web Crypto for random values. A SHA-256 in JavaScript for `createHash`, which Next's cache keys need at once; another algorithm throws                                                                                                                                                                                                |
+| `node:path`                                                  | `next/dist/compiled/path-browserify`                                                                                                                                                                                                                                                                                                  |
+| `setImmediate`                                               | A function in `registry` that server code is compiled to call. Not a global: a library in the page that finds a `setImmediate` uses it, as React's scheduler does, and with one the playgrounds failed now and then on a `removeChild` of React                                                                                       |
+| `process.cwd()`, `nextTick()`, `hrtime`, `on()`              | Added to the `process` of the tab                                                                                                                                                                                                                                                                                                     |
+| A `Request` with a Node.js stream as its body                | The server's `Request` takes one, as Node's does                                                                                                                                                                                                                                                                                      |
+| `Buffer#latin1Slice()` and the like, which busboy calls      | On `Uint8Array.prototype`, which every copy of the `Buffer` polyfill is one of. That is a global of the page too                                                                                                                                                                                                                      |
+| What Next patches when its server starts                     | Left out: `console`, `Date`, `Math.random`, `crypto`, `setImmediate`, the handlers of the process, the hook on `require`. The tab is the test's                                                                                                                                                                                       |
+
+`node:crypto`, `node:stream` and `node:path` are there for the server code of the app as well, as far as this goes.
+
+What is still to do on it:
+
+- Cache Components and `"use cache"`. Their code is reached only with `cacheComponents`, and needs what a tab does not have at all: `AsyncLocalStorage` for more than one scope at a time, the order of `process.nextTick` and `setImmediate` in Node's event loop, and Next's patched `Date` and `Math.random`. The stand-in for `fast-set-immediate.external` throws where that starts.
+- Prerendered pages. Next's request handler of a page has the response cache of a build around a render, and here no page is in it: every request renders its page.
+- `instrumentation.ts`, draft mode, a `cacheHandler` of the app: `load-manifest.external` and its neighbours are where they would go.
+
 ## Watch Mode
+
+What follows is an option, and off unless `vitestPluginNext({ affectedTests: true })` sets it. Without it an edit in watch mode runs every test file that opens a route, and `vitest --changed` and `vitest related` do not find the test files of a route. With it they find the ones that loaded the file. It is off by default because it leans on how Vitest works inside, and because what it writes down between runs has the limits listed below.
+
+It is one addition to the plugin, in `src/nextjs/affected/`, with a plugin of its own. Nothing else knows of it: `plugin.ts` lists it, and `rsc.ts` tells it what a test file loads. Its `index.ts` says how to take it out of the code.
+
+What leans on the inside of Vitest, rather than on something Vitest offers a plugin, is in `affected/vitest.ts` and nowhere else: three functions, each with what it leans on. `affected/vitest.test.ts` runs them against the real Vitest, so an update that changes one of those fails a test.
 
 Vitest finds the test files to run again in Vite's module graph: it walks from the file that changed to what imports it, up to the test files. A test that opens a route with `renderServer({ url })` does not import `page.tsx`. The plugin does, in one module that lists every route, and every test file ends up importing that module. So in the graph every test file imports every route, and an edit of one page would run them all.
 
-The tab knows better, and says so: when the server in it loads the modules of a route, it calls a browser command of the plugin, and Vitest adds the test file that runs. Right before Vitest looks up the test files for a change, the plugin makes the graph say the same (`watch.ts`): the list no longer imports the modules of the routes, and a test file imports the ones of the routes it loaded. The lookup is still Vitest's, so a component deep in a page finds the test files of that page, and a module that a test file imports itself still finds that test file.
+The tab knows better, and says so: when the server in it loads the modules of a route, it calls a browser command of the plugin, and Vitest adds the test file that runs. Right before Vitest looks up the test files for a change, the plugin makes the graph say the same (`affected/watch.ts`): the list no longer imports the modules of the routes, and a test file imports the ones of the routes it loaded. The lookup is still Vitest's, so a component deep in a page finds the test files of that page, and a module that a test file imports itself still finds that test file.
 
 ```
 app/profile/page.tsx changes
@@ -391,6 +507,7 @@ app/profile/page.tsx changes
 
 - **The hook** is `watchTriggerPatterns` of Vitest's config, with a pattern for every file and a function that returns nothing: Vitest calls it for a file that changes, before its own lookup.
 - **A layout** is in the modules of every route under it, so it runs the test files of all of them.
+- **The module of a Server Action** that no page imports runs the test files that called an action of it: the tab says so too.
 - **A route that no test file has loaded** runs nothing. Neither does a test file that has not run since Vitest started: what it loads is not known yet.
 - **A test file that changes** is forgotten until it has run again.
 - **Tailwind** has to be told apart: it registers every file it scans as a dependency of the stylesheet, and Vitest follows that too, so a save of any file runs every test file whose page has the stylesheet. `playground/nextjs-notes-demo/test/ignore-watched-only-modules.ts` takes those out with the same hook.
@@ -400,7 +517,7 @@ app/profile/page.tsx changes
 
 These pick the test files of a change before anything has run, so the tab cannot say what they load. Vitest answers from the imports of each test file: it transforms the file in the `ssr` environment, follows the imports that are files of the project, and keeps the test files that reach a changed file. For an app of Next that fails twice. A test file does not import the page it opens. And the `ssr` environment is none of the three layers: it has no compiler of Next, so it cannot read a file of the app that needs one, like a `.js` file with JSX.
 
-A run does know (`related.ts`). When a test file has passed, the files it depends on are in Vite's module graphs, and the plugin writes them down, each with a hash of what is in it, in `vitest-plugin-rsc/related-<project>.json` in Vite's cache directory:
+A run does know (`affected/related.ts`). When a test file has passed, the files it depends on are in Vite's module graphs, and the plugin writes them down, each with a hash of what is in it, in a `vitest-plugin-rsc/related-….json` named after the project, in Vite's cache directory:
 
 - what the test file and the setup files import;
 - what the routes it loaded import, and the modules of the Server Actions it called;
@@ -413,7 +530,7 @@ At the next lookup the plugin answers for a test file itself. It belongs to the 
 - **Never too few.** A test file that is not written down belongs to every change, also one outside the project. That is one that did not pass, one that ran in part (a name pattern, a line, a tag, a bail), and every test file of a checkout without the cache.
 - **A file that comes to the `app` directory or goes**, or next to it, can change which route a URL gets and which layouts a route has, without a change to a file that is written down. Then nothing that is written down counts.
 - **The `ssr` environment is only Vitest's lookup** for a project in browser mode: its own code and the global setup run in another one. Vitest's static parse of a test file reads it there too, and finds no tests in it during a lookup.
-- **Not known:** a test that loads a route only some of the time, like one behind a condition on the date or one that is skipped while it runs. A file that is no module: one the app reads from disk, or one in `public/`. A file Tailwind scans is no dependency of a test, though a class in it adds to the stylesheet.
+- **Not known:** a test that loads a route only some of the time, like one behind a condition on the date or one that is skipped while it runs. A file that is no module: one the app reads from disk, or one in `public/`. A file Tailwind scans is no dependency of a test, though a class in it adds to the stylesheet. And a file that is edited while a run is under way, outside watch mode: its hash is taken when its test file ends.
 - **One lookup at a time.** Vite keeps the empty test file, and the plugin lets go of it when a run starts. Code that looks up twice without a run in between gets the first answer.
 
 `scripts/related-probe.mjs` says which test files `vitest related` picks.
@@ -432,9 +549,16 @@ At the next lookup the plugin answers for a test file itself. It belongs to the 
 - The font preloads: Next puts a `<link rel="preload">` in the HTML for the fonts of a route, from a manifest of its build. The fonts load when the CSS asks for them.
 - Sass needs the `sass` package, as it does for Vite, and `sassOptions` of `next.config` does not apply. Not tested.
 - An asset prefix with an origin of its own, like a CDN: the files of fonts and images are only served by the dev server.
-- `middleware.ts` / `proxy.ts`, and the redirects, rewrites and headers of `next.config`.
-- `trailingSlash`. A URL with a trailing slash, like `/notes/7/`, is served as it is, for a page and for a node. A deployment redirects it to `/notes/7`, or the other way around with `trailingSlash: true`: that redirect is one of Next's config routes.
-- Route handlers run as they do on Next's edge runtime, also the ones a deployment runs on Node.js. The params of the dynamic segments are in the query of `request.url` too, where they replace a query parameter of the same name. Static generation of a `GET` handler and `revalidate` do not apply: every request runs the handler.
+- The headers of `next.config`, and the ones the proxy sets, for a request the app does not answer itself: a file of `public/`, which the dev server serves. And the headers of `next.config` for a request that the proxy answers itself.
+- A rewrite, of `next.config` or of the proxy, to a path that no route has, like a file of `public/`: the network is asked for the URL of the request, and not for where the rewrite went.
+- A dynamic route under a folder with a name that a URL percent-encodes, like `app/release notes/[id]`: `@next/routing` does not find it. A run warns about it when it starts.
+- `i18n` of `next.config`, which is the Pages Router's: the app runs as without it. An app with `output: "export"` is served like any other, with its proxy and the redirects of `next.config`.
+- A dynamic segment with a `&` in it, written as it is: `@next/routing` reads what follows it as a query of the request.
+- A request the server makes to itself keeps its request stores until all of it is done, which can be after its response is there: an `after()` callback, or a body that streams on. Code that awaits such a `fetch` reads the stores of that request until then, and for a proxy that is the rest of the request it runs for.
+- What the proxy hands to `waitUntil()` goes on after the proxy has returned, without its request stores. Next's `instrumentation.ts` is not run, for the proxy or for a route.
+- A route handler does not see the query that a rewrite adds, as with `next start`: its `request.url` is the URL the browser asked for.
+- `basePath`, and `trailingSlash: true` in a tab: both are passed to Next's route resolution, and neither is tested with a page.
+- A route with `export const runtime = "edge"` runs on Node.js like the others: see [The Node.js Runtime](#the-nodejs-runtime). Static generation of a `GET` route handler and `revalidate` do not apply: every request runs the handler. `process.env.NEXT_RUNTIME` is a constant in Next's own code and is not set for the code of the app.
 - `"use cache"`. Next compiles such a function with the part of its SWC transform that also compiles Server Actions, which is Vite RSC's here. And it would not be enough: the function is called after Next has awaited, so it would never read the store of its cache scope. `cacheTag()` and `cacheLife()` need that store, and so does collecting the tags of the `fetch` calls in it. See [Caching](#a-cache-scope-ends-at-its-first-await).
 - Inside a function cached with `unstable_cache`, after its first `await`, the request's store is read instead of the cache's. See [Caching](#a-cache-scope-ends-at-its-first-await).
 - A `cacheHandler` or `cacheHandlers` of `next.config`. The cache is Next's own, in memory.

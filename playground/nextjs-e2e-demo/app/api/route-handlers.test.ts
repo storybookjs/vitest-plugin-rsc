@@ -28,8 +28,7 @@ test("serves a route handler with a dynamic segment", async () => {
     note: { id: "1", title: "Inbox triage", body: "Sort the inbox" },
     // NextRequest and headers() are the request's.
     pathname: "/api/notes/1",
-    // As on Next's edge runtime, the params are in the query too.
-    search: "?id=1",
+    search: "",
     client: "test",
   });
 });
@@ -55,7 +54,8 @@ test("answers 500 when a route handler throws, and logs the error", async () => 
   const response = await handleRequest("/api/notes/broken");
 
   expect(response.status).toBe(500);
-  expect(await response.text()).toBe("Internal Server Error");
+  // Next's request handler answers without a body.
+  expect(await response.text()).toBe("");
   expect(consoleError.mock.calls).toEqual([[new Error("The database is down")]]);
   consoleError.mockClear();
 
@@ -225,6 +225,38 @@ test("streams the response of a route handler, which reads a mocked module", asy
   expect(await reader.read()).toEqual({ done: true, value: undefined });
 });
 
+test("ends the streamed response of a route handler with the error that stopped it", async () => {
+  consoleError.mockImplementation(() => {});
+  let rejectForecast!: (error: Error) => void;
+  vi.mocked(getForecast).mockReturnValue(new Promise((_, reject) => (rejectForecast = reject)));
+
+  const response = await handleRequest("/api/forecast");
+  const reader = response.body!.pipeThrough(new TextDecoderStream()).getReader();
+  expect(await reader.read()).toEqual({ done: false, value: "Today: " });
+
+  rejectForecast(new Error("The service is down"));
+  // Not as a request that the test left.
+  await expect(reader.read()).rejects.toThrow("The service is down");
+  // Next logs that it could not send the rest.
+  await expect
+    .poll(() => consoleError.mock.calls.flat().map(String))
+    .toEqual(["Error: failed to pipe response"]);
+  consoleError.mockClear();
+});
+
+test("stops a route handler whose streamed response is no longer read", async () => {
+  let resolveForecast!: (forecast: string) => void;
+  vi.mocked(getForecast).mockReturnValue(new Promise((resolve) => (resolveForecast = resolve)));
+
+  const response = await handleRequest("/api/forecast");
+  const reader = response.body!.getReader();
+  await reader.read();
+  await reader.cancel();
+  resolveForecast("sunny");
+  // What the handler writes now goes nowhere, and Next reports no error.
+  await new Promise((resolve) => setTimeout(resolve, 50));
+});
+
 test("serves the fetch() of a Client Component with a route handler", async () => {
   db.notes.set("1", { id: "1", title: "Inbox triage", body: "Sort the inbox" });
   document.cookie = "editor=kasper";
@@ -275,6 +307,18 @@ test("serves the fetch() of a Server Component with a route handler", async () =
   await renderServer({ url: "/status" });
 
   await expect.element(page.getByRole("heading", { name: "Status of status" })).toBeVisible();
+});
+
+test("serves a route handler that asks for the edge runtime", async () => {
+  // `export const runtime = "edge"`. It runs on Node.js like the others, and
+  // the run warns about it when it starts.
+  const response = await handleRequest("/api/runtime?x=1");
+
+  expect(await response.json()).toEqual({
+    asked: "edge",
+    // The URL the tab asked for, with its origin.
+    url: `${location.origin}/api/runtime?x=1`,
+  });
 });
 
 test("keeps the Set-Cookie of a plain Response in a route handler", async () => {

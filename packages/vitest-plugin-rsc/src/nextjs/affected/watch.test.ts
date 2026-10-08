@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 import type { TestProject, Vitest } from "vitest/node";
-import { createRouteWatch } from "./watch.ts";
+import { watchMode } from "./watch.ts";
 
 // Vite's module graph, as far as Vitest's watcher walks it: from a module to
 // its importers.
@@ -15,6 +15,7 @@ function createGraph(imports: Record<string, string[]>) {
     return nodes.get(id)!;
   };
   for (const [id, imported] of Object.entries(imports)) {
+    node(id);
     for (const dep of imported) {
       node(id).importedModules.add(node(dep));
       node(dep).importers.add(node(id));
@@ -23,6 +24,7 @@ function createGraph(imports: Record<string, string[]>) {
   return {
     getModuleById: (id: string) => nodes.get(id),
     getModulesByFile: (file: string) => (nodes.has(file) ? new Set([nodes.get(file)!]) : undefined),
+    urlToModuleMap: new Map<string, Node>(),
     // What Vitest does for a file that changed.
     testFilesFor(file: string, seen = new Set<string>()): string[] {
       if (seen.has(file)) return [];
@@ -45,19 +47,23 @@ function start() {
     "route/0": ["notes/page.tsx", "layout.tsx"],
     "route/1": ["profile/page.tsx", "layout.tsx"],
     "profile/page.tsx": ["avatar.tsx"],
-  });
-  const watch = createRouteWatch({
-    environment: "client",
-    lists: ["list"],
-    modulesOf: (_, page) => [`route/${page}`],
+    // No page imports it: a test calls its Server Action by the id.
+    "/actions.ts": [],
   });
   const vitest = { config: {} } as Vitest;
-  const project = { vite: { environments: { client: { moduleGraph: graph } } } };
-  watch.start(vitest, project as unknown as TestProject);
+  const project = {
+    config: { root: "/" },
+    vite: { environments: { client: { moduleGraph: graph } } },
+  };
+  const watch = watchMode(vitest, project as unknown as TestProject, {
+    environment: "client",
+    lists: ["list"],
+  });
   const { testsToRun } = vitest.config.watchTriggerPatterns![0]!;
   return {
     graph,
-    loaded: (testPath: string, page: string) => watch.command({ testPath }, "page", page),
+    loaded: (testFile: string, page: string) => watch.loaded(testFile, [`route/${page}`]),
+    loadedModule: (testFile: string, name: string) => watch.loaded(testFile, [name]),
     // Vitest calls the pattern, and then looks up the test files itself.
     change(file: string) {
       expect(testsToRun(file, /./.exec(file)!)).toBeUndefined();
@@ -117,4 +123,14 @@ test("forgets the routes of a test file that changes, until it runs again", () =
 
   expect(change("notes/page.tsx")).toEqual([]);
   expect(change("profile/page.tsx")).toEqual(["notes.test.tsx"]);
+});
+
+test("runs the test file that called a Server Action of a module no page imports", () => {
+  const { loadedModule, change } = start();
+  expect(change("/actions.ts")).toEqual([]);
+
+  // By its path from the root, as it is in the id of the action.
+  loadedModule("notes.test.tsx", "actions.ts");
+
+  expect(change("/actions.ts")).toEqual(["notes.test.tsx"]);
 });

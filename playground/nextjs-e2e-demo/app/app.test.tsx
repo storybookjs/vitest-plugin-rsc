@@ -291,7 +291,7 @@ test("does not report the render of a page that the test left before it had its 
   // The render goes on without its request until Next gives up on it.
   await expect
     .poll(() => consoleError.mock.calls.flat().map(String).join("\n"))
-    .toContain("Expected workStore to be initialized");
+    .toContain("`cookies` was called outside a request scope");
   await new Promise((resolve) => setTimeout(resolve));
   consoleError.mockClear();
   expect(reportError).not.toHaveBeenCalled();

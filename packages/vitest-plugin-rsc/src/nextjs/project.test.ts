@@ -59,15 +59,12 @@ test("lists the routes of the app, one for each pathname", async () => {
 });
 
 // An app of its own, next to the demo so that it finds the same Next.
-function appWith(files: string[], config?: object): string {
+function appWith(files: string[], config: object = {}): string {
   const dir = fs.mkdtempSync(path.join(root, ".app-"));
   onTestFinished(() => fs.rmSync(dir, { recursive: true, force: true }));
-  if (config) {
-    fs.writeFileSync(
-      path.join(dir, "next.config.mjs"),
-      `export default ${JSON.stringify(config)};`,
-    );
-  }
+  // Always one of its own: Next looks for a config in the folders above too,
+  // and finds the one of the demo.
+  fs.writeFileSync(path.join(dir, "next.config.mjs"), `export default ${JSON.stringify(config)};`);
   for (const file of files) {
     fs.mkdirSync(path.dirname(path.join(dir, "app", file)), { recursive: true });
     const isRoute = path.basename(file).startsWith("route.");
@@ -198,11 +195,17 @@ test("does not take a route discovery without app pages for an app without route
   );
 });
 
-test("needs the define that makes Next's modules pick their edge build", async () => {
+test("lists the route files that ask for Next's edge runtime", async () => {
+  const { edgeRouteFiles } = await loadNextProject(root);
+
+  expect(edgeRouteFiles).toEqual(["app/api/runtime/route.ts"]);
+});
+
+test("needs the define that makes Next's code take the branches of its Node.js server", async () => {
   const next = nextWith({ "next/dist/build/define-env.js": { getDefineEnv: () => ({}) } });
 
   await expect(loadNextProject(root, next)).rejects.toThrow(
-    changed("`getDefineEnv()` does not define `process.env.NEXT_RUNTIME` as `edge`"),
+    changed("`getDefineEnv()` does not define `process.env.NEXT_RUNTIME` as `nodejs`"),
   );
 });
 
@@ -238,17 +241,6 @@ test.for([
 
   await expect(project.loadAppPageEntry(route(project.routes, pathname!))).rejects.toThrow(
     new RegExp(`next@${version} differs .* the output of next-app-loader has no \`.*${piece}`),
-  );
-});
-
-test("needs the import of the page that it replaces in the edge template", async () => {
-  const next = nextWith({
-    "next/dist/build/load-entrypoint.js": { loadEntrypoint: async () => "export {};" },
-  });
-  const project = await loadNextProject(root, next);
-
-  await expect(project.loadEdgeEntry(route(project.routes, "/notes"), "page")).rejects.toThrow(
-    changed("the edge-ssr-app template has no `import * as pageMod from"),
   );
 });
 
@@ -289,8 +281,8 @@ test("gives the route of a node the segments of its pathname, and nothing of the
       `}, {}, null] }, {}, null] }, { ${boundaries.join(", ")} }, null]`,
   );
   expect(code).toContain('page: "/notes/[id]/page"');
-  // Bound to this package like the entry of a page of the app.
-  expect(code).toContain('from "vitest-plugin-rsc/nextjs/app-page-entrypoint"');
+  // Next's own request handler, like the entry of a page of the app.
+  expect(code).toContain('from "next/dist/build/templates/app-page-runtime"');
   expect(code).not.toContain("__webpack_require__");
   expect(code).not.toContain(project.appDir);
   expect(watchFiles).toEqual([]);
@@ -384,41 +376,20 @@ test.for([
   ],
   [
     "server/route-modules/route-module",
-    "self.__BUILD_MANIFEST",
-    "self.__NEXT_BUILD",
-    "has no `self.__BUILD_MANIFEST`",
+    "load-manifest.external",
+    "load-manifest",
+    "has no `load-manifest.external`",
   ],
   [
-    "server/route-modules/route-module",
-    "self.__RSC_MANIFEST",
-    "self.__NEXT_CLIENT_REFERENCES",
-    "has no `self.__RSC_MANIFEST`",
+    "server/app-render/stream-ops",
+    "process.env.__NEXT_USE_NODE_STREAMS",
+    "process.env.__NEXT_NODE_STREAMS",
+    "has no `process.env.__NEXT_USE_NODE_STREAMS`",
   ],
 ])("needs what the tab assumes of %s: %s", async ([file, piece, replacement, what]) => {
   const next = nextWith({ [runtime(file!)]: sourceWith(runtime(file!), piece!, replacement!) });
 
   await expect(loadNextProject(root, next)).rejects.toThrow(changed(`${runtime(file!)} ${what}`));
-});
-
-test("needs the manifests that the server is given for each request", async () => {
-  const file = runtime("server/app-render/manifests-singleton");
-  const next = nextWith({
-    [file]: sourceWith(file, "serverActionsManifest: raw", "actionsManifest: raw"),
-  });
-
-  await expect(loadNextProject(root, next)).rejects.toThrow(
-    changed("`setManifestsSingleton()` takes no `serverActionsManifest`"),
-  );
-});
-
-test.for([
-  "export const setManifestsSingleton = (options) =>\n  set(options.page, options.clientReferenceManifest, options.serverActionsManifest);",
-  "function setManifestsSingleton({ page, clientReferenceManifest, serverActionsManifest }) {}\nexport { setManifestsSingleton };",
-  `export * from ${JSON.stringify(installed.resolve(runtime("server/app-render/manifests-singleton")))};`,
-])("takes the manifests however Next declares the function that gets them: %s", async (source) => {
-  const next = nextWith({ [runtime("server/app-render/manifests-singleton")]: source });
-
-  await expect(loadNextProject(root, next)).resolves.toBeDefined();
 });
 
 test("reads the exports of the Flight codec of the rsc layer", async () => {
@@ -651,5 +622,347 @@ test("needs the image loader to export the data of an image", async () => {
 
   await expect(project.loadImage(appFile("images/logo.png"))).rejects.toThrow(
     changed("next-image-loader no longer exports the data of an image"),
+  );
+});
+
+// A request, by the route resolution the tab runs, with the routes of a project.
+async function resolve(
+  routing: Awaited<ReturnType<typeof loadNextProject>>["routing"],
+  url: string,
+) {
+  const { resolveRoutes } = installed("@next/routing") as typeof import("@next/routing");
+  const { resolvedPathname, resolvedHeaders, status } = await resolveRoutes({
+    url: new URL(url, "http://localhost"),
+    headers: new Headers(),
+    requestBody: new ReadableStream(),
+    basePath: routing.basePath,
+    buildId: routing.buildId,
+    pathnames: Object.keys(routing.outputs),
+    routes: routing.routes,
+    invokeMiddleware: async () => ({}),
+  });
+  return {
+    page: routing.outputs[resolvedPathname ?? ""],
+    status,
+    location: resolvedHeaders?.get("location") ?? undefined,
+  };
+}
+
+test("has the routes that Next's build hands a deployment adapter", async () => {
+  const { routing } = await loadNextProject(root);
+  // What next.config calls a route. Not a part of what `resolveRoutes()` reads.
+  const sources = (routes: object[]) =>
+    routes.map((route) => (route as { source?: string }).source);
+
+  // The headers and the redirects of next.config, and Next's own redirect of
+  // a trailing slash.
+  expect(sources(routing.routes.beforeMiddleware)).toEqual([
+    "/docs/:slug",
+    "/:path+/",
+    "/guide/:slug",
+  ]);
+  // The interception route of the gallery is a rewrite to Next's build.
+  expect(sources(routing.routes.beforeFiles)).toEqual(["/docs/start", "/gallery/photo/:nxtPid"]);
+  expect(sources(routing.routes.afterFiles)).toEqual(["/docs", "/docs/echo"]);
+  expect(sources(routing.routes.fallback)).toEqual(["/docs/:slug/:rest+", "/elsewhere/:path*"]);
+  // A pattern for each dynamic route, to the output of the build for it.
+  expect(routing.routes.dynamicRoutes).toContainEqual(
+    expect.objectContaining({
+      source: "/docs/[slug]",
+      destination: expect.stringContaining("/docs/[slug]"),
+    }),
+  );
+  expect(routing.outputs).toMatchObject({
+    "/docs": "/docs/page",
+    "/docs/[slug]": "/docs/[slug]/page",
+    "/api/notes/[id]": "/api/notes/[id]/route",
+  });
+  // The matcher of proxy.ts.
+  expect(sources(routing.routes.middlewareMatchers ?? [])).toEqual([
+    "/((?!_next/static|_next/image|favicon.ico).*)",
+  ]);
+});
+
+test("has the routes manifest of a build, for Next's route module", async () => {
+  const { routesManifest } = await loadNextProject(root);
+
+  // Next's route module reads the rewrites of an interception route from it.
+  expect(routesManifest.rewrites.beforeFiles.map(({ source }) => source)).toEqual([
+    "/docs/start",
+    "/gallery/photo/:nxtPid",
+  ]);
+  expect(routesManifest.basePath).toBe("");
+});
+
+test("finds the proxy of the app, and loads it with Next's template", async () => {
+  const project = await loadNextProject(root);
+
+  expect(project.middlewareFile).toBe(path.join(root, "proxy.ts"));
+  const entry = await project.loadMiddlewareEntry();
+  expect(entry).toContain('import * as _mod from "private-next-root-dir/proxy.ts"');
+  expect(entry).toContain('const page = "/proxy"');
+  // Not the `require` of Next's bundler.
+  expect(entry).toContain("await import('node:path')");
+  expect(entry).not.toMatch(/\brequire\(/);
+});
+
+test("has no middleware for an app without one, and a matcher for every path without a config", async () => {
+  const plain = await loadNextProject(appWith(["page.js"]), installed);
+
+  expect(plain.middlewareFile).toBeUndefined();
+  expect(await plain.loadMiddlewareEntry()).toBeUndefined();
+  expect(plain.routing.routes.middlewareMatchers).toEqual([]);
+
+  const app = appWith(["page.js"]);
+  fs.writeFileSync(path.join(app, "middleware.js"), "export function middleware() {}");
+  const { routing, middlewareFile } = await loadNextProject(app, installed);
+
+  expect(middlewareFile).toBe(path.join(app, "middleware.js"));
+  expect(routing.routes.middlewareMatchers).toMatchObject([{ source: "/:path*" }]);
+});
+
+test("does not take a folder with the name of the proxy for it, as `next build` does not", async () => {
+  const app = appWith(["page.js"]);
+  fs.mkdirSync(path.join(app, "middleware"));
+  fs.writeFileSync(path.join(app, "middleware/index.js"), "export const helper = 1;");
+
+  expect((await loadNextProject(app, installed)).middlewareFile).toBeUndefined();
+
+  // Nor is it a second one.
+  fs.writeFileSync(path.join(app, "proxy.js"), "export function proxy() {}");
+
+  expect((await loadNextProject(app, installed)).middlewareFile).toBe(path.join(app, "proxy.js"));
+});
+
+test("rejects an app with both a proxy and a middleware, as `next build` does", async () => {
+  const app = appWith(["page.js"]);
+  fs.writeFileSync(path.join(app, "proxy.js"), "export function proxy() {}");
+  fs.writeFileSync(path.join(app, "middleware.js"), "export function middleware() {}");
+
+  await expect(loadNextProject(app, installed)).rejects.toThrow(
+    "the app has both proxy.js and middleware.js. Next.js takes one of them.",
+  );
+});
+
+test("resolves a URL with a trailing slash to its route when next.config asks for the slash", async () => {
+  const app = appWith(["page.js", "notes/page.js", "notes/[id]/page.js"], { trailingSlash: true });
+  const { routing } = await loadNextProject(app, installed);
+
+  // Next redirects to the URL with the slash.
+  expect(await resolve(routing, "/notes")).toMatchObject({ status: 308, location: "/notes/" });
+  expect(await resolve(routing, "/notes/7")).toMatchObject({ status: 308, location: "/notes/7/" });
+  // `resolveRoutes()` compares a pathname with the outputs of the build as it
+  // is, so an output is there both ways.
+  expect(await resolve(routing, "/notes/")).toEqual({ page: "/notes/page" });
+  expect(await resolve(routing, "/notes/7/")).toEqual({ page: "/notes/[id]/page" });
+  expect(await resolve(routing, "/")).toEqual({ page: "/page" });
+});
+
+test("resolves the routes of an app with a base path", async () => {
+  const app = appWith(["page.js", "notes/[id]/page.js"], { basePath: "/shop" });
+  const { routing } = await loadNextProject(app, installed);
+
+  // The page of `/` is at the base path itself.
+  expect(await resolve(routing, "/shop")).toEqual({ page: "/page" });
+  expect(await resolve(routing, "/shop/notes/7")).toEqual({ page: "/notes/[id]/page" });
+  expect(await resolve(routing, "/notes/7")).toEqual({});
+});
+
+test("routes an app as the App Router does, whatever next.config has for the Pages Router or an export", async () => {
+  const localized = appWith(["page.js", "notes/page.js"]);
+  fs.writeFileSync(
+    path.join(localized, "next.config.mjs"),
+    `export default {
+      i18n: { locales: ["en", "nl"], defaultLocale: "en" },
+      redirects: async () => [{ source: "/old", destination: "/notes", permanent: true }],
+    };`,
+  );
+  fs.writeFileSync(
+    path.join(localized, "proxy.js"),
+    'export function proxy() {}\nexport const config = { matcher: "/notes" };',
+  );
+  const { routing } = await loadNextProject(localized, installed);
+
+  // No locale in a URL: not looked for, and not added to a redirect or to
+  // the matcher of the proxy.
+  expect(await resolve(routing, "/notes")).toEqual({ page: "/notes/page" });
+  expect(await resolve(routing, "/old")).toMatchObject({ status: 308, location: "/notes" });
+  const [matcher] = routing.routes.middlewareMatchers ?? [];
+  expect(new RegExp(matcher!.sourceRegex).test("/notes")).toBe(true);
+
+  // Next's build reads the files of an export. The routes are the same.
+  const exported = appWith(["page.js", "notes/page.js"], { output: "export" });
+
+  expect(await resolve((await loadNextProject(exported, installed)).routing, "/notes")).toEqual({
+    page: "/notes/page",
+  });
+});
+
+test("resolves a URL to a route with a name that the URL percent-encodes", async () => {
+  const app = appWith([
+    "page.js",
+    "日本語/page.js",
+    "release notes/page.js",
+    "日本語/[id]/page.js",
+    "notes/[名前]/page.js",
+  ]);
+  const { routing, unmatchedRoutes } = await loadNextProject(app, installed);
+
+  // `resolveRoutes()` compares a pathname with the outputs of the build as it
+  // is, so an output is there the way a URL has it too.
+  expect(await resolve(routing, "/日本語")).toEqual({ page: "/日本語/page" });
+  expect(await resolve(routing, "/release notes")).toEqual({ page: "/release notes/page" });
+  expect(routing.outputs).toMatchObject({ "/release%20notes": "/release notes/page" });
+  // Not a dynamic route: Next's pattern for it has the folder as it is named.
+  expect(unmatchedRoutes).toEqual(["/日本語/[id]"]);
+  expect(await resolve(routing, "/日本語/7")).toEqual({});
+  // The name of a param is in no URL.
+  expect(await resolve(routing, "/notes/7")).toEqual({ page: "/notes/[名前]/page" });
+});
+
+test("warns about the dynamic routes that @next/routing does not find", async () => {
+  const app = appWith(["layout.js", "page.js", "日本語/[id]/page.js"]);
+  const plugin = vitestPluginNext().find(({ name }) => name === "vitest-plugin-rsc:next")!;
+  const warnOnce = vi.fn();
+  await (plugin.config as (config: object) => Promise<unknown>)({ root: app });
+  (plugin.configResolved as (config: object) => void)({ logger: { warnOnce } });
+
+  expect(warnOnce).toHaveBeenCalledWith(
+    "vitest-plugin-rsc: @next/routing does not find a dynamic route under a folder with a name " +
+      "that a URL percent-encodes. These routes get the not-found page: /日本語/[id]",
+  );
+});
+
+test("needs @next/routing, at the version of next", async () => {
+  const missing = nextWith({ "@next/routing/package.json": new Error("Cannot find module") });
+
+  await expect(loadNextProject(root, missing)).rejects.toThrow(
+    `Install it at the version of next: @next/routing@${version}.`,
+  );
+
+  const other = nextWith({ "@next/routing/package.json": { version: "16.2.0" } });
+
+  await expect(loadNextProject(root, other)).rejects.toThrow(
+    `found @next/routing@16.2.0 next to next@${version}. Install @next/routing@${version}.`,
+  );
+});
+
+test("needs Next's build to hand an adapter the routes without a build on disk", async () => {
+  const silent = nextWith({
+    "next/dist/build/adapter/build-complete.js": { handleBuildComplete: async () => {} },
+  });
+
+  await expect(loadNextProject(root, silent)).rejects.toThrow(
+    changed(
+      "`handleBuildComplete()` does not hand an adapter the routes of an app without a build " +
+        "on disk (it does not call `onBuildComplete` of the adapter)",
+    ),
+  );
+
+  const reading = nextWith({
+    "next/dist/build/adapter/build-complete.js": {
+      handleBuildComplete: async () => {
+        throw new Error("ENOENT: no such file or directory, open 'server/app/page.js'");
+      },
+    },
+  });
+
+  await expect(loadNextProject(root, reading)).rejects.toThrow("(ENOENT: no such file");
+});
+
+test("needs what Next's build hands an adapter to have the routes and an output for each", async () => {
+  type Built = { routing: Record<string, unknown>; outputs: Record<string, unknown[]> };
+  const build = installed(
+    "next/dist/build/adapter/build-complete.js",
+  ) as typeof import("next/dist/build/adapter/build-complete.js");
+  // A build that hands the adapter something else than it does now.
+  const handing = (change: (built: Built) => Built) =>
+    nextWith({
+      "next/dist/build/adapter/build-complete.js": {
+        handleBuildComplete: async (options: Parameters<typeof build.handleBuildComplete>[0]) => {
+          const { __vitest_plugin_rsc_next_adapter__: receivers } = globalThis as unknown as {
+            __vitest_plugin_rsc_next_adapter__: Map<string, (built: Built) => void>;
+          };
+          const receive = receivers.get(options.distDir)!;
+          receivers.set(options.distDir, (built) => receive(change(built)));
+          await build.handleBuildComplete(options);
+        },
+      },
+    });
+
+  const unphased = handing((built) => ({
+    ...built,
+    routing: { ...built.routing, fallback: undefined },
+  }));
+
+  await expect(loadNextProject(root, unphased)).rejects.toThrow(
+    changed("`handleBuildComplete()` hands an adapter no `routing.fallback`"),
+  );
+
+  const empty = handing((built) => ({ ...built, outputs: { ...built.outputs, appPages: [] } }));
+
+  await expect(loadNextProject(root, empty)).rejects.toThrow(
+    /`handleBuildComplete\(\)` has no output for \/.*\/page\./,
+  );
+});
+
+test("needs the routes of the app to resolve with what Next's build hands an adapter", async () => {
+  const { resolveRoutes } = installed("@next/routing") as typeof import("@next/routing");
+  // A `resolveRoutes()` that no longer knows the routes it is given.
+  const next = nextWith({
+    "@next/routing": {
+      resolveRoutes: (params: Parameters<typeof resolveRoutes>[0]) =>
+        resolveRoutes({ ...params, routes: { ...params.routes, dynamicRoutes: [] } }),
+    },
+  });
+
+  await expect(loadNextProject(root, next)).rejects.toThrow(
+    changed(
+      `\`resolveRoutes()\` of @next/routing@${version} does not find /api/echo/[...path] in the ` +
+        "routes that `handleBuildComplete()` hands an adapter",
+    ),
+  );
+});
+
+test("needs the middleware template to load its modules with the `require` of Next's bundler", async () => {
+  const next = nextWith({
+    "next/dist/build/webpack/loaders/next-middleware-loader.js": {
+      default: async () => "export async function handler() {}",
+    },
+  });
+  const project = await loadNextProject(root, next);
+
+  await expect(project.loadMiddlewareEntry()).rejects.toThrow(
+    changed("the middleware template has no `/\\brequire\\(/g` to replace"),
+  );
+});
+
+test("needs Next's build to load the middleware with its middleware loader", async () => {
+  const next = nextWith({
+    "next/dist/build/entries.js": {
+      getEdgeServerEntry: () => ({ import: "next-edge-function-loader?page=%2Fproxy!" }),
+    },
+  });
+  const project = await loadNextProject(root, next);
+
+  await expect(project.loadMiddlewareEntry()).rejects.toThrow(
+    changed("`getEdgeServerEntry()` no longer loads the middleware with next-middleware-loader"),
+  );
+});
+
+test("needs Next's build to have a page for the proxy file", async () => {
+  const { createPagesMapping } = installed(
+    "next/dist/build/route-discovery.js",
+  ) as typeof import("next/dist/build/route-discovery.js");
+  const next = nextWith({
+    "next/dist/build/route-discovery.js": {
+      // Still the pages of the app: not the page of a file next to it.
+      createPagesMapping: async (options: Parameters<typeof createPagesMapping>[0]) =>
+        options.pagesType === "root" ? {} : createPagesMapping(options),
+    },
+  });
+
+  await expect(loadNextProject(root, next)).rejects.toThrow(
+    changed(`\`createPagesMapping()\` has no page for ${path.join(root, "proxy.ts")}`),
   );
 });

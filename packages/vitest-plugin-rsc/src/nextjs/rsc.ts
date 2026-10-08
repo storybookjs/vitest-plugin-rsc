@@ -2,12 +2,12 @@ import { createServerManifest } from "@vitejs/plugin-rsc/core/rsc";
 import * as ReactServer from "@vitejs/plugin-rsc/react/rsc";
 import { prerender } from "@vitejs/plugin-rsc/react/rsc/static";
 import * as FlightServer from "@vitejs/plugin-rsc/vendor/react-server-dom/server.edge";
-import { commands } from "vitest/browser";
 import appPages from "virtual:vitest-plugin-rsc/next-app-pages";
+import loadMiddleware from "virtual:vitest-plugin-rsc/next-middleware";
 import routeHandlers from "virtual:vitest-plugin-rsc/next-route-handlers";
 import type { FlightAdapters } from "./flight.ts";
 import { actionModulePrefix, registry } from "./registry.ts";
-import { routeLoadedCommand, type RouteKind } from "./watch.ts";
+import { reportLoaded } from "./affected/tab.ts";
 
 // The rsc layer: Server Components, Server Actions, route handlers and the
 // Flight encoder.
@@ -39,6 +39,30 @@ registry.flightServer = {
   registerClientReference: ReactServer.registerClientReference,
   createClientModuleProxy: FlightServer.createClientModuleProxy,
 } satisfies FlightAdapters<"server">;
+// Next's Node.js server reads the body of a Server Action with busboy, and
+// React decodes it as the parts come in. Here the parts are collected first.
+type Busboy = { on(event: string, listener: (...args: any[]) => void): void };
+registry.flightServer.decodeReplyFromBusboy = (
+  busboy: Busboy,
+  _serverModules: unknown,
+  options?: object,
+) =>
+  new Promise((resolve, reject) => {
+    const form = new FormData();
+    busboy.on("field", (name: string, value: string) => form.append(name, value));
+    busboy.on(
+      "file",
+      (name: string, file: Busboy, info: { filename: string; mimeType: string }) => {
+        const chunks: BlobPart[] = [];
+        file.on("data", (chunk: Uint8Array) => chunks.push(new Uint8Array(chunk)));
+        file.on("end", () =>
+          form.append(name, new File(chunks, info.filename, { type: info.mimeType })),
+        );
+      },
+    );
+    busboy.on("error", reject);
+    busboy.on("finish", () => resolve(ReactServer.decodeReply(form, options)));
+  });
 registry.flightStatic = {
   prerender: (model: unknown, _clientModules: unknown, options?: object) =>
     prerender(model, options),
@@ -52,17 +76,10 @@ registry.flightClient = {
   createTemporaryReferenceSet: ReactServer.createClientTemporaryReferenceSet,
 } satisfies FlightAdapters<"client">;
 
-// Tells the plugin which route the test file that runs now has loaded: see
-// watch.ts.
-type RouteLoaded = (kind: RouteKind | "action", page: string) => Promise<void>;
-const routeLoaded = (commands as unknown as Partial<Record<string, RouteLoaded>>)[
-  routeLoadedCommand
-];
-
 registry.loadAppPage = async (page) => {
   const load = (appPages as Record<string, () => Promise<unknown>>)[page];
   if (!load) throw new Error(`vitest-plugin-rsc: unknown Next.js app page ${page}`);
-  void routeLoaded?.("page", page).catch(() => {});
+  reportLoaded("page", page);
   return (registry.appPages[page] ??= await load());
 };
 
@@ -80,8 +97,13 @@ export async function loadComponent(): Promise<{ default: () => unknown }> {
 registry.loadRouteHandler = async (page) => {
   const load = routeHandlers[page];
   if (!load) throw new Error(`vitest-plugin-rsc: unknown Next.js route handler ${page}`);
-  void routeLoaded?.("route", page).catch(() => {});
+  reportLoaded("route", page);
   return (await load()).handler;
+};
+
+registry.loadMiddleware = async () => {
+  if (!loadMiddleware) throw new Error("vitest-plugin-rsc: the app has no middleware");
+  return (await loadMiddleware()).handler;
 };
 
 declare global {
@@ -101,7 +123,7 @@ const modules = new Map<string, Promise<unknown>>();
 export function requireModule(id: string): Promise<unknown> {
   if (id.startsWith(actionModulePrefix)) {
     const [module] = id.slice(actionModulePrefix.length).split("#");
-    void routeLoaded?.("action", module!).catch(() => {});
+    reportLoaded("action", module!);
   }
   let loading = modules.get(id);
   if (!loading) modules.set(id, (loading = loadModule(id)));
