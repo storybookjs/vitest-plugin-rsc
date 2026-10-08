@@ -795,6 +795,17 @@ test("resolves the routes of an app with a base path", async () => {
   expect(await resolve(routing, "/notes/7")).toEqual({});
 });
 
+test("turns Cached Navigations off, also when next.config turns it on", async () => {
+  const app = appWith(["layout.js", "page.js"], {
+    cacheComponents: true,
+    experimental: { cachedNavigations: true },
+  });
+
+  const { config } = await loadNextProject(app, installed);
+
+  expect(config.experimental).toMatchObject({ cachedNavigations: false });
+});
+
 test("routes an app as the App Router does, whatever next.config has for the Pages Router or an export", async () => {
   const localized = appWith(["layout.js", "page.js", "notes/page.js"]);
   fs.writeFileSync(

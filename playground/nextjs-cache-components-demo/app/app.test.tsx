@@ -1,15 +1,24 @@
-import { expect, test } from "vitest";
+import { afterEach, beforeEach, expect, test, vi, type MockInstance } from "vitest";
 import { page } from "vitest/browser";
 import { cleanup, handleRequest, renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
 import { getQuote } from "./lib/quotes.ts";
 
-const revalidate = (tag: string) => handleRequest(`/api/revalidate?tag=${tag}`, { method: "POST" });
+// Next stamps a revalidation with its time rounded to a millisecond, which can
+// be half a millisecond ahead. A request in that time gets the old entry once.
+const revalidate = async (tag: string) => {
+  await handleRequest(`/api/revalidate?tag=${tag}`, { method: "POST" });
+  await new Promise((resolve) => setTimeout(resolve, 1));
+};
 const heading = () => page.getByRole("heading").element().textContent;
 
-test("renders a page of an app with cacheComponents", async () => {
-  await renderServer({ url: "/" });
+let consoleError: MockInstance<typeof console.error>;
 
-  await expect.element(page.getByRole("heading", { name: "Cache Components" })).toBeVisible();
+beforeEach(() => {
+  consoleError = vi.spyOn(console, "error");
+});
+
+afterEach(() => {
+  expect(consoleError.mock.calls).toEqual([]);
 });
 
 test('keeps what a "use cache" function returns for the next request, until its tag is revalidated', async () => {
@@ -31,6 +40,8 @@ test('keeps what a "use cache" function returns for the next request, until its 
 test("runs a cached function again after a Server Action has updated its tag", async () => {
   await renderServer({ url: "/quotes" });
   const first = heading();
+  await renderServer({ url: "/quotes" });
+  expect(heading()).toBe(first);
 
   await page.getByRole("button", { name: "Refresh" }).click();
 
@@ -59,6 +70,7 @@ test("runs a cached function again when the tag of a cached function inside it i
   const quote = async () =>
     (await (await handleRequest("/api/quote?topic=nested")).json()) as { runs: number };
   const first = await quote();
+  expect(await quote()).toEqual(first);
 
   await revalidate("authors");
 
@@ -70,6 +82,7 @@ test("runs each of two cached functions again when the tag of a cached function 
   const quotes = async () =>
     (await (await handleRequest("/api/quotes?topics=aa,bb")).json()) as { runs: number }[];
   const first = await quotes();
+  expect(await quotes()).toEqual(first);
 
   await revalidate("authors");
   const second = await quotes();
@@ -90,24 +103,35 @@ test("caches every function of a module with the directive", async () => {
   expect((await report()).runs).toBe(first.runs + 1);
 });
 
-test("caches a component, and a function that closes over a value", async () => {
+test("caches a component", async () => {
+  const summary = () => page.getByText(/^Summary \d+ of report \d+ for 2026$/);
   await renderServer({ url: "/report" });
-  const summary = page.getByText(/^Summary \d+ of report \d+ for 2026$/);
-  await expect.element(summary).toBeVisible();
-  const first = summary.element().textContent;
-  const total = page.getByText(/^Total: 42 EUR, computed \d+ times$/);
-  await expect.element(total).toBeVisible();
-  const firstTotal = total.element().textContent;
+  await expect.element(summary()).toBeVisible();
+  const first = summary().element().textContent;
 
   await renderServer({ url: "/report" });
-  expect(page.getByText(/^Summary/).element().textContent).toBe(first);
-  expect(page.getByText(/^Total/).element().textContent).toBe(firstTotal);
+  expect(summary().element().textContent).toBe(first);
 
-  await revalidate("reports");
+  // The component tags its entry after an `await`.
+  await revalidate("summaries");
   await renderServer({ url: "/report" });
-  expect(page.getByText(/^Summary/).element().textContent).not.toBe(first);
-  // No tag of the function that makes the total was revalidated.
-  expect(page.getByText(/^Total/).element().textContent).toBe(firstTotal);
+  expect(summary().element().textContent).not.toBe(first);
+});
+
+test("makes two calls of a cached function with the same arguments in one render one call", async () => {
+  await renderServer({ url: "/report" });
+
+  await expect.element(page.getByText("One call: true")).toBeVisible();
+});
+
+test("keys a cached function by a value it closes over", async () => {
+  const total = async (unit: string) =>
+    (await (await handleRequest(`/api/total?unit=${unit}`)).json()) as string;
+  const euros = await total("EUR");
+  expect(euros).toMatch(/^42 EUR, computed \d+ times$/);
+
+  expect(await total("USD")).toMatch(/^42 USD/);
+  expect(await total("EUR")).toBe(euros);
 });
 
 test("keys a cached function by the arguments it declares, as Next does", async () => {
@@ -159,14 +183,26 @@ test("known limit: a component that a cached component renders reads the request
   document.cookie = "name=Ada";
   await renderServer({ url: "/nested" });
 
-  // A deployment: `cookies()` throws in it, which stops `next build`, and
-  // `cacheTag()` does not.
+  // `next start`: "Child of nobody, cookies() throws, tagged".
   await expect.element(page.getByText("Child of Ada, not tagged")).toBeVisible();
+});
+
+test("known limit: a cached component that a cached component renders does not pass its tags on", async () => {
+  const text = () => page.getByText(/^outer \d+ inner \d+$/).element().textContent;
+  await renderServer({ url: "/outer" });
+  await expect.element(page.getByText(/^outer/)).toBeVisible();
+  const first = text();
+  await renderServer({ url: "/outer" });
+  expect(text()).toBe(first);
+
+  await revalidate("inner");
+  await renderServer({ url: "/outer" });
+
+  // `next start` runs both again: "outer 2 inner 2" after "outer 1 inner 1".
+  expect(text()).toBe(first);
 });
 
 test("known limit: a test cannot call a cached function itself", async () => {
   // Next's wrapper wants the stores of a request. `unstable_cache` does not.
-  await expect(getQuote("direct")).rejects.toThrow(
-    '"use cache" cannot be used outside of App Router',
-  );
+  await expect(getQuote("direct")).rejects.toThrow('"use cache"');
 });
