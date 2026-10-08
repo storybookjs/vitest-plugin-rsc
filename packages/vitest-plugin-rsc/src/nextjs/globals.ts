@@ -173,15 +173,28 @@ scope.AsyncLocalStorage ??= SequentialAsyncLocalStorage;
 
   // Node's own `Buffer` has these, and busboy reads the parts of a form with
   // them. Every layer has its own copy of the `Buffer` polyfill, and each is a
-  // Uint8Array.
-  const decoders = { latin1: "latin1", ascii: "latin1", utf8: "utf-8", ucs2: "utf-16le" };
-  for (const [encoding, label] of Object.entries(decoders)) {
+  // Uint8Array. Latin-1 is a character per byte, as Node has it. A
+  // `TextDecoder` of that name is windows-1252, with other characters for
+  // 0x80 to 0x9F: busboy reads the headers of a part through it, and the name
+  // of a file with a `テ` in it has such a byte.
+  const perByte = (mask: number) => (bytes: Uint8Array) => {
+    let text = "";
+    for (const byte of bytes) text += String.fromCharCode(byte & mask);
+    return text;
+  };
+  const decoders = {
+    latin1: perByte(0xff),
+    ascii: perByte(0x7f),
+    utf8: (bytes: Uint8Array) => new TextDecoder().decode(bytes),
+    ucs2: (bytes: Uint8Array) => new TextDecoder("utf-16le").decode(bytes),
+  };
+  for (const [encoding, decode] of Object.entries(decoders)) {
     if (`${encoding}Slice` in Uint8Array.prototype) continue;
     Object.defineProperty(Uint8Array.prototype, `${encoding}Slice`, {
       configurable: true,
       writable: true,
       value(this: Uint8Array, start?: number, end?: number) {
-        return new TextDecoder(label).decode(this.subarray(start, end));
+        return decode(this.subarray(start, end));
       },
     });
   }

@@ -1,4 +1,10 @@
-export type Note = { id: string; title: string; body: string; favorite?: boolean };
+export type Note = {
+  id: string;
+  title: string;
+  body: string;
+  favorite?: boolean;
+  attachment?: { name: string; text: string };
+};
 
 // Stands in for a database: tests seed it, spy on it and assert on it directly.
 export const db = {

@@ -12,6 +12,7 @@ import { FavoriteButton } from "./components/favorite-button.tsx";
 import { RouterState } from "./components/router-state.tsx";
 import { Shortcuts } from "./components/shortcuts.tsx";
 import { Widget } from "./components/widget.tsx";
+import { attachFile } from "./lib/actions.ts";
 import { db, type Note } from "./lib/notes.ts";
 import NotesPage from "./notes/page.tsx";
 
@@ -155,6 +156,26 @@ test("calls a Server Action from a Client Component and uses what it returns", a
 
   await expect.element(page.getByRole("button", { name: "Favorite", pressed: true })).toBeVisible();
   expect(db.notes.get("1")?.favorite).toBe(true);
+});
+
+test("gives a Server Action the file of a form, with a name that is not Latin-1", async () => {
+  db.notes.set("1", { id: "1", title: "Inbox triage", body: "" });
+  await renderServer(
+    <form action={attachFile.bind(null, "1")}>
+      <input type="file" name="file" aria-label="File" />
+      <button>Attach</button>
+    </form>,
+  );
+
+  // The bytes of `メ` in UTF-8 are E3 83 A1, and 0x83 is another character in
+  // windows-1252 than in Latin-1.
+  const file = new File(["hello"], "メモ.txt", { type: "text/plain" });
+  await page.getByLabelText("File").upload(file);
+  await page.getByRole("button", { name: "Attach" }).click();
+
+  await expect
+    .poll(() => db.notes.get("1")?.attachment)
+    .toEqual({ name: "メモ.txt", text: "hello" });
 });
 
 test("renders parallel routes", async () => {

@@ -28,6 +28,13 @@ export async function toggleFavorite(id: string): Promise<boolean> {
   return note.favorite;
 }
 
+export async function attachFile(id: string, formData: FormData) {
+  const note = db.notes.get(id);
+  const file = formData.get("file");
+  if (!note || !(file instanceof File)) throw new Error(`No file for note ${id}`);
+  note.attachment = { name: file.name, text: await file.text() };
+}
+
 export async function setLanguage(language: string) {
   (await cookies()).set("language", language);
 }
