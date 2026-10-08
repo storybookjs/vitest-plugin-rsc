@@ -60,6 +60,10 @@ const storages = [localStorage, sessionStorage].map(
   (storage) => [storage, new Set(Object.keys(storage))] as const,
 );
 
+// What Vitest's UI stores in the tab's origin as its settings change, also
+// while the tests run: its panels, and its dark mode through VueUse.
+const isVitestKey = (key: string) => key.startsWith("vitest-") || key === "vueuse-color-scheme";
+
 // The cookies the server has set, to forget them when the test ends.
 const cookiesToClear = new Set<string>();
 
@@ -175,9 +179,14 @@ async function sendRequest(
         });
       }
       url = new URL(location, url);
-      // 307 and 308 repeat the request; the others turn it into a GET, and
-      // the headers of a body go with the body.
-      if (response.status !== 307 && response.status !== 308) {
+      // As in `fetch`: a 301 or 302 turns a POST into a GET, a 303 anything
+      // but a GET or HEAD. The rest repeat the request. The headers of a body
+      // go with the body.
+      const { status } = response;
+      if (
+        ((status === 301 || status === 302) && method === "POST") ||
+        (status === 303 && method !== "GET" && method !== "HEAD")
+      ) {
         method = "GET";
         body = null;
         for (const name of ["encoding", "language", "location", "type"]) {
@@ -193,6 +202,10 @@ async function sendRequest(
       }
       if (url.origin !== window.location.origin) {
         if (navigation) throw leftTheApp(url);
+        // The credentials of the app's origin are not for another one: `fetch`
+        // drops them on such a redirect. A `cookie` header the browser's
+        // `fetch` drops itself.
+        sent.delete("authorization");
         return nativeFetch(url, { method, headers: sent, body });
       }
       continue;
@@ -226,6 +239,12 @@ export function handleRequest(input: RequestInfo | URL, init?: RequestInit): Pro
 const appFetch =
   (server: boolean): typeof fetch =>
   async (input, init) => {
+    // A server has no page to resolve a path against: Node's `fetch` rejects it.
+    if (server && !(input instanceof Request) && !URL.canParse(String(input))) {
+      throw new TypeError(`Failed to parse URL from ${String(input)}`, {
+        cause: new TypeError("Invalid URL"),
+      });
+    }
     const sent = sameOriginRequest(input, init);
     if (!sent) return nativeFetch(input, init);
     const headers = server
@@ -550,8 +569,12 @@ async function openPage(
   registry.browserRequire = (id) => registry.loadBrowserModule(id);
   // React's scheduler, Next's router and Next's dev overlay each leave
   // something on the tab when they load: see leftovers.ts. That is from here
-  // until `start()` says that Next's client has loaded. No module of the app
-  // loads in that time.
+  // until `start()` says that Next's client has loaded.
+  // This assumes that only the plugin's, React's and Next's code runs in that
+  // window, and no module of the app: the modules of the app wait for Next's
+  // client (see `start()` in client.tsx). A listener or channel
+  // of the app's that was added in it would be taken from the app when the
+  // page is left.
   const leftovers = [recordListeners(window), recordMessageChannels()];
   const loaded = () => leftovers.forEach((leftover) => leftover.stop());
   // The page counts as open from here, so that leaving it stops it, also
@@ -641,7 +664,9 @@ export async function cleanup(): Promise<void> {
   ssr.resetCaches();
   clearCookies();
   for (const [storage, keys] of storages) {
-    for (const key of Object.keys(storage)) if (!keys.has(key)) storage.removeItem(key);
+    for (const key of Object.keys(storage)) {
+      if (!keys.has(key) && !isVitestKey(key)) storage.removeItem(key);
+    }
   }
 }
 

@@ -34,7 +34,7 @@ The routes are listed the way `next build` lists its entries. Pages with the sam
 
 ### When Next Changes
 
-All of this is internal to Next, and it changes between minor versions. The build code's output names the runtime it was made for: the constants the runtime reads, the files an alias leads to, the arguments a template passes. So the plugin does not bring its own copy of Next's build code. It calls the build code of the installed `next`, from one place: `project.ts` and the files in `project/`, which are typed against Next's own declarations. `project/context.ts` names every file and export of Next's build that the plugin calls.
+All of this is internal to Next, and it changes between minor versions. The build code's output names the runtime it was made for: the constants the runtime reads, the files an alias leads to, the arguments a template passes. So the plugin does not bring its own copy of Next's build code. It calls the build code of the installed `next`, from one place: `project.ts` and the files in `project/`, which are typed against Next's own declarations. `project/context.ts` loads the modules of Next's build that the plugin calls, and an export that is gone fails with the message below where it is read.
 
 That code checks what the plugin relies on. It does so when a run starts, or for a loader when that loader is first used. The checks cover the build code, and the runtime that the plugin's own modules call in the tab. In the runtime it checks what would fail silently, or without saying why: a hook, a global, `document.currentScript`, what the `server-reference-info` shim replaces, the manifests. A static import of a name that is gone needs no check, because the module fails to link with a `SyntaxError` that names it. The check only reads the runtime's files and does not load them, because they run in the tab. A Next.js that differs stops the run with one message that gives the version and what is different.
 
@@ -62,7 +62,7 @@ That code checks what the plugin relies on. It does so when a run starts, or for
 | `server-reference-info` has the functions the plugin replaces for Vite RSC's ids                                                      | Next rejects the ids of Vite RSC's Server Actions                              |
 | The route module reads the manifests through `load-manifest.external`                                                                 | Next looks for a build's files in `.next/`                                     |
 
-A function that is still there but takes other arguments is not checked. A build-code function then fails with its own error at startup, and a runtime function fails when a test calls it. The check also cannot cover what Next's runtime does with these once a request comes in: a manifest field it starts to read, or a key it starts to require in the loader tree. That shows up as a failing test. For that reason CI runs both playgrounds against `next@latest` and `next@canary`.
+A function that is still there but takes other arguments is not checked. A build-code function then fails with its own error at startup, and a runtime function fails when a test calls it. The check also cannot cover what Next's runtime does with these once a request comes in: a manifest field it starts to read, or a key it starts to require in the loader tree. That shows up as a failing test. For that reason CI runs the two Next.js playgrounds against `next@latest` and `next@canary`.
 
 Next imports its Flight codec as `react-server-dom-webpack`. In the `rsc` layer that codec is Vite RSC's, through adapters that leave out Next's manifests. The layer has every export that the codec in the installed `next` has. An export that the plugin has no adapter for throws when it is called, and says so. A new export that nothing calls does not stop a run.
 
@@ -70,15 +70,15 @@ Next imports its Flight codec as `react-server-dom-webpack`. In the `rsc` layer 
 
 Next compiles an App Router app into three layers. Each has its own module graph and its own build of React:
 
-| Layer     | Runs                                              | React                | Vite environment |
-| --------- | ------------------------------------------------- | -------------------- | ---------------- |
-| `rsc`     | Server Components, Server Actions, route handlers | `react-server` build | `client`         |
-| `ssr`     | A page's request handler, the HTML renderer       | regular build        | `next_ssr`       |
-| `browser` | Next's router, your Client Components             | regular build        | `react_client`   |
+| Layer     | Runs                                                                   | React                | Vite environment |
+| --------- | ---------------------------------------------------------------------- | -------------------- | ---------------- |
+| `rsc`     | Server Components, Server Actions, route handlers                      | `react-server` build | `client`         |
+| `ssr`     | Next's route module, the HTML renderer, the server in front of the app | regular build        | `next_ssr`       |
+| `browser` | Next's router, your Client Components                                  | regular build        | `react_client`   |
 
 Here each layer is a Vite environment, with the aliases and constants Next gives that layer. All three run in the test's tab. That keeps the test white-box: the `db` your test seeds is the module instance the Server Component reads.
 
-Where Next's bundler config moves a module to another layer, the plugin does the same. The route module is created by the `rsc` layer but belongs to `ssr`. The route's request handler is in `ssr` and imports the page from `rsc`. Client Components load once for `ssr`, to render HTML, and once for `browser`. A route handler is entirely in `rsc`: its `route.ts`, its route module and its request handler.
+Where Next's bundler config moves a module to another layer, the plugin does the same. The route module is created by the `rsc` layer but belongs to `ssr`. The route's request handler is in `rsc` too, next to the page, and makes the route module with the `ssr` layer's class. Client Components load once for `ssr`, to render HTML, and once for `browser`. A route handler is entirely in `rsc`: its `route.ts`, its route module and its request handler.
 
 ## The Compiler
 
@@ -350,7 +350,7 @@ The server answers that question with its route resolution, without running anyt
 
 Everything else goes to the network right away: Vite's modules, files in `public/`, a service worker. A page load always belongs to the app: `renderServer()`, `handleRequest()` and a navigation get the not-found page for a URL that resolves to nothing.
 
-A `fetch` that the server makes to its own origin while it renders is chosen the same way, and goes through the proxy too. The server handles it right away, inside the request that waits for it, and follows a redirect, as a server's `fetch` does.
+A `fetch` that the server makes to its own origin while it renders is chosen the same way, and goes through the proxy too. The server handles it right away, inside the request that waits for it, and follows a redirect, as a server's `fetch` does. Like Node's `fetch`, it rejects a URL that is only a path.
 
 ### Without The Server In Front
 
@@ -416,7 +416,7 @@ A tab has a `window`, and a `fetch` that Next has not patched. A tab cannot lose
 - `typeof window` is replaced by `"undefined"`. `next build` does the same to the code it compiles for a server, and libraries rely on it to tell a server from a browser. The same goes for `typeof document`, `typeof location`, `typeof localStorage` and `typeof sessionStorage`, which are `"undefined"` on a server without help.
 - `fetch`, `Request` and `Response` are the server's, even when they are written as `globalThis.fetch`. So a `fetch` in your server code is the one Next patches: two calls for the same URL in one render are one request. The tab still makes the request, so the browser's rules for a request apply, like CORS.
 
-Nothing else is replaced. Code that reads `window.innerWidth` without checking `typeof window` first throws on a server, and reads the tab's `window` here.
+Apart from `setImmediate` and `clearImmediate`, which become the server's, nothing else is replaced. Code that reads `window.innerWidth` without checking `typeof window` first throws on a server, and reads the tab's `window` here.
 
 A Client Component is a module in two layers. It is told it has no `window` while Next renders it to HTML in `ssr`, and it has one in `browser`.
 

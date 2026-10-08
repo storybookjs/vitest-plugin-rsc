@@ -1,5 +1,5 @@
 import { cleanup, handleRequest, renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
-import { afterEach, beforeEach, expect, test, vi, type MockInstance } from "vitest";
+import { afterEach, beforeEach, expect, onTestFinished, test, vi, type MockInstance } from "vitest";
 import { page } from "vitest/browser";
 import { db, type Note } from "./lib/notes.ts";
 
@@ -328,6 +328,24 @@ test("starts every test without what the app stored in the tab", async () => {
 
   await renderServer({ url: "/settings" });
   await expect.element(page.getByRole("button", { name: "Theme: light" })).toBeVisible();
+});
+
+test("keeps what Vitest stores in the tab while the tests run", async () => {
+  // The dark mode of Vitest's UI may be set already: it is the developer's.
+  const colorScheme = localStorage.getItem("vueuse-color-scheme");
+  onTestFinished(() => {
+    localStorage.removeItem("vitest-ui_test-setting");
+    if (colorScheme === null) localStorage.removeItem("vueuse-color-scheme");
+    else localStorage.setItem("vueuse-color-scheme", colorScheme);
+  });
+  // Like the settings of Vitest's UI, which it stores when they change.
+  localStorage.setItem("vitest-ui_test-setting", "on");
+  localStorage.setItem("vueuse-color-scheme", colorScheme ?? "auto");
+
+  await cleanup();
+
+  expect(localStorage.getItem("vitest-ui_test-setting")).toBe("on");
+  expect(localStorage.getItem("vueuse-color-scheme")).toBe(colorScheme ?? "auto");
 });
 
 test("replaces the page when a component redirects in the render after a Server Action", async () => {
