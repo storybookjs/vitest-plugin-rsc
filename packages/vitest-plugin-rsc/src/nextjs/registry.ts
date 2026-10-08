@@ -23,6 +23,16 @@ export type RequestHandler = (
   context: { waitUntil?: (promise: Promise<unknown>) => void; requestMeta?: object },
 ) => Promise<unknown>;
 
+/**
+ * The request handler Next's build makes for the middleware of an app, its
+ * `proxy.ts`: it takes a `Request` and answers with a `Response`, on Node.js
+ * too.
+ */
+export type MiddlewareHandler = (
+  request: ServerRequest,
+  context: { waitUntil?: (promise: Promise<unknown>) => void; signal?: AbortSignal },
+) => Promise<Response>;
+
 type AnyFunction = (...args: any[]) => any;
 
 export type NextRegistry = {
@@ -31,6 +41,8 @@ export type NextRegistry = {
   Response: typeof Response;
   /** The server's `fetch`: its network, which is not the browser's. */
   fetch: typeof fetch;
+  /** The network itself: no request of it is the app's, and Next caches none. */
+  network: typeof fetch;
   /** Node's, for Next's server: a task after the microtasks. Not globals of the tab. */
   setImmediate(callback: (...args: any[]) => void, ...args: unknown[]): unknown;
   clearImmediate(id: unknown): void;
@@ -45,6 +57,8 @@ export type NextRegistry = {
   appPages: Record<string, unknown>;
   /** Loads the request handler of a route handler, which is in the rsc layer. */
   loadRouteHandler(page: string): Promise<RequestHandler>;
+  /** Loads the request handler of the middleware of the app, which is in the rsc layer. */
+  loadMiddleware(): Promise<MiddlewareHandler>;
   /** Whether an id names a Server Action of the app, in the rsc layer. */
   hasServerAction(id: string): Promise<boolean>;
   /**

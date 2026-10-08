@@ -43,6 +43,13 @@ const routeModules = [
   },
 ] as const;
 const [appPages] = routeModules;
+// The middleware of the app, in the rsc layer: a module that says how to load
+// it, if the app has one, and its request handler.
+const middlewareId = virtual("middleware");
+const middlewareEntryId = virtual("middleware-entry");
+// Next's route resolution, which the server in front of the app runs in the
+// ssr layer. Not a part of `next`: it is the project's, next to its `next`.
+const nextRouting = "@next/routing";
 // What the modules of a route are listed by: its page name, which the route
 // of a node shares with a page of the app.
 const entryOf = (route: { page: string; component?: string }) => route.component ?? route.page;
@@ -219,6 +226,13 @@ function createLayerResolver(getProject: () => NextProject, layer: NextLayer) {
           return nextFile(serverReferenceInfo);
         }
 
+        if (source === nextRouting) {
+          return this.resolve(source, path.join(getProject().root, "package.json"), {
+            ...options,
+            skipSelf: true,
+          });
+        }
+
         let specifier = source;
         // Relative imports between Next's own files, and the absolute paths
         // the dependency optimizer names its entries with.
@@ -384,13 +398,16 @@ const runtimeImports: Record<NextLayer, string[]> = {
     "next/dist/server/route-modules/app-page/module",
     "next/dist/server/lib/incremental-cache",
     "next/dist/server/lib/incremental-cache/tags-manifest.external",
+    // ssr.ts, for the server in front of the app
+    "next/dist/client/components/app-router-headers",
+    "next/dist/server/lib/is-rsc-request",
+    "next/dist/shared/lib/router/utils/route-matcher",
+    "next/dist/shared/lib/router/utils/route-regex",
     // node-server.ts
     "next/dist/server/lib/mock-request",
+    // node-server.ts and ssr.ts
     "next/dist/server/web/utils",
     "next/dist/compiled/stream-browserify",
-    "next/dist/shared/lib/router/utils/route-regex",
-    "next/dist/shared/lib/router/utils/route-matcher",
-    "next/dist/shared/lib/router/utils/sorted-routes",
     vendoredFlight("client.edge"),
   ],
   browser: [
@@ -465,7 +482,10 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
           ),
         );
         const entryImports = {
-          rsc: appPageEntries.flatMap(({ code }) => findImports(code)),
+          rsc: [
+            ...appPageEntries.flatMap(({ code }) => findImports(code)),
+            ...findImports((await project.loadMiddlewareEntry()) ?? ""),
+          ],
           // What node-server.ts imports is in `runtimeImports`.
           ssr: [] as string[],
         };
@@ -494,12 +514,15 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
         const clientBoundaries = findClientBoundaries(resolvers.rsc, rscInclude);
         const include: Record<NextLayer, string[]> = {
           rsc: rscInclude,
-          ssr: toInclude("ssr", [
-            ...entryImports.ssr,
-            ...apiImports("ssr"),
-            ...runtimeImports.ssr,
-            ...clientBoundaries,
-          ]),
+          ssr: [
+            ...toInclude("ssr", [
+              ...entryImports.ssr,
+              ...apiImports("ssr"),
+              ...runtimeImports.ssr,
+              ...clientBoundaries,
+            ]),
+            nextRouting,
+          ],
           browser: toInclude("browser", [
             ...apiImports("browser"),
             ...runtimeImports.browser,
@@ -600,6 +623,13 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
               `others: ${project.edgeRouteFiles.join(", ")}`,
           );
         }
+        if (project.unmatchedRoutes.length > 0) {
+          config.logger.warnOnce(
+            `vitest-plugin-rsc: @next/routing does not find a dynamic route under a folder with ` +
+              `a name that a URL percent-encodes. These routes get the not-found page: ` +
+              project.unmatchedRoutes.join(", "),
+          );
+        }
         const files = project.metadataFiles.filter((file) => path.basename(file) !== "favicon.ico");
         if (files.length === 0) return;
         const app = path.relative(process.cwd(), project.root) || path.basename(project.root);
@@ -622,6 +652,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
       },
       resolveId(source) {
         if (source === manifestId || routeModules.some(isRouteModule(source))) return `\0${source}`;
+        if (source === middlewareId || source === middlewareEntryId) return `\0${source}`;
         // TODO: run Next's metadata loaders for these inline loader requests.
         // Until then a page has no metadata from files: see configResolved.
         if (/^next-metadata-(image|route)-loader\?/.test(source)) return `${bridgePrefix}metadata`;
@@ -639,8 +670,23 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
           }));
           return (
             `export const routes = ${JSON.stringify([...routes, ...project.componentRoutes])};\n` +
-            `export const nextConfig = ${JSON.stringify(project.config)};\n`
+            `export const nextConfig = ${JSON.stringify(project.config)};\n` +
+            `export const routing = ${JSON.stringify(project.routing)};\n` +
+            `export const routesManifest = ${JSON.stringify(project.routesManifest)};\n`
           );
+        }
+
+        // Only the rsc layer has the middleware: see the route modules below.
+        const hasMiddleware =
+          project.middlewareFile !== undefined && this.environment.name === environmentOf.rsc;
+        if (id === `\0${middlewareId}`) {
+          const load = `() => import(${JSON.stringify(middlewareEntryId)})`;
+          return `export default ${hasMiddleware ? load : "undefined"};\n`;
+        }
+        if (id === `\0${middlewareEntryId}`) {
+          const code = hasMiddleware && (await project.loadMiddlewareEntry());
+          if (!code) return "export {};";
+          return serverCode.compile(code, "next-middleware-entry.js", definesOf(project, "rsc"));
         }
 
         const modules = routeModules.find(isRouteModule(id.slice(1)));

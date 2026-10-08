@@ -98,11 +98,14 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       # pnpm waits a day before it installs a new release; this job is for the
-      # release the tag names now.
+      # release the tag names now. The packages that go with `next` are at
+      # the version of that release: while Next publishes one, their tags
+      # name different releases for a moment.
       - name: Install Next.js ${{ matrix.next }}
         run: |
-          pnpm --filter nextjs-e2e-demo add --config.minimum-release-age=0 next@${{ matrix.next }}
-          pnpm --filter nextjs-notes-demo add --config.minimum-release-age=0 next@${{ matrix.next }} @next/env@${{ matrix.next }}
+          version=$(npm view next@${{ matrix.next }} version)
+          pnpm --filter nextjs-e2e-demo add --config.minimum-release-age=0 next@$version @next/routing@$version
+          pnpm --filter nextjs-notes-demo add --config.minimum-release-age=0 next@$version @next/env@$version @next/routing@$version
           pnpm --filter nextjs-e2e-demo exec node -p "'next@' + require('next/package.json').version"
       - run: pnpm exec playwright install --with-deps --only-shell chromium
       - run: pnpm build

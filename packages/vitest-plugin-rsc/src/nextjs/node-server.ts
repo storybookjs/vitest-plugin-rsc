@@ -1,6 +1,7 @@
 import { MockedResponse } from "next/dist/server/lib/mock-request";
+import type { RequestMeta } from "next/dist/server/request-meta";
 import { fromNodeOutgoingHttpHeaders, toNodeOutgoingHttpHeaders } from "next/dist/server/web/utils";
-import { nextConfig } from "virtual:vitest-plugin-rsc/next-manifest";
+import { nextConfig, routesManifest } from "virtual:vitest-plugin-rsc/next-manifest";
 import { Readable } from "virtual:vitest-plugin-rsc/node-stream";
 import { preview, restoreIncrementalCache } from "./cache.ts";
 import { registry, type RequestHandler, type ServerRequest } from "./registry.ts";
@@ -50,18 +51,8 @@ const buildManifest = {
 // The files of `.next/` that the route module of a page reads, by the end of
 // their path. What is not here is a file a build does not always write.
 const manifests: [suffix: string, manifest: () => unknown][] = [
-  [
-    "routes-manifest.json",
-    () => ({
-      version: 4,
-      caseSensitive: false,
-      basePath: nextConfig.basePath ?? "",
-      rewrites: { beforeFiles: [], afterFiles: [], fallback: [] },
-      redirects: [],
-      headers: [],
-      onMatchHeaders: [],
-    }),
-  ],
+  // The one Next's build makes: see `routesManifest` in project.ts.
+  ["routes-manifest.json", () => routesManifest],
   [
     "prerender-manifest.json",
     () => ({ version: 4, routes: {}, dynamicRoutes: {}, notFoundRoutes: [], preview }),
@@ -207,10 +198,22 @@ function createNodeResponse(request: ServerRequest) {
   return { res, response };
 }
 
+/**
+ * What the server in front of a route knows of a request that it routed: see
+ * `handle()` in ssr.ts.
+ */
+export type RoutedRequestMeta = Pick<RequestMeta, "params" | "query">;
+
 // What `next start` knows of a request before a route gets it: the URL the
-// browser asked for. Without it Next takes the server to be `localhost`.
-function requestMetaOf(request: ServerRequest) {
-  return { initURL: request.url, initProtocol: new URL(request.url).protocol.slice(0, -1) };
+// browser asked for, and what it made of that URL. Without the first Next
+// takes the server to be `localhost`.
+function requestMetaOf(request: ServerRequest, routed: RoutedRequestMeta = {}) {
+  return {
+    ...(routed.params && { params: routed.params }),
+    ...(routed.query && { query: routed.query }),
+    initURL: request.url,
+    initProtocol: new URL(request.url).protocol.slice(0, -1),
+  };
 }
 
 // Next's build lists the Server Actions of the app in a manifest. Here the
@@ -229,13 +232,17 @@ export async function handleRequest(
   request: ServerRequest,
   context: { waitUntil?: (promise: Promise<unknown>) => void },
   handler: RequestHandler,
+  routed?: RoutedRequestMeta,
 ): Promise<Response> {
   const { res, response } = createNodeResponse(request);
   // Next's route module makes a cache of its own for every request, and
   // leaves it in the global of the server's: see cache.ts.
   const handled = handler(createNodeRequest(request), res, {
     waitUntil: context.waitUntil,
-    requestMeta: { ...requestMetaOf(request), incrementalCache: globalThis.__incrementalCache },
+    requestMeta: {
+      ...requestMetaOf(request, routed),
+      incrementalCache: globalThis.__incrementalCache,
+    },
   }).finally(restoreIncrementalCache);
   return response(handled);
 }

@@ -124,6 +124,7 @@ registry.enterRequestScope = enterAmbientScope;
 // be the `fetch` of the page, which is the browser's.
 const nativeFetch = globalThis.fetch;
 registry.fetch = (input, init) => nativeFetch(input, init);
+registry.network = (input, init) => nativeFetch(input, init);
 
 // Node.js has these as globals. A browser tab has none of them.
 const scope = globalThis as Record<string, any>;

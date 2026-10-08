@@ -91,6 +91,7 @@
     "convert-source-map": "^2.0.0"
   },
   "devDependencies": {
+    "@next/routing": "16.4.0",
     "@types/convert-source-map": "^2.0.3",
     "@types/node": "^24.12.4",
     "@types/react": "^19.2.14",
@@ -103,6 +104,7 @@
     "vite": "^8.3.1"
   },
   "peerDependencies": {
+    "@next/routing": ">=16.4.0-0",
     "next": ">=16.4.0-0",
     "react": "*",
     "react-dom": "*",
@@ -110,6 +112,9 @@
     "vitest": ">=5.0.3"
   },
   "peerDependenciesMeta": {
+    "@next/routing": {
+      "optional": true
+    },
     "next": {
       "optional": true
     }

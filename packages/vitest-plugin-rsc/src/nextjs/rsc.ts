@@ -3,6 +3,7 @@ import * as ReactServer from "@vitejs/plugin-rsc/react/rsc";
 import { prerender } from "@vitejs/plugin-rsc/react/rsc/static";
 import * as FlightServer from "@vitejs/plugin-rsc/vendor/react-server-dom/server.edge";
 import appPages from "virtual:vitest-plugin-rsc/next-app-pages";
+import loadMiddleware from "virtual:vitest-plugin-rsc/next-middleware";
 import routeHandlers from "virtual:vitest-plugin-rsc/next-route-handlers";
 import type { FlightAdapters } from "./flight.ts";
 import { actionModulePrefix, registry } from "./registry.ts";
@@ -98,6 +99,11 @@ registry.loadRouteHandler = async (page) => {
   if (!load) throw new Error(`vitest-plugin-rsc: unknown Next.js route handler ${page}`);
   reportLoaded("route", page);
   return (await load()).handler;
+};
+
+registry.loadMiddleware = async () => {
+  if (!loadMiddleware) throw new Error("vitest-plugin-rsc: the app has no middleware");
+  return (await loadMiddleware()).handler;
 };
 
 declare global {
