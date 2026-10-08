@@ -330,11 +330,12 @@ Where the plugin runs something, it mostly runs it as Next does: 362 of the 374 
 
 **Bugs: 12 tests, 6 causes.** All are in the list above. Two of them are about what a page leaves in the tab that a browser drops with the page: the history, which a page load replaces an entry of, and global CSS, which stays. Two are about the server in front of the app: a header of Next's own that a request brings along, and a proxy that answers with a `Location` header, which `@next/routing` reads as a proxy that let the request through.
 
-**Not Yet: 69 tests.** Three of the causes are not in the list of `docs/next-routes.md`:
+**Not Yet: 69 tests.** The two largest causes are half of them:
 
 - **The Pages Router**, 20 tests. Fixtures of the App Router have a `pages/` directory to test the two together: its pages, and its API routes.
 - **React's development build**, 16 tests. A deployment sends the client a digest for an error of a Server Component, and the message is minified. Here the client gets the message, and Strict Mode runs an effect twice. That is `next dev` without its overlay, for errors, and `next start` for the rest.
-- **An `HttpOnly` cookie**, 1 test. The cookies of the server are the cookies of the tab, and a script of the page reads every one of those.
+
+Four causes are not in the "Not Yet" list of `docs/next-routes.md`: the Pages Router, the ids of Server Actions (4 tests), a builtin module of Node.js without a stand-in (2), and a prerendered page (2), which that document has under "The Node.js Runtime".
 
 **Not applicable: 41 tests.** Half of them are JavaScript off (10) and the output of a build (12).
 
