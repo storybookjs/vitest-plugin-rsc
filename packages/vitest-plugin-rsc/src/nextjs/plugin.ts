@@ -404,7 +404,18 @@ const runtimeImports: Record<NextLayer, string[]> = {
   ],
 };
 
-export type VitestPluginNextOptions = ServerCodeOptions;
+export type VitestPluginNextOptions = ServerCodeOptions & {
+  /**
+   * Lets watch mode, `vitest --changed` and `vitest related` find the test
+   * files of a route: a test that opens a route does not import its files.
+   * Off unless set. It leans on how Vitest works inside, so an update of
+   * Vitest can break it: see docs/next-routes.md, "Watch Mode".
+   *
+   * Without it an edit in watch mode runs every test file that opens a route,
+   * and `--changed` does not find the test files of a route.
+   */
+  affectedTests?: boolean;
+};
 
 export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[] {
   let project: NextProject;
@@ -418,19 +429,23 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
     ...createRunnerEnvironmentPlugins(environmentOf.ssr),
     // Watch mode and `vitest --changed` find the test files of a route. On
     // its own: nothing else here knows of it.
-    affectedTests({
-      environments: layers.map((layer) => environmentOf[layer]),
-      lists: routeModules.map(({ list }) => `\0${list}`),
-      modulesOf: (kind, entry) =>
-        [...project.routes, ...project.componentRoutes].flatMap((route, index) =>
-          route.kind === kind && entryOf(route) === entry
-            ? routeModules
-                .filter((modules) => modules.layer === "rsc")
-                .map(({ prefix }) => `\0${prefix}${index}`)
-            : [],
-        ),
-      next: getProject,
-    }),
+    ...(options.affectedTests
+      ? [
+          affectedTests({
+            environments: layers.map((layer) => environmentOf[layer]),
+            lists: routeModules.map(({ list }) => `\0${list}`),
+            modulesOf: (kind, entry) =>
+              [...project.routes, ...project.componentRoutes].flatMap((route, index) =>
+                route.kind === kind && entryOf(route) === entry
+                  ? routeModules
+                      .filter((modules) => modules.layer === "rsc")
+                      .map(({ prefix }) => `\0${prefix}${index}`)
+                  : [],
+              ),
+            next: getProject,
+          }),
+        ]
+      : []),
     {
       name: "vitest-plugin-rsc:next",
       enforce: "pre",

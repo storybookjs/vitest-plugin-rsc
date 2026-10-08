@@ -51,6 +51,8 @@ async function start(options: { related?: string[]; watch?: boolean }, hooks?: H
   return vitest;
 }
 
+const isTestFile = (file: string) => file.endsWith(".test.ts");
+
 const relevant = async (vitest: Vitest) =>
   (await vitest.getRelevantTestSpecifications()).map((spec) => path.basename(spec.moduleId)).sort();
 
@@ -67,7 +69,7 @@ test("answerLookup: Vitest keeps the test files that belong, and reads none of t
     { related: [at("changed.ts")] },
     {
       configureVitest({ vitest, project }) {
-        lookup = answerLookup(vitest, project, (testFile, changed) => {
+        lookup = answerLookup(vitest, project, isTestFile, (testFile, changed) => {
           asked.push(
             `${path.basename(testFile)} for ${[...changed].map((file) => path.basename(file)).join()}`,
           );
@@ -91,7 +93,7 @@ test("answerLookup: after forget, a test file is read as it is", async () => {
     {
       configureVitest(context) {
         project = context.project;
-        lookup = answerLookup(context.vitest, project, () => true);
+        lookup = answerLookup(context.vitest, project, isTestFile, () => true);
       },
       transform: (environment, id) => lookup.transform(environment, id),
     },
@@ -101,7 +103,7 @@ test("answerLookup: after forget, a test file is read as it is", async () => {
     (await project.vite.environments.ssr!.transformRequest(at("a.test.ts")))!;
   expect((await read()).code).not.toContain("one");
 
-  // What Vitest's command line does once it has the test files.
+  // What Vitest's command line does after the run.
   vitest.config.related = undefined;
   lookup!.forget();
 
@@ -138,16 +140,42 @@ test("onRuns: says when a test file ran whole, and when in part", async () => {
   expect(calls).toContainEqual(["testFileEnd", "a.test.ts", false]);
 });
 
-test("beforeWatchLookup: is asked for every file that changes, before the lookup", async () => {
-  const changes: string[] = [];
+test("beforeWatchLookup: is asked before Vitest looks up the test files of a change", async () => {
+  // Both test files import one module.
+  fs.writeFileSync(at("shared.ts"), "export {};\n");
+  for (const file of ["a.test.ts", "b.test.ts"]) {
+    fs.writeFileSync(at(file), `import "./shared.ts";\n${fs.readFileSync(at(file), "utf8")}`);
+  }
+  const asked: string[] = [];
+  const runs: string[][] = [];
   const vitest = await start(
     { watch: true },
-    { configureVitest: ({ vitest }) => beforeWatchLookup(vitest, (file) => changes.push(file)) },
+    {
+      configureVitest({ vitest, project }) {
+        onRuns(vitest, project, {
+          runStart: (testFiles) => runs.push(testFiles.map((file) => path.basename(file)).sort()),
+          testFileEnd() {},
+          runEnd() {},
+        });
+        beforeWatchLookup(vitest, (file) => {
+          asked.push(path.basename(file));
+          // In time for the lookup: one of the two no longer imports it.
+          for (const { moduleGraph } of Object.values(project.vite.environments)) {
+            for (const shared of moduleGraph.getModulesByFile(at("shared.ts")) ?? []) {
+              for (const test of moduleGraph.getModulesByFile(at("a.test.ts")) ?? []) {
+                shared.importers.delete(test);
+              }
+            }
+          }
+        });
+      },
+    },
   );
-  await vitest.start(["a.test.ts"]);
+  await vitest.start();
+  expect(runs).toEqual([["a.test.ts", "b.test.ts"]]);
 
-  vitest.vite.watcher.emit("change", at("changed.ts"));
-  vitest.vite.watcher.emit("change", at("a.test.ts"));
+  vitest.vite.watcher.emit("change", at("shared.ts"));
 
-  await expect.poll(() => changes).toEqual([at("changed.ts"), at("a.test.ts")]);
+  await expect.poll(() => runs).toEqual([["a.test.ts", "b.test.ts"], ["b.test.ts"]]);
+  expect(asked).toEqual(["shared.ts"]);
 });

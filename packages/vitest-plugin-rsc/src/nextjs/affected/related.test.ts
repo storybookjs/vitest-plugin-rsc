@@ -79,12 +79,12 @@ function start(related?: string[]) {
       config: { cacheDir: at("node_modules/.vite") },
       environments: { rsc: { moduleGraph: rsc }, browser: { moduleGraph: browser } },
     },
-    matchesTestGlob: (file: string) => file.endsWith(".test.tsx"),
   } as unknown as TestProject;
   const routes = relatedLookup(vitest as unknown as Vitest, project, {
     environments: ["rsc", "browser"],
     lists: ["list"],
     next: () => ({ root, appDir: at("app") }),
+    isTestFile: (file) => file.endsWith(".test.tsx"),
   });
   const reporter = config.reporters[0] as {
     onTestRunStart(specifications: TestSpecification[]): void;

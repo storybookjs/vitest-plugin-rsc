@@ -3,8 +3,9 @@ import path from "node:path";
 import { normalizePath } from "vite";
 import type { TestProject, Vitest } from "vitest/node";
 import { filesReachedFrom, modulesNamed, projectFiles, withImports } from "./dependencies.ts";
+import { loadedModules } from "./loaded.ts";
 import { fileHashes, hashOf, openRecord } from "./record.ts";
-import { answerLookup, onRuns } from "./vitest.ts";
+import { answerLookup, onRuns, vitestEnvironment } from "./vitest.ts";
 
 // `vitest --changed` and `vitest related`: which test files a changed file
 // belongs to, before anything has run.
@@ -36,6 +37,8 @@ export function relatedLookup(
     lists: string[];
     /** The project of Next. */
     next(): { root: string; appDir: string };
+    /** What the config of the project says is a test file. */
+    isTestFile(file: string): boolean;
   },
 ) {
   const root = normalizePath(project.config.root);
@@ -53,13 +56,13 @@ export function relatedLookup(
   );
 
   // The modules the test files of this run have loaded so far.
-  const loaded = new Map<string, Set<string>>();
+  const loaded = loadedModules();
   // Of this run, or of this lookup.
   let hash = fileHashes();
 
   const dependenciesOf = (testFile: string): string[] => {
     // Vitest's own environment has the global setup.
-    const graphs = [...options.environments, "__vitest__"].flatMap((environment) => {
+    const graphs = [...options.environments, vitestEnvironment].flatMap((environment) => {
       const graph = project.vite.environments[environment]?.moduleGraph;
       return graph ? [graph] : [];
     });
@@ -73,9 +76,9 @@ export function relatedLookup(
           ...[project.config.globalSetup ?? []].flat(),
           ...withImports(projectFiles(options.next())),
         ],
-        modules: [...(loaded.get(testFile) ?? [])].flatMap((module) =>
-          graphs.flatMap((graph) => modulesNamed(graph, module, root)),
-        ),
+        modules: loaded
+          .of(testFile)
+          .flatMap((name) => graphs.flatMap((graph) => modulesNamed(graph, name, root))),
       },
       // The list imports every route. The ones that count are the loaded ones.
       (id) => lists.has(id),
@@ -83,12 +86,12 @@ export function relatedLookup(
   };
 
   let lookedUp: ReadonlySet<string> | undefined;
-  const lookup = answerLookup(vitest, project, (testFile, changed) => {
+  const lookup = answerLookup(vitest, project, options.isTestFile, (testFile, changed) => {
     if (changed !== lookedUp) hash = fileHashes();
     lookedUp = changed;
     const files = record.of(relative(testFile));
     // Not written down. Another test file that changed runs on its own account.
-    if (!files) return [...changed].some((file) => !project.matchesTestGlob(file));
+    if (!files) return [...changed].some((file) => !options.isTestFile(file));
     return Object.entries(files).some(
       ([file, was]) => changed.has(absolute(file)) || hash(absolute(file)) !== was,
     );
@@ -99,7 +102,7 @@ export function relatedLookup(
       lookup.forget();
       hash = fileHashes();
       record.check();
-      for (const testFile of testFiles) loaded.delete(testFile);
+      for (const testFile of testFiles) loaded.forget(testFile);
     },
     testFileEnd(testFile, complete) {
       const files = complete ? dependenciesOf(testFile).sort() : undefined;
@@ -116,11 +119,7 @@ export function relatedLookup(
      * Modules that a test file has loaded without an import of its own: of a
      * route, or of a Server Action. Each by its id, its file or its URL.
      */
-    loaded(testFile: string, modules: string[]): void {
-      let all = loaded.get(testFile);
-      if (!all) loaded.set(testFile, (all = new Set()));
-      for (const id of modules) all.add(id);
-    },
+    loaded: loaded.add,
     transform: lookup.transform,
   };
 }

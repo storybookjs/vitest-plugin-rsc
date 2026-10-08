@@ -1,4 +1,4 @@
-import type { Plugin } from "vite";
+import { createFilter, type Plugin } from "vite";
 import type { TestProject, Vitest } from "vitest/node";
 import { loadedCommand, type LoadedKind } from "./command.ts";
 import { relatedLookup } from "./related.ts";
@@ -15,19 +15,28 @@ import { watchMode } from "./watch.ts";
 //   related.ts  `vitest --changed` and `vitest related`: the same, between
 //               runs, from what the last run wrote down
 //
-// Both are an addition to Vitest's lookup, not a part of how a route runs.
-// Without this directory every test passes as before, an edit in watch mode
+// Both are an addition to Vitest's lookup, not a part of how a route runs,
+// and off unless the `affectedTests` option of the plugin is set. Without
+// this directory every test passes as before, an edit in watch mode
 // runs every test file that opens a route, and `--changed` does not find the
 // test files of a route. To take it out:
 //
 //   - remove this directory;
-//   - in ../plugin.ts, remove `affectedTests()` from the plugins;
+//   - in ../plugin.ts, remove `affectedTests()` from the plugins, and the
+//     option of that name;
 //   - in ../rsc.ts, remove the calls of `reportLoaded()`;
 //   - in docs/next-routes.md, remove "Watch Mode", and in the README the two
 //     entries that point to it.
 //
-// One of the two goes by its line in `configureVitest` below. What leans on
-// the inside of Vitest is in vitest.ts, and nowhere else.
+//   - remove scripts/watch-probe.mjs and scripts/related-probe.mjs, and
+//     `affectedTests: true` from the configs of the playgrounds.
+//
+// What is written down stays behind in Vite's cache directory, as
+// `vitest-plugin-rsc/related-<project>.json`.
+//
+// To take out only watch mode, or only `--changed`, remove its line in
+// `configureVitest` below. What leans on the inside of Vitest is in
+// vitest.ts, and nowhere else.
 
 export type AffectedTestsOptions = {
   /** The Vite environments of the layers. The first has the test files. */
@@ -72,12 +81,18 @@ export function affectedTests(options: AffectedTestsOptions): Plugin {
     // Vitest's hook for a plugin of a project.
     configureVitest({ vitest, project }: { vitest: Vitest; project: TestProject }) {
       const [environment] = options.environments;
+      const { include, exclude, dir, root } = project.config;
+      // `test.include`, matched the way Vitest does. Not `includeSource`: a
+      // file with tests in its source is a file of the app.
+      const isTestFile = createFilter(include, exclude, { resolve: dir || root });
       parts.push(watchMode(vitest, project, { environment: environment!, lists: options.lists }));
-      parts.push(relatedLookup(vitest, project, options));
+      parts.push(relatedLookup(vitest, project, { ...options, isTestFile }));
     },
     transform(_, id) {
       const file = id.split("?")[0]!;
-      return parts.flatMap((part) => part.transform?.(this.environment.name, file) ?? [])[0];
+      // Each part is asked: one that answers has also told Vitest.
+      const answers = parts.map((part) => part.transform?.(this.environment.name, file));
+      return answers.find(Boolean);
     },
   } as Plugin;
 }

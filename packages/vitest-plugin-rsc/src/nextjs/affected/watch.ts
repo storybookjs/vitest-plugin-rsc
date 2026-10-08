@@ -1,5 +1,6 @@
 import type { TestProject, Vitest } from "vitest/node";
 import { modulesNamed } from "./dependencies.ts";
+import { loadedModules } from "./loaded.ts";
 import { beforeWatchLookup } from "./vitest.ts";
 
 // Watch mode: which test files to run again for a file that changed.
@@ -26,7 +27,7 @@ export function watchMode(
   },
 ) {
   // The modules each test file has loaded, since it last changed.
-  const loaded = new Map<string, Set<string>>();
+  const loaded = loadedModules();
   const graph = () => project.vite.environments[options.environment]?.moduleGraph;
 
   // A route by the id of its module, the module of a Server Action by its file.
@@ -37,12 +38,12 @@ export function watchMode(
   const testsOf = (testFile: string) => [...(graph()?.getModulesByFile(testFile) ?? [])];
 
   const unlink = (testFile: string) => {
-    for (const name of loaded.get(testFile) ?? []) {
+    for (const name of loaded.of(testFile)) {
       for (const loadedModule of named(name)) {
         for (const test of testsOf(testFile)) loadedModule.importers.delete(test);
       }
     }
-    loaded.delete(testFile);
+    loaded.forget(testFile);
   };
 
   const link = () => {
@@ -50,8 +51,8 @@ export function watchMode(
     for (const list of options.lists.flatMap(named)) {
       for (const route of list.importedModules) route.importers.delete(list);
     }
-    for (const [testFile, names] of loaded) {
-      for (const loadedModule of [...names].flatMap(named)) {
+    for (const testFile of loaded.testFiles()) {
+      for (const loadedModule of loaded.of(testFile).flatMap(named)) {
         for (const test of testsOf(testFile)) loadedModule.importers.add(test);
       }
     }
@@ -63,11 +64,5 @@ export function watchMode(
     link();
   });
 
-  return {
-    loaded(testFile: string, modules: string[]): void {
-      let all = loaded.get(testFile);
-      if (!all) loaded.set(testFile, (all = new Set()));
-      for (const id of modules) all.add(id);
-    },
-  };
+  return { loaded: loaded.add };
 }

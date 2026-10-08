@@ -5,6 +5,12 @@ import type { TestModule, TestProject, TestSpecification, Vitest } from "vitest/
 // than on something Vitest offers a plugin. An update of Vitest can break
 // these without an error, so vitest.test.ts runs each against the real one.
 
+/** The Vite environment Vitest follows the imports of a test file in. */
+const lookupEnvironment = "ssr";
+
+/** The Vite environment of Vitest's own code, and of the global setup. */
+export const vitestEnvironment = "__vitest__";
+
 /**
  * Watch mode: calls `prepare` for every file that changes, before Vitest
  * looks up its test files in Vite's module graph.
@@ -35,6 +41,7 @@ export function beforeWatchLookup(vitest: Vitest, prepare: (file: string) => voi
 export function answerLookup(
   vitest: Vitest,
   project: TestProject,
+  isTestFile: (file: string) => boolean,
   belongs: (testFile: string, changed: ReadonlySet<string>) => boolean,
 ) {
   // The changed files of a lookup, as they were before test files were added.
@@ -45,7 +52,7 @@ export function answerLookup(
     transform(environment: string, id: string): { code: string; map: null } | undefined {
       // Vitest sets `related` before it looks up, also for `--changed`.
       const related = vitest.config.related;
-      if (environment !== "ssr" || !related || !project.matchesTestGlob(id)) return;
+      if (environment !== lookupEnvironment || !related || !isTestFile(id)) return;
       let changed = changes.get(related);
       if (!changed) changes.set(related, (changed = new Set(related.map(normalizePath))));
       if (belongs(id, changed) && !related.includes(id)) related.push(id);
@@ -55,7 +62,7 @@ export function answerLookup(
 
     /** Vite keeps the result of a transform, and the empty one is only for the lookup. */
     forget(): void {
-      const graph = project.vite.environments.ssr?.moduleGraph;
+      const graph = project.vite.environments[lookupEnvironment]?.moduleGraph;
       for (const id of emptied) {
         for (const node of graph?.getModulesByFile(id) ?? []) graph!.invalidateModule(node);
       }

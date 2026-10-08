@@ -412,7 +412,9 @@ What is still to do on it:
 
 ## Watch Mode
 
-Watch mode, `vitest --changed` and `vitest related` are one addition to the plugin, in `src/nextjs/affected/`, with a plugin of its own. Nothing else knows of it: `plugin.ts` lists it, and `rsc.ts` tells it what a test file loads. Its `index.ts` says how to take it out, and what is left then: every test passes as before, an edit in watch mode runs every test file that opens a route, and `--changed` does not find the test files of a route.
+What follows is an option, and off unless `vitestPluginNext({ affectedTests: true })` sets it. Without it an edit in watch mode runs every test file that opens a route, and `vitest --changed` and `vitest related` do not find the test files of a route. With it they find the ones that loaded the file. It is off by default because it leans on how Vitest works inside, and because what it writes down between runs has the limits listed below.
+
+It is one addition to the plugin, in `src/nextjs/affected/`, with a plugin of its own. Nothing else knows of it: `plugin.ts` lists it, and `rsc.ts` tells it what a test file loads. Its `index.ts` says how to take it out of the code.
 
 What leans on the inside of Vitest, rather than on something Vitest offers a plugin, is in `affected/vitest.ts` and nowhere else: three functions, each with what it leans on. `affected/vitest.test.ts` runs them against the real Vitest, so an update that changes one of those fails a test.
 
