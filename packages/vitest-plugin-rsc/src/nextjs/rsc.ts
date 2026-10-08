@@ -2,12 +2,14 @@ import { createServerManifest } from "@vitejs/plugin-rsc/core/rsc";
 import * as ReactServer from "@vitejs/plugin-rsc/react/rsc";
 import { prerender } from "@vitejs/plugin-rsc/react/rsc/static";
 import * as FlightServer from "@vitejs/plugin-rsc/vendor/react-server-dom/server.edge";
+import { commands } from "vitest/browser";
 import appPages from "virtual:vitest-plugin-rsc/next-app-pages";
 import loadMiddleware from "virtual:vitest-plugin-rsc/next-middleware";
 import routeHandlers from "virtual:vitest-plugin-rsc/next-route-handlers";
 import type { FlightAdapters } from "./flight.ts";
 import { actionModulePrefix, registry } from "./registry.ts";
 import { reportLoaded } from "./affected/browser.ts";
+import { stylesheetsCommand, type Stylesheets } from "./styles-command.ts";
 
 // The rsc layer: Server Components, Server Actions, route handlers and the
 // Flight encoder.
@@ -84,6 +86,18 @@ registry.loadAppPage = async (page) => {
   if (!load) throw new Error(`vitest-plugin-rsc: unknown Next.js app page ${page}`);
   reportLoaded("page", page);
   return (registry.appPages[page] ??= await load());
+};
+
+// The stylesheets of a route are the plugin's to say, as they are a build's:
+// see styles.ts. Vitest adds which test file asks, for the route of a node.
+registry.loadStylesheets = (entry, inline) => {
+  const load = (
+    commands as unknown as Partial<
+      Record<string, (entry: string, inline: boolean) => Promise<Stylesheets>>
+    >
+  )[stylesheetsCommand];
+  if (!load) throw new Error("vitest-plugin-rsc: the browser has no command for the stylesheets");
+  return load(entry, inline);
 };
 
 /** The page module of the route of a node: see `loadNodeEntry()` in project/entries.ts. */

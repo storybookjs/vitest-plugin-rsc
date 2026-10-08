@@ -1,0 +1,17 @@
+{
+  "name": "styled-package",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./reset": {
+      "types": "./reset.d.ts",
+      "default": "./reset.css"
+    },
+    "./badge": "./badge.js",
+    "./client-badge": "./client-badge.js"
+  },
+  "peerDependencies": {
+    "react": "*"
+  }
+}

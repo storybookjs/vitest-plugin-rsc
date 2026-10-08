@@ -24,7 +24,12 @@ import { getRouteRegex } from "next/dist/shared/lib/router/utils/route-regex";
 import { routes as allRoutes, routing } from "virtual:vitest-plugin-rsc/next-manifest";
 import { shareIncrementalCache } from "./cache.ts";
 import { registerModuleLoader } from "./client-modules.ts";
-import { anyKey, handleRequest as handleWith, setServerActions } from "./node-server.ts";
+import {
+  anyKey,
+  handleRequest as handleWith,
+  setServerActions,
+  setStylesheets,
+} from "./node-server.ts";
 import {
   actionModulePrefix,
   registry,
@@ -438,24 +443,43 @@ async function handle(received: ServerRequest, unrouted: "not-found" | "pass"): 
       // Next's own request handler finds the params of the route, and
       // answers 500 for a route handler that throws.
       const handler = await registry.loadRouteHandler(page);
-      const response = await handleWith(routed, context, handler, requestMeta);
-      return finishWithBody(request, response, endRequest, routedHeaders);
+      const response = await handleWith(routed, context, handler, requestMeta, {
+        headers: routedHeaders,
+      });
+      return finishWithBody(request, response, endRequest, cookiesOf(routedHeaders));
     }
 
     setServerActions(await serverActionsOf(request.method, headers));
+    // Next's build also lists the CSS files of every segment, and Next reads
+    // that list before it loads the module of a segment. So they are asked
+    // for first.
+    // Next puts the CSS in the page only for a page load, not for its router,
+    // and decides so itself: this only spares compiling CSS it would not use.
+    const inline = !isRSCRequestHeader(headers.get(RSC_HEADER) ?? undefined);
+    setStylesheets(await registry.loadStylesheets(entry, inline));
 
     const { handler } = (await registry.loadAppPage(entry)) as { handler: RequestHandler };
     // Whoever routes a request to the not-found page sets its status, also
     // for a request to `/_not-found` itself. Before the route runs, as
     // `next start` does: Next reads the status while it renders, for the
     // `noindex` tag, and its action handler answers with one of its own.
-    const status = page === notFoundPage ? 404 : undefined;
-    const response = await handleWith(routed, context, handler, requestMeta, status);
-    return finishWithBody(request, response, endRequest, routedHeaders);
+    const statusCode = page === notFoundPage ? 404 : undefined;
+    const response = await handleWith(routed, context, handler, requestMeta, {
+      statusCode,
+      headers: routedHeaders,
+    });
+    return finishWithBody(request, response, endRequest, cookiesOf(routedHeaders));
   } catch (error) {
     endRequestScope();
     throw error;
   }
+}
+
+// The cookies of the headers the server in front of a route has.
+function cookiesOf(headers: Headers): Headers {
+  const cookies = new Headers();
+  for (const cookie of headers.getSetCookie()) cookies.append("set-cookie", cookie);
+  return cookies;
 }
 
 // Calls `onFinish` once the server has written the whole body, read or not.
@@ -498,7 +522,8 @@ function finishWithBody(
   }
 
   // The headers the server in front of the route has for the response, under
-  // the ones of the route itself. A cookie of either is set.
+  // the ones of the route itself. A cookie of either is set. A route of the
+  // app gets the others before it runs, see `handleWith()`: it adds to some.
   let { headers } = response;
   if (routedHeaders) {
     headers = new Headers(routedHeaders);

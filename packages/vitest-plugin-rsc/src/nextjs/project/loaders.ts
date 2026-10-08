@@ -3,6 +3,7 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import querystring from "node:querystring";
 import { compileFunction } from "node:vm";
+import type { CSSOptions } from "vite";
 import type { NextProject } from "../project.ts";
 import type { NextContext } from "./context.ts";
 
@@ -47,13 +48,40 @@ export type RunLoader = (
   ...input: unknown[]
 ) => Promise<unknown[]>;
 
+type PostCssHelpers = {
+  result: { opts: { from?: string } };
+  postcss(plugins: never[]): { process(root: never, options: { from: string }): { root: unknown } };
+};
+
+// A config of PostCSS that Next's webpack build does not read, and Turbopack
+// and Vite do: `postcss.config.ts`, `.postcssrc.yaml`, `.config/postcssrc`.
+function hasOtherPostCssConfig(root: string): boolean {
+  const names = (directory: string) => {
+    try {
+      return fs.readdirSync(directory);
+    } catch {
+      return [];
+    }
+  };
+  return (
+    names(root).some((name) => /^(?:\.postcssrc(?:\..+)?|postcss\.config\..+)$/.test(name)) ||
+    names(path.join(root, ".config")).some((name) => name.startsWith("postcssrc"))
+  );
+}
+
 /**
  * Next's webpack loaders for fonts and images, what they emit for the
  * browser, and Next's image optimizer.
  */
 export function createLoaders(context: NextContext): Pick<
   NextProject,
-  "isImage" | "loadImage" | "loadFont" | "readEmittedFile" | "optimizeImage"
+  | "isImage"
+  | "loadImage"
+  | "loadFont"
+  | "loadCssOptions"
+  | "assetPath"
+  | "readEmittedFile"
+  | "optimizeImage"
 > & {
   runLoader: RunLoader;
 } {
@@ -63,6 +91,11 @@ export function createLoaders(context: NextContext): Pick<
     getContentType,
     getExtension,
     getNextFontLoader,
+    getPostCssPlugins,
+    getSupportedBrowsers,
+    getCssModuleLoader,
+    localByDefault,
+    findConfig,
     imageOptimizer,
     nextFontLoader,
     nextImageLoader,
@@ -187,6 +220,93 @@ export function createLoaders(context: NextContext): Pick<
     return { css: String(list), exports: list.locals! };
   };
 
+  // Next's css-loader holds a CSS module to a mode: `pure` in Next's rule,
+  // where each selector has a class or an id of the module. Vite's has no
+  // such mode, so Next's own plugin for it checks a copy of the module, and
+  // the module stays Vite's to make. A Sass module too, which Vite has made
+  // CSS of by then.
+  const [cssModuleLoader] = (
+    getCssModuleLoader(
+      {
+        isClient: false,
+        isServer: true,
+        hasAppDir: true,
+        isAppDir: true,
+        isDevelopment: false,
+        // The rule of PostCSS, which is what the CSS is compiled with here.
+        experimental: { ...config.experimental, useLightningcss: false },
+      } as never,
+      postcss,
+    ) as {
+      loader?: string;
+      options?: { modules?: { mode?: unknown; getLocalIdent?: unknown } };
+    }[]
+  ).filter((entry) => entry.loader?.includes("css-loader"));
+  const rule = cssModuleLoader?.options?.modules;
+  const mode =
+    typeof rule?.mode === "string"
+      ? rule.mode
+      : fail("`getCssModuleLoader()` no longer gives css-loader the `mode` of a CSS module");
+  // The class name of a CSS module, of the same rule.
+  const getLocalIdent =
+    typeof rule?.getLocalIdent === "function"
+      ? (rule.getLocalIdent as (...args: unknown[]) => string)
+      : fail("`getCssModuleLoader()` no longer gives css-loader a `getLocalIdent`");
+  const checkMode = {
+    postcssPlugin: "vitest-plugin-rsc:next-css-module-mode",
+    Once(root: { clone(): never }, { result, postcss: process }: PostCssHelpers) {
+      const file = (result.opts.from ?? "").split("?")[0]!;
+      // As Next's rules for a CSS module and a Sass module.
+      if (!/\.module\.(?:css|scss|sass)$/.test(file)) return;
+      void process([localByDefault({ mode })]).process(root.clone(), { from: file }).root;
+    },
+  } as never;
+
+  // What Next's rules for CSS decide that is not bundling, for Vite, which
+  // bundles: the PostCSS plugins, read from the app's config as Next reads
+  // it, or Next's own when there is none; the mode of a CSS module; and the
+  // class name of a CSS module, as Next makes it. `@import` and `url()` are
+  // the bundler's, so Vite's. The browsers are those of a build. And what is
+  // done otherwise than by Next, to say so.
+  const loadCssOptions = async () => {
+    const { experimental } = config;
+    const differences: string[] = [];
+    if (experimental.useLightningcss) {
+      differences.push(
+        "`experimental.useLightningcss` is not supported: the CSS is compiled with PostCSS",
+      );
+    }
+    // Next's webpack build reads a config of PostCSS by these names. Its
+    // Turbopack build reads more, like `postcss.config.ts`, and so does Vite:
+    // such a config is then Vite's to read.
+    let postcss: CSSOptions["postcss"];
+    if ((await findConfig(root, "postcss")) || !hasOtherPostCssConfig(root)) {
+      const plugins = await getPostCssPlugins(
+        root,
+        getSupportedBrowsers(root, false),
+        experimental.disablePostcssPresetEnv,
+      );
+      // Plugins of PostCSS 8, which Next types with its own copy of PostCSS.
+      postcss = { plugins: [...(plugins as never[]), checkMode] };
+    } else {
+      differences.push(
+        "the app's PostCSS config is one only Vite reads: a CSS module is not held to Next's mode for it",
+      );
+    }
+    const options: CSSOptions = {
+      postcss,
+      modules: {
+        // A stylesheet the plugin links, or one it serves, has a query: the
+        // class names are those of the file. As `css-loader` calls it.
+        generateScopedName: (name, file) =>
+          getLocalIdent({ rootContext: root, resourcePath: file.split("?")[0]! }, undefined, name, {
+            context: root,
+          }),
+      },
+    };
+    return { options, differences };
+  };
+
   // Where the browser asks for the files the loaders emit. An asset prefix
   // with an origin is another server.
   const emittedPath = `${config.assetPrefix.startsWith("/") ? config.assetPrefix : ""}/_next/`;
@@ -214,6 +334,7 @@ export function createLoaders(context: NextContext): Pick<
       }
       return code as string;
     },
+    loadCssOptions,
     loadFont(request) {
       let font = fonts.get(request);
       if (!font) {
@@ -223,6 +344,7 @@ export function createLoaders(context: NextContext): Pick<
       }
       return font;
     },
+    assetPath: emittedPath,
     readEmittedFile(pathname) {
       if (!pathname.startsWith(emittedPath)) return;
       const name = pathname.slice(emittedPath.length);

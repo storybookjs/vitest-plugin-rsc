@@ -1,6 +1,8 @@
 packages:
   - "packages/*"
   - "playground/**"
+  # Packages that a playground installs as they would be from npm.
+  - "!playground/**/fixtures/**"
   - "conformance"
 allowBuilds:
   esbuild: true

@@ -10,6 +10,7 @@ import {
 import { Readable } from "virtual:vitest-plugin-rsc/node-stream";
 import { restoreIncrementalCache } from "./cache.ts";
 import { registry, type RequestHandler, type ServerRequest } from "./registry.ts";
+import type { Stylesheets } from "./styles-command.ts";
 
 // Next's server runs here as it does on Node.js, its default runtime. (Its
 // edge runtime, which is closer to a browser, is deprecated.) The renderer
@@ -31,6 +32,23 @@ export const anyKey = <T>(create: (key: string) => T) =>
     has: () => true,
   });
 
+// Next's build lists the CSS files of every layout, page and boundary, by the
+// file of the segment, and Next's renderer links them next to that segment.
+// Here the plugin says which they are, for the routes that were requested:
+// see styles.ts. The stylesheets of a file are the same in every route.
+type CssFile = { path: string; inlined: false } | { path: string; inlined: true; content: string };
+const stylesheets = new Map<string, CssFile[]>();
+export function setStylesheets(of: Stylesheets): void {
+  for (const [file, entries] of Object.entries(of)) {
+    stylesheets.set(
+      file,
+      entries.map(({ path, content }) =>
+        content === undefined ? { path, inlined: false } : { path, inlined: true, content },
+      ),
+    );
+  }
+}
+
 // Next's build writes a manifest of every client reference. For Vite RSC a
 // reference is its module id, so this one answers for any id.
 const clientReference = anyKey((id) => anyKey((name) => ({ id, name, chunks: [], async: true })));
@@ -39,7 +57,7 @@ const clientReferenceManifest = {
   clientModules: anyKey((id) => ({ id, name: "*", chunks: [], async: true })),
   ssrModuleMapping: clientReference,
   rscModuleMapping: clientReference,
-  entryCSSFiles: anyKey(() => []),
+  entryCSSFiles: anyKey((file) => stylesheets.get(file) ?? []),
   entryJSFiles: anyKey(() => []),
 };
 
@@ -238,13 +256,18 @@ export async function handleRequest(
   context: { waitUntil?: (promise: Promise<unknown>) => void },
   handler: RequestHandler,
   routed?: RoutedRequestMeta,
-  statusCode?: number,
+  { statusCode, headers }: { statusCode?: number; headers?: Headers } = {},
 ): Promise<Response> {
   const { res, response } = createNodeResponse(request);
-  // The status the server in front of the route has for the response, which
-  // `next start` sets the same way: `res.statusCode = 404`. The handler reads
-  // it, and can set another.
+  // The status and the headers the server in front of the route has for the
+  // response, which `next start` sets the same way: `res.statusCode = 404`,
+  // `res.setHeader()`. The handler reads them, and can set others, or add to
+  // them, like React's `Link` of the stylesheets of a page. Not the cookies,
+  // which a route can set over: see `finishWithBody()` in ssr.ts.
   if (statusCode !== undefined) res.statusCode = statusCode;
+  headers?.forEach((value, name) => {
+    if (name !== "set-cookie") res.setHeader(name, value);
+  });
   // Next's route module makes a cache of its own for every request, and
   // leaves it in the global of the server's: see cache.ts.
   const handled = handler(createNodeRequest(request), res, {

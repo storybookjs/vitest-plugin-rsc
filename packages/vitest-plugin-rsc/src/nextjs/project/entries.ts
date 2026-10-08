@@ -1,5 +1,7 @@
 import fs from "node:fs";
+import path from "node:path";
 import querystring from "node:querystring";
+import { parseAst } from "vite";
 import type { AppLoaderOptions } from "next/dist/build/webpack/loaders/next-app-loader/index.js";
 import type { ComponentRoute, NextProject, NextRoute } from "../project.ts";
 import type { NextContext } from "./context.ts";
@@ -27,15 +29,45 @@ export type AppLoaderContext = {
 const componentRoot = "(vitest-plugin-rsc)";
 // What the routes of a node with the layouts of the app are listed by.
 const componentLayouts = "(vitest-plugin-rsc-layouts)";
+/**
+ * What the loader tree of the route of a node names its page, where a page of
+ * the app has its file. Next looks up the stylesheets of the node by it.
+ */
+export const componentPagePath = "vitest-plugin-rsc/component";
 // The node as the page of a loader tree, and the import that goes with it:
 // see `loadComponent()` in rsc.ts.
-const componentPage = `page: [__next_component__, "vitest-plugin-rsc/component"]`;
+const componentPage = `page: [__next_component__, ${JSON.stringify(componentPagePath)}]`;
 const componentImport = `import { loadComponent as __next_component__ } from "vitest-plugin-rsc/nextjs/rsc";\n`;
 
 // Next's templates carry Turbopack-only import attributes. They mean nothing
 // to Vite and are a syntax error in a browser.
 function stripTurbopackTransitions(code: string): string {
   return code.replace(/\s+with\s*\{\s*['"]turbopack-transition['"]\s*:\s*['"][^'"]*['"]\s*\}/g, "");
+}
+
+// The files of the segments of a route, as Next's build finds them for their
+// CSS (`FlightClientEntryPlugin`): the imports of the route's entry by an
+// absolute path. Its loader imports the module of each layout, page and
+// boundary of the app by its file, and Next's own modules by a specifier.
+function segmentFilesOf(code: string): string[] {
+  const files = new Set<string>();
+  const visit = (node: unknown): void => {
+    if (!node || typeof node !== "object") return;
+    const { type, source } = node as { type?: string; source?: { type: string; value: unknown } };
+    if (
+      (type === "ImportDeclaration" || type === "ImportExpression") &&
+      source?.type === "Literal" &&
+      typeof source.value === "string" &&
+      path.isAbsolute(source.value)
+    ) {
+      files.add(source.value);
+    }
+    for (const value of Object.values(node)) {
+      if (value && typeof value === "object") visit(value);
+    }
+  };
+  visit(parseAst(code));
+  return [...files];
 }
 
 export function routeEntries(
@@ -163,7 +195,18 @@ export function routeEntries(
     } else {
       code = bindPageEntry(code, where);
     }
-    return { code, watchFiles: [...watchFiles].filter((file) => fs.existsSync(file)) };
+    const segmentFiles = route.kind === "page" ? segmentFilesOf(code) : [];
+    // The page of a route of the app is a file, also when its layouts are
+    // Next's own.
+    const pageFile = route.kind === "page" ? routeFile(route) : undefined;
+    if (pageFile && !segmentFiles.includes(pageFile)) {
+      fail(`${where} no longer imports the module of a page by its file`);
+    }
+    return {
+      code,
+      watchFiles: [...watchFiles].filter((file) => fs.existsSync(file)),
+      segmentFiles,
+    };
   };
 
   return {
@@ -195,11 +238,14 @@ export function routeEntries(
     ],
     async loadRouteEntry(route) {
       if (!("component" in route)) return loadAppRouteEntry(route);
-      if (!route.layouts) return { code: await loadNodeEntry(route), watchFiles: [] };
+      if (!route.layouts) {
+        return { code: await loadNodeEntry(route), watchFiles: [], segmentFiles: [] };
+      }
       // The entry of the app's route, with the node for its page: the tree
       // of Next's app loader names the page by its file.
       const appRoute = routes.find((candidate) => candidate.page === route.page)!;
-      const file = JSON.stringify(routeFile(appRoute)).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const pageFile = routeFile(appRoute)!;
+      const file = JSON.stringify(pageFile).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
       const entry = await loadAppRouteEntry(appRoute);
       const code = replace(
         entry.code,
@@ -207,7 +253,13 @@ export function routeEntries(
         componentPage,
         "the output of next-app-loader",
       );
-      return { code: componentImport + code, watchFiles: entry.watchFiles };
+      return {
+        code: componentImport + code,
+        watchFiles: entry.watchFiles,
+        // Without the page of the app, which the node stands in for. Its
+        // module is still imported, but never loaded.
+        segmentFiles: entry.segmentFiles.filter((segmentFile) => segmentFile !== pageFile),
+      };
     },
     async loadMiddlewareEntry() {
       if (!middleware || !middlewareFile) return;

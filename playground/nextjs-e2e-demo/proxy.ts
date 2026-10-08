@@ -37,6 +37,14 @@ export async function proxy(request: NextRequest) {
     return response;
   }
 
+  // Lets the request through with a `Link` header, next to the one Next
+  // sends for the stylesheets of the page.
+  if (pathname === "/styles") {
+    const response = NextResponse.next();
+    response.headers.set("link", '<https://example.com/styles>; rel="alternate"; hreflang="en"');
+    return response;
+  }
+
   // Every other request passes as it is.
 }
 

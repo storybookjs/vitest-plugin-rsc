@@ -12,6 +12,8 @@ import { RouterState } from "./components/router-state.tsx";
 import { Widget } from "./components/widget.tsx";
 import { db } from "./lib/notes.ts";
 import NotesPage from "./notes/page.tsx";
+import StylesPage from "./styles/page.tsx";
+import "./node.test.css";
 
 let consoleError: MockInstance<typeof console.error>;
 
@@ -59,6 +61,58 @@ test("renders a node in a container, without the layouts of the app", async () =
   // Hydrated by Next's router.
   await page.getByRole("button", { name: "Count: 0" }).click();
   await expect.element(page.getByRole("button", { name: "Count: 1" })).toBeVisible();
+});
+
+// The plugin cannot tell which components a node renders, so a node has the
+// CSS of what its test file imports, as with Vite in a component test.
+test("links the CSS of a node, of its Server and Client Components", async () => {
+  await renderServer(<StylesPage />);
+
+  await expect
+    .element(page.getByText("Styled by a global stylesheet"))
+    .toHaveStyle({ color: "rgb(0, 0, 255)" });
+  await expect
+    .element(page.getByText("Styled by a CSS module in a Server Component"))
+    .toHaveStyle({ color: "rgb(0, 128, 0)" });
+  await expect
+    .element(page.getByText("Styled by a CSS module in a Client Component"))
+    .toHaveStyle({ color: "rgb(128, 0, 0)" });
+
+  expect(getComputedStyle(document.body).backgroundColor).toBe("rgb(240, 240, 255)");
+
+  // Not on a page of the app that does not import it.
+  await renderServer({ url: "/notice" });
+  await expect.element(page.getByText("The office is closed on Friday.")).toBeVisible();
+  expect(getComputedStyle(document.body).backgroundColor).toBe("rgba(0, 0, 0, 0)");
+});
+
+test("links the CSS of a node in the layouts of a route, and that of the layouts", async () => {
+  await renderServer(<StylesPage />, { url: "/styles", layouts: true });
+
+  // Of the node.
+  await expect
+    .element(page.getByText("Styled by a CSS module in a Client Component"))
+    .toHaveStyle({ color: "rgb(128, 0, 0)" });
+  // Of the layout around it, which the test file does not import.
+  const section = page.getByText("Styled by a global stylesheet").element().closest("section");
+  expect(section && getComputedStyle(section).borderLeftColor).toBe("rgb(0, 0, 255)");
+});
+
+test("renders a node in a page with the CSS of the browser, and not that of Vitest's page", async () => {
+  await renderServer(<p>Plain</p>);
+
+  expect(getComputedStyle(document.body).margin).toBe("8px");
+});
+
+test("keeps the CSS that a test file imports itself, from one page to the next", async () => {
+  await renderServer(<p className="from-test">From the test</p>);
+  await expect.element(page.getByText("From the test")).toHaveStyle({ color: "rgb(255, 0, 255)" });
+
+  await renderServer({ url: "/notice" });
+  await renderServer(<p className="from-test">From the test again</p>);
+  await expect
+    .element(page.getByText("From the test again"))
+    .toHaveStyle({ color: "rgb(255, 0, 255)" });
 });
 
 test("renders a node at / when it gets no url, also where the app has a page", async () => {

@@ -586,7 +586,8 @@ async function openPage(
     container = undefined;
   }
   if (/^\s*<!doctype/i.test(html)) container = undefined;
-  loadDocument(html, response.url, container);
+  await loadDocument(html, response.url, container);
+  superseded();
   // A page load runs the app's scripts from scratch, so every page gets a
   // module graph of its own for the browser layer.
   const runner = createEnvironmentRunner("react_client");

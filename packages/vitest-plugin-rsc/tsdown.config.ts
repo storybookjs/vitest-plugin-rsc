@@ -14,6 +14,8 @@ export default defineConfig({
     "src/nextjs/ssr.ts",
     "src/nextjs/client.tsx",
   ],
+  // The page the tests run in, next to the plugin that names it.
+  copy: [{ from: "src/nextjs/tester.html", to: "dist/nextjs" }],
   format: ["esm"],
   fixedExtension: false,
   deps: {

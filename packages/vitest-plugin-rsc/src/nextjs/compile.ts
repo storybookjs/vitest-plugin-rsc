@@ -3,6 +3,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import path from "node:path";
 import { normalizePath, type Plugin } from "vite";
 import type { NextLayer, NextProject, ServeFile } from "./project.ts";
+import { linked } from "./styles.ts";
 
 // Before Next bundles the code of the app, its build compiles it: with its SWC
 // transform, and with webpack loaders for images and fonts. Here those run in
@@ -11,7 +12,7 @@ import type { NextLayer, NextProject, ServeFile } from "./project.ts";
 // does, and it answers `/_next/image` with Next's image optimizer.
 
 // A call of a `next/font` function: a module for what it returns, and one for
-// its CSS, which Vite puts in the page.
+// its CSS, which is a stylesheet of the segment that calls it (styles.ts).
 const fontPrefix = "\0vitest-plugin-rsc/next-font/";
 const fontRequest = /^next\/font\/(?:google|local)\/target\.css\?/;
 // The files next-swc-loader compiles, as far as Vite serves them as modules.
@@ -86,12 +87,14 @@ export function createCompilePlugin(
     },
     async load(id) {
       if (id.startsWith(fontPrefix)) {
-        const key = id.slice(fontPrefix.length).replace(/\.(?:js|css)$/, "");
+        // The CSS has a query: the one of a stylesheet that Next links.
+        const name = id.slice(fontPrefix.length).split("?")[0]!;
+        const key = name.replace(/\.(?:js|css)$/, "");
         const request = Buffer.from(key, "base64url").toString();
         const { css, exports } = await getProject().loadFont(request);
-        if (id.endsWith(".css")) return css;
+        if (name.endsWith(".css")) return css;
         return (
-          `import ${JSON.stringify(`${fontPrefix}${key}.css`)};\n` +
+          `import ${JSON.stringify(linked(`${fontPrefix}${key}.css`))};\n` +
           `export default ${JSON.stringify(exports)};\n`
         );
       }

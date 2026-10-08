@@ -1,0 +1,4 @@
+/* What a package of CSS has: an import of the package is a stylesheet. */
+.package-reset {
+  color: rgb(0, 128, 128);
+}
