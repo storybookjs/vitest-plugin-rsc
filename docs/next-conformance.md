@@ -13,13 +13,13 @@ Measured against `next@16.4.0`, with `pnpm conformance --docs`.
 |                                                     |         Tests |
 | --------------------------------------------------- | ------------: |
 | Run                                                 |           484 |
-| **Pass**                                            | **362** (75%) |
-| Fail: a bug in the plugin                           |            12 |
+| **Pass**                                            | **361** (75%) |
+| Fail: a bug in the plugin                           |            13 |
 | Fail: Not Yet                                       |            69 |
 | Fail: not applicable                                |            41 |
 | Skipped by the test itself, for a run like this one |             4 |
 
-Of the 443 tests that apply, 362 pass: **82%**.
+Of the 443 tests that apply, 361 pass: **81%**.
 
 ### Per Fixture
 
@@ -33,7 +33,7 @@ Of the 443 tests that apply, 362 pass: **82%**.
 | `hooks`                                           | 19 of 27 |     |       8 |     |         |
 | `use-params`                                      |   6 of 7 |     |       1 |     |         |
 | **Server Actions**                                |          |     |         |     |         |
-| `actions`                                         | 59 of 87 |     |       8 |  20 |       3 |
+| `actions`                                         | 58 of 87 |   1 |       8 |  20 |       3 |
 | `actions-navigation`                              |   2 of 2 |     |         |     |         |
 | `actions-revalidate-remount`                      |   1 of 1 |     |         |     |         |
 | `actions-unrecognized`                            |  8 of 20 |   6 |       4 |   2 |         |
@@ -69,7 +69,7 @@ Of the 443 tests that apply, 362 pass: **82%**.
 | `app-routes-trailing-slash`                       |   2 of 2 |     |         |     |         |
 | `redirect-rewrite-dynamic`                        |   1 of 2 |     |         |   1 |         |
 
-### A Bug In The Plugin: 12 Tests
+### A Bug In The Plugin: 13 Tests
 
 <details><summary>6 × A Server Action request to a path that is no route gets the not-found page, a 404. Next answers for the action: 400 or 409.</summary>
 
@@ -98,6 +98,12 @@ Of the 443 tests that apply, 362 pass: **82%**.
 <details><summary>1 × The not-found page of a path that is no route has no `<meta name="robots" content="noindex">`.</summary>
 
 - `metadata-navigation`: app dir - metadata navigation › navigation › should render root not-found with default metadata
+
+</details>
+
+<details><summary>1 × A form without a Server Action that the browser posts to `/` ends at `/?sessionId=…`: the page gets the query of the test's tab.</summary>
+
+- `actions`: app-dir action handling › should not log errors for non-action form POSTs
 
 </details>
 

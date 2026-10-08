@@ -16,6 +16,10 @@
       "category": "plugin-bug",
       "text": "The not-found page of a path that is no route has no `<meta name=\"robots\" content=\"noindex\">`."
     },
+    "form-post-keeps-tab-query": {
+      "category": "plugin-bug",
+      "text": "A form without a Server Action that the browser posts to `/` ends at `/?sessionId=…`: the page gets the query of the test's tab."
+    },
     "internal-request-headers": {
       "category": "plugin-bug",
       "text": "A header that only Next's own server sets on a request, like `x-middleware-set-cookie`, is not taken off a request that comes in. `next start` drops those."
@@ -166,7 +170,7 @@
       }
     },
     "actions": {
-      "passed": 59,
+      "passed": 58,
       "failed": {
         "app-action-form-state.test.ts > app-dir action useActionState > should support submitting form state without JS": "javascript-off",
         "app-action-form-state.test.ts > app-dir action useActionState > should support hydrating the app from progressively enhanced form request": "form-without-javascript",
@@ -182,6 +186,7 @@
         "app-action.test.ts > app-dir action handling > should error if server action arguments list is too long": "react-development-build",
         "app-action.test.ts > app-dir action handling > should support setting cookies when redirecting (no javascript)": "javascript-off",
         "app-action.test.ts > app-dir action handling > should replace current route when redirecting with type set to replace": "shared-history",
+        "app-action.test.ts > app-dir action handling > should not log errors for non-action form POSTs": "form-post-keeps-tab-query",
         "app-action.test.ts > app-dir action handling > should support notFound (javascript disabled)": "javascript-off",
         "app-action.test.ts > app-dir action handling > should support hoc auth wrappers": "react-development-build",
         "app-action.test.ts > app-dir action handling > should not block navigation events while a server action is in flight": "one-request-at-a-time",
