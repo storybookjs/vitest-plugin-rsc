@@ -125,6 +125,15 @@ export function loadDocument(html: string, url: string, container?: Element): vo
   for (const redirect of page.querySelectorAll('[id="__next-page-redirect"]')) {
     redirect.removeAttribute("http-equiv");
   }
+  // A script with a `src` does not run here: see below. React has the browser
+  // preload the one that starts the app, and in this document a preload is a
+  // request, for a file that is not there.
+  const sources = new Set(
+    Array.from(page.querySelectorAll<HTMLScriptElement>("script[src]"), (script) => script.src),
+  );
+  for (const link of page.querySelectorAll<HTMLLinkElement>('link[rel="preload"][as="script"]')) {
+    if (sources.has(link.href)) link.remove();
+  }
   if (container) {
     document.head.append(...page.head.childNodes);
     container.append(...page.body.childNodes);

@@ -8,6 +8,9 @@ import { createBuilder, createServer } from "vite";
 // Opens the host page in a browser and checks that the app runs in it: against
 // the dev server, or with `--build` against a static build. With `--base=./`
 // the build has that base, and is served from a directory of the site.
+//
+// A check fails on what it looks for, and on any error of the page: one that
+// is not caught, a `console.error`, a request that fails or gets a 4xx or 5xx.
 const root = fileURLToPath(new URL("./", import.meta.url));
 // The config imports the source of the plugin, which is TypeScript.
 const configLoader = "native";
@@ -289,7 +292,9 @@ try {
     });
     try {
       await check(page, host);
-      console.log(`ok   ${name}${errors.length ? `\n     ${errors.join("\n     ")}` : ""}`);
+      // Also what no check looks at: every file the page asks for is there.
+      if (errors.length > 0) throw new Error("the page had errors");
+      console.log(`ok   ${name}`);
     } catch (error) {
       failed = true;
       console.log(`FAIL ${name}\n     ${String(error)}\n     ${errors.join("\n     ")}`);
