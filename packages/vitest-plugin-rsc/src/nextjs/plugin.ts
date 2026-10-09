@@ -22,6 +22,7 @@ import { moduleFileAt } from "./project/context.ts";
 import { compileServerCode, createServerCode, type ServerCodeOptions } from "./server-code.ts";
 import { affectedTests } from "./affected/index.ts";
 import { createPathsPlugin } from "./paths.ts";
+import { createStylesPlugins } from "./styles.ts";
 
 // Each layer of Next is a Vite environment, and all three run in the
 // browser (docs/next-routes.md). Where Next's own bundler config says a module
@@ -81,6 +82,9 @@ const testingLibrary = {
   specifier: "vitest-plugin-rsc/nextjs/testing-library",
   file: ownFile("index"),
 };
+// The page the tests run in. Vitest puts a reset in its own, `body { margin:
+// 0 }`, and only in its own: a page of Next has the margin of the browser.
+const testerHtml = fileURLToPath(new URL("./tester.html", import.meta.url));
 
 // Next's server reference ids are 42 hex characters whose first byte says
 // which arguments the function uses. Vite RSC's are `<module>#<export>`. An
@@ -458,6 +462,8 @@ export type VitestPluginNextOptions = ServerCodeOptions & {
 
 export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[] {
   let project: NextProject;
+  // What the CSS of the app gets otherwise than from Next: see `loadCssOptions()`.
+  let cssDifferences: string[] = [];
   const serverCode = createServerCode(registry, options);
   // What a static build finds of the host: see build.ts.
   const hostReferences = createHostReferences();
@@ -591,10 +597,46 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
           },
         });
 
+        // Next's rules for CSS, unless the Vitest config has its own, which
+        // then wins, and is said to.
+        const css = await project.loadCssOptions();
+        cssDifferences = [...css.differences];
+        const cssOptions = { ...css.options };
+        if (config.css?.transformer === "lightningcss") {
+          // Then Vite runs no PostCSS at all.
+          delete cssOptions.postcss;
+          delete cssOptions.modules;
+          cssDifferences.push(
+            "`css.transformer` of the Vitest config compiles the CSS with Lightning CSS: not with " +
+              "Next's PostCSS plugins, its mode of a CSS module or its class names",
+          );
+        } else {
+          if (config.css?.postcss !== undefined) {
+            delete cssOptions.postcss;
+            cssDifferences.push(
+              "`css.postcss` of the Vitest config is used, not Next's PostCSS plugins, nor Next's " +
+                "mode of a CSS module",
+            );
+          }
+          // Also `false`, which turns CSS modules off.
+          if (config.css?.modules !== undefined) {
+            delete cssOptions.modules;
+            cssDifferences.push(
+              "`css.modules` of the Vitest config names the classes of a CSS module, not Next's rule",
+            );
+          }
+        }
+
         // Before the project's own setup files: one that imports a module of
         // Next's server needs the server's platform to be there.
-        const test = ((config as { test?: { setupFiles?: string | string[] } }).test ??= {});
+        const test = ((
+          config as {
+            test?: { setupFiles?: string | string[]; browser?: { testerHtmlPath?: string } };
+          }
+        ).test ??= {});
         test.setupFiles = [setupFile, ...[test.setupFiles ?? []].flat()];
+        // A page of the project's own wins.
+        (test.browser ??= {}).testerHtmlPath ??= testerHtml;
 
         // A build has no dependency optimizer: a dependency goes through
         // the plugins like a source file, and gets the constants of its layer
@@ -620,6 +662,9 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
           };
 
         return {
+          // Vite bundles the CSS of the app, with Next's PostCSS plugins and
+          // Next's class names of a CSS module.
+          css: cssOptions,
           environments: {
             [environmentOf.rsc]: {
               ...build("rsc"),
@@ -659,6 +704,9 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
       },
       // What the app has and does not get here: said once, when a run starts.
       configResolved(config) {
+        for (const difference of cssDifferences) {
+          config.logger.warnOnce(`vitest-plugin-rsc: ${difference}.`);
+        }
         if (project.edgeRouteFiles.length > 0) {
           config.logger.warnOnce(
             `vitest-plugin-rsc: Next.js has deprecated its edge runtime. These routes ask for ` +
@@ -776,6 +824,17 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
       built: hostReferences,
     }),
     serverCode.plugin({ [environmentOf.rsc]: "rsc", [environmentOf.ssr]: "ssr" }),
+    // The CSS of the app, as the stylesheets of a route.
+    ...createStylesPlugins({
+      getProject,
+      environments: environmentOf,
+      isServerCode: (file) => serverCode.isServerCode(file, "rsc"),
+      routeOf: (entry) =>
+        [...project.routes, ...project.componentRoutes].find(
+          (route) => route.kind === "page" && entryOf(route) === entry,
+        ),
+      lists: routeKinds.map((kind) => `\0${routeLists[kind]}`),
+    }),
     createCompilePlugin(
       getProject,
       (environment) => layers.find((layer) => environmentOf[layer] === environment),

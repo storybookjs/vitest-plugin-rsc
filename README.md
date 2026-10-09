@@ -160,7 +160,7 @@ test("wraps a node in a wrapper, which can be a Server Component", async () => {
 });
 ```
 
-`layouts: true` renders the node inside your app's layouts for that `url`, with everything they give it: providers, global CSS, and the data a layout reads.
+`layouts: true` renders the node inside your app's layouts for that `url`, with everything they give it: providers, global CSS, and the data a layout reads. Without it, a node has the CSS of what its test file and the setup files import: import the global CSS of your root layout in a setup file to have it there.
 
 ```tsx
 import { RouterState } from "./components/router-state.tsx";
@@ -380,7 +380,9 @@ export function NoteToolbar() {
 
 ### Request Headers And Cookies
 
-Pass request headers into `renderServer`. Inside Server Components and Server Actions, use Next's `headers()` and `cookies()` APIs as you normally would:
+Pass request headers into `renderServer`. Inside Server Components and Server Actions, use Next's `headers()` and `cookies()` APIs as you normally would.
+
+The headers go with every request the browser sends to your app from then on, not only the first one: Server Actions, `router.refresh()`, navigations, and `fetch` calls get them too, until the test opens something else or ends. That is what you want for a header that a server in front of your app adds to every request, like `x-forwarded-for`. A request keeps the headers it sets itself. Two headers are for the first request alone: `cookie`, after which the browser's cookies are sent, and `accept`.
 
 ```tsx
 import { expect, test } from "vitest";
@@ -549,7 +551,7 @@ const { response } = await renderServer({ url: "/" });
 expect(response.status).toBe(200);
 ```
 
-Cookies you set on `document.cookie` are sent with the request, and so are the `headers` you pass.
+Cookies you set on `document.cookie` are sent with the request, and so are the `headers` you pass. The headers go with every request of the page after it too, see [Request Headers And Cookies](#request-headers-and-cookies).
 
 ```tsx
 test("sends the cookies the test sets before it opens a page", async () => {
@@ -565,7 +567,7 @@ A URL that isn't a route gets your app's not-found page, with status `404`.
 
 ### Route Handlers
 
-`handleRequest(url, init)` sends one request to the app and resolves with the response. It takes what `fetch` takes. Use it when the response is what you assert on: a status, a header, the HTML, or the Flight payload. The request carries the browser's cookies, and the browser stores the cookies the server sets.
+`handleRequest(url, init)` sends one request to the app and resolves with the response. It takes what `fetch` takes. Use it when the response is what you assert on: a status, a header, the HTML, or the Flight payload. The request carries the browser's cookies, and the browser stores the cookies the server sets. It carries the `headers` of what `renderServer` opened too, under its own.
 
 Route handlers (`app/**/route.ts`) are served too, and `handleRequest` is how a test calls one:
 
@@ -904,7 +906,7 @@ The options for a node, all optional:
 | Option        | What it does                                                                                        |
 | ------------- | --------------------------------------------------------------------------------------------------- |
 | `url`         | The request URL. Defaults to `/`. The params are the ones your app's route has for it.              |
-| `headers`     | Request headers, on top of the ones a browser sends.                                                |
+| `headers`     | Request headers, on top of the ones a browser sends. Sent with every request, also after the first. |
 | `wrapper`     | A component that wraps the node on the server. It can be a Server Component.                        |
 | `proxy`       | `true` runs `proxy.ts` and the routing of `next.config` for the request, as for a route.            |
 | `layouts`     | `true` renders the node in place of the page at `url`, inside your app's layouts.                   |

@@ -13,6 +13,8 @@ function hitsService(): Plugin {
   return {
     name: "nextjs-e2e-demo:hits-service",
     configureServer(server) {
+      // A server that takes a request and never answers it.
+      server.middlewares.use("/service/never", () => {});
       server.middlewares.use("/service/hits", (request, response) => {
         const key = new URL(request.url ?? "/", "http://localhost").searchParams.get("key") ?? "";
         hits.set(key, (hits.get(key) ?? 0) + 1);

@@ -48,18 +48,23 @@ function sameOriginRequest(
   return { url, method, headers, marked: headers.has("rsc") || headers.has("next-action") };
 }
 
+// The `headers` of `renderServer()`, which go with every request the browser
+// sends to the app from then on: until the test opens something else, or ends.
+let pageHeaders: Headers | undefined;
+
 // What a browser adds to a request for the app's origin.
 function browserHeaders(headers: Headers, url: URL, method: string): Headers {
   headers.set("host", url.host);
+  pageHeaders?.forEach((value, name) => {
+    if (!headers.has(name)) headers.set(name, value);
+  });
   if (!headers.has("user-agent")) headers.set("user-agent", navigator.userAgent);
-  if (method !== "GET" && method !== "HEAD") headers.set("origin", url.origin);
+  if (method !== "GET" && method !== "HEAD" && !headers.has("origin")) {
+    headers.set("origin", url.origin);
+  }
   if (!headers.has("cookie") && document.cookie) headers.set("cookie", document.cookie);
   return headers;
 }
-
-// A test's own timers may be fake.
-const setTimeout = globalThis.setTimeout;
-const clearTimeout = globalThis.clearTimeout;
 
 // What a test leaves behind is the app's to forget: a test runs as a new
 // browser context. Another host runs the app next to state of its own, on the
@@ -275,7 +280,8 @@ async function sendRequest(
  * of the app would. Use it to assert on a response itself: its status, its
  * headers, its HTML or Flight body.
  *
- * The request carries the browser's cookies, unless it has a `cookie` header.
+ * The request carries the browser's cookies, unless it has a `cookie` header,
+ * and the `headers` of what `renderServer()` opened, under its own.
  * One to the pathname of what `renderServer()` opened is that page's, as a
  * `fetch` of the page is: it gets the route of the node, and skips the proxy
  * if the page does.
@@ -334,7 +340,14 @@ let currentLoad: AbortController | undefined;
 type RequestOptions = {
   /** The URL to open. Defaults to `/`. */
   url?: string;
-  /** Headers for the request of the document, next to the ones a browser sends. */
+  /**
+   * Headers for the requests of the browser to the app, next to the ones a
+   * browser sends: the request of the document, and every one after it, like
+   * a Server Action, a `router.refresh()`, a navigation or a `fetch`. Until
+   * the test opens something else, or ends. A request keeps the headers it
+   * sets itself. A `cookie` and an `accept` header are for the document alone:
+   * after it the browser's cookies are sent, and what each request accepts.
+   */
   headers?: HeadersInit;
 };
 
@@ -359,7 +372,7 @@ export type RenderServerOptions = RequestOptions & {
 export type RenderServerResult = {
   /** The server's response to the request of the document. */
   response: Response;
-  /** Leaves the page. The cookies stay until the test ends. */
+  /** Leaves the page. The cookies and the `headers` stay until the test ends. */
   unmount(): Promise<void>;
 };
 
@@ -462,6 +475,11 @@ export async function renderServer(
   const options: RenderComponentOptions = (isOptions(first) ? first : second) ?? {};
   const url = new URL(options.url ?? "/", window.location.origin);
   const headers = new Headers(options.headers);
+  // The cookies of the requests after the document are the browser's, and
+  // each of them says itself what it accepts.
+  const sticky = new Headers(headers);
+  sticky.delete("cookie");
+  sticky.delete("accept");
   if (!headers.has("accept")) headers.set("accept", "text/html");
   const { pathname } = url;
   if (isOptions(first)) {
@@ -473,7 +491,10 @@ export async function renderServer(
       );
     }
     const opened = { pathname, proxy: first.proxy ?? true };
-    return { response: await loadPage(url, { headers }, { opened }), unmount: leavePage };
+    return {
+      response: await loadPage(url, { headers }, { opened, headers: sticky }),
+      unmount: leavePage,
+    };
   }
 
   // A node of the browser layer is not the server's to render: the server
@@ -493,6 +514,7 @@ export async function renderServer(
     }
     const opening: Opening = {
       opened: { pathname, proxy, node: { ui, layouts: true } },
+      headers: sticky,
       clientNode,
     };
     const response = await loadPage(url, { headers }, opening);
@@ -539,6 +561,7 @@ export async function renderServer(
   const opening: Opening = {
     container,
     opened: { pathname, proxy, node: { ui, layouts: false } },
+    headers: sticky,
     clientNode,
   };
   const response = await loadPage(url, { headers }, opening);
@@ -648,6 +671,8 @@ function isOptions(value: unknown): value is RenderServerOptions {
 type Opening = {
   container?: Element;
   opened: Opened;
+  /** The `headers` of `renderServer()`, for every request of the page: see `pageHeaders`. */
+  headers: Headers;
   /** The node of the browser layer that the node of `opened` renders. */
   clientNode?: ClientNode;
   /** Set once the page has loaded: whether the server rendered that node. */
@@ -670,6 +695,8 @@ async function loadPage(url: URL, init: RequestInit, opening?: Opening): Promise
   }
   const opened = (registry.opened = opening?.opened);
   setClientNode(opening?.clientNode);
+  // A page the app loads itself keeps the headers of what the test opened.
+  if (opening) pageHeaders = opening.headers;
   try {
     return await openPage(url, init, load.signal, opening);
   } catch (error) {
@@ -733,7 +760,8 @@ async function openPage(
     opening.showsClientNode =
       registry.opened === opening.opened && html.includes(clientNodeReference);
   }
-  loadDocument(html, response.url, container);
+  await loadDocument(html, response.url, container);
+  superseded();
   // A page load runs the app's scripts from scratch, so every page gets a
   // module graph of its own for the browser layer. With a client file loaded
   // that is the graph the file imports from: see client-graph.ts.
@@ -763,7 +791,7 @@ async function openPage(
       environmentModule("react_client", "vitest-plugin-rsc/nextjs/client"),
     );
     superseded();
-    return client.start(loaded, container);
+    return client.start(loaded, container, signal);
   })();
   page = { started: started.catch(() => {}), unmount: () => leave() };
   try {
@@ -787,6 +815,12 @@ async function openPage(
 
 // One at a time: a page that is being left is left before the next one is.
 let leaving: Promise<void> = Promise.resolve();
+// How long leaving a page waits for it to stop starting, at most: less than
+// the 30 seconds of a hook in Browser Mode, so that this says why it waits.
+const startTimeout = 20_000;
+// A test's own timers may be fake.
+const setTimeout = globalThis.setTimeout;
+const clearTimeout = globalThis.clearTimeout;
 
 function leavePage(): Promise<void> {
   currentLoad?.abort(new DOMException("The page was left before it had loaded.", "AbortError"));
@@ -797,16 +831,23 @@ function leavePage(): Promise<void> {
   const gone = leaving
     .catch(() => {})
     .then(async () => {
-      // An app that is still starting cannot be stopped, and would go on to
-      // hydrate the next page with the client code of this one. It is about
-      // done: the document it starts from is already there.
+      // An app that is still starting would go on to hydrate the next page
+      // with the client code of this one. The abort above stops it, and it is
+      // gone once `started` has settled: see `start()` in client.tsx. Until
+      // then it may still load Next's client, which reads the payload of the
+      // document it finds. Only a load that hangs takes long.
       let timeout: ReturnType<typeof setTimeout> | undefined;
-      await Promise.race([
-        left?.started,
-        new Promise((resolve) => (timeout = setTimeout(resolve, 5000))),
+      const stopped = await Promise.race([
+        left?.started.then(() => true),
+        new Promise<false>((resolve) => (timeout = setTimeout(resolve, startTimeout, false))),
       ]);
-      // A timer that is still set keeps the page until it fires.
       clearTimeout(timeout);
+      if (stopped === false) {
+        console.warn(
+          `vitest-plugin-rsc: the page that was left was still loading its client code ` +
+            `${startTimeout / 1000}s later. The next page loads anyway.`,
+        );
+      }
       try {
         left?.unmount();
       } finally {
@@ -836,8 +877,8 @@ function leavePage(): Promise<void> {
 
 /**
  * Leaves the page that `renderServer()` opened, removes the containers it made
- * and forgets the browser's cookies and what the app put in its storage, like a
- * new browser context. The server forgets what it has cached. Runs before and
+ * and forgets its `headers`, the browser's cookies and what the app put in its
+ * storage, like a new browser context. The server forgets what it has cached. Runs before and
  * after every test.
  *
  * Outside Vitest it forgets only what the app added: the cookies its server
@@ -848,6 +889,7 @@ export async function cleanup(): Promise<void> {
   await leavePage();
   for (const container of containers) container.remove();
   containers.clear();
+  pageHeaders = undefined;
   ssr.resetCaches();
   clearCookies();
   clearStorage();

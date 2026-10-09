@@ -151,6 +151,20 @@ export async function openNextProject(
   const { getNextFontLoader } = load<
     typeof import("next/dist/build/webpack/config/blocks/css/loaders/next-font.js")
   >("build/webpack/config/blocks/css/loaders/next-font");
+  const { getPostCssPlugins } = load<
+    typeof import("next/dist/build/webpack/config/blocks/css/plugins.js")
+  >("build/webpack/config/blocks/css/plugins");
+  const { findConfig } = load<typeof import("next/dist/lib/find-config.js")>("lib/find-config");
+  const { getCssModuleLoader } = load<
+    typeof import("next/dist/build/webpack/config/blocks/css/loaders/modules.js")
+  >("build/webpack/config/blocks/css/loaders/modules");
+  // The PostCSS plugin of Next's css-loader that holds a CSS module to its mode.
+  const localByDefault = load<(options: { mode: string }) => never>(
+    "compiled/postcss-modules-local-by-default/index",
+  );
+  const { getSupportedBrowsers } = load<typeof import("next/dist/build/get-supported-browsers.js")>(
+    "build/get-supported-browsers",
+  );
   const nextFontLoader = load<
     typeof import("next/dist/build/webpack/loaders/next-font-loader/index.js")
   >("build/webpack/loaders/next-font-loader/index").default as unknown as Loader;
@@ -280,6 +294,11 @@ export async function openNextProject(
       nextImageLoaderRegex,
       nextImageLoader,
       getNextFontLoader,
+      getPostCssPlugins,
+      getSupportedBrowsers,
+      getCssModuleLoader,
+      localByDefault,
+      findConfig,
       nextFontLoader,
       imageOptimizer,
       loadCustomRoutes,

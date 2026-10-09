@@ -107,6 +107,11 @@ export const ClientNode: unknown = ReactServer.registerClientReference(
   "ClientNode",
 );
 
+// The stylesheets of a route are the plugin's to say, as they are a build's:
+// see styles.ts. Under Vitest a command says them, which knows the test file
+// that asks: see setup.ts. Another host has none yet.
+registry.loadStylesheets = async () => ({});
+
 /** The page module of the route of a node: see `loadNodeEntry()` in project/entries.ts. */
 export async function loadComponent(): Promise<{ default: () => unknown }> {
   return {

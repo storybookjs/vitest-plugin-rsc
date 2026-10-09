@@ -3,6 +3,7 @@ import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { preprocessCSS, resolveConfig } from "vite";
 import { onTestFinished, expect, test, vi } from "vitest";
 import { flightBridge } from "./flight.ts";
 import { vitestPluginNext } from "./plugin.ts";
@@ -169,6 +170,77 @@ test("rejects an interception route without the route it intercepts, as `next bu
   await expect(loadNextProject(app, installed)).rejects.toThrow(
     "- /(.)photo/[id] (expected /photo/[id])",
   );
+});
+
+test("compiles CSS with the PostCSS plugins of Next, its own for an app without a config", async () => {
+  const project = await loadNextProject(appWith(["layout.js", "page.js"]), installed);
+
+  const { options, differences } = await project.loadCssOptions();
+
+  // `postcss-flexbugs-fixes` and `postcss-preset-env`, of Next's own, and the
+  // check of the mode of Next for a CSS module.
+  const { plugins } = options.postcss as { plugins: { postcssPlugin?: string }[] };
+  expect(plugins).toHaveLength(3);
+  expect(plugins.at(-1)?.postcssPlugin).toBe("vitest-plugin-rsc:next-css-module-mode");
+  expect(differences).toEqual([]);
+});
+
+test("leaves a config of PostCSS that Next's webpack build does not read to Vite", async () => {
+  // Turbopack reads it, and so does Vite.
+  const app = appWith(["layout.js", "page.js"]);
+  fs.writeFileSync(path.join(app, "postcss.config.ts"), "export default { plugins: {} };");
+  const project = await loadNextProject(app, installed);
+
+  expect((await project.loadCssOptions()).options.postcss).toBeUndefined();
+});
+
+test("holds a CSS module to the mode of Next, `pure`, as Next's build does", async () => {
+  const app = appWith(["layout.js", "page.js"]);
+  const project = await loadNextProject(app, installed);
+  const { options } = await project.loadCssOptions();
+  // Vite's own pipeline of CSS, in which the check has to see the module
+  // before Vite's `postcss-modules` scopes it.
+  const config = await resolveConfig({ root: app, configFile: false, css: options }, "serve");
+  const compile = (css: string, file: string) => preprocessCSS(css, path.join(app, file), config);
+
+  await expect(compile("body { color: red }", "app/card.module.css?next-linked")).rejects.toThrow(
+    /Selector "body" is not pure/,
+  );
+  await expect(compile(":global(.card) { color: red }", "app/card.module.css")).rejects.toThrow(
+    /is not pure/,
+  );
+  await expect(compile(".card { color: red }", "app/card.module.css")).resolves.toBeDefined();
+  // As in Next, a comment lets a module have a global selector.
+  await expect(
+    compile("/* cssmodules-pure-no-check */\nbody { color: red }", "app/card.module.css"),
+  ).resolves.toBeDefined();
+  // Global CSS may have any selector.
+  await expect(compile("body { color: red }", "app/global.css")).resolves.toBeDefined();
+});
+
+test("names a class of a CSS module as Next's build does", async () => {
+  const app = appWith(["layout.js", "page.js"]);
+  const project = await loadNextProject(app, installed);
+  const { modules } = (await project.loadCssOptions()).options;
+  const name = (modules as { generateScopedName(name: string, file: string): string })
+    .generateScopedName;
+
+  expect(name("card", path.join(app, "app/card.module.css?next-linked"))).toMatch(
+    /^card_card__[\w-]{5}$/,
+  );
+  // `[folder]` of a file at the root of the project is empty.
+  expect(name("card", path.join(app, "index.module.css"))).toMatch(/^_card__[\w-]{5}$/);
+});
+
+test("says when the CSS is compiled otherwise than by Next", async () => {
+  const app = appWith(["layout.js", "page.js"], {
+    experimental: { useLightningcss: true, inlineCss: true },
+  });
+  const project = await loadNextProject(app, installed);
+
+  expect((await project.loadCssOptions()).differences).toEqual([
+    "`experimental.useLightningcss` is not supported: the CSS is compiled with PostCSS",
+  ]);
 });
 
 test("says which file of Next's build no longer loads", async () => {
@@ -686,6 +758,7 @@ test("has the routes that Next's build hands a deployment adapter", async () => 
   // a trailing slash.
   expect(sources(routing.routes.beforeMiddleware)).toEqual([
     "/docs/:slug",
+    "/api/plain",
     "/:path+/",
     "/guide/:slug",
   ]);
