@@ -434,9 +434,23 @@ const appFetch =
     const spare = input instanceof Request && input.body ? input.clone() : input;
     // The server's Request keeps a `cookie` header, which a browser's drops.
     const request = server ? new registry.Request(input, init) : new Request(input, init);
-    return sendRequest(request, {
+    // The page whose router sends it: Next's router marks its requests. A
+    // page that is being left still sends some, like the refresh it had
+    // started.
+    const from = sent.marked && !server ? (page ?? lastPage) : undefined;
+    const response = sendRequest(request, {
       server,
       network: sent.marked ? undefined : () => nativeFetch(spare, init),
+    });
+    if (!from) return response;
+    // A page that was left hears no more of its requests, as in a browser,
+    // where it is gone. The server stops the ones it had not answered yet
+    // (`settleRequests()` in ssr.ts), and the router of that page, which is
+    // still there, would report that as an error, while the next page runs.
+    return response.catch((error: unknown) => {
+      const stopped = error instanceof DOMException && error.name === "AbortError";
+      if (stopped && page !== from) return new Promise<never>(() => {});
+      throw error;
     });
   };
 
@@ -460,6 +474,8 @@ type Page = {
 };
 
 let page: Page | undefined;
+// The page that was left last, until the next one is there.
+let lastPage: Page | undefined;
 // Tells a page load that the test has moved on: to another page, or to the
 // next test.
 let currentLoad: AbortController | undefined;
@@ -1081,6 +1097,7 @@ async function openPage(
   })();
   opened.started = started.catch(() => {});
   page = opened;
+  lastPage = undefined;
   if (opening) opening.page = opened;
   try {
     ({ unmount, refresh: opened.refresh } = await started);
@@ -1122,6 +1139,7 @@ function leavePage(): Promise<void> {
   rerenders.clear();
   const left = page;
   page = undefined;
+  if (left) lastPage = left;
   // Also after a page that could not be left: that one fails its own test.
   const gone = leaving
     .catch(() => {})
