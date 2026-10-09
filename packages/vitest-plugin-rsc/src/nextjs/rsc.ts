@@ -17,7 +17,7 @@ import {
   stylesheetsPath,
   type BuiltStylesheets,
   type Stylesheets,
-} from "./styles-command.ts";
+} from "./styles-shared.ts";
 
 // The rsc layer: Server Components, Server Actions, route handlers and the
 // Flight encoder.
@@ -126,9 +126,10 @@ const NodeRendered = ReactServer.registerClientReference(
 ) as JSXElementConstructor<{ version: number; children?: ReactNode }>;
 
 // The stylesheets of a route are the plugin's to say, as they are a build's:
-// see styles.ts. Under Vitest a command says them, which knows the test file
-// that asks (setup.ts). Another host asks the dev server, and a static build
-// has them in a file of its own, in the directory of the build.
+// see styles.ts. The page asks the dev server, under Vitest as under another
+// host, and a static build has them in a file of its own, in the directory of
+// the build. The node of a route of a node has those of the files that render
+// it, which the host says: see `nodeFiles()` in registry.ts.
 const buildDirectory = builtLayers && Object.values(builtLayers)[0]?.base;
 let built: Promise<BuiltStylesheets> | undefined;
 const json = async <T>(url: string): Promise<T> => {
@@ -140,15 +141,16 @@ const json = async <T>(url: string): Promise<T> => {
   }
   return (await response.json()) as T;
 };
-registry.loadStylesheets = async (entry, inline) => {
+registry.loadStylesheets = async (entry, inline, files) => {
   if (!buildDirectory) {
     const query = new URLSearchParams({ entry, inline: String(inline) });
+    for (const file of files ?? []) query.append("file", file);
     return json<Stylesheets>(`${stylesheetsPath}?${query}`);
   }
   built ??= json<BuiltStylesheets>(new URL(builtStylesheetsFile, buildDirectory).href);
   // One that failed is asked again.
   built.catch(() => (built = undefined));
-  return builtStylesheetsOf(await built, entry, buildDirectory);
+  return builtStylesheetsOf(await built, entry, buildDirectory, files);
 };
 
 /** The page module of the route of a node: see `loadNodeEntry()` in project/entries.ts. */

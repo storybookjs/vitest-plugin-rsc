@@ -14,19 +14,18 @@ import {
   type Plugin,
   type ViteDevServer,
 } from "vite";
-import type { BrowserCommandContext } from "vitest/node";
 import { hostModulePrefix } from "../host-module.ts";
 import { clientReferencesId, cssBuildDirPlaceholder, toBuildDir } from "./build.ts";
+import { liveModuleOf } from "./client-files.ts";
 import { liveModulePrefix } from "./client-ids.ts";
 import type { ComponentRoute, NextLayer, NextProject, NextRoute } from "./project.ts";
-import { componentPagePath } from "./project/entries.ts";
 import {
   builtStylesheetsFile,
-  stylesheetsCommand,
+  componentPagePath,
   stylesheetsPath,
   type BuiltStylesheets,
   type Stylesheets,
-} from "./styles-command.ts";
+} from "./styles-shared.ts";
 
 // The CSS of the app, the way Next brings it to a page: as the stylesheets of
 // the segment that imports them.
@@ -45,13 +44,14 @@ import {
 //   - The module of such an import puts nothing in the document. It exports
 //     the class names of a CSS module, as Vite's module for a server does.
 //   - The list of a segment is read off Vite's module graphs, before Next
-//     renders the route: see `stylesheetsOf()`.
+//     renders the route: see `stylesheetsOf()`. The page asks the dev server
+//     for it, at `stylesheetsPath`.
 //   - The dev server serves a stylesheet where Next links it, under
 //     `/_next/static/css/`: the CSS Vite makes of the file, so with PostCSS
 //     and with the class names its module exports.
 //   - A static build has each stylesheet in a file of its own there, and the
-//     lists of every route in a file next to the layers: see
-//     `createBuiltStylesheets()`.
+//     lists of every route and of every file of the host in a file next to
+//     the layers: see `createBuiltStylesheets()`.
 
 const linkedQuery = "next-linked";
 const linkedRE = new RegExp(`[?&]${linkedQuery}\\b`);
@@ -373,13 +373,15 @@ export function createStyles(options: StylesOptions): Styles {
   /**
    * The stylesheets of a route, per file of a segment: see `Stylesheets`. The
    * node of a test is the page of its route, and no file: its stylesheets are
-   * those of the files that render it, which `isNodeFile` says. Those are in
-   * the rsc layer, and in the layer of the browser with `"use client"`. With
-   * `layouts: true` the layouts of the app around it have their own.
+   * those of the files of the host that render it, `nodeFiles`, which the
+   * host says. Without any, those of every file of the host that Vite has
+   * loaded. They are in the rsc layer, and in the layer of the browser with
+   * `"use client"`. With `layouts: true` the layouts of the app around it
+   * have their own.
    */
   async function stylesheetsOf(
     vite: ViteDevServer,
-    isNodeFile: (file: string) => boolean,
+    nodeFiles: string[],
     entry: string,
     inline: boolean,
   ): Promise<Stylesheets> {
@@ -397,11 +399,20 @@ export function createStyles(options: StylesOptions): Styles {
     );
     if ("component" in route) {
       const layers = ["rsc", "browser"] as const;
-      const nodeModules = layers.flatMap((layer) =>
-        Array.from(vite.environments[environments[layer]]!.moduleGraph.idToModuleMap.values())
-          .filter((node) => node.file && isNodeFile(node.file))
-          .map((node) => ({ layer, node })),
-      );
+      const graph = (layer: Layer) => vite.environments[environments[layer]]!.moduleGraph;
+      // In the order of the files, as a static build has them.
+      const nodeModules =
+        nodeFiles.length > 0
+          ? nodeFiles.flatMap((file) =>
+              layers.flatMap((layer) =>
+                [...(graph(layer).getModulesByFile(file) ?? [])].map((node) => ({ layer, node })),
+              ),
+            )
+          : layers.flatMap((layer) =>
+              [...graph(layer).idToModuleMap.values()]
+                .filter((node) => node.file && options.isHostFile(node.file))
+                .map((node) => ({ layer, node })),
+            );
       starts.set(componentPagePath, nodeModules);
     }
 
@@ -428,34 +439,41 @@ export function createStyles(options: StylesOptions): Styles {
     );
   }
 
-  // Under Vitest the node of a test is rendered by its test file, with the
-  // setup files before it. Vitest says which test file asks.
-  function fromVitest(
-    { project, testPath }: BrowserCommandContext,
-    entry: string,
-    inline: boolean,
-  ) {
-    const files = new Set(
-      [...project.config.setupFiles, ...(testPath ? [testPath] : [])].map((file) =>
-        normalizePath(file),
-      ),
-    );
-    return stylesheetsOf(project.vite, (file) => files.has(file), entry, inline);
-  }
-
-  // Another host does not say which of its files renders a node. Those that
-  // it has loaded do, like the story files that Storybook has loaded: what a
-  // test file and the setup files are to Vitest.
-  function fromHost(vite: ViteDevServer, entry: string, inline: boolean) {
-    return stylesheetsOf(vite, options.isHostFile, entry, inline);
-  }
-
   // The CSS of a stylesheet that Next links, by its path under `/_next/`: the
   // CSS Vite makes of the file, the same one its module is made of, so with
   // the class names that module exports.
   async function cssOf(server: ViteDevServer, path: string) {
     const id = stylesheetIds.get(path);
     return id ? server.environments[environments.rsc]!.transformRequest(`${id}&direct`) : null;
+  }
+
+  // The stylesheets of a route, for the page: see `stylesheetsPath`.
+  async function serveList(
+    server: ViteDevServer,
+    query: URLSearchParams,
+    response: ServerResponse,
+  ): Promise<boolean> {
+    const entry = query.get("entry");
+    if (!entry) return false;
+    // The files that render a node, from the root or absolute. Only files of
+    // the host render one.
+    const files = query
+      .getAll("file")
+      .map((file) => normalizePath(path.resolve(server.config.root, file)));
+    const other = files.find((file) => !options.isHostFile(file));
+    if (other !== undefined) {
+      response.statusCode = 403;
+      response.end(
+        `vitest-plugin-rsc: ${other} renders a node, and is no file of the host: a test file ` +
+          "or a setup file of Vitest, or one of `host.files`.",
+      );
+      return true;
+    }
+    const stylesheets = await stylesheetsOf(server, files, entry, query.get("inline") === "true");
+    response.setHeader("content-type", "application/json");
+    response.setHeader("cache-control", "no-cache");
+    response.end(JSON.stringify(stylesheets));
+    return true;
   }
 
   // The stylesheet Next links.
@@ -466,16 +484,7 @@ export function createStyles(options: StylesOptions): Styles {
   ): Promise<boolean> {
     const { assetPath } = getProject();
     const { pathname, searchParams } = new URL(request.url!, "http://n");
-    // The stylesheets of a route, for the page of another host.
-    if (pathname === stylesheetsPath) {
-      const entry = searchParams.get("entry");
-      if (!entry) return false;
-      const stylesheets = await fromHost(server, entry, searchParams.get("inline") === "true");
-      response.setHeader("content-type", "application/json");
-      response.setHeader("cache-control", "no-cache");
-      response.end(JSON.stringify(stylesheets));
-      return true;
-    }
+    if (pathname === stylesheetsPath) return serveList(server, searchParams, response);
     if (!pathname.startsWith(`${assetPath}${directory}/`)) return false;
     let path: string;
     try {
@@ -502,8 +511,6 @@ export function createStyles(options: StylesOptions): Styles {
     {
       name: "vitest-plugin-rsc:next-styles",
       enforce: "pre",
-      // How a plugin gives the browser a command of its own, in Vitest's config.
-      config: () => ({ test: { browser: { commands: { [stylesheetsCommand]: fromVitest } } } }),
       configureServer(vite) {
         // A load that failed may not after a change. One that did is
         // reloaded when Vite invalidates its module.
@@ -559,7 +566,7 @@ export function createStyles(options: StylesOptions): Styles {
         return { code: exportsOfStylesheet(code, id), map: { mappings: "" } };
       },
     },
-    built.plugin,
+    ...built.plugins,
   ];
   return { plugins, builtFiles: built.files };
 }
@@ -571,23 +578,30 @@ type Manager = NonNullable<ReturnType<typeof getPluginApi>>["manager"];
 const builtAssetRE = /__VITE_ASSET__([\w$]+)__/g;
 const publicAssetRE = /__VITE_PUBLIC_ASSET__([a-z\d]{8})__/g;
 // How Vite's build names a file of `public/` there: the first characters of
-// the SHA-256 of its URL.
+// the SHA-256 of the URL the CSS has for it, decoded, with its query and its
+// fragment, like `/fonts/icons.woff2?v=4`.
 const publicAssetHash = (url: string) => createHash("sha256").update(url).digest("hex").slice(0, 8);
+// The URLs that a stylesheet names a file by: in `url()`, and in a string, as
+// in `image-set()`.
+const cssUrlRE = /\burl\(\s*(?:"([^"]*)"|'([^']*)'|([^'")\s]*))\s*\)|"(\/[^"]*)"|'(\/[^']*)'/g;
 
 /**
  * The stylesheets of a static build, which has no dev server to ask. So the
  * build does what Next's build does: it writes each stylesheet into a file of
  * its own under `/_next/static/css/`, and the stylesheets of every page route
  * into a file next to the layers, which the page reads (`builtStylesheetsOf()`
- * in styles-command.ts).
+ * in styles-shared.ts).
  *
  * The CSS is what Vite's CSS plugin compiles the file into, with the files it
  * names by the way from the stylesheet. Vite leaves a stylesheet that Next
  * links out of the CSS of its chunks, see `linked()`: it is on the pages that
  * link it, and only there. The lists are read off the module graphs of the
  * build, as `reach()` reads them off the dev server's: the rsc layer for the
- * files of the segments and the files of the host, which render a node, and
- * the layer of the browser for the Client Components, which is built after it.
+ * files of the segments and the files of the host, and the layer of the
+ * browser for the Client Components and the files of the host with
+ * `"use client"`, which is built after it. A node has the stylesheets of the
+ * files of the host that render it, as with a dev server, so the build has
+ * those of each file of the host, by its path from the root.
  */
 function createBuiltStylesheets(
   options: StylesOptions,
@@ -603,6 +617,7 @@ function createBuiltStylesheets(
         : undefined;
   let manager: Manager | undefined;
   let publicDir: string | false = false;
+  let root = "";
   const key = (layer: Layer, id: string) => `${layer}\0${id}`;
   // What Vite's CSS plugin compiled each stylesheet into, and the file of it
   // in the build, by layer and id.
@@ -610,27 +625,32 @@ function createBuiltStylesheets(
   const files = new Map<string, string>();
   // What each segment of a page route reaches in the rsc layer: a stylesheet,
   // or a Client Component, by the id the layer of the browser imports it by.
-  // The node of a route of a node also has what the files of the host with
-  // `"use client"` reach.
-  type Reached = { stylesheet: string } | { client: string } | { clientFiles: true };
+  // The route of a node has nothing for the node: see `BuiltStylesheets`.
+  type Reached = { stylesheet: string } | { client: string };
   const routes = new Map<string, Map<string, Reached[]>>();
-  // And the stylesheets each Client Component reaches in the layer of the
-  // browser, and the client files of the host.
+  // The same for each file of the host, by its path.
+  const hostFiles = new Map<string, Reached[]>();
+  // The stylesheets each Client Component reaches in the layer of the
+  // browser, and each file of the host with `"use client"`, by its path.
   const clients = new Map<string, string[]>();
-  let clientFiles: string[] = [];
+  const clientFiles = new Map<string, string[]>();
 
-  // The URL of each file of `public/`, by the name Vite's build gives it.
-  let publicFiles: Map<string, string> | undefined;
+  // The URL of each file of `public/` that a stylesheet names, by the name
+  // Vite's build gives it there. The files of the directory, and the URLs the
+  // stylesheets that Next links have, before Vite's CSS plugin names them:
+  // one with a query or a fragment is no file of the directory.
+  const publicUrls = new Map<string, string>();
+  let listed = false;
   const publicUrl = (hash: string) => {
-    if (!publicFiles) {
-      publicFiles = new Map();
+    if (!listed) {
+      listed = true;
       const files = publicDir ? fs.readdirSync(publicDir, { recursive: true }) : [];
       for (const file of files) {
         const url = `/${normalizePath(String(file))}`;
-        publicFiles.set(publicAssetHash(url), url);
+        publicUrls.set(publicAssetHash(url), url);
       }
     }
-    return publicFiles.get(hash);
+    return publicUrls.get(hash);
   };
 
   type Context = {
@@ -638,10 +658,23 @@ function createBuiltStylesheets(
       id: string,
     ): { importedIds: readonly string[]; dynamicallyImportedIds: readonly string[] } | null;
   };
+  type Imports = (id: string) => readonly string[] | undefined;
+  // What each module of a build imports, read once: the build walks the
+  // graph from every file of the host, which a big host has many of.
+  function importsIn(context: Context): Imports {
+    const imports = new Map<string, readonly string[] | undefined>();
+    return (id) => {
+      if (!imports.has(id)) {
+        const info = context.getModuleInfo(id);
+        imports.set(id, info ? [...info.importedIds, ...info.dynamicallyImportedIds] : undefined);
+      }
+      return imports.get(id);
+    };
+  }
   // The stylesheets that `starts` reach in the graph of a build, in the order
   // of the imports, and the Client Components, where the rsc layer has them.
   function reachIn(
-    context: Context,
+    imports: Imports,
     starts: string[],
     references: Manager["clientReferenceMetaMap"] = {},
   ): Reached[] {
@@ -655,9 +688,7 @@ function createBuiltStylesheets(
         reached.push({ client: reference.importId });
         return;
       }
-      const info = context.getModuleInfo(id);
-      if (!info) return;
-      for (const imported of [...info.importedIds, ...info.dynamicallyImportedIds]) {
+      for (const imported of imports(id) ?? []) {
         if (isLinked(imported)) reached.push({ stylesheet: imported });
         else if (!isCSSRequest(imported)) visit(imported);
       }
@@ -672,6 +703,8 @@ function createBuiltStylesheets(
     configResolved(config) {
       manager = getPluginApi(config)?.manager;
       publicDir = config.publicDir || false;
+      // Vite has a module by the real path of its file.
+      root = normalizePath(fs.realpathSync(config.root));
     },
     buildStart() {
       const layer = layerOf(this.environment.name);
@@ -679,10 +712,8 @@ function createBuiltStylesheets(
       for (const map of [compiled, files]) {
         for (const id of map.keys()) if (id.startsWith(key(layer, ""))) map.delete(id);
       }
-      if (layer === "rsc") routes.clear();
-      else {
-        clients.clear();
-        clientFiles = [];
+      for (const map of layer === "rsc" ? [routes, hostFiles] : [clients, clientFiles]) {
+        map.clear();
       }
     },
     // Between Vite's two CSS plugins: the CSS, and not yet the module.
@@ -694,10 +725,8 @@ function createBuiltStylesheets(
     async buildEnd(error) {
       const layer = layerOf(this.environment.name);
       if (error || !layer || !manager || manager.isScanBuild) return;
+      const imports = importsIn(this);
       if (layer === "rsc") {
-        const hostFiles = [...this.getModuleIds()].filter(
-          (id) => !id.startsWith("\0") && options.isHostFile(id.split("?")[0]!),
-        );
         for (const [entry, route] of options.pageRoutes()) {
           const segments = new Map<string, Reached[]>();
           for (const file of await segmentFilesOf(route)) {
@@ -706,15 +735,18 @@ function createBuiltStylesheets(
             if (!this.getModuleInfo(id) && fs.existsSync(file)) {
               id = normalizePath(fs.realpathSync(file));
             }
-            const reached = reachIn(this, [id], manager.clientReferenceMetaMap);
+            const reached = reachIn(imports, [id], manager.clientReferenceMetaMap);
             // As Next looks it up: `getLinkAndScriptTags()`.
             segments.set(file.replace(/\.[^.]+$/, ""), reached);
           }
-          if ("component" in route) {
-            const reached = reachIn(this, hostFiles, manager.clientReferenceMetaMap);
-            segments.set(componentPagePath, [...reached, { clientFiles: true }]);
-          }
+          if ("component" in route) segments.set(componentPagePath, []);
           routes.set(entry, segments);
+        }
+        for (const id of this.getModuleIds()) {
+          const file = id.split("?")[0]!;
+          if (id.startsWith("\0") || !options.isHostFile(file)) continue;
+          const reached = reachIn(imports, [id], manager.clientReferenceMetaMap);
+          hostFiles.set(file, [...(hostFiles.get(file) ?? []), ...reached]);
         }
         return;
       }
@@ -722,20 +754,25 @@ function createBuiltStylesheets(
         reached.flatMap((item) => ("stylesheet" in item ? [item.stylesheet] : []));
       // A client file imports the modules in between by the file each has in
       // the build, and those import what the file imports: see client-files.ts.
-      const files = [
-        ...options.builtClientFiles().map((file) => normalizePath(file)),
-        ...[...this.getModuleIds()].filter((id) => id.startsWith(liveModulePrefix)),
-      ];
-      clientFiles = stylesheetsOf(reachIn(this, files));
-      // The Client Components that a route reaches, as the list of every
-      // reference imports them: see build.ts.
+      const liveModules = new Map<string, string[]>(
+        options.builtClientFiles().map((file) => [normalizePath(file), []]),
+      );
+      for (const id of this.getModuleIds()) {
+        if (!id.startsWith(liveModulePrefix)) continue;
+        const [file] = liveModuleOf(id);
+        liveModules.set(file, [...(liveModules.get(file) ?? []), id]);
+      }
+      for (const [file, modules] of liveModules) {
+        clientFiles.set(file, stylesheetsOf(reachIn(imports, [file, ...modules])));
+      }
+      // The Client Components that a route or a file of the host reaches, as
+      // the list of every reference imports them: see build.ts.
       const importer = `\0${clientReferencesId}`;
-      for (const segments of routes.values()) {
-        for (const reached of [...segments.values()].flat()) {
-          if (!("client" in reached) || clients.has(reached.client)) continue;
-          const resolved = await this.resolve(reached.client, importer);
-          clients.set(reached.client, resolved ? stylesheetsOf(reachIn(this, [resolved.id])) : []);
-        }
+      const reached = [...routes.values()].flatMap((segments) => [...segments.values()]);
+      for (const item of [...reached, ...hostFiles.values()].flat()) {
+        if (!("client" in item) || clients.has(item.client)) continue;
+        const resolved = await this.resolve(item.client, importer);
+        clients.set(item.client, resolved ? stylesheetsOf(reachIn(imports, [resolved.id])) : []);
       }
     },
     generateBundle() {
@@ -765,26 +802,62 @@ function createBuiltStylesheets(
     },
   };
 
-  /** The stylesheets of every page route, by the files of the build. */
+  // The URLs of the stylesheets that Next links, as their source has them:
+  // see `publicUrls`.
+  const urls: Plugin = {
+    name: "vitest-plugin-rsc:next-styles-build-urls",
+    apply: "build",
+    // Before Vite's CSS plugin.
+    enforce: "pre",
+    transform(code, id) {
+      if (!layerOf(this.environment.name) || !isLinked(id) || directRE.test(id)) return;
+      for (const match of code.matchAll(cssUrlRE)) {
+        // As Vite's CSS plugin reads it: unescaped, and decoded.
+        const url = match
+          .slice(1)
+          .find((group) => group !== undefined)!
+          .replace(/\\(\W)/g, "$1");
+        if (!url.startsWith("/") || url.startsWith("//")) continue;
+        try {
+          const decoded = decodeURI(url);
+          publicUrls.set(publicAssetHash(decoded), decoded);
+        } catch {
+          // Not a URL Vite names a file by.
+        }
+      }
+    },
+  };
+
+  /** The stylesheets of every page route and of every file of the host, by the files of the build. */
   function builtFiles(): { pathname: string; body: Uint8Array }[] {
     if (routes.size === 0) return [];
-    const built: BuiltStylesheets = { assetPath: getProject().assetPath, routes: {} };
+    const built: BuiltStylesheets = {
+      assetPath: getProject().assetPath,
+      routes: {},
+      hostFiles: {},
+    };
+    const filesOf = (ids: string[]) => [...new Set(ids.flatMap((id) => files.get(id) ?? []))];
+    const idsOf = (reached: Reached[]) =>
+      reached.flatMap((item) =>
+        "stylesheet" in item
+          ? [key("rsc", item.stylesheet)]
+          : (clients.get(item.client) ?? []).map((id) => key("browser", id)),
+      );
     for (const [entry, segments] of routes) {
       built.routes[entry] = Object.fromEntries(
-        Array.from(segments, ([segment, reached]) => {
-          const ids = reached.flatMap((item) =>
-            "stylesheet" in item
-              ? [key("rsc", item.stylesheet)]
-              : ("client" in item ? (clients.get(item.client) ?? []) : clientFiles).map((id) =>
-                  key("browser", id),
-                ),
-          );
-          return [segment, [...new Set(ids.flatMap((id) => files.get(id) ?? []))]];
-        }),
+        Array.from(segments, ([segment, reached]) => [segment, filesOf(idsOf(reached))]),
       );
+    }
+    for (const file of new Set([...hostFiles.keys(), ...clientFiles.keys()])) {
+      const stylesheets = filesOf([
+        ...idsOf(hostFiles.get(file) ?? []),
+        ...(clientFiles.get(file) ?? []).map((id) => key("browser", id)),
+      ]);
+      // By its path from the root, which is the same on every machine.
+      if (stylesheets.length > 0) built.hostFiles[path.posix.relative(root, file)] = stylesheets;
     }
     return [{ pathname: `/${builtStylesheetsFile}`, body: Buffer.from(JSON.stringify(built)) }];
   }
 
-  return { plugin, files: builtFiles };
+  return { plugins: [urls, plugin], files: builtFiles };
 }

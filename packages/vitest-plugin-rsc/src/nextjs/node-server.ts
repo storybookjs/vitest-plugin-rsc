@@ -10,7 +10,7 @@ import {
 import { Readable } from "virtual:vitest-plugin-rsc/node-stream";
 import { restoreIncrementalCache } from "./cache.ts";
 import { registry, type RequestHandler, type ServerRequest } from "./registry.ts";
-import type { Stylesheets } from "./styles-command.ts";
+import type { Stylesheets } from "./styles-shared.ts";
 
 // Next's server runs here as it does on Node.js, its default runtime. (Its
 // edge runtime, which is closer to a browser, is deprecated.) The renderer

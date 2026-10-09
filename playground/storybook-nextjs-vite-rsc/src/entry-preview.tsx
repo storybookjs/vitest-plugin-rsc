@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { applyHooks, defaultDecorateStory } from "storybook/preview-api";
-import { clientFileOf } from "vitest-plugin-rsc/nextjs/internal";
+import { previewFiles, workingDir } from "virtual:@storybook/nextjs-vite-rsc/project";
+import { clientFileOf, setNodeFiles } from "vitest-plugin-rsc/nextjs/internal";
 import { cleanup, clientNode, renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
 
 // The renderer. The preview is the rsc layer of the app: a story file is
@@ -33,7 +34,8 @@ export type NextjsParameters = {
 type StoryContext = {
   id: string;
   component?: (props: any) => ReactNode;
-  parameters: { nextjs?: NextjsParameters };
+  /** `fileName` is the story file, from Storybook's working directory: `./stories/a.stories.tsx`. */
+  parameters: { nextjs?: NextjsParameters; fileName?: string };
   globals: Record<string, unknown>;
   originalStoryFn: unknown;
   /** What the story file exports for the story. */
@@ -64,6 +66,22 @@ export function render(args: Record<string, unknown>, context: StoryContext): Re
   const { id, component: Component } = context;
   if (!Component) throw nothingToRender(id);
   return <Component {...args} />;
+}
+
+// A story file by its path from the root, as the plugin knows a file of the
+// host. Storybook names it from its working directory, which can be another
+// directory, like the root of a monorepo: `./apps/web/src/a.stories.tsx` is
+// `./src/a.stories.tsx` for the root `apps/web`.
+function fromRoot(fileName: string): string {
+  const parts = [...workingDir.cwd];
+  for (const part of fileName.split("/")) {
+    if (part === "" || part === ".") continue;
+    if (part === ".." && parts.length > 0 && parts.at(-1) !== "..") parts.pop();
+    else parts.push(part);
+  }
+  let common = 0;
+  while (common < workingDir.root.length && workingDir.root[common] === parts[common]) common++;
+  return [".", ...workingDir.root.slice(common).map(() => ".."), ...parts.slice(common)].join("/");
 }
 
 // What the URL of the iframe is to Storybook: the page of the app changes it
@@ -214,6 +232,11 @@ async function renderStory(
     } else {
       const node = await story();
       if (superseded()) return;
+      // The story has the CSS of what the preview and its story file import,
+      // as a test has that of the setup files and its test file. Not that of
+      // another story file.
+      const { fileName } = storyContext.parameters;
+      setNodeFiles([...previewFiles, ...(fileName ? [fromRoot(fileName)] : [])]);
       const { rerender } = await renderServer(node, {
         url,
         headers,

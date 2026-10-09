@@ -4,6 +4,7 @@ import querystring from "node:querystring";
 import { parseAst } from "vite";
 import type { AppLoaderOptions } from "next/dist/build/webpack/loaders/next-app-loader/index.js";
 import type { ComponentRoute, NextProject, NextRoute } from "../project.ts";
+import { componentPagePath } from "../styles-shared.ts";
 import type { NextContext } from "./context.ts";
 import type { RunLoader } from "./loaders.ts";
 import type { AppRoutes } from "./routes.ts";
@@ -29,11 +30,6 @@ export type AppLoaderContext = {
 const componentRoot = "(vitest-plugin-rsc)";
 // What the routes of a node with the layouts of the app are listed by.
 const componentLayouts = "(vitest-plugin-rsc-layouts)";
-/**
- * What the loader tree of the route of a node names its page, where a page of
- * the app has its file. Next looks up the stylesheets of the node by it.
- */
-export const componentPagePath = "vitest-plugin-rsc/component";
 // The node as the page of a loader tree, and the import that goes with it:
 // see `loadComponent()` in rsc.ts.
 const componentPage = `page: [__next_component__, ${JSON.stringify(componentPagePath)}]`;

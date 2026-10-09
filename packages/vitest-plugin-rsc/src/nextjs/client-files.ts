@@ -68,7 +68,7 @@ export function clientFileStub(id: string, exportNames: string[], internal: stri
 // What a client file imports, and from which file: both are in the id.
 const liveModuleId = (file: string, source: string) =>
   liveModulePrefix + Buffer.from(JSON.stringify([file, source])).toString("base64url");
-const liveModuleOf = (id: string) =>
+export const liveModuleOf = (id: string) =>
   JSON.parse(Buffer.from(id.slice(liveModulePrefix.length), "base64url").toString()) as [
     file: string,
     source: string,

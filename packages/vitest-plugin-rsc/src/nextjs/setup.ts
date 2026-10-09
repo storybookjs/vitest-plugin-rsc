@@ -1,10 +1,8 @@
 import { afterAll, afterEach, beforeEach } from "vitest";
-import { commands } from "vitest/browser";
 import { cleanup } from "./index.ts";
 import { unloadClientFile } from "./client-graph.ts";
 import { clientFileId } from "./client-ids.ts";
 import { registry } from "./registry.ts";
-import { stylesheetsCommand, type Stylesheets } from "./styles-command.ts";
 
 // Registered by `vitestPluginNext()` as a setup file. Importing the entry
 // first matters: it installs the server's platform before a test file can
@@ -19,15 +17,18 @@ beforeEach(cleanup);
 // oxlint-disable-next-line no-empty-pattern
 afterAll(({}, { file }) => unloadClientFile(clientFileId(file.filepath)));
 
-// The stylesheets of a route, from the plugin: see styles.ts. Vitest adds
-// which test file asks, whose imports are the stylesheets of a node.
-type LoadStylesheets = (entry: string, inline: boolean) => Promise<Stylesheets>;
-const loadStylesheets = (commands as unknown as Partial<Record<string, LoadStylesheets>>)[
-  stylesheetsCommand
-];
-registry.loadStylesheets = (entry, inline) => {
-  if (!loadStylesheets) {
-    throw new Error("vitest-plugin-rsc: the browser has no command for the stylesheets");
-  }
-  return loadStylesheets(entry, inline);
+// The files that render the node of a test: its test file, with the setup
+// files before it. The node has the stylesheets of what they import: see
+// styles.ts. Vitest's state of the test that runs, on the page: Vitest's own
+// commands read the test file there too.
+type WorkerState = {
+  filepath?: string;
+  current?: { file?: { filepath: string } };
+  config: { setupFiles: string[] };
+};
+registry.nodeFiles = () => {
+  const state = (globalThis as { __vitest_worker__?: WorkerState }).__vitest_worker__;
+  if (!state) return undefined;
+  const testFile = state.filepath || state.current?.file?.filepath;
+  return [...state.config.setupFiles, ...(testFile ? [testFile] : [])];
 };

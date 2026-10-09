@@ -1,0 +1,10 @@
+/* Every heading of the page. */
+h2 {
+  text-decoration: underline;
+}
+
+/* A file of public/ by a URL with a query, as an icon font names its files. */
+.callout {
+  padding: 0.5rem;
+  background-image: url(/stripes.svg?v=1);
+}
