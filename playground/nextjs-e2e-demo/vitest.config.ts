@@ -48,18 +48,29 @@ function headersService(): Plugin {
 
 // Stands in for a change to a file of the app while the tests are watched:
 // the dev server invalidates the modules of the file, as it does for a change.
+// With `content`, that is what the file has from then on for the dev server,
+// which leaves the file as it is. Without, it has what is in the file again.
 function fileChangeService(): Plugin {
+  const contents = new Map<string, string>();
   return {
     name: "nextjs-e2e-demo:file-change-service",
+    enforce: "pre",
     configureServer(server) {
       server.middlewares.use("/service/file-change", (request, response) => {
-        const file = new URL(request.url ?? "/", "http://localhost").searchParams.get("file") ?? "";
+        const { searchParams } = new URL(request.url ?? "/", "http://localhost");
+        const changed = normalizePath(
+          path.join(server.config.root, searchParams.get("file") ?? ""),
+        );
+        const content = searchParams.get("content");
+        if (content === null) contents.delete(changed);
+        else contents.set(changed, content);
         for (const environment of Object.values(server.environments)) {
-          environment.moduleGraph.onFileChange(normalizePath(path.join(server.config.root, file)));
+          environment.moduleGraph.onFileChange(changed);
         }
         response.end();
       });
     },
+    load: (id) => contents.get(id.split("?")[0]!),
   };
 }
 
@@ -96,32 +107,57 @@ process.env.NEXT_FONT_GOOGLE_MOCKED_RESPONSES = fileURLToPath(
   new URL("../../vitest.google-fonts.cjs", import.meta.url),
 );
 
-export default defineProject({
-  root: fileURLToPath(new URL("./", import.meta.url)),
-  plugins: [
-    transformsService(),
-    vitestPluginRSC(),
-    // The helpers in `test/` work on the page, so they have to see the browser.
-    // Every other module that is not a test file is server code.
-    vitestPluginNext({ browserModules: ["test/**"], affectedTests: true }),
-    hitsService(),
-    headersService(),
-    fileChangeService(),
-  ],
-  resolve: {
-    conditions: vitestPluginRscSourceConditions,
-  },
-  test: {
-    name: "nextjs-e2e-demo",
-    include: ["**/*.test.{ts,tsx}"],
-    exclude: ["node_modules"],
-    browser: {
-      enabled: true,
-      headless: true,
-      provider: playwright(),
-      instances: [{ browser: "chromium" }],
+// The demo as a project of Vitest, for the test files that `test` names.
+function e2eProject(test: {
+  name: string;
+  include: string[];
+  exclude: string[];
+  setupFiles: string[];
+}) {
+  return defineProject({
+    root: fileURLToPath(new URL("./", import.meta.url)),
+    plugins: [
+      transformsService(),
+      vitestPluginRSC(),
+      // The helpers in `test/` work on the page, so they have to see the browser.
+      // Every other module that is not a test file is server code.
+      vitestPluginNext({ browserModules: ["test/**"], affectedTests: true }),
+      hitsService(),
+      headersService(),
+      fileChangeService(),
+    ],
+    resolve: {
+      conditions: vitestPluginRscSourceConditions,
     },
-    isolate: false,
-    setupFiles: ["./vitest.setup.ts"],
-  },
+    test: {
+      ...test,
+      exclude: ["node_modules", ...test.exclude],
+      browser: {
+        enabled: true,
+        headless: true,
+        provider: playwright(),
+        instances: [{ browser: "chromium" }],
+      },
+      isolate: false,
+    },
+  });
+}
+
+// The browser keeps no file while a test mocks a module: Playwright turns its
+// cache off to intercept the requests for one. So what the browser keeps is
+// tested in a project of its own, without the setup file, which mocks one.
+const browserCacheFiles = "**/*.browser-cache.test.{ts,tsx}";
+
+export default e2eProject({
+  name: "nextjs-e2e-demo",
+  include: ["**/*.test.{ts,tsx}"],
+  exclude: [browserCacheFiles],
+  setupFiles: ["./vitest.setup.ts"],
+});
+
+export const browserCacheProject = e2eProject({
+  name: "nextjs-e2e-demo-browser-cache",
+  include: [browserCacheFiles],
+  exclude: [],
+  setupFiles: [],
 });

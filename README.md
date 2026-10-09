@@ -995,6 +995,6 @@ Vitest suites are wired through the root workspace, while each package or playgr
 
 ```bash
 pnpm test
-pnpm test --project nextjs-e2e-demo
+pnpm test --project 'nextjs-e2e-demo*'
 pnpm test --project nextjs-notes-demo-browser --project nextjs-notes-demo-node
 ```

@@ -1,0 +1,4 @@
+/* The tests change what the dev server has for this file: see stylesheets.browser-cache.test.tsx. */
+.edited {
+  color: rgb(0, 0, 0);
+}
