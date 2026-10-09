@@ -1,5 +1,5 @@
 import { expect, test, vi } from "vitest";
-import { hostModulePrefix, isHostModule } from "../host-module.ts";
+import { hostModuleId, isHostModule } from "../host-module.ts";
 import {
   builtClientFileId,
   builtHostModuleUrl,
@@ -133,10 +133,10 @@ test("says so for a client file that mocks a module, which Vitest would leave ou
 test("gives the browser layer the page's own module for a package of the host", async () => {
   const importer = "/app/counter.tsx";
 
-  expect(await resolve("vitest", importer)).toBe(`${hostModulePrefix}vitest`);
-  expect(await resolve("storybook/test", importer)).toBe(`${hostModulePrefix}storybook/test`);
+  expect(await resolve("vitest", importer)).toBe(hostModuleId("vitest"));
+  expect(await resolve("storybook/test", importer)).toBe(hostModuleId("storybook/test"));
   expect(await resolve(testingLibrary.specifier, importer)).toBe(
-    hostModulePrefix + testingLibrary.specifier,
+    hostModuleId(testingLibrary.specifier),
   );
   // Not a package that only starts with the name, and not in the rsc layer.
   expect(await resolve("vitest-browser-react", importer)).toBeUndefined();
@@ -148,7 +148,7 @@ test("gives the browser layer the page's own module for a package of the host", 
 
 test("gives a file of the host the page's own module for another file of the host", async () => {
   expect(await resolve("../vitest.setup.ts", "/app/a.test.tsx")).toBe(
-    `${hostModulePrefix}/vitest.setup.ts`,
+    hostModuleId("/vitest.setup.ts"),
   );
   // A file of the app is the browser layer's, and so is what it imports.
   expect(await resolve("../vitest.setup.ts", "/app/counter.tsx")).toBeUndefined();
@@ -176,15 +176,21 @@ test("gives a file of the host a module in between for every other import", asyn
 test("serves a module of the host to the page as the module it stands for", () => {
   const rsc = context("client");
 
-  expect(load.call(rsc, `${hostModulePrefix}storybook/test`)).toBe(
+  expect(load.call(rsc, hostModuleId("storybook/test"))).toBe(
     `import * as module from "storybook/test";\nexport default module;\n`,
   );
   // In a client file, `renderServer()` renders a node of the browser layer.
-  expect(load.call(rsc, hostModulePrefix + testingLibrary.specifier)).toBe(
+  expect(load.call(rsc, hostModuleId(testingLibrary.specifier))).toBe(
     `import * as module from "/plugin/nextjs/index.js";\n` +
       `export default { ...module, renderServer: module.renderClient };\n`,
   );
   expect(load.call(rsc, "/app/counter.tsx")).toBeUndefined();
+  // The id of a story file's module does not end in its name, which the CSF
+  // plugin of Storybook would read from disk.
+  expect(hostModuleId("/app/a.stories.tsx")).not.toMatch(/\.stories\.tsx$/);
+  expect(load.call(rsc, hostModuleId("/app/a.stories.tsx"))).toBe(
+    `import * as module from "/app/a.stories.tsx";\nexport default module;\n`,
+  );
 });
 
 test("tells the ids apart as a module runner spells them", () => {
@@ -256,4 +262,40 @@ test("in a build, gives a module of the app the page's own module for a package 
   });
   // The build of the host has it, for the browser layer to import.
   expect(built.hostModules.get(builtHostModuleUrl("/", "storybook/test"))).toBe("storybook/test");
+});
+
+test("only refers to a file of host.ui.files in the rsc layer, which a page does not load", async () => {
+  // Like an MDX docs page of Storybook, as its compiler leaves it.
+  const withDocs = clientFiles({
+    environments: { rsc: "client", browser: "react_client" },
+    testingLibrary,
+    internal: "/plugin/nextjs/internal.js",
+    isHostFile: (file) => file.endsWith(".mdx"),
+    isHostUiFile: (file) => file.endsWith(".mdx"),
+    isHostPackage: () => false,
+    built: createHostReferences(),
+  });
+  const transformDocs = withDocs.transform as unknown as typeof transform;
+  const code = `import { Meta } from "@storybook/addon-docs/blocks";
+export const title = "Intro";
+export default function MDXContent() { return null; }
+`;
+
+  const rsc = context("client");
+  const resolveInRsc = vi.spyOn(rsc, "resolve");
+
+  const stub = await transformDocs.call(rsc, code, "/stories/intro.mdx");
+
+  // Vite would pre-bundle a package that the rsc layer resolves.
+  expect(resolveInRsc).not.toHaveBeenCalled();
+  expect(stub?.code)
+    .toBe(`import { referToUiFile as $$referToUiFile } from "/plugin/nextjs/internal.js";
+const $$file = $$referToUiFile("/@fs/stories/intro.mdx", ["title","default"]);
+export const title = $$file["title"];
+export default $$file.default;
+`);
+  // The browser layer compiles it as it is.
+  expect(await transformDocs.call(context("react_client"), code, "/stories/intro.mdx")).toBe(
+    undefined,
+  );
 });

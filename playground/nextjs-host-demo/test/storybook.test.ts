@@ -1,47 +1,21 @@
+import fs from "node:fs";
 import path from "node:path";
 import type { Frame, Locator, Page } from "playwright";
 import { afterAll, beforeAll, describe, expect } from "vitest";
-import { root, run, serve, serveFiles, test, type Site } from "./helpers.ts";
+import { openStory, selectStory } from "../../test-helpers/storybook.ts";
+import { root, run, serve, serveFiles, test, type PageErrors, type Site } from "./helpers.ts";
 
 // The stories in Storybook, on the framework of
 // playground/storybook-nextjs-vite-rsc: with `storybook dev`, and in a static
 // build of `storybook build`.
 
-// The canvas of a story, in the manager: the way a user opens it.
-async function open(page: Page, site: Site, story: string): Promise<Frame> {
-  await page.goto(`${site.url}?path=/story/${story}`);
-  const iframe = await page.locator("#storybook-preview-iframe").elementHandle();
-  return (await iframe!.contentFrame())!;
-}
-
-type Channel = {
-  emit(event: string, payload: object): void;
-  on(event: string, listener: (id: string) => void): void;
-  off(event: string, listener: (id: string) => void): void;
-};
-
-// Another story in the same preview, as a click in the sidebar selects it.
-// Resolves once Storybook has rendered it.
-async function select(canvas: Frame, story: string): Promise<void> {
-  await canvas.evaluate((storyId) => {
-    const { channel } = (window as unknown as { __STORYBOOK_PREVIEW__: { channel: Channel } })
-      .__STORYBOOK_PREVIEW__;
-    return new Promise<void>((resolve) => {
-      const rendered = (id: string) => {
-        if (id !== storyId) return;
-        channel.off("storyRendered", rendered);
-        resolve();
-      };
-      channel.on("storyRendered", rendered);
-      channel.emit("setCurrentStory", { storyId, viewMode: "story" });
-    });
-  }, story);
-}
+const open = (page: Page, site: Site, story: string) => openStory(page, site.url, story);
+const select = selectStory;
 
 // Another story, selected while the story that is there is still rendering:
 // before its page has loaded.
 async function selectWhileRendering(canvas: Frame, story: string): Promise<void> {
-  type Preview = { channel: Channel; currentRender?: { phase?: string } };
+  type Preview = { currentRender?: { phase?: string } };
   await canvas.waitForFunction(
     () =>
       (window as unknown as { __STORYBOOK_PREVIEW__?: Preview }).__STORYBOOK_PREVIEW__
@@ -72,7 +46,7 @@ const mark = (element: Locator) =>
 const isMarked = (element: Locator) =>
   element.evaluate((node) => (node as { kept?: boolean }).kept === true);
 
-type Check = (page: Page, site: Site) => Promise<void>;
+type Check = (page: Page, site: Site, errors: PageErrors) => Promise<void>;
 
 const checks: Record<string, Check> = {
   // A Server Component, with a Client Component in it.
@@ -168,6 +142,70 @@ const checks: Record<string, Check> = {
     await canvas.getByRole("button", { name: "Spied presses: 0" }).click();
     await canvas.getByRole("button", { name: "Spied presses: 1" }).waitFor();
   },
+  // A decorator of the project is a Server Component around every story,
+  // also around one of a file with "use client".
+  async "the decorators of the project"(page, site) {
+    const canvas = await open(page, site, "server-greeting--default");
+    const decorated = canvas.getByTestId("project-decorator");
+    await decorated.getByRole("heading", { name: "Hello from Storybook" }).waitFor();
+    // Around the decorators of the story file, which render in the browser.
+    await select(canvas, "client-button--default");
+    await decorated.getByTestId("meta-decorator").getByRole("button", { name: "Press" }).waitFor();
+  },
+  // A story of CSF Next that extends another, and a client story of CSF 3.
+  async "an extended story, and a client story in CSF 3"(page, site) {
+    let canvas = await open(page, site, "client-button--pressed");
+    await canvas.getByRole("button", { name: "Pressed" }).waitFor();
+    await page.getByRole("tab", { name: /Interactions/ }).click();
+    await panel(page).getByText("toHaveBeenCalledOnce").waitFor();
+    canvas = await open(page, site, "client-buttonincsf3--default");
+    await canvas.getByRole("button", { name: "Tap" }).waitFor();
+    await page.getByRole("tab", { name: /Interactions/ }).click();
+    await panel(page).getByText("toHaveBeenCalledOnce").waitFor();
+    expect(await actions(page, "onClick"), "the actions the play function logged").toBe(1);
+  },
+  // Docs, a story and docs again in one preview: every story is a page load,
+  // and the docs page renders in a module graph that lives as long as the
+  // document.
+  async "from a docs page to a story and back"(page, site, errors) {
+    await page.goto(`${site.url}?path=/docs/introduction--docs`);
+    const preview = page.frameLocator("#storybook-preview-iframe");
+    await preview.getByRole("heading", { name: "Stories of a Next.js app" }).waitFor();
+    const counting = preview.frameLocator(`iframe[src*="id=client-button--counting"]`);
+    await counting.getByRole("button", { name: "Press at /notes/7: 2" }).waitFor();
+    await page.locator('[data-item-id="client-button"]').click();
+    await page.locator('[data-item-id="client-button--counting"]').click();
+    await preview.getByRole("button", { name: "Press at /notes/7: 2" }).waitFor();
+    await page.locator('[data-item-id="introduction--docs"]').click();
+    const greeting = preview.frameLocator(`iframe[src*="id=server-greeting--default"]`);
+    await greeting.getByRole("heading", { name: "Hello from Storybook" }).waitFor();
+    await page.locator('[data-item-id="server-greeting"]').click();
+    await page.locator('[data-item-id="server-greeting--docs"]').click();
+    await preview.getByRole("heading", { name: "Greeting", exact: true }).waitFor();
+    // The requests for modules that a page load stops when the next story
+    // opens before it is done. Nothing else.
+    const logged = errors.list.splice(0);
+    expect(logged.filter((error) => !error.endsWith("net::ERR_ABORTED"))).toEqual([]);
+  },
+  // Stories that use the framework wrong: Storybook shows each error, which
+  // says what to do instead.
+  async "errors that say what to do"(page, site, errors) {
+    const misuse = [
+      ["misuse-server--hook-on-the-server", "calls useState() on the server"],
+      ["misuse-server--throws-on-the-server", "The render function threw on the server"],
+      ["misuse-server--page-without-url", "which needs a URL to open"],
+      ["misuse-server--page-with-layouts", "renders in its layouts already"],
+      ["misuse-client--page-in-a-client-file", 'but its story file has "use client"'],
+    ];
+    for (const [story, message] of misuse) {
+      const canvas = await open(page, site, story!);
+      await canvas.getByText(message!, { exact: false }).first().waitFor();
+    }
+    // What Storybook logs of them, and the requests that the next page load
+    // stops. Nothing else.
+    const logged = errors.list.splice(0);
+    expect(logged.filter((error) => !/misuse|net::ERR_ABORTED$/.test(error))).toEqual([]);
+  },
   // What the manager stores on the origin of the preview is its own: a story
   // that loads does not take it.
   async "the manager's storage"(page, site) {
@@ -179,6 +217,33 @@ const checks: Record<string, Check> = {
     await select(canvas, "server-greeting--other-name");
     await canvas.getByRole("heading", { name: "Hello from a story with other args" }).waitFor();
     expect(await page.evaluate(() => localStorage.getItem("manager-setting"))).toBe("kept");
+  },
+  // A docs page of autodocs, which shows every story in an iframe of its own:
+  // React DOM renders the page, and each iframe has the app of its story.
+  async "a docs page"(page, site) {
+    await page.goto(`${site.url}?path=/docs/server-greeting--docs`);
+    const docs = page.frameLocator("#storybook-preview-iframe");
+    await docs.getByRole("heading", { name: "Greeting", exact: true }).waitFor();
+    for (const [story, heading] of [
+      ["server-greeting--default", "Hello from Storybook"],
+      ["server-greeting--other-name", "Hello from a story with other args"],
+    ]) {
+      const canvas = docs.frameLocator(`iframe[src*="id=${story}"]`).first();
+      await canvas.getByRole("heading", { name: heading }).waitFor();
+      await canvas.getByRole("button", { name: "Count: 0" }).click();
+      await canvas.getByRole("button", { name: "Count: 1" }).waitFor();
+    }
+  },
+  // A docs page in MDX, which is code of the browser layer, with a server
+  // story and a client story on it: each in an iframe of its own.
+  async "an MDX docs page"(page, site) {
+    await page.goto(`${site.url}?path=/docs/introduction--docs`);
+    const docs = page.frameLocator("#storybook-preview-iframe");
+    await docs.getByRole("heading", { name: "Stories of a Next.js app" }).waitFor();
+    const greeting = docs.frameLocator(`iframe[src*="id=server-greeting--default"]`).first();
+    await greeting.getByRole("heading", { name: "Hello from Storybook" }).waitFor();
+    const button = docs.frameLocator(`iframe[src*="id=client-button--counting"]`).first();
+    await button.getByRole("button", { name: "Press at /notes/7: 2" }).waitFor();
   },
   // From story to story in one preview, as in a session: every story is a
   // page load, and a client story reads its imports from the page it is on.
@@ -249,7 +314,7 @@ const checks: Record<string, Check> = {
 
 function runChecks(site: () => Site) {
   for (const [name, check] of Object.entries(checks)) {
-    test(name, ({ page }) => check(page, site()));
+    test(name, ({ page, errors }) => check(page, site(), errors));
   }
 }
 
@@ -264,6 +329,54 @@ describe("storybook dev", () => {
   afterAll(() => site?.close());
 
   runChecks(() => site);
+
+  // An MDX file that changes: the docs page shows it as it is now.
+  test("an MDX docs page after an edit", async ({ page, errors }) => {
+    const file = path.join(root, "stories/introduction.mdx");
+    const source = fs.readFileSync(file, "utf8");
+    await page.goto(`${site.url}?path=/docs/introduction--docs`);
+    const preview = page.frameLocator("#storybook-preview-iframe");
+    const counting = preview.frameLocator(`iframe[src*="id=client-button--counting"]`);
+    await preview.getByRole("heading", { name: "Stories of a Next.js app" }).waitFor();
+    try {
+      fs.writeFileSync(file, source.replace("# Stories of a Next.js app", "# Stories, edited"));
+      await preview.getByRole("heading", { name: "Stories, edited" }).waitFor();
+      // The stories on the page render again, each in its iframe.
+      await counting.getByRole("button", { name: "Press at /notes/7: 2" }).waitFor();
+    } finally {
+      fs.writeFileSync(file, source);
+    }
+    await preview.getByRole("heading", { name: "Stories of a Next.js app" }).waitFor();
+    // An edit renders the docs page again, which replaces the iframes of its
+    // stories: what one of them still loaded is stopped. Nothing else.
+    const logged = errors.list.splice(0);
+    expect(logged.filter((error) => !error.endsWith("net::ERR_ABORTED"))).toEqual([]);
+  });
+
+  // A story file that changes while a story is at the URL of its page: the
+  // preview fetches the story index again, from its own URL, not the page's.
+  test("the story index after an edit, with a story at the URL of its page", async ({ page }) => {
+    const file = path.join(root, "stories/introduction.mdx");
+    const source = fs.readFileSync(file, "utf8");
+    const canvas = await open(page, site, "client-button--counting");
+    await canvas.getByRole("button", { name: "Press at /notes/7: 2" }).waitFor();
+    const index = () =>
+      page.waitForResponse(
+        (response) => response.frame() === canvas && response.url().endsWith("index.json"),
+      );
+    try {
+      const edited = index();
+      fs.writeFileSync(file, `${source}\n`);
+      const response = await edited;
+      expect(response.url()).toBe(`${site.url}index.json`);
+      expect(response.status()).toBe(200);
+    } finally {
+      const restored = index();
+      fs.writeFileSync(file, source);
+      await restored;
+    }
+    await canvas.getByRole("button", { name: "Press at /notes/7: 2" }).waitFor();
+  });
 });
 
 // `storybook build` builds with Vite's app builder: see the patch of

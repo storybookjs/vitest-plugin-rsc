@@ -25,6 +25,7 @@ import {
   type NextRoute,
 } from "./project.ts";
 import { moduleFileAt } from "./project/context.ts";
+import { hostPlugins } from "./host-plugins.ts";
 import { compileServerCode, createServerCode, type ServerCodeOptions } from "./server-code.ts";
 import { affectedTests } from "./affected/index.ts";
 import { createPathsPlugin } from "./paths.ts";
@@ -40,6 +41,13 @@ const environmentOf: Record<NextLayer, string> = {
   browser: "react_client",
 };
 const layers = Object.keys(environmentOf) as NextLayer[];
+
+/**
+ * The name of the Vite environment of each layer, for a host that configures
+ * one, like the dependencies the browser layer pre-bundles. The rsc layer is
+ * the host's own environment.
+ */
+export const layerEnvironments: Readonly<Record<NextLayer, string>> = environmentOf;
 
 const registry = "globalThis.__vitest_plugin_rsc_next__";
 // Shared by the layers: the routes and the `next.config`.
@@ -500,6 +508,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
 
   return [
     ...createRunnerEnvironmentPlugins(environmentOf.ssr),
+    hostPlugins(options.host?.plugins ?? [], environmentOf.rsc),
     createPathsPlugin(getProject),
     // Watch mode and `vitest --changed` find the test files of a route. On
     // its own: nothing else here knows of it.
@@ -588,7 +597,15 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
               : [],
           );
 
-        const appEntries = normalizePath(path.join(project.appDir, "**/*.{js,jsx,ts,tsx}"));
+        // The files of `app/`, but for a story of Storybook next to a route:
+        // not a file of the app, and one that imports what only the plugins
+        // of Storybook resolve, like a virtual module of its framework. One
+        // import that the scan does not resolve fails the scan of the layer,
+        // which then pre-bundles nothing up front. Storybook scans its stories
+        // itself.
+        const appEntries = normalizePath(
+          path.join(project.appDir, "**/!(*.stories).{js,jsx,ts,tsx}"),
+        );
         // The proxy of the app is a module of the rsc layer that no file of
         // `app/` imports.
         const middlewareEntries = project.middlewareFile
@@ -846,6 +863,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
       testingLibrary,
       internal: ownFile("internal"),
       isHostFile: serverCode.isHostFile,
+      isHostUiFile: serverCode.isHostUiFile,
       isHostPackage: serverCode.isHostPackage,
       built: hostReferences,
     }),

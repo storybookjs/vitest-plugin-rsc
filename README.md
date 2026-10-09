@@ -927,13 +927,44 @@ db.notes.set("7", { id: "7", title: "Seeded by the host", body: "From the host" 
 await renderServer({ url: "/notes/7" });
 ```
 
-`playground/storybook-nextjs-vite-rsc` is a proof of concept of a Storybook framework on the plugin: `host` is the story files, `.storybook/` and the packages of Storybook, its framework and its addons. A story file is server code, as a test file is. With `"use client"` its stories render in the browser: an arg can be a spy of `storybook/test`, which the play function asserts on and the Actions panel logs, and `clientNode()` hands such a story to `renderServer()` with its props as they are. An arg that changes in the Controls renders the story again with `rerender()`, in place: the state of its Client Components stays. `parameters.nextjs` takes the `url`, `headers`, `layouts` and `proxy` of `renderServer()`.
+`playground/storybook-nextjs-vite-rsc` is a Storybook framework on the plugin, with [a README of its own](playground/storybook-nextjs-vite-rsc/README.md): `host` is the story files, `.storybook/` and the packages of Storybook, its framework and its addons. A story file is server code, as a test file is. With `"use client"` its stories render in the browser: an arg can be a spy of `storybook/test`, which the play function asserts on and the Actions panel logs, and `clientNode()` hands such a story to `renderServer()` with its props as they are. An arg that changes in the Controls renders the story again with `rerender()`, in place: the state of its Client Components stays. `parameters.nextjs` takes the `url`, `headers`, `layouts` and `proxy` of `renderServer()`.
+
+The framework is `@storybook/nextjs-vite-rsc`, with CSF Next: `definePreview()` from the framework, then `preview.meta()`, `meta.story()` and `story.test()`, for server stories, pages and stories with `"use client"`.
+
+```tsx
+// app/notes/page.stories.tsx
+import { expect, userEvent } from "storybook/test";
+import preview from "#.storybook/preview.ts";
+import { signInAs } from "#test/auth.ts";
+
+// The page at /notes, in the layouts of the app.
+const meta = preview.meta({
+  title: "Pages/Notes",
+  parameters: { nextjs: { url: "/notes" } },
+  async beforeEach() {
+    await signInAs();
+  },
+});
+
+export const Empty = meta.story({
+  async play({ canvas }) {
+    await expect(await canvas.findByText("No notes yet")).toBeVisible();
+  },
+});
+
+Empty.test("links to the form for a new note", async ({ canvas }) => {
+  await userEvent.click(canvas.getByRole("link", { name: "Create your first note" }));
+  await expect(await canvas.findByRole("heading", { level: 1, name: "New note" })).toBeVisible();
+});
+```
+
+A docs page, of autodocs or of an MDX file, renders with React DOM: it is code of the browser layer, as a story with `"use client"` is, loaded in a module graph that lives as long as the document. Each story on it renders in an iframe of its own. `host.ui.packages` are the packages of such a UI of the host, like `@storybook/addon-docs`, which the browser layer loads with its own React, and `host.ui.files` are its files, like MDX docs pages, which a page of the app does not load. `playground/nextjs-notes-demo` has a story for every route and its states, and its tests open every story with `storybook dev` and in a static build.
 
 Outside Vitest, `cleanup()` forgets only what the app added: the cookies its server set, and the cookies and storage keys added while a page of the app was open. The rest is the host's, like what Storybook's manager stores on the same origin.
 
 ### A Static Build
 
-`vite build` builds the app into a static site: the three layers, with the server in the browser of whoever opens the page, and no server behind it. A host builds it with Vite's app builder, `await (await createBuilder(config, null)).buildApp()`, as `vite build` does. Vite's `build()` builds one environment, so the plugin stops it with an error. `storybook build` calls `build()` today: the Storybook proof of concept patches that call in `@storybook/builder-vite`.
+`vite build` builds the app into a static site: the three layers, with the server in the browser of whoever opens the page, and no server behind it. A host builds it with Vite's app builder, `await (await createBuilder(config, null)).buildApp()`, as `vite build` does. Vite's `build()` builds one environment, so the plugin stops it with an error. `storybook build` calls `build()` today. storybookjs/storybook#36690 adds a flag, `features.viteAppBuilder`, that builds with the app builder: this repository patches `@storybook/builder-vite` with that change until a release has it, and the Storybook framework turns the flag on.
 
 - React is its development build, as in a test run.
 - `images.unoptimized` is on: there is no image optimizer to ask.
@@ -954,17 +985,17 @@ import {
 import { vitestPluginNext } from "vitest-plugin-rsc/nextjs/plugin";
 ```
 
-| Function                                | What it does                                                                                                                    |
-| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| `renderServer({ url, headers, proxy })` | Opens a route. Resolves with `{ response, unmount }` once the page has hydrated.                                                |
-| `renderServer(<Node />, options)`       | Renders a node in a container, on a route of its own. See the options below.                                                    |
-| `handleRequest(input, init)`            | Sends one request to the app, like `fetch`. Resolves with the `Response`.                                                       |
-| `runInServerAction(fn, options)`        | Runs `fn` as a Server Action at `url`, without opening a page. Options: `url`, `proxy`, `headers`.                              |
-| `cleanup()`                             | Leaves the page, clears cookies, storage and the cache. The plugin runs it around every test.                                   |
-| `vitestPluginNext({ browserModules })`  | The Vite plugin. `browserModules` are glob patterns, relative to the project root.                                              |
-| `vitestPluginNext({ affectedTests })`   | `true` lets watch mode and `vitest --changed` find a route's test files. Off by default.                                        |
-| `vitestPluginNext({ host })`            | For a host that is not Vitest: its `files` and its `packages`. See [Storybook And Other Hosts](#storybook-and-other-hosts).     |
-| `clientNode(module, name, props)`       | For a host: a node for `renderServer()` that is an export of a `"use client"` module, rendered in the browser with these props. |
+| Function                                | What it does                                                                                                                                                                                  |
+| --------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `renderServer({ url, headers, proxy })` | Opens a route. Resolves with `{ response, unmount }` once the page has hydrated.                                                                                                              |
+| `renderServer(<Node />, options)`       | Renders a node in a container, on a route of its own. See the options below.                                                                                                                  |
+| `handleRequest(input, init)`            | Sends one request to the app, like `fetch`. Resolves with the `Response`.                                                                                                                     |
+| `runInServerAction(fn, options)`        | Runs `fn` as a Server Action at `url`, without opening a page. Options: `url`, `proxy`, `headers`.                                                                                            |
+| `cleanup()`                             | Leaves the page, clears cookies, storage and the cache. The plugin runs it around every test.                                                                                                 |
+| `vitestPluginNext({ browserModules })`  | The Vite plugin. `browserModules` are glob patterns, relative to the project root.                                                                                                            |
+| `vitestPluginNext({ affectedTests })`   | `true` lets watch mode and `vitest --changed` find a route's test files. Off by default.                                                                                                      |
+| `vitestPluginNext({ host })`            | For a host that is not Vitest: its `files`, its `packages`, its Vite `plugins`, and the packages and files of a `ui` of its own. See [Storybook And Other Hosts](#storybook-and-other-hosts). |
+| `clientNode(module, name, props)`       | For a host: a node for `renderServer()` that is an export of a `"use client"` module, rendered in the browser with these props.                                                               |
 
 The options for a node, all optional:
 
@@ -1083,9 +1114,9 @@ For the full walkthrough, see [docs/next-routes.md](docs/next-routes.md). [docs/
 ## Playgrounds
 
 - `playground/nextjs-e2e-demo` — a small Next.js app with a test for every feature of the Next.js support. Most samples above come from its tests.
-- `playground/nextjs-notes-demo` — a fuller Next.js notes app with Better Auth, Drizzle, PGlite test databases, and shadcn/ui. Its tests open whole routes with the database and the session mocked in the test runtime. This is the repository's acceptance app.
+- `playground/nextjs-notes-demo` — a fuller Next.js notes app with Better Auth, Drizzle, PGlite test databases, and shadcn/ui. Its tests open whole routes with the database and the session mocked in the test runtime. This is the repository's acceptance app. It is in Storybook too, with a story for every route, and its `nextjs-notes-demo-storybook` tests open every story in `storybook dev` and in a static build.
 - `playground/nextjs-host-demo` — a Next.js app hosted outside Vitest: in a page of Vite, with a dev server and as a static build, and in Storybook. Its tests start each with the CLI of Vite or Storybook and open it in a browser.
-- `playground/storybook-nextjs-vite-rsc` — a proof of concept of a Storybook framework on the plugin.
+- `playground/storybook-nextjs-vite-rsc` — `@storybook/nextjs-vite-rsc`, a Storybook framework on the plugin, with [a README of its own](playground/storybook-nextjs-vite-rsc/README.md).
 - `playground/rsc-vitest-demo` — a minimal non-Next RSC app. Use this as the smallest end-to-end example of `vitest-plugin-rsc` on its own.
 
 Vitest suites are wired through the root workspace, while each package or playground owns its local config:

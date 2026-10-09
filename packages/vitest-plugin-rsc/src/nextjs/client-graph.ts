@@ -5,7 +5,12 @@ import {
   type ModuleRunner,
 } from "vite/module-runner";
 import { isHostModule } from "../host-module.ts";
-import { checkFetchedModules, createEnvironmentRunner, createEvaluator } from "../utils.ts";
+import {
+  checkFetchedModules,
+  createEnvironmentRunner,
+  createEvaluator,
+  takeFetchedModules,
+} from "../utils.ts";
 import { isLiveModule } from "./client-ids.ts";
 import { recordListeners, recordMessageChannels, type Leftovers } from "./leftovers.ts";
 import { registry } from "./registry.ts";
@@ -199,6 +204,79 @@ function clientFileEvaluator(imported: (module: string) => Promise<object>): Mod
   };
 }
 
+// A UI of the host that renders with React DOM in the document, like the docs
+// pages of Storybook, is code of the browser layer too. It has a module graph
+// of its own, which lives as long as the document: a page load of the app
+// takes the graph of the pages, and so does a client file, which reads from
+// the page that is open. This one keeps its React, and the roots that its
+// React DOM made. It has no hot updates of its own: a file that the rsc layer
+// evaluated again, after a change, is evaluated again here when its export is
+// asked for.
+let hostGraph: ModuleRunner | undefined;
+// What an import of the host graph waits for: what the graph does before,
+// one at a time, so that no import gets a module that it is about to forget.
+let hostGraphReady: Promise<ModuleRunner> | undefined;
+// The exports of the host graph, by what the rsc layer has for each.
+const hostExports = new WeakMap<object, Promise<unknown>>();
+// For each file, which load of it in the rsc layer the host graph has.
+const hostLoads = new Map<string, object>();
+
+function importInHostGraph(module: string, reload: boolean) {
+  const prepare = () => prepareHostGraph(module, reload);
+  const ready = (hostGraphReady ?? Promise.resolve()).then(prepare, prepare);
+  hostGraphReady = ready;
+  return ready.then((graph) => graph.import<Record<string, unknown>>(module));
+}
+
+// A module of a package, and one of the page, are the same after a change of
+// a file of the app. So are the host's React, and the roots its React DOM made.
+const isDependency = ({ id, file }: { id: string; file: string | null }) =>
+  isHostModule(id) || `${file ?? id}`.includes("/node_modules/");
+
+async function prepareHostGraph(module: string, reload: boolean): Promise<ModuleRunner> {
+  // The server's modules as they are now: when the graph is made, and after a
+  // file changed.
+  if (!hostGraph || reload) await checkFetchedModules();
+  const graph = (hostGraph ??= createEnvironmentRunner(environment, pageEvaluator()));
+  if (reload && graph.evaluatedModules.getModuleByUrl(module)) {
+    // A file changed, and the server cannot tell which modules of the graph
+    // did: another runner may have fetched them anew already. So the graph
+    // evaluates every module of the app again, as a page load does, with
+    // what the page fetched, all at once.
+    for (const evaluated of graph.evaluatedModules.idToModuleMap.values()) {
+      if (!isDependency(evaluated)) graph.evaluatedModules.invalidateModule(evaluated);
+    }
+    takeFetchedModules(graph);
+  }
+  return graph;
+}
+
+/**
+ * What an export of a file of the browser layer is in a module graph that
+ * lives as long as the document: an export of a file with `"use client"`, or
+ * the stand-in for an export of a file of `host.ui.files`. Anything else is
+ * itself.
+ */
+export function importForHost<T>(value: T): Promise<T> {
+  const file = isObject(value) ? registry.clientExports.get(value) : undefined;
+  if (!file) return Promise.resolve(value);
+  let found = hostExports.get(file);
+  if (!found) {
+    const loaded = hostLoads.get(file.module);
+    hostLoads.set(file.module, file.load);
+    found = importInHostGraph(file.module, loaded !== undefined && loaded !== file.load).then(
+      (exports) => exports[file.name],
+    );
+    // A file that failed to load is loaded anew the next time.
+    found.catch(() => {
+      hostExports.delete(file);
+      if (hostLoads.get(file.module) === file.load) hostLoads.set(file.module, {});
+    });
+    hostExports.set(file, found);
+  }
+  return found as Promise<T>;
+}
+
 /**
  * Evaluates a file with `"use client"` for the browser layer, and answers
  * with what it exports. `id` is what the browser layer imports the
@@ -236,8 +314,9 @@ export async function loadClientFile(id: string): Promise<Record<string, unknown
     if (files.get(id) === imports) unloadClientFile(id);
     throw error;
   }
+  const load = {};
   for (const [name, value] of Object.entries(exports)) {
-    if (isObject(value)) registry.clientExports.set(value, { module: id, name });
+    if (isObject(value)) registry.clientExports.set(value, { module: id, name, load });
   }
   return exports;
 }

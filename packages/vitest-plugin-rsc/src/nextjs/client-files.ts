@@ -1,7 +1,7 @@
 import path from "node:path";
 import { transformDirectiveProxyExport } from "@vitejs/plugin-rsc/transforms";
 import { normalizePath, parseAstAsync, transformWithOxc, type Plugin } from "vite";
-import { hostModulePrefix } from "../host-module.ts";
+import { hostModuleId, hostModulePrefix, hostModuleTarget } from "../host-module.ts";
 import {
   builtClientFileId,
   builtHostModuleUrl,
@@ -16,6 +16,11 @@ import { clientFileId, liveModulePrefix } from "./client-ids.ts";
 // Storybook to read its stories. So there it is a stub, which has the page
 // evaluate the file itself for the browser layer and hands out its exports:
 // see client-graph.ts.
+//
+// A file of `host.ui.files`, like an MDX docs page of Storybook, is code
+// of the browser layer for a UI of the host, which renders in a module graph
+// of its own. A page does not load it: its stub only refers to it, and the
+// host imports the file with `importForHost()`.
 //
 // The file runs in the browser layer, and what it imports from the host does
 // not: `vitest` has the test that is running, and `storybook/test` the spies
@@ -32,6 +37,9 @@ import { clientFileId, liveModulePrefix } from "./client-ids.ts";
 // evaluates again.
 
 const sourceFile = /\.(?:tsx|ts|mts|jsx|js|mjs)$/;
+// An import of a package by its name: not a path, a subpath import like
+// `#lib/db`, or an alias like `@/lib` or `~/lib`.
+const packageSpecifier = /^(?:@[^/]+\/)?[^./#~@]/;
 const languageOf = (file: string) =>
   file.endsWith(".tsx") ? "tsx" : file.endsWith("ts") ? "ts" : "jsx";
 
@@ -44,23 +52,43 @@ export type ClientFilesOptions = {
   internal: string;
   /** Whether a file is the host's: a test file, a setup file, a story. */
   isHostFile(file: string): boolean;
+  /**
+   * Whether a file of the host is a UI of the host in the browser layer, like
+   * an MDX docs page, which a page does not load: see `host.ui.files`.
+   */
+  isHostUiFile?(file: string): boolean;
   /** Whether an import is of a package of the host, by its name. */
   isHostPackage(specifier: string): boolean;
   /** For a static build: what a build of a layer finds of the host, see build.ts. */
   built: HostReferences;
 };
 
-/** The module of the rsc layer for a client file with these exports. */
-export function clientFileStub(id: string, exportNames: string[], internal: string): string {
-  const exports = exportNames.map((name) =>
+const stubExports = (exportNames: string[]) =>
+  exportNames.map((name) =>
     name === "default"
       ? `export default $$file.default;`
       : `export const ${name} = $$file[${JSON.stringify(name)}];`,
   );
+
+/** The module of the rsc layer for a client file with these exports. */
+export function clientFileStub(id: string, exportNames: string[], internal: string): string {
   return [
     `import { loadClientFile as $$loadClientFile } from ${JSON.stringify(internal)};`,
     `const $$file = await $$loadClientFile(${JSON.stringify(id)});`,
-    ...exports,
+    ...stubExports(exportNames),
+    "",
+  ].join("\n");
+}
+
+/**
+ * The module of the rsc layer for a file of `host.ui.files`: a stand-in
+ * for each export, without loading the file.
+ */
+export function uiFileStub(id: string, exportNames: string[], internal: string): string {
+  return [
+    `import { referToUiFile as $$referToUiFile } from ${JSON.stringify(internal)};`,
+    `const $$file = $$referToUiFile(${JSON.stringify(id)}, ${JSON.stringify(exportNames)});`,
+    ...stubExports(exportNames),
     "",
   ].join("\n");
 }
@@ -92,6 +120,7 @@ export function hostModuleCode(
 export function clientFiles(options: ClientFilesOptions): Plugin {
   const { rsc, browser } = options.environments;
   const { testingLibrary, internal, isHostFile, isHostPackage, built } = options;
+  const isHostUiFile = options.isHostUiFile ?? (() => false);
   // The modules in between that a build of the browser layer has a file for.
   const emitted = new Set<string>();
 
@@ -118,7 +147,7 @@ export function clientFiles(options: ClientFilesOptions): Plugin {
         // browser layer imports it from the page, by a URL, as a runner does
         // with a dev server. The rsc layer is built after it and has it.
         const hostModule = (target: string) => {
-          if (!isBuild) return hostModulePrefix + target;
+          if (!isBuild) return hostModuleId(target);
           const url = builtHostModuleUrl(root, target);
           built.hostModules.set(url, target);
           return { id: url, external: "absolute" as const };
@@ -167,8 +196,8 @@ export function clientFiles(options: ClientFilesOptions): Plugin {
         }
         return `import * as module from ${source};\nexport { module };\n`;
       }
-      if (!id.startsWith(hostModulePrefix)) return;
-      const target = id.slice(hostModulePrefix.length);
+      const target = hostModuleTarget(id);
+      if (target === undefined) return;
       // Not the browser layer's to evaluate: the transport of its module
       // runner answers for it, see ../utils.ts. Vite still warms it up.
       if (this.environment.name !== rsc) return "export {};";
@@ -176,15 +205,25 @@ export function clientFiles(options: ClientFilesOptions): Plugin {
     },
     // Before Vite RSC, which makes a file with `"use client"` a reference.
     async transform(code, id) {
-      if (this.environment.name !== rsc || !code.includes("use client")) return;
-      const file = id.split("?")[0]!;
-      if (id.includes("?") || !sourceFile.test(file) || !isHostFile(file)) return;
+      if (this.environment.name !== rsc || id.includes("?")) return;
+      const file = id;
+      // A file of `host.ui.files` is code of the browser layer, with or
+      // without the directive. Whatever its extension, like `.mdx`, it is
+      // JavaScript by the time it gets here: the plugin of the host that
+      // compiles it, like Storybook's, comes first.
+      const isUiFile = isHostUiFile(file);
+      if (
+        !isUiFile &&
+        !(sourceFile.test(file) && code.includes("use client") && isHostFile(file))
+      ) {
+        return;
+      }
       // Types and JSX are in the way of reading what the file exports.
       const compiled = await transformWithOxc(code, file, {
         lang: languageOf(file),
         sourcemap: false,
       });
-      const ast = await parseAstAsync(compiled.code);
+      const ast = await parseAstAsync(isUiFile ? `"use client";\n${compiled.code}` : compiled.code);
       let exportNames: string[] | undefined;
       try {
         exportNames = transformDirectiveProxyExport(ast, {
@@ -213,7 +252,12 @@ export function clientFiles(options: ClientFilesOptions): Plugin {
       for (const node of ast.body) {
         if (node.type !== "ImportDeclaration" && node.type !== "ExportNamedDeclaration") continue;
         const source = node.source?.value;
-        const resolved = typeof source === "string" && (await this.resolve(source, file));
+        if (typeof source !== "string") continue;
+        // What a file of `host.ui.files` imports of a package, like the blocks
+        // of Storybook's docs pages, is not the rsc layer's: Vite would
+        // pre-bundle a package that the rsc layer resolves.
+        if (isUiFile && packageSpecifier.test(source)) continue;
+        const resolved = await this.resolve(source, file);
         if (resolved && path.isAbsolute(resolved.id) && !resolved.id.includes("/node_modules/")) {
           this.addWatchFile(resolved.id.split("?")[0]!);
         }
@@ -225,10 +269,8 @@ export function clientFiles(options: ClientFilesOptions): Plugin {
         fileId = builtClientFileId(this.environment.config.root, normalized);
         built.clientFiles.set(normalized, fileId);
       }
-      return {
-        code: clientFileStub(fileId, exportNames, internal),
-        map: { mappings: "" },
-      };
+      const stub = isUiFile ? uiFileStub : clientFileStub;
+      return { code: stub(fileId, exportNames, internal), map: { mappings: "" } };
     },
   };
 }

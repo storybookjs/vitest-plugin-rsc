@@ -45,3 +45,7 @@ export async function signInAs(user: AuthUser = testUser) {
     .onConflictDoNothing();
   setCurrentUser(user);
 }
+
+export function signOut() {
+  setCurrentUser(null);
+}

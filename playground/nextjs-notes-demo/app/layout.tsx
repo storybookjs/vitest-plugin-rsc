@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
-import { Geist, Geist_Mono } from "next/font/google";
 import { ProgressBar, ProgressBarProvider } from "react-transition-progress";
 import { Link } from "#components/link.tsx";
 import { NotebookPenIcon } from "#components/icons.tsx";
@@ -9,19 +8,10 @@ import { ThemeToggle } from "#components/theme-toggle.tsx";
 import { buttonVariants } from "#components/ui/button-variants.ts";
 import { getOptionalUser } from "#lib/auth-session.ts";
 import { APP_NAME } from "#lib/config.ts";
+import { fontVariables } from "./fonts.ts";
 import "./globals.css";
 
 export const dynamic = "force-dynamic";
-
-const geistSans = Geist({
-  variable: "--font-geist-sans",
-  subsets: ["latin"],
-});
-
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
-  subsets: ["latin"],
-});
 
 export const metadata: Metadata = {
   title: APP_NAME,
@@ -117,11 +107,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html
-      lang="en"
-      className={`${geistSans.variable} ${geistMono.variable} antialiased`}
-      suppressHydrationWarning
-    >
+    <html lang="en" className={`${fontVariables} antialiased`} suppressHydrationWarning>
       <body>
         <AppShell>{children}</AppShell>
       </body>

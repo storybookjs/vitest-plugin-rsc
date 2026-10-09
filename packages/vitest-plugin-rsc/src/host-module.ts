@@ -18,6 +18,21 @@
 
 export const hostModulePrefix = "\0vitest-plugin-rsc/host-module/";
 
+// The id ends in this, and not in the name of the module it stands for. A
+// plugin that compiles a file by its name, like the CSF plugin of Storybook
+// for a story file, would take the id for that file and read it from disk.
+const hostModuleSuffix = "/module.js";
+
+/** The id of the module of the page for `target`: a package by its name, or a file by its path. */
+export const hostModuleId = (target: string): string =>
+  hostModulePrefix + target + hostModuleSuffix;
+
+/** What the module of the page with this id stands for: see `hostModuleId()`. */
+export function hostModuleTarget(id: string): string | undefined {
+  if (!id.startsWith(hostModulePrefix) || !id.endsWith(hostModuleSuffix)) return;
+  return id.slice(hostModulePrefix.length, -hostModuleSuffix.length);
+}
+
 /** How Vite spells that id where a URL is expected. */
 export const hostModuleUrl = "/@id/__x00__vitest-plugin-rsc/host-module/";
 

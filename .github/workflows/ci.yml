@@ -77,7 +77,12 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec playwright install --with-deps --only-shell chromium
       - run: pnpm build
-      - run: pnpm test:dist
+      # The Storybook of the notes demo runs `storybook dev` and then
+      # `storybook build`, each a process of its own with a browser, for
+      # minutes. Next to the other projects it takes the CPU that their cold
+      # start needs, and their first tests time out: it runs after them.
+      - run: pnpm test:dist --project '!nextjs-notes-demo-storybook'
+      - run: pnpm test:dist --project nextjs-notes-demo-storybook
 
   next:
     name: Next.js ${{ matrix.next }}

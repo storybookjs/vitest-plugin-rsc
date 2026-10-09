@@ -335,8 +335,8 @@ test("tells the page where the layers are from the directory of the build", () =
       `  "react_client": { base: directory, entries: {"vitest-plugin-rsc/nextjs/client":"vitest-plugin-rsc/react_client/entry.js"} },\n` +
       `};\n` +
       `export const hostModules = {\n` +
-      `  "/@id/__x00__vitest-plugin-rsc/host-module/storybook/test": () => import("\\u0000vitest-plugin-rsc/host-module/storybook/test"),\n` +
-      `  ${JSON.stringify(previewUrl)}: () => import(${JSON.stringify(`\0vitest-plugin-rsc/host-module/${preview}`)}),\n` +
+      `  "/@id/__x00__vitest-plugin-rsc/host-module/storybook/test": () => import("\\u0000vitest-plugin-rsc/host-module/storybook/test/module.js"),\n` +
+      `  ${JSON.stringify(previewUrl)}: () => import(${JSON.stringify(`\0vitest-plugin-rsc/host-module/${preview}/module.js`)}),\n` +
       `};\n`,
   );
   // A file of the page by a name of its own, not by the path of the machine

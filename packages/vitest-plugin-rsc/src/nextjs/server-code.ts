@@ -86,6 +86,46 @@ export type ServerCodeOptions = {
      * @example ["storybook", "@storybook/addon-docs"]
      */
     packages?: string[];
+    /**
+     * A UI of the host that renders with React DOM, like the docs pages of
+     * Storybook. React in the rsc layer, which the host shares, is its
+     * react-server build, without React DOM, so such a UI is code of the
+     * browser layer. The host imports it with `importForHost()` of
+     * `vitest-plugin-rsc/nextjs/internal`, in a module graph that lives as
+     * long as the document.
+     */
+    ui?: {
+      /**
+       * Packages of the host that the browser layer loads itself, with its
+       * own React, instead of taking the page's. By package name, or by the
+       * name of an entry point of one.
+       *
+       * What such a package imports of the other packages of the host is the
+       * page's where the browser layer resolves the import. A dependency that
+       * the browser layer pre-bundles has what it imports in the bundle,
+       * unless the bundle leaves the import out, as it does for Storybook's
+       * own preview modules.
+       *
+       * @example ["@storybook/addon-docs", "storybook/theming"]
+       */
+      packages?: string[];
+      /**
+       * Files of the UI, like MDX docs pages: glob patterns, relative to the
+       * project root. They are files of the host, whatever their extension,
+       * once a plugin of the host compiles them to JavaScript. A page does
+       * not load them: in the rsc layer each export of such a file is a
+       * stand-in, which `importForHost()` takes.
+       */
+      files?: string | RegExp | (string | RegExp)[];
+    };
+    /**
+     * The Vite plugins of the host, by name, or by a pattern for the name.
+     * They apply to the host's own environment, the rsc layer, and not to
+     * the two layers of the app.
+     *
+     * @example [/^storybook:/]
+     */
+    plugins?: (string | RegExp)[];
   };
 };
 
@@ -160,9 +200,12 @@ const name = "vitest-plugin-rsc:next-server-code";
 
 export function createServerCode(registry: string, options: ServerCodeOptions = {}) {
   const patterns = [options.browserModules ?? []].flat();
-  const hostFiles = [options.host?.files ?? []].flat();
+  const uiFiles = [options.host?.ui?.files ?? []].flat();
+  const hostFiles = [options.host?.files ?? [], uiFiles].flat();
   const packages = options.host?.packages ?? [];
+  const uiPackages = options.host?.ui?.packages ?? [];
   let isBrowserModule: (file: string) => boolean = () => false;
+  let isUiFile: (file: string) => boolean = () => false;
   // One for every Vitest project this plugin is in, and one for the files of
   // another host.
   const testFileMatchers: ((file: string) => boolean)[] = [];
@@ -195,16 +238,18 @@ export function createServerCode(registry: string, options: ServerCodeOptions = 
   return {
     isServerCode,
     isHostFile,
+    /** Whether a file is one of `host.ui.files`, like an MDX docs page. */
+    isHostUiFile: (file: string): boolean => isUiFile(normalizePath(file)),
     /**
      * Whether an import is of a package of the host, by its name: `vitest`,
      * `vitest/browser`, `@vitest/spy`. Not what such a package depends on.
      */
     isHostPackage(specifier: string): boolean {
-      return hostPackages(packages).some((name) =>
+      const isOf = (name: string) =>
         name.endsWith("/*")
           ? specifier.startsWith(name.slice(0, -1))
-          : specifier === name || specifier.startsWith(`${name}/`),
-      );
+          : specifier === name || specifier.startsWith(`${name}/`);
+      return hostPackages(packages).some(isOf) && !uiPackages.some(isOf);
     },
     /**
      * Whether a source file is code of the app in a layer: what Next's build
@@ -223,6 +268,7 @@ export function createServerCode(registry: string, options: ServerCodeOptions = 
         patterns.map(String),
         hostFiles.map(String),
         packages,
+        uiPackages,
       ]),
     },
     /** For a module this plugin generates, with the constants of its layer. */
@@ -233,6 +279,9 @@ export function createServerCode(registry: string, options: ServerCodeOptions = 
       if (patterns.length > 0) isBrowserModule = createFilter(patterns, null, { resolve: root });
       if (hostFiles.length > 0) {
         testFileMatchers.push(createFilter(hostFiles, null, { resolve: root }));
+      }
+      if (uiFiles.length > 0) {
+        isUiFile = createFilter(uiFiles, null, { resolve: root });
       }
       // Vitest pre-bundles its own runtime in the environment of the rsc layer.
       testRunnerPackages = findPackagesWithDependencies(hostPackageNames(root, packages), root);

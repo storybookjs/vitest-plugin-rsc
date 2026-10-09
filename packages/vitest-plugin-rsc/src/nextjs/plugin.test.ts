@@ -37,7 +37,7 @@ test("has Vite scan the proxy of the app, next to its routes", async () => {
   // No file of `app/` imports the proxy, so the scan of `app/` does not find
   // what only the proxy imports.
   expect(rsc.entries).toEqual([
-    normalizePath(path.join(root, "app/**/*.{js,jsx,ts,tsx}")),
+    normalizePath(path.join(root, "app/**/!(*.stories).{js,jsx,ts,tsx}")),
     normalizePath(path.join(root, "proxy.ts")),
   ]);
 });

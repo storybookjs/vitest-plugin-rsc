@@ -30,7 +30,9 @@
     "**/*.tsx",
     ".next/types/**/*.ts",
     ".next/dev/types/**/*.ts",
-    "**/*.mts"
+    "**/*.mts",
+    ".storybook/*.ts",
+    "../storybook-nextjs-vite-rsc/src/virtual.d.ts"
   ],
   "exclude": ["node_modules"]
 }

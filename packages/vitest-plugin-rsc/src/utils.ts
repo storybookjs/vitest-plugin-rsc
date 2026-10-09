@@ -125,7 +125,9 @@ function createRunner(
  * A module runner with a module graph of its own: every module it imports is
  * evaluated again, the way a page load evaluates a page's scripts again. Call
  * `checkFetchedModules()` before every page load, and before a runner that is
- * made between two, or a file that changed goes unnoticed.
+ * made between two, or a file that changed goes unnoticed. So does a runner
+ * that lives longer than a page load, before it imports a module again after
+ * a file changed.
  */
 export function createEnvironmentRunner(
   environment: string,
@@ -142,7 +144,22 @@ export function createEnvironmentRunner(
       ? invokeForPageLoad(environment, payload, modules)
       : invokeEnvironment(environment, payload);
   };
-  return createRunner(environment, invoke, evaluator, { sourcemaps });
+  const runner = createRunner(environment, invoke, evaluator, { sourcemaps });
+  rebases.set(runner, () => (first = undefined));
+  return runner;
+}
+
+const rebases = new WeakMap<ModuleRunner, () => void>();
+
+/**
+ * Has a runner of `createEnvironmentRunner()` that lives longer than a page
+ * load take the modules that the tab has fetched now, all at once, as the
+ * runner of a page load does, where it would ask the server for each. Of the
+ * modules it has, it evaluates again only those it was made to forget: forget
+ * every one that may have changed first, as the server cannot tell.
+ */
+export function takeFetchedModules(runner: ModuleRunner): void {
+  rebases.get(runner)?.();
 }
 
 // A module of the page is not the environment's to serve: the runner imports

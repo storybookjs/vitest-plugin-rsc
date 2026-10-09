@@ -16,5 +16,5 @@
     "paths": { "@/*": ["./*"] },
     "types": ["node"]
   },
-  "include": ["**/*.ts", "**/*.tsx"]
+  "include": ["**/*.ts", "**/*.tsx", "../storybook-nextjs-vite-rsc/src/virtual.d.ts"]
 }
