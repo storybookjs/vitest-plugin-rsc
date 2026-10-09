@@ -175,7 +175,7 @@ export function clientFiles(options: ClientFilesOptions): Plugin {
         if ((resolveOptions as { scan?: boolean }).scan) return;
         const live = liveModuleId(file, source);
         if (!isBuild) return live;
-        // In a build the module in between is a file of its own, which the
+        // In a build the module in between is a chunk of its own, which the
         // client file imports when it runs, as it does with a dev server. The
         // bundler does not look into the import: what the file imports by
         // name is of the module the import is of, not of the one in between.

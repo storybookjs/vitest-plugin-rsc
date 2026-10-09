@@ -311,8 +311,9 @@ const filesOf = (directory: string) =>
 const chunk = (fileName: string, code: string) => ({ type: "chunk", fileName, code });
 
 // The build of the browser layer of an app: its entry imports a module, which
-// names its CSS, and loads another one when it is asked to. It is served from
-// `base`, by a `fetch` that says what it was asked for.
+// names its CSS, and loads others when it is asked to, one by a template
+// literal, as Rolldown writes a dynamic import. It is served from `base`, by a
+// `fetch` that says what it was asked for.
 async function servedBuild(base: string) {
   const { outDir, plugin, builder } = setup({
     react_client: {
@@ -322,6 +323,7 @@ async function servedBuild(base: string) {
           `export const loads = (globalThis.loads ?? 0) + 1;\n` +
           `globalThis.loads = loads;\n` +
           `export const lazy = () => import("./assets/lazy.js");\n` +
+          "export const later = () => import(`./assets/later.js`);\n" +
           `export { greeting };\n`,
       ),
       "vitest-plugin-rsc/react_client/assets/greeting.js": chunk(
@@ -332,6 +334,10 @@ async function servedBuild(base: string) {
       "vitest-plugin-rsc/react_client/assets/lazy.js": chunk(
         "vitest-plugin-rsc/react_client/assets/lazy.js",
         `export default "lazy";\n`,
+      ),
+      "vitest-plugin-rsc/react_client/assets/later.js": chunk(
+        "vitest-plugin-rsc/react_client/assets/later.js",
+        `export default "later";\n`,
       ),
       "vitest-plugin-rsc/react_client/assets/greeting.css": {
         type: "asset",
@@ -359,7 +365,12 @@ async function servedBuild(base: string) {
   return { outDir, layer, built: createBuiltLayers(fetch as typeof globalThis.fetch), asked };
 }
 
-type Entry = { loads: number; greeting: string; lazy: () => Promise<{ default: string }> };
+type Entry = {
+  loads: number;
+  greeting: string;
+  lazy: () => Promise<{ default: string }>;
+  later: () => Promise<{ default: string }>;
+};
 const entry = "/vitest-plugin-rsc/react_client/entry.js";
 
 // A runner of the layer for a page load, as ../utils.ts makes one.
@@ -392,6 +403,7 @@ test("a runner evaluates a layer from its one file, which a tab fetches once", a
   expect(first.loads).toBe(1);
   expect(first.greeting).toBe("hello");
   expect((await first.lazy()).default).toBe("lazy");
+  expect((await first.later()).default).toBe("later");
   // A module has the URL of the file it would be: what it names by its URL,
   // like its CSS, is a file of the build where it says.
   const greeting = await pageRunner(built, layer).import<{ css: string }>(
@@ -406,6 +418,20 @@ test("a runner evaluates a layer from its one file, which a tab fetches once", a
   const second = await pageRunner(built, layer).import<Entry>(entry);
   expect(second.loads).toBe(2);
   expect(asked).toEqual(["https://site.test/docs/vitest-plugin-rsc/react_client/modules.json"]);
+  // With the same answer for a module, which a page compiles once.
+  const fetchModule = (id: string) =>
+    built.invoke(layer, {
+      type: "custom",
+      event: "vite:invoke",
+      data: { id: "send:fetchModule", name: "fetchModule", data: [id] },
+    });
+  const [answer, again] = await Promise.all([fetchModule(entry), fetchModule(entry)]);
+  expect((answer as { result: unknown }).result).toBe((again as { result: unknown }).result);
+  // Also for a URL of the module, which encodes what its path does not.
+  const encoded = await fetchModule("/vitest-plugin-rsc/react_client/assets/gr%65eting.js");
+  expect((encoded as { result: { id: string } }).result.id).toBe(
+    "/vitest-plugin-rsc/react_client/assets/greeting.js",
+  );
 });
 
 test("a runner of a built layer asks again after a failure, and says what the build does not have", async () => {
@@ -430,6 +456,41 @@ test("a runner of a built layer asks again after a failure, and says what the bu
     "vitest-plugin-rsc: the build has no module /vitest-plugin-rsc/react_client/assets/gone.js",
   );
   expect(asked).toHaveLength(2);
+
+  // A site that answers with another file, like a page of its own.
+  const elsewhere = { ...layer, modules: "vitest-plugin-rsc/react_client/assets/greeting.css" };
+  await expect(pageRunner(built, elsewhere).import(entry)).rejects.toThrow(
+    "vitest-plugin-rsc: https://site.test/vitest-plugin-rsc/react_client/assets/greeting.css " +
+      "is not the modules of a layer",
+  );
+});
+
+test("leaves the bundle of a build that only looks", () => {
+  const { plugin, manager } = setup();
+  const css = { type: "asset", fileName: "assets/a.css", source: "//vitest-plugin-rsc-build-dir/" };
+
+  manager.isScanBuild = true;
+  call(plugin.generateBundle, "client", {}, { "assets/a.css": css });
+
+  expect(css.source).toBe("//vitest-plugin-rsc-build-dir/");
+});
+
+test("names a file of the build by the way from the file that asks", () => {
+  const { plugin } = setup();
+  const image = "/_next/static/media/logo.png";
+  const code = withBuiltFiles(`export default {"src":"${image}","width":40};`, [image], "js");
+  const rendered = (fileName: string) =>
+    (call(plugin.renderChunk, "client", code, { fileName }) as { code: string }).code;
+
+  expect(rendered("index.js")).toBe(
+    `export default {"src":new URL("./" + "_next/static/media/logo.png", import.meta.url).href,"width":40};`,
+  );
+  expect(rendered("assets/page.js")).toContain(`new URL("../" + "_next/static/media/logo.png"`);
+  expect(rendered("vitest-plugin-rsc/next_ssr/assets/badge.js")).toContain(
+    `new URL("../../../" + "_next/static/media/logo.png"`,
+  );
+  // A chunk that names no file of the build stays as it is.
+  expect(call(plugin.renderChunk, "client", "export {};", { fileName: "a.js" })).toBeUndefined();
 });
 
 test("tells the page where the layers are from the directory of the build", () => {
@@ -464,7 +525,7 @@ test("tells the page where the layers are from the directory of the build", () =
   );
 });
 
-test("has the client files of the host in the browser layer, each in the file its id names", async () => {
+test("has the client files of the host in the browser layer, each in the chunk its id names", async () => {
   const { root, plugin, manager, references } = setup();
   manager.clientReferenceMetaMap = {
     "/app/counter.tsx": { referenceKey: "a1b2c3", importId: "/app/counter.tsx" },

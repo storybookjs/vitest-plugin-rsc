@@ -45,9 +45,9 @@ import { builtClientFileDir, builtLiveModuleDir, clientNodeReference } from "./c
 // A file of the host with `"use client"`, like a story, is a module of the
 // browser layer: see client-files.ts. The host imports it in the rsc layer,
 // so each build of that layer finds it, and the browser layer after it builds
-// it into a file of its own, with one for every module in between that it
-// imports. The id of each is the path of its file, which the rsc layer knows
-// before the browser layer is built. What such a file imports of the host is
+// it into a chunk of its own, with one for every module in between that it
+// imports. The id of each is the path the chunk has in the build, which the
+// rsc layer knows before the browser layer is built. What such a file imports of the host is
 // not built in the browser layer: it is the page's module, in the build of the
 // host, which step 3 lists from what step 2 found.
 
@@ -122,7 +122,7 @@ export const createHostReferences = (): HostReferences => ({
 const hash = (key: string) => createHash("sha256").update(key).digest("base64url").slice(0, 10);
 
 /**
- * The id of a module that a build has in a file of its own, in `directory`:
+ * The id of a module that a build has in a chunk of its own, in `directory`:
  * named after `name`, and `key` tells it apart. The same in every build of
  * the project, also on another machine.
  */
@@ -241,7 +241,7 @@ export function nextBuild(options: BuildOptions): Plugin {
       const layer = (name: string) => ({
         build: {
           copyPublicDir: false,
-          // The files are fetched and evaluated, not loaded as scripts.
+          // The chunks are evaluated by a module runner, not loaded as scripts.
           modulePreload: false as const,
           // Named from the directory of the host's build, where they end up:
           // Vite writes the URL of a file, like the CSS of a chunk, from its
@@ -404,7 +404,7 @@ export function nextBuild(options: BuildOptions): Plugin {
     },
     buildStart() {
       if (this.environment.mode !== "build") return;
-      // The client files of the host, each in the file its id names.
+      // The client files of the host, each in the chunk its id names.
       if (this.environment.name === browser) {
         for (const [file, id] of options.host.clientFiles) {
           this.emitFile({ type: "chunk", id: file, fileName: id.slice(1) });

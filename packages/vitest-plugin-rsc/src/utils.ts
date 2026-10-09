@@ -12,7 +12,12 @@ import {
 } from "vite/module-runner";
 import builtLayers, { hostModules } from "virtual:vitest-plugin-rsc/layers";
 import * as pageClient from "virtual:vitest-plugin-rsc/vite-client";
-import { builtUrl, createBuiltLayers } from "./built-layers.ts";
+import {
+  builtUrl,
+  createBuiltLayers,
+  type InvokePayload,
+  type InvokeResult,
+} from "./built-layers.ts";
 import { isHostModule } from "./host-module.ts";
 
 // The page's own instance of Vite's client, for the modules that the runners
@@ -30,8 +35,6 @@ const reactClientWebSocketVersionEvent = "vitest-plugin-rsc:react-client:version
 const sourceUrlRE = /\/\/# sourceURL=[^\n\r]*/;
 const sourceUrlLineRE = /^\/\/# sourceURL=/m;
 
-type InvokePayload = Parameters<NonNullable<ModuleRunnerTransport["invoke"]>>[0];
-type InvokeResult = Awaited<ReturnType<NonNullable<ModuleRunnerTransport["invoke"]>>>;
 /** What the server says of a module next to it: see `describeModule()` in index.ts. */
 type ModuleAnswer = InvokeResult & { imports?: string[]; dependency?: boolean };
 type ViteFetchResult = {
@@ -61,8 +64,8 @@ type InvokeResultMessage = {
 // file of a static build.
 const nativeFetch = globalThis.fetch;
 
-// The modules of a static build, see built-layers.ts. Every page load runs
-// each layer, so the tab asks for all of them at once, before a runner does.
+// The modules of a static build, see built-layers.ts. A page runs both
+// layers, so the tab asks for all of them at once, before a runner does.
 const built = createBuiltLayers(nativeFetch);
 for (const layer of Object.values(builtLayers ?? {})) if (layer) built.preload(layer);
 
