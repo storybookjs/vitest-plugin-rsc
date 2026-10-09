@@ -121,16 +121,18 @@ Next's build lists the CSS of every layout, page and boundary: the CSS that the 
 
 Vite does it another way: a module that imports CSS puts it in a `<style>` when it first loads, and that is once for the browser. Global CSS of one route would then still apply after a test has opened another one. So for the CSS of the app the plugin does what Next's build does (`src/nextjs/styles.ts`):
 
-- An import of CSS in the server code of the app and of its packages, and in the `ssr` and `browser` layers, gets a query, `?next-linked`. So does an import of a package that is a stylesheet, like `@fontsource/inter`. Its module puts nothing in the document, and exports the class names of a CSS module, as Vite's module for a server does: the plugin keeps the exports of Vite's module for the file, and drops the statements that add the `<style>`. A Vite whose exports need those statements stops the run with a message.
-- Before Next renders a route, the browser asks the plugin for the list. Next reads it before it loads the module of a segment. The files of the segments are those that the route's entry imports by an absolute path, as Next's build finds them. The plugin walks Vite's module graphs from the file of each segment, in the `rsc` layer and, from a Client Component, in the `browser` layer. The graph has only what was loaded, so the plugin transforms what it walks first, which the browser asks for right after.
+- An import of CSS in the server code of the app and of its packages, and in the `ssr` and `browser` layers but for a file of the host with `"use client"`, gets a query, `?next-linked`. So does an import of a package that is a stylesheet, like `@fontsource/inter`. Its module puts nothing in the document, and exports the class names of a CSS module, as Vite's module for a server does: the plugin keeps the exports of Vite's module for the file, and drops the statements that add the `<style>`. A Vite whose exports need those statements stops the run with a message.
+- Before Next renders a route, the browser asks the plugin for the list: under Vitest with a command of Vitest's, which says which test file asks, and under [another host](#another-host) at a path of the dev server. Next reads it before it loads the module of a segment. The files of the segments are those that the route's entry imports by an absolute path, as Next's build finds them. The plugin walks Vite's module graphs from the file of each segment, in the `rsc` layer and, from a Client Component, in the `browser` layer. The graph has only what was loaded, so the plugin transforms what it walks first, which the browser asks for right after.
 - The dev server serves a stylesheet where Next links it: the path of the file under `/_next/static/css/`, or a hash for CSS that is no file, like that of a font. It is the CSS Vite makes of the file, so with PostCSS, Tailwind and the class names that its module exports.
 - With `experimental.inlineCss`, the list has the CSS of each file too, and Next puts it in a `<style>` of the page, as it does for `next start`. A navigation of Next's router still links it.
 - `renderServer()` resolves once the stylesheets of the page have loaded, and the page is gone with them.
+- A [static build](#a-static-build) has each stylesheet in a file of its own under `/_next/static/css/`, and the lists of every page route in `vitest-plugin-rsc/next-stylesheets.json`, read off the module graphs of the build. Vite leaves those stylesheets out of the CSS of its chunks.
 
 What differs from `next start`:
 
 - **One stylesheet per CSS file**, in the order of the imports. Next's build joins the CSS of a segment into a chunk.
-- **A node has the CSS of what its test file imports**, and of what the setup files import. The plugin cannot tell which components a node renders. With `layouts: true` the layouts around it have their own.
+- **A node has the CSS of what its test file imports**, and of what the setup files import. The plugin cannot tell which components a node renders. With `layouts: true` the layouts around it have their own. Under another host, which does not say which of its files renders a node, it is the CSS of what the files of the host import that the page has loaded, like the story files that Storybook has loaded. In a static build, of all of them.
+- **In a static build, `experimental.inlineCss` links the CSS**: a stylesheet of the build names a file, like a font, by the way from the stylesheet.
 - **CSS that a test file, a setup file or one of the `browserModules` imports itself** is Vite's `<style>`, and stays in the browser, as it would without Next. The CSS of a `next/font` call is linked all the same, also when a test file imports the font.
 - **An edit to a CSS file** arrives with the next page load. A page that is open keeps the stylesheet it has.
 
@@ -620,6 +622,8 @@ At the next lookup the plugin answers for a test file itself. The test file belo
 
 The layers do not import Vitest, so a page that is not Vitest's can host the app: a page of Vite with a dev server, or Storybook's preview. What Vitest's config says of a test runner, the `host` option says of another host: `host.files` are its files, like its stories, which keep the browser's `window` and `fetch` as a test file does, and `host.packages` are its packages, like `storybook`, which the `browser` layer imports from the page instead of a copy of its own. A spy of `storybook/test` in a Client Component is then the one the Actions panel listens to.
 
+A route has the stylesheets that Next links, as under Vitest: the page asks the dev server for them, at `/@vitest-plugin-rsc/next-stylesheets`. See [Stylesheets](#stylesheets).
+
 `cleanup()` forgets less outside Vitest. A test runs as a new browser context, so Vitest's `cleanup()` forgets every cookie and storage key that was not there when the plugin loaded. Another host keeps state of its own on the same origin, like the manager of Storybook. There it forgets the cookies the server set, and the cookies and keys added while a page of the app was open. A key that another document of the origin stores, like Storybook's manager or Vitest's UI, is never the app's.
 
 ## A Static Build
@@ -638,6 +642,7 @@ The first two cut every module down to its imports, so they are quick. The plugi
 - React is its development build, as in a test run.
 - `images.unoptimized` is on: there is no image optimizer behind `/_next/image`.
 - A file that Next's loaders emit, a font or an image, and a file of Vite's, like an import with `?url`, are named from the file that asks for them, so the site can be served from any path.
+- The CSS of the app is a stylesheet per file under `/_next/static/css/`, which Next links, with the lists of every route in `vitest-plugin-rsc/next-stylesheets.json`: see [Stylesheets](#stylesheets). Served from another path than the root, Next links it by the way up from `/_next/`, like `/_next/../docs/_next/static/css/page-1a2b3c4d.css`. The CSS that a file of the host imports is Vite's, in the CSS of its chunks.
 - The entry of each layer, `vitest-plugin-rsc/<layer>/entry.js`, is not named after its content: the build of the host says where it is, and comes before it. Serve it without a long cache, like `index.html`. The chunks it imports are named after their content.
 
 ## Not Yet

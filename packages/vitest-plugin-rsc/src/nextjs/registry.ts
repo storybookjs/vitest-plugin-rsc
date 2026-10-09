@@ -93,7 +93,8 @@ export type NextRegistry = {
   appPages: Record<string, unknown>;
   /**
    * Asks the plugin for the stylesheets of a page route, by the name of its
-   * modules: see styles.ts. Under Vitest with a command: see setup.ts.
+   * modules: see styles.ts. Under Vitest with a command (setup.ts), else from
+   * the dev server or the files of a static build (rsc.ts).
    */
   loadStylesheets(entry: string, inline: boolean): Promise<Stylesheets>;
   /** Loads the request handler of a route handler, which is in the rsc layer. */

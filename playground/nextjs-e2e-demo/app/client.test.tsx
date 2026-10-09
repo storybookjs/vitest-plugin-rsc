@@ -10,6 +10,7 @@ import { Counter } from "./components/counter.tsx";
 import { PressButton } from "./components/press-button.tsx";
 import { RouterState } from "./components/router-state.tsx";
 import { countPresses, pressed } from "./lib/presses.ts";
+import { ClientCard } from "./styles/client-card.tsx";
 
 // A test file with `"use client"` is code of the browser layer, as such a
 // file is in Next. Its nodes render in the browser and not on the server: a
@@ -118,6 +119,16 @@ function Themed() {
 function Dark({ children }: { children: ReactNode }) {
   return <Theme value="dark">{children}</Theme>;
 }
+
+// As for a test file of the server: a node has the CSS of what the test file
+// imports, here in the browser layer.
+test("links the CSS of a Client Component that this file imports", async () => {
+  await renderServer(<ClientCard />);
+
+  await expect
+    .element(page.getByText("Styled by a CSS module in a Client Component"))
+    .toHaveStyle({ color: "rgb(128, 0, 0)" });
+});
 
 test("wraps the node in a wrapper, in the browser", async () => {
   await renderServer(<Themed />, { wrapper: Dark });

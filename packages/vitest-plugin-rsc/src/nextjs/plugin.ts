@@ -17,12 +17,18 @@ import { clientFiles } from "./client-files.ts";
 import { flightBridge, type FlightEntry } from "./flight.ts";
 import { createCompilePlugin, createDependencyCompilePlugin } from "./compile.ts";
 import { createNodePlatform } from "./node-platform.ts";
-import { loadNextProject, type NextLayer, type NextProject } from "./project.ts";
+import {
+  loadNextProject,
+  type ComponentRoute,
+  type NextLayer,
+  type NextProject,
+  type NextRoute,
+} from "./project.ts";
 import { moduleFileAt } from "./project/context.ts";
 import { compileServerCode, createServerCode, type ServerCodeOptions } from "./server-code.ts";
 import { affectedTests } from "./affected/index.ts";
 import { createPathsPlugin } from "./paths.ts";
-import { createStylesPlugins } from "./styles.ts";
+import { createStyles } from "./styles.ts";
 
 // Each layer of Next is a Vite environment, and all three run in the
 // browser (docs/next-routes.md). Where Next's own bundler config says a module
@@ -468,6 +474,25 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
   // What a static build finds of the host: see build.ts.
   const hostReferences = createHostReferences();
   const getProject = () => project;
+  // The CSS of the app, as the stylesheets of a route.
+  let pageRoutes: { of: NextProject; routes: Map<string, NextRoute | ComponentRoute> } | undefined;
+  const styles = createStyles({
+    getProject,
+    environments: environmentOf,
+    isServerCode: (file) => serverCode.isServerCode(file, "rsc"),
+    isHostFile: serverCode.isHostFile,
+    builtClientFiles: () => [...hostReferences.clientFiles.keys()],
+    pageRoutes() {
+      if (pageRoutes?.of !== project) {
+        const routes = [...project.routes, ...project.componentRoutes].flatMap((route) =>
+          route.kind === "page" ? [[entryOf(route), route] as const] : [],
+        );
+        pageRoutes = { of: project, routes: new Map(routes) };
+      }
+      return pageRoutes.routes;
+    },
+    lists: routeKinds.map((kind) => `\0${routeLists[kind]}`),
+  });
   const resolvers = Object.fromEntries(
     layers.map((layer) => [layer, createLayerResolver(getProject, layer)]),
   ) as Record<NextLayer, LayerResolver>;
@@ -824,17 +849,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
       built: hostReferences,
     }),
     serverCode.plugin({ [environmentOf.rsc]: "rsc", [environmentOf.ssr]: "ssr" }),
-    // The CSS of the app, as the stylesheets of a route.
-    ...createStylesPlugins({
-      getProject,
-      environments: environmentOf,
-      isServerCode: (file) => serverCode.isServerCode(file, "rsc"),
-      routeOf: (entry) =>
-        [...project.routes, ...project.componentRoutes].find(
-          (route) => route.kind === "page" && entryOf(route) === entry,
-        ),
-      lists: routeKinds.map((kind) => `\0${routeLists[kind]}`),
-    }),
+    ...styles.plugins,
     createCompilePlugin(
       getProject,
       (environment) => layers.find((layer) => environmentOf[layer] === environment),
@@ -849,7 +864,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
     nextBuild({
       environments: environmentOf,
       entries: { ssr: "vitest-plugin-rsc/nextjs/ssr", browser: "vitest-plugin-rsc/nextjs/client" },
-      emittedFiles: () => project.emittedFiles(),
+      emittedFiles: () => [...project.emittedFiles(), ...styles.builtFiles()],
       host: hostReferences,
     }),
   ];

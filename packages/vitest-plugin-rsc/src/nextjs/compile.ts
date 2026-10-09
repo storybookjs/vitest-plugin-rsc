@@ -103,9 +103,9 @@ export function createCompilePlugin(
         const request = Buffer.from(key, "base64url").toString();
         const { css, exports } = await getProject().loadFont(request);
         if (name.endsWith(".css")) return built(css, "css");
+        const stylesheet = linked(`${fontPrefix}${key}.css`, this.environment.mode === "build");
         return (
-          `import ${JSON.stringify(linked(`${fontPrefix}${key}.css`))};\n` +
-          `export default ${JSON.stringify(exports)};\n`
+          `import ${JSON.stringify(stylesheet)};\n` + `export default ${JSON.stringify(exports)};\n`
         );
       }
       // With a query it is Vite's: `?url`, `?raw`.

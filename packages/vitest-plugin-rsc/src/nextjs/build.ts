@@ -52,7 +52,7 @@ import { builtClientFileDir, builtLiveModuleDir, clientNodeReference } from "./c
 /** What the page imports for the layers that were built: see ../utils.ts. */
 const layersId = "virtual:vitest-plugin-rsc/layers";
 /** For the ssr and the browser layer: the modules a Flight payload can refer to. */
-const clientReferencesId = "virtual:vitest-plugin-rsc/next-client-references";
+export const clientReferencesId = "virtual:vitest-plugin-rsc/next-client-references";
 /** For the rsc layer: the modules with Server Actions. */
 const serverReferencesId = "virtual:vitest-plugin-rsc/next-server-references";
 /** Where the layers of the module runner are, in the directory of the build. */
@@ -71,8 +71,8 @@ const entryFile = "entry.js";
 // the directory of the build, until the file has its place: in JavaScript, and
 // in CSS, as a URL that Vite leaves as it is.
 const buildDirPlaceholder = "__VITEST_PLUGIN_RSC_BUILD_DIR__";
-const cssBuildDirPlaceholder = "//vitest-plugin-rsc-build-dir";
-const toBuildDir = (fileName: string) =>
+export const cssBuildDirPlaceholder = "//vitest-plugin-rsc-build-dir";
+export const toBuildDir = (fileName: string) =>
   `${path.posix.relative(path.posix.dirname(fileName), "") || "."}/`;
 
 /**
