@@ -12,11 +12,15 @@ import { slowWork } from "../lib/slow-work.ts";
 // cookies, is what the request at work has. Code of a request that goes on
 // after its test would read what the requests of the next test have.
 
+// The first request of a tab loads the route, which takes more than a second
+// while other tabs start too.
+const started = { timeout: 10_000 };
+
 test("leaving waits for a request that the server has not answered yet", async () => {
   Object.assign(slowWork, { duration: 300, started: 0, finished: 0, rendered: 0 });
   document.cookie = "session=ada";
   const response = handleRequest("/api/slow-work", { method: "POST" });
-  await expect.poll(() => slowWork.started).toBe(1);
+  await expect.poll(() => slowWork.started, started).toBe(1);
 
   // What ends a test.
   await cleanup();
@@ -29,7 +33,7 @@ test("leaving waits for a Server Action, and for the page that Next renders afte
   Object.assign(slowWork, { duration: 300, started: 0, finished: 0, rendered: 0 });
   await renderServer({ url: "/slow-work" });
   await page.getByRole("button", { name: "Work slowly" }).click();
-  await expect.poll(() => slowWork.started).toBe(1);
+  await expect.poll(() => slowWork.started, started).toBe(1);
 
   await cleanup();
 
@@ -44,7 +48,7 @@ test("leaving waits for a Server Action that a node of the browser layer calls",
   Object.assign(slowWork, { duration: 300, started: 0, finished: 0, rendered: 0 });
   await renderServer(clientNode("/app/components/slow-work-button.tsx", "SlowWorkButton"));
   await page.getByRole("button", { name: "Work slowly" }).click();
-  await expect.poll(() => slowWork.started).toBe(1);
+  await expect.poll(() => slowWork.started, started).toBe(1);
 
   await cleanup();
 
