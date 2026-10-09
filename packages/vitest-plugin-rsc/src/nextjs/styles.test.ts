@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { createServer, type CSSOptions } from "vite";
 import { expect, test } from "vitest";
-import { exportsOfStylesheet } from "./styles.ts";
+import { exportsOfStylesheet, isCode } from "./styles.ts";
 
 // The module that the installed Vite makes of a stylesheet for a client, of
 // which the plugin keeps the exports, and not the `<style>`. As the plugin
@@ -106,4 +106,22 @@ test("says so when the exports of Vite's module need more than the class names",
   expect(() => exportsOfStylesheet('export * from "./other.css"', "card.css")).toThrow(
     /the exports of its module for the stylesheet card\.css need more/,
   );
+});
+
+// The walk for the stylesheets of a route follows modules of code, and leaves
+// out a file that is no code, which Vite can list with the imports of a module.
+test.each([
+  ["/app/page.tsx", true],
+  ["/node_modules/.vite/deps/react.js?v=1234", true],
+  ["/lib/config.cts", true],
+  ["\0virtual:vitest-plugin-rsc/next-route/3", true],
+  ["/app/a.b/page", true],
+  ["/docs/post.mdx", true],
+  ["/content/page.md", true],
+  ["/node_modules/@electric-sql/pglite/dist/pglite.data", false],
+  ["/node_modules/@electric-sql/pglite/dist/pglite.wasm", false],
+  ["/assets/photo.jpg?import", false],
+  ["/app/data.json", false],
+])("takes %s for code: %s", (id, code) => {
+  expect(isCode(id, ["tsx", "ts", "md"])).toBe(code);
 });

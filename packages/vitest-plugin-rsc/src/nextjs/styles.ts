@@ -51,6 +51,22 @@ const isLinked = (id: string) => linkedRE.test(id);
 // An import that names a module of JavaScript, which is no stylesheet.
 const isScriptRequest = (source: string) => /\.[cm]?[jt]sx?$/.test(source);
 
+// A module of code, as Vite tells one from a file that it serves as it is
+// (its `isJSRequest()`): one of a language that compiles to JavaScript, or one
+// without an extension, like a virtual module. Also `.cjs` and `.cts`, which
+// Vite leaves out, and a page of the app, like `page.md` with `md` in
+// `pageExtensions`.
+const codeExtensionRE = /^(?:[cm]?[jt]sx?|vue|marko|svelte|astro|imba|mdx)$/;
+export function isCode(id: string, pageExtensions: string[]): boolean {
+  const file = id.split("?")[0]!;
+  const extension = /\.([^./]+)$/.exec(file)?.[1];
+  return (
+    extension === undefined ||
+    codeExtensionRE.test(extension) ||
+    pageExtensions.some((pageExtension) => file.endsWith(`.${pageExtension}`))
+  );
+}
+
 // Where Next's build puts the CSS of an app, under `/_next/`.
 const directory = "static/css";
 
@@ -202,7 +218,7 @@ export function createStylesPlugins(options: StylesOptions): Plugin[] {
 
   // What a module loaded as, by its layer and URL, and the invalidation of
   // the module it was loaded after. Some modules never have a result of their
-  // own in Vite's graph, like a `.wasm` file a package asks for: these are
+  // own in Vite's graph, like a module that fails to compile: these are
   // loaded once, and not for every request. Until Vite invalidates the
   // module, or a file changes for one that failed.
   const loads = new Map<
@@ -231,6 +247,7 @@ export function createStylesPlugins(options: StylesOptions): Plugin[] {
     // without imports, and its module in the layer of the browser.
     const clientModules = new Map<EnvironmentModuleNode, EnvironmentModuleNode>();
     const followed = new Set<EnvironmentModuleNode>();
+    const { pageExtensions = [] } = getProject().config as { pageExtensions?: string[] };
 
     // A module that fails to compile says so when the browser loads it. One
     // that cannot be found is the plugin's mistake, and says so here.
@@ -277,6 +294,12 @@ export function createStylesPlugins(options: StylesOptions): Plugin[] {
         Array.from(node.importedModules, async (imported) => {
           // Without an id it is a file that is only watched.
           if (!imported.id || isCSSRequest(imported.id)) return;
+          // A file that is no code has no stylesheet to find, like an image
+          // or the `.wasm` of a package that loads it with `new URL(…,
+          // import.meta.url)`, which Vite adds to the imports of the module.
+          // Compiling one as a module, which can be megabytes of binary data,
+          // holds up the dev server for seconds.
+          if (!isCode(imported.id, pageExtensions)) return;
           const loaded = imported.transformResult ? imported : await load(layer, imported.url);
           if (loaded) await follow(layer, loaded);
         }),
