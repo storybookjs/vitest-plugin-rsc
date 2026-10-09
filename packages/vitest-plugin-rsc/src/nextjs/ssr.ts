@@ -235,6 +235,11 @@ export type HandleOptions = {
    * looks for a file then, which here is the network's to answer.
    */
   unrouted?: "not-found" | "pass";
+  /**
+   * What the request opens, in place of what `renderServer()` opened: the
+   * route of a node of its own, for this request only.
+   */
+  opened?: Opened;
 };
 
 // What `handle()` makes of a request, and when the server is done with it.
@@ -251,9 +256,9 @@ export function handleRequest(
 ): Promise<Response | undefined>;
 export function handleRequest(
   request: ServerRequest,
-  { nested = false, unrouted = "not-found" }: HandleOptions = {},
+  { nested = false, unrouted = "not-found", opened }: HandleOptions = {},
 ): Promise<Response | undefined> {
-  if (nested) return handle(request, unrouted, true).then(({ response }) => response);
+  if (nested) return handle(request, unrouted, true, opened).then(({ response }) => response);
   const requested = generation;
   queued++;
   requestQueued.resolve();
@@ -264,7 +269,7 @@ export function handleRequest(
     }
     queued--;
     requestQueued = Promise.withResolvers();
-    return handle(request, unrouted, false);
+    return handle(request, unrouted, false, opened);
   });
   // The next request waits for the body too: the server writes it as it
   // renders, long after the response is there.
@@ -357,11 +362,16 @@ async function handle(
   received: ServerRequest,
   unrouted: "not-found" | "pass",
   nested: boolean,
+  openedByRequest: Opened | undefined,
 ): Promise<Handled> {
   const request = incoming(received);
   const url = new URL(request.url);
-  const opened = openedAt(url);
+  const opened = openedByRequest ?? openedAt(url);
   const endRequestScope = registry.enterRequestScope();
+  // A route of its own, for the page of the route of a node that renders in
+  // this request. Not for the requests the server makes to itself meanwhile:
+  // see `loadComponent()` in rsc.ts.
+  if (openedByRequest) registry.openedByRequest.run(openedByRequest, () => {});
   // What Next does after it has responded, like `after()`, still reads the
   // stores of the request, so the request lasts until that is done. Not
   // forever once another one waits for it: then for one second at most, and

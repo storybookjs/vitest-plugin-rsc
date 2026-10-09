@@ -145,7 +145,8 @@ registry.loadStylesheets = async (entry, inline) => {
 export async function loadComponent(): Promise<{ default: () => unknown }> {
   return {
     default: function Component() {
-      const node = registry.opened?.node;
+      // A request that brings a route of its own, else what the test opened.
+      const node = (registry.openedByRequest.getStore() ?? registry.opened)?.node;
       if (!node) throw new Error("vitest-plugin-rsc: the node of the test is gone");
       return node.ui;
     },

@@ -31,6 +31,7 @@ Pick one piece of the app — a wishlist carousel, a notes form, a settings pane
   - [Cache And Revalidation](#cache-and-revalidation)
   - [Open A Whole Route](#open-a-whole-route)
   - [Route Handlers](#route-handlers)
+  - [Code That A Server Action Calls](#code-that-a-server-action-calls)
   - [The Proxy, Redirects And Rewrites](#the-proxy-redirects-and-rewrites)
   - [Mocks](#mocks)
   - [Fonts, Images And Styles](#fonts-images-and-styles)
@@ -598,6 +599,40 @@ test("gives a route handler the body of a request and the cookies of the browser
 
 A `fetch` from a Client Component to a route handler reaches it too, with the browser's cookies.
 
+### Code That A Server Action Calls
+
+A form's Server Action is best tested through its page: fill in the form and submit it. For the code that a Server Action calls, `runInServerAction(fn, { url })` runs a function as a Server Action of the page at `url`, in the request of the action. `cookies()` can be set there, and `redirect()`, `refresh()` and `after()` work. It resolves with what the function returns and rejects with what it throws, also the error of a `redirect()` or a `notFound()`:
+
+```ts
+import { isRedirectError } from "next/dist/client/components/redirect-error";
+import { expect, test } from "vitest";
+import { runInServerAction } from "vitest-plugin-rsc/nextjs/testing-library";
+import { createNote, setLanguage } from "../lib/actions.ts";
+import { db } from "../lib/notes.ts";
+
+test("keeps the cookies an action sets", async () => {
+  await runInServerAction(() => setLanguage("nl"));
+
+  expect(document.cookie).toContain("language=nl");
+});
+
+test("creates the note and redirects", async () => {
+  const formData = new FormData();
+  formData.set("title", "Plan the week");
+
+  const error = await runInServerAction(() => createNote(formData)).catch((error) => error);
+
+  expect(isRedirectError(error)).toBe(true);
+  expect(db.notes.get("1")?.title).toBe("Plan the week");
+});
+```
+
+It sends a Server Action request like the one of Next's router, to a route at `url` that renders nothing, and opens no page: no app starts, so it is much faster than a page with a form. After a `redirect()`, Next renders the page it redirects to on the server, as it does for the router. A page that is open stays open. The function and its result are the test's own, so they do not go through Flight.
+
+The request carries the browser's cookies, the `headers` of what `renderServer()` opened and the ones you pass, and the browser keeps the cookies the action sets. With `proxy: true` it goes through the proxy, and a redirect there rejects, since the action did not run.
+
+The function runs in the request of the action, so it cannot send a request to the app itself: that would wait for this one. Call the app's code instead. What it throws, Next also reports with `console.error`, as it does for any Server Action.
+
 ### The Proxy, Redirects And Rewrites
 
 `proxy.ts` and the `redirects`, `rewrites`, and `headers` in `next.config` run here too, through Next's own route resolution.
@@ -887,7 +922,12 @@ Outside Vitest, `cleanup()` forgets only what the app added: the cookies its ser
 ### API
 
 ```ts
-import { cleanup, handleRequest, renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
+import {
+  cleanup,
+  handleRequest,
+  renderServer,
+  runInServerAction,
+} from "vitest-plugin-rsc/nextjs/testing-library";
 import { vitestPluginNext } from "vitest-plugin-rsc/nextjs/plugin";
 ```
 
@@ -896,6 +936,7 @@ import { vitestPluginNext } from "vitest-plugin-rsc/nextjs/plugin";
 | `renderServer({ url, headers, proxy })` | Opens a route. Resolves with `{ response, unmount }` once the page has hydrated.                                                |
 | `renderServer(<Node />, options)`       | Renders a node in a container, on a route of its own. See the options below.                                                    |
 | `handleRequest(input, init)`            | Sends one request to the app, like `fetch`. Resolves with the `Response`.                                                       |
+| `runInServerAction(fn, options)`        | Runs `fn` as a Server Action at `url`, without opening a page. Options: `url`, `proxy`, `headers`.                              |
 | `cleanup()`                             | Leaves the page, clears cookies, storage and the cache. The plugin runs it around every test.                                   |
 | `vitestPluginNext({ browserModules })`  | The Vite plugin. `browserModules` are glob patterns, relative to the project root.                                              |
 | `vitestPluginNext({ affectedTests })`   | `true` lets watch mode and `vitest --changed` find a route's test files. Off by default.                                        |

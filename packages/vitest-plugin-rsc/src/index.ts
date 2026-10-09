@@ -9,13 +9,15 @@ const reactClientWebSocketInfoPath = "/@vite/react-client-runner-websocket";
 const reactClientWebSocketQuery = "vitest-plugin-rsc-react-client";
 const reactClientWebSocketInvokeEvent = "vitest-plugin-rsc:react-client:invoke";
 const reactClientWebSocketInvokeResultEvent = "vitest-plugin-rsc:react-client:invoke-result";
+const reactClientWebSocketVersionEvent = "vitest-plugin-rsc:react-client:version";
 type ReactClientInvokePayload = Parameters<
   ViteDevServer["environments"][string]["hot"]["handleInvoke"]
 >[0];
 type ReactClientWebSocketInvoke = {
   id: string;
   environment: string;
-  payload: ReactClientInvokePayload;
+  /** Without one, the page asks for the version of the modules of the environment. */
+  payload?: ReactClientInvokePayload;
 };
 
 // The Flight codec that Vite RSC brings, to pre-bundle. It is a dependency of
@@ -57,6 +59,20 @@ export function vitestPluginRSC(): Plugin[] {
         }
       },
       configureServer(server) {
+        // A page keeps the modules it fetched for its next page loads, see
+        // utils.ts. An environment has another answer for a module once that
+        // module is invalidated: a file changed, or a plugin said so. The
+        // version of an environment counts those, so a page that sees
+        // another one fetches its modules again.
+        const moduleVersions = new Map<string, number>();
+        for (const [name, { moduleGraph }] of Object.entries(server.environments)) {
+          const invalidateModule = moduleGraph.invalidateModule;
+          moduleGraph.invalidateModule = function (...args) {
+            moduleVersions.set(name, (moduleVersions.get(name) ?? 0) + 1);
+            return invalidateModule.apply(this, args);
+          };
+        }
+
         server.ws.on("connection", (socket, req) => {
           const url = new URL(req.url ?? "/", "https://any.local");
           if (url.searchParams.get(reactClientWebSocketQuery) !== "1") {
@@ -70,8 +86,9 @@ export function vitestPluginRSC(): Plugin[] {
             // The page runs every environment but `client` through a module
             // runner of its own, see utils.ts.
             const environment = server.environments[invoke.environment];
-            const result =
-              environment && invoke.environment !== "client"
+            const result = !invoke.payload
+              ? (moduleVersions.get(invoke.environment) ?? 0)
+              : environment && invoke.environment !== "client"
                 ? await environment.hot.handleInvoke(invoke.payload)
                 : {
                     error: { message: `No environment "${invoke.environment}" to run in the page` },
@@ -170,11 +187,12 @@ function parseWebSocketInvoke(raw: unknown): ReactClientWebSocketInvoke | undefi
       event?: string;
       data?: Partial<ReactClientWebSocketInvoke>;
     };
+    const isVersion = message.event === reactClientWebSocketVersionEvent;
     if (
       message.type !== "custom" ||
-      message.event !== reactClientWebSocketInvokeEvent ||
+      (message.event !== reactClientWebSocketInvokeEvent && !isVersion) ||
       typeof message.data?.id !== "string" ||
-      !message.data.payload
+      (!message.data.payload && !isVersion)
     ) {
       return undefined;
     }
@@ -182,7 +200,7 @@ function parseWebSocketInvoke(raw: unknown): ReactClientWebSocketInvoke | undefi
       id: message.data.id,
       environment:
         typeof message.data.environment === "string" ? message.data.environment : "react_client",
-      payload: message.data.payload,
+      payload: isVersion ? undefined : message.data.payload,
     };
   } catch {
     return undefined;

@@ -46,6 +46,9 @@ test("lets go of a page that the test has left, with all of its modules", async 
   const modules = modulesOfPage();
 
   await renderServer({ url: "/" });
+  // The browser keeps the element that the pointer is over, and with it its
+  // page, until the pointer is over another one.
+  await page.getByRole("heading", { name: "Home" }).hover();
 
   await expectCollected(modules);
 });
@@ -94,6 +97,8 @@ test("lets go of a node that the test has left, also in a container of the test'
   const modules = modulesOfPage();
 
   await renderServer(<Counter />);
+  // The pointer may be over the button of the node that was left.
+  await page.getByRole("button", { name: "Count: 0" }).hover();
 
   await expectCollected(modules);
   container.remove();
