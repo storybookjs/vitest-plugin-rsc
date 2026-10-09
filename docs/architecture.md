@@ -112,6 +112,8 @@ server.ws.on("connection", (socket) => {
 
 A module in `react_client` that Vite imports its client (`/@vite/client`) into gets the page's own instance of it, not a copy with a second HMR websocket (`src/vite-client.ts`).
 
+With Next.js every `renderServer()` is a page load, with a new runner for the browser layer: its modules are evaluated again. Vite's runner sends an invoke for every import of every module, also for a module it already has, which is hundreds of invokes for one page. So the page keeps the answers and gives them to the next runner itself, and compiles a module once (`src/utils.ts`). The server counts the modules it invalidates, for a file that changed while the tests are watched. A runner asks for that count once, and a page that sees another count fetches its modules again.
+
 That is the key bridge. The test is rendering a Server Component, but when React needs a Client Component, Vite resolves it with the browser/client conditions it would have in the app.
 
 ## The Full Loop

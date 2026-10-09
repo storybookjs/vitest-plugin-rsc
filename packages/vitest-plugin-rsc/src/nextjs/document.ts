@@ -171,6 +171,36 @@ export async function loadDocument(html: string, url: string, container?: Elemen
   }
 }
 
+// React's scripts in the document do not put streamed content in place right
+// away. `$RC` queues it, and `$RV` moves what is queued after a frame, or
+// 300 ms after the last time, which here was in the page before. A browser
+// has done that by the time the app starts, long after the HTML arrived. Here
+// the app starts right away, and would render what is not in place yet a
+// second time. So what `$RC` queues is moved at once. Not content that React
+// moves with a view transition, which the browser runs when it can.
+type ReactScripts = {
+  $RB?: unknown[];
+  $RC?: (...args: unknown[]) => void;
+  $RV?: (queued: unknown[]) => void;
+};
+let queueStreamedContent: ReactScripts["$RC"];
+Object.defineProperty(self, "$RC", {
+  configurable: true,
+  set: (queue: ReactScripts["$RC"]) => (queueStreamedContent = queue),
+  get: () =>
+    queueStreamedContent &&
+    ((...args: unknown[]) => {
+      queueStreamedContent!(...args);
+      const { $RB: queued, $RV: reveal } = self as ReactScripts;
+      // An error in it is reported, and the page goes on, as in a browser.
+      try {
+        if (queued?.length && reveal) reveal(queued);
+      } catch (error) {
+        reportError(error);
+      }
+    }),
+});
+
 /** Leaves the page: the document is as it was before the page. */
 export function unloadDocument(): void {
   // Once, also when it throws: the next page is not to find this one.

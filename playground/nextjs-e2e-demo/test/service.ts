@@ -5,3 +5,8 @@ export async function requestHits(key: string): Promise<number> {
   const { hits } = (await response.json()) as { hits: number };
   return hits;
 }
+
+// Tells the dev server in vitest.config.ts that a file of the app has changed.
+export async function fileChanged(file: string): Promise<void> {
+  await fetch(`/service/file-change?file=${file}`);
+}
