@@ -124,8 +124,8 @@ function createRunner(
 /**
  * A module runner with a module graph of its own: every module it imports is
  * evaluated again, the way a page load evaluates a page's scripts again. Call
- * `checkFetchedModules()` before every page load, or a file that changed goes
- * unnoticed.
+ * `checkFetchedModules()` before every page load, and before a runner that is
+ * made between two, or a file that changed goes unnoticed.
  */
 export function createEnvironmentRunner(
   environment: string,
@@ -261,6 +261,10 @@ async function invokeEnvironment(environment: string, payload: InvokePayload) {
 type FetchedModules = { version: unknown; results: Map<string, Promise<InvokeResult>> };
 
 const fetchedModulesOf = new Map<string, Promise<FetchedModules>>();
+// Those of the version the server said last. Two checks at once that hear of
+// the same new version share them: a runner that took the others would ask
+// the server itself.
+const latestModulesOf = new Map<string, FetchedModules>();
 
 function fetchedModules(environment: string): Promise<FetchedModules> {
   return fetchedModulesOf.get(environment) ?? askForModules(environment);
@@ -270,8 +274,14 @@ function fetchedModules(environment: string): Promise<FetchedModules> {
 // its modules.
 function askForModules(environment: string, known?: FetchedModules): Promise<FetchedModules> {
   const fetched = requestOverWebSocket(reactClientWebSocketVersionEvent, { environment }).then(
-    (version): FetchedModules =>
-      known && known.version === version ? known : { version, results: new Map() },
+    (version): FetchedModules => {
+      if (known && known.version === version) return known;
+      const latest = latestModulesOf.get(environment);
+      if (latest && latest.version === version) return latest;
+      const modules = { version, results: new Map() };
+      latestModulesOf.set(environment, modules);
+      return modules;
+    },
   );
   fetchedModulesOf.set(environment, fetched);
   // Not kept: the next module asks again. Modules that were fetched stay, and
