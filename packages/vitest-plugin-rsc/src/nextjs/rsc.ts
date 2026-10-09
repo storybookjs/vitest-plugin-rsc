@@ -2,6 +2,7 @@ import { createServerManifest } from "@vitejs/plugin-rsc/core/rsc";
 import * as ReactServer from "@vitejs/plugin-rsc/react/rsc";
 import { prerender } from "@vitejs/plugin-rsc/react/rsc/static";
 import * as FlightServer from "@vitejs/plugin-rsc/vendor/react-server-dom/server.edge";
+import builtLayers from "virtual:vitest-plugin-rsc/layers";
 import appPages from "virtual:vitest-plugin-rsc/next-app-pages";
 import loadMiddleware from "virtual:vitest-plugin-rsc/next-middleware";
 import routeHandlers from "virtual:vitest-plugin-rsc/next-route-handlers";
@@ -10,6 +11,13 @@ import { createElement, type JSXElementConstructor, type ReactNode } from "react
 import type { FlightAdapters } from "./flight.ts";
 import { clientNodeReference } from "./client-ids.ts";
 import { actionModulePrefix, registry } from "./registry.ts";
+import {
+  builtStylesheetsFile,
+  builtStylesheetsOf,
+  stylesheetsPath,
+  type BuiltStylesheets,
+  type Stylesheets,
+} from "./styles-command.ts";
 
 // The rsc layer: Server Components, Server Actions, route handlers and the
 // Flight encoder.
@@ -117,11 +125,38 @@ const NodeRendered = ReactServer.registerClientReference(
   "NodeRendered",
 ) as JSXElementConstructor<{ version: number; children?: ReactNode }>;
 
+// The stylesheets of a route are the plugin's to say, as they are a build's:
+// see styles.ts. Under Vitest a command says them, which knows the test file
+// that asks (setup.ts). Another host asks the dev server, and a static build
+// has them in a file of its own, in the directory of the build.
+const buildDirectory = builtLayers && Object.values(builtLayers)[0]?.base;
+let built: Promise<BuiltStylesheets> | undefined;
+const json = async <T>(url: string): Promise<T> => {
+  const response = await registry.network(url);
+  if (!response.ok) {
+    throw new Error(
+      `vitest-plugin-rsc: ${url} answered ${response.status}: ${await response.text()}`,
+    );
+  }
+  return (await response.json()) as T;
+};
+registry.loadStylesheets = async (entry, inline) => {
+  if (!buildDirectory) {
+    const query = new URLSearchParams({ entry, inline: String(inline) });
+    return json<Stylesheets>(`${stylesheetsPath}?${query}`);
+  }
+  built ??= json<BuiltStylesheets>(new URL(builtStylesheetsFile, buildDirectory).href);
+  // One that failed is asked again.
+  built.catch(() => (built = undefined));
+  return builtStylesheetsOf(await built, entry, buildDirectory);
+};
+
 /** The page module of the route of a node: see `loadNodeEntry()` in project/entries.ts. */
 export async function loadComponent(): Promise<{ default: () => unknown }> {
   return {
     default: function Component() {
-      const node = registry.opened?.node;
+      // A request that brings a route of its own, else what the test opened.
+      const node = (registry.openedByRequest.getStore() ?? registry.opened)?.node;
       if (!node) throw new Error("vitest-plugin-rsc: the node of the test is gone");
       // The ui and the version as they are when the server renders, which is
       // after `rerender()` has set them.

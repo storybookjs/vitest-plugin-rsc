@@ -48,19 +48,23 @@ function sameOriginRequest(
   return { url, method, headers, marked: headers.has("rsc") || headers.has("next-action") };
 }
 
+// The `headers` of `renderServer()`, which go with every request the browser
+// sends to the app from then on: until the test opens something else, or ends.
+let pageHeaders: Headers | undefined;
+
 // What a browser adds to a request for the app's origin.
 function browserHeaders(headers: Headers, url: URL, method: string): Headers {
   headers.set("host", url.host);
+  pageHeaders?.forEach((value, name) => {
+    if (!headers.has(name)) headers.set(name, value);
+  });
   if (!headers.has("user-agent")) headers.set("user-agent", navigator.userAgent);
-  if (method !== "GET" && method !== "HEAD") headers.set("origin", url.origin);
+  if (method !== "GET" && method !== "HEAD" && !headers.has("origin")) {
+    headers.set("origin", url.origin);
+  }
   if (!headers.has("cookie") && document.cookie) headers.set("cookie", document.cookie);
   return headers;
 }
-
-// A test's own timers may be fake.
-const setTimeout = globalThis.setTimeout;
-const clearTimeout = globalThis.clearTimeout;
-const queueMicrotask = globalThis.queueMicrotask;
 
 // What a test leaves behind is the app's to forget: a test runs as a new
 // browser context. Another host runs the app next to state of its own, on the
@@ -177,6 +181,8 @@ type Sending = {
   navigation?: boolean;
   /** Who answers a request that the server has nothing for: see `HandleOptions.unrouted`. */
   network?: () => Promise<Response>;
+  /** What the request opens, not after a redirect: see `HandleOptions.opened`. */
+  opened?: Opened;
 };
 
 // The network between a client and the Next.js server in the browser. For the
@@ -184,7 +190,7 @@ type Sending = {
 // cookies, store the ones that come back. For either it follows redirects.
 async function sendRequest(
   request: Request,
-  { server = false, navigation = false, network }: Sending = {},
+  { server = false, navigation = false, network, opened }: Sending = {},
 ): Promise<Response> {
   let url = new URL(request.url);
   let method = request.method;
@@ -200,7 +206,11 @@ async function sendRequest(
     const response = await unlessAborted(
       ssr.handleRequest(
         { url: url.href, method, headers, body, signal: request.signal },
-        { nested: server, unrouted: network ? "pass" : "not-found" },
+        {
+          nested: server,
+          unrouted: network ? "pass" : "not-found",
+          opened: redirected ? undefined : opened,
+        },
       ),
       request.signal,
     );
@@ -276,7 +286,8 @@ async function sendRequest(
  * of the app would. Use it to assert on a response itself: its status, its
  * headers, its HTML or Flight body.
  *
- * The request carries the browser's cookies, unless it has a `cookie` header.
+ * The request carries the browser's cookies, unless it has a `cookie` header,
+ * and the `headers` of what `renderServer()` opened, under its own.
  * One to the pathname of what `renderServer()` opened is that page's, as a
  * `fetch` of the page is: it gets the route of the node, and skips the proxy
  * if the page does.
@@ -298,6 +309,120 @@ function withHeaders(sent: AppRequest, init: RequestInit | undefined): RequestIn
   const headers = new Headers(sent.headers);
   for (const [name, value] of extra) if (!headers.has(name)) headers.set(name, value);
   return { ...init, headers };
+}
+
+export type RunInServerActionOptions = {
+  /**
+   * The URL of the page the action is of. Defaults to `/`. For this request
+   * its pathname gets a route of its own that renders nothing, with the params
+   * the app's route for it has.
+   */
+  url?: string;
+  /**
+   * Whether the server in front of the app takes the request: `proxy.ts`, and
+   * the `redirects`, `rewrites` and `headers` of `next.config`. Defaults to
+   * `false`, as for a node. A redirect there rejects: the action did not run.
+   */
+  proxy?: boolean;
+  /**
+   * Headers for the request of the action, next to the ones a browser sends.
+   * The ones that make it a Server Action are the plugin's: `accept`,
+   * `content-type` and `next-action`.
+   */
+  headers?: HeadersInit;
+};
+
+// The functions that `runInServerAction()` runs, by a number of their own.
+let serverActionKeys = 0;
+
+/**
+ * Runs `action` as a Server Action of the page at `url`, the way Next runs
+ * one: in the request of the action, where `cookies()` can be set and
+ * `redirect()`, `refresh()` and `after()` work. Resolves with what it
+ * returns, and rejects with what it throws, also the error of a `redirect()`.
+ * Its arguments and its result are the test's own, not sent through Flight.
+ *
+ * It sends a Server Action request like the one of Next's router, to a route
+ * at `url` that renders nothing, and opens no page: there is no app to start.
+ * After a `redirect()` Next renders the page it redirects to, on the server.
+ * A page that is open stays open. The request carries the browser's cookies,
+ * the `headers` of what `renderServer()` opened and the ones passed here, and
+ * the browser keeps the cookies the action sets. For code that a Server
+ * Action calls; test a form of a page through the page.
+ *
+ * The function runs in the request, so it cannot send a request to the app
+ * itself, which would wait for this one: call the app's code instead.
+ */
+export async function runInServerAction<T>(
+  action: () => T,
+  options: RunInServerActionOptions = {},
+): Promise<Awaited<T>> {
+  const url = new URL(options.url ?? "/", window.location.origin);
+  if (url.origin !== window.location.origin) {
+    throw new Error(
+      `vitest-plugin-rsc: a Server Action is of a page of the app, not of ${url.href}`,
+    );
+  }
+  const { runInServerActionOfTest } = await import("./server-action.ts");
+  const key = serverActionKeys++;
+  const ran: { outcome?: { value: Awaited<T> } | { error: unknown } } = {};
+  registry.serverActions.set(key, async () => {
+    try {
+      ran.outcome = { value: await action() };
+    } catch (error) {
+      ran.outcome = { error };
+      // Next acts on what a Server Action throws: a `redirect()`, a `notFound()`.
+      throw error;
+    }
+  });
+  try {
+    const headers = new Headers(options.headers);
+    headers.set("accept", "text/x-component");
+    headers.set("content-type", "text/plain;charset=UTF-8");
+    headers.set("next-action", serverActionId(runInServerActionOfTest));
+    // Its one argument, encoded as Next's router encodes the arguments of a
+    // call: the number of the function to run.
+    const request = new registry.Request(url, {
+      method: "POST",
+      headers,
+      body: JSON.stringify([key]),
+      // A Server Action answers a `redirect()` itself, without a 3xx.
+      redirect: "manual",
+    });
+    const response = await sendRequest(request, {
+      opened: {
+        pathname: url.pathname,
+        proxy: options.proxy ?? false,
+        node: { ui: null, layouts: false },
+      },
+    });
+    // What Next renders after the action, which no page is there to show.
+    await response.body?.cancel();
+    if (!ran.outcome) {
+      const location = response.headers.get("location");
+      throw new Error(
+        `vitest-plugin-rsc: the Server Action did not run: ${response.url} ` +
+          (location ? `redirected to ${location}.` : `responded with ${response.status}.`),
+      );
+    }
+  } finally {
+    registry.serverActions.delete(key);
+  }
+  if ("error" in ran.outcome) throw ran.outcome.error;
+  return ran.outcome.value;
+}
+
+// The id of a Server Action, which React's server reference carries: what
+// Next's router sends in the `next-action` header.
+function serverActionId(action: unknown): string {
+  const id: unknown = Reflect.get(Object(action), "$$id");
+  if (typeof id !== "string") {
+    throw new Error(
+      "vitest-plugin-rsc: Vite RSC did not compile the plugin's own Server Action. " +
+        "Is `vitest-plugin-rsc` excluded from `optimizeDeps`?",
+    );
+  }
+  return id;
 }
 
 // A `fetch` that sends a same-origin request to the app when it is the app's,
@@ -363,11 +488,12 @@ type RequestOptions = {
   /** The URL to open. Defaults to `/`. */
   url?: string;
   /**
-   * Headers for the request of the document, next to the ones a browser
-   * sends. A node sends them again with the requests of Next's router that
-   * render it again: those of `rerender()` and `router.refresh()`, and a
-   * change of search params. A `cookie` header goes in place of the
-   * browser's cookies there too.
+   * Headers for the requests of the browser to the app, next to the ones a
+   * browser sends: the request of the document, and every one after it, like
+   * a Server Action, a `router.refresh()`, a navigation or a `fetch`. Until
+   * the test opens something else, or ends. A request keeps the headers it
+   * sets itself. A `cookie` and an `accept` header are for the document alone:
+   * after it the browser's cookies are sent, and what each request accepts.
    */
   headers?: HeadersInit;
 };
@@ -393,7 +519,7 @@ export type RenderServerOptions = RequestOptions & {
 export type RenderServerResult = {
   /** The server's response to the request of the document. */
   response: Response;
-  /** Leaves the page. The cookies stay until the test ends. */
+  /** Leaves the page. The cookies and the `headers` stay until the test ends. */
   unmount(): Promise<void>;
 };
 
@@ -512,6 +638,11 @@ export async function renderServer(
   // The test's own, which the router sends again for a node.
   const given = options.headers ? new Headers(options.headers) : undefined;
   const headers = new Headers(options.headers);
+  // The cookies of the requests after the document are the browser's, and
+  // each of them says itself what it accepts.
+  const sticky = new Headers(headers);
+  sticky.delete("cookie");
+  sticky.delete("accept");
   if (!headers.has("accept")) headers.set("accept", "text/html");
   const { pathname } = url;
   if (isOptions(first)) {
@@ -523,7 +654,10 @@ export async function renderServer(
       );
     }
     const opened = { pathname, proxy: first.proxy ?? true };
-    return { response: await loadPage(url, { headers }, { opened }), unmount: leavePage };
+    return {
+      response: await loadPage(url, { headers }, { opened, headers: sticky }),
+      unmount: leavePage,
+    };
   }
 
   // A node of the browser layer is not the server's to render: the server
@@ -550,6 +684,7 @@ export async function renderServer(
     }
     const opening: NodeOpening = {
       opened: { pathname, proxy, headers: given, node: nodeOf(true) },
+      headers: sticky,
       clientNode,
       wrap,
       version: 0,
@@ -599,6 +734,7 @@ export async function renderServer(
   const opening: NodeOpening = {
     container,
     opened: { pathname, proxy, headers: given, node: nodeOf(false) },
+    headers: sticky,
     clientNode,
     wrap,
     version: 0,
@@ -824,6 +960,8 @@ function isOptions(value: unknown): value is RenderServerOptions {
 type Opening = {
   container?: Element;
   opened: Opened;
+  /** The `headers` of `renderServer()`, for every request of the page: see `pageHeaders`. */
+  headers: Headers;
   /** The node of the browser layer that the node of `opened` renders. */
   clientNode?: ClientNode;
   /** Set once the page has loaded: whether the server rendered that node. */
@@ -856,6 +994,8 @@ async function loadPage(url: URL, init: RequestInit, opening?: Opening): Promise
   }
   const opened = (registry.opened = opening?.opened);
   setClientNode(opening?.clientNode);
+  // A page the app loads itself keeps the headers of what the test opened.
+  if (opening) pageHeaders = opening.headers;
   try {
     return await openPage(url, init, load.signal, opening);
   } catch (error) {
@@ -924,7 +1064,8 @@ async function openPage(
   if (opening?.clientNode) opening.showsClientNode = showsNode;
   nodeOnPage = showsNode ? "coming" : "replaced";
   nodesShown = 0;
-  loadDocument(html, response.url, container);
+  await loadDocument(html, response.url, container);
+  superseded();
   // A page load runs the app's scripts from scratch, so every page gets a
   // module graph of its own for the browser layer. With a client file loaded
   // that is the graph the file imports from: see client-graph.ts.
@@ -955,7 +1096,7 @@ async function openPage(
       environmentModule("react_client", "vitest-plugin-rsc/nextjs/client"),
     );
     superseded();
-    return client.start(loaded, container, () => {
+    return client.start(loaded, container, signal, () => {
       if (page === opened) unlessShown();
     });
   })();
@@ -983,6 +1124,13 @@ async function openPage(
 
 // One at a time: a page that is being left is left before the next one is.
 let leaving: Promise<void> = Promise.resolve();
+// How long leaving a page waits for it to stop starting, at most: less than
+// the 30 seconds of a hook in Browser Mode, so that this says why it waits.
+const startTimeout = 20_000;
+// A test's own timers may be fake.
+const setTimeout = globalThis.setTimeout;
+const clearTimeout = globalThis.clearTimeout;
+const queueMicrotask = globalThis.queueMicrotask;
 
 function leavePage(): Promise<void> {
   currentLoad?.abort(new DOMException("The page was left before it had loaded.", "AbortError"));
@@ -999,16 +1147,23 @@ function leavePage(): Promise<void> {
   const gone = leaving
     .catch(() => {})
     .then(async () => {
-      // An app that is still starting cannot be stopped, and would go on to
-      // hydrate the next page with the client code of this one. It is about
-      // done: the document it starts from is already there.
+      // An app that is still starting would go on to hydrate the next page
+      // with the client code of this one. The abort above stops it, and it is
+      // gone once `started` has settled: see `start()` in client.tsx. Until
+      // then it may still load Next's client, which reads the payload of the
+      // document it finds. Only a load that hangs takes long.
       let timeout: ReturnType<typeof setTimeout> | undefined;
-      await Promise.race([
-        left?.started,
-        new Promise((resolve) => (timeout = setTimeout(resolve, 5000))),
+      const stopped = await Promise.race([
+        left?.started.then(() => true),
+        new Promise<false>((resolve) => (timeout = setTimeout(resolve, startTimeout, false))),
       ]);
-      // A timer that is still set keeps the page until it fires.
       clearTimeout(timeout);
+      if (stopped === false) {
+        console.warn(
+          `vitest-plugin-rsc: the page that was left was still loading its client code ` +
+            `${startTimeout / 1000}s later. The next page loads anyway.`,
+        );
+      }
       try {
         left?.unmount();
       } finally {
@@ -1038,8 +1193,8 @@ function leavePage(): Promise<void> {
 
 /**
  * Leaves the page that `renderServer()` opened, removes the containers it made
- * and forgets the browser's cookies and what the app put in its storage, like a
- * new browser context. The server forgets what it has cached. Runs before and
+ * and forgets its `headers`, the browser's cookies and what the app put in its
+ * storage, like a new browser context. The server forgets what it has cached. Runs before and
  * after every test.
  *
  * Outside Vitest it forgets only what the app added: the cookies its server
@@ -1050,6 +1205,7 @@ export async function cleanup(): Promise<void> {
   await leavePage();
   for (const container of containers) container.remove();
   containers.clear();
+  pageHeaders = undefined;
   ssr.resetCaches();
   clearCookies();
   clearStorage();

@@ -24,7 +24,12 @@ import { getRouteRegex } from "next/dist/shared/lib/router/utils/route-regex";
 import { routes as allRoutes, routing } from "virtual:vitest-plugin-rsc/next-manifest";
 import { shareIncrementalCache } from "./cache.ts";
 import { registerModuleLoader } from "./client-modules.ts";
-import { anyKey, handleRequest as handleWith, setServerActions } from "./node-server.ts";
+import {
+  anyKey,
+  handleRequest as handleWith,
+  setServerActions,
+  setStylesheets,
+} from "./node-server.ts";
 import {
   actionModulePrefix,
   registry,
@@ -196,14 +201,26 @@ function withoutBasePath(pathname: string): string {
 
 // A test's own timers may be fake.
 const setTimeout = globalThis.setTimeout;
+const clearTimeout = globalThis.clearTimeout;
+const now = performance.now.bind(performance);
 
 // One request at a time: see `enterAmbientScope`.
 let queue: Promise<unknown> = Promise.resolve();
+// The requests that wait for the one the server is handling, and a promise
+// that resolves once there is one: see `endRequest` in `handle()`.
+let queued = 0;
+let requestQueued = Promise.withResolvers<void>();
+const nextRequest = () => (queued > 0 ? Promise.resolve() : requestQueued.promise);
 // How to stop the renders whose response is still being written.
 const rendering = new Set<() => void>();
 // Changes when the test moves on, for the requests that were still waiting.
 let generation = 0;
 const backgroundWorkTimeout = 1000;
+// What the server does after its responses, like `after()`, until it is done.
+const backgroundWork = new Set<Promise<unknown>>();
+// How long leaving a page waits for that work, at most. Only work that never
+// ends takes that long: see `settleRequests()`.
+const settleTimeout = 5000;
 
 export type HandleOptions = {
   /**
@@ -218,6 +235,11 @@ export type HandleOptions = {
    * looks for a file then, which here is the network's to answer.
    */
   unrouted?: "not-found" | "pass";
+  /**
+   * What the request opens, in place of what `renderServer()` opened: the
+   * route of a node of its own, for this request only.
+   */
+  opened?: Opened;
 };
 
 // What `handle()` makes of a request, and when the server is done with it.
@@ -234,15 +256,20 @@ export function handleRequest(
 ): Promise<Response | undefined>;
 export function handleRequest(
   request: ServerRequest,
-  { nested = false, unrouted = "not-found" }: HandleOptions = {},
+  { nested = false, unrouted = "not-found", opened }: HandleOptions = {},
 ): Promise<Response | undefined> {
-  if (nested) return handle(request, unrouted).then(({ response }) => response);
+  if (nested) return handle(request, unrouted, true, opened).then(({ response }) => response);
   const requested = generation;
+  queued++;
+  requestQueued.resolve();
   const result = queue.then(() => {
+    // `settleRequests()` has forgotten the ones that waited before it.
     if (requested !== generation) {
       throw new DOMException("The page was left before the server responded.", "AbortError");
     }
-    return handle(request, unrouted);
+    queued--;
+    requestQueued = Promise.withResolvers();
+    return handle(request, unrouted, false, opened);
   });
   // The next request waits for the body too: the server writes it as it
   // renders, long after the response is there.
@@ -254,16 +281,45 @@ export function handleRequest(
 }
 
 /**
- * Ends the requests the server is still handling: a short wait, then a stop.
- * A test can end while a page streams, on data that will never come.
+ * Ends the requests the server is still handling, when a page is left: a short
+ * wait, then a stop. A test can end while a page streams, on data that will
+ * never come. Then it waits for what they do after their response, like
+ * `after()`: what comes next is not to run while that still reads the stores
+ * of a request, which would be the ones of the requests that come next.
  */
 export async function settleRequests(): Promise<void> {
   generation++;
   const pending = queue;
   queue = Promise.resolve();
+  queued = 0;
+  const waited = requestQueued;
+  requestQueued = Promise.withResolvers();
   await Promise.race([pending, new Promise((resolve) => setTimeout(resolve, 100))]);
   for (const stop of rendering) stop();
   rendering.clear();
+  // Also what that work starts while it runs: an `after()` that calls the app.
+  const deadline = now() + settleTimeout;
+  let settled = true;
+  while (backgroundWork.size > 0 && settled) {
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    settled = await Promise.race([
+      Promise.all(backgroundWork).then(() => true),
+      new Promise<false>(
+        (resolve) => (timeout = setTimeout(resolve, Math.max(0, deadline - now()), false)),
+      ),
+    ]);
+    clearTimeout(timeout);
+  }
+  // The requests that would wait for a next one: there is none for them.
+  waited.resolve();
+  if (!settled) {
+    backgroundWork.clear();
+    console.warn(
+      "vitest-plugin-rsc: `after()` or `waitUntil()` work of a request was still running " +
+        `${settleTimeout / 1000}s after its page was left. What comes next runs anyway, and ` +
+        "that work may read the stores of the requests that come next.",
+    );
+  }
 }
 
 type Route = (typeof allRoutes)[number];
@@ -302,21 +358,43 @@ async function serverActionsOf(method: string, headers: Headers): Promise<object
   };
 }
 
-async function handle(received: ServerRequest, unrouted: "not-found" | "pass"): Promise<Handled> {
+async function handle(
+  received: ServerRequest,
+  unrouted: "not-found" | "pass",
+  nested: boolean,
+  openedByRequest: Opened | undefined,
+): Promise<Handled> {
   const request = incoming(received);
   const url = new URL(request.url);
-  const opened = openedAt(url);
+  const opened = openedByRequest ?? openedAt(url);
   const endRequestScope = registry.enterRequestScope();
+  // A route of its own, for the page of the route of a node that renders in
+  // this request. Not for the requests the server makes to itself meanwhile:
+  // see `loadComponent()` in rsc.ts.
+  if (openedByRequest) registry.openedByRequest.run(openedByRequest, () => {});
   // What Next does after it has responded, like `after()`, still reads the
-  // stores of the request. Not forever: the next request waits for this one.
+  // stores of the request, so the request lasts until that is done. Not
+  // forever once another one waits for it: then for one second at most, and
+  // so for a nested one, inside the request that waits for it. Leaving the
+  // page waits for all of it: see `settleRequests()`.
   const background: Promise<unknown>[] = [];
   const context = {
-    waitUntil: (promise: Promise<unknown>) => void background.push(promise),
+    waitUntil: (promise: Promise<unknown>) => {
+      background.push(promise);
+      const work = promise.then(
+        () => {},
+        () => {},
+      );
+      backgroundWork.add(work);
+      void work.then(() => backgroundWork.delete(work));
+    },
   };
   const endRequest = async () => {
     await Promise.race([
       Promise.allSettled(background),
-      new Promise((resolve) => setTimeout(resolve, backgroundWorkTimeout)),
+      (nested ? Promise.resolve() : nextRequest()).then(
+        () => new Promise((resolve) => setTimeout(resolve, backgroundWorkTimeout)),
+      ),
     ]);
     endRequestScope();
   };
@@ -438,24 +516,43 @@ async function handle(received: ServerRequest, unrouted: "not-found" | "pass"): 
       // Next's own request handler finds the params of the route, and
       // answers 500 for a route handler that throws.
       const handler = await registry.loadRouteHandler(page);
-      const response = await handleWith(routed, context, handler, requestMeta);
-      return finishWithBody(request, response, endRequest, routedHeaders);
+      const response = await handleWith(routed, context, handler, requestMeta, {
+        headers: routedHeaders,
+      });
+      return finishWithBody(request, response, endRequest, cookiesOf(routedHeaders));
     }
 
     setServerActions(await serverActionsOf(request.method, headers));
+    // Next's build also lists the CSS files of every segment, and Next reads
+    // that list before it loads the module of a segment. So they are asked
+    // for first.
+    // Next puts the CSS in the page only for a page load, not for its router,
+    // and decides so itself: this only spares compiling CSS it would not use.
+    const inline = !isRSCRequestHeader(headers.get(RSC_HEADER) ?? undefined);
+    setStylesheets(await registry.loadStylesheets(entry, inline));
 
     const { handler } = (await registry.loadAppPage(entry)) as { handler: RequestHandler };
     // Whoever routes a request to the not-found page sets its status, also
     // for a request to `/_not-found` itself. Before the route runs, as
     // `next start` does: Next reads the status while it renders, for the
     // `noindex` tag, and its action handler answers with one of its own.
-    const status = page === notFoundPage ? 404 : undefined;
-    const response = await handleWith(routed, context, handler, requestMeta, status);
-    return finishWithBody(request, response, endRequest, routedHeaders);
+    const statusCode = page === notFoundPage ? 404 : undefined;
+    const response = await handleWith(routed, context, handler, requestMeta, {
+      statusCode,
+      headers: routedHeaders,
+    });
+    return finishWithBody(request, response, endRequest, cookiesOf(routedHeaders));
   } catch (error) {
     endRequestScope();
     throw error;
   }
+}
+
+// The cookies of the headers the server in front of a route has.
+function cookiesOf(headers: Headers): Headers {
+  const cookies = new Headers();
+  for (const cookie of headers.getSetCookie()) cookies.append("set-cookie", cookie);
+  return cookies;
 }
 
 // Calls `onFinish` once the server has written the whole body, read or not.
@@ -498,7 +595,8 @@ function finishWithBody(
   }
 
   // The headers the server in front of the route has for the response, under
-  // the ones of the route itself. A cookie of either is set.
+  // the ones of the route itself. A cookie of either is set. A route of the
+  // app gets the others before it runs, see `handleWith()`: it adds to some.
   let { headers } = response;
   if (routedHeaders) {
     headers = new Headers(routedHeaders);

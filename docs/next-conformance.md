@@ -12,14 +12,14 @@ Measured against `next@16.4.0`, with `pnpm conformance --docs`.
 
 |                                                     |         Tests |
 | --------------------------------------------------- | ------------: |
-| Run                                                 |           484 |
-| **Pass**                                            | **369** (76%) |
-| Fail: a bug in the plugin                           |             5 |
-| Fail: Not Yet                                       |            69 |
-| Fail: not applicable                                |            41 |
+| Run                                                 |           522 |
+| **Pass**                                            | **399** (76%) |
+| Fail: a bug in the plugin                           |             4 |
+| Fail: Not Yet                                       |            71 |
+| Fail: not applicable                                |            48 |
 | Skipped by the test itself, for a run like this one |             4 |
 
-Of the 443 tests that apply, 369 pass: **83%**.
+Of the 474 tests that apply, 399 pass: **84%**.
 
 ### Per Fixture
 
@@ -28,7 +28,7 @@ Of the 443 tests that apply, 369 pass: **83%**.
 | **Pages and rendering**                           |          |     |         |     |         |
 | `hello-world`                                     |   4 of 4 |     |         |     |         |
 | **Navigation**                                    |          |     |         |     |         |
-| `navigation`                                      | 38 of 53 |   1 |      10 |   4 |         |
+| `navigation`                                      | 39 of 53 |     |      10 |   4 |         |
 | `shallow-routing`                                 | 16 of 17 |   1 |         |     |         |
 | `hooks`                                           | 19 of 27 |     |       8 |     |         |
 | `use-params`                                      |   6 of 7 |     |       1 |     |         |
@@ -58,6 +58,25 @@ Of the 443 tests that apply, 369 pass: **83%**.
 | `next-font`                                       | 10 of 16 |     |       6 |     |         |
 | **next/image**                                    |          |     |         |     |         |
 | `next-image`                                      | 10 of 11 |     |         |   1 |         |
+| **CSS**                                           |          |     |         |     |         |
+| `app-css-pageextensions`                          |   0 of 1 |     |         |   1 |         |
+| `app-inline-css`                                  |   6 of 6 |     |         |     |         |
+| `autoscroll-with-css-modules`                     |   2 of 2 |     |         |     |         |
+| `css-bom`                                         |   1 of 2 |     |         |   1 |         |
+| `css-chunking`                                    |   1 of 1 |     |         |     |         |
+| `css-client-side-nav-parallel-routes`             |   1 of 1 |     |         |     |         |
+| `css-media-query`                                 |   2 of 2 |     |         |     |         |
+| `css-modules-pure-no-check`                       |   1 of 2 |     |         |   1 |         |
+| `css-modules-scoping`                             |   2 of 2 |     |         |     |         |
+| `css-server-chunks`                               |   0 of 1 |     |       1 |     |         |
+| `cssnano-colormin`                                |   1 of 1 |     |         |     |         |
+| `dynamic-css`                                     |   4 of 5 |     |       1 |     |         |
+| `experimental-lightningcss-features`              |   0 of 3 |     |         |   3 |         |
+| `initial-css-not-found`                           |   1 of 1 |     |         |     |         |
+| `initial-css-order`                               |   2 of 2 |     |         |     |         |
+| `next-dynamic-css`                                |   4 of 4 |     |         |     |         |
+| `parallel-routes-css`                             |   1 of 1 |     |         |     |         |
+| `random-in-sass`                                  |   0 of 1 |     |         |   1 |         |
 | **The Data Cache**                                |          |     |         |     |         |
 | `revalidate-dynamic`                              |   2 of 3 |     |         |   1 |         |
 | `revalidatetag-rsc`                               |   3 of 3 |     |         |     |         |
@@ -69,18 +88,12 @@ Of the 443 tests that apply, 369 pass: **83%**.
 | `app-routes-trailing-slash`                       |   2 of 2 |     |         |     |         |
 | `redirect-rewrite-dynamic`                        |   1 of 2 |     |         |   1 |         |
 
-### A Bug In The Plugin: 5 Tests
+### A Bug In The Plugin: 4 Tests
 
 <details><summary>2 × A page that the app loads itself, like a link to a path that is no route, replaces the entry of the history where a browser adds one. `back()` does not return to the page before it.</summary>
 
 - `shallow-routing`: shallow-routing › back and forward › mpa navigation › should support setting data and then still support navigating back and forward
 - `error-boundary-navigation`: app dir - not found navigation › should allow navigating to a non-existent page
-
-</details>
-
-<details><summary>1 × The global CSS of a page that an earlier test opened still applies. Vite adds a stylesheet once, and it outlives its page.</summary>
-
-- `navigation`: app dir - navigation › hash-link-back-to-same-page › should scroll to the specified hash
 
 </details>
 
@@ -96,9 +109,9 @@ Of the 443 tests that apply, 369 pass: **83%**.
 
 </details>
 
-### Not Yet: 69 Tests
+### Not Yet: 71 Tests
 
-<details><summary>20 × A page or an API route of the Pages Router. The plugin runs the routes of `app/`.</summary>
+<details><summary>21 × A page or an API route of the Pages Router. The plugin runs the routes of `app/`.</summary>
 
 - `navigation`: app dir - navigation › query string › useParams identity between renders › should be stable in pages
 - `navigation`: app dir - navigation › navigation between pages and app › should not contain \_rsc query while navigating from app to pages
@@ -114,6 +127,7 @@ Of the 443 tests that apply, 369 pass: **83%**.
 - `hooks`: app dir - hooks › from pages › should have the correct hooks at /adapter-hooks/1/account #2
 - `use-params`: use-params › should work on pages router
 - `metadata`: app dir - metadata › should not effect metadata images convention like files under pages directory
+- `css-server-chunks`: css-server-chunks › should not write CSS chunks for the server
 - `app-middleware`: app-dir with middleware › Mutate request headers for Serverless Functions › Adds new headers
 - `app-middleware`: app-dir with middleware › Mutate request headers for Serverless Functions › Deletes headers
 - `app-middleware`: app-dir with middleware › Mutate request headers for Serverless Functions › Updates headers
@@ -222,7 +236,13 @@ Of the 443 tests that apply, 369 pass: **83%**.
 
 </details>
 
-### Not Applicable: 41 Tests
+<details><summary>1 × The CSS of a component of `next/dynamic`, which Next links from its manifest of dynamic imports, with `precedence="dynamic"`, next to a preload of its JavaScript. Here it is a stylesheet of the segment that imports the component.</summary>
+
+- `dynamic-css`: app dir - dynamic css › should preload all chunks of dynamic component during SSR
+
+</details>
+
+### Not Applicable: 48 Tests
 
 <details><summary>12 × Reads the output of `next build`: a manifest, a chunk or a prerendered file in `.next`.</summary>
 
@@ -278,11 +298,28 @@ Of the 443 tests that apply, 369 pass: **83%**.
 
 </details>
 
+<details><summary>5 × The app needs an npm package that its test installs, and the runner does not: Sass, Lightning CSS, a CSS framework.</summary>
+
+- `app-css-pageextensions`: app dir - css with pageextensions › css support with pageextensions › page in app directory with pageextention, css should work › should support global css inside layout
+- `experimental-lightningcss-features`: experimental-lightningcss-features › include › should transpile light-dark() when included in lightningCssFeatures
+- `experimental-lightningcss-features`: experimental-lightningcss-features › custom-media-queries › should substitute @custom-media when custom-media-queries is included
+- `experimental-lightningcss-features`: experimental-lightningcss-features › exclude › should preserve light-dark() when excluded from lightningCssFeatures
+- `random-in-sass`: random-in-sass › should work using browser
+
+</details>
+
 <details><summary>3 × Reads what the Next.js CLI prints: the table of routes of a build, or a warning when it starts.</summary>
 
 - `revalidate-dynamic`: app-dir revalidate-dynamic › should correctly mark a route handler that uses revalidateTag as dynamic
 - `unstable-rethrow`: unstable-rethrow › should correctly mark the dynamic page as dynamic
 - `app-middleware`: app-dir with middleware › should warn when deprecated middleware file is used
+
+</details>
+
+<details><summary>2 × The test itself needs Node.js: it starts a server, or removes a directory.</summary>
+
+- `next-image`: app dir - next-image › ssr content › should handle HEAD requests for uncached images
+- `css-bom`: app dir - css with a UTF-8 BOM › keeps the BOM in the fixture
 
 </details>
 
@@ -293,15 +330,15 @@ Of the 443 tests that apply, 369 pass: **83%**.
 
 </details>
 
-<details><summary>1 × The test itself needs Node.js: it starts a server, or removes a directory.</summary>
-
-- `next-image`: app dir - next-image › ssr content › should handle HEAD requests for uncached images
-
-</details>
-
 <details><summary>1 × Expects the cookie that an earlier test of the file set. The plugin's `cleanup()` clears the cookies after every test.</summary>
 
 - `actions`: app-dir action handling › fetch actions › should revalidate when cookies.set is called in a client action
+
+</details>
+
+<details><summary>1 × Expects the CSS that Next's build minified. Here it is the CSS that Vite compiles, as it is.</summary>
+
+- `css-modules-pure-no-check`: css-modules-pure-no-check › should have emitted a CSS file
 
 </details>
 
@@ -309,20 +346,22 @@ Of the 443 tests that apply, 369 pass: **83%**.
 
 ## What The Results Say
 
-Where the plugin runs something, it mostly runs it as Next does: 362 of the 374 tests that are neither a missing feature nor out of reach pass. What does not pass is, for nine tests out of ten, something the plugin does not do at all, or something a test in a tab cannot see.
+Where the plugin runs something, it mostly runs it as Next does: 399 of the 403 tests that are neither a missing feature nor out of reach pass. What does not pass is, for nine tests out of ten, something the plugin does not do at all, or something a test in a browser cannot see.
 
-**Bugs: 12 tests, 6 causes.** All are in the list above. Two of them are about what a page leaves in the tab that a browser drops with the page: the history, which a page load replaces an entry of, and global CSS, which stays. Two are about the server in front of the app: a header of Next's own that a request brings along, and a proxy that answers with a `Location` header, which `@next/routing` reads as a proxy that let the request through.
+**Bugs: 4 tests, 3 causes.** All are in the list above. One is about what a page leaves in the browser that a browser drops with the page: the history, which a page load replaces an entry of. One is a form that the browser posts to `/`, which gets the query of the test's page. One is about the server in front of the app: a proxy that answers with a `Location` header, which `@next/routing` reads as a proxy that let the request through.
 
-**Not Yet: 69 tests.** The two largest causes are half of them:
+**Not Yet: 71 tests.** The two largest causes are half of them:
 
-- **The Pages Router**, 20 tests. Fixtures of the App Router have a `pages/` directory to test the two together: its pages, and its API routes.
+- **The Pages Router**, 21 tests. Fixtures of the App Router have a `pages/` directory to test the two together: its pages, and its API routes.
 - **React's development build**, 16 tests. A deployment sends the client a digest for an error of a Server Component, and the message is minified. Here the client gets the message, and Strict Mode runs an effect twice. That is `next dev` without its overlay, for errors, and `next start` for the rest.
 
 Four causes are not in the "Not Yet" list of `docs/next-routes.md`: the Pages Router, the ids of Server Actions (4 tests), a builtin module of Node.js without a stand-in (2), and a prerendered page (2), which that document has under "The Node.js Runtime".
 
-**Not applicable: 41 tests.** Half of them are JavaScript off (10) and the output of a build (12).
+**Not applicable: 48 tests.** More than half of them are JavaScript off (10), the output of a build (12), and an npm package that the runner does not install (5).
 
-**The server in front of the app.** Five fixtures are there for the proxy, the redirects and rewrites of `next.config`, and `trailingSlash`. 35 of their 48 tests pass. Of the 13 that do not, 6 ask for an API route of the Pages Router, 2 expect a prerendered page, 2 cannot run in a tab, 1 expects an `HttpOnly` cookie, and 2 are the two bugs above.
+**The server in front of the app.** Five fixtures are there for the proxy, the redirects and rewrites of `next.config`, and `trailingSlash`. 36 of their 48 tests pass. Of the 12 that do not, 6 ask for an API route of the Pages Router, 2 expect a prerendered page, 2 cannot run in a browser, 1 expects an `HttpOnly` cookie, and 1 is the bug above.
+
+**CSS.** 18 fixtures are Next's own tests of CSS: global CSS and CSS modules, their order, client navigation, parallel routes, `next/dynamic`, inline CSS and the pure mode of a CSS module. 29 of their 38 tests pass, and none fails for a bug of the plugin. Of the 9 that do not, 5 need an npm package that the runner does not install (Sass, Lightning CSS, a CSS framework), 1 reads a file with Node.js, 1 expects CSS that Next's build minified, 1 asks for the Pages Router, and 1 expects the CSS of a component of `next/dynamic` from Next's manifest of dynamic imports. Seven more of Next's fixtures for CSS do not run here: five need a package or a feature that the runner does not have, two only Turbopack runs. `conformance/src/fixtures.ts` says which.
 
 ### Found Along The Way
 

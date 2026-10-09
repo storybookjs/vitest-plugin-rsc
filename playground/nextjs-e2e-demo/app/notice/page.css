@@ -1,4 +1,4 @@
-/* Vite adds this to the document once: when the module of the page loads. */
+/* Next links this next to the page, also when the router brings the page. */
 .notice {
   color: rgb(0, 128, 0);
 }

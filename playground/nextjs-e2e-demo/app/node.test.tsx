@@ -13,11 +13,14 @@ import type { ReactNode } from "react";
 import { ClientFrame } from "./components/client-frame.tsx";
 import { Counter } from "./components/counter.tsx";
 import { FavoriteButton } from "./components/favorite-button.tsx";
+import { LingerButton } from "./components/linger-button.tsx";
 import { RefreshButton } from "./components/refresh-button.tsx";
 import { RouterState } from "./components/router-state.tsx";
 import { Widget } from "./components/widget.tsx";
 import { db } from "./lib/notes.ts";
 import NotesPage from "./notes/page.tsx";
+import StylesPage from "./styles/page.tsx";
+import "./node.test.css";
 
 let consoleError: MockInstance<typeof console.error>;
 
@@ -65,6 +68,58 @@ test("renders a node in a container, without the layouts of the app", async () =
   // Hydrated by Next's router.
   await page.getByRole("button", { name: "Count: 0" }).click();
   await expect.element(page.getByRole("button", { name: "Count: 1" })).toBeVisible();
+});
+
+// The plugin cannot tell which components a node renders, so a node has the
+// CSS of what its test file imports, as with Vite in a component test.
+test("links the CSS of a node, of its Server and Client Components", async () => {
+  await renderServer(<StylesPage />);
+
+  await expect
+    .element(page.getByText("Styled by a global stylesheet"))
+    .toHaveStyle({ color: "rgb(0, 0, 255)" });
+  await expect
+    .element(page.getByText("Styled by a CSS module in a Server Component"))
+    .toHaveStyle({ color: "rgb(0, 128, 0)" });
+  await expect
+    .element(page.getByText("Styled by a CSS module in a Client Component"))
+    .toHaveStyle({ color: "rgb(128, 0, 0)" });
+
+  expect(getComputedStyle(document.body).backgroundColor).toBe("rgb(240, 240, 255)");
+
+  // Not on a page of the app that does not import it.
+  await renderServer({ url: "/notice" });
+  await expect.element(page.getByText("The office is closed on Friday.")).toBeVisible();
+  expect(getComputedStyle(document.body).backgroundColor).toBe("rgba(0, 0, 0, 0)");
+});
+
+test("links the CSS of a node in the layouts of a route, and that of the layouts", async () => {
+  await renderServer(<StylesPage />, { url: "/styles", layouts: true });
+
+  // Of the node.
+  await expect
+    .element(page.getByText("Styled by a CSS module in a Client Component"))
+    .toHaveStyle({ color: "rgb(128, 0, 0)" });
+  // Of the layout around it, which the test file does not import.
+  const section = page.getByText("Styled by a global stylesheet").element().closest("section");
+  expect(section && getComputedStyle(section).borderLeftColor).toBe("rgb(0, 0, 255)");
+});
+
+test("renders a node in a page with the CSS of the browser, and not that of Vitest's page", async () => {
+  await renderServer(<p>Plain</p>);
+
+  expect(getComputedStyle(document.body).margin).toBe("8px");
+});
+
+test("keeps the CSS that a test file imports itself, from one page to the next", async () => {
+  await renderServer(<p className="from-test">From the test</p>);
+  await expect.element(page.getByText("From the test")).toHaveStyle({ color: "rgb(255, 0, 255)" });
+
+  await renderServer({ url: "/notice" });
+  await renderServer(<p className="from-test">From the test again</p>);
+  await expect
+    .element(page.getByText("From the test again"))
+    .toHaveStyle({ color: "rgb(255, 0, 255)" });
 });
 
 test("renders a node at / when it gets no url, also where the app has a page", async () => {
@@ -259,6 +314,103 @@ test("sends a cookie header instead of the browser's cookies", async () => {
   await expect.element(page.getByText("9", { exact: true })).toBeVisible();
 });
 
+test("sends the headers of a node with every request after it, like a Server Action", async () => {
+  db.notes.set("1", { id: "1", title: "Inbox triage", body: "" });
+  db.notes.set("2", { id: "2", title: "Plan the week", body: "" });
+  await renderServer(
+    <>
+      <RequestInfo />
+      <NotesPage />
+    </>,
+    { url: "/notes", headers: { "x-tenant": "acme", "x-client": "test" } },
+  );
+
+  // The action calls revalidatePath("/notes"): its request renders the node again.
+  await page.getByRole("button", { name: "Delete Inbox triage" }).click();
+  await expect.element(page.getByRole("link", { name: "Inbox triage" })).not.toBeInTheDocument();
+  await expect.element(page.getByText("acme")).toBeVisible();
+
+  // A `fetch` of the page, and a request of the test.
+  expect(await (await fetch("/api/notes/2")).json()).toMatchObject({ client: "test" });
+  expect(await (await handleRequest("/api/notes/2")).json()).toMatchObject({ client: "test" });
+  // A request keeps the header it sets itself.
+  const own = await fetch("/api/notes/2", { headers: { "x-client": "own" } });
+  expect(await own.json()).toMatchObject({ client: "own" });
+});
+
+test("sends the headers of a node with the page that the app loads from it", async () => {
+  db.notes.set("1", { id: "1", title: "Inbox triage", body: "" });
+  await renderServer(<Link href="/notes">All notes</Link>, {
+    url: "/notes/7",
+    headers: { "x-client": "test" },
+  });
+
+  // A page load, which the test did not open: see the test of it below.
+  await page.getByRole("link", { name: "All notes" }).click();
+  await expect.element(page.getByRole("navigation", { name: "Main" })).toBeVisible();
+
+  expect(await (await fetch("/api/notes/1")).json()).toMatchObject({ client: "test" });
+});
+
+test("runs a Server Action behind a forwarded host, with the origin of that host", async () => {
+  db.notes.set("1", { id: "1", title: "Inbox triage", body: "" });
+  // Next takes the host of a Server Action from `x-forwarded-host`, and wants
+  // the origin of the request to be that host.
+  await renderServer(<FavoriteButton id="1" favorite={false} />, {
+    headers: { "x-forwarded-host": "notes.example.com", origin: "https://notes.example.com" },
+  });
+
+  await page.getByRole("button", { name: "Favorite" }).click();
+  await expect.element(page.getByRole("button", { name: "Favorite", pressed: true })).toBeVisible();
+});
+
+test("sends the headers until the test opens something else, or ends", async () => {
+  db.notes.set("1", { id: "1", title: "Inbox triage", body: "" });
+  const { unmount } = await renderServer(<Counter />, { headers: { "x-client": "test" } });
+
+  // Like the cookies, they stay when the node is left.
+  await unmount();
+  expect(await (await fetch("/api/notes/1")).json()).toMatchObject({ client: "test" });
+
+  await renderServer(<Counter />);
+  expect(await (await fetch("/api/notes/1")).json()).toMatchObject({ client: null });
+
+  await renderServer(<Counter />, { headers: { "x-client": "test" } });
+  await cleanup();
+  expect(await (await fetch("/api/notes/1")).json()).toMatchObject({ client: null });
+});
+
+test("sends the headers of what the test asked to open, also when it did not open", async () => {
+  db.notes.set("1", { id: "1", title: "Inbox triage", body: "" });
+
+  // A route handler, which is no page.
+  await expect(
+    renderServer({ url: "/api/plain", headers: { "x-client": "test" } }),
+  ).rejects.toThrow("which is not a page to open");
+
+  expect(await (await fetch("/api/notes/1")).json()).toMatchObject({ client: "test" });
+});
+
+test("leaves a Server Action the content type of its own body", async () => {
+  db.notes.set("1", { id: "1", title: "Inbox triage", body: "" });
+  await renderServer(<FavoriteButton id="1" favorite={false} />, {
+    headers: { "content-type": "text/plain" },
+  });
+
+  await page.getByRole("button", { name: "Favorite" }).click();
+  await expect.element(page.getByRole("button", { name: "Favorite", pressed: true })).toBeVisible();
+});
+
+test("sends a cookie header with the document alone, and the browser's cookies after it", async () => {
+  await renderServer(<RequestInfo />, { headers: { cookie: "last-created=9" } });
+  await expect.element(page.getByText("9", { exact: true })).toBeVisible();
+
+  document.cookie = "last-created=7";
+  // `/api/notes/latest` redirects to the note of the `last-created` cookie.
+  const response = await handleRequest("/api/notes/latest", { redirect: "manual" });
+  expect(response.headers.get("location")).toBe("/notes/7");
+});
+
 async function Tenant({ children }: { children: ReactNode }) {
   const tenant = (await headers()).get("x-tenant");
   return <section aria-label={`Tenant ${tenant}`}>{children}</section>;
@@ -364,6 +516,20 @@ test("gives the container as a fragment, without the scripts that run", async ()
   );
   // Next's and React's, which carry the Flight payload.
   expect(fragment.querySelectorAll("script")).toHaveLength(1);
+});
+
+test("renders the node again after its action called a route whose after() is still running", async () => {
+  await renderServer(
+    <>
+      <p>Node here</p>
+      <LingerButton />
+    </>,
+  );
+
+  await page.getByRole("button", { name: "Result: none" }).click();
+
+  await expect.element(page.getByRole("button", { name: 'Result: {"ok":true}' })).toBeVisible();
+  await expect.element(page.getByText("Node here")).toBeVisible();
 });
 
 test("renders a node in a container of the test's, which it leaves in the document", async () => {

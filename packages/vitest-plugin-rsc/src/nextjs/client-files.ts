@@ -160,7 +160,8 @@ export function clientFiles(options: ClientFilesOptions): Plugin {
         const source = JSON.stringify(liveModuleOf(id)[1]);
         // A build loads the CSS of a chunk where it is imported with
         // `import()`, as it does for a Client Component: with a dev server the
-        // module of the CSS adds it.
+        // module of the CSS adds it. That is the CSS of a file of the host:
+        // Next links the CSS of the app (styles.ts).
         if (this.environment.mode === "build") {
           return `export const module = await import(${source});\n`;
         }

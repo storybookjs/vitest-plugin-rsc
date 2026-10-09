@@ -1,9 +1,13 @@
+import type { Stylesheets } from "./styles-command.ts";
+
 // The three layers of the app are three module graphs with one `window`.
 // Next's bundler config moves a few things across them: the route module is
 // created for the rsc layer but belongs to the ssr layer, and the ssr layer
 // renders the page of the rsc layer. Those cross here.
 //
 // Each graph has its own copy of this module. They share the object.
+
+import type { SequentialAsyncLocalStorage } from "../async-local-storage.ts";
 
 export type ServerRequest = {
   url: string;
@@ -110,12 +114,26 @@ export type NextRegistry = {
   /** Loads the rsc-layer module of a route, into `appPages`. */
   loadAppPage(page: string): Promise<unknown>;
   appPages: Record<string, unknown>;
+  /**
+   * Asks the plugin for the stylesheets of a page route, by the name of its
+   * modules: see styles.ts. Under Vitest with a command (setup.ts), else from
+   * the dev server or the files of a static build (rsc.ts).
+   */
+  loadStylesheets(entry: string, inline: boolean): Promise<Stylesheets>;
   /** Loads the request handler of a route handler, which is in the rsc layer. */
   loadRouteHandler(page: string): Promise<RequestHandler>;
   /** Loads the request handler of the middleware of the app, which is in the rsc layer. */
   loadMiddleware(): Promise<MiddlewareHandler>;
   /** Whether an id names a Server Action of the app, in the rsc layer. */
   hasServerAction(id: string): Promise<boolean>;
+  /** What the Server Action of `runInServerAction()` runs, by the number it is called with. */
+  serverActions: Map<number, () => Promise<void>>;
+  /**
+   * The route of a node that a request brings for itself, like the one of
+   * `runInServerAction()`, for as long as it is handled. The page of the route of
+   * a node reads it, and else `opened`.
+   */
+  openedByRequest: SequentialAsyncLocalStorage<Opened | undefined>;
   /**
    * What `renderServer()` opened, for as long as it is open: the pathname of
    * its URL, and how the server takes a request to that pathname. Without
@@ -164,6 +182,7 @@ export const registry = (scope.__vitest_plugin_rsc_next__ ??= {
   appPages: {},
   clientNodeListeners: new Set(),
   clientExports: new WeakMap(),
+  serverActions: new Map(),
 }) as NextRegistry;
 
 /** Sets the node of the browser layer, and has the page render it. */

@@ -49,10 +49,15 @@ export type StartedPage = {
  * Resolves once it has, with how to leave the page. Calls `loaded` once Next's
  * client has loaded, before a module of the app has, and `onError` when React
  * reports an error of the app, which a boundary may have caught.
+ *
+ * Rejects once `signal` aborts, when the page is left before it has hydrated.
+ * What it started is gone by then: the root, and the listeners React added.
+ * A root that Next would create after that renders nothing.
  */
 export async function start(
   loaded: () => void,
   container: Element | undefined,
+  signal: AbortSignal,
   onError: () => void,
 ): Promise<StartedPage> {
   // Not when this module loads: a page that was left while it loaded must not
@@ -77,6 +82,11 @@ export async function start(
   // The root of the document is Next's own. For a node it is on the container
   // instead: `to` is where the root goes. It reports the errors of the app.
   const keep = <Target,>(target: Target, create: (to: Target, isApp: boolean) => Root): Root => {
+    // Next creates its root late, after the payload of the page has come: a
+    // page that is left by then is gone, and the document is the next one's.
+    // It gets a root that renders nothing. Not an error: React would report
+    // what this throws, as Next creates its root in a transition.
+    if (signal.aborted) return { render() {}, unmount() {} };
     const isApp = (target as unknown) === document;
     const to = isApp && container ? (container as Target) : target;
     // The container of a node can be the test's, which outlives the node.
@@ -91,59 +101,93 @@ export async function start(
       for (const recorded of added) recorded.stop();
     }
   };
+  // Set once the page is left: from then on React may report that a root went
+  // before it had hydrated, which a browser drops with the page unreported.
+  let leaving = false;
   ReactDOMClient.hydrateRoot = (target, children, options) =>
     keep(target, (to, isApp) =>
-      hydrateRoot(to, children, isApp ? reportingErrors(options, onError) : options),
+      hydrateRoot(to, children, {
+        ...(isApp ? reportingErrors(options, onError) : options),
+        onRecoverableError(error, info) {
+          if (leaving) return;
+          if (options?.onRecoverableError) options.onRecoverableError(error, info);
+          else reportError(error);
+        },
+      }),
     );
   ReactDOMClient.createRoot = (target, options) =>
     keep(target, (to, isApp) =>
       createRoot(to, isApp ? reportingErrors(options, onError) : options),
     );
 
-  // Next's entry reads the Flight payload in the document when it loads, so
-  // it loads here, once Client Components can be loaded.
-  const { hydrate } = await import("next/dist/client/app-index");
-  loaded();
-  nextLoaded();
-  // Next reads its asset prefix off the URL of the script that is running,
-  // which for a deployment is the bootstrap script in the server's HTML.
-  const bootstrapScript = document.querySelector("script[src*='/_next/']");
-  if (!bootstrapScript) {
-    throw new Error("vitest-plugin-rsc: the response is not a page of the Next.js app");
-  }
-  Object.defineProperty(document, "currentScript", {
-    configurable: true,
-    get: () => bootstrapScript,
-  });
+  const leave = () => {
+    leaving = true;
+    root?.unmount();
+    for (const added of listeners) added.remove();
+  };
+
   try {
-    await new Promise<void>((resolve, reject) => {
-      // Called by Next's root component from an effect: its own e2e test hook.
-      globalThis.__NEXT_HYDRATED_CB = resolve;
-      // What Next's `app-next.js` does, minus the webpack chunk loading. No
-      // `instrumentation-client` modules yet.
-      appBootstrap((assetPrefix: string) => {
-        hydrate([] as never, assetPrefix).catch(reject);
-      });
+    // Next's entry reads the Flight payload in the document when it loads, so
+    // it loads here, once Client Components can be loaded. Also for a page that
+    // is left meanwhile: the payload it reads is the one of its own document
+    // only until it has loaded.
+    const { hydrate } = await import("next/dist/client/app-index");
+    loaded();
+    nextLoaded();
+    signal.throwIfAborted();
+    // Next reads its asset prefix off the URL of the script that is running,
+    // which for a deployment is the bootstrap script in the server's HTML.
+    const bootstrapScript = document.querySelector("script[src*='/_next/']");
+    if (!bootstrapScript) {
+      throw new Error("vitest-plugin-rsc: the response is not a page of the Next.js app");
+    }
+    Object.defineProperty(document, "currentScript", {
+      configurable: true,
+      get: () => bootstrapScript,
     });
+    try {
+      await new Promise<void>((resolve, reject) => {
+        // A page that is left stops waiting for its hydration, which may not
+        // come: the document it hydrates is about to go.
+        const abort = () => reject(signal.reason);
+        signal.addEventListener("abort", abort, { once: true });
+        // Called by Next's root component from an effect: its own e2e test hook.
+        globalThis.__NEXT_HYDRATED_CB = () => {
+          signal.removeEventListener("abort", abort);
+          resolve();
+        };
+        // What Next's `app-next.js` does, minus the webpack chunk loading. No
+        // `instrumentation-client` modules yet.
+        appBootstrap((assetPrefix: string) => {
+          hydrate([] as never, assetPrefix).catch(reject);
+        });
+      });
+    } finally {
+      delete (document as { currentScript?: unknown }).currentScript;
+    }
+  } catch (error) {
+    // A page that did not start leaves nothing running in the next one.
+    leave();
+    throw error;
   } finally {
-    delete (document as { currentScript?: unknown }).currentScript;
-    ReactDOMClient.hydrateRoot = hydrateRoot;
-    ReactDOMClient.createRoot = createRoot;
+    // A page that was left keeps the ones that give it a root that renders
+    // nothing: Next may still get to create one. This React DOM is the page's
+    // own, see `renderServer()`.
+    if (!signal.aborted) {
+      ReactDOMClient.hydrateRoot = hydrateRoot;
+      ReactDOMClient.createRoot = createRoot;
+    }
   }
   // A contract with Next's entry. Without the root the app runs on, and the
   // page cannot be left.
-  const app = root;
-  if (!app) {
+  if (!root) {
     throw new Error(
       "vitest-plugin-rsc: Next.js did not create a React root on the document, " +
         "which the plugin needs to leave the page.",
     );
   }
   return {
-    unmount() {
-      app.unmount();
-      for (const added of listeners) added.remove();
-    },
+    unmount: leave,
     // The router of this page: the module graph is the page's own.
     refresh: () => publicAppRouterInstance.refresh(),
   };

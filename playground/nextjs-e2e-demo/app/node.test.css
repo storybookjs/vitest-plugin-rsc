@@ -1,0 +1,4 @@
+/* CSS of the test file itself, and not of the app. */
+.from-test {
+  color: rgb(255, 0, 255);
+}

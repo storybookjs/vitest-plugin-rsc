@@ -139,9 +139,17 @@ export type NextProject = {
    * For a route of a node: Next's page template around a loader tree that has
    * the segments of the pathname, and the node as its page. Nothing of the app.
    */
-  loadRouteEntry(
-    route: NextRoute | ComponentRoute,
-  ): Promise<{ code: string; watchFiles: string[] }>;
+  loadRouteEntry(route: NextRoute | ComponentRoute): Promise<{
+    code: string;
+    watchFiles: string[];
+    /**
+     * The files of the segments of a page route, as its entry imports them:
+     * its layouts, pages and boundaries. Next looks up the stylesheets of a
+     * segment by its file. Not the node of the route of a node, which is no
+     * file: its name in the loader tree is `componentPagePath`.
+     */
+    segmentFiles: string[];
+  }>;
   /**
    * Next's request handler of the middleware: its template around the file.
    * Nothing for an app without one.
@@ -161,6 +169,20 @@ export type NextProject = {
    * into: the CSS of the font, and what the call returns.
    */
   loadFont(request: string): Promise<{ css: string; exports: Record<string, unknown> }>;
+  /**
+   * What Next's rules for CSS decide that is not bundling: its PostCSS
+   * plugins and the class names of a CSS module, as Vite's options.
+   */
+  loadCssOptions(): Promise<{
+    options: import("vite").CSSOptions;
+    /** What is done otherwise than Next's build does it, to say when a run starts. */
+    differences: string[];
+  }>;
+  /**
+   * Where the browser asks for the files of the app: `/_next/`, after an
+   * asset prefix that is a path.
+   */
+  assetPath: string;
   /** A file the loaders emitted for the browser, by the path the browser asks for. */
   readEmittedFile(pathname: string): { body: Buffer; contentType: string } | undefined;
   /** The files the loaders have emitted so far, for a static build to write. */

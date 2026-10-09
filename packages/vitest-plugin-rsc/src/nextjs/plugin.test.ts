@@ -130,3 +130,51 @@ test("in a build, gives a dependency the constants of its layer, and a source fi
 });
 
 type BuildConfig = { environments: Record<string, { define: Record<string, string> }> };
+
+// What the plugin makes of a Vitest config, and says of it when a run starts.
+async function configure(config: Record<string, unknown>) {
+  const plugin = vitestPluginNext().find(({ name }) => name === "vitest-plugin-rsc:next")!;
+  const input = { root, ...config } as {
+    test?: { browser?: { testerHtmlPath?: string } };
+  };
+  // As Vite calls the hook for a dev server.
+  const result = (await (plugin.config as (config: object, env: object) => Promise<unknown>)(
+    input,
+    { command: "serve" },
+  )) as {
+    css: { postcss?: unknown; modules?: unknown };
+  };
+  const warnings: string[] = [];
+  (plugin.configResolved as (config: object) => void)({
+    logger: { warnOnce: (message: string) => warnings.push(message) },
+  });
+  return { css: result.css, testerHtmlPath: input.test?.browser?.testerHtmlPath, warnings };
+}
+
+test("runs the tests in a page of its own, without Vitest's reset, unless the project has one", async () => {
+  expect((await configure({})).testerHtmlPath).toBe(path.join(here, "tester.html"));
+  expect(fs.existsSync(path.join(here, "tester.html"))).toBe(true);
+
+  const own = await configure({ test: { browser: { testerHtmlPath: "own.html" } } });
+  expect(own.testerHtmlPath).toBe("own.html");
+});
+
+test("compiles CSS with Next's rules, and says so where the Vitest config has its own", async () => {
+  const next = await configure({});
+  expect(next.css.postcss).toBeDefined();
+  expect(next.css.modules).toBeDefined();
+  expect(next.warnings.filter((warning) => warning.includes("`css"))).toEqual([]);
+
+  // `false` turns CSS modules off, and stays so.
+  const off = await configure({ css: { modules: false } });
+  expect(off.css.modules).toBeUndefined();
+  expect(off.warnings).toContain(
+    "vitest-plugin-rsc: `css.modules` of the Vitest config names the classes of a CSS module, " +
+      "not Next's rule.",
+  );
+
+  const lightningcss = await configure({ css: { transformer: "lightningcss" } });
+  expect(lightningcss.css.postcss).toBeUndefined();
+  expect(lightningcss.css.modules).toBeUndefined();
+  expect(lightningcss.warnings.join("\n")).toContain("compiles the CSS with Lightning CSS");
+});

@@ -10,6 +10,7 @@ import { Counter } from "./components/counter.tsx";
 import { PressButton } from "./components/press-button.tsx";
 import { RouterState } from "./components/router-state.tsx";
 import { countPresses, pressed } from "./lib/presses.ts";
+import { ClientCard } from "./styles/client-card.tsx";
 
 // A test file with `"use client"` is code of the browser layer, as such a
 // file is in Next. Its nodes render in the browser and not on the server: a
@@ -157,6 +158,16 @@ function Dark({ children }: { children: ReactNode }) {
   return <Theme value="dark">{children}</Theme>;
 }
 
+// As for a test file of the server: a node has the CSS of what the test file
+// imports, here in the browser layer.
+test("links the CSS of a Client Component that this file imports", async () => {
+  await renderServer(<ClientCard />);
+
+  await expect
+    .element(page.getByText("Styled by a CSS module in a Client Component"))
+    .toHaveStyle({ color: "rgb(128, 0, 0)" });
+});
+
 test("wraps the node in a wrapper, in the browser", async () => {
   await renderServer(<Themed />, { wrapper: Dark });
 
@@ -176,6 +187,19 @@ test("renders the node in the layouts of a route, with `layouts`", async () => {
   expect(onPress).toHaveBeenCalledOnce();
   // Not the page of the route.
   await expect.element(page.getByRole("heading", { name: "Notes" })).not.toBeInTheDocument();
+});
+
+test("sends the headers of the node with every request after it, as for a node of the server", async () => {
+  await renderServer(<PressButton onPress={() => {}}>Press</PressButton>, {
+    headers: { "x-client": "test" },
+  });
+
+  // This file cannot seed the server's notes: its `db` is a copy of the browser layer's.
+  const body = JSON.stringify({ title: "With headers" });
+  expect((await fetch("/api/notes/client-headers", { method: "PUT", body })).status).toBe(200);
+  expect(await (await fetch("/api/notes/client-headers")).json()).toMatchObject({ client: "test" });
+  const own = await fetch("/api/notes/client-headers", { headers: { "x-client": "own" } });
+  expect(await own.json()).toMatchObject({ client: "own" });
 });
 
 test("opens a page of the app, as a test file of the server does", async () => {
