@@ -1,6 +1,7 @@
 import { type DevEnvironment, type Plugin, type ViteDevServer } from "vite";
 import { vitePluginRscMinimal } from "@vitejs/plugin-rsc/plugin";
 import { createReactClientCoveragePlugin } from "./coverage.ts";
+import { dependencyTransformPlugin } from "./dependency-transforms.ts";
 import { createRunnerEnvironmentPlugins } from "./runner-environment.ts";
 import { pageViteClientPlugin } from "./vite-client.ts";
 
@@ -164,6 +165,7 @@ export function vitestPluginRSC(): Plugin[] {
       },
     },
     dependencySourceMapPlugin(),
+    dependencyTransformPlugin(),
     createReactClientCoveragePlugin(),
     ...createRunnerEnvironmentPlugins("react_client"),
   ];
