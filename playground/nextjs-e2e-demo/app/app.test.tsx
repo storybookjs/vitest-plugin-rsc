@@ -378,6 +378,8 @@ test("loads a page with the one Vite client that the browser has", async () => {
   await renderServer({ url: "/settings" });
   // Vite's client opens a websocket when it is evaluated. The browser has one.
   const WebSocket = vi.spyOn(globalThis, "WebSocket");
+  // The tab runs the next test file with the `WebSocket` it leaves.
+  onTestFinished(() => WebSocket.mockRestore());
 
   await renderServer({ url: "/settings" });
 
