@@ -10,12 +10,14 @@ import { cookies, headers } from "next/headers";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import type { ReactNode } from "react";
+import { transformsOf } from "../test/service.ts";
 import { ClientFrame } from "./components/client-frame.tsx";
 import { Counter } from "./components/counter.tsx";
 import { FavoriteButton } from "./components/favorite-button.tsx";
 import { LingerButton } from "./components/linger-button.tsx";
 import { RouterState } from "./components/router-state.tsx";
 import { Widget } from "./components/widget.tsx";
+import { archiveUrl } from "./lib/archive.ts";
 import { db } from "./lib/notes.ts";
 import NotesPage from "./notes/page.tsx";
 import StylesPage from "./styles/page.tsx";
@@ -102,6 +104,21 @@ test("links the CSS of a node in the layouts of a route, and that of the layouts
   // Of the layout around it, which the test file does not import.
   const section = page.getByText("Styled by a global stylesheet").element().closest("section");
   expect(section && getComputedStyle(section).borderLeftColor).toBe("rgb(0, 0, 255)");
+});
+
+// Vite lists a file that a module refers to with the imports of the module,
+// and the CSS of a node is found from the imports of its test file. A file
+// like the `.wasm` of a package can be megabytes, and is no module.
+test("finds the CSS of a node without compiling a file that a module refers to", async () => {
+  await renderServer(<StylesPage />);
+  await expect
+    .element(page.getByText("Styled by a global stylesheet"))
+    .toHaveStyle({ color: "rgb(0, 0, 255)" });
+
+  expect(await transformsOf("app/lib/archive.data")).toBe(0);
+  // The URL is that of the file, which the dev server serves as it is.
+  const response = await fetch(archiveUrl);
+  expect(await response.text()).toBe("A file that a module refers to, and does not import.\n");
 });
 
 test("renders a node in a page with the CSS of the browser, and not that of Vitest's page", async () => {

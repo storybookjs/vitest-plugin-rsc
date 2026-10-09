@@ -63,6 +63,34 @@ function fileChangeService(): Plugin {
   };
 }
 
+// Counts what the dev server compiles as a module, by the path of its file
+// under the root of the app.
+function transformsService(): Plugin {
+  const transforms = new Map<string, number>();
+  let root = "";
+  return {
+    name: "nextjs-e2e-demo:transforms-service",
+    // First, so that a transform counts also when a later plugin fails on
+    // the file.
+    enforce: "pre",
+    configResolved(config) {
+      root = config.root;
+    },
+    transform(_code, id) {
+      const file = normalizePath(path.relative(root, id.split("?")[0]!));
+      transforms.set(file, (transforms.get(file) ?? 0) + 1);
+    },
+    configureServer(server) {
+      server.middlewares.use("/service/transforms", (request, response) => {
+        const file = new URL(request.url ?? "/", "http://localhost").searchParams.get("file") ?? "";
+        response.setHeader("content-type", "application/json");
+        response.setHeader("cache-control", "no-store");
+        response.end(JSON.stringify({ transforms: transforms.get(file) ?? 0 }));
+      });
+    },
+  };
+}
+
 // Google Fonts, without the network: see the file.
 process.env.NEXT_FONT_GOOGLE_MOCKED_RESPONSES = fileURLToPath(
   new URL("../../vitest.google-fonts.cjs", import.meta.url),
@@ -71,6 +99,7 @@ process.env.NEXT_FONT_GOOGLE_MOCKED_RESPONSES = fileURLToPath(
 export default defineProject({
   root: fileURLToPath(new URL("./", import.meta.url)),
   plugins: [
+    transformsService(),
     vitestPluginRSC(),
     // The helpers in `test/` work on the page, so they have to see the browser.
     // Every other module that is not a test file is server code.
