@@ -129,8 +129,9 @@ test("reports the error of a Server Action whose module fails to load", async ()
   expect((await call()).status).toBe(500);
 });
 
-test("sends the cookie header of a request", async () => {
+test("sends the cookie header of a request, and keeps it out of the browser's cookies", async () => {
   const response = await handleRequest("/notes", { headers: { cookie: "last-created=3" } });
 
   expect(await response.text()).toContain("Last created: <!-- -->3");
+  expect(document.cookie).toBe("");
 });

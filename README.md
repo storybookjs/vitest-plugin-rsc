@@ -352,7 +352,9 @@ export function NoteToolbar() {
 
 Pass request headers into `renderServer`. Inside Server Components and Server Actions, use Next's `headers()` and `cookies()` APIs as you normally would.
 
-The headers go with every request the browser sends to your app from then on, not only the first one: Server Actions, `router.refresh()`, navigations, and `fetch` calls get them too, until the test opens something else or ends. That is what you want for a header that a server in front of your app adds to every request, like `x-forwarded-for`. A request keeps the headers it sets itself. Two headers are for the first request alone: `cookie`, after which the browser's cookies are sent, and `accept`.
+The headers go with every request the browser sends to your app from then on, not only the first one: Server Actions, `router.refresh()`, navigations, and `fetch` calls get them too, until the test opens something else or ends. That is what you want for a header that a server in front of your app adds to every request, like `x-forwarded-for`. A request keeps the headers it sets itself. The `accept` header is for the first request alone.
+
+A `cookie` header is a cookie of the browser: its cookies go into `document.cookie` before the first request, over the ones of the same name, so a page you open signed in stays signed in for every Server Action, `router.refresh()`, navigation and `fetch` after it. They are cleared when the test ends, like the cookies your app sets.
 
 ```tsx
 import { expect, test } from "vitest";
