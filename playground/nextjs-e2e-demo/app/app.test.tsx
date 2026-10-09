@@ -246,6 +246,35 @@ test("sends the cookies the test sets before it opens a page", async () => {
   await expect.element(page.getByText("Last created: 7")).toBeVisible();
 });
 
+test("keeps the cookies of a cookie header for every request of the page after it", async () => {
+  db.notes.set("1", { id: "1", title: "Inbox triage", body: "" });
+  db.notes.set("2", { id: "2", title: "Plan the week", body: "" });
+
+  await renderServer({ url: "/notes", headers: { cookie: "last-created=9; editor=kasper" } });
+
+  await expect.element(page.getByText("Last created: 9")).toBeVisible();
+  // The browser's cookies, as if it had them before it opened the page.
+  expect(document.cookie).toBe("last-created=9; editor=kasper");
+
+  // A Server Action, which calls revalidatePath("/notes"): its request renders
+  // the page again.
+  await page.getByRole("button", { name: "Delete Inbox triage" }).click();
+  await expect.element(page.getByRole("link", { name: "Inbox triage" })).not.toBeInTheDocument();
+  await expect.element(page.getByText("Last created: 9")).toBeVisible();
+
+  // A navigation, then a `fetch` of a Client Component to a route handler,
+  // which reads the `editor` cookie. The component refreshes the page after it.
+  await page.getByRole("link", { name: "Plan the week" }).click();
+  await page.getByRole("textbox", { name: "New title" }).fill("Plan the month");
+  await page.getByRole("button", { name: "Rename" }).click();
+  await expect.element(page.getByText("Renamed to Plan the month by kasper")).toBeVisible();
+  await expect.element(page.getByRole("heading", { name: "Plan the month" })).toBeVisible();
+
+  // And back.
+  await page.getByRole("link", { name: "Notes", exact: true }).click();
+  await expect.element(page.getByText("Last created: 9")).toBeVisible();
+});
+
 test("keeps the CSS of a page whose module loaded while another page was there", async () => {
   await renderServer({ url: "/" });
 

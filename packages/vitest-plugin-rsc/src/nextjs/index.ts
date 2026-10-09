@@ -43,6 +43,7 @@ function sameOriginRequest(
 
 // The `headers` of `renderServer()`, which go with every request the browser
 // sends to the app from then on: until the test opens something else, or ends.
+// Without its `cookie` header, which is in the browser's cookie jar.
 let pageHeaders: Headers | undefined;
 
 // What a browser adds to a request for the app's origin.
@@ -69,8 +70,13 @@ const storages = [localStorage, sessionStorage].map(
 // while the tests run: its panels, and its dark mode through VueUse.
 const isVitestKey = (key: string) => key.startsWith("vitest-") || key === "vueuse-color-scheme";
 
-// The cookies the server has set, to forget them when the test ends.
+// The cookies the server and the `headers` of `renderServer()` have set, to
+// forget them when the test ends.
 const cookiesToClear = new Set<string>();
+
+// A browser takes a cookie whose name has one of these prefixes only when it
+// is `Secure`, also to expire it.
+const secureOnly = (cookie: string) => (/^\s*__(secure|host)-/i.test(cookie) ? "; secure" : "");
 
 function clearCookies(): void {
   for (const cookie of document.cookie.split(";")) {
@@ -78,9 +84,45 @@ function clearCookies(): void {
     if (name) cookiesToClear.add(`${name}=; path=/`);
   }
   for (const cookie of cookiesToClear) {
-    document.cookie = `${cookie}; expires=Thu, 01 Jan 1970 00:00:00 GMT`;
+    document.cookie = `${cookie}; expires=Thu, 01 Jan 1970 00:00:00 GMT${secureOnly(cookie)}`;
   }
   cookiesToClear.clear();
+}
+
+// What a browser trims off the name and the value of a cookie: spaces and
+// tabs, not the other whitespace that `trim()` takes.
+const trimCookie = (text: string) => text.replace(/^[ \t]+|[ \t]+$/g, "");
+
+// A `cookie` header of `renderServer()` holds cookies of the browser: they go
+// into its cookie jar, for every path, as if the browser had them before the
+// test opened the page, and replace the browser's cookies of the same names.
+function storeCookies(header: string): void {
+  // The value of each name, as the jar shows it. The last pair of a name wins.
+  const stored = new Map<string, string>();
+  for (const pair of header.split(";")) {
+    const cookie = trimCookie(pair);
+    if (!cookie) continue;
+    document.cookie = `${cookie}; path=/${secureOnly(cookie)}`;
+    // Its name with an empty value expires it. A pair without a name is a
+    // cookie without a name, as in `document.cookie`, and expires as it is.
+    const at = cookie.indexOf("=");
+    cookiesToClear.add(`${at <= 0 ? cookie : cookie.slice(0, at + 1)}; path=/`);
+    if (at > 0) stored.set(trimCookie(cookie.slice(0, at)), trimCookie(cookie.slice(at + 1)));
+  }
+  // A browser drops a cookie it does not take without an error, and every
+  // request would go without it, the document's too.
+  const jar = new Set(document.cookie.split("; "));
+  for (const [name, value] of stored) {
+    if (jar.has(`${name}=${value}`)) continue;
+    throw new Error(
+      `vitest-plugin-rsc: the browser did not take the cookie \`${name}\` of the \`headers\` ` +
+        `into its cookie jar, from which every request sends its cookies. A script cannot ` +
+        `set a cookie whose name and value are over 4096 bytes together, one with a ` +
+        `character that a cookie cannot have, one with the prefix \`__Http-\` or ` +
+        `\`__Host-Http-\`, one over an HttpOnly cookie of that name, or one with the prefix ` +
+        `\`__Host-\` or \`__Secure-\` where the browser takes no secure cookie.`,
+    );
+  }
 }
 
 // A page of another origin is not the app's: a browser would leave the app for
@@ -235,8 +277,9 @@ async function sendRequest(
  * of the app would. Use it to assert on a response itself: its status, its
  * headers, its HTML or Flight body.
  *
- * The request carries the browser's cookies, unless it has a `cookie` header,
- * and the `headers` of what `renderServer()` opened, under its own.
+ * The request carries the browser's cookies and the `headers` of what
+ * `renderServer()` opened, under its own. A `cookie` header of its own
+ * replaces the browser's cookies, for this request alone.
  * One to the pathname of what `renderServer()` opened is that page's, as a
  * `fetch` of the page is: it gets the route of the node, and skips the proxy
  * if the page does.
@@ -414,8 +457,12 @@ type RequestOptions = {
    * browser sends: the request of the document, and every one after it, like
    * a Server Action, a `router.refresh()`, a navigation or a `fetch`. Until
    * the test opens something else, or ends. A request keeps the headers it
-   * sets itself. A `cookie` and an `accept` header are for the document alone:
-   * after it the browser's cookies are sent, and what each request accepts.
+   * sets itself. An `accept` header is for the document alone.
+   *
+   * A `cookie` header is a cookie of the browser: its cookies go into
+   * `document.cookie`, for every path, before the request of the document,
+   * over the ones of the same name. So every request sends them, until the
+   * test ends, like the cookies the app sets.
    */
   headers?: HeadersInit;
 };
@@ -514,10 +561,12 @@ export async function renderServer(
   const options: RenderComponentOptions = (isOptions(first) ? first : second) ?? {};
   const url = new URL(options.url ?? "/", window.location.origin);
   const headers = new Headers(options.headers);
-  // The cookies of the requests after the document are the browser's, and
-  // each of them says itself what it accepts.
+  // The cookies go into the browser's cookie jar, which every request sends,
+  // the document's too: see `storeCookies()`.
+  const cookie = headers.get("cookie");
+  headers.delete("cookie");
+  // Each request after the document says itself what it accepts.
   const sticky = new Headers(headers);
-  sticky.delete("cookie");
   sticky.delete("accept");
   if (!headers.has("accept")) headers.set("accept", "text/html");
   const { pathname } = url;
@@ -531,7 +580,7 @@ export async function renderServer(
     }
     const opened = { pathname, proxy: first.proxy ?? true };
     return {
-      response: await loadPage(url, { headers }, { opened, headers: sticky }),
+      response: await loadPage(url, { headers }, { opened, headers: sticky, cookie }),
       unmount: leavePage,
     };
   }
@@ -547,7 +596,7 @@ export async function renderServer(
       );
     }
     const opened = { pathname, proxy, node: { ui, layouts: true } };
-    const response = await loadPage(url, { headers }, { opened, headers: sticky });
+    const response = await loadPage(url, { headers }, { opened, headers: sticky, cookie });
     return {
       response,
       get container() {
@@ -590,7 +639,12 @@ export async function renderServer(
   const response = await loadPage(
     url,
     { headers },
-    { container, opened: { pathname, proxy, node: { ui, layouts: false } }, headers: sticky },
+    {
+      container,
+      opened: { pathname, proxy, node: { ui, layouts: false } },
+      headers: sticky,
+      cookie,
+    },
   );
   return {
     response,
@@ -627,7 +681,14 @@ function isOptions(value: unknown): value is RenderServerOptions {
 
 // What a test opens: a page, or a node in a container. A page load that the
 // app makes itself, a navigation, has no `opening`.
-type Opening = { container?: Element; opened: Opened; headers: Headers };
+type Opening = {
+  container?: Element;
+  opened: Opened;
+  /** For every request of the page: see `pageHeaders`. */
+  headers: Headers;
+  /** A `cookie` header, for the browser's cookie jar: see `storeCookies()`. */
+  cookie: string | null;
+};
 
 async function loadPage(url: URL, init: RequestInit, opening?: Opening): Promise<Response> {
   const leaving = leavePage();
@@ -642,9 +703,14 @@ async function loadPage(url: URL, init: RequestInit, opening?: Opening): Promise
         "The node is hydrated in it, and leaving the node empties it.",
     );
   }
+  if (opening) {
+    // A page the app loads itself keeps the headers of what the test opened.
+    pageHeaders = opening.headers;
+    // Not for a load that the test has moved on from, and after the requests
+    // of the page before, so that a cookie they set does not replace these.
+    if (opening.cookie) storeCookies(opening.cookie);
+  }
   const opened = (registry.opened = opening?.opened);
-  // A page the app loads itself keeps the headers of what the test opened.
-  if (opening) pageHeaders = opening.headers;
   try {
     return await openPage(url, init, load.signal, opening);
   } catch (error) {

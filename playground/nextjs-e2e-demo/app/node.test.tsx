@@ -5,10 +5,12 @@ import { cookies, headers } from "next/headers";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import type { ReactNode } from "react";
+import { signInAs } from "../test/browser.ts";
 import { ClientFrame } from "./components/client-frame.tsx";
 import { Counter } from "./components/counter.tsx";
 import { FavoriteButton } from "./components/favorite-button.tsx";
 import { LingerButton } from "./components/linger-button.tsx";
+import { RenameNote } from "./components/rename-note.tsx";
 import { RouterState } from "./components/router-state.tsx";
 import { Widget } from "./components/widget.tsx";
 import { db } from "./lib/notes.ts";
@@ -32,6 +34,11 @@ afterEach(() => {
 // A node renders on its own, the way Testing Library renders a component: in
 // a container, without the app's layouts. And without the proxy: see
 // routing.test.tsx.
+
+async function Session() {
+  const session = (await cookies()).get("session")?.value;
+  return <p>{session ? `Signed in as ${session}` : "Signed out"}</p>;
+}
 
 async function RequestInfo() {
   return (
@@ -300,12 +307,28 @@ test("gives a node the request: its headers and cookies", async () => {
   await expect.element(page.getByText("7", { exact: true })).toBeVisible();
 });
 
-test("sends a cookie header instead of the browser's cookies", async () => {
+test("puts a cookie header in the browser's cookies, over the ones of the same name", async () => {
+  signInAs("grace");
   document.cookie = "last-created=7";
 
-  await renderServer(<RequestInfo />, { headers: { cookie: "last-created=9" } });
+  await renderServer(
+    <>
+      <Session />
+      <RequestInfo />
+    </>,
+    { headers: { cookie: "last-created=9" } },
+  );
 
+  // The request of the node sends all of them.
+  await expect.element(page.getByText("Signed in as grace")).toBeVisible();
   await expect.element(page.getByText("9", { exact: true })).toBeVisible();
+  expect(document.cookie).toBe("session=grace; last-created=9");
+});
+
+test("says so when the browser drops a cookie of a cookie header", async () => {
+  await expect(
+    renderServer(<RequestInfo />, { headers: { cookie: `session=${"a".repeat(4096)}` } }),
+  ).rejects.toThrow("the browser did not take the cookie `session`");
 });
 
 test("sends the headers of a node with every request after it, like a Server Action", async () => {
@@ -395,14 +418,65 @@ test("leaves a Server Action the content type of its own body", async () => {
   await expect.element(page.getByRole("button", { name: "Favorite", pressed: true })).toBeVisible();
 });
 
-test("sends a cookie header with the document alone, and the browser's cookies after it", async () => {
-  await renderServer(<RequestInfo />, { headers: { cookie: "last-created=9" } });
-  await expect.element(page.getByText("9", { exact: true })).toBeVisible();
+test("sends the cookies of a cookie header with every request after it, as the browser's", async () => {
+  db.notes.set("1", { id: "1", title: "Inbox triage", body: "" });
+  db.notes.set("2", { id: "2", title: "Plan the week", body: "" });
+  await renderServer(
+    <>
+      <Session />
+      <NotesPage />
+      <RenameNote id="2" />
+      <Link href="/team">Team</Link>
+    </>,
+    { url: "/notes", headers: { cookie: "session=ada" } },
+  );
+  await expect.element(page.getByText("Signed in as ada")).toBeVisible();
 
-  document.cookie = "last-created=7";
+  // The action calls revalidatePath("/notes"): its request renders the node again.
+  await page.getByRole("button", { name: "Delete Inbox triage" }).click();
+  await expect.element(page.getByRole("link", { name: "Inbox triage" })).not.toBeInTheDocument();
+  await expect.element(page.getByText("Signed in as ada")).toBeVisible();
+
+  // A `fetch` to the route handler of the note, then `router.refresh()`,
+  // which renders the node again.
+  await page.getByRole("textbox", { name: "New title" }).fill("Plan the month");
+  await page.getByRole("button", { name: "Rename" }).click();
+  await expect.element(page.getByRole("link", { name: "Plan the month" })).toBeVisible();
+  await expect.element(page.getByText("Signed in as ada")).toBeVisible();
+
+  // A page load, through the proxy, which lets a visitor with a session in.
+  await page.getByRole("link", { name: "Team" }).click();
+  await expect.element(page.getByRole("heading", { name: "Team" })).toBeVisible();
+  expect(window.location.pathname).toBe("/team");
+});
+
+test("sends the cookie header of a request of the test with that request alone", async () => {
+  await renderServer(<RequestInfo />, { headers: { cookie: "last-created=9" } });
+
   // `/api/notes/latest` redirects to the note of the `last-created` cookie.
+  const own = await handleRequest("/api/notes/latest", {
+    headers: { cookie: "last-created=3" },
+    redirect: "manual",
+  });
+  expect(own.headers.get("location")).toBe("/notes/3");
+  expect(document.cookie).toBe("last-created=9");
+
   const response = await handleRequest("/api/notes/latest", { redirect: "manual" });
-  expect(response.headers.get("location")).toBe("/notes/7");
+  expect(response.headers.get("location")).toBe("/notes/9");
+});
+
+test("forgets the cookies of a cookie header when the test ends", async () => {
+  // A browser keeps a cookie with the prefix `__Host-` only as a secure one.
+  await renderServer(<RequestInfo />, {
+    headers: { cookie: "last-created=9; __Host-session=ada" },
+  });
+  expect(document.cookie).toBe("last-created=9; __Host-session=ada");
+
+  await cleanup();
+
+  expect(document.cookie).toBe("");
+  const response = await handleRequest("/api/notes/latest", { redirect: "manual" });
+  expect(response.headers.get("location")).toBe("/notes/1");
 });
 
 async function Tenant({ children }: { children: ReactNode }) {
