@@ -10,6 +10,7 @@ import {
   type DevEnvironment,
   type EnvironmentModuleNode,
   type Plugin,
+  type TransformResult,
   type ViteDevServer,
 } from "vite";
 import type { BrowserCommandContext } from "vitest/node";
@@ -37,7 +38,8 @@ import { stylesheetsCommand, type Stylesheets } from "./styles-command.ts";
 //     renders the route: see `stylesheetsOf()`.
 //   - The dev server serves a stylesheet where Next links it, under
 //     `/_next/static/css/`: the CSS Vite makes of the file, so with PostCSS
-//     and with the class names its module exports.
+//     and with the class names its module exports. Its path has a hash of
+//     that CSS, as a file of Next's build has, so the browser keeps it.
 
 const linkedQuery = "next-linked";
 const linkedRE = new RegExp(`[?&]${linkedQuery}\\b`);
@@ -69,6 +71,8 @@ export function isCode(id: string, pageExtensions: string[]): boolean {
 
 // Where Next's build puts the CSS of an app, under `/_next/`.
 const directory = "static/css";
+// The version of its CSS that the path of a stylesheet has after the directory.
+const versionRE = new RegExp(`^${directory}/([0-9a-f]{16})(/.*)$`);
 
 // The names a declaration binds, like `{ a, b: [c] }` of a `const`.
 function boundNames(node: unknown, names: Set<string>): void {
@@ -369,13 +373,22 @@ export function createStylesPlugins(options: StylesOptions): Plugin[] {
     const { experimental } = getProject().config as { experimental?: { inlineCss?: boolean } };
     const contentOf = async (path: string) =>
       inline && experimental?.inlineCss ? (await cssOf(project.vite, path))?.code : undefined;
+    // The path with the version of the CSS: see `serve()`. A stylesheet that
+    // fails to compile has none, and fails when the browser loads it.
+    const versioned = async (path: string) => {
+      const css = await cssOf(project.vite, path).catch(() => null);
+      return css ? `${directory}/${versionOf(css)}${path.slice(directory.length)}` : path;
+    };
     // Also a file without any: it may have had some before an edit.
     return Object.fromEntries(
       await Promise.all(
         Array.from(starts, async ([file, start]) => [
           file,
           await Promise.all(
-            collect(start).map(async (path) => ({ path, content: await contentOf(path) })),
+            collect(start).map(async (path) => ({
+              path: await versioned(path),
+              content: await contentOf(path),
+            })),
           ),
         ]),
       ),
@@ -390,7 +403,27 @@ export function createStylesPlugins(options: StylesOptions): Plugin[] {
     return id ? server.environments[environments.rsc]!.transformRequest(`${id}&direct`) : null;
   }
 
+  // The version of the CSS of a stylesheet: a hash of it, once for a result
+  // of Vite's, which is the same until the file changes.
+  const versions = new WeakMap<TransformResult, string>();
+  function versionOf(css: TransformResult): string {
+    let version = versions.get(css);
+    if (!version) {
+      version = createHash("sha1").update(css.code).digest("hex").slice(0, 16);
+      versions.set(css, version);
+    }
+    return version;
+  }
+
   // The stylesheet Next links.
+  //
+  // Its path has the version of the CSS after the directory, as the name of
+  // a CSS file of Next's build has a hash of it. So a path is the same CSS for
+  // good, and the browser keeps it: Next's server says so of a file under
+  // `/_next/static/`, and so does this one. After an edit a page links
+  // another path. A request for a version that is no longer the CSS, from
+  // before the edit, gets the CSS of the file now, which the browser does not
+  // keep.
   async function serve(
     server: ViteDevServer,
     request: IncomingMessage,
@@ -407,11 +440,16 @@ export function createStylesPlugins(options: StylesOptions): Plugin[] {
       // Not a path that Next made.
       return false;
     }
+    const [, hash, rest] = versionRE.exec(path) ?? [];
+    const version =
+      hash && !stylesheetIds.has(path) && stylesheetIds.has(directory + rest) ? hash : undefined;
+    if (version) path = directory + rest;
     const css = await cssOf(server, path);
     if (!css) return false;
+    const current = versionOf(css);
     send(request, response, css.code, "css", {
-      etag: css.etag,
-      cacheControl: "no-cache",
+      etag: `"${current}"`,
+      cacheControl: version === current ? "public, max-age=31536000, immutable" : "no-cache",
       headers: server.config.server.headers,
       map: css.map,
     });

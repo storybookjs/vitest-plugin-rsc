@@ -588,7 +588,8 @@ async function handle(
     // that list before it loads the module of a segment. So they are asked
     // for first.
     // Next puts the CSS in the page only for a page load, not for its router,
-    // and decides so itself: this only spares compiling CSS it would not use.
+    // and decides so itself: this only keeps CSS it would not use out of the
+    // list.
     const inline = !isRSCRequestHeader(headers.get(RSC_HEADER) ?? undefined);
     setStylesheets(await registry.loadStylesheets(entry, inline));
 
