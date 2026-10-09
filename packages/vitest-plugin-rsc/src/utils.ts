@@ -1,6 +1,5 @@
 import {
   createDefaultImportMeta,
-  ESModulesEvaluator,
   ModuleRunner,
   ssrDynamicImportKey,
   ssrExportAllKey,
@@ -28,12 +27,18 @@ const reactClientWebSocketInvokeEvent = "vitest-plugin-rsc:react-client:invoke";
 const reactClientWebSocketInvokeResultEvent = "vitest-plugin-rsc:react-client:invoke-result";
 const reactClientWebSocketVersionEvent = "vitest-plugin-rsc:react-client:version";
 const sourceUrlRE = /\/\/# sourceURL=[^\n\r]*/;
+const sourceUrlLineRE = /^\/\/# sourceURL=/m;
 
 type InvokePayload = Parameters<NonNullable<ModuleRunnerTransport["invoke"]>>[0];
 type InvokeResult = Awaited<ReturnType<NonNullable<ModuleRunnerTransport["invoke"]>>>;
+/** What the server says of a module next to it: see `describeModule()` in index.ts. */
+type ModuleAnswer = InvokeResult & { imports?: string[]; dependency?: boolean };
 type ViteFetchResult = {
   code: string;
   file: string;
+  id?: string;
+  url?: string;
+  invalidate?: boolean;
 };
 
 type WebSocketInfo = { token: string; path: string };
@@ -59,6 +64,15 @@ let webSocketPromise: Promise<WebSocket> | undefined;
 let webSocketInfoPromise: Promise<WebSocketInfo> | undefined;
 let nextInvokeId = 0;
 const invokeTimeout = 30_000;
+// A test's own timers may be fake.
+const setTimeout = globalThis.setTimeout;
+const clearTimeout = globalThis.clearTimeout;
+const now = performance.now.bind(performance);
+// When the server last answered. A page asks for its modules at once, and a
+// dev server that compiles them for the first time answers them one by one:
+// a request waits for the ones before it, so it times out when the server has
+// been silent, not when it is old.
+let lastAnswer = 0;
 
 const pendingInvokes = new Map<string, PendingInvoke>();
 
@@ -70,8 +84,7 @@ function getRunner(environment: string): ModuleRunner {
   let runner = runners.get(environment);
   if (!runner) {
     const invoke = (payload: InvokePayload) => invokeEnvironment(environment, payload);
-    const evaluator = createEvaluator(new ESModulesEvaluator());
-    runners.set(environment, (runner = createRunner(environment, invoke, evaluator)));
+    runners.set(environment, (runner = createRunner(environment, invoke, createEvaluator())));
   }
   return runner;
 }
@@ -110,22 +123,24 @@ function createRunner(
 
 /**
  * A module runner with a module graph of its own: every module it imports is
- * evaluated again, the way a page load evaluates a page's scripts again.
+ * evaluated again, the way a page load evaluates a page's scripts again. Call
+ * `checkFetchedModules()` before every page load, or a file that changed goes
+ * unnoticed.
  */
 export function createEnvironmentRunner(
   environment: string,
   evaluator: ModuleEvaluator = createEvaluator(),
   { sourcemaps = false } = {},
 ): ModuleRunner {
-  // What the tab has fetched, looked up when the runner loads its first
-  // module. Again after a request that failed: the socket may be back.
-  let fetched: Promise<FetchedModules> | undefined;
+  let first: FetchedModules | undefined;
   const invoke = async (payload: InvokePayload) => {
-    fetched ??= fetchedModulesFor(environment).catch((error: unknown) => {
-      fetched = undefined;
-      throw error;
-    });
-    return invokeForPageLoad(environment, payload, await fetched);
+    const modules = await fetchedModules(environment);
+    first ??= modules;
+    // A runner that has modules of before a file changed asks the server
+    // itself, which says of each whether the runner has to evaluate it again.
+    return modules === first
+      ? invokeForPageLoad(environment, payload, modules)
+      : invokeEnvironment(environment, payload);
   };
   return createRunner(environment, invoke, evaluator, { sourcemaps });
 }
@@ -170,12 +185,8 @@ export function environmentModule(environment: string, id: string): string {
   return entry ? `/${entry}` : id;
 }
 
-export function importEnvironment<T = any>(environment: string, id: string): Promise<T> {
-  return getRunner(environment).import<T>(environmentModule(environment, id));
-}
-
 export function importReactClient<T = any>(id: string): Promise<T> {
-  return importEnvironment<T>("react_client", id);
+  return getRunner("react_client").import<T>(environmentModule("react_client", id));
 }
 
 // A static build has no dev server to ask for a module. The environments that
@@ -186,9 +197,37 @@ export function importReactClient<T = any>(id: string): Promise<T> {
 // every page, so `pageLoadEvaluator` compiles it once.
 type BuiltModule = { code: string; file: string; id: string; url: string; invalidate: false };
 const builtModules = new Map<string, Promise<BuiltModule>>();
+// An import of a file of a build, by the path of the imported file: see
+// `toRunnerModule()` in nextjs/build.ts. Not one with `import()`, which the
+// module may never load.
+const builtImportRE = /__vite_ssr_import__\("(\/[^"]+)"/g;
 
 function builtUrl(layer: BuiltLayer, file: string): string {
   return new URL(file.replace(/^\/+/, ""), layer.base).href;
+}
+
+// As with a dev server (see `fetchOnce()`), what a file imports is fetched as
+// soon as the file is there, all at once, and not one after the other as the
+// runner asks for it.
+function fetchBuilt(layer: BuiltLayer, id: string): Promise<BuiltModule> {
+  const url = builtUrl(layer, id);
+  let fetched = builtModules.get(url);
+  if (fetched) return fetched;
+  fetched = nativeFetch(url).then(async (response) => {
+    if (!response.ok) {
+      throw new Error(`vitest-plugin-rsc: ${url} responded with ${response.status}`);
+    }
+    const code = await response.text();
+    for (const [, imported] of code.matchAll(builtImportRE)) {
+      // A runner that asks for it gets the error.
+      if (!isHostModule(imported!)) fetchBuilt(layer, imported!).catch(() => {});
+    }
+    return { code, file: id, id, url: id, invalidate: false };
+  });
+  builtModules.set(url, fetched);
+  // Not kept when it fails: the next page load asks again.
+  fetched.catch(() => builtModules.delete(url));
+  return fetched;
 }
 
 async function invokeBuilt(layer: BuiltLayer, payload: InvokePayload): Promise<InvokeResult> {
@@ -197,24 +236,8 @@ async function invokeBuilt(layer: BuiltLayer, payload: InvokePayload): Promise<I
   if (name !== "fetchModule") {
     return { error: { message: `vitest-plugin-rsc: a build has no "${name}"` } } as InvokeResult;
   }
-  const [id] = data as [string];
-  const url = builtUrl(layer, id);
-  let fetched = builtModules.get(url);
-  if (!fetched) {
-    builtModules.set(
-      url,
-      (fetched = nativeFetch(url).then(async (response) => {
-        if (!response.ok) {
-          throw new Error(`vitest-plugin-rsc: ${url} responded with ${response.status}`);
-        }
-        return { code: await response.text(), file: id, id, url: id, invalidate: false };
-      })),
-    );
-    // Not kept when it fails: the next page load asks again.
-    fetched.catch(() => builtModules.delete(url));
-  }
   try {
-    return { result: await fetched } as InvokeResult;
+    return { result: await fetchBuilt(layer, data[0] as string) } as InvokeResult;
   } catch (error) {
     return {
       error: { message: String(error instanceof Error ? error.message : error) },
@@ -235,54 +258,132 @@ async function invokeEnvironment(environment: string, payload: InvokePayload) {
 // requests for one page. They are answered here, for as long as the server
 // says that its modules are the ones that were fetched: see `moduleVersions`
 // in index.ts.
-type FetchedModules = { version: unknown; results: Map<string, InvokeResult> };
+type FetchedModules = { version: unknown; results: Map<string, Promise<InvokeResult>> };
 
-const fetchedModulesOf = new Map<string, FetchedModules>();
+const fetchedModulesOf = new Map<string, Promise<FetchedModules>>();
 
-// What the tab has fetched of an environment, or nothing when the server has
-// invalidated a module since.
-async function fetchedModulesFor(environment: string): Promise<FetchedModules> {
-  const version = await requestOverWebSocket(reactClientWebSocketVersionEvent, { environment });
-  const known = fetchedModulesOf.get(environment);
-  if (known && known.version === version) return known;
-  const fetched = { version, results: new Map<string, InvokeResult>() };
+function fetchedModules(environment: string): Promise<FetchedModules> {
+  return fetchedModulesOf.get(environment) ?? askForModules(environment);
+}
+
+// The modules that were fetched, when the server still has that version of
+// its modules.
+function askForModules(environment: string, known?: FetchedModules): Promise<FetchedModules> {
+  const fetched = requestOverWebSocket(reactClientWebSocketVersionEvent, { environment }).then(
+    (version): FetchedModules =>
+      known && known.version === version ? known : { version, results: new Map() },
+  );
   fetchedModulesOf.set(environment, fetched);
+  // Not kept: the next module asks again. Modules that were fetched stay, and
+  // the next page load asks: a runner of the server layer that got others
+  // would ask the server itself from then on.
+  fetched.catch(() => {
+    if (fetchedModulesOf.get(environment) !== fetched) return;
+    if (known) fetchedModulesOf.set(environment, Promise.resolve(known));
+    else fetchedModulesOf.delete(environment);
+  });
   return fetched;
 }
+
+/**
+ * Asks the server whether the modules that were fetched are still its modules,
+ * for the runners of `createEnvironmentRunner()`. Before a page load: a file
+ * can change while the tests run.
+ */
+export async function checkFetchedModules(): Promise<void> {
+  await Promise.all(
+    [...fetchedModulesOf].map(async ([environment, fetched]) =>
+      askForModules(environment, await fetched.catch(() => undefined)),
+    ),
+  );
+}
+
+type FetchModulePayload = { data: { name: string; data: [string?, string?, FetchOptions?] } };
+type FetchOptions = { cached?: boolean; startOffset?: number };
+
+// The server resolves a path by itself, and anything else from its importer.
+const fetchKey = (name: string, url?: string, importer?: string) =>
+  [name, url, url && /^[./]/.test(url) ? undefined : importer].join("\n");
 
 async function invokeForPageLoad(
   environment: string,
   payload: InvokePayload,
-  fetched: FetchedModules,
+  modules: FetchedModules,
 ): Promise<InvokeResult> {
   // An invoke of the runner: `fetchModule` with a URL, its importer and
   // whether the runner has the module, or `getBuiltins`.
-  const { name, data } = (payload as { data: { name: string; data: unknown[] } }).data;
+  const { name, data } = (payload as FetchModulePayload).data;
   if (name !== "fetchModule" && name !== "getBuiltins") {
     return invokeEnvironment(environment, payload);
   }
-  const [url, importer, options] = data as [string?, string?, { cached?: boolean }?];
-  // The server resolves a path by itself, and anything else from its importer.
-  const key = [name, url, url && /^[./]/.test(url) ? undefined : importer].join("\n");
-  let result = fetched.results.get(key);
-  if (!result) {
-    result = await invokeEnvironment(environment, payload);
-    // Not what the runner already has: that is an answer to this one request.
-    if (isInvokeSuccess(result) && !isCachedResult(result.result)) {
-      // The server says so when it had to transform the module for this
-      // request, and the runner then evaluates a module it has again. That
-      // was this once: a module can have two URLs, and the second one is
-      // asked for as a module the runner does not have.
-      if (isViteFetchResult(result.result)) {
-        (result.result as { invalidate?: boolean }).invalidate = false;
-      }
-      fetched.results.set(key, result);
-    }
+  const [url, importer, options] = data;
+  const result = await fetchOnce(environment, payload, modules, fetchKey(name, url, importer));
+  if (!isInvokeSuccess(result)) return result;
+  // The answer to a runner that has the module, which this one may not.
+  if (isCachedResult(result.result) && !options?.cached) {
+    return invokeEnvironment(environment, payload);
   }
   // As the server answers for a module that the runner says it has.
-  return options?.cached && isInvokeSuccess(result) && isViteFetchResult(result.result)
-    ? { result: { cache: true } }
-    : result;
+  return options?.cached && isViteFetchResult(result.result) ? { result: { cache: true } } : result;
+}
+
+// Vite's module runner asks for the imports of a module one after the other,
+// each once the one before it has run: a round trip to the server for every
+// module of a page, in a row. The server says what a module imports (see
+// `describeModule()` in index.ts), so those are asked for right away, all at
+// once, and theirs when they arrive.
+function fetchOnce(
+  environment: string,
+  payload: InvokePayload,
+  modules: FetchedModules,
+  key: string,
+): Promise<InvokeResult> {
+  let fetching = modules.results.get(key);
+  if (fetching) return fetching;
+  const forget = () => {
+    if (modules.results.get(key) === fetching) modules.results.delete(key);
+  };
+  fetching = invokeEnvironment(environment, payload).then((result) => {
+    // Not what the runner already has, or an error: that is an answer to
+    // this one request.
+    if (!isInvokeSuccess(result) || isCachedResult(result.result)) {
+      forget();
+      return result;
+    }
+    const fetched = result.result;
+    if (!isViteFetchResult(fetched)) return result;
+    // A runner evaluates a module it has again when the server says that it
+    // compiled the module anew. This answer is for every runner that asks,
+    // and for every URL of the module: a page would run the module twice.
+    // These runners have no module of before a file changed, see
+    // `createEnvironmentRunner()`.
+    fetched.invalidate = false;
+    const { name, data } = (payload as FetchModulePayload).data;
+    // A runner knows a module by the URL the server has for it, also when it
+    // asked for another one, like `/app/page.tsx?import`.
+    const known = fetched.url && fetchKey(name, fetched.url);
+    if (known && !modules.results.has(known)) modules.results.set(known, fetching!);
+    const { startOffset } = data[2] ?? {};
+    // As the runner asks for an import of the module.
+    const importer = fetched.file || fetched.id;
+    for (const imported of (result as ModuleAnswer).imports ?? []) {
+      // The page's own: the runner does not ask the server for it.
+      if (isHostModule(imported)) continue;
+      const args = [imported, importer, { cached: false, startOffset }];
+      const ahead = { ...payload, data: { ...(payload as FetchModulePayload).data, data: args } };
+      // A runner that asks for it gets the error.
+      fetchOnce(
+        environment,
+        ahead as InvokePayload,
+        modules,
+        fetchKey(name, imported, importer),
+      ).catch(() => {});
+    }
+    return result;
+  });
+  modules.results.set(key, fetching);
+  fetching.catch(forget);
+  return fetching;
 }
 
 function isCachedResult(value: unknown): boolean {
@@ -321,6 +422,10 @@ const pageLoadEvaluator: ModuleEvaluator = {
     const shared = fetched?.code === code ? fetched : undefined;
     let run = shared && compiledModules.get(shared);
     if (!run) {
+      // The server names a module in its source map, and a dependency comes
+      // without one: see `dependencySourceMapPlugin()` in index.ts.
+      // On a line of its own: React and Next have it in a string.
+      if (!sourceUrlLineRE.test(code)) code += `\n//# sourceURL=${module.id}`;
       run = new AsyncFunction(...contextKeys, strict + code);
       if (shared) compiledModules.set(shared, run);
     }
@@ -335,6 +440,7 @@ async function withReactClientCoverage(result: InvokeResult) {
     !isCoverageEnabled() ||
     !isInvokeSuccess(result) ||
     !isViteFetchResult(result.result) ||
+    (result as ModuleAnswer).dependency ||
     isNodeModuleFile(result.result.file)
   ) {
     return result;
@@ -426,16 +532,27 @@ async function requestOverWebSocket(event: string, data: object): Promise<unknow
   const id = String(++nextInvokeId);
 
   return new Promise((resolve, reject) => {
-    const timeoutId = setTimeout(() => {
+    const sent = now();
+    const pending: PendingInvoke = {
+      resolve,
+      reject,
+      timeoutId: setTimeout(expire, invokeTimeout),
+    };
+    function expire() {
+      const silent = now() - Math.max(sent, lastAnswer);
+      if (silent < invokeTimeout) {
+        pending.timeoutId = setTimeout(expire, invokeTimeout - silent);
+        return;
+      }
       pendingInvokes.delete(id);
       reject(new Error(`React client websocket invoke timed out: ${id}`));
-    }, invokeTimeout);
+    }
 
-    pendingInvokes.set(id, { resolve, reject, timeoutId });
+    pendingInvokes.set(id, pending);
     try {
       socket.send(JSON.stringify({ type: "custom", event, data: { id, ...data } }));
     } catch (error) {
-      clearTimeout(timeoutId);
+      clearTimeout(pending.timeoutId);
       pendingInvokes.delete(id);
       reject(error);
     }
@@ -500,6 +617,7 @@ function handleWebSocketMessage(event: MessageEvent) {
   const result = parseInvokeResultMessage(event.data);
   if (!result) return;
 
+  lastAnswer = now();
   const pending = pendingInvokes.get(result.id);
   if (!pending) {
     return;
