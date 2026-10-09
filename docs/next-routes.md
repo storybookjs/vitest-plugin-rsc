@@ -126,7 +126,7 @@ Vite does it another way: a module that imports CSS puts it in a `<style>` when 
 - The dev server serves a stylesheet where Next links it: the path of the file under `/_next/static/css/`, or a hash for CSS that is no file, like that of a font. It is the CSS Vite makes of the file, so with PostCSS, Tailwind and the class names that its module exports.
 - With `experimental.inlineCss`, the list has the CSS of each file too, and Next puts it in a `<style>` of the page, as it does for `next start`. A navigation of Next's router still links it.
 - `renderServer()` resolves once the stylesheets of the page have loaded, and the page is gone with them.
-- A [static build](#a-static-build) has each stylesheet in a file of its own under `/_next/static/css/`, and in `vitest-plugin-rsc/next-stylesheets.json` the lists of every page route and of every file of the host, by its path from the root, read off the module graphs of the build. Vite leaves those stylesheets out of the CSS of its chunks.
+- A [static build](#a-static-build) has each stylesheet in a file of its own under `/_next/static/css/`, and in `vitest-plugin-rsc/next-stylesheets.json` the lists of every page route and of every file of the host, by its path from the root, read off the module graphs of the build. Vite leaves those stylesheets out of the CSS of its chunks. A URL of a file of `public/` with a query or a fragment, like `url(/fonts/icons.woff2?v=4)`, is read from the source of the stylesheet, as Vite's build names the file by all of it.
 
 What differs from `next start`:
 
@@ -684,6 +684,7 @@ The first two cut every module down to its imports, so they are quick. The plugi
 - `experimental.useLightningcss` in `next.config`. Next then compiles CSS with Lightning CSS. Here it is PostCSS, Next's default, so a class of a CSS module has the name of that. A run says so.
 - Next's mode of a CSS module, with a PostCSS config that only Vite reads, like `postcss.config.ts`, or with `css.postcss` in the Vitest config. A run says so.
 - Sass needs the `sass` package, as it does for Vite, and `sassOptions` in `next.config` does not apply. Not tested.
+- In a static build, a URL of a file of `public/` with a query or a fragment that is not in the source of a linked stylesheet itself: in a stylesheet it `@import`s, a Sass partial, a Sass interpolation, or what a PostCSS plugin like Tailwind writes. The build does not name the file there, and the browser asks for `__VITE_PUBLIC_ASSET__…__`, which is not found.
 - An asset prefix with its own origin, like a CDN. Stylesheets, font and image files are only served by the dev server, so a page has no CSS.
 - The `next.config` headers, and the ones the proxy sets, for a request the app does not answer itself: a file in `public/`, which the dev server serves. Also the `next.config` headers for a request that the proxy answers itself.
 - A rewrite, from `next.config` or the proxy, to a path that no route has, like a file in `public/`. The network is asked for the request's URL, not for the rewrite's destination.

@@ -555,8 +555,12 @@ type Manager = NonNullable<ReturnType<typeof getPluginApi>>["manager"];
 const builtAssetRE = /__VITE_ASSET__([\w$]+)__/g;
 const publicAssetRE = /__VITE_PUBLIC_ASSET__([a-z\d]{8})__/g;
 // How Vite's build names a file of `public/` there: the first characters of
-// the SHA-256 of its URL.
+// the SHA-256 of the URL the CSS has for it, decoded, with its query and its
+// fragment, like `/fonts/icons.woff2?v=4`.
 const publicAssetHash = (url: string) => createHash("sha256").update(url).digest("hex").slice(0, 8);
+// The URLs that a stylesheet names a file by: in `url()`, and in a string, as
+// in `image-set()`.
+const cssUrlRE = /\burl\(\s*(?:"([^"]*)"|'([^']*)'|([^'")\s]*))\s*\)|"(\/[^"]*)"|'(\/[^']*)'/g;
 
 /**
  * The stylesheets of a static build, which has no dev server to ask. So the
@@ -608,18 +612,22 @@ function createBuiltStylesheets(
   const clients = new Map<string, string[]>();
   const clientFiles = new Map<string, string[]>();
 
-  // The URL of each file of `public/`, by the name Vite's build gives it.
-  let publicFiles: Map<string, string> | undefined;
+  // The URL of each file of `public/` that a stylesheet names, by the name
+  // Vite's build gives it there. The files of the directory, and the URLs the
+  // stylesheets that Next links have, before Vite's CSS plugin names them:
+  // one with a query or a fragment is no file of the directory.
+  const publicUrls = new Map<string, string>();
+  let listed = false;
   const publicUrl = (hash: string) => {
-    if (!publicFiles) {
-      publicFiles = new Map();
+    if (!listed) {
+      listed = true;
       const files = publicDir ? fs.readdirSync(publicDir, { recursive: true }) : [];
       for (const file of files) {
         const url = `/${normalizePath(String(file))}`;
-        publicFiles.set(publicAssetHash(url), url);
+        publicUrls.set(publicAssetHash(url), url);
       }
     }
-    return publicFiles.get(hash);
+    return publicUrls.get(hash);
   };
 
   type Context = {
@@ -771,6 +779,32 @@ function createBuiltStylesheets(
     },
   };
 
+  // The URLs of the stylesheets that Next links, as their source has them:
+  // see `publicUrls`.
+  const urls: Plugin = {
+    name: "vitest-plugin-rsc:next-styles-build-urls",
+    apply: "build",
+    // Before Vite's CSS plugin.
+    enforce: "pre",
+    transform(code, id) {
+      if (!layerOf(this.environment.name) || !isLinked(id) || directRE.test(id)) return;
+      for (const match of code.matchAll(cssUrlRE)) {
+        // As Vite's CSS plugin reads it: unescaped, and decoded.
+        const url = match
+          .slice(1)
+          .find((group) => group !== undefined)!
+          .replace(/\\(\W)/g, "$1");
+        if (!url.startsWith("/") || url.startsWith("//")) continue;
+        try {
+          const decoded = decodeURI(url);
+          publicUrls.set(publicAssetHash(decoded), decoded);
+        } catch {
+          // Not a URL Vite names a file by.
+        }
+      }
+    },
+  };
+
   /** The stylesheets of every page route and of every file of the host, by the files of the build. */
   function builtFiles(): { pathname: string; body: Uint8Array }[] {
     if (routes.size === 0) return [];
@@ -802,5 +836,5 @@ function createBuiltStylesheets(
     return [{ pathname: `/${builtStylesheetsFile}`, body: Buffer.from(JSON.stringify(built)) }];
   }
 
-  return { plugins: [plugin], files: builtFiles };
+  return { plugins: [urls, plugin], files: builtFiles };
 }

@@ -346,3 +346,24 @@ test("builds the CSS of a node per file of the host, by its path from the root",
   // Without a file, those of every file of the host.
   expect(story()).toHaveLength(2);
 });
+
+test("names a file of public/ with a query or a fragment in a stylesheet of a static build", async () => {
+  const { output } = await buildPage({
+    ...layoutAndPage,
+    "app/layout.js": `import "./icons.css";\nexport default function Layout() {}\n`,
+    "app/icons.css":
+      `@font-face { font-family: Icons; src: url(/fonts/icons.woff2?v=4) format("woff2"), ` +
+      `url("/fonts/icons.woff2#iefix") format("woff2") }\n` +
+      `body { background: url(/dot.png) }`,
+    "public/fonts/icons.woff2": "font",
+    "public/dot.png": "png",
+  });
+
+  const css = output.find((file) => file.fileName.startsWith("_next/static/css/icons-"));
+  const source = String((css as Rolldown.OutputAsset).source);
+  expect(source).not.toContain("__VITE_PUBLIC_ASSET__");
+  // By the way from the stylesheet, with the query and the fragment.
+  expect(source).toContain("url(../../../fonts/icons.woff2?v=4)");
+  expect(source).toContain('url("../../../fonts/icons.woff2#iefix")');
+  expect(source).toContain("url(../../../dot.png)");
+});

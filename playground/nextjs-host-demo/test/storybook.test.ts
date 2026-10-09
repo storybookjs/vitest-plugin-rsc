@@ -127,7 +127,8 @@ const checks: Record<string, Check> = {
   },
   // A story links the CSS of what its own story file imports, and not that of
   // another story file the preview has loaded: Callout's CSS underlines every
-  // heading of its page.
+  // heading of its page. With a file of `public/` that the CSS names by a URL
+  // with a query.
   async "the CSS of a story is that of its story file"(page, site) {
     const canvas = await open(page, site, "server-callout--default");
     await canvas.getByRole("heading", { name: "Read this first" }).waitFor();
@@ -136,6 +137,13 @@ const checks: Record<string, Check> = {
         getComputedStyle(document.querySelector("#storybook-root h2")!).textDecorationLine ===
         "underline",
     );
+    const image = await canvas.evaluate(async () => {
+      const callout = document.querySelector(".callout")!;
+      const url = /url\("(.*)"\)/.exec(getComputedStyle(callout).backgroundImage)![1]!;
+      return { url, status: (await fetch(url)).status };
+    });
+    expect(image.url).toMatch(/\/stripes\.svg\?v=1$/);
+    expect(image.status).toBe(200);
 
     // Greeting and what it renders import no CSS: neither Callout's nor that
     // of a client story, like the Badge of client-button.
