@@ -1,0 +1,18 @@
+import { Canvas, Meta } from "@storybook/addon-docs/blocks";
+import * as ButtonStories from "./button.stories.tsx";
+import * as GreetingStories from "./greeting.stories.tsx";
+
+<Meta title="Introduction" />
+
+# Stories of a Next.js app
+
+A docs page in MDX. Each story on it renders in an iframe of its own, with the
+app of that story.
+
+## A Server Component
+
+<Canvas of={GreetingStories.Default} />
+
+## A Client Component
+
+<Canvas of={ButtonStories.Counting} />

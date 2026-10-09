@@ -1,11 +1,12 @@
 "use client";
 
 import { use, useEffect, useMemo, type ComponentType, type ReactNode } from "react";
+import { getStoryChildren, isStory } from "storybook/internal/csf";
 import { HooksContext, normalizeStory, prepareStory } from "storybook/preview-api";
 import { importClientModule } from "vitest-plugin-rsc/nextjs/client-node";
 
 // A story of a file with `"use client"`, in the browser layer: what the
-// preview renders for one, see entry-preview.tsx. With the directive, this
+// preview renders for one, see render.tsx. With the directive, this
 // file is a module of the browser layer too, which the preview imports: a
 // static build has it, as it has the story files.
 //
@@ -54,15 +55,35 @@ function render(args: Record<string, unknown>, { id, component: Component }: Con
   return <Component {...args} />;
 }
 
+// The meta and the story of an export of a story file. In CSF Next the export
+// is what `meta.story()` made, which has both, and the story can be one of its
+// `.test()`s.
+function annotationsOf(
+  csf: Record<string, unknown>,
+  name: string,
+  test: string | undefined,
+): { meta: object; story: unknown } {
+  const exported = csf[name];
+  if (!isStory(exported)) return { meta: csf.default as object, story: exported };
+  const story = test
+    ? getStoryChildren(exported).find((child) => child.input.name === test)
+    : exported;
+  if (!story) throw new Error(`The story ${name} has no test named "${test}"`);
+  return { meta: exported.meta.input, story: story.input };
+}
+
 export function ClientStory({
   file,
   name,
+  test,
   context,
 }: {
   /** What the browser layer imports the story file by. */
   file: string;
   /** The export of it that is the story. */
   name: string;
+  /** In CSF Next, the `.test()` of that story that is the story. */
+  test?: string;
   /** The context of the story, as the preview has it now. */
   context(): Context;
 }): ReactNode {
@@ -70,9 +91,10 @@ export function ClientStory({
   // What Storybook worked out for the file, which its meta may leave out.
   const { title, componentId } = context();
   const story = useMemo(() => {
-    const meta = { ...(csf.default as object), title, id: componentId };
-    return prepare(normalize(name, csf[name], meta), meta, { render });
-  }, [csf, name, title, componentId]);
+    const annotations = annotationsOf(csf, name, test);
+    const meta = { ...annotations.meta, title, id: componentId };
+    return prepare(normalize(test ?? name, annotations.story, meta), meta, { render });
+  }, [csf, name, test, title, componentId]);
   // The decorators here have their own hooks of Storybook: the ones of the
   // preview are for the decorators it runs on the server.
   const hooks = useMemo(() => new HooksContext(), []);
