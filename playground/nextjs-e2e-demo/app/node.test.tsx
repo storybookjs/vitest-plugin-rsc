@@ -842,6 +842,9 @@ test("does not render a node in the layouts of a route again once the app shows 
   // on the client.
   await page.getByRole("link", { name: "Notice" }).click();
   await expect.element(page.getByText("The office is closed on Friday.")).toBeVisible();
+  // The node says that it has left the page in an effect, which React runs
+  // after it commits: by the next frame.
+  await new Promise((resolve) => requestAnimationFrame(() => setTimeout(resolve)));
 
   await expect(rerender(<Greeting name="Grace" />)).rejects.toThrow(
     "the page has something else there",
