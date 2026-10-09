@@ -2,6 +2,7 @@ import fs from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { init as initCjsLexer, parse as parseCjs } from "cjs-module-lexer";
+import type { NextBuild } from "../build.ts";
 import { rscFlightCodec, type FlightEntry } from "../flight.ts";
 import type { NextLayer } from "../project.ts";
 import type { NextContext } from "./context.ts";
@@ -10,7 +11,7 @@ import type { NextContext } from "./context.ts";
  * What Next's build gives each layer: its compile-time constants and its
  * module aliases. And the exports of the Flight codec of the rsc layer.
  */
-export async function layerTables(context: NextContext) {
+export async function layerTables(context: NextContext, build: NextBuild) {
   const {
     root,
     projectRequire,
@@ -83,10 +84,12 @@ export async function layerTables(context: NextContext) {
         aliases[`${file}.compiled$`] = aliases[`${file}.compiled.js$`] = file;
       }
       // Next's own module for `react-dom/server` takes React's build for
-      // Node.js streams by the runtime. The one for web streams.
+      // Node.js streams by the runtime. The one for web streams, of the
+      // `build` option. Not React's entry file for it, which brings React's
+      // legacy server renderer along.
       for (const channel of ["", "-experimental"]) {
         aliases[`next/dist/build/webpack/alias/react-dom-server${channel}.js$`] =
-          `next/dist/compiled/react-dom${channel}/cjs/react-dom-server.edge.development.js`;
+          `next/dist/compiled/react-dom${channel}/cjs/react-dom-server.edge.${build}.js`;
       }
     }
     const base = compilerAliases.createWebpackAliases({
@@ -146,8 +149,8 @@ export async function layerTables(context: NextContext) {
 
   // The Flight codec of the rsc layer is CommonJS. Its exports, the way Node
   // finds them for an `import` of it. Of a `module.exports = require()` in
-  // each branch the lexer gives the last: the development build, which is the
-  // one that runs here.
+  // each branch the lexer gives the last: the development build. The
+  // production build has the same exports.
   await initCjsLexer();
   const exportsOf = (file: string): string[] => {
     const { exports, reexports } = parseCjs(fs.readFileSync(file, "utf8"));

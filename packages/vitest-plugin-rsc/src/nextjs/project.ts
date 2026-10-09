@@ -4,6 +4,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ResolveRoutesParams } from "@next/routing";
 import type { RoutesManifest } from "next/dist/build/index.js";
+import type { NextBuild } from "./build.ts";
 import type { FlightEntry } from "./flight.ts";
 import { openNextProject } from "./project/context.ts";
 import { routeEntries } from "./project/entries.ts";
@@ -211,6 +212,7 @@ const adapterPath = fileURLToPath(
 export async function loadNextProject(
   root: string,
   projectRequire: NodeJS.Require = createRequire(path.join(root, "package.json")),
+  build: NextBuild = "development",
 ): Promise<NextProject> {
   // The project, its `next.config`, and the build code of its `next`.
   const context = await openNextProject(root, projectRequire);
@@ -227,7 +229,7 @@ export async function loadNextProject(
   const { builtinBoundaries } = checkRuntime(context);
   // What Next's build gives each layer, and its compiler and loaders for the
   // files of the app.
-  const layers = await layerTables(context);
+  const layers = await layerTables(context, build);
   const compiler = await createCompiler(context);
   const { runLoader, ...loaders } = createLoaders(context);
 

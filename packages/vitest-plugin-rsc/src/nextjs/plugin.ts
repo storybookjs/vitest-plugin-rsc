@@ -6,6 +6,7 @@ import { createFilter, normalizePath, parseAst, parseAstAsync, type Plugin } fro
 import type { TestProject } from "vitest/node";
 import { createRunnerEnvironmentPlugins } from "../runner-environment.ts";
 import { flightBridge, type FlightEntry } from "./flight.ts";
+import { nextBuilds, nextProductionPlugin, type NextBuild } from "./build.ts";
 import { createCompilePlugin, createDependencyCompilePlugin } from "./compile.ts";
 import { createNodePlatform } from "./node-platform.ts";
 import { loadNextProject, type NextLayer, type NextProject } from "./project.ts";
@@ -320,7 +321,8 @@ function nextClientBoundaryPlugin(getProject: () => NextProject, resolver: Layer
 // Next's compile-time constants for a layer. A server layer gets what makes
 // a module server code on top of these: see server-code.ts.
 function definesOf(project: NextProject, layer: NextLayer): Record<string, string> {
-  // Not NODE_ENV: React stays a development build, for its warnings.
+  // Not NODE_ENV, which is the app's. Next's own is the `build` option
+  // (build.ts).
   const { "process.env.NODE_ENV": _, ...defines } = project.defines[layer];
   return {
     ...defines,
@@ -422,6 +424,8 @@ const runtimeImports: Record<NextLayer, string[]> = {
   ],
 };
 
+export type { NextBuild };
+
 export type VitestPluginNextOptions = ServerCodeOptions & {
   /**
    * Lets watch mode, `vitest --changed` and `vitest related` find the test
@@ -433,6 +437,17 @@ export type VitestPluginNextOptions = ServerCodeOptions & {
    * and `--changed` does not find the test files of a route.
    */
   affectedTests?: boolean;
+  /**
+   * Experimental. The code that Next's runtime and React run, in all three
+   * layers: `"development"` as `next dev` runs it, `"production"` as
+   * `next start` runs it after `next build`. Production renders faster,
+   * without what the development code checks and reports. The app's
+   * `process.env.NODE_ENV` stays as it is. See docs/next-routes.md,
+   * "Development Or Production".
+   *
+   * @default "development"
+   */
+  build?: NextBuild;
 };
 
 export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[] {
@@ -441,9 +456,21 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
   let cssDifferences: string[] = [];
   const serverCode = createServerCode(registry, options);
   const getProject = () => project;
+  const build = options.build ?? "development";
+  if (!nextBuilds.includes(build)) {
+    throw new Error(
+      `vitest-plugin-rsc: \`build\` is "development" or "production", not ${JSON.stringify(build)}.`,
+    );
+  }
   const resolvers = Object.fromEntries(
     layers.map((layer) => [layer, createLayerResolver(getProject, layer)]),
   ) as Record<NextLayer, LayerResolver>;
+  // The constants of what Next's build generates for the rsc layer, the entry
+  // of a route and of the proxy: Next's code, so with Next's NODE_ENV.
+  const generatedDefines = () => ({
+    ...definesOf(project, "rsc"),
+    ...(build === "production" && { "process.env.NODE_ENV": '"production"' }),
+  });
 
   return [
     ...createRunnerEnvironmentPlugins(environmentOf.ssr),
@@ -469,7 +496,11 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
       name: "vitest-plugin-rsc:next",
       enforce: "pre",
       async config(config) {
-        project = await loadNextProject(path.resolve(config.root ?? process.cwd()));
+        project = await loadNextProject(
+          path.resolve(config.root ?? process.cwd()),
+          undefined,
+          build,
+        );
         serverCode.configure(project.root);
 
         // What the route entries import from Next, to pre-bundle it. Every
@@ -541,6 +572,8 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
           include: [...include[layer], ...dependenciesOfNext(layer)],
           rolldownOptions: {
             plugins: [
+              // First: the other plugins see Next's production code.
+              ...(build === "production" ? [nextProductionPlugin(project.nextDir)] : []),
               resolvers[layer].plugin(),
               createDependencyCompilePlugin(getProject, layer),
               ...(layer === "rsc" ? [nextClientBoundaryPlugin(getProject, resolvers.rsc)] : []),
@@ -607,7 +640,18 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
         // A page of the project's own wins.
         (test.browser ??= {}).testerHtmlPath ??= testerHtml;
 
+        // JSX compiled for production, as `next build` compiles it: JSX
+        // compiled for development calls `jsxDEV()`, which React's production
+        // build does not have. Vitest sets `oxc` for every config, which Vite
+        // then takes over `esbuild`. Not where the config turns the
+        // transform off, or keeps JSX as it is (`jsx: "preserve"`).
+        const jsx =
+          build === "production" && config.oxc !== false && typeof config.oxc?.jsx !== "string"
+            ? { oxc: { jsx: { development: false } } }
+            : {};
+
         return {
+          ...jsx,
           // Vite bundles the CSS of the app, with Next's PostCSS plugins and
           // Next's class names of a CSS module.
           css: cssOptions,
@@ -725,7 +769,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
         if (id === `\0${middlewareEntryId}`) {
           const code = hasMiddleware && (await project.loadMiddlewareEntry());
           if (!code) return "export {};";
-          return serverCode.compile(code, "next-middleware-entry.js", definesOf(project, "rsc"));
+          return serverCode.compile(code, "next-middleware-entry.js", generatedDefines());
         }
 
         if (!id.startsWith("\0") || !isRouteModule(id.slice(1))) return;
@@ -752,11 +796,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
         for (const file of entry.watchFiles) this.addWatchFile(file);
         // A generated module: Vite only replaces `define` keys in pre-bundled
         // dependencies.
-        return serverCode.compile(
-          entry.code,
-          `${id.replace(/\W+/g, "-")}.js`,
-          definesOf(project, "rsc"),
-        );
+        return serverCode.compile(entry.code, `${id.replace(/\W+/g, "-")}.js`, generatedDefines());
       },
     },
     serverCode.plugin({ [environmentOf.rsc]: "rsc", [environmentOf.ssr]: "ssr" }),

@@ -1,5 +1,5 @@
 import { cleanup, handleRequest, renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
-import { afterEach, beforeEach, expect, test, vi, type MockInstance } from "vitest";
+import { afterEach, beforeEach, expect, inject, test, vi, type MockInstance } from "vitest";
 import { page } from "vitest/browser";
 import { cookies, headers } from "next/headers";
 import Link from "next/link";
@@ -665,7 +665,15 @@ test("reports what a node throws, as Next does for a page without an error bound
     .element(page.getByRole("heading", { name: "This page couldn’t load" }))
     .toBeVisible();
   expect(container).toBeEmptyDOMElement();
-  expect(reportError).toHaveBeenCalledWith(expect.objectContaining({ message: "Broken node" }));
+  // React's production build reports an error of the server by its digest.
+  expect(reportError).toHaveBeenCalledWith(
+    expect.objectContaining({
+      message:
+        inject("build") === "development"
+          ? "Broken node"
+          : expect.stringContaining("Minified React error #441"),
+    }),
+  );
   expect(consoleError.mock.calls.map(([error]) => String(error))).toEqual(["Error: Broken node"]);
   consoleError.mockClear();
 });

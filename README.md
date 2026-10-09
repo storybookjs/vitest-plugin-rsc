@@ -861,15 +861,16 @@ import {
 import { vitestPluginNext } from "vitest-plugin-rsc/nextjs/plugin";
 ```
 
-| Function                                | What it does                                                                                       |
-| --------------------------------------- | -------------------------------------------------------------------------------------------------- |
-| `renderServer({ url, headers, proxy })` | Opens a route. Resolves with `{ response, unmount }` once the page has hydrated.                   |
-| `renderServer(<Node />, options)`       | Renders a node in a container, on a route of its own. See the options below.                       |
-| `handleRequest(input, init)`            | Sends one request to the app, like `fetch`. Resolves with the `Response`.                          |
-| `runInServerAction(fn, options)`        | Runs `fn` as a Server Action at `url`, without opening a page. Options: `url`, `proxy`, `headers`. |
-| `cleanup()`                             | Leaves the page, clears cookies, storage and the cache. The plugin runs it around every test.      |
-| `vitestPluginNext({ browserModules })`  | The Vite plugin. `browserModules` are glob patterns, relative to the project root.                 |
-| `vitestPluginNext({ affectedTests })`   | `true` lets watch mode and `vitest --changed` find a route's test files. Off by default.           |
+| Function                                | What it does                                                                                                                                                                                                       |
+| --------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `renderServer({ url, headers, proxy })` | Opens a route. Resolves with `{ response, unmount }` once the page has hydrated.                                                                                                                                   |
+| `renderServer(<Node />, options)`       | Renders a node in a container, on a route of its own. See the options below.                                                                                                                                       |
+| `handleRequest(input, init)`            | Sends one request to the app, like `fetch`. Resolves with the `Response`.                                                                                                                                          |
+| `runInServerAction(fn, options)`        | Runs `fn` as a Server Action at `url`, without opening a page. Options: `url`, `proxy`, `headers`.                                                                                                                 |
+| `cleanup()`                             | Leaves the page, clears cookies, storage and the cache. The plugin runs it around every test.                                                                                                                      |
+| `vitestPluginNext({ browserModules })`  | The Vite plugin. `browserModules` are glob patterns, relative to the project root.                                                                                                                                 |
+| `vitestPluginNext({ affectedTests })`   | `true` lets watch mode and `vitest --changed` find a route's test files. Off by default.                                                                                                                           |
+| `vitestPluginNext({ build })`           | Experimental. `"production"` runs Next and React as `next start` does: faster, without their warnings. See [Development Or Production](docs/next-routes.md#development-or-production). `"development"` by default. |
 
 The options for a node, all optional:
 
@@ -998,3 +999,5 @@ pnpm test
 pnpm test --project nextjs-e2e-demo
 pnpm test --project nextjs-notes-demo-browser --project nextjs-notes-demo-node
 ```
+
+`VITEST_PLUGIN_RSC_BUILD=production` runs the two Next.js playgrounds as `next start` would, as CI does too.

@@ -87,9 +87,9 @@ export async function createCompiler(
         experimental: { ...options.jsc.experimental, emitAssertForImportAttributes: false },
         transform: {
           ...transform,
-          // Vite compiles JSX as it does without this plugin, for React's
-          // development runtime. Not in a `.js` file, which Next takes JSX
-          // in too.
+          // Vite compiles JSX as it does without this plugin, for the build
+          // of React that runs (plugin.ts). Not in a `.js` file, which Next
+          // takes JSX in too.
           react: compiledByVite.test(file) ? { ...(react as object), runtime: "preserve" } : react,
         },
       },
