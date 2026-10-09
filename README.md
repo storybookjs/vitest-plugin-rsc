@@ -968,7 +968,7 @@ Outside Vitest, `cleanup()` forgets only what the app added: the cookies its ser
 
 - React is its development build, as in a test run.
 - `images.unoptimized` is on: there is no image optimizer to ask.
-- `vitest-plugin-rsc/*/entry.js` is the one file whose name does not change with its content. Serve it without a long cache, like `index.html`.
+- The code of the ssr and the browser layer is one file each, `vitest-plugin-rsc/*/modules.json`, which a tab fetches once. Its name does not change with its content: serve it without a long cache, like `index.html`.
 - The CSS of a route is linked by Next, as with a dev server: a file per stylesheet under `/_next/static/css/`, with the stylesheets of every route and of every file of the host in `vitest-plugin-rsc/next-stylesheets.json`. A story has the CSS of its own story file, as with a dev server.
 
 `playground/nextjs-host-demo` builds an app with fonts, images, CSS modules, `next/dynamic`, `loading.tsx`, a route handler, `proxy.ts`, redirects, cookies, Server Actions, a module the host stands in for, Drizzle on PGlite, a menu of Base UI and a file of `public/`, and its tests open the build in a browser.
