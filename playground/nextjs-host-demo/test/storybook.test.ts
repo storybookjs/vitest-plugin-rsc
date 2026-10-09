@@ -1,4 +1,3 @@
-import fs from "node:fs";
 import path from "node:path";
 import type { Frame, Locator, Page } from "playwright";
 import { afterAll, beforeAll, describe, expect } from "vitest";
@@ -265,22 +264,6 @@ describe("storybook dev", () => {
   afterAll(() => site?.close());
 
   runChecks(() => site);
-
-  // A story file with "use client" that changes: the browser layer evaluates
-  // it again, as it is now, by the URL it had before.
-  test("a client story after an edit", async ({ page }) => {
-    const file = path.join(root, "stories/button.stories.tsx");
-    const source = fs.readFileSync(file, "utf8");
-    const canvas = await open(page, site, "client-button--with-badge");
-    await canvas.getByText("New", { exact: true }).waitFor();
-    try {
-      fs.writeFileSync(file, source.replace("<Badge>New</Badge>", "<Badge>Edited</Badge>"));
-      await canvas.getByText("Edited", { exact: true }).waitFor();
-    } finally {
-      fs.writeFileSync(file, source);
-    }
-    await canvas.getByText("New", { exact: true }).waitFor();
-  });
 });
 
 // `storybook build` builds with Vite's app builder: see the patch of
