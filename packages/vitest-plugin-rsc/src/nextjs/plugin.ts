@@ -597,7 +597,15 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
               : [],
           );
 
-        const appEntries = normalizePath(path.join(project.appDir, "**/*.{js,jsx,ts,tsx}"));
+        // The files of `app/`, but for a story of Storybook next to a route:
+        // not a file of the app, and one that imports what only the plugins
+        // of Storybook resolve, like a virtual module of its framework. One
+        // import that the scan does not resolve fails the scan of the layer,
+        // which then pre-bundles nothing up front. Storybook scans its stories
+        // itself.
+        const appEntries = normalizePath(
+          path.join(project.appDir, "**/!(*.stories).{js,jsx,ts,tsx}"),
+        );
         // The proxy of the app is a module of the rsc layer that no file of
         // `app/` imports.
         const middlewareEntries = project.middlewareFile
