@@ -12,7 +12,7 @@ import {
   stylesheetsPath,
   type BuiltStylesheets,
 } from "./styles-shared.ts";
-import { createStyles, exportsOfStylesheet } from "./styles.ts";
+import { createStyles, exportsOfStylesheet, isCode } from "./styles.ts";
 
 // The module that the installed Vite makes of a stylesheet for a client, of
 // which the plugin keeps the exports, and not the `<style>`. As the plugin
@@ -366,4 +366,22 @@ test("names a file of public/ with a query or a fragment in a stylesheet of a st
   expect(source).toContain("url(../../../fonts/icons.woff2?v=4)");
   expect(source).toContain('url("../../../fonts/icons.woff2#iefix")');
   expect(source).toContain("url(../../../dot.png)");
+});
+
+// The walk for the stylesheets of a route follows modules of code, and leaves
+// out a file that is no code, which Vite can list with the imports of a module.
+test.each([
+  ["/app/page.tsx", true],
+  ["/node_modules/.vite/deps/react.js?v=1234", true],
+  ["/lib/config.cts", true],
+  ["\0virtual:vitest-plugin-rsc/next-route/3", true],
+  ["/app/a.b/page", true],
+  ["/docs/post.mdx", true],
+  ["/content/page.md", true],
+  ["/node_modules/@electric-sql/pglite/dist/pglite.data", false],
+  ["/node_modules/@electric-sql/pglite/dist/pglite.wasm", false],
+  ["/assets/photo.jpg?import", false],
+  ["/app/data.json", false],
+])("takes %s for code: %s", (id, code) => {
+  expect(isCode(id, ["tsx", "ts", "md"])).toBe(code);
 });

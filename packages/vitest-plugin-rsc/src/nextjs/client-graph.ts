@@ -5,7 +5,7 @@ import {
   type ModuleRunner,
 } from "vite/module-runner";
 import { isHostModule } from "../host-module.ts";
-import { createEnvironmentRunner, createEvaluator, refetchModules } from "../utils.ts";
+import { checkFetchedModules, createEnvironmentRunner, createEvaluator } from "../utils.ts";
 import { isLiveModule } from "./client-ids.ts";
 import { recordListeners, recordMessageChannels, type Leftovers } from "./leftovers.ts";
 import { registry } from "./registry.ts";
@@ -213,14 +213,17 @@ const hostExports = new WeakMap<object, Promise<unknown>>();
 // For each file, which load of it in the rsc layer the host graph has.
 const hostLoads = new Map<string, object>();
 
-function importInHostGraph(module: string, reload: boolean) {
-  hostGraph ??= createEnvironmentRunner(environment, pageEvaluator());
-  const loaded = reload && hostGraph.evaluatedModules.getModuleByUrl(module);
+async function importInHostGraph(module: string, reload: boolean) {
+  const graph = (hostGraph ??= createEnvironmentRunner(environment, pageEvaluator()));
+  const loaded = reload && graph.evaluatedModules.getModuleByUrl(module);
   if (loaded) {
-    refetchModules(hostGraph);
-    hostGraph.evaluatedModules.invalidateModule(loaded);
+    // The server's modules after the change, of which the graph has some of
+    // before: it asks the server for each from then on, see
+    // `createEnvironmentRunner()`.
+    await checkFetchedModules();
+    graph.evaluatedModules.invalidateModule(loaded);
   }
-  return hostGraph.import<Record<string, unknown>>(module);
+  return graph.import<Record<string, unknown>>(module);
 }
 
 /**
