@@ -10,8 +10,14 @@ import {
   type ModuleEvaluator,
   type ModuleRunnerTransport,
 } from "vite/module-runner";
-import builtLayers, { hostModules, type BuiltLayer } from "virtual:vitest-plugin-rsc/layers";
+import builtLayers, { hostModules } from "virtual:vitest-plugin-rsc/layers";
 import * as pageClient from "virtual:vitest-plugin-rsc/vite-client";
+import {
+  builtUrl,
+  createBuiltLayers,
+  type InvokePayload,
+  type InvokeResult,
+} from "./built-layers.ts";
 import { isHostModule } from "./host-module.ts";
 
 // The page's own instance of Vite's client, for the modules that the runners
@@ -29,8 +35,6 @@ const reactClientWebSocketVersionEvent = "vitest-plugin-rsc:react-client:version
 const sourceUrlRE = /\/\/# sourceURL=[^\n\r]*/;
 const sourceUrlLineRE = /^\/\/# sourceURL=/m;
 
-type InvokePayload = Parameters<NonNullable<ModuleRunnerTransport["invoke"]>>[0];
-type InvokeResult = Awaited<ReturnType<NonNullable<ModuleRunnerTransport["invoke"]>>>;
 /** What the server says of a module next to it: see `describeModule()` in index.ts. */
 type ModuleAnswer = InvokeResult & { imports?: string[]; dependency?: boolean };
 type ViteFetchResult = {
@@ -56,8 +60,14 @@ type InvokeResultMessage = {
   };
 };
 
-// Before anything replaces it: this request is for the dev server.
+// Before anything replaces it: this request is for the dev server, or for a
+// file of a static build.
 const nativeFetch = globalThis.fetch;
+
+// The modules of a static build, see built-layers.ts. A page runs both
+// layers, so the tab asks for all of them at once, before a runner does.
+const built = createBuiltLayers(nativeFetch);
+for (const layer of Object.values(builtLayers ?? {})) if (layer) built.preload(layer);
 
 let webSocket: WebSocket | undefined;
 let webSocketPromise: Promise<WebSocket> | undefined;
@@ -90,30 +100,31 @@ function getRunner(environment: string): ModuleRunner {
 }
 
 // A runner of an environment. A module of the page is the page's own, and a
-// static build has the modules of the environment in files of its own.
+// static build has the modules of the environment in a file of its own.
 function createRunner(
   environment: string,
   invoke: NonNullable<ModuleRunnerTransport["invoke"]>,
   evaluator: ModuleEvaluator,
   { sourcemaps = false } = {},
 ): ModuleRunner {
-  const built = builtLayers?.[environment];
+  const layer = builtLayers?.[environment];
   return new ModuleRunner(
     {
       // With `sourcemaps`, the stack of an error has the lines of the source
       // for a module of this runner, where it has the lines of what the
       // runner evaluates. For that every stack is formatted as Vite does it.
-      sourcemapInterceptor: sourcemaps && !built ? "prepareStackTrace" : false,
+      sourcemapInterceptor: sourcemaps && !layer ? "prepareStackTrace" : false,
       transport: {
         invoke: async (payload) =>
-          hostModule(payload) ?? (built ? invokeBuilt(built, payload) : invoke(payload)),
+          hostModule(payload) ?? (layer ? built.invoke(layer, payload) : invoke(payload)),
       },
       hmr: false,
-      // A module of a build is a file of it, and says so.
-      ...(built && {
+      // A module of a build has the URL of the file it would be, from which
+      // it names the files of the build, like its CSS.
+      ...(layer && {
         createImportMeta: (file) => ({
           ...createDefaultImportMeta(file),
-          url: builtUrl(built, file),
+          url: builtUrl(layer, file),
         }),
       }),
     },
@@ -186,16 +197,16 @@ export function createEvaluator(evaluator: ModuleEvaluator = pageLoadEvaluator):
       if (!hostModules) {
         return ((await evaluator.runExternalModule(file)) as { default?: unknown }).default;
       }
-      const built = hostModules[file];
-      if (!built) throw new Error(`vitest-plugin-rsc: the build has no module of the page ${file}`);
-      return (await built()).default;
+      const load = hostModules[file];
+      if (!load) throw new Error(`vitest-plugin-rsc: the build has no module of the page ${file}`);
+      return (await load()).default;
     },
   };
 }
 
 /**
  * What a runner imports a module of an environment by: its id, or in a build
- * the file that the module is the entry of.
+ * the id of the module that it is the entry of.
  */
 export function environmentModule(environment: string, id: string): string {
   const entry = builtLayers?.[environment]?.entries[id];
@@ -204,62 +215,6 @@ export function environmentModule(environment: string, id: string): string {
 
 export function importReactClient<T = any>(id: string): Promise<T> {
   return getRunner("react_client").import<T>(environmentModule("react_client", id));
-}
-
-// A static build has no dev server to ask for a module. The environments that
-// run through a module runner were built into files of the format the runner
-// evaluates, and those are fetched like any file of the site: see
-// nextjs/build.ts. A module is a file, and its id the path of that file in
-// the directory of its environment. The answer for a file is the same for
-// every page, so `pageLoadEvaluator` compiles it once.
-type BuiltModule = { code: string; file: string; id: string; url: string; invalidate: false };
-const builtModules = new Map<string, Promise<BuiltModule>>();
-// An import of a file of a build, by the path of the imported file: see
-// `toRunnerModule()` in nextjs/build.ts. Not one with `import()`, which the
-// module may never load.
-const builtImportRE = /__vite_ssr_import__\("(\/[^"]+)"/g;
-
-function builtUrl(layer: BuiltLayer, file: string): string {
-  return new URL(file.replace(/^\/+/, ""), layer.base).href;
-}
-
-// As with a dev server (see `fetchOnce()`), what a file imports is fetched as
-// soon as the file is there, all at once, and not one after the other as the
-// runner asks for it.
-function fetchBuilt(layer: BuiltLayer, id: string): Promise<BuiltModule> {
-  const url = builtUrl(layer, id);
-  let fetched = builtModules.get(url);
-  if (fetched) return fetched;
-  fetched = nativeFetch(url).then(async (response) => {
-    if (!response.ok) {
-      throw new Error(`vitest-plugin-rsc: ${url} responded with ${response.status}`);
-    }
-    const code = await response.text();
-    for (const [, imported] of code.matchAll(builtImportRE)) {
-      // A runner that asks for it gets the error.
-      if (!isHostModule(imported!)) fetchBuilt(layer, imported!).catch(() => {});
-    }
-    return { code, file: id, id, url: id, invalidate: false };
-  });
-  builtModules.set(url, fetched);
-  // Not kept when it fails: the next page load asks again.
-  fetched.catch(() => builtModules.delete(url));
-  return fetched;
-}
-
-async function invokeBuilt(layer: BuiltLayer, payload: InvokePayload): Promise<InvokeResult> {
-  const { name, data } = (payload as { data: { name: string; data: unknown[] } }).data;
-  if (name === "getBuiltins") return { result: [] } as InvokeResult;
-  if (name !== "fetchModule") {
-    return { error: { message: `vitest-plugin-rsc: a build has no "${name}"` } } as InvokeResult;
-  }
-  try {
-    return { result: await fetchBuilt(layer, data[0] as string) } as InvokeResult;
-  } catch (error) {
-    return {
-      error: { message: String(error instanceof Error ? error.message : error) },
-    } as InvokeResult;
-  }
 }
 
 async function invokeEnvironment(environment: string, payload: InvokePayload) {

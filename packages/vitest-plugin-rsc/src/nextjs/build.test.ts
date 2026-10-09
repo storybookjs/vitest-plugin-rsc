@@ -2,7 +2,9 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { normalizePath } from "vite";
+import { ESModulesEvaluator, ModuleRunner, createDefaultImportMeta } from "vite/module-runner";
 import { expect, onTestFinished, test, vi } from "vitest";
+import { builtUrl, createBuiltLayers, type BuiltLayer } from "../built-layers.ts";
 import {
   builtClientFileId,
   builtHostModuleUrl,
@@ -266,24 +268,201 @@ test("writes the layers and what Next's loaders made into the build of the host"
 
   await (plugin.buildApp as Hook)(builder);
 
-  const files = fs
-    .readdirSync(outDir, { recursive: true, withFileTypes: true })
-    .filter((entry) => entry.isFile())
-    .map((entry) => path.relative(outDir, path.join(entry.parentPath, entry.name)));
-  expect(files.sort()).toEqual([
+  // The modules of a layer are one file, its other files are files.
+  expect(filesOf(outDir)).toEqual([
     "_next/static/media/font.woff2",
-    "vitest-plugin-rsc/next_ssr/entry.js",
+    "vitest-plugin-rsc/next_ssr/modules.json",
     "vitest-plugin-rsc/react_client/assets/a.css",
     "vitest-plugin-rsc/react_client/assets/icon.svg",
-    "vitest-plugin-rsc/react_client/entry.js",
+    "vitest-plugin-rsc/react_client/modules.json",
   ]);
-  // A module as a module runner takes it, and CSS that names a file by the
-  // way from its own.
-  expect(fs.readFileSync(path.join(outDir, "vitest-plugin-rsc/react_client/entry.js"), "utf8")) //
-    .toContain(`__vite_ssr_import__("/vitest-plugin-rsc/react_client/assets/a.js"`);
+  // A module as a module runner takes it, by its id, and CSS that names a
+  // file by the way from its own.
+  const modules = (layer: string) =>
+    JSON.parse(
+      fs.readFileSync(path.join(outDir, `vitest-plugin-rsc/${layer}/modules.json`), "utf8"),
+    ) as Record<string, string>;
+  expect(Object.keys(modules("react_client"))).toEqual([
+    "/vitest-plugin-rsc/react_client/entry.js",
+  ]);
+  expect(modules("react_client")["/vitest-plugin-rsc/react_client/entry.js"]).toContain(
+    `__vite_ssr_import__("/vitest-plugin-rsc/react_client/assets/a.js"`,
+  );
+  expect(modules("next_ssr")).toEqual({
+    "/vitest-plugin-rsc/next_ssr/entry.js": await toRunnerModule({
+      fileName: "vitest-plugin-rsc/next_ssr/entry.js",
+      code: `export const c = 1;\n`,
+    }),
+  });
   expect(
     fs.readFileSync(path.join(outDir, "vitest-plugin-rsc/react_client/assets/a.css"), "utf8"),
   ).toBe("@font-face { src: url(../../../_next/static/media/font.woff2) }");
+});
+
+// The files in a directory, by their path from it.
+const filesOf = (directory: string) =>
+  fs
+    .readdirSync(directory, { recursive: true, withFileTypes: true })
+    .filter((entry) => entry.isFile())
+    .map((entry) => path.relative(directory, path.join(entry.parentPath, entry.name)))
+    .sort();
+
+// A chunk of the bundle of a layer.
+const chunk = (fileName: string, code: string) => ({ type: "chunk", fileName, code });
+
+// The build of the browser layer of an app: its entry imports a module, which
+// names its CSS, and loads others when it is asked to, one by a template
+// literal, as Rolldown writes a dynamic import. It is served from `base`, by a
+// `fetch` that says what it was asked for.
+async function servedBuild(base: string) {
+  const { outDir, plugin, builder } = setup({
+    react_client: {
+      "vitest-plugin-rsc/react_client/entry.js": chunk(
+        "vitest-plugin-rsc/react_client/entry.js",
+        `import { greeting } from "./assets/greeting.js";\n` +
+          `export const loads = (globalThis.loads ?? 0) + 1;\n` +
+          `globalThis.loads = loads;\n` +
+          `export const lazy = () => import("./assets/lazy.js");\n` +
+          "export const later = () => import(`./assets/later.js`);\n" +
+          `export { greeting };\n`,
+      ),
+      "vitest-plugin-rsc/react_client/assets/greeting.js": chunk(
+        "vitest-plugin-rsc/react_client/assets/greeting.js",
+        `export const greeting = "hello";\n` +
+          `export const css = new URL("./greeting.css", import.meta.url).href;\n`,
+      ),
+      "vitest-plugin-rsc/react_client/assets/lazy.js": chunk(
+        "vitest-plugin-rsc/react_client/assets/lazy.js",
+        `export default "lazy";\n`,
+      ),
+      "vitest-plugin-rsc/react_client/assets/later.js": chunk(
+        "vitest-plugin-rsc/react_client/assets/later.js",
+        `export default "later";\n`,
+      ),
+      "vitest-plugin-rsc/react_client/assets/greeting.css": {
+        type: "asset",
+        fileName: "vitest-plugin-rsc/react_client/assets/greeting.css",
+        source: "p { color: red }",
+      },
+    },
+  });
+  await (plugin.buildApp as Hook)(builder);
+  onTestFinished(() => void delete (globalThis as { loads?: number }).loads);
+  const asked: string[] = [];
+  const fetch = async (input: string | URL | Request) => {
+    const url = String(input);
+    asked.push(url);
+    const file = path.join(outDir, url.slice(base.length));
+    if (!url.startsWith(base) || !fs.existsSync(file)) return new Response(null, { status: 404 });
+    return new Response(fs.readFileSync(file));
+  };
+  // Where the build of the host says the layer is: see the test of that.
+  const layer: BuiltLayer = {
+    base,
+    entries: { "vitest-plugin-rsc/nextjs/client": "vitest-plugin-rsc/react_client/entry.js" },
+    modules: "vitest-plugin-rsc/react_client/modules.json",
+  };
+  return { outDir, layer, built: createBuiltLayers(fetch as typeof globalThis.fetch), asked };
+}
+
+type Entry = {
+  loads: number;
+  greeting: string;
+  lazy: () => Promise<{ default: string }>;
+  later: () => Promise<{ default: string }>;
+};
+const entry = "/vitest-plugin-rsc/react_client/entry.js";
+
+// A runner of the layer for a page load, as ../utils.ts makes one.
+const pageRunner = (built: ReturnType<typeof createBuiltLayers>, layer: BuiltLayer) =>
+  new ModuleRunner(
+    {
+      transport: { invoke: (payload) => built.invoke(layer, payload) },
+      hmr: false,
+      sourcemapInterceptor: false,
+      createImportMeta: (file) => ({
+        ...createDefaultImportMeta(file),
+        url: builtUrl(layer, file),
+      }),
+    },
+    new ESModulesEvaluator(),
+  );
+
+test("a runner evaluates a layer from its one file, which a tab fetches once", async () => {
+  const { outDir, layer, built, asked } = await servedBuild("https://site.test/docs/");
+
+  // The modules are no files of the build, the CSS is.
+  expect(filesOf(outDir)).toEqual([
+    "vitest-plugin-rsc/next_ssr/modules.json",
+    "vitest-plugin-rsc/react_client/assets/greeting.css",
+    "vitest-plugin-rsc/react_client/modules.json",
+  ]);
+  // As the page asks for it when it starts, before a runner does.
+  built.preload(layer);
+  const first = await pageRunner(built, layer).import<Entry>(entry);
+  expect(first.loads).toBe(1);
+  expect(first.greeting).toBe("hello");
+  expect((await first.lazy()).default).toBe("lazy");
+  expect((await first.later()).default).toBe("later");
+  // A module has the URL of the file it would be: what it names by its URL,
+  // like its CSS, is a file of the build where it says.
+  const greeting = await pageRunner(built, layer).import<{ css: string }>(
+    "/vitest-plugin-rsc/react_client/assets/greeting.js",
+  );
+  expect(greeting.css).toBe(
+    "https://site.test/docs/vitest-plugin-rsc/react_client/assets/greeting.css",
+  );
+
+  // The next page load has a module graph of its own, and evaluates every
+  // module again, from what the tab fetched.
+  const second = await pageRunner(built, layer).import<Entry>(entry);
+  expect(second.loads).toBe(2);
+  expect(asked).toEqual(["https://site.test/docs/vitest-plugin-rsc/react_client/modules.json"]);
+  // With the same answer for a module, which a page compiles once.
+  const fetchModule = (id: string) =>
+    built.invoke(layer, {
+      type: "custom",
+      event: "vite:invoke",
+      data: { id: "send:fetchModule", name: "fetchModule", data: [id] },
+    });
+  const [answer, again] = await Promise.all([fetchModule(entry), fetchModule(entry)]);
+  expect((answer as { result: unknown }).result).toBe((again as { result: unknown }).result);
+  // Also for a URL of the module, which encodes what its path does not.
+  const encoded = await fetchModule("/vitest-plugin-rsc/react_client/assets/gr%65eting.js");
+  expect((encoded as { result: { id: string } }).result.id).toBe(
+    "/vitest-plugin-rsc/react_client/assets/greeting.js",
+  );
+});
+
+test("a runner of a built layer asks again after a failure, and says what the build does not have", async () => {
+  const { outDir, layer, built, asked } = await servedBuild("https://site.test/");
+  const file = path.join(outDir, layer.modules);
+
+  // The file of the layer is not there, and then it is: the next page load
+  // asks for it again.
+  fs.renameSync(file, `${file}.gone`);
+  await expect(pageRunner(built, layer).import(entry)).rejects.toThrow(
+    "vitest-plugin-rsc: https://site.test/vitest-plugin-rsc/react_client/modules.json responded with 404",
+  );
+  fs.renameSync(`${file}.gone`, file);
+  await expect(pageRunner(built, layer).import<Entry>(entry)).resolves.toMatchObject({
+    greeting: "hello",
+  });
+  expect(asked).toHaveLength(2);
+
+  await expect(
+    pageRunner(built, layer).import("/vitest-plugin-rsc/react_client/assets/gone.js"),
+  ).rejects.toThrow(
+    "vitest-plugin-rsc: the build has no module /vitest-plugin-rsc/react_client/assets/gone.js",
+  );
+  expect(asked).toHaveLength(2);
+
+  // A site that answers with another file, like a page of its own.
+  const elsewhere = { ...layer, modules: "vitest-plugin-rsc/react_client/assets/greeting.css" };
+  await expect(pageRunner(built, elsewhere).import(entry)).rejects.toThrow(
+    "vitest-plugin-rsc: https://site.test/vitest-plugin-rsc/react_client/assets/greeting.css " +
+      "is not the modules of a layer",
+  );
 });
 
 test("leaves the bundle of a build that only looks", () => {
@@ -331,8 +510,8 @@ test("tells the page where the layers are from the directory of the build", () =
   expect(rendered).toBe(
     `const directory = new URL("../", import.meta.url).href;\n` +
       `export default {\n` +
-      `  "next_ssr": { base: directory, entries: {"vitest-plugin-rsc/nextjs/ssr":"vitest-plugin-rsc/next_ssr/entry.js"} },\n` +
-      `  "react_client": { base: directory, entries: {"vitest-plugin-rsc/nextjs/client":"vitest-plugin-rsc/react_client/entry.js"} },\n` +
+      `  "next_ssr": { base: directory, entries: {"vitest-plugin-rsc/nextjs/ssr":"vitest-plugin-rsc/next_ssr/entry.js"}, modules: "vitest-plugin-rsc/next_ssr/modules.json" },\n` +
+      `  "react_client": { base: directory, entries: {"vitest-plugin-rsc/nextjs/client":"vitest-plugin-rsc/react_client/entry.js"}, modules: "vitest-plugin-rsc/react_client/modules.json" },\n` +
       `};\n` +
       `export const hostModules = {\n` +
       `  "/@id/__x00__vitest-plugin-rsc/host-module/storybook/test": () => import("\\u0000vitest-plugin-rsc/host-module/storybook/test/module.js"),\n` +
@@ -346,7 +525,7 @@ test("tells the page where the layers are from the directory of the build", () =
   );
 });
 
-test("has the client files of the host in the browser layer, each in the file its id names", async () => {
+test("has the client files of the host in the browser layer, each in the chunk its id names", async () => {
   const { root, plugin, manager, references } = setup();
   manager.clientReferenceMetaMap = {
     "/app/counter.tsx": { referenceKey: "a1b2c3", importId: "/app/counter.tsx" },

@@ -20,9 +20,11 @@ import { builtClientFileDir, builtLiveModuleDir, clientNodeReference } from "./c
 // The rsc layer shares its environment with the host, so it is the host's
 // build: its HTML, with its scripts. The other two run through a module
 // runner (../utils.ts), so that a page load gets a module graph of its own.
-// They are built like any environment, and then every file of JavaScript is
-// rewritten into the format a module runner evaluates. The browser fetches those
-// files where it asks a dev server for a module.
+// They are built like any environment, and then every chunk is rewritten into
+// the format a module runner evaluates. Those of a layer are one file, by the
+// id of each, which a tab fetches once where it asks a dev server for every
+// module: see ../built-layers.ts. Its other files, like CSS, are files of the
+// build.
 //
 // A dev server finds a module by the id a Flight payload has for it. A build
 // has to have those modules in it, under those ids, so the order matters:
@@ -43,9 +45,9 @@ import { builtClientFileDir, builtLiveModuleDir, clientNodeReference } from "./c
 // A file of the host with `"use client"`, like a story, is a module of the
 // browser layer: see client-files.ts. The host imports it in the rsc layer,
 // so each build of that layer finds it, and the browser layer after it builds
-// it into a file of its own, with one for every module in between that it
-// imports. The id of each is the path of its file, which the rsc layer knows
-// before the browser layer is built. What such a file imports of the host is
+// it into a chunk of its own, with one for every module in between that it
+// imports. The id of each is the path the chunk has in the build, which the
+// rsc layer knows before the browser layer is built. What such a file imports of the host is
 // not built in the browser layer: it is the page's module, in the build of the
 // host, which step 3 lists from what step 2 found.
 
@@ -58,13 +60,18 @@ const serverReferencesId = "virtual:vitest-plugin-rsc/next-server-references";
 /** Where the layers of the module runner are, in the directory of the build. */
 const layersDir = "vitest-plugin-rsc";
 /**
- * The file of the one entry of a layer. Not named after its content: the
- * build of the host, which says where it is, comes before the layer's, which
- * needs the ids that the host's build gives. So it is a file, like the
- * `index.html` of the host, that a site serves without a long cache. The
- * chunks it imports are named after their content.
+ * The one entry of a layer. A module of a layer is no file of the build, but
+ * its id is the path it would have: the file it names by its URL, like its
+ * CSS, is named from there.
  */
 const entryFile = "entry.js";
+/**
+ * The file with every module of a layer. Not named after its content: the
+ * build of the host, which says where it is, comes before the layer's, which
+ * needs the ids that the host's build gives. So it is a file, like the
+ * `index.html` of the host, that a site serves without a long cache.
+ */
+const modulesFile = "modules.json";
 
 // A build can be served from any path, so a file of it names another one by
 // the way from itself. These stand in for the way from a file of the build to
@@ -115,7 +122,7 @@ export const createHostReferences = (): HostReferences => ({
 const hash = (key: string) => createHash("sha256").update(key).digest("base64url").slice(0, 10);
 
 /**
- * The id of a module that a build has in a file of its own, in `directory`:
+ * The id of a module that a build has in a chunk of its own, in `directory`:
  * named after `name`, and `key` tells it apart. The same in every build of
  * the project, also on another machine.
  */
@@ -198,10 +205,14 @@ export function nextBuild(options: BuildOptions): Plugin {
   };
   // Set once the config is resolved, which is before anything is built.
   let manager!: Manager;
-  // The files of the layers that run through a module runner, by environment.
-  // A module is there once it is rewritten for the runner, which the build of
-  // its layer does not wait for.
-  const built = new Map<string, Map<string, string | Uint8Array | Promise<string>>>();
+  // What the builds of the layers that run through a module runner made, by
+  // environment: their modules by id, and their other files. A module is
+  // there once it is rewritten for the runner, which the build of its layer
+  // does not wait for.
+  const built = new Map<
+    string,
+    { modules: Map<string, Promise<string>>; files: Map<string, string | Uint8Array> }
+  >();
   // While `buildApp()` builds the environments.
   let buildingApp = false;
   // The modules of the page that the build of the host lists, once it has.
@@ -230,7 +241,7 @@ export function nextBuild(options: BuildOptions): Plugin {
       const layer = (name: string) => ({
         build: {
           copyPublicDir: false,
-          // The files are fetched and evaluated, not loaded as scripts.
+          // The chunks are evaluated by a module runner, not loaded as scripts.
           modulePreload: false as const,
           // Named from the directory of the host's build, where they end up:
           // Vite writes the URL of a file, like the CSS of a chunk, from its
@@ -374,8 +385,15 @@ export function nextBuild(options: BuildOptions): Plugin {
           fs.mkdirSync(path.dirname(file), { recursive: true });
           fs.writeFileSync(file, content);
         };
-        for (const files of built.values()) {
-          for (const [fileName, content] of files) write(fileName, await content);
+        for (const [name, { modules, files }] of built) {
+          for (const [fileName, content] of files) write(fileName, content);
+          // In the order of their ids, the same in every build.
+          const ids = [...modules.keys()].sort();
+          const codes = await Promise.all(ids.map((id) => modules.get(id)!));
+          write(
+            `${layersDir}/${name}/${modulesFile}`,
+            JSON.stringify(Object.fromEntries(ids.map((id, index) => [id, codes[index]]))),
+          );
         }
         // What Next's loaders made for the browser, fonts and images, by the
         // path it asks for.
@@ -386,7 +404,7 @@ export function nextBuild(options: BuildOptions): Plugin {
     },
     buildStart() {
       if (this.environment.mode !== "build") return;
-      // The client files of the host, each in the file its id names.
+      // The client files of the host, each in the chunk its id names.
       if (this.environment.name === browser) {
         for (const [file, id] of options.host.clientFiles) {
           this.emitFile({ type: "chunk", id: file, fileName: id.slice(1) });
@@ -443,7 +461,7 @@ export function nextBuild(options: BuildOptions): Plugin {
           (name) =>
             `  ${JSON.stringify(name)}: { base: directory, entries: ${JSON.stringify({
               [entryOf[name]!]: `${layersDir}/${name}/${entryFile}`,
-            })} },`,
+            })}, modules: ${JSON.stringify(`${layersDir}/${name}/${modulesFile}`)} },`,
         );
         // The modules of the page that the browser layer imports, found when
         // it was built to look: in this build, they are the host's own.
@@ -484,13 +502,14 @@ export function nextBuild(options: BuildOptions): Plugin {
           );
         }
         if (name !== ssr && name !== browser) return;
-        const files = new Map<string, string | Uint8Array | Promise<string>>();
+        const modules = new Map<string, Promise<string>>();
+        const files = new Map<string, string | Uint8Array>();
         for (const output of Object.values(bundle)) {
           if (output.type === "chunk") {
             const rewritten = toRunnerModule(output);
             // One that fails does so where it is written.
             rewritten.catch(() => {});
-            files.set(output.fileName, rewritten);
+            modules.set(`/${output.fileName}`, rewritten);
           }
           // The CSS is the browser layer's. A file of the ssr layer is one the
           // browser layer has too, when a module of both names it.
@@ -498,7 +517,7 @@ export function nextBuild(options: BuildOptions): Plugin {
             files.set(output.fileName, output.source);
           }
         }
-        built.set(name, files);
+        built.set(name, { modules, files });
       },
     },
   };
