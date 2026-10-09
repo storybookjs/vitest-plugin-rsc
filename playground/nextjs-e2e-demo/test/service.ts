@@ -10,3 +10,11 @@ export async function requestHits(key: string): Promise<number> {
 export async function fileChanged(file: string): Promise<void> {
   await fetch(`/service/file-change?file=${file}`);
 }
+
+// How often the dev server in vitest.config.ts compiled a file as a module, by
+// its path under the root of the app.
+export async function transformsOf(file: string): Promise<number> {
+  const response = await fetch(`/service/transforms?file=${file}`);
+  const { transforms } = (await response.json()) as { transforms: number };
+  return transforms;
+}

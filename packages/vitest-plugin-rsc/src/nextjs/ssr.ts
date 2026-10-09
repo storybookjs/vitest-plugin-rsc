@@ -218,8 +218,11 @@ let generation = 0;
 const backgroundWorkTimeout = 1000;
 // What the server does after its responses, like `after()`, until it is done.
 const backgroundWork = new Set<Promise<unknown>>();
-// How long leaving a page waits for that work, at most. Only work that never
-// ends takes that long: see `settleRequests()`.
+// The requests that the server has not answered yet, each with what to call
+// it in a warning: see `settleRequests()`.
+const unanswered = new Map<Promise<unknown>, string>();
+// How long leaving a page waits for those requests and for that work, at
+// most. Only what never ends takes that long: see `settleRequests()`.
 const settleTimeout = 5000;
 
 export type HandleOptions = {
@@ -258,7 +261,11 @@ export function handleRequest(
   request: ServerRequest,
   { nested = false, unrouted = "not-found", opened }: HandleOptions = {},
 ): Promise<Response | undefined> {
-  if (nested) return handle(request, unrouted, true, opened).then(({ response }) => response);
+  if (nested) {
+    return untilAnswered(request, handle(request, unrouted, true, opened)).then(
+      ({ response }) => response,
+    );
+  }
   const requested = generation;
   queued++;
   requestQueued.resolve();
@@ -269,7 +276,7 @@ export function handleRequest(
     }
     queued--;
     requestQueued = Promise.withResolvers();
-    return handle(request, unrouted, false, opened);
+    return untilAnswered(request, handle(request, unrouted, false, opened));
   });
   // The next request waits for the body too: the server writes it as it
   // renders, long after the response is there.
@@ -280,45 +287,99 @@ export function handleRequest(
   return result.then(({ response }) => response);
 }
 
-/**
- * Ends the requests the server is still handling, when a page is left: a short
- * wait, then a stop. A test can end while a page streams, on data that will
- * never come. Then it waits for what they do after their response, like
- * `after()`: what comes next is not to run while that still reads the stores
- * of a request, which would be the ones of the requests that come next.
- */
-export async function settleRequests(): Promise<void> {
-  generation++;
-  const pending = queue;
-  queue = Promise.resolve();
-  queued = 0;
-  const waited = requestQueued;
-  requestQueued = Promise.withResolvers();
-  await Promise.race([pending, new Promise((resolve) => setTimeout(resolve, 100))]);
+// Keeps a request in `unanswered` until the server has answered it.
+function untilAnswered(request: ServerRequest, handled: Promise<Handled>): Promise<Handled> {
+  const settled = handled.then(
+    () => {},
+    () => {},
+  );
+  unanswered.set(settled, `${request.method} ${new URL(request.url).pathname}`);
+  void settled.then(() => unanswered.delete(settled));
+  return handled;
+}
+
+// Ends the responses that the server is writing: a short wait, then a stop.
+async function stopResponses(written: Promise<unknown>): Promise<void> {
+  await Promise.race([written, new Promise((resolve) => setTimeout(resolve, 100))]);
   for (const stop of rendering) stop();
   rendering.clear();
-  // Also what that work starts while it runs: an `after()` that calls the app.
-  const deadline = now() + settleTimeout;
-  let settled = true;
-  while (backgroundWork.size > 0 && settled) {
+}
+
+// Waits until `work` is empty, also for what is added while it waits. Not
+// past the deadline: then it says so.
+async function untilDone(work: () => Iterable<Promise<unknown>>, deadline: number) {
+  let done = true;
+  for (let waiting = [...work()]; waiting.length > 0 && done; waiting = [...work()]) {
     let timeout: ReturnType<typeof setTimeout> | undefined;
-    settled = await Promise.race([
-      Promise.all(backgroundWork).then(() => true),
+    done = await Promise.race([
+      Promise.all(waiting).then(() => true),
       new Promise<false>(
         (resolve) => (timeout = setTimeout(resolve, Math.max(0, deadline - now()), false)),
       ),
     ]);
     clearTimeout(timeout);
   }
-  // The requests that would wait for a next one: there is none for them.
-  waited.resolve();
-  if (!settled) {
-    backgroundWork.clear();
-    console.warn(
-      "vitest-plugin-rsc: `after()` or `waitUntil()` work of a request was still running " +
-        `${settleTimeout / 1000}s after its page was left. What comes next runs anyway, and ` +
-        "that work may read the stores of the requests that come next.",
-    );
+  return done;
+}
+
+/**
+ * Ends the requests the server is still handling, when a page is left.
+ *
+ * A request that has its answer is writing the body: a short wait, then a
+ * stop. A test can end while a page streams, on data that will never come.
+ *
+ * A request that has no answer yet runs code of the app, like a Server Action
+ * or a route handler, and nothing can stop that. So it is waited for, and
+ * then for the body it writes. So is what requests do after their response,
+ * like `after()`. What comes next is not to run while any of that still reads
+ * or sets the stores of a request, which would be the ones of the requests
+ * that come next. A request that is sent in the meantime waits for all of
+ * that, and is dropped: it is one of the page that was left.
+ */
+export async function settleRequests(): Promise<void> {
+  generation++;
+  const written = queue;
+  const settled = Promise.withResolvers<void>();
+  queue = settled.promise;
+  queued = 0;
+  const waited = requestQueued;
+  requestQueued = Promise.withResolvers();
+  const deadline = now() + settleTimeout;
+  try {
+    await stopResponses(written);
+    if (unanswered.size > 0) {
+      if (!(await untilDone(() => unanswered.keys(), deadline))) {
+        console.warn(
+          `vitest-plugin-rsc: the server was still handling ${[...unanswered.values()].join(", ")} ` +
+            `${settleTimeout / 1000}s after the page was left. What comes next runs anyway. ` +
+            "Until that request is done, its code and the requests that come next can read and " +
+            "set each other's cookies, headers and other values of a request.",
+        );
+        unanswered.clear();
+      }
+      // What they answered with is being written from here on.
+      await stopResponses(new Promise(() => {}));
+    }
+    // Also what that work starts while it runs: an `after()` that calls the app.
+    const worked = await untilDone(() => backgroundWork, deadline);
+    // The requests that would wait for a next one: there is none for them.
+    waited.resolve();
+    if (!worked) {
+      backgroundWork.clear();
+      console.warn(
+        "vitest-plugin-rsc: `after()` or `waitUntil()` work of a request was still running " +
+          `${settleTimeout / 1000}s after its page was left. What comes next runs anyway, and ` +
+          "that work may read the stores of the requests that come next.",
+      );
+    }
+  } finally {
+    // The requests that were sent while this went on are forgotten too.
+    generation++;
+    queued = 0;
+    waited.resolve();
+    requestQueued.resolve();
+    requestQueued = Promise.withResolvers();
+    settled.resolve();
   }
 }
 
