@@ -181,3 +181,29 @@ test("never takes the plugin, or what it is built on, for a package of the host"
   // Vite RSC's Flight server, which the framework reaches through the plugin.
   expect(serverCode.isServerCode(packageOf("@vitejs/plugin-rsc/rsc"), "rsc")).toBe(true);
 });
+
+test("has the browser layer load the packages of a UI of the host itself, and knows its files", () => {
+  const hostRoot = fileURLToPath(
+    new URL("../../../../playground/nextjs-host-demo", import.meta.url),
+  );
+  const serverCode = createServerCode(registry, {
+    host: {
+      files: ["stories/**/*.stories.tsx"],
+      packages: ["storybook", "@storybook/*"],
+      ui: { packages: ["@storybook/addon-docs", "storybook/theming"], files: ["stories/**/*.mdx"] },
+    },
+  });
+  serverCode.configure(hostRoot);
+
+  expect(serverCode.isHostPackage("storybook/preview-api")).toBe(true);
+  expect(serverCode.isHostPackage("@storybook/addon-docs")).toBe(false);
+  expect(serverCode.isHostPackage("@storybook/addon-docs/blocks")).toBe(false);
+  expect(serverCode.isHostPackage("storybook/theming")).toBe(false);
+  expect(serverCode.isHostPackage("storybook/theming-other")).toBe(true);
+
+  const docs = path.join(hostRoot, "stories/introduction.mdx");
+  expect(serverCode.isHostUiFile(docs)).toBe(true);
+  // A file of the host too, which keeps the browser's globals.
+  expect(serverCode.isHostFile(docs)).toBe(true);
+  expect(serverCode.isHostUiFile(path.join(hostRoot, "stories/greeting.stories.tsx"))).toBe(false);
+});

@@ -39,6 +39,19 @@ export type MiddlewareHandler = (
 
 type AnyFunction = (...args: any[]) => any;
 
+/** Where an export of a file of the host that is code of the browser layer is from. */
+export type ClientExport = {
+  /** The module the browser layer imports the file by. */
+  module: string;
+  /** The name of the export. */
+  name: string;
+  /**
+   * One object for each time the rsc layer evaluated the file: another one
+   * is the file as it is after a change.
+   */
+  load: object;
+};
+
 /** See `NextRegistry.nodeReporter`. */
 export type NodeReporter = {
   shown(shown: boolean): void;
@@ -162,9 +175,9 @@ export type NextRegistry = {
   nodeReporter?(): NodeReporter | undefined;
   /**
    * Where an export of a test file or a story file with `"use client"` is
-   * from: the module the browser layer imports it by, and its name.
+   * from, or the stand-in for an export of a file of `host.ui.files`.
    */
-  clientExports: WeakMap<object, { module: string; name: string }>;
+  clientExports: WeakMap<object, ClientExport>;
   /** Loads a Client Component by its module id, in the ssr layer. */
   loadSsrModule(id: string): Promise<unknown>;
   /**

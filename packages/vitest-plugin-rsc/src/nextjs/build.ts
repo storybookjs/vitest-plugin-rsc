@@ -9,7 +9,7 @@ import {
   type Rolldown,
   type ViteBuilder,
 } from "vite";
-import { hostModulePrefix, hostModuleUrl } from "../host-module.ts";
+import { hostModuleId, hostModuleUrl } from "../host-module.ts";
 import { builtClientFileDir, builtLiveModuleDir, clientNodeReference } from "./client-ids.ts";
 
 // A static build of the app: the three layers as files of a site, with no dev
@@ -452,7 +452,7 @@ export function nextBuild(options: BuildOptions): Plugin {
         }
         const hostModules = [...options.host.hostModules].map(
           ([url, target]) =>
-            `  ${JSON.stringify(url)}: () => import(${JSON.stringify(hostModulePrefix + target)}),`,
+            `  ${JSON.stringify(url)}: () => import(${JSON.stringify(hostModuleId(target))}),`,
         );
         return (
           `const directory = new URL(${buildDirPlaceholder}, import.meta.url).href;\n` +

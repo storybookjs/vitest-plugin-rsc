@@ -127,7 +127,20 @@ export function createEnvironmentRunner(
     });
     return invokeForPageLoad(environment, payload, await fetched);
   };
-  return createRunner(environment, invoke, evaluator, { sourcemaps });
+  const runner = createRunner(environment, invoke, evaluator, { sourcemaps });
+  refetchers.set(runner, () => (fetched = undefined));
+  return runner;
+}
+
+const refetchers = new WeakMap<ModuleRunner, () => void>();
+
+/**
+ * Has a runner of `createEnvironmentRunner()` look up again what the tab has
+ * fetched, when it next fetches a module: for a runner that lives longer than
+ * a page load. After a file changed, that is the server's new answer.
+ */
+export function refetchModules(runner: ModuleRunner): void {
+  refetchers.get(runner)?.();
 }
 
 // A module of the page is not the environment's to serve: the runner imports
