@@ -5,7 +5,12 @@ import {
   type ModuleRunner,
 } from "vite/module-runner";
 import { isHostModule } from "../host-module.ts";
-import { checkFetchedModules, createEnvironmentRunner, createEvaluator } from "../utils.ts";
+import {
+  checkFetchedModules,
+  createEnvironmentRunner,
+  createEvaluator,
+  takeFetchedModules,
+} from "../utils.ts";
 import { isLiveModule } from "./client-ids.ts";
 import { recordListeners, recordMessageChannels, type Leftovers } from "./leftovers.ts";
 import { registry } from "./registry.ts";
@@ -208,22 +213,42 @@ function clientFileEvaluator(imported: (module: string) => Promise<object>): Mod
 // evaluated again, after a change, is evaluated again here when its export is
 // asked for.
 let hostGraph: ModuleRunner | undefined;
+// What an import of the host graph waits for: what the graph does before,
+// one at a time, so that no import gets a module that it is about to forget.
+let hostGraphReady: Promise<ModuleRunner> | undefined;
 // The exports of the host graph, by what the rsc layer has for each.
 const hostExports = new WeakMap<object, Promise<unknown>>();
 // For each file, which load of it in the rsc layer the host graph has.
 const hostLoads = new Map<string, object>();
 
-async function importInHostGraph(module: string, reload: boolean) {
+function importInHostGraph(module: string, reload: boolean) {
+  const prepare = () => prepareHostGraph(module, reload);
+  const ready = (hostGraphReady ?? Promise.resolve()).then(prepare, prepare);
+  hostGraphReady = ready;
+  return ready.then((graph) => graph.import<Record<string, unknown>>(module));
+}
+
+// A module of a package, and one of the page, are the same after a change of
+// a file of the app. So are the host's React, and the roots its React DOM made.
+const isDependency = ({ id, file }: { id: string; file: string | null }) =>
+  isHostModule(id) || `${file ?? id}`.includes("/node_modules/");
+
+async function prepareHostGraph(module: string, reload: boolean): Promise<ModuleRunner> {
+  // The server's modules as they are now: when the graph is made, and after a
+  // file changed.
+  if (!hostGraph || reload) await checkFetchedModules();
   const graph = (hostGraph ??= createEnvironmentRunner(environment, pageEvaluator()));
-  const loaded = reload && graph.evaluatedModules.getModuleByUrl(module);
-  if (loaded) {
-    // The server's modules after the change, of which the graph has some of
-    // before: it asks the server for each from then on, see
-    // `createEnvironmentRunner()`.
-    await checkFetchedModules();
-    graph.evaluatedModules.invalidateModule(loaded);
+  if (reload && graph.evaluatedModules.getModuleByUrl(module)) {
+    // A file changed, and the server cannot tell which modules of the graph
+    // did: another runner may have fetched them anew already. So the graph
+    // evaluates every module of the app again, as a page load does, with
+    // what the page fetched, all at once.
+    for (const evaluated of graph.evaluatedModules.idToModuleMap.values()) {
+      if (!isDependency(evaluated)) graph.evaluatedModules.invalidateModule(evaluated);
+    }
+    takeFetchedModules(graph);
   }
-  return graph.import<Record<string, unknown>>(module);
+  return graph;
 }
 
 /**
@@ -263,6 +288,9 @@ export async function loadClientFile(id: string): Promise<Record<string, unknown
   // Set while it loads: a page that is left in the meantime gives the next
   // one what the file has imported so far.
   files.set(id, imports);
+  // The server's modules as they are now, as for a page load: the file is
+  // loaded again after it changed, and has no other URL than before.
+  await checkFetchedModules();
   current ??= createGraph();
   await fileRunners.get(id)?.close();
   const runner = createEnvironmentRunner(

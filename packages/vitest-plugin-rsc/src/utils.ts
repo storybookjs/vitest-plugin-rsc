@@ -124,9 +124,10 @@ function createRunner(
 /**
  * A module runner with a module graph of its own: every module it imports is
  * evaluated again, the way a page load evaluates a page's scripts again. Call
- * `checkFetchedModules()` before every page load, or a file that changed goes
- * unnoticed. So does a runner that lives longer than a page load, before it
- * imports a module again after a file changed.
+ * `checkFetchedModules()` before every page load, and before a runner that is
+ * made between two, or a file that changed goes unnoticed. So does a runner
+ * that lives longer than a page load, before it imports a module again after
+ * a file changed.
  */
 export function createEnvironmentRunner(
   environment: string,
@@ -143,7 +144,22 @@ export function createEnvironmentRunner(
       ? invokeForPageLoad(environment, payload, modules)
       : invokeEnvironment(environment, payload);
   };
-  return createRunner(environment, invoke, evaluator, { sourcemaps });
+  const runner = createRunner(environment, invoke, evaluator, { sourcemaps });
+  rebases.set(runner, () => (first = undefined));
+  return runner;
+}
+
+const rebases = new WeakMap<ModuleRunner, () => void>();
+
+/**
+ * Has a runner of `createEnvironmentRunner()` that lives longer than a page
+ * load take the modules that the tab has fetched now, all at once, as the
+ * runner of a page load does, where it would ask the server for each. Of the
+ * modules it has, it evaluates again only those it was made to forget: forget
+ * every one that may have changed first, as the server cannot tell.
+ */
+export function takeFetchedModules(runner: ModuleRunner): void {
+  rebases.get(runner)?.();
 }
 
 // A module of the page is not the environment's to serve: the runner imports
@@ -262,6 +278,10 @@ async function invokeEnvironment(environment: string, payload: InvokePayload) {
 type FetchedModules = { version: unknown; results: Map<string, Promise<InvokeResult>> };
 
 const fetchedModulesOf = new Map<string, Promise<FetchedModules>>();
+// Those of the version the server said last. Two checks at once that hear of
+// the same new version share them: a runner that took the others would ask
+// the server itself.
+const latestModulesOf = new Map<string, FetchedModules>();
 
 function fetchedModules(environment: string): Promise<FetchedModules> {
   return fetchedModulesOf.get(environment) ?? askForModules(environment);
@@ -271,8 +291,14 @@ function fetchedModules(environment: string): Promise<FetchedModules> {
 // its modules.
 function askForModules(environment: string, known?: FetchedModules): Promise<FetchedModules> {
   const fetched = requestOverWebSocket(reactClientWebSocketVersionEvent, { environment }).then(
-    (version): FetchedModules =>
-      known && known.version === version ? known : { version, results: new Map() },
+    (version): FetchedModules => {
+      if (known && known.version === version) return known;
+      const latest = latestModulesOf.get(environment);
+      if (latest && latest.version === version) return latest;
+      const modules = { version, results: new Map() };
+      latestModulesOf.set(environment, modules);
+      return modules;
+    },
   );
   fetchedModulesOf.set(environment, fetched);
   // Not kept: the next module asks again. Modules that were fetched stay, and
