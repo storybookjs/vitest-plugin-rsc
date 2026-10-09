@@ -1,0 +1,4 @@
+/* Only this page imports this: the layout's CSS is the one of /styles. */
+.extra-note {
+  color: rgb(128, 0, 128);
+}

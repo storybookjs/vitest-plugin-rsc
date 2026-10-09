@@ -374,10 +374,12 @@ export function createStylesPlugins(options: StylesOptions): Plugin[] {
     const contentOf = async (path: string) =>
       inline && experimental?.inlineCss ? (await cssOf(project.vite, path))?.code : undefined;
     // The path with the version of the CSS: see `serve()`. A stylesheet that
-    // fails to compile has none, and fails when the browser loads it.
+    // fails to compile gets a version of its own, which is no CSS, and fails
+    // when the browser loads it.
     const versioned = async (path: string) => {
       const css = await cssOf(project.vite, path).catch(() => null);
-      return css ? `${directory}/${versionOf(css)}${path.slice(directory.length)}` : path;
+      const version = css ? versionOf(path, css) : (++failed).toString(16).padStart(16, "0");
+      return `${directory}/${version}${path.slice(directory.length)}`;
     };
     // Also a file without any: it may have had some before an edit.
     return Object.fromEntries(
@@ -403,15 +405,19 @@ export function createStylesPlugins(options: StylesOptions): Plugin[] {
     return id ? server.environments[environments.rsc]!.transformRequest(`${id}&direct`) : null;
   }
 
-  // The version of the CSS of a stylesheet: a hash of it, once for a result
-  // of Vite's, which is the same until the file changes.
-  const versions = new WeakMap<TransformResult, string>();
-  function versionOf(css: TransformResult): string {
-    let version = versions.get(css);
-    if (!version) {
-      version = createHash("sha1").update(css.code).digest("hex").slice(0, 16);
-      versions.set(css, version);
-    }
+  // The version of the CSS of the stylesheet at `path`: a hash of it, once
+  // for a result of Vite's, which is the same until the file changes. Not a
+  // version that a request got other CSS for, from before an edit: a page
+  // keeps the `<link>` of its path with that CSS (document.ts), so it is never
+  // the CSS of the path again, also when an edit goes back to it.
+  const hashOf = (text: string) => createHash("sha1").update(text).digest("hex").slice(0, 16);
+  const hashes = new WeakMap<TransformResult, string>();
+  const answeredOther = new Set<string>();
+  let failed = 0;
+  function versionOf(path: string, css: TransformResult): string {
+    let version = hashes.get(css);
+    if (!version) hashes.set(css, (version = hashOf(css.code)));
+    while (answeredOther.has(`${version}/${path}`)) version = hashOf(version);
     return version;
   }
 
@@ -423,7 +429,8 @@ export function createStylesPlugins(options: StylesOptions): Plugin[] {
   // `/_next/static/`, and so does this one. After an edit a page links
   // another path. A request for a version that is no longer the CSS, from
   // before the edit, gets the CSS of the file now, which the browser does not
-  // keep.
+  // keep, and the version is never the CSS of the path again: see
+  // `versionOf()`.
   async function serve(
     server: ViteDevServer,
     request: IncomingMessage,
@@ -446,7 +453,8 @@ export function createStylesPlugins(options: StylesOptions): Plugin[] {
     if (version) path = directory + rest;
     const css = await cssOf(server, path);
     if (!css) return false;
-    const current = versionOf(css);
+    const current = versionOf(path, css);
+    if (version && version !== current) answeredOther.add(`${version}/${path}`);
     send(request, response, css.code, "css", {
       etag: `"${current}"`,
       cacheControl: version === current ? "public, max-age=31536000, immutable" : "no-cache",
