@@ -4,7 +4,7 @@ import { playwright } from "@vitest/browser-playwright";
 import { normalizePath, type Plugin } from "vite";
 import { defineProject } from "vitest/config";
 import { vitestPluginRSC } from "vitest-plugin-rsc";
-import { vitestPluginNext } from "vitest-plugin-rsc/nextjs/plugin";
+import { vitestPluginNext, type NextBuild } from "vitest-plugin-rsc/nextjs/plugin";
 import { vitestPluginRscSourceConditions } from "../../vitest.conditions.ts";
 
 // Stands in for a service the app's server calls: it answers with the number
@@ -96,6 +96,11 @@ process.env.NEXT_FONT_GOOGLE_MOCKED_RESPONSES = fileURLToPath(
   new URL("../../vitest.google-fonts.cjs", import.meta.url),
 );
 
+// Next's development code, or its production code with
+// `VITEST_PLUGIN_RSC_BUILD=production`, which CI runs the suite with too.
+// oxlint-disable-next-line no-process-env
+const build = (process.env.VITEST_PLUGIN_RSC_BUILD || "development") as NextBuild;
+
 export default defineProject({
   root: fileURLToPath(new URL("./", import.meta.url)),
   plugins: [
@@ -103,7 +108,7 @@ export default defineProject({
     vitestPluginRSC(),
     // The helpers in `test/` work on the page, so they have to see the browser.
     // Every other module that is not a test file is server code.
-    vitestPluginNext({ browserModules: ["test/**"], affectedTests: true }),
+    vitestPluginNext({ browserModules: ["test/**"], affectedTests: true, build }),
     hitsService(),
     headersService(),
     fileChangeService(),
@@ -115,6 +120,7 @@ export default defineProject({
     name: "nextjs-e2e-demo",
     include: ["**/*.test.{ts,tsx}"],
     exclude: ["node_modules"],
+    provide: { build },
     browser: {
       enabled: true,
       headless: true,

@@ -49,6 +49,14 @@ export async function proxy(request: NextRequest) {
 }
 
 export const config = {
-  // What most apps have: every path, apart from the files of Next's build.
-  matcher: ["/((?!_next/static|_next/image|favicon.ico).*)"],
+  matcher: [
+    {
+      // What most apps have: every path, apart from the files of Next's build.
+      source: "/((?!_next/static|_next/image|favicon.ico).*)",
+      // And not a prefetch of a `<Link>`, which Next's production code sends
+      // as a link comes into view, as Next's docs have it. The proxy cannot
+      // tell one: Next takes the headers of the router off its request.
+      missing: [{ type: "header", key: "next-router-prefetch" }],
+    },
+  ],
 };

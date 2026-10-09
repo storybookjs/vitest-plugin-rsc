@@ -79,8 +79,28 @@ jobs:
       - run: pnpm build
       - run: pnpm test:dist
 
+  # The app as `next start` runs it: see docs/next-routes.md, "Development Or
+  # Production".
+  production:
+    name: Test (production build)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps --only-shell chromium
+      - run: pnpm build
+      - name: Test the Next.js playgrounds
+        env:
+          VITEST_PLUGIN_RSC_BUILD: production
+        run: pnpm test:dist --project nextjs-e2e-demo --project nextjs-notes-demo-browser
+
   next:
-    name: Next.js ${{ matrix.next }}
+    name: Next.js ${{ matrix.next }}, ${{ matrix.build }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -89,6 +109,8 @@ jobs:
         # changes something of Next that the plugin calls, `canary` tells it
         # before the release.
         next: [latest, canary]
+        # The `build` option of the plugin.
+        build: [development, production]
     steps:
       - uses: actions/checkout@v6
       - uses: pnpm/action-setup@v6
@@ -110,6 +132,8 @@ jobs:
       - run: pnpm exec playwright install --with-deps --only-shell chromium
       - run: pnpm build
       - name: Test the Next.js playgrounds
+        env:
+          VITEST_PLUGIN_RSC_BUILD: ${{ matrix.build }}
         run: |
           pnpm test:dist \
             --project nextjs-e2e-demo \
