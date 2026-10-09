@@ -10,7 +10,7 @@ import {
   transformWithOxc,
   type Plugin,
 } from "vite";
-import type { TestProject } from "vitest/node";
+import type { TestProject, Vitest } from "vitest/node";
 import { createRunnerEnvironmentPlugins } from "../runner-environment.ts";
 import { createHostReferences, nextBuild } from "./build.ts";
 import { clientFiles } from "./client-files.ts";
@@ -30,6 +30,7 @@ import { compileServerCode, createServerCode, type ServerCodeOptions } from "./s
 import { affectedTests } from "./affected/index.ts";
 import { createPathsPlugin } from "./paths.ts";
 import { createStyles } from "./styles.ts";
+import { assertVitestVersion } from "./vitest-version.ts";
 
 // Each layer of Next is a Vite environment, and all three run in the
 // browser (docs/next-routes.md). Where Next's own bundler config says a module
@@ -777,7 +778,8 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
       },
       // Vitest's hook for a plugin of a project: what its config says is a
       // test file or a setup file is not server code.
-      configureVitest({ project: testProject }: { project: TestProject }) {
+      configureVitest({ vitest, project: testProject }: { vitest: Vitest; project: TestProject }) {
+        assertVitestVersion(vitest.version);
         const test = testProject.config;
         const setupFiles = new Set(test.setupFiles.map((file) => normalizePath(file)));
         // `test.include`, matched the way Vitest does. Not `includeSource`:
