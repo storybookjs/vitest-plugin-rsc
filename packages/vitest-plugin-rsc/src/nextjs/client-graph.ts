@@ -5,7 +5,7 @@ import {
   type ModuleRunner,
 } from "vite/module-runner";
 import { isHostModule } from "../host-module.ts";
-import { createEnvironmentRunner, createEvaluator } from "../utils.ts";
+import { checkFetchedModules, createEnvironmentRunner, createEvaluator } from "../utils.ts";
 import { isLiveModule } from "./client-ids.ts";
 import { recordListeners, recordMessageChannels, type Leftovers } from "./leftovers.ts";
 import { registry } from "./registry.ts";
@@ -210,6 +210,9 @@ export async function loadClientFile(id: string): Promise<Record<string, unknown
   // Set while it loads: a page that is left in the meantime gives the next
   // one what the file has imported so far.
   files.set(id, imports);
+  // The server's modules as they are now, as for a page load: the file is
+  // loaded again after it changed, and has no other URL than before.
+  await checkFetchedModules();
   current ??= createGraph();
   await fileRunners.get(id)?.close();
   const runner = createEnvironmentRunner(
