@@ -16,6 +16,21 @@ const attributesOf = (element: Element) =>
 
 let unload: (() => void) | undefined;
 
+// A stylesheet of Next's build is the same CSS for as long as its path is the
+// same: the dev server puts a hash of the CSS in it (styles.ts), as Next's
+// build does, and Next's server says that a file under `/_next/static/` does
+// not change. So when a page goes, the `<link>` of one that it loaded stays
+// in the document, without its CSS, for the next page to take where it is. A
+// `<link>` that is added or moved loads again: from the browser's cache, and
+// over the network while a test mocks a module, as Playwright turns the cache
+// off to intercept requests.
+type KeptLink = HTMLLinkElement & { sheet: CSSStyleSheet };
+let kept: KeptLink[] = [];
+const isKept = (node: Node) => (kept as Node[]).includes(node);
+// The rules of a stylesheet when its page had loaded. One the page added
+// rules to is not the CSS of its path any more.
+const rulesAtLoad = new WeakMap<CSSStyleSheet, number>();
+
 function staysDuringPage(node: Node): boolean {
   return (
     node instanceof HTMLScriptElement ||
@@ -39,6 +54,67 @@ function stylesheetLoaded(link: HTMLLinkElement): Promise<void> {
     link.addEventListener("load", () => resolve(), { once: true });
     link.addEventListener("error", () => resolve(), { once: true });
   });
+}
+
+// A stylesheet that Next linked under `/_next/static/`, as its page loaded it.
+function keepable(node: Node): node is KeptLink {
+  if (!(node instanceof HTMLLinkElement) || node.rel !== "stylesheet") return false;
+  if (!node.sheet || rulesAtLoad.get(node.sheet) !== node.sheet.cssRules.length) return false;
+  const url = new URL(node.href);
+  return (
+    node.hasAttribute("data-precedence") &&
+    url.origin === window.location.origin &&
+    url.pathname.includes("/_next/static/")
+  );
+}
+
+// The kept `<link>`s that stand for ones in `head`, the head of the next page,
+// in its order. These have their CSS again, and the nonce of the page, which
+// Next gives every response of a CSP of its own. The others leave the
+// document, so React finds no stylesheet of another page in it. None stays
+// when a stylesheet of the runner came after them, like the CSS Vite adds for
+// a test file, which is before a page's.
+function takeKept(head: HTMLHeadElement): Map<Node, KeptLink> {
+  const taken = new Map<Node, KeptLink>();
+  // What a test took out in the meantime is not there to take.
+  kept = kept.filter((link) => link.parentNode === document.head);
+  const sheets = Array.from(document.head.querySelectorAll('style, link[rel~="stylesheet"]'));
+  const first = kept.length > 0 ? sheets.indexOf(kept[0]!) : -1;
+  if (first !== -1 && sheets.slice(first).every(isKept)) {
+    const attributes = (link: Element) => attributesOf(link).filter(([name]) => name !== "nonce");
+    const same = (a: Element, b: Element) =>
+      attributes(a).length === attributes(b).length &&
+      attributes(a).every(([name, value]) => b.getAttribute(name) === value);
+    let last = -1;
+    for (const node of head.childNodes) {
+      if (!(node instanceof HTMLLinkElement)) continue;
+      const index = kept.findIndex((link, at) => at > last && same(link, node));
+      if (index === -1) continue;
+      taken.set(node, kept[index]!);
+      last = index;
+    }
+  }
+  const taking = new Set(taken.values());
+  for (const link of kept) if (!taking.has(link)) link.remove();
+  for (const [node, link] of taken) {
+    const nonce = (node as HTMLLinkElement).getAttribute("nonce");
+    if (nonce === null) link.removeAttribute("nonce");
+    else link.setAttribute("nonce", nonce);
+    link.sheet.disabled = false;
+  }
+  kept = [];
+  return taken;
+}
+
+// Puts the head of a page in the document's, around the kept `<link>`s that
+// stand for some of it.
+function appendHead(nodes: Node[], taken: Map<Node, KeptLink>): void {
+  const anchors = nodes.flatMap((node) => taken.get(node) ?? []);
+  for (const node of nodes) {
+    if (taken.has(node)) anchors.shift();
+    else if (anchors[0]) document.head.insertBefore(node, anchors[0]);
+    else document.head.append(node);
+  }
 }
 
 function setAttributes(element: Element, attributes: Iterable<readonly [string, string]>): void {
@@ -68,10 +144,13 @@ export async function loadDocument(html: string, url: string, container?: Elemen
   const runnerBody = document.body;
   const runnerAttributes = elements(document).map(attributesOf);
   const runnerScripts = new Set(document.querySelectorAll("script"));
-  const before = new Set<Node>([...document.head.childNodes, ...runnerBody.childNodes]);
+  // A kept `<link>` is the page's, once it takes it.
+  const before = new Set<Node>(
+    [...document.head.childNodes, ...runnerBody.childNodes].filter((node) => !isKept(node)),
+  );
   const parked: Node[] = [];
   for (const node of container ? [] : document.head.childNodes) {
-    if (!staysDuringPage(node)) parked.push(node);
+    if (!staysDuringPage(node) && !isKept(node)) parked.push(node);
   }
   for (const node of parked) document.head.removeChild(node);
   // The body of the page. What the runner needs moves into it, and back.
@@ -90,9 +169,11 @@ export async function loadDocument(html: string, url: string, container?: Elemen
   const leave = () => {
     leaveNow();
     container?.replaceChildren();
+    kept = Array.from(document.head.childNodes).filter(keepable);
+    for (const link of kept) link.sheet.disabled = true;
     for (const parent of [document.head, document.body]) {
       for (const node of Array.from(parent.childNodes)) {
-        if (!before.has(node) && !isViteStyle(node)) node.remove();
+        if (!before.has(node) && !isViteStyle(node) && !isKept(node)) node.remove();
       }
     }
     document.head.append(...parked);
@@ -136,24 +217,25 @@ export async function loadDocument(html: string, url: string, container?: Elemen
       URL.canParse(link.getAttribute("href")!, url) &&
       new URL(link.getAttribute("href")!, url).origin === window.location.origin,
   );
-  if (container) {
-    document.head.append(...page.head.childNodes);
-    container.append(...page.body.childNodes);
-  } else {
+  const taken = takeKept(page.head);
+  if (!container) {
     elements(page).forEach((element, index) =>
       setAttributes(elements(document)[index]!, attributesOf(element)),
     );
-    document.head.append(...page.head.childNodes);
-    document.body.append(...page.body.childNodes);
   }
+  appendHead(Array.from(page.head.childNodes), taken);
+  (container ?? document.body).append(...page.body.childNodes);
 
   // Where the browser ended up, after any redirects. Before the scripts of
   // the page run: one of them may read `location`.
   window.history.replaceState(null, "", url);
 
-  const loading = stylesheets.filter((link) => !link.disabled).map(stylesheetLoaded);
+  const loading = stylesheets
+    .filter((link) => !link.disabled && !taken.has(link))
+    .map(stylesheetLoaded);
   await Promise.race([Promise.all(loading), left]);
   if (unload !== leave) return;
+  for (const { sheet } of stylesheets) if (sheet) rulesAtLoad.set(sheet, sheet.cssRules.length);
 
   // The inline scripts: React's, which move content that was waiting for
   // data into place, and Next's, which carry the Flight payload. The scripts
@@ -201,7 +283,10 @@ Object.defineProperty(self, "$RC", {
     }),
 });
 
-/** Leaves the page: the document is as it was before the page. */
+/**
+ * Leaves the page: the document is as it was before the page, but for the
+ * kept `<link>`s of its stylesheets, without their CSS.
+ */
 export function unloadDocument(): void {
   // Once, also when it throws: the next page is not to find this one.
   const leave = unload;

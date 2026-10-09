@@ -86,16 +86,16 @@ test("serves a stylesheet for the browser to keep, and one of before an edit for
   expect(old.headers.get("cache-control")).toBe("no-cache");
 });
 
-test("links a stylesheet that fails to compile without a version, and with one once it compiles", async () => {
+test("links a stylesheet that fails to compile by a version of its own, and by its CSS once it compiles", async () => {
   await fileChanged("app/edited-css/page.css", ".edited {");
   await renderServer({ url: "/edited-css" });
   const { href } = stylesheet();
-  expect(new URL(href).pathname).toBe("/_next/static/css/app/edited-css/page.css");
   expect((await fetch(href, { cache: "no-store" })).status).toBe(500);
 
   await editTo("rgb(0, 0, 255)");
   await renderServer({ url: "/edited-css" });
 
+  expect(stylesheet().href).not.toBe(href);
   expect(stylesheet().href).toMatch(
     /\/_next\/static\/css\/[0-9a-f]{16}\/app\/edited-css\/page\.css$/,
   );

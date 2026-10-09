@@ -2,6 +2,7 @@ import { handleRequest, renderServer } from "vitest-plugin-rsc/nextjs/testing-li
 import { afterEach, beforeEach, expect, test, vi, type MockInstance } from "vitest";
 import { page } from "vitest/browser";
 import { cssRules } from "../test/browser.ts";
+import { fileChanged } from "../test/service.ts";
 
 // What Next's compiler does to the code of the app, and what the app gets from
 // Vite instead: next/dynamic, styled-jsx, next/script, CSS, and the checks of
@@ -96,6 +97,123 @@ test("takes the global CSS of a page away with the page, and brings it back with
 
   await renderServer({ url: "/styles" });
   expect(background()).toBe("rgb(240, 240, 255)");
+});
+
+// The `<link>`s of the stylesheets that Next links, by the end of their path.
+const stylesheets = () =>
+  Array.from(document.querySelectorAll<HTMLLinkElement>('link[rel="stylesheet"][data-precedence]'));
+const names = (links: HTMLLinkElement[]) => links.map((link) => link.href.split("/").pop());
+
+// How many stylesheets the tab loads while `load` runs, from the network or
+// the browser's cache: the one of the tab is off, as the setup file mocks a
+// module, which Playwright intercepts requests for.
+async function stylesheetsLoaded(load: () => Promise<unknown>): Promise<number> {
+  performance.clearResourceTimings();
+  await load();
+  return performance
+    .getEntriesByType("resource")
+    .filter(({ name }) => name.includes("/_next/static/css/")).length;
+}
+
+test("keeps the stylesheets of a page for the next page that links them", async () => {
+  await renderServer({ url: "/styles" });
+  const before = stylesheets();
+
+  expect(await stylesheetsLoaded(() => renderServer({ url: "/styles" }))).toBe(0);
+
+  // The same `<link>`s, each once, in the order of the page, with their CSS.
+  expect(stylesheets()).toEqual(before);
+  expect(names(stylesheets())).toEqual([
+    "layout.css",
+    "card.module.css",
+    "client-card.module.css",
+    "global.css",
+    "reset.css",
+    "badge.css",
+    "client-badge.css",
+  ]);
+  expect(getComputedStyle(document.body).backgroundColor).toBe("rgb(240, 240, 255)");
+  await expect
+    .element(page.getByText("Styled by a CSS module in a Client Component"))
+    .toHaveStyle({ color: "rgb(128, 0, 0)" });
+});
+
+test("keeps what the next page links of the stylesheets of a page, in the order of the next", async () => {
+  await renderServer({ url: "/styles" });
+  const [layout] = stylesheets();
+
+  expect(await stylesheetsLoaded(() => renderServer({ url: "/styles/extra" }))).toBe(1);
+
+  expect(stylesheets()[0]).toBe(layout);
+  expect(names(stylesheets())).toEqual(["layout.css", "page.css"]);
+  expect(getComputedStyle(document.body).backgroundColor).toBe("rgba(0, 0, 0, 0)");
+  await expect
+    .element(page.getByText("Styled by the CSS of a page in the layout"))
+    .toHaveStyle({ color: "rgb(128, 0, 128)" });
+});
+
+test("keeps the stylesheets of a page with another nonce, and gives them the nonce of the page", async () => {
+  // Next gives the stylesheets the nonce of the CSP of the request.
+  const load = (nonce: string) =>
+    renderServer({
+      url: "/styles",
+      headers: { "content-security-policy": `script-src 'nonce-${nonce}'` },
+    });
+  await load("first");
+  const before = stylesheets();
+
+  expect(await stylesheetsLoaded(() => load("second"))).toBe(0);
+
+  expect(stylesheets()).toEqual(before);
+  expect(stylesheets().map((link) => link.getAttribute("nonce"))).toEqual(
+    before.map(() => "second"),
+  );
+});
+
+test("links the stylesheets of a page again after a stylesheet of the runner", async () => {
+  await renderServer({ url: "/styles" });
+  const before = stylesheets();
+  // The CSS Vite adds for a test file, which outlives the page it came in.
+  const style = document.head.appendChild(document.createElement("style"));
+  style.dataset.viteDevId = "/app/compile.test.css";
+  try {
+    await renderServer({ url: "/styles" });
+
+    expect(stylesheets().filter((link) => before.includes(link))).toEqual([]);
+    expect(style.compareDocumentPosition(stylesheets()[0]!)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(getComputedStyle(document.body).backgroundColor).toBe("rgb(240, 240, 255)");
+  } finally {
+    style.remove();
+  }
+});
+
+test("links the stylesheet of a page that Next's router navigates to, which a page before had", async () => {
+  await renderServer({ url: "/notice" });
+  await renderServer({ url: "/styles" });
+
+  await page.getByRole("link", { name: "Notice" }).click();
+
+  await expect
+    .element(page.getByText("The office is closed on Friday."))
+    .toHaveStyle({ color: "rgb(0, 128, 0)" });
+});
+
+test("links a stylesheet again whose path had the CSS of after an edit", async () => {
+  const editTo = (color: string) =>
+    fileChanged("app/edited-css/page.css", `.edited { color: ${color}; }`);
+  const edited = () => page.getByText("Styled by a stylesheet that is edited");
+  await editTo("rgb(0, 128, 255)");
+  await renderServer({ url: "/edited-css" });
+  const [{ href }] = stylesheets();
+  // A page of before the edit asks for its path after it.
+  await editTo("rgb(255, 128, 0)");
+  await fetch(href, { cache: "no-store" });
+
+  await editTo("rgb(0, 128, 255)");
+  await renderServer({ url: "/edited-css" });
+
+  expect(stylesheets()[0]!.href).not.toBe(href);
+  await expect.element(edited()).toHaveStyle({ color: "rgb(0, 128, 255)" });
 });
 
 test("links the CSS of a package, and of a component of a package, with the page", async () => {
