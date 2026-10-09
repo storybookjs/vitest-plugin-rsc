@@ -221,7 +221,7 @@ test("keeps the count of the counter when the name changes", async () => {
 });
 ```
 
-It resolves once the page shows the new node. The rest stays as `renderServer()` got it: the `url`, the `wrapper`, `proxy`, `layouts` and the `headers`, which every request of Next's router for the node sends, also a `router.refresh()` of the app. For another URL or other headers, call `renderServer()` again: that is a new request. In a test file with `"use client"` the node renders again in the browser, without a request.
+It resolves once the page shows the new node. The rest stays as `renderServer()` got it: the `url`, the `wrapper`, `proxy`, `layouts` and the `headers`, which go with the request of `rerender()` as with every request of the page. For another URL or other headers, call `renderServer()` again: that is a new request. In a test file with `"use client"` the node renders again in the browser, without a request.
 
 A node that throws while it renders again resolves with an error page in its place, as a page shows it. From there `rerender()` rejects: the page no longer has the node. So it does after `unmount()`, after a navigation that loaded another page, and when a not-found page or another route took the node's place. A page that `renderServer({ url })` opened has no node to replace, and no `rerender()`.
 

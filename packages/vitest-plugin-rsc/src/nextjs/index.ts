@@ -297,20 +297,6 @@ export function handleRequest(input: RequestInfo | URL, init?: RequestInit): Pro
   return sendRequest(new registry.Request(input, init));
 }
 
-// A request of Next's router that renders the node of the test again, like
-// the one of `rerender()` or of `router.refresh()`, is sent with the headers
-// the test gave the node, as its document was. A Server Action is sent with
-// the browser's headers only, as for a page.
-function withHeaders(sent: AppRequest, init: RequestInit | undefined): RequestInit | undefined {
-  const opened = registry.opened;
-  const extra = opened?.node && opened.headers;
-  if (!extra || !sent.headers.has("rsc") || sent.headers.has("next-action")) return init;
-  if (sent.url.pathname !== opened.pathname) return init;
-  const headers = new Headers(sent.headers);
-  for (const [name, value] of extra) if (!headers.has(name)) headers.set(name, value);
-  return { ...init, headers };
-}
-
 export type RunInServerActionOptions = {
   /**
    * The URL of the page the action is of. Defaults to `/`. For this request
@@ -446,13 +432,8 @@ const appFetch =
     }
     // The request, for the network: a body can be read once.
     const spare = input instanceof Request && input.body ? input.clone() : input;
-    const sending = server ? init : withHeaders(sent, init);
-    // The server's Request keeps a `cookie` header, which a browser's drops:
-    // also one that a test gave a node.
-    const request =
-      server || sending !== init
-        ? new registry.Request(input, sending)
-        : new Request(input, sending);
+    // The server's Request keeps a `cookie` header, which a browser's drops.
+    const request = server ? new registry.Request(input, init) : new Request(input, init);
     return sendRequest(request, {
       server,
       network: sent.marked ? undefined : () => nativeFetch(spare, init),
@@ -635,8 +616,6 @@ export async function renderServer(
   const [first, second] = args;
   const options: RenderComponentOptions = (isOptions(first) ? first : second) ?? {};
   const url = new URL(options.url ?? "/", window.location.origin);
-  // The test's own, which the router sends again for a node.
-  const given = options.headers ? new Headers(options.headers) : undefined;
   const headers = new Headers(options.headers);
   // The cookies of the requests after the document are the browser's, and
   // each of them says itself what it accepts.
@@ -683,7 +662,7 @@ export async function renderServer(
       );
     }
     const opening: NodeOpening = {
-      opened: { pathname, proxy, headers: given, node: nodeOf(true) },
+      opened: { pathname, proxy, node: nodeOf(true) },
       headers: sticky,
       clientNode,
       wrap,
@@ -733,7 +712,7 @@ export async function renderServer(
   if (!options.container) containers.add(container);
   const opening: NodeOpening = {
     container,
-    opened: { pathname, proxy, headers: given, node: nodeOf(false) },
+    opened: { pathname, proxy, node: nodeOf(false) },
     headers: sticky,
     clientNode,
     wrap,

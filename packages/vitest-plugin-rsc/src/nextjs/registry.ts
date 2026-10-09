@@ -50,11 +50,6 @@ export type Opened = {
   pathname: string;
   /** Whether the server in front of the app takes the request: proxy.ts and `next.config`. */
   proxy: boolean;
-  /**
-   * For a node: the headers the test gave its request, which the requests
-   * of Next's router that render the node again send too.
-   */
-  headers?: Headers;
   node?: {
     ui: unknown;
     layouts: boolean;
