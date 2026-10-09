@@ -22,12 +22,19 @@ const meta = preview.meta({
 export const PickATheme = meta.story({
   async play({ canvas }) {
     const story = within(await canvas.findByRole("main", { name: "Story" }));
+    // Base UI opens the menu a frame after the press. Until then the items
+    // of the menu that closed before are still there, as it animates out,
+    // and take no pointer events: wait for the menu to be open.
+    const openMenu = async () => {
+      await userEvent.click(story.getByRole("button", { name: "Toggle theme" }));
+      await story.findByRole("button", { name: "Toggle theme", expanded: true });
+    };
 
-    await userEvent.click(story.getByRole("button", { name: "Toggle theme" }));
+    await openMenu();
     await userEvent.click(await screen.findByRole("menuitem", { name: "Dark" }));
     await waitFor(() => expect(document.documentElement).toHaveClass("dark"));
 
-    await userEvent.click(story.getByRole("button", { name: "Toggle theme" }));
+    await openMenu();
     await userEvent.click(await screen.findByRole("menuitem", { name: "Light" }));
     await waitFor(() => expect(document.documentElement).not.toHaveClass("dark"));
   },
