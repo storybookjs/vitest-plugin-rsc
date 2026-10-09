@@ -244,6 +244,20 @@ const checks: Record<string, Check> = {
     // The host's own document stays.
     await page.getByText("Loading the host…").waitFor();
   },
+  // The modules of the browser layer of a package of the host in
+  // `node_modules`, which a dev server gives Vite's version query: a node of
+  // its file with "use client", which reads the host's instance of another
+  // module of the package, and a UI of the host, with the React of the
+  // browser layer. See vite.config.ts.
+  async "a package of the host"(page, site) {
+    await open(page, site, "view=package");
+    await page.getByRole("button", { name: "Welcome the host from a package: 0" }).click();
+    await page.getByRole("button", { name: "Welcome the host from a package: 1" }).waitFor();
+    const react = await page.evaluate(
+      () => (window as { __hostReactOfUi?: string }).__hostReactOfUi,
+    );
+    expect(react).toBe("react");
+  },
 };
 
 // A few at a time: a check waits for the page more than it works.
@@ -268,6 +282,18 @@ describe("a dev server", () => {
   afterAll(() => site?.close());
 
   runChecks(() => site, checks);
+
+  // What "a package of the host" is about: the page imports the modules of
+  // the package with Vite's version query.
+  test("gives the modules of a package of the host Vite's version query", async ({ page }) => {
+    await open(page, site, "view=package");
+    const urls = await page.evaluate(() =>
+      performance.getEntriesByType("resource").map((entry) => entry.name),
+    );
+    expect(
+      urls.filter((url) => /\/host-package\/client-greeting\.js\?v=\w+$/.test(url)),
+    ).toHaveLength(1);
+  });
 });
 
 describe("a static build of `vite build`", () => {

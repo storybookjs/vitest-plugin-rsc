@@ -1,0 +1,24 @@
+{
+  "name": "host-package",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A package of the host, installed in node_modules as a framework of Storybook is: see vite.config.ts.",
+  "type": "module",
+  "exports": {
+    "./client-greeting": {
+      "types": "./client-greeting.d.ts",
+      "default": "./client-greeting.js"
+    },
+    "./react-of-layer": {
+      "types": "./react-of-layer.d.ts",
+      "default": "./react-of-layer.js"
+    },
+    "./host-state": {
+      "types": "./host-state.d.ts",
+      "default": "./host-state.js"
+    }
+  },
+  "peerDependencies": {
+    "react": "*"
+  }
+}

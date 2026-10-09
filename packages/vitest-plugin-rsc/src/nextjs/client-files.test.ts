@@ -1,4 +1,4 @@
-import { expect, test, vi } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { hostModuleId, isHostModule } from "../host-module.ts";
 import {
   builtClientFileId,
@@ -7,7 +7,7 @@ import {
   createHostReferences,
 } from "./build.ts";
 import { clientFiles } from "./client-files.ts";
-import { clientFileId, isLiveModule, liveModulePrefix } from "./client-ids.ts";
+import { clientFileId, fileOfModule, isLiveModule, liveModulePrefix } from "./client-ids.ts";
 
 const testingLibrary = {
   specifier: "vitest-plugin-rsc/nextjs/testing-library",
@@ -298,4 +298,84 @@ export default $$file.default;
   expect(await transformDocs.call(context("react_client"), code, "/stories/intro.mdx")).toBe(
     undefined,
   );
+});
+
+test("takes the id of a module of a dependency for its file, without the version of a dev server", () => {
+  expect(fileOfModule("/app/a.test.tsx")).toBe("/app/a.test.tsx");
+  expect(fileOfModule("/x/node_modules/a/b.js?v=1a2b3c4d")).toBe("/x/node_modules/a/b.js");
+  expect(fileOfModule("/x/node_modules/a/b.js?v=1.2.3-beta_4")).toBe("/x/node_modules/a/b.js");
+  // Another module of the file.
+  for (const query of ["raw", "url", "inline", "transform-only", "v=1a2b3c4d&raw", "raw&v=1a2b"]) {
+    expect(fileOfModule(`/x/node_modules/a/b.js?${query}`), query).toBeUndefined();
+  }
+  expect(fileOfModule("/x/node_modules/a/b.js?v=")).toBeUndefined();
+});
+
+describe("a package of the host in node_modules, which a dev server gives Vite's version query", () => {
+  // Like a framework of Storybook: its module that renders a client story,
+  // and the file of its docs renderer, which is one of `host.ui.files`.
+  const framework = "/node_modules/framework/dist";
+  const withPackage = clientFiles({
+    environments: { rsc: "client", browser: "react_client" },
+    testingLibrary,
+    internal: "/plugin/nextjs/internal.js",
+    isHostFile: (file) => file.startsWith(`${framework}/`),
+    isHostUiFile: (file) => file === `${framework}/docs-renderer.js`,
+    isHostPackage: () => false,
+    built: createHostReferences(),
+  });
+  const transformPackage = withPackage.transform as unknown as typeof transform;
+  const resolvePackage = (withPackage.resolveId as unknown as { handler: typeof resolveId })
+    .handler;
+  const clientStory = `"use client";\nexport function ClientStory() { return null; }\n`;
+
+  test("makes its file with `use client` a stub of the file", async () => {
+    const stub = await transformPackage.call(
+      context("client"),
+      clientStory,
+      `${framework}/client-story.js?v=1a2b3c4d`,
+    );
+
+    const id = clientFileId(`${framework}/client-story.js`);
+    expect(stub?.code).toContain(`await $$loadClientFile(${JSON.stringify(id)});`);
+  });
+
+  test("only refers to its file of host.ui.files", async () => {
+    const code = `export async function createDocsRenderer() {}\n`;
+
+    const stub = await transformPackage.call(
+      context("client"),
+      code,
+      `${framework}/docs-renderer.js?v=1a2b3c4d`,
+    );
+
+    const id = clientFileId(`${framework}/docs-renderer.js`);
+    expect(stub?.code).toContain(`$$referToUiFile(${JSON.stringify(id)}, ["createDocsRenderer"]);`);
+  });
+
+  test("leaves another module of the file alone", async () => {
+    for (const query of ["raw", "v=1a2b3c4d&raw"]) {
+      const id = `${framework}/client-story.js?${query}`;
+      expect(await transformPackage.call(context("client"), clientStory, id), id).toBeUndefined();
+    }
+  });
+
+  test("gives its file the page's own module for another of its files, by the file", async () => {
+    // The version is the browser layer's: the rsc layer has one of its own.
+    const browser = context("react_client");
+    browser.resolve = async (source, importer) => ({
+      id: `${new URL(source, `file://${importer}`).pathname}?v=5e6f7a8b`,
+    });
+    const importer = `${framework}/client-story.js?v=5e6f7a8b`;
+
+    expect(await resolvePackage.call(browser, "./render.js", importer, {})).toBe(
+      hostModuleId(`${framework}/render.js`),
+    );
+    // Not another module of a file of the host.
+    browser.resolve = async (source, importer) => ({
+      id: `${new URL(source, `file://${importer}`).pathname}?raw`,
+    });
+    const raw = await resolvePackage.call(browser, "./render.js?raw", importer, {});
+    expect(String(raw).startsWith(liveModulePrefix)).toBe(true);
+  });
 });

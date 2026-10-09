@@ -905,7 +905,7 @@ App code keeps importing `db` from `#lib/db.ts`. Tests then seed rows with the s
 
 ### Storybook And Other Hosts
 
-The plugin does not need Vitest, which is an optional peer dependency: under Vitest it needs Vitest 5.0.3 or later. Any page of Vite can host the app, with `renderServer()` as its API, and so can Storybook, where a story is what a test renders. The `host` option says what is the host's own, as Vitest's config does for a test runner: its files, which keep the browser's `window` and `fetch`, and its packages, which stay the page's own instance in every layer.
+The plugin does not need Vitest, which is an optional peer dependency: under Vitest it needs Vitest 5.0.3 or later. Any page of Vite can host the app, with `renderServer()` as its API, and so can Storybook, where a story is what a test renders. The `host` option says what is the host's own, as Vitest's config does for a test runner: its files, which keep the browser's `window` and `fetch`, and its packages, which stay the page's own instance in every layer. A file of the host can be in a package in `node_modules`, like a framework of Storybook, which the host leaves out of `optimizeDeps`.
 
 ```ts
 // vite.config.ts
