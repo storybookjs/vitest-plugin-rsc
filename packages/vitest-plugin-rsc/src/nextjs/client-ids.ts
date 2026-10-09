@@ -4,6 +4,24 @@
 /** What a Flight payload refers to client-node.tsx by. */
 export const clientNodeReference = "/@id/vitest-plugin-rsc/nextjs/client-node";
 
+// A dev server gives a module of JavaScript in `node_modules` that it does not
+// pre-bundle the version of the dependencies, in the query of its id, by which
+// a browser caches it: `/x/node_modules/a/b.js?v=1a2b3c4d`. A package of the
+// host can be such a module, like a framework of Storybook. The version is the one of an
+// environment, so another layer has another. Any other query, like `?raw` or
+// `?url`, makes another module of the file.
+const versionQuery = /^\?v=[\w.-]+$/;
+
+/**
+ * The file that a module of Vite is, by its id: the id, without the version
+ * a dev server adds for a dependency. Nothing for an id with another query.
+ */
+export function fileOfModule(id: string): string | undefined {
+  const query = id.indexOf("?");
+  if (query === -1) return id;
+  return versionQuery.test(id.slice(query)) ? id.slice(0, query) : undefined;
+}
+
 /**
  * What the browser layer imports a file with `"use client"` of the host by: a
  * test file, a story. `file` is its path, with forward slashes.

@@ -8,7 +8,7 @@ import {
   builtLiveModuleId,
   type HostReferences,
 } from "./build.ts";
-import { clientFileId, liveModulePrefix } from "./client-ids.ts";
+import { clientFileId, fileOfModule, liveModulePrefix } from "./client-ids.ts";
 
 // A test file or a story file with `"use client"` is a module of the browser
 // layer, as a file with that directive is in Next. The host still imports it
@@ -163,9 +163,12 @@ export function clientFiles(options: ClientFilesOptions): Plugin {
         const file = importer.split("?")[0]!;
         if (!isHostFile(file)) return;
         // Another file of the host, like a setup file, or `.storybook/preview`.
+        // By its file: the rsc layer has a version of its own for a file of a
+        // package, see `fileOfModule()`.
         const resolved = await this.resolve(source, file, others);
-        if (resolved && !resolved.id.includes("?") && isHostFile(resolved.id)) {
-          return hostModule(normalizePath(resolved.id));
+        const resolvedFile = resolved ? fileOfModule(resolved.id) : undefined;
+        if (resolvedFile !== undefined && isHostFile(resolvedFile)) {
+          return hostModule(normalizePath(resolvedFile));
         }
         // Not for the scan of the dependencies, which is after what the file
         // imports: a module in between hides that.
@@ -205,8 +208,12 @@ export function clientFiles(options: ClientFilesOptions): Plugin {
     },
     // Before Vite RSC, which makes a file with `"use client"` a reference.
     async transform(code, id) {
-      if (this.environment.name !== rsc || id.includes("?")) return;
-      const file = id;
+      if (this.environment.name !== rsc) return;
+      // Also a file of a package of the host in `node_modules`, like a
+      // framework of Storybook, which has Vite's version query with a dev
+      // server. Not another module of a file, like its `?raw`.
+      const file = fileOfModule(id);
+      if (file === undefined) return;
       // A file of `host.ui.files` is code of the browser layer, with or
       // without the directive. Whatever its extension, like `.mdx`, it is
       // JavaScript by the time it gets here: the plugin of the host that

@@ -119,13 +119,16 @@
     "react": "*",
     "react-dom": "*",
     "vite": ">=8.0.0",
-    "vitest": ">=5.0.3"
+    "vitest": "*"
   },
   "peerDependenciesMeta": {
     "@next/routing": {
       "optional": true
     },
     "next": {
+      "optional": true
+    },
+    "vitest": {
       "optional": true
     }
   }

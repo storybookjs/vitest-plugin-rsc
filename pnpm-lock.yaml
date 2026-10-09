@@ -146,7 +146,7 @@ importers:
         specifier: ^2.0.0
         version: 2.0.0
       vitest:
-        specifier: '>=5.0.3'
+        specifier: '*'
         version: 5.0.3(@opentelemetry/api@1.9.1)(@types/node@24.12.4)(@vitest/browser-playwright@5.0.3)(@vitest/coverage-v8@5.0.3)(@vitest/ui@5.0.3)(msw@2.14.6(@types/node@24.12.4)(typescript@6.0.3))(vite@8.3.1(@types/node@24.12.4)(esbuild@0.27.7)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))
     devDependencies:
       '@next/routing':
@@ -255,6 +255,9 @@ importers:
       drizzle-orm:
         specifier: ^0.45.2
         version: 0.45.2(@electric-sql/pglite@0.4.5)(@neondatabase/serverless@1.1.0)(@opentelemetry/api@1.9.1)(@types/pg@8.20.0)(kysely@0.28.17)(pg@8.20.0)
+      host-package:
+        specifier: file:fixtures/host-package
+        version: file:playground/nextjs-host-demo/fixtures/host-package(react@19.2.6)
       next:
         specifier: 16.4.0
         version: 16.4.0(@babel/core@7.29.0)(@opentelemetry/api@1.9.1)(@types/node@24.12.4)(babel-plugin-react-compiler@1.0.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
@@ -3650,6 +3653,11 @@ packages:
 
   hookable@6.1.1:
     resolution: {integrity: sha512-U9LYDy1CwhMCnprUfeAZWZGByVbhd54hwepegYTK7Pi5NvqEj63ifz5z+xukznehT7i6NIZRu89Ay1AZmRsLEQ==}
+
+  host-package@file:playground/nextjs-host-demo/fixtures/host-package:
+    resolution: {directory: playground/nextjs-host-demo/fixtures/host-package, type: directory}
+    peerDependencies:
+      react: '*'
 
   htmlparser2@10.1.0:
     resolution: {integrity: sha512-VTZkM9GWRAtEpveh7MSF6SjjrpNVNNVJfFup7xTY3UpFtm67foy9HDVXneLtFVt4pMz5kZtgNcvCniNFb1hlEQ==}
@@ -7716,6 +7724,10 @@ snapshots:
   hono@4.12.18: {}
 
   hookable@6.1.1: {}
+
+  host-package@file:playground/nextjs-host-demo/fixtures/host-package(react@19.2.6):
+    dependencies:
+      react: 19.2.6
 
   htmlparser2@10.1.0:
     dependencies:
