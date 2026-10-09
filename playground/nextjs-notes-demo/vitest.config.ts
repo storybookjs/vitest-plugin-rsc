@@ -52,7 +52,7 @@ export const nextjsNotesProjects = [
     test: {
       name: "nextjs-notes-demo-browser",
       include: ["**/*.test.{ts,tsx}"],
-      exclude: ["**/*.node.test.{ts,tsx}", "node_modules"],
+      exclude: ["**/*.node.test.{ts,tsx}", "test/storybook.test.ts", "node_modules"],
       browser: {
         enabled: true,
         headless: true,
@@ -77,6 +77,19 @@ export const nextjsNotesProjects = [
       exclude: ["node_modules"],
       environment: "node",
       setupFiles: ["./vitest.setup.node.ts"],
+    },
+  }),
+  // The Storybook of the app, with the CLI of Storybook in a process of its
+  // own, driven with Playwright: see test/storybook.test.ts.
+  defineProject({
+    root,
+    test: {
+      name: "nextjs-notes-demo-storybook",
+      include: ["test/storybook.test.ts"],
+      environment: "node",
+      testTimeout: 120_000,
+      // A dev server starts, a build builds.
+      hookTimeout: 900_000,
     },
   }),
 ];
