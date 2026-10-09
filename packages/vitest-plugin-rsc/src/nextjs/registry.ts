@@ -1,4 +1,4 @@
-import type { Stylesheets } from "./styles-command.ts";
+import type { Stylesheets } from "./styles-shared.ts";
 
 // The three layers of the app are three module graphs with one `window`.
 // Next's bundler config moves a few things across them: the route module is
@@ -60,6 +60,8 @@ export type Opened = {
      * again in the browser, and has none.
      */
     version?: number;
+    /** The files of the host that render the node, as `NextRegistry.nodeFiles()` said. */
+    files?: string[];
   };
 };
 
@@ -111,10 +113,21 @@ export type NextRegistry = {
   appPages: Record<string, unknown>;
   /**
    * Asks the plugin for the stylesheets of a page route, by the name of its
-   * modules: see styles.ts. Under Vitest with a command (setup.ts), else from
-   * the dev server or the files of a static build (rsc.ts).
+   * modules: see styles.ts. From the dev server, or the files of a static
+   * build (rsc.ts). For the route of a node, `files` are the files of the
+   * host that render it: see `nodeFiles()`.
    */
-  loadStylesheets(entry: string, inline: boolean): Promise<Stylesheets>;
+  loadStylesheets(entry: string, inline: boolean, files?: string[]): Promise<Stylesheets>;
+  /**
+   * The files of the host that render the node `renderServer()` opens, which
+   * the host says, the outer ones first: under Vitest the setup files and the
+   * test file that runs (setup.ts), under Storybook `.storybook/preview` and
+   * the story file. Each is a path from the root of the project, like
+   * `./stories/button.stories.tsx`, or an absolute one, which a static build
+   * does not know. The node has the stylesheets of what they import, in that
+   * order. Without it, those of every file of the host.
+   */
+  nodeFiles?(): string[] | undefined;
   /** Loads the request handler of a route handler, which is in the rsc layer. */
   loadRouteHandler(page: string): Promise<RequestHandler>;
   /** Loads the request handler of the middleware of the app, which is in the rsc layer. */

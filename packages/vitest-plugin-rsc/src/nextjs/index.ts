@@ -349,6 +349,8 @@ export async function runInServerAction<T>(
       `vitest-plugin-rsc: a Server Action is of a page of the app, not of ${url.href}`,
     );
   }
+  // Before an `await`: the host says which files call it, as they are now.
+  const files = registry.nodeFiles?.();
   const { runInServerActionOfTest } = await import("./server-action.ts");
   const key = serverActionKeys++;
   const ran: { outcome?: { value: Awaited<T> } | { error: unknown } } = {};
@@ -379,7 +381,7 @@ export async function runInServerAction<T>(
       opened: {
         pathname: url.pathname,
         proxy: options.proxy ?? false,
-        node: { ui: null, layouts: false },
+        node: { ui: null, layouts: false, files },
       },
     });
     // What Next renders after the action, which no page is there to show.
@@ -654,6 +656,10 @@ export async function renderServer(
     };
   }
 
+  // The files of the host that render the node, as it says before an
+  // `await`: see `nodeFiles()` in registry.ts. Its stylesheets are what they
+  // import.
+  const files = registry.nodeFiles?.();
   // A node of the browser layer is not the server's to render: the server
   // renders the one Client Component that renders it, client-node.tsx.
   const clientNode = clientNodeOf(first);
@@ -667,6 +673,7 @@ export async function renderServer(
     ui: wrap(node),
     layouts,
     version: clientNode ? undefined : 0,
+    files,
   });
   if (options.layouts) {
     if (options.container || options.baseElement) {

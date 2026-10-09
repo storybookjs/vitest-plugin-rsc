@@ -1,7 +1,12 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ViteFinal } from "@storybook/builder-vite";
-import { getAddonNames, getFrameworkName, loadMainConfig } from "storybook/internal/common";
+import {
+  getAddonNames,
+  getFrameworkName,
+  loadMainConfig,
+  loadPreviewOrConfigFile,
+} from "storybook/internal/common";
 import type { PresetProperty } from "storybook/internal/types";
 import type { Plugin } from "vite";
 import { vitestPluginRSC } from "vitest-plugin-rsc";
@@ -77,6 +82,35 @@ async function storybookPackages(options: Parameters<ViteFinal>[1]): Promise<str
 
 const normalize = (name: string) => name.split(path.sep).join("/");
 
+// What the preview needs to know of the project, for the files that render a
+// story: see entry-preview.tsx. The files that render around every story,
+// `.storybook/preview`, whose decorators are the project's, by their path
+// from the root. And where Storybook names a story file from, its working
+// directory, which can be another one than the root, like the root of a
+// monorepo: the two, from the directory both are in.
+const projectId = "virtual:@storybook/nextjs-vite-rsc/project";
+function project(configDir: string): Plugin {
+  let code = "";
+  return {
+    name: "nextjs-vite-rsc:project",
+    configResolved(config) {
+      const preview = loadPreviewOrConfigFile({ configDir });
+      const previewFiles = preview ? [`./${normalize(path.relative(config.root, preview))}`] : [];
+      const toWorkingDir = normalize(path.relative(config.root, process.cwd()))
+        .split("/")
+        .filter(Boolean);
+      const up = toWorkingDir.filter((part) => part === "..").length;
+      const root = normalize(config.root).split("/").filter(Boolean);
+      const workingDir = { root: root.slice(root.length - up), cwd: toWorkingDir.slice(up) };
+      code =
+        `export const previewFiles = ${JSON.stringify(previewFiles)};\n` +
+        `export const workingDir = ${JSON.stringify(workingDir)};\n`;
+    },
+    resolveId: (source) => (source === projectId ? `\0${projectId}` : undefined),
+    load: (id) => (id === `\0${projectId}` ? code : undefined),
+  };
+}
+
 export const viteFinal: ViteFinal = async (config, options) => ({
   ...config,
   resolve: {
@@ -86,6 +120,7 @@ export const viteFinal: ViteFinal = async (config, options) => ({
   plugins: [
     ...(config.plugins ?? []),
     previewOnly,
+    project(options.configDir),
     vitestPluginRSC(),
     vitestPluginNext({
       host: {

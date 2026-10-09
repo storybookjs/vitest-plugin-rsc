@@ -125,6 +125,34 @@ const checks: Record<string, Check> = {
       return image?.complete && image.naturalWidth > 0;
     });
   },
+  // A story links the CSS of what its own story file imports, and not that of
+  // another story file the preview has loaded: Callout's CSS underlines every
+  // heading of its page.
+  async "the CSS of a story is that of its story file"(page, site) {
+    const canvas = await open(page, site, "server-callout--default");
+    await canvas.getByRole("heading", { name: "Read this first" }).waitFor();
+    await canvas.waitForFunction(
+      () =>
+        getComputedStyle(document.querySelector("#storybook-root h2")!).textDecorationLine ===
+        "underline",
+    );
+
+    // Greeting and what it renders import no CSS: neither Callout's nor that
+    // of a client story, like the Badge of client-button.
+    await select(canvas, "server-greeting--default");
+    await canvas.getByRole("heading", { name: "Hello from Storybook" }).waitFor();
+    const linked = await canvas.evaluate(() =>
+      [...document.querySelectorAll<HTMLLinkElement>("link[rel=stylesheet]")]
+        .map((link) => link.href)
+        .filter((href) => href.includes("/_next/static/css/")),
+    );
+    expect(linked).toEqual([]);
+    expect(
+      await canvas.evaluate(
+        () => getComputedStyle(document.querySelector("#storybook-root h2")!).textDecorationLine,
+      ),
+    ).toBe("none");
+  },
   // A Client Component that is no story file and imports a spy of
   // `storybook/test`: the preview's own module, also in a build.
   async "a spy of storybook/test in a Client Component"(page, site) {

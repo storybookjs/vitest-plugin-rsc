@@ -19,3 +19,14 @@ export function clientFileOf(value: unknown): { module: string; name: string } |
   const isObject = (typeof value === "object" && value !== null) || typeof value === "function";
   return isObject ? registry.clientExports.get(value) : undefined;
 }
+
+/**
+ * @internal Says which files of the host render the nodes that
+ * `renderServer()` opens from now on, the outer ones first, like the preview
+ * and a story file: each a path from the root of the project, which a static
+ * build knows them by. A node has the stylesheets of what they import. See
+ * `nodeFiles()` in registry.ts.
+ */
+export function setNodeFiles(files: string[]): void {
+  registry.nodeFiles = () => files;
+}
