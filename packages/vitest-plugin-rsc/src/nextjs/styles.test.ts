@@ -5,7 +5,7 @@ import { build, createServer, type CSSOptions, type Rolldown } from "vite";
 import { expect, onTestFinished, test } from "vitest";
 import type { NextProject, NextRoute } from "./project.ts";
 import { builtStylesheetsOf, type BuiltStylesheets } from "./styles-command.ts";
-import { createStyles, exportsOfStylesheet } from "./styles.ts";
+import { createStyles, exportsOfStylesheet, isCode } from "./styles.ts";
 
 // The module that the installed Vite makes of a stylesheet for a client, of
 // which the plugin keeps the exports, and not the `<style>`. As the plugin
@@ -212,4 +212,22 @@ test("links a stylesheet of a static build from wherever the build is served", (
     "/app/layout": [{ path: "static/css/global-1.css" }],
   });
   expect(builtStylesheetsOf(built, "/other", "http://localhost/")).toEqual({});
+});
+
+// The walk for the stylesheets of a route follows modules of code, and leaves
+// out a file that is no code, which Vite can list with the imports of a module.
+test.each([
+  ["/app/page.tsx", true],
+  ["/node_modules/.vite/deps/react.js?v=1234", true],
+  ["/lib/config.cts", true],
+  ["\0virtual:vitest-plugin-rsc/next-route/3", true],
+  ["/app/a.b/page", true],
+  ["/docs/post.mdx", true],
+  ["/content/page.md", true],
+  ["/node_modules/@electric-sql/pglite/dist/pglite.data", false],
+  ["/node_modules/@electric-sql/pglite/dist/pglite.wasm", false],
+  ["/assets/photo.jpg?import", false],
+  ["/app/data.json", false],
+])("takes %s for code: %s", (id, code) => {
+  expect(isCode(id, ["tsx", "ts", "md"])).toBe(code);
 });
