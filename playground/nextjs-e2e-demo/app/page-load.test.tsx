@@ -140,6 +140,27 @@ test("a dependency comes without its source map, a file of the app with it", asy
   expect(counter.every(hasSourceMap)).toBe(true);
 });
 
+test("Rolldown compiles a pre-bundled dependency, Vite a file of the app", async () => {
+  await renderServer({ url: "/" });
+  await fileChanged("app/components/counter.tsx");
+
+  const { answered } = await modulesWhile(async () => {
+    await renderServer({ url: "/" });
+    await counted();
+  });
+
+  // How each of the two writes an export for a module runner.
+  const byRolldown = ({ code }: { code: string }) =>
+    code.includes("Object.defineProperty(__vite_ssr_exports__");
+  const byVite = ({ code }: { code: string }) => code.includes("__vite_ssr_exportName__(");
+  const preBundled = answered.filter(({ file }) => /\/deps_\w+\//.test(file));
+  expect(preBundled.filter(byRolldown).length).toBeGreaterThan(0);
+  expect(preBundled.filter(byVite).map(({ file }) => file)).toEqual([]);
+  const counter = answered.filter(({ file }) => file.endsWith("/app/components/counter.tsx"));
+  expect(counter.length).toBeGreaterThan(0);
+  expect(counter.every(byVite)).toBe(true);
+});
+
 test("a page has what the server streamed in place before the app starts", async () => {
   await renderServer({ url: "/slow-metadata" });
 
