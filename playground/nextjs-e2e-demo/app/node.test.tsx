@@ -797,6 +797,24 @@ test("does not render a node again once it has navigated to another page, or was
   await expect(rendering).rejects.toThrow("The page was left before the node had rendered again");
 });
 
+test("hears no more of the request of a rerender() once the node is left, also on the next page", async () => {
+  const { rerender, unmount } = await renderServer(<Greeting name="Ada" />);
+  // Its router asks the server for the node again, which leaving stops.
+  const rendering = rerender(<Greeting name="Grace" />);
+
+  await unmount();
+
+  await expect(rendering).rejects.toThrow("The page was left before the node had rendered again");
+  // What runs between two tests, and the page of the next one.
+  await cleanup();
+  await renderServer(<Greeting name="Linus" />);
+  await page.getByRole("button", { name: "Count: 0" }).click();
+  await expect.element(page.getByRole("button", { name: "Count: 1" })).toBeVisible();
+  // The router of the page that was left would report the stopped request as
+  // a failed fetch: "Failed to fetch RSC payload".
+  expect(consoleError).not.toHaveBeenCalled();
+});
+
 test("does not render a node in the layouts of a route again once the app shows another page", async () => {
   const { rerender } = await renderServer(<Greeting name="Ada" />, {
     url: "/notes",
