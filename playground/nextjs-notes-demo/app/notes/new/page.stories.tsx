@@ -1,5 +1,6 @@
 import { expect, userEvent } from "storybook/test";
 import preview from "#.storybook/preview.ts";
+import { routeLoaded } from "#.storybook/route.ts";
 import { signInAs } from "#test/auth.ts";
 
 // The form for a new note, with its Server Action: see
@@ -39,8 +40,8 @@ export const Create = meta.story({
     await userEvent.type(canvas.getByLabelText("Content"), "Milk, eggs");
     await userEvent.click(canvas.getByRole("button", { name: "Create note" }));
 
+    await routeLoaded(/^\/notes\/[0-9a-f-]{36}$/);
     await expect(await canvas.findByRole("heading", { level: 1, name: "Groceries" })).toBeVisible();
     await expect(canvas.getByText("Milk, eggs")).toBeVisible();
-    await expect(window.location.pathname).toMatch(/^\/notes\/[0-9a-f-]{36}$/);
   },
 });

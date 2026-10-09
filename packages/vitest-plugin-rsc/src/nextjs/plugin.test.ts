@@ -66,12 +66,16 @@ async function scan(appRoot: string) {
   });
   try {
     const found: Record<string, string[]> = {};
-    for (const [name, environment] of Object.entries(server.environments)) {
-      const optimizer = environment.depsOptimizer;
-      if (!optimizer) continue;
-      await optimizer.scanProcessing;
-      found[name] = Object.keys(optimizer.metadata.discovered);
-    }
+    await Promise.all(
+      Object.entries(server.environments).map(async ([name, { depsOptimizer }]) => {
+        if (!depsOptimizer) return;
+        await depsOptimizer.scanProcessing;
+        found[name] = Object.keys(depsOptimizer.metadata.discovered);
+        // Before it bundles what it found, which the server's close() does
+        // not stop: it would go on next to the tests that run after this one.
+        await depsOptimizer.close();
+      }),
+    );
     return { errors, found };
   } finally {
     await server.close();
@@ -93,7 +97,7 @@ test.for([
     const { errors, found } = await scan(appRoot);
 
     expect(errors).toEqual([]);
-    expect(Object.keys(found)).toEqual(["client", "next_ssr", "react_client"]);
+    expect(new Set(Object.keys(found))).toEqual(new Set(["client", "next_ssr", "react_client"]));
     for (const dependencies of Object.values(found)) expect(dependencies).toContain(dependency);
   },
 );

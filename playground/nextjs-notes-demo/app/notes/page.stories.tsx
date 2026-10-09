@@ -1,6 +1,7 @@
 import { eq } from "drizzle-orm";
 import { expect, screen, userEvent, waitFor, within } from "storybook/test";
 import preview from "#.storybook/preview.ts";
+import { routeLoaded } from "#.storybook/route.ts";
 import { sampleNotes, seedSampleNotes } from "#.storybook/sample-notes.ts";
 import { notes } from "#db/schema.ts";
 import { db } from "#lib/db.ts";
@@ -27,8 +28,8 @@ export const Empty = meta.story({
 // A test of the story, in CSF Next: it runs after the play function.
 Empty.test("links to the form for a new note", async ({ canvas }) => {
   await userEvent.click(canvas.getByRole("link", { name: "Create your first note" }));
+  await routeLoaded("/notes/new");
   await expect(await canvas.findByRole("heading", { level: 1, name: "New note" })).toBeVisible();
-  await expect(window.location.pathname).toBe("/notes/new");
 });
 
 export const WithNotes = meta.story({

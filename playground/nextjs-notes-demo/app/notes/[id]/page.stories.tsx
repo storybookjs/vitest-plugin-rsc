@@ -1,5 +1,6 @@
 import { expect, spyOn, userEvent } from "storybook/test";
 import preview from "#.storybook/preview.ts";
+import { routeLoaded } from "#.storybook/route.ts";
 import { notes } from "#db/schema.ts";
 import { db } from "#lib/db.ts";
 import { otherUser, signInAs, testUser } from "#test/auth.ts";
@@ -82,8 +83,8 @@ export const Delete = meta.story({
   },
   async play({ canvas }) {
     await userEvent.click(await canvas.findByRole("button", { name: "Delete" }));
+    await routeLoaded("/notes");
     await expect(await canvas.findByText("Still here")).toBeVisible();
-    await expect(window.location.pathname).toBe("/notes");
     await expect(canvas.queryByText("Short-lived")).toBeNull();
   },
 });

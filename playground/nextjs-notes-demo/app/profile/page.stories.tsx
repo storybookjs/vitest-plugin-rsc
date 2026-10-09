@@ -1,5 +1,6 @@
 import { expect, mocked, userEvent } from "storybook/test";
 import preview from "#.storybook/preview.ts";
+import { routeLoaded } from "#.storybook/route.ts";
 import { auth } from "#lib/auth.ts";
 import { signInAs, signOut, testUser } from "#test/auth.ts";
 
@@ -79,11 +80,11 @@ export const SignOut = meta.story({
     });
     await userEvent.click(await canvas.findByRole("button", { name: "Sign out" }));
 
+    await routeLoaded("/auth/sign-in");
     await expect(
       await canvas.findByRole("heading", { level: 1, name: "Welcome back to Notes Demo" }),
     ).toBeVisible();
     await expect(auth.api.signOut).toHaveBeenCalledOnce();
-    await expect(window.location.pathname).toBe("/auth/sign-in");
   },
 });
 

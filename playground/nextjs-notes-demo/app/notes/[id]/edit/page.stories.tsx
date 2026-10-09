@@ -1,5 +1,6 @@
 import { expect, userEvent } from "storybook/test";
 import preview from "#.storybook/preview.ts";
+import { routeLoaded } from "#.storybook/route.ts";
 import { notes } from "#db/schema.ts";
 import { db } from "#lib/db.ts";
 import { signInAs, testUser } from "#test/auth.ts";
@@ -51,9 +52,9 @@ export const Save = meta.story({
     await userEvent.type(title, "Reading list 2026");
     await userEvent.click(canvas.getByRole("button", { name: "Save changes" }));
 
+    await routeLoaded(`/notes/${noteId}`);
     await expect(
       await canvas.findByRole("heading", { level: 1, name: "Reading list 2026" }),
     ).toBeVisible();
-    await expect(window.location.pathname).toBe(`/notes/${noteId}`);
   },
 });
