@@ -1,6 +1,6 @@
 {
   "name": "vitest-plugin-rsc",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Test React Server Components and Next.js App Router apps in Vitest Browser Mode.",
   "keywords": [
     "nextjs",

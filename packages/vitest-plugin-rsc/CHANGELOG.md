@@ -1,5 +1,29 @@
 # Changelog
 
+## [0.3.1](https://github.com/storybookjs/vitest-plugin-rsc/compare/v0.3.0...v0.3.1) (2026-10-09)
+
+
+### Features
+
+* add a build option to run the app as next start does ([#94](https://github.com/storybookjs/vitest-plugin-rsc/issues/94)) ([152ba41](https://github.com/storybookjs/vitest-plugin-rsc/commit/152ba41383d150de5db57734b868d86dc51d169e))
+* add runInServerAction to run code inside a Server Action without a page ([#84](https://github.com/storybookjs/vitest-plugin-rsc/issues/84)) ([8bb82dc](https://github.com/storybookjs/vitest-plugin-rsc/commit/8bb82dcf3ce760d6275de5ccbe15a3f3da426d40))
+* link the CSS of a route as Next does, compiled with Next's CSS rules ([#76](https://github.com/storybookjs/vitest-plugin-rsc/issues/76)) ([dadd59b](https://github.com/storybookjs/vitest-plugin-rsc/commit/dadd59b5b20c3a500e5b8343d89f492401211020))
+
+
+### Bug Fixes
+
+* leave a page and its requests before the next test starts ([#83](https://github.com/storybookjs/vitest-plugin-rsc/issues/83)) ([595c63e](https://github.com/storybookjs/vitest-plugin-rsc/commit/595c63e199956d0f60b50bb03d1f8d338936081a))
+* send the headers of renderServer with every request of the page ([8b4cbde](https://github.com/storybookjs/vitest-plugin-rsc/commit/8b4cbded7ca99966811deaddd19458fba289a920))
+* wait for the requests the server is still handling when a page is left ([#85](https://github.com/storybookjs/vitest-plugin-rsc/issues/85)) ([d7144bb](https://github.com/storybookjs/vitest-plugin-rsc/commit/d7144bb8bf33becca03a2edd3b8998c3ecbc4528))
+
+
+### Performance Improvements
+
+* compile pre-bundled dependencies with Rolldown's module runner transform ([#89](https://github.com/storybookjs/vitest-plugin-rsc/issues/89)) ([ad26c10](https://github.com/storybookjs/vitest-plugin-rsc/commit/ad26c1058393beadc5ddbe46d2ef347ace874b8b))
+* fetch and compile the modules of a page load once ([#86](https://github.com/storybookjs/vitest-plugin-rsc/issues/86)) ([8f446d1](https://github.com/storybookjs/vitest-plugin-rsc/commit/8f446d168797ea6048cf041ff7bb0bd16fc06275))
+* fetch the modules of a page at once, and dependencies without source maps ([#88](https://github.com/storybookjs/vitest-plugin-rsc/issues/88)) ([cf6540f](https://github.com/storybookjs/vitest-plugin-rsc/commit/cf6540f4b6ee9d908a9ad4d29082f9db575c0150))
+* leave files that are no code out of the walk for a route's stylesheets ([#93](https://github.com/storybookjs/vitest-plugin-rsc/issues/93)) ([10ebe1d](https://github.com/storybookjs/vitest-plugin-rsc/commit/10ebe1d85b6d757deb4e326ab17beee5b643d977))
+
 ## [0.3.0](https://github.com/storybookjs/vitest-plugin-rsc/compare/v0.2.5...v0.3.0) (2026-10-08)
 
 
