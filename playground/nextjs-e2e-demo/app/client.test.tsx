@@ -1,7 +1,7 @@
 "use client";
 
 import { cleanup, clientNode, renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
-import { afterEach, beforeEach, expect, test, vi, type MockInstance } from "vitest";
+import { afterEach, beforeEach, expect, inject, test, vi, type MockInstance } from "vitest";
 import { cdp, page } from "vitest/browser";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -10,6 +10,7 @@ import { Counter } from "./components/counter.tsx";
 import { PressButton } from "./components/press-button.tsx";
 import { RouterState } from "./components/router-state.tsx";
 import { countPresses, pressed } from "./lib/presses.ts";
+import { buildOf } from "./lib/build.ts";
 import { ClientCard } from "./styles/client-card.tsx";
 
 // A test file with `"use client"` is code of the browser layer, as such a
@@ -38,6 +39,21 @@ function Presses({ label }: { label: string }) {
 
 test("is not server code", () => {
   expect(typeof window).toBe("object");
+});
+
+// The `build` option of the plugin, which CI runs this file with each of.
+test("runs the build of React that the plugin is set to, as the page does", async () => {
+  const { container } = await renderServer(<p>Rendered</p>);
+
+  // An element of this file, of its JSX for that build, and a fiber of the
+  // page's React DOM, whose development build keeps on it who rendered it.
+  const [, fiber] = Object.entries(container.querySelector("p")!).find(([key]) =>
+    key.startsWith("__reactFiber$"),
+  )!;
+  expect({
+    react: buildOf(<i />),
+    reactDom: "_debugOwner" in fiber ? "development" : "production",
+  }).toEqual({ react: inject("build"), reactDom: inject("build") });
 });
 
 test("passes a function to a Client Component, which calls it", async () => {
