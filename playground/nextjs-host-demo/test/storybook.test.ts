@@ -1,5 +1,5 @@
 import path from "node:path";
-import type { Frame, Page } from "playwright";
+import type { Frame, Locator, Page } from "playwright";
 import { afterAll, beforeAll, describe, expect } from "vitest";
 import { root, run, serve, serveFiles, test, type Site } from "./helpers.ts";
 
@@ -38,6 +38,20 @@ async function select(canvas: Frame, story: string): Promise<void> {
   }, story);
 }
 
+// Another story, selected while the story that is there is still rendering:
+// before its page has loaded.
+async function selectWhileRendering(canvas: Frame, story: string): Promise<void> {
+  type Preview = { channel: Channel; currentRender?: { phase?: string } };
+  await canvas.waitForFunction(
+    () =>
+      (window as unknown as { __STORYBOOK_PREVIEW__?: Preview }).__STORYBOOK_PREVIEW__
+        ?.currentRender?.phase === "rendering",
+    undefined,
+    { polling: 1 },
+  );
+  await select(canvas, story);
+}
+
 // What the Actions panel has logged, by the name of the action.
 async function actions(page: Page, name: string): Promise<number> {
   await page.getByRole("tab", { name: /Actions/ }).click();
@@ -45,6 +59,18 @@ async function actions(page: Page, name: string): Promise<number> {
 }
 
 const panel = (page: Page) => page.locator("#storybook-panel-root");
+
+// Changes an arg of the story in the Controls panel, as a user types it.
+async function control(page: Page, arg: string, value: string): Promise<void> {
+  await page.getByRole("tab", { name: /Controls/ }).click();
+  await panel(page).locator(`#control-${arg}`).fill(value);
+}
+
+// Marks an element of the canvas, which a page load would replace.
+const mark = (element: Locator) =>
+  element.evaluate((node) => ((node as { kept?: boolean }).kept = true));
+const isMarked = (element: Locator) =>
+  element.evaluate((node) => (node as { kept?: boolean }).kept === true);
 
 type Check = (page: Page, site: Site) => Promise<void>;
 
@@ -135,6 +161,53 @@ const checks: Record<string, Check> = {
     await canvas.getByRole("button", { name: "Press at /notes/7: 2" }).waitFor();
     await select(canvas, "server-greeting--other-name");
     await canvas.getByRole("heading", { name: "Hello from a story with other args" }).waitFor();
+  },
+  // An arg from the Controls renders the story again in place, without a
+  // page load: the state of its Client Component stays.
+  async "an arg of a server story from the Controls"(page, site) {
+    const canvas = await open(page, site, "server-greeting--default");
+    const counter = canvas.getByRole("button", { name: /^Count: / });
+    await canvas.getByRole("button", { name: "Count: 0" }).click();
+    await canvas.getByRole("button", { name: "Count: 1" }).waitFor();
+    await mark(counter);
+    await control(page, "name", "the Controls");
+    await canvas.getByRole("heading", { name: "Hello from the Controls" }).waitFor();
+    await canvas.getByText("The server read the request.").waitFor();
+    expect(await counter.textContent()).toBe("Count: 1");
+    expect(await isMarked(counter), "the counter of the page that was there").toBe(true);
+  },
+  async "an arg of a client story from the Controls"(page, site) {
+    const canvas = await open(page, site, "client-button--counting");
+    const button = canvas.getByRole("button", { name: / at \/notes\/7: / });
+    await page.getByRole("tab", { name: /Interactions/ }).click();
+    await panel(page).getByText("toHaveBeenCalledTimes").waitFor();
+    await canvas.getByRole("button", { name: "Press at /notes/7: 2" }).waitFor();
+    await mark(button);
+    await control(page, "children", "Tap");
+    await canvas.getByRole("button", { name: "Tap at /notes/7: 2" }).waitFor();
+    expect(await isMarked(button), "the button of the page that was there").toBe(true);
+    await button.click();
+    await canvas.getByRole("button", { name: "Tap at /notes/7: 3" }).waitFor();
+  },
+  // `parameters.nextjs.proxy` runs proxy.ts for a story of a component,
+  // whose rewrite decides the route of its URL.
+  async "a story through the proxy"(page, site) {
+    const canvas = await open(page, site, "server-routeparams--through-the-proxy");
+    await canvas.getByText('{"id":"7"}').waitFor();
+    await select(canvas, "server-routeparams--default");
+    await canvas.getByText("{}", { exact: true }).waitFor();
+    await canvas.getByText("/latest").waitFor();
+  },
+  // A story that is selected while the one before it is still rendering
+  // takes its place, and the preview goes on with the next one.
+  async "to another story while one renders"(page, site) {
+    const canvas = await open(page, site, "server-greeting--default");
+    await selectWhileRendering(canvas, "client-button--counting");
+    await canvas.getByRole("button", { name: "Press at /notes/7: 2" }).waitFor();
+    await select(canvas, "server-greeting--other-name");
+    await canvas.getByRole("heading", { name: "Hello from a story with other args" }).waitFor();
+    await canvas.getByRole("button", { name: "Count: 0" }).click();
+    await canvas.getByRole("button", { name: "Count: 1" }).waitFor();
   },
 };
 

@@ -1,6 +1,7 @@
 import { appBootstrap } from "next/dist/client/app-bootstrap";
 import { callServer } from "next/dist/client/app-call-server";
-import ReactDOMClient, { type Root } from "react-dom/client";
+import { publicAppRouterInstance } from "next/dist/client/components/app-router-instance";
+import ReactDOMClient, { type Root, type RootOptions } from "react-dom/client";
 import { registerModuleLoader } from "./client-modules.ts";
 import { recordListeners, type Leftovers } from "./leftovers.ts";
 
@@ -14,10 +15,40 @@ declare global {
   var __NEXT_HYDRATED_CB: (() => void) | undefined;
 }
 
+// React tells the root of the app of an error that a boundary caught, and of
+// one that none did, with these options. Next's entry passes both.
+function reportingErrors<Options extends RootOptions>(
+  options: Options | undefined,
+  onError: () => void,
+): Options | undefined {
+  const { onCaughtError, onUncaughtError } = options ?? {};
+  if (!options || !onCaughtError || !onUncaughtError) return options;
+  return {
+    ...options,
+    onCaughtError(error, info) {
+      onError();
+      onCaughtError(error, info);
+    },
+    onUncaughtError(error, info) {
+      onError();
+      onUncaughtError(error, info);
+    },
+  };
+}
+
+/** A page of the app that has started. */
+export type StartedPage = {
+  /** Leaves the page. */
+  unmount(): void;
+  /** Has Next's router render the page again, as `router.refresh()` does. */
+  refresh(): void;
+};
+
 /**
  * Hydrates the document, or with a `container`, the node of a test in it.
  * Resolves once it has, with how to leave the page. Calls `loaded` once Next's
- * client has loaded, before a module of the app has.
+ * client has loaded, before a module of the app has, and `onError` when React
+ * reports an error of the app, which a boundary may have caught.
  *
  * Rejects once `signal` aborts, when the page is left before it has hydrated.
  * What it started is gone by then: the root, and the listeners React added.
@@ -27,7 +58,8 @@ export async function start(
   loaded: () => void,
   container: Element | undefined,
   signal: AbortSignal,
-): Promise<{ unmount(): void }> {
+  onError: () => void,
+): Promise<StartedPage> {
   // Not when this module loads: a page that was left while it loaded must not
   // take over from the page that is there now. The modules of the app wait
   // for Next's client: the Flight client asks for them as soon as it loads.
@@ -48,8 +80,8 @@ export async function start(
   const listeners: Leftovers[] = [];
   const { hydrateRoot, createRoot } = ReactDOMClient;
   // The root of the document is Next's own. For a node it is on the container
-  // instead: `to` is where the root goes.
-  const keep = <Target,>(target: Target, create: (to: Target) => Root): Root => {
+  // instead: `to` is where the root goes. It reports the errors of the app.
+  const keep = <Target,>(target: Target, create: (to: Target, isApp: boolean) => Root): Root => {
     // Next creates its root late, after the payload of the page has come: a
     // page that is left by then is gone, and the document is the next one's.
     // It gets a root that renders nothing. Not an error: React would report
@@ -62,7 +94,7 @@ export async function start(
     const added = targets.map((of) => recordListeners(of));
     listeners.push(...added);
     try {
-      const created = create(to);
+      const created = create(to, isApp);
       if (isApp) root = created;
       return created;
     } finally {
@@ -73,9 +105,9 @@ export async function start(
   // before it had hydrated, which a browser drops with the page unreported.
   let leaving = false;
   ReactDOMClient.hydrateRoot = (target, children, options) =>
-    keep(target, (to) =>
+    keep(target, (to, isApp) =>
       hydrateRoot(to, children, {
-        ...options,
+        ...(isApp ? reportingErrors(options, onError) : options),
         onRecoverableError(error, info) {
           if (leaving) return;
           if (options?.onRecoverableError) options.onRecoverableError(error, info);
@@ -83,7 +115,10 @@ export async function start(
         },
       }),
     );
-  ReactDOMClient.createRoot = (target, ...args) => keep(target, (to) => createRoot(to, ...args));
+  ReactDOMClient.createRoot = (target, options) =>
+    keep(target, (to, isApp) =>
+      createRoot(to, isApp ? reportingErrors(options, onError) : options),
+    );
 
   const leave = () => {
     leaving = true;
@@ -151,5 +186,9 @@ export async function start(
         "which the plugin needs to leave the page.",
     );
   }
-  return { unmount: leave };
+  return {
+    unmount: leave,
+    // The router of this page: the module graph is the page's own.
+    refresh: () => publicAppRouterInstance.refresh(),
+  };
 }

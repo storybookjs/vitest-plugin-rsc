@@ -304,17 +304,38 @@ A link to the node's own pathname stays with the node. With the default URL that
 
 In development a link in a node is not prefetched, and neither is one in a page, as in `next dev`. Next marks a link as visible only when `NODE_ENV` is `"production"` (`links.js`), and it does not prefetch a link that is not visible, not even on hover. With `build: "production"` it prefetches both: see [Development Or Production](#development-or-production).
 
+### Rendering The Node Again
+
+`rerender(ui)` renders the node again in place, without a page load. The route of a node reads the node from the registry each time the server renders it (`loadComponent()` in `rsc.ts`). So `rerender()` puts the new node there and has Next's own router of the page ask for the route again, with the `refresh()` of `router.refresh()`. That is one request of the router, for the node's pathname. The server answers with the Flight payload of the route, and React reconciles it with the page: what stays the same keeps its state, as in a refresh of a page.
+
+The request of `rerender()` carries the `headers` of `renderServer()`, as every request of the page does after its document: see [Request Headers And Cookies](../README.md#request-headers-and-cookies).
+
+The server renders a node of the server inside `NodeRendered`, a Client Component of `client-node.tsx` that renders only its children, and passes it the number of the render. Its layout effect tells `rerender()` which render the page has committed. So `rerender()` resolves once React has committed the new node, or a later one: not when the response arrives, and not after a timeout. A Suspense boundary of the route, like its `loading.tsx`, can hydrate the node after `renderServer()` has resolved, and a rerender before that waits for it.
+
+The page can show something else in the node's place:
+
+- An error, `notFound()` or `redirect()`, which a boundary of Next or of the app catches.
+- Another route. A navigation from a node is a page load (see above). In the layouts of a route, a navigation to another page of the app is not.
+
+Then the node is no longer on the page. A passive effect of `NodeRendered`, or of `client-node.tsx` for a node of the browser layer, says so, and the rerender resolves: the page shows what it has in the node's place, as for a page. It is a passive effect because Suspense takes down the layout effects of what it hides behind a fallback, and leaves the node on the page. A node that is still to hydrate has no effects yet. For it, the plugin hears of an error from React, through the `onCaughtError` and `onUncaughtError` that Next's entry gives the root. An error that a boundary inside the node catches leaves the node on the page, and it renders again as before.
+
+Once the node is no longer on the page, `rerender()` rejects: it has no node to render again. It also rejects once the page is left: by `unmount()`, `cleanup()`, another `renderServer()`, or the page load of a navigation.
+
+A node of the browser layer renders again where it is. `rerender()` hands `client-node.tsx` the new node, which reads it with `useSyncExternalStore`, and React commits it without a request. The page of `renderServer({ url })` has no node to replace, and no `rerender()`.
+
 ### What It Needs Of Next
 
 Checked at startup, like the rest (see [When Next Changes](#when-next-changes)):
 
-| What                                                                                                                                 | Without it                                                         |
-| ------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------ |
-| The `app-page` template takes `tree`, `__next_app_require__` and `__next_app_load_chunk__`                                           | No route for a node                                                |
-| `next/dist/client/components/builtin/` has `global-error.js`, `not-found.js`, `forbidden.js` and `unauthorized.js`                   | No route for a node                                                |
-| `app-index.js` has `const appElement = document`, and calls `hydrateRoot(appElement` and `createRoot(appElement`                     | The node hydrates the document, or nothing                         |
-| `segment-cache/cache.js` compares the root segments of two trees                                                                     | A link from a node renders one of the app's pages in the container |
-| `render-tree.js` calls `doesRouteStructureMatch(`, reads `PrefetchHint.IsRootLayoutOrAbove` and calls `isNavigatingToNewRootLayout(` | The same                                                           |
+| What                                                                                                                                 | Without it                                                           |
+| ------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------- |
+| The `app-page` template takes `tree`, `__next_app_require__` and `__next_app_load_chunk__`                                           | No route for a node                                                  |
+| `next/dist/client/components/builtin/` has `global-error.js`, `not-found.js`, `forbidden.js` and `unauthorized.js`                   | No route for a node                                                  |
+| `app-index.js` has `const appElement = document`, and calls `hydrateRoot(appElement` and `createRoot(appElement`                     | The node hydrates the document, or nothing                           |
+| `segment-cache/cache.js` compares the root segments of two trees                                                                     | A link from a node renders one of the app's pages in the container   |
+| `render-tree.js` calls `doesRouteStructureMatch(`, reads `PrefetchHint.IsRootLayoutOrAbove` and calls `isNavigatingToNewRootLayout(` | The same                                                             |
+| `app-router-instance.js` exports `publicAppRouterInstance`, the router of `useRouter()`                                              | No `rerender()` of a node of the server                              |
+| `app-index.js` gives its root `reactRootOptions`, with `onCaughtError` and `onUncaughtError`                                         | A rerender of a node that throws before it hydrates does not resolve |
 
 Not checked: the shape of a loader tree, `[segment, parallelRoutes, modules, staticSiblings]`. The tests that render a node fail when it changes.
 
@@ -657,6 +678,8 @@ At the next lookup the plugin answers for a test file itself. The test file belo
 ## Another Host
 
 The layers do not import Vitest, so a page that is not Vitest's can host the app: a page of Vite with a dev server, or Storybook's preview. What Vitest's config says of a test runner, the `host` option says of another host: `host.files` are its files, like its stories, which keep the browser's `window` and `fetch` as a test file does, and `host.packages` are its packages, like `storybook`, which the `browser` layer imports from the page instead of a copy of its own. A spy of `storybook/test` in a Client Component is then the one the Actions panel listens to.
+
+Storybook renders a story again when an arg changes. The proof of concept does that with `rerender()`, so the canvas keeps the state of the story's Client Components. A story that the page no longer has, like after an error, renders anew, and so does a client story when the globals change: the project's decorators around it render on the server, once per page. A page of the app always loads anew. Storybook also aborts the render of a story that is left while it renders, and reloads the preview when that render has not stopped a few tasks later. So the framework stops waiting for the page as soon as the render is aborted, and its teardown leaves the page that may still be loading.
 
 A route has the stylesheets that Next links, as under Vitest: the page asks the dev server for them, at `/@vitest-plugin-rsc/next-stylesheets`. See [Stylesheets](#stylesheets).
 

@@ -97,6 +97,11 @@ export function checkRuntime(context: NextContext) {
     "PrefetchHint.IsRootLayoutOrAbove",
     "isNavigatingToNewRootLayout(",
   );
+  // `rerender()` of a node asks Next's router of the page to render it again,
+  // as `router.refresh()` does. It hears of an error of the app from the
+  // callbacks that Next's entry gives the root.
+  runtimeFile("client/components/app-router-instance").export("publicAppRouterInstance");
+  appIndex.contains("reactRootOptions", "onCaughtError", "onUncaughtError");
   // It hands Next the bootstrap script as the one that is running.
   runtimeFile("client/asset-prefix").contains("document.currentScript", "/_next/");
   // The shim in plugin.ts reads these, and replaces the functions for Vite

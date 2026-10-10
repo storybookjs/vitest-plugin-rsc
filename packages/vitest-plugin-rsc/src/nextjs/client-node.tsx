@@ -2,6 +2,9 @@ import {
   Component,
   createElement,
   use,
+  useEffect,
+  useLayoutEffect,
+  useState,
   useSyncExternalStore,
   type ComponentType,
   type ReactNode,
@@ -12,7 +15,7 @@ import { registry, type ClientNode as Node } from "./registry.ts";
 // The one Client Component of the page of a node of the browser layer: see
 // `ClientNode` in registry.ts. It renders what the test or the story put in
 // `registry`, as it is. Around it is Next's own app, so the router and its
-// hooks are Next's.
+// hooks are Next's. A node of the server has `NodeRendered` around it.
 
 function subscribe(changed: () => void): () => void {
   registry.clientNodeListeners.add(changed);
@@ -35,9 +38,27 @@ function Export({ node }: { node: Extract<Node, { module: string }> }): ReactNod
   return createElement(Component, node.props);
 }
 
-// Tells who waits for the node that the page has it. A node that fails to
-// render is not waited for either. The error is for the boundary of the app,
-// as it is without this one.
+// Who to tell what the page does with the node: `rerender()`, for the page
+// that renders it. A page that is being left, or that was, tells nobody.
+const reporter = () => registry.nodeReporter?.();
+
+// Tells `rerender()` that the node is on the page, and when it has left.
+// From a passive effect: when a Suspense boundary shows its fallback in place
+// of what it had, React takes down the layout effects of what it hides, and
+// not the passive ones.
+function OnPage({ children }: { children?: ReactNode }): ReactNode {
+  const [report] = useState(reporter);
+  useEffect(() => {
+    report?.shown(true);
+    return () => report?.shown(false);
+  }, [report]);
+  return children;
+}
+
+// Tells who waits for the node that the page has it: once it is there, and
+// once it has rendered again with another node, see `rerender()`. A node
+// that fails to render is not waited for either. The error is for the
+// boundary of the app, as it is without this one.
 class Rendered extends Component<{ node: Node; children?: ReactNode }, { error?: unknown }> {
   override state: { error?: unknown } = {};
 
@@ -48,6 +69,10 @@ class Rendered extends Component<{ node: Node; children?: ReactNode }, { error?:
 
   override componentDidMount(): void {
     this.props.node.rendered?.();
+  }
+
+  override componentDidUpdate(previous: { node: Node }): void {
+    if (previous.node !== this.props.node) this.props.node.rendered?.();
   }
 
   override render(): ReactNode {
@@ -64,8 +89,25 @@ export function ClientNode(): ReactNode {
   return createElement(
     Rendered,
     { node },
-    wrapper ? createElement(wrapper, null, content) : content,
+    createElement(OnPage, null, wrapper ? createElement(wrapper, null, content) : content),
   );
+}
+
+/**
+ * Around a node of the server, which the server renders around it: tells
+ * `rerender()` that the node is on the page, and which render of it the page
+ * has committed. It renders nothing of its own.
+ */
+export function NodeRendered({
+  version,
+  children,
+}: {
+  version: number;
+  children?: ReactNode;
+}): ReactNode {
+  const [report] = useState(reporter);
+  useLayoutEffect(() => report?.rendered(version), [report, version]);
+  return createElement(OnPage, null, children);
 }
 
 /**

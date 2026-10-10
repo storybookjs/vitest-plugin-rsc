@@ -83,6 +83,44 @@ test("renders a component of the test file, with state", async () => {
   expect(countPresses()).toBe(2);
 });
 
+test("renders the node again with rerender(), where it is, with its state", async () => {
+  const { container, rerender } = await renderServer(<Presses label="Presses" />);
+  await page.getByRole("button", { name: "Presses: 0" }).click();
+  await expect.element(page.getByRole("button", { name: "Presses: 1" })).toBeVisible();
+  const button = container.querySelector("button");
+  const fetch = vi.spyOn(window, "fetch");
+
+  await rerender(<Presses label="Again" />);
+
+  expect(container.querySelector("button")).toBe(button);
+  expect(button?.textContent).toBe("Again: 1");
+  // No request: the node is the browser's.
+  expect(fetch).not.toHaveBeenCalled();
+  await page.getByRole("button", { name: "Again: 1" }).click();
+  await expect.element(page.getByRole("button", { name: "Again: 2" })).toBeVisible();
+  expect(countPresses()).toBe(2);
+});
+
+test("renders the node again in its wrapper, and in the layouts of a route", async () => {
+  const { rerender } = await renderServer(<Themed />, {
+    url: "/notes",
+    layouts: true,
+    wrapper: Dark,
+  });
+
+  await rerender(
+    <>
+      <Themed />
+      <Presses label="Presses" />
+    </>,
+  );
+
+  const main = page.getByRole("main");
+  await expect.element(main.getByText("Theme: dark")).toBeVisible();
+  await expect.element(main.getByRole("button", { name: "Presses: 0" })).toBeVisible();
+  await expect.element(page.getByRole("navigation", { name: "Main" })).toBeVisible();
+});
+
 test("starts every test with a page of its own, and with its modules", async () => {
   expect(countPresses()).toBe(0);
 

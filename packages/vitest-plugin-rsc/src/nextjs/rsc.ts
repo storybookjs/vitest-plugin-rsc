@@ -7,6 +7,7 @@ import appPages from "virtual:vitest-plugin-rsc/next-app-pages";
 import loadMiddleware from "virtual:vitest-plugin-rsc/next-middleware";
 import routeHandlers from "virtual:vitest-plugin-rsc/next-route-handlers";
 import serverReferences from "virtual:vitest-plugin-rsc/next-server-references";
+import { createElement, type JSXElementConstructor, type ReactNode } from "react";
 import type { FlightAdapters } from "./flight.ts";
 import { clientNodeReference } from "./client-ids.ts";
 import { actionModulePrefix, registry } from "./registry.ts";
@@ -115,6 +116,15 @@ export const ClientNode: unknown = ReactServer.registerClientReference(
   "ClientNode",
 );
 
+/** `NodeRendered` of client-node.tsx, as the server has it. */
+const NodeRendered = ReactServer.registerClientReference(
+  () => {
+    throw new Error("vitest-plugin-rsc: NodeRendered does not render on the server");
+  },
+  clientNodeReference,
+  "NodeRendered",
+) as JSXElementConstructor<{ version: number; children?: ReactNode }>;
+
 // The stylesheets of a route are the plugin's to say, as they are a build's:
 // see styles.ts. Under Vitest a command says them, which knows the test file
 // that asks (setup.ts). Another host asks the dev server, and a static build
@@ -148,7 +158,11 @@ export async function loadComponent(): Promise<{ default: () => unknown }> {
       // A request that brings a route of its own, else what the test opened.
       const node = (registry.openedByRequest.getStore() ?? registry.opened)?.node;
       if (!node) throw new Error("vitest-plugin-rsc: the node of the test is gone");
-      return node.ui;
+      // The ui and the version as they are when the server renders, which is
+      // after `rerender()` has set them.
+      const { ui, version } = node;
+      if (version === undefined) return ui;
+      return createElement(NodeRendered, { version }, ui as ReactNode);
     },
   };
 }

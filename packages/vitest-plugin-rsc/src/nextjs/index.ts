@@ -434,9 +434,24 @@ const appFetch =
     const spare = input instanceof Request && input.body ? input.clone() : input;
     // The server's Request keeps a `cookie` header, which a browser's drops.
     const request = server ? new registry.Request(input, init) : new Request(input, init);
-    return sendRequest(request, {
+    // The page whose router sends it: Next's router marks its requests. A
+    // page that is being left still sends some, like the refresh it had
+    // started. A router is there only once its page is, so without a page
+    // (`null`) it is the router of one that was left.
+    const from = sent.marked && !server ? (page ?? null) : undefined;
+    const response = sendRequest(request, {
       server,
       network: sent.marked ? undefined : () => nativeFetch(spare, init),
+    });
+    if (from === undefined) return response;
+    // A page that was left hears no more of its requests, as in a browser,
+    // where it is gone. The server stops the ones it had not answered yet
+    // (`settleRequests()` in ssr.ts), and the router of that page, which is
+    // still there, would report that as an error, while the next page runs.
+    return response.catch((error: unknown) => {
+      const stopped = error instanceof DOMException && error.name === "AbortError";
+      if (stopped && (from === null || page !== from)) return new Promise<never>(() => {});
+      throw error;
     });
   };
 
@@ -451,7 +466,15 @@ registry.fetch = appFetch(true);
 // when it needs it, from the global `process`.
 process.env.__NEXT_PRIVATE_ORIGIN = window.location.origin;
 
-let page: { started: Promise<unknown>; unmount(): void } | undefined;
+// A page that loads, from when its document is there.
+type Page = {
+  started: Promise<unknown>;
+  unmount(): void;
+  /** Once it has started: has Next's router render the page again. */
+  refresh?(): void;
+};
+
+let page: Page | undefined;
 // Tells a page load that the test has moved on: to another page, or to the
 // next test.
 let currentLoad: AbortController | undefined;
@@ -532,6 +555,20 @@ export type RenderComponentResult = RenderServerResult & {
    * Without the scripts that run, which are Next's and React's.
    */
   asFragment(): DocumentFragment;
+  /**
+   * Renders `ui` in place of the node, like Testing Library's `rerender`:
+   * without a page load, so the state of the Client Components in it stays.
+   * A node of the server renders again on the server, in a request of Next's
+   * router like `router.refresh()`, with the `headers` of `renderServer()`.
+   * A node of the browser layer renders again where it is. The `url`, the
+   * headers and the other options stay: for others, call `renderServer()`.
+   * Resolves once the page has committed the new node, or something else in
+   * its place, like an error page.
+   *
+   * Rejects when the page no longer has the node: it was left, or something
+   * took the node's place, like an error page or a route it navigated to.
+   */
+  rerender(ui: ReactNode): Promise<void>;
 };
 
 // A node of the browser layer, where `renderServer()` takes a node: see
@@ -623,7 +660,14 @@ export async function renderServer(
   const node = clientNode ? createElement(rsc.ClientNode as JSXElementConstructor<object>) : first;
   const rendered = clientNode && shows(clientNode);
   const { wrapper, proxy = false } = options;
-  const ui = wrapper ? createElement(wrapper, null, node) : node;
+  const wrap = (inner: ReactNode) => (wrapper ? createElement(wrapper, null, inner) : inner);
+  // What the route of the node renders. A node of the server is counted, for
+  // `rerender()`.
+  const nodeOf = (layouts: boolean) => ({
+    ui: wrap(node),
+    layouts,
+    version: clientNode ? undefined : 0,
+  });
   if (options.layouts) {
     if (options.container || options.baseElement) {
       throw new Error(
@@ -632,10 +676,12 @@ export async function renderServer(
           "to pass.",
       );
     }
-    const opening: Opening = {
-      opened: { pathname, proxy, node: { ui, layouts: true } },
+    const opening: NodeOpening = {
+      opened: { pathname, proxy, node: nodeOf(true) },
       headers: sticky,
       clientNode,
+      wrap,
+      version: 0,
     };
     const response = await loadPage(url, { headers }, opening);
     await shown(rendered, opening);
@@ -649,6 +695,7 @@ export async function renderServer(
       },
       asFragment: () => fragmentOf(document.body),
       unmount: leavePage,
+      rerender: (next) => rerenderNode(opening, next),
     };
   }
   // The container becomes the node's: React hydrates all of it, and leaving
@@ -678,11 +725,13 @@ export async function renderServer(
   const container =
     options.container ?? (base ?? document.body).appendChild(document.createElement("div"));
   if (!options.container) containers.add(container);
-  const opening: Opening = {
+  const opening: NodeOpening = {
     container,
-    opened: { pathname, proxy, node: { ui, layouts: false } },
+    opened: { pathname, proxy, node: nodeOf(false) },
     headers: sticky,
     clientNode,
+    wrap,
+    version: 0,
   };
   const response = await loadPage(url, { headers }, opening);
   await shown(rendered, opening);
@@ -694,7 +743,113 @@ export async function renderServer(
     },
     asFragment: () => fragmentOf(container),
     unmount: leavePage,
+    rerender: (next) => rerenderNode(opening, next),
   };
+}
+
+// Waits for the page to commit a node that `rerender()` gave it, or for it
+// to have something else in its place.
+type Rerender = { version: number; resolve(): void; reject(error: unknown): void };
+const rerenders = new Set<Rerender>();
+
+// The page has committed the node at this version, or a later one: or,
+// without one, something else in the node's place.
+function settleRerenders(version = Infinity): void {
+  for (const rerender of rerenders) {
+    if (rerender.version > version) continue;
+    rerenders.delete(rerender);
+    rerender.resolve();
+  }
+}
+
+// What the page that is open does with its node. It can still be to come,
+// once a Suspense boundary of the route, like its `loading.tsx`, has
+// hydrated. It can be gone, with something else in its place: an error or a
+// not-found page, or another route that the app navigated to.
+let nodeOnPage: "coming" | "shown" | "replaced" = "coming";
+let nodesShown = 0;
+
+// Nothing on the page shows the node: it has left it, or React reported an
+// error of the page, which a boundary may show in place of a node that is
+// still to come. Strict Mode takes an effect down and up again at once, and
+// a boundary inside the node leaves the node there.
+function unlessShown(): void {
+  queueMicrotask(() => {
+    if (nodesShown > 0) return;
+    nodeOnPage = "replaced";
+    settleRerenders();
+  });
+}
+
+registry.nodeReporter = () => {
+  const reported = page;
+  if (!reported) return;
+  return {
+    shown(shown) {
+      if (page !== reported) return;
+      nodesShown += shown ? 1 : -1;
+      if (shown) nodeOnPage = "shown";
+      else unlessShown();
+    },
+    rendered(version) {
+      if (page === reported) settleRerenders(version);
+    },
+  };
+};
+
+async function rerenderNode(opening: NodeOpening, ui: ReactNode): Promise<void> {
+  const clientNode = clientNodeOf(ui);
+  if (!clientNode !== !opening.clientNode) {
+    throw new Error(
+      opening.clientNode
+        ? "vitest-plugin-rsc: rerender() takes a node of the browser layer, as the node it " +
+            "renders again is one. Make it with `clientNode()`, or render it with renderServer()."
+        : "vitest-plugin-rsc: rerender() takes a node of the server, as the node it renders " +
+            "again is one. Render a node of the browser layer with renderServer().",
+    );
+  }
+  const { page: opened } = opening;
+  if (!opened || opened !== page) {
+    throw new Error(
+      "vitest-plugin-rsc: rerender() renders the node again on its page, which was left: by " +
+        "unmount() or cleanup(), by another renderServer(), or by a navigation that loaded " +
+        "another page. Render the node with renderServer() instead.",
+    );
+  }
+  if (registry.opened !== opening.opened || nodeOnPage === "replaced") {
+    throw new Error(
+      "vitest-plugin-rsc: rerender() renders the node again in its place, and the page has " +
+        "something else there: an error or a not-found page, or a route that the node " +
+        "redirected or navigated to. Render the node with renderServer() instead.",
+    );
+  }
+  const version = ++opening.version;
+  let waiting!: Rerender;
+  const committed = new Promise<void>((resolve, reject) => {
+    waiting = { version, resolve, reject };
+  });
+  rerenders.add(waiting);
+  if (clientNode) {
+    // It renders again where it is, in the browser: the server is not asked.
+    const next: ClientNode = { ...clientNode, rendered: () => settleRerenders(version) };
+    opening.clientNode = next;
+    setClientNode(next);
+  } else {
+    // The server reads both when it renders the node's route, which Next's
+    // router asks for again.
+    const node = opening.opened.node!;
+    const before = { ui: node.ui, version: node.version };
+    node.ui = opening.wrap(ui);
+    node.version = version;
+    try {
+      opened.refresh!();
+    } catch (error) {
+      rerenders.delete(waiting);
+      Object.assign(node, before);
+      throw error;
+    }
+  }
+  await committed;
 }
 
 // Resolves once the page has rendered a node of the browser layer.
@@ -760,8 +915,16 @@ export async function renderClient(
   const { wrapper, ...options } = second ?? {};
   assertForNextPage(first);
   // A node of `clientNode()` is one of the browser layer already.
-  const node = clientNodeOf(first);
-  return renderServer(asElement(node ? { ...node, wrapper } : { ui: first, wrapper }), options);
+  const inBrowser = (ui: ReactNode) => {
+    const node = clientNodeOf(ui);
+    return asElement(node ? { ...node, wrapper } : { ui, wrapper });
+  };
+  const result = await renderServer(inBrowser(first), options);
+  // A node to render again is made with the components of the page that is
+  // open, which is the page it renders on.
+  const { rerender } = result;
+  result.rerender = (ui) => rerender(inBrowser(ui));
+  return result;
 }
 
 function fragmentOf(container: HTMLElement): DocumentFragment {
@@ -797,6 +960,16 @@ type Opening = {
   clientNode?: ClientNode;
   /** Set once the page has loaded: whether the server rendered that node. */
   showsClientNode?: boolean;
+  /** The page it opened, once its document is there. */
+  page?: Page;
+};
+
+// A node, which `rerender()` renders again.
+type NodeOpening = Opening & {
+  /** Its `wrapper` around another node. */
+  wrap(ui: ReactNode): ReactNode;
+  /** How many times it has been rendered again. */
+  version: number;
 };
 
 async function loadPage(url: URL, init: RequestInit, opening?: Opening): Promise<Response> {
@@ -884,10 +1057,15 @@ async function openPage(
   if (/^\s*<!doctype/i.test(html)) container = undefined;
   // The node of the browser layer is on the page when the server rendered
   // its Client Component, which the Flight payload in the HTML names.
-  if (opening?.clientNode) {
-    opening.showsClientNode =
-      registry.opened === opening.opened && html.includes(clientNodeReference);
-  }
+  // The same module has what the server renders around a node of the server,
+  // so that the page can say when it has that node: see `rerender()`.
+  const showsNode =
+    opening !== undefined &&
+    registry.opened === opening.opened &&
+    html.includes(clientNodeReference);
+  if (opening?.clientNode) opening.showsClientNode = showsNode;
+  nodeOnPage = showsNode ? "coming" : "replaced";
+  nodesShown = 0;
   await loadDocument(html, response.url, container);
   superseded();
   // A page load runs the app's scripts from scratch, so every page gets a
@@ -914,16 +1092,21 @@ async function openPage(
     left = true;
     loaded();
   };
+  const opened: Page = { started: Promise.resolve(), unmount: () => leave() };
   const started = (async () => {
     const client = await runner.import<typeof import("./client.tsx")>(
       environmentModule("react_client", "vitest-plugin-rsc/nextjs/client"),
     );
     superseded();
-    return client.start(loaded, container, signal);
+    return client.start(loaded, container, signal, () => {
+      if (page === opened) unlessShown();
+    });
   })();
-  page = { started: started.catch(() => {}), unmount: () => leave() };
+  opened.started = started.catch(() => {});
+  page = opened;
+  if (opening) opening.page = opened;
   try {
-    ({ unmount } = await started);
+    ({ unmount, refresh: opened.refresh } = await started);
   } catch (error) {
     // Starting an app whose page is gone fails in its own ways.
     superseded();
@@ -949,10 +1132,17 @@ const startTimeout = 20_000;
 // A test's own timers may be fake.
 const setTimeout = globalThis.setTimeout;
 const clearTimeout = globalThis.clearTimeout;
+const queueMicrotask = globalThis.queueMicrotask;
 
 function leavePage(): Promise<void> {
   currentLoad?.abort(new DOMException("The page was left before it had loaded.", "AbortError"));
   currentLoad = undefined;
+  for (const rerender of rerenders) {
+    rerender.reject(
+      new DOMException("The page was left before the node had rendered again.", "AbortError"),
+    );
+  }
+  rerenders.clear();
   const left = page;
   page = undefined;
   // Also after a page that could not be left: that one fails its own test.
