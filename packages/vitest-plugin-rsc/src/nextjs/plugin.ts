@@ -12,7 +12,7 @@ import {
 } from "vite";
 import type { TestProject } from "vitest/node";
 import { createRunnerEnvironmentPlugins } from "../runner-environment.ts";
-import { createHostReferences, nextBuild } from "./build.ts";
+import { nextBuilds, nextProductionPlugin, type NextBuild } from "./build.ts";
 import { clientFiles } from "./client-files.ts";
 import { flightBridge, type FlightEntry } from "./flight.ts";
 import { createCompilePlugin, createDependencyCompilePlugin } from "./compile.ts";
@@ -28,6 +28,7 @@ import { moduleFileAt } from "./project/context.ts";
 import { compileServerCode, createServerCode, type ServerCodeOptions } from "./server-code.ts";
 import { affectedTests } from "./affected/index.ts";
 import { createPathsPlugin } from "./paths.ts";
+import { createHostReferences, nextBuild } from "./static-build.ts";
 import { createStyles } from "./styles.ts";
 
 // Each layer of Next is a Vite environment, and all three run in the
@@ -351,7 +352,8 @@ function nextClientBoundaryPlugin(getProject: () => NextProject, resolver: Layer
 // Next's compile-time constants for a layer. A server layer gets what makes
 // a module server code on top of these: see server-code.ts.
 function definesOf(project: NextProject, layer: NextLayer): Record<string, string> {
-  // Not NODE_ENV: React stays a development build, for its warnings.
+  // Not NODE_ENV, which is the app's. Next's own is the `build` option
+  // (build.ts).
   const { "process.env.NODE_ENV": _, ...defines } = project.defines[layer];
   return {
     ...defines,
@@ -453,6 +455,8 @@ const runtimeImports: Record<NextLayer, string[]> = {
   ],
 };
 
+export type { NextBuild };
+
 export type VitestPluginNextOptions = ServerCodeOptions & {
   /**
    * Lets watch mode, `vitest --changed` and `vitest related` find the test
@@ -464,6 +468,17 @@ export type VitestPluginNextOptions = ServerCodeOptions & {
    * and `--changed` does not find the test files of a route.
    */
   affectedTests?: boolean;
+  /**
+   * Experimental. The code that Next's runtime and React run, in all three
+   * layers: `"development"` as `next dev` runs it, `"production"` as
+   * `next start` runs it after `next build`. Production renders faster,
+   * without what the development code checks and reports. The app's
+   * `process.env.NODE_ENV` stays as it is. See docs/next-routes.md,
+   * "Development Or Production".
+   *
+   * @default "development"
+   */
+  build?: NextBuild;
 };
 
 export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[] {
@@ -471,7 +486,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
   // What the CSS of the app gets otherwise than from Next: see `loadCssOptions()`.
   let cssDifferences: string[] = [];
   const serverCode = createServerCode(registry, options);
-  // What a static build finds of the host: see build.ts.
+  // What a static build finds of the host: see static-build.ts.
   const hostReferences = createHostReferences();
   const getProject = () => project;
   // The CSS of the app, as the stylesheets of a route.
@@ -493,9 +508,21 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
     },
     lists: routeKinds.map((kind) => `\0${routeLists[kind]}`),
   });
+  const build = options.build ?? "development";
+  if (!nextBuilds.includes(build)) {
+    throw new Error(
+      `vitest-plugin-rsc: \`build\` is "development" or "production", not ${JSON.stringify(build)}.`,
+    );
+  }
   const resolvers = Object.fromEntries(
     layers.map((layer) => [layer, createLayerResolver(getProject, layer)]),
   ) as Record<NextLayer, LayerResolver>;
+  // The constants of what Next's build generates for the rsc layer, the entry
+  // of a route and of the proxy: Next's code, so with Next's NODE_ENV.
+  const generatedDefines = () => ({
+    ...definesOf(project, "rsc"),
+    ...(build === "production" && { "process.env.NODE_ENV": '"production"' }),
+  });
 
   return [
     ...createRunnerEnvironmentPlugins(environmentOf.ssr),
@@ -523,8 +550,18 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
       enforce: "pre",
       async config(config, { command }) {
         const isBuild = command === "build";
+        // A static build has no dependency optimizer, which makes Next's code
+        // its production code: it runs Next and React in development, see
+        // `staticBuild()` below.
+        if (isBuild && build === "production") {
+          throw new Error(
+            "vitest-plugin-rsc: a static build runs Next.js and React in development. " +
+              '`build: "production"` is not supported for it yet.',
+          );
+        }
         project = await loadNextProject(path.resolve(config.root ?? process.cwd()), undefined, {
           static: isBuild,
+          build,
         });
         serverCode.configure(project.root);
 
@@ -597,6 +634,8 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
           include: [...include[layer], ...dependenciesOfNext(layer)],
           rolldownOptions: {
             plugins: [
+              // First: the other plugins see Next's production code.
+              ...(build === "production" ? [nextProductionPlugin(project.nextDir)] : []),
               resolvers[layer].plugin(),
               createDependencyCompilePlugin(getProject, layer),
               ...(layer === "rsc" ? [nextClientBoundaryPlugin(getProject, resolvers.rsc)] : []),
@@ -669,10 +708,11 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
         // server a source file has none of them, also a file of the host.
         // `process.env` stays the one of the page, which Next's server reads
         // as it runs, and which Vite would make an empty object. React is its
-        // development build, as with a dev server: the aliases of a layer
-        // name that build.
+        // development build, as with a dev server by default: the aliases of
+        // a layer name that build. Not its production build yet, see the
+        // start of this hook.
         const nodeEnv = JSON.stringify("development");
-        const build = (layer: NextLayer) =>
+        const staticBuild = (layer: NextLayer) =>
           isBuild && {
             keepProcessEnv: true,
             define: {
@@ -686,13 +726,24 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
             build: { rolldownOptions: { shimMissingExports: true } },
           };
 
+        // JSX compiled for production, as `next build` compiles it: JSX
+        // compiled for development calls `jsxDEV()`, which React's production
+        // build does not have. Vitest sets `oxc` for every config, which Vite
+        // then takes over `esbuild`. Not where the config turns the
+        // transform off, or keeps JSX as it is (`jsx: "preserve"`).
+        const jsx =
+          build === "production" && config.oxc !== false && typeof config.oxc?.jsx !== "string"
+            ? { oxc: { jsx: { development: false } } }
+            : {};
+
         return {
+          ...jsx,
           // Vite bundles the CSS of the app, with Next's PostCSS plugins and
           // Next's class names of a CSS module.
           css: cssOptions,
           environments: {
             [environmentOf.rsc]: {
-              ...build("rsc"),
+              ...staticBuild("rsc"),
               optimizeDeps: {
                 ...optimizeDeps("rsc"),
                 // A route loads when it is first requested, and so does the
@@ -702,7 +753,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
               },
             },
             [environmentOf.ssr]: {
-              ...build("ssr"),
+              ...staticBuild("ssr"),
               consumer: "client",
               resolve: {
                 // Vite's conditions for a browser, which this is.
@@ -723,7 +774,10 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
                 exclude: ["vitest-plugin-rsc", "@vitejs/plugin-rsc"],
               },
             },
-            [environmentOf.browser]: { ...build("browser"), optimizeDeps: optimizeDeps("browser") },
+            [environmentOf.browser]: {
+              ...staticBuild("browser"),
+              optimizeDeps: optimizeDeps("browser"),
+            },
           },
         };
       },
@@ -806,7 +860,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
         if (id === `\0${middlewareEntryId}`) {
           const code = hasMiddleware && (await project.loadMiddlewareEntry());
           if (!code) return "export {};";
-          return serverCode.compile(code, "next-middleware-entry.js", definesOf(project, "rsc"));
+          return serverCode.compile(code, "next-middleware-entry.js", generatedDefines());
         }
 
         if (!id.startsWith("\0") || !isRouteModule(id.slice(1))) return;
@@ -833,11 +887,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
         for (const file of entry.watchFiles) this.addWatchFile(file);
         // A generated module: Vite only replaces `define` keys in pre-bundled
         // dependencies.
-        return serverCode.compile(
-          entry.code,
-          `${id.replace(/\W+/g, "-")}.js`,
-          definesOf(project, "rsc"),
-        );
+        return serverCode.compile(entry.code, `${id.replace(/\W+/g, "-")}.js`, generatedDefines());
       },
     },
     clientFiles({

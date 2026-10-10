@@ -85,6 +85,42 @@ Here each layer is a Vite environment, with the aliases and constants Next gives
 
 Where Next's bundler config moves a module to another layer, the plugin does the same. The route module is created by the `rsc` layer but belongs to `ssr`. The route's request handler is in `rsc` too, next to the page, and makes the route module with the `ssr` layer's class. Client Components load once for `ssr`, to render HTML, and once for `browser`. A route handler is entirely in `rsc`: its `route.ts`, its route module and its request handler.
 
+## Development Or Production
+
+By default the plugin runs Next's runtime and React with their development code, as `next dev` does. With `vitestPluginNext({ build: "production" })` it runs them as `next start` does after `next build`: their production code, in all three layers. That is Next's router, renderer and request handler, and the copies of React, React DOM, the scheduler and the Flight codec that Next ships, which are the React of every layer.
+
+Next's files pick their code by `process.env.NODE_ENV`, and so do React's entry files, which then load `cjs/<name>.production.js` instead of `cjs/<name>.development.js`. So the plugin makes `process.env.NODE_ENV` the string `"production"` in each file of `next/dist` as Vite pre-bundles it (`build.ts`), and in the modules that Next's build generates for a route and for the proxy. It does so with a define of oxc, as a bundler does: a `process.env.NODE_ENV` in a string stays as it is, and so does one that Next's code assigns to. The JSX of the app and of the tests is compiled for production too, as `next build` compiles it: JSX compiled for development calls `jsxDEV()`, which React's production build does not have. A plugin that sets `development: true` for the JSX of `oxc` after this one wins, and then a component fails with a `TypeError` on `jsxDEV`.
+
+The app's own `process.env.NODE_ENV` stays as it is, in its code and in its other packages. An app reads it for its own reasons, like secure cookies, which secrets it needs, or whether to send mail, and a test should not take the paths of a deployment there.
+
+Production is faster. React's development build records where each element was created: an `Error` for its stack and a `console.createTask()`, for the first 10,000 elements of a render. A page is made of elements three times: as its Server Components render, as the HTML is rendered from their payload, and as it hydrates. And `<StrictMode>`, on unless `reactStrictMode` in `next.config` turns it off, renders a Client Component twice in the browser and runs its effects twice. In one app's suite of 1034 browser tests, most of which open a route, production took the suite from 51 to 41 seconds, and the median test that opens a page from 115 to 64 ms.
+
+What a test loses in production:
+
+| In development                                                                          | With `build: "production"`                                                                                                                                                  |
+| --------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| React's warnings: keys, the rules of hooks, DOM nesting                                 | Not logged. A test that expects one fails                                                                                                                                   |
+| React's error messages                                                                  | A number and a link: `Minified React error #418` is a hydration mismatch. [react.dev/errors](https://react.dev/errors/418) has the message                                  |
+| The message of a server error in the browser, from a Server Component or from SSR       | The error has a `digest` and React's message `#441` or `#419`. Next logs the error with its message and the same `digest` on the server, so it is in the output of the test |
+| Owner stacks, and what the RSC payload says of each element: who rendered it, and where | None                                                                                                                                                                        |
+| `<StrictMode>`: a Client Component renders twice and its effects run twice              | Once. An impure render or an effect without cleanup goes unnoticed                                                                                                          |
+| `act()` of React                                                                        | Not there. The plugin does not use it for a Next.js app. Testing Library's `render()` does, and throws                                                                      |
+| Next's development code: its checks and warnings, and `window.nd`                       | Not run                                                                                                                                                                     |
+
+What changes: Next prefetches a `<Link>` as it comes into view, as in a deployment, also in a node. A prefetch is a request to the server, which handles one request at a time (see [Not Yet](#not-yet)). So a test that makes the data of a route wait, with a mock that returns a promise it resolves later, makes the prefetch of a link to that route wait too, and the navigation after it. Make the data wait once the prefetch has read it. The proxy runs for a prefetch too, as in a deployment, unless its matcher leaves prefetches out with `missing: [{ type: "header", key: "next-router-prefetch" }]`, as Next's docs show. The proxy cannot tell a prefetch itself: Next takes the router's headers off the request it gets.
+
+What stays: a hydration mismatch, and what a Server Component or a Client Component throws, are reported as uncaught errors, which fail the test.
+
+The default stays `"development"`. A test is where React's warnings are worth the most, and a test that fails is easiest to read with React's own message. A suite that opens many routes can run production on CI, and development where a failure is read:
+
+```ts
+vitestPluginNext({ build: process.env.CI ? "production" : "development" });
+```
+
+This is experimental. CI runs `nextjs-e2e-demo` and `nextjs-notes-demo` with both, against the pinned Next.js and against `latest` and `canary`. A run that switches from one to the other has Vite pre-bundle the dependencies again.
+
+Not for a [static build](#a-static-build) yet. A static build has no dependency optimizer to make Next's code its production code, and it runs Next and React in development. With `build: "production"` the plugin stops `vite build` with an error, before anything is built.
+
 ## The Compiler
 
 Before Next bundles one of the app's source files, it compiles the file with its SWC transform, and with webpack loaders for fonts and images. The plugin runs those on the app's source files in each of the three layers, with the options Next's build gives that layer. Next's transform strips the TypeScript types, as in Next's build. Vite still compiles JSX and CSS. The exception is JSX in a `.js` file, which Vite does not accept: Next's transform compiles that too.
@@ -266,7 +302,7 @@ This is how an app with two root layouts, in two route groups, moves between the
 
 A link to the node's own pathname stays with the node. With the default URL that pathname is `/`, so a `<Link href="/">` in a node does not load the app's home page.
 
-A link in a node is not prefetched, and neither is one in a page. `NODE_ENV` is `"test"` in the browser. Next marks a link as visible only when `NODE_ENV` is `"production"` (`links.js`), and it does not prefetch a link that is not visible, not even on hover.
+In development a link in a node is not prefetched, and neither is one in a page, as in `next dev`. Next marks a link as visible only when `NODE_ENV` is `"production"` (`links.js`), and it does not prefetch a link that is not visible, not even on hover. With `build: "production"` it prefetches both: see [Development Or Production](#development-or-production).
 
 ### What It Needs Of Next
 
@@ -639,7 +675,7 @@ A Flight payload names a Client Component by an id, so a build has to have every
 
 The first two cut every module down to its imports, so they are quick. The plugin's `buildApp()` hook builds them in that order, so the app is built with Vite's app builder: `vite build`, or `createBuilder()` and `buildApp()`. The config of the plugin has a `builder`, so `createBuilder(config, null)` makes the app builder too. Vite's `build()` builds one environment, the host's, and the plugin stops it with an error before anything is built. `@storybook/builder-vite` calls `build()`: the Storybook proof of concept patches that call, see `playground/storybook-nextjs-vite-rsc`.
 
-- React is its development build, as in a test run.
+- Next and React run their development code, as in a test run by default: the build defines `process.env.NODE_ENV` as `"development"`, and the aliases of each layer name React's development build. `build: "production"` is not supported for a static build yet, so `vite build` stops with an error: see [Development Or Production](#development-or-production).
 - `images.unoptimized` is on: there is no image optimizer behind `/_next/image`.
 - A file that Next's loaders emit, a font or an image, and a file of Vite's, like an import with `?url`, are named from the file that asks for them, so the site can be served from any path.
 - The CSS of the app is a stylesheet per file under `/_next/static/css/`, which Next links, with the lists of every route in `vitest-plugin-rsc/next-stylesheets.json`: see [Stylesheets](#stylesheets). Served from another path than the root, Next links it by the way up from `/_next/`, like `/_next/../docs/_next/static/css/page-1a2b3c4d.css`. The CSS that a file of the host imports is Vite's, in the CSS of its chunks.
@@ -687,7 +723,7 @@ The first two cut every module down to its imports, so they are quick. The plugi
 - A navigation that leaves the page without Next's router, like `location.assign()`, is turned into a page load with the Navigation API, which today means Chromium.
 - A timer that the app starts keeps running after its page is left, like the one `next-themes` uses to turn transitions back on. A browser drops it with the page. Here it fires later, and fails if it touches its page's document. A test that ends right after the app loaded a page itself, like the page a node links to, can run into that. Wait for the page to settle first.
 - Every `renderServer()` loads React and the app's client code again, as a page load does: the modules are evaluated again. They are fetched from the dev server and compiled once, as a browser keeps them in its HTTP cache, until a file changes. The plugin releases a page when the test leaves it, by removing what React and Next left on `window` and `document` while they loaded. What the app's own code leaves there keeps that page in memory, as in a page that never reloads: a listener on `window`, an interval, a global. The app has to clean those up, as in an effect's cleanup. A page has its own `<body>`, which goes away with the page, and so does a node. So a portal into `document.body` keeps nothing in memory, though React adds its listeners to the body. The browser itself keeps the element that the pointer is over, and with it its page, until the pointer is over another one. If the browser grows too much, use `isolate: true`. Every test file then starts in a new page, and loads the app's server again.
-- React is its development build, including in the server layers, while Next takes itself to be a production server. So the client gets the message of an error that a Server Component throws, and `error.tsx` can show it, where a deployment sends a digest and a message that says nothing. Strict Mode also runs an effect twice. A test that reads the text of such an error passes here and not against a deployment.
+- By default React is its development build, including in the server layers, while Next takes itself to be a production server. So the client gets the message of an error that a Server Component throws, and `error.tsx` can show it, where a deployment sends a digest and a message that says nothing. Strict Mode also runs an effect twice. A test that reads the text of such an error passes here and not against a deployment. With `build: "production"` both run as in a deployment: see [Development Or Production](#development-or-production).
 - A script can read an `HttpOnly` cookie. The plugin keeps the app's cookies in `document.cookie`, where a browser keeps such a cookie to itself. Client code that reads a session cookie works here and not in a browser.
 - The browser matches a cookie's `Path` against the test runner's URL, not against the request's URL. A cookie with `Path=/admin` is not sent with a request for `/admin`, and a cookie without a `Path` gets the runner's path.
 - Only `fetch` reaches the app. `XMLHttpRequest`, which axios uses by default, `EventSource`, `navigator.sendBeacon()` and an `<img>` with a route handler's URL go to the dev server.

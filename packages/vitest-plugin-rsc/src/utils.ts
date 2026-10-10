@@ -192,14 +192,14 @@ export function importReactClient<T = any>(id: string): Promise<T> {
 // A static build has no dev server to ask for a module. The environments that
 // run through a module runner were built into files of the format the runner
 // evaluates, and those are fetched like any file of the site: see
-// nextjs/build.ts. A module is a file, and its id the path of that file in
-// the directory of its environment. The answer for a file is the same for
+// nextjs/static-build.ts. A module is a file, and its id the path of that file
+// in the directory of its environment. The answer for a file is the same for
 // every page, so `pageLoadEvaluator` compiles it once.
 type BuiltModule = { code: string; file: string; id: string; url: string; invalidate: false };
 const builtModules = new Map<string, Promise<BuiltModule>>();
 // An import of a file of a build, by the path of the imported file: see
-// `toRunnerModule()` in nextjs/build.ts. Not one with `import()`, which the
-// module may never load.
+// `toRunnerModule()` in nextjs/static-build.ts. Not one with `import()`, which
+// the module may never load.
 const builtImportRE = /__vite_ssr_import__\("(\/[^"]+)"/g;
 
 function builtUrl(layer: BuiltLayer, file: string): string {

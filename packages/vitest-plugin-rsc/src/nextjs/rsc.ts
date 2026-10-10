@@ -25,7 +25,7 @@ declare let __vite_rsc_raw_import__: (id: string) => Promise<unknown>;
 
 // The module of a server reference, by the id Vite RSC gives it. With a dev
 // server that is what Vite imports the module by. A static build has a list
-// of them: see build.ts.
+// of them: see static-build.ts.
 ReactServer.setRequireModule({
   load: (id) => {
     if (!serverReferences) return __vite_rsc_raw_import__(id);

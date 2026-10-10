@@ -1,5 +1,14 @@
 import { cleanup, handleRequest, renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
-import { afterEach, beforeEach, expect, onTestFinished, test, vi, type MockInstance } from "vitest";
+import {
+  afterEach,
+  beforeEach,
+  expect,
+  inject,
+  onTestFinished,
+  test,
+  vi,
+  type MockInstance,
+} from "vitest";
 import { page } from "vitest/browser";
 import { db, type Note } from "./lib/notes.ts";
 
@@ -12,8 +21,12 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  const errors = [...consoleError.mock.calls];
+  // Not for the test files that run after this one, in the same browser: a
+  // spy on `WebSocket` hides the websocket of the plugin from page-load.test.
+  vi.restoreAllMocks();
   // React reports a hydration mismatch here, and Next a failed render.
-  expect(consoleError.mock.calls).toEqual([]);
+  expect(errors).toEqual([]);
 });
 
 test("server-renders a page and hydrates it", async () => {
@@ -53,9 +66,16 @@ test("navigates on the client with next/link", async () => {
 
 test("shows loading.tsx while the next page waits for its data", async () => {
   db.notes.set("1", { id: "1", title: "Inbox triage", body: "Sort the inbox" });
+  const getNote = vi.spyOn(db, "getNote");
   await renderServer({ url: "/notes" });
+  // Next's production code prefetches the note as its link comes into view,
+  // which reads it for its metadata. The server handles one request at a
+  // time, so a prefetch that waits for the note would hold up the navigation.
+  if (inject("build") === "production") {
+    await expect.poll(() => getNote, { timeout: 5000 }).toHaveBeenCalled();
+  }
   let resolveNote!: (note: Note) => void;
-  vi.spyOn(db, "getNote").mockReturnValue(new Promise((resolve) => (resolveNote = resolve)));
+  getNote.mockReturnValue(new Promise((resolve) => (resolveNote = resolve)));
 
   await page.getByRole("link", { name: "Inbox triage" }).click();
   await expect.element(page.getByText("Loading note…")).toBeVisible();

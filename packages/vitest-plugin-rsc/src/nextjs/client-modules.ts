@@ -3,7 +3,7 @@ import { registry } from "./registry.ts";
 
 // How a module is loaded by the id a Flight payload has for it. With a dev
 // server that id is the one Vite imports the module by. A static build has a
-// list of the modules that can be referred to: see build.ts.
+// list of the modules that can be referred to: see static-build.ts.
 function importModule(id: string): Promise<unknown> {
   if (!clientReferences) return import(/* @vite-ignore */ id);
   const load = clientReferences[id];
