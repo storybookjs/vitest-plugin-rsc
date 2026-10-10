@@ -236,7 +236,8 @@ test('says that a static build runs Next.js and React in development, not with `
   };
   const message =
     "vitest-plugin-rsc: a static build runs Next.js and React in development. " +
-    '`build: "production"` is not supported for it yet.';
+    '`build: "production"` is not supported for it yet: give `vite build` "development", ' +
+    "for example with `defineConfig(({ command }) => …)`.";
 
   await expect(configure({ build: "production" }, "build")).rejects.toThrow(message);
   // Past it, the plugin loads the project, which is not there.

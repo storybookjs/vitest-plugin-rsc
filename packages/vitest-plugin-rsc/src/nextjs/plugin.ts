@@ -473,8 +473,8 @@ export type VitestPluginNextOptions = ServerCodeOptions & {
    * layers: `"development"` as `next dev` runs it, `"production"` as
    * `next start` runs it after `next build`. Production renders faster,
    * without what the development code checks and reports. The app's
-   * `process.env.NODE_ENV` stays as it is. See docs/next-routes.md,
-   * "Development Or Production".
+   * `process.env.NODE_ENV` stays as it is. Not for a static build
+   * (`vite build`) yet. See docs/next-routes.md, "Development Or Production".
    *
    * @default "development"
    */
@@ -556,7 +556,8 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
         if (isBuild && build === "production") {
           throw new Error(
             "vitest-plugin-rsc: a static build runs Next.js and React in development. " +
-              '`build: "production"` is not supported for it yet.',
+              '`build: "production"` is not supported for it yet: give `vite build` "development", ' +
+              "for example with `defineConfig(({ command }) => …)`.",
           );
         }
         project = await loadNextProject(path.resolve(config.root ?? process.cwd()), undefined, {

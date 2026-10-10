@@ -18,10 +18,10 @@ import { registry } from "./registry.ts";
 // So the file is evaluated on its own, and what it imports is not: an import
 // is a view on the module of that name in the graph of the page. A module
 // runner compiles the use of an import to a read of a property, so a test
-// that says `<Button />` reads `Button`, and `jsxDEV`, at that moment, from
-// the graph the page has. The component it renders is the page's own, with
-// the page's React and the page's router. (What the file imports is a module
-// in between, for the imports Vite would compile to a constant: see
+// that says `<Button />` reads `Button`, and the JSX runtime, at that moment,
+// from the graph the page has. The component it renders is the page's own,
+// with the page's React and the page's router. (What the file imports is a
+// module in between, for the imports Vite would compile to a constant: see
 // client-files.ts.)
 //
 // There is one such graph at a time, with the imports of the client files in

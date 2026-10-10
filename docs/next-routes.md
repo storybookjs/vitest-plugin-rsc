@@ -119,7 +119,17 @@ vitestPluginNext({ build: process.env.CI ? "production" : "development" });
 
 This is experimental. CI runs `nextjs-e2e-demo` and `nextjs-notes-demo` with both, against the pinned Next.js and against `latest` and `canary`. A run that switches from one to the other has Vite pre-bundle the dependencies again.
 
-Not for a [static build](#a-static-build) yet. A static build has no dependency optimizer to make Next's code its production code, and it runs Next and React in development. With `build: "production"` the plugin stops `vite build` with an error, before anything is built.
+Not for a [static build](#a-static-build) yet. A static build has no dependency optimizer to make Next's code its production code, and it runs Next and React in development. With `build: "production"` the plugin stops `vite build` with an error, before anything is built. A config that `vite build` also uses, on CI too, gives it `"development"`:
+
+```ts
+export default defineConfig(({ command }) => ({
+  plugins: [
+    vitestPluginNext({
+      build: process.env.CI && command !== "build" ? "production" : "development",
+    }),
+  ],
+}));
+```
 
 ## The Compiler
 
@@ -333,7 +343,7 @@ ssr      Flight → HTML                           that component renders nothin
 browser  Next's client entry hydrates it         then client-node.tsx renders the node of the test
 ```
 
-Vitest still imports the file in its own environment, which is the `rsc` layer, to collect its tests. There the file is a stub: it has the page evaluate the file for the `browser` layer, and has its exports. The tests the file registers go to Vitest, since its `test()` is the page's own. The file runs once, and its tests render in page after page. Each page load has a module graph of its own, as in a browser, since Next's client starts once in a graph. So what the file imports is not evaluated with it. An import is a view on the module of that name in the graph of the page that is open: a module runner compiles the use of an import to a read of a property, so `<Button />` reads `Button`, and `jsxDEV`, from that page when it runs. The component is the page's own, with the page's React and the page's router. When the page is left, the next graph loads what the file imports before the test goes on.
+Vitest still imports the file in its own environment, which is the `rsc` layer, to collect its tests. There the file is a stub: it has the page evaluate the file for the `browser` layer, and has its exports. The tests the file registers go to Vitest, since its `test()` is the page's own. The file runs once, and its tests render in page after page. Each page load has a module graph of its own, as in a browser, since Next's client starts once in a graph. So what the file imports is not evaluated with it. An import is a view on the module of that name in the graph of the page that is open: a module runner compiles the use of an import to a read of a property, so `<Button />` reads `Button`, and the function of the JSX runtime, from that page when it runs. The component is the page's own, with the page's React and the page's router. When the page is left, the next graph loads what the file imports before the test goes on.
 
 What the file imports from Vitest, like `vi`, `expect` and `vitest/browser`, is not a copy: it is the page's own module, which has the test that is running. The same goes for `vitest-plugin-rsc/nextjs/testing-library` and the setup files.
 
