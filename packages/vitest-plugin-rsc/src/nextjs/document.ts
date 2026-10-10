@@ -9,6 +9,8 @@
 // node. What it leaves on its body goes with it: React adds its listeners to
 // the body when a portal renders there, and they would keep the page.
 
+import builtLayers from "virtual:vitest-plugin-rsc/layers";
+
 const runnerUrl = window.location.href;
 const elements = (of: Document) => [of.documentElement, of.head, of.body];
 const attributesOf = (element: Element) =>
@@ -16,20 +18,39 @@ const attributesOf = (element: Element) =>
 
 let unload: (() => void) | undefined;
 
+// In a static build, the CSS a file of the host imports is a stylesheet that
+// Vite links when the module loads: in the HTML of the host, or from a script,
+// both with a `crossorigin` attribute. Not a stylesheet of the app, which
+// Next links and React renders, with a precedence (styles.ts).
+function isBuiltStyle(node: Node): boolean {
+  return (
+    builtLayers !== undefined &&
+    node instanceof HTMLLinkElement &&
+    node.rel === "stylesheet" &&
+    node.hasAttribute("crossorigin") &&
+    !node.hasAttribute("data-precedence")
+  );
+}
+
 function staysDuringPage(node: Node): boolean {
   return (
     node instanceof HTMLScriptElement ||
     node instanceof HTMLStyleElement ||
-    (node instanceof HTMLLinkElement && node.rel === "modulepreload")
+    (node instanceof HTMLLinkElement && node.rel === "modulepreload") ||
+    isBuiltStyle(node)
   );
 }
 
-// Vite puts the CSS a module imports in a `<style>`, once. That is not the
-// CSS of the app, which a page links (styles.ts). It is what a test file
-// imports itself, and it has to outlive the page it came during: the module
-// will not load again.
+// Vite puts the CSS a module imports in a `<style>`, once, or links it in a
+// static build. That is not the CSS of the app, which a page links
+// (styles.ts). It is what a test file or another file of the host imports
+// itself, and it has to outlive the page it came during: the module will not
+// load again.
 function isViteStyle(node: Node): boolean {
-  return node instanceof HTMLStyleElement && node.hasAttribute("data-vite-dev-id");
+  return (
+    (node instanceof HTMLStyleElement && node.hasAttribute("data-vite-dev-id")) ||
+    isBuiltStyle(node)
+  );
 }
 
 // A stylesheet holds up the scripts after it, and the page is not loaded
@@ -122,6 +143,15 @@ export async function loadDocument(html: string, url: string, container?: Elemen
   // what makes it a refresh.
   for (const redirect of page.querySelectorAll('[id="__next-page-redirect"]')) {
     redirect.removeAttribute("http-equiv");
+  }
+  // A script with a `src` does not run here: see below. React has the browser
+  // preload the one that starts the app, and in this document a preload is a
+  // request, for a file that is not there.
+  const sources = new Set(
+    Array.from(page.querySelectorAll<HTMLScriptElement>("script[src]"), (script) => script.src),
+  );
+  for (const link of page.querySelectorAll<HTMLLinkElement>('link[rel="preload"][as="script"]')) {
+    if (sources.has(link.href)) link.remove();
   }
   // The stylesheets of the page that the server serves itself, which the
   // page waits for. One of another server may never answer. One that the

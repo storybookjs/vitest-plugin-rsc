@@ -2,6 +2,7 @@ import fs from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import path from "node:path";
 import { normalizePath, type Plugin } from "vite";
+import { withBuiltFiles } from "./static-build.ts";
 import type { NextLayer, NextProject, ServeFile } from "./project.ts";
 import { linked } from "./styles.ts";
 
@@ -86,22 +87,31 @@ export function createCompilePlugin(
       return `${fontPrefix}${Buffer.from(source).toString("base64url")}.js`;
     },
     async load(id) {
+      // The loaders name a file they emit by the path the dev server has it
+      // at. A build has it at the same path, from wherever it is served.
+      const built = (code: string, language: "js" | "css") => {
+        if (this.environment.mode !== "build") return code;
+        const pathnames = getProject()
+          .emittedFiles()
+          .map((file) => file.pathname);
+        return withBuiltFiles(code, pathnames, language);
+      };
       if (id.startsWith(fontPrefix)) {
         // The CSS has a query: the one of a stylesheet that Next links.
         const name = id.slice(fontPrefix.length).split("?")[0]!;
         const key = name.replace(/\.(?:js|css)$/, "");
         const request = Buffer.from(key, "base64url").toString();
         const { css, exports } = await getProject().loadFont(request);
-        if (name.endsWith(".css")) return css;
+        if (name.endsWith(".css")) return built(css, "css");
+        const stylesheet = linked(`${fontPrefix}${key}.css`, this.environment.mode === "build");
         return (
-          `import ${JSON.stringify(linked(`${fontPrefix}${key}.css`))};\n` +
-          `export default ${JSON.stringify(exports)};\n`
+          `import ${JSON.stringify(stylesheet)};\n` + `export default ${JSON.stringify(exports)};\n`
         );
       }
       // With a query it is Vite's: `?url`, `?raw`.
       if (!layerOf(this.environment.name) || id.includes("?")) return;
       if (!getProject().isImage(id) || !fs.existsSync(id)) return;
-      return getProject().loadImage(id);
+      return built(await getProject().loadImage(id), "js");
     },
     async transform(code, id) {
       const layer = layerOf(this.environment.name);

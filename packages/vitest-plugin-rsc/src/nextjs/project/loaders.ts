@@ -81,6 +81,7 @@ export function createLoaders(context: NextContext): Pick<
   | "loadCssOptions"
   | "assetPath"
   | "readEmittedFile"
+  | "emittedFiles"
   | "optimizeImage"
 > & {
   runLoader: RunLoader;
@@ -345,6 +346,8 @@ export function createLoaders(context: NextContext): Pick<
       return font;
     },
     assetPath: emittedPath,
+    emittedFiles: () =>
+      [...emitted].map(([name, body]) => ({ pathname: `${emittedPath}${name}`, body })),
     readEmittedFile(pathname) {
       if (!pathname.startsWith(emittedPath)) return;
       const name = pathname.slice(emittedPath.length);

@@ -34,6 +34,24 @@ declare module "virtual:vitest-plugin-rsc/next-route-handlers" {
   export default routeHandlers;
 }
 
+declare module "virtual:vitest-plugin-rsc/next-client-references" {
+  /**
+   * In a static build: how to load each module a Flight payload can refer to,
+   * by the id it has there. Nothing with a dev server.
+   */
+  const clientReferences: Record<string, () => Promise<unknown>> | undefined;
+  export default clientReferences;
+}
+
+declare module "virtual:vitest-plugin-rsc/next-server-references" {
+  /**
+   * In a static build: how to load each module with Server Actions, by the id
+   * Vite RSC gives it. Nothing with a dev server.
+   */
+  const serverReferences: Record<string, () => Promise<unknown>> | undefined;
+  export default serverReferences;
+}
+
 declare module "virtual:vitest-plugin-rsc/next-app-pages" {
   const appPages: Record<string, () => Promise<unknown>>;
   export default appPages;

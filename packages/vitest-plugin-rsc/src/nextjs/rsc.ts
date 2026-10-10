@@ -2,22 +2,37 @@ import { createServerManifest } from "@vitejs/plugin-rsc/core/rsc";
 import * as ReactServer from "@vitejs/plugin-rsc/react/rsc";
 import { prerender } from "@vitejs/plugin-rsc/react/rsc/static";
 import * as FlightServer from "@vitejs/plugin-rsc/vendor/react-server-dom/server.edge";
-import { commands } from "vitest/browser";
+import builtLayers from "virtual:vitest-plugin-rsc/layers";
 import appPages from "virtual:vitest-plugin-rsc/next-app-pages";
 import loadMiddleware from "virtual:vitest-plugin-rsc/next-middleware";
 import routeHandlers from "virtual:vitest-plugin-rsc/next-route-handlers";
+import serverReferences from "virtual:vitest-plugin-rsc/next-server-references";
 import type { FlightAdapters } from "./flight.ts";
+import { clientNodeReference } from "./client-ids.ts";
 import { actionModulePrefix, registry } from "./registry.ts";
-import { reportLoaded } from "./affected/browser.ts";
-import { stylesheetsCommand, type Stylesheets } from "./styles-command.ts";
+import {
+  builtStylesheetsFile,
+  builtStylesheetsOf,
+  stylesheetsPath,
+  type BuiltStylesheets,
+  type Stylesheets,
+} from "./styles-command.ts";
 
 // The rsc layer: Server Components, Server Actions, route handlers and the
 // Flight encoder.
 
 declare let __vite_rsc_raw_import__: (id: string) => Promise<unknown>;
 
+// The module of a server reference, by the id Vite RSC gives it. With a dev
+// server that is what Vite imports the module by. A static build has a list
+// of them: see static-build.ts.
 ReactServer.setRequireModule({
-  load: (id) => __vite_rsc_raw_import__(id),
+  load: (id) => {
+    if (!serverReferences) return __vite_rsc_raw_import__(id);
+    const load = serverReferences[id];
+    if (!load) throw new Error(`vitest-plugin-rsc: the build has no Server Action module "${id}"`);
+    return load();
+  },
 });
 
 // Next passes its client and server reference manifests to the Flight codec.
@@ -84,20 +99,46 @@ registry.flightClient = {
 registry.loadAppPage = async (page) => {
   const load = (appPages as Record<string, () => Promise<unknown>>)[page];
   if (!load) throw new Error(`vitest-plugin-rsc: unknown Next.js app page ${page}`);
-  reportLoaded("page", page);
+  registry.reportLoaded?.("page", page);
   return (registry.appPages[page] ??= await load());
 };
 
+/**
+ * client-node.tsx, as the server has it: a reference. The page of a node of
+ * the browser layer is this one Client Component.
+ */
+export const ClientNode: unknown = ReactServer.registerClientReference(
+  () => {
+    throw new Error("vitest-plugin-rsc: a node of the browser layer does not render on the server");
+  },
+  clientNodeReference,
+  "ClientNode",
+);
+
 // The stylesheets of a route are the plugin's to say, as they are a build's:
-// see styles.ts. Vitest adds which test file asks, for the route of a node.
-registry.loadStylesheets = (entry, inline) => {
-  const load = (
-    commands as unknown as Partial<
-      Record<string, (entry: string, inline: boolean) => Promise<Stylesheets>>
-    >
-  )[stylesheetsCommand];
-  if (!load) throw new Error("vitest-plugin-rsc: the browser has no command for the stylesheets");
-  return load(entry, inline);
+// see styles.ts. Under Vitest a command says them, which knows the test file
+// that asks (setup.ts). Another host asks the dev server, and a static build
+// has them in a file of its own, in the directory of the build.
+const buildDirectory = builtLayers && Object.values(builtLayers)[0]?.base;
+let built: Promise<BuiltStylesheets> | undefined;
+const json = async <T>(url: string): Promise<T> => {
+  const response = await registry.network(url);
+  if (!response.ok) {
+    throw new Error(
+      `vitest-plugin-rsc: ${url} answered ${response.status}: ${await response.text()}`,
+    );
+  }
+  return (await response.json()) as T;
+};
+registry.loadStylesheets = async (entry, inline) => {
+  if (!buildDirectory) {
+    const query = new URLSearchParams({ entry, inline: String(inline) });
+    return json<Stylesheets>(`${stylesheetsPath}?${query}`);
+  }
+  built ??= json<BuiltStylesheets>(new URL(builtStylesheetsFile, buildDirectory).href);
+  // One that failed is asked again.
+  built.catch(() => (built = undefined));
+  return builtStylesheetsOf(await built, entry, buildDirectory);
 };
 
 /** The page module of the route of a node: see `loadNodeEntry()` in project/entries.ts. */
@@ -115,7 +156,7 @@ export async function loadComponent(): Promise<{ default: () => unknown }> {
 registry.loadRouteHandler = async (page) => {
   const load = routeHandlers[page];
   if (!load) throw new Error(`vitest-plugin-rsc: unknown Next.js route handler ${page}`);
-  reportLoaded("route", page);
+  registry.reportLoaded?.("route", page);
   return (await load()).handler;
 };
 
@@ -141,7 +182,7 @@ const modules = new Map<string, Promise<unknown>>();
 export function requireModule(id: string): Promise<unknown> {
   if (id.startsWith(actionModulePrefix)) {
     const [module] = id.slice(actionModulePrefix.length).split("#");
-    reportLoaded("action", module!);
+    registry.reportLoaded?.("action", module!);
   }
   let loading = modules.get(id);
   if (!loading) modules.set(id, (loading = loadModule(id)));

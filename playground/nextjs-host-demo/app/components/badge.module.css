@@ -1,0 +1,9 @@
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.125rem 0.5rem;
+  border-radius: 1rem;
+  background-color: rgb(0, 112, 243);
+  color: rgb(255, 255, 255);
+}

@@ -1,0 +1,22 @@
+diff --git a/dist/index.js b/dist/index.js
+index 2f21d935c6d97dd408d2373593ef045993c87329..5acacfc52c8665c402f843e2c7ebcb772b3d6bfb 100644
+--- a/dist/index.js
++++ b/dist/index.js
+@@ -1640,7 +1640,7 @@ function findPlugin(config, name) {
+   return config.plugins?.find((p) => p && "name" in p && p.name === name);
+ }
+ async function build(options) {
+-  let { build: viteBuild, mergeConfig } = await import("vite"), { presets } = options, config = await commonConfig(options, "build");
++  let { createBuilder, mergeConfig } = await import("vite"), { presets } = options, config = await commonConfig(options, "build");
+   config.build = mergeConfig(config, {
+     build: {
+       outDir: options.outputDir,
+@@ -1687,7 +1687,7 @@ async function build(options) {
+   return finalConfig.plugins && await hasVitePlugins(finalConfig.plugins, [turbosnapPluginName]) && (logger2.warn(dedent3`Found '${turbosnapPluginName}' which is now included by default in Storybook 8.
+       Removing from your plugins list. Ensure you pass \`--stats-json\` to generate stats.
+ 
+-      For more information, see https://github.com/storybookjs/storybook/blob/next/MIGRATION.md#turbosnap-vite-plugin-is-no-longer-needed`), finalConfig.plugins = await withoutVitePlugins(finalConfig.plugins, [turbosnapPluginName])), finalConfig.customLogger ??= await createViteLogger(), await viteBuild(finalConfig), findPlugin(
++      For more information, see https://github.com/storybookjs/storybook/blob/next/MIGRATION.md#turbosnap-vite-plugin-is-no-longer-needed`), finalConfig.plugins = await withoutVitePlugins(finalConfig.plugins, [turbosnapPluginName])), finalConfig.customLogger ??= await createViteLogger(), await (await createBuilder(finalConfig, null)).buildApp(), findPlugin(
+     finalConfig,
+     "storybook:rollup-plugin-webpack-stats"
+   )?.storybookGetStats();

@@ -47,6 +47,32 @@ export type Opened = {
   node?: { ui: unknown; layouts: boolean };
 };
 
+/**
+ * A node of the browser layer: what a test or a story with `"use client"`
+ * renders. It is not sent through Flight. The server renders a page with one
+ * Client Component, client-node.tsx, and that one renders this, which it
+ * finds here. So a prop can be anything, also a function.
+ */
+export type ClientNode = (
+  | {
+      /** A node the test made, with the modules of the page: see client-graph.ts. */
+      ui: unknown;
+    }
+  | {
+      /** What the browser layer imports the module by. */
+      module: string;
+      /** The export of it to render. */
+      name: string;
+      /** The props of that export, as they are. */
+      props: Record<string, unknown>;
+    }
+) & {
+  /** A component around it, which gets it as its children. */
+  wrapper?: unknown;
+  /** Called once the page has rendered the node, or has failed to. */
+  rendered?: () => void;
+};
+
 export type NextRegistry = {
   /** A `Request` and `Response` that keep the headers a browser drops. */
   Request: typeof Request;
@@ -69,7 +95,8 @@ export type NextRegistry = {
   appPages: Record<string, unknown>;
   /**
    * Asks the plugin for the stylesheets of a page route, by the name of its
-   * modules: see styles.ts. From the rsc layer, which has Vitest's commands.
+   * modules: see styles.ts. Under Vitest with a command (setup.ts), else from
+   * the dev server or the files of a static build (rsc.ts).
    */
   loadStylesheets(entry: string, inline: boolean): Promise<Stylesheets>;
   /** Loads the request handler of a route handler, which is in the rsc layer. */
@@ -94,6 +121,14 @@ export type NextRegistry = {
    * node as its page.
    */
   opened: Opened | undefined;
+  /** The node of the browser layer that the page has, and who to tell when it changes. */
+  clientNode: ClientNode | undefined;
+  clientNodeListeners: Set<() => void>;
+  /**
+   * Where an export of a test file or a story file with `"use client"` is
+   * from: the module the browser layer imports it by, and its name.
+   */
+  clientExports: WeakMap<object, { module: string; name: string }>;
   /** Loads a Client Component by its module id, in the ssr layer. */
   loadSsrModule(id: string): Promise<unknown>;
   /**
@@ -105,14 +140,28 @@ export type NextRegistry = {
   ssr: { AppPageRouteModule: new (options: unknown) => unknown };
   /** For Next's Node.js server: what stands in for the files of a build. */
   node: Record<string, AnyFunction>;
+  /**
+   * Told what the server loads without an import of the test: a page or a
+   * route handler, by its entry, or the module of a Server Action. Only there
+   * with the `affectedTests` option: see affected/browser.ts.
+   */
+  reportLoaded?(kind: "page" | "route" | "action", id: string): void;
 };
 
 const scope = globalThis as { __vitest_plugin_rsc_next__?: Partial<NextRegistry> };
 
 export const registry = (scope.__vitest_plugin_rsc_next__ ??= {
   appPages: {},
+  clientNodeListeners: new Set(),
+  clientExports: new WeakMap(),
   serverActions: new Map(),
 }) as NextRegistry;
+
+/** Sets the node of the browser layer, and has the page render it. */
+export function setClientNode(node: ClientNode | undefined): void {
+  registry.clientNode = node;
+  for (const changed of registry.clientNodeListeners) changed();
+}
 
 /**
  * Next's build gives the module of a Server Action an id. Here the id of the

@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { runInThisContext } from "node:vm";
@@ -162,4 +163,21 @@ test("tells the server code of a layer from the code of the test", () => {
   const ownRuntime = fileURLToPath(new URL("./ssr.ts", import.meta.url));
   expect(serverCode.isServerCode(ownRuntime, "ssr")).toBe(false);
   expect(serverCode.isServerCode("\0virtual:module", "ssr")).toBe(false);
+});
+
+test("never takes the plugin, or what it is built on, for a package of the host", () => {
+  // A host whose framework depends on the plugin, like Storybook's.
+  const hostRoot = fileURLToPath(
+    new URL("../../../../playground/nextjs-host-demo", import.meta.url),
+  );
+  const serverCode = createServerCode(registry, {
+    host: { files: ["stories/**"], packages: ["storybook", "@storybook/*"] },
+  });
+  serverCode.configure(hostRoot);
+  const packageOf = (name: string) => fileURLToPath(import.meta.resolve(name));
+
+  const storybook = fs.realpathSync(path.join(hostRoot, "node_modules/storybook"));
+  expect(serverCode.isServerCode(path.join(storybook, "dist/test/index.js"), "rsc")).toBe(false);
+  // Vite RSC's Flight server, which the framework reaches through the plugin.
+  expect(serverCode.isServerCode(packageOf("@vitejs/plugin-rsc/rsc"), "rsc")).toBe(true);
 });

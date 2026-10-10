@@ -9,4 +9,5 @@ allowBuilds:
   msw: true
   sharp: true
 patchedDependencies:
+  "@storybook/builder-vite@10.6.1": patches/@storybook__builder-vite@10.6.1.patch
   "@vitest/browser@5.0.3": patches/@vitest__browser@5.0.3.patch

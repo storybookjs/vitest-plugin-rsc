@@ -1,4 +1,9 @@
-import { cleanup, handleRequest, renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
+import {
+  cleanup,
+  clientNode,
+  handleRequest,
+  renderServer,
+} from "vitest-plugin-rsc/nextjs/testing-library";
 import { afterEach, beforeEach, expect, inject, test, vi, type MockInstance } from "vitest";
 import { page } from "vitest/browser";
 import { cookies, headers } from "next/headers";
@@ -688,4 +693,29 @@ test("leaves the node when a Client Component makes a React root of its own", as
 
   window.removeEventListener("widget-unmount", widgetUnmount);
   expect(widgetUnmount).toHaveBeenCalledOnce();
+});
+
+// What a host like Storybook renders for a story with `"use client"`: an
+// export of a module of the browser layer, with the props as they are. This
+// file is of the server, and cannot make such a node itself.
+test("renders an export of a module of the browser layer, with a function as a prop", async () => {
+  const onPress = vi.fn();
+  const press = clientNode("/app/components/press-button.tsx", "PressButton", {
+    onPress,
+    children: "Press",
+  });
+
+  const { container, response } = await renderServer(press, {
+    url: "/notes/7",
+    wrapper: Tenant,
+    headers: { "x-tenant": "acme" },
+  });
+
+  // The server renders the wrapper, and leaves the node to the browser.
+  expect(await handleRequest("/notes/7").then((again) => again.text())).not.toContain("Press");
+  expect(response.status).toBe(200);
+  expect(container.querySelector("button")?.textContent).toBe("Press");
+  await page.getByRole("region", { name: "Tenant acme" }).getByRole("button").click();
+  expect(onPress).toHaveBeenCalledOnce();
+  expect(window.location.pathname).toBe("/notes/7");
 });

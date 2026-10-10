@@ -1,0 +1,35 @@
+{
+  "name": "nextjs-host-demo",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "NODE_OPTIONS='--conditions=vitest-plugin-rsc-source' vite --configLoader native",
+    "build": "NODE_OPTIONS='--conditions=vitest-plugin-rsc-source' vite build --configLoader native",
+    "preview": "vite preview",
+    "storybook": "NODE_OPTIONS='--conditions=vitest-plugin-rsc-source' storybook dev -p 6016 --no-open",
+    "build-storybook": "NODE_OPTIONS='--conditions=vitest-plugin-rsc-source' storybook build"
+  },
+  "dependencies": {
+    "@base-ui/react": "^1.4.1",
+    "@electric-sql/pglite": "^0.4.5",
+    "@next/routing": "16.4.0",
+    "drizzle-orm": "^0.45.2",
+    "next": "16.4.0",
+    "react": "19.2.6",
+    "react-dom": "19.2.6"
+  },
+  "devDependencies": {
+    "@storybook/nextjs-vite-rsc": "workspace:*",
+    "@types/node": "^24.12.4",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "playwright": "^1.60.0",
+    "storybook": "10.6.1",
+    "typescript": "^6.0.3",
+    "vite": "^8.3.1",
+    "vitest-plugin-rsc": "workspace:*"
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}
