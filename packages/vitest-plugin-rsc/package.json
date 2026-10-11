@@ -71,6 +71,11 @@
       "types": "./dist/nextjs/client.d.ts",
       "vitest-plugin-rsc-source": "./src/nextjs/client.tsx",
       "default": "./dist/nextjs/client.js"
+    },
+    "./nextjs/client-node": {
+      "types": "./dist/nextjs/client-node.d.ts",
+      "vitest-plugin-rsc-source": "./src/nextjs/client-node.tsx",
+      "default": "./dist/nextjs/client-node.js"
     }
   },
   "publishConfig": {

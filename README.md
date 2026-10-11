@@ -24,6 +24,7 @@ Pick one piece of the app — a wishlist carousel, a notes form, a settings pane
 - [Next.js](#nextjs)
   - [Set Up](#set-up)
   - [Render A Component](#render-a-component)
+  - [A Test File With `"use client"`](#a-test-file-with-use-client)
   - [Example: Server Action Form](#example-server-action-form)
   - [Router Hooks And Links](#router-hooks-and-links)
   - [Request Headers And Cookies](#request-headers-and-cookies)
@@ -198,6 +199,34 @@ test("renders a node in the layouts of a route, behind the proxy", async () => {
   await expect.element(page.getByRole("main")).toHaveTextContent("Team: core");
 });
 ```
+
+### A Test File With `"use client"`
+
+A test file with `"use client"` is code of the browser, as such a file is in Next. `renderServer()` in it renders the node in the browser and not on the server: a prop can be a function, like a spy, and a component of the test file can have state. The node is still the page of a route in Next's own app, so `<Link>`, `useRouter()` and `usePathname()` are Next's, at `url`.
+
+```tsx
+"use client";
+
+import { expect, test, vi } from "vitest";
+import { page } from "vitest/browser";
+import { renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
+import { PressButton } from "./components/press-button.tsx";
+
+test("passes a function to a Client Component, which calls it", async () => {
+  const onPress = vi.fn();
+
+  await renderServer(<PressButton onPress={onPress}>Press</PressButton>);
+
+  await page.getByRole("button", { name: "Press" }).click();
+  expect(onPress).toHaveBeenCalledOnce();
+});
+```
+
+Every page load has modules of its own, as in a browser, and the file reads `PressButton` from the page that is open. What that means for such a file:
+
+- What it imports is the browser's copy of a module. A `db` it imports is not the one your Server Components read, so seed the server in a setup file or in a test file without the directive.
+- `vi.mock()` and `vi.hoisted()` are an error in it: Vitest mocks the modules of the server's layer. See [Mocks](#mocks).
+- A value it computes from an import when it loads, like `const Memo = memo(Button)` at its top, is of the first page. Make it in the test.
 
 ### Example: Server Action Form
 
@@ -668,7 +697,7 @@ See [The Server In Front Of The App](docs/next-routes.md#the-server-in-front-of-
 
 ### Mocks
 
-`vi.mock()` replaces the module that your Server Components, Server Actions, and route handlers import. Put mocks of app modules in a setup file, so every test file gets them.
+`vi.mock()` replaces the module that your Server Components, Server Actions, and route handlers import. It does not reach a Client Component in the browser, and a test file with `"use client"` cannot call it. Put mocks of app modules in a setup file, so every test file gets them.
 
 A bare `vi.mock()` is enough. Each test says what the mock does, through `vi.mocked()`:
 
@@ -982,7 +1011,7 @@ Next compiles an app into three layers, each with its own module graph and its o
 | `ssr`     | Next's route module, the HTML renderer, the server in front of the app | `next_ssr`       |
 | `browser` | Next's router, your Client Components                                  | `react_client`   |
 
-The test runs in `client`, the `rsc` layer's Vite environment. That's why a module your test imports is the instance your Server Components read.
+The test runs in `client`, the `rsc` layer's Vite environment. That's why a module your test imports is the instance your Server Components read. A test file with `"use client"` runs in `react_client`, with the modules of the page that is open.
 
 For the full walkthrough, see [docs/next-routes.md](docs/next-routes.md). [docs/architecture.md](docs/architecture.md) covers the part without Next.js: the two environments and the Module Runner bridge between them.
 

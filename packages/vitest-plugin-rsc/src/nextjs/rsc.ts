@@ -7,6 +7,7 @@ import appPages from "virtual:vitest-plugin-rsc/next-app-pages";
 import loadMiddleware from "virtual:vitest-plugin-rsc/next-middleware";
 import routeHandlers from "virtual:vitest-plugin-rsc/next-route-handlers";
 import type { FlightAdapters } from "./flight.ts";
+import { clientNodeReference } from "./client-ids.ts";
 import { actionModulePrefix, registry } from "./registry.ts";
 import { reportLoaded } from "./affected/browser.ts";
 import { stylesheetsCommand, type Stylesheets } from "./styles-command.ts";
@@ -87,6 +88,18 @@ registry.loadAppPage = async (page) => {
   reportLoaded("page", page);
   return (registry.appPages[page] ??= await load());
 };
+
+/**
+ * client-node.tsx, as the server has it: a reference. The page of a node of
+ * the browser layer is this one Client Component.
+ */
+export const ClientNode: unknown = ReactServer.registerClientReference(
+  () => {
+    throw new Error("vitest-plugin-rsc: a node of the browser layer does not render on the server");
+  },
+  clientNodeReference,
+  "ClientNode",
+);
 
 // The stylesheets of a route are the plugin's to say, as they are a build's:
 // see styles.ts. Vitest adds which test file asks, for the route of a node.

@@ -5,8 +5,9 @@ import { hasDirective, transformDirectiveProxyExport } from "@vitejs/plugin-rsc/
 import { createFilter, normalizePath, parseAst, parseAstAsync, type Plugin } from "vite";
 import type { TestProject } from "vitest/node";
 import { createRunnerEnvironmentPlugins } from "../runner-environment.ts";
-import { flightBridge, type FlightEntry } from "./flight.ts";
 import { nextBuilds, nextProductionPlugin, type NextBuild } from "./build.ts";
+import { clientFiles } from "./client-files.ts";
+import { flightBridge, type FlightEntry } from "./flight.ts";
 import { createCompilePlugin, createDependencyCompilePlugin } from "./compile.ts";
 import { createNodePlatform } from "./node-platform.ts";
 import { loadNextProject, type NextLayer, type NextProject } from "./project.ts";
@@ -61,6 +62,16 @@ const vendoredFlight = (entry: string) => `@vitejs/plugin-rsc/vendor/react-serve
 const setupFile = fileURLToPath(
   new URL(`./setup${path.extname(import.meta.url)}`, import.meta.url),
 );
+// A file of this package, in `src` or in `dist`.
+const ownFile = (name: string) =>
+  normalizePath(
+    fileURLToPath(new URL(`./${name}${path.extname(import.meta.url)}`, import.meta.url)),
+  );
+// What a test imports `renderServer()` from, and the file that is.
+const testingLibrary = {
+  specifier: "vitest-plugin-rsc/nextjs/testing-library",
+  file: ownFile("index"),
+};
 // The page the tests run in. Vitest puts a reset in its own, `body { margin:
 // 0 }`, and only in its own: a page of Next has the margin of the browser.
 const testerHtml = fileURLToPath(new URL("./tester.html", import.meta.url));
@@ -799,12 +810,20 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
         return serverCode.compile(entry.code, `${id.replace(/\W+/g, "-")}.js`, generatedDefines());
       },
     },
+    clientFiles({
+      environments: { rsc: environmentOf.rsc, browser: environmentOf.browser },
+      testingLibrary,
+      internal: ownFile("internal"),
+      isHostFile: serverCode.isHostFile,
+      isHostPackage: serverCode.isHostPackage,
+    }),
     serverCode.plugin({ [environmentOf.rsc]: "rsc", [environmentOf.ssr]: "ssr" }),
     // The CSS of the app, as the stylesheets of a route.
     ...createStylesPlugins({
       getProject,
       environments: environmentOf,
       isServerCode: (file) => serverCode.isServerCode(file, "rsc"),
+      isHostFile: serverCode.isHostFile,
       routeOf: (entry) =>
         [...project.routes, ...project.componentRoutes].find(
           (route) => route.kind === "page" && entryOf(route) === entry,

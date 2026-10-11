@@ -101,6 +101,10 @@ function findPackagesWithDependencies(names: Iterable<string>, root: string): Se
   return dirs;
 }
 
+// The packages of the test runner, by name. Their own modules have state that
+// is the page's.
+const hostPackages = ["vitest", "@vitest/*"];
+
 // Vitest, Vite, and the packages of Vitest's scope that the project has: its
 // browser mode, the provider that drives the browser, coverage.
 function* testRunnerPackageNames(root: string): Generator<string> {
@@ -125,6 +129,12 @@ export function createServerCode(registry: string, options: ServerCodeOptions = 
   const testFileMatchers: ((file: string) => boolean)[] = [];
   let testRunnerPackages = new Set<string>();
 
+  /** Whether a file is one of the host's: a test file or a setup file of Vitest. */
+  function isHostFile(file: string): boolean {
+    file = normalizePath(file);
+    return testFileMatchers.some((matches) => matches(file));
+  }
+
   /**
    * Whether a file is server code in a layer. The rsc layer shares its
    * environment with the test: the test files, what runs them and the
@@ -142,14 +152,27 @@ export function createServerCode(registry: string, options: ServerCodeOptions = 
 
   return {
     isServerCode,
+    isHostFile,
+    /**
+     * Whether an import is of a package of the host, by its name: `vitest`,
+     * `vitest/browser`, `@vitest/spy`. Not what such a package depends on.
+     */
+    isHostPackage(specifier: string): boolean {
+      return hostPackages.some((name) =>
+        name.endsWith("/*")
+          ? specifier.startsWith(name.slice(0, -1))
+          : specifier === name || specifier.startsWith(`${name}/`),
+      );
+    },
     /**
      * Whether a source file is code of the app in a layer: what Next's build
      * compiles. Not in the rsc layer: what is the browser's there, the test
-     * files and the `browserModules`.
+     * files and the `browserModules`. And in no layer a file of the host,
+     * which with `"use client"` is a module of the browser layer.
      */
     isAppCode(file: string, layer: NextLayer): boolean {
       if (!path.isAbsolute(file) || file.includes("/node_modules/")) return false;
-      if (layer !== "rsc") return !normalizePath(file).startsWith(ownDir);
+      if (layer !== "rsc") return !normalizePath(file).startsWith(ownDir) && !isHostFile(file);
       return testFileMatchers.length > 0 && isServerCode(file, layer);
     },
     /** For the `define` of the optimizer, which Vite keys its cache on. */

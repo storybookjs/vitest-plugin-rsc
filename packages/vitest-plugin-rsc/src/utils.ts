@@ -10,6 +10,7 @@ import {
   type ModuleRunnerTransport,
 } from "vite/module-runner";
 import * as pageClient from "virtual:vitest-plugin-rsc/vite-client";
+import { isHostModule } from "./host-module.ts";
 
 // The page's own instance of Vite's client, for the modules that the runners
 // below evaluate: see vite-client.ts.
@@ -81,17 +82,26 @@ function getRunner(environment: string): ModuleRunner {
   let runner = runners.get(environment);
   if (!runner) {
     const invoke = (payload: InvokePayload) => invokeEnvironment(environment, payload);
-    runners.set(environment, (runner = createRunner(invoke, pageLoadEvaluator)));
+    runners.set(environment, (runner = createRunner(invoke, createEvaluator())));
   }
   return runner;
 }
 
+// A runner of an environment. A module of the page is the page's own.
 function createRunner(
   invoke: NonNullable<ModuleRunnerTransport["invoke"]>,
   evaluator: ModuleEvaluator,
+  { sourcemaps = false } = {},
 ): ModuleRunner {
   return new ModuleRunner(
-    { sourcemapInterceptor: false, transport: { invoke }, hmr: false },
+    {
+      // With `sourcemaps`, the stack of an error has the lines of the source
+      // for a module of this runner, where it has the lines of what the
+      // runner evaluates. For that every stack is formatted as Vite does it.
+      sourcemapInterceptor: sourcemaps ? "prepareStackTrace" : false,
+      transport: { invoke: async (payload) => hostModule(payload) ?? invoke(payload) },
+      hmr: false,
+    },
     evaluator,
   );
 }
@@ -99,12 +109,16 @@ function createRunner(
 /**
  * A module runner with a module graph of its own: every module it imports is
  * evaluated again, the way a page load evaluates a page's scripts again. Call
- * `checkFetchedModules()` before every page load, or a file that changed goes
- * unnoticed.
+ * `checkFetchedModules()` before every page load, and before a runner that is
+ * made between two, or a file that changed goes unnoticed.
  */
-export function createEnvironmentRunner(environment: string): ModuleRunner {
+export function createEnvironmentRunner(
+  environment: string,
+  evaluator: ModuleEvaluator = createEvaluator(),
+  { sourcemaps = false } = {},
+): ModuleRunner {
   let first: FetchedModules | undefined;
-  return createRunner(async (payload) => {
+  const invoke = async (payload: InvokePayload) => {
     const modules = await fetchedModules(environment);
     first ??= modules;
     // A runner that has modules of before a file changed asks the server
@@ -112,7 +126,34 @@ export function createEnvironmentRunner(environment: string): ModuleRunner {
     return modules === first
       ? invokeForPageLoad(environment, payload, modules)
       : invokeEnvironment(environment, payload);
-  }, pageLoadEvaluator);
+  };
+  return createRunner(invoke, evaluator, { sourcemaps });
+}
+
+// A module of the page is not the environment's to serve: the runner imports
+// it as the page does. See host-module.ts.
+function hostModule(payload: InvokePayload): InvokeResult | undefined {
+  const { name, data } = (payload as { data: { name: string; data: unknown[] } }).data;
+  if (name !== "fetchModule" || !isHostModule(String(data[0]))) return;
+  return { result: { externalize: data[0], type: "module" } } as InvokeResult;
+}
+
+/**
+ * How a runner of the page evaluates a module: as `evaluator` does, which by
+ * default compiles a module that the pages share once (`pageLoadEvaluator`),
+ * and with the page's own module for a module of the page.
+ */
+export function createEvaluator(evaluator: ModuleEvaluator = pageLoadEvaluator): ModuleEvaluator {
+  return {
+    startOffset: evaluator.startOffset,
+    runInlinedModule: (context, code, module) => evaluator.runInlinedModule(context, code, module),
+    async runExternalModule(file) {
+      if (!isHostModule(file)) return evaluator.runExternalModule(file);
+      // What the page serves for a module of its own has that module as its
+      // default export.
+      return ((await evaluator.runExternalModule(file)) as { default?: unknown }).default;
+    },
+  };
 }
 
 export function importReactClient<T = any>(id: string): Promise<T> {
@@ -135,6 +176,10 @@ async function invokeEnvironment(environment: string, payload: InvokePayload) {
 type FetchedModules = { version: unknown; results: Map<string, Promise<InvokeResult>> };
 
 const fetchedModulesOf = new Map<string, Promise<FetchedModules>>();
+// Those of the version the server said last. Two checks at once that hear of
+// the same new version share them: a runner that took the others would ask
+// the server itself.
+const latestModulesOf = new Map<string, FetchedModules>();
 
 function fetchedModules(environment: string): Promise<FetchedModules> {
   return fetchedModulesOf.get(environment) ?? askForModules(environment);
@@ -144,8 +189,14 @@ function fetchedModules(environment: string): Promise<FetchedModules> {
 // its modules.
 function askForModules(environment: string, known?: FetchedModules): Promise<FetchedModules> {
   const fetched = requestOverWebSocket(reactClientWebSocketVersionEvent, { environment }).then(
-    (version): FetchedModules =>
-      known && known.version === version ? known : { version, results: new Map() },
+    (version): FetchedModules => {
+      if (known && known.version === version) return known;
+      const latest = latestModulesOf.get(environment);
+      if (latest && latest.version === version) return latest;
+      const modules = { version, results: new Map() };
+      latestModulesOf.set(environment, modules);
+      return modules;
+    },
   );
   fetchedModulesOf.set(environment, fetched);
   // Not kept: the next module asks again. Modules that were fetched stay, and
@@ -241,6 +292,8 @@ function fetchOnce(
     // As the runner asks for an import of the module.
     const importer = fetched.file || fetched.id;
     for (const imported of (result as ModuleAnswer).imports ?? []) {
+      // The page's own: the runner does not ask the server for it.
+      if (isHostModule(imported)) continue;
       const args = [imported, importer, { cached: false, startOffset }];
       const ahead = { ...payload, data: { ...(payload as FetchModulePayload).data, data: args } };
       // A runner that asks for it gets the error.
