@@ -48,13 +48,17 @@ function headersService(): Plugin {
 
 // Stands in for a change to a file of the app while the tests are watched:
 // the dev server invalidates the modules of the file, as it does for a change.
+// With `environment`, only the modules of that environment.
 function fileChangeService(): Plugin {
   return {
     name: "nextjs-e2e-demo:file-change-service",
     configureServer(server) {
       server.middlewares.use("/service/file-change", (request, response) => {
-        const file = new URL(request.url ?? "/", "http://localhost").searchParams.get("file") ?? "";
-        for (const environment of Object.values(server.environments)) {
+        const { searchParams } = new URL(request.url ?? "/", "http://localhost");
+        const file = searchParams.get("file") ?? "";
+        const only = searchParams.get("environment");
+        for (const [name, environment] of Object.entries(server.environments)) {
+          if (only && name !== only) continue;
           environment.moduleGraph.onFileChange(normalizePath(path.join(server.config.root, file)));
         }
         response.end();

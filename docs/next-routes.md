@@ -560,7 +560,7 @@ What this does not cover:
 
 ## Mocks
 
-`vi.mock()` replaces a module in the `rsc` layer, where the test runs. That is the module your Server Components and Server Actions import. The other two layers load their own modules, so a mock does not reach a Client Component. For the same reason a test file with `"use client"` cannot mock: the plugin stops with an error at a `vi.mock()`, `vi.unmock()`, `vi.doMock()` or `vi.hoisted()` in it, which Vitest would hoist out of a file that runs elsewhere.
+`vi.mock()` replaces a module in the `rsc` layer, where the test runs. That is the module your Server Components and Server Actions import. The other two layers load their own modules, so a mock does not reach a Client Component. For the same reason a test file with `"use client"` cannot mock: it runs in the `browser` layer, so the plugin stops with an error at a `vi.mock()`, `vi.unmock()`, `vi.doMock()`, `vi.doUnmock()` or `vi.hoisted()` in it. Vitest would also hoist `vi.mock()` and `vi.hoisted()` out of the file, into the stub that runs in the `rsc` layer.
 
 Mocks of app modules go in a setup file. With `isolate: false` the test files of a worker share their modules, so a module is mocked for all of them or for none, and the file that loads it first decides. A setup file runs before every test file. A bare `vi.mock("./app/lib/weather.ts")` there is enough, and a test says what the mock does with `vi.mocked(getForecast).mockResolvedValue("sunny")`.
 

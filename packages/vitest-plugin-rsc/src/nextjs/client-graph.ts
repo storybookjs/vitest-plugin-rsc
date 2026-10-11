@@ -226,6 +226,15 @@ export function unloadClientFile(id: string): void {
 }
 
 /**
+ * Forgets every client file but the one `id` names. Vitest runs no hook of a
+ * file whose tests are all skipped, like with `-t` or `describe.skip`, so that
+ * one is forgotten by the file after it.
+ */
+export function unloadClientFilesExcept(id: string): void {
+  for (const file of files.keys()) if (file !== id) unloadClientFile(file);
+}
+
+/**
  * The module graph for a page that loads. With a client file loaded it is the
  * one that file imports from, so that a test and the page it renders have the
  * same modules. Without one the page has a graph to itself.
@@ -254,6 +263,9 @@ export async function leaveGraph(): Promise<void> {
     replace(undefined);
     return;
   }
+  // The server's modules as they are now, as for a page load: the next page
+  // loads in this graph, and a file can have changed since the last one.
+  await checkFetchedModules();
   const next = createGraph();
   // In the order the files import them, as when the files were evaluated. A
   // file can be loaded in the meantime.

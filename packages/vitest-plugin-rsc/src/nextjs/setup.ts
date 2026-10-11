@@ -1,6 +1,6 @@
-import { afterAll, afterEach, beforeEach } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach } from "vitest";
 import { cleanup } from "./index.ts";
-import { unloadClientFile } from "./client-graph.ts";
+import { unloadClientFile, unloadClientFilesExcept } from "./client-graph.ts";
 import { clientFileId } from "./client-ids.ts";
 
 // Registered by `vitestPluginNext()` as a setup file. Importing the entry
@@ -15,3 +15,6 @@ beforeEach(cleanup);
 // the fixtures it names, so it has to be a pattern.
 // oxlint-disable-next-line no-empty-pattern
 afterAll(({}, { file }) => unloadClientFile(clientFileId(file.filepath)));
+// So is a file before it whose tests were all skipped, which ran no hook.
+// oxlint-disable-next-line no-empty-pattern
+beforeAll(({}, { file }) => unloadClientFilesExcept(clientFileId(file.filepath)));

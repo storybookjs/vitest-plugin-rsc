@@ -9,9 +9,11 @@ import { createContext, use, useState, type ReactNode } from "react";
 import { Counter } from "./components/counter.tsx";
 import { PressButton } from "./components/press-button.tsx";
 import { RouterState } from "./components/router-state.tsx";
+import { toggleFavorite } from "./lib/actions.ts";
 import { countPresses, pressed } from "./lib/presses.ts";
 import { buildOf } from "./lib/build.ts";
 import { ClientCard } from "./styles/client-card.tsx";
+import { fileChanged, transformsOf } from "../test/service.ts";
 
 // A test file with `"use client"` is code of the browser layer, as such a
 // file is in Next. Its nodes render in the browser and not on the server: a
@@ -180,6 +182,28 @@ test("sends the headers of the node with every request after it, as for a node o
   expect(await own.json()).toMatchObject({ client: "own" });
 });
 
+function Favorite({ id }: { id: string }) {
+  const [favorite, setFavorite] = useState<boolean>();
+  return (
+    <button onClick={async () => setFavorite(await toggleFavorite(id))}>
+      Favorite: {String(favorite)}
+    </button>
+  );
+}
+
+test("calls a Server Action from a component of this file", async () => {
+  await renderServer(<Favorite id="client-action" />);
+  // The server's notes, through a route handler: see the test above.
+  const body = JSON.stringify({ title: "A favorite" });
+  expect((await fetch("/api/notes/client-action", { method: "PUT", body })).status).toBe(200);
+
+  await page.getByRole("button", { name: "Favorite: undefined" }).click();
+
+  await expect.element(page.getByRole("button", { name: "Favorite: true" })).toBeVisible();
+  const { note } = await (await fetch("/api/notes/client-action")).json();
+  expect(note).toMatchObject({ title: "A favorite", favorite: true });
+});
+
 test("opens a page of the app, as a test file of the server does", async () => {
   const { response } = await renderServer({ url: "/" });
 
@@ -278,4 +302,18 @@ test("takes back what a module that the file imports while a page is open left b
 
   // The page is gone, and its listener with it.
   expect(timesHeard()).toBe(0);
+});
+
+test("loads what this file imports as the dev server has it now, for the next page", async () => {
+  await renderServer(<Counter />);
+  // For the browser layer only. The server layer, which the tab loads once,
+  // would ask the dev server for every module from then on, which
+  // page-load.test.tsx asserts it does not before its own change.
+  await fileChanged("app/components/counter.tsx", "react_client");
+  const transforms = await transformsOf("app/components/counter.tsx");
+
+  // The next page has a module graph of its own, with `Counter` in it.
+  await cleanup();
+
+  expect(await transformsOf("app/components/counter.tsx")).toBeGreaterThan(transforms);
 });

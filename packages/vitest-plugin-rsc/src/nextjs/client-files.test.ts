@@ -20,7 +20,7 @@ const plugin = clientFiles({
 
 type Resolved = { id: string } | null;
 type Context = {
-  environment: { name: string };
+  environment: { name: string; config: { root: string } };
   resolve(source: string, importer?: string): Promise<Resolved>;
   addWatchFile(file: string): void;
   error(message: string): never;
@@ -29,7 +29,7 @@ type Context = {
 // What Vite's own resolver would answer: a relative import is a file next to
 // its importer, and everything else a package.
 const context = (environment: string): Context => ({
-  environment: { name: environment },
+  environment: { name: environment, config: { root: "/" } },
   resolve: async (source, importer) => ({
     id: source.startsWith(".")
       ? new URL(source, `file://${importer}`).pathname
@@ -134,6 +134,7 @@ test("gives the browser layer the page's own module for a package of the host", 
   expect(await resolve("vitest", importer, "client")).toBeUndefined();
   // What the page asks the layer for itself is the layer's.
   expect(await resolve("vitest", undefined)).toBeUndefined();
+  expect(await resolve("vitest", "/index.html")).toBeUndefined();
 });
 
 test("gives a file of the host the page's own module for another file of the host", async () => {

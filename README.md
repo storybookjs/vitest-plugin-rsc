@@ -227,6 +227,7 @@ Every page load has modules of its own, as in a browser, and the file reads `Pre
 - What it imports is the browser's copy of a module. A `db` it imports is not the one your Server Components read, so seed the server in a setup file or in a test file without the directive.
 - `vi.mock()` and `vi.hoisted()` are an error in it: Vitest mocks the modules of the server's layer. See [Mocks](#mocks).
 - A value it computes from an import when it loads, like `const Memo = memo(Button)` at its top, is of the first page. Make it in the test.
+- A `wrapper` is a component of the browser too, and wraps the node there.
 
 ### Example: Server Action Form
 
