@@ -20,9 +20,9 @@
       "category": "not-yet",
       "text": "A page that a build prerenders, like one with `generateStaticParams`. Next keeps it between two requests, and here every request renders its page."
     },
-    "http-only-cookie": {
+    "document-cookie": {
       "category": "not-yet",
-      "text": "An `HttpOnly` cookie. The cookies of the server are the cookies of the tab, and a script of the page reads every one of them."
+      "text": "Reads or writes `document.cookie`. The plugin keeps the app's cookies out of it: a script of the page finds none of them there, and a cookie it writes there does not reach the app."
     },
     "metadata-files": {
       "category": "not-yet",
@@ -352,7 +352,7 @@
         "app-middleware.test.ts > app-dir with middleware > Mutate request headers for Edge Functions > Adds new headers": "pages-router",
         "app-middleware.test.ts > app-dir with middleware > Mutate request headers for Edge Functions > Deletes headers": "pages-router",
         "app-middleware.test.ts > app-dir with middleware > Mutate request headers for Edge Functions > Updates headers": "pages-router",
-        "app-middleware.test.ts > app-dir with middleware > should respect cookie options of merged middleware cookies": "http-only-cookie",
+        "app-middleware.test.ts > app-dir with middleware > should respect cookie options of merged middleware cookies": "document-cookie",
         "app-middleware.test.ts > app-dir with middleware > should not incorrectly treat a Location header as a rewrite": "proxy-location-header"
       }
     },

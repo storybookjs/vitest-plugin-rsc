@@ -218,7 +218,7 @@ Of the 474 tests that apply, 399 pass: **84%**.
 
 </details>
 
-<details><summary>1 × An `HttpOnly` cookie. The cookies of the server are the cookies of the tab, and a script of the page reads every one of them.</summary>
+<details><summary>1 × Reads or writes `document.cookie`. The plugin keeps the app's cookies out of it: a script of the page finds none of them there, and a cookie it writes there does not reach the app.</summary>
 
 - `app-middleware`: app-dir with middleware › should respect cookie options of merged middleware cookies
 
@@ -359,7 +359,7 @@ Four causes are not in the "Not Yet" list of `docs/next-routes.md`: the Pages Ro
 
 **Not applicable: 48 tests.** More than half of them are JavaScript off (10), the output of a build (12), and an npm package that the runner does not install (5).
 
-**The server in front of the app.** Five fixtures are there for the proxy, the redirects and rewrites of `next.config`, and `trailingSlash`. 36 of their 48 tests pass. Of the 12 that do not, 6 ask for an API route of the Pages Router, 2 expect a prerendered page, 2 cannot run in a browser, 1 expects an `HttpOnly` cookie, and 1 is the bug above.
+**The server in front of the app.** Five fixtures are there for the proxy, the redirects and rewrites of `next.config`, and `trailingSlash`. 36 of their 48 tests pass. Of the 12 that do not, 6 ask for an API route of the Pages Router, 2 expect a prerendered page, 2 cannot run in a browser, 1 reads `document.cookie`, and 1 is the bug above.
 
 **CSS.** 18 fixtures are Next's own tests of CSS: global CSS and CSS modules, their order, client navigation, parallel routes, `next/dynamic`, inline CSS and the pure mode of a CSS module. 29 of their 38 tests pass, and none fails for a bug of the plugin. Of the 9 that do not, 5 need an npm package that the runner does not install (Sass, Lightning CSS, a CSS framework), 1 reads a file with Node.js, 1 expects CSS that Next's build minified, 1 asks for the Pages Router, and 1 expects the CSS of a component of `next/dynamic` from Next's manifest of dynamic imports. Seven more of Next's fixtures for CSS do not run here: five need a package or a feature that the runner does not have, two only Turbopack runs. `conformance/src/fixtures.ts` says which.
 
@@ -525,6 +525,7 @@ A test of Next expects a browser and a server. Where the tab is neither, the run
 - **A request without CORS.** The server's `fetch` is the tab's, so a Server Component that fetches from a server without CORS headers gets nothing: see "Server Code In The Browser" in `docs/next-routes.md`. Many of Next's fixtures fetch from `next-data-api-endpoint.vercel.app`, which has none. The runner has Playwright answer for that host with the headers added, so that a test of the Data Cache measures the cache.
 - **A page that redirects while it loads.** `renderServer()` is done when the first page has hydrated, which can be before a `redirect()` in a response that had started has taken the router to the next page, and it rejects when the app left the page before that. `next.browser()` waits for the page it ends up on instead, like Playwright's `goto`.
 - **`back()` stays in the page.** `history.back()` past the entry a page was opened in would leave the test. The shim throws instead.
+- **Cookies through a Server Action.** The plugin keeps the app's cookies out of `document.cookie`. `browser.addCookie()` and `browser.deleteCookies()` set and delete them with `cookies()` in `runInServerAction()`, as a Server Action of the app would, where Playwright has the browser do it.
 - **`/_next/` goes to the dev server.** `next.fetch()` is `handleRequest()`, which reaches the routes of the app. Fonts, images and Next's image optimizer are the dev server's here, so those requests are the tab's `fetch`.
 - **A moment for React.** A call of Playwright is a round trip, and React has rendered what was scheduled by the time it arrives. The shim waits a tick before each call.
 - **A second run.** A fixture whose run is not what the expectations say runs again, and the second run counts. That takes a cold cache and a busy machine out of the results, and it would take a test that fails one time in two out of them as well. The run names every test that ended otherwise the second time.

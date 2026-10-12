@@ -1,4 +1,9 @@
-import { handleRequest, renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
+import {
+  handleRequest,
+  renderServer,
+  runInServerAction,
+} from "vitest-plugin-rsc/nextjs/testing-library";
+import { cookies, draftMode } from "next/headers";
 import { afterEach, beforeEach, expect, test, vi, type MockInstance } from "vitest";
 import { page } from "vitest/browser";
 import { auditLog } from "../lib/audit.ts";
@@ -16,6 +21,10 @@ beforeEach(() => {
 afterEach(() => {
   expect(consoleError.mock.calls).toEqual([]);
 });
+
+// What the next request of the app has of a cookie.
+const cookieOfTheApp = (name: string) =>
+  runInServerAction(async () => (await cookies()).get(name)?.value);
 
 test("serves a route handler with a dynamic segment", async () => {
   db.notes.set("1", { id: "1", title: "Inbox triage", body: "Sort the inbox" });
@@ -63,13 +72,13 @@ test("answers 500 when a route handler throws, and logs the error", async () => 
   expect((await handleRequest("/api/echo/a")).status).toBe(200);
 });
 
-test("stores the cookies a route handler sets with NextResponse", async () => {
+test("keeps the cookies a route handler sets with NextResponse", async () => {
   db.notes.set("1", { id: "1", title: "Inbox triage", body: "Sort the inbox" });
 
   const response = await handleRequest("/api/notes/1");
 
   expect(response.headers.getSetCookie()).toEqual(["last-read=1; Path=/"]);
-  expect(document.cookie).toBe("last-read=1");
+  expect(await cookieOfTheApp("last-read")).toBe("1");
 });
 
 test("answers 404 when a route handler calls notFound()", async () => {
@@ -112,25 +121,28 @@ test.for([
   },
 );
 
-test("drops the authorization header on a redirect to another origin, as fetch does", async () => {
+test("drops the authorization header and the app's cookies on a redirect to another origin, as fetch does", async () => {
   // The dev server by another name: another origin, to the browser and to Next.
   const elsewhere = `http://elsewhere.localhost:${window.location.port}/service/headers`;
 
   const response = await handleRequest(
     `/api/redirect?status=302&to=${encodeURIComponent(elsewhere)}`,
-    { headers: { authorization: "Bearer secret", "x-client": "test" } },
+    { headers: { authorization: "Bearer secret", "x-client": "test", cookie: "session=ada" } },
   );
 
   const headers = await response.json();
   expect(headers).toMatchObject({ "x-client": "test" });
   expect(headers).not.toHaveProperty("authorization");
+  expect(headers).not.toHaveProperty("cookie");
 });
 
 test("opens the page a route handler redirects to", async () => {
   db.notes.set("3", { id: "3", title: "Plan the week", body: "" });
-  document.cookie = "last-created=3";
 
-  const { response } = await renderServer({ url: "/api/notes/latest" });
+  const { response } = await renderServer({
+    url: "/api/notes/latest",
+    headers: { cookie: "last-created=3" },
+  });
 
   expect(response.redirected).toBe(true);
   expect(window.location.pathname).toBe("/notes/3");
@@ -149,13 +161,12 @@ test("does not open the response of a route handler that is not a document", asy
   );
 });
 
-test("gives a route handler the body of a request and the cookies of the browser", async () => {
+test("gives a route handler the body of a request and the cookies of the app", async () => {
   db.notes.set("1", { id: "1", title: "Inbox triage", body: "Sort the inbox" });
-  document.cookie = "editor=kasper";
 
   const response = await handleRequest("/api/notes/1", {
     method: "PUT",
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", cookie: "editor=kasper" },
     body: JSON.stringify({ title: "Inbox zero" }),
   });
 
@@ -165,7 +176,7 @@ test("gives a route handler the body of a request and the cookies of the browser
   });
   expect(db.notes.get("1")?.title).toBe("Inbox zero");
   // Set with cookies() in the handler.
-  expect(document.cookie).toContain("last-renamed=1");
+  expect(response.headers.getSetCookie()).toEqual(["last-renamed=1; Path=/"]);
 });
 
 test("gives a route handler a form body with the content type it was sent with", async () => {
@@ -210,9 +221,8 @@ test("runs after() of a route handler once the response is there", async () => {
 
 test("runs after() of a page, with the request it belongs to", async () => {
   auditLog.length = 0;
-  document.cookie = "language=nl";
 
-  const response = await handleRequest("/settings");
+  const response = await handleRequest("/settings", { headers: { cookie: "language=nl" } });
   await response.text();
 
   await expect.poll(() => auditLog).toEqual(["opened settings in nl"]);
@@ -318,25 +328,23 @@ test("stops a route handler whose streamed response is no longer read", async ()
 
 test("serves the fetch() of a Client Component with a route handler", async () => {
   db.notes.set("1", { id: "1", title: "Inbox triage", body: "Sort the inbox" });
-  document.cookie = "editor=kasper";
-  await renderServer({ url: "/notes/1" });
+  await renderServer({ url: "/notes/1", headers: { cookie: "editor=kasper" } });
 
   await page.getByRole("textbox", { name: "New title" }).fill("Inbox zero");
   await page.getByRole("button", { name: "Rename" }).click();
 
-  // The handler got the cookie of the browser, and the browser the cookie it
-  // set.
+  // The handler got the cookie of the app, and the app the cookie it set.
   await expect
     .element(page.getByRole("status"))
     .toHaveTextContent("Renamed to Inbox zero by kasper");
-  expect(document.cookie).toContain("last-renamed=1");
+  expect(await cookieOfTheApp("last-renamed")).toBe("1");
   expect(db.notes.get("1")?.title).toBe("Inbox zero");
   // The component refreshes the router: the page is rendered again.
   await expect.element(page.getByRole("heading", { name: "Inbox zero" })).toBeVisible();
 });
 
-test("serves a fetch() with a Request, its body and the cookies of the browser", async () => {
-  document.cookie = "editor=kasper";
+test("serves a fetch() with a Request, its body and the cookies of the app", async () => {
+  await runInServerAction(async () => (await cookies()).set("editor", "kasper"));
   const request = new Request("/api/notes/7", {
     method: "PUT",
     body: JSON.stringify({ title: "Plan the week" }),
@@ -385,7 +393,7 @@ test("keeps the Set-Cookie of a plain Response in a route handler", async () => 
   const response = await handleRequest("/api/plain");
 
   expect(response.headers.getSetCookie()).toEqual(["plain=1; Path=/"]);
-  expect(document.cookie).toBe("plain=1");
+  expect(await cookieOfTheApp("plain")).toBe("1");
 });
 
 test("keeps the Set-Cookie of Response.json() in a route handler", async () => {
@@ -416,6 +424,10 @@ test("turns draft mode on in a route handler", async () => {
 
   expect(response.status).toBe(200);
   expect(await response.json()).toEqual({ draft: true });
-  // Next signs the cookie with the keys of the build.
-  expect(document.cookie).toContain("__prerender_bypass=");
+  // An HttpOnly cookie, which Next signs with the keys of the build.
+  expect(response.headers.getSetCookie()).toEqual([
+    expect.stringMatching(/^__prerender_bypass=.+; HttpOnly/),
+  ]);
+  // The next request is in draft mode.
+  expect(await runInServerAction(async () => (await draftMode()).isEnabled)).toBe(true);
 });
