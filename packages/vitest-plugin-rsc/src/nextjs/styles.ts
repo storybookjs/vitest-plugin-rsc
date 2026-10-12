@@ -399,26 +399,27 @@ export function createStylesPlugins(options: StylesOptions): Plugin[] {
   }
 
   /**
-   * The stylesheets of a test file with `"use client"`, whose components
-   * render without a page of the app: what the file imports in the layer of
-   * the browser, and what the setup files import, as for a node. Their URLs,
-   * which the browser links itself.
+   * The stylesheets of `file`, a test file with `"use client"`, whose
+   * components render without a page of the app: what the file imports in the
+   * layer of the browser, and what the setup files import, as for a node.
+   * Their URLs, which the browser links itself. Not of the test file that
+   * runs: that can be another one, which imports this one.
    */
-  async function clientFileStylesheets({
-    project,
-    testPath,
-  }: BrowserCommandContext): Promise<string[]> {
+  async function clientFileStylesheets(
+    { project }: BrowserCommandContext,
+    file: string,
+  ): Promise<string[]> {
     const { follow, collect } = reach(project.vite);
-    const modulesOf = (layer: Layer, file: string) =>
+    const modulesOf = (layer: Layer, path: string) =>
       Array.from(
         project.vite.environments[environments[layer]]!.moduleGraph.getModulesByFile(
-          normalizePath(file),
+          normalizePath(path),
         ) ?? [],
         (node) => ({ layer, node }),
       );
     const starts = [
-      ...project.config.setupFiles.flatMap((file) => modulesOf("rsc", file)),
-      ...(testPath ? modulesOf("browser", testPath) : []),
+      ...project.config.setupFiles.flatMap((setupFile) => modulesOf("rsc", setupFile)),
+      ...modulesOf("browser", file),
     ];
     await Promise.all(starts.map(({ layer, node }) => follow(layer, node)));
     // Encoded segment by segment, as Next does.

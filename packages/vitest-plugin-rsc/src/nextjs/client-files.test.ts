@@ -1,4 +1,4 @@
-import { expect, test, vi } from "vitest";
+import { expect, test } from "vitest";
 import { hostModulePrefix, isHostModule } from "../host-module.ts";
 import { clientFiles, renderServerError } from "./client-files.ts";
 import { clientFileId } from "./client-ids.ts";
@@ -22,7 +22,6 @@ type Resolved = { id: string } | null;
 type Context = {
   environment: { name: string; config: { root: string } };
   resolve(source: string, importer?: string): Promise<Resolved>;
-  addWatchFile(file: string): void;
   error(message: string): never;
 };
 
@@ -35,7 +34,6 @@ const context = (environment: string): Context => ({
       ? new URL(source, `file://${importer}`).pathname
       : `/node_modules/${source}/index.js`,
   }),
-  addWatchFile: vi.fn(),
   error(message) {
     throw new Error(message);
   },
@@ -59,8 +57,7 @@ const transform = plugin.transform as unknown as (
 const resolve = (source: string, importer?: string, environment = "react_client", options = {}) =>
   resolveId.call(context(environment), source, importer, options);
 
-test("makes a file with `use client` of the host a stub in the rsc layer, with its exports", async () => {
-  const rsc = context("client");
+test("makes a file with `use client` of the host a stub in the rsc layer, which loads it", async () => {
   const code = `"use client";
 import { test } from "vitest";
 import type { ReactNode } from "react";
@@ -69,22 +66,15 @@ import { Counter } from "./counter.tsx";
 type Props = { children: ReactNode };
 export const Primary = { args: { label: "Go" } satisfies Record<string, string> };
 export function Frame({ children }: Props) { return <div>{children}<Counter /></div>; }
-export default { title: "Frame" };
+export * from "./stories.tsx";
 test("renders", () => {});
 `;
 
-  const stub = await transform.call(rsc, code, "/app/frame.test.tsx");
+  const stub = await transform.call(context("client"), code, "/app/frame.test.tsx");
 
-  expect(stub?.code)
-    .toBe(`import { loadClientFile as $$loadClientFile } from "/plugin/nextjs/internal.js";
-const $$file = await $$loadClientFile("/@fs/app/frame.test.tsx");
-export const Primary = $$file["Primary"];
-export const Frame = $$file["Frame"];
-export default $$file.default;
+  expect(stub?.code).toBe(`import { loadClientFile } from "/plugin/nextjs/internal.js";
+await loadClientFile("/app/frame.test.tsx");
 `);
-  // The host follows these to know when to run the file again.
-  expect(rsc.addWatchFile).toHaveBeenCalledWith("/app/counter.tsx");
-  expect(rsc.addWatchFile).not.toHaveBeenCalledWith("/node_modules/vitest/index.js");
 });
 
 test("leaves a file alone that is not the host's, that has no directive, or in another layer", async () => {
@@ -97,21 +87,18 @@ test("leaves a file alone that is not the host's, that has no directive, or in a
   expect(await transform.call(context("client"), server, "/app/a.test.tsx")).toBeUndefined();
 });
 
-test("says so for a client file that does not name what it exports", async () => {
-  const code = `"use client";\nexport * from "./stories.tsx";\n`;
-
-  await expect(transform.call(context("client"), code, "/app/a.test.tsx")).rejects.toThrow(
-    'cannot tell what /app/a.test.tsx exports, which a file with "use client" has to say by name',
-  );
-});
-
-test("says so for a client file that mocks a module, which Vitest would leave out", async () => {
+test("says so for a client file that mocks a module, which the mocker of its `vi` cannot", async () => {
   const rsc = context("client");
   const file = (body: string) => `"use client";\nimport { vi } from "vitest";\n${body}\n`;
 
   await expect(
     transform.call(rsc, file(`vi.mock("./counter.tsx");`), "/app/a.test.tsx"),
   ).rejects.toThrow('/app/a.test.tsx calls vi.mock(), which a file with "use client" cannot');
+  for (const name of ["unmock", "doMock", "doUnmock"]) {
+    await expect(
+      transform.call(rsc, file(`vi.${name}("./counter.tsx");`), "/app/a.test.tsx"),
+    ).rejects.toThrow(`calls vi.${name}()`);
+  }
   await expect(
     transform.call(rsc, file(`const spy = vi.hoisted(() => vi.fn());`), "/app/a.test.tsx"),
   ).rejects.toThrow("calls vi.hoisted()");

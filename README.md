@@ -226,17 +226,18 @@ test("passes a function to a Client Component, which calls it", async () => {
 });
 ```
 
-Install what you render with as a dev dependency: `vitest-browser-react`, or `@testing-library/react` and `@testing-library/dom`. The plugin has no API for it.
+Install what you render with as a dev dependency: `vitest-browser-react`, or `@testing-library/react` and `@testing-library/dom`. The plugin has no API for it. Import `render()` in the test file, as above; that also gives `page.render()`. Not in a setup file, the way vitest-browser-react's docs suggest with `import "vitest-browser-react"`: setup files run in the `rsc` layer, whose React is the server's, so that breaks every test file. The same goes for `@testing-library/react`. Call Testing Library's `configure()` in the test file too: in a setup file, `configure()` of `@testing-library/dom` configures the `rsc` layer's copy, not the one that renders here.
 
 There is no page of your app around the component: no request, no URL and no router of Next. What that means for such a file:
 
 - `renderServer()` rejects: client code cannot render server code.
 - A Server Action that a component calls rejects: it needs Next's app. Test the component with `renderServer()` in a test file without the directive.
 - The hooks of `next/navigation` are Next's, outside its app: `useRouter()` throws `invariant expected app router to be mounted`, and `usePathname()`, `useSearchParams()` and `useParams()` return `null`. Test a component that needs the router with `renderServer()`, or pass it what it reads as a prop.
-- `vi.mock()` and `vi.hoisted()` are an error in it: Vitest mocks the modules of the server's layer. Pass a mock as a prop instead. See [Mocks](#mocks).
+- `vi.mock()`, `vi.unmock()`, `vi.doMock()`, `vi.doUnmock()` and `vi.hoisted()` are an error in it: its `vi` is the page's, whose mocker replaces the modules of the server's layer, not the browser's. Pass a mock as a prop instead. See [Mocks](#mocks).
 - What it imports is the browser's copy of a module. A `db` it imports is not the one your Server Components read.
-- The CSS that the file and the setup files import applies, as it does for a node of `renderServer()`.
-- The plugin unmounts what a test rendered after it, like Testing Library's `cleanup()`.
+- A link or a form cannot navigate: there is no router. A click on Next's `<Link>` or an `<a>`, or a form that submits, is an uncaught error that fails the run, and the test stays where it is. Test navigation with `renderServer()`.
+- The CSS that the file and the setup files import applies, as it does for a node of `renderServer()`, until the next test file starts.
+- After every test, the plugin calls `cleanup()` of vitest-browser-react and of Testing Library, which unmounts what they rendered. A root that another library keeps, like the one a toast renders into, stays.
 - With `build: "production"` React has no `act()`. Testing Library's `render()` needs it, and `render()` of vitest-browser-react resolves before React has rendered: find what it rendered with a locator, which waits. See [Development Or Production](docs/next-routes.md#development-or-production).
 
 See [A Test File With `"use client"`](docs/next-routes.md#a-test-file-with-use-client) for how this works.

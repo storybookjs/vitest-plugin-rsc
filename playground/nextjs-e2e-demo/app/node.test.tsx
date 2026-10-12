@@ -5,6 +5,7 @@ import { cookies, headers } from "next/headers";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import type { ReactNode } from "react";
+import { renderedContainers } from "../test/browser.ts";
 import { transformsOf } from "../test/service.ts";
 import { ClientFrame } from "./components/client-frame.tsx";
 import { Counter } from "./components/counter.tsx";
@@ -642,6 +643,12 @@ test("removes the container it made when the test ends", async () => {
   await cleanup();
 
   expect(container.isConnected).toBe(false);
+});
+
+test('starts without what a test file with "use client" rendered', () => {
+  // The plugin has vitest-browser-react take it away after every test of
+  // such a file, also the last one: see client.test.tsx.
+  expect(renderedContainers()).toEqual([]);
 });
 
 function Broken(): never {

@@ -1,8 +1,8 @@
-import type { Container, Root } from "react-dom/client";
 import type { ModuleRunner } from "vite/module-runner";
 import { commands } from "vitest/browser";
 import { isHostModule } from "../host-module.ts";
 import { checkFetchedModules, createEnvironmentRunner, takeFetchedModules } from "../utils.ts";
+import { clientFileId } from "./client-ids.ts";
 import { registry } from "./registry.ts";
 import { clientFileStylesheetsCommand } from "./styles-command.ts";
 
@@ -23,10 +23,8 @@ let graph: ModuleRunner | undefined;
 // One file at a time: a file that loads may have the graph evaluate its
 // modules again.
 let loading: Promise<unknown> = Promise.resolve();
-// What each client file linked, to take it back: see `unloadClientFile()`.
-const linked = new Map<string, () => void>();
-// The React roots of the graph, with their containers: see `unmountClientRoots()`.
-const roots = new Map<Root, Container>();
+// The stylesheets that the client files linked: see `unlinkClientStylesheets()`.
+const linked = new Set<HTMLLinkElement>();
 
 // What stays the same when a file of the app changes: a package, and a module
 // of the page (../host-module.ts). React stays, with the roots it made.
@@ -41,25 +39,21 @@ const isDependency = ({ id, file }: { id: string; file: string | null }) =>
 const browserRequire = (id: string) => registry.loadBrowserModule(id);
 
 /**
- * Evaluates a file with `"use client"` in the module graph of the browser
- * layer, and answers with what it exports. `id` is what the browser layer
- * imports the file by. The module of the rsc layer for such a file calls
- * this, so Vitest, which imports the file there, gets these exports.
+ * Evaluates `file`, a test file with `"use client"`, in the module graph of
+ * the browser layer, with its tests. The module of the rsc layer for such a
+ * file calls this, so the tests go to Vitest, which imports the file there.
  */
-export function loadClientFile(id: string): Promise<Record<string, unknown>> {
-  const loaded = loading.then(() => load(id));
+export function loadClientFile(file: string): Promise<void> {
+  const loaded = loading.then(() => load(file));
   loading = loaded.catch(() => {});
   return loaded;
 }
 
-async function load(id: string): Promise<Record<string, unknown>> {
+async function load(file: string): Promise<void> {
   // The server's modules as they are now: the graph outlives a page load.
   await checkFetchedModules();
-  if (!graph) {
-    // A test that fails says where, in the file as it is written.
-    graph = createEnvironmentRunner(environment, { sourcemaps: true });
-    await recordRoots(graph);
-  }
+  // A test that fails says where, in the file as it is written.
+  graph ??= createEnvironmentRunner(environment, { sourcemaps: true });
   const { evaluatedModules } = graph;
   // After a change of a file the graph evaluates the modules of the app
   // again, as a page load does: the server cannot tell which of them
@@ -71,51 +65,55 @@ async function load(id: string): Promise<Record<string, unknown>> {
   }
   // The file itself runs every time it loads: its tests are collected as it
   // does, as in watch mode.
-  const file = evaluatedModules.getModuleByUrl(id);
-  if (file) evaluatedModules.invalidateModule(file);
+  const id = clientFileId(file);
+  const loaded = evaluatedModules.getModuleByUrl(id);
+  if (loaded) evaluatedModules.invalidateModule(loaded);
   registry.browserRequire = browserRequire;
   serverActionsNeedTheApp();
-  const exports = await graph.import<Record<string, unknown>>(id);
-  linked.get(id)?.();
-  linked.set(id, await linkStylesheets());
-  return exports;
+  await graph.import(id);
+  await linkStylesheets(file);
 }
 
-// Before anything renders with it: React DOM of the graph says what roots it
-// makes. A module that imports it reads `createRoot` off it.
-async function recordRoots(runner: ModuleRunner): Promise<void> {
-  const { default: client } = await runner.import<{ default: typeof import("react-dom/client") }>(
-    "react-dom/client",
+// The libraries that render a component as React does, by their package.
+// Each keeps the roots it made, and unmounts them with its `cleanup()`. Vite
+// pre-bundles a package into a file of its name, with `_` for a `/`.
+const renderers = ["vitest-browser-react", "@testing-library/react"];
+const isRenderer = (file: string) =>
+  renderers.some(
+    (name) =>
+      file.includes(`/node_modules/${name}/`) || file.endsWith(`/${name.replace("/", "_")}.js`),
   );
-  const { createRoot, hydrateRoot } = client;
-  const record = (root: Root, container: Container) => (roots.set(root, container), root);
-  client.createRoot = (container, options) => record(createRoot(container, options), container);
-  client.hydrateRoot = (container, children, options) =>
-    record(hydrateRoot(container, children, options), container);
-}
 
 /**
- * Unmounts what the components of a client file rendered, after a test as a
- * page is left. A library that renders, like vitest-browser-react, unmounts
- * its own before every test of the file it loads in, and in the graph it
- * loads once, for every file. A container in the body goes, as such a
- * library takes away the one it made.
+ * Has the libraries that rendered in the graph unmount what they rendered,
+ * around every test. They would do it themselves with a test runner that
+ * evaluates them for every test file: vitest-browser-react in a `beforeEach()`
+ * it registers as it loads, and the graph loads it once, for every file.
+ * Testing Library only with Vitest's globals. What a library renders itself,
+ * like a toast into a root it keeps, stays the library's.
+ *
+ * Not through what vitest-browser-react gives the page for Vitest to clean
+ * up with, `Symbol.for("vitest:component-cleanup")`: Vitest calls that once,
+ * when the tab is done, and the `page.extend()` of `@vitest/browser` 5.0
+ * leaves out a key that is a symbol.
  */
-export function unmountClientRoots(): void {
-  for (const [root, container] of roots) {
-    root.unmount();
-    if (container.parentNode === document.body) (container as Element).remove();
+export async function cleanupClientRenders(): Promise<void> {
+  if (!graph) return;
+  const cleanups = new Set<() => unknown>();
+  for (const { file, exports } of graph.evaluatedModules.idToModuleMap.values()) {
+    const cleanup = (exports as { cleanup?: unknown } | undefined)?.cleanup;
+    if (typeof cleanup === "function" && isRenderer(file)) cleanups.add(cleanup as () => unknown);
   }
-  roots.clear();
+  for (const cleanup of cleanups) await cleanup();
 }
 
-// The CSS of what a client file imports, linked in the document until the
-// file is done, as a page of the app links its CSS: see styles.ts. Vite's
-// `<style>` of a module would stay for the pages of the files after it.
-async function linkStylesheets(): Promise<() => void> {
-  const urls = await (commands as unknown as Record<string, () => Promise<string[]>>)[
+// The CSS of what a client file imports, linked in the document, as a page of
+// the app links its CSS: see styles.ts. Vite's `<style>` of a module would
+// stay for the pages of the files after it.
+async function linkStylesheets(file: string): Promise<void> {
+  const urls = await (commands as unknown as Record<string, (file: string) => Promise<string[]>>)[
     clientFileStylesheetsCommand
-  ]!();
+  ]!(file);
   const links = urls.map((href) =>
     Object.assign(document.createElement("link"), { rel: "stylesheet", href }),
   );
@@ -123,9 +121,18 @@ async function linkStylesheets(): Promise<() => void> {
   const loaded = links.map(
     (link) => new Promise((resolve) => (link.onload = link.onerror = resolve)),
   );
+  for (const link of links) linked.add(link);
   document.head.append(...links);
   await Promise.all(loaded);
-  return () => links.forEach((link) => link.remove());
+}
+
+/**
+ * Takes back the stylesheets that client files linked: the plugin's setup
+ * file calls this before every test file. The graph keeps its modules.
+ */
+export function unlinkClientStylesheets(): void {
+  for (const link of linked) link.remove();
+  linked.clear();
 }
 
 // A Server Action that a component of the browser layer calls goes through
@@ -141,22 +148,4 @@ function serverActionsNeedTheApp(): void {
         `in: test it with renderServer() in a test file without "use client".`,
     );
   };
-}
-
-/**
- * Takes back what `loadClientFile()` linked for a client file: its tests are
- * done. The graph keeps its modules.
- */
-export function unloadClientFile(id: string): void {
-  linked.get(id)?.();
-  linked.delete(id);
-}
-
-/**
- * Takes back what every client file but the one `id` names linked. Vitest
- * runs no hook of a file whose tests are all skipped, like with `-t` or
- * `describe.skip`, so that one is done when the file after it starts.
- */
-export function unloadClientFilesExcept(id: string): void {
-  for (const file of linked.keys()) if (file !== id) unloadClientFile(file);
 }

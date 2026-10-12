@@ -1,20 +1,22 @@
 import path from "node:path";
-import { transformDirectiveProxyExport } from "@vitejs/plugin-rsc/transforms";
-import { normalizePath, parseAstAsync, transformWithOxc, type Plugin } from "vite";
+import { hasDirective } from "@vitejs/plugin-rsc/transforms";
+import { normalizePath, parseAstAsync, type Plugin } from "vite";
 import { hostModulePrefix } from "../host-module.ts";
-import { clientFileId } from "./client-ids.ts";
 
 // A test file with `"use client"` is a client boundary, as a file with that
 // directive is in React: a module of the browser layer. Vitest still imports
 // it in its own environment, which is the rsc layer, to collect its tests. So
 // there it is a stub, which has the page evaluate the file in the browser
-// layer and hands out its exports: see client-graph.ts.
+// layer: see client-graph.ts.
 //
 // The file runs in the browser layer, and the test runner does not: `vitest`
-// has the test that is running. So an import of `vitest`, `@vitest/*`, the
-// testing library or a setup file is of the module the page has, see
-// ../host-module.ts. That goes for every module of the browser layer, like
-// `render()` of vitest-browser-react, which registers a hook with `vitest`.
+// has the test that is running. So an import of `vitest`, `@vitest/*` or the
+// testing library is of the module the page has, see ../host-module.ts. That
+// goes for every module of the browser layer, like `render()` of
+// vitest-browser-react, which registers a hook with `vitest`. An import of a
+// setup file goes to the page too, at the file's own URL, which the page
+// evaluates once. Not the instance that Vitest ran before the test file:
+// it evaluates a setup file before every test file, with a query of its own.
 // Every other import is the browser layer's.
 
 const sourceFile = /\.(?:tsx|ts|mts|jsx|js|mjs)$/;
@@ -26,7 +28,7 @@ export type ClientFilesOptions = {
   environments: { rsc: string; browser: string };
   /** `vitest-plugin-rsc/nextjs/testing-library`, and the file it is. */
   testingLibrary: { specifier: string; file: string };
-  /** The file of `vitest-plugin-rsc/nextjs/internal`, which loads a client file. */
+  /** The file of the plugin that loads a client file: internal.ts. */
   internal: string;
   /** Whether a file is the host's: a test file or a setup file. */
   isHostFile(file: string): boolean;
@@ -34,19 +36,15 @@ export type ClientFilesOptions = {
   isHostPackage(specifier: string): boolean;
 };
 
-/** The module of the rsc layer for a client file with these exports. */
-export function clientFileStub(id: string, exportNames: string[], internal: string): string {
-  const exports = exportNames.map((name) =>
-    name === "default"
-      ? `export default $$file.default;`
-      : `export const ${name} = $$file[${JSON.stringify(name)}];`,
+/**
+ * The module of the rsc layer for a client file: it has the page evaluate the
+ * file, with its tests. Vitest only runs a test file, so it exports nothing.
+ */
+export function clientFileStub(file: string, internal: string): string {
+  return (
+    `import { loadClientFile } from ${JSON.stringify(internal)};\n` +
+    `await loadClientFile(${JSON.stringify(file)});\n`
   );
-  return [
-    `import { loadClientFile as $$loadClientFile } from ${JSON.stringify(internal)};`,
-    `const $$file = await $$loadClientFile(${JSON.stringify(id)});`,
-    ...exports,
-    "",
-  ].join("\n");
 }
 
 /** What `renderServer()` throws in a file with `"use client"`. */
@@ -119,49 +117,20 @@ export function clientFiles(options: ClientFilesOptions): Plugin {
       if (this.environment.name !== rsc || !code.includes("use client")) return;
       const file = id.split("?")[0]!;
       if (id.includes("?") || !sourceFile.test(file) || !isHostFile(file)) return;
-      // Types and JSX are in the way of reading what the file exports.
-      const compiled = await transformWithOxc(code, file, {
-        lang: languageOf(file),
-        sourcemap: false,
-      });
-      const ast = await parseAstAsync(compiled.code);
-      let exportNames: string[] | undefined;
-      try {
-        exportNames = transformDirectiveProxyExport(ast, {
-          directive: "use client",
-          runtime: () => "undefined",
-        })?.exportNames;
-      } catch (error) {
-        this.error(
-          `vitest-plugin-rsc: cannot tell what ${file} exports, which a file with "use client" ` +
-            `has to say by name. ${String(error instanceof Error ? error.message : error)}`,
-        );
-      }
-      if (!exportNames) return;
-      // Vitest hoists these out of the file in the rsc layer, which has a stub
-      // for it, and mocks the modules of that layer. Not the browser layer's.
+      const ast = await parseAstAsync(code, { lang: languageOf(file) });
+      if (!hasDirective(ast.body, "use client")) return;
+      // The file runs with the page's `vi`, whose mocker replaces what the
+      // page imports: the modules of the rsc layer, not the ones that the
+      // module runner of the browser layer fetches for the file.
       const mocking = findMocking(ast);
       if (mocking) {
         this.error(
           `vitest-plugin-rsc: ${file} calls ${mocking}(), which a file with "use client" cannot: ` +
-            `it runs in the browser layer, and Vitest mocks the modules of the test's own ` +
-            `environment. Mock in a test file without the directive, or pass a mock as a prop.`,
+            `it runs in the browser layer, and Vitest's mocker replaces the modules of the rsc ` +
+            `layer. Mock in a test file without the directive, or pass a mock as a prop.`,
         );
       }
-      // The host follows the imports of a file to know when to run it again.
-      // The stub has none of them, so it names the ones of the file.
-      for (const node of ast.body) {
-        if (node.type !== "ImportDeclaration" && node.type !== "ExportNamedDeclaration") continue;
-        const source = node.source?.value;
-        const resolved = typeof source === "string" && (await this.resolve(source, file));
-        if (resolved && path.isAbsolute(resolved.id) && !resolved.id.includes("/node_modules/")) {
-          this.addWatchFile(resolved.id.split("?")[0]!);
-        }
-      }
-      return {
-        code: clientFileStub(clientFileId(normalizePath(file)), exportNames, internal),
-        map: { mappings: "" },
-      };
+      return { code: clientFileStub(normalizePath(file), internal), map: { mappings: "" } };
     },
   };
 }

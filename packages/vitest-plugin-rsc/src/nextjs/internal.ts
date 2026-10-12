@@ -1,5 +1,6 @@
-// `vitest-plugin-rsc/nextjs/internal`: not public API. What the code the
-// plugin generates needs. It changes with the plugin.
+// What the code that the plugin generates imports, by the path of this file,
+// which is an entry of the build for that. Not an export of the package, and
+// not public API: it changes with the plugin.
 
 /**
  * @internal Loads a file with `"use client"` in the browser layer: the

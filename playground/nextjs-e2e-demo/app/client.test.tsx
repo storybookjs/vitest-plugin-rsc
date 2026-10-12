@@ -1,12 +1,14 @@
 "use client";
 
 import { fireEvent, render as renderWithTestingLibrary, screen } from "@testing-library/react";
-import { useRouter } from "next/navigation";
+import Link from "next/link";
+import { useParams, usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Component, useState, version, type ReactNode } from "react";
 import { afterEach, beforeEach, expect, inject, test, vi, type MockInstance } from "vitest";
 import { page } from "vitest/browser";
 import { render } from "vitest-browser-react";
 import { renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
+import { linkedStylesheets, renderedContainers } from "../test/browser.ts";
 import { PressButton } from "./components/press-button.tsx";
 import { toggleFavorite } from "./lib/actions.ts";
 import { buildOf } from "./lib/build.ts";
@@ -30,6 +32,9 @@ let consoleError: MockInstance<typeof console.error>;
 beforeEach(() => {
   vi.restoreAllMocks();
   consoleError = vi.spyOn(console, "error");
+  // What vitest-browser-react rendered before, in this file or another one:
+  // see client-cleanup.test.tsx.
+  expect(renderedContainers()).toEqual([]);
 });
 
 afterEach(() => {
@@ -108,6 +113,8 @@ function Toggle() {
 }
 
 test.skipIf(build === "production")("renders with Testing Library", () => {
+  // client-cleanup.test.tsx renders a button of that name with Testing
+  // Library too, which the plugin has Testing Library take away after it.
   renderWithTestingLibrary(<Toggle />);
 
   fireEvent.click(screen.getByRole("button", { name: "Toggle" }));
@@ -115,12 +122,15 @@ test.skipIf(build === "production")("renders with Testing Library", () => {
   expect(screen.getByRole("button", { name: "Toggle" }).getAttribute("aria-pressed")).toBe("true");
 });
 
-test("links the CSS of a Client Component that this file imports", async () => {
+test("links the CSS of a Client Component that this file imports, and none of another file", async () => {
   const { getByText } = await render(<ClientCard />);
   const card = await getByText("Styled by a CSS module in a Client Component").findElement();
 
   // Linked before the tests of the file run.
   expect(getComputedStyle(card).color).toBe("rgb(128, 0, 0)");
+  expect(linkedStylesheets()).toContainEqual(expect.stringContaining("client-card.module.css"));
+  // That of the badge that client-cleanup.test.tsx imports went with it.
+  expect(linkedStylesheets()).not.toContainEqual(expect.stringContaining("client-badge.css"));
 });
 
 test("says that renderServer() renders on the server, which client code cannot", async () => {
@@ -184,4 +194,49 @@ test("has Next's own error for a hook of its router, which is not there", async 
   await expect
     .element(page.getByRole("alert"))
     .toHaveTextContent("invariant expected app router to be mounted");
+});
+
+test("has null for what the hooks of Next's router read of the URL, which is not there", async () => {
+  let read: unknown;
+  function ReadsTheUrl() {
+    read = { pathname: usePathname(), searchParams: useSearchParams(), params: useParams() };
+    return null;
+  }
+
+  await render(<ReadsTheUrl />);
+
+  await expect.poll(() => read).toEqual({ pathname: null, searchParams: null, params: null });
+});
+
+test("says that a link cannot navigate without Next's router, and stays", async () => {
+  // An uncaught error, which would fail this test run too.
+  const reportError = vi.spyOn(window, "reportError").mockImplementation(() => {});
+  const { getByRole } = await render(<Link href="/notes">Notes</Link>);
+
+  // Without its router, Next's `<Link>` leaves the navigation to the browser.
+  await getByRole("link", { name: "Notes" }).click();
+
+  await expect.poll(() => reportError.mock.calls).toHaveLength(1);
+  const error = String(reportError.mock.calls[0]![0]);
+  expect(error).toMatch(`navigated to ${location.origin}/notes`);
+  expect(error).toMatch('A test file with "use client" has no router');
+  await expect.element(getByRole("link", { name: "Notes" })).toBeVisible();
+});
+
+test("says that a form cannot navigate without Next's router either", async () => {
+  const reportError = vi.spyOn(window, "reportError").mockImplementation(() => {});
+  const { getByRole } = await render(
+    <form action="/search">
+      <input name="q" defaultValue="notes" aria-label="Query" />
+      <button>Search</button>
+    </form>,
+  );
+
+  await getByRole("button", { name: "Search" }).click();
+
+  await expect.poll(() => reportError.mock.calls).toHaveLength(1);
+  expect(String(reportError.mock.calls[0]![0])).toMatch(
+    `navigated to ${location.origin}/search?q=notes`,
+  );
+  await expect.element(getByRole("textbox", { name: "Query" })).toHaveValue("notes");
 });

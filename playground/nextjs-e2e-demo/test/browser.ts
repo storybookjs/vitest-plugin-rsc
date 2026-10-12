@@ -21,3 +21,17 @@ export function cssRules(): CSSRule[] {
 export function whereAmI(): string {
   return typeof window === "undefined" ? "server" : "browser";
 }
+
+// The URLs of the stylesheets that are linked in the document.
+export function linkedStylesheets(): string[] {
+  return Array.from(
+    document.querySelectorAll<HTMLLinkElement>('link[rel="stylesheet"]'),
+    (link) => link.href,
+  );
+}
+
+// The containers in the body that vitest-browser-react rendered in, and has
+// not taken away: it gives each an id of Vitest, for its locators.
+export function renderedContainers(): Element[] {
+  return Array.from(document.querySelectorAll('body > [data-testid^="__vitest_"]'));
+}
