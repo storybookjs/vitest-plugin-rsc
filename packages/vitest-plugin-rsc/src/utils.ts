@@ -82,7 +82,7 @@ function getRunner(environment: string): ModuleRunner {
   let runner = runners.get(environment);
   if (!runner) {
     const invoke = (payload: InvokePayload) => invokeEnvironment(environment, payload);
-    runners.set(environment, (runner = createRunner(invoke, createEvaluator())));
+    runners.set(environment, (runner = createRunner(invoke, pageLoadEvaluator)));
   }
   return runner;
 }
@@ -114,7 +114,6 @@ function createRunner(
  */
 export function createEnvironmentRunner(
   environment: string,
-  evaluator: ModuleEvaluator = createEvaluator(),
   { sourcemaps = false } = {},
 ): ModuleRunner {
   let first: FetchedModules | undefined;
@@ -127,7 +126,29 @@ export function createEnvironmentRunner(
       ? invokeForPageLoad(environment, payload, modules)
       : invokeEnvironment(environment, payload);
   };
-  return createRunner(invoke, evaluator, { sourcemaps });
+  const runner = createRunner(invoke, pageLoadEvaluator, { sourcemaps });
+  takes.set(runner, async () => {
+    const modules = await fetchedModules(environment);
+    const changed = first !== undefined && first !== modules;
+    first = modules;
+    return changed;
+  });
+  return runner;
+}
+
+const takes = new WeakMap<ModuleRunner, () => Promise<boolean>>();
+
+/**
+ * For a runner of `createEnvironmentRunner()` that outlives a page load: it
+ * takes the modules that the tab has fetched now, as the runner of the next
+ * page load does, where it would ask the server for each one from then on.
+ * Call `checkFetchedModules()` first. Resolves with whether those are of
+ * another version than the runner had: a file has changed. The modules that
+ * the runner has evaluated stay as they are, also one that changed, which the
+ * server cannot tell this runner. Invalidate the ones that may have.
+ */
+export function takeFetchedModules(runner: ModuleRunner): Promise<boolean> {
+  return takes.get(runner)?.() ?? Promise.resolve(false);
 }
 
 // A module of the page is not the environment's to serve: the runner imports
@@ -136,24 +157,6 @@ function hostModule(payload: InvokePayload): InvokeResult | undefined {
   const { name, data } = (payload as { data: { name: string; data: unknown[] } }).data;
   if (name !== "fetchModule" || !isHostModule(String(data[0]))) return;
   return { result: { externalize: data[0], type: "module" } } as InvokeResult;
-}
-
-/**
- * How a runner of the page evaluates a module: as `evaluator` does, which by
- * default compiles a module that the pages share once (`pageLoadEvaluator`),
- * and with the page's own module for a module of the page.
- */
-export function createEvaluator(evaluator: ModuleEvaluator = pageLoadEvaluator): ModuleEvaluator {
-  return {
-    startOffset: evaluator.startOffset,
-    runInlinedModule: (context, code, module) => evaluator.runInlinedModule(context, code, module),
-    async runExternalModule(file) {
-      if (!isHostModule(file)) return evaluator.runExternalModule(file);
-      // What the page serves for a module of its own has that module as its
-      // default export.
-      return ((await evaluator.runExternalModule(file)) as { default?: unknown }).default;
-    },
-  };
 }
 
 export function importReactClient<T = any>(id: string): Promise<T> {
@@ -176,10 +179,6 @@ async function invokeEnvironment(environment: string, payload: InvokePayload) {
 type FetchedModules = { version: unknown; results: Map<string, Promise<InvokeResult>> };
 
 const fetchedModulesOf = new Map<string, Promise<FetchedModules>>();
-// Those of the version the server said last. Two checks at once that hear of
-// the same new version share them: a runner that took the others would ask
-// the server itself.
-const latestModulesOf = new Map<string, FetchedModules>();
 
 function fetchedModules(environment: string): Promise<FetchedModules> {
   return fetchedModulesOf.get(environment) ?? askForModules(environment);
@@ -189,14 +188,8 @@ function fetchedModules(environment: string): Promise<FetchedModules> {
 // its modules.
 function askForModules(environment: string, known?: FetchedModules): Promise<FetchedModules> {
   const fetched = requestOverWebSocket(reactClientWebSocketVersionEvent, { environment }).then(
-    (version): FetchedModules => {
-      if (known && known.version === version) return known;
-      const latest = latestModulesOf.get(environment);
-      if (latest && latest.version === version) return latest;
-      const modules = { version, results: new Map() };
-      latestModulesOf.set(environment, modules);
-      return modules;
-    },
+    (version): FetchedModules =>
+      known && known.version === version ? known : { version, results: new Map() },
   );
   fetchedModulesOf.set(environment, fetched);
   // Not kept: the next module asks again. Modules that were fetched stay, and
@@ -357,7 +350,12 @@ const pageLoadEvaluator: ModuleEvaluator = {
     await run(...contextKeys.map((key) => context[key]));
     Object.seal(context[ssrModuleExportsKey]);
   },
-  runExternalModule: (file) => import(/* @vite-ignore */ file),
+  async runExternalModule(file) {
+    const exports = (await import(/* @vite-ignore */ file)) as { default?: unknown };
+    // What the page serves for a module of its own has that module as its
+    // default export: see host-module.ts.
+    return isHostModule(file) ? exports.default : exports;
+  },
 };
 
 async function withReactClientCoverage(result: InvokeResult) {

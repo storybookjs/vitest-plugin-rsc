@@ -2,26 +2,20 @@ import path from "node:path";
 import { transformDirectiveProxyExport } from "@vitejs/plugin-rsc/transforms";
 import { normalizePath, parseAstAsync, transformWithOxc, type Plugin } from "vite";
 import { hostModulePrefix } from "../host-module.ts";
-import { clientFileId, liveModulePrefix } from "./client-ids.ts";
+import { clientFileId } from "./client-ids.ts";
 
-// A test file with `"use client"` is a module of the browser layer, as a file
-// with that directive is in Next. Vitest still imports it in its own
-// environment, which is the rsc layer, to collect its tests. So there it is a
-// stub, which has the page evaluate the file itself for the browser layer and
-// hands out its exports: see client-graph.ts.
+// A test file with `"use client"` is a client boundary, as a file with that
+// directive is in React: a module of the browser layer. Vitest still imports
+// it in its own environment, which is the rsc layer, to collect its tests. So
+// there it is a stub, which has the page evaluate the file in the browser
+// layer and hands out its exports: see client-graph.ts.
 //
-// The file runs in the browser layer, and what it imports from the host, the
-// test runner, does not: `vitest` has the test that is running. Those imports
-// are of the modules the page has, see ../host-module.ts.
-//
-// Every other import of the file is, in the browser layer, of a module that
-// has the namespace of that import as its one export. The file is evaluated
-// once and reads its imports from the page that is open, see client-graph.ts,
-// and Vite compiles a named import of a CommonJS dependency, which React is,
-// to a constant at the top of the importer. A constant does not follow the
-// page. The module in between is ESM, so the file reads a property of it when
-// it uses the import, and the constant is in that module, which every page
-// evaluates again.
+// The file runs in the browser layer, and the test runner does not: `vitest`
+// has the test that is running. So an import of `vitest`, `@vitest/*`, the
+// testing library or a setup file is of the module the page has, see
+// ../host-module.ts. That goes for every module of the browser layer, like
+// `render()` of vitest-browser-react, which registers a hook with `vitest`.
+// Every other import is the browser layer's.
 
 const sourceFile = /\.(?:tsx|ts|mts|jsx|js|mjs)$/;
 const languageOf = (file: string) =>
@@ -55,25 +49,28 @@ export function clientFileStub(id: string, exportNames: string[], internal: stri
   ].join("\n");
 }
 
-// What a client file imports, and from which file: both are in the id.
-const liveModuleId = (file: string, source: string) =>
-  liveModulePrefix + Buffer.from(JSON.stringify([file, source])).toString("base64url");
-const liveModuleOf = (id: string) =>
-  JSON.parse(Buffer.from(id.slice(liveModulePrefix.length), "base64url").toString()) as [
-    file: string,
-    source: string,
-  ];
+/** What `renderServer()` throws in a file with `"use client"`. */
+export const renderServerError =
+  'vitest-plugin-rsc: renderServer() renders on the server, and this test file has "use client": ' +
+  "it is client code, which cannot render server code. Render a Client Component with " +
+  "`render()` of vitest-browser-react or of @testing-library/react, or test a connected " +
+  'component with renderServer() in a test file without "use client".';
 
 /** What the page imports for a module of the host: see ../host-module.ts. */
 export function hostModuleCode(
   target: string,
   testingLibrary: ClientFilesOptions["testingLibrary"],
 ): string {
-  // In a client file, a node is one of the browser layer.
+  // A client file renders no server code.
   if (target === testingLibrary.specifier) {
     return (
       `import * as module from ${JSON.stringify(testingLibrary.file)};\n` +
-      `export default { ...module, renderServer: module.renderClient };\n`
+      `export default {\n` +
+      `  ...module,\n` +
+      `  async renderServer() {\n` +
+      `    throw new Error(${JSON.stringify(renderServerError)});\n` +
+      `  },\n` +
+      `};\n`
     );
   }
   return `import * as module from ${JSON.stringify(target)};\nexport default module;\n`;
@@ -90,38 +87,26 @@ export function clientFiles(options: ClientFilesOptions): Plugin {
       // Before the resolver of a package manager, or of the host itself.
       order: "pre",
       async handler(source, importer, resolveOptions) {
-        if (source.startsWith(hostModulePrefix) || source.startsWith(liveModulePrefix)) {
-          return source;
-        }
+        if (source.startsWith(hostModulePrefix)) return source;
         if (this.environment.name !== browser) return;
         // What the page asks a layer for is that layer's. It has no importer,
         // for which Vite names the `index.html` of the root.
         const { root } = this.environment.config;
         if (!importer || importer === path.posix.join(normalizePath(root), "index.html")) return;
-        const others = { ...resolveOptions, skipSelf: true };
-        // The import of a client file, from the module in between.
-        if (importer.startsWith(liveModulePrefix)) {
-          return this.resolve(source, liveModuleOf(importer)[0], others);
-        }
         if (isHostPackage(source) || source === testingLibrary.specifier) {
           return hostModulePrefix + source;
         }
         const file = importer.split("?")[0]!;
         if (!isHostFile(file)) return;
         // Another file of the host, like a setup file.
-        const resolved = await this.resolve(source, file, others);
+        const resolved = await this.resolve(source, file, { ...resolveOptions, skipSelf: true });
         if (resolved && !resolved.id.includes("?") && isHostFile(resolved.id)) {
           return hostModulePrefix + normalizePath(resolved.id);
         }
-        // Not for the scan of the dependencies, which is after what the file
-        // imports: a module in between hides that.
-        if (!(resolveOptions as { scan?: boolean }).scan) return liveModuleId(file, source);
+        return resolved;
       },
     },
     load(id) {
-      if (id.startsWith(liveModulePrefix)) {
-        return `import * as module from ${JSON.stringify(liveModuleOf(id)[1])};\nexport { module };\n`;
-      }
       if (!id.startsWith(hostModulePrefix)) return;
       const target = id.slice(hostModulePrefix.length);
       // Not the browser layer's to evaluate: the transport of its module

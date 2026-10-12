@@ -6,6 +6,12 @@
 export const stylesheetsCommand = "vitestPluginRscStylesheets";
 
 /**
+ * The browser command for the stylesheets of a test file with `"use client"`,
+ * which renders without a page: their URLs. See styles.ts.
+ */
+export const clientFileStylesheetsCommand = "vitestPluginRscClientFileStylesheets";
+
+/**
  * The stylesheets of a route. For each file of a segment that has any, by the
  * name the loader tree has for it without its extension, which is how Next
  * looks them up: their paths under `/_next/`, and their CSS where the app has

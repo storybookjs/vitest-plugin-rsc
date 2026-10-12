@@ -16,7 +16,11 @@ import type { BrowserCommandContext } from "vitest/node";
 import { hostModulePrefix } from "../host-module.ts";
 import type { ComponentRoute, NextLayer, NextProject, NextRoute } from "./project.ts";
 import { componentPagePath } from "./project/entries.ts";
-import { stylesheetsCommand, type Stylesheets } from "./styles-command.ts";
+import {
+  clientFileStylesheetsCommand,
+  stylesheetsCommand,
+  type Stylesheets,
+} from "./styles-command.ts";
 
 // The CSS of the app, the way Next brings it to a page: as the stylesheets of
 // the segment that imports them.
@@ -177,9 +181,9 @@ export type StylesOptions = {
    */
   isServerCode(file: string): boolean;
   /**
-   * Whether a file is the host's: a test file or a setup file of Vitest. What
-   * it imports is not the app's: in the rsc layer it is no server code, and in
-   * the layer of the browser it is a file with `"use client"`.
+   * Whether a file is the host's: a test file or a setup file of Vitest. In
+   * the layer of the browser that is a test file with `"use client"`, whose
+   * own CSS is Vite's, as in the rsc layer.
    */
   isHostFile(file: string): boolean;
   /** The page route that has `entry` for the name of its modules. */
@@ -286,9 +290,9 @@ export function createStylesPlugins(options: StylesOptions): Plugin[] {
       return loaded.module;
     }
 
-    // A module of the page, which a file of the host with `"use client"`
-    // imports in the layer of the browser, is the host's: see ../host-module.ts.
-    // The server does not load it, nor what it imports.
+    // Where a walk ends: at a list of the routes, and at a module of the page,
+    // which a test file with `"use client"` imports in the layer of the
+    // browser. That one is the host's, see ../host-module.ts.
     const isEnd = (id: string) => lists.has(id) || id.startsWith(hostModulePrefix);
 
     /** Has Vite's graphs know what `node` imports, as far as it goes. */
@@ -343,74 +347,85 @@ export function createStylesPlugins(options: StylesOptions): Plugin[] {
   /**
    * The stylesheets of a route, per file of a segment: see `Stylesheets`. The
    * node of a test is the page of its route, and no file: its stylesheets are
-   * those of the files that render it, which `isNodeFile` says. Those are in
-   * the rsc layer, and in the layer of the browser with `"use client"`. With
+   * those of the test file that renders it, and of the setup files. With
    * `layouts: true` the layouts of the app around it have their own.
    */
   async function stylesheetsOf(
-    vite: ViteDevServer,
-    isNodeFile: (file: string) => boolean,
+    { project, testPath }: BrowserCommandContext,
     entry: string,
     inline: boolean,
   ): Promise<Stylesheets> {
     const route = options.routeOf(entry);
     if (!route) return {};
-    const { load, follow, collect } = reach(vite);
-    const starts = new Map<string, { layer: Layer; node: EnvironmentModuleNode }[]>();
+    const { load, follow, collect } = reach(project.vite);
+    const rsc = project.vite.environments[environments.rsc]!;
+    const starts = new Map<string, EnvironmentModuleNode[]>();
 
     await Promise.all(
       (await segmentFilesOf(route)).map(async (file) => {
         const node = await load("rsc", file);
         // As Next looks it up: `getLinkAndScriptTags()`.
-        if (node) starts.set(file.replace(/\.[^.]+$/, ""), [{ layer: "rsc", node }]);
+        if (node) starts.set(file.replace(/\.[^.]+$/, ""), [node]);
       }),
     );
     if ("component" in route) {
-      const layers = ["rsc", "browser"] as const;
-      const nodeModules = layers.flatMap((layer) =>
-        Array.from(vite.environments[environments[layer]]!.moduleGraph.idToModuleMap.values())
-          .filter((node) => node.file && isNodeFile(node.file))
-          .map((node) => ({ layer, node })),
+      const files = [...project.config.setupFiles, ...(testPath ? [testPath] : [])].map((file) =>
+        normalizePath(file),
       );
-      starts.set(componentPagePath, nodeModules);
+      starts.set(
+        componentPagePath,
+        files.flatMap((file) => [...(rsc.moduleGraph.getModulesByFile(file) ?? [])]),
+      );
     }
 
-    await Promise.all([...starts.values()].flat().map(({ layer, node }) => follow(layer, node)));
+    await Promise.all([...starts.values()].flat().map((node) => follow("rsc", node)));
     // Next puts the CSS in the page itself, in a `<style>`, where the app asks
     // for it. Its build does so for `next start`, which this is, and Next
     // does for a page load, which `inline` says this is.
     const { experimental } = getProject().config as { experimental?: { inlineCss?: boolean } };
     const contentOf = async (path: string) =>
-      inline && experimental?.inlineCss ? (await cssOf(vite, path))?.code : undefined;
+      inline && experimental?.inlineCss ? (await cssOf(project.vite, path))?.code : undefined;
     // Also a file without any: it may have had some before an edit.
     return Object.fromEntries(
       await Promise.all(
         Array.from(starts, async ([file, start]) => [
           file,
           await Promise.all(
-            collect(start.map(({ node }) => node)).map(async (path) => ({
-              path,
-              content: await contentOf(path),
-            })),
+            collect(start).map(async (path) => ({ path, content: await contentOf(path) })),
           ),
         ]),
       ),
     );
   }
 
-  // Under Vitest the node of a test is rendered by its test file, with the
-  // setup files before it. Vitest says which test file asks.
-  function fromVitest(
-    { project, testPath }: BrowserCommandContext,
-    entry: string,
-    inline: boolean,
-  ) {
-    const files = new Set(
-      [...project.config.setupFiles, ...(testPath ? [testPath] : [])].map((file) =>
-        normalizePath(file),
-      ),
+  /**
+   * The stylesheets of a test file with `"use client"`, whose components
+   * render without a page of the app: what the file imports in the layer of
+   * the browser, and what the setup files import, as for a node. Their URLs,
+   * which the browser links itself.
+   */
+  async function clientFileStylesheets({
+    project,
+    testPath,
+  }: BrowserCommandContext): Promise<string[]> {
+    const { follow, collect } = reach(project.vite);
+    const modulesOf = (layer: Layer, file: string) =>
+      Array.from(
+        project.vite.environments[environments[layer]]!.moduleGraph.getModulesByFile(
+          normalizePath(file),
+        ) ?? [],
+        (node) => ({ layer, node }),
+      );
+    const starts = [
+      ...project.config.setupFiles.flatMap((file) => modulesOf("rsc", file)),
+      ...(testPath ? modulesOf("browser", testPath) : []),
+    ];
+    await Promise.all(starts.map(({ layer, node }) => follow(layer, node)));
+    // Encoded segment by segment, as Next does.
+    const urlOf = (path: string) => path.split("/").map(encodeURIComponent).join("/");
+    return collect(starts.map(({ node }) => node)).map(
+      (path) => getProject().assetPath + urlOf(path),
     );
-    return stylesheetsOf(project.vite, (file) => files.has(file), entry, inline);
   }
 
   // The CSS of a stylesheet that Next links, by its path under `/_next/`: the
@@ -454,7 +469,16 @@ export function createStylesPlugins(options: StylesOptions): Plugin[] {
       name: "vitest-plugin-rsc:next-styles",
       enforce: "pre",
       // How a plugin gives the browser a command of its own, in Vitest's config.
-      config: () => ({ test: { browser: { commands: { [stylesheetsCommand]: fromVitest } } } }),
+      config: () => ({
+        test: {
+          browser: {
+            commands: {
+              [stylesheetsCommand]: stylesheetsOf,
+              [clientFileStylesheetsCommand]: clientFileStylesheets,
+            },
+          },
+        },
+      }),
       configureServer(vite) {
         // A load that failed may not after a change. One that did is
         // reloaded when Vite invalidates its module.
@@ -488,7 +512,8 @@ export function createStylesPlugins(options: StylesOptions): Plugin[] {
         if (!layer || !importer || source.includes("?") || isScriptRequest(source)) return;
         // The rsc layer shares its environment with the test: the CSS a test
         // file imports stays the browser's. In the other two every module is the
-        // app's, but for a file of the host with `"use client"`.
+        // app's, but for a test file with `"use client"` in the layer of the
+        // browser.
         const file = importer.split("?")[0]!;
         if (layer === "rsc" ? !options.isServerCode(file) : options.isHostFile(file)) return;
         const resolved = await this.resolve(source, importer, {

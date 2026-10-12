@@ -5,9 +5,9 @@ import { hasDirective, transformDirectiveProxyExport } from "@vitejs/plugin-rsc/
 import { createFilter, normalizePath, parseAst, parseAstAsync, type Plugin } from "vite";
 import type { TestProject } from "vitest/node";
 import { createRunnerEnvironmentPlugins } from "../runner-environment.ts";
+import { flightBridge, type FlightEntry } from "./flight.ts";
 import { nextBuilds, nextProductionPlugin, type NextBuild } from "./build.ts";
 import { clientFiles } from "./client-files.ts";
-import { flightBridge, type FlightEntry } from "./flight.ts";
 import { createCompilePlugin, createDependencyCompilePlugin } from "./compile.ts";
 import { createNodePlatform } from "./node-platform.ts";
 import { loadNextProject, type NextLayer, type NextProject } from "./project.ts";
@@ -473,6 +473,11 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
       `vitest-plugin-rsc: \`build\` is "development" or "production", not ${JSON.stringify(build)}.`,
     );
   }
+  const hostPackagesPlugin = {
+    name: "vitest-plugin-rsc:next-host-packages",
+    resolveId: (source: string) =>
+      serverCode.isHostPackage(source) ? { id: source, external: true } : undefined,
+  };
   const resolvers = Object.fromEntries(
     layers.map((layer) => [layer, createLayerResolver(getProject, layer)]),
   ) as Record<NextLayer, LayerResolver>;
@@ -585,6 +590,10 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
             plugins: [
               // First: the other plugins see Next's production code.
               ...(build === "production" ? [nextProductionPlugin(project.nextDir)] : []),
+              // The test runner is the page's own in the browser layer too,
+              // like the `vitest` that vitest-browser-react imports: see
+              // client-files.ts. Not a copy in what that layer pre-bundles.
+              ...(layer === "browser" ? [hostPackagesPlugin] : []),
               resolvers[layer].plugin(),
               createDependencyCompilePlugin(getProject, layer),
               ...(layer === "rsc" ? [nextClientBoundaryPlugin(getProject, resolvers.rsc)] : []),

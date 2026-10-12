@@ -1,21 +1,14 @@
 import "./globals.ts";
-import {
-  createElement,
-  type JSXElementConstructor,
-  type ReactElement,
-  type ReactNode,
-} from "react";
+import { createElement, type JSXElementConstructor, type ReactNode } from "react";
 import { resetAsyncLocalStorage } from "../async-local-storage.ts";
 import { checkFetchedModules, createEnvironmentRunner } from "../utils.ts";
-import { assertForNextPage, leaveGraph, takeGraph } from "./client-graph.ts";
-import { clientNodeReference } from "./client-ids.ts";
 import { loadDocument, unloadDocument } from "./document.ts";
 import { recordListeners, recordMessageChannels } from "./leftovers.ts";
-import { registry, setClientNode, type ClientNode, type Opened } from "./registry.ts";
+import { registry, type Opened } from "./registry.ts";
 
 // The server's platform (globals.ts) has to be there before a module of Next's
 // server loads, so the layers load from here on, in order: rsc, then ssr.
-const rsc = await import("./rsc.ts");
+await import("./rsc.ts");
 // One module graph for the tab: the server stays, where a page is loaded anew.
 const ssr = await createEnvironmentRunner("next_ssr").import<typeof import("./ssr.ts")>(
   "vitest-plugin-rsc/nextjs/ssr",
@@ -490,19 +483,6 @@ export type RenderComponentResult = RenderServerResult & {
   asFragment(): DocumentFragment;
 };
 
-// A node of the browser layer, where `renderServer()` takes a node: see
-// `ClientNode` in registry.ts. It has a `$$typeof`, as an element has.
-const clientNodeType = Symbol.for("vitest-plugin-rsc.client-node");
-type ClientNodeElement = { $$typeof: typeof clientNodeType; node: ClientNode };
-
-const asElement = (node: ClientNode) =>
-  ({ $$typeof: clientNodeType, node }) satisfies ClientNodeElement as unknown as ReactElement;
-
-function clientNodeOf(ui: unknown): ClientNode | undefined {
-  const element = ui as Partial<ClientNodeElement> | null | undefined;
-  return element?.$$typeof === clientNodeType ? element.node : undefined;
-}
-
 /**
  * Opens a route of the Next.js app, as a browser does: it requests
  * the document from the server, shows the HTML it gets back, and starts the
@@ -556,13 +536,8 @@ export async function renderServer(
     };
   }
 
-  // A node of the browser layer is not the server's to render: the server
-  // renders the one Client Component that renders it, client-node.tsx.
-  const clientNode = clientNodeOf(first);
-  const node = clientNode ? createElement(rsc.ClientNode as JSXElementConstructor<object>) : first;
-  const rendered = clientNode && shows(clientNode);
   const { wrapper, proxy = false } = options;
-  const ui = wrapper ? createElement(wrapper, null, node) : node;
+  const ui = wrapper ? createElement(wrapper, null, first) : first;
   if (options.layouts) {
     if (options.container || options.baseElement) {
       throw new Error(
@@ -571,13 +546,8 @@ export async function renderServer(
           "to pass.",
       );
     }
-    const opening: Opening = {
-      opened: { pathname, proxy, node: { ui, layouts: true } },
-      headers: sticky,
-      clientNode,
-    };
-    const response = await loadPage(url, { headers }, opening);
-    await shown(rendered, opening);
+    const opened = { pathname, proxy, node: { ui, layouts: true } };
+    const response = await loadPage(url, { headers }, { opened, headers: sticky });
     return {
       response,
       get container() {
@@ -617,14 +587,11 @@ export async function renderServer(
   const container =
     options.container ?? (base ?? document.body).appendChild(document.createElement("div"));
   if (!options.container) containers.add(container);
-  const opening: Opening = {
-    container,
-    opened: { pathname, proxy, node: { ui, layouts: false } },
-    headers: sticky,
-    clientNode,
-  };
-  const response = await loadPage(url, { headers }, opening);
-  await shown(rendered, opening);
+  const response = await loadPage(
+    url,
+    { headers },
+    { container, opened: { pathname, proxy, node: { ui, layouts: false } }, headers: sticky },
+  );
   return {
     response,
     container,
@@ -634,71 +601,6 @@ export async function renderServer(
     asFragment: () => fragmentOf(container),
     unmount: leavePage,
   };
-}
-
-// Resolves once the page has rendered a node of the browser layer.
-function shows(node: ClientNode): Promise<void> {
-  return new Promise((resolve) => (node.rendered = resolve));
-}
-
-// How long a page that has hydrated takes to render the node of the browser
-// layer, at most. A Suspense boundary of the route, like its `loading.tsx`,
-// hydrates after the page does.
-const clientNodeTimeout = 10_000;
-
-// The page has hydrated. The node of the browser layer renders after that,
-// when the server rendered client-node.tsx: not when it answered with another
-// page, like the one a wrapper redirects to, or the error page.
-async function shown(rendered: Promise<void> | undefined, opening: Opening): Promise<void> {
-  if (!rendered || !opening.showsClientNode) return;
-  let timeout: ReturnType<typeof setTimeout> | undefined;
-  try {
-    await Promise.race([
-      rendered,
-      new Promise((_, reject) => {
-        timeout = setTimeout(
-          () =>
-            reject(
-              new Error(
-                `vitest-plugin-rsc: the page at ${opening.opened.pathname} has hydrated, and ` +
-                  `has not rendered the node of the browser layer after ` +
-                  `${clientNodeTimeout / 1000} seconds. Something around it, like a Suspense ` +
-                  `boundary of the route, does not finish rendering.`,
-              ),
-            ),
-          clientNodeTimeout,
-        );
-      }),
-    ]);
-  } finally {
-    clearTimeout(timeout);
-  }
-}
-
-/**
- * `renderServer()` for a file with `"use client"`, which gets this one under
- * that name. Such a file is code of the browser layer, as it is in Next, so
- * its node is rendered in the browser and not on the server: a prop can be a
- * function, and a component of the file itself can have state. The node is
- * still the page of a route of its own, inside Next's app: the router and its
- * hooks are Next's, at `url`.
- *
- * `wrapper` is a component of the browser layer too, and wraps the node there.
- * With only options it opens a page of the app, as `renderServer()` does.
- */
-export function renderClient(options: RenderServerOptions): Promise<RenderServerResult>;
-export function renderClient(
-  ui: ReactNode,
-  options?: RenderComponentOptions,
-): Promise<RenderComponentResult>;
-export async function renderClient(
-  ...args: [RenderServerOptions] | [ReactNode, RenderComponentOptions?]
-): Promise<RenderServerResult | RenderComponentResult> {
-  const [first, second] = args;
-  if (isOptions(first)) return renderServer(first);
-  const { wrapper, ...options } = second ?? {};
-  assertForNextPage(first);
-  return renderServer(asElement({ ui: first, wrapper }), options);
 }
 
 function fragmentOf(container: HTMLElement): DocumentFragment {
@@ -725,16 +627,7 @@ function isOptions(value: unknown): value is RenderServerOptions {
 
 // What a test opens: a page, or a node in a container. A page load that the
 // app makes itself, a navigation, has no `opening`.
-type Opening = {
-  container?: Element;
-  opened: Opened;
-  /** The `headers` of `renderServer()`, for every request of the page: see `pageHeaders`. */
-  headers: Headers;
-  /** The node of the browser layer that the node of `opened` renders. */
-  clientNode?: ClientNode;
-  /** Set once the page has loaded: whether the server rendered that node. */
-  showsClientNode?: boolean;
-};
+type Opening = { container?: Element; opened: Opened; headers: Headers };
 
 async function loadPage(url: URL, init: RequestInit, opening?: Opening): Promise<Response> {
   const leaving = leavePage();
@@ -750,19 +643,14 @@ async function loadPage(url: URL, init: RequestInit, opening?: Opening): Promise
     );
   }
   const opened = (registry.opened = opening?.opened);
-  setClientNode(opening?.clientNode);
   // A page the app loads itself keeps the headers of what the test opened.
   if (opening) pageHeaders = opening.headers;
   try {
     return await openPage(url, init, load.signal, opening);
   } catch (error) {
     // What did not get to open has no requests of its own. Unless the test has
-    // moved on, to a page or a node of its own. A load that was stopped is
-    // being left, and the server still renders its request until it has
-    // settled: leaving forgets it after that (`leavePage()`).
-    if (opened && registry.opened === opened && !load.signal.aborted) {
-      registry.opened = undefined;
-    }
+    // moved on, to a page or a node of its own.
+    if (opened && registry.opened === opened) registry.opened = undefined;
     throw error;
   }
 }
@@ -818,19 +706,15 @@ async function openPage(
     container = undefined;
   }
   if (/^\s*<!doctype/i.test(html)) container = undefined;
-  // The node of the browser layer is on the page when the server rendered
-  // its Client Component, which the Flight payload in the HTML names.
-  if (opening?.clientNode) {
-    opening.showsClientNode =
-      registry.opened === opening.opened && html.includes(clientNodeReference);
-  }
   await loadDocument(html, response.url, container);
   superseded();
   // A page load runs the app's scripts from scratch, so every page gets a
-  // module graph of its own for the browser layer. With a client file loaded
-  // that is the graph the file imports from: see client-graph.ts.
-  const graph = takeGraph();
-  const { runner } = graph;
+  // module graph of its own for the browser layer.
+  const runner = createEnvironmentRunner("react_client");
+  // The browser's Flight client reads properties off `__webpack_require__`
+  // when it loads, which is before the page can say how it loads a module,
+  // and wraps some of them. One that the pages shared would keep every page.
+  registry.browserRequire = (id) => registry.loadBrowserModule(id);
   // React's scheduler, Next's router and Next's dev overlay each leave
   // something behind when they load: see leftovers.ts. That is from here
   // until `start()` says that Next's client has loaded.
@@ -838,10 +722,9 @@ async function openPage(
   // window, and no module of the app: the modules of the app wait for Next's
   // client (see `start()` in client.tsx). A listener or channel
   // of the app's that was added in it would be taken from the app when the
-  // page is left. A graph that a client file imports from has loaded some of
-  // those modules before, and has what they left behind.
-  const recorded = [recordListeners(window), recordMessageChannels()];
-  const loaded = () => recorded.forEach((leftover) => leftover.stop());
+  // page is left.
+  const leftovers = [recordListeners(window), recordMessageChannels()];
+  const loaded = () => leftovers.forEach((leftover) => leftover.stop());
   // The page counts as open from here, so that leaving it stops it, also
   // while its scripts load and while it hydrates.
   let unmount: (() => void) | undefined;
@@ -868,8 +751,7 @@ async function openPage(
     loaded();
     leave = () => {
       unmount?.();
-      // Also what a client file loaded in the graph while the page was open.
-      for (const leftover of [...graph.leftovers, ...recorded]) leftover.remove();
+      leftovers.forEach((leftover) => leftover.remove());
     };
     if (left) leave();
   }
@@ -918,19 +800,11 @@ function leavePage(): Promise<void> {
         try {
           unloadDocument();
         } finally {
-          try {
-            await ssr.settleRequests();
-          } finally {
-            // What the test opened goes with its page: the route of a node,
-            // and a pathname without the proxy. Nobody waits for its node
-            // anymore.
-            registry.opened = undefined;
-            registry.clientNode?.rendered?.();
-            setClientNode(undefined);
-            resetAsyncLocalStorage();
-            // What a client file imports is of the next page from here on.
-            await leaveGraph();
-          }
+          await ssr.settleRequests();
+          // What the test opened goes with its page: the route of a node,
+          // and a pathname without the proxy.
+          registry.opened = undefined;
+          resetAsyncLocalStorage();
         }
       }
     });

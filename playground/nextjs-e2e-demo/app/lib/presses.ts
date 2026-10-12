@@ -1,6 +1,7 @@
 import "client-only";
 
-// State of a module of the browser layer: every page load starts it again.
+// A module of the browser layer, with state. `client-only` keeps it out of the
+// server.
 let presses = 0;
 
 export const pressed = (): number => ++presses;

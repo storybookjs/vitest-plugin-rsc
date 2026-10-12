@@ -202,32 +202,44 @@ test("renders a node in the layouts of a route, behind the proxy", async () => {
 
 ### A Test File With `"use client"`
 
-A test file with `"use client"` is code of the browser, as such a file is in Next. `renderServer()` in it renders the node in the browser and not on the server: a prop can be a function, like a spy, and a component of the test file can have state. The node is still the page of a route in Next's own app, so `<Link>`, `useRouter()` and `usePathname()` are Next's, at `url`.
+There are two kinds of components to test, and a test file for each:
+
+- A **connected component** gets something from the app: data from a Server Component, a Server Action, a cookie, the router. Test it with `renderServer()`, in a test file as above.
+- A **Client Component of a design system**, like a button or a dialog, gets only its props and has only its state. Test it in a test file with `"use client"`, and render it as you would without Next: with `render()` of [vitest-browser-react](https://github.com/vitest-community/vitest-browser-react) or of [Testing Library](https://testing-library.com/docs/react-testing-library/intro/).
+
+A test file with `"use client"` is a client boundary, as such a file is in React. It is code of Next's `browser` layer, and runs on the React that Next has for the browser. A prop can be a function, like a spy, and a component of the test file can have state:
 
 ```tsx
 "use client";
 
 import { expect, test, vi } from "vitest";
-import { page } from "vitest/browser";
-import { renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
+import { render } from "vitest-browser-react";
 import { PressButton } from "./components/press-button.tsx";
 
 test("passes a function to a Client Component, which calls it", async () => {
   const onPress = vi.fn();
 
-  await renderServer(<PressButton onPress={onPress}>Press</PressButton>);
+  const screen = await render(<PressButton onPress={onPress}>Press</PressButton>);
 
-  await page.getByRole("button", { name: "Press" }).click();
+  await screen.getByRole("button", { name: "Press" }).click();
   expect(onPress).toHaveBeenCalledOnce();
 });
 ```
 
-Every page load has modules of its own, as in a browser, and the file reads `PressButton` from the page that is open. What that means for such a file:
+Install what you render with as a dev dependency: `vitest-browser-react`, or `@testing-library/react` and `@testing-library/dom`. The plugin has no API for it.
 
-- What it imports is the browser's copy of a module. A `db` it imports is not the one your Server Components read, so seed the server in a setup file or in a test file without the directive.
-- `vi.mock()` and `vi.hoisted()` are an error in it: Vitest mocks the modules of the server's layer. See [Mocks](#mocks).
-- A value it computes from an import when it loads, like `const Memo = memo(Button)` at its top, is of the first page. Make it in the test.
-- A `wrapper` is a component of the browser too, and wraps the node there.
+There is no page of your app around the component: no request, no URL and no router of Next. What that means for such a file:
+
+- `renderServer()` rejects: client code cannot render server code.
+- A Server Action that a component calls rejects: it needs Next's app. Test the component with `renderServer()` in a test file without the directive.
+- The hooks of `next/navigation` are Next's, outside its app: `useRouter()` throws `invariant expected app router to be mounted`, and `usePathname()`, `useSearchParams()` and `useParams()` return `null`. Test a component that needs the router with `renderServer()`, or pass it what it reads as a prop.
+- `vi.mock()` and `vi.hoisted()` are an error in it: Vitest mocks the modules of the server's layer. Pass a mock as a prop instead. See [Mocks](#mocks).
+- What it imports is the browser's copy of a module. A `db` it imports is not the one your Server Components read.
+- The CSS that the file and the setup files import applies, as it does for a node of `renderServer()`.
+- The plugin unmounts what a test rendered after it, like Testing Library's `cleanup()`.
+- With `build: "production"` React has no `act()`. Testing Library's `render()` needs it, and `render()` of vitest-browser-react resolves before React has rendered: find what it rendered with a locator, which waits. See [Development Or Production](docs/next-routes.md#development-or-production).
+
+See [A Test File With `"use client"`](docs/next-routes.md#a-test-file-with-use-client) for how this works.
 
 ### Example: Server Action Form
 
@@ -1012,7 +1024,7 @@ Next compiles an app into three layers, each with its own module graph and its o
 | `ssr`     | Next's route module, the HTML renderer, the server in front of the app | `next_ssr`       |
 | `browser` | Next's router, your Client Components                                  | `react_client`   |
 
-The test runs in `client`, the `rsc` layer's Vite environment. That's why a module your test imports is the instance your Server Components read. A test file with `"use client"` runs in `react_client`, with the modules of the page that is open.
+The test runs in `client`, the `rsc` layer's Vite environment. That's why a module your test imports is the instance your Server Components read. A test file with `"use client"` runs in `react_client`, without a page of your app.
 
 For the full walkthrough, see [docs/next-routes.md](docs/next-routes.md). [docs/architecture.md](docs/architecture.md) covers the part without Next.js: the two environments and the Module Runner bridge between them.
 

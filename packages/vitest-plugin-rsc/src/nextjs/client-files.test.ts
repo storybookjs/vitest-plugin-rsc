@@ -1,7 +1,7 @@
 import { expect, test, vi } from "vitest";
 import { hostModulePrefix, isHostModule } from "../host-module.ts";
-import { clientFiles } from "./client-files.ts";
-import { clientFileId, isLiveModule, liveModulePrefix } from "./client-ids.ts";
+import { clientFiles, renderServerError } from "./client-files.ts";
+import { clientFileId } from "./client-ids.ts";
 
 const testingLibrary = {
   specifier: "vitest-plugin-rsc/nextjs/testing-library",
@@ -146,22 +146,14 @@ test("gives a file of the host the page's own module for another file of the hos
   expect(await resolve("./counter.tsx", "/app/page.tsx")).toBeUndefined();
 });
 
-test("gives a file of the host a module in between for every other import", async () => {
+test("leaves every other import of a file of the host to the browser layer", async () => {
   const importer = "/app/a.test.tsx";
 
-  const react = (await resolve("react", importer)) as string;
-  const counter = (await resolve("./counter.tsx", importer)) as string;
-
-  expect(react.startsWith(liveModulePrefix)).toBe(true);
-  expect(counter).not.toBe(react);
-  expect(load.call(context("react_client"), counter)).toBe(
-    `import * as module from "./counter.tsx";\nexport { module };\n`,
-  );
-  // That module imports what the file would, from where the file is.
-  expect(await resolve("./counter.tsx", counter)).toEqual({ id: "/app/counter.tsx" });
-  expect(await resolve("react", react)).toEqual({ id: "/node_modules/react/index.js" });
-  // The scan of the dependencies finds what the file imports.
-  expect(await resolve("react", importer, "react_client", { scan: true })).toBeUndefined();
+  expect(await resolve("react", importer)).toEqual({ id: "/node_modules/react/index.js" });
+  expect(await resolve("./counter.tsx", importer)).toEqual({ id: "/app/counter.tsx" });
+  expect(await resolve("vitest-browser-react", importer)).toEqual({
+    id: "/node_modules/vitest-browser-react/index.js",
+  });
 });
 
 test("serves a module of the host to the page as the module it stands for", () => {
@@ -170,10 +162,15 @@ test("serves a module of the host to the page as the module it stands for", () =
   expect(load.call(rsc, `${hostModulePrefix}vitest`)).toBe(
     `import * as module from "vitest";\nexport default module;\n`,
   );
-  // In a client file, `renderServer()` renders a node of the browser layer.
+  // A client file renders no server code.
   expect(load.call(rsc, hostModulePrefix + testingLibrary.specifier)).toBe(
     `import * as module from "/plugin/nextjs/index.js";\n` +
-      `export default { ...module, renderServer: module.renderClient };\n`,
+      `export default {\n` +
+      `  ...module,\n` +
+      `  async renderServer() {\n` +
+      `    throw new Error(${JSON.stringify(renderServerError)});\n` +
+      `  },\n` +
+      `};\n`,
   );
   expect(load.call(rsc, "/app/counter.tsx")).toBeUndefined();
 });
@@ -181,8 +178,6 @@ test("serves a module of the host to the page as the module it stands for", () =
 test("tells the ids apart as a module runner spells them", () => {
   expect(isHostModule("/@id/__x00__vitest-plugin-rsc/host-module/vitest")).toBe(true);
   expect(isHostModule("/@id/vitest")).toBe(false);
-  expect(isLiveModule("/@id/__x00__vitest-plugin-rsc/live-module/WyJhIiwiYiJd")).toBe(true);
-  expect(isLiveModule("/app/counter.tsx")).toBe(false);
   expect(clientFileId("/Users/me/app/a.test.tsx")).toBe("/@fs/Users/me/app/a.test.tsx");
   expect(clientFileId("C:/app/a.test.tsx")).toBe("/@fs/C:/app/a.test.tsx");
 });

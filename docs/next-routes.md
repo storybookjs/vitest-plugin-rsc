@@ -104,7 +104,7 @@ What a test loses in production:
 | The message of a server error in the browser, from a Server Component or from SSR       | The error has a `digest` and React's message `#441` or `#419`. Next logs the error with its message and the same `digest` on the server, so it is in the output of the test |
 | Owner stacks, and what the RSC payload says of each element: who rendered it, and where | None                                                                                                                                                                        |
 | `<StrictMode>`: a Client Component renders twice and its effects run twice              | Once. An impure render or an effect without cleanup goes unnoticed                                                                                                          |
-| `act()` of React                                                                        | Not there. The plugin does not use it for a Next.js app. Testing Library's `render()` does, and throws                                                                      |
+| `act()` of React                                                                        | Not there. The plugin does not use it for a Next.js app. Testing Library's `render()` does, and throws. vitest-browser-react's resolves before React has rendered           |
 | Next's development code: its checks and warnings, and `window.nd`                       | Not run                                                                                                                                                                     |
 
 What changes: Next prefetches a `<Link>` as it comes into view, as in a deployment, also in a node. A prefetch is a request to the server, which handles one request at a time (see [Not Yet](#not-yet)). So a test that makes the data of a route wait, with a mock that returns a promise it resolves later, makes the prefetch of a link to that route wait too, and the navigation after it. Make the data wait once the prefetch has read it. The proxy runs for a prefetch too, as in a deployment, unless its matcher leaves prefetches out with `missing: [{ type: "header", key: "next-router-prefetch" }]`, as Next's docs show. The proxy cannot tell a prefetch itself: Next takes the router's headers off the request it gets.
@@ -155,7 +155,7 @@ Next's build lists the CSS of every layout, page and boundary: the CSS that the 
 
 Vite does it another way: a module that imports CSS puts it in a `<style>` when it first loads, and that is once for the browser. Global CSS of one route would then still apply after a test has opened another one. So for the CSS of the app the plugin does what Next's build does (`src/nextjs/styles.ts`):
 
-- An import of CSS in the server code of the app and of its packages, and in the `ssr` and `browser` layers but for a test file with `"use client"`, gets a query, `?next-linked`. So does an import of a package that is a stylesheet, like `@fontsource/inter`. Its module puts nothing in the document, and exports the class names of a CSS module, as Vite's module for a server does: the plugin keeps the exports of Vite's module for the file, and drops the statements that add the `<style>`. A Vite whose exports need those statements stops the run with a message.
+- An import of CSS in the server code of the app and of its packages, and in the `ssr` and `browser` layers but for a test file with `"use client"` itself, gets a query, `?next-linked`. So does an import of a package that is a stylesheet, like `@fontsource/inter`. Its module puts nothing in the document, and exports the class names of a CSS module, as Vite's module for a server does: the plugin keeps the exports of Vite's module for the file, and drops the statements that add the `<style>`. A Vite whose exports need those statements stops the run with a message.
 - Before Next renders a route, the browser asks the plugin for the list. Next reads it before it loads the module of a segment. The files of the segments are those that the route's entry imports by an absolute path, as Next's build finds them. The plugin walks Vite's module graphs from the file of each segment, in the `rsc` layer and, from a Client Component, in the `browser` layer. The graph has only what was loaded, so the plugin transforms what it walks first, which the browser asks for right after. It walks the modules of code only, as Vite tells them by their extension, and the page extensions of the app: not an image or a `.json`, and not a file that a module refers to with `new URL(…, import.meta.url)`, like the `.wasm` of a package, which Vite adds to the imports of the module.
 - The dev server serves a stylesheet where Next links it: the path of the file under `/_next/static/css/`, or a hash for CSS that is no file, like that of a font. It is the CSS Vite makes of the file, so with PostCSS, Tailwind and the class names that its module exports.
 - With `experimental.inlineCss`, the list has the CSS of each file too, and Next puts it in a `<style>` of the page, as it does for `next start`. A navigation of Next's router still links it.
@@ -164,7 +164,7 @@ Vite does it another way: a module that imports CSS puts it in a `<style>` when 
 What differs from `next start`:
 
 - **One stylesheet per CSS file**, in the order of the imports. Next's build joins the CSS of a segment into a chunk.
-- **A node has the CSS of what its test file imports**, and of what the setup files import: in the `rsc` layer, and in the `browser` layer for a test file with `"use client"`. The plugin cannot tell which components a node renders. With `layouts: true` the layouts around it have their own.
+- **A node has the CSS of what its test file imports**, and of what the setup files import. The plugin cannot tell which components a node renders. With `layouts: true` the layouts around it have their own. So does a component of a test file with `"use client"`, without a page: see [A Test File With `"use client"`](#a-test-file-with-use-client).
 - **CSS that a test file, a setup file or one of the `browserModules` imports itself** is Vite's `<style>`, and stays in the browser, as it would without Next. The CSS of a `next/font` call is linked all the same, also when a test file imports the font.
 - **An edit to a CSS file** arrives with the next page load. A page that is open keeps the stylesheet it has.
 
@@ -316,29 +316,36 @@ Not checked: the shape of a loader tree, `[segment, parallelRoutes, modules, sta
 
 ## A Test File With `"use client"`
 
-In Next a file with `"use client"` is code of the `browser` layer, and so is a test file with it here. `renderServer(<Node />)` in such a file renders the node in the browser and not on the server. The node is not sent through Flight, so a prop is passed as it is: a function stays that function, like a `vi.fn()` the test asserts on.
+In React a file with `"use client"` is a client boundary: the file, and what it imports, is code of the `browser` layer. Here a test file with it is too. It is for a Client Component that gets only its props, like one of a design system, which the test renders as React does, with `render()` of vitest-browser-react or of Testing Library. A component that needs the app, its data or its router is for `renderServer()`, in a test file without the directive.
 
 ```
-renderServer(<Button onClick={vi.fn()} />)      in a test file with "use client"
-  │  GET /                                       the request of a node, as above
+render(<Button onClick={vi.fn()} />)              in a test file with "use client"
+  │
+rsc      the stub of the file                      Vitest imports it, to collect the tests
+  │  loadClientFile("/@fs/…/button.test.tsx")
   ▼
-rsc      loader tree → Flight                    the page is one Client Component: client-node.tsx
-  ▼
-ssr      Flight → HTML                           that component renders nothing on the server
-  ▼
-browser  Next's client entry hydrates it         then client-node.tsx renders the node of the test
+browser  the file, in one graph of the tab         with Next's React for the browser
+         vitest, @vitest/*, the setup files        the page's own modules, not a copy
 ```
 
-Vitest still imports the file in its own environment, which is the `rsc` layer, to collect its tests. There the file is a stub: it has the page evaluate the file for the `browser` layer, and has its exports. The tests the file registers go to Vitest, since its `test()` is the page's own. The file runs once, and its tests render in page after page. Each page load has a module graph of its own, as in a browser, since Next's client starts once in a graph. So what the file imports is not evaluated with it. An import is a view on the module of that name in the graph of the page that is open: a module runner compiles the use of an import to a read of a property, so `<Button />` reads `Button`, and the function of the JSX runtime, from that page when it runs. The component is the page's own, with the page's React and the page's router. When the page is left, the next graph loads what the file imports before the test goes on.
+Vitest imports a test file in its own environment, which is the `rsc` layer, to collect its tests. There a file with `"use client"` is a stub (`src/nextjs/client-files.ts`): it has the page evaluate the file in the `browser` layer, and hands out its exports. The tests the file registers go to Vitest, since its `test()` is the page's own.
 
-What the file imports from Vitest, like `vi`, `expect` and `vitest/browser`, is not a copy: it is the page's own module, which has the test that is running. The same goes for `vitest-plugin-rsc/nextjs/testing-library` and the setup files.
+The file is evaluated in one module graph of the `browser` layer, which lives as long as the tab (`src/nextjs/client-graph.ts`). What it imports loads there once, as the modules of a test do without Next, and so does the library that renders. That graph is not a page's: every page that `renderServer()` opens has a graph of its own, and the two share no module. There is no request, no URL and no router of Next.
 
-What follows from that:
+What the file imports from Vitest, like `vi`, `expect` and `vitest/browser`, is not a copy: it is the page's own module, which has the test that is running. The same goes for what another module of the graph imports from Vitest, like the `beforeEach()` that vitest-browser-react registers, and for `vitest-plugin-rsc/nextjs/testing-library` and the setup files. The plugin resolves such an import in the `browser` layer to a module of the page, which the layer's module runner takes from the page instead of fetching it. For the same reason the layer does not pre-bundle `vitest` or `@vitest/*` into a package that imports them.
 
-- What the file imports is the `browser` layer's copy of a module. A `db` it imports is not the one the Server Components read. Seed the server from a setup file, or from a test file without the directive.
-- A value the file computes from an import when it loads, like `memo(Button)` in a constant, stays the one of the first page. So does an element made while a page is open: `renderServer()` throws for a node with a component of the page that is open, made before that page was left.
-- `vi.mock()` and `vi.hoisted()` are an error, see [Mocks](#mocks).
-- `renderServer()` resolves once the node has rendered, which can be after the page has hydrated: a Suspense boundary, like the one of a route's `loading.tsx`, hydrates later. It rejects when the node has not rendered ten seconds after the page hydrated.
+What else the plugin does for such a file:
+
+- **After a change.** The graph outlives the pages. Before a file loads after a change, the graph evaluates the modules of the app again, as a page load does, and keeps the packages, React among them. The file itself is evaluated every time it loads. Its stub names what the file imports, so watch mode runs the file again when one of those changes.
+- **Cleanup.** A library that renders unmounts what it rendered before every test of the file it loads in, and in this graph it loads once, for every file. So the plugin keeps the roots that `react-dom/client` of the graph makes, and unmounts them around every test, with the container a root has in the body.
+- **Stylesheets.** A component imports CSS with `?next-linked`, as in a page, see [Stylesheets](#stylesheets). When the file loads, the plugin walks Vite's module graphs from the file in the `browser` layer and from the setup files in the `rsc` layer, and links what it finds in the document, until the tests of the file are done.
+- **Errors.** What needs Next's app, or mocks a module, fails with a message that says what to do instead:
+  - `renderServer()` rejects: client code cannot render server code.
+  - A Server Action goes through `callServer()` of Vite RSC, which calls a global that each page of Next sets, to post to that page. Before a file loads, the plugin sets one that throws: no page would answer, and the action would wait forever.
+  - `vi.mock()`, `vi.unmock()`, `vi.doMock()`, `vi.doUnmock()` and `vi.hoisted()` stop the run, see [Mocks](#mocks).
+- **Next's router.** The hooks of `next/navigation` are Next's, outside its app: `useRouter()` throws `invariant expected app router to be mounted`, and `usePathname()`, `useSearchParams()` and `useParams()` return `null`. The plugin leaves those as they are.
+
+What the file imports is the `browser` layer's copy of a module. So a `db` it imports is not the one the Server Components read.
 
 ## Route Handlers
 
@@ -560,7 +567,7 @@ What this does not cover:
 
 ## Mocks
 
-`vi.mock()` replaces a module in the `rsc` layer, where the test runs. That is the module your Server Components and Server Actions import. The other two layers load their own modules, so a mock does not reach a Client Component. For the same reason a test file with `"use client"` cannot mock: it runs in the `browser` layer, so the plugin stops with an error at a `vi.mock()`, `vi.unmock()`, `vi.doMock()`, `vi.doUnmock()` or `vi.hoisted()` in it. Vitest would also hoist `vi.mock()` and `vi.hoisted()` out of the file, into the stub that runs in the `rsc` layer.
+`vi.mock()` replaces a module in the `rsc` layer, where the test runs. That is the module your Server Components and Server Actions import. The other two layers load their own modules, so a mock does not reach a Client Component. For the same reason a test file with `"use client"` cannot mock: it runs in the `browser` layer, so the plugin stops with an error at a `vi.mock()`, `vi.unmock()`, `vi.doMock()`, `vi.doUnmock()` or `vi.hoisted()` in it. Vitest would also hoist `vi.mock()` and `vi.hoisted()` out of the file, into the stub that runs in the `rsc` layer. Pass a mock to a component as a prop instead.
 
 Mocks of app modules go in a setup file. With `isolate: false` the test files of a worker share their modules, so a module is mocked for all of them or for none, and the file that loads it first decides. A setup file runs before every test file. A bare `vi.mock("./app/lib/weather.ts")` there is enough, and a test says what the mock does with `vi.mocked(getForecast).mockResolvedValue("sunny")`.
 
@@ -681,7 +688,8 @@ At the next lookup the plugin answers for a test file itself. The test file belo
 - An `after()` callback that takes longer than a second continues without its request's stores, so `cookies()` and `headers()` fail in it from then on. Under `vi.useFakeTimers()` a response without a body never tells Next it was sent, so its `after()` callbacks do not run while the request lasts, and the next request starts a second late.
 - A navigation without Next's router to a route handler that does not answer with HTML, like a download link, is an uncaught error, because there is nothing to show. So is a navigation to another origin, like a redirect to a sign-in or a checkout. The test stays where it is.
 - Server code is only told it is on a server where it checks `typeof window`: see [Server Code In The Browser](#server-code-in-the-browser).
-- A mock for Client Components: see [Mocks](#mocks). And a mock in a test file with `"use client"`.
+- A mock for Client Components, also in a test file with `"use client"`: see [Mocks](#mocks).
+- Next's router and Server Actions in a test file with `"use client"`. Its components render without Next's app, see [A Test File With `"use client"`](#a-test-file-with-use-client). A component that needs them is for `renderServer()`.
 - One request at a time. A request that waits for another request that the test has not sent yet will wait forever. A response that streams without end, like server-sent events, holds up every request after it.
 - A page that the test leaves before the server has sent anything, because the page waits for data outside a Suspense boundary, is not stopped. Its render continues once the data comes, without its request, and Next logs the errors that follow, possibly in a later test.
 - A same-origin `fetch` for a path that a dynamic route matches goes to the app, even when it is for a file in `public/`, which a deployment serves before it looks at the routes. With `app/[locale]/page.tsx` that is every one-segment path, like `/data.json`. With a catch-all at the root, like `app/[...slug]`, it is every path.

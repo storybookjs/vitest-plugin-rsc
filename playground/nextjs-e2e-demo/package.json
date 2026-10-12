@@ -17,6 +17,8 @@
     "styled-package": "file:fixtures/styled-package"
   },
   "devDependencies": {
+    "@testing-library/dom": "^10.4.2",
+    "@testing-library/react": "^16.3.3",
     "@types/node": "^24.12.4",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
@@ -27,6 +29,7 @@
     "typescript": "^6.0.3",
     "vite": "^8.3.1",
     "vitest": "5.0.3",
+    "vitest-browser-react": "^2.3.0",
     "vitest-plugin-rsc": "workspace:*"
   },
   "engines": {
