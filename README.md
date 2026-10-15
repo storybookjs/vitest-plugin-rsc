@@ -362,7 +362,7 @@ The plugin keeps your app's cookies for the test, the way a browser keeps a site
 - A `cookie` header in the `headers` of `renderServer` sets cookies, as if your server had set them. Its cookies are added to the ones your app has, and stay until your app changes them or the test ends.
 - Every request to your app carries them: page loads, navigations, `router.refresh()`, Server Actions, route handlers, and `fetch` calls from Client Components.
 - A `Set-Cookie` from your server sets one, and one that has expired, with `Max-Age=0` or an `Expires` in the past, deletes it. A cookie is a name and a value: its `Path`, `Domain` and `Secure` don't count, since every request goes to your app, as if it were served over `https:`.
-- A `cookie` header of `handleRequest` or `runInServerAction` is for that one request: it is sent instead of your app's cookies. The cookies the server sets in its response are your app's from then on, and a redirect that it follows carries them.
+- A `cookie` header of `handleRequest` or `runInServerAction` is for that one request: it is sent instead of your app's cookies, also with the redirects it follows, with the cookies those set. The cookies the server sets are your app's from then on.
 - Each test starts without cookies.
 
 `document.cookie` is a view of your app's cookies, as in a browser. Your Client Components read the ones that aren't `HttpOnly` there, and a cookie they write there reaches your server, like the state that shadcn/ui's sidebar keeps. A script can't write an `HttpOnly` cookie or change one, and a `fetch` from client code doesn't see a `Set-Cookie` header, as in a browser. The page has no `cookieStore`, as in a browser without the Cookie Store API. MSW writes the `Set-Cookie` of a response it mocks into `document.cookie`, so a mocked API's cookie becomes your app's, also when your server sent the request.
@@ -572,7 +572,7 @@ A URL that isn't a route gets your app's not-found page, with status `404`.
 
 ### Route Handlers
 
-`handleRequest(url, init)` sends one request to the app and resolves with the response. It takes what `fetch` takes. Use it when the response is what you assert on: a status, a header, the HTML, or the Flight payload. The request carries your app's cookies, and the cookies the server sets are your app's from then on. A `cookie` header is sent instead of your app's cookies, with this request alone. It carries the `headers` of what `renderServer` opened too, under its own.
+`handleRequest(url, init)` sends one request to the app and resolves with the response. It takes what `fetch` takes. Use it when the response is what you assert on: a status, a header, the HTML, or the Flight payload. The request carries your app's cookies, and the cookies the server sets are your app's from then on. A `cookie` header is sent instead of your app's cookies, with this request and the redirects it follows. It carries the `headers` of what `renderServer` opened too, under its own.
 
 Route handlers (`app/**/route.ts`) are served too, and `handleRequest` is how a test calls one:
 
@@ -581,7 +581,7 @@ import { expect, test } from "vitest";
 import { handleRequest } from "vitest-plugin-rsc/nextjs/testing-library";
 import { db } from "../lib/notes.ts";
 
-test("gives a route handler the body of a request and the cookies of the app", async () => {
+test("gives a route handler the body of a request and its cookie header", async () => {
   db.notes.set("1", { id: "1", title: "Inbox triage", body: "Sort the inbox" });
 
   const response = await handleRequest("/api/notes/1", {

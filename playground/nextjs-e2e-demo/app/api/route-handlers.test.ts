@@ -121,7 +121,7 @@ test.for([
   },
 );
 
-test("drops the authorization header and the app's cookies on a redirect to another origin, as fetch does", async () => {
+test("drops the authorization and the cookie header on a redirect to another origin, as fetch does", async () => {
   // The dev server by another name: another origin, to the browser and to Next.
   const elsewhere = `http://elsewhere.localhost:${window.location.port}/service/headers`;
 
@@ -161,7 +161,7 @@ test("does not open the response of a route handler that is not a document", asy
   );
 });
 
-test("gives a route handler the body of a request and the cookies of the app", async () => {
+test("gives a route handler the body of a request and its cookie header", async () => {
   db.notes.set("1", { id: "1", title: "Inbox triage", body: "Sort the inbox" });
 
   const response = await handleRequest("/api/notes/1", {

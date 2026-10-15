@@ -94,17 +94,28 @@ test("sends the cookie header of a Server Action instead of the app's cookies, w
   expect(await cookiesOfTheApp()).toEqual({ language: "nl" });
 });
 
-test("sends the app's cookies after a redirect, where the request had a cookie header of its own", async () => {
+test("sends the cookie header of a request with its redirects, with the cookies they set", async () => {
+  await serverSets("language=nl");
   // A sign-in that replaces the session and sends the visitor on.
   const signIn = new URLSearchParams({ status: "303", to: "/api/cookies", cookie: "session=new" });
 
   const response = await handleRequest(`/api/redirect?${signIn}`, {
     method: "POST",
-    headers: { cookie: "session=stale" },
+    headers: { cookie: "editor=grace; session=stale" },
   });
 
   expect(response.redirected).toBe(true);
-  expect((await response.json()).cookie).toBe("session=new");
+  expect((await response.json()).cookie).toBe("editor=grace; session=new");
+  expect(await cookiesOfTheApp()).toEqual({ language: "nl", session: "new" });
+});
+
+test("keeps the cookie header of a request on a redirect of Next's own", async () => {
+  // Next redirects a path with a trailing slash, and the proxy sends a
+  // visitor without a session from `/team` to `/account`.
+  const response = await handleRequest("/team/", { headers: { cookie: "session=ada" } });
+
+  expect(response.redirected).toBe(true);
+  expect(new URL(response.url).pathname).toBe("/team");
 });
 
 test("drops the cookie header of a fetch of the page, as a browser does", async () => {
@@ -115,11 +126,13 @@ test("drops the cookie header of a fetch of the page, as a browser does", async 
   expect((await response.json()).cookie).toBe("language=nl");
 });
 
-test("sends and keeps no cookies with a fetch of the page that omits its credentials", async () => {
+test("sends and keeps no cookies with a request that omits its credentials", async () => {
   await serverSets("language=nl");
 
   const sent = await fetch("/api/cookies", { credentials: "omit" });
   expect((await sent.json()).cookie).toBeNull();
+  const handled = await handleRequest("/api/cookies", { credentials: "omit" });
+  expect((await handled.json()).cookie).toBeNull();
   await fetch("/api/cookies", {
     method: "POST",
     credentials: "omit",
@@ -207,6 +220,8 @@ test("gives the server the cookie that a script of the page writes", async () =>
 
 test("gives the page no Cookie Store API, which would be the browser's own cookies", () => {
   expect("cookieStore" in window).toBe(false);
+  expect("CookieStore" in window).toBe(false);
+  expect("CookieChangeEvent" in window).toBe(false);
 });
 
 test("forgets the app's cookies in cleanup()", async () => {

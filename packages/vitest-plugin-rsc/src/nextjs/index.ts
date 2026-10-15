@@ -160,6 +160,11 @@ async function sendRequest(
   let url = new URL(request.url);
   let method = request.method;
   const sent = new Headers(request.headers);
+  // A `cookie` header of the test's own goes with the redirects the request
+  // follows, with the cookies those set, as Next sends the cookies of a
+  // Server Action with the page it redirects to.
+  const own = from && sent.has("cookie") ? new PageStore() : undefined;
+  own?.seed(sent.get("cookie")!);
   // Read once: a 307 or 308 sends the body again.
   let body = request.body ? new Uint8Array(await request.arrayBuffer()) : null;
   let redirected = false;
@@ -230,10 +235,10 @@ async function sendRequest(
         sent.delete("authorization");
         return nativeFetch(url, { method, headers: sent, body });
       }
-      // The browser sends the next request with its own cookies, which have
-      // those of the redirect: a `cookie` header of the test's was for the
-      // first.
-      if (from) sent.delete("cookie");
+      if (own) {
+        own.receive(response.headers.getSetCookie());
+        sent.set("cookie", own.cookieHeader());
+      }
       continue;
     }
 
@@ -252,16 +257,18 @@ async function sendRequest(
  *
  * The request carries the app's cookies and the `headers` of what
  * `renderServer()` opened, under its own. A `cookie` header is sent instead
- * of the app's cookies, with this request alone. The cookies the server sets
- * are the app's from then on: `response.headers.getSetCookie()` has them,
- * where the `fetch` of the page does not show them.
+ * of the app's cookies, with this request and the redirects it follows. The
+ * cookies the server sets are the app's from then on:
+ * `response.headers.getSetCookie()` has them, where the `fetch` of the page
+ * does not show them.
  * One to the pathname of what `renderServer()` opened is that page's, as a
  * `fetch` of the page is: it gets the route of the node, and skips the proxy
  * if the page does.
  */
 export function handleRequest(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
   // Not the browser's Request, which drops a `cookie` header.
-  return sendRequest(new registry.Request(input, init), { from: store });
+  const request = new registry.Request(input, init);
+  return sendRequest(request, { from: store, credentials: request.credentials !== "omit" });
 }
 
 export type RunInServerActionOptions = {
