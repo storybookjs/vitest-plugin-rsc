@@ -24,7 +24,7 @@
     "nanoid": "4.0.1",
     "outdent": "0.8.0",
     "pathe": "^2.0.3",
-    "playwright": "^1.60.0",
+    "playwright": "^1.64.0",
     "server-only": "^0.0.1",
     "strip-ansi": "^7.1.2",
     "typescript": "^6.0.3",
