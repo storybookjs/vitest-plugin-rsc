@@ -44,7 +44,8 @@ function sameOriginRequest(
 
 // The headers and the cookies of the browser's requests to the app: the
 // `headers` of `renderServer()`, until the test opens something else, and the
-// app's cookies, until the test ends. See page-store.ts.
+// app's cookies, until the test ends. `document.cookie` is a view of the
+// cookies. See page-store.ts.
 //
 // A plain value, not a store of the plugin's AsyncLocalStorage: what sends a
 // request, like a click or a timer of the app, runs outside any scope of it.
@@ -67,12 +68,12 @@ function browserHeaders(headers: Headers, url: URL, method: string, from: PageSt
   if (method !== "GET" && method !== "HEAD" && !headers.has("origin")) {
     headers.set("origin", url.origin);
   }
-  // Only the store's: a `cookie` header of the request's own, or of the
-  // `headers` of what the test opened, was the test's, which went into the
-  // store, or one that the `fetch` of a browser drops.
-  const cookie = from.cookieHeader();
-  if (cookie) headers.set("cookie", cookie);
-  else headers.delete("cookie");
+  // A `cookie` header of the request's own is the test's, for that request
+  // alone: the `fetch` of a browser drops one. Else the cookies of the store.
+  if (!headers.has("cookie")) {
+    const cookie = from.cookieHeader();
+    if (cookie) headers.set("cookie", cookie);
+  }
   return headers;
 }
 
@@ -150,13 +151,6 @@ async function sendRequest(
   let url = new URL(request.url);
   let method = request.method;
   const sent = new Headers(request.headers);
-  // A `cookie` header of the test's own, which the `fetch` of a browser would
-  // drop: its cookies are the app's from now on, as if the server had set them.
-  const seed = sent.get("cookie");
-  if (from && seed !== null) {
-    from.seed(seed);
-    sent.delete("cookie");
-  }
   // Read once: a 307 or 308 sends the body again.
   let body = request.body ? new Uint8Array(await request.arrayBuffer()) : null;
   let redirected = false;
@@ -242,11 +236,10 @@ async function sendRequest(
  * headers, its HTML or Flight body.
  *
  * The request carries the app's cookies and the `headers` of what
- * `renderServer()` opened, under its own. A `cookie` header sets cookies for
- * the app, as in `renderServer()`: also for the requests after it. The
- * cookies the server sets are the app's from then on:
- * `response.headers.getSetCookie()` has them, where the `fetch` of the page
- * does not show them.
+ * `renderServer()` opened, under its own. A `cookie` header is sent instead
+ * of the app's cookies, with this request alone. The cookies the server sets
+ * are the app's from then on: `response.headers.getSetCookie()` has them,
+ * where the `fetch` of the page does not show them.
  * One to the pathname of what `renderServer()` opened is that page's, as a
  * `fetch` of the page is: it gets the route of the node, and skips the proxy
  * if the page does.
@@ -272,8 +265,8 @@ export type RunInServerActionOptions = {
   /**
    * Headers for the request of the action, next to the ones a browser sends.
    * The ones that make it a Server Action are the plugin's: `accept`,
-   * `content-type` and `next-action`. A `cookie` header sets cookies for the
-   * app, as in `renderServer()`: also for the requests after it.
+   * `content-type` and `next-action`. A `cookie` header is sent instead of
+   * the app's cookies.
    */
   headers?: HeadersInit;
 };
@@ -293,8 +286,7 @@ let serverActionKeys = 0;
  * After a `redirect()` Next renders the page it redirects to, on the server.
  * A page that is open stays open. The request carries the app's cookies, the
  * `headers` of what `renderServer()` opened and the ones passed here, and the
- * cookies the action sets are the app's from then on. To read one, run
- * `async () => (await cookies()).get(name)?.value`. For code that a Server
+ * cookies the action sets are the app's from then on. For code that a Server
  * Action calls; test a form of a page through the page.
  *
  * The function runs in the request, so it cannot send a request to the app
@@ -405,6 +397,8 @@ const appFetch =
     }
     const sent = sameOriginRequest(input, init);
     if (!sent) return nativeFetch(input, init);
+    // A browser's `fetch` drops a `cookie` header: the cookies are the store's.
+    if (from) sent.headers.delete("cookie");
     const headers = from
       ? browserHeaders(new Headers(sent.headers), sent.url, sent.method, from)
       : sent.headers;
@@ -424,6 +418,20 @@ const appFetch =
 
 // The browser's `fetch`: what Next's client router and Client Components call.
 globalThis.fetch = appFetch(false);
+// A script of the page reads and writes the app's cookies with
+// `document.cookie`, as in a browser, where it is a view of the cookie jar.
+// The jar here is the store, and the browser's own is the tab's: the cookies
+// other documents of the origin set, like Vitest's UI, Storybook's manager
+// or another app on `localhost`. The app neither reads nor writes those.
+Object.defineProperty(document, "cookie", {
+  configurable: true,
+  get: () => store.documentCookie(),
+  set: (cookie: unknown) => store.write(String(cookie)),
+});
+// The Cookie Store API is a view of the browser's own jar, so the page has
+// none, as in a browser without it: a script that checks for `cookieStore`
+// uses `document.cookie` instead, as Next's own does.
+Reflect.deleteProperty(window, "cookieStore");
 // The server's `fetch`. A request to the app itself is one the server makes
 // while it handles another: Next renders the page a Server Action redirects
 // to that way. It is chosen as the browser's is, and goes through the proxy
@@ -449,8 +457,8 @@ type RequestOptions = {
    * the test opens something else, or ends. A request keeps the headers it
    * sets itself. An `accept` header is for the document alone. A `cookie`
    * header sets those cookies for the app, as a `Set-Cookie` would: they go
-   * with the document and the requests after it, until the server changes
-   * them or the test ends.
+   * with the document and the requests after it, until the server or a
+   * script of the page changes them, or the test ends.
    */
   headers?: HeadersInit;
 };
@@ -549,9 +557,11 @@ export async function renderServer(
   const options: RenderComponentOptions = (isOptions(first) ? first : second) ?? {};
   const url = new URL(options.url ?? "/", window.location.origin);
   const headers = new Headers(options.headers);
-  // Each request after the document says itself what it accepts. A `cookie`
-  // header goes into the store with the document, and `browserHeaders()`
-  // sends the cookies of the store.
+  // A `cookie` header sets cookies in the store with the document, and every
+  // request sends the cookies of the store: see `loadPage()`.
+  const cookie = headers.get("cookie");
+  headers.delete("cookie");
+  // Each request after the document says itself what it accepts.
   const sticky = new Headers(headers);
   sticky.delete("accept");
   if (!headers.has("accept")) headers.set("accept", "text/html");
@@ -566,7 +576,7 @@ export async function renderServer(
     }
     const opened = { pathname, proxy: first.proxy ?? true };
     return {
-      response: await loadPage(url, { headers }, { opened, headers: sticky }),
+      response: await loadPage(url, { headers }, { opened, headers: sticky, cookie }),
       unmount: leavePage,
     };
   }
@@ -582,7 +592,7 @@ export async function renderServer(
       );
     }
     const opened = { pathname, proxy, node: { ui, layouts: true } };
-    const response = await loadPage(url, { headers }, { opened, headers: sticky });
+    const response = await loadPage(url, { headers }, { opened, headers: sticky, cookie });
     return {
       response,
       get container() {
@@ -625,7 +635,12 @@ export async function renderServer(
   const response = await loadPage(
     url,
     { headers },
-    { container, opened: { pathname, proxy, node: { ui, layouts: false } }, headers: sticky },
+    {
+      container,
+      opened: { pathname, proxy, node: { ui, layouts: false } },
+      headers: sticky,
+      cookie,
+    },
   );
   return {
     response,
@@ -660,9 +675,11 @@ function isOptions(value: unknown): value is RenderServerOptions {
   return prototype === Object.prototype || prototype === null;
 }
 
-// What a test opens: a page, or a node in a container. A page load that the
-// app makes itself, a navigation, has no `opening`.
-type Opening = { container?: Element; opened: Opened; headers: Headers };
+// What a test opens: a page, or a node in a container, with the `headers` of
+// the requests of the browser after it, and the `cookie` header that sets
+// cookies for the app. A page load that the app makes itself, a navigation,
+// has no `opening`.
+type Opening = { container?: Element; opened: Opened; headers: Headers; cookie: string | null };
 
 async function loadPage(url: URL, init: RequestInit, opening?: Opening): Promise<Response> {
   const leaving = leavePage();
@@ -682,7 +699,10 @@ async function loadPage(url: URL, init: RequestInit, opening?: Opening): Promise
   // `openPage()`. A page the app loads itself keeps the headers of what the
   // test opened.
   const from = store;
-  if (opening) from.headers = opening.headers;
+  if (opening) {
+    from.headers = opening.headers;
+    if (opening.cookie !== null) from.seed(opening.cookie);
+  }
   try {
     return await openPage(url, init, load.signal, from, opening);
   } catch (error) {
@@ -707,7 +727,8 @@ async function openPage(
   // the dev server has them now.
   await checkFetchedModules();
   superseded();
-  // Not the browser's Request, which drops a `cookie` header.
+  // Not the browser's Request, which drops headers of the test's, like
+  // `referer` and `origin`.
   const response = await sendRequest(new registry.Request(url, { ...init, signal }), {
     from,
     navigation: true,

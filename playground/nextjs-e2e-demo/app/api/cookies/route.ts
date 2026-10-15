@@ -7,3 +7,8 @@ export async function POST(request: Request) {
   }
   return new Response(null, { status: 204, headers });
 }
+
+// Answers with the `cookie` header of the request.
+export function GET(request: Request) {
+  return Response.json({ cookie: request.headers.get("cookie") });
+}

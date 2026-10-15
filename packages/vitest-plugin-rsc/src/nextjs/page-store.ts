@@ -4,20 +4,35 @@
 // Node.js. So the plugin keeps them in one store for the test's document, and
 // writes them on each request where it becomes one for the server: see
 // `sendRequest()` in index.ts. The `Set-Cookie` headers of the response go
-// back into the store. The app's cookies are not in `document.cookie`.
+// back into the store.
+//
+// The store is the browser's cookie jar, and `document.cookie` of the test's
+// document is a view of it, as in a browser: a script of the page reads the
+// cookies that are not `HttpOnly`, and the cookie it writes goes into the
+// store. The browser's own cookie jar has none of the app's cookies.
 //
 // A cookie is a name and a value, as in Next's `RequestCookies` and
 // `ResponseCookies`: a `Set-Cookie` sets the cookie of its name, and one that
-// has expired deletes it. Its `Path`, `Domain`, `Secure` and `HttpOnly` do not
-// count: every request here is for the app, at one origin. Unlike those
-// classes, the store keeps a value as the server wrote it, without decoding
-// it and encoding it again, so a request carries what a browser would send.
+// has expired deletes it. Its `Path`, `Domain` and `Secure` do not count:
+// every request here is for the app, at one origin, as if that were an
+// `https:` one. Only `HttpOnly` does, which keeps a cookie from the scripts of
+// the page. Unlike those classes, the store keeps a value as the server wrote
+// it, without decoding it and encoding it again, so a request carries what a
+// browser would send.
 
 /** A name and a value: of a `cookie` header, or of a `Set-Cookie` before its first `;`. */
 function pairOf(text: string): [name: string, value: string] {
   const at = text.indexOf("=");
   // Without a `=` it is a value without a name, as a browser reads it.
   return at === -1 ? ["", text.trim()] : [text.slice(0, at).trim(), text.slice(at + 1).trim()];
+}
+
+/** The name of an attribute of a `Set-Cookie`, in lower case, and its value. */
+function attributeOf(text: string): [name: string, value: string] {
+  const at = text.indexOf("=");
+  return at === -1
+    ? [text.trim().toLowerCase(), ""]
+    : [text.slice(0, at).trim().toLowerCase(), text.slice(at + 1).trim()];
 }
 
 // Whether the attributes of a `Set-Cookie` delete its cookie: a `Max-Age` of
@@ -27,17 +42,20 @@ function pairOf(text: string): [name: string, value: string] {
 function deletes(attributes: string[]): boolean {
   let maxAge: number | undefined;
   let expires: number | undefined;
-  for (const attribute of attributes) {
-    const at = attribute.indexOf("=");
-    if (at === -1) continue;
-    const name = attribute.slice(0, at).trim().toLowerCase();
-    const value = attribute.slice(at + 1).trim();
+  for (const [name, value] of attributes.map(attributeOf)) {
     if (name === "max-age" && /^-?\d+$/.test(value)) maxAge = Number(value);
     if (name === "expires" && !Number.isNaN(Date.parse(value))) expires = Date.parse(value);
   }
   if (maxAge !== undefined) return maxAge <= 0;
   // The clock of the test, which may be fake.
   return expires !== undefined && expires <= Date.now();
+}
+
+type Cookie = { value: string; httpOnly: boolean };
+
+/** The cookies as a `cookie` header, or as `document.cookie` has them. */
+function serialize(cookies: Iterable<[string, Cookie]>): string {
+  return Array.from(cookies, ([name, { value }]) => (name ? `${name}=${value}` : value)).join("; ");
 }
 
 /**
@@ -49,7 +67,7 @@ export class PageStore {
   /** The `headers` of what the test opened, until it opens something else. */
   headers = new Headers();
   /** The app's cookies, by name, with the values the server wrote. */
-  readonly cookies = new Map<string, string>();
+  readonly cookies = new Map<string, Cookie>();
 
   /** Sets the cookies of a `cookie` header, as a `Set-Cookie` of each would. */
   seed(cookie: string): void {
@@ -59,19 +77,35 @@ export class PageStore {
 
   /** Sets and deletes cookies by the `Set-Cookie` headers of a response of the app. */
   receive(setCookies: Iterable<string>): void {
-    for (const setCookie of setCookies) {
-      const [pair = "", ...attributes] = setCookie.split(";");
-      const [name, value] = pairOf(pair);
-      if (!name && !value) continue;
-      if (deletes(attributes)) this.cookies.delete(name);
-      else this.cookies.set(name, value);
-    }
+    for (const setCookie of setCookies) this.#set(setCookie, false);
+  }
+
+  /**
+   * Sets or deletes a cookie as a script of the page does, with
+   * `document.cookie`. As in a browser, a script cannot write an `HttpOnly`
+   * cookie, nor change or delete one.
+   */
+  write(setCookie: string): void {
+    this.#set(setCookie, true);
   }
 
   /** The `cookie` header of a request: empty without cookies. */
   cookieHeader(): string {
-    return Array.from(this.cookies, ([name, value]) => (name ? `${name}=${value}` : value)).join(
-      "; ",
-    );
+    return serialize(this.cookies);
+  }
+
+  /** What `document.cookie` has: the cookies that are not `HttpOnly`. */
+  documentCookie(): string {
+    return serialize(Array.from(this.cookies).filter(([, { httpOnly }]) => !httpOnly));
+  }
+
+  #set(setCookie: string, byScript: boolean): void {
+    const [pair = "", ...attributes] = setCookie.split(";");
+    const [name, value] = pairOf(pair);
+    if (!name && !value) return;
+    const httpOnly = attributes.some((attribute) => attributeOf(attribute)[0] === "httponly");
+    if (byScript && (httpOnly || this.cookies.get(name)?.httpOnly)) return;
+    if (deletes(attributes)) this.cookies.delete(name);
+    else this.cookies.set(name, { value, httpOnly });
   }
 }

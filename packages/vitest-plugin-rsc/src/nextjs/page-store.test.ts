@@ -62,12 +62,9 @@ test("sets the cookies of a cookie header", () => {
 
   store.seed("b=3;c=4 ; ;d=");
 
-  expect([...store.cookies]).toEqual([
-    ["a", "1"],
-    ["b", "3"],
-    ["c", "4"],
-    ["d", ""],
-  ]);
+  expect(store.cookieHeader()).toBe("a=1; b=3; c=4; d=");
+  // As a `Set-Cookie` without attributes: not `HttpOnly`.
+  expect(store.documentCookie()).toBe("a=1; b=3; c=4; d=");
 });
 
 test("reads a cookie without a `=` as a value without a name, as a browser does", () => {
@@ -81,4 +78,55 @@ test("reads a cookie without a `=` as a value without a name, as a browser does"
 test("has no cookie header without cookies", () => {
   expect(new PageStore().cookieHeader()).toBe("");
   expect(storeWith("", "; Path=/").cookieHeader()).toBe("");
+});
+
+test("shows a script the cookies that are not HttpOnly, also the Secure ones", () => {
+  const store = storeWith(
+    "session=ada; Path=/; HttpOnly",
+    "theme=dark; Secure",
+    "__Host-csrf=abc; Path=/; Secure",
+    "flag",
+  );
+
+  expect(store.documentCookie()).toBe("theme=dark; __Host-csrf=abc; flag");
+  expect(store.cookieHeader()).toBe("session=ada; theme=dark; __Host-csrf=abc; flag");
+});
+
+test("reads HttpOnly without a value, in any case", () => {
+  const store = storeWith("a=1; httponly", "b=2; HTTPONLY=", "c=3; HttpOnlyNot");
+
+  expect(store.documentCookie()).toBe("c=3");
+});
+
+test("sets and deletes the cookies a script writes, as a browser does", () => {
+  const store = storeWith("a=1");
+
+  store.write("b=2; path=/; max-age=604800; Secure; SameSite=Lax");
+  store.write("a=3");
+  expect(store.documentCookie()).toBe("a=3; b=2");
+
+  store.write("a=; expires=Thu, 01 Jan 1970 00:00:00 GMT");
+  expect(store.documentCookie()).toBe("b=2");
+});
+
+test("keeps a script from writing an HttpOnly cookie, or changing one", () => {
+  const store = storeWith("session=ada; HttpOnly");
+
+  store.write("other=1; HttpOnly");
+  store.write("session=mallory");
+  store.write("session=; Max-Age=0");
+
+  expect(store.cookieHeader()).toBe("session=ada");
+});
+
+test("lets the server turn a cookie of a script into an HttpOnly one, and back", () => {
+  const store = new PageStore();
+  store.write("a=1");
+
+  store.receive(["a=2; HttpOnly"]);
+  expect(store.documentCookie()).toBe("");
+  expect(store.cookieHeader()).toBe("a=2");
+
+  store.receive(["a=3"]);
+  expect(store.documentCookie()).toBe("a=3");
 });

@@ -82,10 +82,14 @@ test("rejects when the proxy redirects, as the action did not run", async () => 
 test("goes through the proxy with `proxy`, like a page", async () => {
   const teamHeader = async () => (await headers()).get("x-team");
 
+  const signedIn = { cookie: "session=ada" };
+
   await expect(
-    runInServerAction(teamHeader, { url: "/team", headers: { cookie: "session=ada" } }),
+    runInServerAction(teamHeader, { url: "/team", headers: signedIn }),
   ).resolves.toBeNull();
-  await expect(runInServerAction(teamHeader, { url: "/team", proxy: true })).resolves.toBe("core");
+  await expect(
+    runInServerAction(teamHeader, { url: "/team", proxy: true, headers: signedIn }),
+  ).resolves.toBe("core");
 });
 
 test("runs what the action leaves for after() once it has responded", async () => {

@@ -359,12 +359,15 @@ The headers go with every request the browser sends to your app from then on, no
 
 The plugin keeps your app's cookies for the test, the way a browser keeps a site's:
 
-- A `cookie` header sets cookies, as if your server had set them. `renderServer`, `handleRequest` and `runInServerAction` take one. Its cookies are added to the ones your app has, and stay until your app changes them or the test ends: the header does not replace them for that one request.
+- A `cookie` header in the `headers` of `renderServer` sets cookies, as if your server had set them. Its cookies are added to the ones your app has, and stay until your app changes them or the test ends.
 - Every request to your app carries them: page loads, navigations, `router.refresh()`, Server Actions, route handlers, and `fetch` calls from Client Components.
-- A `Set-Cookie` from your server sets one, and one that has expired, with `Max-Age=0` or an `Expires` in the past, deletes it. A cookie is a name and a value: its `Path`, `Domain`, `Secure` and `HttpOnly` don't count, since every request goes to your app.
+- A `Set-Cookie` from your server sets one, and one that has expired, with `Max-Age=0` or an `Expires` in the past, deletes it. A cookie is a name and a value: its `Path`, `Domain` and `Secure` don't count, since every request goes to your app, as if it were served over `https:`.
+- A `cookie` header of `handleRequest` or `runInServerAction` is for that one request: it is sent instead of your app's cookies. The cookies the server sets in its response are your app's from then on.
 - Each test starts without cookies.
 
-They are not in `document.cookie`. Your Client Components don't find them there, `HttpOnly` or not, and a cookie that a script writes there doesn't reach your app. A `fetch` from client code doesn't see a `Set-Cookie` header either, as in a browser. The cookies of the tab, which Vitest's UI shares, stay as they are.
+`document.cookie` is a view of your app's cookies, as in a browser. Your Client Components read the ones that aren't `HttpOnly` there, and a cookie they write there reaches your server, like the state that shadcn/ui's sidebar keeps. A script can't write an `HttpOnly` cookie or change one, and a `fetch` from client code doesn't see a `Set-Cookie` header, as in a browser. The page has no `cookieStore`, as in a browser without the Cookie Store API.
+
+The browser's own cookies for the origin are not your app's: the ones Vitest's UI, Storybook or another app on `localhost` set. Your app doesn't get them, and the plugin leaves them as they are.
 
 ```tsx
 import { expect, test } from "vitest";
@@ -569,7 +572,7 @@ A URL that isn't a route gets your app's not-found page, with status `404`.
 
 ### Route Handlers
 
-`handleRequest(url, init)` sends one request to the app and resolves with the response. It takes what `fetch` takes. Use it when the response is what you assert on: a status, a header, the HTML, or the Flight payload. The request carries your app's cookies, and the cookies the server sets are your app's from then on. A `cookie` header sets cookies for the rest of the test, not for this one request alone. It carries the `headers` of what `renderServer` opened too, under its own.
+`handleRequest(url, init)` sends one request to the app and resolves with the response. It takes what `fetch` takes. Use it when the response is what you assert on: a status, a header, the HTML, or the Flight payload. The request carries your app's cookies, and the cookies the server sets are your app's from then on. A `cookie` header is sent instead of your app's cookies, with this request alone. It carries the `headers` of what `renderServer` opened too, under its own.
 
 Route handlers (`app/**/route.ts`) are served too, and `handleRequest` is how a test calls one:
 
@@ -631,7 +634,7 @@ test("creates the note and redirects", async () => {
 
 It sends a Server Action request like the one of Next's router, to a route at `url` that renders nothing, and opens no page: no app starts, so it is much faster than a page with a form. After a `redirect()`, Next renders the page it redirects to on the server, as it does for the router. A page that is open stays open. The function and its result are the test's own, so they do not go through Flight.
 
-The request carries your app's cookies, the `headers` of what `renderServer()` opened and the ones you pass, and the cookies the action sets are your app's from then on. A `cookie` header among them sets cookies first, for the rest of the test. With `proxy: true` it goes through the proxy, and a redirect there rejects, since the action did not run.
+The request carries your app's cookies, the `headers` of what `renderServer()` opened and the ones you pass, and the cookies the action sets are your app's from then on. A `cookie` header among them is sent instead of your app's cookies, with this request alone. With `proxy: true` it goes through the proxy, and a redirect there rejects, since the action did not run.
 
 The function runs in the request of the action, so it cannot send a request to the app itself: that would wait for this one. Call the app's code instead. What it throws, Next also reports with `console.error`, as it does for any Server Action.
 

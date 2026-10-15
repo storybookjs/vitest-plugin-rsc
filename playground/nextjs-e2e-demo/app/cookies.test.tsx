@@ -10,9 +10,10 @@ import { page } from "vitest/browser";
 import { getForecast } from "./lib/weather.ts";
 
 // The app's cookies are the plugin's, as the headers of a request are: a
-// `cookie` header of the test sets them, a `Set-Cookie` of the server sets or
-// deletes them, and every request to the app carries them. They are not in
-// `document.cookie`, and `cleanup()` forgets them.
+// `cookie` header of `renderServer()` sets them, a `Set-Cookie` of the server
+// or a script of the page sets or deletes them, and every request to the app
+// carries them. `document.cookie` is a view of them, as in a browser, and the
+// browser's own cookies are not the app's. `cleanup()` forgets them.
 
 // What the server answers a request with, as `Set-Cookie` headers.
 async function serverSets(...setCookies: string[]): Promise<void> {
@@ -69,13 +70,27 @@ test("gives the next hop of a redirect the cookie that the redirect set", async 
   await expect.element(page.getByText("Signed in as grace")).toBeVisible();
 });
 
-test("adds the cookies of a cookie header to the ones the app has, for the rest of the test", async () => {
+test("sends the cookie header of a request instead of the app's cookies, with that request alone", async () => {
   await serverSets("language=nl", "editor=kasper");
 
-  await handleRequest("/api/echo/a", { headers: { cookie: "editor=grace; theme=dark" } });
+  const sent = async (cookie: string) =>
+    (await (await handleRequest("/api/cookies", { headers: { cookie } })).json()).cookie;
+  expect(await sent("editor=grace")).toBe("editor=grace");
+  expect(await sent("")).toBe("");
 
-  // Not for that one request: the requests after it have them too.
-  expect(await cookiesOfTheApp()).toEqual({ language: "nl", editor: "grace", theme: "dark" });
+  // The app's cookies are as they were.
+  expect(await cookiesOfTheApp()).toEqual({ language: "nl", editor: "kasper" });
+});
+
+test("keeps the cookies that a request with a cookie header of its own gets", async () => {
+  const response = await handleRequest("/api/cookies", {
+    method: "POST",
+    headers: { cookie: "editor=grace" },
+    body: JSON.stringify(["theme=dark"]),
+  });
+
+  expect(response.headers.getSetCookie()).toEqual(["theme=dark"]);
+  expect(await cookiesOfTheApp()).toEqual({ theme: "dark" });
 });
 
 test("hides the Set-Cookie headers of a response from the page, as a browser does", async () => {
@@ -110,13 +125,41 @@ test("keeps a cookie by its name, whatever its path and domain", async () => {
   expect(await cookiesOfTheApp()).toEqual({ admin: "1", team: "core" });
 });
 
-test("gives the server an HttpOnly cookie, and the page none of the app's cookies", async () => {
-  await serverSets("session=grace; Path=/; HttpOnly", "theme=dark; Path=/");
+test("shows a script of the page the cookies that are not HttpOnly, also the Secure ones", async () => {
+  await serverSets("session=grace; Path=/; HttpOnly; Secure", "theme=dark; Path=/; Secure");
 
   await renderServer({ url: "/account" });
 
   await expect.element(page.getByText("Signed in as grace")).toBeVisible();
-  expect(document.cookie).not.toMatch(/session|theme/);
+  expect(document.cookie).toBe("theme=dark");
+});
+
+test("keeps a script of the page from writing an HttpOnly cookie, or changing one", async () => {
+  await serverSets("session=grace; Path=/; HttpOnly");
+
+  document.cookie = "session=mallory; path=/";
+  document.cookie = "admin=1; path=/; HttpOnly";
+
+  expect(await cookiesOfTheApp()).toEqual({ session: "grace" });
+});
+
+test("gives the server the cookie that a script of the page writes", async () => {
+  await renderServer({ url: "/inbox" });
+  await expect.element(page.getByText("Rendered with the sidebar open")).toBeVisible();
+
+  await page.getByRole("button", { name: "Close sidebar" }).click();
+  expect(document.cookie).toBe("sidebar_state=false");
+  await page.getByRole("button", { name: "Refresh" }).click();
+  await expect.element(page.getByText("Rendered with the sidebar closed")).toBeVisible();
+
+  // And the next page load.
+  await renderServer({ url: "/inbox" });
+  await expect.element(page.getByText("Rendered with the sidebar closed")).toBeVisible();
+  await expect.element(page.getByRole("button", { name: "Open sidebar" })).toBeVisible();
+});
+
+test("gives the page no Cookie Store API, which would be the browser's own cookies", () => {
+  expect("cookieStore" in window).toBe(false);
 });
 
 test("forgets the app's cookies in cleanup()", async () => {
@@ -124,6 +167,7 @@ test("forgets the app's cookies in cleanup()", async () => {
 
   await cleanup();
 
+  expect(document.cookie).toBe("");
   expect(await cookiesOfTheApp()).toEqual({});
 });
 
@@ -149,18 +193,22 @@ test("keeps the cookies of a response that comes after its test out of the next 
   expect(await cookiesOfTheApp()).toEqual({});
 });
 
-test("leaves the cookies of the tab alone", async () => {
-  document.cookie = "runner=1; path=/";
-  onTestFinished(() => {
-    document.cookie = "runner=; path=/; max-age=0";
-  });
+test("leaves the browser's own cookies alone, and out of the app", async () => {
+  // The cookies of the tab, which other documents of the origin share, like
+  // Vitest's UI or another app on localhost.
+  const tab = Object.getOwnPropertyDescriptor(Document.prototype, "cookie")!;
+  const tabCookie = () => tab.get!.call(document) as string;
+  tab.set!.call(document, "runner=1; path=/");
+  onTestFinished(() => tab.set!.call(document, "runner=; path=/; max-age=0"));
 
   await serverSets("a=1");
-  // Not the tab's.
-  expect(await cookiesOfTheApp()).toEqual({ a: "1" });
-  await cleanup();
+  document.cookie = "b=2";
 
-  expect(document.cookie).toContain("runner=1");
+  expect(document.cookie).toBe("a=1; b=2");
+  expect(await cookiesOfTheApp()).toEqual({ a: "1", b: "2" });
+  expect(tabCookie()).toBe("runner=1");
+  await cleanup();
+  expect(tabCookie()).toBe("runner=1");
 });
 
 test("shares the cookies between requests of a page that overlap", async () => {
