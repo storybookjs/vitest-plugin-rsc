@@ -58,8 +58,15 @@ function sameOriginRequest(
 let store = new PageStore();
 
 // What a browser adds to a request for the app's origin, with the headers and
-// the cookies of the store.
-function browserHeaders(headers: Headers, url: URL, method: string, from: PageStore): Headers {
+// the cookies of the store. A request with `credentials: "omit"` has none of
+// the cookies.
+function browserHeaders(
+  headers: Headers,
+  url: URL,
+  method: string,
+  from: PageStore,
+  credentials = true,
+): Headers {
   headers.set("host", url.host);
   from.headers.forEach((value, name) => {
     if (!headers.has(name)) headers.set(name, value);
@@ -70,7 +77,7 @@ function browserHeaders(headers: Headers, url: URL, method: string, from: PageSt
   }
   // A `cookie` header of the request's own is the test's, for that request
   // alone: the `fetch` of a browser drops one. Else the cookies of the store.
-  if (!headers.has("cookie")) {
+  if (credentials && !headers.has("cookie")) {
     const cookie = from.cookieHeader();
     if (cookie) headers.set("cookie", cookie);
   }
@@ -131,7 +138,9 @@ type Sending = {
    * one carries the headers it was given, cookies included, and does not wait
    * for the request it is part of.
    */
-  from?: PageStore;
+  from: PageStore | undefined;
+  /** Whether it sends and keeps cookies: not with `credentials: "omit"`. */
+  credentials?: boolean;
   /** A page load, which leaves the app when it is redirected to another origin. */
   navigation?: boolean;
   /** Who answers a request that the server has nothing for: see `HandleOptions.unrouted`. */
@@ -146,7 +155,7 @@ type Sending = {
 // For either it follows redirects.
 async function sendRequest(
   request: Request,
-  { from, navigation = false, network, opened }: Sending = {},
+  { from, credentials = true, navigation = false, network, opened }: Sending,
 ): Promise<Response> {
   let url = new URL(request.url);
   let method = request.method;
@@ -158,7 +167,9 @@ async function sendRequest(
   let redirects = 0;
 
   for (;;) {
-    const headers = from ? browserHeaders(new Headers(sent), url, method, from) : new Headers(sent);
+    const headers = from
+      ? browserHeaders(new Headers(sent), url, method, from, credentials)
+      : new Headers(sent);
     const response = await unlessAborted(
       ssr.handleRequest(
         { url: url.href, method, headers, body, signal: request.signal },
@@ -176,7 +187,7 @@ async function sendRequest(
         ? nativeFetch(url, { method, headers: sent, body, signal: request.signal })
         : network!();
     }
-    from?.receive(response.headers.getSetCookie());
+    if (credentials) from?.receive(response.headers.getSetCookie());
 
     const location = response.headers.get("location");
     if (response.status >= 300 && response.status < 400 && location) {
@@ -219,6 +230,10 @@ async function sendRequest(
         sent.delete("authorization");
         return nativeFetch(url, { method, headers: sent, body });
       }
+      // The browser sends the next request with its own cookies, which have
+      // those of the redirect: a `cookie` header of the test's was for the
+      // first.
+      if (from) sent.delete("cookie");
       continue;
     }
 
@@ -399,8 +414,10 @@ const appFetch =
     if (!sent) return nativeFetch(input, init);
     // A browser's `fetch` drops a `cookie` header: the cookies are the store's.
     if (from) sent.headers.delete("cookie");
+    const credentials =
+      (init?.credentials ?? (input instanceof Request ? input.credentials : undefined)) !== "omit";
     const headers = from
-      ? browserHeaders(new Headers(sent.headers), sent.url, sent.method, from)
+      ? browserHeaders(new Headers(sent.headers), sent.url, sent.method, from, credentials)
       : sent.headers;
     if (!sent.marked && !(await ssr.takesRequest({ url: sent.url.href, headers }))) {
       return nativeFetch(input, init);
@@ -411,6 +428,7 @@ const appFetch =
     const request = server ? new registry.Request(input, init) : new Request(input, init);
     const response = await sendRequest(request, {
       from,
+      credentials,
       network: sent.marked ? undefined : () => nativeFetch(spare, init),
     });
     return from ? withoutSetCookie(response) : response;
@@ -429,9 +447,11 @@ Object.defineProperty(document, "cookie", {
   set: (cookie: unknown) => store.write(String(cookie)),
 });
 // The Cookie Store API is a view of the browser's own jar, so the page has
-// none, as in a browser without it: a script that checks for `cookieStore`
-// uses `document.cookie` instead, as Next's own does.
-Reflect.deleteProperty(window, "cookieStore");
+// none, as in a browser without it. Code that uses it checks for it first,
+// like Next's own.
+for (const name of ["cookieStore", "CookieStore", "CookieChangeEvent"]) {
+  Reflect.deleteProperty(window, name);
+}
 // The server's `fetch`. A request to the app itself is one the server makes
 // while it handles another: Next renders the page a Server Action redirects
 // to that way. It is chosen as the browser's is, and goes through the proxy

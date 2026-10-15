@@ -13,13 +13,13 @@ Measured against `next@16.4.0`, with `pnpm conformance --docs`.
 |                                                     |         Tests |
 | --------------------------------------------------- | ------------: |
 | Run                                                 |           522 |
-| **Pass**                                            | **394** (75%) |
+| **Pass**                                            | **400** (77%) |
 | Fail: a bug in the plugin                           |             4 |
 | Fail: Not Yet                                       |            70 |
-| Fail: not applicable                                |            54 |
+| Fail: not applicable                                |            48 |
 | Skipped by the test itself, for a run like this one |             4 |
 
-Of the 468 tests that apply, 394 pass: **84%**.
+Of the 474 tests that apply, 400 pass: **84%**.
 
 ### Per Fixture
 
@@ -33,7 +33,7 @@ Of the 468 tests that apply, 394 pass: **84%**.
 | `hooks`                                           | 19 of 27 |     |       8 |     |         |
 | `use-params`                                      |   6 of 7 |     |       1 |     |         |
 | **Server Actions**                                |          |     |         |     |         |
-| `actions`                                         | 53 of 87 |   1 |       8 |  25 |       3 |
+| `actions`                                         | 58 of 87 |   1 |       8 |  20 |       3 |
 | `actions-navigation`                              |   2 of 2 |     |         |     |         |
 | `actions-revalidate-remount`                      |   1 of 1 |     |         |     |         |
 | `actions-unrecognized`                            | 14 of 20 |     |       4 |   2 |         |
@@ -82,7 +82,7 @@ Of the 468 tests that apply, 394 pass: **84%**.
 | `revalidatetag-rsc`                               |   3 of 3 |     |         |     |         |
 | `unstable-rethrow`                                |   3 of 4 |     |         |   1 |         |
 | **The proxy, rewrites, redirects, trailingSlash** |          |     |         |     |         |
-| `app-middleware`                                  | 13 of 22 |   1 |       6 |   2 |         |
+| `app-middleware`                                  | 14 of 22 |   1 |       6 |   1 |         |
 | `rewrites-redirects`                              | 14 of 14 |     |         |     |         |
 | `trailingslash`                                   |   6 of 8 |     |       2 |     |         |
 | `app-routes-trailing-slash`                       |   2 of 2 |     |         |     |         |
@@ -236,7 +236,7 @@ Of the 468 tests that apply, 394 pass: **84%**.
 
 </details>
 
-### Not Applicable: 54 Tests
+### Not Applicable: 48 Tests
 
 <details><summary>12 × Reads the output of `next build`: a manifest, a chunk or a prerendered file in `.next`.</summary>
 
@@ -279,17 +279,6 @@ Of the 468 tests that apply, 394 pass: **84%**.
 - `actions`: app-dir action handling › redirects › redirects properly when route handler uses `permanentRedirect`
 - `actions`: app-dir action handling › redirects › redirects properly when route handler redirects with a 307 status code
 - `actions`: app-dir action handling › redirects › redirects properly when route handler redirects with a 308 status code
-
-</details>
-
-<details><summary>6 × Reads or writes `document.cookie`. The plugin keeps the app's cookies out of it: a script of the page finds none of them there, and a cookie it writes there does not reach the app.</summary>
-
-- `actions`: app-dir action handling › should support headers and cookies
-- `actions`: app-dir action handling › should support setting cookies when redirecting (with javascript)
-- `actions`: app-dir action handling › should support headers in client imported actions
-- `actions`: app-dir action handling › Edge SSR › should allow cookie and header async storages
-- `actions`: app-dir action handling › redirects › merges cookies correctly when redirecting
-- `app-middleware`: app-dir with middleware › should be possible to read cookies that are set during the middleware handling of a server action
 
 </details>
 
@@ -351,7 +340,7 @@ Of the 468 tests that apply, 394 pass: **84%**.
 
 ## What The Results Say
 
-Where the plugin runs something, it mostly runs it as Next does: 394 of the 398 tests that are neither a missing feature nor out of reach pass. What does not pass is, for nine tests out of ten, something the plugin does not do at all, or something a test in a browser cannot see.
+Where the plugin runs something, it mostly runs it as Next does: 400 of the 404 tests that are neither a missing feature nor out of reach pass. What does not pass is, for nine tests out of ten, something the plugin does not do at all, or something a test in a browser cannot see.
 
 **Bugs: 4 tests, 3 causes.** All are in the list above. One is about what a page leaves in the browser that a browser drops with the page: the history, which a page load replaces an entry of. One is a form that the browser posts to `/`, which gets the query of the test's page. One is about the server in front of the app: a proxy that answers with a `Location` header, which `@next/routing` reads as a proxy that let the request through.
 
@@ -362,9 +351,9 @@ Where the plugin runs something, it mostly runs it as Next does: 394 of the 398 
 
 Four causes are not in the "Not Yet" list of `docs/next-routes.md`: the Pages Router, the ids of Server Actions (4 tests), a builtin module of Node.js without a stand-in (2), and a prerendered page (2), which that document has under "The Node.js Runtime".
 
-**Not applicable: 54 tests.** More than half of them are JavaScript off (10), the output of a build (12), a script of the page that reads or writes `document.cookie` (6), and an npm package that the runner does not install (5).
+**Not applicable: 48 tests.** More than half of them are JavaScript off (10), the output of a build (12), and an npm package that the runner does not install (5).
 
-**The server in front of the app.** Five fixtures are there for the proxy, the redirects and rewrites of `next.config`, and `trailingSlash`. 36 of their 48 tests pass. Of the 12 that do not, 6 ask for an API route of the Pages Router, 2 expect a prerendered page, 2 cannot run in a browser, 1 reads `document.cookie`, and 1 is the bug above.
+**The server in front of the app.** Five fixtures are there for the proxy, the redirects and rewrites of `next.config`, and `trailingSlash`. 37 of their 48 tests pass. Of the 11 that do not, 6 ask for an API route of the Pages Router, 2 expect a prerendered page, 2 cannot run in a browser, and 1 is the bug above.
 
 **CSS.** 18 fixtures are Next's own tests of CSS: global CSS and CSS modules, their order, client navigation, parallel routes, `next/dynamic`, inline CSS and the pure mode of a CSS module. 29 of their 38 tests pass, and none fails for a bug of the plugin. Of the 9 that do not, 5 need an npm package that the runner does not install (Sass, Lightning CSS, a CSS framework), 1 reads a file with Node.js, 1 expects CSS that Next's build minified, 1 asks for the Pages Router, and 1 expects the CSS of a component of `next/dynamic` from Next's manifest of dynamic imports. Seven more of Next's fixtures for CSS do not run here: five need a package or a feature that the runner does not have, two only Turbopack runs. `conformance/src/fixtures.ts` says which.
 

@@ -362,10 +362,10 @@ The plugin keeps your app's cookies for the test, the way a browser keeps a site
 - A `cookie` header in the `headers` of `renderServer` sets cookies, as if your server had set them. Its cookies are added to the ones your app has, and stay until your app changes them or the test ends.
 - Every request to your app carries them: page loads, navigations, `router.refresh()`, Server Actions, route handlers, and `fetch` calls from Client Components.
 - A `Set-Cookie` from your server sets one, and one that has expired, with `Max-Age=0` or an `Expires` in the past, deletes it. A cookie is a name and a value: its `Path`, `Domain` and `Secure` don't count, since every request goes to your app, as if it were served over `https:`.
-- A `cookie` header of `handleRequest` or `runInServerAction` is for that one request: it is sent instead of your app's cookies. The cookies the server sets in its response are your app's from then on.
+- A `cookie` header of `handleRequest` or `runInServerAction` is for that one request: it is sent instead of your app's cookies. The cookies the server sets in its response are your app's from then on, and a redirect that it follows carries them.
 - Each test starts without cookies.
 
-`document.cookie` is a view of your app's cookies, as in a browser. Your Client Components read the ones that aren't `HttpOnly` there, and a cookie they write there reaches your server, like the state that shadcn/ui's sidebar keeps. A script can't write an `HttpOnly` cookie or change one, and a `fetch` from client code doesn't see a `Set-Cookie` header, as in a browser. The page has no `cookieStore`, as in a browser without the Cookie Store API.
+`document.cookie` is a view of your app's cookies, as in a browser. Your Client Components read the ones that aren't `HttpOnly` there, and a cookie they write there reaches your server, like the state that shadcn/ui's sidebar keeps. A script can't write an `HttpOnly` cookie or change one, and a `fetch` from client code doesn't see a `Set-Cookie` header, as in a browser. The page has no `cookieStore`, as in a browser without the Cookie Store API. MSW writes the `Set-Cookie` of a response it mocks into `document.cookie`, so a mocked API's cookie becomes your app's, also when your server sent the request.
 
 The browser's own cookies for the origin are not your app's: the ones Vitest's UI, Storybook or another app on `localhost` set. Your app doesn't get them, and the plugin leaves them as they are.
 
@@ -419,7 +419,7 @@ export async function FlashProbe() {
 }
 ```
 
-To read a cookie in a test, assert on what a page renders, read the `Set-Cookie` headers of a response, or call `cookies()` in a Server Action:
+To read a cookie in a test, assert on what a page renders, read the `Set-Cookie` headers of a response, read `document.cookie` for one that isn't `HttpOnly`, or call `cookies()` in a Server Action:
 
 ```ts
 import { cookies } from "next/headers";

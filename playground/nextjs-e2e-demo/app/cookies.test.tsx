@@ -82,6 +82,53 @@ test("sends the cookie header of a request instead of the app's cookies, with th
   expect(await cookiesOfTheApp()).toEqual({ language: "nl", editor: "kasper" });
 });
 
+test("sends the cookie header of a Server Action instead of the app's cookies, with that request alone", async () => {
+  await serverSets("language=nl");
+
+  const seen = await runInServerAction(
+    async () => (await cookies()).getAll().map(({ name, value }) => `${name}=${value}`),
+    { headers: { cookie: "editor=grace" } },
+  );
+
+  expect(seen).toEqual(["editor=grace"]);
+  expect(await cookiesOfTheApp()).toEqual({ language: "nl" });
+});
+
+test("sends the app's cookies after a redirect, where the request had a cookie header of its own", async () => {
+  // A sign-in that replaces the session and sends the visitor on.
+  const signIn = new URLSearchParams({ status: "303", to: "/api/cookies", cookie: "session=new" });
+
+  const response = await handleRequest(`/api/redirect?${signIn}`, {
+    method: "POST",
+    headers: { cookie: "session=stale" },
+  });
+
+  expect(response.redirected).toBe(true);
+  expect((await response.json()).cookie).toBe("session=new");
+});
+
+test("drops the cookie header of a fetch of the page, as a browser does", async () => {
+  await serverSets("language=nl");
+
+  const response = await fetch("/api/cookies", { headers: { cookie: "editor=grace" } });
+
+  expect((await response.json()).cookie).toBe("language=nl");
+});
+
+test("sends and keeps no cookies with a fetch of the page that omits its credentials", async () => {
+  await serverSets("language=nl");
+
+  const sent = await fetch("/api/cookies", { credentials: "omit" });
+  expect((await sent.json()).cookie).toBeNull();
+  await fetch("/api/cookies", {
+    method: "POST",
+    credentials: "omit",
+    body: JSON.stringify(["theme=dark"]),
+  });
+
+  expect(await cookiesOfTheApp()).toEqual({ language: "nl" });
+});
+
 test("keeps the cookies that a request with a cookie header of its own gets", async () => {
   const response = await handleRequest("/api/cookies", {
     method: "POST",

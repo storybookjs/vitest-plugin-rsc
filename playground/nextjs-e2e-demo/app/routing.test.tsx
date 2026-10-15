@@ -138,9 +138,10 @@ test("rewrites to another server, and answers with its response", async () => {
 test("does not send the app's cookies with a rewrite to another server", async () => {
   // A service there that answers with the headers it got.
   const elsewhere = `elsewhere.localhost:${window.location.port}`;
+  await signInAs("ada");
 
   const response = await handleRequest("/elsewhere/service/headers", {
-    headers: { "x-elsewhere": elsewhere, cookie: "session=ada" },
+    headers: { "x-elsewhere": elsewhere },
   });
 
   const headers = await response.json();

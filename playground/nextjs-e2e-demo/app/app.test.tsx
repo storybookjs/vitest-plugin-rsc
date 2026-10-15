@@ -158,6 +158,7 @@ test("runs a Server Action that sets a cookie, revalidates and redirects", async
   expect(window.location.pathname).toBe("/notes/1");
   await expect.poll(() => document.title).toBe("Plan the week | Notes");
   expect(db.notes.get("1")?.title).toBe("Plan the week");
+  expect(document.cookie).toBe("last-created=1");
 
   // The cookie reaches the next server render.
   await page.getByRole("link", { name: "Notes", exact: true }).click();
@@ -234,6 +235,7 @@ test("rerenders the page after a Server Action that only sets a cookie", async (
   await page.getByRole("button", { name: "Use Dutch" }).click();
 
   await expect.element(page.getByText("Language: nl")).toBeVisible();
+  expect(document.cookie).toBe("language=nl");
   expect(window.location.pathname).toBe("/settings");
 });
 
@@ -249,6 +251,8 @@ test("renders and hydrates a Client Component from a package", async () => {
 
 test("starts every test without the cookies of the one before", async () => {
   // The Server Action test above left `last-created` behind.
+  expect(document.cookie).toBe("");
+
   await renderServer({ url: "/notes" });
   await expect.element(page.getByRole("heading", { name: "Notes" })).toBeVisible();
   await expect.element(page.getByText(/Last created/)).not.toBeInTheDocument();

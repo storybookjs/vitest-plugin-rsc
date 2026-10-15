@@ -20,10 +20,6 @@
       "category": "not-yet",
       "text": "A page that a build prerenders, like one with `generateStaticParams`. Next keeps it between two requests, and here every request renders its page."
     },
-    "document-cookie": {
-      "category": "not-applicable",
-      "text": "Reads or writes `document.cookie`. The plugin keeps the app's cookies out of it: a script of the page finds none of them there, and a cookie it writes there does not reach the app."
-    },
     "metadata-files": {
       "category": "not-yet",
       "text": "Metadata files: `favicon.ico`, `icon.png`, `opengraph-image`, `sitemap.ts`, `robots.txt`, `manifest.webmanifest`."
@@ -166,7 +162,7 @@
       }
     },
     "actions": {
-      "passed": 53,
+      "passed": 58,
       "failed": {
         "app-action-form-state.test.ts > app-dir action useActionState > should support submitting form state without JS": "javascript-off",
         "app-action-form-state.test.ts > app-dir action useActionState > should support hydrating the app from progressively enhanced form request": "form-without-javascript",
@@ -180,11 +176,8 @@
         "app-action.test.ts > app-dir action handling > should propagate errors from a `text/plain` response to an error boundary": "playwright-page",
         "app-action.test.ts > app-dir action handling > should trigger an error boundary for action responses with an invalid content-type": "playwright-page",
         "app-action.test.ts > app-dir action handling > should error if server action arguments list is too long": "react-development-build",
-        "app-action.test.ts > app-dir action handling > should support headers and cookies": "document-cookie",
-        "app-action.test.ts > app-dir action handling > should support setting cookies when redirecting (with javascript)": "document-cookie",
         "app-action.test.ts > app-dir action handling > should support setting cookies when redirecting (no javascript)": "javascript-off",
         "app-action.test.ts > app-dir action handling > should replace current route when redirecting with type set to replace": "shared-history",
-        "app-action.test.ts > app-dir action handling > should support headers in client imported actions": "document-cookie",
         "app-action.test.ts > app-dir action handling > should not log errors for non-action form POSTs": "form-post-keeps-tab-query",
         "app-action.test.ts > app-dir action handling > should support notFound (javascript disabled)": "javascript-off",
         "app-action.test.ts > app-dir action handling > should support hoc auth wrappers": "react-development-build",
@@ -193,13 +186,11 @@
         "app-action.test.ts > app-dir action handling > should not expose action content in sourcemaps": "build-output",
         "app-action.test.ts > app-dir action handling > Edge SSR > should return error response for hoc auth wrappers in edge runtime": "react-development-build",
         "app-action.test.ts > app-dir action handling > Edge SSR > should handle calls to redirect() with external URLs": "another-origin",
-        "app-action.test.ts > app-dir action handling > Edge SSR > should allow cookie and header async storages": "document-cookie",
         "app-action.test.ts > app-dir action handling > fetch actions > should handle calls to redirect() with external URLs": "another-origin",
         "app-action.test.ts > app-dir action handling > fetch actions > should handle redirects to routes that provide an invalid RSC response": "playwright-page",
         "app-action.test.ts > app-dir action handling > fetch actions > should revalidate when cookies.set is called in a client action": "state-between-tests",
         "app-action.test.ts > app-dir action handling > redirects > redirects properly when route handler uses `redirect`": "page-load-requests",
         "app-action.test.ts > app-dir action handling > redirects > redirects properly when route handler uses `permanentRedirect`": "page-load-requests",
-        "app-action.test.ts > app-dir action handling > redirects > merges cookies correctly when redirecting": "document-cookie",
         "app-action.test.ts > app-dir action handling > redirects > redirects properly when route handler redirects with a 307 status code": "page-load-requests",
         "app-action.test.ts > app-dir action handling > redirects > redirects properly when route handler redirects with a 308 status code": "page-load-requests"
       }
@@ -348,7 +339,7 @@
       }
     },
     "app-middleware": {
-      "passed": 13,
+      "passed": 14,
       "failed": {
         "app-middleware.test.ts > app-dir with middleware > should warn when deprecated middleware file is used": "cli-output",
         "app-middleware.test.ts > app-dir with middleware > Mutate request headers for Serverless Functions > Adds new headers": "pages-router",
@@ -357,7 +348,6 @@
         "app-middleware.test.ts > app-dir with middleware > Mutate request headers for Edge Functions > Adds new headers": "pages-router",
         "app-middleware.test.ts > app-dir with middleware > Mutate request headers for Edge Functions > Deletes headers": "pages-router",
         "app-middleware.test.ts > app-dir with middleware > Mutate request headers for Edge Functions > Updates headers": "pages-router",
-        "app-middleware.test.ts > app-dir with middleware > should be possible to read cookies that are set during the middleware handling of a server action": "document-cookie",
         "app-middleware.test.ts > app-dir with middleware > should not incorrectly treat a Location header as a rewrite": "proxy-location-header"
       }
     },
