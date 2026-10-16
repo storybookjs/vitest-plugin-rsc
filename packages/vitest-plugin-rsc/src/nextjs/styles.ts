@@ -351,12 +351,18 @@ export function createStylesPlugins(options: StylesOptions): Plugin[] {
      * the order of the imports, as Next's build finds the client entry of a
      * segment file: through the server code, up to a reference. Or `start`
      * itself, when it is one.
+     *
+     * Of the modules that the layer has loaded, which it has by the time it
+     * asks: a file's imports load before its code runs. Not one that a
+     * `vi.mock()` replaces, whose code does not run, or an `import()` that is
+     * not taken. Nothing is transformed for the walk, so it costs what the
+     * graph is: a millisecond or so.
      */
-    async function clientEntry(start: EnvironmentModuleNode[]): Promise<ClientEntry["modules"]> {
+    function clientEntry(start: EnvironmentModuleNode[]): ClientEntry["modules"] {
       const found = new Map<string, ClientEntry["modules"][number]>();
       const seen = new Set<EnvironmentModuleNode>();
-      const visit = async (node: EnvironmentModuleNode): Promise<void> => {
-        if (seen.has(node) || !node.id || isEnd(node.id)) return;
+      const visit = (node: EnvironmentModuleNode): void => {
+        if (seen.has(node) || !node.id || isEnd(node.id) || !node.transformResult) return;
         seen.add(node);
         const reference = references![node.id];
         if (reference) {
@@ -364,17 +370,9 @@ export function createStylesPlugins(options: StylesOptions): Plugin[] {
           found.set(reference.importId, { url: reference.importId, file });
           return;
         }
-        // One at a time, for the order. Also a module that has not loaded:
-        // one that a `vi.mock()` replaces, or an `import()` that is not
-        // taken.
-        for (const imported of node.importedModules) {
-          if (!imported.id || isCSSRequest(imported.id)) continue;
-          if (!isCode(imported.id, pageExtensions)) continue;
-          const loaded = imported.transformResult ? imported : await load("rsc", imported.url);
-          if (loaded) await visit(loaded);
-        }
+        for (const imported of node.importedModules) visit(imported);
       };
-      for (const node of start) await visit(node);
+      start.forEach(visit);
       return [...found.values()];
     }
 
@@ -470,7 +468,7 @@ export function createStylesPlugins(options: StylesOptions): Plugin[] {
     if (start.length === 0) {
       throw new Error(`vitest-plugin-rsc: ${file} is not in the module graph of the rsc layer.`);
     }
-    const modules = await clientEntry(start.map(({ node }) => node));
+    const modules = clientEntry(start.map(({ node }) => node));
     const setupFiles = project.config.setupFiles.map((setupFile) => normalizePath(setupFile));
     const isClientTestFile =
       !setupFiles.includes(file) && modules.length === 1 && modules[0]!.file === file;

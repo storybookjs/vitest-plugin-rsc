@@ -86,8 +86,9 @@ test("shares the test runner of the tab, also with the library that renders", as
 test("has what the setup files set up for the browser layer", async () => {
   // vitest.setup.ts imports test/setup-locale.tsx, a file with `"use client"`:
   // the browser layer loaded it once, for the tab, before the setup file's
-  // own code ran. A page of `renderServer()` starts without it: see
-  // node.test.tsx.
+  // own code ran. Not test/locale-of-mocked-module.tsx, which only a module
+  // that the setup file mocks imports. A page of `renderServer()` starts
+  // without it: see node.test.tsx.
   const { getByText } = await render(<Locale />);
 
   await expect.element(getByText("Locale: nl")).toBeVisible();
