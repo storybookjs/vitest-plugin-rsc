@@ -1,15 +1,18 @@
 // A module of the page itself, for code that a module runner evaluates. A
 // runner has a module graph of its own, so what it imports is a copy. Some
-// modules have to be the one instance the page already has: the test runner,
-// whose `test()` collects for the file that is being imported.
+// modules have to be the one instance the page already has: the packages of
+// the test runner, whose `test()` collects for the file that is being
+// imported. (A "host file" is something else: a test file or a setup file,
+// which the host runs.)
 //
 // The server resolves such an import to an id with this prefix. The transport
 // of a runner answers it without asking the server: it is an external module,
 // which the runner imports the way the page does, with `import()`. The server
 // then serves the page a module with the namespace of the module it stands
-// for as its default export. Not a re-export: a host can have its own way to
-// compile an import of its packages, and `export * from` is not what that
-// expects.
+// for as its default export, which the runner unwraps (see
+// `runExternalModule` in utils.ts): one shape for every such module, also
+// one with an export the page's version has not, like the testing library's
+// `renderServer()` that throws.
 
 export const hostModulePrefix = "\0vitest-plugin-rsc/host-module/";
 

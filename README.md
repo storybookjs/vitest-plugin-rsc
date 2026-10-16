@@ -251,7 +251,8 @@ There is no page of your app around the component: no request, no URL and no rou
 - `vi.mock()`, `vi.unmock()`, `vi.doMock()`, `vi.doUnmock()` and `vi.hoisted()` are an error in it: its `vi` is the page's, whose mocker replaces the modules of the server's layer, not the browser's. Pass a mock as a prop instead. See [Mocks](#mocks).
 - What it imports is the browser's copy of a module. A `db` it imports is not the one your Server Components read.
 - A link or a form cannot navigate: there is no router. A click on Next's `<Link>` or an `<a>`, or a form that submits, is an uncaught error that fails the run, and the test stays where it is. Test navigation with `renderServer()`.
-- The CSS that the file imports applies, and that of a setup file with the directive, until the next test file starts.
+- The CSS that the file imports applies, and that of a setup file with the directive, until the next test file starts. The CSS of the setup file is in the document for a page of `renderServer()` too.
+- `localStorage` and `sessionStorage` are reset around every test, as for `renderServer()`. What a setup file writes there as it loads is gone before the first test: write it in a `beforeEach()`.
 - What a setup file with the directive set up for the `browser` layer is there, as above. A page of `renderServer()` starts without it, as a page of Next does: with what your app loads.
 - With `build: "production"` React has no `act()`. Testing Library's `render()` needs it, and `render()` of vitest-browser-react resolves before React has rendered: find what it rendered with a locator, which waits. See [Development Or Production](docs/next-routes.md#development-or-production).
 

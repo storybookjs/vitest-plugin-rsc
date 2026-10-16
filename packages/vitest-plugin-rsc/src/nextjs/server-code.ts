@@ -145,7 +145,7 @@ export function createServerCode(registry: string, options: ServerCodeOptions = 
     file = normalizePath(file);
     if (file.startsWith(ownDir)) return false;
     if (layer === "ssr") return true;
-    if (isBrowserModule(file) || testFileMatchers.some((matches) => matches(file))) return false;
+    if (isBrowserModule(file) || isHostFile(file)) return false;
     const packageDir = packageDirOf(file);
     return !packageDir || !testRunnerPackages.has(packageDir);
   }
@@ -168,7 +168,9 @@ export function createServerCode(registry: string, options: ServerCodeOptions = 
      * Whether a source file is code of the app in a layer: what Next's build
      * compiles. Not in the rsc layer: what is the browser's there, the test
      * files and the `browserModules`. And in no layer a file of the host,
-     * which with `"use client"` is a module of the browser layer.
+     * which with `"use client"` is a module of the browser layer: it is the
+     * host's to compile, as any test file of Vitest, with Vite's own
+     * transforms and the host's config, not with Next's.
      */
     isAppCode(file: string, layer: NextLayer): boolean {
       if (!path.isAbsolute(file) || file.includes("/node_modules/")) return false;

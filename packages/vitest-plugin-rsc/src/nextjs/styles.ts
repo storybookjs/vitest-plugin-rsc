@@ -14,7 +14,6 @@ import {
   type ViteDevServer,
 } from "vite";
 import type { BrowserCommandContext } from "vitest/node";
-import { hostModulePrefix } from "../host-module.ts";
 import type { ComponentRoute, NextLayer, NextProject, NextRoute } from "./project.ts";
 import { componentPagePath } from "./project/entries.ts";
 import {
@@ -294,10 +293,8 @@ export function createStylesPlugins(options: StylesOptions): Plugin[] {
       return loaded.module;
     }
 
-    // Where a walk ends: at a list of the routes, and at a module of the page,
-    // which a test file with `"use client"` imports in the layer of the
-    // browser. That one is the host's, see ../host-module.ts.
-    const isEnd = (id: string) => lists.has(id) || id.startsWith(hostModulePrefix);
+    // Where a walk ends: at a list of the routes.
+    const isEnd = (id: string) => lists.has(id);
 
     /** Has Vite's graphs know what `node` imports, as far as it goes. */
     async function follow(layer: Layer, node: EnvironmentModuleNode): Promise<void> {
@@ -389,12 +386,6 @@ export function createStylesPlugins(options: StylesOptions): Plugin[] {
     const { experimental } = getProject().config as { experimental?: { inlineCss?: boolean } };
     const contentOf = async (path: string) =>
       inline && experimental?.inlineCss ? (await cssOf(project.vite, path))?.code : undefined;
-    // The path with the version of the CSS: see `serve()`. A stylesheet that
-    // fails to compile has none, and fails when the browser loads it.
-    const versioned = async (path: string) => {
-      const css = await cssOf(project.vite, path).catch(() => null);
-      return css ? `${directory}/${versionOf(css)}${path.slice(directory.length)}` : path;
-    };
     // Also a file without any: it may have had some before an edit.
     return Object.fromEntries(
       await Promise.all(
@@ -402,13 +393,20 @@ export function createStylesPlugins(options: StylesOptions): Plugin[] {
           file,
           await Promise.all(
             collect(start).map(async (path) => ({
-              path: await versioned(path),
+              path: await versioned(project.vite, path),
               content: await contentOf(path),
             })),
           ),
         ]),
       ),
     );
+  }
+
+  // The path with the version of the CSS: see `serve()`. A stylesheet that
+  // fails to compile has none, and fails when the browser loads it.
+  async function versioned(server: ViteDevServer, path: string): Promise<string> {
+    const css = await cssOf(server, path).catch(() => null);
+    return css ? `${directory}/${versionOf(css)}${path.slice(directory.length)}` : path;
   }
 
   /**
@@ -428,7 +426,11 @@ export function createStylesPlugins(options: StylesOptions): Plugin[] {
     await follow("browser", node);
     // Encoded segment by segment, as Next does.
     const urlOf = (path: string) => path.split("/").map(encodeURIComponent).join("/");
-    return collect([node]).map((path) => getProject().assetPath + urlOf(path));
+    return Promise.all(
+      collect([node]).map(
+        async (path) => getProject().assetPath + urlOf(await versioned(project.vite, path)),
+      ),
+    );
   }
 
   // The CSS of a stylesheet that Next links, by its path under `/_next/`: the

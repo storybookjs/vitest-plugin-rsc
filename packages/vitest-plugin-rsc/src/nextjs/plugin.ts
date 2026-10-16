@@ -15,7 +15,7 @@ import type { TestProject } from "vitest/node";
 import { createRunnerEnvironmentPlugins } from "../runner-environment.ts";
 import { flightBridge, type FlightEntry } from "./flight.ts";
 import { nextBuilds, nextProductionPlugin, type NextBuild } from "./build.ts";
-import { clientFiles, loadClientFiles } from "./client-files.ts";
+import { clientFiles } from "./client-files.ts";
 import { createCompilePlugin, createDependencyCompilePlugin } from "./compile.ts";
 import { createNodePlatform } from "./node-platform.ts";
 import { loadNextProject, type NextLayer, type NextProject } from "./project.ts";
@@ -866,17 +866,12 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
         return serverCode.compile(entry.code, `${id.replace(/\W+/g, "-")}.js`, generatedDefines());
       },
     },
-    clientFiles({
+    ...clientFiles({
       environments: { rsc: environmentOf.rsc, browser: environmentOf.browser },
       testingLibrary,
-      isHostFile: serverCode.isHostFile,
-      isHostPackage: serverCode.isHostPackage,
-      clientReferenceOf,
-    }),
-    loadClientFiles({
-      rsc: environmentOf.rsc,
       internal: ownFile("internal"),
       isHostFile: serverCode.isHostFile,
+      isHostPackage: serverCode.isHostPackage,
       clientReferenceOf,
     }),
     serverCode.plugin({ [environmentOf.rsc]: "rsc", [environmentOf.ssr]: "ssr" }),

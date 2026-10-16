@@ -108,8 +108,8 @@ function leftTheApp(url: URL): Error {
 function noRouter(url: URL): Error {
   return new Error(
     `vitest-plugin-rsc: a link or a form navigated to ${url.href}, and there is no page of the ` +
-      `app to navigate in. A test file with "use client" has no router, so a link or a form ` +
-      `cannot navigate: test navigation with renderServer() in a test file without "use client".`,
+      `app to navigate in: no page of renderServer() is open, and a test file with "use client" ` +
+      `has none. Test navigation in a page of renderServer(), in a test file without "use client".`,
   );
 }
 

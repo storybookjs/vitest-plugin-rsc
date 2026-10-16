@@ -17,10 +17,6 @@ import {
 import { page } from "vitest/browser";
 import { render } from "vitest-browser-react";
 import { linkedStylesheets, renderedContainers } from "../test/browser.ts";
-// A setup file without `"use client"` that a file with it imports: the page's
-// own module, which the browser evaluates once for the files that import it.
-// Not the instance that ran before this file. See docs/next-routes.md.
-import "../vitest.setup.ts";
 import { PressButton } from "./components/press-button.tsx";
 import { toast } from "./components/toaster.tsx";
 

@@ -10,6 +10,7 @@ import { render } from "vitest-browser-react";
 import { renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
 import { linkedStylesheets, renderedContainers } from "../test/browser.ts";
 import { Locale } from "./components/locale.tsx";
+import { localeSets } from "./lib/locale.ts";
 import { PressButton } from "./components/press-button.tsx";
 import { toggleFavorite } from "./lib/actions.ts";
 import { buildOf } from "./lib/build.ts";
@@ -85,11 +86,13 @@ test("shares the test runner of the tab, also with the library that renders", as
 
 test("has what the setup file with the directive set up for the browser layer", async () => {
   // vitest.setup.client.tsx imports test/setup-locale.tsx, which set the
-  // locale in the graph of the tab, once. A page of `renderServer()` starts
-  // without it: see node.test.tsx.
+  // locale in the graph of the tab: once, as a module loads once, also
+  // though Vitest runs the setup file before every test file. A page of
+  // `renderServer()` starts without it: see node.test.tsx.
   const { getByText } = await render(<Locale />);
 
   await expect.element(getByText("Locale: nl")).toBeVisible();
+  expect(localeSets()).toBe(1);
 });
 
 function Presses({ label }: { label: string }) {
@@ -231,7 +234,7 @@ test("says that a link cannot navigate without Next's router, and stays", async 
   await expect.poll(() => reportError.mock.calls).toHaveLength(1);
   const error = String(reportError.mock.calls[0]![0]);
   expect(error).toMatch(`navigated to ${location.origin}/notes`);
-  expect(error).toMatch('A test file with "use client" has no router');
+  expect(error).toMatch('a test file with "use client" has none');
   await expect.element(getByRole("link", { name: "Notes" })).toBeVisible();
 });
 
