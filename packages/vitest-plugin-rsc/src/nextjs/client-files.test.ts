@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 import { hostModulePrefix, isHostModule } from "../host-module.ts";
-import { clientEntries, clientFiles, renderServerError } from "./client-files.ts";
+import { clientFiles, loadClientFiles, renderServerError } from "./client-files.ts";
 
 const testingLibrary = {
   specifier: "vitest-plugin-rsc/nextjs/testing-library",
@@ -11,22 +11,21 @@ const testingLibrary = {
 // file, and whose host has the packages of Vitest.
 const isHostFile = (file: string) => /\.test\.tsx$|\/vitest\.setup\.tsx?$/.test(file);
 // Vite RSC made the modules of these files client references: they have
-// `"use client"`.
+// `"use client"`. Their URL in the browser layer is their path.
 const references = new Set(["/app/frame.test.tsx", "/vitest.setup.tsx"]);
-const isClientReference = (id: string) => references.has(id);
+const clientReferenceOf = (id: string) => (references.has(id) ? { importId: id } : undefined);
 const plugin = clientFiles({
   environments: { rsc: "client", browser: "react_client" },
   testingLibrary,
   isHostFile,
   isHostPackage: (specifier) => /^vitest(\/|$)|^@vitest\//.test(specifier),
-  isClientReference,
+  clientReferenceOf,
 });
-const entries = clientEntries({
+const loaders = loadClientFiles({
   rsc: "client",
   internal: "/plugin/nextjs/internal.js",
   isHostFile,
-  isSetupFile: (file) => /\/vitest\.setup\.tsx?$/.test(file),
-  isClientReference,
+  clientReferenceOf,
 });
 
 type Resolved = { id: string } | null;
@@ -64,7 +63,7 @@ const transform = plugin.transform as unknown as (
   code: string,
   id: string,
 ) => Promise<{ code: string } | undefined>;
-const transformEntry = entries.transform as unknown as (
+const transformLoader = loaders.transform as unknown as (
   this: Context,
   code: string,
   id: string,
@@ -81,48 +80,40 @@ export const Frame = /* #__PURE__ */ $$ReactServer.registerClientReference(() =>
 
 test("has the module of a file with `use client` of the host load the file in the browser layer first", () => {
   // After Vite RSC made the reference.
-  expect(entries.enforce).toBe("post");
+  expect(loaders.enforce).toBe("post");
 
-  const entry = transformEntry.call(context("client"), reference, "/app/frame.test.tsx");
+  const loader = transformLoader.call(context("client"), reference, "/app/frame.test.tsx");
 
   // On the first line, before what is there: the lines keep their numbers.
-  expect(entry?.code).toBe(
-    `import { loadClientEntry as __vitestPluginRscLoadClientEntry } from "/plugin/nextjs/internal.js"; ` +
-      `await __vitestPluginRscLoadClientEntry("/app/frame.test.tsx"); ` +
+  expect(loader?.code).toBe(
+    `import { loadClientFile as __vitestPluginRscLoadClientFile } from "/plugin/nextjs/internal.js"; ` +
+      `await __vitestPluginRscLoadClientFile("/app/frame.test.tsx"); ` +
       reference,
   );
-  expect(entry?.code.split("\n")).toHaveLength(reference.split("\n").length);
+  expect(loader?.code.split("\n")).toHaveLength(reference.split("\n").length);
   // A setup file with the directive too.
-  expect(transformEntry.call(context("client"), reference, "/vitest.setup.tsx")?.code).toContain(
-    `__vitestPluginRscLoadClientEntry("/vitest.setup.tsx")`,
+  expect(transformLoader.call(context("client"), reference, "/vitest.setup.tsx")?.code).toContain(
+    `__vitestPluginRscLoadClientFile("/vitest.setup.tsx")`,
   );
 });
 
-test("has the module of a setup file without the directive load the files with it that it imports", () => {
-  const setup = `import { vi } from "vitest";\nimport "./setup.client.tsx";\nvi.mock("./db.ts");\n`;
-
-  const entry = transformEntry.call(context("client"), setup, "/vitest.setup.ts");
-
-  expect(entry?.code).toBe(
-    `import { loadClientEntry as __vitestPluginRscLoadClientEntry } from "/plugin/nextjs/internal.js"; ` +
-      `await __vitestPluginRscLoadClientEntry("/vitest.setup.ts"); ` +
-      setup,
-  );
-});
-
-test("leaves a test file without the directive as it is, and a file that is not the host's", () => {
+test("leaves a file without the directive as it is, and a file that is not the host's", () => {
   const rsc = context("client");
   const server = `import { test } from "vitest";\nimport { Frame } from "./frame.tsx";\ntest("renders", () => {});\n`;
+  const setup = `import { vi } from "vitest";\nimport "./setup.client.tsx";\nvi.mock("./db.ts");\n`;
 
   // Its components render with `renderServer()`, in a page of their own.
-  expect(transformEntry.call(rsc, server, "/app/a.test.tsx")).toBeUndefined();
+  expect(transformLoader.call(rsc, server, "/app/a.test.tsx")).toBeUndefined();
+  // A setup file without the directive is server code: what it imports with
+  // the directive is a reference, as in React.
+  expect(transformLoader.call(rsc, setup, "/vitest.setup.ts")).toBeUndefined();
   // A file of the app with the directive, and a file of the host in another layer.
-  expect(transformEntry.call(rsc, reference, "/app/counter.tsx")).toBeUndefined();
+  expect(transformLoader.call(rsc, reference, "/app/counter.tsx")).toBeUndefined();
   expect(
-    transformEntry.call(context("react_client"), reference, "/app/frame.test.tsx"),
+    transformLoader.call(context("react_client"), reference, "/app/frame.test.tsx"),
   ).toBeUndefined();
   // Not a file with a query, like Vite's `?import`, which the browser asks for.
-  expect(transformEntry.call(rsc, reference, "/app/frame.test.tsx?import")).toBeUndefined();
+  expect(transformLoader.call(rsc, reference, "/app/frame.test.tsx?import")).toBeUndefined();
 });
 
 test("leaves the code of a file with the directive to Vite RSC, which makes it a reference", async () => {

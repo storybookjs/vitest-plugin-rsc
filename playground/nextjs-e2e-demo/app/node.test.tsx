@@ -660,9 +660,9 @@ test('starts without what a test file with "use client" rendered', () => {
 });
 
 test("opens a page with a graph of its own, without what a setup file set up for the browser layer", async () => {
-  // vitest.setup.ts imports test/setup-locale.tsx, a file with `"use client"`,
-  // which set the locale in the graph of the tab: see client.test.tsx. A page
-  // starts as a page of Next does, with what the app itself loads.
+  // vitest.setup.client.tsx imports test/setup-locale.tsx, which set the
+  // locale in the graph of the tab: see client.test.tsx. A page starts as a
+  // page of Next does, with what the app itself loads.
   await renderServer(<Locale />);
 
   await expect.element(page.getByText("Locale: unset")).toBeVisible();

@@ -241,7 +241,7 @@ import { cleanup } from "vitest-browser-react";
 beforeEach(cleanup);
 ```
 
-Call `cleanup()` in a hook of the setup file itself, as above. A module loads once for the tab, as Vitest loads a module that a setup file imports once per worker with `isolate: false`, so a hook that a library registers as it loads, like the one of `import "vitest-browser-react"` in its docs, is only the first test file's. Testing Library's `configure()` goes in such a setup file too. A setup file without the directive is server code, in the `rsc` layer, whose React is the server's: `vitest-browser-react` or `@testing-library/react` there breaks every test file. What such a setup file imports with `"use client"`, like a file that calls `i18n.init()`, the `browser` layer loads once for the tab, before the setup file's own code runs; only a `vi.mock()`, which Vitest hoists, comes first. Not what a module that `vi.mock()` replaces imports: its code does not run.
+Call `cleanup()` in a hook of the setup file itself, as above. A module loads once for the tab, as Vitest loads a module that a setup file imports once per worker with `isolate: false`, so a hook that a library registers as it loads, like the one of `import "vitest-browser-react"` in its docs, is only the first test file's. Testing Library's `configure()` goes in such a setup file too, and so does what the browser needs set up before a test, like a file that calls `i18n.init()`: it loads once for the tab. A setup file without the directive is server code, in the `rsc` layer, whose React is the server's: `vitest-browser-react` or `@testing-library/react` there breaks every test file, and a file with `"use client"` that it imports is a reference, as in React, which loads when something renders it.
 
 There is no page of your app around the component: no request, no URL and no router of Next. What that means for such a file:
 
@@ -251,8 +251,8 @@ There is no page of your app around the component: no request, no URL and no rou
 - `vi.mock()`, `vi.unmock()`, `vi.doMock()`, `vi.doUnmock()` and `vi.hoisted()` are an error in it: its `vi` is the page's, whose mocker replaces the modules of the server's layer, not the browser's. Pass a mock as a prop instead. See [Mocks](#mocks).
 - What it imports is the browser's copy of a module. A `db` it imports is not the one your Server Components read.
 - A link or a form cannot navigate: there is no router. A click on Next's `<Link>` or an `<a>`, or a form that submits, is an uncaught error that fails the run, and the test stays where it is. Test navigation with `renderServer()`.
-- The CSS that the file and the setup files import applies, as it does for a node of `renderServer()`, until the next test file starts.
-- What the setup files set up for the `browser` layer is there, as above. A page of `renderServer()` starts without it, as a page of Next does: with what your app loads.
+- The CSS that the file imports applies, and that of a setup file with the directive, until the next test file starts.
+- What a setup file with the directive set up for the `browser` layer is there, as above. A page of `renderServer()` starts without it, as a page of Next does: with what your app loads.
 - With `build: "production"` React has no `act()`. Testing Library's `render()` needs it, and `render()` of vitest-browser-react resolves before React has rendered: find what it rendered with a locator, which waits. See [Development Or Production](docs/next-routes.md#development-or-production).
 
 See [A Test File With `"use client"`](docs/next-routes.md#a-test-file-with-use-client) for how this works.

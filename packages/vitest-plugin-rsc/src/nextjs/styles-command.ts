@@ -6,21 +6,11 @@
 export const stylesheetsCommand = "vitestPluginRscStylesheets";
 
 /**
- * The browser command for what a file of the host loads in the browser layer:
- * a setup file, or a file with `"use client"`. See styles.ts.
+ * The browser command for the stylesheets of a file of the host with
+ * `"use client"`, by its URL in the browser layer: their URLs. Such a file
+ * renders without a page, so the page links them itself. See styles.ts.
  */
-export const clientEntryCommand = "vitestPluginRscClientEntry";
-
-/**
- * What a file of the host loads in the browser layer: the modules with
- * `"use client"` that it imports, in order, or the file itself when it has the
- * directive. A test file with the directive renders without a page, so it
- * links its stylesheets itself: their URLs.
- */
-export type ClientEntry = {
-  modules: { url: string; file: string }[];
-  stylesheets: string[];
-};
+export const clientStylesheetsCommand = "vitestPluginRscClientStylesheets";
 
 /**
  * The stylesheets of a route. For each file of a segment that has any, by the

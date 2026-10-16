@@ -3,7 +3,7 @@ import { commands } from "vitest/browser";
 import { isHostModule } from "../host-module.ts";
 import { checkFetchedModules, createEnvironmentRunner, takeFetchedModules } from "../utils.ts";
 import { registry } from "./registry.ts";
-import { clientEntryCommand, type ClientEntry } from "./styles-command.ts";
+import { clientStylesheetsCommand } from "./styles-command.ts";
 
 // A file with `"use client"` is a client boundary: code of the browser layer,
 // see client-files.ts. A test file with the directive renders a Client
@@ -19,15 +19,6 @@ import { clientEntryCommand, type ClientEntry } from "./styles-command.ts";
 const environment = "react_client";
 
 let graph: ModuleRunner | undefined;
-// One file at a time: a file that loads may have the graph evaluate its
-// modules again.
-let loading: Promise<unknown> = Promise.resolve();
-// Whether the graph is evaluating the modules of a file now.
-let evaluating = false;
-// The modules that a setup file without `"use client"` had the graph load,
-// in order: loaded once, and again after a change of a file, as a page load
-// loads them again.
-const loadedOnce = new Map<string, string>();
 // The stylesheets that the client files linked: see `unlinkClientStylesheets()`.
 const linked = new Set<HTMLLinkElement>();
 
@@ -43,39 +34,25 @@ const isDependency = ({ id, file }: { id: string; file: string | null }) =>
 // the page.
 const browserRequire = (id: string) => registry.loadBrowserModule(id);
 
+const stylesheetsOf = (url: string) =>
+  (commands as unknown as Record<string, (url: string) => Promise<string[]>>)[
+    clientStylesheetsCommand
+  ]!(url);
+
 /**
- * Evaluates in the module graph of the browser layer what `file`, a file of
- * the host, loads there: see `ClientEntry`. The module of the rsc layer for
- * such a file calls this before its own code runs, as Vitest evaluates what a
- * file imports before it. So a test file with `"use client"` registers its
- * tests with Vitest, which imports the file in the rsc layer.
+ * Evaluates a file of the host with `"use client"`, at its URL in the browser
+ * layer, in the module graph of that layer. The module of the rsc layer for
+ * the file calls this before its own code runs, as Vitest evaluates what a
+ * file imports before it. So a test file with the directive registers its
+ * tests with Vitest, which imports the file in the rsc layer, and a setup
+ * file with it its hooks.
  *
- * Vitest evaluates a setup file again for every test file, and a test file
- * every time it runs it, so a file with `"use client"` is evaluated again as
- * well. What it imports, and what a setup file without the directive
- * imports, once for the graph, as the browser does for what Vitest evaluates
- * in the tab.
+ * Every time Vitest imports the file, as Vitest evaluates the file itself
+ * every time: a setup file before every test file. What the file imports,
+ * once for the graph, as the browser does for what Vitest evaluates in the
+ * tab.
  */
-export function loadClientEntry(file: string): Promise<void> {
-  // A module that the graph evaluates may import a file of the host without
-  // the directive, like a setup file, which is the page's own module, see
-  // ../host-module.ts: the page imports the module of the rsc layer for it,
-  // which calls this. What that file loads here was loaded when Vitest ran
-  // the file, and waiting for the file that is loading would wait forever.
-  if (evaluating) return Promise.resolve();
-  const loaded = loading.then(() => load(file));
-  loading = loaded.catch(() => {});
-  return loaded;
-}
-
-const clientEntryOf = (file: string) =>
-  (commands as unknown as Record<string, (file: string) => Promise<ClientEntry>>)[
-    clientEntryCommand
-  ]!(file);
-
-async function load(file: string): Promise<void> {
-  const { modules, stylesheets } = await clientEntryOf(file);
-  if (modules.length === 0) return;
+export async function loadClientFile(url: string): Promise<void> {
   // The server's modules as they are now: the graph outlives a page load.
   await checkFetchedModules();
   // A test that fails says where, in the file as it is written.
@@ -83,9 +60,10 @@ async function load(file: string): Promise<void> {
   const { evaluatedModules } = graph;
   // After a change of a file the graph evaluates the modules of the app
   // again, as a page load does: the server cannot tell which of them
-  // changed, as another runner may have fetched them again already.
-  const changed = await takeFetchedModules(graph);
-  if (changed) {
+  // changed, as another runner may have fetched them again already. What a
+  // setup file with the directive had set up comes back with the setup file,
+  // which Vitest runs before every test file.
+  if (await takeFetchedModules(graph)) {
     for (const node of evaluatedModules.idToModuleMap.values()) {
       if (!isDependency(node)) evaluatedModules.invalidateModule(node);
     }
@@ -94,26 +72,15 @@ async function load(file: string): Promise<void> {
   serverActionsNeedTheApp();
   // The file itself runs every time it loads, as Vitest runs it: its tests,
   // or the hooks of a setup file, are collected as it does.
-  for (const node of evaluatedModules.getModulesByFile(file) ?? []) {
-    evaluatedModules.invalidateModule(node);
-  }
-  evaluating = true;
-  try {
-    // What the setup files had loaded, as it was: before the file.
-    if (changed) for (const url of loadedOnce.keys()) await graph.import(url);
-    for (const { url, file: moduleFile } of modules) {
-      if (moduleFile !== file) loadedOnce.set(url, moduleFile);
-      await graph.import(url);
-    }
-  } finally {
-    evaluating = false;
-  }
-  await linkStylesheets(stylesheets);
+  const own = evaluatedModules.getModuleByUrl(url);
+  if (own) evaluatedModules.invalidateModule(own);
+  await graph.import(url);
+  await linkStylesheets(await stylesheetsOf(url));
 }
 
-// The CSS of what a test file with `"use client"` imports, linked in the
-// document, as a page of the app links its CSS: see styles.ts. Vite's
-// `<style>` of a module would stay for the pages of the files after it.
+// The CSS of what a file with `"use client"` imports, linked in the document,
+// as a page of the app links its CSS: see styles.ts. Vite's `<style>` of a
+// module would stay for the pages of the files after it.
 async function linkStylesheets(urls: string[]): Promise<void> {
   const links = urls.map((href) =>
     Object.assign(document.createElement("link"), { rel: "stylesheet", href }),

@@ -10,9 +10,10 @@ import { hostModulePrefix } from "../host-module.ts";
 // makes it a client reference, as it does every file with the directive: a
 // module that exports a reference for each export, and runs none of the
 // file's code. The plugin has that module load the file in the browser layer
-// before anything else runs, see `clientEntries()` and client-graph.ts. A
-// setup file without the directive loads the files with it that it imports
-// there, as Next's build loads the client modules of a layout with the page.
+// before anything else runs, see `loadClientFiles()` and client-graph.ts.
+// That is all of it. A file without the directive is server code, and what
+// it imports with the directive is a reference, which loads when something
+// renders it, as in React.
 //
 // The file runs in the browser layer, and the test runner does not: `vitest`
 // has the test that is running. So an import of `vitest`, `@vitest/*` or the
@@ -28,6 +29,12 @@ const sourceFile = /\.(?:tsx|ts|mts|jsx|js|mjs)$/;
 const languageOf = (file: string) =>
   file.endsWith(".tsx") ? "tsx" : file.endsWith("ts") ? "ts" : "jsx";
 
+/**
+ * What Vite RSC made of a module of the rsc layer with `"use client"`: a
+ * client reference, with the URL that loads the file in the browser layer.
+ */
+export type ClientReference = { importId: string };
+
 export type ClientFilesOptions = {
   /** The Vite environment of the rsc layer, which the host shares, and of the browser layer. */
   environments: { rsc: string; browser: string };
@@ -37,34 +44,33 @@ export type ClientFilesOptions = {
   isHostFile(file: string): boolean;
   /** Whether an import is of a package of the host, by its name. */
   isHostPackage(specifier: string): boolean;
-  /** Whether Vite RSC made the module of the rsc layer a client reference: it has `"use client"`. */
-  isClientReference(id: string, config: ResolvedConfig): boolean;
+  /** The client reference that Vite RSC made of a module of the rsc layer, if it has `"use client"`. */
+  clientReferenceOf(id: string, config: ResolvedConfig): ClientReference | undefined;
 };
 
-export type ClientEntriesOptions = {
+export type LoadClientFilesOptions = {
   /** The Vite environment of the rsc layer. */
   rsc: string;
-  /** The file of the plugin that loads a client entry: internal.ts. */
+  /** The file of the plugin that loads a client file: internal.ts. */
   internal: string;
   /** Whether a file is the host's: a test file or a setup file. */
   isHostFile(file: string): boolean;
-  /** Whether a file is a setup file of the project. Not the plugin's own. */
-  isSetupFile(file: string): boolean;
-  /** Whether Vite RSC made the module of the rsc layer a client reference: it has `"use client"`. */
-  isClientReference(id: string, config: ResolvedConfig): boolean;
+  /** The client reference that Vite RSC made of a module of the rsc layer, if it has `"use client"`. */
+  clientReferenceOf(id: string, config: ResolvedConfig): ClientReference | undefined;
 };
 
 /**
- * What the module of the rsc layer for a file of the host starts with: it
- * loads in the browser layer what the file loads there, see client-graph.ts.
- * On the first line of the module, before what is there, so that every line
- * of the module keeps its number: the source map of the module is right
- * without one for this, but for the columns of its first line.
+ * What the module of the rsc layer for a file of the host with `"use client"`
+ * starts with: it loads the file in the browser layer, at `url`, see
+ * client-graph.ts. On the first line of the module, before what is there, so
+ * that every line of the module keeps its number: the source map of the
+ * module is right without one for this, but for the columns of its first
+ * line.
  */
-export function clientEntryCode(file: string, internal: string): string {
+export function loadClientFileCode(url: string, internal: string): string {
   return (
-    `import { loadClientEntry as __vitestPluginRscLoadClientEntry } from ${JSON.stringify(internal)}; ` +
-    `await __vitestPluginRscLoadClientEntry(${JSON.stringify(file)}); `
+    `import { loadClientFile as __vitestPluginRscLoadClientFile } from ${JSON.stringify(internal)}; ` +
+    `await __vitestPluginRscLoadClientFile(${JSON.stringify(url)}); `
   );
 }
 
@@ -97,7 +103,7 @@ export function hostModuleCode(
 
 export function clientFiles(options: ClientFilesOptions): Plugin {
   const { rsc, browser } = options.environments;
-  const { testingLibrary, isHostFile, isHostPackage, isClientReference } = options;
+  const { testingLibrary, isHostFile, isHostPackage, clientReferenceOf } = options;
 
   return {
     name: "vitest-plugin-rsc:next-client-files",
@@ -124,7 +130,7 @@ export function clientFiles(options: ClientFilesOptions): Plugin {
         const resolved = await this.resolve(source, file, { ...resolveOptions, skipSelf: true });
         if (resolved && !resolved.id.includes("?") && isHostFile(resolved.id)) {
           const id = normalizePath(resolved.id);
-          if (!isClientReference(id, this.environment.getTopLevelConfig())) {
+          if (!clientReferenceOf(id, this.environment.getTopLevelConfig())) {
             return hostModulePrefix + id;
           }
         }
@@ -165,26 +171,25 @@ export function clientFiles(options: ClientFilesOptions): Plugin {
 }
 
 /**
- * Has the module of the rsc layer for a file of the host load in the browser
- * layer what the file loads there, before its own code runs: a file with
- * `"use client"` itself, which Vite RSC made a reference, and the files with
- * the directive that a setup file without it imports. Not for a test file
- * without the directive: it renders with `renderServer()`, in a page with a
- * graph of its own. After Vite RSC, which made the reference.
+ * Has the module of the rsc layer for a file of the host with `"use client"`,
+ * which Vite RSC made a reference, load the file in the browser layer before
+ * its own code runs: see client-graph.ts. Not a file without the directive:
+ * a test file without it renders with `renderServer()`, in a page with a
+ * graph of its own. After Vite RSC, which made the reference, and with it the
+ * URL of the file in the browser layer.
  */
-export function clientEntries(options: ClientEntriesOptions): Plugin {
-  const { rsc, internal, isHostFile, isSetupFile, isClientReference } = options;
+export function loadClientFiles(options: LoadClientFilesOptions): Plugin {
+  const { rsc, internal, isHostFile, clientReferenceOf } = options;
   return {
-    name: "vitest-plugin-rsc:next-client-entries",
+    name: "vitest-plugin-rsc:next-load-client-files",
     enforce: "post",
     transform(code, id) {
       if (this.environment.name !== rsc) return;
       const file = id.split("?")[0]!;
       if (id.includes("?") || !sourceFile.test(file) || !isHostFile(file)) return;
-      if (!isClientReference(id, this.environment.getTopLevelConfig()) && !isSetupFile(file)) {
-        return;
-      }
-      return { code: clientEntryCode(normalizePath(file), internal) + code, map: null };
+      const reference = clientReferenceOf(id, this.environment.getTopLevelConfig());
+      if (!reference) return;
+      return { code: loadClientFileCode(reference.importId, internal) + code, map: null };
     },
   };
 }

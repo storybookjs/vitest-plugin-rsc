@@ -15,7 +15,7 @@ import type { TestProject } from "vitest/node";
 import { createRunnerEnvironmentPlugins } from "../runner-environment.ts";
 import { flightBridge, type FlightEntry } from "./flight.ts";
 import { nextBuilds, nextProductionPlugin, type NextBuild } from "./build.ts";
-import { clientEntries, clientFiles } from "./client-files.ts";
+import { clientFiles, loadClientFiles } from "./client-files.ts";
 import { createCompilePlugin, createDependencyCompilePlugin } from "./compile.ts";
 import { createNodePlatform } from "./node-platform.ts";
 import { loadNextProject, type NextLayer, type NextProject } from "./project.ts";
@@ -515,12 +515,10 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
       `vitest-plugin-rsc: \`build\` is "development" or "production", not ${JSON.stringify(build)}.`,
     );
   }
-  // The setup files of the project, from `configureVitest`. The plugin's own
-  // is one of them, and imports no file with `"use client"`.
-  const setupFiles = new Set<string>();
-  // Whether Vite RSC made a module of the rsc layer a client reference.
-  const isClientReference = (id: string, config: ResolvedConfig) =>
-    Boolean(getPluginApi(config)?.manager.clientReferenceMetaMap[id]);
+  // The client reference that Vite RSC made of a module of the rsc layer, if
+  // it has `"use client"`.
+  const clientReferenceOf = (id: string, config: ResolvedConfig) =>
+    getPluginApi(config)?.manager.clientReferenceMetaMap[id];
   const hostPackagesPlugin = {
     name: "vitest-plugin-rsc:next-host-packages",
     resolveId: (source: string) =>
@@ -793,7 +791,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
       // test file or a setup file is not server code.
       configureVitest({ project: testProject }: { project: TestProject }) {
         const test = testProject.config;
-        for (const file of test.setupFiles) setupFiles.add(normalizePath(file));
+        const setupFiles = new Set(test.setupFiles.map((file) => normalizePath(file)));
         // `test.include`, matched the way Vitest does. Not `includeSource`:
         // a file with tests in its source is a file of the app.
         const isIncluded = createFilter(test.include, test.exclude, {
@@ -873,14 +871,13 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
       testingLibrary,
       isHostFile: serverCode.isHostFile,
       isHostPackage: serverCode.isHostPackage,
-      isClientReference,
+      clientReferenceOf,
     }),
-    clientEntries({
+    loadClientFiles({
       rsc: environmentOf.rsc,
       internal: ownFile("internal"),
       isHostFile: serverCode.isHostFile,
-      isSetupFile: (file) => file !== normalizePath(setupFile) && setupFiles.has(file),
-      isClientReference,
+      clientReferenceOf,
     }),
     serverCode.plugin({ [environmentOf.rsc]: "rsc", [environmentOf.ssr]: "ssr" }),
     // The CSS of the app, as the stylesheets of a route.

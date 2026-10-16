@@ -18,9 +18,8 @@ import { hostModulePrefix } from "../host-module.ts";
 import type { ComponentRoute, NextLayer, NextProject, NextRoute } from "./project.ts";
 import { componentPagePath } from "./project/entries.ts";
 import {
-  clientEntryCommand,
+  clientStylesheetsCommand,
   stylesheetsCommand,
-  type ClientEntry,
   type Stylesheets,
 } from "./styles-command.ts";
 
@@ -346,37 +345,7 @@ export function createStylesPlugins(options: StylesOptions): Plugin[] {
       return [...paths];
     }
 
-    /**
-     * The modules with `"use client"` that `start` imports in the rsc layer, in
-     * the order of the imports, as Next's build finds the client entry of a
-     * segment file: through the server code, up to a reference. Or `start`
-     * itself, when it is one.
-     *
-     * Of the modules that the layer has loaded, which it has by the time it
-     * asks: a file's imports load before its code runs. Not one that a
-     * `vi.mock()` replaces, whose code does not run, or an `import()` that is
-     * not taken. Nothing is transformed for the walk, so it costs what the
-     * graph is: a millisecond or so.
-     */
-    function clientEntry(start: EnvironmentModuleNode[]): ClientEntry["modules"] {
-      const found = new Map<string, ClientEntry["modules"][number]>();
-      const seen = new Set<EnvironmentModuleNode>();
-      const visit = (node: EnvironmentModuleNode): void => {
-        if (seen.has(node) || !node.id || isEnd(node.id) || !node.transformResult) return;
-        seen.add(node);
-        const reference = references![node.id];
-        if (reference) {
-          const file = normalizePath(node.file ?? node.id);
-          found.set(reference.importId, { url: reference.importId, file });
-          return;
-        }
-        for (const imported of node.importedModules) visit(imported);
-      };
-      start.forEach(visit);
-      return [...found.values()];
-    }
-
-    return { load, follow, collect, clientEntry };
+    return { load, follow, collect };
   }
 
   /**
@@ -443,48 +412,23 @@ export function createStylesPlugins(options: StylesOptions): Plugin[] {
   }
 
   /**
-   * What `file`, a file of the host, loads in the browser layer: see
-   * `ClientEntry`. A test file with `"use client"` renders without a page of
-   * the app, so its stylesheets are what it imports in the layer of the
-   * browser, and what the setup files import, as for a node. Not of the test
-   * file that runs: that can be another one, which imports this one. The
-   * browser asks before it loads the file, so the file is loaded here first,
-   * as `follow()` loads what it imports.
+   * The stylesheets of a file of the host with `"use client"`, by its URL in
+   * the browser layer: what it imports there, as for a file of a segment. It
+   * renders without a page of the app, so the page links them itself, once it
+   * has evaluated the file: see client-graph.ts. A setup file with the
+   * directive the same, before every test file.
    */
-  async function clientEntryOf(
+  async function clientStylesheetsOf(
     { project }: BrowserCommandContext,
-    file: string,
-  ): Promise<ClientEntry> {
-    const { load, follow, collect, clientEntry } = reach(project.vite);
-    const rsc = project.vite.environments[environments.rsc]!;
-    const modulesOf = (path: string) =>
-      Array.from(rsc.moduleGraph.getModulesByFile(normalizePath(path)) ?? [], (node) => ({
-        layer: "rsc" as const,
-        node,
-      }));
-    file = normalizePath(file);
-    const start = modulesOf(file);
-    // The module of the rsc layer for the file asks, so it is there.
-    if (start.length === 0) {
-      throw new Error(`vitest-plugin-rsc: ${file} is not in the module graph of the rsc layer.`);
-    }
-    const modules = clientEntry(start.map(({ node }) => node));
-    const setupFiles = project.config.setupFiles.map((setupFile) => normalizePath(setupFile));
-    const isClientTestFile =
-      !setupFiles.includes(file) && modules.length === 1 && modules[0]!.file === file;
-    if (!isClientTestFile) return { modules, stylesheets: [] };
-    const own = await load("browser", modules[0]!.url);
-    const starts = [
-      ...setupFiles.flatMap(modulesOf),
-      ...(own ? [{ layer: "browser" as const, node: own }] : []),
-    ];
-    await Promise.all(starts.map(({ layer, node }) => follow(layer, node)));
+    url: string,
+  ): Promise<string[]> {
+    const { load, follow, collect } = reach(project.vite);
+    const node = await load("browser", url);
+    if (!node) return [];
+    await follow("browser", node);
     // Encoded segment by segment, as Next does.
     const urlOf = (path: string) => path.split("/").map(encodeURIComponent).join("/");
-    const stylesheets = collect(starts.map(({ node }) => node)).map(
-      (path) => getProject().assetPath + urlOf(path),
-    );
-    return { modules, stylesheets };
+    return collect([node]).map((path) => getProject().assetPath + urlOf(path));
   }
 
   // The CSS of a stylesheet that Next links, by its path under `/_next/`: the
@@ -562,7 +506,7 @@ export function createStylesPlugins(options: StylesOptions): Plugin[] {
           browser: {
             commands: {
               [stylesheetsCommand]: stylesheetsOf,
-              [clientEntryCommand]: clientEntryOf,
+              [clientStylesheetsCommand]: clientStylesheetsOf,
             },
           },
         },

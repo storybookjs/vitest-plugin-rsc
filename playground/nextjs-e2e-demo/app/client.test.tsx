@@ -22,7 +22,7 @@ import { ClientCard } from "./styles/client-card.tsx";
 // Next around it. A connected component, with its data from the server, is
 // for `renderServer()` in a test file without the directive. The setup of
 // the browser layer is in vitest.setup.client.tsx, a setup file with the
-// directive, and in test/setup-locale.tsx, which vitest.setup.ts imports.
+// directive.
 
 // React's production build has no `act()`. Without it `render()` of
 // vitest-browser-react resolves before React has rendered, so a test finds
@@ -83,11 +83,9 @@ test("shares the test runner of the tab, also with the library that renders", as
   expect(page).toHaveProperty("render");
 });
 
-test("has what the setup files set up for the browser layer", async () => {
-  // vitest.setup.ts imports test/setup-locale.tsx, a file with `"use client"`:
-  // the browser layer loaded it once, for the tab, before the setup file's
-  // own code ran. Not test/locale-of-mocked-module.tsx, which only a module
-  // that the setup file mocks imports. A page of `renderServer()` starts
+test("has what the setup file with the directive set up for the browser layer", async () => {
+  // vitest.setup.client.tsx imports test/setup-locale.tsx, which set the
+  // locale in the graph of the tab, once. A page of `renderServer()` starts
   // without it: see node.test.tsx.
   const { getByText } = await render(<Locale />);
 
