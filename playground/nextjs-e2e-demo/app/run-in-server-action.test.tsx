@@ -5,13 +5,14 @@ import {
 } from "vitest-plugin-rsc/nextjs/testing-library";
 import { cookies, headers } from "next/headers";
 import { isRedirectError } from "next/dist/client/components/redirect-error";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { after } from "next/server";
-import { beforeEach, expect, test } from "vitest";
+import { beforeEach, expect, onTestFinished, test, vi } from "vitest";
 import { page } from "vitest/browser";
 import { audit, auditLog } from "./lib/audit.ts";
-import { createNote, setLanguage, toggleFavorite } from "./lib/actions.ts";
+import { createNote, setLanguage, signIn, toggleFavorite } from "./lib/actions.ts";
 import { db } from "./lib/notes.ts";
+import { reports } from "./lib/reports.ts";
 
 beforeEach(() => {
   db.notes.clear();
@@ -64,6 +65,42 @@ test("rejects with the error of a redirect(), which Next has acted on", async ()
   expect(error).toMatchObject({ digest: expect.stringContaining(";/notes/1;") });
   expect(db.notes.get("1")?.title).toBe("Plan the week");
   expect(await cookieOfTheApp("last-created")).toBe("1");
+});
+
+test("settles once Next has rendered the page a redirect() goes to, in the request of the action", async () => {
+  const error = await runInServerAction(async () => {
+    await signIn("ada");
+    redirect("/welcome");
+  }).catch((error: unknown) => error);
+  audit("the action has settled");
+  // A request after it, of someone else, that takes a while.
+  await runInServerAction(() => new Promise((resolve) => setTimeout(resolve, 200)), {
+    headers: { cookie: "session=grace" },
+  });
+
+  expect(isRedirectError(error)).toBe(true);
+  // The page read the cookies after an `await` of its own: the ones of the
+  // action, before the call settled.
+  expect(auditLog).toEqual(["welcomed ada", "the action has settled"]);
+});
+
+test("stops reading the page a redirect() goes to when it streams on, with a warning", async () => {
+  // The report on the page never comes.
+  reports.waitFor = new Promise(() => {});
+  onTestFinished(() => {
+    reports.waitFor = undefined;
+  });
+  const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+  onTestFinished(() => warn.mockRestore());
+
+  const error = await runInServerAction(() => redirect("/reports/1")).catch(
+    (error: unknown) => error,
+  );
+
+  expect(isRedirectError(error)).toBe(true);
+  expect(warn).toHaveBeenCalledWith(
+    expect.stringContaining("was still streaming 5s after the action"),
+  );
 });
 
 test("rejects with what notFound() throws", async () => {
