@@ -633,7 +633,7 @@ test("creates the note and redirects", async () => {
 });
 ```
 
-It sends a Server Action request like the one of Next's router, to a route at `url` that renders nothing, and opens no page: no app starts, so it is much faster than a page with a form. After a `redirect()`, Next renders the page it redirects to on the server, in the request of the action, as it does for the router. `runInServerAction` settles once that page has rendered, so its code reads the cookies and headers of the action, not those of the requests after it. A page that is still streaming five seconds after the action is cut off, with a warning. A page that is open stays open. The function and its result are the test's own, so they do not go through Flight.
+It sends a Server Action request like the one of Next's router, to a route at `url` that renders nothing, and opens no page: no app starts, so it is much faster than a page with a form. After a `redirect()` the call rejects with its error, and no page renders: open the page the action redirects to in your test, with `renderServer({ url })` or `handleRequest()`. A page that is open stays open. The function and its result are the test's own, so they do not go through Flight.
 
 The request carries your app's cookies, the `headers` of what `renderServer()` opened and the ones you pass, and the cookies the action sets are your app's from then on. A `cookie` header among them is sent instead of your app's cookies, with this request and the redirects it follows, not with the requests after it. With `proxy: true` it goes through the proxy, and a redirect there rejects, since the action did not run.
 

@@ -17,10 +17,6 @@ const ssr = await createEnvironmentRunner("next_ssr").import<typeof import("./ss
 
 const nativeFetch = globalThis.fetch;
 
-// A test's own timers may be fake.
-const setTimeout = globalThis.setTimeout;
-const clearTimeout = globalThis.clearTimeout;
-
 // The origin of the app is also the origin of the dev server, which serves the
 // modules of the test and of the app. So a same-origin `fetch` is the app's
 // when Next's router or a Server Action sends it, which mark their requests,
@@ -312,13 +308,12 @@ let serverActionKeys = 0;
  *
  * It sends a Server Action request like the one of Next's router, to a route
  * at `url` that renders nothing, and opens no page: there is no app to start.
- * After a `redirect()` Next renders the page it redirects to, on the server,
- * in the request of the action. This settles once that page has rendered, or
- * after five seconds, with a warning. A page that is open stays open. The
- * request carries the app's cookies, the `headers` of what `renderServer()`
- * opened and the ones passed here, and the cookies the action sets are the
- * app's from then on. For code that a Server Action calls; test a form of a
- * page through the page.
+ * After a `redirect()` the action rejects with its error, and no page
+ * renders: open the page the action redirects to in the test. A page that is
+ * open stays open. The request carries the app's cookies, the `headers` of
+ * what `renderServer()` opened and the ones passed here, and the cookies the
+ * action sets are the app's from then on. For code that a Server Action
+ * calls; test a form of a page through the page.
  *
  * The function runs in the request, so it cannot send a request to the app
  * itself, which would wait for this one: call the app's code instead.
@@ -367,11 +362,14 @@ export async function runInServerAction<T>(
         pathname: url.pathname,
         proxy: options.proxy ?? false,
         node: { ui: null, layouts: false },
+        rendersRedirect: false,
       },
     });
-    // What Next renders after the action, which no page is there to show, is
-    // read to its end, as a browser reads it: see `readRenderAfterAction()`.
-    await readRenderAfterAction(response);
+    // The response, which no page is there to show, is read to its end, so
+    // that the request has ended: as a browser reads it. It is short, as the
+    // route renders nothing, also after a `redirect()`: see `appFetch()`. What
+    // fails in it, Next reports itself.
+    await response.body?.pipeTo(new WritableStream()).catch(() => {});
     if (!ran.outcome) {
       const location = response.headers.get("location");
       throw new Error(
@@ -384,41 +382,6 @@ export async function runInServerAction<T>(
   }
   if ("error" in ran.outcome) throw ran.outcome.error;
   return ran.outcome.value;
-}
-
-// How long `runInServerAction()` reads the response of the action, at most:
-// the page a `redirect()` goes to can stream on forever, with a Suspense
-// boundary whose data never comes. Only that takes so long.
-const renderAfterActionTimeout = 5000;
-
-// After a `redirect()` Next renders the page it redirects to into the
-// response of the action, through a request to itself. That render belongs
-// to the request of the action, which lasts until its body has been written.
-// With the body cancelled, the request would end while the render goes on
-// without it: its code would read the stores of the requests that come next,
-// or none. So the body is read to its end, up to a time limit.
-async function readRenderAfterAction(response: Response): Promise<void> {
-  const stop = new AbortController();
-  const timeout = setTimeout(() => stop.abort(), renderAfterActionTimeout);
-  // What fails in the render, Next reports itself.
-  const cutOff = await response.body?.pipeTo(new WritableStream(), { signal: stop.signal }).then(
-    () => false,
-    () => stop.signal.aborted,
-  );
-  clearTimeout(timeout);
-  if (cutOff) {
-    // `<url>;<push or replace>`
-    const page = response.headers.get("x-action-redirect")?.replace(/;[^;]*$/, "");
-    const what = page
-      ? `${page}, the page the Server Action at ${response.url} redirected to,`
-      : `the response of the Server Action at ${response.url}`;
-    console.warn(
-      `vitest-plugin-rsc: Next was still rendering ${what} ` +
-        `${renderAfterActionTimeout / 1000}s after the action, so runInServerAction() cut ` +
-        "it off. The rest of that render runs without its request, and can read and set " +
-        "the cookies, headers and other values of the requests that come next.",
-    );
-  }
 }
 
 // The id of a Server Action, which React's server reference carries: what
@@ -473,6 +436,14 @@ const appFetch =
       : sent.headers;
     if (!sent.marked && !(await ssr.takesRequest({ url: sent.url.href, headers }))) {
       return nativeFetch(input, init);
+    }
+    // After a `redirect()` in a Server Action, Next fetches the page it
+    // redirects to from itself, and renders it into the response of the
+    // action: what Next's router shows next. For a request that shows no
+    // page, like the one of `runInServerAction()`, the page does not render:
+    // an answer without a Flight payload has Next send the redirect alone.
+    if (server && sent.marked && registry.openedByRequest.getStore()?.rendersRedirect === false) {
+      return new registry.Response(null, { status: 204 });
     }
     // The request, for the network: a body can be read once.
     const spare = input instanceof Request && input.body ? input.clone() : input;
@@ -897,6 +868,10 @@ let leaving: Promise<void> = Promise.resolve();
 // How long leaving a page waits for it to stop starting, at most: less than
 // the 30 seconds of a hook in Browser Mode, so that this says why it waits.
 const startTimeout = 20_000;
+// A test's own timers may be fake.
+const setTimeout = globalThis.setTimeout;
+const clearTimeout = globalThis.clearTimeout;
+
 function leavePage(): Promise<void> {
   currentLoad?.abort(new DOMException("The page was left before it had loaded.", "AbortError"));
   currentLoad = undefined;
