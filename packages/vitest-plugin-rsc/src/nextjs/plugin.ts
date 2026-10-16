@@ -329,6 +329,29 @@ function nextClientBoundaryPlugin(getProject: () => NextProject, resolver: Layer
   };
 }
 
+// React's Flight server, in development, wraps the console to send what a
+// request logs to the page, which logs it again. Here the page is the server:
+// it has logged it already. And the request a log is sent with is the one
+// whose scope is active, which in the page also takes in client code that
+// runs while a request is open. React queues a log without a flush of its
+// own, and a response does not end while one is queued.
+function flightConsolePlugin(): Plugin {
+  return {
+    name: "vitest-plugin-rsc:flight-console",
+    transform: {
+      // Rolldown matches the id with `/` for a separator.
+      filter: { id: /\/react-server-dom-webpack-server\.[^/]+\.development\.js$/ },
+      handler(code, id) {
+        const patched = code.replace(/function patchConsole\([^)]*\)\s*\{/, "$& return;");
+        if (patched === code) {
+          this.warn(`vitest-plugin-rsc: React's patchConsole() in ${id} is not turned off.`);
+        }
+        return { code: patched, map: null };
+      },
+    },
+  };
+}
+
 // Next's compile-time constants for a layer. A server layer gets what makes
 // a module server code on top of these: see server-code.ts.
 function definesOf(project: NextProject, layer: NextLayer): Record<string, string> {
@@ -588,6 +611,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
               resolvers[layer].plugin(),
               createDependencyCompilePlugin(getProject, layer),
               ...(layer === "rsc" ? [nextClientBoundaryPlugin(getProject, resolvers.rsc)] : []),
+              flightConsolePlugin(),
               ...(layer === "browser" ? [] : [serverCode.optimizerPlugin(layer)]),
             ],
             // A package can import what only another layer's build of a module

@@ -29,22 +29,24 @@ test("rejects with what the function throws", async () => {
   await expect(runInServerAction(() => toggleFavorite("404"))).rejects.toThrow("No note 404");
 });
 
-test("keeps the cookies the action sets in the browser", async () => {
+// What the next request of the app has of a cookie.
+const cookieOfTheApp = (name: string) =>
+  runInServerAction(async () => (await cookies()).get(name)?.value);
+
+test("keeps the cookies the action sets for the requests after it", async () => {
   await runInServerAction(() => setLanguage("nl"));
 
-  expect(document.cookie).toContain("language=nl");
+  expect(await cookieOfTheApp("language")).toBe("nl");
   expect(await (await handleRequest("/settings")).text()).toMatch(/Language: (<!-- -->)?nl/);
 });
 
-test("sends the browser's cookies and the headers it is given", async () => {
-  document.cookie = "language=nl";
-
+test("sends the app's cookies and the headers it is given", async () => {
   const seen = await runInServerAction(
     async () => ({
       language: (await cookies()).get("language")?.value,
       client: (await headers()).get("x-client"),
     }),
-    { headers: { "x-client": "vitest" } },
+    { headers: { "x-client": "vitest", cookie: "language=nl" } },
   );
 
   expect(seen).toEqual({ language: "nl", client: "vitest" });
@@ -61,7 +63,7 @@ test("rejects with the error of a redirect(), which Next has acted on", async ()
   // NEXT_REDIRECT;<type>;<url>;<status>;
   expect(error).toMatchObject({ digest: expect.stringContaining(";/notes/1;") });
   expect(db.notes.get("1")?.title).toBe("Plan the week");
-  expect(document.cookie).toContain("last-created=1");
+  expect(await cookieOfTheApp("last-created")).toBe("1");
 });
 
 test("rejects with what notFound() throws", async () => {
@@ -74,15 +76,20 @@ test("rejects when the proxy redirects, as the action did not run", async () => 
   await expect(
     runInServerAction(() => setLanguage("nl"), { url: "/team", proxy: true }),
   ).rejects.toThrow(/did not run: .*\/team redirected to .*\/account\?from=%2Fteam/);
-  expect(document.cookie).not.toContain("language=nl");
+  expect(await cookieOfTheApp("language")).toBeUndefined();
 });
 
 test("goes through the proxy with `proxy`, like a page", async () => {
-  document.cookie = "session=ada";
   const teamHeader = async () => (await headers()).get("x-team");
 
-  await expect(runInServerAction(teamHeader, { url: "/team" })).resolves.toBeNull();
-  await expect(runInServerAction(teamHeader, { url: "/team", proxy: true })).resolves.toBe("core");
+  const signedIn = { cookie: "session=ada" };
+
+  await expect(
+    runInServerAction(teamHeader, { url: "/team", headers: signedIn }),
+  ).resolves.toBeNull();
+  await expect(
+    runInServerAction(teamHeader, { url: "/team", proxy: true, headers: signedIn }),
+  ).resolves.toBe("core");
 });
 
 test("runs what the action leaves for after() once it has responded", async () => {

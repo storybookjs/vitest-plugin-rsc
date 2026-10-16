@@ -158,7 +158,7 @@ test("runs a Server Action that sets a cookie, revalidates and redirects", async
   expect(window.location.pathname).toBe("/notes/1");
   await expect.poll(() => document.title).toBe("Plan the week | Notes");
   expect(db.notes.get("1")?.title).toBe("Plan the week");
-  expect(document.cookie).toContain("last-created=1");
+  expect(document.cookie).toBe("last-created=1");
 
   // The cookie reaches the next server render.
   await page.getByRole("link", { name: "Notes", exact: true }).click();
@@ -258,10 +258,8 @@ test("starts every test without the cookies of the one before", async () => {
   await expect.element(page.getByText(/Last created/)).not.toBeInTheDocument();
 });
 
-test("sends the cookies the test sets before it opens a page", async () => {
-  document.cookie = "last-created=7";
-
-  await renderServer({ url: "/notes" });
+test("sends the cookies of a cookie header with the page", async () => {
+  await renderServer({ url: "/notes", headers: { cookie: "last-created=7" } });
 
   await expect.element(page.getByText("Last created: 7")).toBeVisible();
 });

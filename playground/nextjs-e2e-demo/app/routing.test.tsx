@@ -1,7 +1,11 @@
-import { handleRequest, renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
+import {
+  handleRequest,
+  renderServer,
+  runInServerAction,
+} from "vitest-plugin-rsc/nextjs/testing-library";
 import { afterEach, beforeEach, expect, test, vi, type MockInstance } from "vitest";
 import { page } from "vitest/browser";
-import { headers } from "next/headers";
+import { cookies, headers } from "next/headers";
 import Link from "next/link";
 import { signInAs } from "../test/browser.ts";
 import { FavoriteButton } from "./components/favorite-button.tsx";
@@ -129,6 +133,20 @@ test("rewrites to another server, and answers with its response", async () => {
 
   expect(response.status).toBe(200);
   expect(response.headers.get("content-type")).toBe("image/png");
+});
+
+test("does not send the app's cookies with a rewrite to another server, as the browser makes that request", async () => {
+  // A service there that answers with the headers it got.
+  const elsewhere = `elsewhere.localhost:${window.location.port}`;
+  await signInAs("ada");
+
+  const response = await handleRequest("/elsewhere/service/headers", {
+    headers: { "x-elsewhere": elsewhere },
+  });
+
+  const headers = await response.json();
+  expect(headers).toMatchObject({ "x-elsewhere": elsewhere });
+  expect(headers).not.toHaveProperty("cookie");
 });
 
 test("leaves a rewrite to the origin of the app itself to the dev server", async () => {
@@ -260,16 +278,19 @@ test("answers with what the proxy responds itself", async () => {
 });
 
 test("gives the app the headers and the cookies the proxy sets", async () => {
-  signInAs("ada");
+  await signInAs("ada");
 
   const { response } = await renderServer({ url: "/team" });
 
   // A header of the request, which the page reads with headers().
   await expect.element(page.getByText("Team: core")).toBeVisible();
   // A cookie of the response: the page reads it with cookies() in the same
-  // request, and the browser has it afterwards.
+  // request, and the app has it afterwards.
   await expect.element(page.getByText("Last team: core")).toBeVisible();
-  expect(document.cookie).toContain("last-team=core");
+  expect(response.headers.getSetCookie()).toEqual(["last-team=core; Path=/"]);
+  expect(await runInServerAction(async () => (await cookies()).get("last-team")?.value)).toBe(
+    "core",
+  );
   // A header of the response.
   expect(response.headers.get("x-proxy")).toBe("team");
 });
@@ -393,7 +414,7 @@ test("renders a node behind the proxy with `proxy: true`, with the params of the
 
   await expect.element(page.getByRole("heading", { name: "Account" })).toBeVisible();
 
-  signInAs("ada");
+  await signInAs("ada");
   await renderServer(<Team />, { url: "/team", proxy: true });
 
   await expect.element(page.getByText("Team of the node: core")).toBeVisible();
@@ -537,7 +558,7 @@ test("renders a node in the layouts of a route without the proxy", async () => {
 });
 
 test("renders a node in the layouts of a route behind the proxy, with both", async () => {
-  signInAs("ada");
+  await signInAs("ada");
 
   const { response } = await renderServer(<Team />, { url: "/team", layouts: true, proxy: true });
 
