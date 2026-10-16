@@ -54,6 +54,19 @@ test("leaves the browser to a test file", () => {
   expect(response.headers.getSetCookie()).toEqual([]);
 });
 
+test("logs what a Server Component logs once, as the page's console is the server's", async () => {
+  const info = vi.spyOn(console, "info");
+
+  await renderServer({ url: "/logged" });
+  await expect.element(page.getByRole("heading", { name: "Logged" })).toBeVisible();
+
+  // React's Flight server does not send it to the page, which would log it again.
+  const logged = info.mock.calls.filter((args) =>
+    args.some((arg) => String(arg).includes("Rendered the logged page")),
+  );
+  expect(logged).toHaveLength(1);
+});
+
 test("leaves the browser to a module that the config lists in browserModules", async () => {
   expect(whereAmI()).toBe("browser");
   await signInAs("grace");
