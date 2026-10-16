@@ -99,7 +99,7 @@ test("stops reading the page a redirect() goes to when it streams on, with a war
 
   expect(isRedirectError(error)).toBe(true);
   expect(warn).toHaveBeenCalledWith(
-    expect.stringContaining("was still streaming 5s after the action"),
+    expect.stringContaining("Next was still rendering /reports/1, the page the Server Action at"),
   );
 });
 

@@ -313,11 +313,12 @@ let serverActionKeys = 0;
  * It sends a Server Action request like the one of Next's router, to a route
  * at `url` that renders nothing, and opens no page: there is no app to start.
  * After a `redirect()` Next renders the page it redirects to, on the server,
- * in the request of the action: this settles once it has, for five seconds
- * at most. A page that is open stays open. The request carries the app's
- * cookies, the `headers` of what `renderServer()` opened and the ones passed
- * here, and the cookies the action sets are the app's from then on. For code
- * that a Server Action calls; test a form of a page through the page.
+ * in the request of the action. This settles once that page has rendered, or
+ * after five seconds, with a warning. A page that is open stays open. The
+ * request carries the app's cookies, the `headers` of what `renderServer()`
+ * opened and the ones passed here, and the cookies the action sets are the
+ * app's from then on. For code that a Server Action calls; test a form of a
+ * page through the page.
  *
  * The function runs in the request, so it cannot send a request to the app
  * itself, which would wait for this one: call the app's code instead.
@@ -393,22 +394,29 @@ const renderAfterActionTimeout = 5000;
 // After a `redirect()` Next renders the page it redirects to into the
 // response of the action, through a request to itself. That render belongs
 // to the request of the action, which lasts until its body has been written.
-// Cancelled, the request would end while the render goes on without it: its
-// code would read the stores of the requests that come next, or none. So the
-// body is read to its end, up to a time limit.
+// With the body cancelled, the request would end while the render goes on
+// without it: its code would read the stores of the requests that come next,
+// or none. So the body is read to its end, up to a time limit.
 async function readRenderAfterAction(response: Response): Promise<void> {
   const stop = new AbortController();
   const timeout = setTimeout(() => stop.abort(), renderAfterActionTimeout);
   // What fails in the render, Next reports itself.
-  await response.body?.pipeTo(new WritableStream(), { signal: stop.signal }).catch(() => {});
+  const cutOff = await response.body?.pipeTo(new WritableStream(), { signal: stop.signal }).then(
+    () => false,
+    () => stop.signal.aborted,
+  );
   clearTimeout(timeout);
-  if (stop.signal.aborted) {
+  if (cutOff) {
+    // `<url>;<push or replace>`
+    const page = response.headers.get("x-action-redirect")?.replace(/;[^;]*$/, "");
+    const what = page
+      ? `${page}, the page the Server Action at ${response.url} redirected to,`
+      : `the response of the Server Action at ${response.url}`;
     console.warn(
-      `vitest-plugin-rsc: the response of the Server Action at ${response.url} was still ` +
-        `streaming ${renderAfterActionTimeout / 1000}s after the action, and ` +
-        "runInServerAction() went on without it. Next renders the page that a redirect() " +
-        "goes to into it. The rest of that render runs without its request, and can read " +
-        "and set the cookies, headers and other values of the requests that come next.",
+      `vitest-plugin-rsc: Next was still rendering ${what} ` +
+        `${renderAfterActionTimeout / 1000}s after the action, so runInServerAction() cut ` +
+        "it off. The rest of that render runs without its request, and can read and set " +
+        "the cookies, headers and other values of the requests that come next.",
     );
   }
 }
