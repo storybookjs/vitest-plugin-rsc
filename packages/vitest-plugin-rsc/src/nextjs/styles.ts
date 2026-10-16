@@ -13,14 +13,9 @@ import {
   type TransformResult,
   type ViteDevServer,
 } from "vite";
-import type { BrowserCommandContext } from "vitest/node";
 import type { ComponentRoute, NextLayer, NextProject, NextRoute } from "./project.ts";
 import { componentPagePath } from "./project/entries.ts";
-import {
-  clientStylesheetsCommand,
-  stylesheetsCommand,
-  type Stylesheets,
-} from "./styles-command.ts";
+import { stylesheetsCommand, stylesheetsPath, type Stylesheets } from "./styles-command.ts";
 
 // The CSS of the app, the way Next brings it to a page: as the stylesheets of
 // the segment that imports them.
@@ -174,6 +169,14 @@ export function exportsOfStylesheet(code: string, id: string): string {
 
 type Layer = "rsc" | "browser";
 
+// What Vitest calls a browser command with (its `BrowserCommandContext`): the
+// project, and the test file that runs. Not imported from Vitest, which
+// another host does not have.
+type CommandContext = {
+  project: { vite: ViteDevServer; config: { setupFiles: string[] } };
+  testPath?: string;
+};
+
 export type StylesOptions = {
   getProject(): NextProject;
   /** The Vite environment of each layer. */
@@ -184,9 +187,9 @@ export type StylesOptions = {
    */
   isServerCode(file: string): boolean;
   /**
-   * Whether a file is the host's: a test file or a setup file of Vitest. In
-   * the layer of the browser that is a test file with `"use client"`, whose
-   * own CSS is Vite's, as in the rsc layer.
+   * Whether a file is the host's: a test file or a setup file of Vitest, or a
+   * file of another host. In the layer of the browser that is such a file
+   * with `"use client"`, whose own CSS is Vite's, as in the rsc layer.
    */
   isHostFile(file: string): boolean;
   /** The page route that has `entry` for the name of its modules. */
@@ -348,18 +351,19 @@ export function createStylesPlugins(options: StylesOptions): Plugin[] {
   /**
    * The stylesheets of a route, per file of a segment: see `Stylesheets`. The
    * node of a test is the page of its route, and no file: its stylesheets are
-   * those of the test file that renders it, and of the setup files. With
+   * those of the files of the host that render it, `isNodeFile`. With
    * `layouts: true` the layouts of the app around it have their own.
    */
   async function stylesheetsOf(
-    { project, testPath }: BrowserCommandContext,
+    vite: ViteDevServer,
+    isNodeFile: (file: string) => boolean,
     entry: string,
     inline: boolean,
   ): Promise<Stylesheets> {
     const route = options.routeOf(entry);
     if (!route) return {};
-    const { load, follow, collect } = reach(project.vite);
-    const rsc = project.vite.environments[environments.rsc]!;
+    const { load, follow, collect } = reach(vite);
+    const rsc = vite.environments[environments.rsc]!;
     const starts = new Map<string, EnvironmentModuleNode[]>();
 
     await Promise.all(
@@ -370,13 +374,10 @@ export function createStylesPlugins(options: StylesOptions): Plugin[] {
       }),
     );
     if ("component" in route) {
-      const files = [...project.config.setupFiles, ...(testPath ? [testPath] : [])].map((file) =>
-        normalizePath(file),
+      const nodes = [...rsc.moduleGraph.idToModuleMap.values()].filter(
+        (node) => node.file && isNodeFile(node.file),
       );
-      starts.set(
-        componentPagePath,
-        files.flatMap((file) => [...(rsc.moduleGraph.getModulesByFile(file) ?? [])]),
-      );
+      starts.set(componentPagePath, nodes);
     }
 
     await Promise.all([...starts.values()].flat().map((node) => follow("rsc", node)));
@@ -385,7 +386,7 @@ export function createStylesPlugins(options: StylesOptions): Plugin[] {
     // does for a page load, which `inline` says this is.
     const { experimental } = getProject().config as { experimental?: { inlineCss?: boolean } };
     const contentOf = async (path: string) =>
-      inline && experimental?.inlineCss ? (await cssOf(project.vite, path))?.code : undefined;
+      inline && experimental?.inlineCss ? (await cssOf(vite, path))?.code : undefined;
     // Also a file without any: it may have had some before an edit.
     return Object.fromEntries(
       await Promise.all(
@@ -393,13 +394,31 @@ export function createStylesPlugins(options: StylesOptions): Plugin[] {
           file,
           await Promise.all(
             collect(start).map(async (path) => ({
-              path: await versioned(project.vite, path),
+              path: await versioned(vite, path),
               content: await contentOf(path),
             })),
           ),
         ]),
       ),
     );
+  }
+
+  // Under Vitest the node of a test is rendered by its test file, with the
+  // setup files before it. Vitest says which test file asks.
+  function fromVitest({ project, testPath }: CommandContext, entry: string, inline: boolean) {
+    const files = new Set(
+      [...project.config.setupFiles, ...(testPath ? [testPath] : [])].map((file) =>
+        normalizePath(file),
+      ),
+    );
+    return stylesheetsOf(project.vite, (file) => files.has(file), entry, inline);
+  }
+
+  // Another host does not say which of its files renders a node. Those it has
+  // loaded do, like the story files that Storybook has loaded: what a test
+  // file and the setup files are to Vitest.
+  function fromHost(vite: ViteDevServer, entry: string, inline: boolean) {
+    return stylesheetsOf(vite, options.isHostFile, entry, inline);
   }
 
   // The path with the version of the CSS: see `serve()`. A stylesheet that
@@ -416,11 +435,8 @@ export function createStylesPlugins(options: StylesOptions): Plugin[] {
    * has evaluated the file: see client-graph.ts. A setup file with the
    * directive the same, before every test file.
    */
-  async function clientStylesheetsOf(
-    { project }: BrowserCommandContext,
-    url: string,
-  ): Promise<string[]> {
-    const { load, follow, collect } = reach(project.vite);
+  async function clientStylesheetsOf(vite: ViteDevServer, url: string): Promise<string[]> {
+    const { load, follow, collect } = reach(vite);
     const node = await load("browser", url);
     if (!node) return [];
     await follow("browser", node);
@@ -428,7 +444,7 @@ export function createStylesPlugins(options: StylesOptions): Plugin[] {
     const urlOf = (path: string) => path.split("/").map(encodeURIComponent).join("/");
     return Promise.all(
       collect([node]).map(
-        async (path) => getProject().assetPath + urlOf(await versioned(project.vite, path)),
+        async (path) => getProject().assetPath + urlOf(await versioned(vite, path)),
       ),
     );
   }
@@ -472,7 +488,21 @@ export function createStylesPlugins(options: StylesOptions): Plugin[] {
     response: ServerResponse,
   ): Promise<boolean> {
     const { assetPath } = getProject();
-    const { pathname } = new URL(request.url!, "http://n");
+    const { pathname, searchParams } = new URL(request.url!, "http://n");
+    // What the page asks the plugin: the stylesheets of a route, or of a
+    // client file. See styles-command.ts.
+    if (pathname === stylesheetsPath) {
+      const url = searchParams.get("url");
+      const entry = searchParams.get("entry");
+      if (!url && !entry) return false;
+      const stylesheets = url
+        ? await clientStylesheetsOf(server, url)
+        : await fromHost(server, entry!, searchParams.get("inline") === "true");
+      response.setHeader("content-type", "application/json");
+      response.setHeader("cache-control", "no-cache");
+      response.end(JSON.stringify(stylesheets));
+      return true;
+    }
     if (!pathname.startsWith(`${assetPath}${directory}/`)) return false;
     let path: string;
     try {
@@ -502,17 +532,9 @@ export function createStylesPlugins(options: StylesOptions): Plugin[] {
     {
       name: "vitest-plugin-rsc:next-styles",
       enforce: "pre",
-      // How a plugin gives the browser a command of its own, in Vitest's config.
-      config: () => ({
-        test: {
-          browser: {
-            commands: {
-              [stylesheetsCommand]: stylesheetsOf,
-              [clientStylesheetsCommand]: clientStylesheetsOf,
-            },
-          },
-        },
-      }),
+      // How a plugin gives the browser a command of its own, in Vitest's
+      // config. Another host ignores this.
+      config: () => ({ test: { browser: { commands: { [stylesheetsCommand]: fromVitest } } } }),
       configureServer(vite) {
         // A load that failed may not after a change. One that did is
         // reloaded when Vite invalidates its module.

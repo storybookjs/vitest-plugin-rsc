@@ -57,6 +57,21 @@ type InvokeResultMessage = {
 // Before anything replaces it: this request is for the dev server.
 const nativeFetch = globalThis.fetch;
 
+/**
+ * Asks the dev server for JSON at a path of the plugin's, with the `fetch` the
+ * page had before the app's replaced it: see nextjs/index.ts.
+ */
+export async function fetchJson<T>(path: string, query: Record<string, string>): Promise<T> {
+  const url = `${path}?${new URLSearchParams(query)}`;
+  const response = await nativeFetch(url);
+  if (!response.ok) {
+    throw new Error(
+      `vitest-plugin-rsc: ${url} answered ${response.status}: ${await response.text()}`,
+    );
+  }
+  return (await response.json()) as T;
+}
+
 let webSocket: WebSocket | undefined;
 let webSocketPromise: Promise<WebSocket> | undefined;
 let webSocketInfoPromise: Promise<WebSocketInfo> | undefined;

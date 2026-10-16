@@ -8,10 +8,10 @@ import {
   normalizePath,
   parseAst,
   parseAstAsync,
+  send,
   type Plugin,
   type ResolvedConfig,
 } from "vite";
-import type { TestProject } from "vitest/node";
 import { createRunnerEnvironmentPlugins } from "../runner-environment.ts";
 import { flightBridge, type FlightEntry } from "./flight.ts";
 import { nextBuilds, nextProductionPlugin, type NextBuild } from "./build.ts";
@@ -24,6 +24,7 @@ import { createServerCode, type ServerCodeOptions } from "./server-code.ts";
 import { affectedTests } from "./affected/index.ts";
 import { createPathsPlugin } from "./paths.ts";
 import { createStylesPlugins } from "./styles.ts";
+import { assertVitestVersion } from "./vitest-version.ts";
 
 // Each layer of Next is a Vite environment, and all three run in the
 // browser (docs/next-routes.md). Where Next's own bundler config says a module
@@ -66,15 +67,16 @@ const bridgePrefix = "\0vitest-plugin-rsc/next-bridge/";
 const emptyModuleId = "\0vitest-plugin-rsc/next-empty";
 const serverReferenceInfo = "next/dist/esm/shared/lib/server-reference-info.js";
 const vendoredFlight = (entry: string) => `@vitejs/plugin-rsc/vendor/react-server-dom/${entry}`;
-// Vitest wants a file path for a setup file, not a package specifier.
-const setupFile = fileURLToPath(
-  new URL(`./setup${path.extname(import.meta.url)}`, import.meta.url),
-);
 // A file of this package, in `src` or in `dist`.
 const ownFile = (name: string) =>
   normalizePath(
     fileURLToPath(new URL(`./${name}${path.extname(import.meta.url)}`, import.meta.url)),
   );
+// Vitest wants a file path for a setup file, not a package specifier. These
+// two are the only files of the layers that import Vitest: a host without
+// Vitest never loads them.
+const setupFile = ownFile("setup");
+const affectedSetupFile = ownFile("affected/browser");
 // What a test imports `renderServer()` from, and the file that is.
 const testingLibrary = {
   specifier: "vitest-plugin-rsc/nextjs/testing-library",
@@ -479,6 +481,20 @@ const runtimeImports: Record<NextLayer, string[]> = {
 
 export type { NextBuild };
 
+// What Vitest calls `configureVitest` with, as far as the plugin reads it.
+type ConfigureVitestContext = {
+  vitest: { version: string };
+  project: {
+    config: {
+      root: string;
+      dir?: string;
+      include: string[];
+      exclude: string[];
+      setupFiles: string[];
+    };
+  };
+};
+
 export type VitestPluginNextOptions = ServerCodeOptions & {
   /**
    * Lets watch mode, `vitest --changed` and `vitest related` find the test
@@ -551,6 +567,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
                   : [],
               ),
             next: getProject,
+            setupFile: affectedSetupFile,
           }),
         ]
       : []),
@@ -757,6 +774,19 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
           },
         };
       },
+      configureServer(vite) {
+        // The script of Next's build that starts the app, which the server
+        // puts in the HTML of every page (`rootMainFiles` in node-server.ts).
+        // The browser asks for it when the page is loaded, and nothing is in
+        // it: `renderServer()` starts the app. Not a 404, which a host may
+        // count as an error of the page.
+        const mainApp = "static/chunks/main-app.js";
+        vite.middlewares.use((request, response, next) => {
+          const { pathname } = new URL(request.url ?? "/", "http://n");
+          if (pathname !== `${project.assetPath}${mainApp}`) return next();
+          send(request, response, "", "js", { headers: vite.config.server.headers });
+        });
+      },
       // What the app has and does not get here: said once, when a run starts.
       configResolved(config) {
         for (const difference of cssDifferences) {
@@ -787,9 +817,12 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
             `${app} leave them out, and their routes are not served: ${files.join(", ")}`,
         );
       },
-      // Vitest's hook for a plugin of a project: what its config says is a
-      // test file or a setup file is not server code.
-      configureVitest({ project: testProject }: { project: TestProject }) {
+      // Vitest's hook for a plugin of a project, which another host has not:
+      // what its config says is a test file or a setup file is not server
+      // code. Typed here and not with Vitest's types, which a host without
+      // Vitest does not have.
+      configureVitest({ vitest, project: testProject }: ConfigureVitestContext) {
+        assertVitestVersion(vitest.version);
         const test = testProject.config;
         const setupFiles = new Set(test.setupFiles.map((file) => normalizePath(file)));
         // `test.include`, matched the way Vitest does. Not `includeSource`:

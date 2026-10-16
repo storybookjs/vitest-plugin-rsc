@@ -145,7 +145,7 @@ importers:
         specifier: ^2.0.0
         version: 2.0.0
       vitest:
-        specifier: '>=5.0.3'
+        specifier: '*'
         version: 5.0.3(@opentelemetry/api@1.9.1)(@types/node@24.12.4)(@vitest/browser-playwright@5.0.3)(@vitest/coverage-v8@5.0.3)(@vitest/ui@5.0.3)(msw@2.14.6(@types/node@24.12.4)(typescript@6.0.3))(vite@8.3.1(@types/node@24.12.4)(esbuild@0.27.7)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))
     devDependencies:
       '@next/routing':
@@ -245,6 +245,49 @@ importers:
       vitest-browser-react:
         specifier: ^2.3.0
         version: 2.3.0(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(vitest@5.0.3)
+      vitest-plugin-rsc:
+        specifier: workspace:*
+        version: link:../../packages/vitest-plugin-rsc
+
+  playground/nextjs-host-demo:
+    dependencies:
+      '@next/routing':
+        specifier: 16.4.0
+        version: 16.4.0
+      next:
+        specifier: 16.4.0
+        version: 16.4.0(@babel/core@7.29.0)(@opentelemetry/api@1.9.1)(@types/node@24.12.4)(babel-plugin-react-compiler@1.0.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
+      react:
+        specifier: 19.2.6
+        version: 19.2.6
+      react-dom:
+        specifier: 19.2.6
+        version: 19.2.6(react@19.2.6)
+    devDependencies:
+      '@types/node':
+        specifier: ^24.12.4
+        version: 24.12.4
+      '@types/react':
+        specifier: ^19.2.14
+        version: 19.2.14
+      '@types/react-dom':
+        specifier: ^19.2.3
+        version: 19.2.3(@types/react@19.2.14)
+      host-report:
+        specifier: file:fixtures/host-report
+        version: file:playground/nextjs-host-demo/fixtures/host-report
+      playwright:
+        specifier: ^1.64.0
+        version: 1.64.1
+      typescript:
+        specifier: ^6.0.3
+        version: 6.0.3
+      vite:
+        specifier: ^8.3.1
+        version: 8.3.1(@types/node@24.12.4)(esbuild@0.27.7)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)
+      vitest:
+        specifier: 5.0.3
+        version: 5.0.3(@opentelemetry/api@1.9.1)(@types/node@24.12.4)(@vitest/browser-playwright@5.0.3)(@vitest/coverage-v8@5.0.3)(@vitest/ui@5.0.3)(msw@2.14.6(@types/node@24.12.4)(typescript@6.0.3))(vite@8.3.1(@types/node@24.12.4)(esbuild@0.27.7)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))
       vitest-plugin-rsc:
         specifier: workspace:*
         version: link:../../packages/vitest-plugin-rsc
@@ -3205,6 +3248,9 @@ packages:
 
   hookable@6.1.1:
     resolution: {integrity: sha512-U9LYDy1CwhMCnprUfeAZWZGByVbhd54hwepegYTK7Pi5NvqEj63ifz5z+xukznehT7i6NIZRu89Ay1AZmRsLEQ==}
+
+  host-report@file:playground/nextjs-host-demo/fixtures/host-report:
+    resolution: {directory: playground/nextjs-host-demo/fixtures/host-report, type: directory}
 
   htmlparser2@10.1.0:
     resolution: {integrity: sha512-VTZkM9GWRAtEpveh7MSF6SjjrpNVNNVJfFup7xTY3UpFtm67foy9HDVXneLtFVt4pMz5kZtgNcvCniNFb1hlEQ==}
@@ -6934,6 +6980,8 @@ snapshots:
   hono@4.12.18: {}
 
   hookable@6.1.1: {}
+
+  host-report@file:playground/nextjs-host-demo/fixtures/host-report: {}
 
   htmlparser2@10.1.0:
     dependencies:

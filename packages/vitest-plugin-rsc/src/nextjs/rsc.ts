@@ -2,14 +2,13 @@ import { createServerManifest } from "@vitejs/plugin-rsc/core/rsc";
 import * as ReactServer from "@vitejs/plugin-rsc/react/rsc";
 import { prerender } from "@vitejs/plugin-rsc/react/rsc/static";
 import * as FlightServer from "@vitejs/plugin-rsc/vendor/react-server-dom/server.edge";
-import { commands } from "vitest/browser";
 import appPages from "virtual:vitest-plugin-rsc/next-app-pages";
 import loadMiddleware from "virtual:vitest-plugin-rsc/next-middleware";
 import routeHandlers from "virtual:vitest-plugin-rsc/next-route-handlers";
 import type { FlightAdapters } from "./flight.ts";
 import { actionModulePrefix, registry } from "./registry.ts";
-import { reportLoaded } from "./affected/browser.ts";
-import { stylesheetsCommand, type Stylesheets } from "./styles-command.ts";
+import { fetchJson } from "../utils.ts";
+import { stylesheetsPath, type Stylesheets } from "./styles-command.ts";
 
 // The rsc layer: Server Components, Server Actions, route handlers and the
 // Flight encoder.
@@ -84,21 +83,16 @@ registry.flightClient = {
 registry.loadAppPage = async (page) => {
   const load = (appPages as Record<string, () => Promise<unknown>>)[page];
   if (!load) throw new Error(`vitest-plugin-rsc: unknown Next.js app page ${page}`);
-  reportLoaded("page", page);
+  registry.reportLoaded?.("page", page);
   return (registry.appPages[page] ??= await load());
 };
 
 // The stylesheets of a route are the plugin's to say, as they are a build's:
-// see styles.ts. Vitest adds which test file asks, for the route of a node.
-registry.loadStylesheets = (entry, inline) => {
-  const load = (
-    commands as unknown as Partial<
-      Record<string, (entry: string, inline: boolean) => Promise<Stylesheets>>
-    >
-  )[stylesheetsCommand];
-  if (!load) throw new Error("vitest-plugin-rsc: the browser has no command for the stylesheets");
-  return load(entry, inline);
-};
+// see styles.ts. The dev server answers, for the files of the host it has
+// loaded. Under Vitest a command answers instead, which knows the test file
+// that asks, for the route of a node: see setup.ts.
+registry.loadStylesheets = (entry, inline) =>
+  fetchJson<Stylesheets>(stylesheetsPath, { entry, inline: String(inline) });
 
 /** The page module of the route of a node: see `loadNodeEntry()` in project/entries.ts. */
 export async function loadComponent(): Promise<{ default: () => unknown }> {
@@ -115,7 +109,7 @@ export async function loadComponent(): Promise<{ default: () => unknown }> {
 registry.loadRouteHandler = async (page) => {
   const load = routeHandlers[page];
   if (!load) throw new Error(`vitest-plugin-rsc: unknown Next.js route handler ${page}`);
-  reportLoaded("route", page);
+  registry.reportLoaded?.("route", page);
   return (await load()).handler;
 };
 
@@ -141,7 +135,7 @@ const modules = new Map<string, Promise<unknown>>();
 export function requireModule(id: string): Promise<unknown> {
   if (id.startsWith(actionModulePrefix)) {
     const [module] = id.slice(actionModulePrefix.length).split("#");
-    reportLoaded("action", module!);
+    registry.reportLoaded?.("action", module!);
   }
   let loading = modules.get(id);
   if (!loading) modules.set(id, (loading = loadModule(id)));

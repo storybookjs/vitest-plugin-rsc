@@ -89,7 +89,7 @@ Agents do dramatically better when wrapped in a self-healing loop with fast unit
 
 ## Requirements
 
-- Vite 8 or later, and Vitest 5.0.3 or later in [Browser Mode](https://vitest.dev/guide/browser/). The examples use Playwright as the browser provider.
+- Vite 8 or later, and Vitest 5.0.3 or later in [Browser Mode](https://vitest.dev/guide/browser/). The examples use Playwright as the browser provider. A host other than Vitest, like a Storybook framework, runs the plugin in a Vite server of its own: see [Another Host Than Vitest](docs/next-routes.md#another-host-than-vitest).
 - For Next.js: the App Router, `next@16.4` or later, and [`@next/routing`](https://www.npmjs.com/package/@next/routing), Next's own route resolution, at the same version as `next`.
 
 The plugin calls Next.js internals, so CI tests against `next@16.4.0`, `next@latest`, and `next@canary`.
@@ -1084,6 +1084,7 @@ For the full walkthrough, see [docs/next-routes.md](docs/next-routes.md). [docs/
 - `playground/nextjs-e2e-demo` — a small Next.js app with a test for every feature of the Next.js support. Most samples above come from its tests.
 - `playground/nextjs-notes-demo` — a fuller Next.js notes app with Better Auth, Drizzle, PGlite test databases, and shadcn/ui. Its tests open whole routes with the database and the session mocked in the test runtime. This is the repository's acceptance app.
 - `playground/rsc-vitest-demo` — a minimal non-Next RSC app. Use this as the smallest end-to-end example of `vitest-plugin-rsc` on its own.
+- `playground/nextjs-host-demo` — the Next.js plugin in a Vite dev server without Vitest, as another host runs it. Its tests start that server and drive it with Playwright.
 
 Vitest suites are wired through the root workspace, while each package or playground owns its local config:
 
