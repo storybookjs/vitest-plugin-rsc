@@ -7,7 +7,11 @@ import { registry } from "./registry.ts";
 function importModule(id: string): Promise<unknown> {
   if (!clientReferences) return import(/* @vite-ignore */ id);
   const load = clientReferences[id];
-  if (!load) throw new Error(`vitest-plugin-rsc: the build has no Client Component "${id}"`);
+  if (!load) {
+    return Promise.reject(
+      new Error(`vitest-plugin-rsc: the build has no Client Component "${id}"`),
+    );
+  }
   return load();
 }
 

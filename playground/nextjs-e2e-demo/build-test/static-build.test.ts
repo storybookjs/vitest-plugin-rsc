@@ -18,8 +18,13 @@ type HostResponse = { status: number; url: string; redirected: boolean };
  * Opens the host page with the URL of the app in its query: see host/main.tsx.
  * Resolves with the response of the server in the browser.
  */
-async function open(page: Page, site: Site, url: string): Promise<HostResponse> {
-  await page.goto(`${site.url}?url=${encodeURIComponent(url)}`);
+async function open(
+  page: Page,
+  site: Site,
+  url: string,
+  query: Record<string, string> = {},
+): Promise<HostResponse> {
+  await page.goto(`${site.url}?${new URLSearchParams({ url, ...query })}`);
   await page.waitForFunction(() => (window as { __hostState?: string }).__hostState);
   const host = await page.evaluate(() => {
     const state = window as {
@@ -83,9 +88,23 @@ describe("a static build", () => {
     await page.getByRole("button", { name: "Count: 1" }).waitFor();
   });
 
+  // A Server Component of the host, on a route of the app, with a Client
+  // Component of the app and the Server Action it calls.
+  test("renders a node of the host", async ({ page }) => {
+    const response = await open(page, site, "/notes/7", { node: "7" });
+    expect(response.status).toBe(200);
+    await heading(page, "A node of the host");
+    await page.getByText("Seeded by the host").waitFor();
+    expect(await pathname(page)).toBe("/notes/7");
+    const favorite = page.getByRole("button", { name: "Favorite" });
+    expect(await favorite.getAttribute("aria-pressed")).toBe("false");
+    await favorite.click();
+    await expect.poll(() => favorite.getAttribute("aria-pressed")).toBe("true");
+  });
+
   // The pages read the `db` that the host seeded in the rsc layer, and Next's
   // router navigates between them.
-  test("renders a server node, and navigates with Next's router", async ({ page }) => {
+  test("navigates with Next's router", async ({ page }) => {
     await open(page, site, "/notes");
     await heading(page, "Notes");
     await page.getByRole("link", { name: "Seeded by the host" }).click();
@@ -130,12 +149,14 @@ describe("a static build", () => {
       "rgb(0, 128, 0)",
     );
     const clientCard = page.getByText("Styled by a CSS module in a Client Component");
-    expect(await clientCard.evaluate((element) => getComputedStyle(element).color)).not.toBe(
-      "rgb(0, 0, 0)",
+    expect(await clientCard.evaluate((element) => getComputedStyle(element).color)).toBe(
+      "rgb(128, 0, 0)",
     );
+    expect(await style(page, ".package-reset", "color")).toBe("rgb(0, 128, 128)");
+    expect(await style(page, ".package-badge", "color")).toBe("rgb(128, 128, 0)");
     const badge = page.getByText("Styled by the CSS of a Client Component of a package");
-    expect(await badge.evaluate((element) => getComputedStyle(element).color)).not.toBe(
-      "rgb(0, 0, 0)",
+    expect(await badge.evaluate((element) => getComputedStyle(element).color)).toBe(
+      "rgb(0, 0, 128)",
     );
     // The CSS of the page goes with the page, when the next page loads.
     await openNext(page, "/notice");

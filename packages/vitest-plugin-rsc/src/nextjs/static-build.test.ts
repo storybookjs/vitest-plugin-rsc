@@ -123,22 +123,12 @@ test("names a file of the ssr layer where the browser layer has it", () => {
   expect(assets("react_client").assetFileNames).toBe(assets("next_ssr").assetFileNames);
 });
 
-test("builds the layers somewhere of their own, whatever directory the host gave them", () => {
-  const { root, layers } = setup();
+test("has Vite write nothing of the layers: their files come from their bundles", () => {
+  const { layers } = setup();
 
   expect(layers).toEqual({
-    next_ssr: {
-      build: {
-        outDir: path.join(root, "node_modules/.vitest-plugin-rsc/next_ssr"),
-        emptyOutDir: true,
-      },
-    },
-    react_client: {
-      build: {
-        outDir: path.join(root, "node_modules/.vitest-plugin-rsc/react_client"),
-        emptyOutDir: true,
-      },
-    },
+    next_ssr: { build: { outDir: "dist", emptyOutDir: false, write: false } },
+    react_client: { build: { outDir: "dist", emptyOutDir: false, write: false } },
   });
 });
 

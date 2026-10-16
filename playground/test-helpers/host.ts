@@ -6,18 +6,18 @@ import path from "node:path";
 import { chromium } from "playwright";
 import { test as base, expect } from "vitest";
 
-// What the node tests of the playgrounds that host an app share: a project as
-// the CLIs of Vite and Storybook start it, a server of files for a static
-// build, and a page of Chromium that fails its test on an error.
+// What the node tests of the playgrounds that host an app share: a command of
+// a project as its CLI runs it, a server of files for a static build, and a
+// page of Chromium that fails its test on an error.
 
-/** A site the tests open: a dev server, or a static build behind a server of files. */
+/** A site the tests open: a static build behind a server of files. */
 export type Site = { url: string; close(): Promise<void> };
 
 // What Vitest sets in the environment of a worker. A CLI runs the plugin
 // without Vitest: with a NODE_ENV of `test`, Vite and Next make another app
 // of it.
 const ofVitest = /^(VITEST(_.*)?|TEST|NODE_ENV|MODE|DEV|PROD|SSR|BASE_URL)$/;
-const env: NodeJS.ProcessEnv = { ...process.env, STORYBOOK_DISABLE_TELEMETRY: "1" };
+const env: NodeJS.ProcessEnv = { ...process.env };
 for (const name of Object.keys(env)) if (ofVitest.test(name)) delete env[name];
 
 type Command = { exited: Promise<void>; output(): string; kill(): void };
@@ -63,57 +63,12 @@ function start(root: string, command: string[]): Command {
   return started;
 }
 
-const freePort = () =>
-  new Promise<number>((resolve) => {
-    const server = net.createServer().listen(0, () => {
-      const { port } = server.address() as net.AddressInfo;
-      server.close(() => resolve(port));
-    });
-  });
-
 /** The commands of the project in `root`, a directory of a playground. */
 export function createProject(root: string) {
   return {
     /** Runs a command of the project to its end. Rejects with what it printed when it fails. */
     async run(...command: string[]): Promise<void> {
       await start(root, command).exited;
-    },
-
-    /**
-     * Starts a dev server of the project on a port that is free, and resolves
-     * once `ready`, a path of it, answers. Rejects when it does not within
-     * `timeout`, or stops.
-     */
-    async serve(
-      command: (port: number) => string[],
-      { ready = "", timeout = 300_000 } = {},
-    ): Promise<Site> {
-      const port = await freePort();
-      const server = start(root, command(port));
-      const url = `http://localhost:${port}/`;
-      const stopped = server.exited.then(() => {
-        throw new Error(`${command(port).join(" ")} stopped:\n${server.output()}`);
-      });
-      const close = async () => {
-        stopped.catch(() => {});
-        server.kill();
-        await server.exited.catch(() => {});
-      };
-      const answers = async () => {
-        for (const end = Date.now() + timeout; Date.now() < end; ) {
-          const response = await fetch(url + ready).catch(() => undefined);
-          if (response?.ok) return;
-          await new Promise((resolve) => setTimeout(resolve, 500));
-        }
-        throw new Error(`${url + ready} did not answer:\n${server.output()}`);
-      };
-      try {
-        await Promise.race([answers(), stopped]);
-      } catch (error) {
-        await close();
-        throw error;
-      }
-      return { url, close };
     },
   };
 }
@@ -127,8 +82,6 @@ const contentTypes: Record<string, string> = {
   ".svg": "image/svg+xml",
   ".png": "image/png",
   ".woff2": "font/woff2",
-  ".wasm": "application/wasm",
-  ".data": "application/octet-stream",
 };
 
 /**
@@ -137,8 +90,13 @@ const contentTypes: Record<string, string> = {
  */
 export function serveFiles(directory: string, at = "/"): Promise<Site> {
   const server = http.createServer((request, response) => {
-    const pathname = decodeURIComponent(new URL(request.url ?? "/", "http://localhost").pathname);
-    const relative = pathname.startsWith(at) ? pathname.slice(at.length) : undefined;
+    let pathname: string | undefined;
+    try {
+      pathname = decodeURIComponent(new URL(request.url ?? "/", "http://localhost").pathname);
+    } catch {
+      // Not a URL: a 404, like the rest.
+    }
+    const relative = pathname?.startsWith(at) ? pathname.slice(at.length) : undefined;
     const file =
       relative === undefined
         ? ""
@@ -154,10 +112,10 @@ export function serveFiles(directory: string, at = "/"): Promise<Site> {
     fs.createReadStream(file).pipe(response);
   });
   return new Promise((resolve) => {
-    server.listen(0, () => {
+    server.listen(0, "127.0.0.1", () => {
       const { port } = server.address() as net.AddressInfo;
       resolve({
-        url: `http://localhost:${port}${at}`,
+        url: `http://127.0.0.1:${port}${at}`,
         close: () => new Promise((closed) => server.close(() => closed())),
       });
     });

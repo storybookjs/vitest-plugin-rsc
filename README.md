@@ -945,14 +945,16 @@ App code keeps importing `db` from `#lib/db.ts`. Tests then seed rows with the s
 
 ### A Static Build
 
-`vite build` builds the app into a static site: the three layers, with the server in the browser of whoever opens the page, and no server behind it. That is what a host like `storybook build` needs, so the directory can go to a static host or to Chromatic. The plugin builds with Vite's app builder, as `vite build` does: `await (await createBuilder(config)).buildApp()`. Vite's `build()` builds one environment, so the plugin stops it with an error that says so, and it does not build in `--watch` mode.
+`vite build` builds the app into a static site: the three layers, with the server in the browser of whoever opens the page, and no server behind it. That is what a host like `storybook build` needs, so the directory can go to a static host or to Chromatic. The plugin builds with Vite's app builder, as `vite build` does: `await (await createBuilder(config, null)).buildApp()`. Vite's `build()` builds one environment, so the plugin stops it with an error that says so, and it does not build in `--watch` mode.
 
 Everything that runs with the dev server runs from the build: pages and nodes, Client Components and their references, Server Actions, route handlers, the proxy, cookies, fonts, images and stylesheets. What differs:
 
-- React is its development build, as in a test run, unless `build: "production"` is set: see [Development Or Production](docs/next-routes.md#development-or-production).
-- `images.unoptimized` is on: there is no image optimizer to ask.
-- The code of the ssr and the browser layer is one file each, `vitest-plugin-rsc/*/modules.json`, which a tab fetches once. Its name does not change with its content: serve it without a long cache, like `index.html`, and compressed, as it is a few MB of JavaScript.
-- The CSS of a route is linked by Next, as with a dev server: a file per stylesheet under `/_next/static/css/`, with the stylesheets of every route in `vitest-plugin-rsc/next-stylesheets.json`.
+- React is its development build, as in a test run, unless `build: "production"` is set: see [Development Or Production](docs/next-routes.md#development-or-production). The app's own `process.env.NODE_ENV` is that value too, not `"test"`.
+- `images.unoptimized` is on, unless the app has an image loader of its own: there is no image optimizer to ask.
+- The code of the ssr and the browser layer is one file each, `vitest-plugin-rsc/*/modules.json`, which a tab fetches once. Its name does not change with its content, nor does `vitest-plugin-rsc/next-stylesheets.json`: the browser asks the server whether its copy is current, so serve them like `index.html`, and compressed, as a layer is a few MB of JavaScript.
+- The CSS of a route is linked by Next, as with a dev server: a file per stylesheet under `/_next/static/css/`, with the stylesheets of every route in `vitest-plugin-rsc/next-stylesheets.json`. A node has the CSS of the route it renders in, not yet the CSS that a file of the host imports.
+- The files of the build name each other by relative paths. To serve the build from a path, build it with that `base`, or with `base: "./"`.
+- The files of the build name the routes of the app by their paths on the machine that built it, as Next's loader tree does.
 
 `playground/nextjs-e2e-demo` builds its app with a page of its own, `index.html`, that calls `renderServer()` as a test does, and a test project opens the build in a browser from a server of files: see its `build-test/`.
 

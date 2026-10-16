@@ -2,7 +2,7 @@ import type { ModuleRunnerTransport } from "vite/module-runner";
 
 // A static build has no dev server to ask for a module. The environments that
 // run through a module runner were built into the format the runner evaluates,
-// each into one file with every module of it, by its id: see nextjs/build.ts.
+// each into one file with every module of it, by its id: see nextjs/static-build.ts.
 // A tab fetches that file once, at the start, and its runners evaluate from
 // it, like the one of each page load of the browser layer: no request for a
 // module, and none of them waits for the one that imports it. The id of a
@@ -54,7 +54,9 @@ export function createBuiltLayers(fetch: typeof globalThis.fetch) {
     const url = builtUrl(layer, layer.modules);
     let modules = fetched.get(url);
     if (modules) return modules;
-    modules = fetch(url).then(async (response) => {
+    // Its name does not change with its content: ask the server whether the
+    // copy the browser has is still the one it serves.
+    modules = fetch(url, { cache: "no-cache" }).then(async (response) => {
       if (!response.ok) {
         throw new Error(`vitest-plugin-rsc: ${url} responded with ${response.status}`);
       }

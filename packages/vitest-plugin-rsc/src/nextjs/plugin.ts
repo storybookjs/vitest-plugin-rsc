@@ -762,7 +762,6 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
         const nodeEnv = JSON.stringify(build);
         const builtLayer = (layer: NextLayer) =>
           isBuild && {
-            keepProcessEnv: true,
             define: {
               "process.env.NODE_ENV": nodeEnv,
               "global.process.env.NODE_ENV": nodeEnv,
@@ -818,6 +817,13 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
             },
           },
         };
+      },
+      // After every `config` hook: the plugin of ../index.ts has Vite make
+      // `process.env` an empty object in the layers, for a dev server.
+      configEnvironment(name, _config, { command }) {
+        if (command === "build" && Object.values(environmentOf).includes(name)) {
+          return { keepProcessEnv: true };
+        }
       },
       // What the app has and does not get here: said once, when a run starts.
       configResolved(config) {

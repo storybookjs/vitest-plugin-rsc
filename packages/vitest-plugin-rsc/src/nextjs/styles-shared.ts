@@ -50,7 +50,10 @@ export function builtStylesheetsOf(
 ): Stylesheets {
   const from = built.assetPath.split("/").filter(Boolean);
   const pathOf = (file: string) => {
-    const to = `${new URL(directory).pathname}${file}`.split("/").filter(Boolean);
+    // Decoded: Next encodes the path it links.
+    const to = `${decodeURIComponent(new URL(directory).pathname)}${file}`
+      .split("/")
+      .filter(Boolean);
     let common = 0;
     while (common < from.length && common < to.length - 1 && from[common] === to[common]) common++;
     return [...from.slice(common).map(() => ".."), ...to.slice(common)].join("/");

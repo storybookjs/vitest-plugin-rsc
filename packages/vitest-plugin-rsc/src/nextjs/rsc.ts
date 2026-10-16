@@ -27,7 +27,11 @@ ReactServer.setRequireModule({
   load: (id) => {
     if (!serverReferences) return __vite_rsc_raw_import__(id);
     const load = serverReferences[id];
-    if (!load) throw new Error(`vitest-plugin-rsc: the build has no Server Action module "${id}"`);
+    if (!load) {
+      return Promise.reject(
+        new Error(`vitest-plugin-rsc: the build has no Server Action module "${id}"`),
+      );
+    }
     return load();
   },
 });
@@ -106,19 +110,24 @@ registry.loadAppPage = async (page) => {
 const buildDirectory = builtLayers && Object.values(builtLayers)[0]?.base;
 if (buildDirectory) {
   let built: Promise<BuiltStylesheets> | undefined;
+  const load = async () => {
+    // Its name does not change with its content, like `modules.json`: ask
+    // the server whether the copy the browser has is still the one it serves.
+    const url = new URL(builtStylesheetsFile, buildDirectory).href;
+    const response = await registry.network(url, { cache: "no-cache" });
+    if (!response.ok) {
+      throw new Error(
+        `vitest-plugin-rsc: ${url} answered ${response.status}: ${await response.text()}`,
+      );
+    }
+    return (await response.json()) as BuiltStylesheets;
+  };
   registry.loadStylesheets = async (entry) => {
-    built ??= registry
-      .network(new URL(builtStylesheetsFile, buildDirectory).href)
-      .then(async (response) => {
-        if (!response.ok) {
-          throw new Error(
-            `vitest-plugin-rsc: ${response.url} answered ${response.status}: ${await response.text()}`,
-          );
-        }
-        return (await response.json()) as BuiltStylesheets;
-      });
-    // One that failed is asked again.
-    built.catch(() => (built = undefined));
+    if (!built) {
+      built = load();
+      // One that failed is asked again.
+      built.catch(() => (built = undefined));
+    }
     return builtStylesheetsOf(await built, entry, buildDirectory);
   };
 }

@@ -217,8 +217,13 @@ export async function openNextProject(
   const config = {
     ...loadedConfig,
     i18n: null,
-    // A static build has no server to optimize an image.
-    ...(options.static && { images: { ...loadedConfig.images, unoptimized: true } }),
+    // A static build has no server to optimize an image. An app with a
+    // loader of its own, like a CDN, keeps it.
+    ...(options.static &&
+      (loadedConfig.images?.loader ?? "default") === "default" &&
+      !loadedConfig.images?.loaderFile && {
+        images: { ...loadedConfig.images, unoptimized: true },
+      }),
   };
   const { appDir } = findPagesDir(root);
   if (!appDir) {

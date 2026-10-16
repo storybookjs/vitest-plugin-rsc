@@ -68,16 +68,37 @@ export const toBuildDir = (fileName: string) =>
  * that is right wherever the build is served.
  */
 export function withBuiltFiles(code: string, pathnames: string[], language: "js" | "css"): string {
+  if (pathnames.length === 0) return code;
+  if (language === "css") {
+    // In one pass, the longest first: a path that starts with another path
+    // is replaced once, as itself.
+    const paths = [...pathnames].sort((a, b) => b.length - a.length);
+    const pattern = new RegExp(
+      paths.map((p) => p.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|"),
+      "g",
+    );
+    return code.replace(pattern, (pathname) => cssBuildDirPlaceholder + pathname);
+  }
   for (const pathname of pathnames) {
-    code =
-      language === "css"
-        ? code.replaceAll(pathname, cssBuildDirPlaceholder + pathname)
-        : code.replaceAll(
-            JSON.stringify(pathname),
-            `new URL(${buildDirPlaceholder} + ${JSON.stringify(pathname.slice(1))}, import.meta.url).href`,
-          );
+    code = code.replaceAll(
+      JSON.stringify(pathname),
+      `new URL(${buildDirPlaceholder} + ${JSON.stringify(pathname.slice(1))}, import.meta.url).href`,
+    );
   }
   return code;
+}
+
+// The modules a Flight payload can refer to, by the id it has for them. In
+// the order of the ids: the map has them in the order they were compiled,
+// which differs from build to build.
+function referenceList(references: { referenceKey: string; importId: string }[]): string {
+  const lines = [...references]
+    .sort((a, b) => (a.referenceKey < b.referenceKey ? -1 : 1))
+    .map(
+      ({ referenceKey, importId }) =>
+        `  ${JSON.stringify(referenceKey)}: () => import(${JSON.stringify(importId)}),`,
+    );
+  return `export default {\n${lines.join("\n")}\n};\n`;
 }
 
 export type StaticBuildOptions = {
@@ -231,19 +252,16 @@ export function nextStaticBuild(options: StaticBuildOptions): Plugin {
       };
     },
     configResolved(resolved) {
+      if (resolved.command !== "build") return;
       const api = getPluginApi(resolved);
       if (!api) throw new Error("vitest-plugin-rsc: vitestPluginNext() needs vitestPluginRSC().");
       manager = api.manager;
-      if (resolved.command !== "build") return;
-      // The layers are built somewhere of their own, and copied from there.
-      // Not in the directory of the host's build, which they would empty.
-      // Set here, where no plugin of the host changes it anymore: a host can
-      // give every environment the directory of its own build.
+      // The layers are read from their bundles, in `generateBundle`, and
+      // written as one file each: see `buildApp()`. Vite writes nothing of
+      // them. Set here, where no plugin of the host changes it anymore.
       for (const name of [ssr, browser]) {
         const layer = resolved.environments[name]?.build;
-        if (!layer) continue;
-        layer.outDir = path.join(resolved.root, "node_modules/.vitest-plugin-rsc", name);
-        layer.emptyOutDir = true;
+        if (layer) layer.write = false;
       }
     },
     // Steps 1 to 4, and the files of the layers in the directory of the
@@ -251,6 +269,7 @@ export function nextStaticBuild(options: StaticBuildOptions): Plugin {
     async buildApp(builder) {
       const build = (name: string) => builder.build(environment(builder, name));
       const scanned = [rsc, browser].map((name) => environment(builder, name).config.build);
+      const writes = scanned.map((scan) => scan.write);
       buildingApp = true;
       try {
         // Steps 1 and 2, which only look: they write nothing, so Vite empties
@@ -263,7 +282,7 @@ export function nextStaticBuild(options: StaticBuildOptions): Plugin {
           await build(browser);
         } finally {
           manager.isScanBuild = false;
-          for (const scan of scanned) scan.write = true;
+          scanned.forEach((scan, index) => (scan.write = writes[index]!));
         }
 
         // Step 3.
@@ -324,19 +343,11 @@ export function nextStaticBuild(options: StaticBuildOptions): Plugin {
       const isBuild = this.environment.mode === "build";
       if (id === `\0${clientReferencesId}`) {
         if (!isBuild) return "export default undefined;";
-        const references = Object.values(manager.clientReferenceMetaMap).map(
-          (meta) =>
-            `  ${JSON.stringify(meta.referenceKey)}: () => import(${JSON.stringify(meta.importId)}),`,
-        );
-        return `export default {\n${references.join("\n")}\n};\n`;
+        return referenceList(Object.values(manager.clientReferenceMetaMap));
       }
       if (id === `\0${serverReferencesId}`) {
         if (!isBuild) return "export default undefined;";
-        const references = [...manager.serverReferences.metaMap.values()].map(
-          (meta) =>
-            `  ${JSON.stringify(meta.referenceKey)}: () => import(${JSON.stringify(meta.importId)}),`,
-        );
-        return `export default {\n${references.join("\n")}\n};\n`;
+        return referenceList([...manager.serverReferences.metaMap.values()]);
       }
       if (id === `\0${layersId}/built`) {
         // A file of a layer is named from the directory of the build.
