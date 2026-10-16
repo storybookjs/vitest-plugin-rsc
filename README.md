@@ -24,6 +24,7 @@ Pick one piece of the app — a wishlist carousel, a notes form, a settings pane
 - [Next.js](#nextjs)
   - [Set Up](#set-up)
   - [Render A Component](#render-a-component)
+  - [A Test File With `"use client"`](#a-test-file-with-use-client)
   - [Example: Server Action Form](#example-server-action-form)
   - [Router Hooks And Links](#router-hooks-and-links)
   - [Request Headers And Cookies](#request-headers-and-cookies)
@@ -201,6 +202,61 @@ test("renders a node in the layouts of a route, behind the proxy", async () => {
   await expect.element(page.getByRole("main")).toHaveTextContent("Team: core");
 });
 ```
+
+### A Test File With `"use client"`
+
+There are two kinds of components to test, and a test file for each:
+
+- A **connected component** gets something from the app: data from a Server Component, a Server Action, a cookie, the router. Test it with `renderServer()`, in a test file as above.
+- A **Client Component of a design system**, like a button or a dialog, gets only its props and has only its state. Test it in a test file with `"use client"`, and render it as you would without Next: with `render()` of [vitest-browser-react](https://github.com/vitest-community/vitest-browser-react) or of [Testing Library](https://testing-library.com/docs/react-testing-library/intro/).
+
+A test file with `"use client"` is a client boundary, as such a file is in React. It is code of Next's `browser` layer, and runs on the React that Next has for the browser. A prop can be a function, like a spy, and a component of the test file can have state:
+
+```tsx
+"use client";
+
+import { expect, test, vi } from "vitest";
+import { render } from "vitest-browser-react";
+import { PressButton } from "./components/press-button.tsx";
+
+test("passes a function to a Client Component, which calls it", async () => {
+  const onPress = vi.fn();
+
+  const screen = await render(<PressButton onPress={onPress}>Press</PressButton>);
+
+  await screen.getByRole("button", { name: "Press" }).click();
+  expect(onPress).toHaveBeenCalledOnce();
+});
+```
+
+Install what you render with as a dev dependency: `vitest-browser-react`, or `@testing-library/react` and `@testing-library/dom`. The plugin has no API for it, and cleans up nothing it rendered: as in Vitest without Next, a library unmounts what it rendered with its `cleanup()`. Set the `browser` layer up in a setup file with `"use client"`, which runs there before every test file, as a setup file does in Vitest:
+
+```tsx
+// vitest.setup.client.tsx
+"use client";
+
+import { beforeEach } from "vitest";
+import { cleanup } from "vitest-browser-react";
+
+beforeEach(cleanup);
+```
+
+Call `cleanup()` in a hook of the setup file itself, as above. A module loads once for the tab, as Vitest loads a module that a setup file imports once per worker with `isolate: false`, so a hook that a library registers as it loads, like the one of `import "vitest-browser-react"` in its docs, is only the first test file's. Testing Library's `configure()` goes in such a setup file too, and so does what the browser needs set up before a test, like a file that calls `i18n.init()`: it loads once for the tab. A setup file without the directive is server code, in the `rsc` layer, whose React is the server's: `vitest-browser-react` or `@testing-library/react` there breaks every test file, and a file with `"use client"` that it imports is a reference, as in React, which loads when something renders it.
+
+There is no page of your app around the component: no request, no URL and no router of Next. What that means for such a file:
+
+- `renderServer()` rejects: client code cannot render server code.
+- A Server Action that a component calls rejects: it needs Next's app. Test the component with `renderServer()` in a test file without the directive.
+- The hooks of `next/navigation` are Next's, outside its app: `useRouter()` throws `invariant expected app router to be mounted`, and `usePathname()`, `useSearchParams()` and `useParams()` return `null`. Test a component that needs the router with `renderServer()`, or pass it what it reads as a prop.
+- `vi.mock()`, `vi.unmock()`, `vi.doMock()`, `vi.doUnmock()` and `vi.hoisted()` are an error in it: its `vi` is the page's, whose mocker replaces the modules of the server's layer, not the browser's. Pass a mock as a prop instead. See [Mocks](#mocks).
+- What it imports is the browser's copy of a module. A `db` it imports is not the one your Server Components read.
+- A link or a form cannot navigate: there is no router. A click on Next's `<Link>` or an `<a>`, or a form that submits, is an uncaught error that fails the run, and the test stays where it is. Test navigation with `renderServer()`.
+- The CSS that the file imports applies, and that of a setup file with the directive, until the next test file starts. The CSS of the setup file is in the document for a page of `renderServer()` too.
+- `localStorage` and `sessionStorage` are reset around every test, as for `renderServer()`. What a setup file writes there as it loads is gone before the first test: write it in a `beforeEach()`.
+- What a setup file with the directive set up for the `browser` layer is there, as above. A page of `renderServer()` starts without it, as a page of Next does: with what your app loads.
+- With `build: "production"` React has no `act()`. Testing Library's `render()` needs it, and `render()` of vitest-browser-react resolves before React has rendered: find what it rendered with a locator, which waits. See [Development Or Production](docs/next-routes.md#development-or-production).
+
+See [A Test File With `"use client"`](docs/next-routes.md#a-test-file-with-use-client) for how this works.
 
 ### Example: Server Action Form
 
@@ -705,7 +761,7 @@ See [The Server In Front Of The App](docs/next-routes.md#the-server-in-front-of-
 
 ### Mocks
 
-`vi.mock()` replaces the module that your Server Components, Server Actions, and route handlers import. Put mocks of app modules in a setup file, so every test file gets them.
+`vi.mock()` replaces the module that your Server Components, Server Actions, and route handlers import. It does not reach a Client Component in the browser, and a test file with `"use client"` cannot call it. Put mocks of app modules in a setup file, so every test file gets them.
 
 A bare `vi.mock()` is enough. Each test says what the mock does, through `vi.mocked()`:
 
@@ -1019,7 +1075,7 @@ Next compiles an app into three layers, each with its own module graph and its o
 | `ssr`     | Next's route module, the HTML renderer, the server in front of the app | `next_ssr`       |
 | `browser` | Next's router, your Client Components                                  | `react_client`   |
 
-The test runs in `client`, the `rsc` layer's Vite environment. That's why a module your test imports is the instance your Server Components read.
+The test runs in `client`, the `rsc` layer's Vite environment. That's why a module your test imports is the instance your Server Components read. A test file with `"use client"` runs in `react_client`, without a page of your app.
 
 For the full walkthrough, see [docs/next-routes.md](docs/next-routes.md). [docs/architecture.md](docs/architecture.md) covers the part without Next.js: the two environments and the Module Runner bridge between them.
 

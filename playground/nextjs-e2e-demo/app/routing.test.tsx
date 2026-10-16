@@ -7,7 +7,7 @@ import { afterEach, beforeEach, expect, test, vi, type MockInstance } from "vite
 import { page } from "vitest/browser";
 import { cookies, headers } from "next/headers";
 import Link from "next/link";
-import { signInAs } from "../test/browser.ts";
+import { signInAs } from "../test/session.ts";
 import { FavoriteButton } from "./components/favorite-button.tsx";
 import { RenameNote } from "./components/rename-note.tsx";
 import { RouterState } from "./components/router-state.tsx";

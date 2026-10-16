@@ -103,6 +103,16 @@ function leftTheApp(url: URL): Error {
   );
 }
 
+// A navigation without a page of the app, which has the router: see the
+// listener of `navigate` below.
+function noRouter(url: URL): Error {
+  return new Error(
+    `vitest-plugin-rsc: a link or a form navigated to ${url.href}, and there is no page of the ` +
+      `app to navigate in: no page of renderServer() is open, and a test file with "use client" ` +
+      `has none. Test navigation in a page of renderServer(), in a test file without "use client".`,
+  );
+}
+
 // As with `fetch`, a request rejects as soon as its signal aborts. The server
 // may still answer, or fail: a render that goes on without its request fails
 // in its own ways. Nobody reads that answer.
@@ -950,14 +960,27 @@ export async function cleanup(): Promise<void> {
 // Here it would replace the test with the app, so load the page the
 // way `renderServer()` does instead.
 type NavigateEvent = Event & {
+  navigationType: "push" | "replace" | "reload" | "traverse";
   destination: { url: string; sameDocument: boolean };
   hashChange: boolean;
   formData: FormData | null;
+  downloadRequest: string | null;
 };
 (window as { navigation?: EventTarget }).navigation?.addEventListener("navigate", (event) => {
-  const { destination, hashChange, formData } = event as NavigateEvent;
-  if (!page || destination.sameDocument || hashChange || !event.cancelable) return;
+  const { navigationType, destination, hashChange, formData, downloadRequest } =
+    event as NavigateEvent;
+  if (destination.sameDocument || hashChange || !event.cancelable) return;
   const url = new URL(destination.url);
+  if (!page) {
+    // No page of the app to load another one of: a component that a test
+    // file with `"use client"` rendered has no router. A link or a form
+    // would replace the test, and Vitest would lose the tab. Not a reload,
+    // like Vite's after a change, and not a download, which stays.
+    if (navigationType === "reload" || downloadRequest != null) return;
+    event.preventDefault();
+    reportError(noRouter(url));
+    return;
+  }
   event.preventDefault();
   if (url.origin !== window.location.origin) {
     reportError(leftTheApp(url));

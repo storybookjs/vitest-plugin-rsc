@@ -1,12 +1,21 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { getPluginApi } from "@vitejs/plugin-rsc/plugin";
 import { hasDirective, transformDirectiveProxyExport } from "@vitejs/plugin-rsc/transforms";
-import { createFilter, normalizePath, parseAst, parseAstAsync, type Plugin } from "vite";
+import {
+  createFilter,
+  normalizePath,
+  parseAst,
+  parseAstAsync,
+  type Plugin,
+  type ResolvedConfig,
+} from "vite";
 import type { TestProject } from "vitest/node";
 import { createRunnerEnvironmentPlugins } from "../runner-environment.ts";
 import { flightBridge, type FlightEntry } from "./flight.ts";
 import { nextBuilds, nextProductionPlugin, type NextBuild } from "./build.ts";
+import { clientFiles } from "./client-files.ts";
 import { createCompilePlugin, createDependencyCompilePlugin } from "./compile.ts";
 import { createNodePlatform } from "./node-platform.ts";
 import { loadNextProject, type NextLayer, type NextProject } from "./project.ts";
@@ -61,6 +70,16 @@ const vendoredFlight = (entry: string) => `@vitejs/plugin-rsc/vendor/react-serve
 const setupFile = fileURLToPath(
   new URL(`./setup${path.extname(import.meta.url)}`, import.meta.url),
 );
+// A file of this package, in `src` or in `dist`.
+const ownFile = (name: string) =>
+  normalizePath(
+    fileURLToPath(new URL(`./${name}${path.extname(import.meta.url)}`, import.meta.url)),
+  );
+// What a test imports `renderServer()` from, and the file that is.
+const testingLibrary = {
+  specifier: "vitest-plugin-rsc/nextjs/testing-library",
+  file: ownFile("index"),
+};
 // The page the tests run in. Vitest puts a reset in its own, `body { margin:
 // 0 }`, and only in its own: a page of Next has the margin of the browser.
 const testerHtml = fileURLToPath(new URL("./tester.html", import.meta.url));
@@ -496,6 +515,15 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
       `vitest-plugin-rsc: \`build\` is "development" or "production", not ${JSON.stringify(build)}.`,
     );
   }
+  // The client reference that Vite RSC made of a module of the rsc layer, if
+  // it has `"use client"`.
+  const clientReferenceOf = (id: string, config: ResolvedConfig) =>
+    getPluginApi(config)?.manager.clientReferenceMetaMap[id];
+  const hostPackagesPlugin = {
+    name: "vitest-plugin-rsc:next-host-packages",
+    resolveId: (source: string) =>
+      serverCode.isHostPackage(source) ? { id: source, external: true } : undefined,
+  };
   const resolvers = Object.fromEntries(
     layers.map((layer) => [layer, createLayerResolver(getProject, layer)]),
   ) as Record<NextLayer, LayerResolver>;
@@ -608,6 +636,10 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
             plugins: [
               // First: the other plugins see Next's production code.
               ...(build === "production" ? [nextProductionPlugin(project.nextDir)] : []),
+              // The test runner is the page's own in the browser layer too,
+              // like the `vitest` that vitest-browser-react imports: see
+              // client-files.ts. Not a copy in what that layer pre-bundles.
+              ...(layer === "browser" ? [hostPackagesPlugin] : []),
               resolvers[layer].plugin(),
               createDependencyCompilePlugin(getProject, layer),
               ...(layer === "rsc" ? [nextClientBoundaryPlugin(getProject, resolvers.rsc)] : []),
@@ -834,12 +866,21 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
         return serverCode.compile(entry.code, `${id.replace(/\W+/g, "-")}.js`, generatedDefines());
       },
     },
+    ...clientFiles({
+      environments: { rsc: environmentOf.rsc, browser: environmentOf.browser },
+      testingLibrary,
+      internal: ownFile("internal"),
+      isHostFile: serverCode.isHostFile,
+      isHostPackage: serverCode.isHostPackage,
+      clientReferenceOf,
+    }),
     serverCode.plugin({ [environmentOf.rsc]: "rsc", [environmentOf.ssr]: "ssr" }),
     // The CSS of the app, as the stylesheets of a route.
     ...createStylesPlugins({
       getProject,
       environments: environmentOf,
       isServerCode: (file) => serverCode.isServerCode(file, "rsc"),
+      isHostFile: serverCode.isHostFile,
       routeOf: (entry) =>
         [...project.routes, ...project.componentRoutes].find(
           (route) => route.kind === "page" && entryOf(route) === entry,
