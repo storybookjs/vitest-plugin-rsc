@@ -322,8 +322,8 @@ function nextClientBoundaryPlugin(getProject: () => NextProject, resolver: Layer
 // request logs to the page, which logs it again. Here the page is the server:
 // it has logged it already. And the request a log is sent with is the one
 // whose scope is active, which in the page also takes in client code that
-// runs while a response streams. React adds such a log without flushing it,
-// and the response does not end until it is flushed.
+// runs while a response streams. React queues a log without a flush of its
+// own, and a response does not end while one is queued.
 function flightConsolePlugin(): Plugin {
   return {
     name: "vitest-plugin-rsc:flight-console",
@@ -333,8 +333,12 @@ function flightConsolePlugin(): Plugin {
         id: /\/react-server-dom-webpack-server\.[\w.]+\.development\.js$/,
         code: "function patchConsole(",
       },
-      handler(code) {
-        return code.replace(/function patchConsole\([^)]*\) \{/, "$& return;");
+      handler(code, id) {
+        const patched = code.replace(/function patchConsole\([^)]*\)\s*\{/, "$& return;");
+        if (patched === code) {
+          this.warn(`vitest-plugin-rsc: React's patchConsole() in ${id} is not turned off.`);
+        }
+        return patched;
       },
     },
   };
@@ -598,9 +602,8 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
               ...(build === "production" ? [nextProductionPlugin(project.nextDir)] : []),
               resolvers[layer].plugin(),
               createDependencyCompilePlugin(getProject, layer),
-              ...(layer === "rsc"
-                ? [nextClientBoundaryPlugin(getProject, resolvers.rsc), flightConsolePlugin()]
-                : []),
+              ...(layer === "rsc" ? [nextClientBoundaryPlugin(getProject, resolvers.rsc)] : []),
+              flightConsolePlugin(),
               ...(layer === "browser" ? [] : [serverCode.optimizerPlugin(layer)]),
             ],
             // A package can import what only another layer's build of a module
