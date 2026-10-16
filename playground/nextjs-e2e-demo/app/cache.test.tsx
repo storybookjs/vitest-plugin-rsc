@@ -1,7 +1,7 @@
 import { cleanup, handleRequest, renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
 import { afterEach, beforeEach, expect, test, vi, type MockInstance } from "vitest";
 import { page } from "vitest/browser";
-import { signInAs } from "../test/browser.ts";
+import { signInAs } from "../test/session.ts";
 import { requestHits } from "../test/service.ts";
 import { getReport, reports } from "./lib/reports.ts";
 

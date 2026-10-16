@@ -1,7 +1,8 @@
 import { handleRequest, renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
 import { afterEach, beforeEach, expect, test, vi, type MockInstance } from "vitest";
 import { page } from "vitest/browser";
-import { signInAs, whereAmI } from "../test/browser.ts";
+import { whereAmI } from "../test/browser.ts";
+import { signInAs } from "../test/session.ts";
 import { requestHits } from "../test/service.ts";
 
 // The app's server code runs in the browser, compiled as server code: `typeof
