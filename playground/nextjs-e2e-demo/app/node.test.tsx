@@ -16,6 +16,7 @@ import { ClientFrame } from "./components/client-frame.tsx";
 import { Counter } from "./components/counter.tsx";
 import { FavoriteButton } from "./components/favorite-button.tsx";
 import { LingerButton } from "./components/linger-button.tsx";
+import { Locale } from "./components/locale.tsx";
 import { RouterState } from "./components/router-state.tsx";
 import { Widget } from "./components/widget.tsx";
 import { archiveUrl } from "./lib/archive.ts";
@@ -653,9 +654,18 @@ test("removes the container it made when the test ends", async () => {
 });
 
 test('starts without what a test file with "use client" rendered', () => {
-  // The plugin has vitest-browser-react take it away after every test of
-  // such a file, also the last one: see client.test.tsx.
+  // vitest.setup.client.tsx has vitest-browser-react take it away before
+  // every test, also one of this file: see client-cleanup.test.tsx.
   expect(renderedContainers()).toEqual([]);
+});
+
+test("opens a page with a graph of its own, without what a setup file set up for the browser layer", async () => {
+  // vitest.setup.ts imports test/setup-locale.tsx, a file with `"use client"`,
+  // which set the locale in the graph of the tab: see client.test.tsx. A page
+  // starts as a page of Next does, with what the app itself loads.
+  await renderServer(<Locale />);
+
+  await expect.element(page.getByText("Locale: unset")).toBeVisible();
 });
 
 function Broken(): never {

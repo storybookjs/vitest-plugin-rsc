@@ -3,7 +3,8 @@
 // not public API: it changes with the plugin.
 
 /**
- * @internal Loads a file with `"use client"` in the browser layer: the
- * module of the rsc layer for such a file calls it. See client-graph.ts.
+ * @internal Loads in the browser layer what a file of the host loads there:
+ * the module of the rsc layer for a setup file, or for a file with
+ * `"use client"`, calls it. See client-graph.ts.
  */
-export { loadClientFile } from "./client-graph.ts";
+export { loadClientEntry } from "./client-graph.ts";

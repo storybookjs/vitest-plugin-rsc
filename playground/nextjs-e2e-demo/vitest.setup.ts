@@ -1,5 +1,8 @@
 import { vi } from "vitest";
 import type { NextBuild } from "vitest-plugin-rsc/nextjs/plugin";
+// A file with `"use client"`: the browser layer loads it before this file's
+// own code runs, once for the tab. See the file.
+import "./test/setup-locale.tsx";
 
 declare module "vitest" {
   interface ProvidedContext {

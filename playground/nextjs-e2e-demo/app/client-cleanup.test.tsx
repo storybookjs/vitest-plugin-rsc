@@ -17,14 +17,20 @@ import {
 import { page } from "vitest/browser";
 import { render } from "vitest-browser-react";
 import { linkedStylesheets, renderedContainers } from "../test/browser.ts";
+// A setup file without `"use client"` that a file with it imports: the page's
+// own module, which the browser evaluates once for the files that import it.
+// Not the instance that ran before this file. See docs/next-routes.md.
+import "../vitest.setup.ts";
 import { PressButton } from "./components/press-button.tsx";
 import { toast } from "./components/toaster.tsx";
 
 // A second test file with `"use client"`, next to client.test.tsx. The tab
 // loads vitest-browser-react and Testing Library once, for the first of the
-// two that runs. What a test or a file leaves, the plugin has them take away
-// before the next one. Every test here holds in any order of the files and
-// of their tests.
+// two that runs, so the `beforeEach()` that vitest-browser-react registers
+// as it loads is only the first file's, as in Vitest without Next with
+// `isolate: false`. What a test or a file leaves, vitest.setup.client.tsx
+// has them take away before the next one. Every test here holds in any
+// order of the files and of their tests.
 
 let consoleError: MockInstance<typeof console.error>;
 
@@ -84,7 +90,8 @@ test.skipIf(inject("build") === "production")(
     const onPress = vi.fn();
     renderWithTestingLibrary(<PressButton onPress={onPress}>Toggle</PressButton>);
 
-    // client.test.tsx renders a button of that name with Testing Library.
+    // client.test.tsx renders a button of that name with Testing Library,
+    // which vitest.setup.client.tsx has it take away.
     fireEvent.click(screen.getByRole("button", { name: "Toggle" }));
 
     expect(onPress).toHaveBeenCalledOnce();

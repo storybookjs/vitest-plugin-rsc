@@ -9,6 +9,7 @@ import { page } from "vitest/browser";
 import { render } from "vitest-browser-react";
 import { renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
 import { linkedStylesheets, renderedContainers } from "../test/browser.ts";
+import { Locale } from "./components/locale.tsx";
 import { PressButton } from "./components/press-button.tsx";
 import { toggleFavorite } from "./lib/actions.ts";
 import { buildOf } from "./lib/build.ts";
@@ -19,7 +20,9 @@ import { ClientCard } from "./styles/client-card.tsx";
 // directive is in React: code of the browser layer. It renders a Client
 // Component with vitest-browser-react or Testing Library, without the app of
 // Next around it. A connected component, with its data from the server, is
-// for `renderServer()` in a test file without the directive.
+// for `renderServer()` in a test file without the directive. The setup of
+// the browser layer is in vitest.setup.client.tsx, a setup file with the
+// directive, and in test/setup-locale.tsx, which vitest.setup.ts imports.
 
 // React's production build has no `act()`. Without it `render()` of
 // vitest-browser-react resolves before React has rendered, so a test finds
@@ -80,6 +83,16 @@ test("shares the test runner of the tab, also with the library that renders", as
   expect(page).toHaveProperty("render");
 });
 
+test("has what the setup files set up for the browser layer", async () => {
+  // vitest.setup.ts imports test/setup-locale.tsx, a file with `"use client"`:
+  // the browser layer loaded it once, for the tab, before the setup file's
+  // own code ran. A page of `renderServer()` starts without it: see
+  // node.test.tsx.
+  const { getByText } = await render(<Locale />);
+
+  await expect.element(getByText("Locale: nl")).toBeVisible();
+});
+
 function Presses({ label }: { label: string }) {
   const [count, setCount] = useState(0);
   return (
@@ -114,7 +127,7 @@ function Toggle() {
 
 test.skipIf(build === "production")("renders with Testing Library", () => {
   // client-cleanup.test.tsx renders a button of that name with Testing
-  // Library too, which the plugin has Testing Library take away after it.
+  // Library too, which vitest.setup.client.tsx has it take away before this.
   renderWithTestingLibrary(<Toggle />);
 
   fireEvent.click(screen.getByRole("button", { name: "Toggle" }));

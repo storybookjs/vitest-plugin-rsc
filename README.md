@@ -229,7 +229,19 @@ test("passes a function to a Client Component, which calls it", async () => {
 });
 ```
 
-Install what you render with as a dev dependency: `vitest-browser-react`, or `@testing-library/react` and `@testing-library/dom`. The plugin has no API for it. Import `render()` in the test file, as above; that also gives `page.render()`. Not in a setup file, the way vitest-browser-react's docs suggest with `import "vitest-browser-react"`: setup files run in the `rsc` layer, whose React is the server's, so that breaks every test file. The same goes for `@testing-library/react`. Call Testing Library's `configure()` in the test file too: in a setup file, `configure()` of `@testing-library/dom` configures the `rsc` layer's copy, not the one that renders here.
+Install what you render with as a dev dependency: `vitest-browser-react`, or `@testing-library/react` and `@testing-library/dom`. The plugin has no API for it, and cleans up nothing it rendered: as in Vitest without Next, a library unmounts what it rendered with its `cleanup()`. Set the `browser` layer up in a setup file with `"use client"`, which runs there before every test file, as a setup file does in Vitest:
+
+```tsx
+// vitest.setup.client.tsx
+"use client";
+
+import { beforeEach } from "vitest";
+import { cleanup } from "vitest-browser-react";
+
+beforeEach(cleanup);
+```
+
+Call `cleanup()` in a hook of the setup file itself, as above. A module loads once for the tab, as Vitest loads a module that a setup file imports once per worker with `isolate: false`, so a hook that a library registers as it loads, like the one of `import "vitest-browser-react"` in its docs, is only the first test file's. Testing Library's `configure()` goes in such a setup file too. A setup file without the directive is server code, in the `rsc` layer, whose React is the server's: `vitest-browser-react` or `@testing-library/react` there breaks every test file. What such a setup file imports with `"use client"`, like a file that calls `i18n.init()`, the `browser` layer loads once for the tab, before the setup file's own code runs; only a `vi.mock()`, which Vitest hoists, comes first.
 
 There is no page of your app around the component: no request, no URL and no router of Next. What that means for such a file:
 
@@ -240,7 +252,7 @@ There is no page of your app around the component: no request, no URL and no rou
 - What it imports is the browser's copy of a module. A `db` it imports is not the one your Server Components read.
 - A link or a form cannot navigate: there is no router. A click on Next's `<Link>` or an `<a>`, or a form that submits, is an uncaught error that fails the run, and the test stays where it is. Test navigation with `renderServer()`.
 - The CSS that the file and the setup files import applies, as it does for a node of `renderServer()`, until the next test file starts.
-- After every test, the plugin calls `cleanup()` of vitest-browser-react and of Testing Library, which unmounts what they rendered. A root that another library keeps, like the one a toast renders into, stays.
+- What the setup files set up for the `browser` layer is there, as above. A page of `renderServer()` starts without it, as a page of Next does: with what your app loads.
 - With `build: "production"` React has no `act()`. Testing Library's `render()` needs it, and `render()` of vitest-browser-react resolves before React has rendered: find what it rendered with a locator, which waits. See [Development Or Production](docs/next-routes.md#development-or-production).
 
 See [A Test File With `"use client"`](docs/next-routes.md#a-test-file-with-use-client) for how this works.

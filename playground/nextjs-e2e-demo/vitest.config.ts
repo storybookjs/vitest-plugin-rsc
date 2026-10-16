@@ -146,6 +146,7 @@ export default defineProject({
       instances: [{ browser: "chromium" }],
     },
     isolate: false,
-    setupFiles: ["./vitest.setup.ts"],
+    // The first is server code, like a test file: the second has `"use client"`.
+    setupFiles: ["./vitest.setup.ts", "./vitest.setup.client.tsx"],
   },
 });

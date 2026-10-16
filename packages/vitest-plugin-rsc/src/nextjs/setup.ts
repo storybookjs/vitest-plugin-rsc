@@ -1,6 +1,6 @@
 import { afterEach, beforeEach } from "vitest";
 import { cleanup } from "./index.ts";
-import { cleanupClientRenders, unlinkClientStylesheets } from "./client-graph.ts";
+import { unlinkClientStylesheets } from "./client-graph.ts";
 
 // Registered by `vitestPluginNext()` as a setup file. Importing the entry
 // first matters: it installs the server's platform before a test file can
@@ -11,13 +11,7 @@ import { cleanupClientRenders, unlinkClientStylesheets } from "./client-graph.ts
 // linked goes once the next file starts.
 unlinkClientStylesheets();
 
-// Also what a test file with `"use client"` rendered.
-async function cleanupAll(): Promise<void> {
-  await cleanupClientRenders();
-  await cleanup();
-}
-
-afterEach(cleanupAll);
+afterEach(cleanup);
 // Also before a test: Vitest skips the remaining `afterEach` hooks when one
 // of them throws, as a test's own does when it asserts in it.
-beforeEach(cleanupAll);
+beforeEach(cleanup);
