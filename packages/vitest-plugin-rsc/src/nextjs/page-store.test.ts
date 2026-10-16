@@ -51,6 +51,8 @@ test.for([
   ["Max-Age=60; Expires=Thu, 01 Jan 1970 00:00:00 GMT"],
   // Neither is a date or a number: the cookie has no expiry.
   ["Expires=tomorrow; Max-Age=soon"],
+  // Not a date to a browser, though `Date.parse()` reads 2000.
+  ["Expires=0"],
 ])("keeps a cookie that expires later, with %s", ([attributes]) => {
   const store = storeWith(`a=1; ${attributes}`);
 

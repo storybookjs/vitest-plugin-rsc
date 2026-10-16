@@ -35,6 +35,16 @@ function attributeOf(text: string): [name: string, value: string] {
     : [text.slice(0, at).trim().toLowerCase(), text.slice(at + 1).trim()];
 }
 
+// The time of an `Expires`, for a date a browser takes: one with a time of
+// day and the name of a month. `Date.parse()` takes more, like `0` for the
+// year 2000, where a browser ignores the attribute.
+function expiresAt(value: string): number | undefined {
+  if (!/\d{1,2}:\d{1,2}:\d{1,2}/.test(value)) return undefined;
+  if (!/jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec/i.test(value)) return undefined;
+  const time = Date.parse(value);
+  return Number.isNaN(time) ? undefined : time;
+}
+
 // Whether the attributes of a `Set-Cookie` delete its cookie: a `Max-Age` of
 // 0 or less, or else an `Expires` that has passed. The last of each counts,
 // and `Max-Age` before `Expires`, as in a browser. Next's `parseSetCookie()`
@@ -44,7 +54,7 @@ function deletes(attributes: string[]): boolean {
   let expires: number | undefined;
   for (const [name, value] of attributes.map(attributeOf)) {
     if (name === "max-age" && /^-?\d+$/.test(value)) maxAge = Number(value);
-    if (name === "expires" && !Number.isNaN(Date.parse(value))) expires = Date.parse(value);
+    if (name === "expires") expires = expiresAt(value) ?? expires;
   }
   if (maxAge !== undefined) return maxAge <= 0;
   // The clock of the test, which may be fake.

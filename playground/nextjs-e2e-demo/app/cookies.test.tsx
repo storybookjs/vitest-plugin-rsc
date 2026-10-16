@@ -133,11 +133,18 @@ test("sends and keeps no cookies with a request that omits its credentials", asy
   expect((await sent.json()).cookie).toBeNull();
   const handled = await handleRequest("/api/cookies", { credentials: "omit" });
   expect((await handled.json()).cookie).toBeNull();
-  await fetch("/api/cookies", {
+  const fetched = await fetch("/api/cookies", {
     method: "POST",
     credentials: "omit",
     body: JSON.stringify(["theme=dark"]),
   });
+  expect(fetched.status).toBe(204);
+  const posted = await handleRequest("/api/cookies", {
+    method: "POST",
+    credentials: "omit",
+    body: JSON.stringify(["editor=grace"]),
+  });
+  expect(posted.headers.getSetCookie()).toEqual(["editor=grace"]);
 
   expect(await cookiesOfTheApp()).toEqual({ language: "nl" });
 });

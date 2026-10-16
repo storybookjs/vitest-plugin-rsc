@@ -139,7 +139,10 @@ type Sending = {
    * for the request it is part of.
    */
   from: PageStore | undefined;
-  /** Whether it sends and keeps cookies: not with `credentials: "omit"`. */
+  /**
+   * Whether it sends the cookies of the store and keeps the ones it gets: not
+   * with `credentials: "omit"`. A `cookie` header of its own it sends either way.
+   */
   credentials?: boolean;
   /** A page load, which leaves the app when it is redirected to another origin. */
   navigation?: boolean;
@@ -163,7 +166,7 @@ async function sendRequest(
   // A `cookie` header of the test's own goes with the redirects the request
   // follows, with the cookies those set, as Next sends the cookies of a
   // Server Action with the page it redirects to.
-  const own = from && sent.has("cookie") ? new PageStore() : undefined;
+  const own = from && credentials && sent.has("cookie") ? new PageStore() : undefined;
   own?.seed(sent.get("cookie")!);
   // Read once: a 307 or 308 sends the body again.
   let body = request.body ? new Uint8Array(await request.arrayBuffer()) : null;
@@ -233,7 +236,7 @@ async function sendRequest(
         // drops them on such a redirect. A `cookie` header the browser's
         // `fetch` drops itself.
         sent.delete("authorization");
-        return nativeFetch(url, { method, headers: sent, body });
+        return nativeFetch(url, { method, headers: sent, body, signal: request.signal });
       }
       if (own) {
         own.receive(response.headers.getSetCookie());

@@ -135,7 +135,7 @@ test("rewrites to another server, and answers with its response", async () => {
   expect(response.headers.get("content-type")).toBe("image/png");
 });
 
-test("does not send the app's cookies with a rewrite to another server", async () => {
+test("does not send the app's cookies with a rewrite to another server, as the browser makes that request", async () => {
   // A service there that answers with the headers it got.
   const elsewhere = `elsewhere.localhost:${window.location.port}`;
   await signInAs("ada");

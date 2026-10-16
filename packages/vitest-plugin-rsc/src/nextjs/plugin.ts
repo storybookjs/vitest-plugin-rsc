@@ -329,10 +329,7 @@ function flightConsolePlugin(): Plugin {
     name: "vitest-plugin-rsc:flight-console",
     transform: {
       // Rolldown matches the id with `/` for a separator.
-      filter: {
-        id: /\/react-server-dom-webpack-server\.[^/]+\.development\.js$/,
-        code: "function patchConsole(",
-      },
+      filter: { id: /\/react-server-dom-webpack-server\.[^/]+\.development\.js$/ },
       handler(code, id) {
         const patched = code.replace(/function patchConsole\([^)]*\)\s*\{/, "$& return;");
         if (patched === code) {
