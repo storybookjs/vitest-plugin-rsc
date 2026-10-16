@@ -415,8 +415,11 @@ export function createStylesPlugins(options: StylesOptions): Plugin[] {
   }
 
   // Another host does not say which of its files renders a node. Those it has
-  // loaded do, like the story files that Storybook has loaded: what a test
-  // file and the setup files are to Vitest.
+  // loaded do: what a test file and the setup files are to Vitest. That is
+  // right as long as the host has loaded only the files of the node it
+  // renders. Storybook has: a server story renders in an iframe of its own,
+  // with the preview file and that one story file loaded. A host that loads
+  // many files in one page gets the stylesheets of all of them for a node.
   function fromHost(vite: ViteDevServer, entry: string, inline: boolean) {
     return stylesheetsOf(vite, options.isHostFile, entry, inline);
   }

@@ -87,6 +87,14 @@ export type ServerCodeOptions = {
      * host's too, but for this plugin and Vite RSC, which a framework of the
      * host can depend on.
      *
+     * Not something the plugin can read off the files: a file of the host
+     * with `"use client"` imports `react` and `storybook/test` the same way,
+     * and the first has to be the browser layer's React, where the second
+     * has to be the page's own module, whose spies the host shows. What
+     * `vitest` is to a test file. The same list keeps the host's runtime
+     * the browser's in the rsc layer, where every other package is server
+     * code.
+     *
      * @example ["storybook", "@storybook/*"]
      */
     packages?: string[];
@@ -113,8 +121,12 @@ function findPackage(name: string, from: string): string | undefined {
 }
 
 // What a host can depend on that is never the host's: this plugin, and what
-// it is built on. A framework of a host, like Storybook's, brings the plugin,
-// and Vite RSC's Flight server is server code.
+// it is built on. A framework of a host brings the plugin, and the walk of
+// the host's dependencies would take it along: `@storybook/nextjs-vite-rsc`
+// matches `@storybook/*`, depends on `vitest-plugin-rsc`, which depends on
+// `@vitejs/plugin-rsc`, whose Flight server has to stay server code in the
+// rsc layer. Without this, that framework turns the plugin's own server
+// code into browser code.
 const ownPackages = new Set(["vitest-plugin-rsc", "@vitejs/plugin-rsc"]);
 
 // The directories of these packages and of everything they depend on.
