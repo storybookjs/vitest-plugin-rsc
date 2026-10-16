@@ -85,7 +85,7 @@ Agents do dramatically better when wrapped in a self-healing loop with fast unit
 - **Black-box output**: Assert what the user sees and does via `vitest/browser` — Playwright locators (`getByRole`, `getByText`, etc.) and `expect.element` matchers.
 - **Watch mode**: With `vitestPluginNext({ affectedTests: true })`, an edit reruns just the tests that use that file. See [Watch Mode](docs/next-routes.md#watch-mode).
 - **No deployed infra**: Use in-memory infrastructure like PGlite instead of spinning up a preview server and database.
-- **Per-test isolation**: Each test starts with an empty Data Cache, no cookies, and none of what the app put in `localStorage` or `sessionStorage`.
+- **Per-test isolation**: Each test starts with an empty Data Cache, none of your app's cookies, and none of what the app put in `localStorage` or `sessionStorage`.
 
 ## Requirements
 
@@ -192,9 +192,12 @@ async function Team() {
 }
 
 test("renders a node in the layouts of a route, behind the proxy", async () => {
-  document.cookie = "session=ada";
-
-  await renderServer(<Team />, { url: "/team", layouts: true, proxy: true });
+  await renderServer(<Team />, {
+    url: "/team",
+    layouts: true,
+    proxy: true,
+    headers: { cookie: "session=ada" },
+  });
 
   await expect.element(page.getByRole("main")).toHaveTextContent("Team: core");
 });
@@ -393,9 +396,22 @@ export function NoteToolbar() {
 
 ### Request Headers And Cookies
 
-Pass request headers into `renderServer`. Inside Server Components and Server Actions, use Next's `headers()` and `cookies()` APIs as you normally would.
+Headers and cookies are the request's, in AsyncLocalStorage, as in Next. Pass request headers into `renderServer`. Inside Server Components, Server Actions, route handlers and `proxy.ts`, use Next's `headers()` and `cookies()` APIs as you normally would: Next makes its request store of every request the plugin sends it, as it does on a server.
 
-The headers go with every request the browser sends to your app from then on, not only the first one: Server Actions, `router.refresh()`, navigations, and `fetch` calls get them too, until the test opens something else or ends. That is what you want for a header that a server in front of your app adds to every request, like `x-forwarded-for`. A request keeps the headers it sets itself. Two headers are for the first request alone: `cookie`, after which the browser's cookies are sent, and `accept`.
+The headers go with every request the browser sends to your app from then on, not only the first one: Server Actions, `router.refresh()`, navigations, and `fetch` calls get them too, until the test opens something else or ends. That is what you want for a header that a server in front of your app adds to every request, like `x-forwarded-for`. A request keeps the headers it sets itself. An `accept` header is for the first request alone.
+
+The plugin keeps your app's cookies for the test, the way a browser keeps a site's:
+
+- A `cookie` header in the `headers` of `renderServer` sets cookies, as a `Set-Cookie` without attributes would. Its cookies are added to the ones your app has, and stay until your app changes them or the test ends. They aren't `HttpOnly`, so `document.cookie` shows them. Set an `HttpOnly` one with `(await cookies()).set(name, value, { httpOnly: true })` in `runInServerAction`.
+- Every request to your app carries them: page loads, navigations, `router.refresh()`, Server Actions, route handlers, and `fetch` calls from Client Components.
+- A `Set-Cookie` from your server sets one, and one that has expired, with `Max-Age=0` or an `Expires` in the past, deletes it. A cookie is a name and a value: its `Path`, `Domain` and `Secure` don't count, since every request goes to your app, as if it were served over `https:`.
+- A `cookie` header of `handleRequest` or `runInServerAction` is for that one request: it is sent instead of your app's cookies, also with the redirects it follows, with the cookies those set. The cookies the server sets are your app's from then on.
+- A request with `credentials: "omit"`, of `fetch` or `handleRequest`, doesn't send your app's cookies, and the ones its response sets aren't kept.
+- Each test starts without cookies.
+
+`document.cookie` is a view of your app's cookies, as in a browser. Your Client Components read the ones that aren't `HttpOnly` there, and a cookie they write there reaches your server, like the state that shadcn/ui's sidebar keeps. A script can't write an `HttpOnly` cookie or change one, and a `fetch` from client code doesn't see a `Set-Cookie` header, as in a browser. The page has no `cookieStore`, as in a browser without the Cookie Store API. MSW writes the `Set-Cookie` of a response it mocks into `document.cookie`, so a mocked API's cookie that isn't `HttpOnly` becomes your app's, also when your server sent the request.
+
+The browser's own cookies for the origin are not your app's: the ones Vitest's UI, Storybook or another app on `localhost` set. Your app doesn't get them, and the plugin leaves them as they are.
 
 ```tsx
 import { expect, test } from "vitest";
@@ -445,6 +461,28 @@ export async function FlashProbe() {
     </form>
   );
 }
+```
+
+To read a cookie in a test, assert on what a page renders, read the `Set-Cookie` headers of a response, read `document.cookie` for one that isn't `HttpOnly`, or call `cookies()` in a Server Action:
+
+```ts
+import { cookies } from "next/headers";
+import { expect, test } from "vitest";
+import { handleRequest, runInServerAction } from "vitest-plugin-rsc/nextjs/testing-library";
+
+test("keeps the cookie a route handler sets", async () => {
+  const response = await handleRequest("/api/notes/1");
+  expect(response.headers.getSetCookie()).toEqual(["last-read=1; Path=/"]);
+
+  const lastRead = await runInServerAction(async () => (await cookies()).get("last-read")?.value);
+  expect(lastRead).toBe("1");
+});
+```
+
+To change or delete one cookie in the middle of a test, do what a Server Action would:
+
+```ts
+await runInServerAction(async () => (await cookies()).delete("session"));
 ```
 
 ### Cache And Revalidation
@@ -564,13 +602,11 @@ const { response } = await renderServer({ url: "/" });
 expect(response.status).toBe(200);
 ```
 
-Cookies you set on `document.cookie` are sent with the request, and so are the `headers` you pass. The headers go with every request of the page after it too, see [Request Headers And Cookies](#request-headers-and-cookies).
+The `headers` you pass are sent with the request, and with every request of the page after it. A `cookie` header sets cookies for your app, see [Request Headers And Cookies](#request-headers-and-cookies).
 
 ```tsx
-test("sends the cookies the test sets before it opens a page", async () => {
-  document.cookie = "last-created=7";
-
-  await renderServer({ url: "/notes" });
+test("sends the cookies of a cookie header with the page", async () => {
+  await renderServer({ url: "/notes", headers: { cookie: "last-created=7" } });
 
   await expect.element(page.getByText("Last created: 7")).toBeVisible();
 });
@@ -580,7 +616,7 @@ A URL that isn't a route gets your app's not-found page, with status `404`.
 
 ### Route Handlers
 
-`handleRequest(url, init)` sends one request to the app and resolves with the response. It takes what `fetch` takes. Use it when the response is what you assert on: a status, a header, the HTML, or the Flight payload. The request carries the browser's cookies, and the browser stores the cookies the server sets. It carries the `headers` of what `renderServer` opened too, under its own.
+`handleRequest(url, init)` sends one request to the app and resolves with the response. It takes what `fetch` takes. Use it when the response is what you assert on: a status, a header, the HTML, or the Flight payload. The request carries your app's cookies, and the cookies the server sets are your app's from then on. A `cookie` header is sent instead of your app's cookies, with this request and the redirects it follows. It carries the `headers` of what `renderServer` opened too, under its own.
 
 Route handlers (`app/**/route.ts`) are served too, and `handleRequest` is how a test calls one:
 
@@ -589,13 +625,12 @@ import { expect, test } from "vitest";
 import { handleRequest } from "vitest-plugin-rsc/nextjs/testing-library";
 import { db } from "../lib/notes.ts";
 
-test("gives a route handler the body of a request and the cookies of the browser", async () => {
+test("gives a route handler the body of a request and its cookie header", async () => {
   db.notes.set("1", { id: "1", title: "Inbox triage", body: "Sort the inbox" });
-  document.cookie = "editor=kasper";
 
   const response = await handleRequest("/api/notes/1", {
     method: "PUT",
-    headers: { "content-type": "application/json" },
+    headers: { "content-type": "application/json", cookie: "editor=kasper" },
     body: JSON.stringify({ title: "Inbox zero" }),
   });
 
@@ -605,11 +640,11 @@ test("gives a route handler the body of a request and the cookies of the browser
   });
   expect(db.notes.get("1")?.title).toBe("Inbox zero");
   // Set with cookies() in the handler.
-  expect(document.cookie).toContain("last-renamed=1");
+  expect(response.headers.getSetCookie()).toEqual(["last-renamed=1; Path=/"]);
 });
 ```
 
-A `fetch` from a Client Component to a route handler reaches it too, with the browser's cookies.
+A `fetch` from a Client Component to a route handler reaches it too, with your app's cookies. As in a browser, it doesn't see the `Set-Cookie` headers of the response, which `handleRequest` does.
 
 ### Code That A Server Action Calls
 
@@ -617,6 +652,7 @@ A form's Server Action is best tested through its page: fill in the form and sub
 
 ```ts
 import { isRedirectError } from "next/dist/client/components/redirect-error";
+import { cookies } from "next/headers";
 import { expect, test } from "vitest";
 import { runInServerAction } from "vitest-plugin-rsc/nextjs/testing-library";
 import { createNote, setLanguage } from "../lib/actions.ts";
@@ -625,7 +661,8 @@ import { db } from "../lib/notes.ts";
 test("keeps the cookies an action sets", async () => {
   await runInServerAction(() => setLanguage("nl"));
 
-  expect(document.cookie).toContain("language=nl");
+  const language = await runInServerAction(async () => (await cookies()).get("language")?.value);
+  expect(language).toBe("nl");
 });
 
 test("creates the note and redirects", async () => {
@@ -641,7 +678,7 @@ test("creates the note and redirects", async () => {
 
 It sends a Server Action request like the one of Next's router, to a route at `url` that renders nothing, and opens no page: no app starts, so it is much faster than a page with a form. After a `redirect()`, Next renders the page it redirects to on the server, as it does for the router. A page that is open stays open. The function and its result are the test's own, so they do not go through Flight.
 
-The request carries the browser's cookies, the `headers` of what `renderServer()` opened and the ones you pass, and the browser keeps the cookies the action sets. With `proxy: true` it goes through the proxy, and a redirect there rejects, since the action did not run.
+The request carries your app's cookies, the `headers` of what `renderServer()` opened and the ones you pass, and the cookies the action sets are your app's from then on. A `cookie` header among them is sent instead of your app's cookies, with this request and the redirects it follows, not with the requests after it. With `proxy: true` it goes through the proxy, and a redirect there rejects, since the action did not run.
 
 The function runs in the request of the action, so it cannot send a request to the app itself: that would wait for this one. Call the app's code instead. What it throws, Next also reports with `console.error`, as it does for any Server Action.
 
@@ -910,22 +947,22 @@ import { vitestPluginNext } from "vitest-plugin-rsc/nextjs/plugin";
 | `renderServer(<Node />, options)`       | Renders a node in a container, on a route of its own. See the options below.                                                                                                                                       |
 | `handleRequest(input, init)`            | Sends one request to the app, like `fetch`. Resolves with the `Response`.                                                                                                                                          |
 | `runInServerAction(fn, options)`        | Runs `fn` as a Server Action at `url`, without opening a page. Options: `url`, `proxy`, `headers`.                                                                                                                 |
-| `cleanup()`                             | Leaves the page, clears cookies, storage and the cache. The plugin runs it around every test.                                                                                                                      |
+| `cleanup()`                             | Leaves the page, clears your app's cookies, storage and the cache. The plugin runs it around every test.                                                                                                           |
 | `vitestPluginNext({ browserModules })`  | The Vite plugin. `browserModules` are glob patterns, relative to the project root.                                                                                                                                 |
 | `vitestPluginNext({ affectedTests })`   | `true` lets watch mode and `vitest --changed` find a route's test files. Off by default.                                                                                                                           |
 | `vitestPluginNext({ build })`           | Experimental. `"production"` runs Next and React as `next start` does: faster, without their warnings. See [Development Or Production](docs/next-routes.md#development-or-production). `"development"` by default. |
 
 The options for a node, all optional:
 
-| Option        | What it does                                                                                        |
-| ------------- | --------------------------------------------------------------------------------------------------- |
-| `url`         | The request URL. Defaults to `/`. The params are the ones your app's route has for it.              |
-| `headers`     | Request headers, on top of the ones a browser sends. Sent with every request, also after the first. |
-| `wrapper`     | A component that wraps the node on the server. It can be a Server Component.                        |
-| `proxy`       | `true` runs `proxy.ts` and the routing of `next.config` for the request, as for a route.            |
-| `layouts`     | `true` renders the node in place of the page at `url`, inside your app's layouts.                   |
-| `container`   | An empty element for the node. Defaults to a new `<div>` in `baseElement`, which `cleanup` removes. |
-| `baseElement` | Defaults to `container` if you pass one, else `document.body`.                                      |
+| Option        | What it does                                                                                                                                     |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `url`         | The request URL. Defaults to `/`. The params are the ones your app's route has for it.                                                           |
+| `headers`     | Request headers, on top of the ones a browser sends. Sent with every request, also after the first. A `cookie` header sets cookies for your app. |
+| `wrapper`     | A component that wraps the node on the server. It can be a Server Component.                                                                     |
+| `proxy`       | `true` runs `proxy.ts` and the routing of `next.config` for the request, as for a route.                                                         |
+| `layouts`     | `true` renders the node in place of the page at `url`, inside your app's layouts.                                                                |
+| `container`   | An empty element for the node. Defaults to a new `<div>` in `baseElement`, which `cleanup` removes.                                              |
+| `baseElement` | Defaults to `container` if you pass one, else `document.body`.                                                                                   |
 
 A node resolves with `{ container, baseElement, asFragment, unmount, response }`.
 

@@ -20,10 +20,6 @@
       "category": "not-yet",
       "text": "A page that a build prerenders, like one with `generateStaticParams`. Next keeps it between two requests, and here every request renders its page."
     },
-    "http-only-cookie": {
-      "category": "not-yet",
-      "text": "An `HttpOnly` cookie. The cookies of the server are the cookies of the tab, and a script of the page reads every one of them."
-    },
     "metadata-files": {
       "category": "not-yet",
       "text": "Metadata files: `favicon.ico`, `icon.png`, `opengraph-image`, `sitemap.ts`, `robots.txt`, `manifest.webmanifest`."
@@ -343,7 +339,7 @@
       }
     },
     "app-middleware": {
-      "passed": 13,
+      "passed": 14,
       "failed": {
         "app-middleware.test.ts > app-dir with middleware > should warn when deprecated middleware file is used": "cli-output",
         "app-middleware.test.ts > app-dir with middleware > Mutate request headers for Serverless Functions > Adds new headers": "pages-router",
@@ -352,7 +348,6 @@
         "app-middleware.test.ts > app-dir with middleware > Mutate request headers for Edge Functions > Adds new headers": "pages-router",
         "app-middleware.test.ts > app-dir with middleware > Mutate request headers for Edge Functions > Deletes headers": "pages-router",
         "app-middleware.test.ts > app-dir with middleware > Mutate request headers for Edge Functions > Updates headers": "pages-router",
-        "app-middleware.test.ts > app-dir with middleware > should respect cookie options of merged middleware cookies": "http-only-cookie",
         "app-middleware.test.ts > app-dir with middleware > should not incorrectly treat a Location header as a rewrite": "proxy-location-header"
       }
     },

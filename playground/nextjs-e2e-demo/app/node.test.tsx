@@ -1,4 +1,9 @@
-import { cleanup, handleRequest, renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
+import {
+  cleanup,
+  handleRequest,
+  renderServer,
+  runInServerAction,
+} from "vitest-plugin-rsc/nextjs/testing-library";
 import { afterEach, beforeEach, expect, inject, test, vi, type MockInstance } from "vitest";
 import { page } from "vitest/browser";
 import { cookies, headers } from "next/headers";
@@ -310,16 +315,16 @@ test("says that a container which went with a page is not in the document", asyn
 });
 
 test("gives a node the request: its headers and cookies", async () => {
-  document.cookie = "last-created=7";
-
-  await renderServer(<RequestInfo />, { headers: { "x-tenant": "acme" } });
+  await renderServer(<RequestInfo />, {
+    headers: { "x-tenant": "acme", cookie: "last-created=7" },
+  });
 
   await expect.element(page.getByText("acme")).toBeVisible();
   await expect.element(page.getByText("7", { exact: true })).toBeVisible();
 });
 
-test("sends a cookie header instead of the browser's cookies", async () => {
-  document.cookie = "last-created=7";
+test("sets the cookies of a cookie header over the ones the app has", async () => {
+  await runInServerAction(async () => (await cookies()).set("last-created", "7"));
 
   await renderServer(<RequestInfo />, { headers: { cookie: "last-created=9" } });
 
@@ -413,14 +418,16 @@ test("leaves a Server Action the content type of its own body", async () => {
   await expect.element(page.getByRole("button", { name: "Favorite", pressed: true })).toBeVisible();
 });
 
-test("sends a cookie header with the document alone, and the browser's cookies after it", async () => {
+test("sends the cookies of a cookie header with the requests after the document, until the app changes them", async () => {
   await renderServer(<RequestInfo />, { headers: { cookie: "last-created=9" } });
   await expect.element(page.getByText("9", { exact: true })).toBeVisible();
 
-  document.cookie = "last-created=7";
   // `/api/notes/latest` redirects to the note of the `last-created` cookie.
-  const response = await handleRequest("/api/notes/latest", { redirect: "manual" });
-  expect(response.headers.get("location")).toBe("/notes/7");
+  const latest = () => handleRequest("/api/notes/latest", { redirect: "manual" });
+  expect((await latest()).headers.get("location")).toBe("/notes/9");
+
+  await runInServerAction(async () => (await cookies()).set("last-created", "7"));
+  expect((await latest()).headers.get("location")).toBe("/notes/7");
 });
 
 async function Tenant({ children }: { children: ReactNode }) {

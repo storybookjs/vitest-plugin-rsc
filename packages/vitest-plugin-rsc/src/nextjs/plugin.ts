@@ -94,6 +94,15 @@ export function extractInfoFromServerReferenceId(id) {
 }
 `;
 
+// Since Next 16.5 a module of Next reads the asset prefix of the dev
+// server's WebSocket when it is evaluated, off `document.currentScript`. Next's
+// entry evaluates it first, on the dev server. Without the dev server Next's
+// router imports it on its first navigation, where nothing runs as a script,
+// and the navigation fails. The plugin has no dev server, and Next opens that
+// WebSocket only on one: the prefix is for nothing here.
+const devAssetPrefix = /^next\/dist\/(esm\/)?client\/dev\/hot-reloader\/app\/asset-prefix(\.js)?$/;
+const devAssetPrefixShim = `export const assetPrefix = "";\n`;
+
 const nodePlatform = createNodePlatform(registry, bridgePrefix);
 
 type Alias = { key: string; exact: boolean; target: string | false };
@@ -178,6 +187,7 @@ function createLayerResolver(getProject: () => NextProject, layer: NextLayer) {
       if (flight) return `${bridgePrefix}flight-${flight[1]}`;
     }
     if (source === serverReferenceInfo) return `${bridgePrefix}server-reference-info`;
+    if (devAssetPrefix.test(source)) return `${bridgePrefix}dev-asset-prefix`;
     // The route module of a page is made in the rsc layer, by Next's request
     // handler for it, and belongs to the ssr layer.
     if (
@@ -282,6 +292,7 @@ function createLayerResolver(getProject: () => NextProject, layer: NextLayer) {
         if (!id.startsWith(bridgePrefix)) return;
         const name = id.slice(bridgePrefix.length);
         if (name === "server-reference-info") return serverReferenceInfoShim;
+        if (name === "dev-asset-prefix") return devAssetPrefixShim;
         const nodeModule = nodePlatform.load(name);
         if (nodeModule) return nodeModule;
         const { flightExports, version } = getProject();
@@ -325,6 +336,29 @@ function nextClientBoundaryPlugin(getProject: () => NextProject, resolver: Layer
         `import * as $$ReactServer from ${JSON.stringify(vendoredFlight("server.edge"))};\n`,
       );
       return { code: result.output.toString(), map: null };
+    },
+  };
+}
+
+// React's Flight server, in development, wraps the console to send what a
+// request logs to the page, which logs it again. Here the page is the server:
+// it has logged it already. And the request a log is sent with is the one
+// whose scope is active, which in the page also takes in client code that
+// runs while a request is open. React queues a log without a flush of its
+// own, and a response does not end while one is queued.
+function flightConsolePlugin(): Plugin {
+  return {
+    name: "vitest-plugin-rsc:flight-console",
+    transform: {
+      // Rolldown matches the id with `/` for a separator.
+      filter: { id: /\/react-server-dom-webpack-server\.[^/]+\.development\.js$/ },
+      handler(code, id) {
+        const patched = code.replace(/function patchConsole\([^)]*\)\s*\{/, "$& return;");
+        if (patched === code) {
+          this.warn(`vitest-plugin-rsc: React's patchConsole() in ${id} is not turned off.`);
+        }
+        return { code: patched, map: null };
+      },
     },
   };
 }
@@ -597,6 +631,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
               resolvers[layer].plugin(),
               createDependencyCompilePlugin(getProject, layer),
               ...(layer === "rsc" ? [nextClientBoundaryPlugin(getProject, resolvers.rsc)] : []),
+              flightConsolePlugin(),
               ...(layer === "browser" ? [] : [serverCode.optimizerPlugin(layer)]),
             ],
             // A package can import what only another layer's build of a module

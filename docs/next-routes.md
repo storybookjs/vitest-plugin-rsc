@@ -157,7 +157,7 @@ Vite does it another way: a module that imports CSS puts it in a `<style>` when 
 
 - An import of CSS in the server code of the app and of its packages, and in the `ssr` and `browser` layers but for a test file with `"use client"` itself, gets a query, `?next-linked`. So does an import of a package that is a stylesheet, like `@fontsource/inter`. Its module puts nothing in the document, and exports the class names of a CSS module, as Vite's module for a server does: the plugin keeps the exports of Vite's module for the file, and drops the statements that add the `<style>`. A Vite whose exports need those statements stops the run with a message.
 - Before Next renders a route, the browser asks the plugin for the list. Next reads it before it loads the module of a segment. The files of the segments are those that the route's entry imports by an absolute path, as Next's build finds them. The plugin walks Vite's module graphs from the file of each segment, in the `rsc` layer and, from a Client Component, in the `browser` layer. The graph has only what was loaded, so the plugin transforms what it walks first, which the browser asks for right after. It walks the modules of code only, as Vite tells them by their extension, and the page extensions of the app: not an image or a `.json`, and not a file that a module refers to with `new URL(…, import.meta.url)`, like the `.wasm` of a package, which Vite adds to the imports of the module.
-- The dev server serves a stylesheet where Next links it: the path of the file under `/_next/static/css/`, or a hash for CSS that is no file, like that of a font. It is the CSS Vite makes of the file, so with PostCSS, Tailwind and the class names that its module exports.
+- The dev server serves a stylesheet where Next links it: the path of the file under `/_next/static/css/`, or a hash for CSS that is no file, like that of a font. It is the CSS Vite makes of the file, so with PostCSS, Tailwind and the class names that its module exports. After the directory, the path has a hash of that CSS, `/_next/static/css/8d11792a12ffe139/app/styles/global.css`, as the name of a CSS file of Next's build has one, and the server says the browser can keep it, as `next start` does for `/_next/static/`. So the next page load does not fetch it again. An edit gives it another path.
 - With `experimental.inlineCss`, the list has the CSS of each file too, and Next puts it in a `<style>` of the page, as it does for `next start`. A navigation of Next's router still links it.
 - `renderServer()` resolves once the stylesheets of the page have loaded, and the page is gone with them.
 
@@ -174,7 +174,7 @@ What differs from `next start`:
 
 ```
 renderServer({ url: "/notes/1" })
-  │  GET /notes/1                          the browser's fetch, with its cookies
+  │  GET /notes/1                          the browser's fetch, with the app's cookies
   ▼
 ssr      resolveRoutes()                   Next's route resolution: redirects, proxy.ts, rewrites
   │        └─ rsc: proxy(request)          the proxy of the app, if its matcher takes the request
@@ -202,7 +202,7 @@ After that, Next's router is in charge. A `<Link>` navigation is an RSC request 
 
 ```
 renderServer(<Node />, { url: "/notes/7" })
-  │  GET /notes/7                          the same request, with the browser's cookies
+  │  GET /notes/7                          the same request, with the app's cookies
   ▼
 rsc      handler(req, res)                 the same request handler, for the route of the node
   ▼
@@ -216,7 +216,7 @@ browser  the HTML goes into the container  with Next's inline scripts, which run
 
 ### The Route Of A Node
 
-The route exists for as long as the node is there, at the pathname of `url`. The plugin writes its loader tree itself, instead of using `next-app-loader`. That loader reads a directory of files, and it ends the process for a page without a root layout. Next's renderer needs no layout. The tree goes into Next's own `app-page` template, with the injections `next-app-loader` makes. From there on the route is a page like any other, with the same request handler, manifests, cookie jar and cache.
+The route exists for as long as the node is there, at the pathname of `url`. The plugin writes its loader tree itself, instead of using `next-app-loader`. That loader reads a directory of files, and it ends the process for a page without a root layout. Next's renderer needs no layout. The tree goes into Next's own `app-page` template, with the injections `next-app-loader` makes. From there on the route is a page like any other, with the same request handler, manifests, cookies and cache.
 
 For `/notes/7`, where the app has `app/notes/[id]/page.tsx`:
 
@@ -354,12 +354,12 @@ An `app/**/route.ts` is a route like a page is, with a request handler from a di
 
 ```
 handleRequest("/api/notes/1", { method: "PUT", body })     or fetch() in a Client Component
-  │  PUT /api/notes/1                      with the browser's cookies
+  │  PUT /api/notes/1                      with the app's cookies
   ▼
 rsc      handler(req, res)                 Next's request handler for the route handler
            └─ AppRouteRouteModule          Next's route module: the request stores, cookies(),
               └─ PUT(request, { params })  redirect(), notFound(), HEAD and OPTIONS, 405
-  │  200 application/json                  Set-Cookie goes into the browser's cookies
+  │  200 application/json                  Set-Cookie goes into the app's cookies
   ▼
 the caller gets the Response               its body as the handler writes it
 ```
@@ -369,6 +369,23 @@ There is no HTML to render, so the `ssr` layer plays no part. A module that `rou
 The request handler is Next's own, the one `next start` calls. It finds the route params in the URL, makes the `NextRequest`, and writes the handler's `Response` to the server's response. A handler that throws is answered with `500` and no body, and Next logs the error with `console.error`.
 
 Next hands the work it does for a request after responding, like `after()` callbacks, to `waitUntil`. The request lasts until that work is done, so the callbacks read their own request's stores. A request that comes in meanwhile waits for that work, for one second at most. A nested one, which the server makes to itself while it handles another, lasts one second at most after its response. Leaving a page waits for all of it, also at the end of a test: five seconds at most, with a warning when it has to stop waiting.
+
+## Headers And Cookies
+
+As in Next, `headers()` and `cookies()` are the request's. Next makes its request store, in `AsyncLocalStorage`, of the request it gets, here as on Node.js: the request store of a page, of a route handler, and of the proxy. The proxy and a route handler read the same request as `request.headers` and `request.cookies`. So the plugin keeps the headers and the cookies of the test in one store for the document (`page-store.ts`), and writes them on each request where it becomes one for the server (`sendRequest()` in `index.ts`): a page load, a navigation, `router.refresh()`, a Server Action, a `fetch` of the page to the app, `handleRequest()` and `runInServerAction()`. The `Set-Cookie` headers of the response go back into the store, also those of every redirect it follows.
+
+- **The headers** are the `headers` of what the test opened, under the ones a request sets itself, until the test opens something else.
+- **The cookies** are the app's, until the test ends. A `cookie` header in the `headers` of `renderServer()` sets its cookies in the store with the document, as a `Set-Cookie` of each without attributes would, so a script of the page reads them too. It adds to the cookies that are there, and they stay until the app changes them or the test ends. To change or delete one cookie in the middle of a test, do what a Server Action would: `runInServerAction(async () => (await cookies()).delete("session"))`.
+- **A `cookie` header of one request**, of `handleRequest()` or `runInServerAction()`, is sent instead of the store's cookies, with that request and the redirects it follows, not with the requests after it. On a redirect it has the cookies the response set, as Next sends the cookies of a Server Action with the page it redirects to. The `Set-Cookie` headers of the responses go into the store all the same.
+- **A `fetch` with `credentials: "omit"`** sends none of the cookies, and its response sets none.
+- **A cookie is a name and a value**, as in Next's `RequestCookies` and `ResponseCookies`. A `Set-Cookie` sets the cookie of its name, and one with a `Max-Age` of 0 or less, or an `Expires` that has passed, deletes it. Its `Path`, `Domain`, `Secure` and `SameSite` do not count: every request here is for the app, at one origin, as if it were an `https:` one. The value stays as the server wrote it, and goes back that way. `HttpOnly` counts for the scripts of the page.
+- **`document.cookie` is a view of the store**, as it is of the cookie jar in a browser. A script of the page reads the cookies that are not `HttpOnly`, and the cookie it writes there goes into the store, for the requests after it. Like the state that shadcn/ui's sidebar keeps. As in a browser, a script cannot write an `HttpOnly` cookie, nor change or delete one. The page has no `cookieStore`: the Cookie Store API is a view of the browser's own cookies. Code that uses it checks for it first, like Next's own.
+- **The browser's own cookies are not the app's.** They are the cookies of the origin, which here is also the origin of Vitest's UI, of Storybook's manager, and of any other app on `localhost`, whatever its port. The app does not get them, and the plugin neither reads nor writes them. The browser would also drop a `Secure` cookie on an origin that is not `https:` or `localhost`.
+- **A `fetch` of the page gets no `Set-Cookie` header**, as in a browser, where it is a forbidden response header. The store gets the cookies. `handleRequest()` keeps the header, for the test to assert on.
+
+The store is a plain value, not one of the plugin's `AsyncLocalStorage`. That one carries the stores of a request across its `await`s while the server handles it, and not further (see [What Stands In For A Server](#what-stands-in-for-a-server)). What sends a request, like a click or a timer of the app, runs outside of it. The document has one page open at a time, so one store is enough. The requests of a page that overlap, like a response that streams while a Server Action is sent, share it, as they share the cookies of a browser. A request takes the store once, when it starts, and writes the cookies it gets to that one. `cleanup()` makes a new store, so a request that answers after its test does not set cookies for the next one.
+
+A request that the server makes to itself, like the one for the page a Server Action redirects to, carries the headers it was given, cookies included, as the `fetch` of a server does. It has nothing of the store, and its `Set-Cookie` headers go nowhere.
 
 ## The Server In Front Of The App
 
@@ -420,7 +437,7 @@ This is the server of a deployment through an adapter, which is not `next start`
 
 - **Next's internal headers** are taken off a request when it comes in, before the resolution and the proxy read it. These are the headers that only Next's own layers set on a request, like `x-middleware-set-cookie`. A request that brought one itself would have a cookie that the app never set. The proxy sets them on the request afterwards, for the route.
 - **A redirect** is a response with the status and the headers the resolution gives.
-- **A rewrite to another server** is a `fetch` to that server, where `next start` proxies the request. The browser makes the request, so its rules for a request apply: CORS applies, a redirect is followed, and the browser sets the request's `host`, `cookie` and `origin`. A destination on the app's own origin is answered by the dev server, not by the app.
+- **A rewrite to another server** is a `fetch` to that server, where `next start` proxies the request. The browser makes the request, so its rules for a request apply: CORS applies, a redirect is followed, and the browser sets the request's `host`, `cookie` and `origin`. The app's cookies do not go with it. A destination on the app's own origin is answered by the dev server, not by the app.
 - **A route** is called with the URL the browser asked for, even after a rewrite, as `next start` calls it. So `usePathname()` says where the browser is, not where the rewrite went. The route gets the rest through the request meta, where `next start` and a deployment adapter put it. The request meta carries the route's params. They come from the pathname the resolution ends at, read with Next's own matcher for the route. They do not come from the resolution's query, which also has them under names like `nxtPid`, because `@next/routing` reads a `+` or a `%25` in them as a query does. After a rewrite, the request meta also carries the query of the rewrite's destination. A request that was not rewritten keeps the query of its URL.
 - **`x-nextjs-rewritten-path` and `x-nextjs-rewritten-query`** are set for a request from Next's router that was rewritten. `next start` sets them for a `next.config` rewrite, and Next's own code sets them for a proxy rewrite. The query leaves out `_rsc`, which the router adds to its own requests.
 - **The headers** that the resolution has for the response, from `next.config` and the proxy, are set on the response before the route runs, as `next start` does. A page adds to them, like React's `Link` for its stylesheets. A route handler cannot replace one: Next sets a header of its `Response` only where there is none, apart from `set-cookie`, `vary`, `www-authenticate` and `proxy-authenticate`, which it adds to. A cookie from either side is set. The resolution has no headers for a request that the proxy answers itself, so that response lacks the `next.config` headers, which `next start` does set.
@@ -463,6 +480,8 @@ The server layers run as Next's Node.js server does, with the web APIs that Node
 - **`fetch`**, so that Next patches the server's `fetch`, not the page's. Next patches it from the `rsc` layer when it first renders, and both server layers call the result. The server's `fetch` and the page's reach the same network.
 - **`AsyncLocalStorage`**. A browser cannot carry a store across `await`. Requests are handled one at a time, and the store a request entered first stays readable until the request ends. So when a page is left, a request that the server has not answered yet is waited for, for five seconds at most, and then the body it writes is stopped. That is code of the app, like a Server Action, which nothing can stop: if it went on after its test, it would read and set the stores of the next test's requests. A store that Next enters for part of a request, like a cached function's store, lasts until that part first awaits. See [Caching](#caching).
 - **`Buffer`**, **`process`**, and the Node modules that Next's server imports.
+
+The server's console is the page's, so what the server logs is in the output of the test once. In development, React's Flight server sends what a request logs to the page, which logs it again. The plugin turns that off. React would also send what client code logs while a request is open, as that code reads the request's scope (see `AsyncLocalStorage` above), and its response could stay open.
 
 For the browser side, the plugin stands in for a page load. The browser cannot navigate away: that would unload the test. So once the whole server document has arrived, the plugin moves it into the test's document, runs its inline scripts in order, and sets the URL with the History API. The test runs in a page of the plugin's (`browser.testerHtmlPath`), not Vitest's own, which has a reset, `body { margin: 0 }`, and Vitest puts that reset in its own page only. So a page, and a node, has the margin of the browser and the CSS of the app, as with `next start`. A project's own `testerHtmlPath` wins. React's scripts in the document wait for a frame before they put streamed content in place, so the plugin has them do it right away. The document has therefore loaded when Next's client starts, and a page's first load does not show a `loading.tsx` or a Suspense fallback. A navigation in the app does, see the README.
 
@@ -699,8 +718,11 @@ At the next lookup the plugin answers for a test file itself. The test file belo
 - A timer that the app starts keeps running after its page is left, like the one `next-themes` uses to turn transitions back on. A browser drops it with the page. Here it fires later, and fails if it touches its page's document. A test that ends right after the app loaded a page itself, like the page a node links to, can run into that. Wait for the page to settle first.
 - Every `renderServer()` loads React and the app's client code again, as a page load does: the modules are evaluated again. They are fetched from the dev server and compiled once, as a browser keeps them in its HTTP cache, until a file changes. The plugin releases a page when the test leaves it, by removing what React and Next left on `window` and `document` while they loaded. What the app's own code leaves there keeps that page in memory, as in a page that never reloads: a listener on `window`, an interval, a global. The app has to clean those up, as in an effect's cleanup. A page has its own `<body>`, which goes away with the page, and so does a node. So a portal into `document.body` keeps nothing in memory, though React adds its listeners to the body. The browser itself keeps the element that the pointer is over, and with it its page, until the pointer is over another one. If the browser grows too much, use `isolate: true`. Every test file then starts in a new page, and loads the app's server again.
 - By default React is its development build, including in the server layers, while Next takes itself to be a production server. So the client gets the message of an error that a Server Component throws, and `error.tsx` can show it, where a deployment sends a digest and a message that says nothing. Strict Mode also runs an effect twice. A test that reads the text of such an error passes here and not against a deployment. With `build: "production"` both run as in a deployment: see [Development Or Production](#development-or-production).
-- A script can read an `HttpOnly` cookie. The plugin keeps the app's cookies in `document.cookie`, where a browser keeps such a cookie to itself. Client code that reads a session cookie works here and not in a browser.
-- The browser matches a cookie's `Path` against the test runner's URL, not against the request's URL. A cookie with `Path=/admin` is not sent with a request for `/admin`, and a cookie without a `Path` gets the runner's path.
+- The page has no `cookieStore`. A script that uses the Cookie Store API without checking for it fails. See [Headers And Cookies](#headers-and-cookies).
+- A script that outlives its page, like a timer, reads and writes the cookies of the test after it: with `document.cookie`, and with a `fetch` of the app.
+- MSW writes the `Set-Cookie` of a response it mocks into `document.cookie`, and so into the app's cookies, unless it is `HttpOnly`, which a script cannot write. Also for a `fetch` of the server, whose response a server keeps to itself. And it gives a mocked request the cookies of `document.cookie` for its handler.
+- A cookie of the app is a name and a value. Its `Path` and `Domain` do not decide which requests carry it, and one that expires later lasts until the test ends.
+- A rewrite to another server does not carry the app's cookies, where `next start` proxies the request with its headers. See [What The Adapter Does Itself](#what-the-adapter-does-itself).
 - Only `fetch` reaches the app. `XMLHttpRequest`, which axios uses by default, `EventSource`, `navigator.sendBeacon()` and an `<img>` with a route handler's URL go to the dev server.
 - A `<form method="post">` without a React action is sent as `multipart/form-data`, where a browser sends it URL-encoded. A route handler that reads it with `request.formData()` does not see the difference.
 - Opening or leaving a page waits for a request that the server has not answered yet, also one of `handleRequest()`, for five seconds at most. A request that never answers makes every leave that long, and gives a warning.

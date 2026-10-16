@@ -58,7 +58,7 @@ test("shares the cache with a test that calls the cached function itself", async
 });
 
 test("renders the rest of the page with the stores of the request while a cached function runs", async () => {
-  signInAs("ada");
+  await signInAs("ada");
   reports.duration = 300;
 
   await renderServer({ url: "/reports/7" });
@@ -98,7 +98,7 @@ test("serves what is cached and computes again in the background after revalidat
   await expect.element(page.getByText("Report 7 by nobody, number 1")).toBeVisible();
 
   await revalidate("tag=reports&profile=max");
-  signInAs("ada");
+  await signInAs("ada");
   reports.duration = 300;
   await renderServer({ url: "/reports/7" });
 

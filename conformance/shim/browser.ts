@@ -6,7 +6,8 @@
 //
 // What a tab of its own gives a test and this one cannot is thrown as
 // `Unsupported`, which the runner reports as not applicable.
-import { renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
+import { cookies } from "next/headers";
+import { renderServer, runInServerAction } from "vitest-plugin-rsc/nextjs/testing-library";
 import { page as vitestPage, userEvent } from "vitest/browser";
 import { consoleCapture, type PageLog } from "./console.ts";
 import { unsupported } from "./unsupported.ts";
@@ -702,17 +703,20 @@ export class Browser<TCurrent = undefined> {
   setDimensions({ width, height }: { width: number; height: number }) {
     return this.startOrPreserveChain(() => vitestPage.viewport(width, height));
   }
+  // The app's cookies are the plugin's, not the tab's: these set and delete
+  // them as a Server Action of the app would, where Playwright has the
+  // browser do it.
   addCookie({ name, value }: { name: string; value: string }) {
     return this.startOrPreserveChain(async () => {
-      document.cookie = `${name}=${value}; path=/`;
+      await runInServerAction(async () => (await cookies()).set(name, value));
     });
   }
   deleteCookies() {
     return this.startOrPreserveChain(async () => {
-      for (const cookie of document.cookie.split(";")) {
-        const name = cookie.split("=")[0]!.trim();
-        if (name) document.cookie = `${name}=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT`;
-      }
+      await runInServerAction(async () => {
+        const store = await cookies();
+        for (const { name } of store.getAll()) store.delete(name);
+      });
     });
   }
 

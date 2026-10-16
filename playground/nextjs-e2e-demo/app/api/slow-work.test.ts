@@ -9,8 +9,10 @@ import { slowWork } from "../lib/slow-work.ts";
 
 test("leaving waits for a request that the server has not answered yet", async () => {
   Object.assign(slowWork, { duration: 300, started: 0, finished: 0, rendered: 0 });
-  document.cookie = "session=ada";
-  const response = handleRequest("/api/slow-work", { method: "POST" });
+  const response = handleRequest("/api/slow-work", {
+    method: "POST",
+    headers: { cookie: "session=ada" },
+  });
   await expect.poll(() => slowWork.started).toBe(1);
 
   // What ends a test.

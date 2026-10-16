@@ -4,6 +4,7 @@ import { resetAsyncLocalStorage } from "../async-local-storage.ts";
 import { checkFetchedModules, createEnvironmentRunner } from "../utils.ts";
 import { loadDocument, unloadDocument } from "./document.ts";
 import { recordListeners, recordMessageChannels } from "./leftovers.ts";
+import { PageStore } from "./page-store.ts";
 import { registry, type Opened } from "./registry.ts";
 
 // The server's platform (globals.ts) has to be there before a module of Next's
@@ -41,21 +42,45 @@ function sameOriginRequest(
   return { url, method, headers, marked: headers.has("rsc") || headers.has("next-action") };
 }
 
-// The `headers` of `renderServer()`, which go with every request the browser
-// sends to the app from then on: until the test opens something else, or ends.
-let pageHeaders: Headers | undefined;
+// The headers and the cookies of the browser's requests to the app: the
+// `headers` of `renderServer()`, until the test opens something else, and the
+// app's cookies, until the test ends. `document.cookie` is a view of the
+// cookies. See page-store.ts.
+//
+// A plain value, not a store of the plugin's AsyncLocalStorage: what sends a
+// request, like a click or a timer of the app, runs outside any scope of it.
+// The document has one page open at a time, so there is one store. The
+// requests of a page that overlap, like a streamed response and a Server
+// Action, share it, as they share the cookies of a browser. A request takes
+// the store once, when it starts, and writes the cookies it gets to that one.
+// `cleanup()` makes a new one: a request that answers after its test does not
+// write to the next test's.
+let store = new PageStore();
 
-// What a browser adds to a request for the app's origin.
-function browserHeaders(headers: Headers, url: URL, method: string): Headers {
+// What a browser adds to a request for the app's origin, with the headers and
+// the cookies of the store. A request with `credentials: "omit"` has none of
+// the cookies.
+function browserHeaders(
+  headers: Headers,
+  url: URL,
+  method: string,
+  from: PageStore,
+  credentials = true,
+): Headers {
   headers.set("host", url.host);
-  pageHeaders?.forEach((value, name) => {
+  from.headers.forEach((value, name) => {
     if (!headers.has(name)) headers.set(name, value);
   });
   if (!headers.has("user-agent")) headers.set("user-agent", navigator.userAgent);
   if (method !== "GET" && method !== "HEAD" && !headers.has("origin")) {
     headers.set("origin", url.origin);
   }
-  if (!headers.has("cookie") && document.cookie) headers.set("cookie", document.cookie);
+  // A `cookie` header of the request's own is the test's, for that request
+  // alone: the `fetch` of a browser drops one. Else the cookies of the store.
+  if (credentials && !headers.has("cookie")) {
+    const cookie = from.cookieHeader();
+    if (cookie) headers.set("cookie", cookie);
+  }
   return headers;
 }
 
@@ -68,20 +93,6 @@ const storages = [localStorage, sessionStorage].map(
 // What Vitest's UI stores on this origin as its settings change, also
 // while the tests run: its panels, and its dark mode through VueUse.
 const isVitestKey = (key: string) => key.startsWith("vitest-") || key === "vueuse-color-scheme";
-
-// The cookies the server has set, to forget them when the test ends.
-const cookiesToClear = new Set<string>();
-
-function clearCookies(): void {
-  for (const cookie of document.cookie.split(";")) {
-    const name = cookie.split("=")[0]!.trim();
-    if (name) cookiesToClear.add(`${name}=; path=/`);
-  }
-  for (const cookie of cookiesToClear) {
-    document.cookie = `${cookie}; expires=Thu, 01 Jan 1970 00:00:00 GMT`;
-  }
-  cookiesToClear.clear();
-}
 
 // A page of another origin is not the app's: a browser would leave the app for
 // it, and this document has the test to keep.
@@ -131,11 +142,18 @@ function unlessAborted<T extends Response | undefined>(
 
 type Sending = {
   /**
-   * For a request the server makes to itself while it handles another. It
-   * carries the headers it was given, cookies included, does not go through
-   * the browser's cookie jar, and does not wait for the request it is part of.
+   * The store of the page, as it was when the request started: what it sends
+   * besides its own headers, and where the cookies of its responses go. None
+   * for a request the server makes to itself while it handles another. That
+   * one carries the headers it was given, cookies included, and does not wait
+   * for the request it is part of.
    */
-  server?: boolean;
+  from: PageStore | undefined;
+  /**
+   * Whether it sends the cookies of the store and keeps the ones it gets: not
+   * with `credentials: "omit"`. A `cookie` header of its own it sends either way.
+   */
+  credentials?: boolean;
   /** A page load, which leaves the app when it is redirected to another origin. */
   navigation?: boolean;
   /** Who answers a request that the server has nothing for: see `HandleOptions.unrouted`. */
@@ -146,14 +164,20 @@ type Sending = {
 
 // The network between a client and the Next.js server in the browser. For the
 // browser it does what a browser does for a same-origin request: send the
-// cookies, store the ones that come back. For either it follows redirects.
+// cookies, store the ones that come back, here with the store of the page.
+// For either it follows redirects.
 async function sendRequest(
   request: Request,
-  { server = false, navigation = false, network, opened }: Sending = {},
+  { from, credentials = true, navigation = false, network, opened }: Sending,
 ): Promise<Response> {
   let url = new URL(request.url);
   let method = request.method;
   const sent = new Headers(request.headers);
+  // A `cookie` header of the test's own goes with the redirects the request
+  // follows, with the cookies those set, as Next sends the cookies of a
+  // Server Action with the page it redirects to.
+  const own = from && credentials && sent.has("cookie") ? new PageStore() : undefined;
+  own?.seed(sent.get("cookie")!);
   // Read once: a 307 or 308 sends the body again.
   let body = request.body ? new Uint8Array(await request.arrayBuffer()) : null;
   let redirected = false;
@@ -161,12 +185,14 @@ async function sendRequest(
   let redirects = 0;
 
   for (;;) {
-    const headers = server ? new Headers(sent) : browserHeaders(new Headers(sent), url, method);
+    const headers = from
+      ? browserHeaders(new Headers(sent), url, method, from, credentials)
+      : new Headers(sent);
     const response = await unlessAborted(
       ssr.handleRequest(
         { url: url.href, method, headers, body, signal: request.signal },
         {
-          nested: server,
+          nested: !from,
           unrouted: network ? "pass" : "not-found",
           opened: redirected ? undefined : opened,
         },
@@ -179,14 +205,7 @@ async function sendRequest(
         ? nativeFetch(url, { method, headers: sent, body, signal: request.signal })
         : network!();
     }
-    for (const cookie of server ? [] : response.headers.getSetCookie()) {
-      // A script cannot store an HttpOnly cookie, and `document.cookie` is the
-      // cookie jar here, so store it as a regular one.
-      document.cookie = cookie.replace(/;\s*httponly/i, "");
-      const [pair, ...attributes] = cookie.split(";");
-      const scope = attributes.filter((attribute) => /^\s*(path|domain)=/i.test(attribute));
-      cookiesToClear.add([`${pair!.split("=")[0]}=`, ...scope].join(";"));
-    }
+    if (credentials) from?.receive(response.headers.getSetCookie());
 
     const location = response.headers.get("location");
     if (response.status >= 300 && response.status < 400 && location) {
@@ -227,7 +246,11 @@ async function sendRequest(
         // drops them on such a redirect. A `cookie` header the browser's
         // `fetch` drops itself.
         sent.delete("authorization");
-        return nativeFetch(url, { method, headers: sent, body });
+        return nativeFetch(url, { method, headers: sent, body, signal: request.signal });
+      }
+      if (own) {
+        own.receive(response.headers.getSetCookie());
+        sent.set("cookie", own.cookieHeader());
       }
       continue;
     }
@@ -245,15 +268,20 @@ async function sendRequest(
  * of the app would. Use it to assert on a response itself: its status, its
  * headers, its HTML or Flight body.
  *
- * The request carries the browser's cookies, unless it has a `cookie` header,
- * and the `headers` of what `renderServer()` opened, under its own.
+ * The request carries the app's cookies and the `headers` of what
+ * `renderServer()` opened, under its own. A `cookie` header is sent instead
+ * of the app's cookies, with this request and the redirects it follows. The
+ * cookies the server sets are the app's from then on:
+ * `response.headers.getSetCookie()` has them, where the `fetch` of the page
+ * does not show them.
  * One to the pathname of what `renderServer()` opened is that page's, as a
  * `fetch` of the page is: it gets the route of the node, and skips the proxy
  * if the page does.
  */
 export function handleRequest(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
   // Not the browser's Request, which drops a `cookie` header.
-  return sendRequest(new registry.Request(input, init));
+  const request = new registry.Request(input, init);
+  return sendRequest(request, { from: store, credentials: request.credentials !== "omit" });
 }
 
 export type RunInServerActionOptions = {
@@ -272,7 +300,8 @@ export type RunInServerActionOptions = {
   /**
    * Headers for the request of the action, next to the ones a browser sends.
    * The ones that make it a Server Action are the plugin's: `accept`,
-   * `content-type` and `next-action`.
+   * `content-type` and `next-action`. A `cookie` header is sent instead of
+   * the app's cookies.
    */
   headers?: HeadersInit;
 };
@@ -290,9 +319,9 @@ let serverActionKeys = 0;
  * It sends a Server Action request like the one of Next's router, to a route
  * at `url` that renders nothing, and opens no page: there is no app to start.
  * After a `redirect()` Next renders the page it redirects to, on the server.
- * A page that is open stays open. The request carries the browser's cookies,
- * the `headers` of what `renderServer()` opened and the ones passed here, and
- * the browser keeps the cookies the action sets. For code that a Server
+ * A page that is open stays open. The request carries the app's cookies, the
+ * `headers` of what `renderServer()` opened and the ones passed here, and the
+ * cookies the action sets are the app's from then on. For code that a Server
  * Action calls; test a form of a page through the page.
  *
  * The function runs in the request, so it cannot send a request to the app
@@ -302,6 +331,8 @@ export async function runInServerAction<T>(
   action: () => T,
   options: RunInServerActionOptions = {},
 ): Promise<Awaited<T>> {
+  // The store of the test that runs the action, also after the `await` below.
+  const from = store;
   const url = new URL(options.url ?? "/", window.location.origin);
   if (url.origin !== window.location.origin) {
     throw new Error(
@@ -335,6 +366,7 @@ export async function runInServerAction<T>(
       redirect: "manual",
     });
     const response = await sendRequest(request, {
+      from,
       opened: {
         pathname: url.pathname,
         proxy: options.proxy ?? false,
@@ -370,11 +402,28 @@ function serverActionId(action: unknown): string {
   return id;
 }
 
+// What client code gets of a response of the app. A browser never shows a
+// script the `Set-Cookie` headers of a response, a forbidden response header:
+// they are the store's. `handleRequest()` keeps them, for the test.
+function withoutSetCookie(response: Response): Response {
+  // Also a response of the network, which is the browser's already.
+  if (!response.headers.has("set-cookie")) return response;
+  const headers = new Headers(response.headers);
+  headers.delete("set-cookie");
+  const { status, statusText, url, redirected } = response;
+  return Object.defineProperties(new Response(response.body, { status, statusText, headers }), {
+    url: { value: url },
+    redirected: { value: redirected },
+  });
+}
+
 // A `fetch` that sends a same-origin request to the app when it is the app's,
 // and everything else to the network.
 const appFetch =
   (server: boolean): typeof fetch =>
   async (input, init) => {
+    // The store of the page, as the request starts. A server has none.
+    const from = server ? undefined : store;
     // A server has no page to resolve a path against: Node's `fetch` rejects it.
     if (server && !(input instanceof Request) && !URL.canParse(String(input))) {
       throw new TypeError(`Failed to parse URL from ${String(input)}`, {
@@ -383,9 +432,13 @@ const appFetch =
     }
     const sent = sameOriginRequest(input, init);
     if (!sent) return nativeFetch(input, init);
-    const headers = server
-      ? sent.headers
-      : browserHeaders(new Headers(sent.headers), sent.url, sent.method);
+    // A browser's `fetch` drops a `cookie` header: the cookies are the store's.
+    if (from) sent.headers.delete("cookie");
+    const credentials =
+      (init?.credentials ?? (input instanceof Request ? input.credentials : undefined)) !== "omit";
+    const headers = from
+      ? browserHeaders(new Headers(sent.headers), sent.url, sent.method, from, credentials)
+      : sent.headers;
     if (!sent.marked && !(await ssr.takesRequest({ url: sent.url.href, headers }))) {
       return nativeFetch(input, init);
     }
@@ -393,14 +446,32 @@ const appFetch =
     const spare = input instanceof Request && input.body ? input.clone() : input;
     // The server's Request keeps a `cookie` header, which a browser's drops.
     const request = server ? new registry.Request(input, init) : new Request(input, init);
-    return sendRequest(request, {
-      server,
+    const response = await sendRequest(request, {
+      from,
+      credentials,
       network: sent.marked ? undefined : () => nativeFetch(spare, init),
     });
+    return from ? withoutSetCookie(response) : response;
   };
 
 // The browser's `fetch`: what Next's client router and Client Components call.
 globalThis.fetch = appFetch(false);
+// A script of the page reads and writes the app's cookies with
+// `document.cookie`, as in a browser, where it is a view of the cookie jar.
+// The jar here is the store, and the browser's own is the tab's: the cookies
+// other documents of the origin set, like Vitest's UI, Storybook's manager
+// or another app on `localhost`. The app neither reads nor writes those.
+Object.defineProperty(document, "cookie", {
+  configurable: true,
+  get: () => store.documentCookie(),
+  set: (cookie: unknown) => store.write(String(cookie)),
+});
+// The Cookie Store API is a view of the browser's own jar, so the page has
+// none, as in a browser without it. Code that uses it checks for it first,
+// like Next's own.
+for (const name of ["cookieStore", "CookieStore", "CookieChangeEvent"]) {
+  Reflect.deleteProperty(window, name);
+}
 // The server's `fetch`. A request to the app itself is one the server makes
 // while it handles another: Next renders the page a Server Action redirects
 // to that way. It is chosen as the browser's is, and goes through the proxy
@@ -424,8 +495,10 @@ type RequestOptions = {
    * browser sends: the request of the document, and every one after it, like
    * a Server Action, a `router.refresh()`, a navigation or a `fetch`. Until
    * the test opens something else, or ends. A request keeps the headers it
-   * sets itself. A `cookie` and an `accept` header are for the document alone:
-   * after it the browser's cookies are sent, and what each request accepts.
+   * sets itself. An `accept` header is for the document alone. A `cookie`
+   * header sets those cookies for the app, as a `Set-Cookie` would: they go
+   * with the document and the requests after it, until the server or a
+   * script of the page changes them, or the test ends.
    */
   headers?: HeadersInit;
 };
@@ -524,10 +597,12 @@ export async function renderServer(
   const options: RenderComponentOptions = (isOptions(first) ? first : second) ?? {};
   const url = new URL(options.url ?? "/", window.location.origin);
   const headers = new Headers(options.headers);
-  // The cookies of the requests after the document are the browser's, and
-  // each of them says itself what it accepts.
+  // A `cookie` header sets cookies in the store with the document, and every
+  // request sends the cookies of the store: see `loadPage()`.
+  const cookie = headers.get("cookie");
+  headers.delete("cookie");
+  // Each request after the document says itself what it accepts.
   const sticky = new Headers(headers);
-  sticky.delete("cookie");
   sticky.delete("accept");
   if (!headers.has("accept")) headers.set("accept", "text/html");
   const { pathname } = url;
@@ -541,7 +616,7 @@ export async function renderServer(
     }
     const opened = { pathname, proxy: first.proxy ?? true };
     return {
-      response: await loadPage(url, { headers }, { opened, headers: sticky }),
+      response: await loadPage(url, { headers }, { opened, headers: sticky, cookie }),
       unmount: leavePage,
     };
   }
@@ -557,7 +632,7 @@ export async function renderServer(
       );
     }
     const opened = { pathname, proxy, node: { ui, layouts: true } };
-    const response = await loadPage(url, { headers }, { opened, headers: sticky });
+    const response = await loadPage(url, { headers }, { opened, headers: sticky, cookie });
     return {
       response,
       get container() {
@@ -600,7 +675,12 @@ export async function renderServer(
   const response = await loadPage(
     url,
     { headers },
-    { container, opened: { pathname, proxy, node: { ui, layouts: false } }, headers: sticky },
+    {
+      container,
+      opened: { pathname, proxy, node: { ui, layouts: false } },
+      headers: sticky,
+      cookie,
+    },
   );
   return {
     response,
@@ -635,9 +715,11 @@ function isOptions(value: unknown): value is RenderServerOptions {
   return prototype === Object.prototype || prototype === null;
 }
 
-// What a test opens: a page, or a node in a container. A page load that the
-// app makes itself, a navigation, has no `opening`.
-type Opening = { container?: Element; opened: Opened; headers: Headers };
+// What a test opens: a page, or a node in a container, with the `headers` of
+// the requests of the browser after it, and the `cookie` header that sets
+// cookies for the app. A page load that the app makes itself, a navigation,
+// has no `opening`.
+type Opening = { container?: Element; opened: Opened; headers: Headers; cookie: string | null };
 
 async function loadPage(url: URL, init: RequestInit, opening?: Opening): Promise<Response> {
   const leaving = leavePage();
@@ -653,10 +735,16 @@ async function loadPage(url: URL, init: RequestInit, opening?: Opening): Promise
     );
   }
   const opened = (registry.opened = opening?.opened);
-  // A page the app loads itself keeps the headers of what the test opened.
-  if (opening) pageHeaders = opening.headers;
+  // The store of the test that loads the page, also after the `await`s of
+  // `openPage()`. A page the app loads itself keeps the headers of what the
+  // test opened.
+  const from = store;
+  if (opening) {
+    from.headers = opening.headers;
+    if (opening.cookie !== null) from.seed(opening.cookie);
+  }
   try {
-    return await openPage(url, init, load.signal, opening);
+    return await openPage(url, init, load.signal, from, opening);
   } catch (error) {
     // What did not get to open has no requests of its own. Unless the test has
     // moved on, to a page or a node of its own.
@@ -669,6 +757,7 @@ async function openPage(
   url: URL,
   init: RequestInit,
   signal: AbortSignal,
+  from: PageStore,
   opening: Opening | undefined,
 ): Promise<Response> {
   // The test has moved on: to another page, or to the next test.
@@ -678,8 +767,10 @@ async function openPage(
   // the dev server has them now.
   await checkFetchedModules();
   superseded();
-  // Not the browser's Request, which drops a `cookie` header.
+  // Not the browser's Request, which drops headers of the test's, like
+  // `referer` and `origin`.
   const response = await sendRequest(new registry.Request(url, { ...init, signal }), {
+    from,
     navigation: true,
   });
   superseded();
@@ -824,17 +915,16 @@ function leavePage(): Promise<void> {
 
 /**
  * Leaves the page that `renderServer()` opened, removes the containers it made
- * and forgets its `headers`, the browser's cookies and what the app put in its
- * storage, like a new browser context. The server forgets what it has cached. Runs before and
- * after every test.
+ * and forgets its `headers`, the app's cookies and what the app put in its
+ * storage, like a new browser context. The server forgets what it has cached.
+ * Runs before and after every test.
  */
 export async function cleanup(): Promise<void> {
   await leavePage();
   for (const container of containers) container.remove();
   containers.clear();
-  pageHeaders = undefined;
+  store = new PageStore();
   ssr.resetCaches();
-  clearCookies();
   for (const [storage, keys] of storages) {
     for (const key of Object.keys(storage)) {
       if (!keys.has(key) && !isVitestKey(key)) storage.removeItem(key);
