@@ -351,7 +351,7 @@ As in Next, `headers()` and `cookies()` are the request's. Next makes its reques
 
 The store is a plain value, not one of the plugin's `AsyncLocalStorage`. That one carries the stores of a request across its `await`s while the server handles it, and not further (see [What Stands In For A Server](#what-stands-in-for-a-server)). What sends a request, like a click or a timer of the app, runs outside of it. The document has one page open at a time, so one store is enough. The requests of a page that overlap, like a response that streams while a Server Action is sent, share it, as they share the cookies of a browser. A request takes the store once, when it starts, and writes the cookies it gets to that one. `cleanup()` makes a new store, so a request that answers after its test does not set cookies for the next one.
 
-A request that the server makes to itself, like the one for the page a Server Action redirects to, carries the headers it was given, cookies included, as the `fetch` of a server does. It has nothing of the store, and its `Set-Cookie` headers go nowhere. `runInServerAction()` shows no page, so for its request the server answers that one with nothing, and Next sends the redirect alone.
+A request that the server makes to itself, like the one for the page a Server Action redirects to, carries the headers it was given, cookies included, as the `fetch` of a server does. It has nothing of the store, and its `Set-Cookie` headers go nowhere. For the request of `runInServerAction()`, which shows no page, the server answers it with nothing, and Next sends the redirect alone.
 
 ## The Server In Front Of The App
 

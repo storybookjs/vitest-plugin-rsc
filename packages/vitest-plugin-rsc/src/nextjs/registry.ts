@@ -89,7 +89,8 @@ export type NextRegistry = {
   /**
    * The route of a node that a request brings for itself, like the one of
    * `runInServerAction()`, for as long as it is handled. The page of the route of
-   * a node reads it, and else `opened`.
+   * a node reads it, and else `opened`. The server's `fetch` reads its
+   * `rendersRedirect`.
    */
   openedByRequest: SequentialAsyncLocalStorage<Opened | undefined>;
   /**

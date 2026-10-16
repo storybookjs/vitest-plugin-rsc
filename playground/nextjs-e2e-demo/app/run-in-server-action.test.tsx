@@ -7,7 +7,7 @@ import { cookies, headers } from "next/headers";
 import { isRedirectError } from "next/dist/client/components/redirect-error";
 import { notFound, redirect } from "next/navigation";
 import { after } from "next/server";
-import { beforeEach, expect, test } from "vitest";
+import { beforeEach, expect, onTestFinished, test, vi } from "vitest";
 import { page } from "vitest/browser";
 import { audit, auditLog } from "./lib/audit.ts";
 import { createNote, setLanguage, signIn, toggleFavorite } from "./lib/actions.ts";
@@ -67,6 +67,9 @@ test("rejects with the error of a redirect(), which Next has acted on", async ()
 });
 
 test("renders no page after a redirect(): the test opens that page itself", async () => {
+  // Next takes the empty answer for the page as its own fallback, not an error.
+  const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+  onTestFinished(() => consoleError.mockRestore());
   const error = await runInServerAction(async () => {
     await signIn("ada");
     redirect("/welcome");
@@ -81,6 +84,7 @@ test("renders no page after a redirect(): the test opens that page itself", asyn
   // of the action.
   expect(await (await handleRequest("/welcome")).text()).toContain("Welcome");
   expect(auditLog).toEqual(["welcomed ada"]);
+  expect(consoleError).not.toHaveBeenCalled();
 });
 
 test("rejects with what notFound() throws", async () => {

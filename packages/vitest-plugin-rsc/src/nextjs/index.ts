@@ -308,9 +308,8 @@ let serverActionKeys = 0;
  *
  * It sends a Server Action request like the one of Next's router, to a route
  * at `url` that renders nothing, and opens no page: there is no app to start.
- * After a `redirect()` the action rejects with its error, and no page
- * renders: open the page the action redirects to in the test. A page that is
- * open stays open. The request carries the app's cookies, the `headers` of
+ * After a `redirect()` no page renders: open the page the action redirects
+ * to in the test. A page that is open stays open. The request carries the app's cookies, the `headers` of
  * what `renderServer()` opened and the ones passed here, and the cookies the
  * action sets are the app's from then on. For code that a Server Action
  * calls; test a form of a page through the page.
@@ -449,6 +448,7 @@ const appFetch =
     if (
       server &&
       sent.method === "GET" &&
+      sent.headers.get("rsc") === "1" &&
       sent.headers.has("x-action-redirect") &&
       registry.openedByRequest.getStore()?.rendersRedirect === false
     ) {
