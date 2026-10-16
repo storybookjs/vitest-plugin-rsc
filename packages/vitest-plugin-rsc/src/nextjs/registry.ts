@@ -79,6 +79,8 @@ export type NextRegistry = {
    * command of Vitest's, which knows the test file that asks (setup.ts).
    */
   loadStylesheets(entry: string, inline: boolean): Promise<Stylesheets>;
+  /** The answer of Vitest's command, which the plugin's setup file sets: see rsc.ts. */
+  loadStylesheetsOfTestFile?(entry: string, inline: boolean): Promise<Stylesheets>;
   /**
    * Tells the host what the page loaded without an import of its own: a route,
    * or the module of a Server Action. Under Vitest with `affectedTests`, see

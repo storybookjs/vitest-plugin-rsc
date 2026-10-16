@@ -38,6 +38,13 @@ const freePort = () =>
 
 type Site = { url: string; output(): string; close(): Promise<void> };
 
+// The servers that run, killed when the worker exits: also after a run that
+// was stopped, or a hook that failed before `afterAll` could close them.
+const running = new Set<Site>();
+process.once("exit", () => {
+  for (const site of running) void site.close();
+});
+
 /** Starts the dev server of the project, as `vite` does, and waits for it to answer. */
 async function serve(): Promise<Site> {
   const port = await freePort();
@@ -56,19 +63,27 @@ async function serve(): Promise<Site> {
   child.stdout.on("data", (data: Buffer) => (output += data.toString()));
   child.stderr.on("data", (data: Buffer) => (output += data.toString()));
   const exited = new Promise<void>((resolve) => child.on("exit", () => resolve()));
+  const kill = (signal: NodeJS.Signals) => {
+    try {
+      process.kill(-child.pid!, signal);
+    } catch {
+      // It has exited already.
+    }
+  };
   const url = `http://localhost:${port}/`;
   const site: Site = {
     url,
     output: () => output,
     async close() {
-      try {
-        process.kill(-child.pid!, "SIGTERM");
-      } catch {
-        // It has exited already.
-      }
+      running.delete(site);
+      kill("SIGTERM");
+      // One that does not stop is killed.
+      const timer = setTimeout(() => kill("SIGKILL"), 5_000);
       await exited;
+      clearTimeout(timer);
     },
   };
+  running.add(site);
   for (const end = Date.now() + 60_000; Date.now() < end; ) {
     if (child.exitCode !== null) break;
     const response = await fetch(url).catch(() => undefined);
@@ -79,11 +94,16 @@ async function serve(): Promise<Site> {
   throw new Error(`vite did not answer at ${url}:\n${output}`);
 }
 
-let site: Site;
-let browser: Browser;
+let site: Site | undefined;
+let browser: Browser | undefined;
 
+// Each is kept as soon as it is there, so that `afterAll` closes what did
+// start when the other failed.
 beforeAll(async () => {
-  [site, browser] = await Promise.all([serve(), chromium.launch()]);
+  await Promise.all([
+    serve().then((started) => (site = started)),
+    chromium.launch().then((launched) => (browser = launched)),
+  ]);
 });
 
 afterAll(async () => {
@@ -103,7 +123,7 @@ type HostWindow = {
  * that fails or gets a 4xx or 5xx. Resolves with what the host left on `window`.
  */
 async function open(view: string, run: (page: Page) => Promise<void>): Promise<HostWindow> {
-  const page = await browser.newPage();
+  const page = await browser!.newPage();
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(`pageerror: ${error.stack ?? error.message}`));
   page.on("console", (message) => {
@@ -116,7 +136,7 @@ async function open(view: string, run: (page: Page) => Promise<void>): Promise<H
     if (response.status() >= 400) errors.push(`${response.status()}: ${response.url()}`);
   });
   try {
-    await page.goto(`${site.url}?view=${view}`);
+    await page.goto(`${site!.url}?view=${view}`);
     await page.waitForFunction(() => (window as HostWindow).__hostState, null, {
       timeout: 60_000,
     });
@@ -135,7 +155,7 @@ async function open(view: string, run: (page: Page) => Promise<void>): Promise<H
   } finally {
     const found = [...errors];
     await page.close();
-    expect(found, `the errors of the page of ?view=${view}\n${site.output()}`).toEqual([]);
+    expect(found, `the errors of the page of ?view=${view}\n${site!.output()}`).toEqual([]);
   }
 }
 
@@ -160,7 +180,7 @@ test("renders a page of the app", async () => {
       "rgb(0, 112, 243)",
     );
   });
-  expect(host.__hostResponse).toEqual({ status: 200, url: `${site.url}` });
+  expect(host.__hostResponse).toEqual({ status: 200, url: site!.url });
 });
 
 test("renders a node of the host in a container of the host", async () => {
@@ -170,7 +190,7 @@ test("renders a node of the host in a container of the host", async () => {
       .locator("#host-root")
       .getByRole("heading", { name: "Hello from the host" })
       .waitFor();
-    await page.getByText("Loading the host…").waitFor();
+    await page.getByText("The document of the host").waitFor();
     await page.getByRole("button", { name: "Count: 0" }).click();
     await page.getByRole("button", { name: "Count: 1" }).waitFor();
     // The stylesheets of the node, which the dev server tells the page of.
@@ -185,7 +205,12 @@ test('runs a file of the host with "use client" in the browser layer', async () 
     // The Client Component the file rendered, in a root it made itself.
     await page.locator("#client-root").getByRole("button", { name: "Count: 0" }).click();
     await page.locator("#client-root").getByRole("button", { name: "Count: 1" }).waitFor();
-    // The CSS the file imports, linked by the page.
+    // The CSS module of the component, a stylesheet of the app that the page
+    // links once the file has loaded: from the dev server, not Vite's
+    // `<style>` of a module.
+    await page
+      .locator("link[rel=stylesheet][href*='counter.module.css']")
+      .waitFor({ state: "attached" });
     expect(await style(page, "#client-root button", "color")).toBe("rgb(0, 112, 243)");
   });
   // With Next's React for the browser, and with the page's own instance of

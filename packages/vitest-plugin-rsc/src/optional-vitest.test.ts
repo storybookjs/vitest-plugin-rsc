@@ -10,7 +10,12 @@ import { assertVitestVersion } from "./nextjs/vitest-version.ts";
 // Vitest of the project's own tests. So no file of the build imports Vitest,
 // in its code or in its types, but for the setup files that the plugin gives
 // Vitest by their path, which no other file imports. This reads the build,
-// which is what a host installs: `pnpm build` first.
+// which is what a host installs: with `pnpm test:dist`, after `pnpm build`.
+// Not with `pnpm test`, which runs the source, and could find a build of
+// another version on disk.
+
+// oxlint-disable-next-line no-process-env
+const runsSource = (process.env.NODE_OPTIONS ?? "").includes("vitest-plugin-rsc-source");
 
 const packageDir = fileURLToPath(new URL("..", import.meta.url));
 const distDir = path.join(packageDir, "dist");
@@ -79,7 +84,11 @@ test("runs in Vitest 5.0.3 and later, and says so in an older one", () => {
   expect(() => assertVitestVersion("5.0.0-beta.4")).toThrow("this is Vitest 5.0.0-beta.4");
 });
 
-describe.skipIf(builtFiles.length === 0)("the build", () => {
+describe.skipIf(runsSource)("the build", () => {
+  test("is there", () => {
+    expect(builtFiles.length).toBeGreaterThan(0);
+  });
+
   test("imports Vitest in the setup files only", () => {
     const importing = builtFiles.filter((file) =>
       importsOf(path.join(distDir, file)).some(isVitest),

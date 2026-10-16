@@ -90,8 +90,10 @@ registry.loadAppPage = async (page) => {
 // The stylesheets of a route are the plugin's to say, as they are a build's:
 // see styles.ts. The dev server answers, for the files of the host it has
 // loaded. Under Vitest a command answers instead, which knows the test file
-// that asks, for the route of a node: see setup.ts.
+// that asks, for the route of a node: the plugin's setup file sets it, and
+// whichever of the two modules evaluates first, the command wins.
 registry.loadStylesheets = (entry, inline) =>
+  registry.loadStylesheetsOfTestFile?.(entry, inline) ??
   fetchJson<Stylesheets>(stylesheetsPath, { entry, inline: String(inline) });
 
 /** The page module of the route of a node: see `loadNodeEntry()` in project/entries.ts. */

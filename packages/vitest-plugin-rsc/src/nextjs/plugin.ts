@@ -12,6 +12,7 @@ import {
   type Plugin,
   type ResolvedConfig,
 } from "vite";
+import type { TestProject, Vitest } from "vitest/node";
 import { createRunnerEnvironmentPlugins } from "../runner-environment.ts";
 import { flightBridge, type FlightEntry } from "./flight.ts";
 import { nextBuilds, nextProductionPlugin, type NextBuild } from "./build.ts";
@@ -481,20 +482,6 @@ const runtimeImports: Record<NextLayer, string[]> = {
 
 export type { NextBuild };
 
-// What Vitest calls `configureVitest` with, as far as the plugin reads it.
-type ConfigureVitestContext = {
-  vitest: { version: string };
-  project: {
-    config: {
-      root: string;
-      dir?: string;
-      include: string[];
-      exclude: string[];
-      setupFiles: string[];
-    };
-  };
-};
-
 export type VitestPluginNextOptions = ServerCodeOptions & {
   /**
    * Lets watch mode, `vitest --changed` and `vitest related` find the test
@@ -677,7 +664,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
             transform: {
               define: {
                 ...definesOf(project, layer),
-                ...(layer !== "browser" && serverCode.cacheKey),
+                ...(layer === "browser" ? serverCode.browserCacheKey : serverCode.cacheKey),
               },
             },
           },
@@ -784,7 +771,11 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
         vite.middlewares.use((request, response, next) => {
           const { pathname } = new URL(request.url ?? "/", "http://n");
           if (pathname !== `${project.assetPath}${mainApp}`) return next();
-          send(request, response, "", "js", { headers: vite.config.server.headers });
+          // Without the source map Vite adds to a script that has none.
+          send(request, response, "", "js", {
+            headers: vite.config.server.headers,
+            map: { mappings: "" },
+          });
         });
       },
       // What the app has and does not get here: said once, when a run starts.
@@ -819,9 +810,8 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
       },
       // Vitest's hook for a plugin of a project, which another host has not:
       // what its config says is a test file or a setup file is not server
-      // code. Typed here and not with Vitest's types, which a host without
-      // Vitest does not have.
-      configureVitest({ vitest, project: testProject }: ConfigureVitestContext) {
+      // code.
+      configureVitest({ vitest, project: testProject }: { vitest: Vitest; project: TestProject }) {
         assertVitestVersion(vitest.version);
         const test = testProject.config;
         const setupFiles = new Set(test.setupFiles.map((file) => normalizePath(file)));

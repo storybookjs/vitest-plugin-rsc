@@ -179,9 +179,10 @@ export function createServerCode(registry: string, options: ServerCodeOptions = 
   const hostFiles = [options.host?.files ?? []].flat();
   const packages = options.host?.packages ?? [];
   let isBrowserModule: (file: string) => boolean = () => false;
-  // One for every Vitest project this plugin is in, and one for the files of
-  // another host.
+  // One for every Vitest project this plugin is in.
   const testFileMatchers: ((file: string) => boolean)[] = [];
+  // The files of another host, `host.files`.
+  let isOwnFileOfHost: (file: string) => boolean = () => false;
   let testRunnerPackages = new Set<string>();
 
   /**
@@ -190,8 +191,10 @@ export function createServerCode(registry: string, options: ServerCodeOptions = 
    */
   function isHostFile(file: string): boolean {
     file = normalizePath(file);
-    return testFileMatchers.some((matches) => matches(file));
+    return isOwnFileOfHost(file) || testFileMatchers.some((matches) => matches(file));
   }
+  // Whether anything says which files are the host's.
+  const knowsHostFiles = () => hostFiles.length > 0 || testFileMatchers.length > 0;
 
   /**
    * Whether a file is server code in a layer. The rsc layer shares its
@@ -233,9 +236,9 @@ export function createServerCode(registry: string, options: ServerCodeOptions = 
     isAppCode(file: string, layer: NextLayer): boolean {
       if (!path.isAbsolute(file) || file.includes("/node_modules/")) return false;
       if (layer !== "rsc") return !normalizePath(file).startsWith(ownDir) && !isHostFile(file);
-      return testFileMatchers.length > 0 && isServerCode(file, layer);
+      return knowsHostFiles() && isServerCode(file, layer);
     },
-    /** For the `define` of the optimizer, which Vite keys its cache on. */
+    /** For the `define` of the optimizer of a server layer, which Vite keys its cache on. */
     cacheKey: {
       __vitest_plugin_rsc_browser_modules__: JSON.stringify([
         patterns.map(String),
@@ -243,15 +246,19 @@ export function createServerCode(registry: string, options: ServerCodeOptions = 
         packages,
       ]),
     },
+    /**
+     * The same for the browser layer, which pre-bundles the packages of the
+     * host as the page's own: Vite does not key its cache on the plugins of
+     * the optimizer.
+     */
+    browserCacheKey: { __vitest_plugin_rsc_host_packages__: JSON.stringify(packages) },
     /** For a module this plugin generates, with the constants of its layer. */
     compile: async (code: string, id: string, define: Record<string, string>) =>
       (await compileServerCode(code, id, registry, define))?.code ?? code,
     /** Call once the root of the project is known. */
     configure(root: string): void {
       if (patterns.length > 0) isBrowserModule = createFilter(patterns, null, { resolve: root });
-      if (hostFiles.length > 0) {
-        testFileMatchers.push(createFilter(hostFiles, null, { resolve: root }));
-      }
+      if (hostFiles.length > 0) isOwnFileOfHost = createFilter(hostFiles, null, { resolve: root });
       // Vitest pre-bundles its own runtime in the environment of the rsc layer.
       testRunnerPackages = findPackagesWithDependencies(hostPackageNames(root, packages), root);
     },
@@ -298,7 +305,7 @@ export function createServerCode(registry: string, options: ServerCodeOptions = 
           // Without Vitest's config, or the files of another host, there is
           // no telling a test file from a file of the app, and a test file
           // must keep the browser.
-          if (layer === "rsc" && testFileMatchers.length === 0) return;
+          if (layer === "rsc" && !knowsHostFiles()) return;
           if (!isServerCode(file, layer)) return;
           return compileServerCode(code, file, registry);
         },

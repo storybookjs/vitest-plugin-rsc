@@ -5,10 +5,10 @@ import { unlinkClientStylesheets } from "./client-graph.ts";
 import { registry } from "./registry.ts";
 import { stylesheetsCommand, type Stylesheets } from "./styles-command.ts";
 
-// Registered by `vitestPluginNext()` as a setup file: the only module of the
-// layers that imports Vitest, which another host does without. Importing the
-// entry first matters: it installs the server's platform before a test file
-// can import a module of Next's server.
+// Registered by `vitestPluginNext()` as a setup file. With affected/browser.ts
+// the only module of the layers that imports Vitest, which another host does
+// without. Importing the entry first matters: it installs the server's
+// platform before a test file can import a module of Next's server.
 
 // Vitest evaluates a setup file again before every test file, also one whose
 // tests are all skipped. So the CSS that a test file with `"use client"`
@@ -30,4 +30,4 @@ const loadStylesheets = (commands as unknown as Partial<Record<string, LoadStyle
 if (!loadStylesheets) {
   throw new Error("vitest-plugin-rsc: the browser has no command for the stylesheets");
 }
-registry.loadStylesheets = loadStylesheets;
+registry.loadStylesheetsOfTestFile = loadStylesheets;

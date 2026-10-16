@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { runInThisContext } from "node:vm";
@@ -162,4 +163,43 @@ test("tells the server code of a layer from the code of the test", () => {
   const ownRuntime = fileURLToPath(new URL("./ssr.ts", import.meta.url));
   expect(serverCode.isServerCode(ownRuntime, "ssr")).toBe(false);
   expect(serverCode.isServerCode("\0virtual:module", "ssr")).toBe(false);
+});
+
+test("takes the files and the packages of another host for the host's", () => {
+  const hostRoot = fileURLToPath(
+    new URL("../../../../playground/nextjs-host-demo", import.meta.url),
+  );
+  const serverCode = createServerCode(registry, {
+    // A package of the project, a scope of it, and this plugin itself, as a
+    // framework of the host that depends on it would be matched.
+    host: { files: ["host/**"], packages: ["host-report", "@types/*", "vitest-plugin-rsc"] },
+  });
+  serverCode.configure(hostRoot);
+  // Again, as Vite calls `config` for a restart: not twice the matchers.
+  serverCode.configure(hostRoot);
+  const file = (name: string) => path.join(hostRoot, name);
+  const packageOf = (name: string) =>
+    fileURLToPath(import.meta.resolve(name, new URL("package.json", `file://${hostRoot}/`)));
+
+  // A file of the host is not server code, and the app is.
+  expect(serverCode.isHostFile(file("host/main.tsx"))).toBe(true);
+  expect(serverCode.isServerCode(file("host/main.tsx"), "rsc")).toBe(false);
+  expect(serverCode.isAppCode(file("host/main.tsx"), "rsc")).toBe(false);
+  expect(serverCode.isServerCode(file("app/page.tsx"), "rsc")).toBe(true);
+  expect(serverCode.isAppCode(file("app/page.tsx"), "rsc")).toBe(true);
+
+  // A package of the host, by its name and by its scope.
+  expect(serverCode.isHostPackage("host-report")).toBe(true);
+  expect(serverCode.isHostPackage("@types/react")).toBe(true);
+  expect(serverCode.isHostPackage("react")).toBe(false);
+  expect(serverCode.isServerCode(packageOf("host-report"), "rsc")).toBe(false);
+  // Where the package manager really put it, as Vite names the file.
+  const typesOfReact = fs.realpathSync(file("node_modules/@types/react"));
+  expect(serverCode.isServerCode(path.join(typesOfReact, "index.d.ts"), "rsc")).toBe(false);
+  expect(serverCode.isServerCode(packageOf("react"), "rsc")).toBe(true);
+  // What this plugin is built on stays server code, also when a framework
+  // of the host brings the plugin: Vite RSC's Flight server.
+  // Resolved from the plugin, which is what depends on it.
+  const flight = fileURLToPath(import.meta.resolve("@vitejs/plugin-rsc/plugin"));
+  expect(serverCode.isServerCode(flight, "rsc")).toBe(true);
 });
