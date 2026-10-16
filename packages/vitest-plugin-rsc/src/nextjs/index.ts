@@ -365,12 +365,15 @@ export async function runInServerAction<T>(
         rendersRedirect: false,
       },
     });
-    // The response, which no page is there to show, is read to its end, so
-    // that the request has ended: as a browser reads it. It is short, as the
-    // route renders nothing, also after a `redirect()`: see `appFetch()`. What
-    // fails in it, Next reports itself.
-    await response.body?.pipeTo(new WritableStream()).catch(() => {});
-    if (!ran.outcome) {
+    if (ran.outcome) {
+      // The response, which no page is there to show, is read to its end, as
+      // a browser reads it, so that the server has written it. It is short:
+      // the route renders nothing, also after a `redirect()`, see `appFetch()`.
+      // What fails in it, Next reports itself.
+      await response.body?.pipeTo(new WritableStream()).catch(() => {});
+    } else {
+      // Not the action's: the proxy's, which can be anything.
+      await response.body?.cancel();
       const location = response.headers.get("location");
       throw new Error(
         `vitest-plugin-rsc: the Server Action did not run: ${response.url} ` +
@@ -438,11 +441,17 @@ const appFetch =
       return nativeFetch(input, init);
     }
     // After a `redirect()` in a Server Action, Next fetches the page it
-    // redirects to from itself, and renders it into the response of the
-    // action: what Next's router shows next. For a request that shows no
-    // page, like the one of `runInServerAction()`, the page does not render:
-    // an answer without a Flight payload has Next send the redirect alone.
-    if (server && sent.marked && registry.openedByRequest.getStore()?.rendersRedirect === false) {
+    // redirects to from itself, with the headers of its response so far, and
+    // renders it into the response of the action: what Next's router shows
+    // next. For a request that shows no page, like the one of
+    // `runInServerAction()`, the page does not render: an answer without a
+    // Flight payload has Next send the redirect alone.
+    if (
+      server &&
+      sent.method === "GET" &&
+      sent.headers.has("x-action-redirect") &&
+      registry.openedByRequest.getStore()?.rendersRedirect === false
+    ) {
       return new registry.Response(null, { status: 204 });
     }
     // The request, for the network: a body can be read once.

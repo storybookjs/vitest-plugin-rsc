@@ -362,7 +362,7 @@ The plugin keeps your app's cookies for the test, the way a browser keeps a site
 - A `cookie` header in the `headers` of `renderServer` sets cookies, as a `Set-Cookie` without attributes would. Its cookies are added to the ones your app has, and stay until your app changes them or the test ends. They aren't `HttpOnly`, so `document.cookie` shows them. Set an `HttpOnly` one with `(await cookies()).set(name, value, { httpOnly: true })` in `runInServerAction`.
 - Every request to your app carries them: page loads, navigations, `router.refresh()`, Server Actions, route handlers, and `fetch` calls from Client Components.
 - A `Set-Cookie` from your server sets one, and one that has expired, with `Max-Age=0` or an `Expires` in the past, deletes it. A cookie is a name and a value: its `Path`, `Domain` and `Secure` don't count, since every request goes to your app, as if it were served over `https:`.
-- A `cookie` header of `handleRequest` or `runInServerAction` is for that one request: it is sent instead of your app's cookies, also with the redirects it follows, with the cookies those set. The cookies the server sets are your app's from then on.
+- A `cookie` header of `handleRequest` or `runInServerAction` is for that one request: it is sent instead of your app's cookies, and with the redirects `handleRequest` follows, with the cookies those set. The cookies the server sets are your app's from then on.
 - A request with `credentials: "omit"`, of `fetch` or `handleRequest`, doesn't send your app's cookies, and the ones its response sets aren't kept.
 - Each test starts without cookies.
 
@@ -635,7 +635,7 @@ test("creates the note and redirects", async () => {
 
 It sends a Server Action request like the one of Next's router, to a route at `url` that renders nothing, and opens no page: no app starts, so it is much faster than a page with a form. After a `redirect()` the call rejects with its error, and no page renders: open the page the action redirects to in your test, with `renderServer({ url })` or `handleRequest()`. A page that is open stays open. The function and its result are the test's own, so they do not go through Flight.
 
-The request carries your app's cookies, the `headers` of what `renderServer()` opened and the ones you pass, and the cookies the action sets are your app's from then on. A `cookie` header among them is sent instead of your app's cookies, with this request and the redirects it follows, not with the requests after it. With `proxy: true` it goes through the proxy, and a redirect there rejects, since the action did not run.
+The request carries your app's cookies, the `headers` of what `renderServer()` opened and the ones you pass, and the cookies the action sets are your app's from then on. A `cookie` header among them is sent instead of your app's cookies, with this request, not with the requests after it. With `proxy: true` it goes through the proxy, and a redirect there rejects, since the action did not run.
 
 The function runs in the request of the action, so it cannot send a request to the app itself: that would wait for this one. Call the app's code instead. What it throws, Next also reports with `console.error`, as it does for any Server Action.
 

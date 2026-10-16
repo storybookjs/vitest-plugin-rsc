@@ -48,7 +48,7 @@ export type Opened = {
   /**
    * Whether Next renders the page a Server Action redirects to, into the
    * response of the action, as Next's router shows that page next. Not for
-   * `runInServerAction()`, which shows no page.
+   * `runInServerAction()`, which shows no page. Read from `openedByRequest`.
    */
   rendersRedirect?: boolean;
 };
