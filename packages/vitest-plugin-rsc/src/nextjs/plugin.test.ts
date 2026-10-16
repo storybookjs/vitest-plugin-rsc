@@ -101,6 +101,46 @@ test("pre-bundles every module of Next that a module of the plugin imports in th
   }
 });
 
+test("gives Next's module for the asset prefix of its dev server no prefix: there is no dev server", async () => {
+  const plugins = vitestPluginNext();
+  const plugin = plugins.find(({ name }) => name === "vitest-plugin-rsc:next")!;
+  await (plugin.config as (config: object) => Promise<Config>)({ root });
+  const resolver = plugins.find(({ name }) => name === "vitest-plugin-rsc:next-resolve:browser")!;
+  const resolveId = resolver.resolveId as (
+    this: object,
+    source: string,
+    importer: string,
+    options: object,
+  ) => Promise<string | { id: string }>;
+  const load = resolver.load as (this: object, id: string) => string | undefined;
+  // What Vite finds for an import that is not a shim.
+  const context = { resolve: async (source: string) => ({ id: source }) };
+  const shimOf = async (source: string, importer: string) => {
+    const resolved = await resolveId.call(context, source, importer, {});
+    return typeof resolved === "string" ? load.call(context, resolved) : undefined;
+  };
+  const shim = 'export const assetPrefix = "";\n';
+  const app = path.join(nextDir, "dist/esm/client/dev/hot-reloader/app");
+  const bootstrap = path.join(nextDir, "dist/esm/client/app-bootstrap.js");
+
+  // Next 16.5 imports it from its WebSocket module, and its entry requires it.
+  // The module reads `document.currentScript`, which is null when Next's
+  // router first imports it, on a navigation. The dependency optimizer names
+  // a file by its path, and Next's CommonJS build has it too.
+  for (const [source, importer] of [
+    ["./asset-prefix", path.join(app, "web-socket.js")],
+    ["./asset-prefix.js", path.join(app, "web-socket.js")],
+    ["./dev/hot-reloader/app/asset-prefix", bootstrap],
+    [path.join(app, "asset-prefix.js"), bootstrap],
+    ["next/dist/client/dev/hot-reloader/app/asset-prefix", bootstrap],
+    ["next/dist/esm/client/dev/hot-reloader/app/asset-prefix.js", bootstrap],
+  ] as const) {
+    expect(await shimOf(source, importer), source).toBe(shim);
+  }
+  // The asset prefix of the app's assets is Next's own.
+  expect(await shimOf("./asset-prefix", bootstrap)).toBeUndefined();
+});
+
 // What the plugin makes of a Vitest config, and says of it when a run starts.
 async function configure(config: Record<string, unknown>) {
   const plugin = vitestPluginNext().find(({ name }) => name === "vitest-plugin-rsc:next")!;

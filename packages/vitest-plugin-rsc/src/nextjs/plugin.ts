@@ -83,6 +83,15 @@ export function extractInfoFromServerReferenceId(id) {
 }
 `;
 
+// Since Next 16.5 a module of Next reads the asset prefix of the dev
+// server's WebSocket when it is evaluated, off `document.currentScript`. Next's
+// entry evaluates it first, on the dev server. Without the dev server Next's
+// router imports it on its first navigation, where nothing runs as a script,
+// and the navigation fails. The plugin has no dev server, and Next opens that
+// WebSocket only on one: the prefix is for nothing here.
+const devAssetPrefix = /^next\/dist\/(esm\/)?client\/dev\/hot-reloader\/app\/asset-prefix(\.js)?$/;
+const devAssetPrefixShim = `export const assetPrefix = "";\n`;
+
 const nodePlatform = createNodePlatform(registry, bridgePrefix);
 
 type Alias = { key: string; exact: boolean; target: string | false };
@@ -167,6 +176,7 @@ function createLayerResolver(getProject: () => NextProject, layer: NextLayer) {
       if (flight) return `${bridgePrefix}flight-${flight[1]}`;
     }
     if (source === serverReferenceInfo) return `${bridgePrefix}server-reference-info`;
+    if (devAssetPrefix.test(source)) return `${bridgePrefix}dev-asset-prefix`;
     // The route module of a page is made in the rsc layer, by Next's request
     // handler for it, and belongs to the ssr layer.
     if (
@@ -271,6 +281,7 @@ function createLayerResolver(getProject: () => NextProject, layer: NextLayer) {
         if (!id.startsWith(bridgePrefix)) return;
         const name = id.slice(bridgePrefix.length);
         if (name === "server-reference-info") return serverReferenceInfoShim;
+        if (name === "dev-asset-prefix") return devAssetPrefixShim;
         const nodeModule = nodePlatform.load(name);
         if (nodeModule) return nodeModule;
         const { flightExports, version } = getProject();
