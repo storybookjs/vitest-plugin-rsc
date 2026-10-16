@@ -5,12 +5,12 @@ import {
 } from "vitest-plugin-rsc/nextjs/testing-library";
 import { cookies, headers } from "next/headers";
 import { isRedirectError } from "next/dist/client/components/redirect-error";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { after } from "next/server";
-import { beforeEach, expect, test } from "vitest";
+import { beforeEach, expect, onTestFinished, test, vi } from "vitest";
 import { page } from "vitest/browser";
 import { audit, auditLog } from "./lib/audit.ts";
-import { createNote, setLanguage, toggleFavorite } from "./lib/actions.ts";
+import { createNote, setLanguage, signIn, toggleFavorite } from "./lib/actions.ts";
 import { db } from "./lib/notes.ts";
 
 beforeEach(() => {
@@ -64,6 +64,27 @@ test("rejects with the error of a redirect(), which Next has acted on", async ()
   expect(error).toMatchObject({ digest: expect.stringContaining(";/notes/1;") });
   expect(db.notes.get("1")?.title).toBe("Plan the week");
   expect(await cookieOfTheApp("last-created")).toBe("1");
+});
+
+test("renders no page after a redirect(): the test opens that page itself", async () => {
+  // Next takes the empty answer for the page as its own fallback, not an error.
+  const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+  onTestFinished(() => consoleError.mockRestore());
+  const error = await runInServerAction(async () => {
+    await signIn("ada");
+    redirect("/welcome");
+  }).catch((error: unknown) => error);
+  expect(isRedirectError(error)).toBe(true);
+  // Next's router would show the page now: nothing here does, so Next has
+  // not rendered it, also not on its own after the action.
+  await new Promise((resolve) => setTimeout(resolve, 200));
+  expect(auditLog).toEqual([]);
+
+  // The page renders once, in the request that opens it, with the cookies
+  // of the action.
+  expect(await (await handleRequest("/welcome")).text()).toContain("Welcome");
+  expect(auditLog).toEqual(["welcomed ada"]);
+  expect(consoleError).not.toHaveBeenCalled();
 });
 
 test("rejects with what notFound() throws", async () => {

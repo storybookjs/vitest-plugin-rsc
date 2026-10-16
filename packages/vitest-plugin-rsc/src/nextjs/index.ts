@@ -318,11 +318,11 @@ let serverActionKeys = 0;
  *
  * It sends a Server Action request like the one of Next's router, to a route
  * at `url` that renders nothing, and opens no page: there is no app to start.
- * After a `redirect()` Next renders the page it redirects to, on the server.
- * A page that is open stays open. The request carries the app's cookies, the
- * `headers` of what `renderServer()` opened and the ones passed here, and the
- * cookies the action sets are the app's from then on. For code that a Server
- * Action calls; test a form of a page through the page.
+ * After a `redirect()` no page renders: open the page the action redirects
+ * to in the test. A page that is open stays open. The request carries the app's cookies, the `headers` of
+ * what `renderServer()` opened and the ones passed here, and the cookies the
+ * action sets are the app's from then on. For code that a Server Action
+ * calls; test a form of a page through the page.
  *
  * The function runs in the request, so it cannot send a request to the app
  * itself, which would wait for this one: call the app's code instead.
@@ -371,11 +371,18 @@ export async function runInServerAction<T>(
         pathname: url.pathname,
         proxy: options.proxy ?? false,
         node: { ui: null, layouts: false },
+        rendersRedirect: false,
       },
     });
-    // What Next renders after the action, which no page is there to show.
-    await response.body?.cancel();
-    if (!ran.outcome) {
+    if (ran.outcome) {
+      // The response, which no page is there to show, is read to its end, as
+      // a browser reads it, so that the server has written it. It is short:
+      // the route renders nothing, also after a `redirect()`, see `appFetch()`.
+      // What fails in it, Next reports itself.
+      await response.body?.pipeTo(new WritableStream()).catch(() => {});
+    } else {
+      // Not the action's: the proxy's, which can be anything.
+      await response.body?.cancel();
       const location = response.headers.get("location");
       throw new Error(
         `vitest-plugin-rsc: the Server Action did not run: ${response.url} ` +
@@ -441,6 +448,21 @@ const appFetch =
       : sent.headers;
     if (!sent.marked && !(await ssr.takesRequest({ url: sent.url.href, headers }))) {
       return nativeFetch(input, init);
+    }
+    // After a `redirect()` in a Server Action, Next fetches the page it
+    // redirects to from itself, with the headers of its response so far, and
+    // renders it into the response of the action: what Next's router shows
+    // next. For a request that shows no page, like the one of
+    // `runInServerAction()`, the page does not render: an answer without a
+    // Flight payload has Next send the redirect alone.
+    if (
+      server &&
+      sent.method === "GET" &&
+      sent.headers.get("rsc") === "1" &&
+      sent.headers.has("x-action-redirect") &&
+      registry.openedByRequest.getStore()?.rendersRedirect === false
+    ) {
+      return new registry.Response(null, { status: 204 });
     }
     // The request, for the network: a body can be read once.
     const spare = input instanceof Request && input.body ? input.clone() : input;

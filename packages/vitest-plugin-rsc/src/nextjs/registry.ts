@@ -45,6 +45,12 @@ export type Opened = {
   /** Whether the server in front of the app takes the request: proxy.ts and `next.config`. */
   proxy: boolean;
   node?: { ui: unknown; layouts: boolean };
+  /**
+   * Whether Next renders the page a Server Action redirects to, into the
+   * response of the action, as Next's router shows that page next. Not for
+   * `runInServerAction()`, which shows no page. Read from `openedByRequest`.
+   */
+  rendersRedirect?: boolean;
 };
 
 export type NextRegistry = {
@@ -83,7 +89,8 @@ export type NextRegistry = {
   /**
    * The route of a node that a request brings for itself, like the one of
    * `runInServerAction()`, for as long as it is handled. The page of the route of
-   * a node reads it, and else `opened`.
+   * a node reads it, and else `opened`. The server's `fetch` reads its
+   * `rendersRedirect`.
    */
   openedByRequest: SequentialAsyncLocalStorage<Opened | undefined>;
   /**
