@@ -47,3 +47,21 @@ declare module "@vitejs/plugin-rsc/vendor/react-server-dom/server.edge" {
   ): Promise<unknown[]>;
   export function createClientModuleProxy(moduleId: string): unknown;
 }
+
+declare module "virtual:vitest-plugin-rsc/next-client-references" {
+  /**
+   * In a static build: how to load each module a Flight payload can refer to,
+   * by the id it has there. Nothing with a dev server.
+   */
+  const clientReferences: Record<string, () => Promise<unknown>> | undefined;
+  export default clientReferences;
+}
+
+declare module "virtual:vitest-plugin-rsc/next-server-references" {
+  /**
+   * In a static build: how to load each module with Server Actions, by the id
+   * Vite RSC gives it. Nothing with a dev server.
+   */
+  const serverReferences: Record<string, () => Promise<unknown>> | undefined;
+  export default serverReferences;
+}

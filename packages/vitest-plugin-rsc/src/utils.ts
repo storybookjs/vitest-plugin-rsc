@@ -1,4 +1,5 @@
 import {
+  createDefaultImportMeta,
   ModuleRunner,
   ssrDynamicImportKey,
   ssrExportAllKey,
@@ -9,7 +10,14 @@ import {
   type ModuleEvaluator,
   type ModuleRunnerTransport,
 } from "vite/module-runner";
+import builtLayers from "virtual:vitest-plugin-rsc/layers";
 import * as pageClient from "virtual:vitest-plugin-rsc/vite-client";
+import {
+  builtUrl,
+  createBuiltLayers,
+  type InvokePayload,
+  type InvokeResult,
+} from "./built-layers.ts";
 import { isHostModule } from "./host-module.ts";
 
 // The page's own instance of Vite's client, for the modules that the runners
@@ -27,8 +35,6 @@ const reactClientWebSocketVersionEvent = "vitest-plugin-rsc:react-client:version
 const sourceUrlRE = /\/\/# sourceURL=[^\n\r]*/;
 const sourceUrlLineRE = /^\/\/# sourceURL=/m;
 
-type InvokePayload = Parameters<NonNullable<ModuleRunnerTransport["invoke"]>>[0];
-type InvokeResult = Awaited<ReturnType<NonNullable<ModuleRunnerTransport["invoke"]>>>;
 /** What the server says of a module next to it: see `describeModule()` in index.ts. */
 type ModuleAnswer = InvokeResult & { imports?: string[]; dependency?: boolean };
 type ViteFetchResult = {
@@ -54,8 +60,14 @@ type InvokeResultMessage = {
   };
 };
 
-// Before anything replaces it: this request is for the dev server.
+// Before anything replaces it: this request is for the dev server, or for a
+// file of a static build.
 const nativeFetch = globalThis.fetch;
+
+// The modules of a static build, see built-layers.ts. A page runs both
+// layers, so the tab asks for all of them at once, before a runner does.
+const built = createBuiltLayers(nativeFetch);
+for (const layer of Object.values(builtLayers ?? {})) if (layer) built.preload(layer);
 
 let webSocket: WebSocket | undefined;
 let webSocketPromise: Promise<WebSocket> | undefined;
@@ -82,25 +94,40 @@ function getRunner(environment: string): ModuleRunner {
   let runner = runners.get(environment);
   if (!runner) {
     const invoke = (payload: InvokePayload) => invokeEnvironment(environment, payload);
-    runners.set(environment, (runner = createRunner(invoke, pageLoadEvaluator)));
+    runners.set(environment, (runner = createRunner(environment, invoke, pageLoadEvaluator)));
   }
   return runner;
 }
 
-// A runner of an environment. A module of the page is the page's own.
+// A runner of an environment. A module of the page is the page's own, and a
+// static build has the modules of the environment in a file of its own.
 function createRunner(
+  environment: string,
   invoke: NonNullable<ModuleRunnerTransport["invoke"]>,
   evaluator: ModuleEvaluator,
   { sourcemaps = false } = {},
 ): ModuleRunner {
+  const layer = builtLayers?.[environment];
   return new ModuleRunner(
     {
       // With `sourcemaps`, the stack of an error has the lines of the source
       // for a module of this runner, where it has the lines of what the
       // runner evaluates. For that every stack is formatted as Vite does it.
-      sourcemapInterceptor: sourcemaps ? "prepareStackTrace" : false,
-      transport: { invoke: async (payload) => hostModule(payload) ?? invoke(payload) },
+      // A build has no source maps.
+      sourcemapInterceptor: sourcemaps && !layer ? "prepareStackTrace" : false,
+      transport: {
+        invoke: async (payload) =>
+          hostModule(payload) ?? (layer ? built.invoke(layer, payload) : invoke(payload)),
+      },
       hmr: false,
+      // A module of a build has the URL of the file it would be, from which
+      // it names the files of the build, like its CSS.
+      ...(layer && {
+        createImportMeta: (file) => ({
+          ...createDefaultImportMeta(file),
+          url: builtUrl(layer, file),
+        }),
+      }),
     },
     evaluator,
   );
@@ -126,7 +153,9 @@ export function createEnvironmentRunner(
       ? invokeForPageLoad(environment, payload, modules)
       : invokeEnvironment(environment, payload);
   };
-  const runner = createRunner(invoke, pageLoadEvaluator, { sourcemaps });
+  const runner = createRunner(environment, invoke, pageLoadEvaluator, { sourcemaps });
+  // The modules of a build do not change.
+  if (builtLayers?.[environment]) return runner;
   takes.set(runner, async () => {
     const modules = await fetchedModules(environment);
     const changed = first !== undefined && first !== modules;
@@ -159,8 +188,17 @@ function hostModule(payload: InvokePayload): InvokeResult | undefined {
   return { result: { externalize: data[0], type: "module" } } as InvokeResult;
 }
 
+/**
+ * What a runner imports a module of an environment by: its id, or in a build
+ * the id of the module that it is the entry of.
+ */
+export function environmentModule(environment: string, id: string): string {
+  const entry = builtLayers?.[environment]?.entries[id];
+  return entry ? `/${entry}` : id;
+}
+
 export function importReactClient<T = any>(id: string): Promise<T> {
-  return getRunner("react_client").import<T>(id);
+  return getRunner("react_client").import<T>(environmentModule("react_client", id));
 }
 
 async function invokeEnvironment(environment: string, payload: InvokePayload) {

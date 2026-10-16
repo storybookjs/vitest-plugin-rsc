@@ -4,6 +4,8 @@
 // apart. This is the build side of it: the modules, as code for Vite. The
 // browser's side is node-server.ts, and globals.ts for the globals.
 
+import zlib from "node:zlib";
+
 /**
  * The stand-ins, for a `registry` in the browser that some of them call and a
  * `prefix` that their module ids start with.
@@ -168,6 +170,23 @@ export function createNodePlatform(registry: string, prefix: string) {
   }
   export function expectNoPendingImmediates() {}
   `,
+    // Next compresses what a prerender leaves for the request that resumes
+    // it, and no page is prerendered here. Every export of Node's \`zlib\` is
+    // there, so that code which imports one loads: the functions throw.
+    "node-zlib": `
+  const missing = (name) =>
+    function () {
+      throw new Error("vitest-plugin-rsc: node:zlib's " + name + " is not there in the browser");
+    };
+  ${Object.entries(zlib)
+    .map(([name, value]) =>
+      typeof value === "function"
+        ? `export const ${name} = missing(${JSON.stringify(name)});`
+        : `export const ${name} = ${JSON.stringify(value)};`,
+    )
+    .join("\n  ")}
+  export default { ${Object.keys(zlib).join(", ")} };
+  `,
     // Next asks Node.js for the source map of a file in a stack. Vite has them.
     "node-module": `
   export const findSourceMap = () => undefined;
@@ -215,6 +234,7 @@ export function createNodePlatform(registry: string, prefix: string) {
     ],
     [/^(node:)?timers$/, "node-timers"],
     [/^(node:)?crypto$/, "node-crypto"],
+    [/^(node:)?zlib$/, "node-zlib"],
     [
       /^next\/dist\/(esm\/)?server\/route-modules\/app-page\/vendored\/(rsc|ssr)\/entrypoints(\.js)?$/,
       "vendored-react",

@@ -1,4 +1,5 @@
-import type { Stylesheets } from "./styles-command.ts";
+import type { LoadedKind } from "./affected/command.ts";
+import type { Stylesheets } from "./styles-shared.ts";
 
 // The three layers of the app are three module graphs with one `window`.
 // Next's bundler config moves a few things across them: the route module is
@@ -75,9 +76,17 @@ export type NextRegistry = {
   appPages: Record<string, unknown>;
   /**
    * Asks the plugin for the stylesheets of a page route, by the name of its
-   * modules: see styles.ts. From the rsc layer, which has Vitest's commands.
+   * modules: see styles.ts. From the rsc layer. Under Vitest the setup file
+   * sets it, with a browser command; a static build reads them from a file
+   * of its own (rsc.ts).
    */
   loadStylesheets(entry: string, inline: boolean): Promise<Stylesheets>;
+  /**
+   * Tells the host what the test that runs now has loaded without an import
+   * of its own: a route, or a Server Action. Only Vitest's setup file sets it,
+   * for watch mode: see affected/browser.ts.
+   */
+  reportLoaded?(kind: LoadedKind, id: string): void;
   /** Loads the request handler of a route handler, which is in the rsc layer. */
   loadRouteHandler(page: string): Promise<RequestHandler>;
   /** Loads the request handler of the middleware of the app, which is in the rsc layer. */

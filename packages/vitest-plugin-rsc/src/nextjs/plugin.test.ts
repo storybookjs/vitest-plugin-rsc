@@ -6,6 +6,10 @@ import { normalizePath } from "vite";
 import { expect, test } from "vitest";
 import { vitestPluginNext } from "./plugin.ts";
 
+// The `config` hook, as Vite calls it for a dev server.
+type ConfigHook<T> = (config: object, env: { command: "serve" | "build" }) => Promise<T>;
+const serve = { command: "serve" } as const;
+
 // What the plugin has Vite scan and pre-bundle for the demo, per layer. A
 // dependency that is missing here is one Vite finds while a test runs, with a
 // cold cache: it pre-bundles again and reloads the page.
@@ -21,7 +25,7 @@ type Config = { environments: Record<string, { optimizeDeps: OptimizeDeps }> };
 // The config loads the project, and Next's config with it: once for the file.
 const optimizeDeps = (async () => {
   const plugin = vitestPluginNext().find(({ name }) => name === "vitest-plugin-rsc:next")!;
-  const { environments } = await (plugin.config as (config: object) => Promise<Config>)({ root });
+  const { environments } = await (plugin.config as ConfigHook<Config>)({ root }, serve);
   return {
     rsc: environments.client!.optimizeDeps,
     ssr: environments.next_ssr!.optimizeDeps,
@@ -104,7 +108,7 @@ test("pre-bundles every module of Next that a module of the plugin imports in th
 test("gives Next's module for the asset prefix of its dev server no prefix: there is no dev server", async () => {
   const plugins = vitestPluginNext();
   const plugin = plugins.find(({ name }) => name === "vitest-plugin-rsc:next")!;
-  await (plugin.config as (config: object) => Promise<Config>)({ root });
+  await (plugin.config as ConfigHook<Config>)({ root }, serve);
   const resolver = plugins.find(({ name }) => name === "vitest-plugin-rsc:next-resolve:browser")!;
   const resolveId = resolver.resolveId as (
     this: object,
@@ -147,7 +151,7 @@ async function configure(config: Record<string, unknown>) {
   const input = { root, ...config } as {
     test?: { browser?: { testerHtmlPath?: string } };
   };
-  const result = (await (plugin.config as (config: object) => Promise<unknown>)(input)) as {
+  const result = (await (plugin.config as ConfigHook<unknown>)(input, serve)) as {
     css: { postcss?: unknown; modules?: unknown };
   };
   const warnings: string[] = [];
