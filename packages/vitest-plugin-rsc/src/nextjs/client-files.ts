@@ -1,0 +1,201 @@
+import path from "node:path";
+import { hasDirective } from "@vitejs/plugin-rsc/transforms";
+import { normalizePath, parseAstAsync, type Plugin, type ResolvedConfig } from "vite";
+import { hostModulePrefix } from "../host-module.ts";
+
+// A file of the host is a test file or a setup file of Vitest. One with
+// `"use client"` is a client boundary, as a file with that directive is in
+// React: a module of the browser layer. Vitest still imports it in its own
+// environment, which is the rsc layer, to collect its tests. There Vite RSC
+// makes it a client reference, as it does every file with the directive: a
+// module that exports a reference for each export, and runs none of the
+// file's code. The plugin has that module load the file in the browser layer
+// before anything else runs, see `loadClientFiles()` and client-graph.ts.
+// That is all of it. A file without the directive is server code, and what
+// it imports with the directive is a reference, which loads when something
+// renders it, as in React.
+//
+// The file runs in the browser layer, and the test runner does not: `vitest`
+// has the test that is running. So an import of `vitest`, `@vitest/*` or the
+// testing library is of the module the page has, see ../host-module.ts. That
+// goes for every module of the browser layer, like `render()` of
+// vitest-browser-react, which registers a hook with `vitest`. Every other
+// import is the browser layer's, as what a client module imports is client
+// code in React: also another file of the host.
+
+const sourceFile = /\.(?:tsx|ts|mts|jsx|js|mjs)$/;
+const languageOf = (file: string) =>
+  file.endsWith(".tsx") ? "tsx" : file.endsWith("ts") ? "ts" : "jsx";
+
+/**
+ * What Vite RSC made of a module of the rsc layer with `"use client"`: a
+ * client reference, with the URL that loads the file in the browser layer.
+ */
+export type ClientReference = { importId: string };
+
+export type ClientFilesOptions = {
+  /** The Vite environment of the rsc layer, which the host shares, and of the browser layer. */
+  environments: { rsc: string; browser: string };
+  /** `vitest-plugin-rsc/nextjs/testing-library`, and the file it is. */
+  testingLibrary: { specifier: string; file: string };
+  /** The file of the plugin that loads a client file: internal.ts. */
+  internal: string;
+  /** Whether a file is the host's: a test file or a setup file. */
+  isHostFile(file: string): boolean;
+  /** Whether an import is of a package of the host, by its name. */
+  isHostPackage(specifier: string): boolean;
+  /** The client reference that Vite RSC made of a module of the rsc layer, if it has `"use client"`. */
+  clientReferenceOf(id: string, config: ResolvedConfig): ClientReference | undefined;
+};
+
+/**
+ * What the module of the rsc layer for a file of the host with `"use client"`
+ * starts with: it loads the file in the browser layer, at `url`, see
+ * client-graph.ts. In front of the reference module, which has none of the
+ * code of the file.
+ */
+export function loadClientFileCode(url: string, internal: string): string {
+  return (
+    `import { loadClientFile as __vitestPluginRscLoadClientFile } from ${JSON.stringify(internal)}; ` +
+    `await __vitestPluginRscLoadClientFile(${JSON.stringify(url)}); `
+  );
+}
+
+/** What `renderServer()` throws in a file with `"use client"`. */
+export const renderServerError =
+  'vitest-plugin-rsc: renderServer() renders on the server, and this test file has "use client": ' +
+  "it is client code, which cannot render server code. Render a Client Component with " +
+  "`render()` of vitest-browser-react or of @testing-library/react, or test a connected " +
+  'component with renderServer() in a test file without "use client".';
+
+/** What the page imports for a module of the host: see ../host-module.ts. */
+export function hostModuleCode(
+  target: string,
+  testingLibrary: ClientFilesOptions["testingLibrary"],
+): string {
+  // A client file renders no server code.
+  if (target === testingLibrary.specifier) {
+    return (
+      `import * as module from ${JSON.stringify(testingLibrary.file)};\n` +
+      `export default {\n` +
+      `  ...module,\n` +
+      `  async renderServer() {\n` +
+      `    throw new Error(${JSON.stringify(renderServerError)});\n` +
+      `  },\n` +
+      `};\n`
+    );
+  }
+  return `import * as module from ${JSON.stringify(target)};\nexport default module;\n`;
+}
+
+/**
+ * Two plugins. Before Vite RSC: the modules of the page for the browser
+ * layer, and the error for a file with `"use client"` that mocks a module,
+ * before Vite RSC drops the code of the file. After Vite RSC, which made
+ * the file a reference: the line in front of that module, which loads the
+ * file in the browser layer, at the URL that the reference knows. Not a
+ * file without the directive: a test file without it renders with
+ * `renderServer()`, in a page with a graph of its own.
+ */
+export function clientFiles(options: ClientFilesOptions): Plugin[] {
+  const { rsc, browser } = options.environments;
+  const { testingLibrary, internal, isHostFile, isHostPackage, clientReferenceOf } = options;
+
+  // A file of the host in the rsc layer, with no query: not Vite's
+  // `?import`, which the browser asks for.
+  const hostFileOf = (id: string): string | undefined => {
+    const file = id.split("?")[0]!;
+    if (id.includes("?") || !sourceFile.test(file) || !isHostFile(file)) return;
+    return file;
+  };
+
+  return [
+    {
+      name: "vitest-plugin-rsc:next-client-files",
+      enforce: "pre",
+      resolveId: {
+        // Before the resolver of a package manager, or of the host itself.
+        order: "pre",
+        handler(source, importer) {
+          if (source.startsWith(hostModulePrefix)) return source;
+          if (this.environment.name !== browser) return;
+          // What the page asks a layer for is that layer's. It has no importer,
+          // for which Vite names the `index.html` of the root.
+          const { root } = this.environment.config;
+          if (!importer || importer === path.posix.join(normalizePath(root), "index.html")) return;
+          if (isHostPackage(source) || source === testingLibrary.specifier) {
+            return hostModulePrefix + source;
+          }
+        },
+      },
+      load(id) {
+        if (!id.startsWith(hostModulePrefix)) return;
+        const target = id.slice(hostModulePrefix.length);
+        // Not the browser layer's to evaluate: the transport of its module
+        // runner answers for it, see ../utils.ts. Vite still warms it up.
+        if (this.environment.name !== rsc) return "export {};";
+        return hostModuleCode(target, testingLibrary);
+      },
+      async transform(code, id) {
+        if (this.environment.name !== rsc || !code.includes("use client")) return;
+        const file = hostFileOf(id);
+        if (!file) return;
+        const ast = await parseAstAsync(code, { lang: languageOf(file) });
+        if (!hasDirective(ast.body, "use client")) return;
+        // The file runs with the page's `vi`, whose mocker replaces what the
+        // page imports: the modules of the rsc layer, not the ones that the
+        // module runner of the browser layer fetches for the file.
+        const mocking = findMocking(ast);
+        if (mocking) {
+          this.error(
+            `vitest-plugin-rsc: ${file} calls ${mocking}(), which a file with "use client" cannot: ` +
+              `it runs in the browser layer, and Vitest's mocker replaces the modules of the rsc ` +
+              `layer. Mock in a setup file or a test file without the directive, or pass a mock ` +
+              `as a prop.`,
+          );
+        }
+      },
+    },
+    {
+      name: "vitest-plugin-rsc:next-load-client-files",
+      enforce: "post",
+      transform(code, id) {
+        if (this.environment.name !== rsc || !hostFileOf(id)) return;
+        const reference = clientReferenceOf(id, this.environment.getTopLevelConfig());
+        if (!reference) return;
+        return { code: loadClientFileCode(reference.importId, internal) + code, map: null };
+      },
+    },
+  ];
+}
+
+// What Vitest hoists to mock a module, by the name it is called with.
+const mockingCall = /^(?:vi|vitest)\.(?:mock|unmock|doMock|doUnmock|hoisted)$/;
+
+/** The first call of the AST to a function of Vitest that mocks a module, like `vi.mock`. */
+export function findMocking(node: unknown): string | undefined {
+  if (Array.isArray(node)) {
+    for (const child of node) {
+      const found = findMocking(child);
+      if (found) return found;
+    }
+    return;
+  }
+  if (typeof node !== "object" || node === null) return;
+  const { type, callee } = node as { type?: string; callee?: Record<string, any> };
+  if (
+    type === "CallExpression" &&
+    callee?.type === "MemberExpression" &&
+    !callee.computed &&
+    callee.object?.type === "Identifier" &&
+    callee.property?.type === "Identifier"
+  ) {
+    const name = `${callee.object.name}.${callee.property.name}`;
+    if (mockingCall.test(name)) return name;
+  }
+  for (const [key, value] of Object.entries(node)) {
+    if (key === "parent" || typeof value !== "object") continue;
+    const found = findMocking(value);
+    if (found) return found;
+  }
+}

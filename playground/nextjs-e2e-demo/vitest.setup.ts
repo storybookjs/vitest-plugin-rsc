@@ -5,6 +5,8 @@ declare module "vitest" {
   interface ProvidedContext {
     // The `build` option of the plugin: see vitest.config.ts.
     build: NextBuild;
+    // The version of the React that Next comes with.
+    nextReact: string;
   }
 }
 

@@ -1,3 +1,4 @@
+import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { playwright } from "@vitest/browser-playwright";
@@ -112,6 +113,12 @@ process.env.NEXT_FONT_GOOGLE_MOCKED_RESPONSES = fileURLToPath(
 // oxlint-disable-next-line no-process-env
 const build = (process.env.VITEST_PLUGIN_RSC_BUILD || "development") as NextBuild;
 
+// The version of the React that Next comes with, which its layers run on, and
+// not the `react` of the app.
+const nextReact = (
+  createRequire(import.meta.url)("next/dist/compiled/react") as { version: string }
+).version;
+
 export default defineProject({
   root: fileURLToPath(new URL("./", import.meta.url)),
   plugins: [
@@ -131,7 +138,7 @@ export default defineProject({
     name: "nextjs-e2e-demo",
     include: ["**/*.test.{ts,tsx}"],
     exclude: ["node_modules"],
-    provide: { build },
+    provide: { build, nextReact },
     browser: {
       enabled: true,
       headless: true,
@@ -139,6 +146,7 @@ export default defineProject({
       instances: [{ browser: "chromium" }],
     },
     isolate: false,
-    setupFiles: ["./vitest.setup.ts"],
+    // The first is server code, like a test file: the second has `"use client"`.
+    setupFiles: ["./vitest.setup.ts", "./vitest.setup.client.tsx"],
   },
 });

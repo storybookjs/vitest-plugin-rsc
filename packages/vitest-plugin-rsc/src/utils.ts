@@ -10,6 +10,7 @@ import {
   type ModuleRunnerTransport,
 } from "vite/module-runner";
 import * as pageClient from "virtual:vitest-plugin-rsc/vite-client";
+import { isHostModule } from "./host-module.ts";
 
 // The page's own instance of Vite's client, for the modules that the runners
 // below evaluate: see vite-client.ts.
@@ -86,12 +87,21 @@ function getRunner(environment: string): ModuleRunner {
   return runner;
 }
 
+// A runner of an environment. A module of the page is the page's own.
 function createRunner(
   invoke: NonNullable<ModuleRunnerTransport["invoke"]>,
   evaluator: ModuleEvaluator,
+  { sourcemaps = false } = {},
 ): ModuleRunner {
   return new ModuleRunner(
-    { sourcemapInterceptor: false, transport: { invoke }, hmr: false },
+    {
+      // With `sourcemaps`, the stack of an error has the lines of the source
+      // for a module of this runner, where it has the lines of what the
+      // runner evaluates. For that every stack is formatted as Vite does it.
+      sourcemapInterceptor: sourcemaps ? "prepareStackTrace" : false,
+      transport: { invoke: async (payload) => hostModule(payload) ?? invoke(payload) },
+      hmr: false,
+    },
     evaluator,
   );
 }
@@ -99,12 +109,15 @@ function createRunner(
 /**
  * A module runner with a module graph of its own: every module it imports is
  * evaluated again, the way a page load evaluates a page's scripts again. Call
- * `checkFetchedModules()` before every page load, or a file that changed goes
- * unnoticed.
+ * `checkFetchedModules()` before every page load, and before a runner that is
+ * made between two, or a file that changed goes unnoticed.
  */
-export function createEnvironmentRunner(environment: string): ModuleRunner {
+export function createEnvironmentRunner(
+  environment: string,
+  { sourcemaps = false } = {},
+): ModuleRunner {
   let first: FetchedModules | undefined;
-  return createRunner(async (payload) => {
+  const invoke = async (payload: InvokePayload) => {
     const modules = await fetchedModules(environment);
     first ??= modules;
     // A runner that has modules of before a file changed asks the server
@@ -112,7 +125,38 @@ export function createEnvironmentRunner(environment: string): ModuleRunner {
     return modules === first
       ? invokeForPageLoad(environment, payload, modules)
       : invokeEnvironment(environment, payload);
-  }, pageLoadEvaluator);
+  };
+  const runner = createRunner(invoke, pageLoadEvaluator, { sourcemaps });
+  takes.set(runner, async () => {
+    const modules = await fetchedModules(environment);
+    const changed = first !== undefined && first !== modules;
+    first = modules;
+    return changed;
+  });
+  return runner;
+}
+
+const takes = new WeakMap<ModuleRunner, () => Promise<boolean>>();
+
+/**
+ * For a runner of `createEnvironmentRunner()` that outlives a page load: it
+ * takes the modules that the tab has fetched now, as the runner of the next
+ * page load does, where it would ask the server for each one from then on.
+ * Call `checkFetchedModules()` first. Resolves with whether those are of
+ * another version than the runner had: a file has changed. The modules that
+ * the runner has evaluated stay as they are, also one that changed, which the
+ * server cannot tell this runner. Invalidate the ones that may have.
+ */
+export function takeFetchedModules(runner: ModuleRunner): Promise<boolean> {
+  return takes.get(runner)?.() ?? Promise.resolve(false);
+}
+
+// A module of the page is not the environment's to serve: the runner imports
+// it as the page does. See host-module.ts.
+function hostModule(payload: InvokePayload): InvokeResult | undefined {
+  const { name, data } = (payload as { data: { name: string; data: unknown[] } }).data;
+  if (name !== "fetchModule" || !isHostModule(String(data[0]))) return;
+  return { result: { externalize: data[0], type: "module" } } as InvokeResult;
 }
 
 export function importReactClient<T = any>(id: string): Promise<T> {
@@ -241,6 +285,8 @@ function fetchOnce(
     // As the runner asks for an import of the module.
     const importer = fetched.file || fetched.id;
     for (const imported of (result as ModuleAnswer).imports ?? []) {
+      // The page's own: the runner does not ask the server for it.
+      if (isHostModule(imported)) continue;
       const args = [imported, importer, { cached: false, startOffset }];
       const ahead = { ...payload, data: { ...(payload as FetchModulePayload).data, data: args } };
       // A runner that asks for it gets the error.
@@ -304,7 +350,12 @@ const pageLoadEvaluator: ModuleEvaluator = {
     await run(...contextKeys.map((key) => context[key]));
     Object.seal(context[ssrModuleExportsKey]);
   },
-  runExternalModule: (file) => import(/* @vite-ignore */ file),
+  async runExternalModule(file) {
+    const exports = (await import(/* @vite-ignore */ file)) as { default?: unknown };
+    // What the page serves for a module of its own has that module as its
+    // default export: see host-module.ts.
+    return isHostModule(file) ? exports.default : exports;
+  },
 };
 
 async function withReactClientCoverage(result: InvokeResult) {
