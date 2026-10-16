@@ -322,7 +322,7 @@ function nextClientBoundaryPlugin(getProject: () => NextProject, resolver: Layer
 // request logs to the page, which logs it again. Here the page is the server:
 // it has logged it already. And the request a log is sent with is the one
 // whose scope is active, which in the page also takes in client code that
-// runs while a response streams. React queues a log without a flush of its
+// runs while a request is open. React queues a log without a flush of its
 // own, and a response does not end while one is queued.
 function flightConsolePlugin(): Plugin {
   return {
@@ -330,7 +330,7 @@ function flightConsolePlugin(): Plugin {
     transform: {
       // Rolldown matches the id with `/` for a separator.
       filter: {
-        id: /\/react-server-dom-webpack-server\.[\w.]+\.development\.js$/,
+        id: /\/react-server-dom-webpack-server\.[^/]+\.development\.js$/,
         code: "function patchConsole(",
       },
       handler(code, id) {
@@ -338,7 +338,7 @@ function flightConsolePlugin(): Plugin {
         if (patched === code) {
           this.warn(`vitest-plugin-rsc: React's patchConsole() in ${id} is not turned off.`);
         }
-        return patched;
+        return { code: patched, map: null };
       },
     },
   };
