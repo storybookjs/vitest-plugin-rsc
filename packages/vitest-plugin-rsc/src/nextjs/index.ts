@@ -1,3 +1,4 @@
+/// <reference types="vite/client" />
 import "./globals.ts";
 import { createElement, type JSXElementConstructor, type ReactNode } from "react";
 import { resetAsyncLocalStorage } from "../async-local-storage.ts";
@@ -1003,6 +1004,12 @@ type NavigateEvent = Event & {
   formData: FormData | null;
   downloadRequest: string | null;
 };
+// Vite's client loads the document again after a change that nothing takes
+// in place. With a page open that would be a reload of the page, which the
+// listener below loads as the app's, at the page's URL: the host's document
+// would stay. Left first, the document and its URL are the host's again.
+import.meta.hot?.on("vite:beforeFullReload", () => leavePage());
+
 (window as { navigation?: EventTarget }).navigation?.addEventListener("navigate", (event) => {
   const { navigationType, destination, hashChange, formData, downloadRequest } =
     event as NavigateEvent;

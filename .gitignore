@@ -21,6 +21,7 @@ artifacts/perf/
 *.local
 # The copies of the demos that their build tests build, should a run not remove them
 playground/.nextjs-e2e-demo-*/
+playground/.nextjs-host-demo-*/
 playground/.rsc-vitest-demo-*/
 
 # Editor directories and files
