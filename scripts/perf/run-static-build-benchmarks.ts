@@ -48,9 +48,14 @@ const defaultRoutes = [
 
 // What Vite and Next name with a hash of the content: a static host can let
 // the browser keep them. See `cache` of serveFiles.
-const hashed = /^(assets|_next\/static)\//;
+// SPIKE SB-2270: also the hashed chunks of a layer, vitest-plugin-rsc/<layer>/assets/.
+const hashed = /^(assets|_next\/static|vitest-plugin-rsc\/[^/]+\/assets)\//;
 
-type Condition = "cold" | "warm";
+// SPIKE SB-2270: a third load in the same context ("third"), to see whether
+// V8's code cache, which Chromium fills on the second run of a script, makes
+// it faster.
+type Condition = "cold" | "warm" | "third";
+const conditions = ["cold", "warm", "third"] as const;
 type Kind = "modules.json" | "html" | "js" | "css" | "fonts" | "images" | "json" | "other";
 const kinds: readonly Kind[] = [
   "modules.json",
@@ -370,7 +375,7 @@ async function loadInNewContext(
   const context = await browser.newContext({ viewport: { width: 1280, height: 800 } });
   try {
     await context.addInitScript(recordHostState);
-    for (const condition of ["cold", "warm"] as const) {
+    for (const condition of conditions) {
       const measured = await measureLoad(context, site, info, route);
       record({ build: info.build, route, condition, iteration, ...measured });
     }
@@ -637,7 +642,7 @@ function summarize(loads: Load[], selected: NextBuild[], routes: string[]): Summ
   const summaries: Summary[] = [];
   for (const build of selected) {
     for (const route of routes) {
-      for (const condition of ["cold", "warm"] as const) {
+      for (const condition of conditions) {
         const of = loads.filter(
           (load) => load.build === build && load.route === route && load.condition === condition,
         );
