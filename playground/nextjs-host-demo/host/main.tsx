@@ -17,7 +17,8 @@ import { show, state } from "./state.ts";
 // `?view=module` renders a component of a file of the host with
 // `"use client"` itself, as a framework renders a story, `?view=action`
 // loads such a file while a node of the app is open, and `?view=after-page`
-// renders its components after the page it loaded during. `?view=tag`
+// renders its components after the page it loaded during. `?view=pages`
+// moves the URL of the host between two pages of the app. `?view=tag`
 // renders a node with a Client Component of a package that is not
 // pre-bundled. A second page of the host, with a node of its own, is
 // callout.html.
@@ -94,6 +95,19 @@ await show(async () => {
     for (const Component of [Badge, Like]) {
       renderClient(Component, container.appendChild(document.createElement("div")));
     }
+    return;
+  }
+  if (view === "pages") {
+    // A page of the app, and another one after the host moved its URL, as a
+    // host says in its URL what it shows. Leaving each page puts back the
+    // URL that the host had as that page opened. One that it set while the
+    // page was open went with the page.
+    await renderServer({ url: "/" });
+    await cleanup();
+    window.history.replaceState(null, "", "?view=pages&shows=second");
+    await renderServer({ url: "/" });
+    window.history.replaceState(null, "", "?view=pages&shows=third");
+    await cleanup();
     return;
   }
   if (view === "switch") {
