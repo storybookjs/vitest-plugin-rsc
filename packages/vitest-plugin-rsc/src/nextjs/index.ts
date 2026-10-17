@@ -439,6 +439,8 @@ function withoutSetCookie(response: Response): Response {
   });
 }
 
+const never = () => new Promise<never>(() => {});
+
 // What a page hears of a request that Next sent for it, one of its router
 // or a Server Action: nothing once the page is left, as in a browser, where
 // it is gone. Leaving drops the requests that wait for the server
@@ -447,7 +449,7 @@ function withoutSetCookie(response: Response): Response {
 // fetch RSC payload".
 async function heardBy(sender: Page, response: Promise<Response>): Promise<Response> {
   await response.catch(() => {});
-  return page === sender ? response : new Promise<never>(() => {});
+  return page === sender ? response : never();
 }
 
 // A `fetch` that sends a same-origin request to the app when it is the app's,
@@ -465,6 +467,11 @@ const appFetch =
     }
     const sent = sameOriginRequest(input, init);
     if (!sent) return nativeFetch(input, init);
+    // Next marks the requests it sends for a page. Its router is there only
+    // once its page is, so without a page that page was left, and it sends
+    // nothing more: see `heardBy()`. A test asks with `handleRequest()`.
+    const sender = from && sent.marked ? page : undefined;
+    if (from && sent.marked && !sender) return never();
     // A browser's `fetch` drops a `cookie` header: the cookies are the store's.
     if (from) sent.headers.delete("cookie");
     const credentials =
@@ -501,8 +508,7 @@ const appFetch =
     });
     if (!from) return response;
     const shown = response.then(withoutSetCookie);
-    // Next marks the requests it sends for a page: the one that is open.
-    return sent.marked && page ? heardBy(page, shown) : shown;
+    return sender ? heardBy(sender, shown) : shown;
   };
 
 // The browser's `fetch`: what Next's client router and Client Components call.

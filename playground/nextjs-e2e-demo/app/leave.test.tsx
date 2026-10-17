@@ -142,3 +142,19 @@ test("hears no more of the requests of its router once a page is left, also whil
   await page.getByRole("button", { name: "Count: 0" }).click();
   await expect.element(page.getByRole("button", { name: "Count: 1" })).toBeInTheDocument();
 });
+
+test("sends nothing more for a page once it is left, also what its router sends a moment later", async () => {
+  await renderServer(<RefreshButton />);
+
+  // Next's router sends the request of a refresh a few microtasks after the
+  // click, and the page is left before that.
+  document.querySelector("button")!.click();
+  await cleanup();
+
+  await renderServer(<Counter />);
+  await page.getByRole("button", { name: "Count: 0" }).click();
+  await expect.element(page.getByRole("button", { name: "Count: 1" })).toBeInTheDocument();
+  // The router of the page that was left would report the dropped request:
+  // "Failed to fetch RSC payload".
+  expect(consoleError).not.toHaveBeenCalled();
+});
