@@ -33,6 +33,19 @@ export const render: ArgsStoryFn<NextjsRscRenderer> = (args, context) => {
 export const isPageStory = (context: StoryContext<NextjsRscRenderer>): boolean =>
   !context.component && context.originalStoryFn === render;
 
+const pageInLayouts = (id: string) =>
+  new Error(
+    `The story ${id} is a page, which renders in its layouts already; \`layouts\` is for a ` +
+      `component. Remove it.`,
+  );
+
+/** For `mount(ui)` in the `play` of a page story. */
+export const nothingToMount = (id: string): Error =>
+  new Error(
+    `The story ${id} is a page, which has nothing to mount: call \`mount()\` without ` +
+      `arguments, or give the story a component.`,
+  );
+
 const pageWithoutUrl = (id: string) =>
   new Error(
     `The story ${id} has no component and no render, so it is a page of the app, which needs ` +
@@ -43,28 +56,31 @@ const pageWithoutUrl = (id: string) =>
 // What a server story was rendered with, and what `renderServer()` gave.
 type Rendered = {
   id: string;
-  nextjs: string;
+  /** `parameters.nextjs`, as JSON: the request. */
+  request: string;
   /** The node, or none for a page. */
   node: ReactNode | undefined;
   options: RenderComponentOptions;
   result: RenderServerResult;
-  /** A page, or a story in the layouts: Next's document in place of the preview's. */
-  ownsDocument: boolean;
 };
 
-// The story on the canvas: the one that counts. A render after it, or an
-// abort, ends a render.
+// The story on the canvas: the one that counts. A render after it, the
+// framework's `beforeEach` of the next one, or an abort, ends a render.
 let shown: Rendered | undefined;
+// The story that the framework's `beforeEach` left, which a render of the
+// same story again is compared with.
+let left: Rendered | undefined;
 
 /** Renders a server story with `renderServer()`. */
 export async function renderServerStory(
   { storyContext, storyFn, showMain, forceRemount }: RenderContext<NextjsRscRenderer>,
   canvasElement: HTMLElement,
-): Promise<() => Promise<void>> {
+): Promise<void> {
   const context = storyContext as Context;
   const { url, headers, proxy, layouts } = context.parameters.nextjs ?? {};
   const page = isPageStory(context);
   if (page && !url) throw pageWithoutUrl(context.id);
+  if (page && layouts) throw pageInLayouts(context.id);
   const node = page
     ? undefined
     : createElement(function Story(): ReactNode {
@@ -79,20 +95,13 @@ export async function renderServerStory(
         hostFiles: hostFilesOf(context.parameters.fileName as string | undefined),
         ...(layouts ? { layouts } : { container: canvasElement }),
       };
-  const nextjs = JSON.stringify(context.parameters.nextjs ?? {});
-  const before = shown;
-  const again = !forceRemount && before?.id === context.id && before.nextjs === nextjs;
+  const request = JSON.stringify(context.parameters.nextjs ?? {});
+  const before = left;
+  const again = !forceRemount && before?.id === context.id && before.request === request;
   // A page and the layouts have the document's `<body>`, which React
   // hydrates: Storybook's classes on it come first.
   const ownsDocument = page || layouts === true;
-  const rendered: Rendered = {
-    id: context.id,
-    nextjs,
-    node,
-    options,
-    result: undefined!,
-    ownsDocument,
-  };
+  const rendered: Rendered = { id: context.id, request, node, options, result: undefined! };
   shown = rendered;
   const superseded = () => shown !== rendered || context.abortSignal.aborted;
   const rendering = (async () => {
@@ -112,13 +121,14 @@ export async function renderServerStory(
       if (superseded()) return;
       const { status } = rendered.result.response;
       if (reported.length > 0 || status >= 500) {
-        // Next's error document has taken the preview's place.
-        await cleanup();
         throw reported[0] ?? new Error(`The server answered ${status} for the story.`);
       }
     } catch (error) {
       if (superseded()) return;
-      throw explainServerError(reported[0] ?? error, context.id);
+      // Storybook shows the error in its own elements of the document, which
+      // Next's error document, or a page that did not load, may have taken.
+      await leave(rendered);
+      throw explainServerError(reported[0] ?? error, context);
     } finally {
       window.removeEventListener("error", report);
     }
@@ -127,40 +137,57 @@ export async function renderServerStory(
     Object.assign(context, { canvasElement: document.body, canvas: within(document.body) });
   })();
   await untilAborted(rendering, context.abortSignal);
-  return () => leave(rendered);
 }
 
-// `cleanup()` leaves the page, and with it the URL of the page: the preview's
-// URL is back.
+// `cleanup()` leaves the page, and puts back the preview's URL of when the
+// page opened. Storybook writes the query of the next story while the page is
+// open, before it tears this one down, and a URL written then goes with the
+// page: written again, the preview is at the story that is selected, also
+// for a reload. Not a query of the page, after a change of the story file.
 async function leave(rendered: Rendered): Promise<void> {
   if (shown === rendered) shown = undefined;
+  const selection = new URLSearchParams(location.search);
   await cleanup();
+  if (selection.has("id") && selection.has("viewMode")) {
+    history.replaceState(history.state, "", `${location.pathname}?${selection}`);
+  }
 }
 
 /**
- * Leaves the page of a story that owns the document, as its teardown does.
- * After a change of the story or the preview file Storybook renders the
- * story again without a teardown, in its own elements of the document, which
- * the page has taken.
+ * The framework's `beforeEach`, the first hook of the project: `cleanup()`, as
+ * before a test, before the story's own `beforeEach`, whose cookies and
+ * storage are then there for the render. It runs for every render of a
+ * story, also with other args. What it returns Storybook runs as the story
+ * is torn down.
  */
-export async function leaveDocument(): Promise<void> {
-  if (shown?.ownsDocument) await leave(shown);
+export async function beforeEach(): Promise<() => Promise<void>> {
+  left = shown;
+  shown = undefined;
+  await cleanup();
+  return leaveShown;
 }
 
-// A new page load for the story: `cleanup()` leaves the story before, also
-// this one with other args.
+// Leaves the story on the canvas, as Storybook tears the story down: before
+// the next story, and also before it renders the story again after a change
+// of its file, in the elements of the document that a page has taken.
+async function leaveShown(): Promise<void> {
+  if (shown) await leave(shown);
+}
+
+// A new page load for the story. The framework's `beforeEach` has left the
+// story before.
 async function renderAnew(
   { node, options }: Rendered,
   showMain: () => void,
   ownsDocument: boolean,
 ): Promise<RenderServerResult> {
-  await cleanup();
   if (ownsDocument) showMain();
   return node === undefined ? renderServer(options) : renderServer(node, options);
 }
 
 // The same story with other args, in the same request. SB-2258 renders it
-// again in the page of `before`, which keeps its state; a page load until then.
+// again in the page of `before`, which keeps its state, and so the
+// framework's `beforeEach` has to keep that page; a page load until then.
 function renderAgain(
   _before: Rendered,
   rendered: Rendered,
@@ -194,7 +221,8 @@ function fromRoot(fileName: string): string {
 // Storybook aborts the render of a story it leaves, waits a few tasks for it
 // to end, and reloads the preview otherwise, at a URL that is the page's by
 // then. A page load takes longer: the render ends at the abort, and the
-// teardown leaves the page that may still load.
+// teardown, the cleanup of the framework's `beforeEach`, leaves the page that
+// may still load.
 function untilAborted(rendering: Promise<void>, signal: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
     if (signal.aborted) resolve();
@@ -206,10 +234,13 @@ function untilAborted(rendering: Promise<void>, signal: AbortSignal): Promise<vo
 // Flight cannot send a function to a Client Component, and React says so
 // without a word of where the function came from: an arg of the story, most
 // often a spy of `fn()`.
-function explainServerError(error: unknown, id: string): unknown {
+function explainServerError(error: unknown, { id, args }: Context): unknown {
   const message = error instanceof Error ? error.message : "";
   if (
-    !/(?:Functions|Event handlers) cannot be passed (?:directly )?to Client Component/.test(message)
+    !/(?:Functions|Event handlers) cannot be passed (?:directly )?to Client Component/.test(
+      message,
+    ) ||
+    !Object.values(args).some((arg) => typeof arg === "function")
   ) {
     return error;
   }

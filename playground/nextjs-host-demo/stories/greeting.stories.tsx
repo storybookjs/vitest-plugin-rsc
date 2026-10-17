@@ -1,6 +1,7 @@
 import type { Meta, StoryObj } from "@storybook/nextjs-vite-rsc";
-import { headers } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { expect, within } from "storybook/test";
+import { runInServerAction } from "vitest-plugin-rsc/nextjs/testing-library";
 import { Greeting } from "../app/components/greeting.tsx";
 import { Like } from "../app/components/like.tsx";
 
@@ -32,6 +33,30 @@ export const Default: Story = {
     const canvas = within(canvasElement);
     await expect(await canvas.findByText("Hello from Storybook")).toBeVisible();
     await expect(canvas.getByTestId("server-decorator")).toHaveAttribute("data-agent", "read");
+  },
+};
+
+// In the layouts of the app, which own the document, in place of the page at
+// `url`.
+export const InLayouts: Story = {
+  parameters: { nextjs: { url: "/", layouts: true } },
+  play: async ({ canvasElement }) => {
+    const main = within(canvasElement).getByRole("main");
+    await expect(await within(main).findByText("Hello from Storybook")).toBeVisible();
+  },
+};
+
+// What the story's `beforeEach` sets is there for its render: a cookie of
+// the app, set in a Server Action, and the browser's storage.
+export const Seeded: Story = {
+  beforeEach: async () => {
+    await runInServerAction(async () => (await cookies()).set("visitor", "Ada"));
+    localStorage.setItem("visitor", "Ada");
+  },
+  render: async () => <p>Visitor: {(await cookies()).get("visitor")?.value ?? "none"}</p>,
+  play: async ({ canvasElement }) => {
+    await expect(await within(canvasElement).findByText("Visitor: Ada")).toBeVisible();
+    await expect(localStorage.getItem("visitor")).toBe("Ada");
   },
 };
 

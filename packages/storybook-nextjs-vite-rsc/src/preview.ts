@@ -13,7 +13,13 @@ import {
   loadStoryFile,
   renderClientStory,
 } from "./client-story.ts";
-import { leaveDocument, render, renderServerStory } from "./server-story.tsx";
+import {
+  beforeEach,
+  isPageStory,
+  nothingToMount,
+  render,
+  renderServerStory,
+} from "./server-story.tsx";
 
 // The annotations of the framework, in place of the ones of
 // `@storybook/react` that render (see preset.ts). Each picks
@@ -21,7 +27,7 @@ import { leaveDocument, render, renderServerStory } from "./server-story.tsx";
 // (client-story.ts). The preview runs in the rsc layer, with the browser's
 // globals, as a test file does.
 
-export { render };
+export { beforeEach, render };
 
 export const parameters = { renderer: "react" };
 
@@ -29,17 +35,16 @@ export const parameters = { renderer: "react" };
 export const mount =
   (context: StoryContext<NextjsRscRenderer>) =>
   async (ui?: ReactNode): Promise<StoryContext<NextjsRscRenderer>["canvas"]> => {
-    if (ui != null) context.originalStoryFn = () => ui;
+    if (ui != null) {
+      // A client story has no page: it renders `ui`, as `@storybook/react` does.
+      if (isPageStory(context) && !isClientStory(context)) throw nothingToMount(context.id);
+      context.originalStoryFn = () => ui;
+    }
     await context.renderToCanvas();
     return context.canvas;
   };
 
 export const experimental_loadStoryFile = loadStoryFile;
-
-// What a `beforeEach` returns Storybook runs as a story is torn down, also
-// for a render of the story again after a change, which keeps what the story
-// rendered, and before that render.
-export const beforeEach = () => leaveDocument;
 
 // Storybook decorates a story once it is prepared, without its context, and
 // calls the result with the context of each render. A server story without

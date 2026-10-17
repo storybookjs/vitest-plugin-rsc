@@ -75,7 +75,40 @@ test("a client story renders in the browser layer, with fn() for play and Action
 test("a page story and a Server Action", async ({ page }) => {
   const canvas = await openStory(page, site!.url, "home--home");
   expect(await storyRun(page, canvas, "home--home")).toEqual(passed);
+  // The page owns the `<body>`, with the app's style. Selecting the story
+  // again leaves it as it is, but for Storybook's class of its main mode,
+  // which none of Storybook's layouts styles on its own.
+  const body = () =>
+    canvas.evaluate(() => ({
+      classes: document.body.className,
+      margin: getComputedStyle(document.body).margin,
+      root: !!document.getElementById("storybook-root"),
+    }));
+  expect(await body()).toEqual({ classes: "", margin: "32px", root: false });
+  await page.evaluate(() =>
+    (
+      window as { __STORYBOOK_ADDONS_CHANNEL__?: { emit(...args: unknown[]): void } }
+    ).__STORYBOOK_ADDONS_CHANNEL__!.emit("setCurrentStory", {
+      storyId: "home--home",
+      viewMode: "story",
+    }),
+  );
+  await expect.poll(async () => (await body()).classes).toBe("sb-show-main");
+  expect(await body()).toMatchObject({ margin: "32px", root: false });
+  // A story after the page has Storybook's document, its classes and root.
   expect(await runStory(page, canvas, "greeting--server-action")).toEqual(passed);
+  expect(await body()).toEqual({
+    classes: "sb-main-padded sb-show-main",
+    margin: "0px",
+    root: true,
+  });
+});
+
+test("a story in the layouts, and one whose beforeEach sets a cookie", async ({ page }) => {
+  const canvas = await openStory(page, site!.url, "greeting--in-layouts");
+  expect(await storyRun(page, canvas, "greeting--in-layouts")).toEqual(passed);
+  expect(await runStory(page, canvas, "greeting--seeded")).toEqual(passed);
+  expect(await runStory(page, canvas, "home--home")).toEqual(passed);
 });
 
 test("from a server story to a client story, to another, and back", async ({ page }) => {
@@ -94,8 +127,16 @@ test("from a server story to a client story, to another, and back", async ({ pag
     phase: "finished",
     reports: [],
   });
-  // The preview is at its own URL again, where Storybook fetches its index.
-  expect(new URL(canvas.url()).pathname).toBe("/iframe.html");
+  // The preview is at its own URL again, where Storybook fetches its index,
+  // with the story that is selected, also after a reload.
+  const atStory = () => {
+    const url = new URL(canvas.url());
+    return `${url.pathname}?id=${url.searchParams.get("id")}`;
+  };
+  expect(atStory()).toBe("/iframe.html?id=press-button--labelled");
+  await canvas.evaluate(() => location.reload());
+  expect(await rendered(canvas, "press-button--labelled")).toBe("finished");
+  expect(atStory()).toBe("/iframe.html?id=press-button--labelled");
 });
 
 test("new args: a server story loads its page again, a client story keeps its state", async ({
@@ -132,6 +173,19 @@ test("misuse says what to do instead", async ({ page, errors }) => {
   expect(await misuse(page, canvas, "misuse--function-arg", errors)).toContain(
     "is a function, like fn() of storybook/test",
   );
+  expect(await misuse(page, canvas, "misuse--throws-in-layouts", errors)).toContain(
+    "The story failed in the layouts",
+  );
+  expect(await misuse(page, canvas, "misuse--page-without-url", errors)).toContain(
+    "so it is a page of the app, which needs a URL",
+  );
+  expect(await misuse(page, canvas, "misuse--page-in-layouts", errors)).toContain(
+    "`layouts` is for a component",
+  );
+  // An exception of `play`, which Storybook shows in the Interactions panel.
+  const mounted = await runStory(page, canvas, "misuse--mount-on-page");
+  expect(mounted.reports.join("\n")).toContain("which has nothing to mount");
+  errors.list.splice(0);
   expect(await misuse(page, canvas, "misuse-client--async-render", errors)).toContain(
     "is an async Client Component",
   );

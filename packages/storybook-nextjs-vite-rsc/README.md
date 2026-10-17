@@ -116,12 +116,55 @@ export const Pressed: StoryObj<typeof meta> = {
 What the file imports is client code too, so a client story cannot render a
 Server Component or call `next/headers`.
 
+## Pages
+
 A server story without `component` and `render` is the page of the app at
-its URL:
+its URL, in its layouts:
 
 ```ts
 export default { title: "Pages/Notes" };
 export const Notes = { parameters: { nextjs: { url: "/notes" } } };
+```
+
+A page has no props. Its `args` are inputs of the story's `beforeEach`,
+which runs before the request, so a control can seed the data the page
+reads. A new value is a new page load.
+
+```ts
+export const Notes = {
+  parameters: { nextjs: { url: "/notes" } },
+  args: { count: 3 },
+  beforeEach: ({ args }) => seedNotes(args.count),
+};
+```
+
+The page owns the document. In `play`, `canvas` and `canvasElement` are
+its `<body>`: query with `canvas`, not `screen` of `storybook/test`, which
+queries the `<body>` of Storybook that the page replaced. A `<Link>`, a
+Server Action and `redirect()` keep that `<body>`. After a navigation that
+loads a new document, query `within(document.body)`.
+
+A page renders without the decorators, which have no node to decorate,
+and `parameters.layout` does not style it: the app styles its own `<body>`.
+`layouts` is for a component, and `mount(ui)` has no story to replace: both
+fail with a message.
+
+## Before A Story
+
+Before each story the framework leaves the previous one and clears the
+app's cookies and storage, as before a test, and then runs the story's
+`beforeEach`. What that sets is there for the render: a cookie of the app,
+set in `runInServerAction()` of `vitest-plugin-rsc/nextjs/testing-library`,
+or an item of `localStorage`.
+
+```ts
+export const SignedIn = {
+  beforeEach: async () => {
+    await runInServerAction(async () => {
+      (await cookies()).set("session", "ada");
+    });
+  },
+};
 ```
 
 ## `parameters.nextjs`
@@ -134,8 +177,9 @@ The request a server story renders in:
   like `cookie`.
 - `proxy`: whether `proxy.ts` and the routing of `next.config` take the
   request. Defaults to `true` for a page, `false` for a component.
-- `layouts`: renders the story in place of the page at `url`, in the
-  layouts of the app, which then own the document. Defaults to `false`.
+- `layouts`: renders the component in place of the page at `url`, in the
+  layouts of the app, which then own the document, as a page does. Not for
+  a page. Defaults to `false`.
 
 A new value of an arg, from the Controls panel, renders the story again in
 a new request.

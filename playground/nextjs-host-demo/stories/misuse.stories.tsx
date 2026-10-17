@@ -3,8 +3,8 @@ import { useState } from "react";
 import { fn } from "storybook/test";
 import { PressButton } from "../app/components/press-button.tsx";
 
-// Server stories that do what only a client story can: each shows an error
-// that says what to do instead.
+// Server stories that a user can get wrong: each shows an error that says
+// what to do instead.
 export default { tags: ["!test"] } satisfies Meta;
 
 export const HookOnServer: StoryObj = {
@@ -17,4 +17,27 @@ export const HookOnServer: StoryObj = {
 export const FunctionArg: StoryObj<typeof PressButton> = {
   render: ({ label, onPress }) => <PressButton label={label} onPress={onPress} />,
   args: { label: "Press", onPress: fn() },
+};
+
+// A story that fails while the layouts of the app own the document: the
+// error shows in Storybook's own document again.
+export const ThrowsInLayouts: StoryObj = {
+  parameters: { nextjs: { url: "/", layouts: true } },
+  render: () => {
+    throw new Error("The story failed in the layouts");
+  },
+};
+
+// Pages: a story without a component and a render.
+export const PageWithoutUrl: StoryObj = {};
+
+export const PageInLayouts: StoryObj = {
+  parameters: { nextjs: { url: "/", layouts: true } },
+};
+
+export const MountOnPage: StoryObj = {
+  parameters: { nextjs: { url: "/" } },
+  play: async ({ mount }) => {
+    await mount(<p>A component</p>);
+  },
 };

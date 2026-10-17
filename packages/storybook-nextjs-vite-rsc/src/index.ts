@@ -6,6 +6,7 @@ import type {
   ArgsFromMeta,
   ArgsStoryFn,
   ArgTypes,
+  Canvas,
   CompatibleString,
   ComponentAnnotations,
   DecoratorFunction,
@@ -41,7 +42,8 @@ export type NextjsParameters = {
     /**
      * The URL of the request: what `usePathname()`, `useParams()` and
      * `useSearchParams()` read. A story without `component` and `render`
-     * is the page of the app at this URL. Defaults to `/`.
+     * is the page of the app at this URL, which it needs. For a component,
+     * defaults to `/`.
      */
     url?: string;
     /** Headers of the requests to the app, next to a browser's, like `cookie`. */
@@ -52,8 +54,9 @@ export type NextjsParameters = {
      */
     proxy?: boolean;
     /**
-     * Renders the story in place of the page at `url`, in the layouts of the
-     * app, which then own the document. Defaults to `false`.
+     * Renders the component in place of the page at `url`, in the layouts of
+     * the app, which then own the document. Not for a page, which has its
+     * layouts. Defaults to `false`.
      */
     layouts?: boolean;
   };
@@ -66,6 +69,8 @@ export type NextjsParameters = {
 export interface NextjsRscRenderer extends WebRenderer {
   component: JSXElementConstructor<this["T"]>;
   storyResult: ReactNode | Promise<ReactNode>;
+  /** In `play`: renders the story, or `ui` in its place. */
+  mount: (ui?: ReactNode) => Promise<Canvas>;
 }
 
 interface NextjsRscTypes extends NextjsRscRenderer {
