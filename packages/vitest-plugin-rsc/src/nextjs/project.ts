@@ -186,6 +186,8 @@ export type NextProject = {
   assetPath: string;
   /** A file the loaders emitted for the browser, by the path the browser asks for. */
   readEmittedFile(pathname: string): { body: Buffer; contentType: string } | undefined;
+  /** The files the loaders have emitted so far, for a static build to write. */
+  emittedFiles(): { pathname: string; body: Buffer }[];
   /**
    * Answers a request for `/_next/image` with Next's image optimizer, as
    * `next start` does, and resolves with whether it was one. `serveFile`
@@ -209,13 +211,24 @@ const adapterPath = fileURLToPath(
   new URL(`./adapter${path.extname(import.meta.url)}`, import.meta.url),
 );
 
+export type NextProjectOptions = {
+  /** The code that Next's runtime and React run: see build.ts. */
+  build?: NextBuild;
+  /**
+   * For a static build, which has no server next to the browser: what the server
+   * outside the browser does, the app does without. That is Next's image
+   * optimizer, so `next/image` asks for the image itself.
+   */
+  static?: boolean;
+};
+
 export async function loadNextProject(
   root: string,
   projectRequire: NodeJS.Require = createRequire(path.join(root, "package.json")),
-  build: NextBuild = "development",
+  { build = "development", static: isStatic = false }: NextProjectOptions = {},
 ): Promise<NextProject> {
   // The project, its `next.config`, and the build code of its `next`.
-  const context = await openNextProject(root, projectRequire);
+  const context = await openNextProject(root, projectRequire, { static: isStatic });
   // The app: its routes, its middleware, and the server in front of them.
   const app = await discoverAppRoutes(context);
   const middleware = await findMiddleware(context);

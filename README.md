@@ -37,6 +37,7 @@ Pick one piece of the app — a wishlist carousel, a notes form, a settings pane
   - [Fonts, Images And Styles](#fonts-images-and-styles)
   - [Server Code In The Browser](#server-code-in-the-browser)
   - [Example: Drizzle + PGlite](#example-drizzle--pglite)
+  - [A Static Build](#a-static-build)
   - [API](#api)
 - [React Server Components Without Next.js](#react-server-components-without-nextjs)
 - [Server Code That Runs In A Browser](#server-code-that-runs-in-a-browser)
@@ -942,6 +943,22 @@ afterAll(async () => {
 
 App code keeps importing `db` from `#lib/db.ts`. Tests then seed rows with the same `db.insert(...)` calls the app uses, like the test under [Why This Exists](#why-this-exists).
 
+### A Static Build
+
+`vite build` builds the app into a static site: the three layers, with the server in the browser of whoever opens the page, and no server behind it. That is what a host like `storybook build` needs, so the directory can go to a static host or to Chromatic. The plugin builds with Vite's app builder, as `vite build` does: `await (await createBuilder(config, null)).buildApp()`. Vite's `build()` builds one environment, so the plugin stops it with an error that says so, and it does not build in `--watch` mode.
+
+Everything that runs with the dev server runs from the build: pages and nodes, Client Components and their references, Server Actions, route handlers, the proxy, cookies, fonts, images and stylesheets. What differs:
+
+- React is its development build, as in a test run, unless `build: "production"` is set: see [Development Or Production](docs/next-routes.md#development-or-production). The app's own `process.env.NODE_ENV` is that value too, not `"test"`.
+- `images.unoptimized` is on, unless the app has an image loader of its own: there is no image optimizer to ask.
+- The code of the ssr and the browser layer is one file each, `vitest-plugin-rsc/*/modules.json`, which a tab fetches once. Its name does not change with its content, nor does `vitest-plugin-rsc/next-stylesheets.json`: the browser asks the server whether its copy is current, so serve them like `index.html`, and compressed, as a layer is a few MB of JavaScript.
+- The CSS of a route is linked by Next, as with a dev server: a file per stylesheet under `/_next/static/css/`, with the stylesheets of every route in `vitest-plugin-rsc/next-stylesheets.json`. A node has the CSS of the route it renders in, not yet the CSS that a file of the host imports.
+- The files of the build name each other by relative paths. To serve the build from a path, build it with that `base`, or with `base: "./"`.
+- The files of the build name the routes of the app by their paths on the machine that built it, as Next's loader tree does, and the Next config in the layers has its `configFile` and roots as absolute paths. A build is not the same byte for byte on another machine. The next PRs of the stack take the machine paths out.
+- `experimental.inlineCss` is not honoured in a build: the stylesheets are linked.
+
+`playground/nextjs-e2e-demo` builds its app with a page of its own, `index.html`, that calls `renderServer()` as a test does, and a test project opens the build in a browser from a server of files: see its `build-test/`.
+
 ### API
 
 ```ts
@@ -1081,7 +1098,7 @@ For the full walkthrough, see [docs/next-routes.md](docs/next-routes.md). [docs/
 
 ## Playgrounds
 
-- `playground/nextjs-e2e-demo` — a small Next.js app with a test for every feature of the Next.js support. Most samples above come from its tests.
+- `playground/nextjs-e2e-demo` — a small Next.js app with a test for every feature of the Next.js support. Most samples above come from its tests. Its `build-test/` builds the app with `vite build` and opens the build in a browser: see [A Static Build](#a-static-build).
 - `playground/nextjs-notes-demo` — a fuller Next.js notes app with Better Auth, Drizzle, PGlite test databases, and shadcn/ui. Its tests open whole routes with the database and the session mocked in the test runtime. This is the repository's acceptance app.
 - `playground/rsc-vitest-demo` — a minimal non-Next RSC app. Use this as the smallest end-to-end example of `vitest-plugin-rsc` on its own.
 

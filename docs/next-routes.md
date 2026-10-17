@@ -676,6 +676,24 @@ At the next lookup the plugin answers for a test file itself. The test file belo
 - **Not known:** a test that loads a route only some of the time, like one behind a condition on the date or one that is skipped while it runs. A file that is not a module: one the app reads from disk, or one in `public/`. A file Tailwind scans is not a dependency of a test, though a class in it adds to the stylesheet. And a file that is edited while a run is under way, outside watch mode, because its hash is taken when its test file ends.
 - **One lookup at a time.** Vite keeps the empty test file, and the plugin releases it when a run starts. Code that looks up twice without a run in between gets the first answer.
 
+## A Static Build
+
+`vite build` builds the app into a directory of files: see [A Static Build](../README.md#a-static-build) in the README. The build is one of Vite's app builder, so each environment is built with the others in sight, in this order:
+
+1. The rsc layer, to find the `"use client"` files it refers to. Vite RSC collects them as it compiles.
+2. The browser layer, as a scan: it finds the `"use server"` files the Client Components import, which the rsc layer must export. Nothing is written.
+3. The rsc layer again, now with every server reference, and then the browser and the ssr layer with every client reference.
+
+The rsc layer is the `client` environment, which Vite builds as the page: `index.html` of the host and the chunks of the app's server code. The other two layers run in module runners, as with the dev server (see [Three Layers, Three Environments](#three-layers-three-environments)). A dev server transforms each of their modules on request. A build has no server, so the plugin writes each layer into one file, `vitest-plugin-rsc/<environment>/modules.json`: every chunk of the layer, transformed for the module runner, by its id. A tab fetches the file once and the runner evaluates a module from it as the layer imports it. Relative imports between the chunks are the paths of the build, and `import.meta.resolve()` resolves against the URL the chunk would have had as a file.
+
+With a dev server, the id of a module in a Flight payload is the one Vite imports it by. In a build Vite RSC names a reference with a hash of its path, so the plugin gives each layer a list of the modules a payload can refer to, by that id: `virtual:vitest-plugin-rsc/next-client-references` for the ssr and the browser layer, and `virtual:vitest-plugin-rsc/next-server-references` for the rsc layer. A dev server has neither: the lists are `undefined` there, and the layers import by id.
+
+The build can be served from any path, so a file of it names another by the way from itself. Where the plugin's own code, the output of Next's image and font loaders, and a stylesheet need the directory of the build, they have a placeholder: `__VITEST_PLUGIN_RSC_BUILD_DIR__` in JavaScript and `//vitest-plugin-rsc-build-dir` in CSS. Once a chunk has its place in the build, the placeholder becomes the relative path from that chunk to the directory of the build, resolved against the chunk's `import.meta.url`. The files of the host's own build, like the scripts of `index.html`, are named by Vite, from `base`.
+
+The stylesheets of a route are the plugin's to collect, as with the dev server (see [Stylesheets](#stylesheets)): a build knows them from the module graph of each page, as the rsc layer is built, and emits a file per stylesheet under `/_next/static/css/`, named with a hash of its content. The list of each route's stylesheets is `vitest-plugin-rsc/next-stylesheets.json`, and the rsc layer reads it in the browser when Next asks for the stylesheets of a route. Fonts of `next/font` and images that Next's loaders emit are files of the build too, under `/_next/static/media/`.
+
+What a build has no equivalent of: the optimizer, so the plugin compiles the dependencies that the optimizer would have compiled with a plugin of the build, and `images.unoptimized` is on in the Next config it loads, unless the app has an image loader of its own.
+
 ## Not Yet
 
 - Metadata files like `icon.png` and `sitemap.ts`. The plugin does not run Next's metadata loaders yet. When a run starts, it warns once about the app's metadata files, apart from `favicon.ico`. A page renders without them, and their routes are not served.

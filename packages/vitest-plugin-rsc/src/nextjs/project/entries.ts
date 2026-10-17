@@ -8,6 +8,7 @@ import type { NextContext } from "./context.ts";
 import type { RunLoader } from "./loaders.ts";
 import type { AppRoutes } from "./routes.ts";
 import type { FoundMiddleware } from "./routing.ts";
+import { componentPagePath } from "../styles-shared.ts";
 
 // The entry of a route: the module of the rsc layer that Next's build makes
 // for it, and what the plugin makes for the route of a node.
@@ -33,7 +34,7 @@ const componentLayouts = "(vitest-plugin-rsc-layouts)";
  * What the loader tree of the route of a node names its page, where a page of
  * the app has its file. Next looks up the stylesheets of the node by it.
  */
-export const componentPagePath = "vitest-plugin-rsc/component";
+export { componentPagePath };
 // The node as the page of a loader tree, and the import that goes with it:
 // see `loadComponent()` in rsc.ts.
 const componentPage = `page: [__next_component__, ${JSON.stringify(componentPagePath)}]`;

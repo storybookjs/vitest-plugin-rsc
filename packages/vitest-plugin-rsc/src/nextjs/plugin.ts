@@ -8,6 +8,7 @@ import {
   normalizePath,
   parseAst,
   parseAstAsync,
+  transformWithOxc,
   type Plugin,
   type ResolvedConfig,
 } from "vite";
@@ -18,12 +19,19 @@ import { nextBuilds, nextProductionPlugin, type NextBuild } from "./build.ts";
 import { clientFiles } from "./client-files.ts";
 import { createCompilePlugin, createDependencyCompilePlugin } from "./compile.ts";
 import { createNodePlatform } from "./node-platform.ts";
-import { loadNextProject, type NextLayer, type NextProject } from "./project.ts";
+import {
+  loadNextProject,
+  type ComponentRoute,
+  type NextLayer,
+  type NextProject,
+  type NextRoute,
+} from "./project.ts";
 import { moduleFileAt } from "./project/context.ts";
-import { createServerCode, type ServerCodeOptions } from "./server-code.ts";
+import { compileServerCode, createServerCode, type ServerCodeOptions } from "./server-code.ts";
 import { affectedTests } from "./affected/index.ts";
 import { createPathsPlugin } from "./paths.ts";
-import { createStylesPlugins } from "./styles.ts";
+import { nextStaticBuild } from "./static-build.ts";
+import { createStyles } from "./styles.ts";
 
 // Each layer of Next is a Vite environment, and all three run in the
 // browser (docs/next-routes.md). Where Next's own bundler config says a module
@@ -248,6 +256,9 @@ function createLayerResolver(getProject: () => NextProject, layer: NextLayer) {
       name: `vitest-plugin-rsc:next-resolve:${layer}`,
       enforce: "pre",
       async resolveId(source, importer, options) {
+        // One bridge module imports another by its id. A dev server takes
+        // such an id as it is, and a build asks.
+        if (source.startsWith(bridgePrefix) || source === emptyModuleId) return source;
         if (source.startsWith("\0")) return;
         // The shim wraps the module it replaces.
         if (importer === `${bridgePrefix}server-reference-info`) {
@@ -527,6 +538,24 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
   const resolvers = Object.fromEntries(
     layers.map((layer) => [layer, createLayerResolver(getProject, layer)]),
   ) as Record<NextLayer, LayerResolver>;
+  // The CSS of the app, as the stylesheets of a route.
+  let pageRoutes: { of: NextProject; routes: Map<string, NextRoute | ComponentRoute> } | undefined;
+  const styles = createStyles({
+    getProject,
+    environments: environmentOf,
+    isServerCode: (file) => serverCode.isServerCode(file, "rsc"),
+    isHostFile: serverCode.isHostFile,
+    pageRoutes() {
+      if (pageRoutes?.of !== project) {
+        const routes = [...project.routes, ...project.componentRoutes].flatMap((route) =>
+          route.kind === "page" ? [[entryOf(route), route] as const] : [],
+        );
+        pageRoutes = { of: project, routes: new Map(routes) };
+      }
+      return pageRoutes.routes;
+    },
+    lists: routeKinds.map((kind) => `\0${routeLists[kind]}`),
+  });
   // The constants of what Next's build generates for the rsc layer, the entry
   // of a route and of the proxy: Next's code, so with Next's NODE_ENV.
   const generatedDefines = () => ({
@@ -557,13 +586,17 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
     {
       name: "vitest-plugin-rsc:next",
       enforce: "pre",
-      async config(config) {
-        project = await loadNextProject(
-          path.resolve(config.root ?? process.cwd()),
-          undefined,
+      async config(config, { command }) {
+        const isBuild = command === "build";
+        project = await loadNextProject(path.resolve(config.root ?? process.cwd()), undefined, {
           build,
-        );
+          static: isBuild,
+        });
         serverCode.configure(project.root);
+        // A static build runs without Vitest, so it has no test files: every
+        // file of the project is server code in the rsc layer, but for the
+        // `browserModules`, which the page of the host is in.
+        if (isBuild) serverCode.addTestFiles(() => false);
 
         // What the route entries import from Next, to pre-bundle it. Every
         // route is read: which of Next's builtin boundaries a loader tree
@@ -717,6 +750,29 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
             ? { oxc: { jsx: { development: false } } }
             : {};
 
+        // A static build has no dependency optimizer: a dependency goes
+        // through the plugins like a source file, and gets the constants of
+        // its layer there, see `dependencyBuildPlugin()`. Not every module:
+        // with a dev server a source file has none of them, also a file of
+        // the host. `process.env` stays the one of the page, which Next's
+        // server reads as it runs, and which Vite would make an empty object.
+        // NODE_ENV is the `build` option's for every module: without Vitest
+        // the app has no NODE_ENV of its own, and React's build follows it,
+        // as the aliases of a layer do (project/layers.ts).
+        const nodeEnv = JSON.stringify(build);
+        const builtLayer = (layer: NextLayer) =>
+          isBuild && {
+            define: {
+              "process.env.NODE_ENV": nodeEnv,
+              "global.process.env.NODE_ENV": nodeEnv,
+              "globalThis.process.env.NODE_ENV": nodeEnv,
+              // The name Vite RSC gives the `__webpack_require__` of a
+              // Flight client, before Vite replaces the constants.
+              ...(layer === "browser" && { __vite_rsc_require__: `${registry}.browserRequire` }),
+            },
+            build: { rolldownOptions: { shimMissingExports: true } },
+          };
+
         return {
           ...jsx,
           // Vite bundles the CSS of the app, with Next's PostCSS plugins and
@@ -724,6 +780,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
           css: cssOptions,
           environments: {
             [environmentOf.rsc]: {
+              ...builtLayer("rsc"),
               optimizeDeps: {
                 ...optimizeDeps("rsc"),
                 // A route loads when it is first requested, and so does the
@@ -733,6 +790,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
               },
             },
             [environmentOf.ssr]: {
+              ...builtLayer("ssr"),
               consumer: "client",
               resolve: {
                 // Vite's conditions for a browser, which this is.
@@ -753,9 +811,19 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
                 exclude: ["vitest-plugin-rsc", "@vitejs/plugin-rsc"],
               },
             },
-            [environmentOf.browser]: { optimizeDeps: optimizeDeps("browser") },
+            [environmentOf.browser]: {
+              ...builtLayer("browser"),
+              optimizeDeps: optimizeDeps("browser"),
+            },
           },
         };
+      },
+      // After every `config` hook: the plugin of ../index.ts has Vite make
+      // `process.env` an empty object in the layers, for a dev server.
+      configEnvironment(name, _config, { command }) {
+        if (command === "build" && Object.values(environmentOf).includes(name)) {
+          return { keepProcessEnv: true };
+        }
       },
       // What the app has and does not get here: said once, when a run starts.
       configResolved(config) {
@@ -875,18 +943,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
       clientReferenceOf,
     }),
     serverCode.plugin({ [environmentOf.rsc]: "rsc", [environmentOf.ssr]: "ssr" }),
-    // The CSS of the app, as the stylesheets of a route.
-    ...createStylesPlugins({
-      getProject,
-      environments: environmentOf,
-      isServerCode: (file) => serverCode.isServerCode(file, "rsc"),
-      isHostFile: serverCode.isHostFile,
-      routeOf: (entry) =>
-        [...project.routes, ...project.componentRoutes].find(
-          (route) => route.kind === "page" && entryOf(route) === entry,
-        ),
-      lists: routeKinds.map((kind) => `\0${routeLists[kind]}`),
-    }),
+    ...styles.plugins,
     createCompilePlugin(
       getProject,
       (environment) => layers.find((layer) => environmentOf[layer] === environment),
@@ -897,5 +954,61 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
       applyToEnvironment: (environment: { name: string }) =>
         environment.name === environmentOf[layer],
     })),
+    // What the dependency optimizer does to a dependency, for a static build,
+    // which has no optimizer.
+    ...layers.map((layer) => dependencyBuildPlugin(getProject, serverCode, layer)),
+    { ...flightConsolePlugin(), apply: "build" },
+    nextStaticBuild({
+      environments: environmentOf,
+      entries: { ssr: "vitest-plugin-rsc/nextjs/ssr", browser: "vitest-plugin-rsc/nextjs/client" },
+      emittedFiles: () => [...project.emittedFiles(), ...styles.builtFiles()],
+    }),
   ];
+}
+
+// What the dependency optimizer does to a package for a layer, for a static
+// build, which has no optimizer: Next's compiler for a package that calls
+// `next/font`, the constants of the layer, and for a server layer what makes
+// a module server code. Vite RSC makes the client references of Next's own
+// `"use client"` files itself, as a build runs every module through the
+// plugins (`nextClientBoundaryPlugin()` is for the optimizer).
+function dependencyBuildPlugin(
+  getProject: () => NextProject,
+  serverCode: ReturnType<typeof createServerCode>,
+  layer: NextLayer,
+): Plugin {
+  const compile = createDependencyCompilePlugin(getProject, layer);
+  return {
+    name: `vitest-plugin-rsc:next-build-dependency:${layer}`,
+    apply: "build",
+    applyToEnvironment: (environment) => environment.name === environmentOf[layer],
+    async transform(code, id) {
+      const file = id.split("?")[0]!;
+      if (!normalizePath(file).includes("/node_modules/") || !/\.[cm]?js$/.test(file)) return;
+      const compiled = await compile.transform(code, file);
+      const source = compiled?.code ?? code;
+      // The ones it names: most modules name none.
+      const define = Object.fromEntries(
+        Object.entries(definesOf(getProject(), layer)).filter(([key]) =>
+          source.includes(key.replace(/^typeof /, "")),
+        ),
+      );
+      const isServerCode = layer !== "browser" && serverCode.isServerCode(file, layer);
+      if (!isServerCode && Object.keys(define).length === 0) return compiled;
+      try {
+        const defined = isServerCode
+          ? await compileServerCode(source, file, registry, define)
+          : await transformWithOxc(source, file, { lang: "js", define });
+        return defined ?? compiled;
+      } catch (error) {
+        // JSX in a `.js` file, for one. The bundler may still take it.
+        const reason = String(error instanceof Error ? error.message : error);
+        this.warn(
+          `vitest-plugin-rsc: ${file} keeps the constants of Next's ${layer} layer, it does not ` +
+            `parse as JavaScript. ${reason.replace(/\s+/g, " ")}`,
+        );
+        return compiled;
+      }
+    },
+  };
 }

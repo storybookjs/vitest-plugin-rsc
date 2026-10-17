@@ -5,7 +5,8 @@
   "scripts": {
     "dev": "next dev",
     "test": "vitest",
-    "test:run": "vitest run"
+    "test:run": "vitest run",
+    "build": "NODE_OPTIONS='--conditions=vitest-plugin-rsc-source' vite build --configLoader native"
   },
   "dependencies": {
     "@next/routing": "16.4.0",

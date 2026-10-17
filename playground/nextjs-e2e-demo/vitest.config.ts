@@ -137,7 +137,8 @@ export default defineProject({
   test: {
     name: "nextjs-e2e-demo",
     include: ["**/*.test.{ts,tsx}"],
-    exclude: ["node_modules"],
+    // The build and its test run without Vitest: see vite.config.ts.
+    exclude: ["node_modules", "build-test/**", "dist/**"],
     provide: { build, nextReact },
     browser: {
       enabled: true,
