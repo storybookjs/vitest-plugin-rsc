@@ -17,8 +17,11 @@ unlinkClientStylesheets();
 
 // The node of a test has the stylesheets of the files that render it: the
 // setup files, in the order of the config, and the test file, which Vitest
-// gives a `beforeAll` of a setup file. See `nodeFiles` in registry.ts.
-beforeAll((_, suite) => {
+// gives a `beforeAll` of a setup file as its second argument. The first is
+// the fixtures, which Vitest reads off the parameter: it has to be a pattern.
+// See `nodeFiles` in registry.ts.
+// oxlint-disable-next-line no-empty-pattern
+beforeAll(({}, suite) => {
   const { filepath } = suite.file;
   registry.nodeFiles = () => [...server.config.setupFiles, filepath];
 });
