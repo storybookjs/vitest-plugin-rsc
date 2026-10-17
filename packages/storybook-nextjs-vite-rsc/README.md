@@ -157,12 +157,18 @@ error that says so.
 The CSS that the preview file and a story file import is the story's, in
 both kinds of story.
 
+## After A Change
+
+A change of a story file renders its stories again in place. A change of
+the code of the app, or of the preview file and what it imports, loads the
+preview again: the server code of the app runs once per document.
+
 ## Not In This Version
 
 - Docs pages and MDX.
 - A new value of an arg renders the story again in place, with the state it
   has: now it is a new request.
-- Hot reload of a module that a client story imports, without a reload of
-  the preview.
+- A change of a component that only client stories import: it shows once
+  the preview loads again.
 - Next's router in a client story: `useRouter()` throws there, and
   `usePathname()` returns `null`. A server story has the router.

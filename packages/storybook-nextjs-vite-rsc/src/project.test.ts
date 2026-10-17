@@ -18,9 +18,7 @@ test("the preview file, and the directories from the one they are both in", () =
   });
   expect(code).toBe(
     [
-      'import * as evaluated from "/home/me/repo/apps/web/.storybook/preview.tsx";',
-      "let preview = evaluated;",
-      'import.meta.hot?.accept("/home/me/repo/apps/web/.storybook/preview.tsx", (next) => { if (next) preview = next; });',
+      'import * as preview from "/home/me/repo/apps/web/.storybook/preview.tsx";',
       "export { preview };",
       'export const previewFile = ".storybook/preview.tsx";',
       'export const root = "apps/web";',

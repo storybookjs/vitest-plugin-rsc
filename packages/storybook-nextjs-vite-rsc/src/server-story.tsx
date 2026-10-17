@@ -40,10 +40,6 @@ const pageWithoutUrl = (id: string) =>
       `a story of a component, give it a \`component\` or a \`render\`.`,
   );
 
-// The path of the preview, which the page of a story moves away from.
-// Storybook names the story in the query.
-const previewPath = window.location.pathname;
-
 // What a server story was rendered with, and what `renderServer()` gave.
 type Rendered = {
   id: string;
@@ -134,12 +130,11 @@ export async function renderServerStory(
   return () => leave(rendered);
 }
 
+// `cleanup()` leaves the page, and with it the URL of the page: the preview's
+// URL is back.
 async function leave(rendered: Rendered): Promise<void> {
   if (shown === rendered) shown = undefined;
   await cleanup();
-  if (window.location.pathname !== previewPath) {
-    window.history.replaceState(null, "", previewPath + window.location.search);
-  }
 }
 
 /**

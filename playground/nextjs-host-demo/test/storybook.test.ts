@@ -114,12 +114,13 @@ test("new args: a server story loads its page again, a client story keeps its st
     .toBe(1);
 });
 
-// A story that does what only the other kind of story can.
+// A story that does what only the other kind of story can: the message that
+// Storybook shows for it. The page logs the error too, which the test takes
+// from `errors`, so that the end of the test checks the stories after it.
 async function misuse(page: Page, canvas: Frame, story: string, errors: { list: string[] }) {
   await runStory(page, canvas, story);
   const message = (await canvas.locator("#error-message").textContent()) ?? "";
-  // What the page logged of it.
-  errors.list.length = 0;
+  expect(errors.list.splice(0), `what the page logged of ${story}`).not.toEqual([]);
   return message;
 }
 

@@ -2,7 +2,7 @@
 
 // The virtual module of project.ts.
 declare module "virtual:@storybook/nextjs-vite-rsc/project" {
-  /** The exports of `.storybook/preview.tsx`, or none: the last evaluation. */
+  /** The exports of `.storybook/preview.tsx`, or none. */
   export const preview: Record<string, unknown>;
   /** The preview file, from the root of the project. */
   export const previewFile: string | undefined;

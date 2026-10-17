@@ -1,5 +1,5 @@
 import path from "node:path";
-import { normalizePath, type Plugin } from "vite";
+import { normalizePath, type EnvironmentModuleNode, type Plugin } from "vite";
 
 // What the preview knows of the project, as a virtual module: the preview
 // file of `.storybook/`, and where Storybook names a story file from. Both
@@ -8,11 +8,12 @@ import { normalizePath, type Plugin } from "vite";
 // preview file is evaluated in both, as a module without a directive that a
 // Server Component and a Client Component both import is in Next.
 //
-// In the rsc layer its exports are the ones Storybook has, as a client story
-// tells the decorators of the preview file by their identity. Storybook takes
-// a change of the file in place, and so does the module: an importer of the
-// file that took it again would import it at another URL after a reload,
-// which is another evaluation of it.
+// In the rsc layer its exports are the ones Storybook has: a client story
+// tells the decorators of the preview file apart by their identity. Storybook
+// loads the preview again after a change of the file, and so does the module
+// after a change of a module that the file imports: one importer that took
+// the change in place would have another evaluation of the file than the
+// other.
 
 export const projectModuleId = "virtual:@storybook/nextjs-vite-rsc/project";
 
@@ -33,13 +34,7 @@ export function projectPlugin({ root, workingDir, previewFile }: Project): Plugi
   const base = commonDir(root, workingDir);
   const preview = previewFile && normalizePath(previewFile);
   const code = [
-    ...(preview
-      ? [
-          `import * as evaluated from ${JSON.stringify(preview)};`,
-          "let preview = evaluated;",
-          `import.meta.hot?.accept(${JSON.stringify(preview)}, (next) => { if (next) preview = next; });`,
-        ]
-      : ["const preview = {};"]),
+    preview ? `import * as preview from ${JSON.stringify(preview)};` : "const preview = {};",
     "export { preview };",
     `export const previewFile = ${JSON.stringify(preview && path.posix.relative(root, preview))};`,
     `export const root = ${JSON.stringify(path.posix.relative(base, root))};`,
@@ -49,7 +44,24 @@ export function projectPlugin({ root, workingDir, previewFile }: Project): Plugi
     name: "storybook-nextjs-vite-rsc:project",
     resolveId: (source) => (source === projectModuleId ? `\0${projectModuleId}` : undefined),
     load: (id) => (id === `\0${projectModuleId}` ? code : undefined),
+    hotUpdate({ modules }) {
+      if (this.environment.name !== "client" || !preview) return;
+      if (!modules.some((module) => isOrIsImportedBy(module, preview))) return;
+      this.environment.hot.send({ type: "full-reload" });
+      return [];
+    },
   };
+}
+
+// Whether a module is the file, or one that the file imports, also through
+// other modules.
+function isOrIsImportedBy(module: EnvironmentModuleNode, file: string): boolean {
+  const seen = new Set([module]);
+  for (const node of seen) {
+    if (node.file === file) return true;
+    for (const importer of node.importers) seen.add(importer);
+  }
+  return false;
 }
 
 function commonDir(a: string, b: string): string {
