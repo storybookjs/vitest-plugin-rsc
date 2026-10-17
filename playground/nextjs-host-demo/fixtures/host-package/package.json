@@ -1,0 +1,21 @@
+{
+  "name": "host-package",
+  "version": "1.0.0",
+  "private": true,
+  "description": "A package of the host in node_modules, as a framework of Storybook is: see ../../vite.config.ts.",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "default": "./index.js"
+    },
+    "./client-greeting": {
+      "types": "./client-greeting.d.ts",
+      "default": "./client-greeting.js"
+    }
+  },
+  "peerDependencies": {
+    "host-report": "*",
+    "react": "*"
+  }
+}

@@ -1,20 +1,39 @@
 import type { Plugin } from "vite";
 import { expect, test } from "vitest";
 import { hostModulePrefix, isHostModule } from "../host-module.ts";
-import { clientFiles, renderServerError } from "./client-files.ts";
+import { clientFiles, fileOfModule, renderServerError } from "./client-files.ts";
 
 const testingLibrary = {
   specifier: "vitest-plugin-rsc/nextjs/testing-library",
   file: "/plugin/nextjs/index.js",
 };
 
-// The plugins, for a project whose host files are its test files and a setup
-// file, and whose host has the packages of Vitest.
-const isHostFile = (file: string) => /\.test\.tsx$|\/vitest\.setup\.tsx?$/.test(file);
+// The plugins, for a project whose host files are its test files, a setup
+// file and the files of a framework in `node_modules`, and whose host has the
+// packages of Vitest.
+const framework = "/node_modules/framework/dist";
+const isHostFile = (file: string) =>
+  /\.test\.tsx$|\/vitest\.setup\.tsx?$/.test(file) || file.startsWith(`${framework}/`);
 // Vite RSC made the modules of these files client references: they have
-// `"use client"`. Their URL in the browser layer is their path.
-const references = new Set(["/app/frame.test.tsx", "/vitest.setup.tsx"]);
-const clientReferenceOf = (id: string) => (references.has(id) ? { importId: id } : undefined);
+// `"use client"`. The URL of a file of the project in the browser layer is
+// its path. One of a dependency is a module of Vite RSC that imports it: by
+// its file, which Vite RSC has the reference by, without Vite's version, or
+// by the name of its package, when the page imports it by that, with the
+// reference by the id.
+const proxy = "/@id/__x00__virtual:vite-rsc/";
+const references = new Map([
+  ["/app/frame.test.tsx", "/app/frame.test.tsx"],
+  ["/vitest.setup.tsx", "/vitest.setup.tsx"],
+  [
+    `${framework}/client-story.js`,
+    `${proxy}client-in-server-package-proxy/${encodeURIComponent(`${framework}/client-story.js`)}`,
+  ],
+  [`${framework}/by-name.js?v=1a2b3c4d`, `${proxy}client-package-proxy/framework/by-name`],
+]);
+const clientReferenceOf = (id: string) => {
+  const importId = references.get(id);
+  return importId === undefined ? undefined : { importId };
+};
 const [plugin, loaders] = clientFiles({
   environments: { rsc: "client", browser: "react_client" },
   testingLibrary,
@@ -95,6 +114,39 @@ test("leaves a file without the directive as it is, and a file that is not the h
   ).toBeUndefined();
   // Not a file with a query, like Vite's `?import`, which the browser asks for.
   expect(transformLoader.call(rsc, reference, "/app/frame.test.tsx?import")).toBeUndefined();
+});
+
+test("takes the id of a module for its file, without the version of a dependency", () => {
+  expect(fileOfModule("/app/a.test.tsx")).toBe("/app/a.test.tsx");
+  expect(fileOfModule("/x/node_modules/a/b.js?v=1a2b3c4d")).toBe("/x/node_modules/a/b.js");
+  expect(fileOfModule("/x/node_modules/a/b.js?v=1.2.3-beta_4")).toBe("/x/node_modules/a/b.js");
+  // Another module of the file.
+  for (const query of ["import", "raw", "url", "v=1a2b3c4d&raw", "raw&v=1a2b", "v="]) {
+    expect(fileOfModule(`/x/node_modules/a/b.js?${query}`), query).toBeUndefined();
+  }
+});
+
+test("loads a file of the host in `node_modules` that has Vite's version query", async () => {
+  const rsc = context("client");
+  const load = (id: string) => transformLoader.call(rsc, reference, id)?.code;
+
+  // By the reference that Vite RSC has by the file.
+  expect(load(`${framework}/client-story.js?v=1a2b3c4d`)).toContain(
+    `__vitestPluginRscLoadClientFile("${references.get(`${framework}/client-story.js`)}")`,
+  );
+  // And by the one it has by the id.
+  expect(load(`${framework}/by-name.js?v=1a2b3c4d`)).toContain(
+    `__vitestPluginRscLoadClientFile("${proxy}client-package-proxy/framework/by-name")`,
+  );
+  // Not another module of the file.
+  for (const query of ["raw", "v=1a2b3c4d&raw"]) {
+    expect(load(`${framework}/client-story.js?${query}`), query).toBeUndefined();
+  }
+  // And it says so for a mock in one, too.
+  const mocking = `"use client";\nimport { vi } from "vitest";\nvi.mock("./a.js");\n`;
+  await expect(
+    transform.call(rsc, mocking, `${framework}/client-story.js?v=1a2b3c4d`),
+  ).rejects.toThrow(`${framework}/client-story.js calls vi.mock()`);
 });
 
 test("leaves the code of a file with the directive to Vite RSC, which makes it a reference", async () => {

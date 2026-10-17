@@ -27,6 +27,23 @@ const sourceFile = /\.(?:tsx|ts|mts|jsx|js|mjs)$/;
 const languageOf = (file: string) =>
   file.endsWith(".tsx") ? "tsx" : file.endsWith("ts") ? "ts" : "jsx";
 
+// A dev server puts its version of the dependencies in the query of the id of
+// a module in `node_modules` that it does not pre-bundle, by which the browser
+// caches it: `/x/node_modules/a/b.js?v=1a2b3c4d`. A file of the host can be
+// such a module, like a framework of Storybook that `host.files` matches. Any
+// other query, like `?raw` or `?import`, is another module of the file.
+const versionQuery = /^\?v=[\w.-]+$/;
+
+/**
+ * The file that a module of Vite is, by its id: the id, without the version
+ * a dev server adds for a dependency. Nothing for an id with another query.
+ */
+export function fileOfModule(id: string): string | undefined {
+  const query = id.indexOf("?");
+  if (query === -1) return id;
+  return versionQuery.test(id.slice(query)) ? id.slice(0, query) : undefined;
+}
+
 /**
  * What Vite RSC made of a module of the rsc layer with `"use client"`: a
  * client reference, with the URL that loads the file in the browser layer.
@@ -101,11 +118,11 @@ export function clientFiles(options: ClientFilesOptions): Plugin[] {
   const { rsc, browser } = options.environments;
   const { testingLibrary, internal, isHostFile, isHostPackage, clientReferenceOf } = options;
 
-  // A file of the host in the rsc layer, with no query: not Vite's
-  // `?import`, which the browser asks for.
+  // A file of the host in the rsc layer, with no query but the version of a
+  // dependency: not Vite's `?import`, which the browser asks for.
   const hostFileOf = (id: string): string | undefined => {
-    const file = id.split("?")[0]!;
-    if (id.includes("?") || !sourceFile.test(file) || !isHostFile(file)) return;
+    const file = fileOfModule(id);
+    if (file === undefined || !sourceFile.test(file) || !isHostFile(file)) return;
     return file;
   };
 
@@ -160,8 +177,14 @@ export function clientFiles(options: ClientFilesOptions): Plugin[] {
       name: "vitest-plugin-rsc:next-load-client-files",
       enforce: "post",
       transform(code, id) {
-        if (this.environment.name !== rsc || !hostFileOf(id)) return;
-        const reference = clientReferenceOf(id, this.environment.getTopLevelConfig());
+        if (this.environment.name !== rsc) return;
+        const file = hostFileOf(id);
+        if (!file) return;
+        // Vite RSC has the reference of a module in `node_modules` by its
+        // file, without the version, unless the page imports it by the name
+        // of its package.
+        const config = this.environment.getTopLevelConfig();
+        const reference = clientReferenceOf(id, config) ?? clientReferenceOf(file, config);
         if (!reference) return;
         return { code: loadClientFileCode(reference.importId, internal) + code, map: null };
       },

@@ -17,6 +17,7 @@
     "@types/node": "^24.12.4",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
+    "host-package": "file:fixtures/host-package",
     "host-report": "file:fixtures/host-report",
     "playwright": "^1.64.0",
     "typescript": "^6.0.3",
