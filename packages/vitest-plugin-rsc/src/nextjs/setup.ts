@@ -19,7 +19,10 @@ unlinkClientStylesheets();
 // setup files, in the order of the config, and the test file, which Vitest
 // gives a `beforeAll` of a setup file as its second argument. The first is
 // the fixtures, which Vitest reads off the parameter: it has to be a pattern.
-// See `nodeFiles` in registry.ts.
+// Until then, as a setup file or a test file collects, the setup files
+// alone: not the test file of before, with `isolate: false`. See `nodeFiles`
+// in registry.ts.
+registry.nodeFiles = () => [...server.config.setupFiles];
 // oxlint-disable-next-line no-empty-pattern
 beforeAll(({}, suite) => {
   const { filepath } = suite.file;

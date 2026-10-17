@@ -341,8 +341,8 @@ export function createServerCode(registry: string, options: ServerCodeOptions = 
             throw new Error(
               `vitest-plugin-rsc: ${file} is a file of the app, or one of the host's, and ` +
                 `nothing says which. Under Vitest the test files and the setup files come ` +
-                `from its config, through \`configureVitest\`, which Vitest 3.1 and later ` +
-                `call for the plugins of a project, not for one of \`injectTestProjects\`. ` +
+                `from its config, through \`configureVitest\`, which Vitest calls for the ` +
+                `plugins of a project, not for one of \`injectTestProjects\`. ` +
                 `Another host lists its files in the \`host.files\` option of ` +
                 `vitestPluginNext().`,
             );

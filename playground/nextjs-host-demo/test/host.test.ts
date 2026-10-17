@@ -138,6 +138,21 @@ test("a node has the CSS of the files of the host that render it", async ({ page
   });
 });
 
+test("answers 403 for a file of the app in `files`", async () => {
+  // What the page asks for the node of a route of a node: see styles.ts.
+  // Only a file of the host is the host's to say.
+  const ask = (file: string) =>
+    fetch(
+      `${site!.url}@vitest-plugin-rsc/next-stylesheets?entry=${encodeURIComponent(
+        "(vitest-plugin-rsc)/",
+      )}&inline=true&file=${encodeURIComponent(file)}`,
+    );
+  const refused = await ask("app/components/greeting.tsx");
+  expect(refused.status).toBe(403);
+  expect(await refused.text()).toContain("greeting.tsx is not a file of the host");
+  expect((await ask("host/main.tsx")).status).toBe(200);
+});
+
 test('runs a file of the host with "use client" in the browser layer', async ({ page, errors }) => {
   const host = await open(page, errors, "client", async (page) => {
     // The Client Component the file rendered, in a root it made itself.

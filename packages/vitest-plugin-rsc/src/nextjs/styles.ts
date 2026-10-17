@@ -392,7 +392,16 @@ export function createStyles(options: StylesOptions): Styles {
     if ("component" in route) {
       starts.set(
         componentPagePath,
-        hostFiles.flatMap((file) => [...(rsc.moduleGraph.getModulesByFile(file) ?? [])]),
+        hostFiles.flatMap((file) => {
+          const nodes = rsc.moduleGraph.getModulesByFile(file);
+          if (!nodes?.size) {
+            vite.config.logger.warnOnce(
+              `vitest-plugin-rsc: ${file} is in \`files\` of renderServer(), and the rsc layer ` +
+                `has not loaded it: the stylesheets it imports are not linked.`,
+            );
+          }
+          return [...(nodes ?? [])];
+        }),
       );
     }
 
