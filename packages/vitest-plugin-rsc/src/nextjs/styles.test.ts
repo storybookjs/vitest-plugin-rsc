@@ -1,9 +1,11 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { createServer, type CSSOptions } from "vite";
+import { createServer, normalizePath, type CSSOptions, type Plugin } from "vite";
 import { expect, test } from "vitest";
-import { exportsOfStylesheet, isCode } from "./styles.ts";
+import type { NextProject } from "./project.ts";
+import { componentPagePath, type BuiltStylesheets } from "./styles-shared.ts";
+import { createStyles, exportsOfStylesheet, isCode, linked } from "./styles.ts";
 
 // The module that the installed Vite makes of a stylesheet for a client, of
 // which the plugin keeps the exports, and not the `<style>`. As the plugin
@@ -124,4 +126,165 @@ test.each([
   ["/app/data.json", false],
 ])("takes %s for code: %s", (id, code) => {
   expect(isCode(id, ["tsx", "ts", "md"])).toBe(code);
+});
+
+// What a static build writes into `next-stylesheets.json`: the build's plugin,
+// driven through the hooks of a build of the rsc layer and then the layer of
+// the browser, over a module graph of its own. `root` is the root as the
+// config has it, which `isHostFile` matches against, and `real` where Vite
+// has the modules, by their real paths.
+type Graph = {
+  /** What each module imports, in the rsc layer and in the browser layer. */
+  rsc: Record<string, string[]>;
+  browser: Record<string, string[]>;
+  /** The modules with `"use client"`, a reference in the rsc layer. */
+  references: string[];
+  /** The stylesheets Vite's CSS plugin compiles, by layer. */
+  sources: { rsc: string[]; browser: string[] };
+};
+const list = "\0virtual:vitest-plugin-rsc/next-routes-page";
+const builtCss = (dir: string, file: string) => linked(`${dir}/${file}`, true);
+
+async function buildStylesheets(root: string, real: string, graph: Graph) {
+  const route = { kind: "page", page: "/notes/page", pathname: "/notes", component: "node" };
+  const styles = createStyles({
+    getProject: () =>
+      ({
+        root,
+        assetPath: "/_next/",
+        config: {},
+        loadRouteEntry: async () => ({
+          segments: [{ file: `${real}/app/layout.tsx`, stylesheetsKey: "app/layout" }],
+        }),
+      }) as unknown as NextProject,
+    environments: { rsc: "client", ssr: "ssr", browser: "react_client" },
+    isServerCode: (file) => !file.startsWith(`${root}/host/`),
+    isHostFile: (file) => file.startsWith(`${root}/host/`),
+    pageRoutes: () => new Map([["/app/notes/page", route as never]]),
+    lists: [list],
+  });
+  const plugin = styles.plugins.find(({ name }) => name === "vitest-plugin-rsc:next-styles-build")!;
+  type Hook = (this: unknown, ...args: unknown[]) => unknown;
+  const hook = (name: keyof Plugin) => plugin[name] as Hook;
+  const manager = {
+    isScanBuild: false,
+    clientReferenceMetaMap: Object.fromEntries(
+      graph.references.map((id) => [id, { importId: id }]),
+    ),
+  };
+  hook("configResolved").call(undefined, {
+    plugins: [{ name: "rsc:minimal", api: { manager } }],
+    publicDir: "",
+  });
+
+  const emitted: string[] = [];
+  async function build(environment: string, imports: Record<string, string[]>, sources: string[]) {
+    const context = {
+      environment: { name: environment },
+      getModuleIds: () => [...Object.keys(imports), ...Object.values(imports).flat()].values(),
+      getModuleInfo: (id: string) =>
+        imports[id] ? { importedIds: imports[id], dynamicallyImportedIds: [] } : null,
+      resolve: async (id: string) => ({ id }),
+      emitFile: ({ fileName }: { fileName: string }) => emitted.push(fileName),
+    };
+    hook("buildStart").call(context);
+    for (const source of sources) {
+      hook("transform").call(context, `.${source} {}`, builtCss(real, source));
+    }
+    await hook("buildEnd").call(context);
+    hook("generateBundle").call(context);
+  }
+  await build("client", graph.rsc, graph.sources.rsc);
+  await build("react_client", graph.browser, graph.sources.browser);
+
+  const [file] = styles.builtFiles();
+  expect(file!.pathname).toBe("/vitest-plugin-rsc/next-stylesheets.json");
+  return {
+    built: JSON.parse(Buffer.from(file!.body).toString()) as BuiltStylesheets,
+    named: (name: string) => emitted.find((fileName) => fileName.includes(`/${name}-`))!,
+  };
+}
+
+test("lists the stylesheets of every route and of every file of the host in a build", async () => {
+  const root = "/project";
+  const css = (file: string) => builtCss(root, file);
+  const { built, named } = await buildStylesheets(root, root, {
+    rsc: {
+      [`${root}/app/layout.tsx`]: [css("app/global.css")],
+      // A host file that renders a node, with a Server Component of the
+      // app, a Client Component of the app, and a stylesheet of its own.
+      [`${root}/host/node.tsx`]: [
+        `${root}/app/card.tsx`,
+        `${root}/app/client.tsx`,
+        `${root}/host/own.css`,
+      ],
+      [`${root}/app/card.tsx`]: [css("app/card.module.css")],
+      [`${root}/app/client.tsx`]: [],
+      // The page of the host, which imports the list of the routes too.
+      [`${root}/host/main.tsx`]: [`${root}/host/node.tsx`, list],
+      [list]: [`${root}/app/page.tsx`],
+      [`${root}/app/page.tsx`]: [css("app/page.css")],
+      // A host file without stylesheets, and what is no file of the host's
+      // code: a query of Vite's, a virtual module, an image.
+      [`${root}/host/plain.tsx`]: [
+        `${root}/host/plain.tsx?raw`,
+        `\0${root}/host/virtual.tsx`,
+        `${root}/host/logo.svg`,
+      ],
+      [`${root}/host/own.css`]: [],
+      // A host file with `"use client"`.
+      [`${root}/host/story.tsx`]: [],
+    },
+    browser: {
+      [`${root}/app/client.tsx`]: [css("app/client.css")],
+      [`${root}/host/story.tsx`]: [`${root}/app/client.tsx`],
+    },
+    references: [`${root}/app/client.tsx`, `${root}/host/story.tsx`],
+    sources: {
+      rsc: ["app/global.css", "app/card.module.css", "app/page.css"],
+      browser: ["app/client.css"],
+    },
+  });
+  expect(built).toEqual({
+    assetPath: "/_next/",
+    routes: {
+      "/app/notes/page": { "app/layout": [named("global")], [componentPagePath]: [] },
+    },
+    // By their paths from the root, in their order: no file of the app, and
+    // no stylesheet. What a file reaches goes up to the lists of the routes,
+    // and into the browser layer from a Client Component.
+    hostFiles: {
+      "host/main.tsx": [named("card.module"), named("client")],
+      "host/node.tsx": [named("card.module"), named("client")],
+      "host/plain.tsx": [],
+      "host/story.tsx": [named("client")],
+    },
+  });
+  expect(Object.keys(built.hostFiles)).toEqual(Object.keys(built.hostFiles).sort());
+});
+
+// A root that is a link, like a project in `/tmp` on macOS: Vite has the
+// modules by their real paths, and `host.files` is from the root as the
+// config has it.
+test("finds the files of the host under a root that is a link", async () => {
+  const temp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "vitest-plugin-rsc-link-")));
+  try {
+    const real = normalizePath(path.join(temp, "real"));
+    const root = normalizePath(path.join(temp, "link"));
+    fs.mkdirSync(real);
+    fs.symlinkSync(real, root, "dir");
+    const { built, named } = await buildStylesheets(root, real, {
+      rsc: {
+        [`${real}/app/layout.tsx`]: [],
+        [`${real}/host/node.tsx`]: [`${real}/app/card.tsx`],
+        [`${real}/app/card.tsx`]: [builtCss(real, "app/card.module.css")],
+      },
+      browser: {},
+      references: [],
+      sources: { rsc: ["app/card.module.css"], browser: [] },
+    });
+    expect(built.hostFiles).toEqual({ "host/node.tsx": [named("card.module")] });
+  } finally {
+    fs.rmSync(temp, { recursive: true, force: true });
+  }
 });

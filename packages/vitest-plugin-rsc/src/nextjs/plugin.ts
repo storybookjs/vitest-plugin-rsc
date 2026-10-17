@@ -603,8 +603,9 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
         });
         serverCode.configure(project.root);
         // A static build runs without Vitest, so it has no test files: every
-        // file of the project is server code in the rsc layer, but for the
-        // `browserModules`, which the page of the host is in.
+        // file of the project is server code in the rsc layer, but for
+        // `host.files`, which the page of the host is in, and the
+        // `browserModules`.
         if (isBuild) serverCode.addTestFiles(() => false);
 
         // What the route entries import from Next, to pre-bundle it. Every

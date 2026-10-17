@@ -25,8 +25,10 @@ export default defineConfig({
   root: fileURLToPath(new URL("./", import.meta.url)),
   plugins: [
     vitestPluginRSC(),
-    // The host works on the page, so it has to see the browser.
-    vitestPluginNext({ browserModules: ["host/**"], build }),
+    // The files of the host, what test files are to Vitest: they work on the
+    // page, so they see the browser, and a node has the CSS of the ones
+    // that render it, also in the build.
+    vitestPluginNext({ host: { files: ["host/**"] }, build }),
   ],
   resolve: { conditions: vitestPluginRscSourceConditions },
 });

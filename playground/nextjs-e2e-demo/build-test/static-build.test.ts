@@ -220,6 +220,37 @@ describe.for(builds)("a static build, $build", ({ build, env }) => {
       .toBe("true");
   });
 
+  // The node has the CSS of the file of the host that renders it, `files` of
+  // renderServer(): host/node.tsx, whose NoteCard of the app has a CSS
+  // module. A page route has not, and the stylesheet goes with the node.
+  test("links the stylesheets of the files of the host that render a node", async ({ page }) => {
+    await open(page, site, "/notes/7", { node: "7" });
+    const card = page.getByText("Seeded by the host");
+    expect(await card.evaluate((element) => getComputedStyle(element).color)).toBe(
+      "rgb(128, 0, 128)",
+    );
+    expect(await page.locator("link[rel=stylesheet][href*='note-card']").count()).toBe(1);
+
+    await openNext(page, "/notes/7");
+    await heading(page, "Seeded by the host");
+    expect(await page.locator("link[rel=stylesheet][href*='note-card']").count()).toBe(0);
+  });
+
+  // A file that the build has no stylesheets for, like a file of the app,
+  // warns in the page, and the node renders without them.
+  test("warns of a file of a node that is not the host's", async ({ page }) => {
+    const warnings: string[] = [];
+    page.on("console", (message) => {
+      if (message.type() === "warning") warnings.push(message.text());
+    });
+    await open(page, site, "/notes/7", { node: "7", file: "app/page.tsx" });
+    await heading(page, "A node of the host");
+    expect(warnings).toContainEqual(
+      expect.stringMatching(/the files that render a node name app\/page\.tsx, which the static/),
+    );
+    expect(await page.locator("link[rel=stylesheet][href*='note-card']").count()).toBe(0);
+  });
+
   // The pages read the `db` that the host seeded in the rsc layer, and Next's
   // router navigates between them.
   test("navigates with Next's router", async ({ page }) => {
