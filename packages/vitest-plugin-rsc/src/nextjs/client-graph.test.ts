@@ -32,7 +32,7 @@ vi.mock("virtual:vitest-plugin-rsc/layers", () => ({
 vi.mock("../utils.ts", () => ({
   checkFetchedModules: async () => {},
   takeFetchedModules: async () => false,
-  fetchJson: async (_path: string, { url }: { url: string }) => tab.stylesheets.get(url) ?? [],
+  askDevServer: async (_event: string, { url }: { url: string }) => tab.stylesheets.get(url) ?? [],
   createEnvironmentRunner: () => ({
     evaluatedModules: {
       idToModuleMap: new Map(),
