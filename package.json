@@ -10,8 +10,8 @@
     "tsgo": "tsgo --build",
     "build": "pnpm -r --filter='./packages/*' run build",
     "test": "pnpm test:run",
-    "test:run": "NODE_OPTIONS='--conditions=vitest-plugin-rsc-source' vitest run --configLoader native",
-    "test:watch": "NODE_OPTIONS='--conditions=vitest-plugin-rsc-source' vitest --configLoader native",
+    "test:run": "NODE_OPTIONS='--conditions=vitest-plugin-rsc-source --conditions=storybook-nextjs-vite-rsc-source' vitest run --configLoader native",
+    "test:watch": "NODE_OPTIONS='--conditions=vitest-plugin-rsc-source --conditions=storybook-nextjs-vite-rsc-source' vitest --configLoader native",
     "test:dist": "vitest run --configLoader runner",
     "conformance": "pnpm --filter next-conformance run conformance",
     "perf": "pnpm perf:commands",
@@ -23,6 +23,7 @@
     "prepare": "husky"
   },
   "devDependencies": {
+    "@storybook/nextjs-vite-rsc": "workspace:*",
     "@types/node": "^24.12.4",
     "@typescript/native-preview": "7.0.0-dev.20260512.1",
     "@vitest/browser": "5.0.3",

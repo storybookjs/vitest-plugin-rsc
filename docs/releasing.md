@@ -17,3 +17,16 @@ Configure npm trusted publishing for `vitest-plugin-rsc` before merging the firs
 The release workflow intentionally does not use `NODE_AUTH_TOKEN`. It relies on GitHub OIDC with `id-token: write`, Node 24, and npm 11.5.2 or newer so npm can publish through trusted publishing with provenance.
 
 Install the `pkg.pr.new` GitHub app on `storybookjs/vitest-plugin-rsc` before relying on preview packages. Preview packages are not npm `latest` releases and should be used only for testing unreleased commits.
+
+## Two Packages
+
+The repository has two packages, and Release Please releases each on its own, from the commits that change files in its directory:
+
+- `vitest-plugin-rsc`, in `packages/vitest-plugin-rsc`: tags `v<version>`, published to npm by the release workflow.
+- `@storybook/nextjs-vite-rsc`, in `packages/storybook-nextjs-vite-rsc`: tags `storybook-nextjs-vite-rsc-v<version>`, GitHub releases marked as pre-releases. Not published to npm yet: the release workflow has no publish job for it.
+
+Each package has a release PR of its own (`separate-pull-requests`). Until the first release of `@storybook/nextjs-vite-rsc`, Release Please logs "Expected 2 releases, only found 1" and reads the commits back to `bootstrap-sha`; that is expected.
+
+The preview workflow publishes both packages in one `pkg-pr-new` run, with `--no-compact`: on npm, `@storybook/nextjs-vite-rsc` belongs to storybookjs/storybook so far, and a compact URL resolves through the `repository` of the npm package.
+
+A publish job for `@storybook/nextjs-vite-rsc` has to pack with pnpm (`pnpm publish --provenance`, or `pnpm pack` and `npm publish <tarball>`): pnpm turns its `workspace:^` peer dependency on `vitest-plugin-rsc` into a version range, npm does not.
