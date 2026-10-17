@@ -3,9 +3,9 @@ import { vitePluginRscMinimal } from "@vitejs/plugin-rsc/plugin";
 import { createReactClientCoveragePlugin } from "./coverage.ts";
 import { dependencyTransformPlugin } from "./dependency-transforms.ts";
 import { createRunnerEnvironmentPlugins } from "./runner-environment.ts";
+import { staticBuild } from "./static-build.ts";
 import { pageViteClientPlugin } from "./vite-client.ts";
 
-const builtLayersId = "virtual:vitest-plugin-rsc/layers";
 const reactClientWebSocketInfoPath = "/@vite/react-client-runner-websocket";
 const reactClientWebSocketQuery = "vitest-plugin-rsc-react-client";
 const reactClientWebSocketInvokeEvent = "vitest-plugin-rsc:react-client:invoke";
@@ -37,6 +37,14 @@ function withConfiguredSourceConditions(
   return [...new Set([...sourceConditions, ...conditions])];
 }
 
+// The key of Vite RSC for the variables that an inline Server Action keeps,
+// like the `id` of `async () => { "use server"; await remove(id); }`. It is
+// one key, not a new one for every run: the server is the page, which has
+// the key anyway, so it keeps nothing from the browser. A static build has it
+// in a file, which is then the same in every build. The 32 bytes of
+// `vitest-plugin-rsc-encryption-key`, in base64.
+const encryptionKey = JSON.stringify("dml0ZXN0LXBsdWdpbi1yc2MtZW5jcnlwdGlvbi1rZXk=");
+
 export function vitestPluginRSC(): Plugin[] {
   return [
     pageViteClientPlugin(),
@@ -45,19 +53,16 @@ export function vitestPluginRSC(): Plugin[] {
         browser: "react_client",
         rsc: "client",
       },
+      defineEncryptionKey: encryptionKey,
+    }),
+    // `vite build`, and what a dev server has instead: see static-build.ts.
+    staticBuild({
+      rsc: "client",
+      browser: "react_client",
+      layers: { entries: { react_client: "vitest-plugin-rsc/testing-library-client" } },
     }),
     {
       name: "rsc:run-in-browser",
-      // What a static build made of the environments that the page runs
-      // through a module runner. Nothing here: a build is the Next.js
-      // plugin's, see nextjs/static-build.ts, which answers for this id in a
-      // build.
-      resolveId(source) {
-        if (source === builtLayersId) return `\0${builtLayersId}`;
-      },
-      load(id) {
-        if (id === `\0${builtLayersId}`) return "export default undefined;\n";
-      },
       configureServer(server) {
         // A page keeps the modules it fetched for its next page loads, see
         // utils.ts. An environment has another answer for a module once that

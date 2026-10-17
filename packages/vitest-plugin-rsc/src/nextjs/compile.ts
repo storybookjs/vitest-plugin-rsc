@@ -3,7 +3,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import path from "node:path";
 import { normalizePath, type Plugin } from "vite";
 import type { NextLayer, NextProject, ServeFile } from "./project.ts";
-import { withBuiltFiles } from "./static-build.ts";
+import { withBuiltFiles } from "../static-build.ts";
 import { linked } from "./styles.ts";
 
 // Before Next bundles the code of the app, its build compiles it: with its SWC

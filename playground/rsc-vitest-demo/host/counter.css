@@ -1,0 +1,4 @@
+/* The CSS of a Client Component: a file of the browser layer, which Vite loads with its chunk. */
+.counter button {
+  color: rgb(128, 0, 0);
+}

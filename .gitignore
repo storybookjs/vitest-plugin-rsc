@@ -18,8 +18,9 @@ artifacts/perf/
 **/__screenshots__/
 *.tsbuildinfo
 *.local
-# The copy of the e2e demo that its build test builds, should a run not remove it
+# The copies of the demos that their build tests build, should a run not remove them
 playground/.nextjs-e2e-demo-*/
+playground/.rsc-vitest-demo-*/
 
 # Editor directories and files
 .cursor/rules/local-context.mdc

@@ -957,6 +957,8 @@ Everything that runs with the dev server runs from the build: pages and nodes, C
 - The plugin puts no path of the machine into the build. The files of a route are named from the root of the project, `app/layout.tsx`, and so are the paths of the Next config in the layers, like `configFile`, and the files that a compile error quotes. The same tree builds into the same files, byte for byte, in another directory as on another machine, so their content hashes hold. What the app puts in itself stays, like a path in `env` of `next.config`. A source map, with `build.sourcemap`, names its sources by the way from the map, as Vite names them.
 - `experimental.inlineCss` is not honoured in a build: the stylesheets are linked.
 
+`vitestPluginRSC()` on its own builds the same way, without Next.js: its two layers, from a page of the project that calls `renderServer()` of `vitest-plugin-rsc/testing-library`. Server Components, Client Components, Server Actions and the CSS of both run from the build, with React's production code. See [A Static Build](docs/architecture.md#a-static-build) and `playground/rsc-vitest-demo`.
+
 `playground/nextjs-e2e-demo` builds its app with a page of its own, `index.html`, that calls `renderServer()` as a test does, and a test project opens the build in a browser from a server of files: see its `build-test/`. `pnpm perf:static` measures what one page load of its build costs per route, in bytes, requests and time, for both builds: see [docs/performance.md](docs/performance.md#a-static-build-per-page-load).
 
 ### API
@@ -1052,6 +1054,8 @@ test("server action", async () => {
 
 This `renderServer` takes `{ container, baseElement, wrapper }` and resolves with `{ container, baseElement, rerender, unmount, asFragment }`. After a Server Action the tree is rendered again.
 
+`vite build` builds a page of the project that calls `renderServer()` into a static site, as for Next.js: see [A Static Build](docs/architecture.md#a-static-build).
+
 ## Server Code That Runs In A Browser
 
 The plugin runs server code inside the browser test runtime. That sounds wrong, but the surface is closer than it looks: Node.js has most of the web APIs a browser has, and server code that sticks to those runs in a browser too.
@@ -1102,7 +1106,7 @@ For the full walkthrough, see [docs/next-routes.md](docs/next-routes.md). [docs/
 
 - `playground/nextjs-e2e-demo` — a small Next.js app with a test for every feature of the Next.js support. Most samples above come from its tests. Its `build-test/` builds the app with `vite build` and opens the build in a browser: see [A Static Build](#a-static-build).
 - `playground/nextjs-notes-demo` — a fuller Next.js notes app with Better Auth, Drizzle, PGlite test databases, and shadcn/ui. Its tests open whole routes with the database and the session mocked in the test runtime. This is the repository's acceptance app.
-- `playground/rsc-vitest-demo` — a minimal non-Next RSC app. Use this as the smallest end-to-end example of `vitest-plugin-rsc` on its own.
+- `playground/rsc-vitest-demo` — a minimal non-Next RSC app. Use this as the smallest end-to-end example of `vitest-plugin-rsc` on its own. Its `build-test/` builds the page of `host/main.tsx` with `vite build` and opens the build in a browser.
 - `playground/nextjs-host-demo` — the Next.js plugin in a Vite dev server without Vitest, as another host runs it. Its tests start that server and drive it with Playwright.
 
 Vitest suites are wired through the root workspace, while each package or playground owns its local config:

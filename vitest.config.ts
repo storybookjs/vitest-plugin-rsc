@@ -5,6 +5,7 @@ import nextjsE2eDemoBuildProject from "./playground/nextjs-e2e-demo/vitest.build
 import nextjsE2eDemoProject from "./playground/nextjs-e2e-demo/vitest.config.ts";
 import nextjsHostDemoProject from "./playground/nextjs-host-demo/vitest.config.ts";
 import { nextjsNotesProjects } from "./playground/nextjs-notes-demo/vitest.config.ts";
+import rscVitestDemoBuildProject from "./playground/rsc-vitest-demo/vitest.build.config.ts";
 import rscVitestDemoProject from "./playground/rsc-vitest-demo/vitest.config.ts";
 
 export default defineConfig({
@@ -36,6 +37,7 @@ export default defineConfig({
     projects: [
       vitestPluginRscProject,
       rscVitestDemoProject,
+      rscVitestDemoBuildProject,
       nextjsE2eDemoProject,
       nextjsE2eDemoBuildProject,
       nextjsHostDemoProject,

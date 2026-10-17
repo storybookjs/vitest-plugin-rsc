@@ -16,7 +16,7 @@ import {
   type ViteDevServer,
 } from "vite";
 import type { ComponentRoute, NextLayer, NextProject, NextRoute, RouteSegment } from "./project.ts";
-import { clientReferencesId, cssBuildDirPlaceholder, toBuildDir } from "./static-build.ts";
+import { clientReferencesId, cssBuildDirPlaceholder, toBuildDir } from "../static-build.ts";
 import {
   builtStylesheetsFile,
   componentPagePath,
@@ -831,7 +831,7 @@ function createBuiltStylesheets(
       const stylesheetsOf = (reached: Reached[]) =>
         reached.flatMap((item) => ("stylesheet" in item ? [item.stylesheet] : []));
       // The Client Components that a route reaches, as the list of every
-      // reference imports them: see static-build.ts.
+      // reference imports them: see ../static-build.ts.
       const importer = `\0${clientReferencesId}`;
       const reached = [
         ...[...routes.values()].flatMap((segments) => [...segments.values()]),

@@ -4,6 +4,7 @@ import { resetAsyncLocalStorage } from "./async-local-storage.ts";
 import { importReactClient } from "./utils.ts";
 import type { FetchRsc, RscPayload, TestingLibraryClientRoot } from "./testing-library-client.tsx";
 import * as ReactServer from "@vitejs/plugin-rsc/react/rsc";
+import serverReferences from "virtual:vitest-plugin-rsc/server-references";
 
 const client = await importReactClient<typeof import("./testing-library-client.tsx")>(
   "vitest-plugin-rsc/testing-library-client",
@@ -132,8 +133,20 @@ declare let __vite_rsc_raw_import__: (id: string) => Promise<unknown>;
 export function initialize(customConfig: Partial<RenderConfiguration> = {}): void {
   Object.assign(config, customConfig);
 
+  // The module of a server reference, by the id Vite RSC gives it. With a dev
+  // server that is what Vite imports the module by. A static build has a list
+  // of them: see static-build.ts.
   ReactServer.setRequireModule({
-    load: (id) => __vite_rsc_raw_import__(id),
+    load: (id) => {
+      if (!serverReferences) return __vite_rsc_raw_import__(id);
+      const load = serverReferences[id];
+      if (!load) {
+        return Promise.reject(
+          new Error(`vitest-plugin-rsc: the build has no Server Action module "${id}"`),
+        );
+      }
+      return load();
+    },
   });
   client.initialize();
 }
