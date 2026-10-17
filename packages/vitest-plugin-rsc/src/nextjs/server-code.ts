@@ -144,19 +144,24 @@ function dependenciesOf(dir: string): string[] {
 // `dependencies` of the app is the app's, and server code, unless the host
 // names it. A package of the host that depends on `next`, `react` or a
 // library of the app would otherwise take it along, and the app's server
-// would run as browser code, without a message. A package that only the
-// dependencies of the app depend on is not caught: that the walk of the
-// app's own tree would cost a few hundred milliseconds of startup, for a
-// case no host has had yet.
+// would run as browser code, without a message. The directory decides, so a
+// version of the host's own, which the package manager keeps apart, is still
+// the host's. A package that only the dependencies of the app depend on is
+// not caught: the walk of the app's own tree would cost a few hundred
+// milliseconds of startup, for a case no host has had yet.
 function findPackagesWithDependencies(names: Iterable<string>, root: string): Set<string> {
   const dirs = new Set<string>();
   const named = new Set(names);
-  const appPackages = new Set(dependenciesOf(root));
+  const appDirs = new Set(
+    dependenciesOf(root)
+      .map((name) => findPackage(name, root))
+      .filter((dir) => dir !== undefined),
+  );
   const visit = (name: string, from: string) => {
     if (ownPackages.has(name)) return;
-    if (from !== root && appPackages.has(name) && !named.has(name)) return;
     const dir = findPackage(name, from);
     if (!dir || dirs.has(normalizePath(dir))) return;
+    if (from !== root && !named.has(name) && appDirs.has(dir)) return;
     dirs.add(normalizePath(dir));
     for (const dependency of dependenciesOf(dir)) visit(dependency, dir);
   };
@@ -336,8 +341,10 @@ export function createServerCode(registry: string, options: ServerCodeOptions = 
             throw new Error(
               `vitest-plugin-rsc: ${file} is a file of the app, or one of the host's, and ` +
                 `nothing says which. Under Vitest the test files and the setup files come ` +
-                `from its config; another host lists its files in the \`host.files\` option ` +
-                `of vitestPluginNext().`,
+                `from its config, through \`configureVitest\`, which Vitest 3.1 and later ` +
+                `call for the plugins of a project, not for one of \`injectTestProjects\`. ` +
+                `Another host lists its files in the \`host.files\` option of ` +
+                `vitestPluginNext().`,
             );
           }
           return compileServerCode(code, file, registry);

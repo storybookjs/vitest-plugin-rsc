@@ -365,10 +365,10 @@ export function createStyles(options: StylesOptions): Styles {
   /**
    * The stylesheets of a route, per file of a segment: see `Stylesheets`. The
    * node of a test is the page of its route, and no file: its stylesheets are
-   * those of the files of the host that the page has loaded, `hostFiles`, in
-   * their order. Under Vitest those are the setup files and the test file;
-   * see `hostFiles` in registry.ts. With `layouts: true` the layouts of the
-   * app around it have their own.
+   * those of the files of the host that render it, `hostFiles`, in their
+   * order. Under Vitest those are the setup files and the test file; see
+   * `nodeFiles` in registry.ts. With `layouts: true` the layouts of the app
+   * around it have their own.
    */
   async function stylesheetsOf(
     vite: ViteDevServer,
@@ -418,6 +418,10 @@ export function createStyles(options: StylesOptions): Styles {
       ),
     );
   }
+
+  // A file of the host, as the page names it: absolute, or from the root of
+  // the project.
+  const fileOf = (file: string) => normalizePath(path.resolve(getProject().root, file));
 
   // The path with the version of the CSS: see `serve()`. A stylesheet that
   // fails to compile has none, and fails when the browser loads it.
@@ -492,7 +496,7 @@ export function createStyles(options: StylesOptions): Styles {
     if (pathname === stylesheetsPath) {
       const url = searchParams.get("url");
       const entry = searchParams.get("entry");
-      const files = searchParams.getAll("file").map((file) => normalizePath(file));
+      const files = searchParams.getAll("file").map(fileOf);
       if (!url && !entry) {
         response.statusCode = 400;
         response.end("vitest-plugin-rsc: the stylesheets of what? Give `url` or `entry`.");
@@ -505,8 +509,9 @@ export function createStyles(options: StylesOptions): Styles {
         );
         return true;
       }
-      // The page says which files of the host it has loaded, and only those
-      // are the host's to say: not a file of the app, whose CSS is its route's.
+      // The page says which files of the host render the node, and only
+      // those are the host's to say: not a file of the app, whose CSS is its
+      // route's.
       const notHost = files.find((file) => !options.isHostFile(file));
       if (notHost) {
         response.statusCode = 403;

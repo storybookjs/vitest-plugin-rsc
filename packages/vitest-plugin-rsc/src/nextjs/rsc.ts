@@ -110,8 +110,8 @@ registry.loadAppPage = async (page) => {
 // The stylesheets of a route are the plugin's to say, as they are a build's:
 // see styles.ts. A static build has them in a file of its own, in the
 // directory of the build. With a dev server, the dev server answers, for the
-// route and for the files of the host this page has loaded, which render the
-// node of a route of a node: `registry.hostFiles`.
+// route and, for the route of a node, for the files of the host that render
+// the node: `files` of `renderServer()`, or what the host set as the default.
 const buildDirectory = builtLayers && Object.values(builtLayers)[0]?.base;
 if (buildDirectory) {
   let built: Promise<BuiltStylesheets> | undefined;
@@ -140,7 +140,7 @@ if (buildDirectory) {
     fetchJson<Stylesheets>(stylesheetsPath, {
       entry,
       inline: String(inline),
-      file: registry.hostFiles,
+      file: (registry.openedByRequest.getStore() ?? registry.opened)?.node?.files ?? [],
     });
 }
 

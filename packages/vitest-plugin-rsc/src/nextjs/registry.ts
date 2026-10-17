@@ -45,7 +45,8 @@ export type Opened = {
   pathname: string;
   /** Whether the server in front of the app takes the request: proxy.ts and `next.config`. */
   proxy: boolean;
-  node?: { ui: unknown; layouts: boolean };
+  /** With `files`: the files of the host that render the node, see `nodeFiles`. */
+  node?: { ui: unknown; layouts: boolean; files: string[] };
   /**
    * Whether Next renders the page a Server Action redirects to, into the
    * response of the action, as Next's router shows that page next. Not for
@@ -76,21 +77,19 @@ export type NextRegistry = {
   appPages: Record<string, unknown>;
   /**
    * Asks the plugin for the stylesheets of a page route, by the name of its
-   * modules: see styles.ts. The dev server answers, for the route and for
-   * `hostFiles`; a static build reads them from a file of its own (rsc.ts).
+   * modules: see styles.ts. The dev server answers, for the route and for the
+   * files of the host that render the node of a route of a node; a static
+   * build reads them from a file of its own (rsc.ts).
    */
   loadStylesheets(entry: string, inline: boolean): Promise<Stylesheets>;
   /**
-   * The files of the host that the page has evaluated in the rsc layer, in
-   * that order: under Vitest the setup files and the test file, for another
-   * host what renders its node. Every such file says so as it loads, with a
-   * line the plugin puts in front of it (client-files.ts). The node of a test
-   * has the stylesheets of these files: see styles.ts. Vitest runs the test
-   * files of a worker in one page with `isolate: false`, so the plugin's
-   * setup file, which Vitest evaluates again before every test file, starts
-   * the list over.
+   * The files of the host that render a node, when `renderServer()` is not
+   * told them with `files`: the node has their stylesheets, see styles.ts.
+   * Under Vitest the setup files and the test file, which the plugin's setup
+   * file sets before every test file (setup.ts). Another host passes `files`,
+   * or sets nothing: a node then has no stylesheets of the host's files.
    */
-  hostFiles: string[];
+  nodeFiles?(): string[];
   /**
    * Tells the host what the page loaded without an import of its own: a route,
    * or the module of a Server Action. Under Vitest with `affectedTests`, see
@@ -138,7 +137,6 @@ const scope = globalThis as { __vitest_plugin_rsc_next__?: Partial<NextRegistry>
 export const registry = (scope.__vitest_plugin_rsc_next__ ??= {
   appPages: {},
   serverActions: new Map(),
-  hostFiles: [],
 }) as NextRegistry;
 
 /**
