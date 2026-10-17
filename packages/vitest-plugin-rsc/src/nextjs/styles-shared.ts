@@ -14,7 +14,7 @@ export const builtStylesheetsFile = "vitest-plugin-rsc/next-stylesheets.json";
  * route: `?entry=<name of its modules>&inline=<true|false>`, with
  * `Stylesheets`, and a `file=<path>` for each file of the host that renders
  * the node of the route, in their order, absolute or from the root of the
- * project: see `nodeFiles` in registry.ts. For a file of the host with
+ * project: see `hostFiles` of `renderServer()`. For a file of the host with
  * `"use client"`: `?url=<its URL in the browser layer>`, with the URLs of
  * its stylesheets.
  */
@@ -50,7 +50,7 @@ export type BuiltStylesheets = {
   /**
    * For each file of the host that the rsc layer built, by its path from the
    * root of the project, `host/button.stories.tsx`: the files of the
-   * stylesheets it imports, as the dev server walks them for `files` of
+   * stylesheets it imports, as the dev server walks them for `hostFiles` of
    * `renderServer()`. In a build the files of the host are what `host.files`
    * of `vitestPluginNext()` matches. An empty list for one without any.
    */
@@ -86,8 +86,8 @@ export function builtFileKey(file: string, keys: string[]): string | undefined {
  * The stylesheets of a route of a static build that is served from
  * `directory`, a URL: what the dev server answers at `stylesheetsPath`. For
  * the route of a node, the node has the stylesheets of `files`, the files of
- * the host that render it, in their order, each once. A file that the build
- * has none for, `missing` is told of.
+ * the host that render it (`hostFiles` of `renderServer()`), in their order,
+ * each once. A file that the build has none for, `missing` is told of.
  *
  * Next links a stylesheet at its path under the asset path, from the root of
  * the site. A build can be served from any directory, so that path goes up to
