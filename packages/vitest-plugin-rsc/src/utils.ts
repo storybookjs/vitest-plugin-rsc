@@ -19,6 +19,14 @@ import {
   type InvokeResult,
 } from "./built-layers.ts";
 import { isHostModule } from "./host-module.ts";
+import {
+  answerEvent,
+  invokeEvent,
+  versionEvent,
+  webSocketInfoPath,
+  webSocketQuery,
+  type PageAnswer,
+} from "./websocket-bridge.ts";
 
 // The page's own instance of Vite's client, for the modules that the runners
 // below evaluate: see vite-client.ts.
@@ -26,12 +34,7 @@ import { isHostModule } from "./host-module.ts";
   pageClient;
 
 const reactClientCoverageModulePath = "/@vite/react-client-coverage-module";
-const reactClientWebSocketInfoPath = "/@vite/react-client-runner-websocket";
-const reactClientWebSocketQuery = "vitest-plugin-rsc-react-client";
 const reactClientCoverageQuery = "vitest-plugin-rsc-react-client-coverage";
-const reactClientWebSocketInvokeEvent = "vitest-plugin-rsc:react-client:invoke";
-const reactClientWebSocketInvokeResultEvent = "vitest-plugin-rsc:react-client:invoke-result";
-const reactClientWebSocketVersionEvent = "vitest-plugin-rsc:react-client:version";
 const sourceUrlRE = /\/\/# sourceURL=[^\n\r]*/;
 const sourceUrlLineRE = /^\/\/# sourceURL=/m;
 
@@ -49,7 +52,7 @@ type WebSocketInfo = { token: string; path: string };
 type PendingInvoke = {
   resolve: (result: unknown) => void;
   reject: (error: unknown) => void;
-  timeoutId: ReturnType<typeof setTimeout>;
+  timeoutId: ReturnType<typeof setTimeout> | undefined;
 };
 type InvokeResultMessage = {
   type?: string;
@@ -65,25 +68,17 @@ type InvokeResultMessage = {
 const nativeFetch = globalThis.fetch;
 
 /**
- * Asks the dev server for JSON at a path of the plugin's, with the `fetch` the
- * page had before the app's replaced it: see nextjs/index.ts.
+ * Asks the dev server what a plugin answers at `event`, over the websocket of
+ * the page: see `answerPage()` in websocket-bridge.ts.
  */
-export async function fetchJson<T>(
-  path: string,
-  query: Record<string, string | string[]>,
-): Promise<T> {
-  const params = new URLSearchParams();
-  for (const [name, value] of Object.entries(query)) {
-    for (const each of [value].flat()) params.append(name, each);
+export async function askDevServer<T>(event: string, question: object): Promise<T> {
+  // Without a timeout, as a request of HTTP: one question can take a while,
+  // like the first walk of a route, which compiles all of it.
+  const result = (await requestOverWebSocket(event, question, false)) as PageAnswer<T>;
+  if ("error" in result) {
+    throw new Error(`vitest-plugin-rsc: the dev server failed to answer ${event}: ${result.error}`);
   }
-  const url = `${path}?${params}`;
-  const response = await nativeFetch(url);
-  if (!response.ok) {
-    throw new Error(
-      `vitest-plugin-rsc: ${path} answered ${response.status}: ${await response.text()}`,
-    );
-  }
-  return (await response.json()) as T;
+  return result.answer;
 }
 
 // The modules of a static build, see built-layers.ts. A page runs every
@@ -247,7 +242,7 @@ function fetchedModules(environment: string): Promise<FetchedModules> {
 // The modules that were fetched, when the server still has that version of
 // its modules.
 function askForModules(environment: string, known?: FetchedModules): Promise<FetchedModules> {
-  const fetched = requestOverWebSocket(reactClientWebSocketVersionEvent, { environment }).then(
+  const fetched = requestOverWebSocket(versionEvent, { environment }).then(
     (version): FetchedModules =>
       known && known.version === version ? known : { version, results: new Map() },
   );
@@ -504,13 +499,15 @@ function toBrowserCoverageFileUrl(file: string) {
 }
 
 function invokeOverWebSocket(environment: string, payload: InvokePayload) {
-  return requestOverWebSocket(reactClientWebSocketInvokeEvent, {
+  return requestOverWebSocket(invokeEvent, {
     environment,
     payload,
   }) as Promise<InvokeResult>;
 }
 
-async function requestOverWebSocket(event: string, data: object): Promise<unknown> {
+// Rejects once the server has sent nothing for `invokeTimeout`, unless the
+// request does not `expire`.
+async function requestOverWebSocket(event: string, data: object, expires = true): Promise<unknown> {
   const socket = await getReactClientWebSocket();
   const id = String(++nextInvokeId);
 
@@ -519,7 +516,7 @@ async function requestOverWebSocket(event: string, data: object): Promise<unknow
     const pending: PendingInvoke = {
       resolve,
       reject,
-      timeoutId: setTimeout(expire, invokeTimeout),
+      timeoutId: expires ? setTimeout(expire, invokeTimeout) : undefined,
     };
     function expire() {
       const silent = now() - Math.max(sent, lastAnswer);
@@ -528,7 +525,7 @@ async function requestOverWebSocket(event: string, data: object): Promise<unknow
         return;
       }
       pendingInvokes.delete(id);
-      reject(new Error(`React client websocket invoke timed out: ${id}`));
+      reject(new Error(`React client websocket invoke timed out: ${event} ${id}`));
     }
 
     pendingInvokes.set(id, pending);
@@ -620,7 +617,7 @@ function parseInvokeResultMessage(raw: unknown) {
     const message = JSON.parse(raw) as InvokeResultMessage;
     if (
       message.type !== "custom" ||
-      message.event !== reactClientWebSocketInvokeResultEvent ||
+      message.event !== answerEvent ||
       typeof message.data?.id !== "string"
     ) {
       return undefined;
@@ -643,12 +640,12 @@ function createWebSocketUrl(info: WebSocketInfo) {
   const protocol = window.location.protocol === "https:" ? "wss" : "ws";
   const url = new URL(`${protocol}://${window.location.host}${info.path}`);
   url.searchParams.set("token", info.token);
-  url.searchParams.set(reactClientWebSocketQuery, "1");
+  url.searchParams.set(webSocketQuery, "1");
   return url;
 }
 
 async function getWebSocketInfo() {
-  webSocketInfoPromise ??= nativeFetch(reactClientWebSocketInfoPath).then(async (response) => {
+  webSocketInfoPromise ??= nativeFetch(webSocketInfoPath).then(async (response) => {
     if (!response.ok) {
       throw new Error("Failed to fetch React client websocket info");
     }

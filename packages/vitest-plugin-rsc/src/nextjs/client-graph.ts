@@ -1,13 +1,13 @@
 import type { ModuleRunner } from "vite/module-runner";
 import { isHostModule } from "../host-module.ts";
 import {
+  askDevServer,
   checkFetchedModules,
   createEnvironmentRunner,
-  fetchJson,
   takeFetchedModules,
 } from "../utils.ts";
 import { registry } from "./registry.ts";
-import { stylesheetsPath } from "./styles-shared.ts";
+import { stylesheetsEvent, type StylesheetsQuestion } from "./styles-shared.ts";
 
 // A file with `"use client"` is a client boundary: code of the browser layer,
 // see client-files.ts. A test file with the directive renders a Client
@@ -39,7 +39,8 @@ const isDependency = ({ id, file }: { id: string; file: string | null }) =>
 const browserRequire = (id: string) => registry.loadBrowserModule(id);
 
 // The URLs of the stylesheets of a client file, from the dev server: see styles.ts.
-const stylesheetsOf = (url: string) => fetchJson<string[]>(stylesheetsPath, { url });
+const stylesheetsOf = (url: string) =>
+  askDevServer<string[]>(stylesheetsEvent, { url } satisfies StylesheetsQuestion);
 
 /**
  * Evaluates a file of the host with `"use client"`, at its URL in the browser

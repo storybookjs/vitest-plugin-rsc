@@ -9,7 +9,8 @@ import { show, state } from "./state.ts";
 // file does. What it shows is in its query: `?view=page` for a page of the
 // app, `?view=node` for a node in a container of the host, `?view=switch`
 // for one node after another in the one document, as Storybook's canvas
-// renders story after story, `?view=client` for a file of the host with
+// renders story after story, `?view=app-file` for a node whose `hostFiles`
+// name a file of the app, `?view=client` for a file of the host with
 // `"use client"`, `?view=package` for the ones of a package of the host in
 // `node_modules`: one by the name of the package, one through its entry. A
 // second page of the host, with a node of its own, is callout.html.
@@ -39,6 +40,8 @@ await show(async () => {
   const { response } =
     view === "node" || view === "switch"
       ? await renderGreeting(container)
-      : await renderServer({ url: "/" });
+      : view === "app-file"
+        ? await renderGreeting(container, ["app/components/greeting.tsx"])
+        : await renderServer({ url: "/" });
   state.__hostResponse = { status: response.status, url: response.url };
 });

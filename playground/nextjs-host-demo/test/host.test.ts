@@ -146,23 +146,22 @@ test("a node has the CSS of the files of the host that render it", async ({ page
 });
 
 test("leaves a file of the app out of `hostFiles`, with a warning", async ({ page, errors }) => {
-  // What the page asks for the route of a node: see styles.ts. Only a file
-  // of the host is the host's to say. The server answers for a file it has
-  // loaded, so a page loads the host's first.
-  await open(page, errors, "node", expectGreetingStylesheets);
-  const ask = async (file: string) => {
-    const response = await fetch(
-      `${site!.url}@vitest-plugin-rsc/next-stylesheets?entry=${encodeURIComponent(
-        "(vitest-plugin-rsc)/",
-      )}&inline=true&file=${encodeURIComponent(file)}`,
+  // Only a file of the host is the host's to say: see styles.ts. The CSS of
+  // a file of the app is its route's, and the route of a node has none of its
+  // own. The same node with the file of the host has it: `?view=node`.
+  await open(page, errors, "app-file", async (page) => {
+    await page
+      .locator("#host-root")
+      .getByRole("heading", { name: "Hello from the host" })
+      .waitFor();
+    expect(await page.locator("link[rel=stylesheet][href*='greeting.module.css']").count()).toBe(0);
+    expect(await style(page, "[data-testid=greeting]", "border-left-color")).not.toBe(
+      "rgb(0, 112, 243)",
     );
-    expect(response.status).toBe(200);
-    return (await response.json()) as Record<string, unknown[]>;
-  };
-  expect(await ask("app/components/greeting.tsx")).toEqual({ "vitest-plugin-rsc/component": [] });
+  });
   // The warning comes over the pipe of the server, after the answer can.
   await expect.poll(() => site!.output()).toContain("greeting.tsx, which is neither");
-  expect((await ask("host/greeting.tsx"))["vitest-plugin-rsc/component"]).not.toEqual([]);
+  await open(page, errors, "node", expectGreetingStylesheets);
 });
 
 test('runs a file of the host with "use client" in the browser layer', async ({ page, errors }) => {

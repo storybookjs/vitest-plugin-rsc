@@ -1,7 +1,8 @@
 // What the page and the plugin share about the stylesheets of a route, and
 // of a file of the host with `"use client"`: see styles.ts. The page asks for
 // them before Next renders the route. With a dev server it asks the dev
-// server, at `stylesheetsPath`. A static build has them in a file.
+// server over the page's websocket (`stylesheetsEvent`). A static build has
+// them in a file.
 
 /**
  * The file of a static build with the stylesheets of every page route, and
@@ -10,15 +11,22 @@
 export const builtStylesheetsFile = "vitest-plugin-rsc/next-stylesheets.json";
 
 /**
- * Where the dev server answers the page with stylesheets, as JSON. For a
- * route: `?entry=<name of its modules>&inline=<true|false>`, with
- * `Stylesheets`, and a `file=<path>` for each file of the host that renders
+ * Where the dev server answers the page with stylesheets, over the websocket
+ * of the page (`askDevServer()` in ../utils.ts), for a `StylesheetsQuestion`.
+ */
+export const stylesheetsEvent = "vitest-plugin-rsc:next-stylesheets";
+
+/**
+ * What the page asks at `stylesheetsEvent`. For a route: by the name of its
+ * modules, with `Stylesheets`, and `files`, the files of the host that render
  * the node of the route, in their order, absolute or from the root of the
  * project: see `hostFiles` of `renderServer()`. For a file of the host with
- * `"use client"`: `?url=<its URL in the browser layer>`, with the URLs of
- * its stylesheets.
+ * `"use client"`: by its URL in the browser layer, with the URLs of its
+ * stylesheets.
  */
-export const stylesheetsPath = "/@vitest-plugin-rsc/next-stylesheets";
+export type StylesheetsQuestion =
+  | { entry: string; inline: boolean; files: string[] }
+  | { url: string };
 
 /**
  * What the loader tree of the route of a node names its page, where a page of
@@ -84,7 +92,7 @@ export function builtFileKey(file: string, keys: string[]): string | undefined {
 
 /**
  * The stylesheets of a route of a static build that is served from
- * `directory`, a URL: what the dev server answers at `stylesheetsPath`. For
+ * `directory`, a URL: what the dev server answers at `stylesheetsEvent`. For
  * the route of a node, the node has the stylesheets of `files`, the files of
  * the host that render it (`hostFiles` of `renderServer()`), in their order,
  * each once. A file that the build has none for, `missing` is told of.
