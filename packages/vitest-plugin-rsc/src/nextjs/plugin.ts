@@ -301,6 +301,27 @@ function createLayerResolver(getProject: () => NextProject, layer: NextLayer) {
             skipSelf: true,
           });
         }
+        // In a build, an import by a bare specifier gets the file of Next. Vite
+        // RSC keys the client reference of a package's file by the bare
+        // specifier it last saw resolve to it, and it has seen this one:
+        // another `resolve()` would show it the one `normalize()` gives too,
+        // like the ESM form of a route entry's
+        // `next/dist/client/components/builtin/global-error.js`, and the key
+        // would depend on how the routes' resolutions interleave. A relative
+        // import between Next's files is resolved by the specifier below, so
+        // Vite RSC keys the file by it, not by its path in `node_modules`,
+        // which differs by install. Not a directory, whose `package.json`
+        // Vite reads, like the exports by condition of `next/dist/compiled/react-dom`.
+        if (
+          // No environment in the dependency scan of a dev server.
+          this.environment?.mode === "build" &&
+          source === specifier &&
+          target.startsWith("next/")
+        ) {
+          const file = nextFile(target);
+          const named = path.join(getProject().nextDir, target.slice("next/".length));
+          if (file && path.dirname(file) !== named) return normalizePath(file);
+        }
         // Keep it a bare specifier, so Vite maps it to the pre-bundled dependency.
         // Next is the project's: a package of the app that imports `react`
         // can have another `next` closer by, as in a pnpm workspace.
@@ -328,45 +349,6 @@ function createLayerResolver(getProject: () => NextProject, layer: NextLayer) {
 }
 
 type LayerResolver = ReturnType<typeof createLayerResolver>;
-
-// In a build, Vite RSC keys the client reference of a package's file by the
-// bare specifier it last saw resolve to the file. A `"use client"` file of
-// Next that is imported in a form `normalize()` rewrites can reach it under
-// two specifiers: the one the import names, like
-// `next/dist/client/components/builtin/global-error.js` of a route entry,
-// and the one in `next/dist/esm` that the resolver above sends it on to,
-// with a `resolve()` of its own. Which one was last when Vite RSC transforms
-// the file depends on how the resolutions of the routes interleave, and so
-// does the key, and the hash of every chunk that names it. This goes first
-// and resolves the import as the resolver above does, so Vite RSC only sees
-// the specifier `normalize()` gives: for a file of Next it finds, one per
-// file. What else it gives, like a bridge, passes through untouched.
-//
-// Vite's alias plugin and the other resolvers before it no longer see such
-// a source either. An alias of a `next/` specifier did not apply in this
-// layer of a build before this either (checked with `next/headers`).
-function nextSpecifierPlugin(getProject: () => NextProject, resolver: LayerResolver): Plugin {
-  return {
-    name: "vitest-plugin-rsc:next-specifier",
-    apply: "build",
-    enforce: "pre",
-    applyToEnvironment: (environment) => environment.name === environmentOf.rsc,
-    resolveId: {
-      order: "pre",
-      handler(source, _importer, options) {
-        // Not a request with a query, like the CSS of `next/font`, which has
-        // its options in it: no file of Next, and too long a path to look for.
-        if (!source.startsWith("next/") || source.includes("?")) return;
-        const target = resolver.normalize(source);
-        if (target === false || target === source || !target.startsWith("next/")) return;
-        return this.resolve(target, path.join(getProject().root, "package.json"), {
-          ...options,
-          skipSelf: true,
-        });
-      },
-    },
-  };
-}
 
 // Client Components of Next's own runtime: the layout router, the error
 // boundaries, `next/link`. Vite RSC turns `"use client"` modules into client
@@ -1028,7 +1010,6 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
       applyToEnvironment: (environment: { name: string }) =>
         environment.name === environmentOf[layer],
     })),
-    nextSpecifierPlugin(getProject, resolvers.rsc),
     // What the dependency optimizer does to a dependency, for a static build,
     // which has no optimizer.
     ...layers.map((layer) => dependencyBuildPlugin(getProject, serverCode, layer)),
