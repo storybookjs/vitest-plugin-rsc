@@ -984,16 +984,16 @@ import { vitestPluginNext } from "vitest-plugin-rsc/nextjs/plugin";
 
 The options for a node, all optional:
 
-| Option        | What it does                                                                                                                                     |
-| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `url`         | The request URL. Defaults to `/`. The params are the ones your app's route has for it.                                                           |
-| `headers`     | Request headers, on top of the ones a browser sends. Sent with every request, also after the first. A `cookie` header sets cookies for your app. |
-| `wrapper`     | A component that wraps the node on the server. It can be a Server Component.                                                                     |
-| `proxy`       | `true` runs `proxy.ts` and the routing of `next.config` for the request, as for a route.                                                         |
-| `layouts`     | `true` renders the node in place of the page at `url`, inside your app's layouts.                                                                |
-| `container`   | An empty element for the node. Defaults to a new `<div>` in `baseElement`, which `cleanup` removes.                                              |
-| `files`       | The files that render the node, for their CSS. Defaults to the setup files and the test file. For a host other than Vitest; not in a build yet.  |
-| `baseElement` | Defaults to `container` if you pass one, else `document.body`.                                                                                   |
+| Option        | What it does                                                                                                                                                                                                                                    |
+| ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `url`         | The request URL. Defaults to `/`. The params are the ones your app's route has for it.                                                                                                                                                          |
+| `headers`     | Request headers, on top of the ones a browser sends. Sent with every request, also after the first. A `cookie` header sets cookies for your app.                                                                                                |
+| `wrapper`     | A component that wraps the node on the server. It can be a Server Component.                                                                                                                                                                    |
+| `proxy`       | `true` runs `proxy.ts` and the routing of `next.config` for the request, as for a route.                                                                                                                                                        |
+| `layouts`     | `true` renders the node in place of the page at `url`, inside your app's layouts.                                                                                                                                                               |
+| `container`   | An empty element for the node. Defaults to a new `<div>` in `baseElement`, which `cleanup` removes.                                                                                                                                             |
+| `files`       | The files of the host that render the node, for their CSS: absolute, or from the project root. Defaults to the setup files and the test file, and replaces that. A file that is not the host's is left out, with a warning. Not in a build yet. |
+| `baseElement` | Defaults to `container` if you pass one, else `document.body`.                                                                                                                                                                                  |
 
 A node resolves with `{ container, baseElement, asFragment, unmount, response }`.
 

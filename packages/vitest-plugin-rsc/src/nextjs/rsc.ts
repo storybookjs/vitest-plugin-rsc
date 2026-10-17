@@ -111,7 +111,7 @@ registry.loadAppPage = async (page) => {
 // see styles.ts. A static build has them in a file of its own, in the
 // directory of the build. With a dev server, the dev server answers, for the
 // route and, for the route of a node, for the files of the host that render
-// the node: `files` of `renderServer()`, or what the host set as the default.
+// the node (ssr.ts).
 const buildDirectory = builtLayers && Object.values(builtLayers)[0]?.base;
 if (buildDirectory) {
   let built: Promise<BuiltStylesheets> | undefined;
@@ -136,12 +136,8 @@ if (buildDirectory) {
     return builtStylesheetsOf(await built, entry, buildDirectory);
   };
 } else {
-  registry.loadStylesheets = (entry, inline) =>
-    fetchJson<Stylesheets>(stylesheetsPath, {
-      entry,
-      inline: String(inline),
-      file: (registry.openedByRequest.getStore() ?? registry.opened)?.node?.files ?? [],
-    });
+  registry.loadStylesheets = (entry, inline, files) =>
+    fetchJson<Stylesheets>(stylesheetsPath, { entry, inline: String(inline), file: files });
 }
 
 /** The page module of the route of a node: see `loadNodeEntry()` in project/entries.ts. */

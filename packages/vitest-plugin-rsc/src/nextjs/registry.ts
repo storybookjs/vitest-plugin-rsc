@@ -77,11 +77,11 @@ export type NextRegistry = {
   appPages: Record<string, unknown>;
   /**
    * Asks the plugin for the stylesheets of a page route, by the name of its
-   * modules: see styles.ts. The dev server answers, for the route and for the
-   * files of the host that render the node of a route of a node; a static
-   * build reads them from a file of its own (rsc.ts).
+   * modules, and for the route of a node with `files`, the files of the host
+   * that render the node: see styles.ts. The dev server answers; a static
+   * build reads them from a file of its own, without `files` (rsc.ts).
    */
-  loadStylesheets(entry: string, inline: boolean): Promise<Stylesheets>;
+  loadStylesheets(entry: string, inline: boolean, files: string[]): Promise<Stylesheets>;
   /**
    * The files of the host that render a node, when `renderServer()` is not
    * told them with `files`: the node has their stylesheets, see styles.ts.

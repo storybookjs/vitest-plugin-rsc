@@ -5,6 +5,8 @@ export type HostWindow = {
   __hostError?: unknown;
   __hostResponse?: { status: number; url: string };
   __hostReports?: unknown[];
+  /** Whether the callout had its stylesheet, before `?view=switch` left it. */
+  __hostCalloutLinked?: boolean;
 };
 
 export const state = window as HostWindow;

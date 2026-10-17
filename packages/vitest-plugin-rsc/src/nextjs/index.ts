@@ -565,9 +565,11 @@ export type RenderComponentOptions = RequestOptions & {
    * the stylesheets that these files import, as a page has those of its
    * route. Absolute paths, or paths from the project root without a leading
    * slash, like `stories/button.stories.tsx`. Under Vitest it defaults to the
-   * setup files and the test file; another host, like Storybook, passes its
-   * own, like the preview file and the story's file. With a dev server only:
-   * a static build does not link the CSS of these files yet.
+   * setup files and the test file, and what is passed replaces that; another
+   * host, like Storybook, passes its own, like the preview file and the
+   * story's file. A file that is not the host's, like one of the app, is
+   * left out, with a warning. With a dev server only: a static build does
+   * not link the CSS of these files yet.
    */
   files?: string[];
   /**

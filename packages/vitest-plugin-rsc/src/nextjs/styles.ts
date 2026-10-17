@@ -365,14 +365,14 @@ export function createStyles(options: StylesOptions): Styles {
   /**
    * The stylesheets of a route, per file of a segment: see `Stylesheets`. The
    * node of a test is the page of its route, and no file: its stylesheets are
-   * those of the files of the host that render it, `hostFiles`, in their
-   * order. Under Vitest those are the setup files and the test file; see
-   * `nodeFiles` in registry.ts. With `layouts: true` the layouts of the app
-   * around it have their own.
+   * those of the files of the host that render it, `files`, in their order.
+   * Under Vitest those are the setup files and the test file; see `nodeFiles`
+   * in registry.ts. With `layouts: true` the layouts of the app around it
+   * have their own.
    */
   async function stylesheetsOf(
     vite: ViteDevServer,
-    hostFiles: string[],
+    files: string[],
     entry: string,
     inline: boolean,
   ): Promise<Stylesheets> {
@@ -392,12 +392,25 @@ export function createStyles(options: StylesOptions): Styles {
     if ("component" in route) {
       starts.set(
         componentPagePath,
-        hostFiles.flatMap((file) => {
+        files.flatMap((file) => {
+          // Only a file of the host is the host's to say: not a file of the
+          // app, whose CSS is its route's. A test file or a setup file of
+          // Vitest, or what `host.files` matches; an in-source test file is
+          // a file of the app, see plugin.ts.
+          if (!options.isHostFile(file)) {
+            vite.config.logger.warnOnce(
+              `vitest-plugin-rsc: the files that render a node, \`files\` of renderServer(), ` +
+                `name ${file}, which is neither a test file or setup file of Vitest nor ` +
+                `matched by \`host.files\` of vitestPluginNext(); an in-source test file is ` +
+                `a file of the app. Its stylesheets are not linked.`,
+            );
+            return [];
+          }
           const nodes = rsc.moduleGraph.getModulesByFile(file);
           if (!nodes?.size) {
             vite.config.logger.warnOnce(
-              `vitest-plugin-rsc: ${file} is in \`files\` of renderServer(), and the rsc layer ` +
-                `has not loaded it: the stylesheets it imports are not linked.`,
+              `vitest-plugin-rsc: \`files\` of renderServer() names ${file}, which the rsc ` +
+                `layer has not loaded: the stylesheets it imports are not linked.`,
             );
           }
           return [...(nodes ?? [])];
@@ -505,6 +518,7 @@ export function createStyles(options: StylesOptions): Styles {
     if (pathname === stylesheetsPath) {
       const url = searchParams.get("url");
       const entry = searchParams.get("entry");
+      // For the route of a node: the files of the host that render it.
       const files = searchParams.getAll("file").map(fileOf);
       if (!url && !entry) {
         response.statusCode = 400;
@@ -516,15 +530,6 @@ export function createStyles(options: StylesOptions): Styles {
         response.end(
           "vitest-plugin-rsc: the stylesheets of what? Give `url` or `entry`, not both.",
         );
-        return true;
-      }
-      // The page says which files of the host render the node, and only
-      // those are the host's to say: not a file of the app, whose CSS is its
-      // route's.
-      const notHost = files.find((file) => !options.isHostFile(file));
-      if (notHost) {
-        response.statusCode = 403;
-        response.end(`vitest-plugin-rsc: ${notHost} is not a file of the host.`);
         return true;
       }
       const stylesheets = url

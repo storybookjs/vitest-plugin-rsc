@@ -161,7 +161,7 @@ function findPackagesWithDependencies(names: Iterable<string>, root: string): Se
     if (ownPackages.has(name)) return;
     const dir = findPackage(name, from);
     if (!dir || dirs.has(normalizePath(dir))) return;
-    if (from !== root && !named.has(name) && appDirs.has(dir)) return;
+    if (!named.has(name) && appDirs.has(dir)) return;
     dirs.add(normalizePath(dir));
     for (const dependency of dependenciesOf(dir)) visit(dependency, dir);
   };

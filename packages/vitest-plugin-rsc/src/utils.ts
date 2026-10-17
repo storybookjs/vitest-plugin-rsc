@@ -80,7 +80,7 @@ export async function fetchJson<T>(
   const response = await nativeFetch(url);
   if (!response.ok) {
     throw new Error(
-      `vitest-plugin-rsc: ${url} answered ${response.status}: ${await response.text()}`,
+      `vitest-plugin-rsc: ${path} answered ${response.status}: ${await response.text()}`,
     );
   }
   return (await response.json()) as T;
