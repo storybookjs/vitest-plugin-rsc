@@ -129,20 +129,38 @@ function findPackage(name: string, from: string): string | undefined {
 // code into browser code.
 const ownPackages = new Set(["vitest-plugin-rsc", "@vitejs/plugin-rsc"]);
 
-// The directories of these packages and of everything they depend on.
+// The `dependencies` of the package at `dir`, by name.
+function dependenciesOf(dir: string): string[] {
+  const file = path.join(dir, "package.json");
+  if (!fs.existsSync(file)) return [];
+  const { dependencies = {} } = JSON.parse(fs.readFileSync(file, "utf8")) as {
+    dependencies?: Record<string, string>;
+  };
+  return Object.keys(dependencies);
+}
+
+// The directories of these packages and of everything they depend on, but
+// for a package that the project itself depends on: what is in the
+// `dependencies` of the app is the app's, and server code, unless the host
+// names it. A package of the host that depends on `next`, `react` or a
+// library of the app would otherwise take it along, and the app's server
+// would run as browser code, without a message. A package that only the
+// dependencies of the app depend on is not caught: that the walk of the
+// app's own tree would cost a few hundred milliseconds of startup, for a
+// case no host has had yet.
 function findPackagesWithDependencies(names: Iterable<string>, root: string): Set<string> {
   const dirs = new Set<string>();
+  const named = new Set(names);
+  const appPackages = new Set(dependenciesOf(root));
   const visit = (name: string, from: string) => {
     if (ownPackages.has(name)) return;
+    if (from !== root && appPackages.has(name) && !named.has(name)) return;
     const dir = findPackage(name, from);
     if (!dir || dirs.has(normalizePath(dir))) return;
     dirs.add(normalizePath(dir));
-    const { dependencies = {} } = JSON.parse(
-      fs.readFileSync(path.join(dir, "package.json"), "utf8"),
-    ) as { dependencies?: Record<string, string> };
-    for (const dependency of Object.keys(dependencies)) visit(dependency, dir);
+    for (const dependency of dependenciesOf(dir)) visit(dependency, dir);
   };
-  for (const name of names) visit(name, root);
+  for (const name of named) visit(name, root);
   return dirs;
 }
 
@@ -299,17 +317,29 @@ export function createServerCode(registry: string, options: ServerCodeOptions = 
         applyToEnvironment: (environment) => Object.hasOwn(environments, environment.name),
         async transform(code, id) {
           const file = id.split("?")[0]!;
-          // Not a stylesheet, and not what another plugin compiles to JavaScript.
+          // Not a stylesheet, and not what another plugin compiles to
+          // JavaScript. And a file on disk: a module that is no file is a
+          // plugin's, like the `/virtual:/@storybook/…` entries of Storybook's
+          // preview, which run on the page, and is never server code.
           if (!/\.[cm]?[jt]sx?$/.test(file) || !fs.existsSync(file)) return;
           // A dependency is compiled when it is pre-bundled, or not at all.
           if (file.includes("/node_modules/")) return;
           if (file.startsWith(`${normalizePath(this.environment.config.cacheDir)}/`)) return;
           const layer = environments[this.environment.name]!;
+          if (!isServerCode(file, layer)) return;
           // Without Vitest's config, or the files of another host, there is
           // no telling a test file from a file of the app, and a test file
-          // must keep the browser.
-          if (layer === "rsc" && !knowsHostFiles()) return;
-          if (!isServerCode(file, layer)) return;
+          // must keep the browser. Said here, at the first file, rather than
+          // compiling the host's own files as server code, which fails far
+          // away in Next.
+          if (layer === "rsc" && !knowsHostFiles()) {
+            throw new Error(
+              `vitest-plugin-rsc: ${file} is a file of the app, or one of the host's, and ` +
+                `nothing says which. Under Vitest the test files and the setup files come ` +
+                `from its config; another host lists its files in the \`host.files\` option ` +
+                `of vitestPluginNext().`,
+            );
+          }
           return compileServerCode(code, file, registry);
         },
       };

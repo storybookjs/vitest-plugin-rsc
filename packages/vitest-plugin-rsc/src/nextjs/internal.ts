@@ -8,3 +8,13 @@
  * client-graph.ts.
  */
 export { loadClientFile } from "./client-graph.ts";
+
+import { registry } from "./registry.ts";
+
+/**
+ * @internal A file of the host says so as it loads in the rsc layer: the
+ * plugin puts the call in front of the file. See `hostFiles` in registry.ts.
+ */
+export function loadedHostFile(file: string): void {
+  if (!registry.hostFiles.includes(file)) registry.hostFiles.push(file);
+}
