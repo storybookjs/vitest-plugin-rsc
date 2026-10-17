@@ -148,6 +148,59 @@ test("gives Next's module for the asset prefix of its dev server no prefix: ther
   expect(await shimOf("./asset-prefix", bootstrap)).toBeUndefined();
 });
 
+// In a build, Vite RSC keys a client reference of a package by the bare
+// specifier it last saw resolve to the file. The rsc layer resolves a form of
+// a specifier of Next that it rewrites before Vite RSC sees it, so that it
+// only sees the one of the file: the key does not depend on which resolution
+// was last.
+test("hands Vite RSC one specifier for a file of Next in the rsc layer of a build", async () => {
+  const plugins = vitestPluginNext();
+  const plugin = plugins.find(({ name }) => name === "vitest-plugin-rsc:next")!;
+  await (plugin.config as ConfigHook<Config>)({ root }, { command: "build" });
+  const specifier = plugins.find(({ name }) => name === "vitest-plugin-rsc:next-specifier")!;
+  expect(specifier.apply).toBe("build");
+  expect(specifier.enforce).toBe("pre");
+  const applies = specifier.applyToEnvironment as (environment: { name: string }) => boolean;
+  expect(["client", "next_ssr", "react_client"].filter((name) => applies({ name }))).toEqual([
+    "client",
+  ]);
+  const hook = specifier.resolveId as {
+    order: string;
+    handler: (this: object, source: string, importer: string, options: object) => unknown;
+  };
+  expect(hook.order).toBe("pre");
+
+  const resolved: unknown[][] = [];
+  const context = {
+    resolve: async (...args: unknown[]) => {
+      resolved.push(args);
+      return { id: args[0] };
+    },
+  };
+  const resolve = (source: string) =>
+    hook.handler.call(context, source, path.join(root, "app/page.tsx"), {});
+
+  // What a route entry imports, and Next's ESM files import as a file.
+  const globalError = "next/dist/esm/client/components/builtin/global-error.js";
+  for (const source of [
+    "next/dist/client/components/builtin/global-error.js",
+    "next/dist/client/components/builtin/global-error",
+  ]) {
+    resolved.length = 0;
+    expect(await resolve(source), source).toEqual({ id: globalError });
+    expect(resolved).toEqual([[globalError, path.join(root, "package.json"), { skipSelf: true }]]);
+  }
+
+  // The specifier of the file, what is not Next, and a request with a
+  // query, like the CSS of `next/font` with its options, are Vite's.
+  resolved.length = 0;
+  const fontCss = `next/font/local/target.css?${JSON.stringify({ src: "x".repeat(2000) })}`;
+  for (const source of [globalError, "react", "./page", fontCss]) {
+    expect(await resolve(source), source).toBeUndefined();
+  }
+  expect(resolved).toEqual([]);
+});
+
 // What the plugin makes of a Vitest config, and says of it when a run starts.
 async function configure(config: Record<string, unknown>) {
   const plugin = vitestPluginNext().find(({ name }) => name === "vitest-plugin-rsc:next")!;

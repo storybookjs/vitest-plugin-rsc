@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -121,6 +122,27 @@ describe.for(builds)("a static build, $build", ({ build, env }) => {
       expect(hashesOf(moved)).toEqual(hashesOf(dist));
     },
   );
+
+  // Vite RSC keys a client reference of a package by the hash of a bare
+  // specifier of its file. The route entries import Next's global error page
+  // by its CommonJS path, and the rsc layer resolves it in Next's ESM build:
+  // the key is the one of the ESM file, in every build, and not the one of
+  // whichever specifier Vite RSC saw last. The test above sees it change
+  // only when the two builds happen to differ.
+  test("keys a Client Component of Next by the specifier of its file", () => {
+    const key = (specifier: string) =>
+      createHash("sha256").update(specifier).digest("hex").slice(0, 12);
+    const assets = path.join(dist, "assets");
+    const chunks = fs
+      .readdirSync(assets)
+      .filter((file) => file.endsWith(".js"))
+      .map((file) => fs.readFileSync(path.join(assets, file), "utf8"));
+    const withKey = (specifier: string) =>
+      chunks.filter((code) => code.includes(`\`${key(specifier)}\``)).length;
+    const file = "client/components/builtin/global-error.js";
+    expect(withKey(`next/dist/esm/${file}`)).toBeGreaterThan(0);
+    expect(withKey(`next/dist/${file}`)).toBe(0);
+  });
 
   test("renders a page with a Client Component", async ({ page }) => {
     const response = await open(page, site, "/");
