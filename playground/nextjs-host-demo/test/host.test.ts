@@ -55,6 +55,18 @@ test("renders a page of the app", async ({ page, errors }) => {
   expect(host.__hostResponse).toEqual({ status: 200, url: site!.url });
 });
 
+test("leaving a page puts back the URL the host had as the page opened", async ({
+  page,
+  errors,
+}) => {
+  // The host moved its URL between the two pages: leaving the second one
+  // puts that URL back, not the one the document loaded with, nor the one
+  // the host set while the page was open.
+  await open(page, errors, "pages", async (page) => {
+    expect(page.url()).toBe(`${site!.url}?view=pages&shows=second`);
+  });
+});
+
 test("renders a node of the host in a container of the host", async ({ page, errors }) => {
   await open(page, errors, "node", async (page) => {
     // In the container, with the document of the host around it.
