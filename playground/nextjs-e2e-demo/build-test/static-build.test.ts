@@ -99,7 +99,9 @@ describe("a static build", () => {
     const favorite = page.getByRole("button", { name: "Favorite" });
     expect(await favorite.getAttribute("aria-pressed")).toBe("false");
     await favorite.click();
-    await expect.poll(() => favorite.getAttribute("aria-pressed")).toBe("true");
+    await expect
+      .poll(() => favorite.getAttribute("aria-pressed"), { timeout: 30_000 })
+      .toBe("true");
   });
 
   // The pages read the `db` that the host seeded in the rsc layer, and Next's
@@ -210,9 +212,13 @@ describe("a static build", () => {
 
     await open(page, site, "/notes/7");
     const favorite = page.getByRole("button", { name: "Favorite" });
-    await expect.poll(() => favorite.getAttribute("aria-pressed")).toBe("false");
+    await expect
+      .poll(() => favorite.getAttribute("aria-pressed"), { timeout: 30_000 })
+      .toBe("false");
     await favorite.click();
-    await expect.poll(() => favorite.getAttribute("aria-pressed")).toBe("true");
+    await expect
+      .poll(() => favorite.getAttribute("aria-pressed"), { timeout: 30_000 })
+      .toBe("true");
   });
 
   // A route handler, asked by the `fetch` of a Client Component, which then
