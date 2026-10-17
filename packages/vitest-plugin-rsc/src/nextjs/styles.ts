@@ -48,8 +48,8 @@ import {
 //     and with the class names its module exports. Its path has a hash of
 //     that CSS, as a file of Next's build has, so the browser keeps it.
 //   - A static build has each stylesheet in a file of its own there, and the
-//     lists of every route in a file next to the layers: see
-//     `createBuiltStylesheets()`.
+//     lists of every route and of every file of the host in a file next to
+//     the layers: see `createBuiltStylesheets()`.
 
 const linkedQuery = "next-linked";
 const linkedRE = new RegExp(`[?&]${linkedQuery}\\b`);
@@ -636,6 +636,12 @@ export function createStyles(options: StylesOptions): Styles {
 
 type Manager = NonNullable<ReturnType<typeof getPluginApi>>["manager"];
 
+// The real path of the root of the project. Vite has a module of a build by
+// the real path of its file, and the root as the config has it, which can be
+// a link, like `/tmp` on macOS.
+const realRootOf = (root: string) =>
+  fs.existsSync(root) ? normalizePath(fs.realpathSync(root)) : normalizePath(root);
+
 // What Vite's CSS plugin leaves in the CSS of a build for a file it names,
 // until the file has its name: one the build emits, and one of `public/`.
 const builtAssetRE = /__VITE_ASSET__([\w$]+)__/g;
@@ -660,9 +666,12 @@ const cssUrlRE = /\burl\(\s*(?:"([^"]*)"|'([^']*)'|([^'")\s]*))\s*\)|"(\/[^"]*)"
  * links out of the CSS of its chunks, see `linked()`: it is on the pages that
  * link it, and only there. The lists are read off the module graphs of the
  * build, as `reach()` reads them off the dev server's: the rsc layer for the
- * files of the segments, and the layer of the browser for the Client
- * Components, which is built after it. The route of a node has nothing for
- * the node: a build has no files of the host that render one.
+ * files of the segments and the files of the host, and the layer of the
+ * browser for the Client Components, which is built after it. The node of a
+ * route has the stylesheets of the files of the host that the page names
+ * when it renders the node, as with the dev server: the build lists them
+ * for every file of the host it has, by its path from the root of the
+ * project, which is the same on every machine.
  */
 function createBuiltStylesheets(
   options: StylesOptions,
@@ -687,6 +696,9 @@ function createBuiltStylesheets(
   // or a Client Component, by the id the layer of the browser imports it by.
   type Reached = { stylesheet: string } | { client: string };
   const routes = new Map<string, Map<string, Reached[]>>();
+  // What each file of the host reaches in the rsc layer, by its path from the
+  // root of the project.
+  const hostFiles = new Map<string, Reached[]>();
   // The stylesheets each Client Component reaches in the layer of the browser.
   const clients = new Map<string, string[]>();
 
@@ -764,7 +776,10 @@ function createBuiltStylesheets(
       for (const map of [compiled, files]) {
         for (const id of map.keys()) if (id.startsWith(key(layer, ""))) map.delete(id);
       }
-      (layer === "rsc" ? routes : clients).clear();
+      if (layer === "rsc") {
+        routes.clear();
+        hostFiles.clear();
+      } else clients.clear();
     },
     // Between Vite's two CSS plugins: the CSS, and not yet the module.
     transform(code, id) {
@@ -791,6 +806,25 @@ function createBuiltStylesheets(
           if ("component" in route) segments.set(componentPagePath, []);
           routes.set(entry, segments);
         }
+        // The files of the host that the build has, as `stylesheetsOf()`
+        // walks them for `files` of renderServer(): any of them can render a
+        // node. The CSS one imports itself is Vite's, in the chunks of the
+        // host's build.
+        // By the path from the root, which is also how the file is matched
+        // against `host.files`, which are from the root as the config has it.
+        const project = getProject();
+        const root = normalizePath(project.root);
+        const realRoot = realRootOf(root);
+        const { pageExtensions = [] } = project.config as { pageExtensions?: string[] };
+        for (const id of this.getModuleIds()) {
+          if (id.startsWith("\0") || id.includes("?") || !isCode(id, pageExtensions)) continue;
+          const file = normalizePath(path.relative(realRoot, id));
+          // On another drive of Windows there is no way from the root, and
+          // the path is the machine's.
+          if (path.isAbsolute(file)) continue;
+          if (!options.isHostFile(path.posix.join(root, file))) continue;
+          hostFiles.set(file, reachIn(imports, [id], manager.clientReferenceMetaMap));
+        }
         return;
       }
       const stylesheetsOf = (reached: Reached[]) =>
@@ -798,7 +832,10 @@ function createBuiltStylesheets(
       // The Client Components that a route reaches, as the list of every
       // reference imports them: see static-build.ts.
       const importer = `\0${clientReferencesId}`;
-      const reached = [...routes.values()].flatMap((segments) => [...segments.values()]);
+      const reached = [
+        ...[...routes.values()].flatMap((segments) => [...segments.values()]),
+        ...hostFiles.values(),
+      ];
       for (const item of reached.flat()) {
         if (!("client" in item) || clients.has(item.client)) continue;
         const resolved = await this.resolve(item.client, importer);
@@ -858,10 +895,14 @@ function createBuiltStylesheets(
     },
   };
 
-  /** The stylesheets of every page route, by the files of the build. */
+  /** The stylesheets of every page route and every file of the host, by the files of the build. */
   function builtFiles(): { pathname: string; body: Uint8Array }[] {
     if (routes.size === 0) return [];
-    const built: BuiltStylesheets = { assetPath: getProject().assetPath, routes: {} };
+    const built: BuiltStylesheets = {
+      assetPath: getProject().assetPath,
+      routes: {},
+      hostFiles: {},
+    };
     const filesOf = (ids: string[]) => [...new Set(ids.flatMap((id) => files.get(id) ?? []))];
     const idsOf = (reached: Reached[]) =>
       reached.flatMap((item) =>
@@ -873,6 +914,10 @@ function createBuiltStylesheets(
       built.routes[entry] = Object.fromEntries(
         Array.from(segments, ([segment, reached]) => [segment, filesOf(idsOf(reached))]),
       );
+    }
+    // In the order of their paths, the same in every build.
+    for (const file of [...hostFiles.keys()].sort()) {
+      built.hostFiles[file] = filesOf(idsOf(hostFiles.get(file)!));
     }
     return [{ pathname: `/${builtStylesheetsFile}`, body: Buffer.from(JSON.stringify(built)) }];
   }

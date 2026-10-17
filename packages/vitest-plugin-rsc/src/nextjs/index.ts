@@ -568,8 +568,8 @@ export type RenderComponentOptions = RequestOptions & {
    * setup files and the test file, and what is passed replaces that; another
    * host, like Storybook, passes its own, like the preview file and the
    * story's file. A file that is not the host's, like one of the app, is
-   * left out, with a warning. With a dev server only: a static build does
-   * not link the CSS of these files yet.
+   * left out, with a warning. In a static build the files of the host are
+   * what `host.files` of `vitestPluginNext()` matches.
    */
   files?: string[];
   /**

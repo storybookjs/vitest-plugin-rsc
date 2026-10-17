@@ -108,10 +108,10 @@ registry.loadAppPage = async (page) => {
 };
 
 // The stylesheets of a route are the plugin's to say, as they are a build's:
-// see styles.ts. A static build has them in a file of its own, in the
-// directory of the build. With a dev server, the dev server answers, for the
-// route and, for the route of a node, for the files of the host that render
-// the node (ssr.ts).
+// see styles.ts. The route of a node also has those of the files of the host
+// that render the node, which ssr.ts passes. A static build has them in a
+// file of its own, in the directory of the build. With a dev server, the dev
+// server answers.
 const buildDirectory = builtLayers && Object.values(builtLayers)[0]?.base;
 if (buildDirectory) {
   let built: Promise<BuiltStylesheets> | undefined;
@@ -127,13 +127,26 @@ if (buildDirectory) {
     }
     return (await response.json()) as BuiltStylesheets;
   };
-  registry.loadStylesheets = async (entry) => {
+  // A file the build has no stylesheets for, once for the page, as the dev
+  // server warns once.
+  const warned = new Set<string>();
+  const missing = (file: string) => {
+    if (warned.has(file)) return;
+    warned.add(file);
+    console.warn(
+      `vitest-plugin-rsc: the files that render a node name ${file}, which the static build ` +
+        `has no stylesheets for: it is no file of the host that the rsc layer built. In a ` +
+        `build the files of the host are what \`host.files\` of vitestPluginNext() matches, ` +
+        `named from the root of the project. The stylesheets it imports are not linked.`,
+    );
+  };
+  registry.loadStylesheets = async (entry, _inline, files) => {
     if (!built) {
       built = load();
       // One that failed is asked again.
       built.catch(() => (built = undefined));
     }
-    return builtStylesheetsOf(await built, entry, buildDirectory);
+    return builtStylesheetsOf(await built, entry, buildDirectory, files, missing);
   };
 } else {
   registry.loadStylesheets = (entry, inline, files) =>
