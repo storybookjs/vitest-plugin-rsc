@@ -208,20 +208,26 @@ async function buildOf(options: VitestPluginNextOptions, command: "serve" | "bui
   return { jsxDevelopment: config.oxc?.jsx?.development, nodeEnv: [...nodeEnvs][0] };
 }
 
-test("runs Next's development code in a test run, and builds its production code", async () => {
-  expect(await buildOf({}, "serve")).toEqual({ jsxDevelopment: undefined, nodeEnv: undefined });
-  expect(await buildOf({}, "build")).toEqual({ jsxDevelopment: false, nodeEnv: '"production"' });
+// Four `config` hooks, each of which loads the Next project: longer than
+// Vitest's 5 s on CI.
+test(
+  "runs Next's development code in a test run, and builds its production code",
+  { timeout: 60_000 },
+  async () => {
+    expect(await buildOf({}, "serve")).toEqual({ jsxDevelopment: undefined, nodeEnv: undefined });
+    expect(await buildOf({}, "build")).toEqual({ jsxDevelopment: false, nodeEnv: '"production"' });
 
-  // Unless the option says otherwise.
-  expect(await buildOf({ build: "production" }, "serve")).toEqual({
-    jsxDevelopment: false,
-    nodeEnv: undefined,
-  });
-  expect(await buildOf({ build: "development" }, "build")).toEqual({
-    jsxDevelopment: undefined,
-    nodeEnv: '"development"',
-  });
-});
+    // Unless the option says otherwise.
+    expect(await buildOf({ build: "production" }, "serve")).toEqual({
+      jsxDevelopment: false,
+      nodeEnv: undefined,
+    });
+    expect(await buildOf({ build: "development" }, "build")).toEqual({
+      jsxDevelopment: undefined,
+      nodeEnv: '"development"',
+    });
+  },
+);
 
 test("takes no other build", () => {
   expect(() => vitestPluginNext({ build: "test" as never })).toThrow(
