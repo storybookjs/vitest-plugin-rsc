@@ -7,7 +7,7 @@ import {
   takeFetchedModules,
 } from "../utils.ts";
 import { registry } from "./registry.ts";
-import { stylesheetsPath } from "./styles-command.ts";
+import { stylesheetsPath } from "./styles-shared.ts";
 
 // A file with `"use client"` is a client boundary: code of the browser layer,
 // see client-files.ts. A test file with the directive renders a Client

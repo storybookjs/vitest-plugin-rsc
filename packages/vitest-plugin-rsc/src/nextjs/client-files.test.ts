@@ -60,15 +60,23 @@ const reference = `import * as $$ReactServer from "@vitejs/plugin-rsc/react/rsc/
 export const Frame = /* #__PURE__ */ $$ReactServer.registerClientReference(() => {}, "/app/frame.test.tsx", "Frame");
 `;
 
+// What the plugin puts in front of every file of the host in the rsc layer:
+// the file says that it loaded, see `hostFiles` in registry.ts.
+const loaded = (file: string) =>
+  `import { loadedHostFile as __vitestPluginRscLoadedHostFile } from "/plugin/nextjs/internal.js"; ` +
+  `__vitestPluginRscLoadedHostFile(${JSON.stringify(file)}); `;
+
 test("has the module of a file with `use client` of the host load the file in the browser layer first", () => {
   // After Vite RSC made the reference.
   expect(loaders.enforce).toBe("post");
 
   const loader = transformLoader.call(context("client"), reference, "/app/frame.test.tsx");
 
-  // In front of the reference module, at the URL of the file in the browser layer.
+  // In front of the reference module, at the URL of the file in the browser
+  // layer, after the line that says the file loaded.
   expect(loader?.code).toBe(
-    `import { loadClientFile as __vitestPluginRscLoadClientFile } from "/plugin/nextjs/internal.js"; ` +
+    loaded("/app/frame.test.tsx") +
+      `import { loadClientFile as __vitestPluginRscLoadClientFile } from "/plugin/nextjs/internal.js"; ` +
       `await __vitestPluginRscLoadClientFile("/app/frame.test.tsx"); ` +
       reference,
   );
@@ -78,16 +86,23 @@ test("has the module of a file with `use client` of the host load the file in th
   );
 });
 
-test("leaves a file without the directive as it is, and a file that is not the host's", () => {
+test("has a file of the host without the directive say that it loaded, and leaves the rest as it is", () => {
   const rsc = context("client");
   const server = `import { test } from "vitest";\nimport { Frame } from "./frame.tsx";\ntest("renders", () => {});\n`;
   const setup = `import { vi } from "vitest";\nimport "./setup.client.tsx";\nvi.mock("./db.ts");\n`;
 
-  // Its components render with `renderServer()`, in a page of their own.
-  expect(transformLoader.call(rsc, server, "/app/a.test.tsx")).toBeUndefined();
+  // Its components render with `renderServer()`, in a page of their own: the
+  // node has the CSS of what the file imports, so the file says it loaded.
+  // On the first line, with the code as it is after it.
+  expect(transformLoader.call(rsc, server, "/app/a.test.tsx")).toEqual({
+    code: loaded("/app/a.test.tsx") + server,
+    map: null,
+  });
   // A setup file without the directive is server code: what it imports with
-  // the directive is a reference, as in React.
-  expect(transformLoader.call(rsc, setup, "/vitest.setup.ts")).toBeUndefined();
+  // the directive is a reference, as in React. It says it loaded, the same.
+  expect(transformLoader.call(rsc, setup, "/vitest.setup.ts")?.code).toBe(
+    loaded("/vitest.setup.ts") + setup,
+  );
   // A file of the app with the directive, and a file of the host in another layer.
   expect(transformLoader.call(rsc, reference, "/app/counter.tsx")).toBeUndefined();
   expect(

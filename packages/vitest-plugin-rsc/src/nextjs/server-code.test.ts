@@ -3,6 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { runInThisContext } from "node:vm";
 import { rolldown } from "rolldown";
+import os from "node:os";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
 import { compileServerCode, createServerCode } from "./server-code.ts";
 
@@ -223,4 +224,72 @@ test("adds the files of another host to the test files of Vitest", () => {
   // Vitest's packages are still the host's, next to the option's.
   expect(serverCode.isHostPackage("vitest/browser")).toBe(true);
   expect(serverCode.isHostPackage("@vitest/spy")).toBe(true);
+});
+
+// A project on disk: `packages` is the dependency tree, by name, each with
+// its own `dependencies`; `app` is what the project's package.json lists.
+function fakeProject(app: string[], packages: Record<string, string[]>): string {
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "vitest-plugin-rsc-walk-")));
+  const write = (dir: string, name: string, dependencies: string[]) => {
+    fs.mkdirSync(dir, { recursive: true });
+    const manifest = { name, dependencies: Object.fromEntries(dependencies.map((d) => [d, "*"])) };
+    fs.writeFileSync(path.join(dir, "package.json"), JSON.stringify(manifest));
+    fs.writeFileSync(path.join(dir, "index.js"), "");
+  };
+  write(root, "app", app);
+  for (const [name, dependencies] of Object.entries(packages)) {
+    write(path.join(root, "node_modules", name), name, dependencies);
+  }
+  return root;
+}
+
+test("leaves what the project itself depends on to the app, in the walk of the host's packages", () => {
+  // The host's package depends on `react` and on `shared`, as the app does.
+  // `theme` is the host's alone.
+  const root = fakeProject(["react", "shared", "next"], {
+    "host-ui": ["react", "shared", "theme"],
+    react: [],
+    shared: [],
+    theme: ["shared"],
+    next: [],
+    "host-core": ["next"],
+  });
+  const serverCode = createServerCode(registry, {
+    host: { packages: ["host-ui", "host-core", "shared"] },
+  });
+  serverCode.configure(root);
+  serverCode.addTestFiles(() => false);
+  const moduleOf = (name: string) => path.join(root, "node_modules", name, "index.js");
+
+  expect(serverCode.isServerCode(moduleOf("host-ui"), "rsc")).toBe(false);
+  expect(serverCode.isServerCode(moduleOf("theme"), "rsc")).toBe(false);
+  // The host names `shared`: the host's, though the app depends on it too.
+  expect(serverCode.isServerCode(moduleOf("shared"), "rsc")).toBe(false);
+  // The app's own dependencies stay server code, whichever package of the
+  // host depends on them.
+  expect(serverCode.isServerCode(moduleOf("react"), "rsc")).toBe(true);
+  expect(serverCode.isServerCode(moduleOf("next"), "rsc")).toBe(true);
+  fs.rmSync(root, { recursive: true, force: true });
+});
+
+test("stops with a message when nothing says which files are the host's", async () => {
+  const serverCode = createServerCode(registry);
+  serverCode.configure(root);
+  const plugin = serverCode.plugin({ client: "rsc", ssr: "ssr" });
+  const transform = (plugin.transform as (this: unknown, code: string, id: string) => unknown).bind(
+    { environment: { name: "client", config: { cacheDir: path.join(root, ".vite") } } },
+  );
+  const file = path.join(root, "app/page.tsx");
+  await expect(() => transform("export const x = typeof window;", file)).rejects.toThrow(
+    "nothing says which",
+  );
+  // Once Vitest's config, or `host.files`, has said so, the app is compiled.
+  serverCode.addTestFiles((candidate) => candidate.endsWith(".test.tsx"));
+  await expect(transform("export const x = typeof window;", file)).resolves.toMatchObject({
+    code: expect.stringContaining('"undefined"'),
+  });
+  // A module that is no file is a plugin's, like the entries of the page of
+  // a host, and never server code: the plugin that makes it compiles it.
+  const virtual = "/virtual:/@storybook/builder-vite/vite-app.js";
+  await expect(transform("export const x = typeof window;", virtual)).resolves.toBeUndefined();
 });

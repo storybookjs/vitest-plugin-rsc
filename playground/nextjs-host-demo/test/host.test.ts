@@ -37,25 +37,21 @@ beforeAll(async () => {
 
 afterAll(() => site?.close());
 
-type HostWindow = {
-  __hostState?: "ready" | "error";
-  __hostError?: unknown;
-  __hostResponse?: { status: number; url: string };
-  __hostReports?: unknown[];
-};
+type HostWindow = import("../host/state.ts").HostWindow;
 
 /**
- * Opens the host page with a view (see host/main.tsx), and fails the test on
- * an error of the page, with what the dev server printed: see `test` in
- * test-helpers/host.ts. Resolves with what the host left on `window`.
+ * Opens a page of the host with a view (see host/main.tsx), and fails the
+ * test on an error of the page, with what the dev server printed: see `test`
+ * in test-helpers/host.ts. Resolves with what the host left on `window`.
  */
 async function open(
   page: Page,
   errors: PageErrors,
   view: string,
   run: (page: Page) => Promise<void>,
+  document = "",
 ): Promise<HostWindow> {
-  await page.goto(`${site!.url}?view=${view}`);
+  await page.goto(`${site!.url}${document}?view=${view}`);
   await page.waitForFunction(() => (window as HostWindow).__hostState, null, {
     timeout: 60_000,
   });
@@ -112,6 +108,33 @@ test("renders a node of the host in a container of the host", async ({ page, err
     expect(await style(page, "[data-testid=greeting]", "border-left-color")).toBe(
       "rgb(0, 112, 243)",
     );
+  });
+});
+
+test("a node has the CSS of the files of the host that render it", async ({ page, errors }) => {
+  // A page of the host that renders a node from another file of the host,
+  // like a story before this one, in a page of its own: callout.html.
+  await open(
+    page,
+    errors,
+    "callout",
+    async (page) => {
+      await page.locator("#host-root").getByText("From the host").waitFor();
+      expect(await style(page, "[data-testid=callout]", "border-top-color")).toBe("rgb(255, 0, 0)");
+    },
+    "callout.html",
+  );
+  // The dev server has loaded both files of the host now. A node has the
+  // CSS of the file of the host that this page loaded, and not of the other.
+  await open(page, errors, "node", async (page) => {
+    await page
+      .locator("#host-root")
+      .getByRole("heading", { name: "Hello from the host" })
+      .waitFor();
+    await page
+      .locator("link[rel=stylesheet][href*='greeting.module.css']")
+      .waitFor({ state: "attached" });
+    expect(await page.locator("link[rel=stylesheet][href*='callout.module.css']").count()).toBe(0);
   });
 });
 
