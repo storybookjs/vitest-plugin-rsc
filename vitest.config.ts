@@ -1,5 +1,6 @@
 import { defineConfig } from "vitest/config";
 import { vitestPluginRscSourceConditions } from "./vitest.conditions.ts";
+import storybookNextjsViteRscProject from "./packages/storybook-nextjs-vite-rsc/vitest.config.ts";
 import vitestPluginRscProject from "./packages/vitest-plugin-rsc/vitest.config.ts";
 import nextjsE2eDemoBuildProject from "./playground/nextjs-e2e-demo/vitest.build.config.ts";
 import nextjsE2eDemoProject from "./playground/nextjs-e2e-demo/vitest.config.ts";
@@ -18,6 +19,7 @@ export default defineConfig({
       reporter: ["text", "html", "lcov"],
       include: [
         "packages/vitest-plugin-rsc/src/**/*.{ts,tsx}",
+        "packages/storybook-nextjs-vite-rsc/src/**/*.{ts,tsx}",
         "playground/rsc-vitest-demo/src/**/*.{ts,tsx}",
         "playground/nextjs-e2e-demo/**/*.{ts,tsx}",
         "playground/nextjs-notes-demo/**/*.{ts,tsx}",
@@ -36,6 +38,7 @@ export default defineConfig({
     maxWorkers: process.env.CI ? undefined : 2,
     projects: [
       vitestPluginRscProject,
+      storybookNextjsViteRscProject,
       rscVitestDemoProject,
       rscVitestDemoBuildProject,
       nextjsE2eDemoProject,

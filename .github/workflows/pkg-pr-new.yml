@@ -29,4 +29,12 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
-      - run: pnpm dlx pkg-pr-new publish --compact --no-template --pnpm --comment=update --commentWithDev --packageManager=pnpm packages/vitest-plugin-rsc
+      # `--no-compact`, as compact is the default. A compact URL names no
+      # repository: pkg.pr.new looks it up in the `repository` of the package
+      # on npm, and pkg-pr-new checks only that there is one. On npm,
+      # `@storybook/nextjs-vite-rsc` is so far the canaries of
+      # storybookjs/storybook#32412, so its compact URL would look there.
+      - run: >-
+          pnpm dlx pkg-pr-new publish --no-compact --no-template --pnpm
+          --comment=update --commentWithDev --packageManager=pnpm
+          packages/vitest-plugin-rsc packages/storybook-nextjs-vite-rsc

@@ -1,3 +1,4 @@
 {
-  "packages/vitest-plugin-rsc": "0.3.0"
+  "packages/vitest-plugin-rsc": "0.3.0",
+  "packages/storybook-nextjs-vite-rsc": "0.0.0"
 }
