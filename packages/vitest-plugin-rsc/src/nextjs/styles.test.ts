@@ -1,8 +1,15 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { createServer, normalizePath, type CSSOptions, type Plugin } from "vite";
-import { expect, test } from "vitest";
+import {
+  build,
+  createServer,
+  normalizePath,
+  type CSSOptions,
+  type Plugin,
+  type Rolldown,
+} from "vite";
+import { expect, onTestFinished, test } from "vitest";
 import type { NextProject } from "./project.ts";
 import { componentPagePath, type BuiltStylesheets } from "./styles-shared.ts";
 import { createStyles, exportsOfStylesheet, isCode, linked } from "./styles.ts";
@@ -287,4 +294,66 @@ test("finds the files of the host under a root that is a link", async () => {
   } finally {
     fs.rmSync(temp, { recursive: true, force: true });
   }
+});
+
+// A static build of a layout, by the plugin's CSS alone, with Vite's own CSS
+// plugin, which names a file of `public/` in a stylesheet by a placeholder of
+// its own until the file has its name. The rsc layer is Vite's `client`
+// environment, as under a host.
+test("names a file of public/ with a query or a fragment in a stylesheet of a static build", async () => {
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "vitest-plugin-rsc-public-")));
+  onTestFinished(() => fs.rmSync(root, { recursive: true, force: true }));
+  const files = {
+    "app/layout.js": `import "./icons.css";\nexport default function Layout() {}\n`,
+    "app/icons.css":
+      `@font-face { font-family: Icons; src: url(/fonts/icons.woff2?v=4) format("woff2"), ` +
+      `url("/fonts/icons.woff2#iefix") format("woff2") }\n` +
+      `body { background: url(/dot.png) }`,
+    "public/fonts/icons.woff2": "font",
+    "public/dot.png": "png",
+  };
+  for (const [name, content] of Object.entries(files)) {
+    fs.mkdirSync(path.dirname(path.join(root, name)), { recursive: true });
+    fs.writeFileSync(path.join(root, name), content);
+  }
+  const layout = path.join(root, "app/layout.js");
+  const route = { kind: "page", page: "/page", pathname: "/" };
+  const styles = createStyles({
+    getProject: () =>
+      ({
+        root,
+        assetPath: "/_next/",
+        config: {},
+        loadRouteEntry: async () => ({
+          segments: [{ file: layout, stylesheetsKey: "app/layout" }],
+        }),
+      }) as unknown as NextProject,
+    environments: { rsc: "client", ssr: "next_ssr", browser: "react_client" },
+    isServerCode: () => true,
+    isHostFile: () => false,
+    pageRoutes: () => new Map([["/page", route as never]]),
+    lists: [],
+  });
+  const manager = { isScanBuild: false, clientReferenceMetaMap: {} };
+  const { output } = (await build({
+    root,
+    configFile: false,
+    logLevel: "silent",
+    plugins: [{ name: "rsc:minimal", api: { manager } }, ...styles.plugins],
+    // The exports of the layout are what the route renders.
+    build: {
+      write: false,
+      minify: false,
+      rolldownOptions: { input: layout, preserveEntrySignatures: "strict" },
+    },
+  })) as Rolldown.RolldownOutput;
+
+  const css = output.find((file) => file.fileName.startsWith("_next/static/css/icons-"));
+  expect(css?.type).toBe("asset");
+  const source = String((css as Rolldown.OutputAsset).source);
+  expect(source).not.toContain("__VITE_PUBLIC_ASSET__");
+  // By the way from the stylesheet, with the query and the fragment.
+  expect(source).toContain("url(../../../fonts/icons.woff2?v=4)");
+  expect(source).toContain('url("../../../fonts/icons.woff2#iefix")');
+  expect(source).toContain("url(../../../dot.png)");
 });
