@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 import { playwright } from "@vitest/browser-playwright";
 import { defineConfig, defineProject } from "vitest/config";
 import { vitestPluginRSC } from "vitest-plugin-rsc";
-import { vitestPluginNext } from "vitest-plugin-rsc/nextjs/plugin";
+import { vitestPluginNext, type NextBuild } from "vitest-plugin-rsc/nextjs/plugin";
 import { vitestPluginRscSourceConditions } from "../../vitest.conditions.ts";
 import { ignoreWatchedOnlyModules } from "./test/ignore-watched-only-modules.ts";
 
@@ -46,7 +46,13 @@ export const nextjsNotesProjects = [
     ...createSharedProjectConfig(),
     plugins: [
       vitestPluginRSC(),
-      vitestPluginNext({ affectedTests: true }),
+      // Next's production code with `VITEST_PLUGIN_RSC_BUILD=production`,
+      // which CI runs the suite with too.
+      // oxlint-disable-next-line no-process-env
+      vitestPluginNext({
+        affectedTests: true,
+        build: (process.env.VITEST_PLUGIN_RSC_BUILD || "development") as NextBuild,
+      }),
       ignoreWatchedOnlyModules(),
     ],
     test: {

@@ -1,5 +1,5 @@
 import { handleRequest } from "vitest-plugin-rsc/nextjs/testing-library";
-import { expect, onTestFinished, test, vi } from "vitest";
+import { expect, inject, onTestFinished, test, vi } from "vitest";
 import { db } from "./lib/notes.ts";
 
 test("responds to an RSC request with a Flight payload", async () => {
@@ -122,7 +122,14 @@ test("reports the error of a Server Action whose module fails to load", async ()
 
   expect(response.status).toBe(500);
   expect(response.headers.get("x-nextjs-action-not-found")).toBeNull();
-  expect(await response.text()).toContain("The actions of this module cannot load");
+  // React's production build sends an error by its digest only.
+  const body = await response.text();
+  if (inject("build") === "development") {
+    expect(body).toContain("The actions of this module cannot load");
+  } else {
+    expect(body).toContain('"digest"');
+    expect(body).not.toContain("The actions of this module cannot load");
+  }
   expect(String(error.mock.calls[0]?.[0])).toContain("The actions of this module cannot load");
 
   // And again: the error is not replaced by "no such action" the second time.

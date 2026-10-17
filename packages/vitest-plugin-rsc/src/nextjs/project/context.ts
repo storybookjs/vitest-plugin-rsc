@@ -206,7 +206,8 @@ export async function openNextProject(
     load<typeof import("next/dist/server/serve-static.js")>("server/serve-static");
 
   // The app is served the way a deployment serves it: production Next on its
-  // Node.js runtime. React itself stays a development build, see plugin.ts.
+  // Node.js runtime. Next's code and React's run in development unless the
+  // `build` option says otherwise, see build.ts.
   const loadedConfig = await inDirectory(root, () =>
     loadConfig(PHASE_PRODUCTION_BUILD, root, { silent: true }),
   );

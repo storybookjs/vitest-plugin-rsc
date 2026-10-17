@@ -353,7 +353,7 @@ Where the plugin runs something, it mostly runs it as Next does: 399 of the 403 
 **Not Yet: 71 tests.** The two largest causes are half of them:
 
 - **The Pages Router**, 21 tests. Fixtures of the App Router have a `pages/` directory to test the two together: its pages, and its API routes.
-- **React's development build**, 16 tests. A deployment sends the client a digest for an error of a Server Component, and the message is minified. Here the client gets the message, and Strict Mode runs an effect twice. That is `next dev` without its overlay, for errors, and `next start` for the rest.
+- **React's development build**, 16 tests. A deployment sends the client a digest for an error of a Server Component, and the message is minified. Here the client gets the message, and Strict Mode runs an effect twice. That is `next dev` without its overlay, for errors, and `next start` for the rest. The run takes the plugin's default, `build: "development"`: see "Development Or Production" in `docs/next-routes.md`.
 
 Four causes are not in the "Not Yet" list of `docs/next-routes.md`: the Pages Router, the ids of Server Actions (4 tests), a builtin module of Node.js without a stand-in (2), and a prerendered page (2), which that document has under "The Node.js Runtime".
 
@@ -454,7 +454,7 @@ A test gets a minute, as in Next's own runs, and a fixture half an hour. A test 
 
 Next runs every test in two modes, `dev` and `start`, and a test asks which one it is in. The plugin runs Next's runtime the way `next build` and `next start` do: no dev overlay, no HMR. So a run is in `start` mode. `--mode dev` runs the tests as Next's `dev` runs would, to see what differs.
 
-It is not quite `next start`: React is a development build here. See the results for what that means for a test.
+It is not quite `next start`: React is a development build here, the default of the plugin's `build` option. See the results for what that means for a test.
 
 ### Expectations
 

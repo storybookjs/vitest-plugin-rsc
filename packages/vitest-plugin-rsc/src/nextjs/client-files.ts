@@ -7,7 +7,7 @@ import {
   builtHostModuleUrl,
   builtLiveModuleId,
   type HostReferences,
-} from "./build.ts";
+} from "./static-build.ts";
 import { clientFileId, liveModulePrefix } from "./client-ids.ts";
 
 // A test file or a story file with `"use client"` is a module of the browser
@@ -46,7 +46,7 @@ export type ClientFilesOptions = {
   isHostFile(file: string): boolean;
   /** Whether an import is of a package of the host, by its name. */
   isHostPackage(specifier: string): boolean;
-  /** For a static build: what a build of a layer finds of the host, see build.ts. */
+  /** For a static build: what a build of a layer finds of the host, see static-build.ts. */
   built: HostReferences;
 };
 

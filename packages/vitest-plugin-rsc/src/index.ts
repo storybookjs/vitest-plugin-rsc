@@ -50,7 +50,7 @@ export function vitestPluginRSC(): Plugin[] {
       name: "rsc:run-in-browser",
       // What a static build made of the environments that the page runs
       // through a module runner. Nothing here: a build is the Next.js
-      // plugin's, see nextjs/build.ts.
+      // plugin's, see nextjs/static-build.ts.
       resolveId(source) {
         if (source === builtLayersId) return `\0${builtLayersId}`;
       },

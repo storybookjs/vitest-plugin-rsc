@@ -5,7 +5,7 @@ import {
   builtHostModuleUrl,
   builtLiveModuleId,
   createHostReferences,
-} from "./build.ts";
+} from "./static-build.ts";
 import { clientFiles } from "./client-files.ts";
 import { clientFileId, isLiveModule, liveModulePrefix } from "./client-ids.ts";
 

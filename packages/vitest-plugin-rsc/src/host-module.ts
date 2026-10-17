@@ -14,7 +14,7 @@
 //
 // A static build has no server to ask. The page's modules are in the build of
 // the host, which has a list of the ones the runners import, by the same URL:
-// see nextjs/build.ts.
+// see nextjs/static-build.ts.
 
 export const hostModulePrefix = "\0vitest-plugin-rsc/host-module/";
 

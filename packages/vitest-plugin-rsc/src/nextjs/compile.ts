@@ -2,7 +2,7 @@ import fs from "node:fs";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import path from "node:path";
 import { normalizePath, type Plugin } from "vite";
-import { withBuiltFiles } from "./build.ts";
+import { withBuiltFiles } from "./static-build.ts";
 import type { NextLayer, NextProject, ServeFile } from "./project.ts";
 import { linked } from "./styles.ts";
 

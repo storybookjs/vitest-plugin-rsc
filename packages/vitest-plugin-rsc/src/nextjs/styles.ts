@@ -16,7 +16,7 @@ import {
 } from "vite";
 import type { BrowserCommandContext } from "vitest/node";
 import { hostModulePrefix } from "../host-module.ts";
-import { clientReferencesId, cssBuildDirPlaceholder, toBuildDir } from "./build.ts";
+import { clientReferencesId, cssBuildDirPlaceholder, toBuildDir } from "./static-build.ts";
 import { liveModulePrefix } from "./client-ids.ts";
 import type { ComponentRoute, NextLayer, NextProject, NextRoute } from "./project.ts";
 import { componentPagePath } from "./project/entries.ts";
@@ -205,7 +205,7 @@ export type StylesOptions = {
   pageRoutes(): Map<string, PageRoute>;
   /**
    * The files of the host with `"use client"` that a static build has in the
-   * layer of the browser, which render a node there: see build.ts.
+   * layer of the browser, which render a node there: see static-build.ts.
    */
   builtClientFiles(): string[];
   /** The ids of the modules that list the routes: what leads from a test file to every route. */
@@ -728,7 +728,7 @@ function createBuiltStylesheets(
       ];
       clientFiles = stylesheetsOf(reachIn(this, files));
       // The Client Components that a route reaches, as the list of every
-      // reference imports them: see build.ts.
+      // reference imports them: see static-build.ts.
       const importer = `\0${clientReferencesId}`;
       for (const segments of routes.values()) {
         for (const reached of [...segments.values()].flat()) {
