@@ -4,7 +4,8 @@ import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, expect } from "vitest";
 import { copyProject } from "../../test-helpers/build.ts";
 import { createProject, test, type DevServer } from "../../test-helpers/host.ts";
-import { openStory, storyRun } from "../../test-helpers/storybook.ts";
+import type { Frame } from "playwright";
+import { openStory, rendered, runStory, storyRun } from "../../test-helpers/storybook.ts";
 
 // `storybook dev` after a change of a file, as a user edits one with a story
 // open. In a copy of the project, which the test changes, so that the other
@@ -28,6 +29,15 @@ afterAll(async () => {
   fs.rmSync(copy, { recursive: true, force: true });
 });
 
+// Marks the document of the canvas, which a full reload replaces.
+const mark = (canvas: Frame) => canvas.evaluate(() => Object.assign(window, { __marked: true }));
+const reloaded = (canvas: Frame) =>
+  expect
+    .poll(() => canvas.evaluate(() => !("__marked" in window)).catch(() => false), {
+      timeout: 30_000,
+    })
+    .toBe(true);
+
 function change(file: string, from: string, to: string) {
   const changed = path.join(copy, file);
   const source = fs.readFileSync(changed, "utf8");
@@ -49,6 +59,37 @@ test("a page story renders again after a change of its file", async ({ page }) =
   change("stories/home.stories.tsx", 'url: "/"', 'url: "/?changed"');
   await expect.poll(() => new URL(canvas.url()).search, { timeout: 30_000 }).toBe("?changed");
   expect(await storyRun(page, canvas, "home--home")).toMatchObject({
+    phase: "finished",
+    reports: [],
+  });
+});
+
+test("a client story has the project's decorator after a change of a component of it", async ({
+  page,
+}) => {
+  const canvas = await openStory(page, site!.url, "press-button--labelled");
+  await mark(canvas);
+  change("app/components/theme.tsx", "data-theme={theme}>", 'data-theme={theme} data-changed="">');
+  // A change that reaches the preview file loads the preview again.
+  await reloaded(canvas);
+  await rendered(canvas, "press-button--labelled");
+  const theme = canvas.locator("#storybook-root").getByTestId("theme");
+  await expect.poll(() => theme.getAttribute("data-changed")).toBe("");
+  const button = theme.getByRole("button");
+  await expect.poll(() => button.getAttribute("data-theme")).toBe("storybook");
+});
+
+test("server stories render after a change of a component of the app", async ({ page }) => {
+  const canvas = await openStory(page, site!.url, "home--home");
+  await mark(canvas);
+  change("app/components/greeting.tsx", "<h2>Hello from {name}</h2>", "<h2>Hi from {name}</h2>");
+  // A change of the app loads the preview again, with the page open too.
+  await reloaded(canvas);
+  await rendered(canvas, "home--home");
+  await expect
+    .poll(() => canvas.getByRole("heading", { name: "Hi from the page" }).count())
+    .toBe(1);
+  expect(await runStory(page, canvas, "greeting--server-action")).toMatchObject({
     phase: "finished",
     reports: [],
   });
