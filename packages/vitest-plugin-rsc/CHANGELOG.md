@@ -1,5 +1,58 @@
 # Changelog
 
+## [0.4.0](https://github.com/storybookjs/vitest-plugin-rsc/compare/v0.3.0...v0.4.0) (2026-10-17)
+
+
+### ⚠ BREAKING CHANGES
+
+* `files` of renderServer() is now `hostFiles`.
+* The app's cookies are in a cookie jar of the plugin, one for each document, and no longer in the browser's own cookies. `document.cookie` is a view of that jar.
+    - `document.cookie` hides `HttpOnly` cookies, and a test can't write or change one there. Read one with `response.headers.getSetCookie()`, or with `cookies()` in `runInServerAction()`, and set one with `cookies().set()` there.
+    - The page has no `cookieStore`.
+    - A `cookie` header of `renderServer()` goes with every request of the page, not with the document alone, until the test ends or the app changes it.
+    - A `fetch` from client code no longer sees `Set-Cookie` headers.
+    - A cookie's `Path` and `Domain` no longer limit which requests carry it.
+    - The browser's own cookies don't reach the app, and `cleanup()` no longer deletes them.
+    - `handleRequest()` with `credentials: "omit"` sends no cookies.
+
+### Features
+
+* a static build links the CSS of the files of the host that render a node ([#111](https://github.com/storybookjs/vitest-plugin-rsc/issues/111)) ([88aed58](https://github.com/storybookjs/vitest-plugin-rsc/commit/88aed58e910baff30fa84b02710006c0afe6c516))
+* add a build option to run the app as next start does ([#94](https://github.com/storybookjs/vitest-plugin-rsc/issues/94)) ([152ba41](https://github.com/storybookjs/vitest-plugin-rsc/commit/152ba41383d150de5db57734b868d86dc51d169e))
+* add runInServerAction to run code inside a Server Action without a page ([#84](https://github.com/storybookjs/vitest-plugin-rsc/issues/84)) ([8bb82dc](https://github.com/storybookjs/vitest-plugin-rsc/commit/8bb82dcf3ce760d6275de5ccbe15a3f3da426d40))
+* build Next's production code by default in a static build ([#108](https://github.com/storybookjs/vitest-plugin-rsc/issues/108)) ([f30de0c](https://github.com/storybookjs/vitest-plugin-rsc/commit/f30de0c878a0f61a70b6ca7a94953ebbf425beee))
+* build the app's layers into a static site ([#104](https://github.com/storybookjs/vitest-plugin-rsc/issues/104)) ([caf70bc](https://github.com/storybookjs/vitest-plugin-rsc/commit/caf70bc9c05ad335216bc82b8d16465ee4233426))
+* build vitestPluginRSC() on its own into a static site ([#113](https://github.com/storybookjs/vitest-plugin-rsc/issues/113)) ([a81830e](https://github.com/storybookjs/vitest-plugin-rsc/commit/a81830e30fec6d23b4500730d93a4ee94d447955))
+* keep the app's cookies in a cookie jar of the plugin ([#100](https://github.com/storybookjs/vitest-plugin-rsc/issues/100)) ([cfde6df](https://github.com/storybookjs/vitest-plugin-rsc/commit/cfde6dfeb3085572b45626a1f07ef0f4e55c6d1f))
+* link the CSS of a route as Next does, compiled with Next's CSS rules ([#76](https://github.com/storybookjs/vitest-plugin-rsc/issues/76)) ([dadd59b](https://github.com/storybookjs/vitest-plugin-rsc/commit/dadd59b5b20c3a500e5b8343d89f492401211020))
+* rename files of renderServer() to hostFiles, a host option ([#112](https://github.com/storybookjs/vitest-plugin-rsc/issues/112)) ([03d1ecd](https://github.com/storybookjs/vitest-plugin-rsc/commit/03d1ecdaedee598b8b0ff825af80eecb330363b1))
+* run a test file with "use client" in the browser layer ([#99](https://github.com/storybookjs/vitest-plugin-rsc/issues/99)) ([41def92](https://github.com/storybookjs/vitest-plugin-rsc/commit/41def92d06f116b4d240589032813e9c2cb97d0c))
+* the host says which of its files render a node, with files of renderServer() ([#109](https://github.com/storybookjs/vitest-plugin-rsc/issues/109)) ([be68793](https://github.com/storybookjs/vitest-plugin-rsc/commit/be687933573765149681c4ae006873ac645f0be8))
+
+
+### Bug Fixes
+
+* a host file in node_modules with Vite's version query loads in the browser layer ([#118](https://github.com/storybookjs/vitest-plugin-rsc/issues/118)) ([07d0034](https://github.com/storybookjs/vitest-plugin-rsc/commit/07d0034663aba9fa13ff6b07e3be94cd8573087f))
+* keep Next's client navigations working without its dev server ([#101](https://github.com/storybookjs/vitest-plugin-rsc/issues/101)) ([c3291d6](https://github.com/storybookjs/vitest-plugin-rsc/commit/c3291d64a2840d9396743a9157813ec57db00694))
+* keep React's Flight server off the page's console ([cfde6df](https://github.com/storybookjs/vitest-plugin-rsc/commit/cfde6dfeb3085572b45626a1f07ef0f4e55c6d1f))
+* keep the node of a page that is left while it loads until its request is done ([#116](https://github.com/storybookjs/vitest-plugin-rsc/issues/116)) ([8ec58b6](https://github.com/storybookjs/vitest-plugin-rsc/commit/8ec58b6fd9d26d9203dd99662e50665875d4fb18))
+* keep the paths of the machine out of a static build ([#110](https://github.com/storybookjs/vitest-plugin-rsc/issues/110)) ([e1b0215](https://github.com/storybookjs/vitest-plugin-rsc/commit/e1b02157aabde075b31ff3ff000d23db05b59935))
+* keep what another document of the origin stores in the browser ([#117](https://github.com/storybookjs/vitest-plugin-rsc/issues/117)) ([f07a546](https://github.com/storybookjs/vitest-plugin-rsc/commit/f07a5460e33d913f7c576cbb47d48f54415d5e1f))
+* key Next's client references by one specifier in a build ([#115](https://github.com/storybookjs/vitest-plugin-rsc/issues/115)) ([7f4eefe](https://github.com/storybookjs/vitest-plugin-rsc/commit/7f4eefe6f366b88ef92edda51739963438636b81))
+* leave a page and its requests before the next test starts ([#83](https://github.com/storybookjs/vitest-plugin-rsc/issues/83)) ([595c63e](https://github.com/storybookjs/vitest-plugin-rsc/commit/595c63e199956d0f60b50bb03d1f8d338936081a))
+* render no page after a redirect() in runInServerAction ([#102](https://github.com/storybookjs/vitest-plugin-rsc/issues/102)) ([cc07ec7](https://github.com/storybookjs/vitest-plugin-rsc/commit/cc07ec78defbca4314c643de53e2672e8b38cb5f))
+* send the headers of renderServer with every request of the page ([8b4cbde](https://github.com/storybookjs/vitest-plugin-rsc/commit/8b4cbded7ca99966811deaddd19458fba289a920))
+* wait for the requests the server is still handling when a page is left ([#85](https://github.com/storybookjs/vitest-plugin-rsc/issues/85)) ([d7144bb](https://github.com/storybookjs/vitest-plugin-rsc/commit/d7144bb8bf33becca03a2edd3b8998c3ecbc4528))
+
+
+### Performance Improvements
+
+* compile pre-bundled dependencies with Rolldown's module runner transform ([#89](https://github.com/storybookjs/vitest-plugin-rsc/issues/89)) ([ad26c10](https://github.com/storybookjs/vitest-plugin-rsc/commit/ad26c1058393beadc5ddbe46d2ef347ace874b8b))
+* fetch and compile the modules of a page load once ([#86](https://github.com/storybookjs/vitest-plugin-rsc/issues/86)) ([8f446d1](https://github.com/storybookjs/vitest-plugin-rsc/commit/8f446d168797ea6048cf041ff7bb0bd16fc06275))
+* fetch the modules of a page at once, and dependencies without source maps ([#88](https://github.com/storybookjs/vitest-plugin-rsc/issues/88)) ([cf6540f](https://github.com/storybookjs/vitest-plugin-rsc/commit/cf6540f4b6ee9d908a9ad4d29082f9db575c0150))
+* leave files that are no code out of the walk for a route's stylesheets ([#93](https://github.com/storybookjs/vitest-plugin-rsc/issues/93)) ([10ebe1d](https://github.com/storybookjs/vitest-plugin-rsc/commit/10ebe1d85b6d757deb4e326ab17beee5b643d977))
+* let the browser keep the stylesheets that Next links ([#95](https://github.com/storybookjs/vitest-plugin-rsc/issues/95)) ([9833335](https://github.com/storybookjs/vitest-plugin-rsc/commit/9833335152d68e31e0b5942ed2e49b8aa5ac3d36))
+
 ## [0.3.0](https://github.com/storybookjs/vitest-plugin-rsc/compare/v0.2.5...v0.3.0) (2026-10-08)
 
 
