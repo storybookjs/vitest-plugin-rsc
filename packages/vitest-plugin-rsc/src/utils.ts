@@ -12,12 +12,7 @@ import {
 } from "vite/module-runner";
 import builtLayers from "virtual:vitest-plugin-rsc/layers";
 import * as pageClient from "virtual:vitest-plugin-rsc/vite-client";
-import {
-  builtUrl,
-  createBuiltLayers,
-  type InvokePayload,
-  type InvokeResult,
-} from "./built-layers.ts";
+import { createBuiltLayers, type InvokePayload, type InvokeResult } from "./built-layers.ts";
 import { isHostModule } from "./host-module.ts";
 
 // The page's own instance of Vite's client, for the modules that the runners
@@ -80,7 +75,8 @@ export async function fetchJson<T>(path: string, query: Record<string, string>):
 }
 
 // The modules of a static build, see built-layers.ts. A page runs both
-// layers, so the tab asks for all of them at once, before a runner does.
+// layers, so the tab asks for their manifests and the chunks of their entries
+// at once, before a runner does.
 const built = createBuiltLayers(nativeFetch);
 for (const layer of Object.values(builtLayers ?? {})) if (layer) built.preload(layer);
 
@@ -115,7 +111,7 @@ function getRunner(environment: string): ModuleRunner {
 }
 
 // A runner of an environment. A module of the page is the page's own, and a
-// static build has the modules of the environment in a file of its own.
+// static build has the modules of the environment in chunks of its own.
 function createRunner(
   environment: string,
   invoke: NonNullable<ModuleRunnerTransport["invoke"]>,
@@ -135,12 +131,12 @@ function createRunner(
           hostModule(payload) ?? (layer ? built.invoke(layer, payload) : invoke(payload)),
       },
       hmr: false,
-      // A module of a build has the URL of the file it would be, from which
-      // it names the files of the build, like its CSS.
+      // A module of a build has the URL of its chunk, from which it names
+      // the files of the build, like its CSS.
       ...(layer && {
         createImportMeta: (file) => ({
           ...createDefaultImportMeta(file),
-          url: builtUrl(layer, file),
+          url: built.urlOf(layer, file),
         }),
       }),
     },
@@ -205,15 +201,16 @@ function hostModule(payload: InvokePayload): InvokeResult | undefined {
 
 /**
  * What a runner imports a module of an environment by: its id, or in a build
- * the id of the module that it is the entry of.
+ * the file of the chunk that it is the entry of, which the manifest of the
+ * layer names.
  */
-export function environmentModule(environment: string, id: string): string {
-  const entry = builtLayers?.[environment]?.entries[id];
-  return entry ? `/${entry}` : id;
+export async function environmentModule(environment: string, id: string): Promise<string> {
+  const layer = builtLayers?.[environment];
+  return layer ? built.moduleOf(layer, id) : id;
 }
 
-export function importReactClient<T = any>(id: string): Promise<T> {
-  return getRunner("react_client").import<T>(environmentModule("react_client", id));
+export async function importReactClient<T = any>(id: string): Promise<T> {
+  return getRunner("react_client").import<T>(await environmentModule("react_client", id));
 }
 
 async function invokeEnvironment(environment: string, payload: InvokePayload) {

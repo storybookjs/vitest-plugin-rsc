@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Page } from "playwright";
@@ -11,6 +12,15 @@ import { createProject, serveFiles, test, type Site } from "../../test-helpers/h
 
 const root = fileURLToPath(new URL("../", import.meta.url));
 const dist = path.join(root, "dist");
+
+/** The layers that run through a module runner, by their environments. */
+const layers = ["next_ssr", "react_client"];
+/** What the manifest of a layer says: see `BuiltManifest` of the plugin. */
+type Manifest = { entry: { file: string }; chunks: Record<string, unknown> };
+const manifestOf = (layer: string) =>
+  JSON.parse(
+    fs.readFileSync(path.join(dist, `vitest-plugin-rsc/${layer}/manifest.json`), "utf8"),
+  ) as Manifest;
 
 type HostResponse = { status: number; url: string; redirected: boolean };
 
@@ -251,14 +261,43 @@ describe("a static build", () => {
   });
 
   test("has every file the page asks for", async ({ page }) => {
-    // The layers, one file each, and the stylesheets: see the plugin.
+    // The manifests of the layers, the entries they name, which are named
+    // after their content, and the stylesheets: see the plugin.
+    const entries = layers.map((layer) => manifestOf(layer).entry.file);
+    for (const entry of entries) {
+      expect(entry).toMatch(
+        /^vitest-plugin-rsc\/(next_ssr|react_client)\/assets\/entry-[\w-]+\.js$/,
+      );
+    }
     for (const file of [
-      "vitest-plugin-rsc/next_ssr/modules.json",
-      "vitest-plugin-rsc/react_client/modules.json",
+      ...layers.map((layer) => `vitest-plugin-rsc/${layer}/manifest.json`),
+      ...entries,
       "vitest-plugin-rsc/next-stylesheets.json",
     ]) {
       const response = await page.request.get(site.url + file);
       expect(response.status(), file).toBe(200);
     }
+  });
+
+  // A Client Component is a chunk of each layer, which a page fetches when
+  // its route renders the component, not before.
+  test("fetches the Client Component of a route when the route renders it", async ({ page }) => {
+    const clientCard = layers.map((layer) => {
+      const files = Object.keys(manifestOf(layer).chunks);
+      const found = files.filter((file) => /\/client-card-[\w-]+\.js$/.test(file));
+      expect(found, layer).toHaveLength(1);
+      return found[0]!;
+    });
+    const requested: string[] = [];
+    page.on("request", (request) => requested.push(request.url().slice(site.url.length)));
+    const wasRequested = () => clientCard.filter((file) => requested.includes(file));
+
+    await open(page, site, "/");
+    await heading(page, "Home");
+    expect(wasRequested()).toEqual([]);
+
+    await open(page, site, "/styles");
+    await page.getByText("Styled by a CSS module in a Client Component").waitFor();
+    expect(wasRequested()).toEqual(clientCard);
   });
 });

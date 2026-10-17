@@ -117,8 +117,9 @@ const buildDirectory = builtLayers && Object.values(builtLayers)[0]?.base;
 if (buildDirectory) {
   let built: Promise<BuiltStylesheets> | undefined;
   const load = async () => {
-    // Its name does not change with its content, like `modules.json`: ask
-    // the server whether the copy the browser has is still the one it serves.
+    // Its name does not change with its content, like the manifest of a
+    // layer: ask the server whether the copy the browser has is still the
+    // one it serves.
     const url = new URL(builtStylesheetsFile, buildDirectory).href;
     const response = await registry.network(url, { cache: "no-cache" });
     if (!response.ok) {

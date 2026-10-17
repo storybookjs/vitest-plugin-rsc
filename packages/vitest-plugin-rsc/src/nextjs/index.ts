@@ -12,7 +12,7 @@ import { registry, type Opened } from "./registry.ts";
 await import("./rsc.ts");
 // One module graph for the tab: the server stays, where a page is loaded anew.
 const ssr = await createEnvironmentRunner("next_ssr").import<typeof import("./ssr.ts")>(
-  environmentModule("next_ssr", "vitest-plugin-rsc/nextjs/ssr"),
+  await environmentModule("next_ssr", "vitest-plugin-rsc/nextjs/ssr"),
 );
 
 const nativeFetch = globalThis.fetch;
@@ -858,7 +858,7 @@ async function openPage(
   };
   const started = (async () => {
     const client = await runner.import<typeof import("./client.tsx")>(
-      environmentModule("react_client", "vitest-plugin-rsc/nextjs/client"),
+      await environmentModule("react_client", "vitest-plugin-rsc/nextjs/client"),
     );
     superseded();
     return client.start(loaded, container, signal);

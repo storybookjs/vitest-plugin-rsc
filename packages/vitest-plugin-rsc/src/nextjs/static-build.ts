@@ -1,7 +1,15 @@
 import fs from "node:fs";
 import path from "node:path";
 import { getPluginApi } from "@vitejs/plugin-rsc/plugin";
-import { moduleRunnerTransform, type Plugin, type Rolldown, type ViteBuilder } from "vite";
+import {
+  moduleRunnerTransform,
+  type Plugin,
+  type RenderBuiltAssetUrl,
+  type Rolldown,
+  version as viteVersion,
+  type ViteBuilder,
+} from "vite";
+import type { BuiltManifest } from "../built-layers.ts";
 
 // A static build of the app: the three layers as files of a site, with no dev
 // server next to the browser. `vite build` makes it, and so does a host that
@@ -11,11 +19,12 @@ import { moduleRunnerTransform, type Plugin, type Rolldown, type ViteBuilder } f
 // The rsc layer shares its environment with the host, so it is the host's
 // build: its HTML, with its scripts. The other two run through a module
 // runner (../utils.ts), so that a page load gets a module graph of its own.
-// They are built like any environment, and then every chunk is rewritten into
-// the format a module runner evaluates. Those of a layer are one file, by the
-// id of each, which a tab fetches once where it asks a dev server for every
-// module: see ../built-layers.ts. Its other files, like CSS, are files of the
-// build.
+// They are built like any environment, into chunks with a hash in their
+// names, and then every chunk is rewritten into the format a module runner
+// evaluates. A manifest per layer names its entry and says what each chunk
+// imports, so that a tab fetches the chunks a page needs, at once, where it
+// asks a dev server for every module: see ../built-layers.ts. The other files
+// of a layer, like CSS, are files of the build as Vite names them.
 //
 // A dev server finds a module by the id a Flight payload has for it. A build
 // has to have those modules in it, under those ids, so the order matters:
@@ -40,18 +49,14 @@ const serverReferencesId = "virtual:vitest-plugin-rsc/next-server-references";
 /** Where the layers of the module runner are, in the directory of the build. */
 const layersDir = "vitest-plugin-rsc";
 /**
- * The one entry of a layer. A module of a layer is no file of the build, but
- * its id is the path it would have: the file it names by its URL, like its
- * CSS, is named from there.
+ * The manifest of a layer: see `BuiltManifest` in ../built-layers.ts. The only
+ * file of a layer that is not named after its content: the build of the host,
+ * which says where it is, comes before the layer's, which needs the ids that
+ * the host's build gives. So it is a file, like the `index.html` of the host,
+ * that a site serves without a long cache. The chunks it names can have one.
  */
-const entryFile = "entry.js";
-/**
- * The file with every module of a layer. Not named after its content: the
- * build of the host, which says where it is, comes before the layer's, which
- * needs the ids that the host's build gives. So it is a file, like the
- * `index.html` of the host, that a site serves without a long cache.
- */
-const modulesFile = "modules.json";
+const manifestFile = "manifest.json";
+const manifestOf = (layer: string) => `${layersDir}/${layer}/${manifestFile}`;
 
 // A build can be served from any path, so a file of it names another one by
 // the way from itself. These stand in for the way from a file of the build to
@@ -118,7 +123,8 @@ const importMeta = "__vite_ssr_import_meta__";
 // A module of a build as a module runner takes it. Its imports are by the
 // path of the file, from the directory of the build: a runner resolves a
 // relative import against what the importer was asked by, which for a build
-// is not always a path.
+// is not always a path. Also an `import()`, which Rolldown writes with a
+// template literal, when nothing is put into it.
 export async function toRunnerModule(
   chunk: Pick<Rolldown.OutputChunk, "fileName" | "code">,
 ): Promise<string> {
@@ -126,7 +132,7 @@ export async function toRunnerModule(
   const transformed = await moduleRunnerTransform(chunk.code, null, id, chunk.code);
   const directory = path.posix.dirname(id);
   const code = (transformed?.code ?? chunk.code).replace(
-    /(__vite_ssr_(?:dynamic_)?import__\()(["'])(\.\.?\/[^"']*)\2/g,
+    /(__vite_ssr_(?:dynamic_)?import__\()(["'`])(\.\.?\/[^"'`$]*)\2/g,
     (_match, call: string, _quote: string, specifier: string) =>
       `${call}${JSON.stringify(path.posix.resolve(directory, specifier))}`,
   );
@@ -137,6 +143,14 @@ export async function toRunnerModule(
     : code;
 }
 
+// What the hash in the name of a chunk of a layer covers, next to what
+// Rolldown makes of it: how it is rewritten for the runner, which is after
+// Rolldown has named it. A site keeps a chunk for as long as its name stays.
+const runnerFormat = `vite ${viteVersion}\n${toRunnerModule.toString()}`;
+
+/** The name of the entry of a layer, in its input. */
+const entryName = "entry";
+
 export function nextStaticBuild(options: StaticBuildOptions): Plugin {
   const { rsc, ssr, browser } = options.environments;
   const entryOf: Record<string, string> = {
@@ -145,13 +159,19 @@ export function nextStaticBuild(options: StaticBuildOptions): Plugin {
   };
   // Set once the config is resolved, which is before anything is built.
   let manager!: Manager;
+  let renderBuiltUrl: RenderBuiltAssetUrl | undefined;
+  const isServer = new Map<string, boolean>();
   // What the builds of the layers that run through a module runner made, by
-  // environment: their modules by id, and their other files. A module is
-  // there once it is rewritten for the runner, which the build of its layer
-  // does not wait for.
+  // environment: their chunks by file, their manifest, and their other files.
+  // A chunk is there once it is rewritten for the runner, which the build of
+  // its layer does not wait for.
   const built = new Map<
     string,
-    { modules: Map<string, Promise<string>>; files: Map<string, string | Uint8Array> }
+    {
+      chunks: Map<string, Promise<string>>;
+      manifest: BuiltManifest;
+      files: Map<string, string | Uint8Array>;
+    }
   >();
   // While `buildApp()` builds the environments.
   let buildingApp = false;
@@ -160,6 +180,25 @@ export function nextStaticBuild(options: StaticBuildOptions): Plugin {
     const found = builder.environments[name];
     if (!found) throw new Error(`vitest-plugin-rsc: the build has no environment "${name}"`);
     return found;
+  };
+
+  // Where the config has Vite name a file of the build, with
+  // `experimental.renderBuiltUrl`, which Vite RSC asks for its assets too, as
+  // for code that a script runs: a URL, code that makes one, or nothing,
+  // which leaves it to the plugin. As for Vite, an empty URL is nothing.
+  const renderedUrl = (
+    file: string,
+    hostId: string,
+    environment: string,
+  ): { url?: string; runtime?: string } => {
+    const rendered = renderBuiltUrl?.(file, {
+      type: "asset",
+      hostId,
+      hostType: "js",
+      ssr: isServer.get(environment) ?? false,
+    });
+    if (typeof rendered === "string") return rendered ? { url: rendered } : {};
+    return rendered?.runtime ? { runtime: rendered.runtime } : {};
   };
 
   return {
@@ -186,9 +225,12 @@ export function nextStaticBuild(options: StaticBuildOptions): Plugin {
           // name and the base.
           assetsDir: `${layersDir}/${name}/assets`,
           rolldownOptions: {
-            input: { entry: entryOf[name]! },
+            input: { [entryName]: entryOf[name]! },
             output: {
-              entryFileNames: `${layersDir}/${name}/${entryFile}`,
+              // Named after their content, also the entry: a site can serve
+              // them with a long cache. The manifest says which is the entry.
+              entryFileNames: `${layersDir}/${name}/assets/[name]-[hash].js`,
+              chunkFileNames: `${layersDir}/${name}/assets/[name]-[hash].js`,
               // A file a module names by its URL, like an import with `?url`,
               // where the browser layer has it: the server renders the URL
               // that the browser hydrates.
@@ -256,9 +298,14 @@ export function nextStaticBuild(options: StaticBuildOptions): Plugin {
       const api = getPluginApi(resolved);
       if (!api) throw new Error("vitest-plugin-rsc: vitestPluginNext() needs vitestPluginRSC().");
       manager = api.manager;
+      renderBuiltUrl = resolved.experimental?.renderBuiltUrl;
+      for (const [name, environment] of Object.entries(resolved.environments)) {
+        isServer.set(name, environment?.consumer === "server");
+      }
       // The layers are read from their bundles, in `generateBundle`, and
-      // written as one file each: see `buildApp()`. Vite writes nothing of
-      // them. Set here, where no plugin of the host changes it anymore.
+      // written from there, rewritten for the runner: see `buildApp()`. Vite
+      // writes nothing of them. Set here, where no plugin of the host changes
+      // it anymore.
       for (const name of [ssr, browser]) {
         const layer = resolved.environments[name]?.build;
         if (layer) layer.write = false;
@@ -303,15 +350,11 @@ export function nextStaticBuild(options: StaticBuildOptions): Plugin {
           fs.mkdirSync(path.dirname(file), { recursive: true });
           fs.writeFileSync(file, content);
         };
-        for (const [name, { modules, files }] of built) {
+        for (const [name, { chunks, manifest, files }] of built) {
           for (const [fileName, content] of files) write(fileName, content);
-          // In the order of their ids, the same in every build.
-          const ids = [...modules.keys()].sort();
-          const codes = await Promise.all(ids.map((id) => modules.get(id)!));
-          write(
-            `${layersDir}/${name}/${modulesFile}`,
-            JSON.stringify(Object.fromEntries(ids.map((id, index) => [id, codes[index]]))),
-          );
+          for (const [fileName, code] of chunks) write(fileName, await code);
+          // Last, as it names the others.
+          write(manifestOf(name), JSON.stringify(manifest));
         }
         // What Next's loaders made for the browser, fonts and images, by the
         // path it asks for, and the stylesheets of the routes.
@@ -350,18 +393,24 @@ export function nextStaticBuild(options: StaticBuildOptions): Plugin {
         return referenceList([...manager.serverReferences.metaMap.values()]);
       }
       if (id === `\0${layersId}/built`) {
-        // A file of a layer is named from the directory of the build.
-        const layers = [ssr, browser].map(
-          (name) =>
-            `  ${JSON.stringify(name)}: { base: directory, entries: ${JSON.stringify({
-              [entryOf[name]!]: `${layersDir}/${name}/${entryFile}`,
-            })}, modules: ${JSON.stringify(`${layersDir}/${name}/${modulesFile}`)} },`,
-        );
+        // A manifest is named from the directory of the build, unless the
+        // config names it, by a URL or by code. Vite RSC asks for its assets
+        // with no file that names them, as this is before there is one.
+        const layers = [ssr, browser].map((name) => {
+          const file = manifestOf(name);
+          const { url, runtime } = renderedUrl(file, "", rsc);
+          const manifest = `new URL(${runtime ? `(${runtime})` : JSON.stringify(url ?? file)}, directory).href`;
+          return `  ${JSON.stringify(name)}: { base: directory, manifest: ${manifest} },`;
+        });
         return (
           `const directory = new URL(${buildDirPlaceholder}, import.meta.url).href;\n` +
           `export default {\n${layers.join("\n")}\n};\n`
         );
       }
+    },
+    augmentChunkHash() {
+      const { name } = this.environment;
+      if (name === ssr || name === browser) return runnerFormat;
     },
     // Where the directory of the build is, from the file that asks.
     renderChunk(code, chunk) {
@@ -386,14 +435,29 @@ export function nextStaticBuild(options: StaticBuildOptions): Plugin {
           );
         }
         if (name !== ssr && name !== browser) return;
-        const modules = new Map<string, Promise<string>>();
+        const chunks = new Map<string, Promise<string>>();
         const files = new Map<string, string | Uint8Array>();
-        for (const output of Object.values(bundle)) {
+        const isChunk = (fileName: string) => bundle[fileName]?.type === "chunk";
+        const manifest: BuiltManifest = { entry: { id: entryOf[name]!, file: "" }, chunks: {} };
+        // In the order of their files, the same in every build.
+        const outputs = Object.values(bundle).sort((a, b) => (a.fileName < b.fileName ? -1 : 1));
+        for (const output of outputs) {
           if (output.type === "chunk") {
             const rewritten = toRunnerModule(output);
             // One that fails does so where it is written.
             rewritten.catch(() => {});
-            modules.set(`/${output.fileName}`, rewritten);
+            chunks.set(output.fileName, rewritten);
+            // Not another chunk that a plugin emits as an entry.
+            if (output.isEntry && output.name === entryName) {
+              manifest.entry.file = output.fileName;
+            }
+            // As Rolldown has them, which `toRunnerModule()` keeps, by their
+            // files. Not the chunks of CSS that Vite takes out of the bundle.
+            manifest.chunks[output.fileName] = {
+              imports: output.imports.filter(isChunk),
+              dynamicImports: output.dynamicImports.filter(isChunk),
+              ...renderedUrl(output.fileName, manifestOf(name), name),
+            };
           }
           // The CSS is the browser layer's. A file of the ssr layer is one the
           // browser layer has too, when a module of both names it.
@@ -401,7 +465,10 @@ export function nextStaticBuild(options: StaticBuildOptions): Plugin {
             files.set(output.fileName, output.source);
           }
         }
-        built.set(name, { modules, files });
+        if (!manifest.entry.file) {
+          throw new Error(`vitest-plugin-rsc: the build of the ${name} layer has no entry`);
+        }
+        built.set(name, { chunks, manifest, files });
       },
     },
   };
