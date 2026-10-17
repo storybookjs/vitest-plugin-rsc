@@ -367,6 +367,39 @@ test("keeps what Vitest stores in the browser while the tests run", async () => 
   expect(localStorage.getItem("vueuse-color-scheme")).toBe(colorScheme ?? "auto");
 });
 
+test("keeps what another document of the origin stores in the browser, like the manager of Storybook", async () => {
+  await renderServer({ url: "/settings" });
+  // The app stores its theme.
+  await page.getByRole("button", { name: "Theme: light" }).click();
+  await expect.element(page.getByRole("button", { name: "Theme: dark" })).toBeVisible();
+  expect(localStorage.getItem("theme")).toBe("dark");
+
+  // A document of the same origin next to the app's, as the manager of
+  // Storybook is next to its preview.
+  const other = document.body.appendChild(document.createElement("iframe"));
+  onTestFinished(() => {
+    other.remove();
+    localStorage.removeItem("host-setting");
+    sessionStorage.removeItem("host-session");
+  });
+  // What this document hears of, once the other one has written.
+  const heard = new Set<string | null>();
+  const hear = ({ key }: StorageEvent) => heard.add(key);
+  window.addEventListener("storage", hear);
+  onTestFinished(() => window.removeEventListener("storage", hear));
+  other.contentWindow!.localStorage.setItem("host-setting", "on");
+  other.contentWindow!.sessionStorage.setItem("host-session", "on");
+  await expect
+    .poll(() => [...heard])
+    .toEqual(expect.arrayContaining(["host-setting", "host-session"]));
+
+  await cleanup();
+
+  expect(localStorage.getItem("host-setting")).toBe("on");
+  expect(sessionStorage.getItem("host-session")).toBe("on");
+  expect(localStorage.getItem("theme")).toBeNull();
+});
+
 test("replaces the page when a component redirects in the render after a Server Action", async () => {
   await renderServer({ url: "/members" });
   await expect.element(page.getByRole("heading", { name: "Members" })).toBeVisible();
