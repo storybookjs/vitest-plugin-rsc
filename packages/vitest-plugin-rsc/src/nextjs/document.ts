@@ -1,3 +1,5 @@
+import { graphStylesheetAttribute } from "./styles-shared.ts";
+
 // A page load, without loading a page: the test runs in this
 // document and has to stay in it. So the document the server sends is moved
 // into this one. What the test runner needs stays, its scripts and styles. The
@@ -20,7 +22,8 @@ function staysDuringPage(node: Node): boolean {
   return (
     node instanceof HTMLScriptElement ||
     node instanceof HTMLStyleElement ||
-    (node instanceof HTMLLinkElement && node.rel === "modulepreload")
+    (node instanceof HTMLLinkElement && node.rel === "modulepreload") ||
+    isGraphStylesheet(node)
   );
 }
 
@@ -30,6 +33,14 @@ function staysDuringPage(node: Node): boolean {
 // will not load again.
 function isViteStyle(node: Node): boolean {
   return node instanceof HTMLStyleElement && node.hasAttribute("data-vite-dev-id");
+}
+
+// The stylesheets that the tab's graph linked for a file of the host with
+// `"use client"` (client-graph.ts) are the tab's, as the graph is: they stay
+// for the pages, and outlive the page they came during, as Vite's `<style>`
+// does. A host loads a client file before it leaves the page that is there.
+function isGraphStylesheet(node: Node): boolean {
+  return node instanceof HTMLLinkElement && node.hasAttribute(graphStylesheetAttribute);
 }
 
 // A stylesheet holds up the scripts after it, and the page is not loaded
@@ -92,7 +103,7 @@ export async function loadDocument(html: string, url: string, container?: Elemen
     container?.replaceChildren();
     for (const parent of [document.head, document.body]) {
       for (const node of Array.from(parent.childNodes)) {
-        if (!before.has(node) && !isViteStyle(node)) node.remove();
+        if (!before.has(node) && !isViteStyle(node) && !isGraphStylesheet(node)) node.remove();
       }
     }
     document.head.append(...parked);
