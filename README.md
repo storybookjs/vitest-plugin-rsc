@@ -992,7 +992,7 @@ The options for a node, all optional:
 | `proxy`       | `true` runs `proxy.ts` and the routing of `next.config` for the request, as for a route.                                                         |
 | `layouts`     | `true` renders the node in place of the page at `url`, inside your app's layouts.                                                                |
 | `container`   | An empty element for the node. Defaults to a new `<div>` in `baseElement`, which `cleanup` removes.                                              |
-| `files`       | The files that render the node, for their CSS. Defaults to the setup files and the test file. For a host other than Vitest.                      |
+| `files`       | The files that render the node, for their CSS. Defaults to the setup files and the test file. For a host other than Vitest; not in a build yet.  |
 | `baseElement` | Defaults to `container` if you pass one, else `document.body`.                                                                                   |
 
 A node resolves with `{ container, baseElement, asFragment, unmount, response }`.

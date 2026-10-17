@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { runInThisContext } from "node:vm";
 import { rolldown } from "rolldown";
 import os from "node:os";
-import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, expect, onTestFinished, test, vi } from "vitest";
 import { compileServerCode, createServerCode } from "./server-code.ts";
 
 const registry = "globalThis.__server__";
@@ -226,10 +226,12 @@ test("adds the files of another host to the test files of Vitest", () => {
   expect(serverCode.isHostPackage("@vitest/spy")).toBe(true);
 });
 
-// A project on disk: `packages` is the dependency tree, by name, each with
-// its own `dependencies`; `app` is what the project's package.json lists.
+// A project on disk: `packages` is the dependency tree, by path under
+// `node_modules`, each with its own `dependencies`; `app` is what the
+// project's package.json lists. Gone when the test ends.
 function fakeProject(app: string[], packages: Record<string, string[]>): string {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "vitest-plugin-rsc-walk-")));
+  onTestFinished(() => fs.rmSync(root, { recursive: true, force: true }));
   const write = (dir: string, name: string, dependencies: string[]) => {
     fs.mkdirSync(dir, { recursive: true });
     const manifest = { name, dependencies: Object.fromEntries(dependencies.map((d) => [d, "*"])) };
@@ -244,15 +246,18 @@ function fakeProject(app: string[], packages: Record<string, string[]>): string 
 }
 
 test("leaves what the project itself depends on to the app, in the walk of the host's packages", () => {
-  // The host's package depends on `react` and on `shared`, as the app does.
-  // `theme` is the host's alone.
+  // The host's package depends on `react` and on `shared`, as the app does,
+  // and on `theme`, which is the host's alone. `host-core` depends on `next`
+  // and on a version of `react` of its own, which the package manager keeps
+  // apart from the app's.
   const root = fakeProject(["react", "shared", "next"], {
     "host-ui": ["react", "shared", "theme"],
     react: [],
     shared: [],
     theme: ["shared"],
     next: [],
-    "host-core": ["next"],
+    "host-core": ["next", "react"],
+    "host-core/node_modules/react": [],
   });
   const serverCode = createServerCode(registry, {
     host: { packages: ["host-ui", "host-core", "shared"] },
@@ -266,10 +271,10 @@ test("leaves what the project itself depends on to the app, in the walk of the h
   // The host names `shared`: the host's, though the app depends on it too.
   expect(serverCode.isServerCode(moduleOf("shared"), "rsc")).toBe(false);
   // The app's own dependencies stay server code, whichever package of the
-  // host depends on them.
+  // host depends on them. A copy of the host's own is the host's.
   expect(serverCode.isServerCode(moduleOf("react"), "rsc")).toBe(true);
   expect(serverCode.isServerCode(moduleOf("next"), "rsc")).toBe(true);
-  fs.rmSync(root, { recursive: true, force: true });
+  expect(serverCode.isServerCode(moduleOf("host-core/node_modules/react"), "rsc")).toBe(false);
 });
 
 test("stops with a message when nothing says which files are the host's", async () => {
