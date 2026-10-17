@@ -273,6 +273,9 @@ importers:
       '@types/react-dom':
         specifier: ^19.2.3
         version: 19.2.3(@types/react@19.2.14)
+      host-package:
+        specifier: file:fixtures/host-package
+        version: file:playground/nextjs-host-demo/fixtures/host-package(host-report@file:playground/nextjs-host-demo/fixtures/host-report)(react@19.2.6)
       host-report:
         specifier: file:fixtures/host-report
         version: file:playground/nextjs-host-demo/fixtures/host-report
@@ -3245,6 +3248,12 @@ packages:
 
   hookable@6.1.1:
     resolution: {integrity: sha512-U9LYDy1CwhMCnprUfeAZWZGByVbhd54hwepegYTK7Pi5NvqEj63ifz5z+xukznehT7i6NIZRu89Ay1AZmRsLEQ==}
+
+  host-package@file:playground/nextjs-host-demo/fixtures/host-package:
+    resolution: {directory: playground/nextjs-host-demo/fixtures/host-package, type: directory}
+    peerDependencies:
+      host-report: '*'
+      react: '*'
 
   host-report@file:playground/nextjs-host-demo/fixtures/host-report:
     resolution: {directory: playground/nextjs-host-demo/fixtures/host-report, type: directory}
@@ -6977,6 +6986,11 @@ snapshots:
   hono@4.12.18: {}
 
   hookable@6.1.1: {}
+
+  host-package@file:playground/nextjs-host-demo/fixtures/host-package(host-report@file:playground/nextjs-host-demo/fixtures/host-report)(react@19.2.6):
+    dependencies:
+      host-report: file:playground/nextjs-host-demo/fixtures/host-report
+      react: 19.2.6
 
   host-report@file:playground/nextjs-host-demo/fixtures/host-report: {}
 

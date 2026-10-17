@@ -182,3 +182,27 @@ test('runs a file of the host with "use client" in the browser layer', async ({ 
   // the package of the host: the host read what the file reported.
   expect(host.__hostReports).toEqual([{ from: "host/client.tsx", react: nextReact }]);
 });
+
+test('runs a file with "use client" of a package of the host in the browser layer', async ({
+  page,
+  errors,
+}) => {
+  // A package in `node_modules` that Vite does not pre-bundle, like a
+  // framework of Storybook: see ../vite.config.ts.
+  // What the test is about: the page imports the files with Vite's version
+  // query.
+  const versioned = /\/host-package\/client-(?:greeting|story)\.js\?v=\w+$/;
+  const requested = new Set<string>();
+  page.on("request", (request) => {
+    if (versioned.test(request.url())) requested.add(request.url());
+  });
+  const host = await open(page, errors, "package", async () => {
+    expect(requested.size).toBe(2);
+  });
+  // The file the host imports by the name of the package, and the one the
+  // entry of the package imports.
+  expect(host.__hostReports).toEqual([
+    { from: "host-package/client-greeting.js", react: nextReact },
+    { from: "host-package/client-story.js", react: nextReact },
+  ]);
+});

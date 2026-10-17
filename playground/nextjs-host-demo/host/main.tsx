@@ -10,13 +10,18 @@ import { show, state } from "./state.ts";
 // app, `?view=node` for a node in a container of the host, `?view=switch`
 // for one node after another in the one document, as Storybook's canvas
 // renders story after story, `?view=client` for a file of the host with
-// `"use client"`. A second page of the host, with a node of its own, is
-// callout.html.
+// `"use client"`, `?view=package` for the ones of a package of the host in
+// `node_modules`: one by the name of the package, one through its entry. A
+// second page of the host, with a node of its own, is callout.html.
 const view = new URLSearchParams(window.location.search).get("view");
 await show(async () => {
-  if (view === "client") {
+  if (view === "client" || view === "package") {
     // A client boundary, as in React: the file runs in the browser layer.
-    await import("./client.tsx");
+    if (view === "client") await import("./client.tsx");
+    else {
+      await import("host-package/client-greeting");
+      await import("host-package");
+    }
     // The report it made, through the page's own `host-report`.
     state.__hostReports = reports;
     return;
