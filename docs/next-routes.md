@@ -381,6 +381,8 @@ Under Vitest the option adds to what Vitest's config says, and nothing else chan
 
 `playground/nextjs-host-demo` is such a host: a page of Vite's own dev server, `index.html` and `host/main.tsx`, that renders a page of the app, a node in a container of its own, one node after another in the one document (`?view=switch`), a file of the host with `"use client"`, and a component of such a file that it renders itself with `loadClientModule()` (`?view=module`); a second page, `callout.html`, renders a node from a file of its own. Its tests start that server and drive it with Playwright, and its `build-test/` opens the same views in its static build (see [A Static Build](#a-static-build)).
 
+`packages/storybook-nextjs-vite-rsc` is the host this section describes, as a framework of Storybook. Its preset gives `vitestPluginNext()` the story files and `.storybook/` as `host.files`, with the framework's own directory, and `storybook` and the addons of `main.ts` as `host.packages`. A story file without `"use client"` renders with `renderServer()`, with the preview file and the story's file as `hostFiles`; the framework's one file with the directive, its canvas, comes back from `loadClientModule()` with `@storybook/react`'s renderer of the `browser` layer, which renders a story of a file with the directive. Its `experimental_loadStoryFile` is `loadClientModule()`, so a story is of the one kind or the other by the identity of its export. `playground/nextjs-host-demo/.storybook` is its project, and `test/storybook.test.ts` drives it.
+
 ## Route Handlers
 
 An `app/**/route.ts` is a route like a page is, with a request handler from a different template:

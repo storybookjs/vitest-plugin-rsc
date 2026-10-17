@@ -42,11 +42,6 @@
       "types": "./dist/preview.d.ts",
       "storybook-nextjs-vite-rsc-source": "./src/preview.ts",
       "default": "./dist/preview.js"
-    },
-    "./vite-plugin": {
-      "types": "./dist/vite-plugin.d.ts",
-      "storybook-nextjs-vite-rsc-source": "./src/vite-plugin.ts",
-      "default": "./dist/vite-plugin.js"
     }
   },
   "publishConfig": {
@@ -59,10 +54,13 @@
     "build": "tsdown",
     "prepack": "tsdown"
   },
-  "devDependencies": {
+  "dependencies": {
     "@storybook/builder-vite": "https://pkg.pr.new/storybookjs/storybook/@storybook/builder-vite@0e82d2fc9b2fdcad71bdea0c59188ff57788e5f7",
-    "@storybook/react": "https://pkg.pr.new/storybookjs/storybook/@storybook/react@0e82d2fc9b2fdcad71bdea0c59188ff57788e5f7",
+    "@storybook/react": "https://pkg.pr.new/storybookjs/storybook/@storybook/react@0e82d2fc9b2fdcad71bdea0c59188ff57788e5f7"
+  },
+  "devDependencies": {
     "@types/node": "^24.12.4",
+    "@types/react": "^19.2.14",
     "next": "16.4.0",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
@@ -72,7 +70,6 @@
     "vitest-plugin-rsc": "workspace:*"
   },
   "peerDependencies": {
-    "@storybook/react": "^11.0.0-0",
     "next": ">=16.4.0-0",
     "react": "*",
     "react-dom": "*",
