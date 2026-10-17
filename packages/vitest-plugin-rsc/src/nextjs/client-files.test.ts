@@ -14,11 +14,12 @@ const testingLibrary = {
 };
 
 // The plugins, for a project whose host files are its test files, a setup
-// file and the files of a framework in `node_modules`, and whose host has the
-// packages of Vitest.
+// file, the files of a framework in `node_modules` and the `.mdx` files of
+// `docs/`, and whose host has the packages of Vitest.
 const framework = "/node_modules/framework/dist";
 const isHostFile = (file: string) =>
-  /\.test\.tsx$|\/vitest\.setup\.tsx?$/.test(file) || file.startsWith(`${framework}/`);
+  /\.test\.tsx$|\/vitest\.setup\.tsx?$|^\/docs\/.*\.mdx$/.test(file) ||
+  file.startsWith(`${framework}/`);
 // Vite RSC made the modules of these files client references: they have
 // `"use client"`. The URL of a file of the project in the browser layer is
 // its path. One of a dependency is a module of Vite RSC that imports it: by
@@ -30,6 +31,7 @@ const references: Record<string, string> = {
   "/app/frame.test.tsx": "/app/frame.test.tsx",
   "/vitest.setup.tsx": "/vitest.setup.tsx",
   "/app/built.test.tsx": "/app/built.test.tsx",
+  "/docs/intro.mdx": "/docs/intro.mdx",
   [`${framework}/client-story.js`]: `${proxy}client-in-server-package-proxy/${encodeURIComponent(`${framework}/client-story.js`)}`,
   [`${framework}/by-name.js?v=1a2b3c4d`]: `${proxy}client-package-proxy/framework/by-name`,
 };
@@ -150,6 +152,28 @@ test("leaves a file without the directive as it is, and a file that is not the h
   ).toBeUndefined();
   // Not a file with a query, like Vite's `?import`, which the browser asks for.
   expect(transformLoader.call(rsc, reference, "/app/frame.test.tsx?import")).toBeUndefined();
+});
+
+test("loads a file of the host with another extension, whose code a plugin of the host compiled", async () => {
+  const rsc = context("client");
+
+  // Vite RSC made a reference of it: its compiled code has the directive.
+  expect(transformLoader.call(rsc, reference, "/docs/intro.mdx")?.code).toContain(
+    `__vitestPluginRscLoadClientFile("/docs/intro.mdx"); `,
+  );
+  expect(
+    transformLoader.call(context("client", "build"), reference, "/docs/intro.mdx")?.code,
+  ).toContain(`__vitestPluginRscLoadClientFile("/docs/intro.mdx", "docs/intro.mdx"); `);
+  // One without the directive is no client file: Vite RSC made no reference of it.
+  const page = `export default function Content() { return <h1>Notes</h1>; }\n`;
+  expect(transformLoader.call(rsc, page, "/docs/notes.mdx")).toBeUndefined();
+
+  // The compiled code is JSX.
+  const content = `"use client";\nimport { vi } from "vitest";\n${page}`;
+  await expect(transform.call(rsc, content, "/docs/intro.mdx")).resolves.toBeUndefined();
+  await expect(
+    transform.call(rsc, `${content}vi.mock("./db.ts");\n`, "/docs/intro.mdx"),
+  ).rejects.toThrow("/docs/intro.mdx calls vi.mock()");
 });
 
 test("takes the id of a module for its file, without the version of a dependency", () => {

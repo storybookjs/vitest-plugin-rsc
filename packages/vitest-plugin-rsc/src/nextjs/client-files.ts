@@ -24,7 +24,11 @@ import { builtHostFileKey } from "./styles.ts";
 // import is the browser layer's, as what a client module imports is client
 // code in React: also another file of the host.
 
-const sourceFile = /\.(?:tsx|ts|mts|jsx|js|mjs)$/;
+// A file of the host can have an extension that is not JavaScript's, which a
+// plugin of the host compiles to JSX before Vite RSC sees it, like `.mdx`.
+// With the directive at the top of that code it is a client file like any
+// other, and its code parses as JSX.
+const sourceFile = /\.(?:tsx|ts|mts|jsx|js|mjs|mdx)$/;
 const languageOf = (file: string) =>
   file.endsWith(".tsx") ? "tsx" : file.endsWith("ts") ? "ts" : "jsx";
 
