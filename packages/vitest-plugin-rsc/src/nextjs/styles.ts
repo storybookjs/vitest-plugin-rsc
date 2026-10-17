@@ -15,7 +15,7 @@ import {
   type TransformResult,
   type ViteDevServer,
 } from "vite";
-import type { ComponentRoute, NextLayer, NextProject, NextRoute } from "./project.ts";
+import type { ComponentRoute, NextLayer, NextProject, NextRoute, RouteSegment } from "./project.ts";
 import { clientReferencesId, cssBuildDirPlaceholder, toBuildDir } from "./static-build.ts";
 import {
   builtStylesheetsFile,
@@ -234,15 +234,15 @@ export function createStyles(options: StylesOptions): Styles {
   }
   // The files of the segments of a route, once per route. A layout that is
   // added later is found by a run that starts after it, as with the routes.
-  const segmentFiles = new Map<PageRoute, Promise<string[]>>();
-  function segmentFilesOf(route: PageRoute): Promise<string[]> {
-    let files = segmentFiles.get(route);
+  const segments = new Map<PageRoute, Promise<RouteSegment[]>>();
+  function segmentsOf(route: PageRoute): Promise<RouteSegment[]> {
+    let files = segments.get(route);
     if (!files) {
       files = getProject()
         .loadRouteEntry(route)
-        .then((entry) => entry.segmentFiles);
-      segmentFiles.set(route, files);
-      files.catch(() => segmentFiles.delete(route));
+        .then((entry) => entry.segments);
+      segments.set(route, files);
+      files.catch(() => segments.delete(route));
     }
     return files;
   }
@@ -383,10 +383,9 @@ export function createStyles(options: StylesOptions): Styles {
     const starts = new Map<string, EnvironmentModuleNode[]>();
 
     await Promise.all(
-      (await segmentFilesOf(route)).map(async (file) => {
+      (await segmentsOf(route)).map(async ({ file, stylesheetsKey }) => {
         const node = await load("rsc", file);
-        // As Next looks it up: `getLinkAndScriptTags()`.
-        if (node) starts.set(file.replace(/\.[^.]+$/, ""), [node]);
+        if (node) starts.set(stylesheetsKey, [node]);
       }),
     );
     if ("component" in route) {
@@ -568,7 +567,7 @@ export function createStyles(options: StylesOptions): Styles {
     return true;
   }
 
-  const built = createBuiltStylesheets(options, segmentFilesOf);
+  const built = createBuiltStylesheets(options, segmentsOf);
 
   const plugins: Plugin[] = [
     {
@@ -667,7 +666,7 @@ const cssUrlRE = /\burl\(\s*(?:"([^"]*)"|'([^']*)'|([^'")\s]*))\s*\)|"(\/[^"]*)"
  */
 function createBuiltStylesheets(
   options: StylesOptions,
-  segmentFilesOf: (route: PageRoute) => Promise<string[]>,
+  segmentsOf: (route: PageRoute) => Promise<RouteSegment[]>,
 ) {
   const { environments, getProject } = options;
   const lists = new Set(options.lists);
@@ -780,15 +779,14 @@ function createBuiltStylesheets(
       if (layer === "rsc") {
         for (const [entry, route] of options.pageRoutes()) {
           const segments = new Map<string, Reached[]>();
-          for (const file of await segmentFilesOf(route)) {
+          for (const { file, stylesheetsKey } of await segmentsOf(route)) {
             // Vite has a module by the real path of its file.
             let id = normalizePath(file);
             if (!this.getModuleInfo(id) && fs.existsSync(file)) {
               id = normalizePath(fs.realpathSync(file));
             }
             const reached = reachIn(imports, [id], manager.clientReferenceMetaMap);
-            // As Next looks it up: `getLinkAndScriptTags()`.
-            segments.set(file.replace(/\.[^.]+$/, ""), reached);
+            segments.set(stylesheetsKey, reached);
           }
           if ("component" in route) segments.set(componentPagePath, []);
           routes.set(entry, segments);

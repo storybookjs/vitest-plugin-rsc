@@ -4,7 +4,12 @@ import path from "node:path";
 import { ESModulesEvaluator, ModuleRunner, createDefaultImportMeta } from "vite/module-runner";
 import { expect, onTestFinished, test, vi } from "vitest";
 import { builtUrl, createBuiltLayers, type BuiltLayer } from "../built-layers.ts";
-import { nextStaticBuild, toRunnerModule, withBuiltFiles } from "./static-build.ts";
+import {
+  nextStaticBuild,
+  toRunnerModule,
+  withBuiltFiles,
+  withPathsFromRoot,
+} from "./static-build.ts";
 
 const names = { rsc: "client", ssr: "next_ssr", browser: "react_client" };
 const clientReferences = "\0virtual:vitest-plugin-rsc/next-client-references";
@@ -636,4 +641,52 @@ test("passes a warning that it shows on to the config's own handler", () => {
   expect(warnings(hidden)).toEqual([]);
   expect(warnings(shown)).toEqual([shown]);
   expect(onwarn.mock.calls.map(([warning]) => warning)).toEqual([hidden, shown]);
+});
+
+// Next's config loader makes these absolute paths: the directory of the
+// project and of its repository, on the machine that builds.
+test("has the paths of next.config from the root of the project", () => {
+  const repository = path.join(os.tmpdir(), "repository");
+  const root = path.join(repository, "apps", "web");
+  const config = {
+    basePath: "/docs",
+    distDir: ".next",
+    configFile: path.join(root, "next.config.ts"),
+    outputFileTracingRoot: repository,
+    repoRoot: repository,
+    turbopack: { root: repository },
+    images: { loaderFile: path.join(root, "lib", "image-loader.ts"), path: "/_next/image" },
+    cacheHandlers: { remote: path.join(repository, "cache", "handler.js") },
+    // The app's own values stay, also one that names a file of the project.
+    env: { DATA: path.join(root, "data") },
+  };
+
+  expect(withPathsFromRoot(config, root)).toEqual({
+    ...config,
+    configFile: "next.config.ts",
+    outputFileTracingRoot: "../..",
+    repoRoot: "../..",
+    turbopack: { root: "../.." },
+    images: { loaderFile: "lib/image-loader.ts", path: "/_next/image" },
+    cacheHandlers: { remote: "../../cache/handler.js" },
+  });
+});
+
+// A project in `/app`, as in many a container, whose app is served from
+// `/app` too.
+test("leaves the URLs of next.config as they are, also one that is the path of the project", () => {
+  const root = path.resolve("/app");
+  const config = {
+    basePath: "/app",
+    assetPrefix: "/app",
+    images: { path: "/app/_next/image" },
+    configFile: path.join(root, "next.config.ts"),
+    outputFileTracingRoot: root,
+  };
+
+  expect(withPathsFromRoot(config, root)).toEqual({
+    ...config,
+    configFile: "next.config.ts",
+    outputFileTracingRoot: ".",
+  });
 });

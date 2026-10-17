@@ -1,7 +1,13 @@
 import fs from "node:fs";
 import path from "node:path";
 import { getPluginApi } from "@vitejs/plugin-rsc/plugin";
-import { moduleRunnerTransform, type Plugin, type Rolldown, type ViteBuilder } from "vite";
+import {
+  moduleRunnerTransform,
+  normalizePath,
+  type Plugin,
+  type Rolldown,
+  type ViteBuilder,
+} from "vite";
 
 // A static build of the app: the three layers as files of a site, with no dev
 // server next to the browser. `vite build` makes it, and so does a host that
@@ -86,6 +92,50 @@ export function withBuiltFiles(code: string, pathnames: string[], language: "js"
     );
   }
   return code;
+}
+
+// The options of `next.config` that are files or directories of the machine,
+// by their keys, `*` for every key of an object. Next's config loader makes
+// the roots and `images.loaderFile` absolute paths. A cache handler and the
+// adapter are files that the app names, often with `require.resolve()`.
+const configPaths = [
+  ["configFile"],
+  ["outputFileTracingRoot"],
+  ["repoRoot"],
+  ["turbopack", "root"],
+  ["images", "loaderFile"],
+  ["cacheHandler"],
+  ["cacheHandlers", "*"],
+  ["adapterPath"],
+];
+
+/**
+ * The `next.config` of the app as the layers of a static build have it: with
+ * each option that is a path of the machine as a path from the root of the
+ * project, like `next.config.ts` and `../..`. Next's build reads them, and its
+ * server reads none for a request but the cache handlers, which the plugin
+ * does not load. A build would otherwise have the directory it was built in,
+ * and differ from machine to machine.
+ *
+ * By the options, not by what a value looks like: `basePath: "/app"` of a
+ * project in `/app` is no path of the machine.
+ */
+export function withPathsFromRoot<T>(config: T, root: string): T {
+  const copy = JSON.parse(JSON.stringify(config)) as Record<string, unknown>;
+  const relativize = (object: Record<string, unknown>, [key, ...rest]: string[]) => {
+    for (const name of key === "*" ? Object.keys(object) : [key!]) {
+      const value = object[name];
+      if (rest.length > 0) {
+        if (value && typeof value === "object") {
+          relativize(value as Record<string, unknown>, rest);
+        }
+      } else if (typeof value === "string" && path.isAbsolute(value)) {
+        object[name] = normalizePath(path.relative(root, value)) || ".";
+      }
+    }
+  };
+  for (const keys of configPaths) relativize(copy, keys);
+  return copy as T;
 }
 
 // The modules a Flight payload can refer to, by the id it has for them. In

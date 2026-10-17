@@ -27,7 +27,8 @@ export const componentPagePath = "vitest-plugin-rsc/component";
  * The stylesheets of a route. For each file of a segment that has any, by the
  * name the loader tree has for it without its extension, which is how Next
  * looks them up: their paths under `/_next/`, and their CSS where the app has
- * Next inline it (`experimental.inlineCss`).
+ * Next inline it (`experimental.inlineCss`). The name is the path of the file
+ * from the root of the project, `app/layout`: see `RouteSegment` in project.ts.
  */
 export type Stylesheets = Record<string, { path: string; content?: string }[]>;
 

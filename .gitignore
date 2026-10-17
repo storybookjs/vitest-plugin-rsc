@@ -18,6 +18,8 @@ artifacts/perf/
 **/__screenshots__/
 *.tsbuildinfo
 *.local
+# The copy of the e2e demo that its build test builds, should a run not remove it
+playground/.nextjs-e2e-demo-*/
 
 # Editor directories and files
 .cursor/rules/local-context.mdc

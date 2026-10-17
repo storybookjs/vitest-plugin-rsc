@@ -47,6 +47,13 @@ export async function layerTables(context: NextContext, build: NextBuild) {
     // Next's Node.js server renders to Node.js streams unless this is off:
     // a compile-time switch of its own. A browser has web streams.
     if (layer !== "browser") defines["process.env.__NEXT_USE_NODE_STREAMS"] = "false";
+    // The project from the working directory, which `next build` runs in. So
+    // that the route modules do not depend on where a run starts, like a
+    // build from the root of a monorepo. Next's server joins it to its own
+    // working directory, which the plugin has as `/`.
+    if ("process.env.__NEXT_RELATIVE_PROJECT_DIR" in defines) {
+      defines["process.env.__NEXT_RELATIVE_PROJECT_DIR"] = '""';
+    }
     return {
       ...(layer !== "browser" &&
         Object.fromEntries(

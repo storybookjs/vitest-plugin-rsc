@@ -358,10 +358,37 @@ test("gives the route of a node with layouts the entry of the app's route, with 
   expect(code).toContain(`page: [__next_component__, "vitest-plugin-rsc/component"]`);
   expect(code).toContain(`import { loadComponent as __next_component__ }`);
   // The rest of the tree is the app's.
-  expect(code).toMatch(/'layout': \[\w+, "[^"]*app\/layout\.js"\]/);
-  expect(code).toMatch(/'layout': \[\w+, "[^"]*app\/notes\/layout\.js"\]/);
-  expect(code).toMatch(/'loading': \[\w+, "[^"]*app\/notes\/\[id\]\/loading\.js"\]/);
+  expect(code).toMatch(/'layout': \[\w+, "app\/layout\.js"\]/);
+  expect(code).toMatch(/'layout': \[\w+, "app\/notes\/layout\.js"\]/);
+  expect(code).toMatch(/'loading': \[\w+, "app\/notes\/\[id\]\/loading\.js"\]/);
   expect(code).not.toMatch(/page: \[\w+, "[^"]*page\.js"\]/);
+});
+
+// A static build has the tree in its files: they are the same on every
+// machine, and the stylesheets of a segment are listed by the same name.
+test("names the files of a route from the root of the project, and imports them by their path", async () => {
+  const dir = appWith(["layout.js", "notes/[id]/page.js", "api/route.ts"]);
+  const project = await loadNextProject(dir);
+  const page = await project.loadRouteEntry(route(project.routes, "/notes/[id]"));
+  const handler = await project.loadRouteEntry(route(project.routes, "/api"));
+
+  const layout = path.join(dir, "app", "layout.js");
+  expect(page.code).toMatch(/'layout': \[\w+, "app\/layout\.js"\]/);
+  expect(page.code).toMatch(/page: \[\w+, "app\/notes\/\[id\]\/page\.js"\]/);
+  // The absolute path is in the specifiers, and nowhere else.
+  expect(page.code).toContain(JSON.stringify(layout));
+  for (const { code } of [page, handler]) {
+    const specifiers = /\b(?:import|require)\s*\((?:\s*\/\*.*?\*\/)?\s*"[^"]*"\)|\bfrom\s*"[^"]*"/g;
+    expect(code.replace(specifiers, "")).not.toContain(dir);
+  }
+  expect(page.segments).toContainEqual({ file: layout, stylesheetsKey: "app/layout" });
+  expect(page.segments).toContainEqual({
+    file: path.join(dir, "app", "notes", "[id]", "page.js"),
+    stylesheetsKey: "app/notes/[id]/page",
+  });
+  // Next's errors of a route handler quote its file.
+  expect(handler.code).toContain(`resolvedPagePath: "app/api/route.ts"`);
+  expect(handler.segments).toEqual([]);
 });
 
 test("gives the route of a node the segments of its pathname, and nothing of the app", async () => {
@@ -583,7 +610,10 @@ test("makes a module that `next build` stops at throw Next's error, with its exp
   expect(first).toMatch(
     /^throw new Error\("x You're importing a module that depends on `useState` into a React Server Component module\./,
   );
-  expect(first).toContain(`${path.join("app", "page.tsx")}:1:1`);
+  // By its path from the root, as `next build` quotes it: a static build has
+  // the module.
+  expect(first).toContain(",-[app/page.tsx:1:1]");
+  expect(first).not.toContain(root);
   expect(rest.join("\n")).toBe(
     "const _ = undefined;\nexport { _ as a, _ as x, _ as z, _ as c };\n" +
       'export default undefined;\nexport * from "./d.ts";\n',
