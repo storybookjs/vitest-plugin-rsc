@@ -1,6 +1,9 @@
+import Link from "next/link";
 import { cleanup, renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
 import { afterEach, beforeEach, expect, onTestFinished, test, vi, type MockInstance } from "vitest";
 import { page } from "vitest/browser";
+import { Counter } from "./components/counter.tsx";
+import { RefreshButton } from "./components/refresh-button.tsx";
 
 type Held = { loading: boolean; loaded: boolean; release: Promise<void> };
 // Code that waits while a test holds it: the client code of a widget
@@ -109,4 +112,33 @@ test("keeps the node of a page that is left while its request renders, until the
   await next;
   await expect.element(page.getByText("Next node")).toBeInTheDocument();
   await expect.element(page.getByText("Held node")).not.toBeInTheDocument();
+});
+
+test("hears no more of the requests of its router once a page is left, also while the next one runs", async () => {
+  await renderServer(
+    <>
+      <RefreshButton />
+      <Link href="/settings">Settings</Link>
+    </>,
+    { url: "/held", proxy: true },
+  );
+  const [holding, release] = hold();
+  held.heldProxy = holding;
+  // The refresh waits in the proxy, and the navigation for the refresh.
+  await page.getByRole("button", { name: "Refresh" }).click();
+  await expect.poll(() => holding.loading, { timeout: 10_000 }).toBe(true);
+  await page.getByRole("link", { name: "Settings" }).click();
+
+  // What runs between two tests: it waits for the refresh, and drops the
+  // navigation, which waits behind it.
+  const left = cleanup();
+  release();
+  await left;
+
+  // The router of the page that was left would report the stopped request:
+  // "Failed to fetch RSC payload".
+  expect(consoleError).not.toHaveBeenCalled();
+  await renderServer(<Counter />);
+  await page.getByRole("button", { name: "Count: 0" }).click();
+  await expect.element(page.getByRole("button", { name: "Count: 1" })).toBeInTheDocument();
 });

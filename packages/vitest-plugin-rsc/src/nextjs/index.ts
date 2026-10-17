@@ -439,6 +439,17 @@ function withoutSetCookie(response: Response): Response {
   });
 }
 
+// What a page hears of a request that Next sent for it, one of its router
+// or a Server Action: nothing once the page is left, as in a browser, where
+// it is gone. Leaving drops the requests that wait for the server
+// (`settleRequests()` in ssr.ts), and the router of that page, which is still
+// there, would report that as an error while the next page runs: "Failed to
+// fetch RSC payload".
+async function heardBy(sender: Page, response: Promise<Response>): Promise<Response> {
+  await response.catch(() => {});
+  return page === sender ? response : new Promise<never>(() => {});
+}
+
 // A `fetch` that sends a same-origin request to the app when it is the app's,
 // and everything else to the network.
 const appFetch =
@@ -483,12 +494,15 @@ const appFetch =
     const spare = input instanceof Request && input.body ? input.clone() : input;
     // The server's Request keeps a `cookie` header, which a browser's drops.
     const request = server ? new registry.Request(input, init) : new Request(input, init);
-    const response = await sendRequest(request, {
+    const response = sendRequest(request, {
       from,
       credentials,
       network: sent.marked ? undefined : () => nativeFetch(spare, init),
     });
-    return from ? withoutSetCookie(response) : response;
+    if (!from) return response;
+    const shown = response.then(withoutSetCookie);
+    // Next marks the requests it sends for a page: the one that is open.
+    return sent.marked && page ? heardBy(page, shown) : shown;
   };
 
 // The browser's `fetch`: what Next's client router and Client Components call.
@@ -518,7 +532,10 @@ registry.fetch = appFetch(true);
 // when it needs it, from the global `process`.
 process.env.__NEXT_PRIVATE_ORIGIN = window.location.origin;
 
-let page: { started: Promise<unknown>; unmount(): void } | undefined;
+// A page that is open, from when its document is there.
+type Page = { started: Promise<unknown>; unmount(): void };
+
+let page: Page | undefined;
 // Tells a page load that the test has moved on: to another page, or to the
 // next test.
 let currentLoad: AbortController | undefined;
