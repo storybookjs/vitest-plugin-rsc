@@ -2,6 +2,7 @@ import { reports } from "host-report";
 import { cleanup, loadClientModule, renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
 import { renderCallout } from "./callout.tsx";
 import { renderGreeting } from "./greeting.tsx";
+import { renderTag } from "./tag.tsx";
 import { show, state } from "./state.ts";
 
 // The host of the app: what a test file is to Vitest, and a story to
@@ -16,8 +17,10 @@ import { show, state } from "./state.ts";
 // `?view=module` renders a component of a file of the host with
 // `"use client"` itself, as a framework renders a story, `?view=action`
 // loads such a file while a node of the app is open, and `?view=after-page`
-// renders its components after the page it loaded during. A second page of
-// the host, with a node of its own, is callout.html.
+// renders its components after the page it loaded during. `?view=tag`
+// renders a node with a Client Component of a package that is not
+// pre-bundled. A second page of the host, with a node of its own, is
+// callout.html.
 const view = new URLSearchParams(window.location.search).get("view");
 await show(async () => {
   if (view === "client" || view === "package") {
@@ -59,6 +62,10 @@ await show(async () => {
       ),
     };
     state.__hostReports = reports;
+    return;
+  }
+  if (view === "tag") {
+    await renderTag(container);
     return;
   }
   if (view === "action") {

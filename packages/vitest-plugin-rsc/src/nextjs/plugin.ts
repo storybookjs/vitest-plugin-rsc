@@ -17,7 +17,7 @@ import type { TestProject, Vitest } from "vitest/node";
 import { createRunnerEnvironmentPlugins } from "../runner-environment.ts";
 import { flightBridge, type FlightEntry } from "./flight.ts";
 import { nextBuilds, nextProductionPlugin, type NextBuild } from "./build.ts";
-import { clientFiles } from "./client-files.ts";
+import { clientFiles, clientReferenceOfModule } from "./client-files.ts";
 import { createCompilePlugin, createDependencyCompilePlugin } from "./compile.ts";
 import { createNodePlatform } from "./node-platform.ts";
 import {
@@ -574,8 +574,10 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
   let build: NextBuild = options.build ?? "development";
   // The client reference that Vite RSC made of a module of the rsc layer, if
   // it has `"use client"`.
-  const clientReferenceOf = (id: string, config: ResolvedConfig) =>
-    getPluginApi(config)?.manager.clientReferenceMetaMap[id];
+  const clientReferenceOf = (id: string, config: ResolvedConfig) => {
+    const references = getPluginApi(config)?.manager.clientReferenceMetaMap;
+    return references && clientReferenceOfModule(references, id);
+  };
   const hostPackagesPlugin = {
     name: "vitest-plugin-rsc:next-host-packages",
     resolveId: (source: string) =>

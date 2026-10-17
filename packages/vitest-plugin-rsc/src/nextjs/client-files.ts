@@ -45,6 +45,22 @@ export function fileOfModule(id: string): string | undefined {
 }
 
 /**
+ * The client reference of a module of the rsc layer, in Vite RSC's map of
+ * them. With a dev server, Vite RSC has a module in `node_modules` there by
+ * its file, without the version, unless the page imports it by the name of
+ * its package.
+ */
+export function clientReferenceOfModule<Reference>(
+  references: Record<string, Reference>,
+  id: string,
+): Reference | undefined {
+  const reference = references[id];
+  if (reference) return reference;
+  const file = fileOfModule(id);
+  return file === undefined ? undefined : references[file];
+}
+
+/**
  * What Vite RSC made of a module of the rsc layer with `"use client"`: a
  * client reference, with the URL that loads the file in the browser layer,
  * and the key that each reference of the module has in its `$$id`.
@@ -62,7 +78,11 @@ export type ClientFilesOptions = {
   isHostFile(file: string): boolean;
   /** Whether an import is of a package of the host, by its name. */
   isHostPackage(specifier: string): boolean;
-  /** The client reference that Vite RSC made of a module of the rsc layer, if it has `"use client"`. */
+  /**
+   * The client reference that Vite RSC made of a module of the rsc layer, if
+   * it has `"use client"`: by the id of a module, else by its file, see
+   * `clientReferenceOfModule()`.
+   */
   clientReferenceOf(id: string, config: ResolvedConfig): ClientReference | undefined;
 };
 
@@ -184,11 +204,7 @@ export function clientFiles(options: ClientFilesOptions): Plugin[] {
         if (this.environment.name !== rsc) return;
         const file = hostFileOf(id);
         if (!file) return;
-        // Vite RSC has the reference of a module in `node_modules` by its
-        // file, without the version, unless the page imports it by the name
-        // of its package.
-        const config = this.environment.getTopLevelConfig();
-        const reference = clientReferenceOf(id, config) ?? clientReferenceOf(file, config);
+        const reference = clientReferenceOf(id, this.environment.getTopLevelConfig());
         if (!reference) return;
         return { code: loadClientFileCode(reference, internal) + code, map: null };
       },

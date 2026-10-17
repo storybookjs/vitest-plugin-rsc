@@ -152,6 +152,26 @@ test("a node has the CSS of the files of the host that render it", async ({ page
   expect(host.__hostCalloutLinked).toBe(true);
 });
 
+test("a node has the CSS of a Client Component of a package that is not pre-bundled", async ({
+  page,
+  errors,
+}) => {
+  // The dev server gives the id of the component's module Vite's version of
+  // the dependencies, `?v=1a2b3c4d`, in the rsc layer too: see ../vite.config.ts.
+  // What the test is about: the page imports the file with that query.
+  const versioned = /\/host-package\/ui\/tag\.js\?v=\w+$/;
+  let requested = false;
+  page.on("request", (request) => {
+    if (versioned.test(request.url())) requested = true;
+  });
+  await open(page, errors, "tag", async (page) => {
+    await page.locator("#host-root").getByText("Tagged by the host").waitFor();
+    await page.locator("link[rel=stylesheet][href*='ui/tag.css']").waitFor({ state: "attached" });
+    expect(await style(page, "[data-testid=tag]", "color")).toBe("rgb(128, 0, 128)");
+  });
+  expect(requested).toBe(true);
+});
+
 test("leaves a file of the app out of `hostFiles`, with a warning", async ({ page, errors }) => {
   // Only a file of the host is the host's to say: see styles.ts. The CSS of
   // a file of the app is its route's, and the route of a node has none of its
