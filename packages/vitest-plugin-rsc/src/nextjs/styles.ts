@@ -432,12 +432,12 @@ export function createStyles(options: StylesOptions): Styles {
     );
   }
 
-  // Another host does not say which of its files renders a node. Those it has
-  // loaded do: what a test file and the setup files are to Vitest. That is
-  // right as long as the host has loaded only the files of the node it
-  // renders. Storybook has: a server story renders in an iframe of its own,
-  // with the preview file and that one story file loaded. A host that loads
-  // many files in one page gets the stylesheets of all of them for a node.
+  // Another host does not say which of its files renders a node. Those the
+  // server has loaded do: what a test file and the setup files are to Vitest.
+  // That is every file of the host the page has loaded so far, in this run of
+  // the server: a host that renders one node per page of its own gets the
+  // stylesheets of that node and of what it loaded before, like Vite's own
+  // `<style>` of a module stays. SB-2268 has the host say which file asks.
   function fromHost(vite: ViteDevServer, entry: string, inline: boolean) {
     return stylesheetsOf(
       vite,
@@ -528,9 +528,19 @@ export function createStyles(options: StylesOptions): Styles {
         response.end("vitest-plugin-rsc: the stylesheets of what? Give `url` or `entry`.");
         return true;
       }
+      if (url && entry) {
+        response.statusCode = 400;
+        response.end(
+          "vitest-plugin-rsc: the stylesheets of what? Give `url` or `entry`, not both.",
+        );
+        return true;
+      }
       const stylesheets = url
         ? await clientStylesheetsOf(server, url)
         : await fromHost(server, entry!, searchParams.get("inline") === "true");
+      for (const [name, value] of Object.entries(server.config.server.headers ?? {})) {
+        if (value !== undefined) response.setHeader(name, value);
+      }
       response.setHeader("content-type", "application/json");
       response.setHeader("cache-control", "no-cache");
       response.end(JSON.stringify(stylesheets));

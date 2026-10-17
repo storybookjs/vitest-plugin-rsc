@@ -203,3 +203,24 @@ test("takes the files and the packages of another host for the host's", () => {
   const flight = fileURLToPath(import.meta.resolve("@vitejs/plugin-rsc/plugin"));
   expect(serverCode.isServerCode(flight, "rsc")).toBe(true);
 });
+
+test("adds the files of another host to the test files of Vitest", () => {
+  const hostRoot = fileURLToPath(
+    new URL("../../../../playground/nextjs-host-demo", import.meta.url),
+  );
+  const serverCode = createServerCode(registry, { host: { files: ["host/**"] } });
+  serverCode.configure(hostRoot);
+  const file = (name: string) => path.join(hostRoot, name);
+  // What Vitest's config says, as `configureVitest` passes it on.
+  serverCode.addTestFiles((candidate) => candidate.endsWith(".test.ts"));
+
+  // Both are the host's, and the app is still server code.
+  expect(serverCode.isHostFile(file("host/main.tsx"))).toBe(true);
+  expect(serverCode.isHostFile(file("test/host.test.ts"))).toBe(true);
+  expect(serverCode.isServerCode(file("test/host.test.ts"), "rsc")).toBe(false);
+  expect(serverCode.isServerCode(file("host/main.tsx"), "rsc")).toBe(false);
+  expect(serverCode.isServerCode(file("app/page.tsx"), "rsc")).toBe(true);
+  // Vitest's packages are still the host's, next to the option's.
+  expect(serverCode.isHostPackage("vitest/browser")).toBe(true);
+  expect(serverCode.isHostPackage("@vitest/spy")).toBe(true);
+});

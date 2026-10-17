@@ -183,7 +183,10 @@ export function createServerCode(registry: string, options: ServerCodeOptions = 
   const testFileMatchers: ((file: string) => boolean)[] = [];
   // The files of another host, `host.files`.
   let isOwnFileOfHost: (file: string) => boolean = () => false;
-  let testRunnerPackages = new Set<string>();
+  // The names of the packages of the host, and once configured, the
+  // directories of them and of everything they depend on.
+  const hostPackageNamesOfOptions = hostPackages(packages);
+  let hostPackageDirs = new Set<string>();
 
   /**
    * Whether a file is one of the host's: a test file or a setup file of
@@ -208,7 +211,7 @@ export function createServerCode(registry: string, options: ServerCodeOptions = 
     if (layer === "ssr") return true;
     if (isBrowserModule(file) || isHostFile(file)) return false;
     const packageDir = packageDirOf(file);
-    return !packageDir || !testRunnerPackages.has(packageDir);
+    return !packageDir || !hostPackageDirs.has(packageDir);
   }
 
   return {
@@ -219,7 +222,7 @@ export function createServerCode(registry: string, options: ServerCodeOptions = 
      * `vitest/browser`, `@vitest/spy`. Not what such a package depends on.
      */
     isHostPackage(specifier: string): boolean {
-      return hostPackages(packages).some((name) =>
+      return hostPackageNamesOfOptions.some((name) =>
         name.endsWith("/*")
           ? specifier.startsWith(name.slice(0, -1))
           : specifier === name || specifier.startsWith(`${name}/`),
@@ -260,7 +263,7 @@ export function createServerCode(registry: string, options: ServerCodeOptions = 
       if (patterns.length > 0) isBrowserModule = createFilter(patterns, null, { resolve: root });
       if (hostFiles.length > 0) isOwnFileOfHost = createFilter(hostFiles, null, { resolve: root });
       // Vitest pre-bundles its own runtime in the environment of the rsc layer.
-      testRunnerPackages = findPackagesWithDependencies(hostPackageNames(root, packages), root);
+      hostPackageDirs = findPackagesWithDependencies(hostPackageNames(root, packages), root);
     },
     /** Call with what a Vitest config says is a test file or a setup file. */
     addTestFiles(matches: (file: string) => boolean): void {
