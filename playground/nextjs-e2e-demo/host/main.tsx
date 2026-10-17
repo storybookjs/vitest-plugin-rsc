@@ -18,7 +18,7 @@ const state = window as {
 
 // Opens a page of the app, the way a test calls `renderServer()`, or renders
 // the node with the note `node` at `url`, from host/node.tsx, with the files
-// of the host that render it, `files`. The tab keeps what the app has
+// of the host that render it, `hostFiles`. The tab keeps what the app has
 // between the calls: its cookies, its data.
 state.__hostOpen = async (url, node, files) => {
   const { response } = node ? await renderNode(node, url, files) : await renderServer({ url });

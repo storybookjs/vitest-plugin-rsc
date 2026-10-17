@@ -145,7 +145,7 @@ test("a node has the CSS of the files of the host that render it", async ({ page
   expect(host.__hostCalloutLinked).toBe(true);
 });
 
-test("leaves a file of the app out of `files`, with a warning", async ({ page, errors }) => {
+test("leaves a file of the app out of `hostFiles`, with a warning", async ({ page, errors }) => {
   // What the page asks for the route of a node: see styles.ts. Only a file
   // of the host is the host's to say. The server answers for a file it has
   // loaded, so a page loads the host's first.

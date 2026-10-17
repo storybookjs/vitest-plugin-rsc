@@ -592,7 +592,7 @@ async function handle(
     // list.
     const inline = !isRSCRequestHeader(headers.get(RSC_HEADER) ?? undefined);
     // The route of a node has the stylesheets of the files of the host that
-    // render the node: `files` of `renderServer()`.
+    // render the node: `hostFiles` of `renderServer()`.
     const files = component ? (opened?.node?.files ?? []) : [];
     setStylesheets(await registry.loadStylesheets(entry, inline, files));
 

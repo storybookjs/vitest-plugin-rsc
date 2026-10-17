@@ -18,9 +18,9 @@ async function HostNode({ id }: { id: string }) {
 }
 
 // A file of the host that renders a node, as a story file is to Storybook:
-// the node has the CSS of the files the host names, `files`, which is this
+// the node has the CSS of the files the host names, `hostFiles`, which is this
 // one. The build lists the stylesheets of every file of the host by its path
 // from the root of the project.
-export function renderNode(id: string, url: string, files = ["host/node.tsx"]) {
-  return renderServer(<HostNode id={id} />, { url, files });
+export function renderNode(id: string, url: string, hostFiles = ["host/node.tsx"]) {
+  return renderServer(<HostNode id={id} />, { url, hostFiles });
 }

@@ -45,7 +45,7 @@ export type Opened = {
   pathname: string;
   /** Whether the server in front of the app takes the request: proxy.ts and `next.config`. */
   proxy: boolean;
-  /** With `files`: the files of the host that render the node, see `nodeFiles`. */
+  /** With `files`: the files of the host that render the node, `hostFiles` of `renderServer()`. */
   node?: { ui: unknown; layouts: boolean; files: string[] };
   /**
    * Whether Next renders the page a Server Action redirects to, into the
@@ -78,16 +78,17 @@ export type NextRegistry = {
   /**
    * Asks the plugin for the stylesheets of a page route, by the name of its
    * modules, and for the route of a node with `files`, the files of the host
-   * that render the node: see styles.ts. The dev server answers; a static
-   * build reads them from a file of its own (rsc.ts).
+   * that render the node, `hostFiles` of `renderServer()`: see styles.ts.
+   * The dev server answers; a static build reads them from a file of its
+   * own (rsc.ts).
    */
   loadStylesheets(entry: string, inline: boolean, files: string[]): Promise<Stylesheets>;
   /**
-   * The files of the host that render a node, when `renderServer()` is not
-   * told them with `files`: the node has their stylesheets, see styles.ts.
-   * Under Vitest the setup files and the test file, which the plugin's setup
-   * file sets before every test file (setup.ts). Another host passes `files`,
-   * or sets nothing: a node then has no stylesheets of the host's files.
+   * Internal, not an API: the Vitest default behind `hostFiles` of
+   * `renderServer()`, the files of the host that render a node when it is
+   * not passed. The setup files and the test file, which the plugin's setup
+   * file sets before every test file (setup.ts). Another host passes
+   * `hostFiles`; without it a node has no stylesheets of the host's files.
    */
   nodeFiles?(): string[];
   /**

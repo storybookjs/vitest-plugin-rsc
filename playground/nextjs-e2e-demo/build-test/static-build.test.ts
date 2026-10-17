@@ -220,8 +220,8 @@ describe.for(builds)("a static build, $build", ({ build, env }) => {
       .toBe("true");
   });
 
-  // The node has the CSS of the file of the host that renders it, `files` of
-  // renderServer(): host/node.tsx, whose NoteCard of the app has a CSS
+  // The node has the CSS of the file of the host that renders it, `hostFiles`
+  // of renderServer(): host/node.tsx, whose NoteCard of the app has a CSS
   // module. A page route has not, and the stylesheet goes with the node.
   test("links the stylesheets of the files of the host that render a node", async ({ page }) => {
     await open(page, site, "/notes/7", { node: "7" });
@@ -246,7 +246,9 @@ describe.for(builds)("a static build, $build", ({ build, env }) => {
     await open(page, site, "/notes/7", { node: "7", file: "app/page.tsx" });
     await heading(page, "A node of the host");
     expect(warnings).toContainEqual(
-      expect.stringMatching(/the files that render a node name app\/page\.tsx, which the static/),
+      expect.stringMatching(
+        /`hostFiles` of renderServer\(\), name app\/page\.tsx, which the static/,
+      ),
     );
     expect(await page.locator("link[rel=stylesheet][href*='note-card']").count()).toBe(0);
   });

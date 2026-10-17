@@ -134,10 +134,11 @@ if (buildDirectory) {
     if (warned.has(file)) return;
     warned.add(file);
     console.warn(
-      `vitest-plugin-rsc: the files that render a node name ${file}, which the static build ` +
-        `has no stylesheets for: it is no file of the host that the rsc layer built. In a ` +
-        `build the files of the host are what \`host.files\` of vitestPluginNext() matches, ` +
-        `named from the root of the project. The stylesheets it imports are not linked.`,
+      `vitest-plugin-rsc: the files that render a node, \`hostFiles\` of renderServer(), ` +
+        `name ${file}, which the static build has no stylesheets for: it is no file of the ` +
+        `host that the rsc layer built. In a build the files of the host are what ` +
+        `\`host.files\` of vitestPluginNext() matches, named from the root of the project. ` +
+        `The stylesheets it imports are not linked.`,
     );
   };
   registry.loadStylesheets = async (entry, _inline, files) => {

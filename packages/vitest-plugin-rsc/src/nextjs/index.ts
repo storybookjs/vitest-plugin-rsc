@@ -561,17 +561,19 @@ export type RenderComponentOptions = RequestOptions & {
   /** Wraps the node on the server. It can be a Server Component. */
   wrapper?: JSXElementConstructor<{ children: ReactNode }>;
   /**
-   * The files of the host that render the node, for their CSS: the node has
+   * For another host than Vitest: the files of the host that render the
+   * node, for their CSS. A Vitest test never passes it: the plugin's setup
+   * file fills in the setup files and the test file. Another host, like
+   * Storybook, passes the preview file and the story's file: absolute, or
+   * from the project root without a leading slash, like
+   * `stories/button.stories.tsx`. The node has
    * the stylesheets that these files import, as a page has those of its
-   * route. Absolute paths, or paths from the project root without a leading
-   * slash, like `stories/button.stories.tsx`. Under Vitest it defaults to the
-   * setup files and the test file, and what is passed replaces that; another
-   * host, like Storybook, passes its own, like the preview file and the
-   * story's file. A file that is not the host's, like one of the app, is
-   * left out, with a warning. In a static build the files of the host are
-   * what `host.files` of `vitestPluginNext()` matches.
+   * route. What is passed replaces the default, it adds nothing to it. A
+   * file that is not the host's, like one of the app, is left out, with a
+   * warning. `host.files` of `vitestPluginNext()` says which files are the
+   * host's at all, and in a static build only those have stylesheets.
    */
-  files?: string[];
+  hostFiles?: string[];
   /**
    * Whether the server in front of the app takes the request: `proxy.ts`, and
    * the `redirects`, `rewrites` and `headers` of `next.config`. Defaults to
@@ -658,7 +660,7 @@ export async function renderServer(
   const { wrapper, proxy = false } = options;
   const ui = wrapper ? createElement(wrapper, null, first) : first;
   // The files of the host that render the node, for their stylesheets.
-  const files = options.files ?? registry.nodeFiles?.() ?? [];
+  const files = options.hostFiles ?? registry.nodeFiles?.() ?? [];
   if (options.layouts) {
     if (options.container || options.baseElement) {
       throw new Error(

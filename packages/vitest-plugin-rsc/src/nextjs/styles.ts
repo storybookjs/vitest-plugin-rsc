@@ -365,10 +365,10 @@ export function createStyles(options: StylesOptions): Styles {
   /**
    * The stylesheets of a route, per file of a segment: see `Stylesheets`. The
    * node of a test is the page of its route, and no file: its stylesheets are
-   * those of the files of the host that render it, `files`, in their order.
-   * Under Vitest those are the setup files and the test file; see `nodeFiles`
-   * in registry.ts. With `layouts: true` the layouts of the app around it
-   * have their own.
+   * those of the files of the host that render it, `hostFiles` of
+   * renderServer(), in their order. Under Vitest those are the setup files
+   * and the test file; see `nodeFiles` in registry.ts. With `layouts: true`
+   * the layouts of the app around it have their own.
    */
   async function stylesheetsOf(
     vite: ViteDevServer,
@@ -398,7 +398,7 @@ export function createStyles(options: StylesOptions): Styles {
           // a file of the app, see plugin.ts.
           if (!options.isHostFile(file)) {
             vite.config.logger.warnOnce(
-              `vitest-plugin-rsc: the files that render a node, \`files\` of renderServer(), ` +
+              `vitest-plugin-rsc: the files that render a node, \`hostFiles\` of renderServer(), ` +
                 `name ${file}, which is neither a test file or setup file of Vitest nor ` +
                 `matched by \`host.files\` of vitestPluginNext(); an in-source test file is ` +
                 `a file of the app. Its stylesheets are not linked.`,
@@ -408,8 +408,9 @@ export function createStyles(options: StylesOptions): Styles {
           const nodes = rsc.moduleGraph.getModulesByFile(file);
           if (!nodes?.size) {
             vite.config.logger.warnOnce(
-              `vitest-plugin-rsc: \`files\` of renderServer() names ${file}, which the rsc ` +
-                `layer has not loaded: the stylesheets it imports are not linked.`,
+              `vitest-plugin-rsc: the files that render a node, \`hostFiles\` of renderServer() ` +
+                `or its default under Vitest, name ${file}, which the rsc layer has not ` +
+                `loaded: the stylesheets it imports are not linked.`,
             );
           }
           return [...(nodes ?? [])];
@@ -807,7 +808,7 @@ function createBuiltStylesheets(
           routes.set(entry, segments);
         }
         // The files of the host that the build has, as `stylesheetsOf()`
-        // walks them for `files` of renderServer(): any of them can render a
+        // walks them for `hostFiles` of renderServer(): any of them can render a
         // node. The CSS one imports itself is Vite's, in the chunks of the
         // host's build.
         // By the path from the root, which is also how the file is matched
