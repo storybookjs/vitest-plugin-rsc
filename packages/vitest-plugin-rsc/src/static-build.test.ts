@@ -16,6 +16,7 @@ import {
 
 const names = { rsc: "client", ssr: "next_ssr", browser: "react_client" };
 const clientReferences = "\0virtual:vitest-plugin-rsc/client-references";
+const hostModules = "\0virtual:vitest-plugin-rsc/host-modules";
 const serverReferences = "\0virtual:vitest-plugin-rsc/server-references";
 
 // The layers of `vitestPluginRSC()` on its own, as ../index.ts has them.
@@ -48,6 +49,16 @@ const call = (hook: unknown, environment: string, ...args: unknown[]) =>
     { environment: { name: environment, mode: "build" } },
     ...args,
   ) as unknown;
+
+// A chunk of the bundle of a layer, and what it imports that is no chunk of
+// it: a module of the page, see host-module.ts.
+const chunk = (fileName: string, code: string, imports: string[] = []) => ({
+  type: "chunk",
+  fileName,
+  code,
+  imports,
+  dynamicImports: [],
+});
 
 // The plugin as a build has it, in a project of its own: the config of Vite
 // that it asks for, and an app builder that says what it was asked to build.
@@ -161,9 +172,30 @@ test("names a file of the ssr layer where the browser layer has it", () => {
 test("has Vite write nothing of the layers: their files come from their bundles", () => {
   const { layers } = setup();
 
+  // Each builds its own entries, and the browser layer the list of its
+  // references, which a runner outside a page loads a Client Component from.
   expect(layers).toEqual({
-    next_ssr: { build: { outDir: "dist", emptyOutDir: false, write: false } },
-    react_client: { build: { outDir: "dist", emptyOutDir: false, write: false } },
+    next_ssr: {
+      build: {
+        outDir: "dist",
+        emptyOutDir: false,
+        write: false,
+        rolldownOptions: { input: { entry: "vitest-plugin-rsc/nextjs/ssr" } },
+      },
+    },
+    react_client: {
+      build: {
+        outDir: "dist",
+        emptyOutDir: false,
+        write: false,
+        rolldownOptions: {
+          input: {
+            entry: "vitest-plugin-rsc/nextjs/client",
+            references: "virtual:vitest-plugin-rsc/client-references",
+          },
+        },
+      },
+    },
   });
 });
 
@@ -235,9 +267,10 @@ test("writes the layers and what Next's loaders made into the build of the host"
     {
       react_client: {
         "vitest-plugin-rsc/react_client/entry.js": {
-          type: "chunk",
-          fileName: "vitest-plugin-rsc/react_client/entry.js",
-          code: `import { a } from "./assets/a.js";\nexport const b = a;\n`,
+          ...chunk(
+            "vitest-plugin-rsc/react_client/entry.js",
+            `import { a } from "./assets/a.js";\nexport const b = a;\n`,
+          ),
         },
         "vitest-plugin-rsc/react_client/assets/a.css": {
           type: "asset",
@@ -247,9 +280,7 @@ test("writes the layers and what Next's loaders made into the build of the host"
       },
       next_ssr: {
         "vitest-plugin-rsc/next_ssr/entry.js": {
-          type: "chunk",
-          fileName: "vitest-plugin-rsc/next_ssr/entry.js",
-          code: `export const c = 1;\n`,
+          ...chunk("vitest-plugin-rsc/next_ssr/entry.js", `export const c = 1;\n`),
         },
         // The CSS of a Client Component is the browser layer's to load.
         "vitest-plugin-rsc/react_client/assets/style.css": {
@@ -308,9 +339,6 @@ const filesOf = (directory: string) =>
     .filter((entry) => entry.isFile())
     .map((entry) => path.relative(directory, path.join(entry.parentPath, entry.name)))
     .sort();
-
-// A chunk of the bundle of a layer.
-const chunk = (fileName: string, code: string) => ({ type: "chunk", fileName, code });
 
 // The build of the browser layer of an app: its entry imports a module, which
 // names its CSS, and loads others when it is asked to, one by a template
@@ -507,7 +535,7 @@ test("tells the page where the layers are from the directory of the build", () =
     `const directory = new URL("../", import.meta.url).href;\n` +
       `export default {\n` +
       `  "next_ssr": { base: directory, entries: {"vitest-plugin-rsc/nextjs/ssr":"vitest-plugin-rsc/next_ssr/entry.js"}, modules: "vitest-plugin-rsc/next_ssr/modules.json" },\n` +
-      `  "react_client": { base: directory, entries: {"vitest-plugin-rsc/nextjs/client":"vitest-plugin-rsc/react_client/entry.js"}, modules: "vitest-plugin-rsc/react_client/modules.json" },\n` +
+      `  "react_client": { base: directory, entries: {"vitest-plugin-rsc/nextjs/client":"vitest-plugin-rsc/react_client/entry.js","virtual:vitest-plugin-rsc/client-references":"vitest-plugin-rsc/react_client/references.js"}, modules: "vitest-plugin-rsc/react_client/modules.json" },\n` +
       `};\n`,
   );
   // A dev server serves the modules of every layer itself.
@@ -516,22 +544,89 @@ test("tells the page where the layers are from the directory of the build", () =
   expect((plugin.load as Hook).call(inDev, devId)).toBe("export default undefined;\n");
 });
 
+// The modules of the page that the browser layer imports, like a package of
+// the host, are externals of its chunks, which its scan finds. The rsc layer,
+// the host's build, lists them, to import each as the host's own scripts do:
+// see host-module.ts.
+test("lists the modules of the page that the scan of the browser layer finds", async () => {
+  const hostModule = (specifier: string) =>
+    `/@id/__x00__vitest-plugin-rsc/host-module/${specifier}`;
+  const entry = "vitest-plugin-rsc/react_client/entry.js";
+  const { plugin, builder } = setup({
+    react_client: {
+      [entry]: chunk(entry, "", [hostModule("storybook/test"), hostModule("host-report")]),
+    },
+  });
+
+  await (plugin.buildApp as Hook)(builder);
+
+  const id = call(plugin.resolveId, "client", "virtual:vitest-plugin-rsc/host-modules");
+  expect(id).toBe(hostModules);
+  // In the order of the imports, the same in every build.
+  expect(call(plugin.load, "client", id)).toBe(
+    `export default {\n` +
+      `  "${hostModule("host-report")}": () => import("\\u0000vitest-plugin-rsc/host-module/host-report"),\n` +
+      `  "${hostModule("storybook/test")}": () => import("\\u0000vitest-plugin-rsc/host-module/storybook/test"),\n` +
+      `};\n`,
+  );
+  // Only the host's build has them, and a dev server serves them itself.
+  expect(call(plugin.load, "react_client", id)).toBe("export default undefined;");
+  const inDev = { environment: { name: "client", mode: "dev" } };
+  expect((plugin.load as Hook).call(inDev, id)).toBe("export default undefined;");
+});
+
+test("says which module of the page the scan of the browser layer did not find", async () => {
+  const hostModule = (specifier: string) =>
+    `/@id/__x00__vitest-plugin-rsc/host-module/${specifier}`;
+  const entry = "vitest-plugin-rsc/react_client/entry.js";
+  const { plugin, builder } = setup({
+    react_client: { [entry]: chunk(entry, "", [hostModule("host-report")]) },
+  });
+  await (plugin.buildApp as Hook)(builder);
+
+  // A build of the layer that imports one more than its scan did.
+  const generate = () =>
+    (plugin.generateBundle as { handler: Hook }).handler.call(
+      {
+        environment: { name: "react_client", mode: "build" },
+        error(message: string) {
+          throw new Error(message);
+        },
+      },
+      {},
+      { [entry]: chunk(entry, "", [hostModule("host-report"), hostModule("storybook/test")]) },
+    );
+  expect(generate).toThrow(
+    "vitest-plugin-rsc: the react_client layer imports storybook/test as a module of the page, " +
+      "which the scan of the browser layer did not find",
+  );
+  expect(generate).toThrow("`host.packages` has to name the package of storybook/test");
+});
+
 // `vitestPluginRSC()` on its own: the rsc layer and the browser layer, which
 // starts with the client of the testing library.
 test("builds the two layers of vitestPluginRSC() on its own", async () => {
   const { plugin, config, builder, builds, layers } = setup({}, {}, { rsc: true });
 
   expect(Object.keys(config.environments)).toEqual(["react_client"]);
-  const browser = config.environments.react_client!.build;
-  expect(browser.rolldownOptions.input).toEqual({
-    entry: "vitest-plugin-rsc/testing-library-client",
-  });
   // Its CSS is its own to load, as Vite loads the CSS of a chunk.
-  expect(browser.cssCodeSplit).toBe(true);
+  expect(config.environments.react_client!.build.cssCodeSplit).toBe(true);
   // Its modules run as Vite bundles them, as for any app: that is Next's.
   expect(config.build.rolldownOptions.output).toBeUndefined();
   expect(layers).toEqual({
-    react_client: { build: { outDir: "dist", emptyOutDir: false, write: false } },
+    react_client: {
+      build: {
+        outDir: "dist",
+        emptyOutDir: false,
+        write: false,
+        rolldownOptions: {
+          input: {
+            entry: "vitest-plugin-rsc/testing-library-client",
+            references: "virtual:vitest-plugin-rsc/client-references",
+          },
+        },
+      },
+    },
   });
 
   await (plugin.buildApp as Hook)(builder);
@@ -546,7 +641,7 @@ test("builds the two layers of vitestPluginRSC() on its own", async () => {
   expect(call(plugin.load, "client", id)).toBe(
     `const directory = new URL(__VITEST_PLUGIN_RSC_BUILD_DIR__, import.meta.url).href;\n` +
       `export default {\n` +
-      `  "react_client": { base: directory, entries: {"vitest-plugin-rsc/testing-library-client":"vitest-plugin-rsc/react_client/entry.js"}, modules: "vitest-plugin-rsc/react_client/modules.json" },\n` +
+      `  "react_client": { base: directory, entries: {"vitest-plugin-rsc/testing-library-client":"vitest-plugin-rsc/react_client/entry.js","virtual:vitest-plugin-rsc/client-references":"vitest-plugin-rsc/react_client/references.js"}, modules: "vitest-plugin-rsc/react_client/modules.json" },\n` +
       `};\n`,
   );
   expect(() =>
@@ -557,23 +652,19 @@ test("builds the two layers of vitestPluginRSC() on its own", async () => {
 // What a framework's plugin, like `vitestPluginNext()`, gives the build in
 // the config: a layer more, with the CSS of the browser layer.
 test("builds the layers that a framework's plugin gives it", () => {
-  const { config } = setup();
+  const { config, layers } = setup();
 
   expect(config).toMatchObject({
     build: { rolldownOptions: { output: { strictExecutionOrder: true } } },
-    environments: {
-      react_client: {
-        build: { rolldownOptions: { input: { entry: "vitest-plugin-rsc/nextjs/client" } } },
-      },
-      next_ssr: {
-        build: {
-          cssCodeSplit: false,
-          rolldownOptions: { input: { entry: "vitest-plugin-rsc/nextjs/ssr" } },
-        },
-      },
-    },
+    environments: { next_ssr: { build: { cssCodeSplit: false } } },
   });
   expect(config.environments.react_client!.build.cssCodeSplit).toBe(true);
+  expect(layers).toMatchObject({
+    react_client: {
+      build: { rolldownOptions: { input: { entry: "vitest-plugin-rsc/nextjs/client" } } },
+    },
+    next_ssr: { build: { rolldownOptions: { input: { entry: "vitest-plugin-rsc/nextjs/ssr" } } } },
+  });
   expect(nextConfig()).toEqual(
     withStaticBuild(expect.objectContaining({ directives: ["turbopack"] })),
   );
@@ -598,14 +689,27 @@ test.for(["the framework first", "the build first"])(
     const plugins =
       order === "the framework first" ? [framework, createPlugin()] : [createPlugin(), framework];
 
+    // The host's own input, the pages of a site, which a layer does not
+    // build: Vite merges an array of them into the input of an environment.
+    const pages = ["index.html", "callout.html"].map((page) => path.join(root, page));
     const resolved = await resolveConfig(
-      { configFile: false, root, logLevel: "silent", plugins: [rsc, ...plugins] },
+      {
+        configFile: false,
+        root,
+        logLevel: "silent",
+        plugins: [rsc, ...plugins],
+        build: { rolldownOptions: { input: pages } },
+      },
       "build",
     );
 
     const build = (name: string) => resolved.environments[name]!.build;
-    expect(build("react_client").rolldownOptions.input).toEqual({ entry: "framework/client" });
+    expect(build("react_client").rolldownOptions.input).toEqual({
+      entry: "framework/client",
+      references: "virtual:vitest-plugin-rsc/client-references",
+    });
     expect(build("next_ssr").rolldownOptions.input).toEqual({ entry: "framework/ssr" });
+    expect(build("client").rolldownOptions.input).toEqual(pages);
     expect([build("react_client").write, build("next_ssr").write]).toEqual([false, false]);
     expect(build("client").write).toBe(true);
   },

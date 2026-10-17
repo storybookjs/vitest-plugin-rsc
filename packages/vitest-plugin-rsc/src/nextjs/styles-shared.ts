@@ -137,3 +137,17 @@ export function builtStylesheetsOf(
     ]),
   );
 }
+
+/**
+ * The stylesheets of a file of the host with `"use client"` in a static
+ * build that is served from `directory`, a URL: those that `hostFiles` has
+ * for it by its key, `file`, as URLs. What the dev server answers for the
+ * file at `stylesheetsPath`.
+ */
+export function builtClientStylesheetsOf(
+  built: BuiltStylesheets,
+  file: string,
+  directory: string,
+): string[] {
+  return (built.hostFiles[file] ?? []).map((stylesheet) => new URL(stylesheet, directory).href);
+}

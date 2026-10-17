@@ -12,7 +12,7 @@ import {
 import { expect, onTestFinished, test } from "vitest";
 import type { NextProject } from "./project.ts";
 import { componentPagePath, type BuiltStylesheets } from "./styles-shared.ts";
-import { createStyles, exportsOfStylesheet, isCode, linked } from "./styles.ts";
+import { builtHostFileKey, createStyles, exportsOfStylesheet, isCode, linked } from "./styles.ts";
 
 // The module that the installed Vite makes of a stylesheet for a client, of
 // which the plugin keeps the exports, and not the `<style>`. As the plugin
@@ -294,6 +294,23 @@ test("finds the files of the host under a root that is a link", async () => {
   } finally {
     fs.rmSync(temp, { recursive: true, force: true });
   }
+});
+
+// The key of a file of the host in a build, which the prefix of a file with
+// `"use client"` names it by: from the real path of the root, also up out of
+// it, like a package in the `node_modules` of a workspace.
+test("keys a file of the host in a build by its path from the real root", () => {
+  const temp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "vitest-plugin-rsc-key-")));
+  onTestFinished(() => fs.rmSync(temp, { recursive: true, force: true }));
+  const real = normalizePath(path.join(temp, "real"));
+  const root = normalizePath(path.join(temp, "link"));
+  fs.mkdirSync(real);
+  fs.symlinkSync(real, root, "dir");
+
+  expect(builtHostFileKey(`${real}/host/badge.tsx`, root)).toBe("host/badge.tsx");
+  expect(builtHostFileKey(`${temp}/node_modules/.pnpm/a@1/node_modules/a/story.js`, real)).toBe(
+    "../node_modules/.pnpm/a@1/node_modules/a/story.js",
+  );
 });
 
 // A static build of a layout, by the plugin's CSS alone, with Vite's own CSS

@@ -42,13 +42,16 @@ await show(async () => {
     const plain = await import("./state.ts");
     // The file imported again, as Vite's client imports it after a change:
     // with a timestamp, another module of the browser, whose prefix runs the
-    // file again. Vite's dev server takes the timestamp out of the id.
+    // file again. Vite's dev server takes the timestamp out of the id. A
+    // static build has no change, and no server to ask for such a module.
     const update = `./client-module.tsx?t=${Date.now()}`;
-    const again: typeof reference = await import(/* @vite-ignore */ update);
+    const again: typeof reference | undefined = import.meta.env.DEV
+      ? await import(/* @vite-ignore */ update)
+      : undefined;
     state.__hostModule = {
       reference: Reflect.get(reference.Badge, "$$typeof") === Symbol.for("react.client.reference"),
       same: (await loadClientModule(reference)) === loaded,
-      again: (await loadClientModule(again)) !== loaded,
+      again: again && (await loadClientModule(again)) !== loaded,
       kept: (await loadClientModule(reference)) === loaded,
       plain: (await loadClientModule(plain)) === plain,
       // A file of the app with the directive.
@@ -91,7 +94,7 @@ await show(async () => {
     // The next `renderServer()` would leave the first node by itself too.
     await renderCallout(container);
     state.__hostCalloutLinked =
-      document.querySelector("link[rel=stylesheet][href*='callout.module.css']") !== null;
+      document.querySelector("link[rel=stylesheet][href*='callout.module']") !== null;
     await cleanup();
   }
   const { response } =

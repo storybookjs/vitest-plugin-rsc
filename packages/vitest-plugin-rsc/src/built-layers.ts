@@ -9,13 +9,23 @@ import type { ModuleRunnerTransport } from "vite/module-runner";
 // module is the path that it would have as a file of the build, so what it
 // names by its URL, like its CSS, is where it says.
 
+/**
+ * For the layers but the rsc layer: the modules a Flight payload can refer
+ * to, by the id it has for them. In a build the browser layer has it as an
+ * entry too, so that a runner outside a page evaluates a Client Component by
+ * that id, like the tab's graph of nextjs/client-graph.ts.
+ */
+export const clientReferencesId = "virtual:vitest-plugin-rsc/client-references";
+
 /** An environment that a static build made into a file for the module runner. */
 export type BuiltLayer = {
   /** The URL of the directory of the build, which ends in a slash. */
   base: string;
   /**
-   * The module of the layer that the page imports by an id of its own, like
-   * `vitest-plugin-rsc/nextjs/ssr`: its path from the directory of the build.
+   * The modules of the layer that the page imports by an id of their own,
+   * by that id: their paths from the directory of the build. The entry of
+   * the layer, like `vitest-plugin-rsc/nextjs/ssr`, and for the browser
+   * layer the list of its client references, by `clientReferencesId`.
    */
   entries: Record<string, string>;
   /** The file with the code of every module of the layer, by its id. */

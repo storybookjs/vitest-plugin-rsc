@@ -2,6 +2,14 @@ import fs from "node:fs";
 import path from "node:path";
 import { getPluginApi } from "@vitejs/plugin-rsc/plugin";
 import { moduleRunnerTransform, type Plugin, type Rolldown, type ViteBuilder } from "vite";
+import { clientReferencesId } from "./built-layers.ts";
+import {
+  builtHostModuleUrl,
+  hostModulePrefix,
+  hostModulesId,
+  hostModuleSpecifier,
+  isHostModule,
+} from "./host-module.ts";
 
 // A static build of the app: its layers as files of a site, with no dev
 // server next to the browser. `vite build` makes it, and so does a host that
@@ -31,21 +39,23 @@ import { moduleRunnerTransform, type Plugin, type Rolldown, type ViteBuilder } f
 // The first two cut every module down to its imports, so they are quick.
 // Their ids are not the ones of step 3: Vite RSC names a module of a package
 // by how it was imported, which it only knows of all of them afterwards.
+// Step 2 also finds the modules of the page that the browser layer imports,
+// which step 3 gives the page's own instance of: see host-module.ts.
 
 /** What the page imports for the layers that were built: see utils.ts. */
 const layersId = "virtual:vitest-plugin-rsc/layers";
-/** For the layers but the rsc layer: the modules a Flight payload can refer to. */
-export const clientReferencesId = "virtual:vitest-plugin-rsc/client-references";
 /** For the rsc layer: the modules with Server Actions. */
 const serverReferencesId = "virtual:vitest-plugin-rsc/server-references";
 /** Where the layers of the module runner are, in the directory of the build. */
 const layersDir = "vitest-plugin-rsc";
 /**
- * The one entry of a layer. A module of a layer is no file of the build, but
- * its id is the path it would have: the file it names by its URL, like its
- * CSS, is named from there.
+ * The entries of a layer, by their names in its input: the module that the
+ * page starts the layer with, and in the browser layer the list of its
+ * client references, `clientReferencesId`. A module of a layer is no file of
+ * the build, but its id is the path it would have: the file it names by its
+ * URL, like its CSS, is named from there.
  */
-const entryFile = "entry.js";
+const entryFile = (input: "entry" | "references") => `${input}.js`;
 /**
  * The file with every module of a layer. Not named after its content: the
  * build of the host, which says where it is, comes before the layer's, which
@@ -178,6 +188,19 @@ export async function toRunnerModule(
     : code;
 }
 
+// The modules of the page that the chunks of a layer import, by the import
+// each stands for: externals, see host-module.ts.
+function hostModulesOf(bundle: Rolldown.OutputBundle): Set<string> {
+  const found = new Set<string>();
+  for (const output of Object.values(bundle)) {
+    if (output.type !== "chunk") continue;
+    for (const id of [...output.imports, ...output.dynamicImports]) {
+      if (isHostModule(id)) found.add(hostModuleSpecifier(id));
+    }
+  }
+  return found;
+}
+
 // The layers a build has, said in words: the rsc layer and the others.
 const countOf = (layers: number) => ["two", "three"][layers - 2] ?? String(layers);
 
@@ -204,6 +227,19 @@ export function staticBuild(options: StaticBuildOptions): Plugin {
   >();
   // While `buildApp()` builds the environments.
   let buildingApp = false;
+  // The modules of the page that the scan of the browser layer found it
+  // imports, by the import each stands for: the rsc layer lists them, see
+  // `hostModulesId`.
+  let hostModules = new Set<string>();
+
+  // The entries of a layer, by their names in its input: see `entryFile()`.
+  // A runner outside a page evaluates a Client Component of the browser
+  // layer by its id in a Flight payload, from the list that a page's Flight
+  // client loads it from.
+  const inputOf = (name: string) => ({
+    entry: layers.entries[name]!,
+    ...(name === browser && { references: clientReferencesId }),
+  });
 
   const environment = (builder: ViteBuilder, name: string) => {
     const found = builder.environments[name];
@@ -250,10 +286,10 @@ export function staticBuild(options: StaticBuildOptions): Plugin {
             // with the chunk of the component: one file of all of it would be
             // loaded by nothing.
             cssCodeSplit: name === browser,
+            // Its input is set once the config is resolved: see `inputOf()`.
             rolldownOptions: {
-              input: { entry: layers.entries[name]! },
               output: {
-                entryFileNames: `${layersDir}/${name}/${entryFile}`,
+                entryFileNames: `${layersDir}/${name}/[name].js`,
                 // A file a module names by its URL, like an import with `?url`,
                 // where the browser layer has it: the server renders the URL
                 // that the browser hydrates.
@@ -317,9 +353,14 @@ export function staticBuild(options: StaticBuildOptions): Plugin {
       // The layers are read from their bundles, in `generateBundle`, and
       // written as one file each: see `buildApp()`. Vite writes nothing of
       // them. Set here, where no plugin of the host changes it anymore.
+      // Its input, too: Vite merges the config of an environment into the
+      // top level's, which has the host's own input, like the pages of a
+      // site, and an array or object of those would be the layer's as well.
       for (const name of runnerLayers()) {
         const layer = resolved.environments[name]?.build;
-        if (layer) layer.write = false;
+        if (!layer) continue;
+        layer.write = false;
+        layer.rolldownOptions = { ...layer.rolldownOptions, input: inputOf(name) };
       }
     },
     // Steps 1 to 4, and the files of the layers in the directory of the
@@ -330,6 +371,7 @@ export function staticBuild(options: StaticBuildOptions): Plugin {
       const writes = scanned.map((scan) => scan.write);
       // Not what a build before this one made.
       built.clear();
+      hostModules = new Set();
       buildingApp = true;
       try {
         // Steps 1 and 2, which only look: they write nothing, so Vite empties
@@ -395,6 +437,7 @@ export function staticBuild(options: StaticBuildOptions): Plugin {
     },
     resolveId(source) {
       if (source === clientReferencesId || source === serverReferencesId) return `\0${source}`;
+      if (source === hostModulesId) return `\0${source}`;
       if (source === layersId) {
         return this.environment.mode === "build" ? `\0${layersId}/built` : `\0${layersId}`;
       }
@@ -409,6 +452,21 @@ export function staticBuild(options: StaticBuildOptions): Plugin {
         if (!isBuild) return "export default undefined;";
         return referenceList([...manager.serverReferences.metaMap.values()]);
       }
+      // The modules of the page, for the layers of the module runner, as the
+      // host's build has them: one instance with the host's own scripts.
+      // Each is `hostModulePrefix` and its import, which the framework that
+      // resolves imports to modules of the page loads.
+      if (id === `\0${hostModulesId}`) {
+        if (!isBuild || this.environment.name !== rsc) return "export default undefined;";
+        const lines = [...hostModules]
+          .sort()
+          .map(
+            (specifier) =>
+              `  ${JSON.stringify(builtHostModuleUrl(specifier))}: () => ` +
+              `import(${JSON.stringify(hostModulePrefix + specifier)}),`,
+          );
+        return `export default {\n${lines.join("\n")}\n};\n`;
+      }
       // A dev server serves the modules of every layer itself.
       if (id === `\0${layersId}`) return "export default undefined;\n";
       if (id === `\0${layersId}/built`) {
@@ -418,7 +476,10 @@ export function staticBuild(options: StaticBuildOptions): Plugin {
           .map(
             (name) =>
               `  ${JSON.stringify(name)}: { base: directory, entries: ${JSON.stringify({
-                [layers.entries[name]!]: `${layersDir}/${name}/${entryFile}`,
+                [layers.entries[name]!]: `${layersDir}/${name}/${entryFile("entry")}`,
+                ...(name === browser && {
+                  [clientReferencesId]: `${layersDir}/${name}/${entryFile("references")}`,
+                }),
               })}, modules: ${JSON.stringify(`${layersDir}/${name}/${modulesFile}`)} },`,
           );
         return (
@@ -440,6 +501,27 @@ export function staticBuild(options: StaticBuildOptions): Plugin {
       order: "post",
       handler(_options, bundle) {
         const { name } = this.environment;
+        if (runnerLayers().includes(name)) {
+          const imported = hostModulesOf(bundle);
+          // The scan of the browser layer, which comes before the rsc layer
+          // that lists them. The layer's own build imports what its scan
+          // did: a module it imports beyond that is not in the list.
+          if (manager.isScanBuild) {
+            if (name === browser) hostModules = imported;
+          } else {
+            const missing = [...imported].find((specifier) => !hostModules.has(specifier));
+            if (missing !== undefined) {
+              this.error(
+                `vitest-plugin-rsc: the ${name} layer imports ${missing} as a module of the ` +
+                  `page, which the scan of the browser layer did not find, so the host's build ` +
+                  `has no instance of it to share. A module of the page is a package that ` +
+                  `\`host.packages\` of vitestPluginNext() names: \`host.packages\` has to name ` +
+                  `the package of ${missing}, and the browser layer has to import it by that ` +
+                  `name, in an import that the scan sees.`,
+              );
+            }
+          }
+        }
         if (manager.isScanBuild) return;
         // Where the directory of the build is, from a file of CSS.
         for (const output of Object.values(bundle)) {

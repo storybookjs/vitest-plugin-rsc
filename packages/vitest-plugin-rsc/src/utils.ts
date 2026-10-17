@@ -10,6 +10,7 @@ import {
   type ModuleEvaluator,
   type ModuleRunnerTransport,
 } from "vite/module-runner";
+import hostModules from "virtual:vitest-plugin-rsc/host-modules";
 import builtLayers from "virtual:vitest-plugin-rsc/layers";
 import * as pageClient from "virtual:vitest-plugin-rsc/vite-client";
 import {
@@ -411,10 +412,13 @@ const pageLoadEvaluator: ModuleEvaluator = {
     Object.seal(context[ssrModuleExportsKey]);
   },
   async runExternalModule(file) {
-    const exports = (await import(/* @vite-ignore */ file)) as { default?: unknown };
+    if (!isHostModule(file)) return import(/* @vite-ignore */ file);
     // What the page serves for a module of its own has that module as its
-    // default export: see host-module.ts.
-    return isHostModule(file) ? exports.default : exports;
+    // default export: see host-module.ts. A static build has it in the
+    // host's build, which the list imports it from.
+    const load = hostModules ? hostModules[file] : () => import(/* @vite-ignore */ file);
+    if (!load) throw new Error(`vitest-plugin-rsc: the build has no module of the page ${file}`);
+    return ((await load()) as { default?: unknown }).default;
   },
 };
 
