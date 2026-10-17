@@ -8,9 +8,14 @@ import { createProject, serveFiles, test, type Site } from "../../test-helpers/h
 // see vite.config.ts. A server of files serves the directory, and nothing
 // else: no dev server, no server of the app. The page of `index.html` hosts
 // the app, see host/main.tsx.
+//
+// Built twice: as `vite build` builds it, with Next's production code, the
+// plugin's default for a build, and with `build: "development"`, which
+// vite.config.ts takes from `VITEST_PLUGIN_RSC_BUILD`. What each test checks
+// holds for both, as none of it is what only the development code has, like
+// React's warnings, but for `window.nd`.
 
 const root = fileURLToPath(new URL("../", import.meta.url));
-const dist = path.join(root, "dist");
 
 type HostResponse = { status: number; url: string; redirected: boolean };
 
@@ -71,10 +76,24 @@ const fontLoaded = (page: Page, family: RegExp) =>
     family.source,
   );
 
-describe("a static build", () => {
+const builds = [
+  { build: "production", env: {} },
+  { build: "development", env: { VITEST_PLUGIN_RSC_BUILD: "development" } },
+] as const;
+
+describe.for(builds)("a static build, $build", ({ build, env }) => {
   let site: Site;
   beforeAll(async () => {
-    await createProject(root).run("vite", "build", "--configLoader", "native");
+    const dist = path.join(root, "dist", build);
+    await createProject(root, { env }).run(
+      "vite",
+      "build",
+      "--configLoader",
+      "native",
+      "--outDir",
+      dist,
+      "--emptyOutDir",
+    );
     site = await serveFiles(dist);
   });
   afterAll(() => site?.close());
@@ -86,6 +105,8 @@ describe("a static build", () => {
     expect(await pathname(page)).toBe("/");
     await page.getByRole("button", { name: "Count: 0" }).click();
     await page.getByRole("button", { name: "Count: 1" }).waitFor();
+    // Next's router puts itself on `window.nd` in development, for debugging.
+    expect(await page.evaluate(() => "nd" in window)).toBe(build === "development");
   });
 
   // A Server Component of the host, on a route of the app, with a Client

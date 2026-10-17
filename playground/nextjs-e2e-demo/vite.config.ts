@@ -14,12 +14,12 @@ process.env.NEXT_FONT_GOOGLE_MOCKED_RESPONSES = fileURLToPath(
   new URL("../../vitest.google-fonts.cjs", import.meta.url),
 );
 
-// Next's development code, or its production code with
-// `VITEST_PLUGIN_RSC_BUILD=production`, as for the tests in vitest.config.ts.
-// `pnpm perf:static` builds the app both ways with it. The test of the build
-// spawns `vite build` without the variables of Vitest, so it builds the default.
+// The plugin's default, which is Next's production code for `vite build`, or
+// the build of `VITEST_PLUGIN_RSC_BUILD`. `pnpm perf:static` builds the app
+// both ways with it, and so does the test of the build, which spawns
+// `vite build` without the other variables of Vitest.
 // oxlint-disable-next-line no-process-env
-const build = (process.env.VITEST_PLUGIN_RSC_BUILD || "development") as NextBuild;
+const build = (process.env.VITEST_PLUGIN_RSC_BUILD || undefined) as NextBuild | undefined;
 
 export default defineConfig({
   root: fileURLToPath(new URL("./", import.meta.url)),

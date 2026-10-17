@@ -87,11 +87,11 @@ Where Next's bundler config moves a module to another layer, the plugin does the
 
 ## Development Or Production
 
-By default the plugin runs Next's runtime and React with their development code, as `next dev` does. With `vitestPluginNext({ build: "production" })` it runs them as `next start` does after `next build`: their production code, in all three layers. That is Next's router, renderer and request handler, and the copies of React, React DOM, the scheduler and the Flight codec that Next ships, which are the React of every layer.
+By default a test run and a dev server run Next's runtime and React with their development code, as `next dev` does. With `vitestPluginNext({ build: "production" })` they run them as `next start` does after `next build`: their production code, in all three layers. That is Next's router, renderer and request handler, and the copies of React, React DOM, the scheduler and the Flight codec that Next ships, which are the React of every layer. `vite build` builds the production code by default, and the development code with `build: "development"`: see [A Static Build](#a-static-build).
 
 Next's files pick their code by `process.env.NODE_ENV`, and so do React's entry files, which then load `cjs/<name>.production.js` instead of `cjs/<name>.development.js`. So the plugin makes `process.env.NODE_ENV` the string `"production"` in each file of `next/dist` as Vite pre-bundles it (`build.ts`), and in the modules that Next's build generates for a route and for the proxy. It does so with a define of oxc, as a bundler does: a `process.env.NODE_ENV` in a string stays as it is, and so does one that Next's code assigns to. The JSX of the app and of the tests is compiled for production too, as `next build` compiles it: JSX compiled for development calls `jsxDEV()`, which React's production build does not have. A plugin that sets `development: true` for the JSX of `oxc` after this one wins, and then a component fails with a `TypeError` on `jsxDEV`.
 
-The app's own `process.env.NODE_ENV` stays as it is, in its code and in its other packages. An app reads it for its own reasons, like secure cookies, which secrets it needs, or whether to send mail, and a test should not take the paths of a deployment there.
+In a test run the app's own `process.env.NODE_ENV` stays as it is, in its code and in its other packages. An app reads it for its own reasons, like secure cookies, which secrets it needs, or whether to send mail, and a test should not take the paths of a deployment there. A static build has no test and no dependency optimizer: there `process.env.NODE_ENV` is the build in every module of the three layers, the app's too, as it is after `next build`.
 
 Production is faster. React's development build records where each element was created: an `Error` for its stack and a `console.createTask()`, for the first 10,000 elements of a render. A page is made of elements three times: as its Server Components render, as the HTML is rendered from their payload, and as it hydrates. And `<StrictMode>`, on unless `reactStrictMode` in `next.config` turns it off, renders a Client Component twice in the browser and runs its effects twice. In one app's suite of 1034 browser tests, most of which open a route, production took the suite from 51 to 41 seconds, and the median test that opens a page from 115 to 64 ms.
 
@@ -111,13 +111,15 @@ What changes: Next prefetches a `<Link>` as it comes into view, as in a deployme
 
 What stays: a hydration mismatch, and what a Server Component or a Client Component throws, are reported as uncaught errors, which fail the test.
 
-The default stays `"development"`. A test is where React's warnings are worth the most, and a test that fails is easiest to read with React's own message. A suite that opens many routes can run production on CI, and development where a failure is read:
+For a test run and a dev server the default is `"development"`. A test is where React's warnings are worth the most, and a test that fails is easiest to read with React's own message. A suite that opens many routes can run production on CI, and development where a failure is read:
 
 ```ts
 vitestPluginNext({ build: process.env.CI ? "production" : "development" });
 ```
 
-This is experimental. CI runs the playgrounds with both, against the pinned Next.js and against `latest` and `canary`. A run that switches from one to the other has Vite pre-bundle the dependencies again.
+For `vite build` the default is `"production"`. A static build is a site that people look at, page by page, like the stories of a Storybook on Chromatic, where React's warnings go unread. In production a page of the e2e demo's build loads in about 60% of the time, with about 60% of the bytes, as `pnpm perf:static` measures it (see [docs/performance.md](performance.md#a-static-build-per-page-load)). `build: "development"` builds the development code, with React's warnings and messages and Next's checks, for a build to debug in.
+
+This is experimental. CI runs the playgrounds with both, against the pinned Next.js and against `latest` and `canary`. The test of the e2e demo's static build builds it both ways, against the pinned Next.js. A run that switches from one to the other has Vite pre-bundle the dependencies again.
 
 ## The Compiler
 
@@ -705,7 +707,7 @@ At the next lookup the plugin answers for a test file itself. The test file belo
 
 ## A Static Build
 
-`vite build` builds the app into a directory of files: see [A Static Build](../README.md#a-static-build) in the README. The build is one of Vite's app builder, so each environment is built with the others in sight, in this order:
+`vite build` builds the app into a directory of files: see [A Static Build](../README.md#a-static-build) in the README. It builds Next's production code unless `build: "development"` is set (see [Development Or Production](#development-or-production)), and Vite minifies the three layers, as it minifies the code of any page. The build is one of Vite's app builder, so each environment is built with the others in sight, in this order:
 
 1. The rsc layer, to find the `"use client"` files it refers to. Vite RSC collects them as it compiles.
 2. The browser layer, as a scan: it finds the `"use server"` files the Client Components import, which the rsc layer must export. Nothing is written.

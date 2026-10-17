@@ -34,12 +34,13 @@ process.once("exit", () => {
   for (const command of running) command.kill();
 });
 
-// A command of the project, like `vite build`, as `pnpm exec` runs it. In a
-// process group of its own, so that killing it takes its children with it.
-function start(root: string, command: string[]): Command {
+// A command of the project, like `vite build`, as `pnpm exec` runs it, with
+// the variables of the project on top. In a process group of its own, so that
+// killing it takes its children with it.
+function start(root: string, command: string[], variables: Record<string, string>): Command {
   const child = spawn("pnpm", ["exec", ...command], {
     cwd: root,
-    env,
+    env: { ...env, ...variables },
     detached: true,
     stdio: ["ignore", "pipe", "pipe"],
   });
@@ -76,12 +77,19 @@ const freePort = () =>
     });
   });
 
-/** The commands of the project in `root`, a directory of a playground. */
-export function createProject(root: string) {
+/**
+ * The commands of the project in `root`, a directory of a playground. They
+ * run without the variables of Vitest, but for the ones of `env`, like
+ * `VITEST_PLUGIN_RSC_BUILD`.
+ */
+export function createProject(
+  root: string,
+  { env: variables = {} }: { env?: Record<string, string> } = {},
+) {
   return {
     /** Runs a command of the project to its end. Rejects with what it printed when it fails. */
     async run(...command: string[]): Promise<void> {
-      await start(root, command).exited;
+      await start(root, command, variables).exited;
     },
 
     /**
@@ -93,7 +101,7 @@ export function createProject(root: string) {
       { timeout = 60_000 } = {},
     ): Promise<DevServer> {
       const port = await freePort();
-      const server = start(root, command(port));
+      const server = start(root, command(port), variables);
       const url = `http://localhost:${port}/`;
       const stopped = server.exited.then(() => {
         throw new Error(`${command(port).join(" ")} stopped:\n${server.output()}`);

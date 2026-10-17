@@ -508,11 +508,12 @@ export type VitestPluginNextOptions = ServerCodeOptions & {
    * Experimental. The code that Next's runtime and React run, in all three
    * layers: `"development"` as `next dev` runs it, `"production"` as
    * `next start` runs it after `next build`. Production renders faster,
-   * without what the development code checks and reports. The app's
-   * `process.env.NODE_ENV` stays as it is. See docs/next-routes.md,
-   * "Development Or Production".
+   * without what the development code checks and reports. In a test run
+   * the app's `process.env.NODE_ENV` stays as it is, in a static build it is
+   * the build. See docs/next-routes.md, "Development Or Production".
    *
-   * @default "development"
+   * @default `"development"` for a test run and a dev server, `"production"`
+   * for `vite build`, a static build of the app
    */
   build?: NextBuild;
 };
@@ -523,12 +524,15 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
   let cssDifferences: string[] = [];
   const serverCode = createServerCode(registry, options);
   const getProject = () => project;
-  const build = options.build ?? "development";
-  if (!nextBuilds.includes(build)) {
+  if (options.build !== undefined && !nextBuilds.includes(options.build)) {
     throw new Error(
-      `vitest-plugin-rsc: \`build\` is "development" or "production", not ${JSON.stringify(build)}.`,
+      `vitest-plugin-rsc: \`build\` is "development" or "production", not ${JSON.stringify(options.build)}.`,
     );
   }
+  // The option's, or the default of the command, once the `config` hook knows
+  // it: development for a test run and a dev server, production for a static
+  // build, which is a site to look at, not a test that reads React's warnings.
+  let build: NextBuild = options.build ?? "development";
   // The client reference that Vite RSC made of a module of the rsc layer, if
   // it has `"use client"`.
   const clientReferenceOf = (id: string, config: ResolvedConfig) =>
@@ -592,6 +596,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
       enforce: "pre",
       async config(config, { command }) {
         const isBuild = command === "build";
+        build = options.build ?? (isBuild ? "production" : "development");
         project = await loadNextProject(path.resolve(config.root ?? process.cwd()), undefined, {
           build,
           static: isBuild,
