@@ -15,21 +15,34 @@ export default defineConfig({
     "src/nextjs/ssr.ts",
     "src/nextjs/client.tsx",
     "src/nextjs/internal.ts",
-    // Its own file: Vite RSC compiles the module of a "use server" directive.
+    // Files of their own: Vite RSC compiles the module of a "use server" or
+    // a "use client" directive.
     "src/nextjs/server-action.ts",
+    "src/nextjs/node-rendered.tsx",
   ],
   // The page the tests run in, next to the plugin that names it.
   copy: [{ from: "src/nextjs/tester.html", to: "dist/nextjs" }],
   format: ["esm"],
   fixedExtension: false,
   deps: {
-    neverBundle: [/^virtual:/, /^@vitejs\/plugin-rsc\/vendor\//, /^vitest(\/|$)/],
+    neverBundle: [
+      /^virtual:/,
+      /^@vitejs\/plugin-rsc\/vendor\//,
+      /^vitest(\/|$)/,
+      // A module of its own, with its "use client": see rsc.ts.
+      "vitest-plugin-rsc/nextjs/node-rendered",
+    ],
   },
   inputOptions: {
     onLog(level, log, handler) {
-      // The file of a "use server" directive is an entry of its own, so the
-      // directive stays at its top: dist/nextjs/server-action.js.
-      if (log.code === "MODULE_LEVEL_DIRECTIVE" && log.id?.endsWith("server-action.ts")) return;
+      // The file of a directive is an entry of its own, so the directive
+      // stays at its top: dist/nextjs/server-action.js and node-rendered.js.
+      if (
+        log.code === "MODULE_LEVEL_DIRECTIVE" &&
+        /(server-action|node-rendered)\.tsx?$/.test(log.id ?? "")
+      ) {
+        return;
+      }
       handler(level, log);
     },
   },

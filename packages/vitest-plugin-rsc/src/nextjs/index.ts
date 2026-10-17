@@ -5,6 +5,7 @@ import { checkFetchedModules, createEnvironmentRunner, environmentModule } from 
 import { callServerWithoutPage } from "./client-graph.ts";
 import { loadDocument, unloadDocument } from "./document.ts";
 import { recordListeners, recordMessageChannels } from "./leftovers.ts";
+import { NodeOnPage } from "./node-on-page.ts";
 import { PageStore } from "./page-store.ts";
 import { registry, type Opened } from "./registry.ts";
 
@@ -538,8 +539,9 @@ registry.fetch = appFetch(true);
 // when it needs it, from the global `process`.
 process.env.__NEXT_PRIVATE_ORIGIN = window.location.origin;
 
-// A page that is open, from when its document is there.
-type Page = { started: Promise<unknown>; unmount(): void };
+// A page that is open, from when its document is there, with the node of
+// `renderServer()` on it.
+type Page = { started: Promise<unknown>; unmount(): void; onPage?: NodeOnPage };
 
 let page: Page | undefined;
 // Tells a page load that the test has moved on: to another page, or to the
@@ -587,6 +589,9 @@ export type RenderServerResult = {
   /** Leaves the page. The cookies and the `headers` stay until the test ends. */
   unmount(): Promise<void>;
 };
+
+// The `unmount()` that `renderServer()` resolves with.
+const unmount = () => leavePage("unmount()");
 
 export type RenderComponentOptions = RequestOptions & {
   /**
@@ -638,6 +643,25 @@ export type RenderComponentResult = RenderServerResult & {
    * Without the scripts that run, which are Next's and React's.
    */
   asFragment(): DocumentFragment;
+  /**
+   * Renders `ui` in place of the node, like Testing Library's `rerender`:
+   * on the server, in one request of Next's router, as `router.refresh()`
+   * sends, and without a page load, so the state of the Client Components in
+   * the node stays. `ui` gets the same `wrapper`, and the page keeps its
+   * `url`, `headers` and the other options: for others, call
+   * `renderServer()`. Resolves once React has committed the new node, or a
+   * later one, and run its effects. A Suspense boundary that is new in it
+   * may still show its fallback. Every call is a request of its own: a host
+   * that renders often, as a user types, waits for one before the next.
+   *
+   * Rejects when something else is in the node's place: an error page, a
+   * not-found page, a page the node redirected to, or a route the app
+   * navigated to. Its `cause` is the error React reported, which for
+   * `notFound()` and `redirect()` is Next's own. Rejects when the page was
+   * left, and with an `AbortError` when it is left while the node renders
+   * again.
+   */
+  rerender(ui: ReactNode): Promise<void>;
 };
 
 /**
@@ -691,15 +715,27 @@ export async function renderServer(
     const opened = { pathname, proxy: first.proxy ?? true };
     return {
       response: await loadPage(url, { headers }, { opened, headers: sticky, cookie }),
-      unmount: leavePage,
+      unmount,
     };
   }
 
   const { wrapper, proxy = false } = options;
-  const ui = wrapper ? createElement(wrapper, null, first) : first;
+  const wrap = (node: ReactNode) => (wrapper ? createElement(wrapper, null, node) : node);
   // The files of the host that render the node, for their stylesheets.
   const files = options.hostFiles ?? registry.nodeFiles?.() ?? [];
-  if (options.layouts) {
+  const layouts = options.layouts ?? false;
+  const served = { ui: wrap(first), layouts, files, version: 0 };
+  const opened: Opened = { pathname, proxy, node: served };
+  // The node on its page, which `rerender()` waits for.
+  const onPage = new NodeOnPage();
+  const rerender = (next: ReactNode) => {
+    // A navigation of the app on the client, in the layouts of a route, takes
+    // the node's place before the node's effects say so.
+    if (window.location.pathname !== pathname) onPage.replaced();
+    // The server reads both as it renders the route of the node.
+    return onPage.rerender((version) => Object.assign(served, { ui: wrap(next), version }));
+  };
+  if (layouts) {
     if (options.container || options.baseElement) {
       throw new Error(
         "vitest-plugin-rsc: with `layouts` a node renders in the document of its route, whose " +
@@ -707,8 +743,7 @@ export async function renderServer(
           "to pass.",
       );
     }
-    const opened = { pathname, proxy, node: { ui, layouts: true, files } };
-    const response = await loadPage(url, { headers }, { opened, headers: sticky, cookie });
+    const response = await loadPage(url, { headers }, { opened, headers: sticky, cookie, onPage });
     return {
       response,
       get container() {
@@ -718,7 +753,8 @@ export async function renderServer(
         return document.body;
       },
       asFragment: () => fragmentOf(document.body),
-      unmount: leavePage,
+      unmount,
+      rerender,
     };
   }
   // The container becomes the node's: React hydrates all of it, and leaving
@@ -732,7 +768,7 @@ export async function renderServer(
   }
   // Leaving the page that is there takes what was added to the document
   // since it loaded, so the container comes after that.
-  await leavePage();
+  await leavePage("another renderServer()");
   // A base element of the test's own. Not a body: that is the one of the
   // document, whichever it is by then. A node has a body of its own, and the
   // page after it another.
@@ -751,12 +787,7 @@ export async function renderServer(
   const response = await loadPage(
     url,
     { headers },
-    {
-      container,
-      opened: { pathname, proxy, node: { ui, layouts: false, files } },
-      headers: sticky,
-      cookie,
-    },
+    { container, opened, headers: sticky, cookie, onPage },
   );
   return {
     response,
@@ -765,7 +796,8 @@ export async function renderServer(
       return base ?? (defaultsToContainer || document.body);
     },
     asFragment: () => fragmentOf(container),
-    unmount: leavePage,
+    unmount,
+    rerender,
   };
 }
 
@@ -795,10 +827,17 @@ function isOptions(value: unknown): value is RenderServerOptions {
 // the requests of the browser after it, and the `cookie` header that sets
 // cookies for the app. A page load that the app makes itself, a navigation,
 // has no `opening`.
-type Opening = { container?: Element; opened: Opened; headers: Headers; cookie: string | null };
+type Opening = {
+  container?: Element;
+  opened: Opened;
+  headers: Headers;
+  cookie: string | null;
+  /** For a node: what `rerender()` waits for. */
+  onPage?: NodeOnPage;
+};
 
 async function loadPage(url: URL, init: RequestInit, opening?: Opening): Promise<Response> {
-  const leaving = leavePage();
+  const leaving = leavePage(opening ? "another renderServer()" : "a page load of the app");
   const load = (currentLoad = new AbortController());
   await leaving;
   load.signal.throwIfAborted();
@@ -885,8 +924,14 @@ async function openPage(
   if (opening && new URL(response.url).pathname !== opening.opened.pathname) {
     registry.opened = undefined;
     container = undefined;
+    opening.onPage?.replaced();
   }
-  if (/^\s*<!doctype/i.test(html)) container = undefined;
+  if (/^\s*<!doctype/i.test(html)) {
+    container = undefined;
+    // In the layouts of a route a page is a whole document too. There React
+    // reports the error that takes the node's place as the page hydrates.
+    if (!opening?.opened.node?.layouts) opening?.onPage?.replaced();
+  }
   await loadDocument(html, response.url, container);
   superseded();
   // A page load runs the app's scripts from scratch, so every page gets a
@@ -919,9 +964,9 @@ async function openPage(
       environmentModule("react_client", "vitest-plugin-rsc/nextjs/client"),
     );
     superseded();
-    return client.start(loaded, container, signal);
+    return client.start(loaded, container, signal, opening?.onPage);
   })();
-  page = { started: started.catch(() => {}), unmount: () => leave() };
+  page = { started: started.catch(() => {}), unmount: () => leave(), onPage: opening?.onPage };
   try {
     ({ unmount } = await started);
   } catch (error) {
@@ -949,11 +994,13 @@ const startTimeout = 20_000;
 const setTimeout = globalThis.setTimeout;
 const clearTimeout = globalThis.clearTimeout;
 
-function leavePage(): Promise<void> {
+// Leaves the page that is open: `by` is what leaves it, for its node.
+function leavePage(by: string): Promise<void> {
   currentLoad?.abort(new DOMException("The page was left before it had loaded.", "AbortError"));
   currentLoad = undefined;
   const left = page;
   page = undefined;
+  left?.onPage?.left(by);
   // Also after a page that could not be left: that one fails its own test.
   const gone = leaving
     .catch(() => {})
@@ -1002,7 +1049,7 @@ function leavePage(): Promise<void> {
  * Runs before and after every test.
  */
 export async function cleanup(): Promise<void> {
-  await leavePage();
+  await leavePage("cleanup()");
   for (const container of containers) container.remove();
   containers.clear();
   store = new PageStore();

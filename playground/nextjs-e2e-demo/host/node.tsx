@@ -24,3 +24,6 @@ async function HostNode({ id }: { id: string }) {
 export function renderNode(id: string, url: string, hostFiles = ["host/node.tsx"]) {
   return renderServer(<HostNode id={id} />, { url, hostFiles });
 }
+
+/** The node of another note, for `rerender()` of what `renderNode()` resolved with. */
+export const nodeOf = (id: string) => <HostNode id={id} />;

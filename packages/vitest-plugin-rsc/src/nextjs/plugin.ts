@@ -518,6 +518,8 @@ const runtimeImports: Record<NextLayer, string[]> = {
     "next/dist/server/web/utils",
     "next/dist/compiled/stream-browserify",
     vendoredFlight("client.edge"),
+    // node-rendered.tsx, around every node
+    "next/navigation",
   ],
   browser: [
     ...react,
@@ -526,6 +528,8 @@ const runtimeImports: Record<NextLayer, string[]> = {
     "next/dist/client/app-bootstrap",
     "next/dist/client/app-call-server",
     "next/dist/client/app-index",
+    // node-rendered.tsx, around every node
+    "next/navigation",
     vendoredFlight("client.browser"),
   ],
 };

@@ -979,6 +979,7 @@ import { vitestPluginNext } from "vitest-plugin-rsc/nextjs/plugin";
 | --------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `renderServer({ url, headers, proxy })` | Opens a route. Resolves with `{ response, unmount }` once the page has hydrated.                                                                                                                                                                                     |
 | `renderServer(<Node />, options)`       | Renders a node in a container, on a route of its own. See the options below.                                                                                                                                                                                         |
+| `rerender(ui)`                          | On the result of `renderServer(<Node />)`: renders `ui` in its place without a page load, keeping the state of its Client Components. Resolves once React has committed it and run its effects.                                                                      |
 | `handleRequest(input, init)`            | Sends one request to the app, like `fetch`. Resolves with the `Response`.                                                                                                                                                                                            |
 | `runInServerAction(fn, options)`        | Runs `fn` as a Server Action at `url`, without opening a page. Options: `url`, `proxy`, `headers`.                                                                                                                                                                   |
 | `cleanup()`                             | Leaves the page, clears your app's cookies, storage and the cache. The plugin runs it around every test.                                                                                                                                                             |
@@ -1001,7 +1002,15 @@ The options for a node, all optional:
 
 A node has the CSS of what its test file and the setup files import. A host other than Vitest, like a Storybook framework, passes one more option, `hostFiles`: the files of the host that render the node, for their CSS. A Vitest test never passes it. See [Another Host Than Vitest](docs/next-routes.md#another-host-than-vitest).
 
-A node resolves with `{ container, baseElement, asFragment, unmount, response }`.
+A node resolves with `{ container, baseElement, asFragment, rerender, unmount, response }`. `rerender(ui)` renders another node in its place without a page load, so the state of its Client Components stays: one request of Next's router, as `router.refresh()` sends, with the same `wrapper`, `url` and `headers`. It resolves once React has committed the new node and run its effects, and rejects when something else took the node's place, like an error page, or the page was left. See [Rendering The Node Again](docs/next-routes.md#rendering-the-node-again).
+
+```tsx
+const { rerender } = await renderServer(<Greeting name="Ada" />);
+await page.getByRole("button", { name: "Count: 0" }).click();
+
+await rerender(<Greeting name="Grace" />);
+// "Hello Grace", and the counter still says "Count: 1".
+```
 
 ## React Server Components Without Next.js
 
