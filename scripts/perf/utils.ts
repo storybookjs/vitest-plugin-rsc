@@ -1,5 +1,6 @@
 /// <reference types="node" />
 
+import { spawnSync } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -46,4 +47,29 @@ export function formatSeconds(value: unknown): string {
 export function formatMilliseconds(value: unknown): string {
   if (typeof value !== "number" || !Number.isFinite(value)) return "n/a";
   return `${value.toFixed(2)}ms`;
+}
+
+export function median(values: number[]): number | undefined {
+  if (values.length === 0) return undefined;
+  const sorted = [...values].sort((a, b) => a - b);
+  const middle = Math.floor(sorted.length / 2);
+  return sorted.length % 2 === 1 ? sorted[middle] : (sorted[middle - 1]! + sorted[middle]!) / 2;
+}
+
+/** Bytes in kB of 1000, as Vite prints the size of a file of a build. */
+export function formatKilobytes(value: unknown): string {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "n/a";
+  return `${(value / 1000).toFixed(1)} kB`;
+}
+
+export function gitMetadata(cwd: string): Record<string, string> {
+  return {
+    branch: git(["branch", "--show-current"], cwd),
+    sha: git(["rev-parse", "HEAD"], cwd),
+  };
+}
+
+function git(args: string[], cwd: string): string {
+  const result = spawnSync("git", args, { cwd, encoding: "utf8" });
+  return result.status === 0 ? result.stdout.trim() : "unknown";
 }

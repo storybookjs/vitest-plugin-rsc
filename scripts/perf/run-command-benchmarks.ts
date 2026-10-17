@@ -7,6 +7,7 @@ import { parseArgs } from "node:util";
 import {
   ensureDir,
   formatSeconds,
+  gitMetadata,
   numberOption,
   repoRoot,
   resolveOutputDir,
@@ -242,18 +243,6 @@ async function writeSummary(
   }
 
   await writeFile(summaryPath, `${lines.join("\n")}\n`);
-}
-
-function gitMetadata(cwd: string): Record<string, string> {
-  return {
-    branch: git(["branch", "--show-current"], cwd),
-    sha: git(["rev-parse", "HEAD"], cwd),
-  };
-}
-
-function git(args: string[], cwd: string): string {
-  const result = spawnSync("git", args, { cwd, encoding: "utf8" });
-  return result.status === 0 ? result.stdout.trim() : "unknown";
 }
 
 try {

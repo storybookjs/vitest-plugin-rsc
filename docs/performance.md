@@ -1,9 +1,10 @@
 # Performance Benchmarks
 
-This repo keeps two benchmark layers:
+This repo keeps three benchmark layers:
 
-- Repo-local Vitest command benchmarks are the portable baseline. They run in CI, produce JSON artifacts, and cover `playground/rsc-vitest-demo` and the Next.js notes demo, which doubles as the comprehensive acceptance app. `playground/nextjs-e2e-demo` has no benchmark.
+- Repo-local Vitest command benchmarks are the portable baseline. They run in CI, produce JSON artifacts, and cover `playground/rsc-vitest-demo` and the Next.js notes demo, which doubles as the comprehensive acceptance app.
 - An optional Vitest bench micro layer for render-helper hotspots. It is supporting evidence only; the main acceptance signal is end-to-end Vitest browser command runtime.
+- An optional page load benchmark of the static build of `playground/nextjs-e2e-demo`, `pnpm perf:static`: see [A Static Build Per Page Load](#a-static-build-per-page-load).
 
 The suite is intentionally informational for now. It fails when benchmark commands fail, but it does not enforce timing thresholds or block PRs on small regressions.
 
@@ -45,6 +46,23 @@ You can tune runs without editing committed files:
 PERF_HYPERFINE_RUNS=5 pnpm perf:commands
 VITE_PERF_BENCH_TIME_MS=500 VITE_PERF_BENCH_ITERATIONS=20 pnpm perf:micro
 ```
+
+## A Static Build Per Page Load
+
+Chromatic loads every story of a static build in a preview iframe of its own, so what a build costs is the cost of one fresh page load, route by route:
+
+```sh
+pnpm perf:static
+pnpm perf:static --iterations 3 --builds production --routes /,/fonts
+```
+
+It builds `playground/nextjs-e2e-demo` with `vite build` twice, with `VITEST_PLUGIN_RSC_BUILD=development` and `production`, into `artifacts/perf/local/static-build/dist-*`. It serves each from a server of files and opens the host page with Playwright's Chromium, for six routes of the build test and for a node of the host. Each iteration opens a route twice: cold, in a new browser context, and warm, in a new page of the same context. It writes `results.json`, with every request of every load, and `summary.md`, the medians, which it also prints.
+
+- Bytes and requests come from CDP's Network domain: what came over the wire, headers included, and what came from the cache. The server of files does not compress, so the bytes are uncompressed. The gzip column is what the same files would be gzipped, computed with `node:zlib`, and the build table has the gzip and brotli sizes of each `modules.json`.
+- The server sends every file with an `ETag`. The files under `assets/` and `_next/static/` have a hash in their names and are immutable for the browser. Any other file is `no-cache`, so a warm load gets a 304 for it, as for `modules.json`.
+- Ready is the time from the start of the navigation until the host sets `__hostState` to `"ready"`. The load counts what the page fetches after that until the network is quiet, as Chromatic waits for images and fonts. Busy time is how long Chromium's main thread was busy until then, its `TaskDuration`. `results.json` also has its `ScriptDuration`, which leaves out what runs after an `await` of a fetch, most of the host, so take a CPU profile to see what the time is spent on. In production the load includes Next's prefetch of the links on the page.
+- The server is on localhost, so the times are about the CPU. Bytes and requests are what a network adds.
+- The run fails when the host reports an error, with the errors of the page. Other errors of a page are in the summary. `--skip-build` measures the builds that are there.
 
 ## Comparing Branches
 

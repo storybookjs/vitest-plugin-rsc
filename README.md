@@ -957,7 +957,7 @@ Everything that runs with the dev server runs from the build: pages and nodes, C
 - The files of the build name the routes of the app by their paths on the machine that built it, as Next's loader tree does, and the Next config in the layers has its `configFile` and roots as absolute paths. A build is not the same byte for byte on another machine. The next PRs of the stack take the machine paths out.
 - `experimental.inlineCss` is not honoured in a build: the stylesheets are linked.
 
-`playground/nextjs-e2e-demo` builds its app with a page of its own, `index.html`, that calls `renderServer()` as a test does, and a test project opens the build in a browser from a server of files: see its `build-test/`.
+`playground/nextjs-e2e-demo` builds its app with a page of its own, `index.html`, that calls `renderServer()` as a test does, and a test project opens the build in a browser from a server of files: see its `build-test/`. `pnpm perf:static` measures what one page load of its build costs per route, in bytes, requests and time, for both builds: see [docs/performance.md](docs/performance.md#a-static-build-per-page-load).
 
 ### API
 
