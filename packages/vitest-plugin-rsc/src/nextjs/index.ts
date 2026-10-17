@@ -796,9 +796,13 @@ async function loadPage(url: URL, init: RequestInit, opening?: Opening): Promise
   try {
     return await openPage(url, init, load.signal, from, opening);
   } catch (error) {
-    // What did not get to open has no requests of its own. Unless the test has
-    // moved on, to a page or a node of its own.
-    if (opened && registry.opened === opened) registry.opened = undefined;
+    // A load that failed has no requests left, unless the test has moved on
+    // to a page or a node of its own. Only `leavePage()` stops a load. The
+    // server may still render the request of a stopped one, so leaving
+    // forgets what it opened once that request is done.
+    if (opened && registry.opened === opened && !load.signal.aborted) {
+      registry.opened = undefined;
+    }
     throw error;
   }
 }
