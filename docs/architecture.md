@@ -1,6 +1,6 @@
 # Architecture
 
-This page describes `vitestPluginRSC()` on its own: how the `renderServer` of `vitest-plugin-rsc/testing-library` renders a Server Component. A Next.js app runs on the same two environments and a third one, see [next-routes.md](next-routes.md).
+This page describes `vitestPluginRSC()` on its own: how the `renderServer` of `vitest-plugin-rsc/testing-library` renders a Server Component, and how `vite build` builds it into a static site. A Next.js app runs on the same two environments and a third one, see [next-routes.md](next-routes.md).
 
 `renderServer` runs the same React Server Components protocol your app uses in production:
 
@@ -121,6 +121,19 @@ The server counts the modules it invalidates, for a file that changed while the 
 In an environment that the page runs through a module runner, a dependency comes without its source map. Vite puts the source map in the module, and for the pre-bundled dependencies of an app that is megabytes, more than their code. Combining those source maps is also what takes the dev server longest when it first compiles a dependency for a runner. An error in a dependency is reported at its place in the code that the page runs, under the name of the file, and the source maps of the app's own files are as they were. This goes for `react_client` without Next.js too.
 
 Vite also compiles every pre-bundled dependency again for a module runner, in every run: it turns the file into a syntax tree in JavaScript, megabytes for a package like an icon set, and walks it to rewrite its imports and exports. That was most of what the dev server did while a page loaded for the first time in a run. Rolldown, which Vite comes with, does that step natively, about ten times as fast and off the main thread, but Vite does not use it yet. So for a pre-bundled file the plugin runs Vite's plugins as Vite does, then Rolldown's `moduleRunnerTransform` in place of Vite's own, and gives Vite the result as the one it has for the module (`src/dependency-transforms.ts`). The files of the app are Vite's to compile. One thing differs from Vite's transform: in a cycle of imports, a module that reads an export before the module that has it defined it gets `undefined` from Vite's, and a `ReferenceError` from Rolldown's. A browser throws too, except for a function that a module exports from another module. Without Rolldown's transform, or when it fails on a file, Vite compiles the file as it always did.
+
+## A Static Build
+
+`vite build` builds the two environments into a static site, with no dev server behind it (`src/static-build.ts`). A page of the project hosts the Server Components, as a test file does: its `index.html`, with a script that calls `initialize()` and `renderServer()` of `vitest-plugin-rsc/testing-library`. `playground/rsc-vitest-demo` has one, `host/main.tsx`, and a test project that opens its build in a browser, `build-test/`. It builds with Vite's app builder, as `vite build` does: Vite's `build()` builds one environment, so the plugin stops it with an error, and it does not build in `--watch` mode.
+
+- **`client`** is the host's build: Vite builds `index.html` and its scripts, the Server Components among them, as for any page, also its CSS, which the HTML links.
+- **`react_client`** is built as an environment of its own, from the client of the testing library, and every chunk is rewritten for the module runner. They are one file, `vitest-plugin-rsc/react_client/modules.json`, by the id of each chunk, which a tab fetches once (`src/built-layers.ts`). The CSS of a Client Component is a file of the build, which Vite loads with the chunk of the component, as it does for any dynamic import.
+
+Vite's app builder builds them in an order that gives every reference its id: `client`, to find the `"use client"` files, then `react_client`, as a scan for the `"use server"` files that only a Client Component imports, then `client` again and `react_client` with every reference. With a dev server the id of a reference is the one Vite imports the module by. In a build Vite RSC names it with a hash of its path, so each environment gets a list of the modules a payload can refer to by that id: `virtual:vitest-plugin-rsc/client-references` in `react_client`, and `virtual:vitest-plugin-rsc/server-references` in `client`. With a dev server both are `undefined`.
+
+A file of the layers names another one by the way from itself: where the plugin's code needs the directory of the build, it has a placeholder, which becomes the relative path from the chunk to the directory once the chunk has its place. The files of the host's own build, like the scripts of `index.html`, are named by Vite, from `base`: to serve the build from a path, build it with that `base`, or with `base: "./"`. `vite build` builds React's production code, as for any app. There is no option for the development code without Next.js. The variables that an inline Server Action keeps are encrypted with one key, not a new one for every build, so `__vite_rsc_encryption_key.js` is the same in every build: the server is the page, which has the key anyway.
+
+Next.js builds the same way, with its ssr layer as one more environment for the module runner: see [A Static Build](next-routes.md#a-static-build).
 
 ## The Full Loop
 

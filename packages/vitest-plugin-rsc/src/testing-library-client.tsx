@@ -1,6 +1,7 @@
 import * as React from "react";
 import * as ReactDOMClient from "react-dom/client";
 import * as ReactClient from "@vitejs/plugin-rsc/react/browser";
+import clientReferences from "virtual:vitest-plugin-rsc/client-references";
 import type { RenderConfiguration } from "./testing-library.tsx";
 
 export type RscPayload = {
@@ -89,8 +90,20 @@ async function act<T>(callback: () => T | Promise<T>) {
   }
 }
 
+// A Client Component in a Flight payload, by its module id. With a dev server
+// that id is the one Vite imports the module by. A static build has a list of
+// the modules that can be referred to: see static-build.ts.
 export function initialize() {
   ReactClient.setRequireModule({
-    load: (id) => import(/* @vite-ignore */ id),
+    load: (id) => {
+      if (!clientReferences) return import(/* @vite-ignore */ id);
+      const load = clientReferences[id];
+      if (!load) {
+        return Promise.reject(
+          new Error(`vitest-plugin-rsc: the build has no Client Component "${id}"`),
+        );
+      }
+      return load();
+    },
   });
 }

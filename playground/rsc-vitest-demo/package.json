@@ -3,8 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc -b && vite build",
+    "dev": "NODE_OPTIONS='--conditions=vitest-plugin-rsc-source' vite --configLoader native",
+    "build": "NODE_OPTIONS='--conditions=vitest-plugin-rsc-source' vite build --configLoader native",
     "check": "tsc -b",
     "preview": "vite preview",
     "test": "vitest",
@@ -21,7 +21,6 @@
     "@types/node": "^24.12.4",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
-    "@vitejs/plugin-react": "^6.0.1",
     "@vitest/browser": "5.0.3",
     "@vitest/browser-playwright": "5.0.3",
     "@vitest/coverage-v8": "5.0.3",

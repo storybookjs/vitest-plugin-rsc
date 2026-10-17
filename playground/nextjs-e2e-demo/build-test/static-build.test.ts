@@ -1,11 +1,15 @@
-import { createHash } from "node:crypto";
 import fs from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Page } from "playwright";
 import { afterAll, beforeAll, describe, expect, onTestFinished } from "vitest";
-import { createProject, serveFiles, test, type Site } from "../../test-helpers/host.ts";
+import {
+  copyProject,
+  filesWithMachinePaths,
+  hashesOf,
+  viteBuild,
+} from "../../test-helpers/build.ts";
+import { serveFiles, test, type Site } from "../../test-helpers/host.ts";
 
 // The app in a static build, which `vite build` makes with Vite's app builder:
 // see vite.config.ts. A server of files serves the directory, and nothing
@@ -21,81 +25,6 @@ import { createProject, serveFiles, test, type Site } from "../../test-helpers/h
 const root = fileURLToPath(new URL("../", import.meta.url));
 // The repository the app is in, which Next's config names too.
 const repository = path.resolve(root, "../..");
-
-/** Builds the project in `dir` into `outDir` with `vite build`. */
-const viteBuild = (dir: string, outDir: string, env: Record<string, string>) =>
-  createProject(dir, { env }).run(
-    "vite",
-    "build",
-    "--configLoader",
-    "native",
-    "--outDir",
-    outDir,
-    "--emptyOutDir",
-  );
-
-/** The files of a directory, by their paths from it, with `/`, in order. */
-const filesOf = (dir: string) =>
-  fs
-    .readdirSync(dir, { recursive: true, encoding: "utf8" })
-    .filter((file) => fs.statSync(path.join(dir, file)).isFile())
-    .map((file) => file.split(path.sep).join("/"))
-    .sort();
-
-/** Every file of a directory with a hash of its content. */
-const hashesOf = (dir: string) =>
-  Object.fromEntries(
-    filesOf(dir).map((file) => [
-      file,
-      createHash("sha256")
-        .update(fs.readFileSync(path.join(dir, file)))
-        .digest("hex"),
-    ]),
-  );
-
-/**
- * The files of a build that name a directory of the machine that built it:
- * the repository, which the project is in, or the home directory. As it is
- * written, with `/`, and escaped in a string, each with a separator after it.
- * Not a directory at the root, like `/app` in a container: its name is in
- * many a URL.
- */
-function filesWithMachinePaths(dir: string): Record<string, string[]> {
-  const named = [...new Set([repository, fs.realpathSync(repository), os.homedir()])].flatMap(
-    (name) =>
-      path.dirname(name) === path.parse(name).root
-        ? []
-        : [
-            ...new Set([
-              name + path.sep,
-              `${name.split(path.sep).join("/")}/`,
-              JSON.stringify(name + path.sep).slice(1, -1),
-            ]),
-          ],
-  );
-  const found: Record<string, string[]> = {};
-  for (const file of filesOf(dir)) {
-    const content = fs.readFileSync(path.join(dir, file));
-    const names = named.filter((name) => content.includes(name));
-    if (names.length > 0) found[file] = names;
-  }
-  return found;
-}
-
-// A copy of the project in a directory next to it, which `vite build` builds
-// like the project itself. Its `node_modules` links to the same packages, by
-// the same way up: what the build names by the way from the root of the
-// project is the same. Not what test runs write into the project: a build,
-// Next's cache in `.next`, the apps of project.test.ts in `.app-*`.
-function copyProject(copy: string): void {
-  const skipped =
-    /^(?:dist|\.next|\.app-[^\\/]*|\.vitest[^\\/]*|node_modules[\\/]\.(?!bin(?:[\\/]|$))[^\\/]*)(?:[\\/]|$)/;
-  fs.cpSync(root, copy, {
-    recursive: true,
-    verbatimSymlinks: true,
-    filter: (source) => !skipped.test(path.relative(root, source)),
-  });
-}
 
 type HostResponse = { status: number; url: string; redirected: boolean };
 
@@ -173,7 +102,7 @@ describe.for(builds)("a static build, $build", ({ build, env }) => {
   // A build is the same on every machine, and says nothing of the one it
   // was built on: who built it, and where.
   test("has no path of the machine that built it", () => {
-    expect(filesWithMachinePaths(dist)).toEqual({});
+    expect(filesWithMachinePaths(dist, repository)).toEqual({});
   });
 
   // The same tree, built in another directory, is the same build, byte for
@@ -186,7 +115,7 @@ describe.for(builds)("a static build, $build", ({ build, env }) => {
     async () => {
       const copy = fs.mkdtempSync(path.join(root, "..", ".nextjs-e2e-demo-"));
       onTestFinished(() => fs.rmSync(copy, { recursive: true, force: true }));
-      copyProject(copy);
+      copyProject(root, copy);
       const moved = path.join(copy, "dist");
       await viteBuild(copy, moved, env);
       expect(hashesOf(moved)).toEqual(hashesOf(dist));

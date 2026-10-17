@@ -37,6 +37,14 @@ function withConfiguredSourceConditions(
   return [...new Set([...sourceConditions, ...conditions])];
 }
 
+// The key of Vite RSC for the variables that an inline Server Action keeps,
+// like the `id` of `async () => { "use server"; await remove(id); }`. It is
+// one key, not a new one for every run: the server is the page, which has
+// the key anyway, so it keeps nothing from the browser. A static build has it
+// in a file, which is then the same in every build. The 32 bytes of
+// `vitest-plugin-rsc-encryption-key`, in base64.
+const encryptionKey = JSON.stringify("dml0ZXN0LXBsdWdpbi1yc2MtZW5jcnlwdGlvbi1rZXk=");
+
 export function vitestPluginRSC(): Plugin[] {
   return [
     pageViteClientPlugin(),
@@ -45,6 +53,7 @@ export function vitestPluginRSC(): Plugin[] {
         browser: "react_client",
         rsc: "client",
       },
+      defineEncryptionKey: encryptionKey,
     }),
     // `vite build`, and what a dev server has instead: see static-build.ts.
     staticBuild({
