@@ -2,6 +2,7 @@ import type { DecoratorFunction, ModuleExports } from "storybook/internal/types"
 import { applyHooks, defaultDecorateStory, HooksContext } from "storybook/preview-api";
 import { expect, test, vi } from "vitest";
 import { applyDecorators, experimental_loadStoryFile } from "./preview.ts";
+import { render } from "./server-story.tsx";
 
 // The two layers, as the plugin has them: a module of the rsc layer, and of
 // a file with "use client" a module of the browser layer, which
@@ -40,6 +41,7 @@ vi.mock("./client-canvas.tsx", () => {
   const reference = {};
   browserModules.set(reference, {
     applyDecorators: defaultDecorateStory,
+    render: () => "browser-render",
     loadPreview: async () => browserPreview.current,
   });
   return { default: reference };
@@ -48,7 +50,6 @@ vi.mock("./client-canvas.tsx", () => {
 vi.mock("./server-story.tsx", () => ({
   render: () => null,
   isPageStory: () => false,
-  leaveDocument: async () => {},
 }));
 
 // A story file: what the rsc layer imports, with the order of the stories
@@ -85,9 +86,9 @@ test('a story file with "use client" is the browser layer\'s, the same object ea
 
 // A story decorated and called as Storybook's `prepareStory()` does: with
 // the decorators wrapped for Storybook's hooks.
-function decorated(moduleExport: object, decorators: DecoratorFunction[]) {
+function decorated(moduleExport: object, decorators: DecoratorFunction[], context = {}) {
   const story = applyHooks(applyDecorators as never)(() => "story", decorators);
-  return story({ moduleExport, hooks: new HooksContext() } as never);
+  return story({ moduleExport, hooks: new HooksContext(), ...context } as never);
 }
 
 test("a client story has the decorators of the preview file as the browser layer evaluated them", async () => {
@@ -98,7 +99,23 @@ test("a client story has the decorators of the preview file as the browser layer
   // Storybook's order: the story's, the meta's, the preview file's, and
   // those of an addon, which are one instance for both layers.
   const decorators = [named("story"), named("meta"), rscTheme, named("addon")];
-  expect(decorated(Pressed, decorators)).toBe("browser-theme(addon(meta(story(story))))");
+  expect(decorated(Pressed, decorators)).toBe("addon(browser-theme(meta(story(story))))");
+  // Without a `render` of its own, the story is rendered by the browser
+  // layer's `render` of `@storybook/react`, not by the framework's.
+  expect(decorated(Pressed, [rscTheme], { originalStoryFn: render })).toBe(
+    "browser-theme(browser-render)",
+  );
+});
+
+test("a preview file that fails in the browser layer says so", async () => {
+  const meta = { title: "Button" };
+  browserModules.set(meta, { default: meta, Failing: {} });
+  const current = browserPreview.current;
+  browserPreview.current = Promise.reject(new Error("window.process")) as never;
+  await expect(storyFile({ default: meta, Failing: {} })()).rejects.toThrow(
+    ".storybook/preview.tsx is evaluated in the browser layer too",
+  );
+  browserPreview.current = current;
 });
 
 test("a server story has the decorators of the preview file as the rsc layer evaluated them", () => {
@@ -118,7 +135,10 @@ test("a story file that loads after a change has the preview file of the browser
   browserModules.set(changed, { default: changed, After });
   await storyFile({ default: changed, After: {} })();
   expect(decorated(After, [rscTheme])).toBe("changed-theme(story)");
-  // A story of before has the components of before.
+  // A story of before has the components of before, also when Storybook
+  // loads its file again to prepare another story of it.
+  expect(decorated(Before, [rscTheme])).toBe("browser-theme(story)");
+  await storyFile({ default: meta, Before: {} })();
   expect(decorated(Before, [rscTheme])).toBe("browser-theme(story)");
   browserPreview.current = { decorators: [browserTheme] };
 });

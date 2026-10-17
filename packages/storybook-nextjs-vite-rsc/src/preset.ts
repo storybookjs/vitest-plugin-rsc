@@ -12,6 +12,7 @@ import { normalizePath } from "vite";
 import { vitestPluginRSC } from "vitest-plugin-rsc";
 import { vitestPluginNext } from "vitest-plugin-rsc/nextjs/plugin";
 import type { FrameworkOptions } from "./index.ts";
+import { previewRuntimePlugin } from "./preview-runtime.ts";
 import { projectPlugin } from "./project.ts";
 
 // The preset: Storybook's Vite builder and React renderer, with
@@ -29,9 +30,9 @@ export const features: PresetProperty<"features"> = async (existing) => ({
   viteAppBuilder: true,
 });
 
-// `@storybook/react`'s annotations but those that render: its preview renders
-// with `react-dom` and extends `React.Component`, which the rsc layer's React,
-// the server's, does not have. The framework's preview renders, as the last
+// `@storybook/react`'s annotations but those that render or decorate: they
+// render with `react-dom` and extend `React.Component`, which the rsc layer's
+// React, the server's, does not have. The framework's preview renders, as the last
 // of the annotations, and a client story renders with `@storybook/react`'s
 // renderer from the browser layer (client-canvas.tsx).
 const renderingAnnotations = new Set(
@@ -58,7 +59,7 @@ const frameworkDir = normalizePath(fileURLToPath(new URL(".", import.meta.url)))
 const frameworkFiles = new RegExp(`^${frameworkDir.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`);
 
 export const viteFinal: ViteFinal = async (config, options) => {
-  const root = config.root ?? path.resolve(options.configDir, "..");
+  const root = path.resolve(config.root ?? path.join(options.configDir, ".."));
   if (await hasVitePlugins(config.plugins ?? [], ["rsc:run-in-browser"])) {
     throw new Error(
       "@storybook/nextjs-vite-rsc adds vitest-plugin-rsc to the Vite config itself, and the " +
@@ -97,6 +98,7 @@ export const viteFinal: ViteFinal = async (config, options) => {
         workingDir: process.cwd(),
         previewFile: loadPreviewOrConfigFile({ configDir: options.configDir }),
       }),
+      previewRuntimePlugin(),
     ],
   };
 };

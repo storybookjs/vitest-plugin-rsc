@@ -16,8 +16,9 @@ declare module "virtual:@storybook/nextjs-vite-rsc/project" {
 // takes, which the package has no types for.
 declare module "@storybook/react/entry-preview" {
   import type { ReactRenderer } from "@storybook/react";
-  import type { DecoratorApplicator, RenderToCanvas } from "storybook/internal/types";
+  import type { ArgsStoryFn, DecoratorApplicator, RenderToCanvas } from "storybook/internal/types";
 
+  export const render: ArgsStoryFn<ReactRenderer>;
   export const renderToCanvas: RenderToCanvas<ReactRenderer>;
   export const applyDecorators: DecoratorApplicator<ReactRenderer>;
 }

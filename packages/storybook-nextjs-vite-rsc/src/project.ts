@@ -45,6 +45,7 @@ export function projectPlugin({ root, workingDir, previewFile }: Project): Plugi
     resolveId: (source) => (source === projectModuleId ? `\0${projectModuleId}` : undefined),
     load: (id) => (id === `\0${projectModuleId}` ? code : undefined),
     hotUpdate({ modules }) {
+      // The rsc layer is Vite's `client` environment: the preview.
       if (this.environment.name !== "client" || !preview) return;
       if (!modules.some((module) => isOrIsImportedBy(module, preview))) return;
       this.environment.hot.send({ type: "full-reload" });

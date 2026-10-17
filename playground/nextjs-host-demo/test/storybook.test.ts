@@ -65,11 +65,12 @@ test("a client story renders in the browser layer, with fn() for play and Action
   await expect
     .poll(() => frame.evaluate((element) => getComputedStyle(element).backgroundColor))
     .toBe("rgb(240, 240, 240)");
-  // The spy of the args is the one of the Actions panel.
+  // The spy of the args is one that the Actions panel listens to: its call
+  // in play is the panel's one action.
   await page.getByRole("tab", { name: /Actions/ }).click();
   await expect
-    .poll(() => page.locator("#storybook-panel-root").getByText("onPress").count())
-    .toBeGreaterThan(0);
+    .poll(() => page.locator("#storybook-panel-root").innerText())
+    .toContain("onPress: []");
 });
 
 test("a page story and a Server Action", async ({ page }) => {

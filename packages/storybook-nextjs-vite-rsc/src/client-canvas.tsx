@@ -8,7 +8,7 @@
 // on the browser layer's `react-dom`, and the preview file as that layer
 // evaluates it, where its `"use client"` components are components and not
 // references.
-export { applyDecorators, renderToCanvas } from "@storybook/react/entry-preview";
+export { applyDecorators, render, renderToCanvas } from "@storybook/react/entry-preview";
 
 /**
  * The preview file of the browser layer as it is now. The layer evaluates
