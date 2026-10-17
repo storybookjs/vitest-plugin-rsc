@@ -83,9 +83,11 @@ export type ServerCodeOptions = {
     files?: string | RegExp | (string | RegExp)[];
     /**
      * The packages of the host, by name. A name that ends in `/*` is every
-     * package of that scope the project has. What they depend on is the
-     * host's too, but for this plugin and Vite RSC, which a framework of the
-     * host can depend on.
+     * package of that scope the project has. A module of a package, like
+     * `storybook/test`, is the page's own, and the package's other modules
+     * are not, but the files of all of them are the host's runtime. What
+     * they depend on is the host's too, but for this plugin and Vite RSC,
+     * which a framework of the host can depend on.
      *
      * Not something the plugin can read off the files: a file of the host
      * with `"use client"` imports `react` and `storybook/test` the same way,
@@ -173,13 +175,23 @@ function findPackagesWithDependencies(names: Iterable<string>, root: string): Se
 // name. Their own modules have state that is the page's.
 const hostPackages = (packages: string[]) => ["vitest", "@vitest/*", ...packages];
 
+// The package of a module, by its name: `storybook` of `storybook/test`,
+// `@scope/name` of `@scope/name/module`.
+const packageNameOf = (specifier: string) =>
+  specifier
+    .split("/")
+    .slice(0, specifier.startsWith("@") ? 2 : 1)
+    .join("/");
+
 // Vite and the packages of the host that the project has: Vitest, its browser
 // mode, the provider that drives the browser, coverage; a scope is every
-// package of it.
+// package of it. A module of a package, like `storybook/test`, is its
+// package: the module's files are in that directory, with the rest of the
+// runtime they import, and its `package.json` has what they depend on.
 function* hostPackageNames(root: string, packages: string[]): Generator<string> {
   for (const name of ["vite", ...hostPackages(packages)]) {
     if (!name.endsWith("/*")) {
-      yield name;
+      yield packageNameOf(name);
       continue;
     }
     const scope = name.slice(0, -"/*".length);
