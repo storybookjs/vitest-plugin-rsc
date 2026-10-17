@@ -17,6 +17,10 @@ import { vitestPluginRscSourceConditions } from "../../vitest.conditions.ts";
 // one of a UI library. So `host.files` has only the `*.js` at the top of the
 // package: the CSS that a file of the host imports in the browser layer is
 // Vite's `<style>`, never a link, see styles.ts.
+//
+// `vite build` builds both pages of the host into a static site, with the
+// files of the host that have `"use client"` and the page's own `host-report`:
+// see build-test/static-build.test.ts.
 export default defineConfig({
   root: fileURLToPath(new URL("./", import.meta.url)),
   plugins: [
@@ -26,5 +30,12 @@ export default defineConfig({
     }),
   ],
   optimizeDeps: { exclude: ["host-package"] },
+  build: {
+    rolldownOptions: {
+      input: ["index.html", "callout.html"].map((page) =>
+        fileURLToPath(new URL(page, import.meta.url)),
+      ),
+    },
+  },
   resolve: { conditions: vitestPluginRscSourceConditions },
 });

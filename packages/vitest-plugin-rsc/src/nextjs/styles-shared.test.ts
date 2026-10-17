@@ -1,5 +1,6 @@
 import { expect, test } from "vitest";
 import {
+  builtClientStylesheetsOf,
   builtFileKey,
   builtStylesheetsOf,
   componentPagePath,
@@ -129,4 +130,16 @@ test("finds a file of the host by its path from the root, or by an absolute path
   expect(builtFileKey("/home/ada/app/my-callout.tsx", keys)).toBeUndefined();
   expect(builtFileKey("host/other.tsx", keys)).toBeUndefined();
   expect(builtFileKey("../host/callout.tsx", keys)).toBeUndefined();
+});
+
+// A file of the host with `"use client"` renders without a page: the tab
+// links its stylesheets itself, as URLs, from wherever the build is served.
+test("gives a file of the host with `use client` the stylesheets of the build, as URLs", () => {
+  expect(builtClientStylesheetsOf(built, "host/callout.tsx", "https://site.test/docs/")).toEqual([
+    "https://site.test/docs/_next/static/css/callout-222.css",
+    "https://site.test/docs/_next/static/css/theme-111.css",
+  ]);
+  expect(builtClientStylesheetsOf(built, "host/plain.tsx", "https://site.test/")).toEqual([]);
+  // One the build has no stylesheets for.
+  expect(builtClientStylesheetsOf(built, "host/gone.tsx", "https://site.test/")).toEqual([]);
 });

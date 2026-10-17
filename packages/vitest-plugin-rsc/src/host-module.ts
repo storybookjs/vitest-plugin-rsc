@@ -24,3 +24,27 @@ const hostModuleUrl = "/@id/__x00__vitest-plugin-rsc/host-module/";
 export function isHostModule(url: string): boolean {
   return url.includes(hostModuleUrl);
 }
+
+// A static build has no server that serves that module to the page. The page's
+// own instance is in the host's build, the rsc layer, which the host's
+// scripts are one bundle with. So a layer of the module runner imports it by
+// the URL a dev server has for it, as an external module, and the rsc layer
+// has a list of them, which imports each one as the host's build has it:
+// see `hostModulesId` in static-build.ts.
+
+/**
+ * The URL by which a built layer of the module runner imports a module of
+ * the page, by the import it stands for: `host-report` or `storybook/test`.
+ */
+export const builtHostModuleUrl = (specifier: string): string => hostModuleUrl + specifier;
+
+/**
+ * For the rsc layer: in a static build, how to load the module of the page
+ * that each URL of `builtHostModuleUrl()` stands for. Nothing with a dev
+ * server.
+ */
+export const hostModulesId = "virtual:vitest-plugin-rsc/host-modules";
+
+/** The import that a URL of `builtHostModuleUrl()` stands for. */
+export const hostModuleSpecifier = (url: string): string =>
+  url.slice(url.indexOf(hostModuleUrl) + hostModuleUrl.length);

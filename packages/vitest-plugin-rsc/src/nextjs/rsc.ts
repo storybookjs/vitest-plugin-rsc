@@ -2,19 +2,17 @@ import { createServerManifest } from "@vitejs/plugin-rsc/core/rsc";
 import * as ReactServer from "@vitejs/plugin-rsc/react/rsc";
 import { prerender } from "@vitejs/plugin-rsc/react/rsc/static";
 import * as FlightServer from "@vitejs/plugin-rsc/vendor/react-server-dom/server.edge";
-import builtLayers from "virtual:vitest-plugin-rsc/layers";
 import appPages from "virtual:vitest-plugin-rsc/next-app-pages";
 import loadMiddleware from "virtual:vitest-plugin-rsc/next-middleware";
 import routeHandlers from "virtual:vitest-plugin-rsc/next-route-handlers";
 import serverReferences from "virtual:vitest-plugin-rsc/server-references";
 import type { FlightAdapters } from "./flight.ts";
+import { buildDirectory, builtStylesheets } from "./built-stylesheets.ts";
 import { actionModulePrefix, registry } from "./registry.ts";
 import { askDevServer } from "../utils.ts";
 import {
-  builtStylesheetsFile,
   builtStylesheetsOf,
   stylesheetsEvent,
-  type BuiltStylesheets,
   type Stylesheets,
   type StylesheetsQuestion,
 } from "./styles-shared.ts";
@@ -111,23 +109,11 @@ registry.loadAppPage = async (page) => {
 // The stylesheets of a route are the plugin's to say, as they are a build's:
 // see styles.ts. The route of a node also has those of the files of the host
 // that render the node, which ssr.ts passes. A static build has them in a
-// file of its own, in the directory of the build. With a dev server, the dev
-// server answers.
-const buildDirectory = builtLayers && Object.values(builtLayers)[0]?.base;
-if (buildDirectory) {
-  let built: Promise<BuiltStylesheets> | undefined;
-  const load = async () => {
-    // Its name does not change with its content, like `modules.json`: ask
-    // the server whether the copy the browser has is still the one it serves.
-    const url = new URL(builtStylesheetsFile, buildDirectory).href;
-    const response = await registry.network(url, { cache: "no-cache" });
-    if (!response.ok) {
-      throw new Error(
-        `vitest-plugin-rsc: ${url} answered ${response.status}: ${await response.text()}`,
-      );
-    }
-    return (await response.json()) as BuiltStylesheets;
-  };
+// file of its own, in the directory of the build: see built-stylesheets.ts.
+// With a dev server, the dev server answers.
+// A const of this module, which TypeScript narrows in the function below too.
+const directory = buildDirectory;
+if (directory) {
   // A file the build has no stylesheets for, once for the page, as the dev
   // server warns once.
   const warned = new Set<string>();
@@ -142,14 +128,8 @@ if (buildDirectory) {
         `The stylesheets it imports are not linked.`,
     );
   };
-  registry.loadStylesheets = async (entry, _inline, files) => {
-    if (!built) {
-      built = load();
-      // One that failed is asked again.
-      built.catch(() => (built = undefined));
-    }
-    return builtStylesheetsOf(await built, entry, buildDirectory, files, missing);
-  };
+  registry.loadStylesheets = async (entry, _inline, files) =>
+    builtStylesheetsOf(await builtStylesheets(), entry, directory, files, missing);
 } else {
   registry.loadStylesheets = (entry, inline, files) =>
     askDevServer<Stylesheets>(stylesheetsEvent, {
