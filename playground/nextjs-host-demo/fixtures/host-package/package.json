@@ -12,6 +12,10 @@
     "./client-greeting": {
       "types": "./client-greeting.d.ts",
       "default": "./client-greeting.js"
+    },
+    "./ui": {
+      "types": "./ui/index.d.ts",
+      "default": "./ui/index.js"
     }
   },
   "peerDependencies": {

@@ -1,7 +1,12 @@
 import type { Plugin } from "vite";
 import { expect, test } from "vitest";
 import { hostModulePrefix, isHostModule } from "../host-module.ts";
-import { clientFiles, fileOfModule, renderServerError } from "./client-files.ts";
+import {
+  clientFiles,
+  clientReferenceOfModule,
+  fileOfModule,
+  renderServerError,
+} from "./client-files.ts";
 
 const testingLibrary = {
   specifier: "vitest-plugin-rsc/nextjs/testing-library",
@@ -21,22 +26,19 @@ const isHostFile = (file: string) =>
 // by the name of its package, when the page imports it by that, with the
 // reference by the id.
 const proxy = "/@id/__x00__virtual:vite-rsc/";
-const references = new Map([
-  ["/app/frame.test.tsx", "/app/frame.test.tsx"],
-  ["/vitest.setup.tsx", "/vitest.setup.tsx"],
-  ["/app/built.test.tsx", "/app/built.test.tsx"],
-  [
-    `${framework}/client-story.js`,
-    `${proxy}client-in-server-package-proxy/${encodeURIComponent(`${framework}/client-story.js`)}`,
-  ],
-  [`${framework}/by-name.js?v=1a2b3c4d`, `${proxy}client-package-proxy/framework/by-name`],
-]);
+const references: Record<string, string> = {
+  "/app/frame.test.tsx": "/app/frame.test.tsx",
+  "/vitest.setup.tsx": "/vitest.setup.tsx",
+  "/app/built.test.tsx": "/app/built.test.tsx",
+  [`${framework}/client-story.js`]: `${proxy}client-in-server-package-proxy/${encodeURIComponent(`${framework}/client-story.js`)}`,
+  [`${framework}/by-name.js?v=1a2b3c4d`]: `${proxy}client-package-proxy/framework/by-name`,
+};
 // The key that the references of a module have in their `$$id`: with a dev
 // server the URL, in a build a hash of the file. This file has the key of a
 // build.
 const builtKeys = new Map([["/app/built.test.tsx", "5f3a9c1e"]]);
 const clientReferenceOf = (id: string) => {
-  const url = references.get(id);
+  const url = clientReferenceOfModule(references, id);
   if (url === undefined) return;
   return { referenceKey: builtKeys.get(id) ?? url };
 };
@@ -160,10 +162,20 @@ test("takes the id of a module for its file, without the version of a dependency
   }
 });
 
+test("finds the client reference of a module by its id, else by its file", () => {
+  const map = { "/a.js": "by file", "/b.js?v=1a2b": "by id", "/b.js": "by file" };
+  expect(clientReferenceOfModule(map, "/a.js")).toBe("by file");
+  expect(clientReferenceOfModule(map, "/a.js?v=1a2b")).toBe("by file");
+  expect(clientReferenceOfModule(map, "/b.js?v=1a2b")).toBe("by id");
+  // Another module of the file is not the reference.
+  expect(clientReferenceOfModule(map, "/a.js?raw")).toBeUndefined();
+  expect(clientReferenceOfModule(map, "/c.js")).toBeUndefined();
+});
+
 test("loads a file of the host in `node_modules` that has Vite's version query", async () => {
   const rsc = context("client");
   const load = (id: string) => transformLoader.call(rsc, reference, id)?.code;
-  const storyProxy = references.get(`${framework}/client-story.js`);
+  const storyProxy = references[`${framework}/client-story.js`];
   const byName = `${proxy}client-package-proxy/framework/by-name`;
 
   // By the reference that Vite RSC has by the file.
