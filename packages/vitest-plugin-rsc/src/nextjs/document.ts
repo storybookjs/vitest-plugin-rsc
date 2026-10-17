@@ -11,7 +11,6 @@ import { graphStylesheetAttribute } from "./styles-shared.ts";
 // node. What it leaves on its body goes with it: React adds its listeners to
 // the body when a portal renders there, and they would keep the page.
 
-const runnerUrl = window.location.href;
 const elements = (of: Document) => [of.documentElement, of.head, of.body];
 const attributesOf = (element: Element) =>
   Array.from(element.attributes, ({ name, value }) => [name, value] as const);
@@ -76,6 +75,8 @@ export async function loadDocument(html: string, url: string, container?: Elemen
   unloadDocument();
 
   // What was here before the page. Everything else is the page's to lose.
+  // The URL too: a host may move it between pages, to say what it shows next.
+  const runnerUrl = window.location.href;
   const runnerBody = document.body;
   const runnerAttributes = elements(document).map(attributesOf);
   const runnerScripts = new Set(document.querySelectorAll("script"));
