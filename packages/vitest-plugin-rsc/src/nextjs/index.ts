@@ -784,6 +784,9 @@ async function loadPage(url: URL, init: RequestInit, opening?: Opening): Promise
   }
 }
 
+// SPIKE SB-2270: whether a page of the tab has imported the native browser layer.
+let nativeBrowserLayerUsed = false;
+
 async function openPage(
   url: URL,
   init: RequestInit,
@@ -842,7 +845,13 @@ async function openPage(
   superseded();
   // A page load runs the app's scripts from scratch, so every page gets a
   // module graph of its own for the browser layer.
-  const runner = createEnvironmentRunner("react_client");
+  // SPIKE SB-2270: in a static build with the browser layer as native ESM,
+  // the first page of the tab imports the layer as the page's own modules,
+  // once. A second page needs a fresh graph: a module runner, from the
+  // layer's modules.json.
+  const native = isNativeLayer("react_client") && !nativeBrowserLayerUsed;
+  if (native) nativeBrowserLayerUsed = true;
+  const runner = native ? undefined : createEnvironmentRunner("react_client");
   // The browser's Flight client reads properties off `__webpack_require__`
   // when it loads, which is before the page can say how it loads a module,
   // and wraps some of them. One that the pages shared would keep every page.
@@ -866,9 +875,14 @@ async function openPage(
     loaded();
   };
   const started = (async () => {
-    const client = await runner.import<typeof import("./client.tsx")>(
-      environmentModule("react_client", "vitest-plugin-rsc/nextjs/client"),
-    );
+    const client = runner
+      ? await runner.import<typeof import("./client.tsx")>(
+          environmentModule("react_client", "vitest-plugin-rsc/nextjs/client"),
+        )
+      : await importNativeEntry<typeof import("./client.tsx")>(
+          "react_client",
+          "vitest-plugin-rsc/nextjs/client",
+        );
     superseded();
     return client.start(loaded, container, signal);
   })();

@@ -143,7 +143,12 @@ export function nextStaticBuild(options: StaticBuildOptions): Plugin {
   // that the page imports, and not for the module runner. A comma list of
   // environments in VITEST_PLUGIN_RSC_SPIKE_NATIVE, "none" for none.
   // oxlint-disable-next-line no-process-env
-  const nativeSetting = process.env.VITEST_PLUGIN_RSC_SPIKE_NATIVE ?? ssr;
+  const nativeSetting = process.env.VITEST_PLUGIN_RSC_SPIKE_NATIVE ?? `${ssr},${browser}`;
+  // SPIKE SB-2270: a native browser layer is for the first page of a tab. A
+  // second `renderServer()` in the same tab needs a fresh module graph, so the
+  // layer is in modules.json as well, for a module runner, which the page only
+  // fetches then.
+  const withRunner = (name: string) => !native.has(name) || name === browser;
   const native = new Set(nativeSetting === "none" ? [] : nativeSetting.split(","));
   const entryOf: Record<string, string> = {
     [ssr]: options.entries.ssr,
@@ -162,6 +167,8 @@ export function nextStaticBuild(options: StaticBuildOptions): Plugin {
       files: Map<string, string | Uint8Array>;
       /** SPIKE SB-2270: the hashed entry chunk of a native layer. */
       entry?: string;
+      /** SPIKE SB-2270: every chunk the entry imports, also through others. */
+      closure?: string[];
     }
   >();
   // While `buildApp()` builds the environments.
@@ -318,16 +325,26 @@ export function nextStaticBuild(options: StaticBuildOptions): Plugin {
           fs.mkdirSync(path.dirname(file), { recursive: true });
           fs.writeFileSync(file, content);
         };
-        for (const [name, { modules, files, entry }] of built) {
+        for (const [name, { modules, files, entry, closure = [] }] of built) {
           for (const [fileName, content] of files) write(fileName, content);
           // SPIKE SB-2270: the entry of a native layer, by a name the host's
           // build knows before the layer is built.
           if (entry) {
             const stub = `${layersDir}/${name}/${entryFile}`;
             const from = `./${path.posix.relative(path.posix.dirname(stub), entry)}`;
-            write(stub, `export * from ${JSON.stringify(from)};\n`);
+            // The chunks the entry imports, also through others, imported
+            // here too: the browser asks for all of them at once, where it
+            // would find them import by import. The entry comes first, so the
+            // order they run in stays the entry's.
+            const relative = (file: string) =>
+              JSON.stringify(`./${path.posix.relative(path.posix.dirname(stub), file)}`);
+            const code =
+              `export * from ${JSON.stringify(from)};\n` +
+              closure.map((file) => `import ${relative(file)};\n`).join("");
+            write(stub, code);
+            if (withRunner(name)) modules.set(`/${stub}`, toRunnerModule({ fileName: stub, code }));
           }
-          if (native.has(name)) continue;
+          if (!withRunner(name)) continue;
           // In the order of their ids, the same in every build.
           const ids = [...modules.keys()].sort();
           const codes = await Promise.all(ids.map((id) => modules.get(id)!));
@@ -335,6 +352,31 @@ export function nextStaticBuild(options: StaticBuildOptions): Plugin {
             `${layersDir}/${name}/${modulesFile}`,
             JSON.stringify(Object.fromEntries(ids.map((id, index) => [id, codes[index]]))),
           );
+        }
+        // SPIKE SB-2270: with VITEST_PLUGIN_RSC_SPIKE_PRELOAD=all, the HTML of
+        // the host has a `modulepreload` for every chunk of a native layer,
+        // the ones the page imports later too: the browser fetches and
+        // compiles them at once, as a tab fetches modules.json at once.
+        // oxlint-disable-next-line no-process-env
+        if (process.env.VITEST_PLUGIN_RSC_SPIKE_PRELOAD === "all") {
+          const chunks = [...built]
+            .filter(([name]) => native.has(name))
+            .flatMap(([name, { files, entry }]) => [
+              `${layersDir}/${name}/${entryFile}`,
+              ...[entry!, ...[...files.keys()].filter((file) => file !== entry)].filter((file) =>
+                file.endsWith(".js"),
+              ),
+            ]);
+          for (const html of fs.readdirSync(outDir).filter((file) => file.endsWith(".html"))) {
+            const file = path.join(outDir, html);
+            const links = chunks
+              .map((chunk) => `<link rel="modulepreload" crossorigin href="./${chunk}">`)
+              .join("");
+            fs.writeFileSync(
+              file,
+              fs.readFileSync(file, "utf8").replace("</head>", `${links}</head>`),
+            );
+          }
         }
         // What Next's loaders made for the browser, fonts and images, by the
         // path it asks for, and the stylesheets of the routes.
@@ -378,10 +420,10 @@ export function nextStaticBuild(options: StaticBuildOptions): Plugin {
           (name) =>
             `  ${JSON.stringify(name)}: { base: directory, entries: ${JSON.stringify({
               [entryOf[name]!]: `${layersDir}/${name}/${entryFile}`,
-            })}, ${
-              native.has(name)
-                ? "native: true"
-                : `modules: ${JSON.stringify(`${layersDir}/${name}/${modulesFile}`)}`
+            })}, ${native.has(name) ? "native: true, " : ""}${
+              withRunner(name)
+                ? `modules: ${JSON.stringify(`${layersDir}/${name}/${modulesFile}`)}`
+                : ""
             } },`,
         );
         return (
@@ -417,11 +459,13 @@ export function nextStaticBuild(options: StaticBuildOptions): Plugin {
         const files = new Map<string, string | Uint8Array>();
         let entry: string | undefined;
         for (const output of Object.values(bundle)) {
-          // SPIKE SB-2270: a chunk of a native layer is a file as it is.
-          if (output.type === "chunk" && native.has(name)) {
-            files.set(output.fileName, output.code);
-            if (output.isEntry && output.name === "entry") entry = output.fileName;
-          } else if (output.type === "chunk") {
+          if (output.type === "chunk") {
+            // SPIKE SB-2270: a chunk of a native layer is a file as it is.
+            if (native.has(name)) files.set(output.fileName, output.code);
+            if (native.has(name) && output.isEntry && output.name === "entry") {
+              entry = output.fileName;
+            }
+            if (!withRunner(name)) continue;
             const rewritten = toRunnerModule(output);
             // One that fails does so where it is written.
             rewritten.catch(() => {});
@@ -433,7 +477,19 @@ export function nextStaticBuild(options: StaticBuildOptions): Plugin {
             files.set(output.fileName, output.source);
           }
         }
-        built.set(name, { modules, files, entry });
+        // SPIKE SB-2270: what the entry of a native layer imports, all of it.
+        const closure = new Set<string>();
+        const visit = (fileName: string) => {
+          const chunk = bundle[fileName];
+          if (chunk?.type !== "chunk") return;
+          for (const imported of chunk.imports) {
+            if (closure.has(imported)) continue;
+            closure.add(imported);
+            visit(imported);
+          }
+        };
+        if (entry) visit(entry);
+        built.set(name, { modules, files, entry, closure: [...closure] });
       },
     },
   };
