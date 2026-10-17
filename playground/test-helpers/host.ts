@@ -7,11 +7,14 @@ import { chromium } from "playwright";
 import { test as base, expect } from "vitest";
 
 // What the node tests of the playgrounds that host an app share: a command of
-// a project as its CLI runs it, a server of files for a static build, and a
-// page of Chromium that fails its test on an error.
+// a project as its CLI runs it, a dev server of a project, a server of files
+// for a static build, and a page of Chromium that fails its test on an error.
 
-/** A site the tests open: a static build behind a server of files. */
+/** A site the tests open: a dev server, or a static build behind a server of files. */
 export type Site = { url: string; close(): Promise<void> };
+
+/** A dev server the tests open, with what it printed. */
+export type DevServer = Site & { output(): string };
 
 // What Vitest sets in the environment of a worker. A CLI runs the plugin
 // without Vitest: with a NODE_ENV of `test`, Vite and Next make another app
@@ -20,7 +23,11 @@ const ofVitest = /^(VITEST(_.*)?|TEST|NODE_ENV|MODE|DEV|PROD|SSR|BASE_URL)$/;
 const env: NodeJS.ProcessEnv = { ...process.env };
 for (const name of Object.keys(env)) if (ofVitest.test(name)) delete env[name];
 
-type Command = { exited: Promise<void>; output(): string; kill(): void };
+type Command = {
+  exited: Promise<void>;
+  output(): string;
+  kill(signal?: NodeJS.Signals): void;
+};
 
 // The commands that run, killed when the worker exits: also after a test
 // that timed out, or a run that was stopped.
@@ -51,9 +58,9 @@ function start(root: string, command: string[]): Command {
       });
     }),
     output: () => output,
-    kill() {
+    kill(signal = "SIGTERM") {
       try {
-        process.kill(-child.pid!, "SIGTERM");
+        process.kill(-child.pid!, signal);
       } catch {
         // It has exited already.
       }
@@ -63,12 +70,59 @@ function start(root: string, command: string[]): Command {
   return started;
 }
 
+const freePort = () =>
+  new Promise<number>((resolve) => {
+    const server = net.createServer().listen(0, () => {
+      const { port } = server.address() as net.AddressInfo;
+      server.close(() => resolve(port));
+    });
+  });
+
 /** The commands of the project in `root`, a directory of a playground. */
 export function createProject(root: string) {
   return {
     /** Runs a command of the project to its end. Rejects with what it printed when it fails. */
     async run(...command: string[]): Promise<void> {
       await start(root, command).exited;
+    },
+
+    /**
+     * Starts a dev server of the project on a port that is free, and resolves
+     * once it answers. Rejects when it does not within `timeout`, or stops.
+     */
+    async serve(
+      command: (port: number) => string[],
+      { timeout = 60_000 } = {},
+    ): Promise<DevServer> {
+      const port = await freePort();
+      const server = start(root, command(port));
+      const url = `http://localhost:${port}/`;
+      const stopped = server.exited.then(() => {
+        throw new Error(`${command(port).join(" ")} stopped:\n${server.output()}`);
+      });
+      stopped.catch(() => {});
+      const close = async () => {
+        server.kill();
+        // One that does not stop is killed.
+        const timer = setTimeout(() => server.kill("SIGKILL"), 5_000);
+        await server.exited.catch(() => {});
+        clearTimeout(timer);
+      };
+      const answers = async () => {
+        for (const end = Date.now() + timeout; Date.now() < end; ) {
+          const response = await fetch(url).catch(() => undefined);
+          if (response?.ok) return;
+          await new Promise((resolve) => setTimeout(resolve, 250));
+        }
+        throw new Error(`${url} did not answer:\n${server.output()}`);
+      };
+      try {
+        await Promise.race([answers(), stopped]);
+      } catch (error) {
+        await close();
+        throw error;
+      }
+      return { url, output: server.output, close };
     },
   };
 }

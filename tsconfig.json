@@ -11,6 +11,9 @@
       "path": "./playground/nextjs-e2e-demo"
     },
     {
+      "path": "./playground/nextjs-host-demo"
+    },
+    {
       "path": "./playground/nextjs-notes-demo"
     },
     {

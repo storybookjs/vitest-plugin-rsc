@@ -1,7 +1,7 @@
 // What the page and the plugin share about the stylesheets of a route: see
 // styles.ts. The page asks for them before Next renders the route. With a
-// dev server it asks Vitest, through a browser command (styles-command.ts). A
-// static build has them in a file.
+// dev server it asks the dev server, or Vitest's browser command
+// (styles-command.ts). A static build has them in a file.
 
 /** The file of a static build with the stylesheets of every page route, in its directory. */
 export const builtStylesheetsFile = "vitest-plugin-rsc/next-stylesheets.json";

@@ -350,6 +350,33 @@ What else the plugin does for such a file:
 
 What the file imports is the `browser` layer's copy of a module. So a `db` it imports is not the one the Server Components read.
 
+## Another Host Than Vitest
+
+Vitest is a host of the plugin: it owns the Vite server, it says which files are its test files and setup files, and its packages, `vitest` and `@vitest/*`, are the page's own. Another host, like Storybook's builder, runs the plugin in a Vite server of its own and says the same with the `host` option:
+
+```ts
+vitestPluginNext({
+  host: {
+    // Glob patterns, relative to the project root: what a test file is to
+    // Vitest. Not server code, and with "use client" a module of the browser layer.
+    files: [".storybook/**", "src/**/*.stories.tsx"],
+    // What `vitest` is to a test file: the page's own modules, also in the
+    // browser layer. A name that ends in `/*` is every package of that scope.
+    packages: ["storybook", "@storybook/*"],
+  },
+});
+```
+
+Both are facts only the host knows. The plugin cannot read the packages off the files: a story with `"use client"` imports `react` and `storybook/test` the same way, and the first has to be the `browser` layer's React, where the second has to be the page's own module, whose spies the host shows. The same list keeps the host's runtime, and what it depends on, the browser's in the `rsc` layer, where every other package is server code.
+
+Under Vitest the option adds to what Vitest's config says, and nothing else changes. Without Vitest:
+
+- The page imports `vitest-plugin-rsc/nextjs/testing-library` itself, from a file of the host, and calls `renderServer()` and `cleanup()` itself: there is no hook to run them around a test.
+- The stylesheets of a route and of a file with `"use client"` come from the dev server, at `/@vitest-plugin-rsc/next-stylesheets`. Under Vitest a command of Vitest answers for a route instead, which knows the test file that asks: the node of a test has the stylesheets of its test file. Another host does not say which of its files renders a node, so the node has the stylesheets of every file of the host that the server has loaded so far: those of the node, and of what the page loaded before it. For a host that renders one node per page of its own that is the same as what Vite's own `<style>` of a module does.
+- `vitest` is an optional peer dependency, of any version. Only two files of the build import it, the setup files that the plugin registers with Vitest by their path: `nextjs/setup.js`, and `nextjs/affected/browser.js` for [Watch Mode](#watch-mode). A host without Vitest loads neither. Under Vitest the plugin checks the version itself, and stops with a message for one older than 5.0.3.
+
+`playground/nextjs-host-demo` is such a host: a page of Vite's own dev server, `index.html` and `host/main.tsx`, that renders a page of the app, a node in a container of its own, and a file of the host with `"use client"`. Its tests start that server and drive it with Playwright.
+
 ## Route Handlers
 
 An `app/**/route.ts` is a route like a page is, with a request handler from a different template:

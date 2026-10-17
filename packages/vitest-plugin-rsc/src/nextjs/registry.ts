@@ -76,15 +76,17 @@ export type NextRegistry = {
   appPages: Record<string, unknown>;
   /**
    * Asks the plugin for the stylesheets of a page route, by the name of its
-   * modules: see styles.ts. From the rsc layer. Under Vitest the setup file
-   * sets it, with a browser command; a static build reads them from a file
-   * of its own (rsc.ts).
+   * modules: see styles.ts. The dev server answers, or under Vitest a command
+   * of Vitest's, which knows the test file that asks (setup.ts); a static
+   * build reads them from a file of its own (rsc.ts).
    */
   loadStylesheets(entry: string, inline: boolean): Promise<Stylesheets>;
+  /** The answer of Vitest's command, which the plugin's setup file sets: see rsc.ts. */
+  loadStylesheetsOfTestFile?(entry: string, inline: boolean): Promise<Stylesheets>;
   /**
-   * Tells the host what the test that runs now has loaded without an import
-   * of its own: a route, or a Server Action. Only Vitest's setup file sets it,
-   * for watch mode: see affected/browser.ts.
+   * Tells the host what the page loaded without an import of its own: a route,
+   * or the module of a Server Action. Under Vitest with `affectedTests`, see
+   * affected/browser.ts. Another host, and a static build, have none.
    */
   reportLoaded?(kind: LoadedKind, id: string): void;
   /** Loads the request handler of a route handler, which is in the rsc layer. */

@@ -9,6 +9,8 @@ import routeHandlers from "virtual:vitest-plugin-rsc/next-route-handlers";
 import serverReferences from "virtual:vitest-plugin-rsc/next-server-references";
 import type { FlightAdapters } from "./flight.ts";
 import { actionModulePrefix, registry } from "./registry.ts";
+import { fetchJson } from "../utils.ts";
+import { stylesheetsPath, type Stylesheets } from "./styles-command.ts";
 import {
   builtStylesheetsFile,
   builtStylesheetsOf,
@@ -105,8 +107,12 @@ registry.loadAppPage = async (page) => {
 };
 
 // The stylesheets of a route are the plugin's to say, as they are a build's:
-// see styles.ts. Under Vitest the setup file asks Vitest for them (setup.ts).
-// A static build has them in a file of its own, in the directory of the build.
+// see styles.ts. A static build has them in a file of its own, in the
+// directory of the build. With a dev server, the dev server answers, for the
+// files of the host it has loaded. Under Vitest a command answers instead,
+// which knows the test file that asks, for the route of a node: the plugin's
+// setup file sets it, and whichever of the two modules evaluates first, the
+// command wins.
 const buildDirectory = builtLayers && Object.values(builtLayers)[0]?.base;
 if (buildDirectory) {
   let built: Promise<BuiltStylesheets> | undefined;
@@ -130,6 +136,10 @@ if (buildDirectory) {
     }
     return builtStylesheetsOf(await built, entry, buildDirectory);
   };
+} else {
+  registry.loadStylesheets = (entry, inline) =>
+    registry.loadStylesheetsOfTestFile?.(entry, inline) ??
+    fetchJson<Stylesheets>(stylesheetsPath, { entry, inline: String(inline) });
 }
 
 /** The page module of the route of a node: see `loadNodeEntry()` in project/entries.ts. */

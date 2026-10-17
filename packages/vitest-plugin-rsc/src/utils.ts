@@ -64,6 +64,21 @@ type InvokeResultMessage = {
 // file of a static build.
 const nativeFetch = globalThis.fetch;
 
+/**
+ * Asks the dev server for JSON at a path of the plugin's, with the `fetch` the
+ * page had before the app's replaced it: see nextjs/index.ts.
+ */
+export async function fetchJson<T>(path: string, query: Record<string, string>): Promise<T> {
+  const url = `${path}?${new URLSearchParams(query)}`;
+  const response = await nativeFetch(url);
+  if (!response.ok) {
+    throw new Error(
+      `vitest-plugin-rsc: ${url} answered ${response.status}: ${await response.text()}`,
+    );
+  }
+  return (await response.json()) as T;
+}
+
 // The modules of a static build, see built-layers.ts. A page runs both
 // layers, so the tab asks for all of them at once, before a runner does.
 const built = createBuiltLayers(nativeFetch);
