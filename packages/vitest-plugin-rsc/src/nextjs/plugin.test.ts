@@ -4,9 +4,9 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { normalizePath } from "vite";
 import { expect, test } from "vitest";
-import { vitestPluginNext } from "./plugin.ts";
+import { vitestPluginNext, type VitestPluginNextOptions } from "./plugin.ts";
 
-// The `config` hook, as Vite calls it for a dev server.
+// The `config` hook, as Vite calls it for a dev server or a build.
 type ConfigHook<T> = (config: object, env: { command: "serve" | "build" }) => Promise<T>;
 const serve = { command: "serve" } as const;
 
@@ -187,4 +187,44 @@ test("compiles CSS with Next's rules, and says so where the Vitest config has it
   expect(lightningcss.css.postcss).toBeUndefined();
   expect(lightningcss.css.modules).toBeUndefined();
   expect(lightningcss.warnings.join("\n")).toContain("compiles the CSS with Lightning CSS");
+});
+
+// What the `config` hook makes of the `build` option for a command: the
+// NODE_ENV of the layers in a static build, and JSX compiled for production.
+async function buildOf(options: VitestPluginNextOptions, command: "serve" | "build") {
+  const plugin = vitestPluginNext(options).find(({ name }) => name === "vitest-plugin-rsc:next")!;
+  type BuildConfig = {
+    oxc?: { jsx?: { development?: boolean } };
+    environments: Record<string, { define?: Record<string, string> }>;
+  };
+  const config = await (plugin.config as ConfigHook<BuildConfig>)({ root }, { command });
+  const nodeEnvs = new Set(
+    ["client", "next_ssr", "react_client"].map(
+      (name) => config.environments[name]!.define?.["process.env.NODE_ENV"],
+    ),
+  );
+  // The same in every layer.
+  expect(nodeEnvs.size).toBe(1);
+  return { jsxDevelopment: config.oxc?.jsx?.development, nodeEnv: [...nodeEnvs][0] };
+}
+
+test("runs Next's development code in a test run, and builds its production code", async () => {
+  expect(await buildOf({}, "serve")).toEqual({ jsxDevelopment: undefined, nodeEnv: undefined });
+  expect(await buildOf({}, "build")).toEqual({ jsxDevelopment: false, nodeEnv: '"production"' });
+
+  // Unless the option says otherwise.
+  expect(await buildOf({ build: "production" }, "serve")).toEqual({
+    jsxDevelopment: false,
+    nodeEnv: undefined,
+  });
+  expect(await buildOf({ build: "development" }, "build")).toEqual({
+    jsxDevelopment: undefined,
+    nodeEnv: '"development"',
+  });
+});
+
+test("takes no other build", () => {
+  expect(() => vitestPluginNext({ build: "test" as never })).toThrow(
+    '`build` is "development" or "production", not "test".',
+  );
 });
