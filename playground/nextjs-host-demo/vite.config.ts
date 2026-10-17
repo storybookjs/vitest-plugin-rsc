@@ -12,7 +12,11 @@ import { vitestPluginRscSourceConditions } from "../../vitest.conditions.ts";
 // the host too. The page, the rsc layer, does not pre-bundle it, which would
 // make its file with `"use client"` a chunk of a bundle, so the dev server
 // gives the ids of its modules there Vite's version of the dependencies in
-// their query: `?v=1a2b3c4d`.
+// their query: `?v=1a2b3c4d`. Its `ui/` is no file of the host: a Client
+// Component of a package that the app's layers have, with a stylesheet, like
+// one of a UI library. So `host.files` has only the `*.js` at the top of the
+// package: the CSS that a file of the host imports in the browser layer is
+// Vite's `<style>`, never a link, see styles.ts.
 //
 // `vite build` builds both pages of the host into a static site, with the
 // files of the host that have `"use client"` and the page's own `host-report`:
@@ -22,7 +26,7 @@ export default defineConfig({
   plugins: [
     vitestPluginRSC(),
     vitestPluginNext({
-      host: { files: ["host/**", "**/node_modules/host-package/**"], packages: ["host-report"] },
+      host: { files: ["host/**", "**/node_modules/host-package/*.js"], packages: ["host-report"] },
     }),
   ],
   optimizeDeps: { exclude: ["host-package"] },

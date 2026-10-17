@@ -15,6 +15,7 @@ import {
   type TransformResult,
   type ViteDevServer,
 } from "vite";
+import { clientReferenceOfModule } from "./client-files.ts";
 import type { ComponentRoute, NextLayer, NextProject, NextRoute, RouteSegment } from "./project.ts";
 import { clientReferencesId } from "../built-layers.ts";
 import { cssBuildDirPlaceholder, toBuildDir } from "../static-build.ts";
@@ -320,7 +321,7 @@ export function createStyles(options: StylesOptions): Styles {
     async function follow(layer: Layer, node: EnvironmentModuleNode): Promise<void> {
       if (followed.has(node) || !node.id || isEnd(node.id)) return;
       followed.add(node);
-      const reference = layer === "rsc" ? references![node.id] : undefined;
+      const reference = layer === "rsc" ? clientReferenceOfModule(references!, node.id) : undefined;
       if (reference) {
         const client = await load("browser", reference.importId);
         if (!client) return;
