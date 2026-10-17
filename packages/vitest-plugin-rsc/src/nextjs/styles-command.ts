@@ -1,8 +1,11 @@
-// What the page and the plugin share about the stylesheets of a route, and
-// of a file of the host with `"use client"`: see styles.ts. The page asks for
-// them before Next renders the route, and the dev server answers at
+// What the page and the dev server share about the stylesheets of a route,
+// and of a file of the host with `"use client"`: see styles.ts. The page asks
+// for them before Next renders the route, and the dev server answers at
 // `stylesheetsPath`. Under Vitest a command of Vitest's answers for a route
-// instead, which knows the test file that asks (setup.ts).
+// instead, which knows the test file that asks (setup.ts). A static build has
+// them in a file: see styles-shared.ts.
+
+export type { Stylesheets } from "./styles-shared.ts";
 
 /**
  * The browser command that the test's page calls for the stylesheets of a
@@ -18,11 +21,3 @@ export const stylesheetsCommand = "vitestPluginRscStylesheets";
  * in the browser layer>`, with the URLs of its stylesheets.
  */
 export const stylesheetsPath = "/@vitest-plugin-rsc/next-stylesheets";
-
-/**
- * The stylesheets of a route. For each file of a segment that has any, by the
- * name the loader tree has for it without its extension, which is how Next
- * looks them up: their paths under `/_next/`, and their CSS where the app has
- * Next inline it (`experimental.inlineCss`).
- */
-export type Stylesheets = Record<string, { path: string; content?: string }[]>;

@@ -1,7 +1,7 @@
 import "./globals.ts";
 import { createElement, type JSXElementConstructor, type ReactNode } from "react";
 import { resetAsyncLocalStorage } from "../async-local-storage.ts";
-import { checkFetchedModules, createEnvironmentRunner } from "../utils.ts";
+import { checkFetchedModules, createEnvironmentRunner, environmentModule } from "../utils.ts";
 import { loadDocument, unloadDocument } from "./document.ts";
 import { recordListeners, recordMessageChannels } from "./leftovers.ts";
 import { PageStore } from "./page-store.ts";
@@ -12,7 +12,7 @@ import { registry, type Opened } from "./registry.ts";
 await import("./rsc.ts");
 // One module graph for the tab: the server stays, where a page is loaded anew.
 const ssr = await createEnvironmentRunner("next_ssr").import<typeof import("./ssr.ts")>(
-  "vitest-plugin-rsc/nextjs/ssr",
+  environmentModule("next_ssr", "vitest-plugin-rsc/nextjs/ssr"),
 );
 
 const nativeFetch = globalThis.fetch;
@@ -858,7 +858,7 @@ async function openPage(
   };
   const started = (async () => {
     const client = await runner.import<typeof import("./client.tsx")>(
-      "vitest-plugin-rsc/nextjs/client",
+      environmentModule("react_client", "vitest-plugin-rsc/nextjs/client"),
     );
     superseded();
     return client.start(loaded, container, signal);

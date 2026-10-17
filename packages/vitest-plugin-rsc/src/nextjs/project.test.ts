@@ -9,6 +9,10 @@ import { flightBridge } from "./flight.ts";
 import { vitestPluginNext } from "./plugin.ts";
 import { loadNextProject, type NextRoute } from "./project.ts";
 
+// The `config` hook, as Vite calls it for a dev server.
+type ConfigHook<T> = (config: object, env: { command: "serve" | "build" }) => Promise<T>;
+const serve = { command: "serve" } as const;
+
 const root = fileURLToPath(new URL("../../../../playground/nextjs-e2e-demo", import.meta.url));
 const installed = createRequire(path.join(root, "package.json"));
 const { version } = installed("next/package.json") as { version: string };
@@ -120,7 +124,7 @@ test("lists the metadata files of the app, and warns once that they are left out
   // What a run of that app logs when it starts. Not the favicon, which every
   // new app has.
   const plugin = vitestPluginNext().find(({ name }) => name === "vitest-plugin-rsc:next")!;
-  await (plugin.config as (config: object) => Promise<unknown>)({ root: app });
+  await (plugin.config as ConfigHook<unknown>)({ root: app }, serve);
   const warnOnce = vi.fn();
   (plugin.configResolved as (config: object) => void)({ logger: { warnOnce } });
   expect(warnOnce.mock.calls).toEqual([
@@ -136,7 +140,7 @@ test("does not warn about the favicon alone", async () => {
   const app = appWith(["layout.js", "page.js", "favicon.ico"]);
 
   const plugin = vitestPluginNext().find(({ name }) => name === "vitest-plugin-rsc:next")!;
-  await (plugin.config as (config: object) => Promise<unknown>)({ root: app });
+  await (plugin.config as ConfigHook<unknown>)({ root: app }, serve);
   const warnOnce = vi.fn();
   (plugin.configResolved as (config: object) => void)({ logger: { warnOnce } });
   expect(warnOnce).not.toHaveBeenCalled();
@@ -937,7 +941,7 @@ test("warns about the dynamic routes that @next/routing does not find", async ()
   const app = appWith(["layout.js", "page.js", "日本語/[id]/page.js"]);
   const plugin = vitestPluginNext().find(({ name }) => name === "vitest-plugin-rsc:next")!;
   const warnOnce = vi.fn();
-  await (plugin.config as (config: object) => Promise<unknown>)({ root: app });
+  await (plugin.config as ConfigHook<unknown>)({ root: app }, serve);
   (plugin.configResolved as (config: object) => void)({ logger: { warnOnce } });
 
   expect(warnOnce).toHaveBeenCalledWith(

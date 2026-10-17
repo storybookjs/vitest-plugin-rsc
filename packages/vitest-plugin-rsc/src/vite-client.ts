@@ -31,6 +31,8 @@ export function pageViteClientPlugin(): Plugin {
     },
     async load(id) {
       if (id === `\0${pageViteClientId}`) {
+        // A build has no client of Vite.
+        if (this.environment.mode !== "dev") return "export {};";
         // A static import of the URL that Vite itself writes into modules, so
         // the browser gives the instance it already has. A dynamic import
         // would get a query from Vite, and with it a second instance.
@@ -40,6 +42,7 @@ export function pageViteClientPlugin(): Plugin {
 
       // The environments this plugin runs in the page through a module runner.
       const { consumer, dev } = this.environment.config;
+      if (this.environment.mode !== "dev") return;
       if (consumer !== "client" || !dev.moduleRunnerTransform) return;
       clientFile ??= (await this.resolve("/@vite/client"))?.id;
       if (id !== clientFile) return;

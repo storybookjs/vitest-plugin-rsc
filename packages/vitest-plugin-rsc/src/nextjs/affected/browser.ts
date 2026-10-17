@@ -6,9 +6,9 @@ type Loaded = (kind: LoadedKind, id: string) => Promise<void>;
 const loaded = (commands as unknown as Partial<Record<string, Loaded>>)[loadedCommand];
 
 // The browser's side: a setup file that `affectedTests()` registers, so the
-// layers themselves do not import Vitest. Tells the plugin what the test file
-// that runs now has loaded without an import of its own: Vitest adds which
-// test file that is.
+// layers themselves do not import Vitest: another host, or a static build,
+// runs them without it. Tells the plugin what the test file that runs now has
+// loaded without an import of its own: Vitest adds which test file that is.
 registry.reportLoaded = (kind, id) => {
   void loaded?.(kind, id).catch(() => {});
 };

@@ -18,6 +18,9 @@
     },
     {
       "path": "./playground/rsc-vitest-demo"
+    },
+    {
+      "path": "./playground/test-helpers"
     }
   ]
 }

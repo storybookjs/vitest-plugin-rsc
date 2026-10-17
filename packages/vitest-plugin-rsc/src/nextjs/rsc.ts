@@ -2,21 +2,40 @@ import { createServerManifest } from "@vitejs/plugin-rsc/core/rsc";
 import * as ReactServer from "@vitejs/plugin-rsc/react/rsc";
 import { prerender } from "@vitejs/plugin-rsc/react/rsc/static";
 import * as FlightServer from "@vitejs/plugin-rsc/vendor/react-server-dom/server.edge";
+import builtLayers from "virtual:vitest-plugin-rsc/layers";
 import appPages from "virtual:vitest-plugin-rsc/next-app-pages";
 import loadMiddleware from "virtual:vitest-plugin-rsc/next-middleware";
 import routeHandlers from "virtual:vitest-plugin-rsc/next-route-handlers";
+import serverReferences from "virtual:vitest-plugin-rsc/next-server-references";
 import type { FlightAdapters } from "./flight.ts";
 import { actionModulePrefix, registry } from "./registry.ts";
 import { fetchJson } from "../utils.ts";
 import { stylesheetsPath, type Stylesheets } from "./styles-command.ts";
+import {
+  builtStylesheetsFile,
+  builtStylesheetsOf,
+  type BuiltStylesheets,
+} from "./styles-shared.ts";
 
 // The rsc layer: Server Components, Server Actions, route handlers and the
 // Flight encoder.
 
 declare let __vite_rsc_raw_import__: (id: string) => Promise<unknown>;
 
+// The module of a server reference, by the id Vite RSC gives it. With a dev
+// server that is what Vite imports the module by. A static build has a list
+// of them: see static-build.ts.
 ReactServer.setRequireModule({
-  load: (id) => __vite_rsc_raw_import__(id),
+  load: (id) => {
+    if (!serverReferences) return __vite_rsc_raw_import__(id);
+    const load = serverReferences[id];
+    if (!load) {
+      return Promise.reject(
+        new Error(`vitest-plugin-rsc: the build has no Server Action module "${id}"`),
+      );
+    }
+    return load();
+  },
 });
 
 // Next passes its client and server reference manifests to the Flight codec.
@@ -88,13 +107,40 @@ registry.loadAppPage = async (page) => {
 };
 
 // The stylesheets of a route are the plugin's to say, as they are a build's:
-// see styles.ts. The dev server answers, for the files of the host it has
-// loaded. Under Vitest a command answers instead, which knows the test file
-// that asks, for the route of a node: the plugin's setup file sets it, and
-// whichever of the two modules evaluates first, the command wins.
-registry.loadStylesheets = (entry, inline) =>
-  registry.loadStylesheetsOfTestFile?.(entry, inline) ??
-  fetchJson<Stylesheets>(stylesheetsPath, { entry, inline: String(inline) });
+// see styles.ts. A static build has them in a file of its own, in the
+// directory of the build. With a dev server, the dev server answers, for the
+// files of the host it has loaded. Under Vitest a command answers instead,
+// which knows the test file that asks, for the route of a node: the plugin's
+// setup file sets it, and whichever of the two modules evaluates first, the
+// command wins.
+const buildDirectory = builtLayers && Object.values(builtLayers)[0]?.base;
+if (buildDirectory) {
+  let built: Promise<BuiltStylesheets> | undefined;
+  const load = async () => {
+    // Its name does not change with its content, like `modules.json`: ask
+    // the server whether the copy the browser has is still the one it serves.
+    const url = new URL(builtStylesheetsFile, buildDirectory).href;
+    const response = await registry.network(url, { cache: "no-cache" });
+    if (!response.ok) {
+      throw new Error(
+        `vitest-plugin-rsc: ${url} answered ${response.status}: ${await response.text()}`,
+      );
+    }
+    return (await response.json()) as BuiltStylesheets;
+  };
+  registry.loadStylesheets = async (entry) => {
+    if (!built) {
+      built = load();
+      // One that failed is asked again.
+      built.catch(() => (built = undefined));
+    }
+    return builtStylesheetsOf(await built, entry, buildDirectory);
+  };
+} else {
+  registry.loadStylesheets = (entry, inline) =>
+    registry.loadStylesheetsOfTestFile?.(entry, inline) ??
+    fetchJson<Stylesheets>(stylesheetsPath, { entry, inline: String(inline) });
+}
 
 /** The page module of the route of a node: see `loadNodeEntry()` in project/entries.ts. */
 export async function loadComponent(): Promise<{ default: () => unknown }> {

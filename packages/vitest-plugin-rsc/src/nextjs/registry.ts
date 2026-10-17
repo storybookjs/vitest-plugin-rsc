@@ -1,4 +1,5 @@
-import type { Stylesheets } from "./styles-command.ts";
+import type { LoadedKind } from "./affected/command.ts";
+import type { Stylesheets } from "./styles-shared.ts";
 
 // The three layers of the app are three module graphs with one `window`.
 // Next's bundler config moves a few things across them: the route module is
@@ -75,8 +76,9 @@ export type NextRegistry = {
   appPages: Record<string, unknown>;
   /**
    * Asks the plugin for the stylesheets of a page route, by the name of its
-   * modules: see styles.ts. The dev server answers (rsc.ts), or under Vitest a
-   * command of Vitest's, which knows the test file that asks (setup.ts).
+   * modules: see styles.ts. The dev server answers, or under Vitest a command
+   * of Vitest's, which knows the test file that asks (setup.ts); a static
+   * build reads them from a file of its own (rsc.ts).
    */
   loadStylesheets(entry: string, inline: boolean): Promise<Stylesheets>;
   /** The answer of Vitest's command, which the plugin's setup file sets: see rsc.ts. */
@@ -84,9 +86,9 @@ export type NextRegistry = {
   /**
    * Tells the host what the page loaded without an import of its own: a route,
    * or the module of a Server Action. Under Vitest with `affectedTests`, see
-   * affected/browser.ts. Another host has none.
+   * affected/browser.ts. Another host, and a static build, have none.
    */
-  reportLoaded?(kind: "page" | "route" | "action", id: string): void;
+  reportLoaded?(kind: LoadedKind, id: string): void;
   /** Loads the request handler of a route handler, which is in the rsc layer. */
   loadRouteHandler(page: string): Promise<RequestHandler>;
   /** Loads the request handler of the middleware of the app, which is in the rsc layer. */
