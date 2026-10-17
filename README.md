@@ -954,7 +954,8 @@ Everything that runs with the dev server runs from the build: pages and nodes, C
 - The code of the ssr and the browser layer is one file each, `vitest-plugin-rsc/*/modules.json`, which a tab fetches once. Its name does not change with its content, nor does `vitest-plugin-rsc/next-stylesheets.json`: the browser asks the server whether its copy is current, so serve them like `index.html`, and compressed, as a layer is a few MB of JavaScript.
 - The CSS of a route is linked by Next, as with a dev server: a file per stylesheet under `/_next/static/css/`, with the stylesheets of every route in `vitest-plugin-rsc/next-stylesheets.json`. A node has the CSS of the route it renders in, not yet the CSS that a file of the host imports.
 - The files of the build name each other by relative paths. To serve the build from a path, build it with that `base`, or with `base: "./"`.
-- The files of the build name the routes of the app by their paths on the machine that built it, as Next's loader tree does.
+- The files of the build name the routes of the app by their paths on the machine that built it, as Next's loader tree does, and the Next config in the layers has its `configFile` and roots as absolute paths. A build is not the same byte for byte on another machine. The next PRs of the stack take the machine paths out.
+- `experimental.inlineCss` is not honoured in a build: the stylesheets are linked.
 
 `playground/nextjs-e2e-demo` builds its app with a page of its own, `index.html`, that calls `renderServer()` as a test does, and a test project opens the build in a browser from a server of files: see its `build-test/`.
 
