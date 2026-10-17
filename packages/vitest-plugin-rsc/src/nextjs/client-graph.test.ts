@@ -221,7 +221,11 @@ test("rejects for a file with `use client` that is not the host's", async () => 
 // that the build has for it, by its path from the root of the project.
 test("loads a file of the host in a static build, by its key", async () => {
   tab.buildDirectory = "https://site.test/docs/";
-  tab.references = { "5f3a9c1e": "/vitest-plugin-rsc/react_client/assets/badge.js" };
+  tab.references = {
+    "5f3a9c1e": "/vitest-plugin-rsc/react_client/assets/badge.js",
+    "7d2b4e6a": "/vitest-plugin-rsc/react_client/assets/plain.js",
+    "9c8e1f3b": "/vitest-plugin-rsc/react_client/assets/far.js",
+  };
   const { loadClientFile, loadClientModule } = await graph();
 
   await loadClientFile("5f3a9c1e", "host/badge.tsx");
@@ -233,11 +237,13 @@ test("loads a file of the host in a static build, by its key", async () => {
   });
   // A file of the build, wherever the build is served.
   expect(links()).toEqual(["https://site.test/docs/_next/static/css/badge-1a2b3c4d.css"]);
-  // One without any, and a key the build has no reference for.
-  await loadClientFile("5f3a9c1e", "host/plain.tsx");
+  // One without any, one with no path from the root, like a file on another
+  // drive, and a key the build has no reference for.
+  await loadClientFile("7d2b4e6a", "host/plain.tsx");
+  await loadClientFile("9c8e1f3b");
   expect(links()).toHaveLength(1);
   await expect(loadClientFile("0000", "host/badge.tsx")).rejects.toThrow(
-    'vitest-plugin-rsc: the build has no Client Component "0000"',
+    'vitest-plugin-rsc: the build has no client reference "0000"',
   );
 });
 

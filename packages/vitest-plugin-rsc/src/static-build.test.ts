@@ -51,14 +51,16 @@ const call = (hook: unknown, environment: string, ...args: unknown[]) =>
   ) as unknown;
 
 // A chunk of the bundle of a layer, and what it imports that is no chunk of
-// it: a module of the page, see host-module.ts.
-const chunk = (fileName: string, code: string, imports: string[] = []) => ({
-  type: "chunk",
-  fileName,
-  code,
-  imports,
-  dynamicImports: [],
-});
+// it, statically and with `import()`: a module of the page, see
+// host-module.ts.
+const chunk = (
+  fileName: string,
+  code: string,
+  imports: string[] = [],
+  dynamicImports: string[] = [],
+) => ({ type: "chunk", fileName, code, imports, dynamicImports });
+// The URL of a module of the page, which a chunk imports it by.
+const hostModule = (specifier: string) => `/@id/__x00__vitest-plugin-rsc/host-module/${specifier}`;
 
 // The plugin as a build has it, in a project of its own: the config of Vite
 // that it asks for, and an app builder that says what it was asked to build.
@@ -549,12 +551,10 @@ test("tells the page where the layers are from the directory of the build", () =
 // the host's build, lists them, to import each as the host's own scripts do:
 // see host-module.ts.
 test("lists the modules of the page that the scan of the browser layer finds", async () => {
-  const hostModule = (specifier: string) =>
-    `/@id/__x00__vitest-plugin-rsc/host-module/${specifier}`;
   const entry = "vitest-plugin-rsc/react_client/entry.js";
   const { plugin, builder } = setup({
     react_client: {
-      [entry]: chunk(entry, "", [hostModule("storybook/test"), hostModule("host-report")]),
+      [entry]: chunk(entry, "", [hostModule("storybook/test")], [hostModule("host-report")]),
     },
   });
 
@@ -562,7 +562,7 @@ test("lists the modules of the page that the scan of the browser layer finds", a
 
   const id = call(plugin.resolveId, "client", "virtual:vitest-plugin-rsc/host-modules");
   expect(id).toBe(hostModules);
-  // In the order of the imports, the same in every build.
+  // In the order of their names, the same in every build.
   expect(call(plugin.load, "client", id)).toBe(
     `export default {\n` +
       `  "${hostModule("host-report")}": () => import("\\u0000vitest-plugin-rsc/host-module/host-report"),\n` +
@@ -576,8 +576,6 @@ test("lists the modules of the page that the scan of the browser layer finds", a
 });
 
 test("says which module of the page the scan of the browser layer did not find", async () => {
-  const hostModule = (specifier: string) =>
-    `/@id/__x00__vitest-plugin-rsc/host-module/${specifier}`;
   const entry = "vitest-plugin-rsc/react_client/entry.js";
   const { plugin, builder } = setup({
     react_client: { [entry]: chunk(entry, "", [hostModule("host-report")]) },
@@ -598,9 +596,10 @@ test("says which module of the page the scan of the browser layer did not find",
     );
   expect(generate).toThrow(
     "vitest-plugin-rsc: the react_client layer imports storybook/test as a module of the page, " +
-      "which the scan of the browser layer did not find",
+      "as `host.packages` of vitestPluginNext() names its package, but the scan of the browser " +
+      "layer did not find that import",
   );
-  expect(generate).toThrow("`host.packages` has to name the package of storybook/test");
+  expect(generate).toThrow("a plugin that adds this import has to add it in the scan too");
 });
 
 // `vitestPluginRSC()` on its own: the rsc layer and the browser layer, which

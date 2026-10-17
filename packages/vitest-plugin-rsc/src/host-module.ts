@@ -25,7 +25,7 @@ export function isHostModule(url: string): boolean {
   return url.includes(hostModuleUrl);
 }
 
-// A static build has no server to serve the page that module. The page's
+// A static build has no server that serves that module to the page. The page's
 // own instance is in the host's build, the rsc layer, which the host's
 // scripts are one bundle with. So a layer of the module runner imports it by
 // the URL a dev server has for it, as an external module, and the rsc layer

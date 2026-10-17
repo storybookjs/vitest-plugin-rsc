@@ -32,14 +32,13 @@ const references = new Map([
   [`${framework}/by-name.js?v=1a2b3c4d`, `${proxy}client-package-proxy/framework/by-name`],
 ]);
 // The key that the references of a module have in their `$$id`: with a dev
-// server the URL, in a build a hash of the file. This file has one of a
-// build, by the URL of the others: a build's `importId` is the file's path,
-// which makes no difference here.
+// server the URL, in a build a hash of the file. This file has the key of a
+// build.
 const builtKeys = new Map([["/app/built.test.tsx", "5f3a9c1e"]]);
 const clientReferenceOf = (id: string) => {
-  const importId = references.get(id);
-  if (importId === undefined) return;
-  return { importId, referenceKey: builtKeys.get(id) ?? importId };
+  const url = references.get(id);
+  if (url === undefined) return;
+  return { referenceKey: builtKeys.get(id) ?? url };
 };
 const [plugin, loaders] = clientFiles({
   environments: { rsc: "client", browser: "react_client" },
@@ -246,7 +245,7 @@ test("has a build of the browser layer import the page's own module by its URL",
   const url = "/@id/__x00__vitest-plugin-rsc/host-module/@vitest/spy";
   expect(resolve("@vitest/spy", "/app/counter.tsx", "react_client", "build")).toEqual({
     id: url,
-    external: true,
+    external: "absolute",
   });
   expect(isHostModule(url)).toBe(true);
   // Which loads the module as the host's build has it.

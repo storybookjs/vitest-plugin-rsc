@@ -79,7 +79,7 @@ async function stylesheetsOf(key: string, builtFile: string | undefined): Promis
 
 // In a static build: the modules of the browser layer that a Flight payload
 // can refer to, by their reference keys, which the graph evaluates a client
-// file from. With a dev server the key is the URL of the file.
+// file from.
 type ClientReferences = { default: Record<string, () => Promise<object>> };
 
 /**
@@ -104,7 +104,7 @@ export async function loadClientFile(key: string, builtFile?: string): Promise<v
       environmentModule(environment, clientReferencesId),
     );
     const load = references.default[key];
-    if (!load) throw new Error(`vitest-plugin-rsc: the build has no Client Component "${key}"`);
+    if (!load) throw new Error(`vitest-plugin-rsc: the build has no client reference "${key}"`);
     registry.browserRequire = browserRequire;
     // Once for the document: a build has no HMR, so the host has one module
     // of the file in the rsc layer, which the browser evaluates once, and

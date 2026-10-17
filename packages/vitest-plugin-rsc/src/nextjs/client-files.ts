@@ -47,10 +47,11 @@ export function fileOfModule(id: string): string | undefined {
 
 /**
  * What Vite RSC made of a module of the rsc layer with `"use client"`: a
- * client reference, with the URL that loads the file in the browser layer,
- * and the key that each reference of the module has in its `$$id`.
+ * client reference, with the key that each reference of the module has in
+ * its `$$id`. With a dev server that is the URL of the file in the browser
+ * layer, in a build a hash of the file.
  */
-export type ClientReference = { importId: string; referenceKey: string };
+export type ClientReference = { referenceKey: string };
 
 export type ClientFilesOptions = {
   /** The Vite environment of the rsc layer, which the host shares, and of the browser layer. */
@@ -120,7 +121,7 @@ export function hostModuleCode(
  * layer, and the error for a file with `"use client"` that mocks a module,
  * before Vite RSC drops the code of the file. After Vite RSC, which made
  * the file a reference: the line in front of that module, which loads the
- * file in the browser layer, at the URL that the reference knows. Not a
+ * file in the browser layer by the key of the reference. Not a
  * file without the directive: a test file without it renders with
  * `renderServer()`, in a page with a graph of its own.
  */
@@ -152,9 +153,9 @@ export function clientFiles(options: ClientFilesOptions): Plugin[] {
           if (!importer || importer === path.posix.join(normalizePath(root), "index.html")) return;
           if (isHostPackage(source) || source === testingLibrary.specifier) {
             // A build has the page's own module in the host's build, which
-            // the layer imports by its URL: see ../host-module.ts.
+            // the layer imports by its URL, as it is: see ../host-module.ts.
             return this.environment.mode === "build"
-              ? { id: builtHostModuleUrl(source), external: true }
+              ? { id: builtHostModuleUrl(source), external: "absolute" as const }
               : hostModulePrefix + source;
           }
         },

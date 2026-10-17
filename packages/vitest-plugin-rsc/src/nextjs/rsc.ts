@@ -111,6 +111,7 @@ registry.loadAppPage = async (page) => {
 // that render the node, which ssr.ts passes. A static build has them in a
 // file of its own, in the directory of the build: see built-stylesheets.ts.
 // With a dev server, the dev server answers.
+// A const of this module, which TypeScript narrows in the function below too.
 const directory = buildDirectory;
 if (directory) {
   // A file the build has no stylesheets for, once for the page, as the dev

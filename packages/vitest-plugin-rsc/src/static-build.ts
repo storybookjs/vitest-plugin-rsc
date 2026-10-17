@@ -49,14 +49,6 @@ const serverReferencesId = "virtual:vitest-plugin-rsc/server-references";
 /** Where the layers of the module runner are, in the directory of the build. */
 const layersDir = "vitest-plugin-rsc";
 /**
- * The entries of a layer, by their names in its input: the module that the
- * page starts the layer with, and in the browser layer the list of its
- * client references, `clientReferencesId`. A module of a layer is no file of
- * the build, but its id is the path it would have: the file it names by its
- * URL, like its CSS, is named from there.
- */
-const entryFile = (input: "entry" | "references") => `${input}.js`;
-/**
  * The file with every module of a layer. Not named after its content: the
  * build of the host, which says where it is, comes before the layer's, which
  * needs the ids that the host's build gives. So it is a file, like the
@@ -232,11 +224,14 @@ export function staticBuild(options: StaticBuildOptions): Plugin {
   // `hostModulesId`.
   let hostModules = new Set<string>();
 
-  // The entries of a layer, by their names in its input: see `entryFile()`.
-  // A runner outside a page evaluates a Client Component of the browser
-  // layer by its id in a Flight payload, from the list that a page's Flight
-  // client loads it from.
-  const inputOf = (name: string) => ({
+  // The entries of a layer, by their names in its input: the module that the
+  // page starts the layer with, and in the browser layer the list of its
+  // client references, `clientReferencesId`, from which Next's graph of the
+  // tab evaluates a file of the host with `"use client"` by its key, see
+  // nextjs/client-graph.ts. A module of a layer is no file of the build, but
+  // its id is the path it would have, `<name>.js` in the layer's directory:
+  // the file it names by its URL, like its CSS, is named from there.
+  const inputOf = (name: string): Record<string, string> => ({
     entry: layers.entries[name]!,
     ...(name === browser && { references: clientReferencesId }),
   });
@@ -475,12 +470,14 @@ export function staticBuild(options: StaticBuildOptions): Plugin {
           .sort()
           .map(
             (name) =>
-              `  ${JSON.stringify(name)}: { base: directory, entries: ${JSON.stringify({
-                [layers.entries[name]!]: `${layersDir}/${name}/${entryFile("entry")}`,
-                ...(name === browser && {
-                  [clientReferencesId]: `${layersDir}/${name}/${entryFile("references")}`,
-                }),
-              })}, modules: ${JSON.stringify(`${layersDir}/${name}/${modulesFile}`)} },`,
+              `  ${JSON.stringify(name)}: { base: directory, entries: ${JSON.stringify(
+                Object.fromEntries(
+                  Object.entries(inputOf(name)).map(([input, id]) => [
+                    id,
+                    `${layersDir}/${name}/${input}.js`,
+                  ]),
+                ),
+              )}, modules: ${JSON.stringify(`${layersDir}/${name}/${modulesFile}`)} },`,
           );
         return (
           `const directory = new URL(${buildDirPlaceholder}, import.meta.url).href;\n` +
@@ -513,11 +510,11 @@ export function staticBuild(options: StaticBuildOptions): Plugin {
             if (missing !== undefined) {
               this.error(
                 `vitest-plugin-rsc: the ${name} layer imports ${missing} as a module of the ` +
-                  `page, which the scan of the browser layer did not find, so the host's build ` +
-                  `has no instance of it to share. A module of the page is a package that ` +
-                  `\`host.packages\` of vitestPluginNext() names: \`host.packages\` has to name ` +
-                  `the package of ${missing}, and the browser layer has to import it by that ` +
-                  `name, in an import that the scan sees.`,
+                  `page, as \`host.packages\` of vitestPluginNext() names its package, but the ` +
+                  `scan of the browser layer did not find that import, so the host's build has ` +
+                  `no instance of it to share. The scan sees every import of the browser layer ` +
+                  `that its build does: a plugin that adds this import has to add it in the ` +
+                  `scan too.`,
               );
             }
           }

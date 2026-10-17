@@ -36,7 +36,7 @@ afterAll(() => site?.close());
 /**
  * Opens a page of the build with a view: see test/host-page.ts. What the
  * page asks for is a file of the build: a request for a path of a dev server,
- * like Vite's `/@id/` or the plugin's `/@vitest-plugin-rsc/`, fails the test.
+ * like Vite's `/@id/` or the dev server's `/@vite/`, fails the test.
  */
 async function open(
   page: Page,
