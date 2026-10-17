@@ -4,7 +4,14 @@ import { spawnSync } from "node:child_process";
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { parseArgs } from "node:util";
-import { ensureDir, formatMilliseconds, repoRoot, resolveOutputDir, writeJson } from "./utils.ts";
+import {
+  ensureDir,
+  formatMilliseconds,
+  gitMetadata,
+  repoRoot,
+  resolveOutputDir,
+  writeJson,
+} from "./utils.ts";
 
 // Vitest 5 reports benchmarks through the JSON reporter, per test.
 type BenchmarkReport = {
@@ -140,18 +147,6 @@ function formatDelta(mean: unknown, baselineMean: number): string {
   if (typeof mean !== "number" || !Number.isFinite(mean) || baselineMean === 0) return "n/a";
   const delta = ((mean - baselineMean) / baselineMean) * 100;
   return `${delta >= 0 ? "+" : ""}${delta.toFixed(1)}%`;
-}
-
-function gitMetadata(cwd: string): Record<string, string> {
-  return {
-    branch: git(["branch", "--show-current"], cwd),
-    sha: git(["rev-parse", "HEAD"], cwd),
-  };
-}
-
-function git(args: string[], cwd: string): string {
-  const result = spawnSync("git", args, { cwd, encoding: "utf8" });
-  return result.status === 0 ? result.stdout.trim() : "unknown";
 }
 
 function formatHz(value: unknown): string {

@@ -21,6 +21,9 @@
     },
     {
       "path": "./playground/test-helpers"
+    },
+    {
+      "path": "./scripts"
     }
   ]
 }

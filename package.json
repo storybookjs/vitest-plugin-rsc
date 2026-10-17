@@ -18,6 +18,7 @@
     "perf:ci": "pnpm perf",
     "perf:commands": "node scripts/perf/run-command-benchmarks.ts",
     "perf:micro": "node scripts/perf/run-vitest-bench.ts",
+    "perf:static": "node scripts/perf/run-static-build-benchmarks.ts",
     "dev": "pnpm -r --parallel --filter='./packages/*' run dev",
     "prepare": "husky"
   },

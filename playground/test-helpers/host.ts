@@ -1,8 +1,5 @@
 import { spawn } from "node:child_process";
-import fs from "node:fs";
-import http from "node:http";
 import net from "node:net";
-import path from "node:path";
 import { chromium } from "playwright";
 import { test as base, expect } from "vitest";
 
@@ -10,8 +7,9 @@ import { test as base, expect } from "vitest";
 // a project as its CLI runs it, a dev server of a project, a server of files
 // for a static build, and a page of Chromium that fails its test on an error.
 
-/** A site the tests open: a dev server, or a static build behind a server of files. */
-export type Site = { url: string; close(): Promise<void> };
+import type { Site } from "./serve-files.ts";
+
+export { serveFiles, type Site } from "./serve-files.ts";
 
 /** A dev server the tests open, with what it printed. */
 export type DevServer = Site & { output(): string };
@@ -125,55 +123,6 @@ export function createProject(root: string) {
       return { url, output: server.output, close };
     },
   };
-}
-
-const contentTypes: Record<string, string> = {
-  ".html": "text/html",
-  ".js": "text/javascript",
-  ".mjs": "text/javascript",
-  ".css": "text/css",
-  ".json": "application/json",
-  ".svg": "image/svg+xml",
-  ".png": "image/png",
-  ".woff2": "font/woff2",
-};
-
-/**
- * Serves the files of a directory at a path, and nothing else, like the host
- * of a static site: a URL without a file is a 404.
- */
-export function serveFiles(directory: string, at = "/"): Promise<Site> {
-  const server = http.createServer((request, response) => {
-    let pathname: string | undefined;
-    try {
-      pathname = decodeURIComponent(new URL(request.url ?? "/", "http://localhost").pathname);
-    } catch {
-      // Not a URL: a 404, like the rest.
-    }
-    const relative = pathname?.startsWith(at) ? pathname.slice(at.length) : undefined;
-    const file =
-      relative === undefined
-        ? ""
-        : path.join(directory, /(^|\/)$/.test(relative) ? `${relative}index.html` : relative);
-    const inDirectory = file.startsWith(path.join(directory, path.sep));
-    if (!inDirectory || !fs.statSync(file, { throwIfNoEntry: false })?.isFile()) {
-      response.writeHead(404).end("Not found");
-      return;
-    }
-    response.writeHead(200, {
-      "content-type": contentTypes[path.extname(file)] ?? "application/octet-stream",
-    });
-    fs.createReadStream(file).pipe(response);
-  });
-  return new Promise((resolve) => {
-    server.listen(0, "127.0.0.1", () => {
-      const { port } = server.address() as net.AddressInfo;
-      resolve({
-        url: `http://127.0.0.1:${port}${at}`,
-        close: () => new Promise((closed) => server.close(() => closed())),
-      });
-    });
-  });
 }
 
 /** What went wrong on a page: an error, a `console.error`, a request that failed. */
