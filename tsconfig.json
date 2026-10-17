@@ -5,6 +5,9 @@
       "path": "./packages/vitest-plugin-rsc"
     },
     {
+      "path": "./packages/storybook-nextjs-vite-rsc"
+    },
+    {
       "path": "./conformance"
     },
     {

@@ -2,14 +2,22 @@
 
 import { registerHooks } from "node:module";
 
+// The export conditions that resolve a package of the repo to its source
+// instead of its build. `pnpm test` runs Node with them, `pnpm test:dist`
+// without.
 const vitestPluginRscSourceCondition = "vitest-plugin-rsc-source";
+const storybookNextjsViteRscSourceCondition = "storybook-nextjs-vite-rsc-source";
 const nodeConditions = getNodeConditions();
 
-export const vitestPluginRscSourceConditions = nodeConditions.includes(
-  vitestPluginRscSourceCondition,
-)
-  ? [vitestPluginRscSourceCondition]
-  : [];
+export const vitestPluginRscSourceConditions = activeConditions(vitestPluginRscSourceCondition);
+
+export const storybookNextjsViteRscSourceConditions = activeConditions(
+  storybookNextjsViteRscSourceCondition,
+);
+
+function activeConditions(condition: string): string[] {
+  return nodeConditions.includes(condition) ? [condition] : [];
+}
 
 function getNodeConditions(): string[] {
   let conditions: string[] = [];
