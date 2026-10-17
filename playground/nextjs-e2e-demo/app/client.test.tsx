@@ -176,7 +176,7 @@ test("says that a Server Action needs Next's app", async () => {
   await expect
     .element(page.getByRole("alert"))
     .toMatchTextContent(
-      'a component called the Server Action toggleFavorite in a test file with "use client"',
+      "a component called the Server Action toggleFavorite, and no page of the app is open",
     );
 });
 

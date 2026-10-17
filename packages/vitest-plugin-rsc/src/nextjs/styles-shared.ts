@@ -29,6 +29,13 @@ export type StylesheetsQuestion =
   | { url: string };
 
 /**
+ * What marks the `<link>` of a stylesheet of a file of the host with
+ * `"use client"`, which the tab's graph linked (client-graph.ts): the tab's,
+ * not a page's, so it stays while pages come and go (document.ts).
+ */
+export const graphStylesheetAttribute = "data-vitest-plugin-rsc-graph";
+
+/**
  * What the loader tree of the route of a node names its page, where a page of
  * the app has its file. Next looks up the stylesheets of the node by it.
  */
