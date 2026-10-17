@@ -9,6 +9,15 @@ export async function proxy(request: NextRequest) {
   // Reads the body, which the route reads too.
   if (pathname === "/api/echo/read") readByProxy.push(await request.text());
 
+  // Waits while a test holds it: app/leave.test.tsx.
+  if (pathname === "/held") {
+    const held = globalThis as { heldProxy?: { loading: boolean; release: Promise<void> } };
+    if (held.heldProxy) {
+      held.heldProxy.loading = true;
+      await held.heldProxy.release;
+    }
+  }
+
   // Answers the request itself.
   if (pathname === "/proxy/ping") return NextResponse.json({ pong: true });
   if (pathname === "/proxy/broken") throw new Error("The proxy is down");
