@@ -84,14 +84,26 @@ function browserHeaders(
   return headers;
 }
 
-// What was in the browser's storage before the app ran, which is the test
-// runner's to keep.
-const storages = [localStorage, sessionStorage].map(
-  (storage) => [storage, new Set(Object.keys(storage))] as const,
+// What was in the browser's storage before the app ran, and what another
+// document of the origin stores in it later, like Vitest's UI or Storybook's
+// manager: the host's to keep. The app runs in this document, and a document
+// gets no `storage` event for its own writes. What the other document removes
+// is no longer the host's.
+const storages = new Map(
+  [localStorage, sessionStorage].map((storage) => [storage, new Set(Object.keys(storage))]),
 );
+window.addEventListener("storage", ({ key, newValue, storageArea }) => {
+  const keys = storageArea && storages.get(storageArea);
+  if (!keys) return;
+  if (key === null) keys.clear();
+  else if (newValue === null) keys.delete(key);
+  else keys.add(key);
+});
 
 // What Vitest's UI stores on this origin as its settings change, also
-// while the tests run: its panels, and its dark mode through VueUse.
+// while the tests run: its panels, and its dark mode through VueUse. Also
+// before this document hears of it: a `storage` event comes later than the
+// write.
 const isVitestKey = (key: string) => key.startsWith("vitest-") || key === "vueuse-color-scheme";
 
 // A page of another origin is not the app's: a browser would leave the app for
