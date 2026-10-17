@@ -145,11 +145,10 @@ export type NextProject = {
     watchFiles: string[];
     /**
      * The files of the segments of a page route, as its entry imports them:
-     * its layouts, pages and boundaries. Next looks up the stylesheets of a
-     * segment by its file. Not the node of the route of a node, which is no
-     * file: its name in the loader tree is `componentPagePath`.
+     * its layouts, pages and boundaries. Not the node of the route of a node,
+     * which is no file: its name in the loader tree is `componentPagePath`.
      */
-    segmentFiles: string[];
+    segments: RouteSegment[];
   }>;
   /**
    * Next's request handler of the middleware: its template around the file.
@@ -198,6 +197,19 @@ export type NextProject = {
     response: ServerResponse,
     serveFile: ServeFile,
   ): Promise<boolean>;
+};
+
+/** A file of a segment of a page route: see `loadRouteEntry()`. */
+export type RouteSegment = {
+  /** The file, by its absolute path, which the entry imports. */
+  file: string;
+  /**
+   * What Next looks up the stylesheets of the segment by: the name the loader
+   * tree has for the file, without its extension. The name is the path from
+   * the root of the project, the same on every machine and with a dev server
+   * or a build: see `nameInLoaderTree()` in project/entries.ts.
+   */
+  stylesheetsKey: string;
 };
 
 export type Compiled = { code: string; map?: string };

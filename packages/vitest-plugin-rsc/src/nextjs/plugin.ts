@@ -31,7 +31,7 @@ import { moduleFileAt } from "./project/context.ts";
 import { compileServerCode, createServerCode, type ServerCodeOptions } from "./server-code.ts";
 import { affectedTests } from "./affected/index.ts";
 import { createPathsPlugin } from "./paths.ts";
-import { nextStaticBuild } from "./static-build.ts";
+import { nextStaticBuild, withPathsFromRoot } from "./static-build.ts";
 import { createStyles } from "./styles.ts";
 import { assertVitestVersion } from "./vitest-version.ts";
 
@@ -915,7 +915,11 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
           }));
           return (
             `export const routes = ${JSON.stringify([...routes, ...project.componentRoutes])};\n` +
-            `export const nextConfig = ${JSON.stringify(project.config)};\n` +
+            `export const nextConfig = ${JSON.stringify(
+              this.environment.mode === "build"
+                ? withPathsFromRoot(project.config, project.root)
+                : project.config,
+            )};\n` +
             `export const routing = ${JSON.stringify(project.routing)};\n` +
             `export const routesManifest = ${JSON.stringify(project.routesManifest)};\n` +
             `export const preview = ${JSON.stringify(project.preview)};\n`

@@ -1,5 +1,6 @@
 import path from "node:path";
 import { stripVTControlCharacters } from "node:util";
+import { normalizePath } from "vite";
 import type { Compiled, NextLayer, NextProject } from "../project.ts";
 import type { NextContext } from "./context.ts";
 import { exportStubs } from "./module-exports.ts";
@@ -111,7 +112,17 @@ export async function createCompiler(
       // imports, which would run first, apart from an `export *`, and it
       // keeps its exports, for the modules that import it to link.
       const exports = await exportStubs(code, file).catch(() => Promise.reject(error));
-      const message = stripVTControlCharacters((error as Error).message ?? String(error)).trim();
+      const message = stripVTControlCharacters((error as Error).message ?? String(error))
+        .trim()
+        // The file of each code frame by its path from the root of the
+        // project, as `next build` quotes it, and any other file of the
+        // project: a module of a static build has the message.
+        .replace(/(,-\[)(.+?)(:\d+:\d+\])/g, (frame, start: string, file: string, end: string) =>
+          path.isAbsolute(file)
+            ? `${start}${normalizePath(path.relative(root, file))}${end}`
+            : frame,
+        )
+        .replaceAll(root + path.sep, "");
       return { code: `throw new Error(${JSON.stringify(message)});\n${exports}` };
     }
     // In the rsc layer Next turns a client module into its own proxy. Vite

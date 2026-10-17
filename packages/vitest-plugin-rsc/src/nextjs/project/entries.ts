@@ -1,9 +1,9 @@
 import fs from "node:fs";
 import path from "node:path";
 import querystring from "node:querystring";
-import { parseAst } from "vite";
+import { normalizePath, parseAst } from "vite";
 import type { AppLoaderOptions } from "next/dist/build/webpack/loaders/next-app-loader/index.js";
-import type { ComponentRoute, NextProject, NextRoute } from "../project.ts";
+import type { ComponentRoute, NextProject, NextRoute, RouteSegment } from "../project.ts";
 import type { NextContext } from "./context.ts";
 import type { RunLoader } from "./loaders.ts";
 import type { AppRoutes } from "./routes.ts";
@@ -46,29 +46,85 @@ function stripTurbopackTransitions(code: string): string {
   return code.replace(/\s+with\s*\{\s*['"]turbopack-transition['"]\s*:\s*['"][^'"]*['"]\s*\}/g, "");
 }
 
-// The files of the segments of a route, as Next's build finds them for their
-// CSS (`FlightClientEntryPlugin`): the imports of the route's entry by an
-// absolute path. Its loader imports the module of each layout, page and
-// boundary of the app by its file, and Next's own modules by a specifier.
-function segmentFilesOf(code: string): string[] {
+/**
+ * What the loader tree of a route names a file of it: its path from the root
+ * of the project, with `/`. Next looks up the stylesheets of a segment by that
+ * name without its extension (`RouteSegment`), with a dev server and in a
+ * build. Not the absolute path that Next's webpack build names it by: a static
+ * build has the tree in its files, which are then the same on every machine.
+ * Turbopack's names are from a root too, `[project]/app/page.tsx`.
+ */
+export function nameInLoaderTree(root: string, file: string): string {
+  return normalizePath(path.relative(root, file));
+}
+
+type Literal = { type: "Literal"; value: unknown; start: number; end: number };
+const isLiteral = (node: unknown): node is Literal =>
+  (node as { type?: unknown } | null)?.type === "Literal";
+
+// The entry of a route, with its files named as `nameInLoaderTree()` names
+// them. Next's app loader imports the module of each layout, page and
+// boundary of the app by its absolute path, and names it by that path next to
+// the import. A specifier stays, for Vite to resolve: of an import, an export
+// or a `require()`. Every other string that is the path of an imported file
+// is a name: the files of the tree, and `resolvedPagePath` of a route
+// handler, which Next's errors quote.
+//
+// The files of the segments are those imports, as Next's build finds them for
+// their CSS (`FlightClientEntryPlugin`). Next's own modules it imports by a
+// specifier, but for some of its boundaries.
+function nameFiles(root: string, code: string): { code: string; segments: RouteSegment[] } {
   const files = new Set<string>();
+  const specifiers = new Set<Literal>();
+  const strings: Literal[] = [];
   const visit = (node: unknown): void => {
     if (!node || typeof node !== "object") return;
-    const { type, source } = node as { type?: string; source?: { type: string; value: unknown } };
-    if (
-      (type === "ImportDeclaration" || type === "ImportExpression") &&
-      source?.type === "Literal" &&
-      typeof source.value === "string" &&
-      path.isAbsolute(source.value)
-    ) {
-      files.add(source.value);
+    const {
+      type,
+      source,
+      callee,
+      arguments: args,
+    } = node as {
+      type?: string;
+      source?: unknown;
+      callee?: { type?: string; name?: string };
+      arguments?: unknown[];
+    };
+    const specifier =
+      type === "CallExpression" && callee?.type === "Identifier" && callee.name === "require"
+        ? args?.[0]
+        : source;
+    if (isLiteral(specifier) && typeof specifier.value === "string") {
+      specifiers.add(specifier);
+      if (
+        (type === "ImportDeclaration" || type === "ImportExpression") &&
+        path.isAbsolute(specifier.value)
+      ) {
+        files.add(specifier.value);
+      }
     }
+    if (isLiteral(node) && typeof node.value === "string") strings.push(node);
     for (const value of Object.values(node)) {
       if (value && typeof value === "object") visit(value);
     }
   };
   visit(parseAst(code));
-  return [...files];
+  const names = strings
+    .filter((string) => !specifiers.has(string) && files.has(string.value as string))
+    // From the end, so that the offsets of the ones before stay.
+    .sort((a, b) => b.start - a.start);
+  for (const { value, start, end } of names) {
+    const name = JSON.stringify(nameInLoaderTree(root, value as string));
+    code = code.slice(0, start) + name + code.slice(end);
+  }
+  return {
+    code,
+    segments: [...files].map((file) => ({
+      file,
+      // As Next looks it up: `getLinkAndScriptTags()`.
+      stylesheetsKey: nameInLoaderTree(root, file).replace(/\.[^.]+$/, ""),
+    })),
+  };
 }
 
 export function routeEntries(
@@ -196,17 +252,17 @@ export function routeEntries(
     } else {
       code = bindPageEntry(code, where);
     }
-    const segmentFiles = route.kind === "page" ? segmentFilesOf(code) : [];
+    const named = nameFiles(root, code);
     // The page of a route of the app is a file, also when its layouts are
     // Next's own.
     const pageFile = route.kind === "page" ? routeFile(route) : undefined;
-    if (pageFile && !segmentFiles.includes(pageFile)) {
+    if (pageFile && !named.segments.some((segment) => segment.file === pageFile)) {
       fail(`${where} no longer imports the module of a page by its file`);
     }
     return {
-      code,
+      code: named.code,
       watchFiles: [...watchFiles].filter((file) => fs.existsSync(file)),
-      segmentFiles,
+      segments: route.kind === "page" ? named.segments : [],
     };
   };
 
@@ -240,13 +296,16 @@ export function routeEntries(
     async loadRouteEntry(route) {
       if (!("component" in route)) return loadAppRouteEntry(route);
       if (!route.layouts) {
-        return { code: await loadNodeEntry(route), watchFiles: [], segmentFiles: [] };
+        return { code: await loadNodeEntry(route), watchFiles: [], segments: [] };
       }
       // The entry of the app's route, with the node for its page: the tree
       // of Next's app loader names the page by its file.
       const appRoute = routes.find((candidate) => candidate.page === route.page)!;
       const pageFile = routeFile(appRoute)!;
-      const file = JSON.stringify(pageFile).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      const file = JSON.stringify(nameInLoaderTree(root, pageFile)).replace(
+        /[.*+?^${}()|[\]\\]/g,
+        "\\$&",
+      );
       const entry = await loadAppRouteEntry(appRoute);
       const code = replace(
         entry.code,
@@ -259,7 +318,7 @@ export function routeEntries(
         watchFiles: entry.watchFiles,
         // Without the page of the app, which the node stands in for. Its
         // module is still imported, but never loaded.
-        segmentFiles: entry.segmentFiles.filter((segmentFile) => segmentFile !== pageFile),
+        segments: entry.segments.filter((segment) => segment.file !== pageFile),
       };
     },
     async loadMiddlewareEntry() {
