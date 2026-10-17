@@ -68,12 +68,19 @@ const nativeFetch = globalThis.fetch;
  * Asks the dev server for JSON at a path of the plugin's, with the `fetch` the
  * page had before the app's replaced it: see nextjs/index.ts.
  */
-export async function fetchJson<T>(path: string, query: Record<string, string>): Promise<T> {
-  const url = `${path}?${new URLSearchParams(query)}`;
+export async function fetchJson<T>(
+  path: string,
+  query: Record<string, string | string[]>,
+): Promise<T> {
+  const params = new URLSearchParams();
+  for (const [name, value] of Object.entries(query)) {
+    for (const each of [value].flat()) params.append(name, each);
+  }
+  const url = `${path}?${params}`;
   const response = await nativeFetch(url);
   if (!response.ok) {
     throw new Error(
-      `vitest-plugin-rsc: ${url} answered ${response.status}: ${await response.text()}`,
+      `vitest-plugin-rsc: ${path} answered ${response.status}: ${await response.text()}`,
     );
   }
   return (await response.json()) as T;

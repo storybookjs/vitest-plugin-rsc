@@ -45,7 +45,8 @@ export type Opened = {
   pathname: string;
   /** Whether the server in front of the app takes the request: proxy.ts and `next.config`. */
   proxy: boolean;
-  node?: { ui: unknown; layouts: boolean };
+  /** With `files`: the files of the host that render the node, see `nodeFiles`. */
+  node?: { ui: unknown; layouts: boolean; files: string[] };
   /**
    * Whether Next renders the page a Server Action redirects to, into the
    * response of the action, as Next's router shows that page next. Not for
@@ -76,13 +77,19 @@ export type NextRegistry = {
   appPages: Record<string, unknown>;
   /**
    * Asks the plugin for the stylesheets of a page route, by the name of its
-   * modules: see styles.ts. The dev server answers, or under Vitest a command
-   * of Vitest's, which knows the test file that asks (setup.ts); a static
-   * build reads them from a file of its own (rsc.ts).
+   * modules, and for the route of a node with `files`, the files of the host
+   * that render the node: see styles.ts. The dev server answers; a static
+   * build reads them from a file of its own, without `files` (rsc.ts).
    */
-  loadStylesheets(entry: string, inline: boolean): Promise<Stylesheets>;
-  /** The answer of Vitest's command, which the plugin's setup file sets: see rsc.ts. */
-  loadStylesheetsOfTestFile?(entry: string, inline: boolean): Promise<Stylesheets>;
+  loadStylesheets(entry: string, inline: boolean, files: string[]): Promise<Stylesheets>;
+  /**
+   * The files of the host that render a node, when `renderServer()` is not
+   * told them with `files`: the node has their stylesheets, see styles.ts.
+   * Under Vitest the setup files and the test file, which the plugin's setup
+   * file sets before every test file (setup.ts). Another host passes `files`,
+   * or sets nothing: a node then has no stylesheets of the host's files.
+   */
+  nodeFiles?(): string[];
   /**
    * Tells the host what the page loaded without an import of its own: a route,
    * or the module of a Server Action. Under Vitest with `affectedTests`, see

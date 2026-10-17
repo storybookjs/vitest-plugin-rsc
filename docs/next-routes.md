@@ -166,7 +166,7 @@ Vite does it another way: a module that imports CSS puts it in a `<style>` when 
 What differs from `next start`:
 
 - **One stylesheet per CSS file**, in the order of the imports. Next's build joins the CSS of a segment into a chunk.
-- **A node has the CSS of what its test file imports**, and of what the setup files import. The plugin cannot tell which components a node renders. With `layouts: true` the layouts around it have their own. So does a component of a test file with `"use client"`, without a page: see [A Test File With `"use client"`](#a-test-file-with-use-client).
+- **A node has the CSS of what its test file imports**, and of what the setup files import: the files of the host that render it, which the plugin's setup file tells `renderServer()`. The plugin cannot tell which components a node renders. With `layouts: true` the layouts around it have their own. So does a component of a test file with `"use client"`, without a page: see [A Test File With `"use client"`](#a-test-file-with-use-client).
 - **CSS that a test file, a setup file or one of the `browserModules` imports itself** is Vite's `<style>`, and stays in the browser, as it would without Next. The CSS of a `next/font` call is linked all the same, also when a test file imports the font.
 - **An edit to a CSS file** arrives with the next page load. A page that is open keeps the stylesheet it has.
 
@@ -369,15 +369,15 @@ vitestPluginNext({
 });
 ```
 
-Both are facts only the host knows. The plugin cannot read the packages off the files: a story with `"use client"` imports `react` and `storybook/test` the same way, and the first has to be the `browser` layer's React, where the second has to be the page's own module, whose spies the host shows. The same list keeps the host's runtime, and what it depends on, the browser's in the `rsc` layer, where every other package is server code.
+Both are facts only the host knows. The plugin cannot read the packages off the files: a story with `"use client"` imports `react` and `storybook/test` the same way, and the first has to be the `browser` layer's React, where the second has to be the page's own module, whose spies the host shows. The same list keeps the host's runtime, and what it depends on, the browser's in the `rsc` layer, where every other package is server code. Not a package that the app lists in its `dependencies`, the same copy: that is the app's, server code, unless `host.packages` names it. A package of the host that depends on `next` or `react` would otherwise take the app's server along.
 
-Under Vitest the option adds to what Vitest's config says, and nothing else changes. Without Vitest:
+Under Vitest the option adds to what Vitest's config says, and nothing else changes. The same mechanisms serve both, and without Vitest the host does what Vitest's config and the plugin's setup file do:
 
 - The page imports `vitest-plugin-rsc/nextjs/testing-library` itself, from a file of the host, and calls `renderServer()` and `cleanup()` itself: there is no hook to run them around a test.
-- The stylesheets of a route and of a file with `"use client"` come from the dev server, at `/@vitest-plugin-rsc/next-stylesheets`. Under Vitest a command of Vitest answers for a route instead, which knows the test file that asks: the node of a test has the stylesheets of its test file. Another host does not say which of its files renders a node, so the node has the stylesheets of every file of the host that the server has loaded so far: those of the node, and of what the page loaded before it. For a host that renders one node per page of its own that is the same as what Vite's own `<style>` of a module does.
+- The stylesheets of a route and of a file with `"use client"` come from the dev server, at `/@vitest-plugin-rsc/next-stylesheets`, under Vitest too. A node has the stylesheets of the files of the host that render it, which the host passes to `renderServer()` as `files`, absolute or from the project root: for Storybook the preview file and the story's file. Under Vitest the plugin's setup file fills them in, the setup files and the test file, which Vitest gives a `beforeAll` of a setup file. A host that passes nothing gets a node without the stylesheets of its files. A file that is not the host's is left out, with a warning: the CSS of a file of the app is its route's. A static build does not link the CSS of these files yet.
 - `vitest` is an optional peer dependency, of any version. Only two files of the build import it, the setup files that the plugin registers with Vitest by their path: `nextjs/setup.js`, and `nextjs/affected/browser.js` for [Watch Mode](#watch-mode). A host without Vitest loads neither. Under Vitest the plugin checks the version itself, and stops with a message for one older than 5.0.3.
 
-`playground/nextjs-host-demo` is such a host: a page of Vite's own dev server, `index.html` and `host/main.tsx`, that renders a page of the app, a node in a container of its own, and a file of the host with `"use client"`. Its tests start that server and drive it with Playwright.
+`playground/nextjs-host-demo` is such a host: a page of Vite's own dev server, `index.html` and `host/main.tsx`, that renders a page of the app, a node in a container of its own, one node after another in the one document (`?view=switch`), and a file of the host with `"use client"`; a second page, `callout.html`, renders a node from a file of its own. Its tests start that server and drive it with Playwright.
 
 ## Route Handlers
 
@@ -570,7 +570,7 @@ A Client Component is a module in two layers. It is told it has no `window` whil
 The `rsc` layer shares its Vite environment with the test, and a test needs the browser. So in that environment these are not server code:
 
 - the test files and setup files from your Vitest config: `test.include` and `test.setupFiles`,
-- Vitest, Vite and the `@vitest/*` packages you have installed, and the packages those depend on,
+- Vitest, Vite and the `@vitest/*` packages you have installed, and the packages those depend on, but for one that your app lists in `dependencies` (the same copy), which is your app's,
 - what you list in `browserModules`.
 
 Everything else in that environment is server code, including a module that only a test imports and a file with in-source tests. A component defined in a test file is part of that test file's code, and sees the browser. A test file with `"use client"` is code of the `browser` layer, and so is what it imports.

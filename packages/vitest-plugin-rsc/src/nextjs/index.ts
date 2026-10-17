@@ -370,7 +370,7 @@ export async function runInServerAction<T>(
       opened: {
         pathname: url.pathname,
         proxy: options.proxy ?? false,
-        node: { ui: null, layouts: false },
+        node: { ui: null, layouts: false, files: [] },
         rendersRedirect: false,
       },
     });
@@ -561,6 +561,18 @@ export type RenderComponentOptions = RequestOptions & {
   /** Wraps the node on the server. It can be a Server Component. */
   wrapper?: JSXElementConstructor<{ children: ReactNode }>;
   /**
+   * The files of the host that render the node, for their CSS: the node has
+   * the stylesheets that these files import, as a page has those of its
+   * route. Absolute paths, or paths from the project root without a leading
+   * slash, like `stories/button.stories.tsx`. Under Vitest it defaults to the
+   * setup files and the test file, and what is passed replaces that; another
+   * host, like Storybook, passes its own, like the preview file and the
+   * story's file. A file that is not the host's, like one of the app, is
+   * left out, with a warning. With a dev server only: a static build does
+   * not link the CSS of these files yet.
+   */
+  files?: string[];
+  /**
    * Whether the server in front of the app takes the request: `proxy.ts`, and
    * the `redirects`, `rewrites` and `headers` of `next.config`. Defaults to
    * `false`: the node renders at `url` as it is given, and so do its Server
@@ -645,6 +657,8 @@ export async function renderServer(
 
   const { wrapper, proxy = false } = options;
   const ui = wrapper ? createElement(wrapper, null, first) : first;
+  // The files of the host that render the node, for their stylesheets.
+  const files = options.files ?? registry.nodeFiles?.() ?? [];
   if (options.layouts) {
     if (options.container || options.baseElement) {
       throw new Error(
@@ -653,7 +667,7 @@ export async function renderServer(
           "to pass.",
       );
     }
-    const opened = { pathname, proxy, node: { ui, layouts: true } };
+    const opened = { pathname, proxy, node: { ui, layouts: true, files } };
     const response = await loadPage(url, { headers }, { opened, headers: sticky, cookie });
     return {
       response,
@@ -699,7 +713,7 @@ export async function renderServer(
     { headers },
     {
       container,
-      opened: { pathname, proxy, node: { ui, layouts: false } },
+      opened: { pathname, proxy, node: { ui, layouts: false, files } },
       headers: sticky,
       cookie,
     },

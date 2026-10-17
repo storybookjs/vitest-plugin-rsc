@@ -1,9 +1,8 @@
-import { afterEach, beforeEach } from "vitest";
-import { commands } from "vitest/browser";
+import { afterEach, beforeAll, beforeEach } from "vitest";
+import { server } from "vitest/browser";
 import { cleanup } from "./index.ts";
 import { unlinkClientStylesheets } from "./client-graph.ts";
 import { registry } from "./registry.ts";
-import { stylesheetsCommand, type Stylesheets } from "./styles-command.ts";
 
 // Registered by `vitestPluginNext()` as a setup file. With affected/browser.ts
 // the only module of the layers that imports Vitest, which another host, or a
@@ -16,19 +15,21 @@ import { stylesheetsCommand, type Stylesheets } from "./styles-command.ts";
 // linked goes once the next file starts.
 unlinkClientStylesheets();
 
+// The node of a test has the stylesheets of the files that render it: the
+// setup files, in the order of the config, and the test file, which Vitest
+// gives a `beforeAll` of a setup file as its second argument. The first is
+// the fixtures, which Vitest reads off the parameter: it has to be a pattern.
+// Until then, as a setup file or a test file collects, the setup files
+// alone: not the test file of before, with `isolate: false`. See `nodeFiles`
+// in registry.ts.
+registry.nodeFiles = () => [...server.config.setupFiles];
+// oxlint-disable-next-line no-empty-pattern
+beforeAll(({}, suite) => {
+  const { filepath } = suite.file;
+  registry.nodeFiles = () => [...server.config.setupFiles, filepath];
+});
+
 afterEach(cleanup);
 // Also before a test: Vitest skips the remaining `afterEach` hooks when one
 // of them throws, as a test's own does when it asserts in it.
 beforeEach(cleanup);
-
-// The stylesheets of a route, from a command of Vitest's: see styles.ts. It
-// knows which test file asks, whose imports are the stylesheets of a node.
-// Another host asks the dev server (rsc.ts).
-type LoadStylesheets = (entry: string, inline: boolean) => Promise<Stylesheets>;
-const loadStylesheets = (commands as unknown as Partial<Record<string, LoadStylesheets>>)[
-  stylesheetsCommand
-];
-if (!loadStylesheets) {
-  throw new Error("vitest-plugin-rsc: the browser has no command for the stylesheets");
-}
-registry.loadStylesheetsOfTestFile = loadStylesheets;

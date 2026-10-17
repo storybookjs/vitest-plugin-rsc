@@ -37,35 +37,33 @@ beforeAll(async () => {
 
 afterAll(() => site?.close());
 
-type HostWindow = {
-  __hostState?: "ready" | "error";
-  __hostError?: unknown;
-  __hostResponse?: { status: number; url: string };
-  __hostReports?: unknown[];
-};
+type HostWindow = import("../host/state.ts").HostWindow;
 
 /**
- * Opens the host page with a view (see host/main.tsx), and fails the test on
- * an error of the page, with what the dev server printed: see `test` in
- * test-helpers/host.ts. Resolves with what the host left on `window`.
+ * Opens a page of the host with a view (see host/main.tsx), and fails the
+ * test on an error of the page, with what the dev server printed: see `test`
+ * in test-helpers/host.ts. Resolves with what the host left on `window`.
  */
 async function open(
   page: Page,
   errors: PageErrors,
   view: string,
   run: (page: Page) => Promise<void>,
+  document = "",
 ): Promise<HostWindow> {
-  await page.goto(`${site!.url}?view=${view}`);
+  await page.goto(`${site!.url}${document}?view=${view}`);
   await page.waitForFunction(() => (window as HostWindow).__hostState, null, {
     timeout: 60_000,
   });
   const host = await page.evaluate(() => {
-    const { __hostState, __hostError, __hostResponse, __hostReports } = window as HostWindow;
+    const { __hostState, __hostError, __hostResponse, __hostReports, __hostCalloutLinked } =
+      window as HostWindow;
     return {
       __hostState,
       __hostError: __hostError === undefined ? undefined : String(__hostError),
       __hostResponse,
       __hostReports,
+      __hostCalloutLinked,
     };
   });
   expect(host.__hostState, `the host of ?view=${view}: ${host.__hostError}`).toBe("ready");
@@ -113,6 +111,58 @@ test("renders a node of the host in a container of the host", async ({ page, err
       "rgb(0, 112, 243)",
     );
   });
+});
+
+// The stylesheets of the greeting, and none of the callout.
+async function expectGreetingStylesheets(page: Page) {
+  await page.locator("#host-root").getByRole("heading", { name: "Hello from the host" }).waitFor();
+  await page
+    .locator("link[rel=stylesheet][href*='greeting.module.css']")
+    .waitFor({ state: "attached" });
+  expect(await page.locator("link[rel=stylesheet][href*='callout.module.css']").count()).toBe(0);
+}
+
+test("a node has the CSS of the files of the host that render it", async ({ page, errors }) => {
+  // A page of the host that renders a node from another file of the host,
+  // in a page of its own: callout.html.
+  await open(
+    page,
+    errors,
+    "callout",
+    async (page) => {
+      await page.locator("#host-root").getByText("From the host").waitFor();
+      expect(await style(page, "[data-testid=callout]", "border-top-color")).toBe("rgb(255, 0, 0)");
+    },
+    "callout.html",
+  );
+  // The dev server has loaded both files of the host now, and the page of
+  // `?view=node` imports both: a node has the CSS of the files that render
+  // it, whatever the server and the page loaded. Then `?view=switch`, which
+  // renders the callout first, with its stylesheet, and leaves it: as a story
+  // has in Storybook's canvas after the story before it.
+  await open(page, errors, "node", expectGreetingStylesheets);
+  const host = await open(page, errors, "switch", expectGreetingStylesheets);
+  expect(host.__hostCalloutLinked).toBe(true);
+});
+
+test("leaves a file of the app out of `files`, with a warning", async ({ page, errors }) => {
+  // What the page asks for the route of a node: see styles.ts. Only a file
+  // of the host is the host's to say. The server answers for a file it has
+  // loaded, so a page loads the host's first.
+  await open(page, errors, "node", expectGreetingStylesheets);
+  const ask = async (file: string) => {
+    const response = await fetch(
+      `${site!.url}@vitest-plugin-rsc/next-stylesheets?entry=${encodeURIComponent(
+        "(vitest-plugin-rsc)/",
+      )}&inline=true&file=${encodeURIComponent(file)}`,
+    );
+    expect(response.status).toBe(200);
+    return (await response.json()) as Record<string, unknown[]>;
+  };
+  expect(await ask("app/components/greeting.tsx")).toEqual({ "vitest-plugin-rsc/component": [] });
+  // The warning comes over the pipe of the server, after the answer can.
+  await expect.poll(() => site!.output()).toContain("greeting.tsx, which is neither");
+  expect((await ask("host/greeting.tsx"))["vitest-plugin-rsc/component"]).not.toEqual([]);
 });
 
 test('runs a file of the host with "use client" in the browser layer', async ({ page, errors }) => {

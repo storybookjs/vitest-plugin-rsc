@@ -591,7 +591,10 @@ async function handle(
     // and decides so itself: this only keeps CSS it would not use out of the
     // list.
     const inline = !isRSCRequestHeader(headers.get(RSC_HEADER) ?? undefined);
-    setStylesheets(await registry.loadStylesheets(entry, inline));
+    // The route of a node has the stylesheets of the files of the host that
+    // render the node: `files` of `renderServer()`.
+    const files = component ? (opened?.node?.files ?? []) : [];
+    setStylesheets(await registry.loadStylesheets(entry, inline, files));
 
     const { handler } = (await registry.loadAppPage(entry)) as { handler: RequestHandler };
     // Whoever routes a request to the not-found page sets its status, also
