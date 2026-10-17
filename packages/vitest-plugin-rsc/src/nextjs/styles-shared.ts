@@ -10,9 +10,10 @@ export const builtStylesheetsFile = "vitest-plugin-rsc/next-stylesheets.json";
  * Where the dev server answers the page with stylesheets, as JSON. For a
  * route: `?entry=<name of its modules>&inline=<true|false>`, with
  * `Stylesheets`, and a `file=<path>` for each file of the host that renders
- * the node of the route, in their order: see `hostFiles` in registry.ts. For
- * a file of the host with `"use client"`: `?url=<its URL in the browser
- * layer>`, with the URLs of its stylesheets.
+ * the node of the route, in their order, absolute or from the root of the
+ * project: see `nodeFiles` in registry.ts. For a file of the host with
+ * `"use client"`: `?url=<its URL in the browser layer>`, with the URLs of
+ * its stylesheets.
  */
 export const stylesheetsPath = "/@vitest-plugin-rsc/next-stylesheets";
 

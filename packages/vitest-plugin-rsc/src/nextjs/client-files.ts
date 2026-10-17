@@ -49,23 +49,10 @@ export type ClientFilesOptions = {
 };
 
 /**
- * What the module of the rsc layer for a file of the host starts with: the
- * file says that it loaded, see `hostFiles` in registry.ts. On the first
- * line, in front of the code, so that the lines of the file stay where they
- * are.
- */
-export function loadedHostFileCode(file: string, internal: string): string {
-  return (
-    `import { loadedHostFile as __vitestPluginRscLoadedHostFile } from ${JSON.stringify(internal)}; ` +
-    `__vitestPluginRscLoadedHostFile(${JSON.stringify(file)}); `
-  );
-}
-
-/**
  * What the module of the rsc layer for a file of the host with `"use client"`
- * starts with, after `loadedHostFileCode()`: it loads the file in the browser
- * layer, at `url`, see client-graph.ts. In front of the reference module,
- * which has none of the code of the file.
+ * starts with: it loads the file in the browser layer, at `url`, see
+ * client-graph.ts. In front of the reference module, which has none of the
+ * code of the file.
  */
 export function loadClientFileCode(url: string, internal: string): string {
   return (
@@ -173,14 +160,10 @@ export function clientFiles(options: ClientFilesOptions): Plugin[] {
       name: "vitest-plugin-rsc:next-load-client-files",
       enforce: "post",
       transform(code, id) {
-        if (this.environment.name !== rsc) return;
-        const file = hostFileOf(id);
-        if (!file) return;
+        if (this.environment.name !== rsc || !hostFileOf(id)) return;
         const reference = clientReferenceOf(id, this.environment.getTopLevelConfig());
-        const prefix =
-          loadedHostFileCode(normalizePath(file), internal) +
-          (reference ? loadClientFileCode(reference.importId, internal) : "");
-        return { code: prefix + code, map: null };
+        if (!reference) return;
+        return { code: loadClientFileCode(reference.importId, internal) + code, map: null };
       },
     },
   ];

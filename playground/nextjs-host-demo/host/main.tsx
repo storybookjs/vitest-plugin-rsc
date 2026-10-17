@@ -22,6 +22,9 @@ await show(async () => {
     view === "node"
       ? await renderServer(<Greeting name="the host" />, {
           container: document.getElementById("host-root")!,
+          // The files of the host that render the node, for their CSS: what
+          // a test file is to Vitest, which fills this in itself.
+          files: ["host/main.tsx"],
         })
       : await renderServer({ url: "/" });
   state.__hostResponse = { status: response.status, url: response.url };
