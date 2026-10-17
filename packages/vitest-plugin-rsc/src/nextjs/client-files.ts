@@ -46,9 +46,10 @@ export function fileOfModule(id: string): string | undefined {
 
 /**
  * What Vite RSC made of a module of the rsc layer with `"use client"`: a
- * client reference, with the URL that loads the file in the browser layer.
+ * client reference, with the URL that loads the file in the browser layer,
+ * and the key that each reference of the module has in its `$$id`.
  */
-export type ClientReference = { importId: string };
+export type ClientReference = { importId: string; referenceKey: string };
 
 export type ClientFilesOptions = {
   /** The Vite environment of the rsc layer, which the host shares, and of the browser layer. */
@@ -67,14 +68,17 @@ export type ClientFilesOptions = {
 
 /**
  * What the module of the rsc layer for a file of the host with `"use client"`
- * starts with: it loads the file in the browser layer, at `url`, see
- * client-graph.ts. In front of the reference module, which has none of the
- * code of the file.
+ * starts with: it loads the file in the browser layer, at the URL of the
+ * reference, as the evaluation of its key, see client-graph.ts. In front of
+ * the reference module, which has none of the code of the file.
  */
-export function loadClientFileCode(url: string, internal: string): string {
+export function loadClientFileCode(
+  { importId, referenceKey }: ClientReference,
+  internal: string,
+): string {
   return (
     `import { loadClientFile as __vitestPluginRscLoadClientFile } from ${JSON.stringify(internal)}; ` +
-    `await __vitestPluginRscLoadClientFile(${JSON.stringify(url)}); `
+    `await __vitestPluginRscLoadClientFile(${JSON.stringify(importId)}, ${JSON.stringify(referenceKey)}); `
   );
 }
 
@@ -186,7 +190,7 @@ export function clientFiles(options: ClientFilesOptions): Plugin[] {
         const config = this.environment.getTopLevelConfig();
         const reference = clientReferenceOf(id, config) ?? clientReferenceOf(file, config);
         if (!reference) return;
-        return { code: loadClientFileCode(reference.importId, internal) + code, map: null };
+        return { code: loadClientFileCode(reference, internal) + code, map: null };
       },
     },
   ];

@@ -56,13 +56,20 @@ async function open(
     timeout: 60_000,
   });
   const host = await page.evaluate(() => {
-    const { __hostState, __hostError, __hostResponse, __hostReports, __hostCalloutLinked } =
-      window as HostWindow;
+    const {
+      __hostState,
+      __hostError,
+      __hostResponse,
+      __hostReports,
+      __hostModule,
+      __hostCalloutLinked,
+    } = window as HostWindow;
     return {
       __hostState,
       __hostError: __hostError === undefined ? undefined : String(__hostError),
       __hostResponse,
       __hostReports,
+      __hostModule,
       __hostCalloutLinked,
     };
   });
@@ -205,4 +212,76 @@ test('runs a file with "use client" of a package of the host in the browser laye
     { from: "host-package/client-greeting.js", react: nextReact },
     { from: "host-package/client-story.js", react: nextReact },
   ]);
+});
+
+test('gives the host the exports of a file of the host with "use client"', async ({
+  page,
+  errors,
+}) => {
+  const host = await open(page, errors, "module", async (page) => {
+    // The component of the file, which the host rendered in its container,
+    // with the renderer of another such file.
+    await page.locator("#host-root").getByRole("button", { name: "Clicks: 0" }).click();
+    await page.locator("#host-root").getByRole("button", { name: "Clicks: 1" }).waitFor();
+    // Its CSS module, linked once: as the file loaded, and not again by the
+    // import of the file after it.
+    const badge = page.locator("link[rel=stylesheet][href*='badge.module.css']");
+    await badge.waitFor({ state: "attached" });
+    expect(await badge.count()).toBe(1);
+    expect(await style(page, "#host-root button", "color")).toBe("rgb(0, 128, 0)");
+  });
+  expect(host.__hostModule).toEqual({
+    reference: true,
+    same: true,
+    again: true,
+    kept: true,
+    plain: true,
+    app: expect.stringContaining(
+      '/app/components/counter.tsx has "use client" and is not a file of the host',
+    ),
+  });
+  expect(host.__hostModule?.app).toContain("host.files of vitestPluginNext()");
+  // Each file ran as its module loaded, with Next's React for the browser:
+  // the file of the stories again for its second import, and never for a
+  // call of loadClientModule().
+  expect(host.__hostReports).toEqual([
+    { from: "host/client-module.tsx", react: nextReact },
+    { from: "host/render-client.tsx", react: nextReact },
+    { from: "host/client-module.tsx", react: nextReact },
+  ]);
+});
+
+test('keeps the Server Actions of a node that is open while a file with "use client" loads', async ({
+  page,
+  errors,
+}) => {
+  const host = await open(page, errors, "action", async (page) => {
+    // The action posts to the page of the node, which is still open: the
+    // file that loaded after it did not take that over.
+    await page.locator("#host-root").getByRole("button", { name: "Likes: 0" }).click();
+    await page.locator("#host-root").getByRole("button", { name: "Likes: 1" }).waitFor();
+  });
+  expect(host.__hostReports).toEqual([{ from: "host/client-module.tsx", react: nextReact }]);
+});
+
+test('keeps the CSS of a file with "use client" that loaded during a page', async ({
+  page,
+  errors,
+}) => {
+  await open(page, errors, "after-page", async (page) => {
+    // The tab's, not the page's: two pages came and went, and the link is
+    // there once.
+    await page.locator("#host-root").getByRole("button", { name: "Clicks: 0" }).waitFor();
+    const badge = page.locator("link[rel=stylesheet][href*='badge.module.css']");
+    expect(await badge.count()).toBe(1);
+    expect(await style(page, "#host-root button", "color")).toBe("rgb(0, 128, 0)");
+    // No page is open: a Server Action says so, and does not post to the
+    // page that was left.
+    await page.locator("#host-root").getByRole("button", { name: "Likes: 0" }).click();
+    await page
+      .locator("#host-root")
+      .getByRole("alert")
+      .getByText("a component called the Server Action like, and no page of the app is open")
+      .waitFor();
+  });
 });

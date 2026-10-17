@@ -24,15 +24,22 @@ const proxy = "/@id/__x00__virtual:vite-rsc/";
 const references = new Map([
   ["/app/frame.test.tsx", "/app/frame.test.tsx"],
   ["/vitest.setup.tsx", "/vitest.setup.tsx"],
+  ["/app/built.test.tsx", "/app/built.test.tsx"],
   [
     `${framework}/client-story.js`,
     `${proxy}client-in-server-package-proxy/${encodeURIComponent(`${framework}/client-story.js`)}`,
   ],
   [`${framework}/by-name.js?v=1a2b3c4d`, `${proxy}client-package-proxy/framework/by-name`],
 ]);
+// The key that the references of a module have in their `$$id`: with a dev
+// server the URL, in a build a hash of the file. This file has one of a
+// build, by the URL of the others: a build's `importId` is the file's path,
+// which makes no difference here.
+const builtKeys = new Map([["/app/built.test.tsx", "5f3a9c1e"]]);
 const clientReferenceOf = (id: string) => {
   const importId = references.get(id);
-  return importId === undefined ? undefined : { importId };
+  if (importId === undefined) return;
+  return { importId, referenceKey: builtKeys.get(id) ?? importId };
 };
 const [plugin, loaders] = clientFiles({
   environments: { rsc: "client", browser: "react_client" },
@@ -88,12 +95,17 @@ test("has the module of a file with `use client` of the host load the file in th
   // In front of the reference module, at the URL of the file in the browser layer.
   expect(loader?.code).toBe(
     `import { loadClientFile as __vitestPluginRscLoadClientFile } from "/plugin/nextjs/internal.js"; ` +
-      `await __vitestPluginRscLoadClientFile("/app/frame.test.tsx"); ` +
+      `await __vitestPluginRscLoadClientFile("/app/frame.test.tsx", "/app/frame.test.tsx"); ` +
       reference,
   );
   // A setup file with the directive too.
   expect(transformLoader.call(context("client"), reference, "/vitest.setup.tsx")?.code).toContain(
-    `__vitestPluginRscLoadClientFile("/vitest.setup.tsx")`,
+    `__vitestPluginRscLoadClientFile("/vitest.setup.tsx", "/vitest.setup.tsx")`,
+  );
+  // With the key of the references, which the file's evaluation is recorded
+  // by, for loadClientModule(): not always its URL.
+  expect(transformLoader.call(context("client"), reference, "/app/built.test.tsx")?.code).toContain(
+    `__vitestPluginRscLoadClientFile("/app/built.test.tsx", "5f3a9c1e")`,
   );
 });
 
@@ -129,14 +141,16 @@ test("takes the id of a module for its file, without the version of a dependency
 test("loads a file of the host in `node_modules` that has Vite's version query", async () => {
   const rsc = context("client");
   const load = (id: string) => transformLoader.call(rsc, reference, id)?.code;
+  const storyProxy = references.get(`${framework}/client-story.js`);
+  const byName = `${proxy}client-package-proxy/framework/by-name`;
 
   // By the reference that Vite RSC has by the file.
   expect(load(`${framework}/client-story.js?v=1a2b3c4d`)).toContain(
-    `__vitestPluginRscLoadClientFile("${references.get(`${framework}/client-story.js`)}")`,
+    `__vitestPluginRscLoadClientFile("${storyProxy}", "${storyProxy}")`,
   );
   // And by the one it has by the id.
   expect(load(`${framework}/by-name.js?v=1a2b3c4d`)).toContain(
-    `__vitestPluginRscLoadClientFile("${proxy}client-package-proxy/framework/by-name")`,
+    `__vitestPluginRscLoadClientFile("${byName}", "${byName}")`,
   );
   // Not another module of the file.
   for (const query of ["raw", "v=1a2b3c4d&raw"]) {

@@ -5,6 +5,21 @@ export type HostWindow = {
   __hostError?: unknown;
   __hostResponse?: { status: number; url: string };
   __hostReports?: unknown[];
+  /** What `loadClientModule()` gave `?view=module`. */
+  __hostModule?: {
+    /** Whether the rsc layer's module of the file has references, not the components. */
+    reference: boolean;
+    /** Whether a second call gave the same exports. */
+    same: boolean;
+    /** Whether the module of another import of the file gave other exports. */
+    again: boolean;
+    /** Whether the first module kept its own after that. */
+    kept: boolean;
+    /** Whether a module without the directive came back as it is. */
+    plain: boolean;
+    /** What it did for a file of the app: its error. */
+    app: string;
+  };
   /** Whether the callout had its stylesheet, before `?view=switch` left it. */
   __hostCalloutLinked?: boolean;
 };

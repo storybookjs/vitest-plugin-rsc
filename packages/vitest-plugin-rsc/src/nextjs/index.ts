@@ -2,10 +2,13 @@ import "./globals.ts";
 import { createElement, type JSXElementConstructor, type ReactNode } from "react";
 import { resetAsyncLocalStorage } from "../async-local-storage.ts";
 import { checkFetchedModules, createEnvironmentRunner, environmentModule } from "../utils.ts";
+import { callServerWithoutPage } from "./client-graph.ts";
 import { loadDocument, unloadDocument } from "./document.ts";
 import { recordListeners, recordMessageChannels } from "./leftovers.ts";
 import { PageStore } from "./page-store.ts";
 import { registry, type Opened } from "./registry.ts";
+
+export { loadClientModule } from "./client-graph.ts";
 
 // The server's platform (globals.ts) has to be there before a module of Next's
 // server loads, so the layers load from here on, in order: rsc, then ssr.
@@ -959,6 +962,8 @@ function leavePage(): Promise<void> {
           // What the test opened goes with its page: the route of a node,
           // and a pathname without the proxy.
           registry.opened = undefined;
+          // A Server Action has no page to post to until the next one starts.
+          globalThis.__viteRscCallServer = callServerWithoutPage;
           resetAsyncLocalStorage();
         }
       }
