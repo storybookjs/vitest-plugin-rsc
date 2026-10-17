@@ -18,12 +18,14 @@ import {
 import type { ComponentRoute, NextLayer, NextProject, NextRoute, RouteSegment } from "./project.ts";
 import { clientReferencesId } from "../built-layers.ts";
 import { cssBuildDirPlaceholder, toBuildDir } from "../static-build.ts";
+import { answerPage } from "../websocket-bridge.ts";
 import {
   builtStylesheetsFile,
   componentPagePath,
-  stylesheetsPath,
+  stylesheetsEvent,
   type BuiltStylesheets,
   type Stylesheets,
+  type StylesheetsQuestion,
 } from "./styles-shared.ts";
 
 // The CSS of the app, the way Next brings it to a page: as the stylesheets of
@@ -513,37 +515,7 @@ export function createStyles(options: StylesOptions): Styles {
     response: ServerResponse,
   ): Promise<boolean> {
     const { assetPath } = getProject();
-    const { pathname, searchParams } = new URL(request.url!, "http://n");
-    // What the page asks the plugin: the stylesheets of a route, or of a
-    // client file. See `stylesheetsPath` in styles-shared.ts.
-    if (pathname === stylesheetsPath) {
-      const url = searchParams.get("url");
-      const entry = searchParams.get("entry");
-      // For the route of a node: the files of the host that render it.
-      const files = searchParams.getAll("file").map(fileOf);
-      if (!url && !entry) {
-        response.statusCode = 400;
-        response.end("vitest-plugin-rsc: the stylesheets of what? Give `url` or `entry`.");
-        return true;
-      }
-      if (url && entry) {
-        response.statusCode = 400;
-        response.end(
-          "vitest-plugin-rsc: the stylesheets of what? Give `url` or `entry`, not both.",
-        );
-        return true;
-      }
-      const stylesheets = url
-        ? await clientStylesheetsOf(server, url)
-        : await stylesheetsOf(server, files, entry!, searchParams.get("inline") === "true");
-      for (const [name, value] of Object.entries(server.config.server.headers ?? {})) {
-        if (value !== undefined) response.setHeader(name, value);
-      }
-      response.setHeader("content-type", "application/json");
-      response.setHeader("cache-control", "no-cache");
-      response.end(JSON.stringify(stylesheets));
-      return true;
-    }
+    const { pathname } = new URL(request.url!, "http://n");
     if (!pathname.startsWith(`${assetPath}${directory}/`)) return false;
     let path: string;
     try {
@@ -576,6 +548,13 @@ export function createStyles(options: StylesOptions): Styles {
       name: "vitest-plugin-rsc:next-styles",
       enforce: "pre",
       configureServer(vite) {
+        // What the page asks the plugin: the stylesheets of a route, or of a
+        // client file. See `stylesheetsEvent` in styles-shared.ts.
+        answerPage(vite, stylesheetsEvent, (question: StylesheetsQuestion) =>
+          "url" in question
+            ? clientStylesheetsOf(vite, question.url)
+            : stylesheetsOf(vite, question.files.map(fileOf), question.entry, question.inline),
+        );
         // A load that failed may not after a change. One that did is
         // reloaded when Vite invalidates its module.
         vite.watcher.on("all", () => {

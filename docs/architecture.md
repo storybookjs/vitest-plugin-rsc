@@ -112,6 +112,8 @@ server.ws.on("connection", (socket) => {
 
 That is the key bridge. The test is rendering a Server Component, but when React needs a Client Component, Vite resolves it with the browser/client conditions it would have in the app.
 
+A plugin answers the page over the same socket with `answerPage()` (`src/websocket-bridge.ts`), and the page asks with `askDevServer()` (`src/utils.ts`): the Next.js plugin does so for the stylesheets of a route, which every page load asks for. A round trip of the socket is a fraction of one of HTTP.
+
 A module in `react_client` that Vite imports its client (`/@vite/client`) into gets the page's own instance of it, not a copy with a second HMR websocket (`src/vite-client.ts`).
 
 With Next.js every `renderServer()` is a page load, with a new runner for the browser layer: its modules are evaluated again. Vite's runner sends an invoke for every import of every module, also for a module it already has. It sends them one after the other, each once the module before it has run, which is hundreds of round trips in a row for one page. So the page fetches the modules itself (`src/utils.ts`). With a module, the server says what that module imports, and the page asks for all of those at once. It keeps the answers for the runner, and for the runner of the next page, and compiles a module once. The server layer of a Next.js app, which a tab loads once, gets its modules the same way.

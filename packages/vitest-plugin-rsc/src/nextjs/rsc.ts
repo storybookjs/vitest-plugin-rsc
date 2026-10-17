@@ -9,8 +9,13 @@ import serverReferences from "virtual:vitest-plugin-rsc/server-references";
 import type { FlightAdapters } from "./flight.ts";
 import { buildDirectory, builtStylesheets } from "./built-stylesheets.ts";
 import { actionModulePrefix, registry } from "./registry.ts";
-import { fetchJson } from "../utils.ts";
-import { builtStylesheetsOf, stylesheetsPath, type Stylesheets } from "./styles-shared.ts";
+import { askDevServer } from "../utils.ts";
+import {
+  builtStylesheetsOf,
+  stylesheetsEvent,
+  type Stylesheets,
+  type StylesheetsQuestion,
+} from "./styles-shared.ts";
 
 // The rsc layer: Server Components, Server Actions, route handlers and the
 // Flight encoder.
@@ -126,7 +131,11 @@ if (directory) {
     builtStylesheetsOf(await builtStylesheets(), entry, directory, files, missing);
 } else {
   registry.loadStylesheets = (entry, inline, files) =>
-    fetchJson<Stylesheets>(stylesheetsPath, { entry, inline: String(inline), file: files });
+    askDevServer<Stylesheets>(stylesheetsEvent, {
+      entry,
+      inline,
+      files,
+    } satisfies StylesheetsQuestion);
 }
 
 /** The page module of the route of a node: see `loadNodeEntry()` in project/entries.ts. */

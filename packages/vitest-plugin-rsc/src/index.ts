@@ -5,12 +5,14 @@ import { dependencyTransformPlugin } from "./dependency-transforms.ts";
 import { createRunnerEnvironmentPlugins } from "./runner-environment.ts";
 import { staticBuild } from "./static-build.ts";
 import { pageViteClientPlugin } from "./vite-client.ts";
+import {
+  answerEvent,
+  invokeEvent,
+  versionEvent,
+  webSocketInfoPath,
+  webSocketQuery,
+} from "./websocket-bridge.ts";
 
-const reactClientWebSocketInfoPath = "/@vite/react-client-runner-websocket";
-const reactClientWebSocketQuery = "vitest-plugin-rsc-react-client";
-const reactClientWebSocketInvokeEvent = "vitest-plugin-rsc:react-client:invoke";
-const reactClientWebSocketInvokeResultEvent = "vitest-plugin-rsc:react-client:invoke-result";
-const reactClientWebSocketVersionEvent = "vitest-plugin-rsc:react-client:version";
 type ReactClientInvokePayload = Parameters<
   ViteDevServer["environments"][string]["hot"]["handleInvoke"]
 >[0];
@@ -80,7 +82,7 @@ export function vitestPluginRSC(): Plugin[] {
 
         server.ws.on("connection", (socket, req) => {
           const url = new URL(req.url ?? "/", "https://any.local");
-          if (url.searchParams.get(reactClientWebSocketQuery) !== "1") {
+          if (url.searchParams.get(webSocketQuery) !== "1") {
             return;
           }
 
@@ -102,7 +104,7 @@ export function vitestPluginRSC(): Plugin[] {
             socket.send(
               JSON.stringify({
                 type: "custom",
-                event: reactClientWebSocketInvokeResultEvent,
+                event: answerEvent,
                 data: {
                   id: invoke.id,
                   result,
@@ -114,7 +116,7 @@ export function vitestPluginRSC(): Plugin[] {
 
         server.middlewares.use((req, res, next) => {
           const url = new URL(req.url ?? "/", "https://any.local");
-          if (url.pathname === reactClientWebSocketInfoPath) {
+          if (url.pathname === webSocketInfoPath) {
             res.setHeader("Content-Type", "application/json");
             res.end(JSON.stringify(getReactClientWebSocketInfo(server)));
             return;
@@ -237,10 +239,10 @@ function parseWebSocketInvoke(raw: unknown): ReactClientWebSocketInvoke | undefi
       event?: string;
       data?: Partial<ReactClientWebSocketInvoke>;
     };
-    const isVersion = message.event === reactClientWebSocketVersionEvent;
+    const isVersion = message.event === versionEvent;
     if (
       message.type !== "custom" ||
-      (message.event !== reactClientWebSocketInvokeEvent && !isVersion) ||
+      (message.event !== invokeEvent && !isVersion) ||
       typeof message.data?.id !== "string" ||
       (!message.data.payload && !isVersion)
     ) {

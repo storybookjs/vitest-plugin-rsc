@@ -2,10 +2,10 @@ import type { ModuleRunner } from "vite/module-runner";
 import { clientReferencesId } from "../built-layers.ts";
 import { isHostModule } from "../host-module.ts";
 import {
+  askDevServer,
   checkFetchedModules,
   createEnvironmentRunner,
   environmentModule,
-  fetchJson,
   takeFetchedModules,
 } from "../utils.ts";
 import { buildDirectory, builtStylesheets } from "./built-stylesheets.ts";
@@ -14,7 +14,8 @@ import { registry } from "./registry.ts";
 import {
   builtClientStylesheetsOf,
   graphStylesheetAttribute,
-  stylesheetsPath,
+  stylesheetsEvent,
+  type StylesheetsQuestion,
 } from "./styles-shared.ts";
 
 // A file with `"use client"` is a client boundary: code of the browser layer,
@@ -69,7 +70,9 @@ const browserRequire = (id: string) => registry.loadBrowserModule(id);
 // URL, see styles.ts. A static build has them in a file, by the path of the
 // file from the root of the project.
 async function stylesheetsOf(key: string, builtFile: string | undefined): Promise<string[]> {
-  if (!buildDirectory) return fetchJson<string[]>(stylesheetsPath, { url: key });
+  if (!buildDirectory) {
+    return askDevServer<string[]>(stylesheetsEvent, { url: key } satisfies StylesheetsQuestion);
+  }
   if (builtFile === undefined) return [];
   return builtClientStylesheetsOf(await builtStylesheets(), builtFile, buildDirectory);
 }
