@@ -1,7 +1,8 @@
 import path from "node:path";
 import { hasDirective } from "@vitejs/plugin-rsc/transforms";
 import { normalizePath, parseAstAsync, type Plugin, type ResolvedConfig } from "vite";
-import { hostModulePrefix } from "../host-module.ts";
+import { builtHostModuleUrl, hostModulePrefix } from "../host-module.ts";
+import { builtHostFileKey } from "./styles.ts";
 
 // A file of the host is a test file or a setup file of Vitest. One with
 // `"use client"` is a client boundary, as a file with that directive is in
@@ -46,10 +47,11 @@ export function fileOfModule(id: string): string | undefined {
 
 /**
  * What Vite RSC made of a module of the rsc layer with `"use client"`: a
- * client reference, with the URL that loads the file in the browser layer,
- * and the key that each reference of the module has in its `$$id`.
+ * client reference, with the key that each reference of the module has in
+ * its `$$id`. With a dev server that is the URL of the file in the browser
+ * layer, in a build a hash of the file.
  */
-export type ClientReference = { importId: string; referenceKey: string };
+export type ClientReference = { referenceKey: string };
 
 export type ClientFilesOptions = {
   /** The Vite environment of the rsc layer, which the host shares, and of the browser layer. */
@@ -68,17 +70,22 @@ export type ClientFilesOptions = {
 
 /**
  * What the module of the rsc layer for a file of the host with `"use client"`
- * starts with: it loads the file in the browser layer, at the URL of the
- * reference, as the evaluation of its key, see client-graph.ts. In front of
- * the reference module, which has none of the code of the file.
+ * starts with: it loads the file in the browser layer by its reference key,
+ * see client-graph.ts. In front of the reference module, which has none of
+ * the code of the file. With a dev server the key is the URL of the file in
+ * the browser layer. In a build it is a hash, and the line also has the key
+ * of the file's stylesheets in the build, `builtFile`: its path from the
+ * root of the project. Not its id, which is a path of the machine.
  */
 export function loadClientFileCode(
-  { importId, referenceKey }: ClientReference,
+  { referenceKey }: ClientReference,
   internal: string,
+  builtFile?: string,
 ): string {
+  const args = [referenceKey, ...(builtFile === undefined ? [] : [builtFile])];
   return (
     `import { loadClientFile as __vitestPluginRscLoadClientFile } from ${JSON.stringify(internal)}; ` +
-    `await __vitestPluginRscLoadClientFile(${JSON.stringify(importId)}, ${JSON.stringify(referenceKey)}); `
+    `await __vitestPluginRscLoadClientFile(${args.map((arg) => JSON.stringify(arg)).join(", ")}); `
   );
 }
 
@@ -114,7 +121,7 @@ export function hostModuleCode(
  * layer, and the error for a file with `"use client"` that mocks a module,
  * before Vite RSC drops the code of the file. After Vite RSC, which made
  * the file a reference: the line in front of that module, which loads the
- * file in the browser layer, at the URL that the reference knows. Not a
+ * file in the browser layer by the key of the reference. Not a
  * file without the directive: a test file without it renders with
  * `renderServer()`, in a page with a graph of its own.
  */
@@ -145,7 +152,11 @@ export function clientFiles(options: ClientFilesOptions): Plugin[] {
           const { root } = this.environment.config;
           if (!importer || importer === path.posix.join(normalizePath(root), "index.html")) return;
           if (isHostPackage(source) || source === testingLibrary.specifier) {
-            return hostModulePrefix + source;
+            // A build has the page's own module in the host's build, which
+            // the layer imports by its URL, as it is: see ../host-module.ts.
+            return this.environment.mode === "build"
+              ? { id: builtHostModuleUrl(source), external: "absolute" as const }
+              : hostModulePrefix + source;
           }
         },
       },
@@ -190,7 +201,9 @@ export function clientFiles(options: ClientFilesOptions): Plugin[] {
         const config = this.environment.getTopLevelConfig();
         const reference = clientReferenceOf(id, config) ?? clientReferenceOf(file, config);
         if (!reference) return;
-        return { code: loadClientFileCode(reference, internal) + code, map: null };
+        const builtFile =
+          this.environment.mode === "build" ? builtHostFileKey(file, config.root) : undefined;
+        return { code: loadClientFileCode(reference, internal, builtFile) + code, map: null };
       },
     },
   ];

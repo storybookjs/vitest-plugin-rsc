@@ -16,7 +16,8 @@ import {
   type ViteDevServer,
 } from "vite";
 import type { ComponentRoute, NextLayer, NextProject, NextRoute, RouteSegment } from "./project.ts";
-import { clientReferencesId, cssBuildDirPlaceholder, toBuildDir } from "../static-build.ts";
+import { clientReferencesId } from "../built-layers.ts";
+import { cssBuildDirPlaceholder, toBuildDir } from "../static-build.ts";
 import { answerPage } from "../websocket-bridge.ts";
 import {
   builtStylesheetsFile,
@@ -616,11 +617,29 @@ export function createStyles(options: StylesOptions): Styles {
 
 type Manager = NonNullable<ReturnType<typeof getPluginApi>>["manager"];
 
-// The real path of the root of the project. Vite has a module of a build by
-// the real path of its file, and the root as the config has it, which can be
-// a link, like `/tmp` on macOS.
-const realRootOf = (root: string) =>
-  fs.existsSync(root) ? normalizePath(fs.realpathSync(root)) : normalizePath(root);
+// The real path of the root of the project, once for a root. Vite has a
+// module of a build by the real path of its file, and the root as the config
+// has it, which can be a link, like `/tmp` on macOS.
+const realRoots = new Map<string, string>();
+function realRootOf(root: string): string {
+  let real = realRoots.get(root);
+  if (real === undefined) {
+    real = fs.existsSync(root) ? normalizePath(fs.realpathSync(root)) : normalizePath(root);
+    realRoots.set(root, real);
+  }
+  return real;
+}
+
+/**
+ * The key of a file of the host in `hostFiles` of `BuiltStylesheets`, by the
+ * id of its module in a build: its path from the root of the project, the
+ * same on every machine. Nothing for a file on another drive of Windows,
+ * which has no way from the root: its path is the machine's.
+ */
+export function builtHostFileKey(id: string, root: string): string | undefined {
+  const file = normalizePath(path.relative(realRootOf(normalizePath(root)), id));
+  return path.isAbsolute(file) ? undefined : file;
+}
 
 // What Vite's CSS plugin leaves in the CSS of a build for a file it names,
 // until the file has its name: one the build emits, and one of `public/`.
@@ -794,15 +813,11 @@ function createBuiltStylesheets(
         // against `host.files`, which are from the root as the config has it.
         const project = getProject();
         const root = normalizePath(project.root);
-        const realRoot = realRootOf(root);
         const { pageExtensions = [] } = project.config as { pageExtensions?: string[] };
         for (const id of this.getModuleIds()) {
           if (id.startsWith("\0") || id.includes("?") || !isCode(id, pageExtensions)) continue;
-          const file = normalizePath(path.relative(realRoot, id));
-          // On another drive of Windows there is no way from the root, and
-          // the path is the machine's.
-          if (path.isAbsolute(file)) continue;
-          if (!options.isHostFile(path.posix.join(root, file))) continue;
+          const file = builtHostFileKey(id, root);
+          if (file === undefined || !options.isHostFile(path.posix.join(root, file))) continue;
           hostFiles.set(file, reachIn(imports, [id], manager.clientReferenceMetaMap));
         }
         return;

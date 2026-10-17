@@ -2,8 +2,8 @@ import { afterEach, beforeEach, expect, test, vi } from "vitest";
 
 // The tab's graph of the browser layer, without a browser: a module runner
 // whose `import()` evaluates a file into a new exports object, the
-// stylesheets of the dev server, and a document with a `<head>`. Each test
-// gets a client-graph.ts of its own, as a tab does.
+// stylesheets of the dev server, or of a static build, and a document with a
+// `<head>`. Each test gets a client-graph.ts of its own, as a tab does.
 
 type FakeLink = {
   rel: string;
@@ -20,14 +20,27 @@ const tab = vi.hoisted(() => ({
   evaluated: [] as string[],
   /** The stylesheets of a file, by its URL. */
   stylesheets: new Map<string, string[]>(),
-  /** What the static build made of the layers: nothing with a dev server. */
-  builtLayers: undefined as object | undefined,
+  /** The directory of a static build: nothing with a dev server. */
+  buildDirectory: undefined as string | undefined,
+  /** The client references of the build, by key: the URL of the file each evaluates. */
+  references: {} as Record<string, string>,
 }));
 
-vi.mock("virtual:vitest-plugin-rsc/layers", () => ({
-  get default() {
-    return tab.builtLayers;
+// A build's stylesheets, by the path of a file of the host from the root.
+const built = {
+  assetPath: "/_next/",
+  routes: {},
+  hostFiles: {
+    "host/badge.tsx": ["_next/static/css/badge-1a2b3c4d.css"],
+    "host/plain.tsx": [],
   },
+};
+
+vi.mock("./built-stylesheets.ts", () => ({
+  get buildDirectory() {
+    return tab.buildDirectory;
+  },
+  builtStylesheets: async () => built,
 }));
 vi.mock("../utils.ts", () => ({
   checkFetchedModules: async () => {},
@@ -40,10 +53,24 @@ vi.mock("../utils.ts", () => ({
       invalidateModule() {},
     },
     async import(url: string) {
+      // The list of a build's references, which evaluates a file by its key.
+      if (url === "/built/references.js") {
+        const evaluate = (file: string) => async () => {
+          tab.evaluated.push(file);
+          return { url: file, evaluation: tab.evaluated.length };
+        };
+        return {
+          default: Object.fromEntries(
+            Object.entries(tab.references).map(([key, file]) => [key, evaluate(file)]),
+          ),
+        };
+      }
       tab.evaluated.push(url);
       return { url, evaluation: tab.evaluated.length };
     },
   }),
+  environmentModule: (_environment: string, id: string) =>
+    id === "virtual:vitest-plugin-rsc/client-references" ? "/built/references.js" : id,
 }));
 
 const head = new Set<FakeLink>();
@@ -56,7 +83,8 @@ beforeEach(() => {
     ["/host/badge.tsx", ["/_next/static/css/badge.css"]],
     ["/host/card.tsx", ["/_next/static/css/badge.css", "/_next/static/css/card.css"]],
   ]);
-  tab.builtLayers = undefined;
+  tab.buildDirectory = undefined;
+  tab.references = {};
   head.clear();
   vi.stubGlobal("__viteRscCallServer", undefined);
   vi.stubGlobal("document", {
@@ -106,7 +134,7 @@ const referenceModule = (key: string, ...names: string[]): object =>
 // reference module evaluates it in the graph as it loads.
 async function importHostFile(key: string, ...names: string[]) {
   const { loadClientFile } = await graph();
-  await loadClientFile(key, key);
+  await loadClientFile(key);
   return referenceModule(key, ...names);
 }
 
@@ -174,25 +202,49 @@ test("rejects for a file with `use client` that is not the host's", async () => 
   await expect(loadClientModule(reference)).rejects.toThrow(
     '/app/components/counter.tsx has "use client" and is not a file of the host',
   );
+  // Which says what the key is, as a build's is a hash.
+  await expect(loadClientModule(reference)).rejects.toThrow(
+    "is the reference key that Vite RSC gives the file: its URL with a dev server, and in a " +
+      "static build a hash of the file",
+  );
   await expect(loadClientModule(reference)).rejects.toThrow("host.files of vitestPluginNext()");
   // Nothing is kept of it: once the file has been evaluated, the module has it.
-  await loadClientFile("/app/components/counter.tsx", "/app/components/counter.tsx");
+  await loadClientFile("/app/components/counter.tsx");
   expect(await loadClientModule(reference)).toEqual({
     url: "/app/components/counter.tsx",
     evaluation: 1,
   });
 });
 
-test("says that a static build does not load a file of the host yet", async () => {
-  tab.builtLayers = { react_client: {} };
-  const { loadClientFile } = await graph();
+// A static build has no dev server: the graph evaluates a file by its key,
+// from the list of the browser layer's references, and links the stylesheets
+// that the build has for it, by its path from the root of the project.
+test("loads a file of the host in a static build, by its key", async () => {
+  tab.buildDirectory = "https://site.test/docs/";
+  tab.references = {
+    "5f3a9c1e": "/vitest-plugin-rsc/react_client/assets/badge.js",
+    "7d2b4e6a": "/vitest-plugin-rsc/react_client/assets/plain.js",
+    "9c8e1f3b": "/vitest-plugin-rsc/react_client/assets/far.js",
+  };
+  const { loadClientFile, loadClientModule } = await graph();
 
-  // As the host imports the file: the module of a build has the key of a
-  // build, a hash.
-  await expect(loadClientFile("/host/badge.tsx", "5f3a9c1e")).rejects.toThrow(
-    'a static build does not load a file of the host with "use client" yet',
+  await loadClientFile("5f3a9c1e", "host/badge.tsx");
+
+  expect(tab.evaluated).toEqual(["/vitest-plugin-rsc/react_client/assets/badge.js"]);
+  expect(await loadClientModule(referenceModule("5f3a9c1e", "Badge"))).toEqual({
+    url: "/vitest-plugin-rsc/react_client/assets/badge.js",
+    evaluation: 1,
+  });
+  // A file of the build, wherever the build is served.
+  expect(links()).toEqual(["https://site.test/docs/_next/static/css/badge-1a2b3c4d.css"]);
+  // One without any, one with no path from the root, like a file on another
+  // drive, and a key the build has no reference for.
+  await loadClientFile("7d2b4e6a", "host/plain.tsx");
+  await loadClientFile("9c8e1f3b");
+  expect(links()).toHaveLength(1);
+  await expect(loadClientFile("0000", "host/badge.tsx")).rejects.toThrow(
+    'vitest-plugin-rsc: the build has no client reference "0000"',
   );
-  expect(tab.evaluated).toEqual([]);
 });
 
 test("has a Server Action say that it needs a page of the app, from the start", async () => {

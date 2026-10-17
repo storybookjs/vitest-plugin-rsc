@@ -29,3 +29,14 @@ declare module "virtual:vitest-plugin-rsc/server-references" {
   const serverReferences: Record<string, () => Promise<unknown>> | undefined;
   export default serverReferences;
 }
+
+declare module "virtual:vitest-plugin-rsc/host-modules" {
+  /**
+   * In a static build: how to load each module of the page that a layer of
+   * the module runner imports, by the URL it imports it by, from the host's
+   * build. Its default export is the module. Nothing with a dev server: see
+   * host-module.ts.
+   */
+  const hostModules: Record<string, () => Promise<unknown>> | undefined;
+  export default hostModules;
+}

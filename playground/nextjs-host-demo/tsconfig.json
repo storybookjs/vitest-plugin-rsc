@@ -13,7 +13,7 @@
     "resolveJsonModule": true,
     "isolatedModules": true,
     "jsx": "react-jsx",
-    "types": ["node"]
+    "types": ["node", "vite/client"]
   },
   "include": ["**/*.ts", "**/*.tsx"],
   "exclude": ["node_modules", "fixtures"]

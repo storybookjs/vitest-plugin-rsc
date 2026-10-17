@@ -32,14 +32,13 @@ const references = new Map([
   [`${framework}/by-name.js?v=1a2b3c4d`, `${proxy}client-package-proxy/framework/by-name`],
 ]);
 // The key that the references of a module have in their `$$id`: with a dev
-// server the URL, in a build a hash of the file. This file has one of a
-// build, by the URL of the others: a build's `importId` is the file's path,
-// which makes no difference here.
+// server the URL, in a build a hash of the file. This file has the key of a
+// build.
 const builtKeys = new Map([["/app/built.test.tsx", "5f3a9c1e"]]);
 const clientReferenceOf = (id: string) => {
-  const importId = references.get(id);
-  if (importId === undefined) return;
-  return { importId, referenceKey: builtKeys.get(id) ?? importId };
+  const url = references.get(id);
+  if (url === undefined) return;
+  return { referenceKey: builtKeys.get(id) ?? url };
 };
 const [plugin, loaders] = clientFiles({
   environments: { rsc: "client", browser: "react_client" },
@@ -51,12 +50,23 @@ const [plugin, loaders] = clientFiles({
 }) as [Plugin, Plugin];
 
 type Context = {
-  environment: { name: string; config: { root: string }; getTopLevelConfig(): object };
+  environment: {
+    name: string;
+    mode: "dev" | "build";
+    config: { root: string };
+    getTopLevelConfig(): { root: string };
+  };
   error(message: string): never;
 };
 
-const context = (environment: string): Context => ({
-  environment: { name: environment, config: { root: "/" }, getTopLevelConfig: () => ({}) },
+// An environment of a dev server, or of a build, of the project at `/`.
+const context = (environment: string, mode: "dev" | "build" = "dev"): Context => ({
+  environment: {
+    name: environment,
+    mode,
+    config: { root: "/" },
+    getTopLevelConfig: () => ({ root: "/" }),
+  },
   error(message) {
     throw new Error(message);
   },
@@ -77,8 +87,12 @@ const transformLoader = loaders.transform as unknown as (
   id: string,
 ) => { code: string } | undefined;
 
-const resolve = (source: string, importer?: string, environment = "react_client") =>
-  resolveId.call(context(environment), source, importer);
+const resolve = (
+  source: string,
+  importer?: string,
+  environment = "react_client",
+  mode: "dev" | "build" = "dev",
+) => resolveId.call(context(environment, mode), source, importer);
 
 // What Vite RSC made of a file with `"use client"` in the rsc layer: a
 // reference for each export, and none of the code of the file.
@@ -92,21 +106,29 @@ test("has the module of a file with `use client` of the host load the file in th
 
   const loader = transformLoader.call(context("client"), reference, "/app/frame.test.tsx");
 
-  // In front of the reference module, at the URL of the file in the browser layer.
+  // In front of the reference module, by the key of its references, which
+  // with a dev server is the URL of the file in the browser layer.
   expect(loader?.code).toBe(
     `import { loadClientFile as __vitestPluginRscLoadClientFile } from "/plugin/nextjs/internal.js"; ` +
-      `await __vitestPluginRscLoadClientFile("/app/frame.test.tsx", "/app/frame.test.tsx"); ` +
+      `await __vitestPluginRscLoadClientFile("/app/frame.test.tsx"); ` +
       reference,
   );
   // A setup file with the directive too.
   expect(transformLoader.call(context("client"), reference, "/vitest.setup.tsx")?.code).toContain(
-    `__vitestPluginRscLoadClientFile("/vitest.setup.tsx", "/vitest.setup.tsx")`,
+    `__vitestPluginRscLoadClientFile("/vitest.setup.tsx")`,
   );
-  // With the key of the references, which the file's evaluation is recorded
-  // by, for loadClientModule(): not always its URL.
-  expect(transformLoader.call(context("client"), reference, "/app/built.test.tsx")?.code).toContain(
-    `__vitestPluginRscLoadClientFile("/app/built.test.tsx", "5f3a9c1e")`,
+});
+
+test("loads a file of the host in a build by its key, with the key of its stylesheets", () => {
+  const loader = transformLoader.call(context("client", "build"), reference, "/app/built.test.tsx");
+
+  // The key of a build, a hash, which the file's evaluation is recorded by,
+  // and its path from the root of the project, by which the build has its
+  // stylesheets: not its id, which is a path of the machine.
+  expect(loader?.code).toContain(
+    `__vitestPluginRscLoadClientFile("5f3a9c1e", "app/built.test.tsx")`,
   );
+  expect(loader?.code).not.toContain("/app/built.test.tsx");
 });
 
 test("leaves a file without the directive as it is, and a file that is not the host's", () => {
@@ -146,11 +168,11 @@ test("loads a file of the host in `node_modules` that has Vite's version query",
 
   // By the reference that Vite RSC has by the file.
   expect(load(`${framework}/client-story.js?v=1a2b3c4d`)).toContain(
-    `__vitestPluginRscLoadClientFile("${storyProxy}", "${storyProxy}")`,
+    `__vitestPluginRscLoadClientFile("${storyProxy}")`,
   );
   // And by the one it has by the id.
   expect(load(`${framework}/by-name.js?v=1a2b3c4d`)).toContain(
-    `__vitestPluginRscLoadClientFile("${byName}", "${byName}")`,
+    `__vitestPluginRscLoadClientFile("${byName}")`,
   );
   // Not another module of the file.
   for (const query of ["raw", "v=1a2b3c4d&raw"]) {
@@ -216,6 +238,20 @@ test("gives the browser layer the page's own module for a package of the host", 
   // What the page asks the layer for itself is the layer's.
   expect(resolve("vitest", undefined)).toBeUndefined();
   expect(resolve("vitest", "/index.html")).toBeUndefined();
+});
+
+test("has a build of the browser layer import the page's own module by its URL", () => {
+  // The rsc layer, the host's build, has it: see `hostModulesId`.
+  const url = "/@id/__x00__vitest-plugin-rsc/host-module/@vitest/spy";
+  expect(resolve("@vitest/spy", "/app/counter.tsx", "react_client", "build")).toEqual({
+    id: url,
+    external: "absolute",
+  });
+  expect(isHostModule(url)).toBe(true);
+  // Which loads the module as the host's build has it.
+  expect(resolve(`${hostModulePrefix}@vitest/spy`, undefined, "client", "build")).toBe(
+    `${hostModulePrefix}@vitest/spy`,
+  );
 });
 
 test("leaves every other import of a file of the host to the browser layer", () => {

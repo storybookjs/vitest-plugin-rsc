@@ -13,6 +13,10 @@ import { vitestPluginRscSourceConditions } from "../../vitest.conditions.ts";
 // make its file with `"use client"` a chunk of a bundle, so the dev server
 // gives the ids of its modules there Vite's version of the dependencies in
 // their query: `?v=1a2b3c4d`.
+//
+// `vite build` builds both pages of the host into a static site, with the
+// files of the host that have `"use client"` and the page's own `host-report`:
+// see build-test/static-build.test.ts.
 export default defineConfig({
   root: fileURLToPath(new URL("./", import.meta.url)),
   plugins: [
@@ -22,5 +26,12 @@ export default defineConfig({
     }),
   ],
   optimizeDeps: { exclude: ["host-package"] },
+  build: {
+    rolldownOptions: {
+      input: ["index.html", "callout.html"].map((page) =>
+        fileURLToPath(new URL(page, import.meta.url)),
+      ),
+    },
+  },
   resolve: { conditions: vitestPluginRscSourceConditions },
 });

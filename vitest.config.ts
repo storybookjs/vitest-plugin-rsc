@@ -4,6 +4,7 @@ import storybookNextjsViteRscProject from "./packages/storybook-nextjs-vite-rsc/
 import vitestPluginRscProject from "./packages/vitest-plugin-rsc/vitest.config.ts";
 import nextjsE2eDemoBuildProject from "./playground/nextjs-e2e-demo/vitest.build.config.ts";
 import nextjsE2eDemoProject from "./playground/nextjs-e2e-demo/vitest.config.ts";
+import nextjsHostDemoBuildProject from "./playground/nextjs-host-demo/vitest.build.config.ts";
 import nextjsHostDemoProject from "./playground/nextjs-host-demo/vitest.config.ts";
 import { nextjsNotesProjects } from "./playground/nextjs-notes-demo/vitest.config.ts";
 import rscVitestDemoBuildProject from "./playground/rsc-vitest-demo/vitest.build.config.ts";
@@ -44,6 +45,7 @@ export default defineConfig({
       nextjsE2eDemoProject,
       nextjsE2eDemoBuildProject,
       nextjsHostDemoProject,
+      nextjsHostDemoBuildProject,
       ...nextjsNotesProjects,
     ],
   },

@@ -1,15 +1,18 @@
 import type { ModuleRunner } from "vite/module-runner";
-import builtLayers from "virtual:vitest-plugin-rsc/layers";
+import { clientReferencesId } from "../built-layers.ts";
 import { isHostModule } from "../host-module.ts";
 import {
   askDevServer,
   checkFetchedModules,
   createEnvironmentRunner,
+  environmentModule,
   takeFetchedModules,
 } from "../utils.ts";
+import { buildDirectory, builtStylesheets } from "./built-stylesheets.ts";
 import { clientReferenceKeyOf } from "./client-reference.ts";
 import { registry } from "./registry.ts";
 import {
+  builtClientStylesheetsOf,
   graphStylesheetAttribute,
   stylesheetsEvent,
   type StylesheetsQuestion,
@@ -63,31 +66,52 @@ const isDependency = ({ id, file }: { id: string; file: string | null }) =>
 // loads a module as its own does.
 const browserRequire = (id: string) => registry.loadBrowserModule(id);
 
-// The URLs of the stylesheets of a client file, from the dev server: see styles.ts.
-const stylesheetsOf = (url: string) =>
-  askDevServer<string[]>(stylesheetsEvent, { url } satisfies StylesheetsQuestion);
+// The URLs of the stylesheets of a client file: from the dev server, by its
+// URL, see styles.ts. A static build has them in a file, by the path of the
+// file from the root of the project.
+async function stylesheetsOf(key: string, builtFile: string | undefined): Promise<string[]> {
+  if (!buildDirectory) {
+    return askDevServer<string[]>(stylesheetsEvent, { url: key } satisfies StylesheetsQuestion);
+  }
+  if (builtFile === undefined) return [];
+  return builtClientStylesheetsOf(await builtStylesheets(), builtFile, buildDirectory);
+}
+
+// In a static build: the modules of the browser layer that a Flight payload
+// can refer to, by their reference keys, which the graph evaluates a client
+// file from.
+type ClientReferences = { default: Record<string, () => Promise<object>> };
 
 /**
- * Evaluates a file of the host with `"use client"`, at its URL in the browser
- * layer, in the module graph of that layer: the evaluation of the file with
- * the reference key `key`. The module of the rsc layer for the file calls
- * this before its own code runs, as Vitest evaluates what a file imports
- * before it. So a test file with the directive registers its tests with
- * Vitest, which imports the file in the rsc layer, and a setup file with it
- * its hooks.
+ * Evaluates a file of the host with `"use client"` in the module graph of
+ * the browser layer: the file with the reference key `key`, which with a dev
+ * server is its URL in that layer. The module of the rsc layer for the file
+ * calls this before its own code runs, as Vitest evaluates what a file
+ * imports before it. So a test file with the directive registers its tests
+ * with Vitest, which imports the file in the rsc layer, and a setup file
+ * with it its hooks. In a static build `builtFile` is the key of its
+ * stylesheets there: see `loadClientFileCode()` in client-files.ts.
  *
  * Every time the host imports the file, as Vitest evaluates the file itself
  * every time: a setup file before every test file. What the file imports,
  * once for the graph, as the browser does for what Vitest evaluates in the
  * tab.
  */
-export async function loadClientFile(url: string, key: string): Promise<void> {
-  // A static build has no dev server to evaluate the file with, nor to ask
-  // for its stylesheets.
-  if (builtLayers) {
-    throw new Error(
-      'vitest-plugin-rsc: a static build does not load a file of the host with "use client" yet.',
+export async function loadClientFile(key: string, builtFile?: string): Promise<void> {
+  if (buildDirectory) {
+    graph ??= createEnvironmentRunner(environment);
+    const references = await graph.import<ClientReferences>(
+      environmentModule(environment, clientReferencesId),
     );
+    const load = references.default[key];
+    if (!load) throw new Error(`vitest-plugin-rsc: the build has no client reference "${key}"`);
+    registry.browserRequire = browserRequire;
+    // Once for the document: a build has no HMR, so the host has one module
+    // of the file in the rsc layer, which the browser evaluates once, and
+    // with it this.
+    evaluations.set(key, await load());
+    await linkStylesheets(await stylesheetsOf(key, builtFile));
+    return;
   }
   // The server's modules as they are now: the graph outlives a page load.
   await checkFetchedModules();
@@ -107,10 +131,10 @@ export async function loadClientFile(url: string, key: string): Promise<void> {
   registry.browserRequire = browserRequire;
   // The file itself runs every time it loads, as Vitest runs it: its tests,
   // or the hooks of a setup file, are collected as it does.
-  const own = evaluatedModules.getModuleByUrl(url);
+  const own = evaluatedModules.getModuleByUrl(key);
   if (own) evaluatedModules.invalidateModule(own);
-  evaluations.set(key, await graph.import(url));
-  await linkStylesheets(await stylesheetsOf(url));
+  evaluations.set(key, await graph.import(key));
+  await linkStylesheets(await stylesheetsOf(key, builtFile));
 }
 
 /**
@@ -133,8 +157,10 @@ export async function loadClientModule<T extends object>(module: T): Promise<T> 
     if (!exports) {
       throw new Error(
         `vitest-plugin-rsc: ${key} has "use client" and is not a file of the host, so nothing ` +
-          `loaded it in the browser layer for loadClientModule(). The files of the host are ` +
-          `the ones that host.files of vitestPluginNext() matches.`,
+          `loaded it in the browser layer for loadClientModule(). ${key} is the reference key ` +
+          `that Vite RSC gives the file: its URL with a dev server, and in a static build a ` +
+          `hash of the file. The files of the host are the ones that host.files of ` +
+          `vitestPluginNext() matches.`,
       );
     }
     evaluationOf.set(module, exports);

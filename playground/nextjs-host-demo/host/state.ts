@@ -11,8 +11,11 @@ export type HostWindow = {
     reference: boolean;
     /** Whether a second call gave the same exports. */
     same: boolean;
-    /** Whether the module of another import of the file gave other exports. */
-    again: boolean;
+    /**
+     * Whether the module of another import of the file gave other exports.
+     * Not in a static build, which has one module of the file.
+     */
+    again?: boolean;
     /** Whether the first module kept its own after that. */
     kept: boolean;
     /** Whether a module without the directive came back as it is. */
