@@ -215,7 +215,8 @@ export function clientFiles(options: ClientFilesOptions): Plugin[] {
         if (this.environment.name !== rsc) return;
         const file = hostFileOf(id);
         if (!file) return;
-        const reference = clientReferenceOf(id, this.environment.getTopLevelConfig());
+        const config = this.environment.getTopLevelConfig();
+        const reference = clientReferenceOf(id, config);
         if (!reference) return;
         const builtFile =
           this.environment.mode === "build" ? builtHostFileKey(file, config.root) : undefined;
