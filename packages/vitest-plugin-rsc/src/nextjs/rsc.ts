@@ -6,7 +6,7 @@ import builtLayers from "virtual:vitest-plugin-rsc/layers";
 import appPages from "virtual:vitest-plugin-rsc/next-app-pages";
 import loadMiddleware from "virtual:vitest-plugin-rsc/next-middleware";
 import routeHandlers from "virtual:vitest-plugin-rsc/next-route-handlers";
-import serverReferences from "virtual:vitest-plugin-rsc/next-server-references";
+import serverReferences from "virtual:vitest-plugin-rsc/server-references";
 import type { FlightAdapters } from "./flight.ts";
 import { actionModulePrefix, registry } from "./registry.ts";
 import { fetchJson } from "../utils.ts";
@@ -25,7 +25,7 @@ declare let __vite_rsc_raw_import__: (id: string) => Promise<unknown>;
 
 // The module of a server reference, by the id Vite RSC gives it. With a dev
 // server that is what Vite imports the module by. A static build has a list
-// of them: see static-build.ts.
+// of them: see ../static-build.ts.
 ReactServer.setRequireModule({
   load: (id) => {
     if (!serverReferences) return __vite_rsc_raw_import__(id);

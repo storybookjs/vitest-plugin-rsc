@@ -86,8 +86,8 @@ export async function fetchJson<T>(
   return (await response.json()) as T;
 }
 
-// The modules of a static build, see built-layers.ts. A page runs both
-// layers, so the tab asks for all of them at once, before a runner does.
+// The modules of a static build, see built-layers.ts. A page runs every
+// layer of it, so the tab asks for all of them at once, before a runner does.
 const built = createBuiltLayers(nativeFetch);
 for (const layer of Object.values(builtLayers ?? {})) if (layer) built.preload(layer);
 

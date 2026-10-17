@@ -3,9 +3,9 @@ import { vitePluginRscMinimal } from "@vitejs/plugin-rsc/plugin";
 import { createReactClientCoveragePlugin } from "./coverage.ts";
 import { dependencyTransformPlugin } from "./dependency-transforms.ts";
 import { createRunnerEnvironmentPlugins } from "./runner-environment.ts";
+import { staticBuild } from "./static-build.ts";
 import { pageViteClientPlugin } from "./vite-client.ts";
 
-const builtLayersId = "virtual:vitest-plugin-rsc/layers";
 const reactClientWebSocketInfoPath = "/@vite/react-client-runner-websocket";
 const reactClientWebSocketQuery = "vitest-plugin-rsc-react-client";
 const reactClientWebSocketInvokeEvent = "vitest-plugin-rsc:react-client:invoke";
@@ -46,18 +46,14 @@ export function vitestPluginRSC(): Plugin[] {
         rsc: "client",
       },
     }),
+    // `vite build`, and what a dev server has instead: see static-build.ts.
+    staticBuild({
+      rsc: "client",
+      browser: "react_client",
+      layers: { entries: { react_client: "vitest-plugin-rsc/testing-library-client" } },
+    }),
     {
       name: "rsc:run-in-browser",
-      // What a static build made of the environments that the page runs
-      // through a module runner. Nothing here: a build is the Next.js
-      // plugin's, see nextjs/static-build.ts, which answers for this id in a
-      // build.
-      resolveId(source) {
-        if (source === builtLayersId) return `\0${builtLayersId}`;
-      },
-      load(id) {
-        if (id === `\0${builtLayersId}`) return "export default undefined;\n";
-      },
       configureServer(server) {
         // A page keeps the modules it fetched for its next page loads, see
         // utils.ts. An environment has another answer for a module once that
