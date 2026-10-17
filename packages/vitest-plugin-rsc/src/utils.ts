@@ -82,7 +82,18 @@ export async function fetchJson<T>(path: string, query: Record<string, string>):
 // The modules of a static build, see built-layers.ts. A page runs both
 // layers, so the tab asks for all of them at once, before a runner does.
 const built = createBuiltLayers(nativeFetch);
-for (const layer of Object.values(builtLayers ?? {})) if (layer) built.preload(layer);
+// SPIKE SB-2270: a native layer has its entry preloaded as a module instead.
+for (const layer of Object.values(builtLayers ?? {})) {
+  if (layer?.modules && !layer.native) built.preload(layer);
+  if (layer?.native && typeof document !== "undefined") {
+    for (const entry of Object.values(layer.entries)) {
+      const link = document.createElement("link");
+      link.rel = "modulepreload";
+      link.href = builtUrl(layer, entry);
+      document.head.append(link);
+    }
+  }
+}
 
 let webSocket: WebSocket | undefined;
 let webSocketPromise: Promise<WebSocket> | undefined;
@@ -210,6 +221,23 @@ function hostModule(payload: InvokePayload): InvokeResult | undefined {
 export function environmentModule(environment: string, id: string): string {
   const entry = builtLayers?.[environment]?.entries[id];
   return entry ? `/${entry}` : id;
+}
+
+/**
+ * SPIKE SB-2270: whether a static build has `environment` as native ESM: its
+ * entry is imported by the page, and every module of it is the page's own.
+ */
+export function isNativeLayer(environment: string): boolean {
+  return !!builtLayers?.[environment]?.native;
+}
+
+/**
+ * SPIKE SB-2270: imports the entry `id` of a native layer of a static build,
+ * as the page imports any module: one instance for the tab.
+ */
+export function importNativeEntry<T = any>(environment: string, id: string): Promise<T> {
+  const layer = builtLayers![environment]!;
+  return import(/* @vite-ignore */ builtUrl(layer, layer.entries[id]!)) as Promise<T>;
 }
 
 export function importReactClient<T = any>(id: string): Promise<T> {

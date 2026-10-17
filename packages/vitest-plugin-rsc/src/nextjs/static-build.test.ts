@@ -408,7 +408,7 @@ test("a runner evaluates a layer from its one file, which a tab fetches once", a
 
 test("a runner of a built layer asks again after a failure, and says what the build does not have", async () => {
   const { outDir, layer, built, asked } = await servedBuild("https://site.test/");
-  const file = path.join(outDir, layer.modules);
+  const file = path.join(outDir, layer.modules!);
 
   // The file of the layer is not there, and then it is: the next page load
   // asks for it again.

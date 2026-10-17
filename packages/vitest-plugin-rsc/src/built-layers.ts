@@ -19,7 +19,12 @@ export type BuiltLayer = {
    */
   entries: Record<string, string>;
   /** The file with the code of every module of the layer, by its id. */
-  modules: string;
+  modules?: string;
+  /**
+   * SPIKE SB-2270: the layer is ordinary ESM, hashed chunks that the page
+   * `import()`s: its entry is the stub of `entries`, no module runner.
+   */
+  native?: boolean;
 };
 
 export type InvokePayload = Parameters<NonNullable<ModuleRunnerTransport["invoke"]>>[0];
@@ -51,6 +56,9 @@ export function createBuiltLayers(fetch: typeof globalThis.fetch) {
 
   /** The modules of a layer, which the tab fetches once. */
   function modulesOf(layer: BuiltLayer): Promise<Map<string, BuiltModule>> {
+    if (!layer.modules) {
+      return Promise.reject(new Error("vitest-plugin-rsc: the layer has no modules.json"));
+    }
     const url = builtUrl(layer, layer.modules);
     let modules = fetched.get(url);
     if (modules) return modules;

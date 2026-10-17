@@ -253,7 +253,8 @@ describe("a static build", () => {
   test("has every file the page asks for", async ({ page }) => {
     // The layers, one file each, and the stylesheets: see the plugin.
     for (const file of [
-      "vitest-plugin-rsc/next_ssr/modules.json",
+      // SPIKE SB-2270: the ssr layer is native ESM, with a stub entry.
+      "vitest-plugin-rsc/next_ssr/entry.js",
       "vitest-plugin-rsc/react_client/modules.json",
       "vitest-plugin-rsc/next-stylesheets.json",
     ]) {

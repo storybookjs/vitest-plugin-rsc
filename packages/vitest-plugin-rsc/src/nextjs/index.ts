@@ -1,7 +1,13 @@
 import "./globals.ts";
 import { createElement, type JSXElementConstructor, type ReactNode } from "react";
 import { resetAsyncLocalStorage } from "../async-local-storage.ts";
-import { checkFetchedModules, createEnvironmentRunner, environmentModule } from "../utils.ts";
+import {
+  checkFetchedModules,
+  createEnvironmentRunner,
+  environmentModule,
+  importNativeEntry,
+  isNativeLayer,
+} from "../utils.ts";
 import { loadDocument, unloadDocument } from "./document.ts";
 import { recordListeners, recordMessageChannels } from "./leftovers.ts";
 import { PageStore } from "./page-store.ts";
@@ -11,9 +17,12 @@ import { registry, type Opened } from "./registry.ts";
 // server loads, so the layers load from here on, in order: rsc, then ssr.
 await import("./rsc.ts");
 // One module graph for the tab: the server stays, where a page is loaded anew.
-const ssr = await createEnvironmentRunner("next_ssr").import<typeof import("./ssr.ts")>(
-  environmentModule("next_ssr", "vitest-plugin-rsc/nextjs/ssr"),
-);
+// SPIKE SB-2270: a static build can have the ssr layer as native ESM.
+const ssr = isNativeLayer("next_ssr")
+  ? await importNativeEntry<typeof import("./ssr.ts")>("next_ssr", "vitest-plugin-rsc/nextjs/ssr")
+  : await createEnvironmentRunner("next_ssr").import<typeof import("./ssr.ts")>(
+      environmentModule("next_ssr", "vitest-plugin-rsc/nextjs/ssr"),
+    );
 
 const nativeFetch = globalThis.fetch;
 
