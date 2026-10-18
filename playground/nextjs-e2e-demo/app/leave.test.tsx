@@ -3,7 +3,10 @@ import { cleanup, renderServer } from "vitest-plugin-rsc/nextjs/testing-library"
 import { afterEach, beforeEach, expect, onTestFinished, test, vi, type MockInstance } from "vitest";
 import { page } from "vitest/browser";
 import { Counter } from "./components/counter.tsx";
+import { FavoriteButton } from "./components/favorite-button.tsx";
 import { RefreshButton } from "./components/refresh-button.tsx";
+import { db } from "./lib/notes.ts";
+import { seenByProxy } from "./lib/proxy-log.ts";
 
 type Held = { loading: boolean; loaded: boolean; release: Promise<void> };
 // Code that waits while a test holds it: the client code of a widget
@@ -143,13 +146,52 @@ test("hears no more of the requests of its router once a page is left, also whil
   await expect.element(page.getByRole("button", { name: "Count: 1" })).toBeInTheDocument();
 });
 
+test("hears nothing of a Server Action of a page once it is left", async () => {
+  db.notes.set("1", { id: "1", title: "Inbox triage", body: "" });
+  await renderServer(<FavoriteButton id="1" favorite={false} />, { url: "/held", proxy: true });
+  const [holding, release] = hold();
+  held.heldProxy = holding;
+  // The action waits in the proxy.
+  await page.getByRole("button", { name: "Favorite" }).click();
+  await expect.poll(() => holding.loading, { timeout: 10_000 }).toBe(true);
+
+  const left = cleanup();
+  release();
+  await left;
+
+  // Next would report the action that failed, and the transition would
+  // reject unhandled.
+  expect(consoleError).not.toHaveBeenCalled();
+  await renderServer(<Counter />);
+  await page.getByRole("button", { name: "Count: 0" }).click();
+  await expect.element(page.getByRole("button", { name: "Count: 1" })).toBeInTheDocument();
+});
+
+test("sends no Server Action of a page once it is left", async () => {
+  db.notes.set("1", { id: "1", title: "Inbox triage", body: "" });
+  const note = db.notes.get("1")!;
+  await renderServer(<FavoriteButton id="1" favorite={false} />, { proxy: true });
+  const seen = seenByProxy.length;
+
+  // Next sends the action a few microtasks after the click, and the page is
+  // left before that.
+  (page.getByRole("button", { name: "Favorite" }).element() as HTMLElement).click();
+  await cleanup();
+
+  expect(seenByProxy.length).toBe(seen);
+  expect(note.favorite).toBeUndefined();
+  expect(consoleError).not.toHaveBeenCalled();
+});
+
 test("sends nothing more for a page once it is left, also what its router sends a moment later", async () => {
-  await renderServer(<RefreshButton />);
+  await renderServer(<RefreshButton />, { proxy: true });
+  const seen = seenByProxy.length;
 
   // Next's router sends the request of a refresh a few microtasks after the
   // click, and the page is left before that.
   (page.getByRole("button", { name: "Refresh" }).element() as HTMLElement).click();
   await cleanup();
+  expect(seenByProxy.length).toBe(seen);
 
   await renderServer(<Counter />);
   await page.getByRole("button", { name: "Count: 0" }).click();
