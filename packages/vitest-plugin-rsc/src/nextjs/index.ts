@@ -1137,29 +1137,30 @@ function reloadsDocument(path: string | undefined): boolean {
 }
 
 (window as { navigation?: EventTarget }).navigation?.addEventListener("navigate", (event) => {
-  const { navigationType, destination, hashChange, formData, downloadRequest } =
-    event as NavigateEvent;
+  const { destination, hashChange, formData, downloadRequest } = event as NavigateEvent;
   // A navigation of Next's router on the client, in the layouts of a route,
   // to another pathname takes the place of the node, also of one that has
   // not hydrated yet, which no effect of it would say.
   if (destination.sameDocument) page?.nodeOnPage?.at(new URL(destination.url).pathname);
   if (destination.sameDocument || hashChange || !event.cancelable) return;
   const url = new URL(destination.url);
-  // A reload loads again what owns the document. A page of the app owns it,
-  // so it loads again from its URL. Anything else is the host's document, a
-  // node included: the browser reloads it at the host's URL, which leaving
-  // puts back. Hosts leave a page before a reload of their own (Vite with
-  // `vite:beforeFullReload`, Storybook with the story's cleanup), so a reload
-  // with a page open is the app's.
-  const appOwnsUrl = page && !openedAt(url)?.node;
-  if (navigationType === "reload" && !appOwnsUrl) {
-    if (destination.url === documentUrl()) return;
+  // A navigation loads what owns its URL, a reload too. The host owns the
+  // URL of its document, and while a node is open the node's URL, any with
+  // its pathname, stands in for it: the node is the host's, and the app's
+  // route there is another page, at `/` the app's home page. So the plugin
+  // leaves the node, which puts back the host's URL, and the browser loads
+  // the host's document there, as it does for the host's URL itself. Any
+  // other URL is the app's. Hosts leave a page before a reload of their own
+  // (Vite with `vite:beforeFullReload`, Storybook with the story's cleanup),
+  // so a reload with a page open is the app's.
+  if (openedAt(url)?.node) {
     event.preventDefault();
-    void leavePage("a reload of the document")
+    void leavePage("a navigation to the host's document")
       .catch(() => {})
       .then(() => window.location.reload());
     return;
   }
+  if (destination.url === documentUrl()) return;
   if (!page) {
     // No page of the app to load another one of: a component that a test
     // file with `"use client"` rendered has no router. A link or a form
