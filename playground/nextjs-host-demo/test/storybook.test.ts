@@ -213,7 +213,7 @@ test("an MDX page: a server story in an iframe, a client story inline", async ({
   expect(await server.getByText("Hello from Storybook").count()).toBe(1);
   expect(await server.getByTestId("server-decorator").getAttribute("data-agent")).toBe("read");
   const iframe = inDocs(canvas).locator("iframe");
-  expect(await iframe.evaluate((element) => element.getBoundingClientRect().height)).toBe(400);
+  expect(await iframe.evaluate((element) => element.getBoundingClientRect().height)).toBe(320);
   // The client story in the docs page, in the meta's and the project's
   // decorators, of the browser layer, with the CSS of its story file.
   const frame = inDocs(canvas).getByTestId("theme").getByTestId("meta-decorator");

@@ -84,9 +84,15 @@ test("in the browser layer an MDX file has the store's exports of its story file
   const storyFiles = 'globalThis[Symbol.for("@storybook/nextjs-vite-rsc/story-files")]';
   const start = mdx.indexOf("import meta");
   expect(code!.split("\n")).toEqual([
+    "const __storyFileOf = (importPath) => {",
+    `  const exports = ${storyFiles}?.get(importPath);`,
+    "  if (exports) return exports;",
+    "  throw new Error(`The stories of ${importPath} are not loaded: an MDX file has them as " +
+      "Storybook loads it, as a docs page, not as another file imports it.`);",
+    "};",
     'import { Canvas, Meta } from "@storybook/addon-docs/blocks";',
-    `const Greeting = ${storyFiles}.get("./stories/greeting.stories.tsx");`,
-    `const __storyFile${start} = ${storyFiles}.get("./stories/nested/press-button.stories.tsx"); ` +
+    'const Greeting = __storyFileOf("./stories/greeting.stories.tsx");',
+    `const __storyFile${start} = __storyFileOf("./stories/nested/press-button.stories.tsx"); ` +
       `const meta = __storyFile${start}.default; ` +
       `const { Pressed, "Labelled": Other } = __storyFile${start};`,
     'import { helper } from "./helper.ts";',
@@ -96,7 +102,7 @@ test("in the browser layer an MDX file has the store's exports of its story file
 });
 
 test("in the rsc layer the preview of addon-docs has no renderer", async () => {
-  const docsPreview = plugin("storybook-nextjs-vite-rsc:docs-preview");
+  const docsPreview = plugin("storybook-nextjs-vite-rsc:addon-docs-preview");
   const applies = docsPreview.applyToEnvironment as (environment: { name: string }) => boolean;
   expect([applies({ name: "client" }), applies({ name: "react_client" })]).toEqual([true, false]);
   // Storybook's Vite builder imports it by its path.
@@ -119,13 +125,19 @@ test("in the rsc layer the preview of addon-docs has no renderer", async () => {
 
 test("a module of the rsc layer that imports Storybook's theming says where it goes", async () => {
   const check = (code: string, file = "/repo/.storybook/preview.tsx") =>
-    transform("storybook-nextjs-vite-rsc:docs-preview", "client", code, file);
+    transform("storybook-nextjs-vite-rsc:browser-only-imports", "client", code, file);
   await expect(check('import { themes } from "storybook/theming";')).rejects.toThrow(
-    "preview.tsx imports storybook/theming, which renders with React DOM, in the browser: the " +
-      "preview runs on React's server build, where it does not load. Import it from a file " +
-      'with "use client", and a theme from storybook/theming/create.',
+    "preview.tsx imports storybook/theming, which renders with React DOM, in the browser: " +
+      "preview.tsx runs on React's server build, as the preview file and a story file without " +
+      '"use client" do, where it does not load. Import it from a file with "use client", and a ' +
+      "theme from storybook/theming/create.",
   );
-  await expect(check('import { Title } from "@storybook/addon-docs/blocks";')).rejects.toThrow(
+  // A story file without the directive, whose `docs.page` has the blocks.
+  const storyFile = "/repo/stories/greeting.stories.tsx";
+  await expect(
+    check('import { Title } from "@storybook/addon-docs/blocks";', storyFile),
+  ).rejects.toThrow("greeting.stories.tsx imports @storybook/addon-docs/blocks");
+  await expect(check('export { Title } from "@storybook/addon-docs/blocks";')).rejects.toThrow(
     "preview.tsx imports @storybook/addon-docs/blocks",
   );
   // A file with "use client" is a reference module there, a type is no
@@ -134,6 +146,8 @@ test("a module of the rsc layer that imports Storybook's theming says where it g
     undefined,
   );
   expect(await check('import type { Theme } from "storybook/theming";')).toBe(undefined);
+  expect(await check('import { type Theme } from "storybook/theming";')).toBe(undefined);
+  expect(await check('export type { Theme } from "storybook/theming";')).toBe(undefined);
   expect(await check('import { create } from "storybook/theming/create";')).toBe(undefined);
 });
 
@@ -159,6 +173,21 @@ test("addon-docs's React goes, its MDXProvider stays, and the browser layer pre-
     },
   };
   const hook = handlerOf(plugin("storybook-nextjs-vite-rsc:without-docs-dependencies").config);
+  // Without addon-docs the config is the project's own.
+  const own = {
+    resolve: { alias: [{ find: "react", replacement: "/repo/vendor/react" }] },
+    optimizeDeps: { include: ["react-dom/client"] },
+  };
+  expect(await hook.call({}, own as never)).toBe(undefined);
+  expect(own.resolve.alias.map(({ find }) => find)).toEqual(["react"]);
+  expect(own.optimizeDeps.include).toEqual(["react-dom/client"]);
+  // `storybook build`, which has the aliases of addon-docs, as an object,
+  // and no pre-bundles.
+  const built = {
+    resolve: { alias: { react: "/repo/node_modules/react", "@mdx-js/react": "/repo/mdx" } },
+  };
+  expect(await hook.call({}, built as never)).toBe(undefined);
+  expect(built.resolve.alias).toEqual({ "@mdx-js/react": "/repo/mdx" });
   const added = await hook.call({}, config as never);
   expect(config.resolve.alias.map(({ find }) => find)).toEqual(["@mdx-js/react"]);
   expect(config.optimizeDeps.include).toEqual(["react/jsx-runtime"]);
@@ -175,4 +204,22 @@ test("addon-docs's React goes, its MDXProvider stays, and the browser layer pre-
       },
     },
   });
+});
+
+test("the canvas has the DocsRenderer of addon-docs when the project has it", async () => {
+  const addonDocs = plugin("storybook-nextjs-vite-rsc:addon-docs");
+  const resolved = handlerOf(addonDocs.resolveId).call(
+    {},
+    "virtual:@storybook/nextjs-vite-rsc/addon-docs" as never,
+  ) as string;
+  const load = handlerOf(addonDocs.load);
+  const installed = {
+    resolve: async () => ({ id: "/repo/node_modules/@storybook/addon-docs/dist/index.js" }),
+  };
+  expect(await load.call(installed, resolved as never)).toBe(
+    'export { DocsRenderer } from "/repo/node_modules/@storybook/addon-docs/dist/index.js";',
+  );
+  expect(await load.call({ resolve: async () => null }, resolved as never)).toBe(
+    "export const DocsRenderer = undefined;",
+  );
 });

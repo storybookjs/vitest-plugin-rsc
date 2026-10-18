@@ -214,7 +214,14 @@ of a stylesheet that the preview file imports shows in place.
 ## Docs
 
 With `@storybook/addon-docs` a story file can have a docs page, with
-`tags: ["autodocs"]`, and an MDX file is a docs page of its own:
+`tags: ["autodocs"]`, and an MDX file is a docs page of its own. The
+framework has addon-docs as an optional peer dependency: install it next to
+`storybook`, in the same version, so the docs page and the blocks of the
+MDX files are one copy.
+
+```sh
+npm install --save-dev @storybook/addon-docs
+```
 
 ```ts
 export default {
@@ -230,13 +237,13 @@ each story the way its kind renders:
 - A client story renders in the docs page, inline. A new value from
   Controls renders it again in place, with the state it has.
 - A server story renders in a page of the app, which has a document of its
-  own: the docs page shows it in Storybook's iframe of the story, 400px
+  own: the docs page shows it in Storybook's iframe of the story, 320px
   high. Set another height with `parameters.docs.story.iframeHeight`.
 
-`parameters.docs.story.inline` decides it when a story sets it. A client
-story with `inline: false` renders in an iframe. A server story with
-`inline: true` cannot render in the docs page, and shows an error that
-says so.
+`parameters.docs.story.inline`, or `<Canvas story={{ inline }} />`,
+decides it when a story or a block sets it. A client story with
+`inline: false` renders in an iframe. A server story with `inline: true`
+cannot render in the docs page, and shows an error that says so.
 
 An MDX file is client code, as a file with `"use client"` is, and so is
 what it imports, with one exception: its imports of story files are the
@@ -261,9 +268,10 @@ that fails to load fails all of it, while `storybook build` succeeds.
 
 The docs page, its blocks and Storybook's theming render with React DOM,
 in the browser, and the preview file is evaluated on the server too (see
-The Preview File). So the preview file cannot import
-`@storybook/addon-docs/blocks` or `storybook/theming`, which stops with a
-message. A theme comes from `storybook/theming/create`:
+The Preview File), as a story file without `"use client"` is. So neither
+can import `@storybook/addon-docs/blocks` or `storybook/theming`, which
+stops with a message: import them from a file with `"use client"`, like a
+`docs.page` made of blocks. A theme comes from `storybook/theming/create`:
 
 ```ts
 import { themes } from "storybook/theming/create";
@@ -280,6 +288,9 @@ story. In a server story file a component of a file with `"use client"` is
 a reference, which shows an error: set it in the preview file, or in a
 story file with `"use client"`.
 
+The framework sets `parameters.docs.renderer`, which renders the docs page
+in the browser: one of the project's own is not supported.
+
 `Source` shows the snippet of Storybook's docgen, or the source of the
 story: a server story renders on the server, so there is no snippet of
 what it rendered. The args table reads the files with Storybook's docgen,
@@ -293,8 +304,8 @@ for both kinds.
 - The iframe of a server story on a docs page does not follow the height
   of its page.
 - One instance of a package for an addon and a client story: an addon
-  that a client story needs the same module of, beyond Storybook's own
-  modules of the preview, like `storybook/test`, gets one of each.
+  that a client story needs the same module of, beyond `storybook/test`
+  and Storybook's own modules of the preview, gets one of each.
 - `definePreview()` and the story factories of CSF Next: write the preview
   file and the stories in CSF 3, as above.
 - A decorator of an addon that renders a component of the addon, like a

@@ -165,7 +165,7 @@ test("an MDX file that imports server code says so", async ({ page, errors }) =>
     const canvas = (await iframe!.contentFrame())!;
     await expect
       .poll(() => canvas.locator("#error-message").textContent(), { timeout: 30_000 })
-      .toContain("./stories/server-code.mdx is a docs page, which renders in the browser");
+      .toContain("./stories/server-code.mdx could not load in the browser");
     errors.list.splice(0);
   } finally {
     fs.rmSync(path.join(copy, "stories/server-code.mdx"));

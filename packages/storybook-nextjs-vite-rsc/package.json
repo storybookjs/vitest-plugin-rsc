@@ -55,11 +55,12 @@
     "prepack": "tsdown"
   },
   "dependencies": {
-    "@storybook/addon-docs": "https://pkg.pr.new/storybookjs/storybook/@storybook/addon-docs@0e82d2fc9b2fdcad71bdea0c59188ff57788e5f7",
     "@storybook/builder-vite": "https://pkg.pr.new/storybookjs/storybook/@storybook/builder-vite@0e82d2fc9b2fdcad71bdea0c59188ff57788e5f7",
-    "@storybook/react": "https://pkg.pr.new/storybookjs/storybook/@storybook/react@0e82d2fc9b2fdcad71bdea0c59188ff57788e5f7"
+    "@storybook/react": "https://pkg.pr.new/storybookjs/storybook/@storybook/react@0e82d2fc9b2fdcad71bdea0c59188ff57788e5f7",
+    "magic-string": "^1.4.3"
   },
   "devDependencies": {
+    "@storybook/addon-docs": "https://pkg.pr.new/storybookjs/storybook/@storybook/addon-docs@0e82d2fc9b2fdcad71bdea0c59188ff57788e5f7",
     "@types/node": "^24.12.4",
     "@types/react": "^19.2.14",
     "next": "16.4.0",
@@ -71,11 +72,17 @@
     "vitest-plugin-rsc": "workspace:*"
   },
   "peerDependencies": {
+    "@storybook/addon-docs": "^11.0.0-0",
     "next": ">=16.4.0-0",
     "react": "*",
     "react-dom": "*",
     "storybook": "^11.0.0-0",
     "vite": ">=8.0.0",
     "vitest-plugin-rsc": "workspace:^"
+  },
+  "peerDependenciesMeta": {
+    "@storybook/addon-docs": {
+      "optional": true
+    }
   }
 }

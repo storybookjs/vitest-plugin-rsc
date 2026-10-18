@@ -94,12 +94,15 @@ export const viteFinal: ViteFinal = async (config, options) => {
       vitestPluginNext({
         build,
         browserModules,
-        // No packages of the host: Storybook's Vite builder gives every layer
-        // the preview's instance of the modules that have one, like
-        // `storybook/test`, whose spies `play` and the Actions panel read
-        // (preview-runtime.ts). The rest of Storybook, like its theming and
+        // The packages of the host are the fewest that have to be one
+        // instance in the preview and the layers. Storybook's Vite builder
+        // gives a layer the preview's instance of the modules that have one
+        // (preview-runtime.ts), but in a build the rsc layer bundles its own
+        // `storybook/test`, whose Testing Library then finds no `window`: a
+        // `waitFor` in the `play` of a server story fails. Never `storybook`
+        // as a whole, nor `@storybook/addon-docs`: its theming, the
         // components that the docs page renders with, and the renderer of a
-        // client story, is the browser layer's own, with its React.
+        // client story are the browser layer's own, with its React.
         host: {
           files: [
             ...stories.map(({ directory, files }) =>
@@ -111,6 +114,7 @@ export const viteFinal: ViteFinal = async (config, options) => {
             path.posix.join(normalizePath(path.relative(root, options.configDir)), "**"),
             frameworkFiles,
           ],
+          packages: ["storybook/test"],
         },
       }),
       projectPlugin({

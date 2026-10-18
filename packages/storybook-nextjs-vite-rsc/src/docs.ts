@@ -31,9 +31,9 @@ export async function docsRenderer(): Promise<{
   };
 }
 
-// The docs parameters that are components: the page, its container, and
-// what renders the elements of an MDX file.
-const components = ["page", "container"] as const;
+// The docs parameters that are a component: the page and its container.
+// `components`, what renders the elements of an MDX file, has one for each.
+const componentParameters = ["page", "container"] as const;
 
 // The docs parameters with the components of the preview file as the browser
 // layer evaluated it, in the place of the rsc layer's, as a client story has
@@ -45,7 +45,7 @@ function withTwins(docs: Parameters, browser: object): Parameters {
   const twin = (value: unknown, rsc: unknown, other: unknown) =>
     value !== undefined && value === rsc ? other : value;
   const result: Parameters = { ...docs };
-  for (const name of components) {
+  for (const name of componentParameters) {
     if (docs[name] === undefined) continue;
     result[name] = twin(docs[name], ofRsc[name], ofBrowser[name]);
     if (isClientReference(result[name])) throw referenceInDocs(`docs.${name}`);
@@ -93,7 +93,7 @@ export const docsStoryByKind: ArgTypesEnhancer<NextjsRscRenderer> = (context) =>
     ...docs,
     story: isClientStoryFile(parameters.fileName)
       ? { inline: true, ...docs.story }
-      : { iframeHeight: "400px", ...docs.story },
+      : { iframeHeight: "320px", ...docs.story },
   };
   return context.argTypes;
 };
@@ -102,8 +102,8 @@ export const docsStoryByKind: ArgTypesEnhancer<NextjsRscRenderer> = (context) =>
 export const serverStoryInline = (id: string): Error =>
   new Error(
     `The story ${id} renders on the server, in a page of the app, which a docs page shows in ` +
-      `an iframe: remove \`inline: true\` of \`parameters.docs.story\`, or put the story in a ` +
-      `file with "use client".`,
+      `an iframe: remove \`inline: true\` of \`parameters.docs.story\` or of ` +
+      `\`<Canvas story={{ inline: true }} />\`, or put the story in a file with "use client".`,
   );
 
 /**
@@ -115,8 +115,8 @@ export async function loadDocsFile(path: string, importFn: ModuleImportFn): Prom
     return await loadClientModule(await importFn(path));
   } catch (error) {
     throw new Error(
-      `${path} is a docs page, which renders in the browser, so what it imports has to load ` +
-        `in a browser. Show server code through a story: <Canvas of={Stories.Name} />.`,
+      `${path} could not load in the browser, where a docs page renders. If it imports server ` +
+        `code, show that through a story: <Canvas of={Stories.Name} />.`,
       { cause: error },
     );
   }

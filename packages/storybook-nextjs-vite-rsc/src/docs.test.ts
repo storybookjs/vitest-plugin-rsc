@@ -87,7 +87,7 @@ test("a docs page shows a client story inline, a server story in an iframe", asy
   };
   expect(enhanced("./stories/button.stories.tsx")).toEqual({ story: { inline: true } });
   expect(enhanced("./stories/greeting.stories.tsx")).toEqual({
-    story: { iframeHeight: "400px" },
+    story: { iframeHeight: "320px" },
   });
   // What the story, its meta or the project says wins, and the object of
   // the meta, which other stories have too, stays as it is.
@@ -106,8 +106,8 @@ test("a server story inline on a docs page says what to do instead", async () =>
   };
   expect(() => renderToCanvas(context as never, {} as HTMLElement)).toThrow(
     "The story greeting--default renders on the server, in a page of the app, which a docs " +
-      "page shows in an iframe: remove `inline: true` of `parameters.docs.story`, or put the " +
-      'story in a file with "use client".',
+      "page shows in an iframe: remove `inline: true` of `parameters.docs.story` or of " +
+      '`<Canvas story={{ inline: true }} />`, or put the story in a file with "use client".',
   );
 });
 
@@ -122,8 +122,8 @@ test("an MDX file is the browser layer's, and one that fails there says why", as
     throw new Error("This module cannot be imported from a Client Component module.");
   });
   await expect(failing).rejects.toThrow(
-    "./stories/server.mdx is a docs page, which renders in the browser, so what it imports has " +
-      "to load in a browser. Show server code through a story: <Canvas of={Stories.Name} />.",
+    "./stories/server.mdx could not load in the browser, where a docs page renders. If it " +
+      "imports server code, show that through a story: <Canvas of={Stories.Name} />.",
   );
   await expect(failing.catch((error: Error) => Promise.reject(error.cause))).rejects.toThrow(
     "cannot be imported from a Client Component",

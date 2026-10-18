@@ -86,12 +86,21 @@ export async function selectDocs(canvas: Frame, docs: string): Promise<void> {
 /**
  * The preview of a story that a docs page shows in an iframe, once its
  * render has ended: a server story, which renders in a page of the app.
+ * The docs page asks its iframes, which have its origin, so an iframe that
+ * it replaces, as it renders again, is not the one waited on.
  */
-export async function storyInDocs(canvas: Frame, story: string): Promise<Frame> {
-  const iframe = canvas.locator(`#storybook-docs iframe[src*="id=${story}"]`).first();
-  const frame = (await (await iframe.elementHandle())!.contentFrame())!;
-  await rendered(frame, story);
-  return frame;
+export async function storyInDocs(canvas: Frame, story: string, timeout = 90_000): Promise<Frame> {
+  const iframe = await canvas.waitForFunction(
+    ({ id, ended }) =>
+      [...document.querySelectorAll<HTMLIFrameElement>("#storybook-docs iframe")].find((iframe) => {
+        const render = (iframe.contentWindow as Window | null)?.__STORYBOOK_PREVIEW__
+          ?.currentRender;
+        return render?.id === id && ended.includes(render.phase!);
+      }),
+    { id: story, ended: done },
+    { timeout, polling: 100 },
+  );
+  return (await iframe.asElement()!.contentFrame())!;
 }
 
 // The phases a render of Storybook ends in.

@@ -1,4 +1,5 @@
 import path from "node:path";
+import MagicString from "magic-string";
 import type { NormalizedStoriesSpecifier } from "storybook/internal/types";
 import { normalizePath, parseAstAsync, type Plugin, type Rollup, type UserConfig } from "vite";
 
@@ -28,7 +29,13 @@ export type DocsPluginOptions = {
 
 /** The plugins, after `vitestPluginNext()`: see `mdxFiles`. */
 export function docsPlugins(options: DocsPluginOptions): Plugin[] {
-  return [withoutDocsDependencies(), docsPreview(), ...mdxFiles(options)];
+  return [
+    withoutDocsDependencies(),
+    addonDocsModule(),
+    addonDocsPreview(),
+    browserOnlyImports(),
+    ...mdxFiles(options),
+  ];
 }
 
 // `@storybook/addon-docs` aliases `react` and `react-dom` to the project's in
@@ -39,6 +46,7 @@ export function docsPlugins(options: DocsPluginOptions): Plugin[] {
 // React DOM are for the preview, which is the rsc layer and never loads
 // them: the browser layer pre-bundles the docs page instead.
 const reactAliases = new Set(["react", "react-dom", "react-dom/server"]);
+const mdxProvider = "@mdx-js/react";
 const docsDependency = /^@storybook\/addon-docs([\s/]|$)/;
 
 function withoutDocsDependencies(): Plugin {
@@ -47,7 +55,13 @@ function withoutDocsDependencies(): Plugin {
     config: {
       order: "post",
       handler(config) {
+        // Without addon-docs, whose alias of `@mdx-js/react` says it is
+        // there, in a build too, the config is the project's own.
         const alias = config.resolve?.alias;
+        const aliases = Array.isArray(alias)
+          ? alias.map(({ find }: { find: unknown }) => find)
+          : Object.keys(alias ?? {});
+        if (!aliases.includes(mdxProvider)) return;
         if (Array.isArray(alias)) {
           config.resolve!.alias = alias.filter(
             ({ find }: { find: unknown }) => typeof find !== "string" || !reactAliases.has(find),
@@ -55,6 +69,7 @@ function withoutDocsDependencies(): Plugin {
         } else if (alias) {
           for (const name of reactAliases) delete (alias as Record<string, string>)[name];
         }
+        // Only `storybook dev` has its pre-bundles.
         const include = config.optimizeDeps?.include ?? [];
         const docs = include.filter((name) => docsDependency.test(name));
         if (docs.length === 0) return;
@@ -69,18 +84,70 @@ function withoutDocsDependencies(): Plugin {
   };
 }
 
-// What the preview has of `@storybook/addon-docs` and of Storybook's UI.
+// `@storybook/addon-docs` is an optional peer dependency: the canvas
+// (client-canvas.tsx) imports its `DocsRenderer` through this module, which
+// has none when the project does not have addon-docs installed.
+const addonDocsId = "virtual:@storybook/nextjs-vite-rsc/addon-docs";
+
+function addonDocsModule(): Plugin {
+  return {
+    name: "storybook-nextjs-vite-rsc:addon-docs",
+    resolveId: {
+      filter: { id: new RegExp(`^${addonDocsId}$`) },
+      handler: () => `\0${addonDocsId}`,
+    },
+    load: {
+      filter: { id: new RegExp(`^\0${addonDocsId}$`) },
+      async handler() {
+        const resolved = await this.resolve("@storybook/addon-docs", import.meta.filename);
+        return resolved && !resolved.external
+          ? `export { DocsRenderer } from ${JSON.stringify(resolved.id)};`
+          : "export const DocsRenderer = undefined;";
+      },
+    },
+  };
+}
+
 // Storybook's Vite builder imports the preview of addon-docs by its path,
 // after the framework's, so its `docs.renderer`, whose `DocsRenderer` renders
 // with React DOM, would win over the framework's: in the rsc layer the
-// preview of addon-docs is its parameters without it. And a module of the
-// docs page or of Storybook's theming that a module of the rsc layer
-// imports, like a theme of `storybook/theming` in the preview file, calls
-// `createContext` as it loads, which the rsc layer's React does not have:
-// that is an error that says so. Not one of a file with `"use client"`,
-// which the rsc layer has a reference module of.
-const addonDocsPreview = /\/@storybook\/addon-docs\/dist\/preview\.js(\?.*)?$/;
+// preview of addon-docs is its parameters without it.
+const addonDocsPreviewFile = /\/@storybook\/addon-docs\/dist\/preview\.js(\?.*)?$/;
 const docsPreviewId = "\0storybook-nextjs-vite-rsc/addon-docs-preview";
+
+function addonDocsPreview(): Plugin {
+  let realPreview = "";
+  return {
+    name: "storybook-nextjs-vite-rsc:addon-docs-preview",
+    enforce: "pre",
+    applyToEnvironment: (environment) => environment.name === rsc,
+    resolveId: {
+      filter: { id: addonDocsPreviewFile },
+      handler(source, importer) {
+        if (importer === docsPreviewId) return;
+        realPreview = normalizePath(source).replace(/\?.*$/, "");
+        return docsPreviewId;
+      },
+    },
+    load: {
+      filter: { id: new RegExp(`^${docsPreviewId}$`) },
+      handler: () =>
+        [
+          `import { parameters as docsParameters } from ${JSON.stringify(realPreview)};`,
+          `export * from ${JSON.stringify(realPreview)};`,
+          "const { renderer, ...docs } = docsParameters.docs;",
+          "export const parameters = { ...docsParameters, docs };",
+        ].join("\n"),
+    },
+  };
+}
+
+// A module of the docs page or of Storybook's theming calls `createContext`
+// as it loads, which the rsc layer's React, the server's, does not have. A
+// module of the rsc layer that imports one, like the preview file or a story
+// file without `"use client"`, is an error that says where it goes. Not a
+// file with `"use client"`, which the rsc layer has a reference module of,
+// nor an import of types.
 const browserOnly = new Set([
   "storybook/theming",
   "@storybook/addon-docs",
@@ -89,26 +156,33 @@ const browserOnly = new Set([
 const languageOf = (file: string) =>
   file.endsWith(".tsx") ? "tsx" : /\.[cm]?ts$/.test(file) ? "ts" : "jsx";
 
-function docsPreview(): Plugin {
-  let realPreview = "";
+type ModuleDeclaration = Awaited<ReturnType<typeof parseAstAsync>>["body"][number];
+
+// The source of a declaration that imports a value of another module.
+function valueImportOf(node: ModuleDeclaration): { source: string; start: number } | undefined {
+  if (node.type === "ImportDeclaration") {
+    if (node.importKind === "type") return;
+    const specifiers = node.specifiers;
+    const types = specifiers.filter(
+      (specifier) => specifier.type === "ImportSpecifier" && specifier.importKind === "type",
+    );
+    if (specifiers.length > 0 && types.length === specifiers.length) return;
+    return { source: node.source.value, start: node.start };
+  }
+  if (node.type === "ExportAllDeclaration" || node.type === "ExportNamedDeclaration") {
+    if (!node.source || node.exportKind === "type") return;
+    return { source: node.source.value, start: node.start };
+  }
+  return undefined;
+}
+
+function browserOnlyImports(): Plugin {
   return {
-    name: "storybook-nextjs-vite-rsc:docs-preview",
+    name: "storybook-nextjs-vite-rsc:browser-only-imports",
+    // On the code as it is written, before Vite RSC makes a reference module
+    // of a file with `"use client"`.
     enforce: "pre",
     applyToEnvironment: (environment) => environment.name === rsc,
-    resolveId(source, importer) {
-      if (importer === docsPreviewId || !addonDocsPreview.test(normalizePath(source))) return;
-      realPreview = normalizePath(source).replace(/\?.*$/, "");
-      return docsPreviewId;
-    },
-    load(id) {
-      if (id !== docsPreviewId) return;
-      return [
-        `import { parameters as docsParameters } from ${JSON.stringify(realPreview)};`,
-        `export * from ${JSON.stringify(realPreview)};`,
-        "const { renderer, ...docs } = docsParameters.docs;",
-        "export const parameters = { ...docsParameters, docs };",
-      ].join("\n");
-    },
     transform: {
       filter: {
         id: { include: /\.[cm]?[jt]sx?(\?.*)?$/, exclude: /\/node_modules\// },
@@ -122,19 +196,16 @@ function docsPreview(): Plugin {
           if (node.type !== "ExpressionStatement" || !node.directive) break;
         }
         for (const node of ast.body) {
-          if (
-            node.type === "ImportDeclaration" &&
-            node.importKind !== "type" &&
-            browserOnly.has(node.source.value)
-          ) {
-            this.error(
-              `${path.basename(file)} imports ${node.source.value}, which renders with React ` +
-                `DOM, in the browser: the preview runs on React's server build, where it does ` +
-                `not load. Import it from a file with "use client", and a theme from ` +
-                `storybook/theming/create.`,
-              node.start,
-            );
-          }
+          const imported = valueImportOf(node);
+          if (!imported || !browserOnly.has(imported.source)) continue;
+          const name = path.basename(file);
+          this.error(
+            `${name} imports ${imported.source}, which renders with React DOM, in the ` +
+              `browser: ${name} runs on React's server build, as the preview file and a story ` +
+              `file without "use client" do, where it does not load. Import it from a file ` +
+              `with "use client", and a theme from storybook/theming/create.`,
+            imported.start,
+          );
         }
       },
     },
@@ -167,7 +238,7 @@ function mdxFiles({ workingDir, stories, previewFile }: DocsPluginOptions): Plug
     !importPath.endsWith(".mdx") &&
     stories.some(({ importPathMatcher }) => importPathMatcher.test(importPath));
   const importPathOf = (file: string) => {
-    const relative = path.posix.relative(normalizePath(workingDir), file);
+    const relative = normalizePath(path.relative(workingDir, file));
     return relative.startsWith("../") ? relative : `./${relative}`;
   };
   // The story files that each MDX file imports, as the rsc layer compiled it.
@@ -182,12 +253,16 @@ function mdxFiles({ workingDir, stories, previewFile }: DocsPluginOptions): Plug
       transform: {
         filter: { id: /\.mdx$/ },
         async handler(code, id) {
-          const imports = await storyFileImports.call(this, code, id, isStoryFile, importPathOf);
+          const resolve = (source: string) => this.resolve(source, id);
+          const imports = await storyFileImports(code, resolve, isStoryFile, importPathOf);
+          const result = new MagicString(code);
           if (this.environment.name === rsc) {
             imported.set(id, imports);
-            return { code: `"use client";\n${code}`, map: null };
+            result.prepend(`"use client";\n`);
+          } else {
+            withStoryFilesOfTheStore(result, imports);
           }
-          return { code: withStoryFilesOfTheStore(code, imports), map: null };
+          return { code: result.toString(), map: result.generateMap({ hires: true }) };
         },
       },
     },
@@ -202,18 +277,18 @@ function mdxFiles({ workingDir, stories, previewFile }: DocsPluginOptions): Plug
         handler(code, id) {
           const imports = imported.get(id);
           if (!imports?.length) return;
-          return { code: storyFilesCode(imports, previewFile) + code, map: null };
+          const result = new MagicString(code).prepend(storyFilesCode(imports, previewFile));
+          return { code: result.toString(), map: result.generateMap({ hires: true }) };
         },
       },
     },
   ];
 }
 
-/** The imports of story files in compiled MDX. */
-export async function storyFileImports(
-  this: Pick<Rollup.PluginContext, "resolve">,
+// The imports of story files in compiled MDX.
+async function storyFileImports(
   code: string,
-  id: string,
+  resolve: (source: string) => Promise<Rollup.ResolvedId | null>,
   isStoryFile: (importPath: string) => boolean,
   importPathOf: (file: string) => string,
 ): Promise<StoryFileImport[]> {
@@ -221,7 +296,7 @@ export async function storyFileImports(
   const imports: StoryFileImport[] = [];
   for (const node of ast.body) {
     if (node.type !== "ImportDeclaration" || node.importKind === "type") continue;
-    const resolved = await this.resolve(node.source.value, id);
+    const resolved = await resolve(node.source.value);
     if (!resolved || resolved.external) continue;
     const file = normalizePath(resolved.id.replace(/\?.*$/, ""));
     const importPath = importPathOf(file);
@@ -248,11 +323,9 @@ export async function storyFileImports(
 
 const storyFiles = `globalThis[Symbol.for(${JSON.stringify(storyFilesKey)})]`;
 
-/**
- * The rsc layer's lines above the module of an MDX file: its story files,
- * loaded by the framework's hook, as the store loads them.
- */
-export function storyFilesCode(imports: StoryFileImport[], previewFile: string): string {
+// The rsc layer's lines above the module of an MDX file: its story files,
+// loaded by the framework's hook, as the store loads them.
+function storyFilesCode(imports: StoryFileImport[], previewFile: string): string {
   const lines = [
     `import { experimental_loadStoryFile as __loadStoryFile } from ${JSON.stringify(previewFile)};`,
     ...imports.map(
@@ -268,13 +341,22 @@ export function storyFilesCode(imports: StoryFileImport[], previewFile: string):
   return `${lines.join("\n")}\n`;
 }
 
-/** The browser layer's MDX, with the exports that the rsc layer loaded in place of its imports. */
-export function withStoryFilesOfTheStore(code: string, imports: StoryFileImport[]): string {
-  let result = code;
-  for (const found of [...imports].sort((a, b) => b.start - a.start)) {
-    const exports = `${storyFiles}.get(${JSON.stringify(found.importPath)})`;
+// The browser layer's MDX, with the exports that the rsc layer loaded in
+// place of its imports. Only an MDX file that Storybook loads, as a docs
+// page, has them: not one that another file imports.
+function withStoryFilesOfTheStore(code: MagicString, imports: StoryFileImport[]): void {
+  if (imports.length === 0) return;
+  code.prepend(
+    "const __storyFileOf = (importPath) => {\n" +
+      `  const exports = ${storyFiles}?.get(importPath);\n` +
+      "  if (exports) return exports;\n" +
+      "  throw new Error(`The stories of ${importPath} are not loaded: an MDX file has them " +
+      "as Storybook loads it, as a docs page, not as another file imports it.`);\n" +
+      "};\n",
+  );
+  for (const found of imports) {
     const local = found.namespace ?? `__storyFile${found.start}`;
-    const declarations = [`const ${local} = ${exports};`];
+    const declarations = [`const ${local} = __storyFileOf(${JSON.stringify(found.importPath)});`];
     if (found.default) declarations.push(`const ${found.default} = ${local}.default;`);
     if (found.named.length > 0) {
       const names = found.named.map(([name, as]) =>
@@ -282,7 +364,6 @@ export function withStoryFilesOfTheStore(code: string, imports: StoryFileImport[
       );
       declarations.push(`const { ${names.join(", ")} } = ${local};`);
     }
-    result = result.slice(0, found.start) + declarations.join(" ") + result.slice(found.end);
+    code.overwrite(found.start, found.end, declarations.join(" "));
   }
-  return result;
 }

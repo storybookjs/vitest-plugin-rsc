@@ -83,9 +83,9 @@ test("the plugin, with the stories and .storybook as files of the host", async (
     new URL("./client-canvas.tsx", import.meta.resolve("@storybook/nextjs-vite-rsc/preset")),
   );
   expect((host.files[2] as RegExp).test(canvas)).toBe(true);
-  // No packages of the host: Storybook's Vite builder gives each layer the
-  // preview's instance of what has one, and the rest is each layer's own.
-  expect(host.packages).toBe(undefined);
+  // The one package of the host: in a build the rsc layer would have its own
+  // `storybook/test`, without a `window`. The rest is each layer's own.
+  expect(host.packages).toEqual(["storybook/test"]);
 });
 
 test("the docs plugins after the plugin's, whose load line of an MDX file they go above", async () => {
