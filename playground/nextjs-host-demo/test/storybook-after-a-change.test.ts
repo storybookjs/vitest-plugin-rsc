@@ -98,7 +98,10 @@ test("a client story has the project's decorator after a change of its file", as
   await expect.poll(() => button.getAttribute("data-theme"), { timeout: 30_000 }).toBe("storybook");
 });
 
-test("a page story renders again after a change of its file", async ({ page }) => {
+// Retried until SB-2295 is fixed in Storybook: a render that Storybook drops
+// while it prepares runs the cleanup of the render on screen, which leaves
+// the page while it loads. Under CI load that hits this test.
+test("a page story renders again after a change of its file", { retry: 2 }, async ({ page }) => {
   const canvas = await openStory(page, site!.url, "home--home");
   change("stories/home.stories.tsx", 'url: "/"', 'url: "/?changed"');
   await expect.poll(() => new URL(canvas.url()).search, { timeout: 30_000 }).toBe("?changed");
