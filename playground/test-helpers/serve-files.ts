@@ -31,6 +31,8 @@ const contentTypes: Record<string, string> = {
   ".svg": "image/svg+xml",
   ".png": "image/png",
   ".woff2": "font/woff2",
+  // The only type `WebAssembly.compileStreaming()` takes, which PGlite loads its build with.
+  ".wasm": "application/wasm",
 };
 
 /**

@@ -1,0 +1,5 @@
+/* The font that the root layout sets on `<html>` with next/font, for a story
+   of a component, which renders without the layouts. */
+:root {
+  --font-geist-sans: "Geist Variable", ui-sans-serif, system-ui, sans-serif;
+}
