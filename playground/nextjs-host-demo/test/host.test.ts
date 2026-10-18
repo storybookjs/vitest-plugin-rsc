@@ -68,6 +68,42 @@ test("leaving a page puts back the URL the host had as the page opened", async (
   });
 });
 
+test("puts back the storage of a document that goes, which another document heard of", async ({
+  page,
+  errors,
+}) => {
+  await open(page, errors, "node", async (page) => {
+    // A second document of the host next to this one, as a page of docs has
+    // one for each story, which stores in the browser. This one hears of it,
+    // as of what any other document of the origin stores: the host's, for
+    // all it knows. Then the second document goes, without `cleanup()`.
+    const frame = await page.evaluate(async () => {
+      const heard = new Set<Storage | null>();
+      const hear = ({ key, storageArea }: StorageEvent) => {
+        if (key === "visitor") heard.add(storageArea);
+      };
+      window.addEventListener("storage", hear);
+      const iframe = document.body.appendChild(document.createElement("iframe"));
+      iframe.src = "?view=stored";
+      const other = () => iframe.contentWindow as HostWindow | null;
+      while (heard.size < 2 && other()?.__hostState !== "error") {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+      window.removeEventListener("storage", hear);
+      const { __hostState, __hostError } = other() ?? {};
+      iframe.remove();
+      return { state: __hostState, error: String(__hostError) };
+    });
+    expect(frame.state, frame.error).toBe("ready");
+
+    await expect
+      .poll(() =>
+        page.evaluate(() => [localStorage.getItem("visitor"), sessionStorage.getItem("visitor")]),
+      )
+      .toEqual([null, null]);
+  });
+});
+
 test("renders a node of the host in a container of the host", async ({ page, errors }) => {
   await open(page, errors, "node", async (page) => {
     // In the container, with the document of the host around it.

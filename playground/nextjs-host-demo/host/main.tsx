@@ -21,8 +21,9 @@ import { show, state } from "./state.ts";
 // moves the URL of the host between two pages of the app. `?view=tag`
 // renders a node with a Client Component of a package that is not
 // pre-bundled, and `?view=rerender` renders a node again with other props,
-// without a page load. A second page of the host, with a node of its own,
-// is callout.html.
+// without a page load. `?view=stored` opens a page and stores in the
+// browser, as a story's `beforeEach` does. A second page of the host, with a
+// node of its own, is callout.html.
 const view = new URLSearchParams(window.location.search).get("view");
 await show(async () => {
   if (view === "client" || view === "package") {
@@ -101,6 +102,12 @@ await show(async () => {
     for (const Component of [Badge, Like]) {
       renderClient(Component, container.appendChild(document.createElement("div")));
     }
+    return;
+  }
+  if (view === "stored") {
+    await renderServer({ url: "/" });
+    localStorage.setItem("visitor", "Ada");
+    sessionStorage.setItem("visitor", "Ada");
     return;
   }
   if (view === "pages") {
