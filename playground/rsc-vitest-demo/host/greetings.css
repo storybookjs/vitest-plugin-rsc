@@ -1,4 +1,5 @@
 /* The CSS of a Server Component: a file of the host's build, which its HTML links. */
 .greetings h1 {
   color: rgb(0, 0, 255);
+  background-image: url("./noise.png");
 }
