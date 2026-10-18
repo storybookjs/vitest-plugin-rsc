@@ -94,3 +94,16 @@ test("server stories render after a change of a component of the app", async ({ 
     reports: [],
   });
 });
+
+test("a change of the preview's stylesheet shows in place", async ({ page }) => {
+  const canvas = await openStory(page, site!.url, "press-button--labelled");
+  await mark(canvas);
+  change(".storybook/preview.css", "rgb(255, 0, 0)", "rgb(0, 128, 0)");
+  const theme = canvas.locator("#storybook-root").getByTestId("theme");
+  await expect
+    .poll(() => theme.evaluate((element) => getComputedStyle(element).outlineColor), {
+      timeout: 30_000,
+    })
+    .toBe("rgb(0, 128, 0)");
+  expect(await canvas.evaluate(() => "__marked" in window)).toBe(true);
+});

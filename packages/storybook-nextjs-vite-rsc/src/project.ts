@@ -1,5 +1,5 @@
 import path from "node:path";
-import { normalizePath, type EnvironmentModuleNode, type Plugin } from "vite";
+import { isCSSRequest, normalizePath, type EnvironmentModuleNode, type Plugin } from "vite";
 
 // What the preview knows of the project, as a virtual module: the preview
 // file of `.storybook/`, and where Storybook names a story file from. Both
@@ -13,7 +13,8 @@ import { normalizePath, type EnvironmentModuleNode, type Plugin } from "vite";
 // loads the preview again after a change of the file, and so does the module
 // after a change of a module that the file imports: one importer that took
 // the change in place would have another evaluation of the file than the
-// other.
+// other. A change that reaches the preview file loads the preview again,
+// but for a stylesheet, which Vite swaps in place.
 
 export const projectModuleId = "virtual:@storybook/nextjs-vite-rsc/project";
 
@@ -47,6 +48,11 @@ export function projectPlugin({ root, workingDir, previewFile }: Project): Plugi
     hotUpdate({ modules }) {
       // The rsc layer is Vite's `client` environment: the preview.
       if (this.environment.name !== "client" || !preview) return;
+      // A stylesheet that Vite swaps in place, like one the preview file
+      // imports, changes no evaluation of the file.
+      if (modules.every((module) => module.isSelfAccepting && isCSSRequest(module.file ?? ""))) {
+        return;
+      }
       if (!modules.some((module) => isOrIsImportedBy(module, preview))) return;
       this.environment.hot.send({ type: "full-reload" });
       return [];
