@@ -1136,6 +1136,13 @@ function reloadsDocument(path: string | undefined): boolean {
   );
 }
 
+// Whether the URL is the one of the route of a node, which renders the node
+// and not the app's page. Not after the node redirected to another
+// pathname, or the app navigated to one: the page there is the app's.
+function nodeAt(url: URL): boolean {
+  return !!registry.opened?.node && registry.opened.pathname === url.pathname;
+}
+
 (window as { navigation?: EventTarget }).navigation?.addEventListener("navigate", (event) => {
   const { navigationType, destination, hashChange, formData, downloadRequest } =
     event as NavigateEvent;
@@ -1145,12 +1152,27 @@ function reloadsDocument(path: string | undefined): boolean {
   if (destination.sameDocument) page?.nodeOnPage?.at(new URL(destination.url).pathname);
   if (destination.sameDocument || hashChange || !event.cancelable) return;
   const url = new URL(destination.url);
+  // A reload loads again what owns the document. A page of the app owns it
+  // and its URL: it loads again from that URL, below. Else the document is
+  // the host's, also with a node in it: the node is the host's, at the URL
+  // of its route, where the app's route has another page. So the browser
+  // loads the host's document again, as after a change (see above), at the
+  // host's URL, which leaving puts back.
+  const pageOfTheApp = page && !nodeAt(url);
+  if (navigationType === "reload" && !pageOfTheApp) {
+    if (destination.url === documentUrl()) return;
+    event.preventDefault();
+    void leavePage("a reload of the document")
+      .catch(() => {})
+      .then(() => window.location.reload());
+    return;
+  }
   if (!page) {
     // No page of the app to load another one of: a component that a test
     // file with `"use client"` rendered has no router. A link or a form
-    // would replace the test, and Vitest would lose the tab. Not a reload,
-    // like Vite's after a change, and not a download, which stays.
-    if (navigationType === "reload" || downloadRequest != null) return;
+    // would replace the test, and Vitest would lose the tab. Not a
+    // download, which stays.
+    if (downloadRequest != null) return;
     event.preventDefault();
     reportError(noRouter(url));
     return;
