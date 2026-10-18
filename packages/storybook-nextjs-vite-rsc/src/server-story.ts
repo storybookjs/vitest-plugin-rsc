@@ -6,7 +6,6 @@ import {
   cleanup,
   renderServer,
   type RenderComponentOptions,
-  type RenderServerResult,
 } from "vitest-plugin-rsc/nextjs/testing-library";
 import type { NextjsParameters, NextjsRscRenderer } from "./index.ts";
 
@@ -53,27 +52,16 @@ const pageWithoutUrl = (id: string) =>
       `a story of a component, give it a \`component\` or a \`render\`.`,
   );
 
-// What a server story was rendered with, and what `renderServer()` gave.
-type Rendered = {
-  id: string;
-  /** `parameters.nextjs`, as JSON: the request. */
-  request: string;
-  /** The node, or none for a page. */
-  node: ReactNode | undefined;
-  options: RenderComponentOptions;
-  result: RenderServerResult;
-};
+// A render of a server story, by identity.
+type Rendered = object;
 
 // The story on the canvas: the one that counts. A render after it, the
 // framework's `beforeEach` of the next one, or an abort, ends a render.
 let shown: Rendered | undefined;
-// The story that the framework's `beforeEach` left, which a render of the
-// same story again is compared with.
-let left: Rendered | undefined;
 
 /** Renders a server story with `renderServer()`. */
 export async function renderServerStory(
-  { storyContext, storyFn, showMain, forceRemount }: RenderContext<NextjsRscRenderer>,
+  { storyContext, storyFn, showMain }: RenderContext<NextjsRscRenderer>,
   canvasElement: HTMLElement,
 ): Promise<void> {
   const context = storyContext as Context;
@@ -95,13 +83,12 @@ export async function renderServerStory(
         hostFiles: hostFilesOf(context.parameters.fileName as string | undefined),
         ...(layouts ? { layouts } : { container: canvasElement }),
       };
-  const request = JSON.stringify(context.parameters.nextjs ?? {});
-  const before = left;
-  const again = !forceRemount && before?.id === context.id && before.request === request;
   // A page and the layouts have the document's `<body>`, which React
-  // hydrates: Storybook's classes on it come first.
+  // hydrates: Storybook's classes on it come first. Every render is a new
+  // page load, also with other args: the framework's `beforeEach` has left
+  // the story before.
   const ownsDocument = page || layouts === true;
-  const rendered: Rendered = { id: context.id, request, node, options, result: undefined! };
+  const rendered: Rendered = {};
   shown = rendered;
   const superseded = () => shown !== rendered || context.abortSignal.aborted;
   const rendering = (async () => {
@@ -115,11 +102,12 @@ export async function renderServerStory(
     };
     window.addEventListener("error", report);
     try {
-      rendered.result = again
-        ? await renderAgain(before, rendered, showMain, ownsDocument)
-        : await renderAnew(rendered, showMain, ownsDocument);
+      if (ownsDocument) showMain();
+      const result = await (node === undefined
+        ? renderServer(options)
+        : renderServer(node, options));
       if (superseded()) return;
-      const { status } = rendered.result.response;
+      const { status } = result.response;
       if (reported.length > 0 || status >= 500) {
         throw reported[0] ?? new Error(`The server answered ${status} for the story.`);
       }
@@ -161,9 +149,7 @@ async function leave(rendered: Rendered): Promise<void> {
  * is torn down.
  */
 export async function beforeEach(): Promise<() => Promise<void>> {
-  left = shown;
-  shown = undefined;
-  await cleanup();
+  await (shown ? leave(shown) : cleanup());
   return leaveShown;
 }
 
@@ -174,32 +160,11 @@ async function leaveShown(): Promise<void> {
   if (shown) await leave(shown);
 }
 
-// A new page load for the story. The framework's `beforeEach` has left the
-// story before.
-async function renderAnew(
-  { node, options }: Rendered,
-  showMain: () => void,
-  ownsDocument: boolean,
-): Promise<RenderServerResult> {
-  if (ownsDocument) showMain();
-  return node === undefined ? renderServer(options) : renderServer(node, options);
-}
-
-// The same story with other args, in the same request. SB-2258 renders it
-// again in the page of `before`, which keeps its state, and so the
-// framework's `beforeEach` has to keep that page; a page load until then.
-function renderAgain(
-  _before: Rendered,
-  rendered: Rendered,
-  showMain: () => void,
-  ownsDocument: boolean,
-): Promise<RenderServerResult> {
-  return renderAnew(rendered, showMain, ownsDocument);
-}
-
-// The preview file and the story's file: their stylesheets are the story's,
-// as a test has those of its setup files and its own.
-function hostFilesOf(fileName: string | undefined): string[] {
+/**
+ * The preview file and the story's file: their stylesheets are the story's,
+ * as a test has those of its setup files and its own.
+ */
+export function hostFilesOf(fileName: string | undefined): string[] {
   return [previewFile, fileName && fromRoot(fileName)].filter((file) => !!file) as string[];
 }
 
