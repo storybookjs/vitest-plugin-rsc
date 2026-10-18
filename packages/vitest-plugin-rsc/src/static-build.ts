@@ -311,11 +311,13 @@ export function staticBuild(options: StaticBuildOptions): Plugin {
             // environments share, and not from where a layer has it. So a
             // URL of the CSS of a layer names the file from the directory of
             // the build, until the CSS has its place: see `generateBundle`.
+            // Unless the config's own names it with a URL of its own.
             renderBuiltUrl(filename, context) {
-              if (buildingLayer && context.hostType === "css") {
-                return `${cssBuildDirPlaceholder}/${filename}`;
+              const own = userRenderBuiltUrl?.(filename, context);
+              if (!buildingLayer || context.hostType !== "css" || typeof own === "string") {
+                return own;
               }
-              return userRenderBuiltUrl?.(filename, context);
+              return `${cssBuildDirPlaceholder}/${filename}`;
             },
           },
           build: {
@@ -431,6 +433,7 @@ export function staticBuild(options: StaticBuildOptions): Plugin {
         for (const { pathname, body } of layers.files?.() ?? []) write(pathname, body);
       } finally {
         buildingApp = false;
+        buildingLayer = false;
       }
     },
     buildStart() {
