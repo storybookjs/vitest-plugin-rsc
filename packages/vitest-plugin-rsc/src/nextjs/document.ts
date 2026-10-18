@@ -10,10 +10,20 @@ import { graphStylesheetAttribute } from "./styles-shared.ts";
 // A page gets a `<body>` of its own, as it does in a browser, and so does a
 // node. What it leaves on its body goes with it: React adds its listeners to
 // the body when a portal renders there, and they would keep the page.
+//
+// React DOM keeps what it knows of a node in properties of the node, named
+// for the copy of React DOM that sets them: the page's, which loads with it.
+// On the document those stay, and with them the page: the stylesheets React
+// hoisted, and the listeners it added to them. So what the page's React DOM
+// set on the document, on `<html>` and `<head>`, and on the container of a
+// node goes with the page. Not what was there before it: the host may run a
+// React of its own.
 
 const elements = (of: Document) => [of.documentElement, of.head, of.body];
 const attributesOf = (element: Element) =>
   Array.from(element.attributes, ({ name, value }) => [name, value] as const);
+// `__reactFiber$…`, `__reactResources$…`, `_reactListening…` and the like.
+const isReactProperty = (key: string) => /^(?:__react[A-Za-z]+\$|_reactListening)/.test(key);
 
 let unload: (() => void) | undefined;
 // The URL that leaving the page puts back, while a page is open.
@@ -90,6 +100,9 @@ export async function loadDocument(html: string, url: string, container?: Elemen
   runnerHref = runnerUrl;
   const runnerBody = document.body;
   const runnerAttributes = elements(document).map(attributesOf);
+  const marked: object[] = [document, document.documentElement, document.head];
+  if (container) marked.push(container);
+  const runnerProperties = marked.map((target) => new Set(Object.keys(target)));
   const runnerScripts = new Set(document.querySelectorAll("script"));
   const before = new Set<Node>([...document.head.childNodes, ...runnerBody.childNodes]);
   const parked: Node[] = [];
@@ -129,6 +142,13 @@ export async function loadDocument(html: string, url: string, container?: Elemen
     elements(document).forEach((element, index) =>
       setAttributes(element, runnerAttributes[index]!),
     );
+    marked.forEach((target, index) => {
+      for (const key of Object.keys(target)) {
+        if (isReactProperty(key) && !runnerProperties[index]!.has(key)) {
+          delete (target as Record<string, unknown>)[key];
+        }
+      }
+    });
     // Where Next's scripts leave the Flight payload and the scripts to run
     // before the app starts.
     delete (self as { __next_f?: unknown }).__next_f;
