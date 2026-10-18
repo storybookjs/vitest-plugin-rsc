@@ -43,7 +43,8 @@ test("every docs page shows its stories: a client story inline, a server story i
 });
 
 // What Chromatic does with a build: the stories of every entry of the index,
-// which loads every file, the MDX file too.
+// which loads every file, the MDX file too. One file that fails to load
+// rejects extract().
 test("extract() of the preview has every story", async ({ page }) => {
   await page.goto(new URL("iframe.html", site!.url).href);
   await page.waitForFunction(

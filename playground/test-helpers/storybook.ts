@@ -62,24 +62,37 @@ export async function openDocs(page: Page, url: string, docs: string): Promise<F
   return canvas;
 }
 
-/** Resolves once the docs page is the one in the preview, and it shows its content. */
+/**
+ * Resolves once the docs page is the one in the preview, and it shows its
+ * content, not the content of the last one: see `selectDocs()`.
+ */
 export async function docsShown(canvas: Frame, docs: string, timeout = 90_000): Promise<void> {
   await canvas.waitForFunction(
-    (id) =>
-      window.__STORYBOOK_PREVIEW__?.currentRender?.id === id &&
-      !!document.querySelector("#storybook-docs")?.textContent,
+    (id) => {
+      const content = document.querySelector("#storybook-docs");
+      return (
+        window.__STORYBOOK_PREVIEW__?.currentRender?.id === id &&
+        !!content?.textContent &&
+        !content.querySelector("[data-last-docs]")
+      );
+    },
     docs,
     { timeout, polling: 100 },
   );
 }
 
-/** Selects a docs page in the manager that is open, as a click in the sidebar does. */
+/**
+ * Selects a docs page in the manager that is open, as a click in the sidebar
+ * does. Storybook makes the next docs page the current render before it
+ * removes the content of the last one, so that content is marked first.
+ */
 export async function selectDocs(canvas: Frame, docs: string): Promise<void> {
-  await canvas.evaluate(
-    (storyId) =>
-      window.__STORYBOOK_PREVIEW__.channel.emit("selectStory", { storyId, viewMode: "docs" }),
-    docs,
-  );
+  await canvas.evaluate((storyId) => {
+    for (const element of document.querySelectorAll("#storybook-docs > *")) {
+      element.setAttribute("data-last-docs", "");
+    }
+    window.__STORYBOOK_PREVIEW__.channel.emit("selectStory", { storyId, viewMode: "docs" });
+  }, docs);
   await docsShown(canvas, docs);
 }
 

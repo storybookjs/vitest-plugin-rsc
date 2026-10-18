@@ -20,26 +20,25 @@ export const passed: StoryRun = { phase: "finished", reports: [], interactions: 
 
 type Story = { id: string; page: boolean; client: boolean };
 
-/**
- * A docs page: of the stories of a file with `autodocs`, or an MDX file. The
- * stories it can show: every one of its file, or of the files the MDX file
- * imports.
- */
-type Docs = { id: string; autodocs: boolean; stories: Story[] };
+/** A docs page, and the stories it shows. */
+type Docs = { id: string; stories: Story[] };
 
 const root = new URL("../", import.meta.url);
+
+// The stories that each MDX file shows, with `<Canvas of={…} />`.
+const mdx: Record<string, string[]> = {
+  "introduction--docs": ["components-flashcookieprobe--from-request", "ui-button--disabled"],
+};
 
 /**
  * The stories and docs pages of the Storybook at `url`, in the order of its
  * sidebar: a page is a story of a `page.stories.tsx`, a client story one of
- * a file with "use client".
+ * a file with "use client". An autodocs page shows the stories of its file
+ * that have the `autodocs` tag.
  */
 export async function index(url: string): Promise<{ stories: Story[]; docs: Docs[] }> {
   const { entries } = (await (await fetch(new URL("index.json", url))).json()) as {
-    entries: Record<
-      string,
-      { id: string; type: string; importPath: string; storiesImports?: string[] }
-    >;
+    entries: Record<string, { id: string; type: string; importPath: string; tags: string[] }>;
   };
   const all = Object.values(entries);
   const storyEntries = all.filter((entry) => entry.type === "story");
@@ -54,20 +53,29 @@ export async function index(url: string): Promise<{ stories: Story[]; docs: Docs
   expect(new Set(docsEntries.map((entry) => entry.importPath))).toEqual(
     new Set([...files("components/**/*.mdx"), ...files("components/**/*.stories.tsx")]),
   );
-  const stories = storyEntries.map(({ id, importPath }) => ({
+  const stories = storyEntries.map(({ id, importPath, tags }) => ({
     id,
-    importPath,
     page: importPath.endsWith("/page.stories.tsx"),
     client: /^["']use client["']/.test(fs.readFileSync(new URL(importPath, root), "utf8")),
+    autodocs: tags.includes("autodocs") && !tags.includes("!autodocs"),
+    importPath,
   }));
-  const docs = docsEntries.map(({ id, importPath, storiesImports = [] }) => {
-    const autodocs = !importPath.endsWith(".mdx");
-    const of = new Set(autodocs ? [importPath] : storiesImports);
-    return { id, autodocs, stories: stories.filter((story) => of.has(story.importPath)) };
+  const docs = docsEntries.map(({ id, importPath }) => {
+    if (!importPath.endsWith(".mdx")) {
+      const of = stories.filter((story) => story.importPath === importPath && story.autodocs);
+      return { id, stories: of };
+    }
+    const of = stories.filter((story) => mdx[id]?.includes(story.id));
+    expect(
+      of.map((story) => story.id),
+      `the stories that ${importPath} shows`,
+    ).toEqual(mdx[id]);
+    return { id, stories: of };
   });
+  const story = ({ id, page, client }: Story): Story => ({ id, page, client });
   return {
-    stories: stories.map(({ importPath: _, ...story }) => story),
-    docs,
+    stories: stories.map(story),
+    docs: docs.map(({ id, stories }) => ({ id, stories: stories.map(story) })),
   };
 }
 
@@ -114,22 +122,20 @@ export async function runEveryStory(page: Page, url: string, errors: PageErrors)
   for (const story of rest) await check(story, await runStory(page, canvas, story.id));
 }
 
-/** A story that a docs page shows: inline, or in an iframe of its own, and the phase its render ended in. */
-type Shown = { id: string; in: "inline" | "iframe"; phase: string };
+/** A story that a docs page shows: inline, or in an iframe of its own, and whether it shows an error. */
+type Shown = { id: string; in: "inline" | "iframe"; error: boolean };
 
 // The stories that the docs page in the preview shows, once each has
-// rendered: an inline story once its root has content, a story in an iframe
-// once the render of the preview in it has ended. The primary story of an
-// autodocs page is in a block of its own too. Storybook has the next docs
-// page as the one of the preview before it removes the last one's, so the
-// blocks of that one are marked, and are not the ones waited on.
+// rendered: an inline story once its block has its root or the error in
+// place of it, a story in an iframe once the render of the preview in it has
+// ended. The primary story of an autodocs page has a block of its own too.
+// Storybook makes the next docs page the current render before it removes
+// the blocks of the last one, which `selectDocs()` waits for.
 async function shownStories(canvas: Frame): Promise<Shown[]> {
   const shown = await canvas.waitForFunction(
     (ended) => {
       const blocks = [...document.querySelectorAll("#storybook-docs .sb-story")];
-      if (!blocks.length || blocks.some((block) => block.hasAttribute("data-last-docs"))) {
-        return false;
-      }
+      if (!blocks.length) return false;
       const stories = [];
       for (const block of blocks) {
         const id = block.id.replace(/^story--/, "").replace(/--primary$/, "");
@@ -138,10 +144,13 @@ async function shownStories(canvas: Frame): Promise<Shown[]> {
           const render = (iframe.contentWindow as Window | null)?.__STORYBOOK_PREVIEW__
             ?.currentRender;
           if (render?.id !== id || !ended.includes(render.phase!)) return false;
-          stories.push({ id, in: "iframe", phase: render.phase! });
+          const error = !!iframe.contentDocument?.body.classList.contains("sb-show-errordisplay");
+          stories.push({ id, in: "iframe", error });
+        } else if (block.querySelector("pre")) {
+          stories.push({ id, in: "inline", error: true });
         } else {
           if (!block.querySelector(`[id$="-inner"]`)?.childElementCount) return false;
-          stories.push({ id, in: "inline", phase: "rendered" });
+          stories.push({ id, in: "inline", error: false });
         }
       }
       return stories;
@@ -155,9 +164,9 @@ async function shownStories(canvas: Frame): Promise<Shown[]> {
 /**
  * Selects every docs page of the Storybook at `url` in turn, as the sidebar
  * does. Each shows its stories, a client story inline and a server story in
- * an iframe, where it renders in a page of the app and its play function
- * passes, and the page logs no error. An autodocs page shows every story of
- * its file, an MDX page some of the files it imports.
+ * an iframe, where it renders in a page of the app and runs its play
+ * function, without an error, and the page logs no error: a play function
+ * that fails logs one.
  */
 export async function renderEveryDocsPage(
   page: Page,
@@ -166,31 +175,21 @@ export async function renderEveryDocsPage(
 ): Promise<void> {
   const [first, ...rest] = (await index(url)).docs;
   const canvas = await openDocs(page, url, first!.id);
-  const check = async ({ id, autodocs, stories }: Docs) => {
+  const check = async ({ id, stories }: Docs) => {
     const shown = await shownStories(canvas);
-    const ids = new Set(shown.map((story) => story.id));
-    const of = new Set(stories.map((story) => story.id));
-    if (autodocs) expect(ids, id).toEqual(of);
-    else
-      expect(
-        [...ids].filter((story) => !of.has(story)),
-        id,
-      ).toEqual([]);
-    const expected = shown.map((story) =>
-      stories.find((of) => of.id === story.id)!.client
-        ? { id: story.id, in: "inline", phase: "rendered" }
-        : { id: story.id, in: "iframe", phase: "finished" },
+    expect(new Set(shown.map((story) => story.id)), id).toEqual(
+      new Set(stories.map((story) => story.id)),
     );
+    const expected = shown.map((story) => ({
+      id: story.id,
+      in: stories.find((of) => of.id === story.id)!.client ? "inline" : "iframe",
+      error: false,
+    }));
     expect(shown, id).toEqual(expected);
     expect(errors.list.splice(0), id).toEqual([]);
   };
   await check(first!);
   for (const docs of rest) {
-    await canvas.evaluate(() => {
-      for (const block of document.querySelectorAll("#storybook-docs .sb-story")) {
-        block.setAttribute("data-last-docs", "");
-      }
-    });
     await selectDocs(canvas, docs.id);
     await check(docs);
   }
