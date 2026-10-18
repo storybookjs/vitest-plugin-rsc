@@ -296,6 +296,10 @@ async function sendRequest(
  * One to the pathname of what `renderServer()` opened is that page's, as a
  * `fetch` of the page is: it gets the route of the node, and skips the proxy
  * if the page does.
+ *
+ * Ask the server yourself with this, not with `fetch`: a `fetch` with Next's
+ * `rsc` or `next-action` header is Next's. It is the page's that is open as
+ * it is sent, and it never settles once that page is left, or without one.
  */
 export function handleRequest(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
   // Not the browser's Request, which drops a `cookie` header.
@@ -495,8 +499,37 @@ const appFetch =
     return from ? withoutSetCookie(response) : response;
   };
 
+// What a request of a page that was left gets: nothing, ever. One promise
+// per request: a pending promise holds on to what awaits it.
+const never = () => new Promise<never>(() => {});
+
+// What a page hears of a request that Next sent for it, one of its router
+// or a Server Action: nothing once the page is left, as in a browser, where
+// it is gone. Leaving drops the requests that wait for the server
+// (`settleRequests()` in ssr.ts), and the router of that page, which is still
+// there, would report that as an error while the next page runs: "Failed to
+// fetch RSC payload". Nobody reads the body of a response that comes after
+// that, so it stops.
+async function heardBy(sender: Page, response: Promise<Response>): Promise<Response> {
+  const answered = await response.catch(() => undefined);
+  if (page === sender) return response;
+  void answered?.body?.cancel().catch(() => {});
+  return never();
+}
+
+const browserFetch = appFetch(false);
+
 // The browser's `fetch`: what Next's client router and Client Components call.
-globalThis.fetch = appFetch(false);
+// Next marks the requests it sends for a page, with an `rsc` or a
+// `next-action` header. They belong to the page that is open as they are
+// sent. Its router is there only once its page is, so without a page that
+// page was left, and it sends nothing more. A test asks with
+// `handleRequest()`.
+globalThis.fetch = async (input, init) => {
+  if (!sameOriginRequest(input, init)?.marked) return browserFetch(input, init);
+  const sender = page;
+  return sender ? heardBy(sender, browserFetch(input, init)) : never();
+};
 // A script of the page reads and writes the app's cookies with
 // `document.cookie`, as in a browser, where it is a view of the cookie jar.
 // The jar here is the store, and the browser's own is the tab's: the cookies
@@ -522,7 +555,10 @@ registry.fetch = appFetch(true);
 // when it needs it, from the global `process`.
 process.env.__NEXT_PRIVATE_ORIGIN = window.location.origin;
 
-let page: { started: Promise<unknown>; unmount(): void } | undefined;
+// A page that is open, from when its document is there.
+type Page = { started: Promise<unknown>; unmount(): void };
+
+let page: Page | undefined;
 // Tells a page load that the test has moved on: to another page, or to the
 // next test.
 let currentLoad: AbortController | undefined;

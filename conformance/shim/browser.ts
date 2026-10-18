@@ -381,9 +381,33 @@ type NetworkEvent = "request" | "response";
 type NetworkListener = (subject: never) => void;
 
 const browsers = new Set<Browser<unknown>>();
-// The requests the page has in flight, for `waitForIdleNetwork()`.
+// The requests in flight, for `waitForIdleNetwork()`: the page loads of
+// `goto()`, and the `fetch` calls of the page that is open. A request of a
+// page that was left never settles (the plugin's `fetch`), so every page
+// counts its own, from 0.
+let loadsInFlight = 0;
 let inFlight = 0;
+let pageCount = 0;
 let lastSettled = performance.now();
+
+function newPage(): void {
+  pageCount++;
+  inFlight = 0;
+}
+
+// Counts a `fetch` of the page that is open, until the returned function says
+// it has settled.
+function countFetch(): () => void {
+  const of = pageCount;
+  inFlight++;
+  let settled = false;
+  return () => {
+    if (settled) return;
+    settled = true;
+    if (of === pageCount) inFlight--;
+    lastSettled = performance.now();
+  };
+}
 
 function emit(event: NetworkEvent, subject: NetworkRequest | NetworkResponse): void {
   for (const browser of browsers) browser.emit(event, subject);
@@ -392,14 +416,13 @@ const listening = () => Array.from(browsers).some((browser) => browser.listens()
 
 // A request is in flight until its body has ended: a response of Next's
 // router streams, long after its headers are there.
-async function inFlightUntilRead(response: Response): Promise<void> {
+async function inFlightUntilRead(response: Response, settle: () => void): Promise<void> {
   try {
     await response.clone().arrayBuffer();
   } catch {
     // The page left, or the body was not to be read twice.
   } finally {
-    inFlight--;
-    lastSettled = performance.now();
+    settle();
   }
 }
 
@@ -423,20 +446,19 @@ globalThis.fetch = async (input, init) => {
     );
     emit("request", request);
   }
-  inFlight++;
+  const settle = countFetch();
   let response: Response;
   try {
     response = await pluginFetch(input, init);
   } catch (error) {
-    inFlight--;
-    lastSettled = performance.now();
+    settle();
     throw error;
   }
   if (request) {
     request.answer = new NetworkResponse(request, response, response.clone());
     emit("response", request.answer);
   }
-  void inFlightUntilRead(response);
+  void inFlightUntilRead(response, settle);
   return response;
 };
 
@@ -472,6 +494,7 @@ type NavigateEvent = Event & {
     // What the plugin loads a page for: see its own listener.
     if (destination.sameDocument || hashChange || !event.cancelable) return;
     if (new URL(destination.url).origin !== window.location.origin) return;
+    newPage();
     loading ??= new Promise<void>((resolve) => {
       // Or not at all, for a page that does not hydrate, like one the plugin
       // could not load.
@@ -654,7 +677,8 @@ export class Browser<TCurrent = undefined> {
       "document",
     );
     emit("request", request);
-    inFlight++;
+    newPage();
+    loadsInFlight++;
     try {
       const { response, unmount } = await renderServer({ url: target.href, headers: this.headers });
       this.leave = unmount;
@@ -668,7 +692,7 @@ export class Browser<TCurrent = undefined> {
       if (!(error instanceof DOMException && error.name === "AbortError")) throw error;
       await pageLoaded();
     } finally {
-      inFlight--;
+      loadsInFlight--;
       lastSettled = performance.now();
     }
     // Playwright waits for the `load` event and then for Next's hydration
@@ -683,6 +707,7 @@ export class Browser<TCurrent = undefined> {
   async close(): Promise<void> {
     this.stopListening();
     browsers.delete(this as Browser<unknown>);
+    newPage();
     await this.leave?.();
     this.leave = undefined;
   }
@@ -855,7 +880,8 @@ export class Browser<TCurrent = undefined> {
   waitForIdleNetwork() {
     return this.startOrPreserveChain(async () => {
       // Playwright's `networkidle`: no request for half a second.
-      while (inFlight > 0 || performance.now() - lastSettled < 500) await sleep(50);
+      while (loadsInFlight > 0 || inFlight > 0 || performance.now() - lastSettled < 500)
+        await sleep(50);
     });
   }
   websocketFrames() {

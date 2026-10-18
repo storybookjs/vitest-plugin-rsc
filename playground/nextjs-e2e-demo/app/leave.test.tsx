@@ -1,6 +1,12 @@
+import Link from "next/link";
 import { cleanup, renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
 import { afterEach, beforeEach, expect, onTestFinished, test, vi, type MockInstance } from "vitest";
 import { page } from "vitest/browser";
+import { Counter } from "./components/counter.tsx";
+import { FavoriteButton } from "./components/favorite-button.tsx";
+import { RefreshButton } from "./components/refresh-button.tsx";
+import { db } from "./lib/notes.ts";
+import { seenByProxy } from "./lib/proxy-log.ts";
 
 type Held = { loading: boolean; loaded: boolean; release: Promise<void> };
 // Code that waits while a test holds it: the client code of a widget
@@ -109,4 +115,88 @@ test("keeps the node of a page that is left while its request renders, until the
   await next;
   await expect.element(page.getByText("Next node")).toBeInTheDocument();
   await expect.element(page.getByText("Held node")).not.toBeInTheDocument();
+});
+
+test("hears no more of the requests of its router once a page is left, also while the next one runs", async () => {
+  await renderServer(
+    <>
+      <RefreshButton />
+      <Link href="/settings">Settings</Link>
+    </>,
+    { url: "/held", proxy: true },
+  );
+  const [holding, release] = hold();
+  held.heldProxy = holding;
+  // The refresh waits in the proxy, and the navigation for the refresh.
+  await page.getByRole("button", { name: "Refresh" }).click();
+  await expect.poll(() => holding.loading, { timeout: 10_000 }).toBe(true);
+  await page.getByRole("link", { name: "Settings" }).click();
+
+  // What runs between two tests: it waits for the refresh, and drops the
+  // navigation, which waits behind it.
+  const left = cleanup();
+  release();
+  await left;
+
+  // The router of the page that was left would report the stopped request:
+  // "Failed to fetch RSC payload".
+  expect(consoleError).not.toHaveBeenCalled();
+  await renderServer(<Counter />);
+  await page.getByRole("button", { name: "Count: 0" }).click();
+  await expect.element(page.getByRole("button", { name: "Count: 1" })).toBeInTheDocument();
+});
+
+test("hears nothing of a Server Action of a page once it is left", async () => {
+  db.notes.set("1", { id: "1", title: "Inbox triage", body: "" });
+  await renderServer(<FavoriteButton id="1" favorite={false} />, { url: "/held", proxy: true });
+  const [holding, release] = hold();
+  held.heldProxy = holding;
+  // The action waits in the proxy.
+  await page.getByRole("button", { name: "Favorite" }).click();
+  await expect.poll(() => holding.loading, { timeout: 10_000 }).toBe(true);
+
+  const left = cleanup();
+  release();
+  await left;
+
+  // Next would report the action that failed, and the transition would
+  // reject unhandled.
+  expect(consoleError).not.toHaveBeenCalled();
+  await renderServer(<Counter />);
+  await page.getByRole("button", { name: "Count: 0" }).click();
+  await expect.element(page.getByRole("button", { name: "Count: 1" })).toBeInTheDocument();
+});
+
+test("sends no Server Action of a page once it is left", async () => {
+  db.notes.set("1", { id: "1", title: "Inbox triage", body: "" });
+  const note = db.notes.get("1")!;
+  await renderServer(<FavoriteButton id="1" favorite={false} />, { proxy: true });
+  const seen = seenByProxy.length;
+
+  // Next sends the action a few microtasks after the click, and the page is
+  // left before that.
+  (page.getByRole("button", { name: "Favorite" }).element() as HTMLElement).click();
+  await cleanup();
+
+  expect(seenByProxy.length).toBe(seen);
+  expect(note.favorite).toBeUndefined();
+  expect(consoleError).not.toHaveBeenCalled();
+});
+
+test("sends nothing more for a page once it is left, also what its router sends a moment later", async () => {
+  await renderServer(<RefreshButton />, { proxy: true });
+  const seen = seenByProxy.length;
+
+  // Next's router sends the request of a refresh a few microtasks after the
+  // click, and the page is left before that.
+  (page.getByRole("button", { name: "Refresh" }).element() as HTMLElement).click();
+  await cleanup();
+  expect(seenByProxy.length).toBe(seen);
+
+  await renderServer(<Counter />);
+  await page.getByRole("button", { name: "Count: 0" }).click();
+  await expect.element(page.getByRole("button", { name: "Count: 1" })).toBeInTheDocument();
+  // The router of the page that was left would report the dropped request:
+  // "Failed to fetch RSC payload".
+  expect(consoleError).not.toHaveBeenCalled();
 });
