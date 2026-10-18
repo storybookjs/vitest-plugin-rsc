@@ -10,6 +10,7 @@ import {
   parseAstAsync,
   send,
   transformWithOxc,
+  type EnvironmentModuleNode,
   type Plugin,
   type ResolvedConfig,
 } from "vite";
@@ -72,6 +73,25 @@ const nextRouting = "@next/routing";
 const entryOf = (route: { page: string; component?: string }) => route.component ?? route.page;
 const isRouteModule = (id: string) =>
   id.startsWith(routeEntryPrefix) || routeKinds.some((kind) => id === routeLists[kind]);
+
+// Whether a module of the rsc layer is one that a route or the middleware
+// imports, also through other modules: code of the app that the plugin's
+// runtime loads.
+function importedByRoute(module: EnvironmentModuleNode): boolean {
+  const seen = new Set<EnvironmentModuleNode>([module]);
+  for (const node of seen) {
+    for (const importer of node.importers) {
+      const id = importer.id?.startsWith("\0") ? importer.id.slice(1) : undefined;
+      if (
+        id !== undefined &&
+        (isRouteModule(id) || id === middlewareId || id === middlewareEntryId)
+      )
+        return true;
+      seen.add(importer);
+    }
+  }
+  return false;
+}
 const bridgePrefix = "\0vitest-plugin-rsc/next-bridge/";
 const emptyModuleId = "\0vitest-plugin-rsc/next-empty";
 const serverReferenceInfo = "next/dist/esm/shared/lib/server-reference-info.js";
@@ -561,6 +581,10 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
   // it: development for a test run and a dev server, production for a static
   // build, which is a site to look at, not a test that reads React's warnings.
   let build: NextBuild = options.build ?? "development";
+  // Whether Vitest runs the plugin, which takes a change of a file itself.
+  // Vitest turns Vite's HMR off, so `hotUpdate` never runs under it: this
+  // flag is a defence, should a version of Vitest turn it on.
+  let underVitest = false;
   // The client reference that Vite RSC made of a module of the rsc layer, if
   // it has `"use client"`.
   const clientReferenceOf = (id: string, config: ResolvedConfig) => {
@@ -916,6 +940,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
       // what its config says is a test file or a setup file is not server
       // code.
       configureVitest({ vitest, project: testProject }: { vitest: Vitest; project: TestProject }) {
+        underVitest = true;
         assertVitestVersion(vitest.version);
         const test = testProject.config;
         const setupFiles = new Set(test.setupFiles.map((file) => normalizePath(file)));
@@ -925,6 +950,27 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
           resolve: test.dir || test.root,
         });
         serverCode.addTestFiles((file) => setupFiles.has(file) || isIncluded(file));
+      },
+      // Without Vitest, a page of the host has the rsc layer's modules as the
+      // browser loaded them, with the plugin's runtime, whose modules of the
+      // routes import the app. Vite takes a change of a file of the app up
+      // through the runtime to the host, and a host that takes the change in
+      // place, like a framework that renders its own modules again, would
+      // evaluate a second runtime next to the first, with another page
+      // registry and other globals. A page load evaluates them all again,
+      // once. Only the rsc layer's graph is walked: a module that only a
+      // Client Component imports is not in it, and the host sees its change
+      // when it renders again. Under Vitest a change runs test files again:
+      // see Watch Mode.
+      hotUpdate({ file, modules }) {
+        if (underVitest || this.environment.name !== environmentOf.rsc) return;
+        if (!modules.some(importedByRoute)) return;
+        this.environment.logger.info(
+          `page reload ${path.relative(this.environment.config.root, file)} (vitest-plugin-rsc: a file of the app changed)`,
+          { timestamp: true },
+        );
+        this.environment.hot.send({ type: "full-reload", path: "*", triggeredBy: file });
+        return [];
       },
       resolveId(source) {
         if (source === manifestId || isRouteModule(source)) return `\0${source}`;

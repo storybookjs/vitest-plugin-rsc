@@ -1,9 +1,13 @@
+// Types `import.meta.hot` and `import.meta.env` below, as Vite gives them a
+// module, without the rest of `vite/client`. The emitted .d.ts does not
+// carry it.
+/// <reference types="vite/types/importMeta.d.ts" />
 import "./globals.ts";
 import { createElement, type JSXElementConstructor, type ReactNode } from "react";
 import { resetAsyncLocalStorage } from "../async-local-storage.ts";
 import { checkFetchedModules, createEnvironmentRunner, environmentModule } from "../utils.ts";
 import { callServerWithoutPage } from "./client-graph.ts";
-import { loadDocument, unloadDocument } from "./document.ts";
+import { documentUrl, loadDocument, unloadDocument } from "./document.ts";
 import { recordListeners, recordMessageChannels } from "./leftovers.ts";
 import { NodeOnPage } from "./node-on-page.ts";
 import { PageStore } from "./page-store.ts";
@@ -1101,6 +1105,27 @@ type NavigateEvent = Event & {
   formData: FormData | null;
   downloadRequest: string | null;
 };
+// Vite's client loads the document again after a change that nothing takes
+// in place. With a page open that would be a reload of the page, which the
+// listener below loads as the app's, at the page's URL: the host's document
+// would stay. Left first, the document and its URL are the host's again.
+import.meta.hot?.on("vite:beforeFullReload", ({ path }) => {
+  if (reloadsDocument(path)) return leavePage();
+});
+
+// Whether Vite's client goes on to load the document again, as it decides
+// once the page is left: for a change of an HTML file only if it is the one
+// of the host's document, by the URL that leaving puts back. A change of
+// another HTML page of the host keeps the page that is open.
+function reloadsDocument(path: string | undefined): boolean {
+  if (!path?.endsWith(".html") || path === "/index.html") return true;
+  const pagePath = decodeURI(new URL(documentUrl()).pathname);
+  const payloadPath = (import.meta.env?.BASE_URL ?? "/") + path.slice(1);
+  return (
+    pagePath === payloadPath || (pagePath.endsWith("/") && `${pagePath}index.html` === payloadPath)
+  );
+}
+
 (window as { navigation?: EventTarget }).navigation?.addEventListener("navigate", (event) => {
   const { navigationType, destination, hashChange, formData, downloadRequest } =
     event as NavigateEvent;

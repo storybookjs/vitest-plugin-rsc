@@ -16,6 +16,16 @@ const attributesOf = (element: Element) =>
   Array.from(element.attributes, ({ name, value }) => [name, value] as const);
 
 let unload: (() => void) | undefined;
+// The URL that leaving the page puts back, while a page is open.
+let runnerHref: string | undefined;
+
+/**
+ * The URL of the document without the page that is open: the runner's, which
+ * the page shows as its own while it is open.
+ */
+export function documentUrl(): string {
+  return runnerHref ?? window.location.href;
+}
 
 function staysDuringPage(node: Node): boolean {
   return (
@@ -77,6 +87,7 @@ export async function loadDocument(html: string, url: string, container?: Elemen
   // What was here before the page. Everything else is the page's to lose.
   // The URL too: a host may move it between pages, to say what it shows next.
   const runnerUrl = window.location.href;
+  runnerHref = runnerUrl;
   const runnerBody = document.body;
   const runnerAttributes = elements(document).map(attributesOf);
   const runnerScripts = new Set(document.querySelectorAll("script"));
@@ -119,6 +130,7 @@ export async function loadDocument(html: string, url: string, container?: Elemen
     delete (self as { __next_f?: unknown }).__next_f;
     delete (self as { __next_s?: unknown }).__next_s;
     if (window.location.href !== runnerUrl) window.history.replaceState(null, "", runnerUrl);
+    runnerHref = undefined;
   };
   unload = leave;
 
