@@ -868,13 +868,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
             },
             [environmentOf.browser]: {
               ...builtLayer("browser"),
-              optimizeDeps: {
-                ...optimizeDeps("browser"),
-                // One instance of the plugin's modules on a page: client.tsx
-                // and the client reference of node-rendered.tsx are the same
-                // module, also in an installed package.
-                exclude: ["vitest-plugin-rsc", "@vitejs/plugin-rsc"],
-              },
+              optimizeDeps: optimizeDeps("browser"),
             },
           },
         };

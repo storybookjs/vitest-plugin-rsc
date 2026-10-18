@@ -29,8 +29,7 @@ export default defineConfig({
       /^virtual:/,
       /^@vitejs\/plugin-rsc\/vendor\//,
       /^vitest(\/|$)/,
-      // Left as this import in dist: it resolves to the entry of its own,
-      // dist/nextjs/node-rendered.js, with its "use client". See rsc.ts.
+      // A module of its own, with its "use client": see rsc.ts.
       "vitest-plugin-rsc/nextjs/node-rendered",
     ],
   },
