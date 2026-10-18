@@ -29,9 +29,10 @@ export type DocsPluginOptions = {
 
 /** The plugins, after `vitestPluginNext()`: see `mdxFiles`. */
 export function docsPlugins(options: DocsPluginOptions): Plugin[] {
+  const project = { hasAddonDocs: false };
   return [
-    withoutDocsDependencies(),
-    addonDocsModule(),
+    withoutDocsDependencies(project),
+    addonDocsModule(project),
     addonDocsPreview(),
     browserOnlyImports(),
     ...mdxFiles(options),
@@ -49,7 +50,10 @@ const reactAliases = new Set(["react", "react-dom", "react-dom/server"]);
 const mdxProvider = "@mdx-js/react";
 const docsDependency = /^@storybook\/addon-docs([\s/]|$)/;
 
-function withoutDocsDependencies(): Plugin {
+// Whether `.storybook/main.ts` has addon-docs, which the config says.
+type Project = { hasAddonDocs: boolean };
+
+function withoutDocsDependencies(project: Project): Plugin {
   return {
     name: "storybook-nextjs-vite-rsc:without-docs-dependencies",
     config: {
@@ -61,7 +65,8 @@ function withoutDocsDependencies(): Plugin {
         const aliases = Array.isArray(alias)
           ? alias.map(({ find }: { find: unknown }) => find)
           : Object.keys(alias ?? {});
-        if (!aliases.includes(mdxProvider)) return;
+        project.hasAddonDocs = aliases.includes(mdxProvider);
+        if (!project.hasAddonDocs) return;
         if (Array.isArray(alias)) {
           config.resolve!.alias = alias.filter(
             ({ find }: { find: unknown }) => typeof find !== "string" || !reactAliases.has(find),
@@ -76,8 +81,12 @@ function withoutDocsDependencies(): Plugin {
         config.optimizeDeps!.include = include.filter(
           (name) => !docsDependency.test(name) && name !== "react-dom/client",
         );
+        // And Storybook's theming, which the error of `browserOnlyImports`
+        // has a file with `"use client"` import.
         return {
-          environments: { [browser]: { optimizeDeps: { include: docs } } },
+          environments: {
+            [browser]: { optimizeDeps: { include: [...docs, "storybook/theming"] } },
+          },
         } satisfies UserConfig;
       },
     },
@@ -86,10 +95,12 @@ function withoutDocsDependencies(): Plugin {
 
 // `@storybook/addon-docs` is an optional peer dependency: the canvas
 // (client-canvas.tsx) imports its `DocsRenderer` through this module, which
-// has none when the project does not have addon-docs installed.
+// has none when the project does not have the addon. The project's own
+// addon-docs, which its MDX files import the blocks of, by the name that it
+// pre-bundles in the browser layer: one copy, with one context of the docs.
 const addonDocsId = "virtual:@storybook/nextjs-vite-rsc/addon-docs";
 
-function addonDocsModule(): Plugin {
+function addonDocsModule(project: Project): Plugin {
   return {
     name: "storybook-nextjs-vite-rsc:addon-docs",
     resolveId: {
@@ -98,12 +109,10 @@ function addonDocsModule(): Plugin {
     },
     load: {
       filter: { id: new RegExp(`^\0${addonDocsId}$`) },
-      async handler() {
-        const resolved = await this.resolve("@storybook/addon-docs", import.meta.filename);
-        return resolved && !resolved.external
-          ? `export { DocsRenderer } from ${JSON.stringify(resolved.id)};`
-          : "export const DocsRenderer = undefined;";
-      },
+      handler: () =>
+        project.hasAddonDocs
+          ? 'export { DocsRenderer } from "@storybook/addon-docs";'
+          : "export const DocsRenderer = undefined;",
     },
   };
 }

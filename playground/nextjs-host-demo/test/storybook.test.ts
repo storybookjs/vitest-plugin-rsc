@@ -225,9 +225,11 @@ test("an MDX page: a server story in an iframe, a client story inline", async ({
   await button.click();
   await expect.poll(() => frame.getByRole("button", { name: "Press: 1" }).count()).toBe(1);
   // One MDXProvider: the docs page's anchors of the headings, and the
-  // project's component of `parameters.docs.components`, the browser layer's.
+  // project's component of `parameters.docs.components`, the browser layer's,
+  // with the theme of the docs page from Storybook's theming.
   expect(await inDocs(canvas).locator('h2 a[href="#a-server-story"]').count()).toBe(1);
-  expect(await inDocs(canvas).getByTestId("docs-blockquote").count()).toBe(1);
+  const blockquote = inDocs(canvas).getByTestId("docs-blockquote");
+  expect(await blockquote.getAttribute("data-theme-base")).toBe("light");
 });
 
 test("autodocs: a client story file's stories inline, a server story file's in iframes", async ({

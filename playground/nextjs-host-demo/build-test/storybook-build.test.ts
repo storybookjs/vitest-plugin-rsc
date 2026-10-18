@@ -77,7 +77,9 @@ test("an MDX page and autodocs, with server stories in iframes and client storie
   await expect.poll(() => button.getAttribute("data-theme")).toBe("storybook");
   await button.click();
   await expect.poll(() => docs.getByRole("button", { name: "Press: 1" }).count()).toBe(1);
-  expect(await docs.getByTestId("docs-blockquote").count()).toBe(1);
+  // A file with `"use client"` next to the preview file, which imports
+  // Storybook's theming.
+  expect(await docs.getByTestId("docs-blockquote").getAttribute("data-theme-base")).toBe("light");
   const autodocs = await openDocs(page, site!.url, "press-button--docs");
   await expect
     .poll(() =>

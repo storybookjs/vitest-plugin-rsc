@@ -199,6 +199,7 @@ test("addon-docs's React goes, its MDXProvider stays, and the browser layer pre-
             "@storybook/addon-docs",
             "@storybook/addon-docs/blocks",
             "@storybook/addon-docs > @mdx-js/react",
+            "storybook/theming",
           ],
         },
       },
@@ -206,20 +207,20 @@ test("addon-docs's React goes, its MDXProvider stays, and the browser layer pre-
   });
 });
 
-test("the canvas has the DocsRenderer of addon-docs when the project has it", async () => {
-  const addonDocs = plugin("storybook-nextjs-vite-rsc:addon-docs");
-  const resolved = handlerOf(addonDocs.resolveId).call(
+test("the canvas has the DocsRenderer of addon-docs when the project has the addon", async () => {
+  // The plugins of another project, whose config is still to come.
+  const ofProject = docsPlugins({ workingDir, stories: [], previewFile: "/fw/dist/preview.js" });
+  const named = (name: string) =>
+    ofProject.find((plugin) => plugin.name === `storybook-nextjs-vite-rsc:${name}`)!;
+  const addonDocs = named("addon-docs");
+  const id = handlerOf(addonDocs.resolveId).call(
     {},
     "virtual:@storybook/nextjs-vite-rsc/addon-docs" as never,
-  ) as string;
-  const load = handlerOf(addonDocs.load);
-  const installed = {
-    resolve: async () => ({ id: "/repo/node_modules/@storybook/addon-docs/dist/index.js" }),
-  };
-  expect(await load.call(installed, resolved as never)).toBe(
-    'export { DocsRenderer } from "/repo/node_modules/@storybook/addon-docs/dist/index.js";',
   );
-  expect(await load.call({ resolve: async () => null }, resolved as never)).toBe(
-    "export const DocsRenderer = undefined;",
-  );
+  const load = () => handlerOf(addonDocs.load).call({}, id as never);
+  const config = handlerOf(named("without-docs-dependencies").config);
+  await config.call({}, { resolve: { alias: { react: "/repo/vendor/react" } } } as never);
+  expect(load()).toBe("export const DocsRenderer = undefined;");
+  await config.call({}, { resolve: { alias: { "@mdx-js/react": "/repo/mdx" } } } as never);
+  expect(load()).toBe('export { DocsRenderer } from "@storybook/addon-docs";');
 });
