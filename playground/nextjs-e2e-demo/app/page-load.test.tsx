@@ -1,5 +1,5 @@
-import { renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
-import { expect, test } from "vitest";
+import { cleanup, renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
+import { expect, onTestFinished, test } from "vitest";
 import { page } from "vitest/browser";
 import { fileChanged } from "../test/service.ts";
 import { Counter } from "./components/counter.tsx";
@@ -177,4 +177,57 @@ test("a page has what the server streamed in place before the app starts", async
   }
   expect(waiting).toEqual([]);
   expect(document.querySelectorAll('meta[name="description"]')).toHaveLength(1);
+});
+
+// The URLs the tab requests for a file from here on, as it resolved them,
+// once each. An observer: the tab's buffer of requests fills up in a suite.
+function requestsOf(file: string): () => string[] {
+  const urls = new Set<string>();
+  const add = (entries: PerformanceEntryList) => {
+    for (const { name } of entries) if (name.includes(file)) urls.add(name);
+  };
+  const observer = new PerformanceObserver((list) => add(list.getEntries()));
+  observer.observe({ type: "resource" });
+  onTestFinished(() => observer.disconnect());
+  return () => {
+    add(observer.takeRecords());
+    return [...urls];
+  };
+}
+
+function settled(link: HTMLLinkElement): Promise<unknown> {
+  return new Promise((resolve) => {
+    link.addEventListener("load", resolve, { once: true });
+    link.addEventListener("error", resolve, { once: true });
+  });
+}
+
+test("a stylesheet of the document with a relative href loads from the document's URL again after a page", async () => {
+  const href = `relative-stylesheet.css?${Math.random()}`;
+  const requested = requestsOf(href);
+  const link = document.createElement("link");
+  link.rel = "stylesheet";
+  link.setAttribute("href", href);
+  let loaded = settled(link);
+  document.head.append(link);
+  onTestFinished(() => link.remove());
+  await loaded;
+  const fromDocument = new URL(href, window.location.href).href;
+
+  // The page steps the stylesheet aside, and puts it back once it is left.
+  await renderServer({ url: "/notes/1" });
+  expect(link.isConnected).toBe(false);
+  loaded = settled(link);
+  await cleanup();
+  await loaded;
+
+  expect(requested()).toEqual([fromDocument]);
+});
+
+test("a relative URL of a page resolves against the URL of the page", async () => {
+  const src = `relative-image.png?${Math.random()}`;
+  const requested = requestsOf(src);
+  await renderServer(<img src={src} alt="Relative" />, { url: "/notes/1" });
+
+  await expect.poll(requested).toEqual([new URL(`/notes/${src}`, window.location.href).href]);
 });
