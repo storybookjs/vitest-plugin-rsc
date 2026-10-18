@@ -8,7 +8,16 @@
 // on the browser layer's `react-dom`, and the preview file as that layer
 // evaluates it, where its `"use client"` components are components and not
 // references.
-export { applyDecorators, render, renderToCanvas } from "@storybook/react/entry-preview";
+import * as react from "@storybook/react/entry-preview";
+import type { ArgsStoryFn, DecoratorApplicator, RenderToCanvas } from "storybook/internal/types";
+import type { NextjsRscRenderer } from "./index.ts";
+
+// Typed for the framework's renderer: they render a client story, whose
+// component is one of the browser layer's React.
+export const render = react.render as unknown as ArgsStoryFn<NextjsRscRenderer>;
+export const renderToCanvas = react.renderToCanvas as unknown as RenderToCanvas<NextjsRscRenderer>;
+export const applyDecorators =
+  react.applyDecorators as unknown as DecoratorApplicator<NextjsRscRenderer>;
 
 /**
  * The preview file of the browser layer as it is now. The layer evaluates

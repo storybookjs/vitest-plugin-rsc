@@ -2,7 +2,7 @@ import type { DecoratorFunction, ModuleExports } from "storybook/internal/types"
 import { applyHooks, defaultDecorateStory, HooksContext } from "storybook/preview-api";
 import { expect, test, vi } from "vitest";
 import { applyDecorators, experimental_loadStoryFile } from "./preview.ts";
-import { render } from "./server-story.tsx";
+import { render } from "./server-story.ts";
 
 // The two layers, as the plugin has them: a module of the rsc layer, and of
 // a file with "use client" a module of the browser layer, which
@@ -47,7 +47,7 @@ vi.mock("./client-canvas.tsx", () => {
   return { default: reference };
 });
 // What renders a server story is of a browser.
-vi.mock("./server-story.tsx", () => ({
+vi.mock("./server-story.ts", () => ({
   render: () => null,
   isPageStory: () => false,
 }));
@@ -84,6 +84,20 @@ test('a story file with "use client" is the browser layer\'s, the same object ea
   expect(second).toBe(first);
 });
 
+test('a story file with "use client" that exports a value of another one is the browser layer\'s', async () => {
+  // A fixture that both files export, which `excludeStories` leaves out.
+  const fixture = { name: "fixture" };
+  const first = { title: "First" };
+  const Shared = { args: {} };
+  browserModules.set(first, { default: first, Shared, fixture });
+  await storyFile({ default: first, Shared: {}, fixture: {} })();
+  const second = { title: "Second" };
+  const Own = { args: {} };
+  browserModules.set(second, { default: second, Own, fixture });
+  await storyFile({ default: second, Own: {}, fixture: {} })();
+  expect(decorated(Own, [rscTheme])).toBe("browser-theme(story)");
+});
+
 // A story decorated and called as Storybook's `prepareStory()` does: with
 // the decorators wrapped for Storybook's hooks.
 function decorated(moduleExport: object, decorators: DecoratorFunction[], context = {}) {
@@ -104,6 +118,17 @@ test("a client story has the decorators of the preview file as the browser layer
   // layer's `render` of `@storybook/react`, not by the framework's.
   expect(decorated(Pressed, [rscTheme], { originalStoryFn: render })).toBe(
     "browser-theme(browser-render)",
+  );
+});
+
+test("a client story has the twins in the place of the run of the preview file's decorators", async () => {
+  const meta = { title: "Button" };
+  const Pressed = { args: {} };
+  browserModules.set(meta, { default: meta, Pressed });
+  await storyFile({ default: meta, Pressed: {} })();
+  // An addon that has the same function as the preview file keeps it.
+  expect(decorated(Pressed, [named("story"), rscTheme, rscTheme])).toBe(
+    "rsc-theme(browser-theme(story(story)))",
   );
 });
 

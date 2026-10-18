@@ -8,8 +8,8 @@ import type {
 import { defaultDecorateStory } from "storybook/preview-api";
 import type { NextjsRscRenderer } from "./index.ts";
 import {
+  clientStoryOf,
   decorateClientStory,
-  isClientStory,
   loadStoryFile,
   renderClientStory,
 } from "./client-story.ts";
@@ -19,11 +19,11 @@ import {
   nothingToMount,
   render,
   renderServerStory,
-} from "./server-story.tsx";
+} from "./server-story.ts";
 
 // The annotations of the framework, in place of the ones of
 // `@storybook/react` that render (see preset.ts). Each picks
-// the kind of the story, a server story (server-story.tsx) or a client story
+// the kind of the story, a server story (server-story.ts) or a client story
 // (client-story.ts). The preview runs in the rsc layer, with the browser's
 // globals, as a test file does.
 
@@ -37,7 +37,7 @@ export const mount =
   async (ui?: ReactNode): Promise<StoryContext<NextjsRscRenderer>["canvas"]> => {
     if (ui != null) {
       // A client story has no page: it renders `ui`, as `@storybook/react` does.
-      if (isPageStory(context) && !isClientStory(context)) throw nothingToMount(context.id);
+      if (isPageStory(context) && !clientStoryOf(context)) throw nothingToMount(context.id);
       context.originalStoryFn = () => ui;
     }
     await context.renderToCanvas();
@@ -54,13 +54,17 @@ export const experimental_loadStoryFile = loadStoryFile;
 export const applyDecorators: DecoratorApplicator<NextjsRscRenderer> = (storyFn, decorators) => {
   let server: LegacyStoryFn<NextjsRscRenderer> | undefined;
   let client: LegacyStoryFn<NextjsRscRenderer> | undefined;
-  return (context) =>
-    isClientStory(context)
-      ? (client ??= decorateClientStory(storyFn, decorators, context))(context)
+  return (context) => {
+    const clientStory = clientStoryOf(context);
+    return clientStory
+      ? (client ??= decorateClientStory(storyFn, decorators, clientStory))(context)
       : (server ??= defaultDecorateStory(storyFn, decorators))(context);
+  };
 };
 
-export const renderToCanvas: RenderToCanvas<NextjsRscRenderer> = (context, canvasElement) =>
-  isClientStory(context.storyContext)
-    ? renderClientStory(context, canvasElement)
+export const renderToCanvas: RenderToCanvas<NextjsRscRenderer> = (context, canvasElement) => {
+  const clientStory = clientStoryOf(context.storyContext);
+  return clientStory
+    ? renderClientStory(context, canvasElement, clientStory)
     : renderServerStory(context, canvasElement);
+};
