@@ -8,6 +8,7 @@ import { createProject, serveFiles, test, type Site } from "../../test-helpers/h
 import {
   openDocs,
   openStory,
+  rendered,
   runStory,
   storyInDocs,
   storyRun,
@@ -64,6 +65,22 @@ test("server stories, a page, a Server Action and client stories", async ({ page
         .evaluate((element) => getComputedStyle(element).color),
     )
     .toBe("rgb(0, 0, 255)");
+});
+
+// A server story of a component is a node, in the preview's document: a
+// reload loads the preview again, not the app's page at the node's URL.
+test("a reload at a server story of a component shows the story again", async ({ page }) => {
+  const canvas = await openStory(page, site!.url, "greeting--default");
+  await canvas.evaluate(() => ((window as { before?: true }).before = true));
+  await canvas.evaluate(() => location.reload());
+  await canvas.waitForFunction(() => !(window as { before?: true }).before, null, {
+    timeout: 30_000,
+  });
+  // Once the preview of the new document has rendered the story: `storyRun()`
+  // reads the preview, which loads after the document.
+  expect(await rendered(canvas, "greeting--default")).toBe("finished");
+  expect(await storyRun(page, canvas, "greeting--default")).toEqual(passed);
+  expect(await canvas.getByText("Hello from the page").count()).toBe(0);
 });
 
 test("an MDX page and autodocs, with server stories in iframes and client stories inline", async ({

@@ -146,6 +146,18 @@ export const registry = (scope.__vitest_plugin_rsc_next__ ??= {
 }) as NextRegistry;
 
 /**
+ * What `renderServer()` opened, at a URL that belongs to it: one with its
+ * pathname. That is the document, and what the page sends there while it is
+ * open: a Server Action, `router.refresh()`, a change of search params. A URL
+ * with another pathname is the app's, as always. The server and the browser
+ * layer both ask, so they agree on it.
+ */
+export function openedAt(url: URL): Opened | undefined {
+  const { opened } = registry;
+  return opened?.pathname === url.pathname ? opened : undefined;
+}
+
+/**
  * Next's build gives the module of a Server Action an id. Here the id of the
  * action already says where it is, so the module id is the action id, marked.
  */
