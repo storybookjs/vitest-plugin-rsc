@@ -11,7 +11,7 @@ import { documentUrl, loadDocument, unloadDocument } from "./document.ts";
 import { recordListeners, recordMessageChannels } from "./leftovers.ts";
 import { NodeOnPage } from "./node-on-page.ts";
 import { PageStore } from "./page-store.ts";
-import { registry, type Opened } from "./registry.ts";
+import { openedAt, registry, type Opened } from "./registry.ts";
 
 export { loadClientModule } from "./client-graph.ts";
 
@@ -1136,13 +1136,6 @@ function reloadsDocument(path: string | undefined): boolean {
   );
 }
 
-// Whether the URL is the one of the route of a node, which renders the node
-// and not the app's page. Not after the node redirected to another
-// pathname, or the app navigated to one: the page there is the app's.
-function nodeAt(url: URL): boolean {
-  return !!registry.opened?.node && registry.opened.pathname === url.pathname;
-}
-
 (window as { navigation?: EventTarget }).navigation?.addEventListener("navigate", (event) => {
   const { navigationType, destination, hashChange, formData, downloadRequest } =
     event as NavigateEvent;
@@ -1152,14 +1145,14 @@ function nodeAt(url: URL): boolean {
   if (destination.sameDocument) page?.nodeOnPage?.at(new URL(destination.url).pathname);
   if (destination.sameDocument || hashChange || !event.cancelable) return;
   const url = new URL(destination.url);
-  // A reload loads again what owns the document. A page of the app owns it
-  // and its URL: it loads again from that URL, below. Else the document is
-  // the host's, also with a node in it: the node is the host's, at the URL
-  // of its route, where the app's route has another page. So the browser
-  // loads the host's document again, as after a change (see above), at the
-  // host's URL, which leaving puts back.
-  const pageOfTheApp = page && !nodeAt(url);
-  if (navigationType === "reload" && !pageOfTheApp) {
+  // A reload loads again what owns the document. A page of the app owns it,
+  // so it loads again from its URL. Anything else is the host's document, a
+  // node included: the browser reloads it at the host's URL, which leaving
+  // puts back. Hosts leave a page before a reload of their own (Vite with
+  // `vite:beforeFullReload`, Storybook with the story's cleanup), so a reload
+  // with a page open is the app's.
+  const appOwnsUrl = page && !openedAt(url)?.node;
+  if (navigationType === "reload" && !appOwnsUrl) {
     if (destination.url === documentUrl()) return;
     event.preventDefault();
     void leavePage("a reload of the document")
