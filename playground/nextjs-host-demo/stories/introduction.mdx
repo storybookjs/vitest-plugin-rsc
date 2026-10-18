@@ -1,0 +1,15 @@
+import { Meta, Canvas, Story } from "@storybook/addon-docs/blocks";
+import * as Greeting from "./greeting.stories.tsx";
+import * as PressButton from "./press-button.stories.tsx";
+
+<Meta title="Introduction" />
+
+# Introduction
+
+A server story, in an iframe:
+
+<Canvas of={Greeting.Default} />
+
+A client story, inline:
+
+<Canvas of={PressButton.Pressed} />

@@ -55,6 +55,7 @@
     "prepack": "tsdown"
   },
   "dependencies": {
+    "@storybook/addon-docs": "https://pkg.pr.new/storybookjs/storybook/@storybook/addon-docs@0e82d2fc9b2fdcad71bdea0c59188ff57788e5f7",
     "@storybook/builder-vite": "https://pkg.pr.new/storybookjs/storybook/@storybook/builder-vite@0e82d2fc9b2fdcad71bdea0c59188ff57788e5f7",
     "@storybook/react": "https://pkg.pr.new/storybookjs/storybook/@storybook/react@0e82d2fc9b2fdcad71bdea0c59188ff57788e5f7"
   },
