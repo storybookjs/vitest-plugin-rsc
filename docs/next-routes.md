@@ -364,12 +364,14 @@ vitestPluginNext({
     files: [".storybook/**", "src/**/*.stories.tsx"],
     // What `vitest` is to a test file: the page's own modules, also in the
     // browser layer. A name that ends in `/*` is every package of that scope.
-    packages: ["storybook", "@storybook/*"],
+    packages: ["storybook/test", "storybook/preview-api"],
   },
 });
 ```
 
-Both are facts only the host knows. The plugin cannot read the packages off the files: a story with `"use client"` imports `react` and `storybook/test` the same way, and the first has to be the `browser` layer's React, where the second has to be the page's own module, whose spies the host shows. The same list keeps the host's runtime, and what it depends on, the browser's in the `rsc` layer, where every other package is server code. Not a package that the app lists in its `dependencies`, the same copy: that is the app's, server code, unless `host.packages` names it. A package of the host that depends on `next` or `react` would otherwise take the app's server along.
+Both are facts only the host knows. The plugin cannot read the packages off the files: a story with `"use client"` imports `react` and `storybook/test` the same way, and the first has to be the `browser` layer's React, where the second has to be the page's own module, whose spies the host shows. The same list keeps the host's runtime, and what it depends on, the browser's in the `rsc` layer, where every other package is server code. Not a package that the app lists in its `dependencies`, the same copy: that is the app's, server code, unless `host.packages` names it. A package of the host that depends on `next` or `react` would otherwise take the app's server along. A name can be a module of a package, like `storybook/test`: that module is the page's own, and the package's other modules, like `storybook/theming`, are each layer's, but the files of the whole package and what it depends on are the host's runtime in the `rsc` layer.
+
+A file of the host can have an extension that is not JavaScript's, which a plugin of the host compiles to JavaScript before Vite RSC sees it, like `.mdx`: with `"use client"` at the top of that code, it is a file with the directive like any other.
 
 Under Vitest the option adds to what Vitest's config says, and nothing else changes. The same mechanisms serve both, and without Vitest the host does what Vitest's config and the plugin's setup file do:
 
