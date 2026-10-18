@@ -578,6 +578,8 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
   // build, which is a site to look at, not a test that reads React's warnings.
   let build: NextBuild = options.build ?? "development";
   // Whether Vitest runs the plugin, which takes a change of a file itself.
+  // Vitest turns Vite's HMR off, so `hotUpdate` never runs under it: this
+  // flag is a defence, should a version of Vitest turn it on.
   let underVitest = false;
   // The client reference that Vite RSC made of a module of the rsc layer, if
   // it has `"use client"`.
@@ -952,11 +954,18 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
       // place, like a framework that renders its own modules again, would
       // evaluate a second runtime next to the first, with another page
       // registry and other globals. A page load evaluates them all again,
-      // once. Under Vitest a change runs test files again: see Watch Mode.
-      hotUpdate({ modules }) {
+      // once. Only the rsc layer's graph is walked: a module that only a
+      // Client Component imports is not in it, and the host sees its change
+      // when it renders again. Under Vitest a change runs test files again:
+      // see Watch Mode.
+      hotUpdate({ file, modules }) {
         if (underVitest || this.environment.name !== environmentOf.rsc) return;
         if (!modules.some(importedByRoute)) return;
-        this.environment.hot.send({ type: "full-reload" });
+        this.environment.logger.info(
+          `page reload ${path.relative(this.environment.config.root, file)} (vitest-plugin-rsc: a file of the app changed)`,
+          { timestamp: true },
+        );
+        this.environment.hot.send({ type: "full-reload", path: "*", triggeredBy: file });
         return [];
       },
       resolveId(source) {
