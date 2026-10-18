@@ -117,6 +117,28 @@ test("a story in the layouts, and one whose beforeEach sets a cookie", async ({ 
   expect(await runStory(page, canvas, "home--home")).toEqual(passed);
 });
 
+// A server story of a component is a node: the document and its URL are
+// the preview's, so a reload loads the preview again, at the story. Not
+// the app's page at the node's URL, which for a story is `/`, the home page.
+test("a reload at a server story of a component shows the story again", async ({ page }) => {
+  // Without the layouts, and in them, where the node's route owns the body.
+  for (const story of ["greeting--default", "greeting--in-layouts"]) {
+    const canvas = await openStory(page, site!.url, story);
+    await canvas.evaluate(() => ((window as { before?: true }).before = true));
+    await canvas.evaluate(() => location.reload());
+    // A new document: the browser loaded the preview again.
+    await canvas.waitForFunction(() => !(window as { before?: true }).before, null, {
+      timeout: 30_000,
+    });
+    expect(await rendered(canvas, story)).toBe("finished");
+    const body = canvas.locator("body");
+    await expect
+      .poll(() => body.getByText("Hello from Storybook").count(), { message: story })
+      .toBe(1);
+    expect(await body.getByText("Hello from the page").count(), story).toBe(0);
+  }
+});
+
 test("from a server story to a client story, to another, and back", async ({ page }) => {
   const canvas = await openStory(page, site!.url, "greeting--default");
   expect(await runStory(page, canvas, "press-button--pressed")).toEqual(passed);

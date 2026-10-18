@@ -139,6 +139,8 @@ Pass a node to test one component instead of a whole page. It renders the way Te
 
 Without a `url`, the node renders at `/`. With a `url`, the pathname, search params, and route params come from it. The URL goes straight to your route, past `proxy.ts`, so a component behind a sign-in renders without one.
 
+A component that calls `location.reload()` reloads the test's tab, as it does without the plugin: the node is the test's, not a page of your app.
+
 `wrapper` wraps the node on the server, for the providers a layout would give it. It can be a Server Component:
 
 ```tsx
