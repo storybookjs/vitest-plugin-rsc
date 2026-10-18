@@ -83,11 +83,12 @@ export type ServerCodeOptions = {
     files?: string | RegExp | (string | RegExp)[];
     /**
      * The packages of the host, by name. A name that ends in `/*` is every
-     * package of that scope the project has. A module of a package, like
+     * package of that scope the project has, or every module under that path
+     * of a package, like `storybook/internal/*`. A module of a package, like
      * `storybook/test`, is the page's own, and the package's other modules
-     * are not, but the files of all of them are the host's runtime. What
-     * they depend on is the host's too, but for this plugin and Vite RSC,
-     * which a framework of the host can depend on.
+     * are not, but the files of the whole package are the host's runtime in
+     * the rsc layer. What they depend on is the host's too, but for this
+     * plugin and Vite RSC, which a framework of the host can depend on.
      *
      * Not something the plugin can read off the files: a file of the host
      * with `"use client"` imports `react` and `storybook/test` the same way,
@@ -97,7 +98,7 @@ export type ServerCodeOptions = {
      * the browser's in the rsc layer, where every other package is server
      * code.
      *
-     * @example ["storybook", "@storybook/*"]
+     * @example ["storybook/test", "storybook/preview-api"]
      */
     packages?: string[];
   };
@@ -177,11 +178,7 @@ const hostPackages = (packages: string[]) => ["vitest", "@vitest/*", ...packages
 
 // The package of a module, by its name: `storybook` of `storybook/test`,
 // `@scope/name` of `@scope/name/module`.
-const packageNameOf = (specifier: string) =>
-  specifier
-    .split("/")
-    .slice(0, specifier.startsWith("@") ? 2 : 1)
-    .join("/");
+const packageNameOf = (specifier: string) => /^(?:@[^/]+\/)?[^/]+/.exec(specifier)![0];
 
 // Vite and the packages of the host that the project has: Vitest, its browser
 // mode, the provider that drives the browser, coverage; a scope is every
@@ -190,7 +187,7 @@ const packageNameOf = (specifier: string) =>
 // runtime they import, and its `package.json` has what they depend on.
 function* hostPackageNames(root: string, packages: string[]): Generator<string> {
   for (const name of ["vite", ...hostPackages(packages)]) {
-    if (!name.endsWith("/*")) {
+    if (!/^@[^/]+\/\*$/.test(name)) {
       yield packageNameOf(name);
       continue;
     }

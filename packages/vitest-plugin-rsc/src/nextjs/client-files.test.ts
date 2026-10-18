@@ -167,13 +167,12 @@ test("loads a file of the host with another extension, whose code a plugin of th
   // One without the directive is no client file: Vite RSC made no reference of it.
   const page = `export default function Content() { return <h1>Notes</h1>; }\n`;
   expect(transformLoader.call(rsc, page, "/docs/notes.mdx")).toBeUndefined();
+  // The extension alone makes no file the host's.
+  expect(transformLoader.call(rsc, reference, "/app/readme.mdx")).toBeUndefined();
 
-  // The compiled code is JSX.
-  const content = `"use client";\nimport { vi } from "vitest";\n${page}`;
-  await expect(transform.call(rsc, content, "/docs/intro.mdx")).resolves.toBeUndefined();
-  await expect(
-    transform.call(rsc, `${content}vi.mock("./db.ts");\n`, "/docs/intro.mdx"),
-  ).rejects.toThrow("/docs/intro.mdx calls vi.mock()");
+  // The check of `vi.mock()` parses no code that the host has yet to compile.
+  const source = `# Use "use client"\n\nWith the directive, a file runs in the browser.\n`;
+  await expect(transform.call(rsc, source, "/docs/intro.mdx")).resolves.toBeUndefined();
 });
 
 test("takes the id of a module for its file, without the version of a dependency", () => {
