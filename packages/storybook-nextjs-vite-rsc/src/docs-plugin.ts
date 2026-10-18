@@ -25,14 +25,16 @@ export type DocsPluginOptions = {
   stories: NormalizedStoriesSpecifier[];
   /** The framework's preview, which has the hook that loads a story file. */
   previewFile: string;
+  /** Whether the addons of `.storybook/main.ts` have `@storybook/addon-docs`. */
+  hasAddonDocs: boolean;
 };
 
 /** The plugins, after `vitestPluginNext()`: see `mdxFiles`. */
 export function docsPlugins(options: DocsPluginOptions): Plugin[] {
-  const project = { hasAddonDocs: false };
   return [
-    withoutDocsDependencies(project),
-    addonDocsModule(project),
+    withoutDocsDependencies(options.hasAddonDocs),
+    browserTheming(),
+    addonDocsModule(options.hasAddonDocs),
     addonDocsPreview(),
     browserOnlyImports(),
     ...mdxFiles(options),
@@ -47,26 +49,17 @@ export function docsPlugins(options: DocsPluginOptions): Plugin[] {
 // React DOM are for the preview, which is the rsc layer and never loads
 // them: the browser layer pre-bundles the docs page instead.
 const reactAliases = new Set(["react", "react-dom", "react-dom/server"]);
-const mdxProvider = "@mdx-js/react";
 const docsDependency = /^@storybook\/addon-docs([\s/]|$)/;
 
-// Whether `.storybook/main.ts` has addon-docs, which the config says.
-type Project = { hasAddonDocs: boolean };
-
-function withoutDocsDependencies(project: Project): Plugin {
+function withoutDocsDependencies(hasAddonDocs: boolean): Plugin {
   return {
     name: "storybook-nextjs-vite-rsc:without-docs-dependencies",
     config: {
       order: "post",
       handler(config) {
-        // Without addon-docs, whose alias of `@mdx-js/react` says it is
-        // there, in a build too, the config is the project's own.
+        // Without addon-docs, the config is the project's own.
+        if (!hasAddonDocs) return;
         const alias = config.resolve?.alias;
-        const aliases = Array.isArray(alias)
-          ? alias.map(({ find }: { find: unknown }) => find)
-          : Object.keys(alias ?? {});
-        project.hasAddonDocs = aliases.includes(mdxProvider);
-        if (!project.hasAddonDocs) return;
         if (Array.isArray(alias)) {
           config.resolve!.alias = alias.filter(
             ({ find }: { find: unknown }) => typeof find !== "string" || !reactAliases.has(find),
@@ -81,17 +74,22 @@ function withoutDocsDependencies(project: Project): Plugin {
         config.optimizeDeps!.include = include.filter(
           (name) => !docsDependency.test(name) && name !== "react-dom/client",
         );
-        // And Storybook's theming, which the error of `browserOnlyImports`
-        // has a file with `"use client"` import.
         return {
-          environments: {
-            [browser]: { optimizeDeps: { include: [...docs, "storybook/theming"] } },
-          },
+          environments: { [browser]: { optimizeDeps: { include: docs } } },
         } satisfies UserConfig;
       },
     },
   };
 }
+
+// A file with `"use client"` of the project may import Storybook's theming,
+// which the browser layer's dep scan does not see before the file loads.
+const browserTheming = (): Plugin => ({
+  name: "storybook-nextjs-vite-rsc:browser-theming",
+  config: () => ({
+    environments: { [browser]: { optimizeDeps: { include: ["storybook/theming"] } } },
+  }),
+});
 
 // `@storybook/addon-docs` is an optional peer dependency: the canvas
 // (client-canvas.tsx) imports its `DocsRenderer` through this module, which
@@ -100,7 +98,7 @@ function withoutDocsDependencies(project: Project): Plugin {
 // pre-bundles in the browser layer: one copy, with one context of the docs.
 const addonDocsId = "virtual:@storybook/nextjs-vite-rsc/addon-docs";
 
-function addonDocsModule(project: Project): Plugin {
+function addonDocsModule(hasAddonDocs: boolean): Plugin {
   return {
     name: "storybook-nextjs-vite-rsc:addon-docs",
     resolveId: {
@@ -110,7 +108,7 @@ function addonDocsModule(project: Project): Plugin {
     load: {
       filter: { id: new RegExp(`^\0${addonDocsId}$`) },
       handler: () =>
-        project.hasAddonDocs
+        hasAddonDocs
           ? 'export { DocsRenderer } from "@storybook/addon-docs";'
           : "export const DocsRenderer = undefined;",
     },

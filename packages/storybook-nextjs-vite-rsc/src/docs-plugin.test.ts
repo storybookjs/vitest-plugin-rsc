@@ -13,6 +13,7 @@ const plugins = docsPlugins({
     workingDir,
   }),
   previewFile: "/fw/dist/preview.js",
+  hasAddonDocs: true,
 });
 const plugin = (name: string) => plugins.find((plugin) => plugin.name === name)!;
 
@@ -178,7 +179,17 @@ test("addon-docs's React goes, its MDXProvider stays, and the browser layer pre-
     resolve: { alias: [{ find: "react", replacement: "/repo/vendor/react" }] },
     optimizeDeps: { include: ["react-dom/client"] },
   };
-  expect(await hook.call({}, own as never)).toBe(undefined);
+  const withoutDocs = docsPlugins({
+    workingDir,
+    stories: [],
+    previewFile: "",
+    hasAddonDocs: false,
+  });
+  const ownHook = handlerOf(
+    withoutDocs.find(({ name }) => name === "storybook-nextjs-vite-rsc:without-docs-dependencies")!
+      .config,
+  );
+  expect(await ownHook.call({}, own as never)).toBe(undefined);
   expect(own.resolve.alias.map(({ find }) => find)).toEqual(["react"]);
   expect(own.optimizeDeps.include).toEqual(["react-dom/client"]);
   // `storybook build`, which has the aliases of addon-docs, as an object,
@@ -199,7 +210,6 @@ test("addon-docs's React goes, its MDXProvider stays, and the browser layer pre-
             "@storybook/addon-docs",
             "@storybook/addon-docs/blocks",
             "@storybook/addon-docs > @mdx-js/react",
-            "storybook/theming",
           ],
         },
       },
@@ -208,19 +218,22 @@ test("addon-docs's React goes, its MDXProvider stays, and the browser layer pre-
 });
 
 test("the canvas has the DocsRenderer of addon-docs when the project has the addon", async () => {
-  // The plugins of another project, whose config is still to come.
-  const ofProject = docsPlugins({ workingDir, stories: [], previewFile: "/fw/dist/preview.js" });
-  const named = (name: string) =>
-    ofProject.find((plugin) => plugin.name === `storybook-nextjs-vite-rsc:${name}`)!;
-  const addonDocs = named("addon-docs");
-  const id = handlerOf(addonDocs.resolveId).call(
-    {},
-    "virtual:@storybook/nextjs-vite-rsc/addon-docs" as never,
-  );
-  const load = () => handlerOf(addonDocs.load).call({}, id as never);
-  const config = handlerOf(named("without-docs-dependencies").config);
-  await config.call({}, { resolve: { alias: { react: "/repo/vendor/react" } } } as never);
-  expect(load()).toBe("export const DocsRenderer = undefined;");
-  await config.call({}, { resolve: { alias: { "@mdx-js/react": "/repo/mdx" } } } as never);
-  expect(load()).toBe('export { DocsRenderer } from "@storybook/addon-docs";');
+  const loaded = (hasAddonDocs: boolean) => {
+    const addonDocs = docsPlugins({ workingDir, stories: [], previewFile: "", hasAddonDocs }).find(
+      ({ name }) => name === "storybook-nextjs-vite-rsc:addon-docs",
+    )!;
+    const id = handlerOf(addonDocs.resolveId).call(
+      {},
+      "virtual:@storybook/nextjs-vite-rsc/addon-docs" as never,
+    );
+    return handlerOf(addonDocs.load).call({}, id as never);
+  };
+  expect(loaded(false)).toBe("export const DocsRenderer = undefined;");
+  expect(loaded(true)).toBe('export { DocsRenderer } from "@storybook/addon-docs";');
+});
+
+test('the browser layer pre-bundles Storybook\'s theming, which a file with "use client" may import', () => {
+  expect(handlerOf(plugin("storybook-nextjs-vite-rsc:browser-theming").config).call({})).toEqual({
+    environments: { react_client: { optimizeDeps: { include: ["storybook/theming"] } } },
+  });
 });

@@ -1,7 +1,12 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { hasVitePlugins, type ViteFinal } from "@storybook/builder-vite";
-import { loadPreviewOrConfigFile, normalizeStories } from "storybook/internal/common";
+import {
+  getAddonNames,
+  loadMainConfig,
+  loadPreviewOrConfigFile,
+  normalizeStories,
+} from "storybook/internal/common";
 import type {
   NormalizedStoriesSpecifier,
   Options,
@@ -80,6 +85,9 @@ export const viteFinal: ViteFinal = async (config, options) => {
     (await options.presets.apply<FrameworkOptions | undefined>("frameworkOptions")) ?? {};
   const workingDir = process.cwd();
   const stories = await storiesOf(options, workingDir);
+  const hasAddonDocs = getAddonNames(
+    await loadMainConfig({ configDir: options.configDir }),
+  ).includes("@storybook/addon-docs");
   return {
     ...config,
     optimizeDeps: {
@@ -124,7 +132,7 @@ export const viteFinal: ViteFinal = async (config, options) => {
       }),
       previewRuntimePlugin(),
       // After the plugin's: see docs-plugin.ts.
-      ...docsPlugins({ workingDir, stories, previewFile }),
+      ...docsPlugins({ workingDir, stories, previewFile, hasAddonDocs }),
     ],
   };
 };
