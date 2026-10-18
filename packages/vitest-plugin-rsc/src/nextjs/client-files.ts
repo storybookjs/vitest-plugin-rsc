@@ -24,7 +24,11 @@ import { builtHostFileKey } from "./styles.ts";
 // import is the browser layer's, as what a client module imports is client
 // code in React: also another file of the host.
 
-const sourceFile = /\.(?:tsx|ts|mts|jsx|js|mjs)$/;
+// The files whose code the check of `vi.mock()` parses, before the host's
+// plugins ran. A file of the host with another extension, which a plugin of
+// the host compiles to JavaScript, like `.mdx`, is still a client file when
+// Vite RSC made a reference of it: that is what says it has the directive.
+const parsedFile = /\.(?:tsx|ts|mts|jsx|js|mjs)$/;
 const languageOf = (file: string) =>
   file.endsWith(".tsx") ? "tsx" : file.endsWith("ts") ? "ts" : "jsx";
 
@@ -153,7 +157,7 @@ export function clientFiles(options: ClientFilesOptions): Plugin[] {
   // dependency: not Vite's `?import`, which the browser asks for.
   const hostFileOf = (id: string): string | undefined => {
     const file = fileOfModule(id);
-    if (file === undefined || !sourceFile.test(file) || !isHostFile(file)) return;
+    if (file === undefined || !isHostFile(file)) return;
     return file;
   };
 
@@ -191,7 +195,7 @@ export function clientFiles(options: ClientFilesOptions): Plugin[] {
       async transform(code, id) {
         if (this.environment.name !== rsc || !code.includes("use client")) return;
         const file = hostFileOf(id);
-        if (!file) return;
+        if (!file || !parsedFile.test(file)) return;
         const ast = await parseAstAsync(code, { lang: languageOf(file) });
         if (!hasDirective(ast.body, "use client")) return;
         // The file runs with the page's `vi`, whose mocker replaces what the
