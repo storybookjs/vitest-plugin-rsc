@@ -45,8 +45,13 @@ export type Opened = {
   pathname: string;
   /** Whether the server in front of the app takes the request: proxy.ts and `next.config`. */
   proxy: boolean;
-  /** With `files`: the files of the host that render the node, `hostFiles` of `renderServer()`. */
-  node?: { ui: unknown; layouts: boolean; files: string[] };
+  /**
+   * With `files`: the files of the host that render the node, `hostFiles` of
+   * `renderServer()`. With `version`: which render of it the server sends,
+   * which `rerender()` counts up, and the page says it has committed. The
+   * server reads both as it renders, after `rerender()` has set them.
+   */
+  node?: { ui: unknown; layouts: boolean; files: string[]; version?: number };
   /**
    * Whether Next renders the page a Server Action redirects to, into the
    * response of the action, as Next's router shows that page next. Not for

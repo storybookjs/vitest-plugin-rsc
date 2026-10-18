@@ -2404,7 +2404,7 @@ packages:
     resolution: {integrity: sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w==}
 
   '@storybook/addon-docs@https://pkg.pr.new/storybookjs/storybook/@storybook/addon-docs@0e82d2fc9b2fdcad71bdea0c59188ff57788e5f7':
-    resolution: {integrity: sha512-B+YE0yk/hSa9k3zZHCGVb7Xwc/lDz4us4lAIMK0cj+ywV93mF8AfrABoPJ1wRmPtsHktESghLmCgYQ0X1+iZPg==, tarball: https://pkg.pr.new/storybookjs/storybook/@storybook/addon-docs@0e82d2fc9b2fdcad71bdea0c59188ff57788e5f7}
+    resolution: {tarball: https://pkg.pr.new/storybookjs/storybook/@storybook/addon-docs@0e82d2fc9b2fdcad71bdea0c59188ff57788e5f7}
     version: 11.0.0-alpha.6
     peerDependencies:
       '@types/react': ^18.0.0 || ^19.0.0

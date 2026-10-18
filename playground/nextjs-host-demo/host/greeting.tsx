@@ -8,3 +8,6 @@ import { Greeting } from "../app/components/greeting.tsx";
 export function renderGreeting(container: HTMLElement, hostFiles = ["host/greeting.tsx"]) {
   return renderServer(<Greeting name="the host" />, { container, hostFiles });
 }
+
+/** The greeting for another name, for `rerender()` of what `renderGreeting()` resolved with. */
+export const greetingFor = (name: string) => <Greeting name={name} />;
