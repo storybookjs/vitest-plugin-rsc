@@ -10,6 +10,7 @@ import {
   expect,
   expectTypeOf,
   inject,
+  onTestFinished,
   test,
   vi,
   type MockInstance,
@@ -507,6 +508,54 @@ test("loads the page of the app's route when a node links to it", async () => {
   await expect.element(page.getByRole("navigation", { name: "Main" })).toBeVisible();
   expect(window.location.pathname).toBe("/notes");
   expect(container).toBeEmptyDOMElement();
+});
+
+// The reloads of the document that the plugin lets the browser make, which
+// the test stops: the tab would not survive them.
+function stopReloads(): string[] {
+  const reloads: string[] = [];
+  const stop = (event: Event) => {
+    const { navigationType, destination } = event as Event & {
+      navigationType: string;
+      destination: { url: string };
+    };
+    if (navigationType !== "reload" || event.defaultPrevented) return;
+    reloads.push(destination.url);
+    event.preventDefault();
+  };
+  navigation.addEventListener("navigate", stop);
+  onTestFinished(() => navigation.removeEventListener("navigate", stop));
+  return reloads;
+}
+
+// A node is the test's, in the test's document: a reload is the one of that
+// document, at its own URL, as for a component without a page.
+test("leaves the node at a reload, which reloads the document of the test", async () => {
+  const testUrl = window.location.href;
+  const { container } = await renderServer(<h1>Not the home page</h1>);
+  const reloads = stopReloads();
+
+  window.location.reload();
+
+  await expect.poll(() => reloads).toEqual([testUrl]);
+  expect(container).toBeEmptyDOMElement();
+  expect(window.location.href).toBe(testUrl);
+  await expect.element(page.getByRole("heading", { name: "Home" })).not.toBeInTheDocument();
+});
+
+test("loads the app's page again at a reload once the app has navigated away from the node", async () => {
+  await renderServer(<Link href="/notes">All notes</Link>, { url: "/notes/7", layouts: true });
+  const reloads = stopReloads();
+  // On the client: both routes have the app's root layout.
+  await page.getByRole("link", { name: "All notes" }).click();
+  await expect.element(page.getByRole("heading", { name: "Notes" })).toBeVisible();
+  db.notes.set("7", { id: "7", title: "After the reload", body: "" });
+
+  window.location.reload();
+
+  await expect.element(page.getByRole("link", { name: "After the reload" })).toBeVisible();
+  expect(window.location.pathname).toBe("/notes");
+  expect(reloads).toEqual([]);
 });
 
 test("leaves the node with unmount(), and its route with it", async () => {

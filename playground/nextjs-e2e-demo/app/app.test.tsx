@@ -287,6 +287,16 @@ test("loads the page when the app navigates without its router", async () => {
   expect(window.location.pathname).toBe("/notes");
 });
 
+test("loads the page again at a reload, which owns the document and its URL", async () => {
+  await renderServer({ url: "/notes" });
+  db.notes.set("7", { id: "7", title: "After the reload", body: "" });
+
+  window.location.reload();
+
+  await expect.element(page.getByText("After the reload")).toBeVisible();
+  expect(window.location.pathname).toBe("/notes");
+});
+
 test("rejects a page load that the test leaves before the server has responded", async () => {
   // The notes page has no loading.tsx: the server sends nothing until it has
   // the notes, which do not come.

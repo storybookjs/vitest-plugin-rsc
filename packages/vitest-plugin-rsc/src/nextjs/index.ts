@@ -11,7 +11,7 @@ import { documentUrl, loadDocument, unloadDocument } from "./document.ts";
 import { recordListeners, recordMessageChannels } from "./leftovers.ts";
 import { NodeOnPage } from "./node-on-page.ts";
 import { PageStore } from "./page-store.ts";
-import { registry, type Opened } from "./registry.ts";
+import { openedAt, registry, type Opened } from "./registry.ts";
 
 export { loadClientModule } from "./client-graph.ts";
 
@@ -1145,12 +1145,27 @@ function reloadsDocument(path: string | undefined): boolean {
   if (destination.sameDocument) page?.nodeOnPage?.at(new URL(destination.url).pathname);
   if (destination.sameDocument || hashChange || !event.cancelable) return;
   const url = new URL(destination.url);
+  // A reload loads again what owns the document. A page of the app owns it,
+  // so it loads again from its URL. Anything else is the host's document, a
+  // node included: the browser reloads it at the host's URL, which leaving
+  // puts back. Hosts leave a page before a reload of their own (Vite with
+  // `vite:beforeFullReload`, Storybook with the story's cleanup), so a reload
+  // with a page open is the app's.
+  const appOwnsUrl = page && !openedAt(url)?.node;
+  if (navigationType === "reload" && !appOwnsUrl) {
+    if (destination.url === documentUrl()) return;
+    event.preventDefault();
+    void leavePage("a reload of the document")
+      .catch(() => {})
+      .then(() => window.location.reload());
+    return;
+  }
   if (!page) {
     // No page of the app to load another one of: a component that a test
     // file with `"use client"` rendered has no router. A link or a form
-    // would replace the test, and Vitest would lose the tab. Not a reload,
-    // like Vite's after a change, and not a download, which stays.
-    if (navigationType === "reload" || downloadRequest != null) return;
+    // would replace the test, and Vitest would lose the tab. Not a
+    // download, which stays.
+    if (downloadRequest != null) return;
     event.preventDefault();
     reportError(noRouter(url));
     return;

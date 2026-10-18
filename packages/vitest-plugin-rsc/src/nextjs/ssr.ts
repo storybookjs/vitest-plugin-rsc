@@ -32,6 +32,7 @@ import {
 } from "./node-server.ts";
 import {
   actionModulePrefix,
+  openedAt,
   registry,
   type Opened,
   type RequestHandler,
@@ -99,15 +100,6 @@ function resolve(
     routes: proxy ? routing.routes : routing.appRoutes,
     invokeMiddleware,
   });
-}
-
-// What `renderServer()` opened, for a request that belongs to it: one to its
-// pathname. That is the document, and what the page sends there while it is
-// open: a Server Action, `router.refresh()`, a change of search params. A
-// request to another pathname is the app's, as always.
-function openedAt(url: URL): Opened | undefined {
-  const { opened } = registry;
-  return opened?.pathname === url.pathname ? opened : undefined;
 }
 
 // What the resolution answers with a redirect: one of `next.config`, of the
