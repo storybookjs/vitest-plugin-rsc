@@ -12,5 +12,6 @@ export default defineProject({
     testTimeout: 120_000,
     // A build builds.
     hookTimeout: 600_000,
+    globalSetup: ["../test-helpers/storybook-framework.ts"],
   },
 });
