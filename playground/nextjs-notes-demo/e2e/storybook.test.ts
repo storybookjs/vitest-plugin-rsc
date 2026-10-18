@@ -1,7 +1,7 @@
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, expect } from "vitest";
-import { createProject, test, type DevServer } from "../../test-helpers/host.ts";
-import { openStory, rendered, runStory, updateArgs } from "../../test-helpers/storybook.ts";
+import { createProject, type DevServer } from "../../test-helpers/host.ts";
+import { openStory, rendered, runStory, test, updateArgs } from "../../test-helpers/storybook.ts";
 import { atStory, body, passed, runEveryStory } from "./stories.ts";
 
 // `storybook dev` of the notes demo, driven in the manager as a user does:

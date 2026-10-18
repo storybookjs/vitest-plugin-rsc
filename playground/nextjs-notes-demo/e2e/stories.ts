@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import type { Frame, Page } from "playwright";
 import { expect } from "vitest";
 import type { PageErrors } from "../../test-helpers/host.ts";
@@ -8,14 +9,26 @@ import { openStory, runStory, storyRun, type StoryRun } from "../../test-helpers
 
 export const passed: StoryRun = { phase: "finished", reports: [], interactions: "PASS" };
 
-/** The ids of the stories of the Storybook at `url`, in the order of its sidebar. */
-export async function storyIds(url: string): Promise<string[]> {
+type Story = { id: string; page: boolean; client: boolean };
+
+const root = new URL("../", import.meta.url);
+
+/**
+ * The stories of the Storybook at `url`, in the order of its sidebar: a page
+ * is one of a `page.stories.tsx`, a client story one of a file with
+ * "use client".
+ */
+export async function stories(url: string): Promise<Story[]> {
   const index = (await (await fetch(new URL("index.json", url))).json()) as {
-    entries: Record<string, { id: string; type: string }>;
+    entries: Record<string, { id: string; type: string; importPath: string }>;
   };
   return Object.values(index.entries)
     .filter((entry) => entry.type === "story")
-    .map((entry) => entry.id);
+    .map(({ id, importPath }) => ({
+      id,
+      page: importPath.endsWith("/page.stories.tsx"),
+      client: /^["']use client["']/.test(fs.readFileSync(new URL(importPath, root), "utf8")),
+    }));
 }
 
 /** The path of the preview with the id of its story: where a reload lands. */
@@ -30,12 +43,6 @@ export const body = (canvas: Frame) =>
     classes: [...document.body.classList].sort(),
     root: !!document.getElementById("storybook-root"),
   }));
-
-// The stories of the pages of the app have the titles `Pages/…`, and the
-// client stories are the ones of the files with "use client".
-export const isPage = (story: string) => story.startsWith("pages-");
-export const isClientStory = (story: string) =>
-  /^(ui-button|components-submitbutton)--/.test(story);
 
 // The root layout has the provider of next-themes, whose script React's
 // development build warns of when it renders it in the browser. Next does so
@@ -52,17 +59,17 @@ const scriptTagWarning = /^console\.error: Encountered a script tag while render
  * reload lands.
  */
 export async function runEveryStory(page: Page, url: string, errors: PageErrors): Promise<void> {
-  const [first, ...rest] = await storyIds(url);
-  const canvas = await openStory(page, url, first!);
-  const check = async (story: string, run: StoryRun) => {
-    expect(run, story).toEqual(passed);
-    expect((await body(canvas)).root, story).toBe(!isPage(story));
-    if (isClientStory(story)) expect(atStory(canvas), story).toBe(`/iframe.html?id=${story}`);
-    else expect(new URL(canvas.url()).pathname, story).not.toBe("/iframe.html");
+  const [first, ...rest] = await stories(url);
+  const canvas = await openStory(page, url, first!.id);
+  const check = async ({ id, page: isPage, client }: Story, run: StoryRun) => {
+    expect(run, id).toEqual(passed);
+    expect((await body(canvas)).root, id).toBe(!isPage);
+    if (client) expect(atStory(canvas), id).toBe(`/iframe.html?id=${id}`);
+    else expect(new URL(canvas.url()).pathname, id).not.toBe("/iframe.html");
     const logged = errors.list.splice(0);
-    if (!notFound.has(story)) return expect(logged, story).toEqual([]);
-    for (const error of logged) expect(error, story).toMatch(scriptTagWarning);
+    if (!notFound.has(id)) return expect(logged, id).toEqual([]);
+    for (const error of logged) expect(error, id).toMatch(scriptTagWarning);
   };
-  await check(first!, await storyRun(page, canvas, first!));
-  for (const story of rest) await check(story, await runStory(page, canvas, story));
+  await check(first!, await storyRun(page, canvas, first!.id));
+  for (const story of rest) await check(story, await runStory(page, canvas, story.id));
 }

@@ -24,8 +24,8 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:studio": "drizzle-kit studio",
-    "storybook": "NODE_OPTIONS='--conditions=vitest-plugin-rsc-source' storybook dev --port 6006",
-    "build-storybook": "NODE_OPTIONS='--conditions=vitest-plugin-rsc-source' storybook build"
+    "storybook": "NODE_OPTIONS='--conditions=vitest-plugin-rsc-source --conditions=storybook-nextjs-vite-rsc-source' storybook dev --port 6006",
+    "build-storybook": "NODE_OPTIONS='--conditions=vitest-plugin-rsc-source --conditions=storybook-nextjs-vite-rsc-source' storybook build"
   },
   "dependencies": {
     "@base-ui/react": "^1.4.1",

@@ -16,6 +16,9 @@ export default {
 
 type Story = StoryObj;
 
+// A fixed date, so a story looks the same every day.
+const updatedAt = new Date("2026-08-21T09:00:00.000Z");
+
 export const Empty: Story = {
   play: async ({ canvas }) => {
     await expect(await canvas.findByText("No notes yet")).toBeVisible();
@@ -58,7 +61,9 @@ export const DarkMode: Story = {
 // A Server Action that writes to the database and refreshes the page.
 export const ToggleFavorite: Story = {
   beforeEach: async () => {
-    await db.insert(notes).values({ ownerId: testUser.id, title: "Book recommendations" });
+    await db
+      .insert(notes)
+      .values({ ownerId: testUser.id, title: "Book recommendations", updatedAt });
   },
   play: async ({ canvas, userEvent }) => {
     await userEvent.click(await canvas.findByRole("button", { name: "Favorite note" }));
@@ -71,8 +76,8 @@ export const ToggleFavorite: Story = {
 export const DeleteNote: Story = {
   beforeEach: async () => {
     await db.insert(notes).values([
-      { ownerId: testUser.id, title: "Team offsite agenda" },
-      { ownerId: testUser.id, title: "Old meeting notes" },
+      { ownerId: testUser.id, title: "Team offsite agenda", updatedAt },
+      { ownerId: testUser.id, title: "Old meeting notes", updatedAt },
     ]);
   },
   play: async ({ canvas, userEvent }) => {
