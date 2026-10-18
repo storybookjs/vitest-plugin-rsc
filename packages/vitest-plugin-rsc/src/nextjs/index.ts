@@ -1110,7 +1110,7 @@ type NavigateEvent = Event & {
 // listener below loads as the app's, at the page's URL: the host's document
 // would stay. Left first, the document and its URL are the host's again.
 import.meta.hot?.on("vite:beforeFullReload", ({ path }) => {
-  if (reloadsDocument(path)) return leavePage();
+  if (reloadsDocument(path)) return leavePage("a reload of the page");
 });
 
 // Whether Vite's client goes on to load the document again, as it decides
