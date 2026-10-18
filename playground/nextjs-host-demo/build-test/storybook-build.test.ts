@@ -8,6 +8,7 @@ import { createProject, serveFiles, test, type Site } from "../../test-helpers/h
 import {
   openDocs,
   openStory,
+  rendered,
   runStory,
   storyInDocs,
   storyRun,
@@ -75,6 +76,9 @@ test("a reload at a server story of a component shows the story again", async ({
   await canvas.waitForFunction(() => !(window as { before?: true }).before, null, {
     timeout: 30_000,
   });
+  // Once the preview of the new document has rendered the story: `storyRun()`
+  // reads the preview, which loads after the document.
+  expect(await rendered(canvas, "greeting--default")).toBe("finished");
   expect(await storyRun(page, canvas, "greeting--default")).toEqual(passed);
   expect(await canvas.getByText("Hello from the page").count()).toBe(0);
 });
