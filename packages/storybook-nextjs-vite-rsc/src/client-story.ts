@@ -35,6 +35,14 @@ const clientStories = new WeakMap<object, ClientStory>();
 // The story files with `"use client"` that loaded, by their module, which
 // `loadClientModule()` gives the same object for each time.
 const loaded = new WeakSet<ModuleExports>();
+// The same files, by the importPath that Storybook loaded them with, which is
+// the `parameters.fileName` of their stories: a story that is prepared has
+// no export of its own yet (docs.ts).
+const clientFiles = new Set<string>();
+
+/** Whether the story file of `parameters.fileName` has `"use client"`, as it loaded last. */
+export const isClientStoryFile = (importPath: unknown): boolean =>
+  typeof importPath === "string" && clientFiles.has(importPath);
 
 /** What a story of a file with `"use client"` renders with; none for a server story. */
 export const clientStoryOf = (context: object): ClientStory | undefined =>
@@ -46,8 +54,8 @@ const moduleExportOf = (context: object): object =>
 
 let loading: Promise<Canvas> | undefined;
 
-// The canvas, once, before the first client story is prepared.
-function loadCanvas(): Promise<Canvas> {
+/** The canvas, once, before the first client story is prepared or docs page renders. */
+export function loadCanvas(): Promise<Canvas> {
   loading ??= import("./client-canvas.tsx")
     .then((reference) => loadClientModule(reference))
     .catch((error: unknown) => {
@@ -56,16 +64,16 @@ function loadCanvas(): Promise<Canvas> {
       // The plugin's message names its options, which the framework sets.
       throw new Error(
         `@storybook/nextjs-vite-rsc could not load its canvas in the browser layer, which ` +
-          `renders the stories of files with "use client". This is a bug of the framework: ` +
-          `please report it, with the error it caused.`,
+          `renders the stories of files with "use client" and the docs pages. This is a bug of ` +
+          `the framework: please report it, with the error it caused.`,
         { cause: error },
       );
     });
   return loading;
 }
 
-// The preview file, as the browser layer evaluates it now.
-async function browserPreview({ loadPreview }: Canvas): Promise<object> {
+/** The preview file, as the browser layer evaluates it now. */
+export async function browserPreview({ loadPreview }: Canvas): Promise<object> {
   try {
     return await loadPreview();
   } catch (error) {
@@ -92,7 +100,11 @@ export async function loadStoryFile(
   const imported = await importFn(path);
   const references = referencesOf(imported);
   const exports = await loadClientModule(references);
-  if (exports === references) return imported;
+  if (exports === references) {
+    clientFiles.delete(path);
+    return imported;
+  }
+  clientFiles.add(path);
   // Storybook loads the file for every story it prepares. A module that
   // loaded before keeps its twins, which its components were evaluated with.
   if (loaded.has(exports)) return exports;
@@ -143,7 +155,7 @@ function previewDecoratorsOf(preview: object): Decorator[] {
  * A client story, all of the browser layer: the story, with the browser
  * layer's `render` of `@storybook/react` for one without its own, and its
  * decorators. Those of the story and its meta, from the file, those of
- * Storybook and its addons, which are one instance for both layers, and the
+ * Storybook and its addons, as the preview has them, and the
  * preview file's as the browser layer evaluated it, in the place of the rsc
  * layer's: the run of them inside the addons' ones, as Storybook orders them.
  */

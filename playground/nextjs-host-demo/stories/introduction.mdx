@@ -1,0 +1,23 @@
+import { Canvas, Meta } from "@storybook/addon-docs/blocks";
+import * as Greeting from "./greeting.stories.tsx";
+import { Pressed } from "./press-button.stories.tsx";
+
+<Meta title="Introduction" />
+
+# Introduction
+
+A docs page renders in the browser, as a file with "use client" does.
+
+## A server story
+
+It renders on the server, in a page of the app, which the docs page shows in an iframe:
+
+<Canvas of={Greeting.Default} />
+
+## A client story
+
+It renders inline, in the project's decorator:
+
+<Canvas of={Pressed} />
+
+> A blockquote, which the project's components of `parameters.docs` render.

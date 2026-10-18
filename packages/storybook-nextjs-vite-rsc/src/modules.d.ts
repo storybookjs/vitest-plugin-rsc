@@ -12,6 +12,12 @@ declare module "virtual:@storybook/nextjs-vite-rsc/project" {
   export const workingDir: string;
 }
 
+// The virtual module of docs-plugin.ts: the `DocsRenderer` of
+// `@storybook/addon-docs`, if the project has it.
+declare module "virtual:@storybook/nextjs-vite-rsc/addon-docs" {
+  export const DocsRenderer: typeof import("@storybook/addon-docs").DocsRenderer | undefined;
+}
+
 // The annotations of `@storybook/react` that the canvas of a client story
 // takes, which the package has no types for.
 declare module "@storybook/react/entry-preview" {

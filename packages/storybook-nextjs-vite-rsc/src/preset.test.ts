@@ -11,7 +11,7 @@ import { vitestPluginRSC } from "vitest-plugin-rsc";
 // build with `pnpm test:dist`. What it gives vitestPluginNext() is what the
 // mock records.
 const { vitestPluginNext } = vi.hoisted(() => ({
-  vitestPluginNext: vi.fn((_options: object): Plugin[] => []),
+  vitestPluginNext: vi.fn((_options: object): Plugin[] => [{ name: "vitest-plugin-rsc:next" }]),
 }));
 vi.mock("vitest-plugin-rsc/nextjs/plugin", () => ({ vitestPluginNext }));
 
@@ -21,7 +21,7 @@ const configDir = path.join(root, ".storybook");
 fs.mkdirSync(configDir);
 fs.writeFileSync(
   path.join(configDir, "main.js"),
-  "export default { stories: ['../stories/**/*.stories.tsx'], addons: ['@storybook/addon-a11y', './local-addon.js'] };\n",
+  "export default { stories: ['../stories/**/*.stories.tsx'] };\n",
 );
 fs.writeFileSync(path.join(configDir, "preview.tsx"), "export default {};\n");
 afterAll(() => fs.rmSync(root, { recursive: true }));
@@ -83,9 +83,17 @@ test("the plugin, with the stories and .storybook as files of the host", async (
     new URL("./client-canvas.tsx", import.meta.resolve("@storybook/nextjs-vite-rsc/preset")),
   );
   expect((host.files[2] as RegExp).test(canvas)).toBe(true);
-  // Not a local addon, and not @storybook/react, whose renderer the browser
-  // layer has a copy of.
-  expect(host.packages).toEqual(["storybook", "@storybook/addon-a11y"]);
+  // The one package of the host: in a build the rsc layer would have its own
+  // `storybook/test`, without a `window`. The rest is each layer's own.
+  expect(host.packages).toEqual(["storybook/test"]);
+});
+
+test("the docs plugins after the plugin's, whose load line of an MDX file they go above", async () => {
+  const { plugins } = await viteFinal({});
+  const names = plugins.map((plugin) => plugin.name);
+  expect(names.indexOf("storybook-nextjs-vite-rsc:mdx-story-files")).toBeGreaterThan(
+    names.indexOf("vitest-plugin-rsc:next"),
+  );
 });
 
 test("the virtual module of the project has the preview file, from the root", async () => {

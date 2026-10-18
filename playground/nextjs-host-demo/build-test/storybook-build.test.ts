@@ -5,7 +5,14 @@ import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, expect } from "vitest";
 import { filesWithMachinePaths } from "../../test-helpers/build.ts";
 import { createProject, serveFiles, test, type Site } from "../../test-helpers/host.ts";
-import { openStory, runStory, storyRun, type StoryRun } from "../../test-helpers/storybook.ts";
+import {
+  openDocs,
+  openStory,
+  runStory,
+  storyInDocs,
+  storyRun,
+  type StoryRun,
+} from "../../test-helpers/storybook.ts";
 
 // `storybook build` of the project with @storybook/nextjs-vite-rsc, which
 // builds the layers with Vite's app builder, behind a server of files: the
@@ -58,3 +65,46 @@ test("server stories, a page, a Server Action and client stories", async ({ page
     )
     .toBe("rgb(0, 0, 255)");
 });
+
+test("an MDX page and autodocs, with server stories in iframes and client stories inline", async ({
+  page,
+}) => {
+  const canvas = await openDocs(page, site!.url, "introduction--docs");
+  const docs = canvas.locator("#storybook-docs");
+  const server = await storyInDocs(canvas, "greeting--default");
+  expect(await server.getByText("Hello from Storybook").count()).toBe(1);
+  const button = docs.getByTestId("meta-decorator").getByRole("button", { name: "Press: 0" });
+  await expect.poll(() => button.getAttribute("data-theme")).toBe("storybook");
+  await button.click();
+  await expect.poll(() => docs.getByRole("button", { name: "Press: 1" }).count()).toBe(1);
+  // A file with `"use client"` next to the preview file, which imports
+  // Storybook's theming.
+  expect(await docs.getByTestId("docs-blockquote").getAttribute("data-theme-base")).toBe("light");
+  const autodocs = await openDocs(page, site!.url, "press-button--docs");
+  await expect
+    .poll(() =>
+      autodocs.locator("#storybook-docs").getByRole("button", { name: "Press: 0" }).count(),
+    )
+    .toBe(2);
+});
+
+// What Chromatic does with a build: the stories of every entry of the index,
+// which loads every file, the MDX files too.
+test("extract() of the preview has the stories of every file", async ({ page }) => {
+  await page.goto(new URL("iframe.html", site!.url).href);
+  await page.waitForFunction(
+    () => !!(window.__STORYBOOK_PREVIEW__ as Extracting | undefined)?.storyStoreValue,
+    null,
+    { timeout: 60_000 },
+  );
+  const stories = await page.evaluate(async () =>
+    Object.keys(await (window.__STORYBOOK_PREVIEW__ as Extracting).extract()),
+  );
+  expect(stories).toEqual(expect.arrayContaining(["greeting--default", "press-button--pressed"]));
+});
+
+// What the preview has for Chromatic.
+type Extracting = Window["__STORYBOOK_PREVIEW__"] & {
+  storyStoreValue?: object;
+  extract(): Promise<object>;
+};

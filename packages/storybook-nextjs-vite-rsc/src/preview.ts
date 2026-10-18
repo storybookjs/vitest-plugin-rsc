@@ -13,6 +13,7 @@ import {
   loadStoryFile,
   renderClientStory,
 } from "./client-story.ts";
+import { docsRenderer, docsStoryByKind, loadDocsFile, serverStoryInline } from "./docs.ts";
 import {
   beforeEach,
   isPageStory,
@@ -24,12 +25,15 @@ import {
 // The annotations of the framework, in place of the ones of
 // `@storybook/react` that render (see preset.ts). Each picks
 // the kind of the story, a server story (server-story.ts) or a client story
-// (client-story.ts). The preview runs in the rsc layer, with the browser's
-// globals, as a test file does.
+// (client-story.ts), or of the file, a story file or a docs page (docs.ts).
+// The preview runs in the rsc layer, with the browser's globals, as a test
+// file does.
 
 export { beforeEach, render };
 
-export const parameters = { renderer: "react" };
+export const parameters = { renderer: "react", docs: { renderer: docsRenderer } };
+
+export const argTypesEnhancers = [docsStoryByKind];
 
 // `@storybook/react`'s: `mount(<Story />)` in `play` renders that element.
 export const mount =
@@ -44,7 +48,8 @@ export const mount =
     return context.canvas;
   };
 
-export const experimental_loadStoryFile = loadStoryFile;
+export const experimental_loadStoryFile: typeof loadStoryFile = (path, importFn) =>
+  path.endsWith(".mdx") ? loadDocsFile(path, importFn) : loadStoryFile(path, importFn);
 
 // Storybook decorates a story once it is prepared, without its context, and
 // calls the result with the context of each render. A server story without
@@ -64,7 +69,8 @@ export const applyDecorators: DecoratorApplicator<NextjsRscRenderer> = (storyFn,
 
 export const renderToCanvas: RenderToCanvas<NextjsRscRenderer> = (context, canvasElement) => {
   const clientStory = clientStoryOf(context.storyContext);
-  return clientStory
-    ? renderClientStory(context, canvasElement, clientStory)
-    : renderServerStory(context, canvasElement);
+  if (clientStory) return renderClientStory(context, canvasElement, clientStory);
+  // Inline on a docs page, in its document: a server story has a page.
+  if (context.storyContext.viewMode === "docs") throw serverStoryInline(context.id);
+  return renderServerStory(context, canvasElement);
 };
