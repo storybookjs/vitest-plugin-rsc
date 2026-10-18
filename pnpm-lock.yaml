@@ -440,6 +440,9 @@ importers:
       '@opentelemetry/api':
         specifier: ^1.9.1
         version: 1.9.1
+      '@storybook/addon-docs':
+        specifier: https://pkg.pr.new/storybookjs/storybook/@storybook/addon-docs@0e82d2fc9b2fdcad71bdea0c59188ff57788e5f7
+        version: https://pkg.pr.new/storybookjs/storybook/@storybook/addon-docs@0e82d2fc9b2fdcad71bdea0c59188ff57788e5f7(@types/react@19.2.14)(storybook@https://pkg.pr.new/storybookjs/storybook/storybook@0e82d2fc9b2fdcad71bdea0c59188ff57788e5f7(@types/react@19.2.14)(react@19.2.6))
       '@storybook/nextjs-vite-rsc':
         specifier: workspace:*
         version: link:../../packages/storybook-nextjs-vite-rsc

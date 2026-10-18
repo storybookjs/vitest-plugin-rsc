@@ -3,6 +3,7 @@ import { expect } from "storybook/test";
 import { notes } from "#db/schema.ts";
 import { db } from "#lib/db.ts";
 import { otherUser, signInAs, testUser } from "#test/auth.ts";
+import { roundTrip } from "#.storybook/round-trip.ts";
 
 // The page of one note: see page.test.tsx.
 const id = "00000000-0000-4000-8000-000000000001";
@@ -60,7 +61,7 @@ export const Delete: Story = {
   },
   play: async ({ canvas, userEvent }) => {
     await userEvent.click(await canvas.findByRole("button", { name: "Delete" }));
-    await expect(await canvas.findByText("No notes yet")).toBeVisible();
+    await expect(await canvas.findByText("No notes yet", {}, roundTrip)).toBeVisible();
     await expect(location.pathname).toBe("/notes");
   },
 };

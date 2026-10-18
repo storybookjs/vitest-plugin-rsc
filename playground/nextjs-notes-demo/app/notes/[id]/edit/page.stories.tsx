@@ -3,6 +3,7 @@ import { expect } from "storybook/test";
 import { notes } from "#db/schema.ts";
 import { db } from "#lib/db.ts";
 import { signInAs, testUser } from "#test/auth.ts";
+import { roundTrip } from "#.storybook/round-trip.ts";
 
 // The form of a note, filled from the database: see page.test.tsx.
 const id = "00000000-0000-4000-8000-000000000001";
@@ -35,7 +36,7 @@ export const ValidationError: Story = {
   play: async ({ canvas, userEvent }) => {
     await userEvent.clear(await canvas.findByLabelText("Title"));
     await userEvent.click(canvas.getByRole("button", { name: "Save changes" }));
-    await expect(await canvas.findByText("Title is required.")).toBeVisible();
+    await expect(await canvas.findByText("Title is required.", {}, roundTrip)).toBeVisible();
     await expect(canvas.getByLabelText("Title")).toHaveAttribute("aria-invalid", "true");
   },
 };
@@ -48,7 +49,7 @@ export const Save: Story = {
     await userEvent.type(title, "Reading list 2026");
     await userEvent.click(canvas.getByRole("button", { name: "Save changes" }));
     await expect(
-      await canvas.findByRole("heading", { level: 1, name: "Reading list 2026" }),
+      await canvas.findByRole("heading", { level: 1, name: "Reading list 2026" }, roundTrip),
     ).toBeVisible();
     await expect(location.pathname).toBe(`/notes/${id}`);
   },

@@ -1,12 +1,14 @@
 import type { Meta, StoryObj } from "@storybook/nextjs-vite-rsc";
 import { expect } from "storybook/test";
 import FlashCookieProbe from "./flash-cookie-probe.tsx";
+import { roundTrip } from "#.storybook/round-trip.ts";
 
 // A Server Component that reads the cookies and headers of its request, and
 // sets a cookie in a Server Action: see flash-cookie-probe.test.tsx.
 const meta = {
   title: "Components/FlashCookieProbe",
   component: FlashCookieProbe,
+  tags: ["autodocs"],
 } satisfies Meta<typeof FlashCookieProbe>;
 
 export default meta;
@@ -27,6 +29,6 @@ export const SetFlash: Story = {
   play: async ({ canvas, userEvent }) => {
     await expect(await canvas.findByText("flash: empty")).toBeVisible();
     await userEvent.click(canvas.getByRole("button", { name: "Set flash" }));
-    await expect(await canvas.findByText("flash: saved")).toBeVisible();
+    await expect(await canvas.findByText("flash: saved", {}, roundTrip)).toBeVisible();
   },
 };

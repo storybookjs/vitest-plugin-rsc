@@ -1,8 +1,12 @@
 import type { Meta, StoryObj } from "@storybook/nextjs-vite-rsc";
 import { expect, waitFor } from "storybook/test";
 import { signInAs, testUser } from "#test/auth.ts";
+import { roundTrip } from "#.storybook/round-trip.ts";
 
 // The home page, in the root layout, whose header knows who is signed in.
+// No `autodocs` for the pages: a docs page shows a server story in an
+// iframe 320px high, where a whole route says little. The stories of
+// components/ have docs pages.
 export default {
   title: "Pages/Home",
   parameters: { nextjs: { url: "/" } },
@@ -41,7 +45,9 @@ export const OpenNotes: Story = {
   beforeEach: () => signInAs(),
   play: async ({ canvas, userEvent }) => {
     await userEvent.click(await canvas.findByRole("link", { name: "Open notes" }));
-    await expect(await canvas.findByRole("heading", { level: 1, name: "Notes" })).toBeVisible();
+    await expect(
+      await canvas.findByRole("heading", { level: 1, name: "Notes" }, roundTrip),
+    ).toBeVisible();
     await expect(location.pathname).toBe("/notes");
   },
 };

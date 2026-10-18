@@ -9,7 +9,7 @@ import {
   test,
   updateArgs,
 } from "../../test-helpers/storybook.ts";
-import { atStory, body, passed, runEveryStory } from "./stories.ts";
+import { atStory, body, passed, renderEveryDocsPage, runEveryStory } from "./stories.ts";
 
 // `storybook dev` of the notes demo, driven in the manager as a user does:
 // see ../.storybook, the page stories next to each `page.tsx` and the stories
@@ -68,4 +68,11 @@ test("a new count in Controls seeds the database again and loads the page", asyn
     .toBe(1);
   await expect.poll(() => canvas.getByRole("heading", { level: 2 }).count()).toBe(12);
   expect(await storyRun(page, canvas, "pages-notes--with-notes")).toEqual(passed);
+});
+
+test("every docs page shows its stories: a client story inline, a server story in an iframe", async ({
+  page,
+  errors,
+}) => {
+  await renderEveryDocsPage(page, site!.url, errors);
 });
