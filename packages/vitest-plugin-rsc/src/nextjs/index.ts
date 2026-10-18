@@ -124,7 +124,8 @@ function forgetStorage(): void {
 }
 // Also when the document goes without `cleanup()`, like an iframe that is
 // taken out of its page: every other document of the origin heard of what
-// the app stored, and would keep it as the host's, also after a reload.
+// the app stored, and would keep it as the host's, also after a reload. So a
+// reload starts without it, as a test does.
 window.addEventListener("pagehide", forgetStorage);
 
 // A page of another origin is not the app's: a browser would leave the app for
