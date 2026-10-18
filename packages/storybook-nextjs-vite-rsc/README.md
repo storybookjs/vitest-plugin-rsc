@@ -145,7 +145,9 @@ Server Action and `redirect()` keep that `<body>`. After a navigation that
 loads a new document, query `within(document.body)`.
 
 A page renders without the decorators, which have no node to decorate,
-and `parameters.layout` does not style it: the app styles its own `<body>`.
+Storybook's own included: backgrounds, measure and outline do nothing on a
+page. It has no CSS of the preview file or its story file, and
+`parameters.layout` does not style it: the app styles its own `<body>`.
 `layouts` is for a component, and `mount(ui)` has no story to replace: both
 fail with a message.
 
@@ -191,6 +193,7 @@ sides import, as a shared module is in Next. The framework evaluates it
 twice: on the server, where its decorators decorate the server stories, and
 in the browser, where they decorate the client stories. A decorator of the
 preview file, like a provider of the app's theme, so applies to every story.
+In a client story it is a Client Component, which cannot be async.
 
 So the preview file, and what it imports, has to load in a browser too.
 Setup that is only for the server, like a database, goes in a decorator of
@@ -205,11 +208,18 @@ both kinds of story.
 
 A change of a story file renders its stories again in place. A change of
 the code of the app, or of the preview file and what it imports, loads the
-preview again: the server code of the app runs once per document.
+preview again: the server code of the app runs once per document. A change
+of a stylesheet that the preview file imports shows in place.
 
 ## Not In This Version
 
-- Docs pages and MDX.
+- Docs pages, `autodocs` and MDX: with `@storybook/addon-docs` a docs entry
+  fails. They are coming (SB-2284).
+- `definePreview()` and the story factories of CSF Next: write the preview
+  file and the stories in CSF 3, as above.
+- A decorator of an addon that renders a component of the addon, like a
+  provider of `@storybook/addon-themes`. One that returns `Story()` applies
+  to both kinds of story.
 - A new value of an arg renders the story again in place, with the state it
   has: now it is a new request.
 - A change of a component that only client stories import: it shows once
