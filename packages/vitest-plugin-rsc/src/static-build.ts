@@ -219,6 +219,9 @@ export function staticBuild(options: StaticBuildOptions): Plugin {
   >();
   // While `buildApp()` builds the environments.
   let buildingApp = false;
+  // While the build of a layer that runs through a module runner renders its
+  // chunks, one environment at a time.
+  let buildingLayer = false;
   // The modules of the page that the scan of the browser layer found it
   // imports, by the import each stands for: the rsc layer lists them, see
   // `hostModulesId`.
@@ -265,6 +268,7 @@ export function staticBuild(options: StaticBuildOptions): Plugin {
         }
         // The config's own, which this one replaces: it gets what is left.
         const userOnwarn = userConfig.build?.rolldownOptions?.onwarn;
+        const userRenderBuiltUrl = userConfig.experimental?.renderBuiltUrl;
         const directives = new RegExp(
           `\\buse (${["client", "server", ...(layers.directives ?? [])].join("|")})\\b`,
         );
@@ -301,6 +305,19 @@ export function staticBuild(options: StaticBuildOptions): Plugin {
           // `vite build` calls. One set of plugins for the environments: what
           // the build of one finds, the build of the next one has.
           builder: { sharedPlugins: true, sharedConfigBuild: true },
+          experimental: {
+            // Vite writes the URL of a file in CSS from the directory where
+            // the host's build puts its CSS, with plugins that the
+            // environments share, and not from where a layer has it. So a
+            // URL of the CSS of a layer names the file from the directory of
+            // the build, until the CSS has its place: see `generateBundle`.
+            renderBuiltUrl(filename, context) {
+              if (buildingLayer && context.hostType === "css") {
+                return `${cssBuildDirPlaceholder}/${filename}`;
+              }
+              return userRenderBuiltUrl?.(filename, context);
+            },
+          },
           build: {
             rolldownOptions: {
               ...(layers.strictExecutionOrder && { output: { strictExecutionOrder: true } }),
@@ -418,6 +435,7 @@ export function staticBuild(options: StaticBuildOptions): Plugin {
     },
     buildStart() {
       if (this.environment.mode !== "build") return;
+      buildingLayer = runnerLayers().includes(this.environment.name);
       // Outside the plugin's `buildApp()`, like with Vite's `build()`, only
       // the environment of the host is built: a site without the other
       // layers, which would fail when it is opened.
