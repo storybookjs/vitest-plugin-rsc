@@ -2,6 +2,7 @@ import { fileURLToPath } from "node:url";
 import type { Page } from "playwright";
 import { afterAll, beforeAll, expect } from "vitest";
 import { createProject, test, type DevServer, type PageErrors } from "../../test-helpers/host.ts";
+import type { HostWindow } from "../host/state.ts";
 import { expectGreetingStylesheets, nextReact, open as openView, style } from "./host-page.ts";
 
 // The app in a page of Vite's own dev server, without Vitest: see
@@ -78,6 +79,24 @@ test("renders a node of the host in a container of the host", async ({ page, err
     await page.getByRole("button", { name: "Count: 0" }).click();
     await page.getByRole("button", { name: "Count: 1" }).waitFor();
     // The stylesheets of the node, which the dev server tells the page of.
+    expect(await style(page, "[data-testid=greeting]", "border-left-color")).toBe(
+      "rgb(0, 112, 243)",
+    );
+  });
+});
+
+test("renders a node of the host again with other props, keeping its state", async ({
+  page,
+  errors,
+}) => {
+  await open(page, errors, "rerender", async (page) => {
+    await page.getByRole("button", { name: "Count: 0" }).click();
+    await page.getByRole("button", { name: "Count: 1" }).waitFor();
+
+    await page.evaluate(() => (window as HostWindow).__hostRerender!("a rerender"));
+
+    expect(await page.getByRole("heading", { name: "Hello from a rerender" }).count()).toBe(1);
+    expect(await page.getByRole("button", { name: "Count: 1" }).count()).toBe(1);
     expect(await style(page, "[data-testid=greeting]", "border-left-color")).toBe(
       "rgb(0, 112, 243)",
     );

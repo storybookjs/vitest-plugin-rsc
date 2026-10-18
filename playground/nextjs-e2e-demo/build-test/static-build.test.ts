@@ -175,6 +175,38 @@ describe.for(builds)("a static build, $build", ({ build, env }) => {
       .toBe("true");
   });
 
+  // `rerender()` in a build: the page has the module the server renders
+  // around every node, which says when the page has committed it, among the
+  // client references of the build.
+  test("renders a node of the host again, without a page load", async ({ page }) => {
+    await open(page, site, "/notes/7", { node: "7" });
+    const favorite = page.getByRole("button", { name: "Favorite" });
+    await favorite.click();
+    await expect
+      .poll(() => favorite.getAttribute("aria-pressed"), { timeout: 30_000 })
+      .toBe("true");
+    type Rerendering = {
+      __favorite?: Element | null;
+      __hostRerender?: (id: string) => Promise<void>;
+    };
+    await page.evaluate(() => {
+      const state = window as Rerendering;
+      state.__favorite = document.querySelector("button[aria-pressed]");
+    });
+
+    // The node of another note, which the host has none of.
+    const same = await page.evaluate(async () => {
+      const state = window as Rerendering;
+      await state.__hostRerender!("8");
+      return state.__favorite === document.querySelector("button[aria-pressed]");
+    });
+
+    expect(await page.getByText("No note").count()).toBe(1);
+    // The same element, with the state of its Client Component.
+    expect(same).toBe(true);
+    expect(await favorite.getAttribute("aria-pressed")).toBe("true");
+  });
+
   // The node has the CSS of the file of the host that renders it, `hostFiles`
   // of renderServer(): host/node.tsx, whose NoteCard of the app has a CSS
   // module. A page route has not, and the stylesheet goes with the node.
