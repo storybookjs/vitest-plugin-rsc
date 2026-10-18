@@ -100,9 +100,10 @@ export async function loadDocument(html: string, url: string, container?: Elemen
   runnerHref = runnerUrl;
   const runnerBody = document.body;
   const runnerAttributes = elements(document).map(attributesOf);
-  const marked: object[] = [document, document.documentElement, document.head];
-  if (container) marked.push(container);
-  const runnerProperties = marked.map((target) => new Set(Object.keys(target)));
+  // Where the page's React DOM sets its properties.
+  const reactTargets: object[] = [document, document.documentElement, document.head];
+  if (container) reactTargets.push(container);
+  const runnerProperties = reactTargets.map((target) => new Set(Object.keys(target)));
   const runnerScripts = new Set(document.querySelectorAll("script"));
   const before = new Set<Node>([...document.head.childNodes, ...runnerBody.childNodes]);
   const parked: Node[] = [];
@@ -142,7 +143,7 @@ export async function loadDocument(html: string, url: string, container?: Elemen
     elements(document).forEach((element, index) =>
       setAttributes(element, runnerAttributes[index]!),
     );
-    marked.forEach((target, index) => {
+    reactTargets.forEach((target, index) => {
       for (const key of Object.keys(target)) {
         if (isReactProperty(key) && !runnerProperties[index]!.has(key)) {
           delete (target as Record<string, unknown>)[key];
