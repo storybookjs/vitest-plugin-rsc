@@ -11,10 +11,16 @@ type Waiting = {
   reject(error: unknown): void;
 };
 
-/** What `NodeRendered` tells the node of its page. */
-export type PageNode = Pick<NodeOnPage, "mounted" | "committed" | "shown" | "hidden">;
+/**
+ * What `NodeRendered` tells the node of its page. A shape, not the class:
+ * node-rendered.tsx is an entry of its own in the package, whose types have
+ * a copy of the class, and a class with private fields is only itself.
+ */
+export type NodeReports = Pick<NodeOnPage, "mounted" | "shown" | "hidden">;
 
 export class NodeOnPage {
+  // The pathname of the node's route.
+  #pathname: string;
   // The last render that `rerender()` asked for. The first one is the
   // document's.
   #version = 0;
@@ -25,10 +31,15 @@ export class NodeOnPage {
   // Next's router of the page, once the node is mounted. Before that it may
   // still hydrate, behind a Suspense boundary like a `loading.tsx`.
   #refresh: (() => void) | undefined;
-  // What React reported since the node last committed: what took its place.
+  // What React reported since the last `rerender()` or commit of the node:
+  // what took its place.
   #error: unknown;
   // Set once the page has no node to render again, with why.
   #gone: (() => Error) | undefined;
+
+  constructor(pathname: string) {
+    this.#pathname = pathname;
+  }
 
   /**
    * Renders the node again: `swap` puts the node with the next version where
@@ -39,6 +50,7 @@ export class NodeOnPage {
    */
   rerender(swap: (version: number) => void): Promise<void> {
     if (this.#gone) return Promise.reject(this.#gone());
+    this.#error = undefined;
     const version = ++this.#version;
     swap(version);
     const committed = new Promise<void>((resolve, reject) => {
@@ -46,6 +58,11 @@ export class NodeOnPage {
     });
     this.#refresh?.();
     return committed;
+  }
+
+  /** The page is at `pathname` now. At another than the node's, the node is not there. */
+  at(pathname: string): void {
+    if (pathname !== this.#pathname) this.replaced();
   }
 
   /** From the page, in the commit that mounts the node: its router. */
@@ -57,8 +74,12 @@ export class NodeOnPage {
     if (first && this.#waiting.size > 0) refresh();
   }
 
-  /** From the page, after the effects of the node: it has committed `version`. */
-  committed(version: number): void {
+  /**
+   * From the page, from a passive effect, after the effects of the node: it
+   * shows the node at `version`.
+   */
+  shown(version: number): void {
+    this.#shown++;
     if (this.#gone) return;
     this.#error = undefined;
     for (const waiting of this.#waiting) {
@@ -68,16 +89,11 @@ export class NodeOnPage {
     }
   }
 
-  /** From the page: the node is shown, from a passive effect. */
-  shown(): void {
-    this.#shown++;
-  }
-
   /** From the page: the node is no longer shown. Something else may be in its place. */
   hidden(): void {
     this.#shown--;
-    // After the microtasks of this commit: Strict Mode shows the node again
-    // right away.
+    // After the microtasks of this commit: Strict Mode, and a new version,
+    // show the node again right away.
     void Promise.resolve().then(() => {
       if (this.#shown === 0) this.replaced();
     });
@@ -102,11 +118,14 @@ export class NodeOnPage {
     if (this.#gone) return;
     const cause = this.#error;
     const error = () =>
-      new Error(
-        "vitest-plugin-rsc: rerender() renders the node again in its place, and the page has " +
-          "something else there: an error or a not-found page, a page the node redirected to, or " +
-          "a route the app navigated to. Render the node with renderServer() instead.",
-        cause === undefined ? undefined : { cause },
+      Object.assign(
+        new Error(
+          "vitest-plugin-rsc: rerender() renders the node again in its place, and the page has " +
+            "something else there: an error or a not-found page, a page the node redirected to, " +
+            "or a route the app navigated to. Render the node with renderServer() instead.",
+          cause === undefined ? undefined : { cause },
+        ),
+        { name: "NodeReplacedError" },
       );
     this.#leave(error, error());
   }

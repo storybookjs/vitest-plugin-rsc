@@ -5,7 +5,7 @@ import { registerModuleLoader } from "./client-modules.ts";
 import { recordListeners, type Leftovers } from "./leftovers.ts";
 import type { NodeOnPage } from "./node-on-page.ts";
 // The module that the Flight payload of a node names: see rsc.ts.
-import { setNodeOfPage } from "vitest-plugin-rsc/nextjs/node-rendered";
+import { setNodeOnPage } from "vitest-plugin-rsc/nextjs/node-rendered";
 
 // The browser layer. This module is the app's client entry: what Next's
 // `main-app.js` chunk is for a deployment. Like that chunk, it runs once per
@@ -22,18 +22,18 @@ declare global {
 // did. Next's entry passes both, see project/runtime.ts.
 function reportingErrors<Options extends RootOptions>(
   options: Options | undefined,
-  onPage: NodeOnPage | undefined,
+  nodeOnPage: NodeOnPage | undefined,
 ): Options | undefined {
   const { onCaughtError, onUncaughtError } = options ?? {};
-  if (!onPage || !options || !onCaughtError || !onUncaughtError) return options;
+  if (!nodeOnPage || !options || !onCaughtError || !onUncaughtError) return options;
   return {
     ...options,
     onCaughtError(error, info) {
-      onPage.errored(error);
+      nodeOnPage.errored(error);
       onCaughtError(error, info);
     },
     onUncaughtError(error, info) {
-      onPage.errored(error);
+      nodeOnPage.errored(error);
       onUncaughtError(error, info);
     },
   };
@@ -43,7 +43,7 @@ function reportingErrors<Options extends RootOptions>(
  * Hydrates the document, or with a `container`, the node of a test in it.
  * Resolves once it has, with how to leave the page. Calls `loaded` once Next's
  * client has loaded, before a module of the app has. A page of a node tells
- * `onPage` what it does with the node: see node-rendered.tsx.
+ * `nodeOnPage` what it does with the node: see node-rendered.tsx.
  *
  * Rejects once `signal` aborts, when the page is left before it has hydrated.
  * What it started is gone by then: the root, and the listeners React added.
@@ -53,9 +53,9 @@ export async function start(
   loaded: () => void,
   container: Element | undefined,
   signal: AbortSignal,
-  onPage: NodeOnPage | undefined,
+  nodeOnPage: NodeOnPage | undefined,
 ): Promise<{ unmount(): void }> {
-  setNodeOfPage(onPage);
+  setNodeOnPage(nodeOnPage);
   // Not when this module loads: a page that was left while it loaded must not
   // take over from the page that is there now. The modules of the app wait
   // for Next's client: the Flight client asks for them as soon as it loads.
@@ -104,7 +104,7 @@ export async function start(
   ReactDOMClient.hydrateRoot = (target, children, options) =>
     keep(target, (to, isApp) =>
       hydrateRoot(to, children, {
-        ...(isApp ? reportingErrors(options, onPage) : options),
+        ...(isApp ? reportingErrors(options, nodeOnPage) : options),
         onRecoverableError(error, info) {
           if (leaving) return;
           if (options?.onRecoverableError) options.onRecoverableError(error, info);
@@ -113,7 +113,9 @@ export async function start(
       }),
     );
   ReactDOMClient.createRoot = (target, options) =>
-    keep(target, (to, isApp) => createRoot(to, isApp ? reportingErrors(options, onPage) : options));
+    keep(target, (to, isApp) =>
+      createRoot(to, isApp ? reportingErrors(options, nodeOnPage) : options),
+    );
 
   const leave = () => {
     leaving = true;

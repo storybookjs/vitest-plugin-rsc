@@ -554,7 +554,7 @@ process.env.__NEXT_PRIVATE_ORIGIN = window.location.origin;
 
 // A page that is open, from when its document is there, with the node of
 // `renderServer()` on it.
-type Page = { started: Promise<unknown>; unmount(): void; onPage?: NodeOnPage };
+type Page = { started: Promise<unknown>; unmount(): void; nodeOnPage?: NodeOnPage };
 
 let page: Page | undefined;
 // Tells a page load that the test has moved on: to another page, or to the
@@ -664,15 +664,22 @@ export type RenderComponentResult = RenderServerResult & {
    * `url`, `headers` and the other options: for others, call
    * `renderServer()`. Resolves once React has committed the new node, or a
    * later one, and run its effects. A Suspense boundary that is new in it
-   * may still show its fallback. Every call is a request of its own: a host
-   * that renders often, as a user types, waits for one before the next.
+   * may still show its fallback.
    *
-   * Rejects when something else is in the node's place: an error page, a
-   * not-found page, a page the node redirected to, or a route the app
-   * navigated to. Its `cause` is the error React reported, which for
-   * `notFound()` and `redirect()` is Next's own. Rejects when the page was
-   * left, and with an `AbortError` when it is left while the node renders
-   * again.
+   * Every call is a request of its own, and React commits once the last has
+   * answered: a host that renders often, as a user types, waits for one call
+   * before it makes the next. When the app changes the history without a
+   * request while it waits, like a hash link or `history.back()`, Next drops
+   * the refresh, and the call waits for the next one.
+   *
+   * Rejects with a `NodeReplacedError` when something else is in the node's
+   * place: an error page, a not-found page, a page the node redirected to,
+   * or a route the app navigated to. Its `cause` is the error React reported
+   * since the call, if any, which for `notFound()` and `redirect()` is
+   * Next's own. In the layouts of a route, an error of a layout or of
+   * another slot before the node has hydrated counts as one too. Rejects
+   * when the page was left, and with an `AbortError` when it is left while
+   * the node renders again.
    */
   rerender(ui: ReactNode): Promise<void>;
 };
@@ -740,13 +747,13 @@ export async function renderServer(
   const served = { ui: wrap(first), layouts, files, version: 0 };
   const opened: Opened = { pathname, proxy, node: served };
   // The node on its page, which `rerender()` waits for.
-  const onPage = new NodeOnPage();
+  const nodeOnPage = new NodeOnPage(pathname);
   const rerender = (next: ReactNode) => {
     // A navigation of the app on the client, in the layouts of a route, takes
     // the node's place before the node's effects say so.
-    if (window.location.pathname !== pathname) onPage.replaced();
+    nodeOnPage.at(window.location.pathname);
     // The server reads both as it renders the route of the node.
-    return onPage.rerender((version) => Object.assign(served, { ui: wrap(next), version }));
+    return nodeOnPage.rerender((version) => Object.assign(served, { ui: wrap(next), version }));
   };
   if (layouts) {
     if (options.container || options.baseElement) {
@@ -756,7 +763,11 @@ export async function renderServer(
           "to pass.",
       );
     }
-    const response = await loadPage(url, { headers }, { opened, headers: sticky, cookie, onPage });
+    const response = await loadPage(
+      url,
+      { headers },
+      { opened, headers: sticky, cookie, nodeOnPage },
+    );
     return {
       response,
       get container() {
@@ -800,7 +811,7 @@ export async function renderServer(
   const response = await loadPage(
     url,
     { headers },
-    { container, opened, headers: sticky, cookie, onPage },
+    { container, opened, headers: sticky, cookie, nodeOnPage },
   );
   return {
     response,
@@ -846,7 +857,7 @@ type Opening = {
   headers: Headers;
   cookie: string | null;
   /** For a node: what `rerender()` waits for. */
-  onPage?: NodeOnPage;
+  nodeOnPage?: NodeOnPage;
 };
 
 async function loadPage(url: URL, init: RequestInit, opening?: Opening): Promise<Response> {
@@ -937,13 +948,13 @@ async function openPage(
   if (opening && new URL(response.url).pathname !== opening.opened.pathname) {
     registry.opened = undefined;
     container = undefined;
-    opening.onPage?.replaced();
+    opening.nodeOnPage?.replaced();
   }
   if (/^\s*<!doctype/i.test(html)) {
     container = undefined;
     // In the layouts of a route a page is a whole document too. There React
     // reports the error that takes the node's place as the page hydrates.
-    if (!opening?.opened.node?.layouts) opening?.onPage?.replaced();
+    if (!opening?.opened.node?.layouts) opening?.nodeOnPage?.replaced();
   }
   await loadDocument(html, response.url, container);
   superseded();
@@ -977,9 +988,13 @@ async function openPage(
       environmentModule("react_client", "vitest-plugin-rsc/nextjs/client"),
     );
     superseded();
-    return client.start(loaded, container, signal, opening?.onPage);
+    return client.start(loaded, container, signal, opening?.nodeOnPage);
   })();
-  page = { started: started.catch(() => {}), unmount: () => leave(), onPage: opening?.onPage };
+  page = {
+    started: started.catch(() => {}),
+    unmount: () => leave(),
+    nodeOnPage: opening?.nodeOnPage,
+  };
   try {
     ({ unmount } = await started);
   } catch (error) {
@@ -1013,7 +1028,7 @@ function leavePage(by: string): Promise<void> {
   currentLoad = undefined;
   const left = page;
   page = undefined;
-  left?.onPage?.left(by);
+  left?.nodeOnPage?.left(by);
   // Also after a page that could not be left: that one fails its own test.
   const gone = leaving
     .catch(() => {})
@@ -1089,6 +1104,10 @@ type NavigateEvent = Event & {
 (window as { navigation?: EventTarget }).navigation?.addEventListener("navigate", (event) => {
   const { navigationType, destination, hashChange, formData, downloadRequest } =
     event as NavigateEvent;
+  // A navigation of Next's router on the client, in the layouts of a route,
+  // to another pathname takes the place of the node, also of one that has
+  // not hydrated yet, which no effect of it would say.
+  if (destination.sameDocument) page?.nodeOnPage?.at(new URL(destination.url).pathname);
   if (destination.sameDocument || hashChange || !event.cancelable) return;
   const url = new URL(destination.url);
   if (!page) {

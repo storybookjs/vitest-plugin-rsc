@@ -7,12 +7,18 @@ const nextTask = () => new Promise((resolve) => setTimeout(resolve));
 
 // A node that the page shows, at its first version.
 function shownNode() {
-  const node = new NodeOnPage();
+  const node = new NodeOnPage("/node");
   const refresh = vi.fn();
   node.mounted(refresh);
-  node.committed(0);
-  node.shown();
+  node.shown(0);
   return { node, refresh };
+}
+
+// The passive effect of `NodeRendered` for a new version of a node that is
+// shown: down and up again, in one flush.
+function commit(node: NodeOnPage, version: number) {
+  node.hidden();
+  node.shown(version);
 }
 
 const settled = async (promise: Promise<unknown>) => {
@@ -25,6 +31,8 @@ const settled = async (promise: Promise<unknown>) => {
   return outcome;
 };
 
+const replacedMessage = /the page has something else there/;
+
 test("swaps the node, asks the router for it, and resolves once the page has committed it", async () => {
   const { node, refresh } = shownNode();
   const swap = vi.fn();
@@ -34,9 +42,7 @@ test("swaps the node, asks the router for it, and resolves once the page has com
   expect(swap).toHaveBeenCalledWith(1);
   expect(refresh).toHaveBeenCalledOnce();
   expect(await settled(rendering)).toBe("pending");
-  node.committed(0);
-  expect(await settled(rendering)).toBe("pending");
-  node.committed(1);
+  commit(node, 1);
   expect(await settled(rendering)).toBe("resolved");
 });
 
@@ -45,7 +51,7 @@ test("asks the router once for every rerender, and resolves them once the page h
 
   const first = node.rerender(() => {});
   const second = node.rerender(() => {});
-  node.committed(2);
+  commit(node, 2);
 
   expect(refresh).toHaveBeenCalledTimes(2);
   expect(await settled(first)).toBe("resolved");
@@ -53,17 +59,16 @@ test("asks the router once for every rerender, and resolves them once the page h
 });
 
 test("asks the router once the node is mounted, when it is still to hydrate", async () => {
-  const node = new NodeOnPage();
+  const node = new NodeOnPage("/node");
   const refresh = vi.fn();
 
   const rendering = node.rerender(() => {});
   node.mounted(refresh);
 
   expect(refresh).toHaveBeenCalledOnce();
-  node.committed(0);
-  node.shown();
+  node.shown(0);
   expect(await settled(rendering)).toBe("pending");
-  node.committed(1);
+  commit(node, 1);
   expect(await settled(rendering)).toBe("resolved");
 });
 
@@ -72,10 +77,9 @@ test("keeps the node that Strict Mode takes down and shows again at once", async
   const rendering = node.rerender(() => {});
 
   node.mounted(refresh);
-  node.hidden();
-  node.shown();
+  commit(node, 0);
   await nextTask();
-  node.committed(1);
+  commit(node, 1);
 
   expect(refresh).toHaveBeenCalledOnce();
   expect(await settled(rendering)).toBe("resolved");
@@ -89,7 +93,7 @@ test("keeps the node that a Suspense fallback hid, and asks the router no more o
   // passive ones: once the node is back, it is mounted again.
   node.mounted(refresh);
   await nextTask();
-  node.committed(1);
+  commit(node, 1);
 
   expect(refresh).toHaveBeenCalledOnce();
   expect(await settled(rendering)).toBe("resolved");
@@ -101,13 +105,26 @@ test("rejects once nothing shows the node, and from then on, without swapping it
 
   node.hidden();
 
-  const message = /the page has something else there/;
   expect(await settled(rendering)).toEqual(
-    expect.objectContaining({ message: expect.stringMatching(message) }),
+    expect.objectContaining({
+      name: "NodeReplacedError",
+      message: expect.stringMatching(replacedMessage),
+    }),
   );
   const swap = vi.fn();
-  await expect(node.rerender(swap)).rejects.toThrow(message);
+  await expect(node.rerender(swap)).rejects.toThrow(replacedMessage);
   expect(swap).not.toHaveBeenCalled();
+});
+
+test("rejects once the page is at another pathname, and not at its own", async () => {
+  const { node } = shownNode();
+  const rendering = node.rerender(() => {});
+
+  node.at("/node");
+  expect(await settled(rendering)).toBe("pending");
+  node.at("/elsewhere");
+
+  expect(await settled(rendering)).toEqual(expect.objectContaining({ name: "NodeReplacedError" }));
 });
 
 test("rejects with the error that React reported, when a boundary shows it in place of the node", async () => {
@@ -129,13 +146,27 @@ test("keeps the node when a boundary in it shows the error", async () => {
 
   node.errored(new Error("Broken widget"));
   await nextTask();
-  node.committed(1);
+  commit(node, 1);
 
   expect(await settled(rendering)).toBe("resolved");
 });
 
+test("gives no cause of an error from before the rerender", async () => {
+  const { node } = shownNode();
+  // A boundary in the node shows an error of a client update.
+  node.errored(new Error("Broken widget"));
+  await nextTask();
+
+  const rendering = node.rerender(() => {});
+  node.at("/elsewhere");
+
+  const error = await settled(rendering);
+  expect(error).toEqual(expect.objectContaining({ name: "NodeReplacedError" }));
+  expect((error as Error).cause).toBeUndefined();
+});
+
 test("keeps the node when a boundary in it shows an error as the node hydrates", async () => {
-  const node = new NodeOnPage();
+  const node = new NodeOnPage("/node");
   const refresh = vi.fn();
 
   // The boundary is in the node, so React reports its error before the node
@@ -143,16 +174,15 @@ test("keeps the node when a boundary in it shows an error as the node hydrates",
   node.errored(new Error("Broken widget"));
   node.mounted(refresh);
   await nextTask();
-  node.committed(0);
-  node.shown();
+  node.shown(0);
 
   const rendering = node.rerender(() => {});
-  node.committed(1);
+  commit(node, 1);
   expect(await settled(rendering)).toBe("resolved");
 });
 
 test("rejects when an error takes the place of a node that is still to hydrate", async () => {
-  const node = new NodeOnPage();
+  const node = new NodeOnPage("/node");
   const rendering = node.rerender(() => {});
   const error = new Error("Broken node");
 
@@ -178,7 +208,7 @@ test("rejects with an AbortError that names what left the page, and an Error aft
   );
   // What the page that was left still tells.
   node.mounted(refresh);
-  node.committed(1);
+  commit(node, 1);
   node.hidden();
   await nextTask();
   expect(refresh).toHaveBeenCalledOnce();

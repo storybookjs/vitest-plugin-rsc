@@ -21,6 +21,7 @@ import { notFound, redirect } from "next/navigation";
 import type { ReactNode } from "react";
 import { renderedContainers } from "../test/browser.ts";
 import { transformsOf } from "../test/service.ts";
+import { ClientBoundary, ThrowsOnClient } from "./components/client-boundary.tsx";
 import { ClientFrame } from "./components/client-frame.tsx";
 import { Counter } from "./components/counter.tsx";
 import { FavoriteButton } from "./components/favorite-button.tsx";
@@ -795,7 +796,7 @@ test("renders a node again with the wrapper and the headers it was rendered with
   await expect.element(tenant.getByRole("heading", { name: "Hello Grace" })).toBeVisible();
   await expect.element(tenant.getByRole("button", { name: "Count: 1" })).toBeVisible();
   expect(window.location.pathname).toBe("/notes/7");
-  // And so does a refresh of the app's own, and a Server Action.
+  // And so does a refresh of the app's own.
   await tenant.getByRole("button", { name: "Refresh" }).click();
   await expect.poll(() => greetings).toBe(3);
   await expect.element(tenant.getByRole("heading", { name: "Hello Grace" })).toBeVisible();
@@ -827,7 +828,7 @@ test("renders a node again while its route still hydrates, and the last of two r
     url: "/notes/7",
     layouts: true,
   });
-  expect(hydrated(document.querySelector("main h2")), "the node has hydrated").toBe(false);
+  expect(hydrated(document.querySelector("main h2")), "the node has not hydrated yet").toBe(false);
 
   await Promise.all([rerender(<Greeting name="Grace" />), rerender(<Greeting name="Linus" />)]);
 
@@ -874,8 +875,9 @@ test("rejects a rerender whose refresh a Server Action that redirects away disca
   await page.getByLabelText("Title").fill("Groceries");
 
   const rendering = rerender(node("Grace"));
-  // The navigation to the page it redirects to goes before the refresh, and
-  // takes the node's place.
+  // Next's router runs the refresh, and then the action, whose redirect is
+  // the router state that React commits: the page it redirects to takes the
+  // node's place.
   document.querySelector("form")!.requestSubmit();
 
   await expect(rendering).rejects.toThrow("the page has something else there");
@@ -900,11 +902,13 @@ test("does not render a node again once its page was left, and stops a rerender 
   const third = await renderServer(<Greeting name="Ada" />);
   // Its router asks the server for the node again, which leaving stops.
   const rendering = third.rerender(<Greeting name="Grace" />);
-  await cleanup();
-  await expect(rendering).rejects.toMatchObject({
+  // Before `cleanup()`, which rejects it right away and then waits.
+  const aborted = expect(rendering).rejects.toMatchObject({
     name: "AbortError",
     message: "The page was left before the node had rendered again: by cleanup().",
   });
+  await cleanup();
+  await aborted;
   // The next page, which the router of the page that was left would tell
   // of the stopped request: "Failed to fetch RSC payload".
   await renderServer(<Greeting name="Linus" />);
@@ -985,6 +989,53 @@ test("does not wait for a node that threw before the page hydrated it", async ()
     "the page has something else there",
   );
   consoleError.mockClear();
+});
+
+test("renders a node again whose error boundary shows an error, from as it hydrated or as it renders again", async () => {
+  // React reports the error that the boundary caught.
+  consoleError.mockImplementation(() => {});
+  const node = (name: string, throws: boolean) => (
+    <>
+      <ClientBoundary>
+        <ThrowsOnClient when={throws} />
+      </ClientBoundary>
+      <Greeting name={name} />
+    </>
+  );
+
+  const hydrating = await renderServer(node("Ada", true));
+  await expect.element(page.getByText("Caught: Thrown on the client")).toBeVisible();
+  await page.getByRole("button", { name: "Count: 0" }).click();
+  await hydrating.rerender(node("Grace", true));
+  await expect.element(page.getByRole("heading", { name: "Hello Grace" })).toBeVisible();
+  await expect.element(page.getByRole("button", { name: "Count: 1" })).toBeVisible();
+
+  const again = await renderServer(node("Ada", false));
+  await expect.element(page.getByText("Not thrown")).toBeVisible();
+  await again.rerender(node("Grace", true));
+  await expect.element(page.getByText("Caught: Thrown on the client")).toBeVisible();
+  await expect.element(page.getByRole("heading", { name: "Hello Grace" })).toBeVisible();
+  await again.rerender(node("Linus", true));
+  await expect.element(page.getByRole("heading", { name: "Hello Linus" })).toBeVisible();
+  consoleError.mockClear();
+});
+
+test("does not wait for a node in the layouts of a route that called notFound() or redirect() as it rendered", async () => {
+  const missing = await renderServer(<Missing />, { url: "/notes", layouts: true });
+  // The app's own not-found page, in its root layout.
+  await expect.element(page.getByRole("heading", { name: "Nothing here" })).toBeVisible();
+  await expect(missing.rerender(<Greeting name="Grace" />)).rejects.toMatchObject({
+    name: "NodeReplacedError",
+  });
+
+  const redirecting = await renderServer(<Redirects to="/settings" />, {
+    url: "/notes",
+    layouts: true,
+  });
+  expect(window.location.pathname).toBe("/settings");
+  await expect(redirecting.rerender(<Greeting name="Grace" />)).rejects.toThrow(
+    "the page has something else there",
+  );
 });
 
 test("does not render a node again that calls notFound() or redirect() as it renders again", async () => {
