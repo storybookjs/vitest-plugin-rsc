@@ -111,17 +111,23 @@ export async function loadDocument(html: string, url: string, container?: Elemen
   let leaveNow!: () => void;
   const left = new Promise<void>((resolve) => (leaveNow = resolve));
   const leave = () => {
-    leaveNow();
-    container?.replaceChildren();
-    for (const parent of [document.head, document.body]) {
-      for (const node of Array.from(parent.childNodes)) {
-        if (!before.has(node) && !isViteStyle(node) && !isGraphStylesheet(node)) node.remove();
+    try {
+      leaveNow();
+      container?.replaceChildren();
+      for (const parent of [document.head, document.body]) {
+        for (const node of Array.from(parent.childNodes)) {
+          if (!before.has(node) && !isViteStyle(node) && !isGraphStylesheet(node)) node.remove();
+        }
       }
+    } finally {
+      // The URL first: a relative URL of what comes back, the href of a
+      // stylesheet, resolves against it once the node is in the document
+      // again. Also when removing the page throws, or `replaceState()`
+      // does: a page that is left holds the URL no longer, and
+      // `documentUrl()` is the document's own.
+      runnerHref = undefined;
+      if (window.location.href !== runnerUrl) window.history.replaceState(null, "", runnerUrl);
     }
-    // The URL first: a relative URL of what comes back, the href of a
-    // stylesheet, resolves against it once the node is in the document again.
-    if (window.location.href !== runnerUrl) window.history.replaceState(null, "", runnerUrl);
-    runnerHref = undefined;
     document.head.append(...parked);
     // In the order they are in: what stayed, and the CSS Vite added.
     runnerBody.append(...pageBody.childNodes);
