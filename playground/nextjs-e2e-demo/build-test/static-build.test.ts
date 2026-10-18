@@ -143,6 +143,9 @@ describe.for(builds)("a static build, $build", ({ build, env }) => {
     const file = "client/components/builtin/global-error.js";
     expect(withKey(`next/dist/${file}`)).toBeGreaterThan(0);
     expect(withKey(`next/dist/esm/${file}`)).toBe(0);
+    // Next's own files import the layout router by a relative path: it is
+    // keyed by its specifier in `next/dist/esm`, the same on any install.
+    expect(withKey("next/dist/esm/client/components/layout-router.js")).toBeGreaterThan(0);
   });
 
   test("renders a page with a Client Component", async ({ page }) => {

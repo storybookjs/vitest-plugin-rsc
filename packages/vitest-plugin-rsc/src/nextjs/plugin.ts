@@ -301,26 +301,29 @@ function createLayerResolver(getProject: () => NextProject, layer: NextLayer) {
             skipSelf: true,
           });
         }
-        // In a build, an import by a bare specifier gets the file of Next. Vite
-        // RSC keys the client reference of a package's file by the bare
-        // specifier it last saw resolve to it, and it has seen this one:
-        // another `resolve()` would show it the one `normalize()` gives too,
-        // like the ESM form of a route entry's
-        // `next/dist/client/components/builtin/global-error.js`, and the key
-        // would depend on how the routes' resolutions interleave. A relative
-        // import between Next's files is resolved by the specifier below, so
-        // Vite RSC keys the file by it, not by its path in `node_modules`,
-        // which differs by install. Not a directory, whose `package.json`
-        // Vite reads, like the exports by condition of `next/dist/compiled/react-dom`.
+        // In a build, a bare import of Next gets its file, in each layer: a
+        // build has no optimizer to keep a bare specifier for. The rsc layer
+        // is the one that needs it. Vite RSC keys the client reference of a
+        // package's file by the last bare specifier it saw resolve to it, and
+        // it has seen this import's own. A `resolve()` of the specifier
+        // `normalize()` gives would show it a second one, like the ESM form
+        // of a route entry's `next/dist/client/components/builtin/global-error.js`,
+        // and the key would depend on how the routes' resolutions interleave.
+        // A relative import between Next's files keeps the `resolve()` below,
+        // so Vite RSC keys the file by that specifier, not by its path in
+        // `node_modules`, which differs by install. Not in `next/dist/compiled`,
+        // where Vite reads the `package.json` of a package, like the exports
+        // by condition of `next/dist/compiled/react-dom`.
         if (
-          // No environment in the dependency scan of a dev server.
+          // The dependency optimizer runs this plugin under Rolldown itself
+          // (its `rolldownOptions.plugins`), without an environment.
           this.environment?.mode === "build" &&
           source === specifier &&
-          target.startsWith("next/")
+          target.startsWith("next/") &&
+          !target.startsWith("next/dist/compiled/")
         ) {
           const file = nextFile(target);
-          const named = path.join(getProject().nextDir, target.slice("next/".length));
-          if (file && path.dirname(file) !== named) return normalizePath(file);
+          if (file) return normalizePath(file);
         }
         // Keep it a bare specifier, so Vite maps it to the pre-bundled dependency.
         // Next is the project's: a package of the app that imports `react`

@@ -149,11 +149,11 @@ test("gives Next's module for the asset prefix of its dev server no prefix: ther
 });
 
 // In a build, Vite RSC keys a client reference of a package by the bare
-// specifier it last saw resolve to the file. The rsc layer shows it one per
-// file: an import by a bare specifier gets the file, without a second
-// resolution of the specifier the layer sends it to. A relative import
-// between Next's files is resolved by that specifier, which Vite RSC keys by.
-test("shows Vite RSC one specifier for a file of Next in a build", async () => {
+// specifier it last saw resolve to the file. An import of Next by a bare
+// specifier gets the file, without a second resolution of the specifier the
+// layer sends it to. A relative import between Next's files is resolved by
+// that specifier, which Vite RSC keys the file by.
+test("resolves a bare import of Next to its file in a build", async () => {
   const plugins = vitestPluginNext();
   const plugin = plugins.find(({ name }) => name === "vitest-plugin-rsc:next")!;
   await (plugin.config as ConfigHook<Config>)({ root }, { command: "build" });
@@ -165,36 +165,45 @@ test("shows Vite RSC one specifier for a file of Next in a build", async () => {
     options: object,
   ) => Promise<unknown>;
   const resolved: unknown[][] = [];
-  const contextOf = (mode: string) => ({
-    environment: { mode },
+  const contextOf = (environment?: { mode: string }) => ({
+    environment,
     resolve: async (...args: unknown[]) => {
       resolved.push(args);
       return { id: args[0] };
     },
   });
-  const resolve = (source: string, importer: string, mode = "build") => {
+  const resolve = (source: string, importer: string, mode: string | null = "build") => {
     resolved.length = 0;
-    return resolveId.call(contextOf(mode), source, importer, {});
+    const environment = mode === null ? undefined : { mode };
+    return resolveId.call(contextOf(environment), source, importer, {});
   };
-  const globalError = "dist/esm/client/components/builtin/global-error.js";
+  const fromRoot = path.join(root, "package.json");
   const page = path.join(root, "app/page.tsx");
 
   // What a route entry imports.
+  const globalError = "dist/esm/client/components/builtin/global-error.js";
   const source = "next/dist/client/components/builtin/global-error.js";
   expect(await resolve(source, page)).toBe(normalizePath(path.join(nextDir, globalError)));
   expect(resolved).toEqual([]);
 
-  // What Next's ESM files import.
-  const importer = path.join(nextDir, "dist/esm/client/react-client-callbacks/x.js");
-  expect(await resolve("../components/builtin/global-error", importer)).toEqual({
-    id: `next/${globalError}`,
+  // What Next's ESM files import, here the layout router of a page's tree.
+  const layoutRouter = "next/dist/esm/client/components/layout-router.js";
+  const entryBase = path.join(nextDir, "dist/esm/server/app-render/entry-base.js");
+  expect(await resolve("../../client/components/layout-router", entryBase)).toEqual({
+    id: layoutRouter,
   });
-  expect(resolved).toEqual([
-    [`next/${globalError}`, path.join(root, "package.json"), { skipSelf: true }],
-  ]);
+  expect(resolved).toEqual([[layoutRouter, fromRoot, { skipSelf: true }]]);
 
-  // A dev server maps a bare specifier to the pre-bundled dependency.
-  expect(await resolve(source, page, "dev")).toEqual({ id: `next/${globalError}` });
+  // A file of a package in `next/dist/compiled`, whose `package.json` Vite reads.
+  const reactDom = "next/dist/compiled/react-dom/react-dom.react-server.js";
+  expect(await resolve("react-dom", page)).toEqual({ id: reactDom });
+  expect(resolved).toEqual([[reactDom, fromRoot, { skipSelf: true }]]);
+
+  // A dev server maps a bare specifier to the pre-bundled dependency, and so
+  // does the dependency optimizer, which runs the plugin without an environment.
+  const commonJs = `next/${globalError}`;
+  expect(await resolve(source, page, "dev")).toEqual({ id: commonJs });
+  expect(await resolve(source, page, null)).toEqual({ id: commonJs });
 });
 
 // What the plugin makes of a Vitest config, and says of it when a run starts.
