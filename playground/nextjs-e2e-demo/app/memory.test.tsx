@@ -1,5 +1,5 @@
 import { cleanup, renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
-import { afterEach, beforeEach, expect, test, vi, type MockInstance } from "vitest";
+import { afterEach, beforeEach, expect, onTestFinished, test, vi, type MockInstance } from "vitest";
 import { cdp, page } from "vitest/browser";
 import { Counter } from "./components/counter.tsx";
 import { HelpDialog } from "./components/help-dialog.tsx";
@@ -26,20 +26,85 @@ afterEach(() => {
 const modulesOfPage = () =>
   new WeakRef((globalThis as { __viteRscCallServer?: object }).__viteRscCallServer!);
 
-// Passes once the browser has let go of what `modules` refers to: after the
-// tasks that the page had queued have run.
-async function expectCollected(modules: WeakRef<object>): Promise<void> {
+// Passes once the browser has let go of what `modules` refer to: after the
+// tasks that the pages had queued have run. The garbage collection is forced
+// through the Chrome DevTools Protocol, which Chromium always has.
+async function expectCollected(...modules: WeakRef<object>[]): Promise<void> {
   await expect
     .poll(
       async () => {
         await cdp().send("HeapProfiler.collectGarbage");
-        // Not the object itself: the assertion would keep it.
-        return modules.deref() === undefined;
+        // Not the objects themselves: the assertion would keep them.
+        return modules.filter((of) => of.deref() !== undefined).length;
       },
       { timeout: 4000, interval: 100 },
     )
-    .toBe(true);
+    .toBe(0);
 }
+
+// Next's router, as Next's own e2e tests reach it.
+const router = () =>
+  (window as unknown as { next: { router: { push(href: string): void } } }).next.router;
+
+test("lets go of every page that navigated to a route with stylesheets", async () => {
+  // React waits for a stylesheet that has not loaded before it shows a route,
+  // with a timer of a minute that it does not clear once it has: that timer
+  // would keep the page. So the browser has loaded them already.
+  await renderServer({ url: "/styles" });
+  // Many pages, and first in the file: whether V8 keeps a page can depend on
+  // the shape that the document has at that moment. One page, or a garbage
+  // collection before them, can let go of it by luck.
+  const left: WeakRef<object>[] = [];
+  for (let pages = 0; pages < 12; pages++) {
+    await renderServer({ url: "/" });
+    // React inserts the stylesheets of the route, keeps them on the document,
+    // and listens for them to load.
+    router().push("/styles");
+    await expect.element(page.getByRole("heading", { name: "Styles" })).toBeInTheDocument();
+    left.push(modulesOfPage());
+  }
+
+  await renderServer({ url: "/" });
+  await page.getByRole("heading", { name: "Home" }).hover();
+
+  await expectCollected(...left);
+});
+
+// The properties React DOM keeps on a node, named for the copy of React DOM
+// that sets them: the page's.
+const reactProperties = (of: object) => Object.keys(of).filter((key) => /^_+react/.test(key));
+
+test("takes back what React DOM kept on the document, and only that", async () => {
+  // As a React of the host's would have it. The tab's own React DOM may have
+  // set its own already, for an earlier test file.
+  const host = { __reactResources$host: {}, _reactListeninghost: true };
+  Object.assign(document, host);
+  onTestFinished(() => {
+    for (const key of Object.keys(host)) Reflect.deleteProperty(document, key);
+  });
+  const reactTargets = () => [document, document.documentElement, document.head];
+  const runner = reactTargets().map(reactProperties);
+  const added = vi.spyOn(document, "addEventListener");
+  const removed = vi.spyOn(document, "removeEventListener");
+
+  await renderServer({ url: "/" });
+  router().push("/styles");
+  await expect.element(page.getByRole("heading", { name: "Styles" })).toBeInTheDocument();
+  const first = reactTargets().map(reactProperties);
+  const listenersOfFirst = added.mock.calls.slice();
+  expect(first[0]).toEqual(expect.arrayContaining(Object.keys(host)));
+  expect(first[0]!.length).toBeGreaterThan(runner[0]!.length);
+
+  const { unmount } = await renderServer({ url: "/" });
+  // The second page's React DOM is another copy, with names of its own.
+  reactTargets().forEach((of, index) =>
+    expect(reactProperties(of).filter((key) => first[index]!.includes(key))).toEqual(runner[index]),
+  );
+  expect(removed.mock.calls).toEqual(expect.arrayContaining(listenersOfFirst));
+  await unmount();
+
+  expect(reactTargets().map(reactProperties)).toEqual(runner);
+});
 
 test("lets go of a page that the test has left, with all of its modules", async () => {
   await renderServer({ url: "/" });
@@ -51,63 +116,6 @@ test("lets go of a page that the test has left, with all of its modules", async 
   await page.getByRole("heading", { name: "Home" }).hover();
 
   await expectCollected(modules);
-});
-
-// The properties React DOM keeps on a node, named for the copy of React DOM
-// that sets them: the page's.
-const reactProperties = (of: object) =>
-  Object.keys(of).filter((key) => /^(?:__react[A-Za-z]+\$|_reactListening)/.test(key));
-
-// Next's router, as Next's own e2e tests reach it.
-const router = () =>
-  (window as unknown as { next: { router: { push(href: string): void } } }).next.router;
-
-test("lets go of a page that navigated to a route with stylesheets", async () => {
-  // React waits for a stylesheet that has not loaded before it shows a route,
-  // with a timer of a minute that it does not clear once it has: that timer
-  // would keep the page. So the browser has loaded them already.
-  await renderServer({ url: "/styles" });
-  await renderServer({ url: "/" });
-  // React inserts the stylesheets of the route, keeps them on the document,
-  // and listens for them to load.
-  router().push("/styles");
-  await expect.element(page.getByRole("heading", { name: "Styles" })).toBeInTheDocument();
-  const modules = modulesOfPage();
-
-  await renderServer({ url: "/" });
-  await page.getByRole("heading", { name: "Home" }).hover();
-
-  await expectCollected(modules);
-});
-
-test("takes back what React DOM kept on the document, and only that", async () => {
-  // As a React of the host's would have it. The tab's own React DOM may have
-  // set its own already, for an earlier test file.
-  const host = { __reactResources$host: {}, _reactListeninghost: true };
-  Object.assign(document, host);
-  const marked = () => [document, document.documentElement, document.head];
-  const runner = marked().map(reactProperties);
-  const added = vi.spyOn(document, "addEventListener");
-  const removed = vi.spyOn(document, "removeEventListener");
-
-  await renderServer({ url: "/" });
-  router().push("/styles");
-  await expect.element(page.getByRole("heading", { name: "Styles" })).toBeInTheDocument();
-  const first = marked().map(reactProperties);
-  const listenersOfFirst = added.mock.calls.slice();
-  expect(first[0]).toEqual(expect.arrayContaining(Object.keys(host)));
-  expect(first[0]!.length).toBeGreaterThan(runner[0]!.length);
-
-  const { unmount } = await renderServer({ url: "/" });
-  // The second page's React DOM is another copy, with names of its own.
-  marked().forEach((of, index) =>
-    expect(reactProperties(of).filter((key) => first[index]!.includes(key))).toEqual(runner[index]),
-  );
-  expect(removed.mock.calls).toEqual(expect.arrayContaining(listenersOfFirst));
-  await unmount();
-
-  expect(marked().map(reactProperties)).toEqual(runner);
-  for (const key of Object.keys(host)) Reflect.deleteProperty(document, key);
 });
 
 test("lets go of a page that rendered a portal in the body", async () => {

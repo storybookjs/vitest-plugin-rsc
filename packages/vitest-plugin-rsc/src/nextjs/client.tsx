@@ -138,9 +138,11 @@ export async function start(
     if (!bootstrapScript) {
       throw new Error("vitest-plugin-rsc: the response is not a page of the Next.js app");
     }
+    // A value, not a getter: V8 keeps a getter in the shape of the document
+    // after it is deleted, and its closure would keep this page.
     Object.defineProperty(document, "currentScript", {
       configurable: true,
-      get: () => bootstrapScript,
+      value: bootstrapScript,
     });
     try {
       await new Promise<void>((resolve, reject) => {
