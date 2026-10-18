@@ -134,16 +134,20 @@ importers:
         version: link:../packages/vitest-plugin-rsc
 
   packages/storybook-nextjs-vite-rsc:
-    devDependencies:
+    dependencies:
       '@storybook/builder-vite':
         specifier: https://pkg.pr.new/storybookjs/storybook/@storybook/builder-vite@0e82d2fc9b2fdcad71bdea0c59188ff57788e5f7
         version: https://pkg.pr.new/storybookjs/storybook/@storybook/builder-vite@0e82d2fc9b2fdcad71bdea0c59188ff57788e5f7(storybook@https://pkg.pr.new/storybookjs/storybook/storybook@0e82d2fc9b2fdcad71bdea0c59188ff57788e5f7(@types/react@19.2.14)(react@19.2.6))(vite@8.3.1(@types/node@24.12.4)(esbuild@0.27.7)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))
       '@storybook/react':
         specifier: https://pkg.pr.new/storybookjs/storybook/@storybook/react@0e82d2fc9b2fdcad71bdea0c59188ff57788e5f7
         version: https://pkg.pr.new/storybookjs/storybook/@storybook/react@0e82d2fc9b2fdcad71bdea0c59188ff57788e5f7(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(storybook@https://pkg.pr.new/storybookjs/storybook/storybook@0e82d2fc9b2fdcad71bdea0c59188ff57788e5f7(@types/react@19.2.14)(react@19.2.6))(typescript@6.0.3)
+    devDependencies:
       '@types/node':
         specifier: ^24.12.4
         version: 24.12.4
+      '@types/react':
+        specifier: ^19.2.14
+        version: 19.2.14
       next:
         specifier: 16.4.0
         version: 16.4.0(@babel/core@7.29.0)(@opentelemetry/api@1.9.1)(@types/node@24.12.4)(babel-plugin-react-compiler@1.0.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
@@ -300,6 +304,9 @@ importers:
         specifier: 19.2.6
         version: 19.2.6(react@19.2.6)
     devDependencies:
+      '@storybook/nextjs-vite-rsc':
+        specifier: workspace:*
+        version: link:../../packages/storybook-nextjs-vite-rsc
       '@types/node':
         specifier: ^24.12.4
         version: 24.12.4
@@ -318,6 +325,9 @@ importers:
       playwright:
         specifier: ^1.64.0
         version: 1.64.1
+      storybook:
+        specifier: https://pkg.pr.new/storybookjs/storybook/storybook@0e82d2fc9b2fdcad71bdea0c59188ff57788e5f7
+        version: https://pkg.pr.new/storybookjs/storybook/storybook@0e82d2fc9b2fdcad71bdea0c59188ff57788e5f7(@types/react@19.2.14)(react@19.2.6)
       typescript:
         specifier: ^6.0.3
         version: 6.0.3
@@ -2382,7 +2392,7 @@ packages:
     resolution: {integrity: sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w==}
 
   '@storybook/builder-vite@https://pkg.pr.new/storybookjs/storybook/@storybook/builder-vite@0e82d2fc9b2fdcad71bdea0c59188ff57788e5f7':
-    resolution: {integrity: sha512-8+4CkmKbGrejTiBe6JHrQtlzw/N8A4bV7bCel6s9aeiTHkAUkWsCk/YazbncFa3lVHMVHTA6CJtCiW6XLLdu9g==, tarball: https://pkg.pr.new/storybookjs/storybook/@storybook/builder-vite@0e82d2fc9b2fdcad71bdea0c59188ff57788e5f7}
+    resolution: {tarball: https://pkg.pr.new/storybookjs/storybook/@storybook/builder-vite@0e82d2fc9b2fdcad71bdea0c59188ff57788e5f7}
     version: 11.0.0-alpha.6
     peerDependencies:
       storybook: ^11.0.0-alpha.6
@@ -2397,7 +2407,7 @@ packages:
       react: ^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
 
   '@storybook/react@https://pkg.pr.new/storybookjs/storybook/@storybook/react@0e82d2fc9b2fdcad71bdea0c59188ff57788e5f7':
-    resolution: {integrity: sha512-+Kt7PdY31WU0d0qOHM4cYFZNX30n6wsSE03W9xwWAlZqzqwLVn19hl2pqCbls3HbAR6USE6Pbqm+pfUfsCyd4w==, tarball: https://pkg.pr.new/storybookjs/storybook/@storybook/react@0e82d2fc9b2fdcad71bdea0c59188ff57788e5f7}
+    resolution: {tarball: https://pkg.pr.new/storybookjs/storybook/@storybook/react@0e82d2fc9b2fdcad71bdea0c59188ff57788e5f7}
     version: 11.0.0-alpha.6
     peerDependencies:
       '@types/react': ^18.0.0 || ^19.0.0
@@ -4758,7 +4768,7 @@ packages:
     engines: {node: '>=18'}
 
   storybook@https://pkg.pr.new/storybookjs/storybook/storybook@0e82d2fc9b2fdcad71bdea0c59188ff57788e5f7:
-    resolution: {integrity: sha512-tg0dMwZxCDoXAxOWELv+7K0rsc+Al+7iKqs8IoE8FGwfzDkIj8NT+L2NamuT+7wx2u3d6EOkuZW7SsowzCI2eg==, tarball: https://pkg.pr.new/storybookjs/storybook/storybook@0e82d2fc9b2fdcad71bdea0c59188ff57788e5f7}
+    resolution: {tarball: https://pkg.pr.new/storybookjs/storybook/storybook@0e82d2fc9b2fdcad71bdea0c59188ff57788e5f7}
     version: 11.0.0-alpha.6
     hasBin: true
     peerDependencies:
