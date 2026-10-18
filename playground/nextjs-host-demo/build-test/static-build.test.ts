@@ -153,7 +153,7 @@ test('keeps the CSS of a file with "use client" that loaded during a page', asyn
 
 test("a node has the CSS of the files of the host that render it", async ({ page, errors }) => {
   // The second page of the host, callout.html.
-  await open(
+  const callout = await open(
     page,
     errors,
     "callout",
@@ -163,6 +163,8 @@ test("a node has the CSS of the files of the host that render it", async ({ page
     },
     "callout.html",
   );
+  // Its file with `"use client"` loaded before the page imported the plugin.
+  expect(callout.__hostReports).toEqual([{ from: "host/callout-note.tsx", react: nextReact }]);
   const host = await open(page, errors, "switch", expectGreetingStylesheets);
   expect(host.__hostCalloutLinked).toBe(true);
 });
