@@ -14,12 +14,14 @@
     "react-dom": "19.2.6"
   },
   "devDependencies": {
+    "@storybook/nextjs-vite-rsc": "workspace:*",
     "@types/node": "^24.12.4",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "host-package": "file:fixtures/host-package",
     "host-report": "file:fixtures/host-report",
     "playwright": "^1.64.0",
+    "storybook": "https://pkg.pr.new/storybookjs/storybook/storybook@0e82d2fc9b2fdcad71bdea0c59188ff57788e5f7",
     "typescript": "^6.0.3",
     "vite": "^8.3.1",
     "vitest": "5.0.3",
