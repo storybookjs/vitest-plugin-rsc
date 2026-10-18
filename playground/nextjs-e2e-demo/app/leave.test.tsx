@@ -148,7 +148,7 @@ test("sends nothing more for a page once it is left, also what its router sends 
 
   // Next's router sends the request of a refresh a few microtasks after the
   // click, and the page is left before that.
-  document.querySelector("button")!.click();
+  (page.getByRole("button", { name: "Refresh" }).element() as HTMLElement).click();
   await cleanup();
 
   await renderServer(<Counter />);
