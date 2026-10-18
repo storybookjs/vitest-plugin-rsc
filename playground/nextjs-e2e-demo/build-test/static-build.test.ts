@@ -123,13 +123,14 @@ describe.for(builds)("a static build, $build", ({ build, env }) => {
     },
   );
 
-  // Vite RSC keys a client reference of a package by the hash of a bare
-  // specifier of its file. The route entries import Next's global error page
-  // by its CommonJS path, and the rsc layer resolves it in Next's ESM build:
-  // the key is the one of the ESM file, in every build, and not the one of
-  // whichever specifier Vite RSC saw last. The test above sees it change
-  // only when the two builds happen to differ.
-  test("keys a Client Component of Next by the specifier of its file", () => {
+  // Vite RSC keys a client reference of a package by the hash of the bare
+  // specifier it saw resolve to the file, the last one if it saw several. The
+  // route entries import Next's global error page by its CommonJS path, which
+  // the rsc layer resolves to Next's ESM file, without a specifier of its
+  // own for Vite RSC to see: the key is the one of the route entries' import,
+  // in every build. The test above sees it change only when two builds
+  // happen to differ.
+  test("keys a Client Component of Next by the specifier it is imported by", () => {
     const key = (specifier: string) =>
       createHash("sha256").update(specifier).digest("hex").slice(0, 12);
     const assets = path.join(dist, "assets");
@@ -140,8 +141,11 @@ describe.for(builds)("a static build, $build", ({ build, env }) => {
     const withKey = (specifier: string) =>
       chunks.filter((code) => code.includes(`\`${key(specifier)}\``)).length;
     const file = "client/components/builtin/global-error.js";
-    expect(withKey(`next/dist/esm/${file}`)).toBeGreaterThan(0);
-    expect(withKey(`next/dist/${file}`)).toBe(0);
+    expect(withKey(`next/dist/${file}`)).toBeGreaterThan(0);
+    expect(withKey(`next/dist/esm/${file}`)).toBe(0);
+    // Next's own files import the layout router by a relative path: it is
+    // keyed by its specifier in `next/dist/esm`, the same on any install.
+    expect(withKey("next/dist/esm/client/components/layout-router.js")).toBeGreaterThan(0);
   });
 
   test("renders a page with a Client Component", async ({ page }) => {
