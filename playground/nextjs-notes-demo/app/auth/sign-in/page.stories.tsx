@@ -1,0 +1,57 @@
+import type { Meta, StoryObj } from "@storybook/nextjs-vite-rsc";
+import { expect } from "storybook/test";
+import { auth } from "#lib/auth.ts";
+
+// Signing in with a magic link of Better Auth, whose API is a mock: see
+// page.test.tsx.
+export default {
+  title: "Pages/Sign in",
+  parameters: { nextjs: { url: "/auth/sign-in" } },
+} satisfies Meta;
+
+type Story = StoryObj;
+
+export const Default: Story = {
+  play: async ({ canvas }) => {
+    await expect(await canvas.findByLabelText("Email")).toHaveValue("");
+    await expect(canvas.getByRole("button", { name: "Continue with email" })).toBeEnabled();
+  },
+};
+
+export const MagicLinkSent: Story = {
+  parameters: { nextjs: { url: "/auth/sign-in?sent=magic-link" } },
+  play: async ({ canvas }) => {
+    await expect(await canvas.findByText("Check your inbox for the sign-in link.")).toBeVisible();
+  },
+};
+
+export const MagicLinkFailed: Story = {
+  parameters: { nextjs: { url: "/auth/sign-in?error=magic" } },
+  play: async ({ canvas }) => {
+    await expect(await canvas.findByRole("alert")).toHaveTextContent(
+      "We couldn’t send your sign-in link.",
+    );
+  },
+};
+
+// The error that the Server Action flashes, with what was typed kept.
+export const InvalidEmail: Story = {
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.type(await canvas.findByLabelText("Email"), "not-an-email");
+    await userEvent.click(canvas.getByRole("button", { name: "Continue with email" }));
+    await expect(await canvas.findByText("Enter a valid email address.")).toBeVisible();
+    await expect(canvas.getByLabelText("Email")).toHaveValue("not-an-email");
+  },
+};
+
+// The Server Action asks Better Auth for a link and redirects to say so.
+export const SendLink: Story = {
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.type(await canvas.findByLabelText("Email"), "ada@example.com");
+    await userEvent.click(canvas.getByRole("button", { name: "Continue with email" }));
+    await expect(await canvas.findByText("Check your inbox for the sign-in link.")).toBeVisible();
+    await expect(auth.api.signInMagicLink).toHaveBeenCalledWith(
+      expect.objectContaining({ body: expect.objectContaining({ email: "ada@example.com" }) }),
+    );
+  },
+};

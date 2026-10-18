@@ -58,7 +58,8 @@ export const nextjsNotesProjects = [
     test: {
       name: "nextjs-notes-demo-browser",
       include: ["**/*.test.{ts,tsx}"],
-      exclude: ["**/*.node.test.{ts,tsx}", "node_modules"],
+      // e2e/ runs Storybook: see vitest.storybook.config.ts.
+      exclude: ["**/*.node.test.{ts,tsx}", "e2e/**", "node_modules"],
       browser: {
         enabled: true,
         headless: true,

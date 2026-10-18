@@ -7,6 +7,7 @@ import nextjsE2eDemoProject from "./playground/nextjs-e2e-demo/vitest.config.ts"
 import nextjsHostDemoBuildProject from "./playground/nextjs-host-demo/vitest.build.config.ts";
 import nextjsHostDemoProject from "./playground/nextjs-host-demo/vitest.config.ts";
 import { nextjsNotesProjects } from "./playground/nextjs-notes-demo/vitest.config.ts";
+import { nextjsNotesStorybookProjects } from "./playground/nextjs-notes-demo/vitest.storybook.config.ts";
 import rscVitestDemoBuildProject from "./playground/rsc-vitest-demo/vitest.build.config.ts";
 import rscVitestDemoProject from "./playground/rsc-vitest-demo/vitest.config.ts";
 
@@ -31,7 +32,8 @@ export default defineConfig({
         "**/*.{test,test-fixture,mock,config}.{ts,tsx}",
         "**/*.d.ts",
         "**/vitest*.{ts,tsx}",
-        "playground/nextjs-notes-demo/{db,env,scripts,test}/**/*.{ts,tsx}",
+        "playground/nextjs-notes-demo/{.storybook,db,e2e,env,scripts,test}/**/*.{ts,tsx}",
+        "playground/nextjs-notes-demo/**/*.stories.tsx",
         "playground/nextjs-notes-demo/lib/db{,.dev}.ts",
       ],
     },
@@ -47,6 +49,7 @@ export default defineConfig({
       nextjsHostDemoProject,
       nextjsHostDemoBuildProject,
       ...nextjsNotesProjects,
+      ...nextjsNotesStorybookProjects,
     ],
   },
 });

@@ -23,7 +23,9 @@
     "test:ui": "vitest --ui",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
-    "db:studio": "drizzle-kit studio"
+    "db:studio": "drizzle-kit studio",
+    "storybook": "NODE_OPTIONS='--conditions=vitest-plugin-rsc-source --conditions=storybook-nextjs-vite-rsc-source' storybook dev --port 6006",
+    "build-storybook": "NODE_OPTIONS='--conditions=vitest-plugin-rsc-source --conditions=storybook-nextjs-vite-rsc-source' storybook build"
   },
   "dependencies": {
     "@base-ui/react": "^1.4.1",
@@ -57,6 +59,7 @@
     "@fontsource-variable/geist": "^5.2.8",
     "@fontsource-variable/geist-mono": "^5.2.7",
     "@opentelemetry/api": "^1.9.1",
+    "@storybook/nextjs-vite-rsc": "workspace:*",
     "@tailwindcss/postcss": "^4.3.0",
     "@types/node": "^24.12.4",
     "@types/pg": "^8.20.0",
@@ -74,6 +77,7 @@
     "msw": "2.14.6",
     "pg": "^8.20.0",
     "playwright": "^1.64.0",
+    "storybook": "https://pkg.pr.new/storybookjs/storybook/storybook@0e82d2fc9b2fdcad71bdea0c59188ff57788e5f7",
     "tailwindcss": "^4.3.0",
     "typescript": "^6.0.3",
     "vite": "^8.3.1",
