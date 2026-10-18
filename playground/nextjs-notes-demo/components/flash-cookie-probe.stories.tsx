@@ -7,6 +7,7 @@ import FlashCookieProbe from "./flash-cookie-probe.tsx";
 const meta = {
   title: "Components/FlashCookieProbe",
   component: FlashCookieProbe,
+  tags: ["autodocs"],
 } satisfies Meta<typeof FlashCookieProbe>;
 
 export default meta;

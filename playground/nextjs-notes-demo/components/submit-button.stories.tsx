@@ -11,6 +11,7 @@ import { SubmitButton } from "./submit-button.tsx";
 const meta = {
   title: "Components/SubmitButton",
   component: SubmitButton,
+  tags: ["autodocs"],
   args: { children: "Save note", action: fn() },
   render: ({ action, ...args }) => (
     <form action={action}>

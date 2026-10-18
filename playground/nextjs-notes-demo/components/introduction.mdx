@@ -1,0 +1,21 @@
+import { Canvas, Meta } from "@storybook/addon-docs/blocks";
+import * as FlashCookieProbe from "./flash-cookie-probe.stories.tsx";
+import * as Button from "./ui/button.stories.tsx";
+
+<Meta title="Introduction" />
+
+# Notes Demo
+
+The components of the app, and a story per route under Pages. A docs page renders in the browser, as a file with "use client" does.
+
+## A server story
+
+A Server Component, which reads the cookies and headers of its request. It renders on the server, in a page of the app, which the docs page shows in an iframe:
+
+<Canvas of={FlashCookieProbe.FromRequest} />
+
+## A client story
+
+A Client Component, from a story file with "use client". It renders in the docs page, inline:
+
+<Canvas of={Button.Pressed} />

@@ -3,6 +3,9 @@ import { expect, waitFor } from "storybook/test";
 import { signInAs, testUser } from "#test/auth.ts";
 
 // The home page, in the root layout, whose header knows who is signed in.
+// No `autodocs` for the pages: a docs page shows a server story in an
+// iframe 320px high, where a whole route says little. The stories of
+// components/ have docs pages.
 export default {
   title: "Pages/Home",
   parameters: { nextjs: { url: "/" } },

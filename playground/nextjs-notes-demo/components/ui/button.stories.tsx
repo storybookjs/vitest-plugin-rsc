@@ -10,6 +10,7 @@ import { Button } from "./button.tsx";
 const meta = {
   title: "UI/Button",
   component: Button,
+  tags: ["autodocs"],
   args: { children: "Create note", onClick: fn() },
 } satisfies Meta<typeof Button>;
 

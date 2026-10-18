@@ -8,6 +8,7 @@ import { FieldError } from "./field.tsx";
 const meta = {
   title: "UI/FieldError",
   component: FieldError,
+  tags: ["autodocs"],
 } satisfies Meta<typeof FieldError>;
 
 export default meta;
