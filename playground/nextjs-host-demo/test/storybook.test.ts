@@ -1,12 +1,13 @@
 import { fileURLToPath } from "node:url";
 import type { Frame, Page } from "playwright";
 import { afterAll, beforeAll, expect } from "vitest";
-import { createProject, test, type DevServer } from "../../test-helpers/host.ts";
+import { createProject, type DevServer } from "../../test-helpers/host.ts";
 import {
   openStory,
   rendered,
   runStory,
   storyRun,
+  test,
   updateArgs,
   type StoryRun,
 } from "../../test-helpers/storybook.ts";
@@ -79,9 +80,10 @@ test("a page story and a Server Action", async ({ page }) => {
   // The page owns the `<body>`, with the app's style. Selecting the story
   // again leaves it as it is, but for Storybook's class of its main mode,
   // which none of Storybook's layouts styles on its own.
+  // The classes as a set: Storybook adds them in an order of its timing.
   const body = () =>
     canvas.evaluate(() => ({
-      classes: document.body.className,
+      classes: [...document.body.classList].sort().join(" "),
       margin: getComputedStyle(document.body).margin,
       root: !!document.getElementById("storybook-root"),
     }));

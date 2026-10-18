@@ -134,7 +134,11 @@ export function createProject(
 }
 
 /** What went wrong on a page: an error, a `console.error`, a request that failed. */
-export type PageErrors = { list: string[] };
+export type PageErrors = {
+  list: string[];
+  /** What is not the host's to answer for, like an error of Storybook's own manager. */
+  ignore?: RegExp[];
+};
 
 /**
  * `test` with a `page` of Chromium, in a browser context of its own. The test
@@ -155,15 +159,18 @@ export const test = base
   .extend("page", async ({ browser, errors }, { onCleanup }) => {
     const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
     page.setDefaultTimeout(60_000);
-    page.on("pageerror", (error) => errors.list.push(`pageerror: ${error.stack ?? error.message}`));
+    const found = (error: string) => {
+      if (!errors.ignore?.some((ignored) => ignored.test(error))) errors.list.push(error);
+    };
+    page.on("pageerror", (error) => found(`pageerror: ${error.stack ?? error.message}`));
     page.on("console", (message) => {
-      if (message.type() === "error") errors.list.push(`console.error: ${message.text()}`);
+      if (message.type() === "error") found(`console.error: ${message.text()}`);
     });
     page.on("requestfailed", (request) =>
-      errors.list.push(`requestfailed: ${request.url()} ${request.failure()?.errorText}`),
+      found(`requestfailed: ${request.url()} ${request.failure()?.errorText}`),
     );
     page.on("response", (response) => {
-      if (response.status() >= 400) errors.list.push(`${response.status()}: ${response.url()}`);
+      if (response.status() >= 400) found(`${response.status()}: ${response.url()}`);
     });
     onCleanup(async () => {
       // Not what closing the page cuts off.

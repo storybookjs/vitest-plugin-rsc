@@ -1,4 +1,5 @@
 import type { Frame, Page } from "playwright";
+import { test as hostTest, type PageErrors } from "./host.ts";
 
 // What the node tests of a Storybook share: the canvas of a story in the
 // manager, and a story that renders and plays there, with what Storybook
@@ -21,6 +22,27 @@ declare global {
     __storyReports?: Record<string, string[]>;
   }
 }
+
+/**
+ * `test` of host.ts, for a page with Storybook's manager. The manager's
+ * stores of statuses, test providers and the checklist follow a leader in
+ * Storybook's server, and ask it for its state over the dev server's
+ * websocket as the manager loads. A follower gives up after one second with
+ * `SB_MANAGER_UNIVERSAL-STORE_0001` (UniversalStoreFollowerTimeoutError), a
+ * rejection that nothing handles, and ignores the answer that comes later.
+ * On a slow machine the server answers later than that while Vite
+ * transforms the modules of a preview that has not loaded before, as it
+ * does for the first test of a file. That is the manager's timeout of its
+ * own stores, not an error of the preview, which talks to the manager over
+ * the window.
+ */
+export const test = hostTest.extend(
+  "errors",
+  async (): Promise<PageErrors> => ({
+    list: [],
+    ignore: [/^pageerror: SB_MANAGER_UNIVERSAL-STORE_0001 \(UniversalStoreFollowerTimeoutError\)/],
+  }),
+);
 
 /** The canvas of the manager at `url`, with a story open, as a user opens it. */
 export async function openStory(page: Page, url: string, story: string): Promise<Frame> {

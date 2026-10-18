@@ -3,9 +3,9 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, expect } from "vitest";
 import { copyProject } from "../../test-helpers/build.ts";
-import { createProject, test, type DevServer } from "../../test-helpers/host.ts";
+import { createProject, type DevServer } from "../../test-helpers/host.ts";
 import type { Frame } from "playwright";
-import { openStory, rendered, runStory, storyRun } from "../../test-helpers/storybook.ts";
+import { openStory, rendered, runStory, storyRun, test } from "../../test-helpers/storybook.ts";
 
 // `storybook dev` after a change of a file, as a user edits one with a story
 // open. In a copy of the project, which the test changes, so that the other
