@@ -472,6 +472,7 @@ test.for([
     "ReactDOMClient.createRoot(document",
     "has no `ReactDOMClient.createRoot(appElement`",
   ],
+  ["client/app-index", "    onCaughtError,", "", "has no `    onCaughtError,`"],
   [
     "client/components/render-tree",
     "PrefetchHint.IsRootLayoutOrAbove",

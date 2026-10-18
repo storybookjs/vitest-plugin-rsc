@@ -25,6 +25,8 @@ export type HostWindow = {
   };
   /** Whether the callout had its stylesheet, before `?view=switch` left it. */
   __hostCalloutLinked?: boolean;
+  /** For `?view=rerender`: renders the greeting again for another name. */
+  __hostRerender?: (name: string) => Promise<void>;
 };
 
 export const state = window as HostWindow;

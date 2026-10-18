@@ -1,4 +1,6 @@
 /* The CSS of a Client Component: a file of the browser layer, which Vite loads with its chunk. */
 .counter button {
   color: rgb(128, 0, 0);
+  /* A file it names by its URL, too large for Vite to inline. */
+  background-image: url("./noise.png");
 }

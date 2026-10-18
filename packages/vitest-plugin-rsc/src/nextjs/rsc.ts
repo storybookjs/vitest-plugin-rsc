@@ -6,10 +6,15 @@ import appPages from "virtual:vitest-plugin-rsc/next-app-pages";
 import loadMiddleware from "virtual:vitest-plugin-rsc/next-middleware";
 import routeHandlers from "virtual:vitest-plugin-rsc/next-route-handlers";
 import serverReferences from "virtual:vitest-plugin-rsc/server-references";
+import { createElement, type ReactNode } from "react";
 import type { FlightAdapters } from "./flight.ts";
 import { buildDirectory, builtStylesheets } from "./built-stylesheets.ts";
 import { actionModulePrefix, registry } from "./registry.ts";
 import { askDevServer } from "../utils.ts";
+// By the package, so that it stays a module of its own with its "use client"
+// in the build of the package, and in the one of the app it is a client
+// reference: see node-rendered.tsx.
+import { NodeRendered } from "vitest-plugin-rsc/nextjs/node-rendered";
 import {
   builtStylesheetsOf,
   stylesheetsEvent,
@@ -146,7 +151,9 @@ export async function loadComponent(): Promise<{ default: () => unknown }> {
       // A request that brings a route of its own, else what the test opened.
       const node = (registry.openedByRequest.getStore() ?? registry.opened)?.node;
       if (!node) throw new Error("vitest-plugin-rsc: the node of the test is gone");
-      return node.ui;
+      // A client reference here: the page renders it, around the node.
+      const { ui, version } = node;
+      return version === undefined ? ui : createElement(NodeRendered, { version }, ui as ReactNode);
     },
   };
 }

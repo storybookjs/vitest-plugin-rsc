@@ -9,6 +9,9 @@ import { vitestPluginRscSourceConditions } from "../../vitest.conditions.ts";
 // Vitest, see vitest.config.ts.
 export default defineConfig({
   root: fileURLToPath(new URL("./", import.meta.url)),
+  // A build that is served from any path: a file of it names another by the
+  // way from itself.
+  base: "./",
   plugins: [vitestPluginRSC()],
   resolve: { conditions: vitestPluginRscSourceConditions },
 });

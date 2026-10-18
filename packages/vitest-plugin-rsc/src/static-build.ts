@@ -265,6 +265,7 @@ export function staticBuild(options: StaticBuildOptions): Plugin {
         }
         // The config's own, which this one replaces: it gets what is left.
         const userOnwarn = userConfig.build?.rolldownOptions?.onwarn;
+        const userRenderBuiltUrl = userConfig.experimental?.renderBuiltUrl;
         const directives = new RegExp(
           `\\buse (${["client", "server", ...(layers.directives ?? [])].join("|")})\\b`,
         );
@@ -301,6 +302,21 @@ export function staticBuild(options: StaticBuildOptions): Plugin {
           // `vite build` calls. One set of plugins for the environments: what
           // the build of one finds, the build of the next one has.
           builder: { sharedPlugins: true, sharedConfigBuild: true },
+          experimental: {
+            // A file of the build that CSS names by its URL, by the way from
+            // the directory of the build, until the CSS has its place: see
+            // `generateBundle`. Vite's way is from where the top-level config
+            // puts CSS, with the plugins that the environments share, also
+            // for CSS that an environment puts elsewhere. Unless the config's
+            // own names the file with a URL of its own.
+            renderBuiltUrl(filename, context) {
+              const own = userRenderBuiltUrl?.(filename, context);
+              if (!buildingApp || context.hostType !== "css" || typeof own === "string") {
+                return own;
+              }
+              return `${cssBuildDirPlaceholder}/${filename}`;
+            },
+          },
           build: {
             rolldownOptions: {
               ...(layers.strictExecutionOrder && { output: { strictExecutionOrder: true } }),

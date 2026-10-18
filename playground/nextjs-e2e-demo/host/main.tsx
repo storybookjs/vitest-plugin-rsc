@@ -1,6 +1,6 @@
 import { renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
 import { db } from "../app/lib/notes.ts";
-import { renderNode } from "./node.tsx";
+import { nodeOf, renderNode } from "./node.tsx";
 
 // A page of Vite that hosts the app without Vitest, for the static build:
 // what a test file is to Vitest. It runs in the rsc layer, so the `db` it
@@ -14,6 +14,7 @@ const state = window as {
   __hostError?: unknown;
   __hostResponse?: HostResponse;
   __hostOpen?: (url: string, node?: string, files?: string[]) => Promise<HostResponse>;
+  __hostRerender?: (node: string) => Promise<void>;
 };
 
 // Opens a page of the app, the way a test calls `renderServer()`, or renders
@@ -21,7 +22,14 @@ const state = window as {
 // of the host that render it, `hostFiles`. The tab keeps what the app has
 // between the calls: its cookies, its data.
 state.__hostOpen = async (url, node, files) => {
-  const { response } = node ? await renderNode(node, url, files) : await renderServer({ url });
+  if (!node) {
+    const { response } = await renderServer({ url });
+    state.__hostRerender = undefined;
+    return { status: response.status, url: response.url, redirected: response.redirected };
+  }
+  const { response, rerender } = await renderNode(node, url, files);
+  // Renders the node of another note in its place, without a page load.
+  state.__hostRerender = (id) => rerender(nodeOf(id));
   return { status: response.status, url: response.url, redirected: response.redirected };
 };
 

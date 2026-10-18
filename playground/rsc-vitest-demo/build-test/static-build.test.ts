@@ -69,6 +69,28 @@ describe("a static build", () => {
     expect(hashesOf(moved)).toEqual(hashesOf(dist));
   });
 
+  // The CSS of the Server Component is the host's, and that of the Client
+  // Component the browser layer's, in a directory of its own.
+  test("names a file of the build in its CSS by the way from the CSS", () => {
+    const files = filesOf(dist);
+    const named = Object.fromEntries(
+      files
+        .filter((file) => file.endsWith(".css"))
+        .map((stylesheet) => [
+          stylesheet,
+          Array.from(
+            fs.readFileSync(path.join(dist, stylesheet), "utf8").matchAll(/url\(([^)]*)\)/g),
+            ([, url]) => path.posix.join(path.posix.dirname(stylesheet), url!),
+          ),
+        ]),
+    );
+    expect(Object.keys(named)).toHaveLength(2);
+    for (const [stylesheet, urls] of Object.entries(named)) {
+      expect(urls, stylesheet).toEqual([expect.stringMatching(/noise-[\w-]+\.png$/)]);
+      for (const url of urls) expect(files, stylesheet).toContain(url);
+    }
+  });
+
   test("renders a Server Component with a Client Component", async ({ page }) => {
     await open(page, site);
     await page.getByRole("heading", { name: "Greetings from the host" }).waitFor();

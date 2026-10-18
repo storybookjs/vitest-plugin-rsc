@@ -83,6 +83,16 @@ export function checkRuntime(context: NextContext) {
     "ReactDOMClient.hydrateRoot(appElement",
     "ReactDOMClient.createRoot(appElement",
   );
+  // `rerender()` hears of an error that takes the place of a node from the
+  // `onCaughtError` and `onUncaughtError` of the options of that root, which
+  // it wraps. Without them a rerender would wait for a node that an error
+  // page has replaced. Indented, they are the ones of the options.
+  appIndex.contains(
+    "    onCaughtError,",
+    "    onUncaughtError",
+    "ReactDOMClient.createRoot(appElement, reactRootOptions)",
+    "...reactRootOptions",
+  );
   // A node renders on a route whose root segment is not the app's, and that
   // has no root layout. Next's router leaves the node with a page load for a
   // page of the app when all of this holds: it compares the root segments of

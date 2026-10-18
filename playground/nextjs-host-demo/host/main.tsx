@@ -1,7 +1,7 @@
 import { reports } from "host-report";
 import { cleanup, loadClientModule, renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
 import { renderCallout } from "./callout.tsx";
-import { renderGreeting } from "./greeting.tsx";
+import { greetingFor, renderGreeting } from "./greeting.tsx";
 import { renderTag } from "./tag.tsx";
 import { show, state } from "./state.ts";
 
@@ -20,8 +20,10 @@ import { show, state } from "./state.ts";
 // renders its components after the page it loaded during. `?view=pages`
 // moves the URL of the host between two pages of the app. `?view=tag`
 // renders a node with a Client Component of a package that is not
-// pre-bundled. A second page of the host, with a node of its own, is
-// callout.html.
+// pre-bundled, and `?view=rerender` renders a node again with other props,
+// without a page load. `?view=stored` opens a page and stores in the
+// browser, as a story's `beforeEach` does. A second page of the host, with a
+// node of its own, is callout.html.
 const view = new URLSearchParams(window.location.search).get("view");
 await show(async () => {
   if (view === "client" || view === "package") {
@@ -72,6 +74,11 @@ await show(async () => {
     await renderTag(container);
     return;
   }
+  if (view === "rerender") {
+    const { rerender } = await renderGreeting(container);
+    state.__hostRerender = (name) => rerender(greetingFor(name));
+    return;
+  }
   if (view === "action") {
     // A node of the app with a Server Action, and then a file of the host
     // with `"use client"` while the node is open, as a page of a framework's
@@ -95,6 +102,12 @@ await show(async () => {
     for (const Component of [Badge, Like]) {
       renderClient(Component, container.appendChild(document.createElement("div")));
     }
+    return;
+  }
+  if (view === "stored") {
+    await renderServer({ url: "/" });
+    localStorage.setItem("visitor", "Ada");
+    sessionStorage.setItem("visitor", "Ada");
     return;
   }
   if (view === "pages") {

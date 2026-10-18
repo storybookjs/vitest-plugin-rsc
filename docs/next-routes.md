@@ -304,17 +304,46 @@ A link to the node's own pathname stays with the node. With the default URL that
 
 In development a link in a node is not prefetched, and neither is one in a page, as in `next dev`. Next marks a link as visible only when `NODE_ENV` is `"production"` (`links.js`), and it does not prefetch a link that is not visible, not even on hover. With `build: "production"` it prefetches both: see [Development Or Production](#development-or-production).
 
+### Rendering The Node Again
+
+`rerender(ui)` on the result of `renderServer(<Node />)` renders `ui` in place of the node, without a page load, like Testing Library's `rerender`. The state of the Client Components in the node stays: a typed field, an open menu, a counter.
+
+The node is a value in the registry, which the route of the node reads every time the server renders it (`loadComponent()` in `rsc.ts`). `rerender()` puts `ui` there, with the `wrapper` around it, and a new version, and has Next's router ask for the page again, as `router.refresh()` does: one request with `rsc: 1` to the node's pathname, with the headers and cookies of the page. React reconciles the new payload with the page. The server reads `ui` as it renders, so a render has the last one.
+
+Every call is a request of its own. Next's router sends them one after the other, and React commits once the last has answered: a host that renders the node as a user types waits for one call before it makes the next, with the last `ui`.
+
+It resolves on React's commit, once the effects of the node have run, not on the response. The server renders every node inside `NodeRendered` (`node-rendered.tsx`), a Client Component of the plugin that renders only its children, from the node's first render: wrapping it later would remount it. So the Flight payload of every node names that module, and the page loads it once. Its layout effect hands the page's router over once the node is mounted. Its passive effect, which runs after those of the node, says which version the page shows, and its cleanup that the node is not shown any more: a new version takes it down and up again in the same flush. Passive, because Suspense takes down the layout effects of what it hides behind a fallback. `node-on-page.ts` keeps the count, one per page of a node. Each page has a module graph of its own in the browser layer, so a page that was left tells its own, which nobody waits on.
+
+| When                                                                                                   | `rerender()`                                                                                                                                                                |
+| ------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| The node still hydrates, behind a `loading.tsx`                                                        | Waits for it, then asks the router                                                                                                                                          |
+| Two calls in a row                                                                                     | Two requests. Each call resolves once the page has its version or a later one                                                                                               |
+| A Server Action, `router.refresh()` or a navigation to the node's pathname after it                    | Renders the last `ui`                                                                                                                                                       |
+| The node throws, or calls `notFound()` or `redirect()`, as it renders again                            | Rejects with a `NodeReplacedError`: the page has something else there. The `cause` is the error React reported since the call, for `notFound()` and `redirect()` Next's own |
+| The node threw before the page hydrated it                                                             | Rejects at once, without waiting                                                                                                                                            |
+| A navigation of the app in the layouts of a route, or a Server Action that redirects away              | Rejects: the page has something else there, also while the node still hydrates                                                                                              |
+| An error boundary in the node shows an error                                                           | Resolves: the node is still there                                                                                                                                           |
+| In the layouts of a route, a layout or another slot throws before the node has hydrated                | Rejects: the plugin cannot tell that error from one in the node's place                                                                                                     |
+| The app changes the history without a request while it waits: a hash link, `history.pushState()`, back | Next drops the refresh, and the node stays: it waits for the next call, or a request of the router                                                                          |
+| `cleanup()`, `unmount()`, another `renderServer()`, a page load of the app while it waits              | Rejects with an `AbortError` that names what left the page. The request of the left page never settles: see [What Stands In For A Server](#what-stands-in-for-a-server)     |
+| After the page was left, or something else took the node's place                                       | Rejects at once                                                                                                                                                             |
+
+Something else is in the node's place when nothing has shown it for a microtask: Strict Mode takes an effect down and up again at once, and an error boundary inside the node leaves the node there. For a node that is not mounted yet, the root of the app says so: the plugin wraps its `onCaughtError` and `onUncaughtError`, which Next's entry passes, and any error React reports there while the node is not mounted means one took its place. In the layouts of a route that is also an error of a layout or of another slot, before the node has hydrated. For a node without layouts, a response that is a whole document, Next's error page, or one at another pathname, a redirect, says so before the page loads.
+
+Only `ui` changes. `url`, `headers`, `proxy`, `layouts` and `hostFiles` are the page's: for others, call `renderServer()`, which opens another page. `renderServer({ url })` has no `rerender()`: a page of the app has no node to put another one in place of.
+
 ### What It Needs Of Next
 
 Checked at startup, like the rest (see [When Next Changes](#when-next-changes)):
 
-| What                                                                                                                                 | Without it                                                         |
-| ------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------ |
-| The `app-page` template takes `tree`, `__next_app_require__` and `__next_app_load_chunk__`                                           | No route for a node                                                |
-| `next/dist/client/components/builtin/` has `global-error.js`, `not-found.js`, `forbidden.js` and `unauthorized.js`                   | No route for a node                                                |
-| `app-index.js` has `const appElement = document`, and calls `hydrateRoot(appElement` and `createRoot(appElement`                     | The node hydrates the document, or nothing                         |
-| `segment-cache/cache.js` compares the root segments of two trees                                                                     | A link from a node renders one of the app's pages in the container |
-| `render-tree.js` calls `doesRouteStructureMatch(`, reads `PrefetchHint.IsRootLayoutOrAbove` and calls `isNavigatingToNewRootLayout(` | The same                                                           |
+| What                                                                                                                                 | Without it                                                                       |
+| ------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------- |
+| The `app-page` template takes `tree`, `__next_app_require__` and `__next_app_load_chunk__`                                           | No route for a node                                                              |
+| `next/dist/client/components/builtin/` has `global-error.js`, `not-found.js`, `forbidden.js` and `unauthorized.js`                   | No route for a node                                                              |
+| `app-index.js` has `const appElement = document`, and calls `hydrateRoot(appElement` and `createRoot(appElement`                     | The node hydrates the document, or nothing                                       |
+| `segment-cache/cache.js` compares the root segments of two trees                                                                     | A link from a node renders one of the app's pages in the container               |
+| `render-tree.js` calls `doesRouteStructureMatch(`, reads `PrefetchHint.IsRootLayoutOrAbove` and calls `isNavigatingToNewRootLayout(` | The same                                                                         |
+| `app-index.js` passes its root `onCaughtError` and `onUncaughtError`                                                                 | `rerender()` waits for a node that an error took the place of before it hydrated |
 
 Not checked: the shape of a loader tree, `[segment, parallelRoutes, modules, staticSiblings]`. The tests that render a node fail when it changes.
 
