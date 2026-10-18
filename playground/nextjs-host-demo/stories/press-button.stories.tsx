@@ -11,6 +11,7 @@ import "./press-button.stories.css";
 // Actions panel read.
 const meta = {
   component: PressButton,
+  tags: ["autodocs"],
   args: { label: "Press", onPress: fn() },
   decorators: [
     (Story) => (

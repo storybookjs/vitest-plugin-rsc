@@ -53,6 +53,47 @@ export async function openStory(page: Page, url: string, story: string): Promise
   return canvas;
 }
 
+/** The canvas of the manager at `url`, with a docs page open, once it has its content. */
+export async function openDocs(page: Page, url: string, docs: string): Promise<Frame> {
+  await page.goto(`${url}?path=/docs/${docs}`);
+  const iframe = await page.locator("#storybook-preview-iframe").elementHandle();
+  const canvas = (await iframe!.contentFrame())!;
+  await docsShown(canvas, docs);
+  return canvas;
+}
+
+/** Resolves once the docs page is the one in the preview, and it shows its content. */
+export async function docsShown(canvas: Frame, docs: string, timeout = 90_000): Promise<void> {
+  await canvas.waitForFunction(
+    (id) =>
+      window.__STORYBOOK_PREVIEW__?.currentRender?.id === id &&
+      !!document.querySelector("#storybook-docs")?.textContent,
+    docs,
+    { timeout, polling: 100 },
+  );
+}
+
+/** Selects a docs page in the manager that is open, as a click in the sidebar does. */
+export async function selectDocs(canvas: Frame, docs: string): Promise<void> {
+  await canvas.evaluate(
+    (storyId) =>
+      window.__STORYBOOK_PREVIEW__.channel.emit("selectStory", { storyId, viewMode: "docs" }),
+    docs,
+  );
+  await docsShown(canvas, docs);
+}
+
+/**
+ * The preview of a story that a docs page shows in an iframe, once its
+ * render has ended: a server story, which renders in a page of the app.
+ */
+export async function storyInDocs(canvas: Frame, story: string): Promise<Frame> {
+  const iframe = canvas.locator(`#storybook-docs iframe[src*="id=${story}"]`).first();
+  const frame = (await (await iframe.elementHandle())!.contentFrame())!;
+  await rendered(frame, story);
+  return frame;
+}
+
 // The phases a render of Storybook ends in.
 const done = ["finished", "errored", "aborted"];
 

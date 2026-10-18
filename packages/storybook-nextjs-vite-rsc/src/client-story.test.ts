@@ -111,7 +111,7 @@ test("a client story has the decorators of the preview file as the browser layer
   browserModules.set(meta, { default: meta, Pressed });
   await storyFile({ default: meta, Pressed: {} })();
   // Storybook's order: the story's, the meta's, the preview file's, and
-  // those of an addon, which are one instance for both layers.
+  // those of an addon, as the preview has them.
   const decorators = [named("story"), named("meta"), rscTheme, named("addon")];
   expect(decorated(Pressed, decorators)).toBe("addon(browser-theme(meta(story(story))))");
   // Without a `render` of its own, the story is rendered by the browser

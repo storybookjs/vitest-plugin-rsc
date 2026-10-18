@@ -211,10 +211,90 @@ the code of the app, or of the preview file and what it imports, loads the
 preview again: the server code of the app runs once per document. A change
 of a stylesheet that the preview file imports shows in place.
 
+## Docs
+
+With `@storybook/addon-docs` a story file can have a docs page, with
+`tags: ["autodocs"]`, and an MDX file is a docs page of its own:
+
+```ts
+export default {
+  stories: ["../app/**/*.mdx", "../app/**/*.stories.tsx"],
+  addons: ["@storybook/addon-docs"],
+  framework: "@storybook/nextjs-vite-rsc",
+} satisfies StorybookConfig;
+```
+
+A docs page renders in the browser, as a Client Component does. It shows
+each story the way its kind renders:
+
+- A client story renders in the docs page, inline. A new value from
+  Controls renders it again in place, with the state it has.
+- A server story renders in a page of the app, which has a document of its
+  own: the docs page shows it in Storybook's iframe of the story, 400px
+  high. Set another height with `parameters.docs.story.iframeHeight`.
+
+`parameters.docs.story.inline` decides it when a story sets it. A client
+story with `inline: false` renders in an iframe. A server story with
+`inline: true` cannot render in the docs page, and shows an error that
+says so.
+
+An MDX file is client code, as a file with `"use client"` is, and so is
+what it imports, with one exception: its imports of story files are the
+stories of Storybook, for `of={…}`, so a server story file is fine there.
+Code that is only for the server, like `server-only` or a database, cannot
+be imported at the top of an MDX file: the docs page fails with an error
+that says so. Show server code through a story, with
+`<Canvas of={Stories.Name} />`.
+
+```mdx
+import { Canvas, Meta } from "@storybook/addon-docs/blocks";
+import * as Greeting from "./greeting.stories";
+
+<Meta of={Greeting} />
+
+<Canvas of={Greeting.Default} />
+```
+
+Chromatic and other tools that read the stories of a build with
+`extract()` load every file of the index, the MDX files too. One MDX file
+that fails to load fails all of it, while `storybook build` succeeds.
+
+The docs page, its blocks and Storybook's theming render with React DOM,
+in the browser, and the preview file is evaluated on the server too (see
+The Preview File). So the preview file cannot import
+`@storybook/addon-docs/blocks` or `storybook/theming`, which stops with a
+message. A theme comes from `storybook/theming/create`:
+
+```ts
+import { themes } from "storybook/theming/create";
+
+export default {
+  parameters: { docs: { theme: themes.dark } },
+} satisfies Preview;
+```
+
+A component of `parameters.docs`, like `container`, `page` or one of
+`components`, renders in the browser: in the preview file, it is the one
+of the browser's evaluation of the file, as its decorators are for a client
+story. In a server story file a component of a file with `"use client"` is
+a reference, which shows an error: set it in the preview file, or in a
+story file with `"use client"`.
+
+`Source` shows the snippet of Storybook's docgen, or the source of the
+story: a server story renders on the server, so there is no snippet of
+what it rendered. The args table reads the files with Storybook's docgen,
+for both kinds.
+
 ## Not In This Version
 
-- Docs pages, `autodocs` and MDX: with `@storybook/addon-docs` a docs entry
-  fails. They are coming (SB-2284).
+- Controls on a docs page do not reach a server story, which is in an
+  iframe, as they reach no story in an iframe in Storybook: open the story
+  to change its args.
+- The iframe of a server story on a docs page does not follow the height
+  of its page.
+- One instance of a package for an addon and a client story: an addon
+  that a client story needs the same module of, beyond Storybook's own
+  modules of the preview, like `storybook/test`, gets one of each.
 - `definePreview()` and the story factories of CSF Next: write the preview
   file and the stories in CSF 3, as above.
 - A decorator of an addon that renders a component of the addon, like a

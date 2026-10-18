@@ -1,16 +1,17 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { hasVitePlugins, type ViteFinal } from "@storybook/builder-vite";
-import {
-  getAddonNames,
-  loadMainConfig,
-  loadPreviewOrConfigFile,
-  normalizeStories,
-} from "storybook/internal/common";
-import type { Options, PresetProperty, PreviewAnnotation } from "storybook/internal/types";
+import { loadPreviewOrConfigFile, normalizeStories } from "storybook/internal/common";
+import type {
+  NormalizedStoriesSpecifier,
+  Options,
+  PresetProperty,
+  PreviewAnnotation,
+} from "storybook/internal/types";
 import { normalizePath } from "vite";
 import { vitestPluginRSC } from "vitest-plugin-rsc";
 import { vitestPluginNext } from "vitest-plugin-rsc/nextjs/plugin";
+import { docsPlugins } from "./docs-plugin.ts";
 import type { FrameworkOptions } from "./index.ts";
 import { previewRuntimePlugin } from "./preview-runtime.ts";
 import { projectPlugin } from "./project.ts";
@@ -42,12 +43,16 @@ const renderingAnnotations = new Set(
   ),
 );
 
+// Next to this file, in `src` or `dist`: Storybook loads the preset of a
+// framework by its build, which the rest of the framework has to match.
+const previewFile = normalizePath(
+  fileURLToPath(new URL(`./preview${path.extname(import.meta.url)}`, import.meta.url)),
+);
+
 export const previewAnnotations: PresetProperty<"previewAnnotations"> = async (input = []) => [
   // The one of an addon in `node_modules` is `{ bare, absolute }`, unlike its type.
   ...input.filter((entry: PreviewAnnotation) => !renderingAnnotations.has(absoluteOf(entry))),
-  // Next to this file, in `src` or `dist`: Storybook loads the preset of a
-  // framework by its build, which the rest of the framework has to match.
-  fileURLToPath(new URL(`./preview${path.extname(import.meta.url)}`, import.meta.url)),
+  previewFile,
 ];
 
 const absoluteOf = (entry: PreviewAnnotation) =>
@@ -73,6 +78,8 @@ export const viteFinal: ViteFinal = async (config, options) => {
   }
   const { build, browserModules } =
     (await options.presets.apply<FrameworkOptions | undefined>("frameworkOptions")) ?? {};
+  const workingDir = process.cwd();
+  const stories = await storiesOf(options, workingDir);
   return {
     ...config,
     optimizeDeps: {
@@ -87,47 +94,42 @@ export const viteFinal: ViteFinal = async (config, options) => {
       vitestPluginNext({
         build,
         browserModules,
+        // No packages of the host: Storybook's Vite builder gives every layer
+        // the preview's instance of the modules that have one, like
+        // `storybook/test`, whose spies `play` and the Actions panel read
+        // (preview-runtime.ts). The rest of Storybook, like its theming and
+        // components that the docs page renders with, and the renderer of a
+        // client story, is the browser layer's own, with its React.
         host: {
           files: [
-            ...(await storyFiles(root, options)),
+            ...stories.map(({ directory, files }) =>
+              path.posix.join(
+                normalizePath(path.relative(root, path.resolve(workingDir, directory))),
+                files,
+              ),
+            ),
             path.posix.join(normalizePath(path.relative(root, options.configDir)), "**"),
             frameworkFiles,
           ],
-          packages: await hostPackages(options),
         },
       }),
       projectPlugin({
         root,
-        workingDir: process.cwd(),
+        workingDir,
         previewFile: loadPreviewOrConfigFile({ configDir: options.configDir }),
       }),
       previewRuntimePlugin(),
+      // After the plugin's: see docs-plugin.ts.
+      ...docsPlugins({ workingDir, stories, previewFile }),
     ],
   };
 };
 
-// The `stories` of `.storybook/main.ts` as globs from the root.
-async function storyFiles(root: string, options: Options): Promise<string[]> {
+// The `stories` of `.storybook/main.ts`, as Storybook normalizes them.
+async function storiesOf(
+  options: Options,
+  workingDir: string,
+): Promise<NormalizedStoriesSpecifier[]> {
   const stories = await options.presets.apply("stories", [], options);
-  const workingDir = process.cwd();
-  return normalizeStories(stories, { configDir: options.configDir, workingDir }).map(
-    ({ directory, files }) =>
-      path.posix.join(
-        normalizePath(path.relative(root, path.resolve(workingDir, directory))),
-        files,
-      ),
-  );
-}
-
-// `storybook`, whose `storybook/test` has the spies that `play` and the
-// Actions panel read, and the addons of `.storybook/main.ts`: one instance
-// for the preview and the browser layer. Not `@storybook/react`: the canvas
-// of a client story has its own, with the browser layer's React.
-async function hostPackages(options: Options): Promise<string[]> {
-  const main = await loadMainConfig({ configDir: options.configDir });
-  // A local addon is a file of the project, not a package.
-  const addons = getAddonNames(main).flatMap(
-    (name) => /^(@[^/]+\/)?[^./][^/]*/.exec(name)?.[0] ?? [],
-  );
-  return ["storybook", ...new Set(addons)];
+  return normalizeStories(stories, { configDir: options.configDir, workingDir });
 }

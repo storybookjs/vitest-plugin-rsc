@@ -1,5 +1,6 @@
 import type { Preview } from "@storybook/nextjs-vite-rsc";
 import { ThemeProvider } from "../app/components/theme.tsx";
+import { Blockquote } from "./docs-components.tsx";
 import "./preview.css";
 
 // The project's decorator, around every story: a Client Component, which a
@@ -12,4 +13,6 @@ export default {
       </ThemeProvider>
     ),
   ],
+  // What renders the elements of an MDX file, on top of the docs page's own.
+  parameters: { docs: { components: { blockquote: Blockquote } } },
 } satisfies Preview;

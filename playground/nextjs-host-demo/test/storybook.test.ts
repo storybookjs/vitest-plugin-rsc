@@ -3,9 +3,12 @@ import type { Frame, Page } from "playwright";
 import { afterAll, beforeAll, expect } from "vitest";
 import { createProject, type DevServer } from "../../test-helpers/host.ts";
 import {
+  openDocs,
   openStory,
   rendered,
   runStory,
+  selectDocs,
+  storyInDocs,
   storyRun,
   test,
   updateArgs,
@@ -198,4 +201,81 @@ test("misuse says what to do instead", async ({ page, errors }) => {
   // And the stories after them render as before.
   expect(await runStory(page, canvas, "press-button--pressed")).toEqual(passed);
   expect(await rendered(canvas, "press-button--pressed")).toBe("finished");
+});
+
+// The content of a docs page.
+const inDocs = (canvas: Frame) => canvas.locator("#storybook-docs");
+
+test("an MDX page: a server story in an iframe, a client story inline", async ({ page }) => {
+  const canvas = await openDocs(page, site!.url, "introduction--docs");
+  // The server story, in Storybook's iframe of the story, high enough for it.
+  const server = await storyInDocs(canvas, "greeting--default");
+  expect(await server.getByText("Hello from Storybook").count()).toBe(1);
+  expect(await server.getByTestId("server-decorator").getAttribute("data-agent")).toBe("read");
+  const iframe = inDocs(canvas).locator("iframe");
+  expect(await iframe.evaluate((element) => element.getBoundingClientRect().height)).toBe(400);
+  // The client story in the docs page, in the meta's and the project's
+  // decorators, of the browser layer, with the CSS of its story file.
+  const frame = inDocs(canvas).getByTestId("theme").getByTestId("meta-decorator");
+  const button = frame.getByRole("button", { name: "Press: 0" });
+  await expect.poll(() => button.getAttribute("data-theme")).toBe("storybook");
+  await expect
+    .poll(() => frame.evaluate((element) => getComputedStyle(element).backgroundColor))
+    .toBe("rgb(240, 240, 240)");
+  await button.click();
+  await expect.poll(() => frame.getByRole("button", { name: "Press: 1" }).count()).toBe(1);
+  // One MDXProvider: the docs page's anchors of the headings, and the
+  // project's component of `parameters.docs.components`, the browser layer's.
+  expect(await inDocs(canvas).locator('h2 a[href="#a-server-story"]').count()).toBe(1);
+  expect(await inDocs(canvas).getByTestId("docs-blockquote").count()).toBe(1);
+});
+
+test("autodocs: a client story file's stories inline, a server story file's in iframes", async ({
+  page,
+}) => {
+  const canvas = await openDocs(page, site!.url, "press-button--docs");
+  expect(await inDocs(canvas).locator("iframe").count()).toBe(0);
+  const primary = inDocs(canvas).getByRole("button", { name: "Press: 0" }).first();
+  await primary.click();
+  // A new value from Controls renders the inline story again in place, with
+  // the state it has.
+  await updateArgs(canvas, "press-button--pressed", { label: "Renamed" });
+  await expect
+    .poll(() => inDocs(canvas).getByRole("button", { name: "Renamed: 1" }).count())
+    .toBe(1);
+  // The args table, from the component's docgen, which Storybook's server
+  // reads.
+  const argsTable = inDocs(canvas).locator("table");
+  await expect
+    .poll(() => argsTable.getByText("onPress", { exact: true }).count(), { timeout: 30_000 })
+    .toBe(1);
+  await selectDocs(canvas, "greeting--docs");
+  // The primary story and every story of the file, each in a page of its own.
+  await expect.poll(() => inDocs(canvas).locator("iframe").count()).toBe(5);
+  const primaryFrame = await storyInDocs(canvas, "greeting--default");
+  expect(await primaryFrame.getByText("Hello from Storybook").count()).toBe(1);
+  await expect
+    .poll(() => argsTable.getByText("name", { exact: true }).count(), { timeout: 30_000 })
+    .toBe(1);
+});
+
+test("from a docs page to a story, and back", async ({ page }) => {
+  const canvas = await openDocs(page, site!.url, "introduction--docs");
+  await storyInDocs(canvas, "greeting--default");
+  expect(await runStory(page, canvas, "greeting--default")).toEqual(passed);
+  expect(await runStory(page, canvas, "press-button--pressed")).toEqual(passed);
+  await selectDocs(canvas, "introduction--docs");
+  await storyInDocs(canvas, "greeting--default");
+  await expect.poll(() => inDocs(canvas).getByRole("button", { name: "Press: 0" }).count()).toBe(1);
+  expect(await runStory(page, canvas, "home--home")).toEqual(passed);
+});
+
+test("a server story inline on a docs page says what to do instead", async ({ page, errors }) => {
+  const canvas = await openDocs(page, site!.url, "misuse--docs");
+  // In the box of that story, and the rest of the page renders.
+  await expect
+    .poll(() => inDocs(canvas).innerText())
+    .toContain("The story misuse--inline-on-docs renders on the server");
+  expect(await inDocs(canvas).getByRole("heading", { name: "Misuse" }).count()).toBe(1);
+  errors.list.splice(0);
 });

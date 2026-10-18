@@ -41,3 +41,10 @@ export const MountOnPage: StoryObj = {
     await mount(<p>A component</p>);
   },
 };
+
+// A server story that a docs page renders inline, in its own document, as
+// it does a client story: see misuse.mdx.
+export const InlineOnDocs: StoryObj = {
+  parameters: { docs: { story: { inline: true } } },
+  render: () => <p>A server story, inline</p>,
+};

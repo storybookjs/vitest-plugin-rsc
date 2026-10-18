@@ -1,7 +1,8 @@
 import type { StorybookConfig } from "@storybook/nextjs-vite-rsc";
 
 export default {
-  stories: ["../stories/**/*.stories.tsx"],
+  stories: ["../stories/**/*.mdx", "../stories/**/*.stories.tsx"],
+  addons: ["@storybook/addon-docs"],
   framework: {
     name: "@storybook/nextjs-vite-rsc",
     // Not the vite.config.ts of the project, which is the host page's, with

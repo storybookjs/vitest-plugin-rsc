@@ -10,6 +10,7 @@ import { Like } from "../app/components/like.tsx";
 // page, with Next's router and Server Actions.
 const meta = {
   component: Greeting,
+  tags: ["autodocs"],
   args: { name: "Storybook" },
   decorators: [
     // An async decorator that reads the request.
