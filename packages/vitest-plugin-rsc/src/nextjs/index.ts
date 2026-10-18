@@ -114,6 +114,19 @@ window.addEventListener("storage", ({ key, newValue, storageArea }) => {
 // write.
 const isVitestKey = (key: string) => key.startsWith("vitest-") || key === "vueuse-color-scheme";
 
+// Removes what the app put in the browser's storage: what is not the host's.
+function forgetStorage(): void {
+  for (const [storage, keys] of storages) {
+    for (const key of Object.keys(storage)) {
+      if (!keys.has(key) && !isVitestKey(key)) storage.removeItem(key);
+    }
+  }
+}
+// Also when the document goes without `cleanup()`, like an iframe that is
+// taken out of its page: every other document of the origin heard of what
+// the app stored, and would keep it as the host's, also after a reload.
+window.addEventListener("pagehide", forgetStorage);
+
 // A page of another origin is not the app's: a browser would leave the app for
 // it, and this document has the test to keep.
 function leftTheApp(url: URL): Error {
@@ -1086,11 +1099,7 @@ export async function cleanup(): Promise<void> {
   containers.clear();
   store = new PageStore();
   ssr.resetCaches();
-  for (const [storage, keys] of storages) {
-    for (const key of Object.keys(storage)) {
-      if (!keys.has(key) && !isVitestKey(key)) storage.removeItem(key);
-    }
-  }
+  forgetStorage();
 }
 
 // The app can leave its page without its router: `location.assign()`, a
