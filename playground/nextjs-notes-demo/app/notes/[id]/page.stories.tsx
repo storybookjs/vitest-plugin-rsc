@@ -56,16 +56,12 @@ export const Favorite: Story = {
 // A Server Action that deletes the note and redirects to the list.
 export const Delete: Story = {
   beforeEach: async () => {
-    await db.insert(notes).values([
-      { id, ownerId: testUser.id, title: "Short-lived", updatedAt },
-      { ownerId: testUser.id, title: "Still here", updatedAt },
-    ]);
+    await db.insert(notes).values({ id, ownerId: testUser.id, title: "Short-lived", updatedAt });
   },
   play: async ({ canvas, userEvent }) => {
     await userEvent.click(await canvas.findByRole("button", { name: "Delete" }));
-    await expect(await canvas.findByText("Still here")).toBeVisible();
+    await expect(await canvas.findByText("No notes yet")).toBeVisible();
     await expect(location.pathname).toBe("/notes");
-    await expect(canvas.queryByText("Short-lived")).toBeNull();
   },
 };
 

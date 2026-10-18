@@ -30,7 +30,7 @@ export const Default: Story = {
   },
 };
 
-// The error that the Server Action flashes, with the edits kept.
+// The error that the Server Action flashes.
 export const ValidationError: Story = {
   play: async ({ canvas, userEvent }) => {
     await userEvent.clear(await canvas.findByLabelText("Title"));

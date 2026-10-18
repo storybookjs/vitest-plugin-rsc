@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import { fileURLToPath } from "node:url";
 import type { Frame, Page } from "playwright";
 import { expect } from "vitest";
 import type { PageErrors } from "../../test-helpers/host.ts";
@@ -22,13 +23,17 @@ export async function stories(url: string): Promise<Story[]> {
   const index = (await (await fetch(new URL("index.json", url))).json()) as {
     entries: Record<string, { id: string; type: string; importPath: string }>;
   };
-  return Object.values(index.entries)
-    .filter((entry) => entry.type === "story")
-    .map(({ id, importPath }) => ({
-      id,
-      page: importPath.endsWith("/page.stories.tsx"),
-      client: /^["']use client["']/.test(fs.readFileSync(new URL(importPath, root), "utf8")),
-    }));
+  const entries = Object.values(index.entries).filter((entry) => entry.type === "story");
+  // Every file of stories of the project is in the index.
+  const files = fs.globSync("{app,components}/**/*.stories.tsx", { cwd: fileURLToPath(root) });
+  expect(new Set(entries.map((entry) => entry.importPath))).toEqual(
+    new Set(files.map((file) => `./${file}`)),
+  );
+  return entries.map(({ id, importPath }) => ({
+    id,
+    page: importPath.endsWith("/page.stories.tsx"),
+    client: /^["']use client["']/.test(fs.readFileSync(new URL(importPath, root), "utf8")),
+  }));
 }
 
 /** The path of the preview with the id of its story: where a reload lands. */

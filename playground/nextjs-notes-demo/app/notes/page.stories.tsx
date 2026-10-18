@@ -30,31 +30,14 @@ export const Empty: Story = {
 // database before the request. A new value in Controls loads the page again.
 export const WithNotes: StoryObj<{ count: number }> = {
   args: { count: 5 },
-  argTypes: { count: { control: { type: "range", min: 0, max: 24 } } },
+  argTypes: { count: { control: { type: "range", min: 1, max: 24 } } },
   beforeEach: async ({ args }) => {
     await seedNotes(testUser.id, args.count);
   },
   play: async ({ args, canvas }) => {
     const total = `${args.count} ${args.count === 1 ? "note" : "notes"}`;
     const favorited = Math.min(args.count, 2);
-    await expect(
-      await canvas.findByText(
-        args.count ? `${total} · ${favorited} favorited` : "Start by creating your first note.",
-      ),
-    ).toBeVisible();
-  },
-};
-
-// The theme toggle of the layout. Its menu opens in a portal, outside of the
-// page's `<main>`: `canvas` is the page's `<body>`, which has it.
-export const DarkMode: Story = {
-  beforeEach: async () => {
-    await seedNotes(testUser.id, 3);
-  },
-  play: async ({ canvas, userEvent }) => {
-    await userEvent.click(await canvas.findByRole("button", { name: "Toggle theme" }));
-    await userEvent.click(await canvas.findByRole("menuitem", { name: "Dark" }));
-    await waitFor(() => expect(document.documentElement).toHaveClass("dark"));
+    await expect(await canvas.findByText(`${total} · ${favorited} favorited`)).toBeVisible();
   },
 };
 

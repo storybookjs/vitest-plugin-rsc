@@ -1,7 +1,14 @@
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, expect } from "vitest";
 import { createProject, type DevServer } from "../../test-helpers/host.ts";
-import { openStory, rendered, runStory, test, updateArgs } from "../../test-helpers/storybook.ts";
+import {
+  openStory,
+  rendered,
+  runStory,
+  storyRun,
+  test,
+  updateArgs,
+} from "../../test-helpers/storybook.ts";
 import { atStory, body, passed, runEveryStory } from "./stories.ts";
 
 // `storybook dev` of the notes demo, driven in the manager as a user does:
@@ -60,4 +67,5 @@ test("a new count in Controls seeds the database again and loads the page", asyn
     .poll(() => canvas.getByText("12 notes · 2 favorited").count(), { timeout: 30_000 })
     .toBe(1);
   await expect.poll(() => canvas.getByRole("heading", { level: 2 }).count()).toBe(12);
+  expect(await storyRun(page, canvas, "pages-notes--with-notes")).toEqual(passed);
 });

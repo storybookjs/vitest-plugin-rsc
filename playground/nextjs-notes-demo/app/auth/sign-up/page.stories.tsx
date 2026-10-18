@@ -33,6 +33,7 @@ export const InvalidEmail: Story = {
     await userEvent.type(await canvas.findByLabelText("Email"), "not-an-email");
     await userEvent.click(canvas.getByRole("button", { name: "Create account" }));
     await expect(await canvas.findByText("Enter a valid email address.")).toBeVisible();
+    await expect(canvas.getByLabelText("Email")).toHaveValue("not-an-email");
   },
 };
 

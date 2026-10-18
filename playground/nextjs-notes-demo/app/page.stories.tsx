@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/nextjs-vite-rsc";
-import { expect } from "storybook/test";
+import { expect, waitFor } from "storybook/test";
 import { signInAs, testUser } from "#test/auth.ts";
 
 // The home page, in the root layout, whose header knows who is signed in.
@@ -23,6 +23,16 @@ export const SignedIn: Story = {
     await expect(
       await canvas.findByRole("link", { name: `Signed in as ${testUser.email}, open profile` }),
     ).toBeVisible();
+  },
+};
+
+// The theme toggle of the root layout. Its menu opens in a portal, outside
+// of the page's `<main>`: `canvas` is the page's `<body>`, which has it.
+export const DarkMode: Story = {
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.click(await canvas.findByRole("button", { name: "Toggle theme" }));
+    await userEvent.click(await canvas.findByRole("menuitem", { name: "Dark" }));
+    await waitFor(() => expect(document.documentElement).toHaveClass("dark"));
   },
 };
 
