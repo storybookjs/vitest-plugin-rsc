@@ -118,6 +118,10 @@ export async function loadDocument(html: string, url: string, container?: Elemen
         if (!before.has(node) && !isViteStyle(node) && !isGraphStylesheet(node)) node.remove();
       }
     }
+    // The URL first: a relative URL of what comes back, the href of a
+    // stylesheet, resolves against it once the node is in the document again.
+    if (window.location.href !== runnerUrl) window.history.replaceState(null, "", runnerUrl);
+    runnerHref = undefined;
     document.head.append(...parked);
     // In the order they are in: what stayed, and the CSS Vite added.
     runnerBody.append(...pageBody.childNodes);
@@ -129,8 +133,6 @@ export async function loadDocument(html: string, url: string, container?: Elemen
     // before the app starts.
     delete (self as { __next_f?: unknown }).__next_f;
     delete (self as { __next_s?: unknown }).__next_s;
-    if (window.location.href !== runnerUrl) window.history.replaceState(null, "", runnerUrl);
-    runnerHref = undefined;
   };
   unload = leave;
 
@@ -169,6 +171,11 @@ export async function loadDocument(html: string, url: string, container?: Elemen
       URL.canParse(link.getAttribute("href")!, url) &&
       new URL(link.getAttribute("href")!, url).origin === window.location.origin,
   );
+  // Where the browser ended up, after any redirects. Before the page is in
+  // the document, which requests what its relative URLs resolve to against
+  // it, and before its scripts run: one of them may read `location`.
+  window.history.replaceState(null, "", url);
+
   if (container) {
     document.head.append(...page.head.childNodes);
     container.append(...page.body.childNodes);
@@ -179,10 +186,6 @@ export async function loadDocument(html: string, url: string, container?: Elemen
     document.head.append(...page.head.childNodes);
     document.body.append(...page.body.childNodes);
   }
-
-  // Where the browser ended up, after any redirects. Before the scripts of
-  // the page run: one of them may read `location`.
-  window.history.replaceState(null, "", url);
 
   const loading = stylesheets.filter((link) => !link.disabled).map(stylesheetLoaded);
   await Promise.race([Promise.all(loading), left]);
