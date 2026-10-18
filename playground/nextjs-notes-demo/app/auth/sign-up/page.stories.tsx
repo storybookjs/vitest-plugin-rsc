@@ -1,6 +1,7 @@
 import type { Meta, StoryObj } from "@storybook/nextjs-vite-rsc";
 import { expect } from "storybook/test";
 import { auth } from "#lib/auth.ts";
+import { roundTrip } from "#.storybook/round-trip.ts";
 
 // Signing up with a magic link of Better Auth, whose API is a mock: see
 // page.test.tsx.
@@ -32,7 +33,9 @@ export const InvalidEmail: Story = {
   play: async ({ canvas, userEvent }) => {
     await userEvent.type(await canvas.findByLabelText("Email"), "not-an-email");
     await userEvent.click(canvas.getByRole("button", { name: "Create account" }));
-    await expect(await canvas.findByText("Enter a valid email address.")).toBeVisible();
+    await expect(
+      await canvas.findByText("Enter a valid email address.", {}, roundTrip),
+    ).toBeVisible();
     await expect(canvas.getByLabelText("Email")).toHaveValue("not-an-email");
   },
 };
@@ -44,7 +47,11 @@ export const CreateAccount: Story = {
     await userEvent.type(await canvas.findByLabelText("Email"), "ada@example.com");
     await userEvent.click(canvas.getByRole("button", { name: "Create account" }));
     await expect(
-      await canvas.findByText("Check your inbox for the link to finish creating your account."),
+      await canvas.findByText(
+        "Check your inbox for the link to finish creating your account.",
+        {},
+        roundTrip,
+      ),
     ).toBeVisible();
     await expect(auth.api.signInMagicLink).toHaveBeenCalledWith(
       expect.objectContaining({

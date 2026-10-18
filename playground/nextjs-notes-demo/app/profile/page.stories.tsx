@@ -2,6 +2,7 @@ import type { Meta, StoryObj } from "@storybook/nextjs-vite-rsc";
 import { expect, mocked } from "storybook/test";
 import { auth } from "#lib/auth.ts";
 import { signInAs, testUser } from "#test/auth.ts";
+import { roundTrip } from "#.storybook/round-trip.ts";
 
 // The profile, whose passkeys come from Better Auth: a story says what the
 // mock of `auth.api` answers, see lib/__mocks__/auth.ts and page.test.tsx.
@@ -68,7 +69,11 @@ export const SignOut: Story = {
   play: async ({ canvas, userEvent }) => {
     await userEvent.click(await canvas.findByRole("button", { name: "Sign out" }));
     await expect(
-      await canvas.findByRole("heading", { level: 1, name: "Welcome back to Notes Demo" }),
+      await canvas.findByRole(
+        "heading",
+        { level: 1, name: "Welcome back to Notes Demo" },
+        roundTrip,
+      ),
     ).toBeVisible();
     await expect(auth.api.signOut).toHaveBeenCalledOnce();
   },

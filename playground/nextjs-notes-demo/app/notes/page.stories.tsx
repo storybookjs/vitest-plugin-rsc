@@ -1,10 +1,11 @@
 import type { Meta, StoryObj } from "@storybook/nextjs-vite-rsc";
 import { eq } from "drizzle-orm";
-import { expect, waitFor, within } from "storybook/test";
+import { expect, waitForElementToBeRemoved, within } from "storybook/test";
 import { seedNotes } from "#.storybook/sample-notes.ts";
 import { notes } from "#db/schema.ts";
 import { db } from "#lib/db.ts";
 import { signInAs, signOut, testUser } from "#test/auth.ts";
+import { roundTrip } from "#.storybook/round-trip.ts";
 
 // The list of notes. A story file is server code, so the `db` it seeds is the
 // one the page reads: see page.test.tsx.
@@ -50,7 +51,9 @@ export const ToggleFavorite: Story = {
   },
   play: async ({ canvas, userEvent }) => {
     await userEvent.click(await canvas.findByRole("button", { name: "Favorite note" }));
-    await expect(await canvas.findByRole("button", { name: "Unfavorite note" })).toBeVisible();
+    await expect(
+      await canvas.findByRole("button", { name: "Unfavorite note" }, roundTrip),
+    ).toBeVisible();
     const [note] = await db.select().from(notes).where(eq(notes.title, "Book recommendations"));
     await expect(note?.isFavorite).toBe(true);
   },
@@ -66,7 +69,7 @@ export const DeleteNote: Story = {
   play: async ({ canvas, userEvent }) => {
     const row = within((await canvas.findByText("Old meeting notes")).closest("li")!);
     await userEvent.click(row.getByRole("button", { name: "Delete note" }));
-    await waitFor(() => expect(canvas.queryByText("Old meeting notes")).toBeNull());
+    await waitForElementToBeRemoved(() => canvas.queryByText("Old meeting notes"), roundTrip);
     await expect(await db.select().from(notes)).toHaveLength(1);
   },
 };
