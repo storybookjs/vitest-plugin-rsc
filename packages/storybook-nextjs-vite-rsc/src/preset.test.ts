@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import type { Plugin } from "vite";
 import { afterAll, expect, test, vi } from "vitest";
 import * as preset from "@storybook/nextjs-vite-rsc/preset";
+import { vitestPluginRSC } from "vitest-plugin-rsc";
 
 // The preset through the package's exports: the source with `pnpm test`, the
 // build with `pnpm test:dist`. What it gives vitestPluginNext() is what the
@@ -51,15 +52,17 @@ test("Storybook's Vite builder and React renderer, with Vite's app builder", asy
 test("the preview of the framework in place of the annotations of @storybook/react that render", async () => {
   const react = (entry: string) => fileURLToPath(import.meta.resolve(`@storybook/react/${entry}`));
   const annotations = preset.previewAnnotations as (input: unknown[]) => Promise<unknown[]>;
-  const addon = { bare: "@storybook/addon-a11y/preview", absolute: "/addon/preview.js" };
-  const result = await annotations([
-    react("entry-preview"),
-    react("entry-preview-argtypes"),
-    addon,
-  ]);
-  expect(result.slice(0, 2)).toEqual([react("entry-preview-argtypes"), addon]);
+  // What the renderer's preset gave, which Storybook applies before the
+  // framework's, and the addons' and the project's after it.
+  const argtypes = {
+    bare: "@storybook/react/entry-preview-argtypes",
+    absolute: react("entry-preview-argtypes"),
+  };
+  const result = await annotations([react("entry-preview"), react("entry-preview-docs"), argtypes]);
+  expect(result[0]).toEqual(argtypes);
   // Next to the preset, in `src` or `dist`.
-  expect(result[2]).toMatch(/storybook-nextjs-vite-rsc\/(src\/preview\.ts|dist\/preview\.js)$/);
+  expect(result[1]).toMatch(/storybook-nextjs-vite-rsc\/(src\/preview\.ts|dist\/preview\.js)$/);
+  expect(result).toHaveLength(2);
 });
 
 test("the plugin, with the stories and .storybook as files of the host", async () => {
@@ -97,7 +100,8 @@ test("the virtual module of the project has the preview file, from the root", as
 });
 
 test("a Vite config of the project that has the plugin already is an error", async () => {
-  await expect(viteFinal({ plugins: [{ name: "rsc:run-in-browser" }] })).rejects.toThrow(
+  // The plugin as a project adds it, so that the check holds its name.
+  await expect(viteFinal({ plugins: [vitestPluginRSC()] })).rejects.toThrow(
     "viteConfigPath: '.storybook/vite.config.ts'",
   );
 });

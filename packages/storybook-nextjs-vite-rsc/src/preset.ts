@@ -32,9 +32,10 @@ export const features: PresetProperty<"features"> = async (existing) => ({
 
 // `@storybook/react`'s annotations but those that render or decorate: they
 // render with `react-dom` and extend `React.Component`, which the rsc layer's
-// React, the server's, does not have. The framework's preview renders, as the last
-// of the annotations, and a client story renders with `@storybook/react`'s
-// renderer from the browser layer (client-canvas.tsx).
+// React, the server's, does not have. The framework's preview renders, after
+// the renderer's annotations and before the addons' and the project's, and a
+// client story renders with `@storybook/react`'s renderer from the browser
+// layer (client-canvas.tsx).
 const renderingAnnotations = new Set(
   ["entry-preview", "entry-preview-docs", "entry-preview-rsc"].map((entry) =>
     fileURLToPath(import.meta.resolve(`@storybook/react/${entry}`)),
@@ -60,7 +61,9 @@ const frameworkFiles = new RegExp(`^${frameworkDir.replace(/[.*+?^${}()|[\]\\]/g
 
 export const viteFinal: ViteFinal = async (config, options) => {
   const root = path.resolve(config.root ?? path.join(options.configDir, ".."));
-  if (await hasVitePlugins(config.plugins ?? [], ["rsc:run-in-browser"])) {
+  // The names of the plugin's own plugins.
+  const names = vitestPluginRSC().map((plugin) => plugin.name);
+  if (await hasVitePlugins(config.plugins ?? [], names)) {
     throw new Error(
       "@storybook/nextjs-vite-rsc adds vitest-plugin-rsc to the Vite config itself, and the " +
         "Vite config of the project has it already. Give Storybook a Vite config without it: " +

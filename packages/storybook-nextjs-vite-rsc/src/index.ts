@@ -28,6 +28,8 @@ type FrameworkName = CompatibleString<"@storybook/nextjs-vite-rsc">;
 export type FrameworkOptions = {
   /** The options of `@storybook/builder-vite`, like `viteConfigPath`. */
   builder?: BuilderOptions;
+  /** React's `<StrictMode>` around a client story, as `@storybook/react` has it. */
+  strictMode?: boolean;
 } & Pick<VitestPluginNextOptions, "build" | "browserModules">;
 
 /** What `.storybook/main.ts` exports. */
