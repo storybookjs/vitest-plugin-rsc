@@ -277,6 +277,43 @@ test("leaves what the project itself depends on to the app, in the walk of the h
   expect(serverCode.isServerCode(moduleOf("host-core/node_modules/react"), "rsc")).toBe(false);
 });
 
+test("walks the package of a module of the host that `host.packages` names by its subpath", () => {
+  // `host-ui/test` is a module of `host-ui`, which has no `package.json` of
+  // its own there. So is `@host/blocks/preview` of `@host/blocks`, and every
+  // module under `host-kit/internal/` of `host-kit`.
+  const root = fakeProject([], {
+    "host-ui": ["theme"],
+    theme: [],
+    "@host/blocks": [],
+    "host-kit": [],
+  });
+  const serverCode = createServerCode(registry, {
+    // `missing` is not installed: skipped, like a package that is missing.
+    host: {
+      packages: ["host-ui/test", "@host/blocks/preview", "host-kit/internal/*", "missing/sub"],
+    },
+  });
+  serverCode.configure(root);
+  serverCode.addTestFiles(() => false);
+  const moduleOf = (name: string) => path.join(root, "node_modules", name, "index.js");
+
+  // The module is the page's, and the rest of its package is not.
+  expect(serverCode.isHostPackage("host-ui/test")).toBe(true);
+  expect(serverCode.isHostPackage("host-ui/test/spy")).toBe(true);
+  expect(serverCode.isHostPackage("host-ui")).toBe(false);
+  expect(serverCode.isHostPackage("host-ui/theming")).toBe(false);
+  expect(serverCode.isHostPackage("@host/blocks/preview")).toBe(true);
+  expect(serverCode.isHostPackage("@host/blocks")).toBe(false);
+  expect(serverCode.isHostPackage("host-kit/internal/preview")).toBe(true);
+  expect(serverCode.isHostPackage("host-kit")).toBe(false);
+  // The files of the package are the host's runtime, in the rsc layer too,
+  // and so are what it depends on.
+  expect(serverCode.isServerCode(moduleOf("host-ui"), "rsc")).toBe(false);
+  expect(serverCode.isServerCode(moduleOf("theme"), "rsc")).toBe(false);
+  expect(serverCode.isServerCode(moduleOf("@host/blocks"), "rsc")).toBe(false);
+  expect(serverCode.isServerCode(moduleOf("host-kit"), "rsc")).toBe(false);
+});
+
 test("stops with a message when nothing says which files are the host's", async () => {
   const serverCode = createServerCode(registry);
   serverCode.configure(root);
