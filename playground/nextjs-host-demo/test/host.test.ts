@@ -142,7 +142,7 @@ test("renders a node of the host again with other props, keeping its state", asy
 test("a node has the CSS of the files of the host that render it", async ({ page, errors }) => {
   // A page of the host that renders a node from another file of the host,
   // in a page of its own: callout.html.
-  await open(
+  const callout = await open(
     page,
     errors,
     "callout",
@@ -152,6 +152,9 @@ test("a node has the CSS of the files of the host that render it", async ({ page
     },
     "callout.html",
   );
+  // Its file with `"use client"`, which loaded before the page imported the
+  // plugin.
+  expect(callout.__hostReports).toEqual([{ from: "host/callout-note.tsx", react: nextReact }]);
   // The dev server has loaded both files of the host now, and the page of
   // `?view=node` imports both: a node has the CSS of the files that render
   // it, whatever the server and the page loaded. Then `?view=switch`, which
