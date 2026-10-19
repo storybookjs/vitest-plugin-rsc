@@ -1,8 +1,17 @@
 import { handleRequest, renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
-import { afterAll, afterEach, beforeEach, expect, test, vi, type MockInstance } from "vitest";
+import {
+  afterAll,
+  afterEach,
+  beforeEach,
+  expect,
+  onTestFinished,
+  test,
+  vi,
+  type MockInstance,
+} from "vitest";
 import { page } from "vitest/browser";
 import { cssRules } from "../test/browser.ts";
-import { fileChanged } from "../test/service.ts";
+import { fileChanged, releaseStylesheet } from "../test/service.ts";
 
 // What Next's compiler does to the code of the app, and what the app gets from
 // Vite instead: next/dynamic, styled-jsx, next/script, CSS, and the checks of
@@ -73,6 +82,49 @@ test("does not wait for a stylesheet of another origin, or for an alternate one"
   await renderServer({ url: "/elsewhere-css" });
 
   await expect.element(page.getByText("Loaded without them")).toBeVisible();
+});
+
+// The link of a stylesheet that the page is loading.
+const lateStylesheet = (key: string) =>
+  document.querySelector(`link[href="/service/late-stylesheet?key=${key}"]`);
+
+test("shows a page once the stylesheets of its head have loaded, and what was there until then", async () => {
+  const key = crypto.randomUUID();
+  const { body, title } = document;
+  // The color of the text as it comes into the document.
+  const colors: string[] = [];
+  const observer = new MutationObserver(() => {
+    const text = document.querySelector(".late");
+    if (text && colors.length === 0) colors.push(getComputedStyle(text).color);
+  });
+  observer.observe(document.documentElement, { childList: true, subtree: true });
+  onTestFinished(() => observer.disconnect());
+
+  const loading = renderServer({ url: `/late-css?key=${key}` });
+  // The head of the page is in the document, where its stylesheet loads.
+  await expect.poll(() => lateStylesheet(key)).not.toBeNull();
+  expect(document.body).toBe(body);
+  expect(document.title).toBe(title);
+  expect(document.querySelector(".late")).toBeNull();
+
+  await releaseStylesheet(key);
+  await loading;
+
+  expect(colors).toEqual(["rgb(0, 0, 255)"]);
+});
+
+test("leaves a page whose stylesheet is still loading, which does not show after it", async () => {
+  const key = crypto.randomUUID();
+  const left = renderServer({ url: `/late-css?key=${key}` }).catch((error: unknown) => error);
+  await expect.poll(() => lateStylesheet(key)).not.toBeNull();
+
+  await renderServer({ url: "/notice" });
+  expect(await left).toMatchObject({ name: "AbortError" });
+  await releaseStylesheet(key);
+
+  await expect.element(page.getByText("The office is closed on Friday.")).toBeVisible();
+  expect(lateStylesheet(key)).toBeNull();
+  expect(document.querySelector(".late")).toBeNull();
 });
 
 test("gives a class of a CSS module the name Next gives it", async () => {
