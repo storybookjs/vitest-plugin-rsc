@@ -150,16 +150,17 @@ function noRouter(url: URL): Error {
 // As with `fetch`, what waits on a signal rejects as soon as it aborts, with
 // its reason. The answer may still come, or fail: a render that goes on
 // without its request fails in its own ways. Nobody reads that answer, and
-// `discard` lets go of it.
+// `abandon` lets go of what it started.
 function unlessAborted<T>(
   answer: Promise<T>,
   signal: AbortSignal,
-  discard?: (late: T) => unknown,
+  abandon: (answer: Promise<T>) => void,
 ): Promise<T> {
   return new Promise((resolve, reject) => {
     const abort = () => {
       reject(signal.reason);
-      answer.then(discard).catch(() => {});
+      answer.catch(() => {});
+      abandon(answer);
     };
     if (signal.aborted) return abort();
     signal.addEventListener("abort", abort, { once: true });
@@ -234,7 +235,7 @@ async function sendRequest(
         },
       ),
       request.signal,
-      (late) => late?.body?.cancel(),
+      (answer) => void answer.then((late) => late?.body?.cancel()).catch(() => {}),
     );
     if (!response) {
       // After a redirect it is another request than the one that was passed in.
@@ -639,7 +640,7 @@ export type RenderServerResult = {
    * Next's error page or the app's `error.tsx`, so `renderServer()` resolves
    * with the error here; it rejects when there is no page to open. The array
    * grows while the page is open, also with the pages the app loads from it,
-   * until the test leaves it.
+   * until `unmount()`, `cleanup()` or another `renderServer()` leaves it.
    */
   errors: unknown[];
   /** Leaves the page. The cookies and the `headers` stay until the test ends. */
@@ -844,8 +845,10 @@ export async function renderServer(
     );
   }
   // Leaving the page that is there takes what was added to the document
-  // since it loaded, so the container comes after that.
-  await leavePage("another renderServer()");
+  // since it loaded, so the container comes after that. An abort meanwhile
+  // rejects at once, and makes no container.
+  const left = leavePage("another renderServer()");
+  await (signal ? unlessAborted(left, signal, () => {}) : left);
   // A base element of the test's own. Not a body: that is the one of the
   // document, whichever it is by then. A node has a body of its own, and the
   // page after it another.
@@ -923,22 +926,16 @@ type Opening = {
 let pageErrors: unknown[] = [];
 
 async function loadPage(url: URL, init: RequestInit, opening?: Opening): Promise<Response> {
-  const signal = opening?.signal;
-  signal?.throwIfAborted();
   const leaving = leavePage(opening ? "another renderServer()" : "a page load of the app");
   const load = (currentLoad = new AbortController());
   const loading = loadAfter(leaving, load, url, init, opening);
-  if (!signal) return loading;
+  if (!opening?.signal) return loading;
   // Until the load has settled, the abort leaves its page as another
   // `renderServer()` would, also one that is still loading. Not a page that
-  // came after it. A page that cannot be left fails the test.
-  const abort = () => {
+  // came after it. A page that cannot be left is reported.
+  return unlessAborted(loading, opening.signal, () => {
     if (currentLoad === load) leavePage("the signal of renderServer()").catch(reportError);
-  };
-  signal.addEventListener("abort", abort, { once: true });
-  const settled = () => signal.removeEventListener("abort", abort);
-  loading.then(settled, settled);
-  return unlessAborted(loading, signal);
+  });
 }
 
 // Loads the page once the one before it is left.

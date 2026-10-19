@@ -41,13 +41,15 @@ function reportingErrors<Options extends RootOptions>(
 }
 
 // Whether an error is how Next goes on, not a failure: a `redirect()`, a
-// `notFound()` and the like, which Next does not report either.
+// `notFound()` and the like, which Next does not report either. Only the
+// error itself, as Next checks it: not one that has such an error as its
+// `cause`, which `unstable_rethrow()` throws too.
 function isNextControlFlow(error: unknown): boolean {
   try {
     unstable_rethrow(error);
     return false;
-  } catch {
-    return true;
+  } catch (thrown) {
+    return thrown === error;
   }
 }
 
@@ -71,10 +73,11 @@ export async function start(
   errors: unknown[],
 ): Promise<{ unmount(): void }> {
   setNodeOnPage(nodeOnPage);
-  // A node hears of all of them: a `notFound()` takes its place too.
+  // A node hears of all of them: a `notFound()` takes its place too. A page
+  // that was left, whose load has aborted, reports no more.
   const report = (error: unknown) => {
     nodeOnPage?.errored(error);
-    if (!isNextControlFlow(error)) errors.push(error);
+    if (!signal.aborted && !isNextControlFlow(error)) errors.push(error);
   };
   // Not when this module loads: a page that was left while it loaded must not
   // take over from the page that is there now. The modules of the app wait

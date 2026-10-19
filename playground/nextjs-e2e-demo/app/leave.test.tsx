@@ -253,6 +253,25 @@ test("stops the page load of a node while the server renders it, with the reason
   await expect.element(page.getByText("Held node")).not.toBeInTheDocument();
 });
 
+test("leaves no page that came after it when its signal aborts", async () => {
+  const [holding, release] = hold();
+  held.slowWidget = holding;
+  const controller = new AbortController();
+  const first = renderServer({ url: "/slow-start", signal: controller.signal });
+  const left = first.catch((error: unknown) => error);
+  await expect.poll(() => holding.loading, { timeout: 10_000 }).toBe(true);
+
+  // Before the first one has settled: the next page has taken over its load.
+  const next = renderServer({ url: "/settings" });
+  controller.abort();
+
+  expect(await left).toMatchObject({ name: "AbortError" });
+  await next;
+  release();
+  await page.getByRole("button", { name: "Use Dutch" }).click();
+  await expect.element(page.getByText("Language: nl")).toBeInTheDocument();
+});
+
 test("opens nothing for a signal that has aborted, and keeps the page that is open", async () => {
   const signal = AbortSignal.abort();
 
