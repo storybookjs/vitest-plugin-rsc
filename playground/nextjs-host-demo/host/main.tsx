@@ -15,7 +15,8 @@ import { show, state } from "./state.ts";
 // `"use client"`, `?view=package` for the ones of a package of the host in
 // `node_modules`: one by the name of the package, one through its entry.
 // `?view=module` renders a component of a file of the host with
-// `"use client"` itself, as a framework renders a story, `?view=action`
+// `"use client"` itself, as a framework renders a story, and
+// `?view=in-place` renders it again after a change. `?view=action`
 // loads such a file while a node of the app is open, and `?view=after-page`
 // renders its components after the page it loaded during. `?view=pages`
 // moves the URL of the host between two pages of the app. `?view=tag`
@@ -67,6 +68,12 @@ await show(async () => {
         (error: Error) => error.message,
       ),
     };
+    state.__hostReports = reports;
+    return;
+  }
+  if (view === "in-place") {
+    const { renderInPlace } = await import("./in-place.tsx");
+    await renderInPlace(container);
     state.__hostReports = reports;
     return;
   }
