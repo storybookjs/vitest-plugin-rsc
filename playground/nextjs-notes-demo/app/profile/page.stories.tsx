@@ -1,18 +1,16 @@
-import type { Meta, StoryObj } from "@storybook/nextjs-vite-rsc";
 import { expect, mocked } from "storybook/test";
 import { auth } from "#lib/auth.ts";
 import { signInAs, testUser } from "#test/auth.ts";
 import { roundTrip } from "#.storybook/round-trip.ts";
+import preview from "#.storybook/preview.server.tsx";
 
 // The profile, whose passkeys come from Better Auth: a story says what the
 // mock of `auth.api` answers, see lib/__mocks__/auth.ts and page.test.tsx.
-export default {
+const meta = preview.meta({
   title: "Pages/Profile",
   parameters: { nextjs: { url: "/profile" } },
   beforeEach: () => signInAs(),
-} satisfies Meta;
-
-type Story = StoryObj;
+});
 
 const passkey = {
   publicKey: "pk",
@@ -23,13 +21,13 @@ const passkey = {
   transports: "internal",
 } as const;
 
-export const NoPasskeys: Story = {
+export const NoPasskeys = meta.story({
   play: async ({ canvas }) => {
     await expect(await canvas.findByText("No passkeys yet")).toBeVisible();
   },
-};
+});
 
-export const WithPasskeys: Story = {
+export const WithPasskeys = meta.story({
   beforeEach: () => {
     mocked(auth.api.listPasskeys).mockResolvedValue([
       {
@@ -52,20 +50,20 @@ export const WithPasskeys: Story = {
     await expect(await canvas.findByText("iPhone passkey")).toBeVisible();
     await expect(canvas.getByText("Added Mar 20, 2026")).toBeVisible();
   },
-};
+});
 
 // After the first sign-in, the magic link opens the profile with this query.
-export const PasskeySetup: Story = {
+export const PasskeySetup = meta.story({
   parameters: { nextjs: { url: "/profile?setup=passkey" } },
   play: async ({ canvas }) => {
     await expect(
       await canvas.findByRole("heading", { level: 1, name: "Add a passkey" }),
     ).toBeVisible();
   },
-};
+});
 
 // A Server Action that signs out with Better Auth and redirects to sign in.
-export const SignOut: Story = {
+export const SignOut = meta.story({
   play: async ({ canvas, userEvent }) => {
     await userEvent.click(await canvas.findByRole("button", { name: "Sign out" }));
     await expect(
@@ -77,4 +75,4 @@ export const SignOut: Story = {
     ).toBeVisible();
     await expect(auth.api.signOut).toHaveBeenCalledOnce();
   },
-};
+});

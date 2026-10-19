@@ -1,4 +1,3 @@
-import type { Meta, StoryObj } from "@storybook/nextjs-vite-rsc";
 import { eq } from "drizzle-orm";
 import { expect, waitForElementToBeRemoved, within } from "storybook/test";
 import { seedNotes } from "#.storybook/sample-notes.ts";
@@ -6,30 +5,29 @@ import { notes } from "#db/schema.ts";
 import { db } from "#lib/db.ts";
 import { signInAs, signOut, testUser } from "#test/auth.ts";
 import { roundTrip } from "#.storybook/round-trip.ts";
+import preview from "#.storybook/preview.server.tsx";
 
 // The list of notes. A story file is server code, so the `db` it seeds is the
 // one the page reads: see page.test.tsx.
-export default {
+const meta = preview.meta({
   title: "Pages/Notes",
   parameters: { nextjs: { url: "/notes" } },
   beforeEach: () => signInAs(),
-} satisfies Meta;
-
-type Story = StoryObj;
+});
 
 // A fixed date, so a story looks the same every day.
 const updatedAt = new Date("2026-08-21T09:00:00.000Z");
 
-export const Empty: Story = {
+export const Empty = meta.story({
   play: async ({ canvas }) => {
     await expect(await canvas.findByText("No notes yet")).toBeVisible();
     await expect(canvas.getByRole("link", { name: "Create your first note" })).toBeVisible();
   },
-};
+});
 
 // A page has no props: `count` is an input of `beforeEach`, which seeds the
 // database before the request. A new value in Controls loads the page again.
-export const WithNotes: StoryObj<{ count: number }> = {
+export const WithNotes = meta.type<{ args: { count: number } }>().story({
   args: { count: 5 },
   argTypes: { count: { control: { type: "range", min: 1, max: 24 } } },
   beforeEach: async ({ args }) => {
@@ -40,10 +38,10 @@ export const WithNotes: StoryObj<{ count: number }> = {
     const favorited = Math.min(args.count, 2);
     await expect(await canvas.findByText(`${total} · ${favorited} favorited`)).toBeVisible();
   },
-};
+});
 
 // A Server Action that writes to the database and refreshes the page.
-export const ToggleFavorite: Story = {
+export const ToggleFavorite = meta.story({
   beforeEach: async () => {
     await db
       .insert(notes)
@@ -57,9 +55,9 @@ export const ToggleFavorite: Story = {
     const [note] = await db.select().from(notes).where(eq(notes.title, "Book recommendations"));
     await expect(note?.isFavorite).toBe(true);
   },
-};
+});
 
-export const DeleteNote: Story = {
+export const DeleteNote = meta.story({
   beforeEach: async () => {
     await db.insert(notes).values([
       { ownerId: testUser.id, title: "Team offsite agenda", updatedAt },
@@ -72,10 +70,10 @@ export const DeleteNote: Story = {
     await waitForElementToBeRemoved(() => canvas.queryByText("Old meeting notes"), roundTrip);
     await expect(await db.select().from(notes)).toHaveLength(1);
   },
-};
+});
 
 // `requireUser()` sends a visitor without a session to sign in.
-export const SignedOut: Story = {
+export const SignedOut = meta.story({
   beforeEach: signOut,
   play: async ({ canvas }) => {
     await expect(
@@ -83,4 +81,4 @@ export const SignedOut: Story = {
     ).toBeVisible();
     await expect(location.pathname).toBe("/auth/sign-in");
   },
-};
+});

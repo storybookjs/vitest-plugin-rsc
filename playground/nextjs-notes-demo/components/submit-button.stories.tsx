@@ -1,14 +1,13 @@
 "use client";
 
-import type { Meta, StoryObj } from "@storybook/nextjs-vite-rsc";
-import type { ComponentProps } from "react";
-import { expect, fn } from "storybook/test";
+import { expect, fn, type Mock } from "storybook/test";
 import { SubmitButton } from "./submit-button.tsx";
+import preview from "#.storybook/preview.tsx";
 
 // A client story of the button of the app's forms, which reads the status of
 // its form with `useFormStatus()`. Its form's action is the `action` spy,
 // a function of the browser, which a server story could not pass.
-const meta = {
+const meta = preview.type<{ args: { action: Mock<(data: FormData) => Promise<void>> } }>().meta({
   title: "Components/SubmitButton",
   component: SubmitButton,
   tags: ["autodocs"],
@@ -18,16 +17,10 @@ const meta = {
       <SubmitButton {...args} />
     </form>
   ),
-} satisfies Meta<
-  ComponentProps<typeof SubmitButton> & { action: (data: FormData) => Promise<void> }
->;
-
-export default meta;
-
-type Story = StoryObj<typeof meta>;
+});
 
 // Busy while the action runs: `play` holds it until it has seen that.
-export const Pending: Story = {
+export const Pending = meta.story({
   play: async ({ args, canvas, userEvent }) => {
     let done!: () => void;
     args.action.mockImplementation(() => new Promise<void>((resolve) => (done = resolve)));
@@ -38,4 +31,4 @@ export const Pending: Story = {
     done();
     await expect(await canvas.findByRole("button", { busy: false })).toBeEnabled();
   },
-};
+});
