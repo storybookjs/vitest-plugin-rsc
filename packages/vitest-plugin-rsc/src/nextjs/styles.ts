@@ -832,7 +832,12 @@ function createBuiltStylesheets(
         ...[...routes.values()].flatMap((segments) => [...segments.values()]),
         ...hostFiles.values(),
       ];
-      for (const item of reached.flat()) {
+      // Every client reference too, which the tab's React can render in the
+      // document of the host by its key: see `references` of BuiltStylesheets.
+      const everyReference = Object.values(manager.clientReferenceMetaMap).map(
+        ({ importId }) => ({ client: importId }),
+      );
+      for (const item of [...reached.flat(), ...everyReference]) {
         if (!("client" in item) || clients.has(item.client)) continue;
         const resolved = await this.resolve(item.client, importer);
         clients.set(item.client, resolved ? stylesheetsOf(reachIn(imports, [resolved.id])) : []);
@@ -915,6 +920,15 @@ function createBuiltStylesheets(
     for (const file of [...hostFiles.keys()].sort()) {
       built.hostFiles[file] = filesOf(idsOf(hostFiles.get(file)!));
     }
+    const references = Object.values(manager?.clientReferenceMetaMap ?? {}).sort((a, b) =>
+      a.referenceKey.localeCompare(b.referenceKey),
+    );
+    built.references = Object.fromEntries(
+      references.map(({ referenceKey, importId }) => [
+        referenceKey,
+        filesOf(idsOf([{ client: importId }])),
+      ]),
+    );
     return [{ pathname: `/${builtStylesheetsFile}`, body: Buffer.from(JSON.stringify(built)) }];
   }
 

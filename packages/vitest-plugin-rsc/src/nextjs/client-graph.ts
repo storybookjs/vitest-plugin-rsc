@@ -9,8 +9,13 @@ import {
   takeFetchedModules,
 } from "../utils.ts";
 import { buildDirectory, builtStylesheets } from "./built-stylesheets.ts";
-import { clientReferenceKeyOf } from "./client-reference.ts";
+import { clientReferenceKeyOf, rendererModule } from "./client-reference.ts";
 import { registry } from "./registry.ts";
+import type {
+  LoadReference,
+  Thenable,
+  createRenderClientReference,
+} from "./render-client-reference.ts";
 import {
   builtClientStylesheetsOf,
   graphStylesheetAttribute,
@@ -82,6 +87,82 @@ async function stylesheetsOf(key: string, builtFile: string | undefined): Promis
 // file from.
 type ClientReferences = { default: Record<string, () => Promise<object>> };
 
+// The files that client references point at, loaded in the graph with their
+// stylesheets linked, by reference key: see `loadReference()`.
+let referenceLoads = new Map<string, Thenable<Record<string, unknown>>>();
+
+function track<T>(promise: Promise<T>): Thenable<T> {
+  const thenable = promise as Thenable<T>;
+  thenable.status = "pending";
+  promise.then(
+    (value) => Object.assign(thenable, { status: "fulfilled", value }),
+    (reason: unknown) => Object.assign(thenable, { status: "rejected", reason }),
+  );
+  return thenable;
+}
+
+async function importReference(key: string): Promise<Record<string, unknown>> {
+  if (buildDirectory) {
+    const references = await graph!.import<ClientReferences>(
+      environmentModule(environment, clientReferencesId),
+    );
+    const load = references.default[key];
+    if (!load) throw new Error(`vitest-plugin-rsc: the build has no client reference "${key}"`);
+    return (await load()) as Record<string, unknown>;
+  }
+  return graph!.import(key);
+}
+
+async function referenceStylesheetsOf(key: string): Promise<string[]> {
+  if (!buildDirectory) {
+    return askDevServer<string[]>(stylesheetsEvent, { url: key } satisfies StylesheetsQuestion);
+  }
+  const built = await builtStylesheets();
+  return (built.references?.[key] ?? []).map((file) => new URL(file, buildDirectory).href);
+}
+
+/**
+ * The file with the reference key `key`, as the tab's graph has it, once its
+ * stylesheets are linked in the document: the same thenable for a key until
+ * the graph evaluates the modules of the app again.
+ */
+const loadReference: LoadReference = (key) => {
+  let loading = referenceLoads.get(key);
+  if (!loading) {
+    loading = track(
+      (async () => {
+        const module = await importReference(key);
+        await linkStylesheets(await referenceStylesheetsOf(key));
+        return module;
+      })(),
+    );
+    referenceLoads.set(key, loading);
+  }
+  return loading;
+};
+
+let createRenderer: typeof createRenderClientReference | undefined;
+
+// The graph of the tab, with the renderer of client references in it.
+async function graphWithRenderer(sourcemaps: boolean): Promise<ModuleRunner> {
+  graph ??= createEnvironmentRunner(environment, { sourcemaps });
+  if (!createRenderer) {
+    const renderer = await graph.import<typeof import("./render-client-reference.ts")>(
+      environmentModule(environment, rendererModule),
+    );
+    createRenderer = renderer.createRenderClientReference;
+    registry.renderClientReference = createRenderer(loadReference);
+  }
+  return graph;
+}
+
+// After the graph evaluated the modules of the app again: references load
+// the new ones, through a renderer that has none of the old ones.
+function forgetReferences(): void {
+  referenceLoads = new Map();
+  if (createRenderer) registry.renderClientReference = createRenderer(loadReference);
+}
+
 /**
  * Evaluates a file of the host with `"use client"` in the module graph of
  * the browser layer: the file with the reference key `key`, which with a dev
@@ -99,7 +180,7 @@ type ClientReferences = { default: Record<string, () => Promise<object>> };
  */
 export async function loadClientFile(key: string, builtFile?: string): Promise<void> {
   if (buildDirectory) {
-    graph ??= createEnvironmentRunner(environment);
+    graph = await graphWithRenderer(false);
     const references = await graph.import<ClientReferences>(
       environmentModule(environment, clientReferencesId),
     );
@@ -116,7 +197,7 @@ export async function loadClientFile(key: string, builtFile?: string): Promise<v
   // The server's modules as they are now: the graph outlives a page load.
   await checkFetchedModules();
   // A test that fails says where, in the file as it is written.
-  graph ??= createEnvironmentRunner(environment, { sourcemaps: true });
+  graph = await graphWithRenderer(true);
   const { evaluatedModules } = graph;
   // After a change of a file the graph evaluates the modules of the app
   // again, as a page load does: the server cannot tell which of them
@@ -127,6 +208,7 @@ export async function loadClientFile(key: string, builtFile?: string): Promise<v
     for (const node of evaluatedModules.idToModuleMap.values()) {
       if (!isDependency(node)) evaluatedModules.invalidateModule(node);
     }
+    forgetReferences();
   }
   registry.browserRequire = browserRequire;
   // The file itself runs every time it loads, as Vitest runs it: its tests,

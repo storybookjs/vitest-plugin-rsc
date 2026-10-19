@@ -29,3 +29,10 @@ export function clientReferenceKeyOf(module: object): string | undefined {
   }
   return key;
 }
+
+/**
+ * The browser layer's half of a client reference that the tab's React
+ * renders, by the id that the tab's graph imports it by: see
+ * render-client-reference.ts. In a build it is an entry of the browser layer.
+ */
+export const rendererModule = "vitest-plugin-rsc/nextjs/render-client-reference";

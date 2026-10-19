@@ -105,6 +105,7 @@ const ownFile = (name: string) =>
 // two are the only files of the layers that import Vitest: a host without
 // Vitest never loads them.
 const setupFile = ownFile("setup");
+const clientProxyFile = ownFile("client-proxy");
 const affectedSetupFile = ownFile("affected/browser");
 // What a test imports `renderServer()` from, and the file that is.
 const testingLibrary = {
@@ -389,19 +390,80 @@ function nextClientBoundaryPlugin(getProject: () => NextProject, resolver: Layer
       if (!code.includes("use client")) return;
 
       const specifier = resolver.toSpecifier(file);
+      const key = JSON.stringify(`/@id/${specifier}`);
       const result = transformDirectiveProxyExport(await parseAstAsync(code), {
         directive: "use client",
         code,
         runtime: (name) =>
           `$$ReactServer.registerClientReference(` +
-          `() => { throw new Error(${JSON.stringify(`${specifier}#${name} is a Client Component and cannot be called on the server`)}) }, ` +
-          `${JSON.stringify(`/@id/${specifier}`)}, ${JSON.stringify(name)})`,
+          `$$clientProxy(${key}, ${JSON.stringify(name)}), ${key}, ${JSON.stringify(name)})`,
       });
       if (!result) return;
       result.output.prepend(
-        `import * as $$ReactServer from ${JSON.stringify(vendoredFlight("server.edge"))};\n`,
+        `import * as $$ReactServer from ${JSON.stringify(vendoredFlight("server.edge"))};\n` +
+          `import { clientProxy as $$clientProxy } from ${JSON.stringify(clientProxyFile)};\n`,
       );
       return { code: result.output.toString(), map: null };
+    },
+  };
+}
+
+// The proxy that Vite RSC gives each export of a client reference module of
+// the rsc layer, in @vitejs/plugin-rsc 0.5.36, which package.json pins:
+// a function that throws. Its key and name follow.
+const viteRscProxy =
+  /\(\) => \{ throw new Error\("Unexpectedly client reference export '" \+ ("(?:[^"\\]|\\.)*") \+ "' is called on server"\) \},\s*("(?:[^"\\]|\\.)*"),\s*("(?:[^"\\]|\\.)*")\)/g;
+
+/**
+ * The proxy of `clientProxy()` for every client reference that Vite RSC
+ * makes in the rsc layer: the one that renders the browser layer's export
+ * when the tab's React renders the reference, see client-proxy.ts. Next's
+ * own files get it from `nextClientBoundaryPlugin()` in their pre-bundle,
+ * where no transform runs. A module that Vite RSC made a client reference
+ * module of, whose proxies this does not find all of, fails the build and
+ * the request: a version of Vite RSC that makes another proxy would else
+ * leave every reference throwing where the host renders it.
+ */
+export function replaceClientProxies(
+  code: string,
+  exportNames: readonly string[] | undefined,
+  id: string,
+): string {
+  let replaced = 0;
+  const out = code.replace(viteRscProxy, (_match, name: string, key: string, again: string) => {
+    if (name !== again) return _match;
+    replaced++;
+    return `$$clientProxy(${key}, ${name}), ${key}, ${name})`;
+  });
+  const calls = code.split("registerClientReference(").length - 1;
+  const expected = exportNames?.length ?? calls;
+  if (replaced === 0 || replaced !== expected || replaced !== calls) {
+    throw new Error(
+      `vitest-plugin-rsc: the proxy of a client reference in ${id} is not the one of ` +
+        `@vitejs/plugin-rsc 0.5.36: ${replaced} of ${expected} replaced. A client reference ` +
+        `that the React of the browser layer renders in the document of the host would ` +
+        `throw. Use the version of @vitejs/plugin-rsc that vitest-plugin-rsc depends on.`,
+    );
+  }
+  return `import { clientProxy as $$clientProxy } from ${JSON.stringify(clientProxyFile)};\n${out}`;
+}
+
+function clientProxyPlugin(
+  rsc: string,
+  referenceOf: (id: string, config: ResolvedConfig) => { exportNames?: string[] } | undefined,
+): Plugin {
+  return {
+    name: "vitest-plugin-rsc:next-client-proxy",
+    enforce: "post",
+    transform(code, id) {
+      if (this.environment.name !== rsc) return;
+      const reference = referenceOf(id, this.environment.getTopLevelConfig());
+      if (!reference) return;
+      try {
+        return { code: replaceClientProxies(code, reference.exportNames, id), map: null };
+      } catch (error) {
+        this.error(error as Error);
+      }
     },
   };
 }
@@ -1043,6 +1105,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
         return serverCode.compile(entry.code, `${id.replace(/\W+/g, "-")}.js`, generatedDefines());
       },
     },
+    clientProxyPlugin(environmentOf.rsc, clientReferenceOf),
     ...clientFiles({
       environments: { rsc: environmentOf.rsc, browser: environmentOf.browser },
       testingLibrary,
