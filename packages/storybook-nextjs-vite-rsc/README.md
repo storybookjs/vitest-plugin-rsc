@@ -271,7 +271,9 @@ previews import listens to Storybook's channel once, and a client story's
 `fn()` is the spy that the Actions panel shows. A package that depends on
 React, like `@storybook/addon-docs`, `storybook/theming` or the renderer,
 is the layer's own, as React is: imported in both previews, it is two
-instances, each listening to the channel.
+instances, each listening to the channel. The framework knows an addon by
+the package path of the preview its preset registers; a preview that a
+preset registers by a plain string is never one instance.
 
 An addon works for server stories when its preview renders no React: hooks
 like `beforeEach` and `afterEach`, loaders, and decorators that work on the
