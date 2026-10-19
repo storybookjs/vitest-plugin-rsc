@@ -21,23 +21,23 @@ const isHostFile = (file: string) =>
   /\.test\.tsx$|\/vitest\.setup\.tsx?$|^\/docs\/.*\.mdx$/.test(file) ||
   file.startsWith(`${framework}/`);
 // Vite RSC made the modules of these files client references: they have
-// `"use client"`. The URL of a file of the project in the browser layer is
-// its path. One of a dependency is a module of Vite RSC that imports it: by
+// `"use client"`, also a component of the app, which is not the host's. The
+// URL of a file of the project in the browser layer is its path. One of a dependency is a module of Vite RSC that imports it: by
 // its file, which Vite RSC has the reference by, without Vite's version, or
 // by the name of its package, when the page imports it by that, with the
 // reference by the id.
 const proxy = "/@id/__x00__virtual:vite-rsc/";
 const references: Record<string, string> = {
   "/app/frame.test.tsx": "/app/frame.test.tsx",
+  "/app/counter.tsx": "/app/counter.tsx",
   "/vitest.setup.tsx": "/vitest.setup.tsx",
   "/app/built.test.tsx": "/app/built.test.tsx",
   "/docs/intro.mdx": "/docs/intro.mdx",
   [`${framework}/client-story.js`]: `${proxy}client-in-server-package-proxy/${encodeURIComponent(`${framework}/client-story.js`)}`,
   [`${framework}/by-name.js?v=1a2b3c4d`]: `${proxy}client-package-proxy/framework/by-name`,
 };
-// The key that the references of a module have in their `$$id`: with a dev
-// server the URL, in a build a hash of the file. This file has the key of a
-// build.
+// The reference key of a file: with a dev server the URL, in a build a hash
+// of the file. This file has the key of a build.
 const builtKeys = new Map([["/app/built.test.tsx", "5f3a9c1e"]]);
 const clientReferenceOf = (id: string) => {
   const url = clientReferenceOfModule(references, id);
@@ -110,10 +110,13 @@ test("has the module of a file with `use client` of the host load the file in th
 
   const loader = transformLoader.call(context("client"), reference, "/app/frame.test.tsx");
 
-  // In front of the reference module, by the key of its references, which
-  // with a dev server is the URL of the file in the browser layer.
+  // In front of the reference module, by the file's reference key, which
+  // with a dev server is the URL of the file in the browser layer. The
+  // module exports it too, under the plugin's own name, by which
+  // `loadClientModule()` tells it.
   expect(loader?.code).toBe(
     `import { loadClientFile as __vitestPluginRscLoadClientFile } from "/plugin/nextjs/internal.js"; ` +
+      `export const __vitest_plugin_rsc_client_file__ = "/app/frame.test.tsx"; ` +
       `await __vitestPluginRscLoadClientFile("/app/frame.test.tsx"); ` +
       reference,
   );
@@ -132,10 +135,11 @@ test("loads a file of the host in a build by its key, with the key of its styles
   expect(loader?.code).toContain(
     `__vitestPluginRscLoadClientFile("5f3a9c1e", "app/built.test.tsx")`,
   );
+  expect(loader?.code).toContain(`export const __vitest_plugin_rsc_client_file__ = "5f3a9c1e"; `);
   expect(loader?.code).not.toContain("/app/built.test.tsx");
 });
 
-test("leaves a file without the directive as it is, and a file that is not the host's", () => {
+test("leaves a file without the directive as it is, and gives a file that is not the host's its key", () => {
   const rsc = context("client");
   const server = `import { test } from "vitest";\nimport { Frame } from "./frame.tsx";\ntest("renders", () => {});\n`;
   const setup = `import { vi } from "vitest";\nimport "./setup.client.tsx";\nvi.mock("./db.ts");\n`;
@@ -145,8 +149,15 @@ test("leaves a file without the directive as it is, and a file that is not the h
   // A setup file without the directive is server code: what it imports with
   // the directive is a reference, as in React.
   expect(transformLoader.call(rsc, setup, "/vitest.setup.ts")).toBeUndefined();
-  // A file of the app with the directive, and a file of the host in another layer.
-  expect(transformLoader.call(rsc, reference, "/app/counter.tsx")).toBeUndefined();
+  // A file of the app with the directive: its key, by which
+  // `loadClientModule()` says that nothing loaded it, and no load.
+  expect(transformLoader.call(rsc, reference, "/app/counter.tsx")?.code).toBe(
+    `export const __vitest_plugin_rsc_client_file__ = "/app/counter.tsx"; ` + reference,
+  );
+  expect(
+    transformLoader.call(context("client", "build"), reference, "/app/counter.tsx")?.code,
+  ).not.toContain("__vitestPluginRscLoadClientFile");
+  // A file of the host in another layer.
   expect(
     transformLoader.call(context("react_client"), reference, "/app/frame.test.tsx"),
   ).toBeUndefined();
@@ -167,7 +178,7 @@ test("loads a file of the host with another extension, whose code a plugin of th
   // One without the directive is no client file: Vite RSC made no reference of it.
   const page = `export default function Content() { return <h1>Notes</h1>; }\n`;
   expect(transformLoader.call(rsc, page, "/docs/notes.mdx")).toBeUndefined();
-  // The extension alone makes no file the host's.
+  // The extension alone makes no file the host's, nor a client file.
   expect(transformLoader.call(rsc, reference, "/app/readme.mdx")).toBeUndefined();
 
   // The check of `vi.mock()` parses no code that the host has yet to compile.
