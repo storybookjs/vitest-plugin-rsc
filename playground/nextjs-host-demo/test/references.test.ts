@@ -78,3 +78,24 @@ test("a change of a file that a client reference points at reloads the host's do
     }
   });
 });
+
+test("a change of a file that only a client reference points at reloads the host's document", async ({
+  page,
+  errors,
+}) => {
+  // No file of the host imports late.tsx: only the reference of references.tsx.
+  const file = fileURLToPath(new URL("../app/components/late.tsx", import.meta.url));
+  const source = fs.readFileSync(file, "utf8");
+  await open(page, errors, "references", async (page) => {
+    await page.evaluate(() => Object.assign(window, { __beforeChange: true }));
+    fs.writeFileSync(file, source.replace(">late<", ">later<"));
+    try {
+      await page.locator("#host-root").getByText("later").waitFor({ timeout: 30_000 });
+      const reloaded = await page.evaluate(() => !("__beforeChange" in window));
+      console.log("hmr late", reloaded);
+      expect(reloaded).toBe(true);
+    } finally {
+      fs.writeFileSync(file, source);
+    }
+  });
+});
