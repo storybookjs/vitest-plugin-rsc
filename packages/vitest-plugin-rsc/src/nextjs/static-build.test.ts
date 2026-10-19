@@ -25,7 +25,6 @@ test("gives the static build Next's layers, its directives, its order and its fi
         next_ssr: "vitest-plugin-rsc/nextjs/ssr",
         react_client: "vitest-plugin-rsc/nextjs/client",
       },
-      browserEntries: { renderer: "vitest-plugin-rsc/nextjs/render-client-reference" },
       directives: ["turbopack"],
       strictExecutionOrder: true,
       files: emittedFiles,

@@ -1,7 +1,6 @@
 import path from "node:path";
 import { normalizePath, type Plugin } from "vite";
 import { withStaticBuild } from "../static-build.ts";
-import { rendererModule } from "./client-reference.ts";
 
 // Next's part of the static build, which ../static-build.ts builds: the ssr
 // layer, which runs through a module runner like the browser layer, the files
@@ -69,8 +68,6 @@ export function nextStaticBuild(options: NextStaticBuildOptions): Plugin {
       if (command !== "build") return;
       return withStaticBuild({
         entries: { [ssr]: options.entries.ssr, [browser]: options.entries.browser },
-        // What renders a client reference in the document of the host.
-        browserEntries: { renderer: rendererModule },
         // Next's own files have directives for Turbopack.
         directives: ["turbopack"],
         // The server's platform comes before a module of Next's server.

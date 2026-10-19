@@ -24,8 +24,6 @@ const tab = vi.hoisted(() => ({
   buildDirectory: undefined as string | undefined,
   /** The client references of the build, by key: the URL of the file each evaluates. */
   references: {} as Record<string, string>,
-  /** What loads the file of a client reference, which the graph gives its renderer. */
-  load: undefined as undefined | ((key: string) => Promise<object> & { status?: string }),
 }));
 
 // A build's stylesheets, by the path of a file of the host from the root.
@@ -36,8 +34,6 @@ const built = {
     "host/badge.tsx": ["_next/static/css/badge-1a2b3c4d.css"],
     "host/plain.tsx": [],
   },
-  // A client reference, by its key: the file of 9c8e1f3b is a component of the app.
-  references: { "9c8e1f3b": ["_next/static/css/far-5e6f7a8b.css"] },
 };
 
 vi.mock("./built-stylesheets.ts", () => ({
@@ -57,15 +53,6 @@ vi.mock("../utils.ts", () => ({
       invalidateModule() {},
     },
     async import(url: string) {
-      // The renderer of client references, which this graph has no React for.
-      if (url === "vitest-plugin-rsc/nextjs/render-client-reference") {
-        return {
-          createRenderClientReference: (load: typeof tab.load) => {
-            tab.load = load;
-            return () => null;
-          },
-        };
-      }
       // The list of a build's references, which evaluates a file by its key.
       if (url === "/built/references.js") {
         const evaluate = (file: string) => async () => {
@@ -98,7 +85,6 @@ beforeEach(() => {
   ]);
   tab.buildDirectory = undefined;
   tab.references = {};
-  tab.load = undefined;
   head.clear();
   vi.stubGlobal("__viteRscCallServer", undefined);
   vi.stubGlobal("document", {
@@ -200,52 +186,6 @@ test("links each stylesheet once for the tab, until Vitest's setup file takes th
   expect(links()).toEqual(["/_next/static/css/badge.css"]);
 });
 
-// The file of a client reference that the tab's React renders: the graph
-// loads it for the renderer, which it installs as the host loads a file.
-test("loads the file of a client reference once, with its stylesheets linked first", async () => {
-  await importHostFile("/host/badge.tsx", "Badge");
-  const load = tab.load!;
-
-  const loading = load("/host/card.tsx");
-
-  expect(loading.status).toBe("pending");
-  expect(load("/host/card.tsx")).toBe(loading);
-  expect(await loading).toEqual({ url: "/host/card.tsx", evaluation: 2 });
-  expect(loading.status).toBe("fulfilled");
-  expect(links()).toEqual(["/_next/static/css/badge.css", "/_next/static/css/card.css"]);
-  expect(tab.evaluated).toEqual(["/host/badge.tsx", "/host/card.tsx"]);
-});
-
-test("loads a file of the host again once the host imported it again, and no other", async () => {
-  await importHostFile("/host/badge.tsx", "Badge");
-  const load = tab.load!;
-  const badge = load("/host/badge.tsx");
-  const card = load("/host/card.tsx");
-  await Promise.all([badge, card]);
-
-  // The host imports the file again: a reference to it renders that evaluation.
-  await importHostFile("/host/badge.tsx", "Badge");
-
-  expect(load("/host/badge.tsx")).not.toBe(badge);
-  expect(load("/host/card.tsx")).toBe(card);
-});
-
-test("loads every file again once Vitest's setup file took the stylesheets", async () => {
-  const { unlinkClientStylesheets } = await graph();
-  await importHostFile("/host/badge.tsx", "Badge");
-  const load = tab.load!;
-  const card = load("/host/card.tsx");
-  await card;
-
-  unlinkClientStylesheets();
-  const again = load("/host/card.tsx");
-  await again;
-
-  expect(again).not.toBe(card);
-  // The next test file of the tab has the stylesheets of what it renders.
-  expect(links()).toEqual(["/_next/static/css/badge.css", "/_next/static/css/card.css"]);
-});
-
 test("gives any other module as it is", async () => {
   const { loadClientModule } = await graph();
   const reference = { renderGreeting() {} };
@@ -305,16 +245,6 @@ test("loads a file of the host in a static build, by its key", async () => {
   await expect(loadClientFile("0000", "host/badge.tsx")).rejects.toThrow(
     'vitest-plugin-rsc: the build has no client reference "0000"',
   );
-
-  // A client reference, by its key, with the stylesheets the build has for it.
-  expect(await tab.load!("9c8e1f3b")).toEqual({
-    url: "/vitest-plugin-rsc/react_client/assets/far.js",
-    evaluation: 4,
-  });
-  expect(links()).toContain("https://site.test/docs/_next/static/css/far-5e6f7a8b.css");
-  const failed = tab.load!("0000");
-  await expect(failed).rejects.toThrow('the build has no client reference "0000"');
-  expect(failed.status).toBe("rejected");
 });
 
 test("has a Server Action say that it needs a page of the app, from the start", async () => {

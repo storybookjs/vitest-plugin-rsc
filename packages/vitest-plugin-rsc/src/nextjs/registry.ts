@@ -133,13 +133,6 @@ export type NextRegistry = {
    */
   browserRequire(id: string): Promise<unknown>;
   loadBrowserModule(id: string): Promise<unknown>;
-  /**
-   * What the proxy of a client reference calls while the React of the tab's
-   * graph of the browser layer renders it: the export `name` of the file
-   * with the reference key `key`, rendered as Flight renders it. Set once
-   * that graph exists, see client-graph.ts and client-proxy.ts.
-   */
-  renderClientReference?(key: string, name: string, props: object): unknown;
   ssr: { AppPageRouteModule: new (options: unknown) => unknown };
   /** For Next's Node.js server: what stands in for the files of a build. */
   node: Record<string, AnyFunction>;

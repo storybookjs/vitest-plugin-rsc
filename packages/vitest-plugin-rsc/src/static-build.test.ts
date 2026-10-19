@@ -194,7 +194,6 @@ test("has Vite write nothing of the layers: their files come from their bundles"
           input: {
             entry: "vitest-plugin-rsc/nextjs/client",
             references: "virtual:vitest-plugin-rsc/client-references",
-            renderer: "vitest-plugin-rsc/nextjs/render-client-reference",
           },
         },
       },
@@ -538,7 +537,7 @@ test("tells the page where the layers are from the directory of the build", () =
     `const directory = new URL("../", import.meta.url).href;\n` +
       `export default {\n` +
       `  "next_ssr": { base: directory, entries: {"vitest-plugin-rsc/nextjs/ssr":"vitest-plugin-rsc/next_ssr/entry.js"}, modules: "vitest-plugin-rsc/next_ssr/modules.json" },\n` +
-      `  "react_client": { base: directory, entries: {"vitest-plugin-rsc/nextjs/client":"vitest-plugin-rsc/react_client/entry.js","virtual:vitest-plugin-rsc/client-references":"vitest-plugin-rsc/react_client/references.js","vitest-plugin-rsc/nextjs/render-client-reference":"vitest-plugin-rsc/react_client/renderer.js"}, modules: "vitest-plugin-rsc/react_client/modules.json" },\n` +
+      `  "react_client": { base: directory, entries: {"vitest-plugin-rsc/nextjs/client":"vitest-plugin-rsc/react_client/entry.js","virtual:vitest-plugin-rsc/client-references":"vitest-plugin-rsc/react_client/references.js"}, modules: "vitest-plugin-rsc/react_client/modules.json" },\n` +
       `};\n`,
   );
   // A dev server serves the modules of every layer itself.

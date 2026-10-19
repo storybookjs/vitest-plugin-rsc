@@ -3,9 +3,7 @@ import { vitestPluginRscSourceConditions } from "./vitest.conditions.ts";
 import storybookNextjsViteRscProject from "./packages/storybook-nextjs-vite-rsc/vitest.config.ts";
 import vitestPluginRscProject from "./packages/vitest-plugin-rsc/vitest.config.ts";
 import nextjsE2eDemoBuildProject from "./playground/nextjs-e2e-demo/vitest.build.config.ts";
-import nextjsE2eDemoProject, {
-  nextjsE2eDemoOneTabProject,
-} from "./playground/nextjs-e2e-demo/vitest.config.ts";
+import nextjsE2eDemoProject from "./playground/nextjs-e2e-demo/vitest.config.ts";
 import nextjsHostDemoBuildProject from "./playground/nextjs-host-demo/vitest.build.config.ts";
 import nextjsHostDemoProject from "./playground/nextjs-host-demo/vitest.config.ts";
 import { nextjsNotesProjects } from "./playground/nextjs-notes-demo/vitest.config.ts";
@@ -47,7 +45,6 @@ export default defineConfig({
       rscVitestDemoProject,
       rscVitestDemoBuildProject,
       nextjsE2eDemoProject,
-      nextjsE2eDemoOneTabProject,
       nextjsE2eDemoBuildProject,
       nextjsHostDemoProject,
       nextjsHostDemoBuildProject,

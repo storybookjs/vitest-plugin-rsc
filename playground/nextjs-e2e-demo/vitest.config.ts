@@ -119,70 +119,35 @@ const nextReact = (
   createRequire(import.meta.url)("next/dist/compiled/react") as { version: string }
 ).version;
 
-type E2eTests = {
-  name: string;
-  include: string[];
-  exclude?: string[];
-  fileParallelism?: boolean;
-  sequence?: { groupOrder: number };
-};
-
-// A project of the tests of the app, with plugins of its own.
-function e2eProject({ exclude = [], ...tests }: E2eTests) {
-  return defineProject({
-    root: fileURLToPath(new URL("./", import.meta.url)),
-    plugins: [
-      transformsService(),
-      vitestPluginRSC(),
-      // The helpers in `test/` work on the page, so they have to see the
-      // browser. Every other module that is not a test file is server code.
-      // A file of the host, as a test file and a setup file are, renders in
-      // the tab.
-      vitestPluginNext({
-        browserModules: ["test/**"],
-        host: { files: ["vitest.render.tsx"] },
-        affectedTests: true,
-        build,
-      }),
-      hitsService(),
-      headersService(),
-      fileChangeService(),
-    ],
-    resolve: {
-      conditions: vitestPluginRscSourceConditions,
+export default defineProject({
+  root: fileURLToPath(new URL("./", import.meta.url)),
+  plugins: [
+    transformsService(),
+    vitestPluginRSC(),
+    // The helpers in `test/` work on the page, so they have to see the browser.
+    // Every other module that is not a test file is server code.
+    vitestPluginNext({ browserModules: ["test/**"], affectedTests: true, build }),
+    hitsService(),
+    headersService(),
+    fileChangeService(),
+  ],
+  resolve: {
+    conditions: vitestPluginRscSourceConditions,
+  },
+  test: {
+    name: "nextjs-e2e-demo",
+    include: ["**/*.test.{ts,tsx}"],
+    // The build and its test run without Vitest: see vite.config.ts.
+    exclude: ["node_modules", "build-test/**", "dist/**"],
+    provide: { build, nextReact },
+    browser: {
+      enabled: true,
+      headless: true,
+      provider: playwright(),
+      instances: [{ browser: "chromium" }],
     },
-    test: {
-      ...tests,
-      // The build and its test run without Vitest: see vite.config.ts.
-      exclude: ["node_modules", "build-test/**", "dist/**", ...exclude],
-      provide: { build, nextReact },
-      browser: {
-        enabled: true,
-        headless: true,
-        provider: playwright(),
-        instances: [{ browser: "chromium" }],
-      },
-      isolate: false,
-      // The first is server code, like a test file: the second has `"use client"`.
-      setupFiles: ["./vitest.setup.ts", "./vitest.setup.client.tsx"],
-    },
-  });
-}
-
-// Test files that run one after the other in one tab, which the files of
-// the other project are not sure to: see app/one-tab/.
-const oneTab = "app/one-tab/*.test.tsx";
-
-export default e2eProject({
-  name: "nextjs-e2e-demo",
-  include: ["**/*.test.{ts,tsx}"],
-  exclude: [oneTab],
-});
-
-export const nextjsE2eDemoOneTabProject = e2eProject({
-  name: "nextjs-e2e-demo-one-tab",
-  include: [oneTab],
-  fileParallelism: false,
-  // Vitest runs a project with another number of workers in a group of its own.
-  sequence: { groupOrder: 1 },
+    isolate: false,
+    // The first is server code, like a test file: the second has `"use client"`.
+    setupFiles: ["./vitest.setup.ts", "./vitest.setup.client.tsx"],
+  },
 });
