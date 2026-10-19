@@ -959,9 +959,10 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
       // evaluate a second runtime next to the first, with another page
       // registry and other globals. A page load evaluates them all again,
       // once. Only the rsc layer's graph is walked: a module that only a
-      // Client Component imports is not in it, and the host sees its change
-      // when it renders again. Under Vitest a change runs test files again:
-      // see Watch Mode.
+      // Client Component imports is not in it. A file of the host with
+      // `"use client"` that imports it changes with it (client-files.ts), and
+      // the host sees any other one as a page renders it again. Under Vitest
+      // a change runs test files again: see Watch Mode.
       hotUpdate({ file, modules }) {
         if (underVitest || this.environment.name !== environmentOf.rsc) return;
         if (!modules.some(importedByRoute)) return;

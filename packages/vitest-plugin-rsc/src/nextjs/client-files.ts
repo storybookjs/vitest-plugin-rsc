@@ -1,6 +1,13 @@
 import path from "node:path";
 import { hasDirective } from "@vitejs/plugin-rsc/transforms";
-import { normalizePath, parseAstAsync, type Plugin, type ResolvedConfig } from "vite";
+import {
+  isCSSRequest,
+  normalizePath,
+  parseAstAsync,
+  type EnvironmentModuleNode,
+  type Plugin,
+  type ResolvedConfig,
+} from "vite";
 import { builtHostModuleUrl, hostModulePrefix } from "../host-module.ts";
 import { builtHostFileKey } from "./styles.ts";
 
@@ -11,10 +18,11 @@ import { builtHostFileKey } from "./styles.ts";
 // makes it a client reference, as it does every file with the directive: a
 // module that exports a reference for each export, and runs none of the
 // file's code. The plugin has that module load the file in the browser layer
-// before anything else runs, see `loadClientFiles()` and client-graph.ts.
-// That is all of it. A file without the directive is server code, and what
-// it imports with the directive is a reference, which loads when something
-// renders it, as in React.
+// before anything else runs, see `loadClientFiles()` and client-graph.ts,
+// and with a dev server a change of what the file imports there changes that
+// module. That is all of it. A file without the directive is server code,
+// and what it imports with the directive is a reference, which loads when
+// something renders it, as in React.
 //
 // The file runs in the browser layer, and the test runner does not: `vitest`
 // has the test that is running. So an import of `vitest`, `@vitest/*` or the
@@ -145,9 +153,10 @@ export function hostModuleCode(
  * layer, and the error for a file with `"use client"` that mocks a module,
  * before Vite RSC drops the code of the file. After Vite RSC, which made
  * the file a reference: the line in front of that module, which loads the
- * file in the browser layer by the key of the reference. Not a
- * file without the directive: a test file without it renders with
- * `renderServer()`, in a page with a graph of its own.
+ * file in the browser layer by the key of the reference, and with a dev
+ * server the change of that module for a change of what the file imports
+ * there. Not a file without the directive: a test file without it renders
+ * with `renderServer()`, in a page with a graph of its own.
  */
 export function clientFiles(options: ClientFilesOptions): Plugin[] {
   const { rsc, browser } = options.environments;
@@ -226,8 +235,54 @@ export function clientFiles(options: ClientFilesOptions): Plugin[] {
           this.environment.mode === "build" ? builtHostFileKey(file, config.root) : undefined;
         return { code: loadClientFileCode(reference, internal, builtFile) + code, map: null };
       },
+      // That module stands for the file's code in the browser layer, of which
+      // it has none. So a change of a module that the file imports there,
+      // also through other modules, is a change of that module: Vite takes
+      // it to the host as a change of the file itself, the host imports the
+      // file again, and the line of the new module evaluates the file with
+      // what changed. Before the hook that loads the document again for a
+      // change of what a route imports, which then still takes over. Not a
+      // stylesheet, which changes in place through its link.
+      hotUpdate: {
+        order: "pre",
+        handler({ file, modules, server }) {
+          if (this.environment.name !== rsc || isCSSRequest(file)) return;
+          const changed = server.environments[browser]?.moduleGraph.getModulesByFile(file);
+          if (!changed) return;
+          const config = this.environment.getTopLevelConfig();
+          const updated = new Set(modules);
+          for (const hostFile of hostFilesImporting(changed, isHostFile)) {
+            for (const node of this.environment.moduleGraph.getModulesByFile(hostFile) ?? []) {
+              const { id } = node;
+              if (id && hostFileOf(id) && clientReferenceOf(id, config)) updated.add(node);
+            }
+          }
+          // The module of a file of the host that changed itself is there already.
+          return updated.size === modules.length ? undefined : [...updated];
+        },
+      },
     },
   ];
+}
+
+/**
+ * The files of the host among `modules` and the modules that import them in
+ * a module graph, also through other modules.
+ */
+function hostFilesImporting(
+  modules: Iterable<EnvironmentModuleNode>,
+  isHostFile: (file: string) => boolean,
+): Set<string> {
+  const files = new Set<string>();
+  const seen = new Set<EnvironmentModuleNode>();
+  const queue = [...modules];
+  for (let node = queue.pop(); node; node = queue.pop()) {
+    if (seen.has(node)) continue;
+    seen.add(node);
+    if (node.file && isHostFile(node.file)) files.add(node.file);
+    queue.push(...node.importers);
+  }
+  return files;
 }
 
 // What Vitest hoists to mock a module, by the name it is called with.

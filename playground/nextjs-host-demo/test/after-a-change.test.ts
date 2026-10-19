@@ -107,3 +107,35 @@ test("a change of another page of the host keeps the page that is open", async (
   expect(await page.evaluate(() => "__beforeTheChange" in window)).toBe(true);
   expect(await page.getByRole("heading", { name: "Hello from the page" }).count()).toBe(1);
 });
+
+// What host/client-module.tsx reported: once for every time it ran.
+const moduleReports = () =>
+  ((window as HostWindow).__hostReports ?? []).filter(
+    (entry) => (entry as { from: string }).from === "host/client-module.tsx",
+  );
+
+test('a change of what a file with "use client" imports renders it again in place', async ({
+  page,
+}) => {
+  const { copy, url } = await serveCopy();
+  await openPage(page, url.replace("view=page", "view=in-place"));
+  await page.getByRole("button", { name: "Clicks: 0" }).waitFor();
+  // A component that only the file of the host imports, which no route has.
+  const badge = path.join(copy, "app/components/badge.tsx");
+  fs.writeFileSync(badge, fs.readFileSync(badge, "utf8").replace("Clicks:", "Taps:"));
+  await page.getByRole("button", { name: "Taps: 0" }).waitFor({ timeout: 30_000 });
+  // The host imported the file once more, in the same document.
+  expect(await page.evaluate(moduleReports)).toHaveLength(2);
+  // A change of the file itself: once more, not twice.
+  const file = path.join(copy, "host/client-module.tsx");
+  fs.writeFileSync(
+    file,
+    fs.readFileSync(file, "utf8").replace("react: version", "react: version, changed: true"),
+  );
+  await expect
+    .poll(async () => (await page.evaluate(moduleReports)).at(-1), { timeout: 30_000 })
+    .toMatchObject({ changed: true });
+  expect(await page.evaluate(moduleReports)).toHaveLength(3);
+  await page.getByRole("button", { name: "Taps: 0" }).waitFor();
+  expect(await page.evaluate(() => "__beforeTheChange" in window)).toBe(true);
+});

@@ -15,7 +15,8 @@ import { show, state } from "./state.ts";
 // `"use client"`, `?view=package` for the ones of a package of the host in
 // `node_modules`: one by the name of the package, one through its entry.
 // `?view=module` renders a component of a file of the host with
-// `"use client"` itself, as a framework renders a story, `?view=action`
+// `"use client"` itself, as a framework renders a story, and
+// `?view=in-place` renders it again after a change. `?view=action`
 // loads such a file while a node of the app is open, and `?view=after-page`
 // renders its components after the page it loaded during. `?view=pages`
 // moves the URL of the host between two pages of the app. `?view=tag`
@@ -67,6 +68,26 @@ await show(async () => {
         (error: Error) => error.message,
       ),
     };
+    state.__hostReports = reports;
+    return;
+  }
+  if (view === "in-place") {
+    // A component of a file of the host with `"use client"`, rendered again
+    // in place after a change of the file or of what it imports, as a
+    // framework renders a story again: Vite's client imports the file again,
+    // and `loadClientModule()` gives the new module's evaluation.
+    const { renderClient } = await loadClientModule(await import("./render-client.tsx"));
+    let unmount = () => {};
+    type ClientModule = typeof import("./client-module.tsx");
+    const render = async (module: ClientModule) => {
+      const { Badge } = await loadClientModule(module);
+      unmount();
+      unmount = renderClient(Badge, container);
+    };
+    await render(await import("./client-module.tsx"));
+    import.meta.hot?.accept("./client-module.tsx", (module) => {
+      if (module) void show(() => render(module as unknown as ClientModule));
+    });
     state.__hostReports = reports;
     return;
   }

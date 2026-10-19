@@ -1,5 +1,8 @@
-import type { Plugin } from "vite";
-import { expect, test } from "vitest";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { createServer, type EnvironmentModuleNode, type Plugin } from "vite";
+import { expect, onTestFinished, test, vi } from "vitest";
 import { hostModulePrefix, isHostModule } from "../host-module.ts";
 import {
   clientFiles,
@@ -323,4 +326,125 @@ test("serves a module of the host to the page as the module it stands for", () =
 test("tells a module of the host apart as a module runner spells it", () => {
   expect(isHostModule("/@id/__x00__vitest-plugin-rsc/host-module/vitest")).toBe(true);
   expect(isHostModule("/@id/vitest")).toBe(false);
+});
+
+// A dev server of a project with a file of the host with `"use client"`,
+// `host.tsx`, which imports `value.ts` and `value.css` in the browser layer,
+// and an entry of the host that imports it in the rsc layer and takes a change
+// of it in place, as a framework does that renders it again. The plugin of
+// Vite RSC is a stand-in that makes the file a reference module.
+async function serveHostFile() {
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "client-files-")));
+  onTestFinished(() => fs.rmSync(root, { recursive: true, force: true }));
+  const files = {
+    "host.tsx": '"use client";\nimport "./value.css";\nexport { value } from "./value.ts";\n',
+    "value.ts": 'export const value = "one";\n',
+    "value.css": "p { color: red }\n",
+    "main.ts": 'import "./host.tsx";\nimport.meta.hot?.accept("./host.tsx", () => {});\n',
+    "internal.ts": "export async function loadClientFile() {}\n",
+  };
+  for (const [name, code] of Object.entries(files)) fs.writeFileSync(path.join(root, name), code);
+  const at = (name: string) => path.join(root, name);
+
+  // The modules of the rsc layer that Vite takes a change of a file to, once
+  // the plugins have said which.
+  const changes = new Map<string, PromiseWithResolvers<string[]>>();
+  const changeOf = (file: string) => {
+    if (!changes.has(file)) changes.set(file, Promise.withResolvers());
+    return changes.get(file)!;
+  };
+  const [own, loaders] = clientFiles({
+    environments: { rsc: "client", browser: "react_client" },
+    testingLibrary,
+    internal: at("internal.ts"),
+    isHostFile: (file) => file === at("host.tsx"),
+    isHostPackage: () => false,
+    clientReferenceOf: (id) => (id === at("host.tsx") ? { referenceKey: "/host.tsx" } : undefined),
+  });
+  const server = await createServer({
+    root,
+    configFile: false,
+    logLevel: "silent",
+    server: { middlewareMode: true, ws: false },
+    environments: { client: {}, react_client: { consumer: "client" } },
+    plugins: [
+      own!,
+      {
+        name: "vite-rsc-stand-in",
+        transform(_, id) {
+          if (this.environment.name === "client" && id === at("host.tsx")) {
+            return 'export const value = { $$id: "/host.tsx#value" };\n';
+          }
+        },
+      },
+      loaders!,
+      {
+        name: "changes",
+        hotUpdate: {
+          order: "post",
+          handler({ file, modules }: { file: string; modules: EnvironmentModuleNode[] }) {
+            if (this.environment.name !== "client") return;
+            changeOf(file).resolve(modules.map(({ url }) => url));
+          },
+        },
+      },
+    ],
+  });
+  onTestFinished(() => server.close());
+  // What the rsc layer sends the page: an update, by the module that takes it.
+  const rsc = server.environments.client!;
+  let sent = Promise.withResolvers<unknown>();
+  vi.spyOn(rsc.hot, "send").mockImplementation((payload: unknown) => sent.resolve(payload));
+  // What the page has loaded: the entry of the host in the rsc layer, and
+  // the file in the graph of the browser layer.
+  await rsc.transformRequest("/main.ts");
+  await rsc.transformRequest("/host.tsx");
+  for (const name of ["/host.tsx", "/value.ts", "/value.css"]) {
+    await server.environments.react_client!.transformRequest(name);
+  }
+
+  return {
+    hostModule: () => rsc.moduleGraph.getModuleById(at("host.tsx"))!,
+    /**
+     * Changes a file. `modules`: the ones of the rsc layer that Vite takes
+     * the change to, once the plugins have said which. `sent`: what the rsc
+     * layer sends the page next.
+     */
+    change(name: string, code: string) {
+      sent = Promise.withResolvers();
+      fs.writeFileSync(at(name), code);
+      return { modules: changeOf(at(name)).promise, sent: sent.promise };
+    },
+  };
+}
+
+test("takes a change of what a file of the host imports in the browser layer to the host as a change of the file", async () => {
+  const { hostModule, change } = await serveHostFile();
+  expect(hostModule().transformResult).not.toBeNull();
+
+  // The module of the file in the rsc layer imports nothing of `value.ts`.
+  const { modules, sent } = change("value.ts", 'export const value = "two";\n');
+  expect(await modules).toEqual(["/host.tsx"]);
+
+  // The host imports the file again, whose new module loads the file again.
+  expect(await sent).toEqual({
+    type: "update",
+    updates: [expect.objectContaining({ path: "/main.ts", acceptedPath: "/host.tsx" })],
+  });
+  expect(hostModule().transformResult).toBeNull();
+});
+
+test("takes a change of the file itself to the host once", async () => {
+  const { change } = await serveHostFile();
+
+  const { modules, sent } = change("host.tsx", '"use client";\nexport const value = "changed";\n');
+  expect(await modules).toEqual(["/host.tsx"]);
+  expect(await sent).toEqual({ type: "update", updates: [expect.anything()] });
+});
+
+test("leaves a stylesheet that a file of the host imports to change in place", async () => {
+  const { change } = await serveHostFile();
+
+  // No module of the rsc layer, so Vite sends that layer's page nothing.
+  expect(await change("value.css", "p { color: green }\n").modules).toEqual([]);
 });
