@@ -27,6 +27,17 @@ export type HostWindow = {
   __hostCalloutLinked?: boolean;
   /** For `?view=rerender`: renders the greeting again for another name. */
   __hostRerender?: (name: string) => Promise<void>;
+  /** For `?view=early`: the status of the `fetch` of a file of the host. */
+  __hostFetched?: number;
+  /** For `?view=early`: when it was done, by `performance.now()`. */
+  __hostReadyAt?: number;
+  /**
+   * For `?view=early`: sends a request to the app with `handleRequest()`, and
+   * resolves with the status of the response, or the name of the error.
+   */
+  __hostRequest?: (path: string) => Promise<number | string>;
+  /** For `?view=early`: the plugin's `cleanup()`. */
+  __hostCleanup?: () => Promise<void>;
 };
 
 export const state = window as HostWindow;

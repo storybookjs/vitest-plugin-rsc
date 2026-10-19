@@ -3,6 +3,7 @@ import { server } from "vitest/browser";
 import { cleanup, keepStorageKeys } from "./index.ts";
 import { forgetClientFiles } from "./client-graph.ts";
 import { registry } from "./registry.ts";
+import { ssrLayer } from "./server-layers.ts";
 
 // Registered by `vitestPluginNext()` as a setup file. With affected/browser.ts
 // the only module of the layers that imports Vitest, which another host, or a
@@ -33,6 +34,12 @@ beforeAll(({}, suite) => {
 // What Vitest's UI stores on this origin as its settings change, also while
 // the tests run: its panels, and its dark mode through VueUse.
 keepStorageKeys(["vitest-*", "vueuse-color-scheme"]);
+
+// The ssr layer, which the entry does not wait for: with a dev server, the
+// first time it loads compiles Next's server, which takes longer than a test
+// may. In a setup file it does not count towards a test's timeout. A layer
+// that fails to load fails the test file here.
+await ssrLayer;
 
 // Without arguments: a hook gets the test's context, which is no options.
 afterEach(() => cleanup());
