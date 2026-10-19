@@ -1,6 +1,11 @@
 import { reports } from "host-report";
 import { tags } from "host-report/tags";
-import { cleanup, loadClientModule, renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
+import {
+  cleanup,
+  handleRequest,
+  loadClientModule,
+  renderServer,
+} from "vitest-plugin-rsc/nextjs/testing-library";
 import { renderCallout } from "./callout.tsx";
 import { greetingFor, renderGreeting } from "./greeting.tsx";
 import { renderTag } from "./tag.tsx";
@@ -25,8 +30,10 @@ import { show, state } from "./state.ts";
 // pre-bundled, and leaves what it tagged through the page's
 // `host-report/tags`, and `?view=rerender` renders a node again with other props,
 // without a page load. `?view=stored` opens a page and stores in the
-// browser, as a story's `beforeEach` does. A second page of the host, with a
-// node of its own, is callout.html.
+// browser, as a story's `beforeEach` does. `?view=early` renders no route,
+// as a story of a Client Component does, and leaves the test a way to send
+// a request to the app. A second page of the host, with a node of its own,
+// is callout.html.
 const view = new URLSearchParams(window.location.search).get("view");
 await show(async () => {
   if (view === "client" || view === "package") {
@@ -41,6 +48,24 @@ await show(async () => {
     return;
   }
   const container = document.getElementById("host-root")!;
+  if (view === "early") {
+    // What a page of the host does that renders no route: a `fetch` of a file
+    // of its own, a file of the host with `"use client"`, and `cleanup()`, as
+    // a framework cleans up before each story. None of it is the server's.
+    state.__hostFetched = (await fetch("./callout.html")).status;
+    const { Badge } = await loadClientModule(await import("./client-module.tsx"));
+    const { renderClient } = await loadClientModule(await import("./render-client.tsx"));
+    renderClient(Badge, container);
+    await cleanup();
+    state.__hostReadyAt = performance.now();
+    state.__hostRequest = (path) =>
+      handleRequest(path).then(
+        (response) => response.status,
+        (error: Error) => error.name,
+      );
+    state.__hostCleanup = cleanup;
+    return;
+  }
   if (view === "module") {
     // What the rsc layer has of the file: a client reference module, with a
     // reference for each export. The file's own exports are the browser
