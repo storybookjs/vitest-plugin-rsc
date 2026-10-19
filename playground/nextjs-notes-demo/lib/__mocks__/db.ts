@@ -5,9 +5,9 @@ import { drizzle } from "drizzle-orm/pglite";
 import * as schema from "#db/schema.ts";
 import type { db as appDb } from "../db.ts";
 
-// What `#lib/db.ts` is in the tests and the stories, which vitest.setup.ts
-// and .storybook/preview.tsx mock it with: a PGlite database in memory, one
-// for the document, with the tables of db/schema.ts. Each test and each
+// `#lib/db.ts` in the tests and the stories, which vitest.setup.ts and
+// .storybook/preview.tsx mock with this file: a PGlite database in memory,
+// one for the document, with the tables of db/schema.ts. Each test and each
 // story empties it first.
 
 // The SQL of the schema: see test/schema-sql.ts.
