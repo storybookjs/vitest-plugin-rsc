@@ -499,6 +499,7 @@ test("loads the page of the app's route when a node links to it", async () => {
   const { container } = await renderServer(<Link href="/notes">All notes</Link>, {
     url: "/notes/7",
   });
+  const loads = stopLoads();
 
   await page.getByRole("link", { name: "All notes" }).click();
 
@@ -508,6 +509,7 @@ test("loads the page of the app's route when a node links to it", async () => {
   await expect.element(page.getByRole("navigation", { name: "Main" })).toBeVisible();
   expect(window.location.pathname).toBe("/notes");
   expect(container).toBeEmptyDOMElement();
+  expect(loads).toEqual([]);
 });
 
 // The loads of a document that the plugin lets the browser make, which the
@@ -546,7 +548,7 @@ test("leaves the node at a reload, which reloads the document of the test", asyn
 // and the browser loads the host's document at the host's URL.
 test("leaves the node at a navigation to its own URL, which loads the document of the test", async () => {
   const testUrl = window.location.href;
-  const { container } = await renderServer(<h1>Not the home page</h1>);
+  const { container } = await renderServer(<h1>Not the note</h1>, { url: "/notes/7?tab=1" });
   const loads = stopLoads();
 
   window.location.assign(window.location.href);
@@ -554,7 +556,6 @@ test("leaves the node at a navigation to its own URL, which loads the document o
   await expect.poll(() => loads).toEqual([testUrl]);
   expect(container).toBeEmptyDOMElement();
   expect(window.location.href).toBe(testUrl);
-  await expect.element(page.getByRole("heading", { name: "Home" })).not.toBeInTheDocument();
 });
 
 test("leaves the node at a GET form without an action, which loads the document of the test", async () => {
@@ -574,15 +575,18 @@ test("leaves the node at a GET form without an action, which loads the document 
   expect(window.location.href).toBe(testUrl);
 });
 
-test("loads the app's page in place at a navigation from a node to another pathname", async () => {
-  const { container } = await renderServer(<h1>Not the notes</h1>);
+test("says that a navigation to another origin leaves the app, also at the node's pathname", async () => {
+  await renderServer(<h1>Not the home page</h1>);
+  const reportError = vi.spyOn(window, "reportError").mockImplementation(() => {});
   const loads = stopLoads();
 
-  window.location.assign("/notes");
+  window.location.assign("https://example.com/");
 
-  await expect.element(page.getByRole("heading", { name: "Notes" })).toBeVisible();
-  expect(window.location.pathname).toBe("/notes");
-  expect(container).toBeEmptyDOMElement();
+  await expect.poll(() => reportError.mock.calls).toHaveLength(1);
+  expect(String(reportError.mock.calls[0]![0])).toMatch(
+    "the app navigated to another origin: https://example.com/",
+  );
+  await expect.element(page.getByRole("heading", { name: "Not the home page" })).toBeVisible();
   expect(loads).toEqual([]);
 });
 

@@ -288,7 +288,7 @@ React listens for events on the root's container. For a node that is the `<div>`
 
 ### Leaving The Node
 
-A request belongs to the node when its pathname is the node's. A change of search params, `router.refresh()` and a Server Action stay with the node.
+A request belongs to the node when its pathname is the node's. A change of search params by Next's router, `router.refresh()` and a Server Action stay with the node. A navigation that loads a document is another thing, see below.
 
 A navigation to another pathname gets the app's route for that pathname. Next's router then walks the tree it has and the tree it gets, from the root (`render-tree.js`). It loads the page, instead of navigating on the client, when three things hold at a segment:
 
@@ -302,7 +302,11 @@ This is how an app with two root layouts, in two route groups, moves between the
 
 A link to the node's own pathname stays with the node. With the default URL that pathname is `/`, so a `<Link href="/">` in a node does not load the app's home page.
 
-A navigation that loads a document loads what owns its URL. A reload is one, to the URL that is open. The app owns the URL of a page of its own and any other pathname, so the plugin loads that page, as it does for a page the app navigates to without its router. The host owns the URL of its document, and while a node is open the node's URL stands in for it, any URL with the node's pathname: a node is the test's or the host's, and the app's route at its URL is another page, at `/` the app's home page. So a navigation to the node's URL, like `location.reload()`, `location.assign(location.href)` or a `<form method="get">` without an `action`, leaves the node, which puts back the URL of the document, and lets the browser load the document again at that URL, without the search params of the navigation. A navigation to the URL of the document itself, like a host's `location.replace()` to it, goes to the browser as it is. The URL says which it is: once the app has navigated from the node to another pathname, in the layouts of a route, the page there is the app's, and a reload loads that page.
+A navigation that loads a document loads what owns its URL. A reload is one, to the URL that is open. A navigation to the URL of the host's document goes to the browser as it is, like a host's `location.replace()` to it. Any other URL is the app's, and the plugin loads its page, as it does for a page the app navigates to without its router.
+
+While a node is open, its URL stands in for the host's: any URL of the app's origin with the node's pathname. A node is the test's or the host's, and the app's route at its URL is another page, at `/` the app's home page. So a navigation to the node's URL leaves the node, which puts back the URL of the document, and lets the browser load the document again at that URL, without the search params of the navigation: `location.reload()`, `location.assign(location.href)`, a `<form method="get">` without an `action`, a plain `<a href="?page=2">`.
+
+The URL says which it is: once the app has navigated from the node to another pathname, in the layouts of a route, the page there is the app's, and a reload loads that page.
 
 Under Vitest a navigation to the node's URL loads the tab again, as a reload does without the plugin and in a test file with `"use client"`, and Vitest reports it as an error of the test file. In Storybook it loads the preview again, at the story. The plugin cannot tell a reload of the app from one of the host, and does not have to: a host leaves the page before a reload of its own, Vite with `vite:beforeFullReload` and Storybook with the cleanup of the story, so a reload with a page open is the app's.
 
@@ -382,7 +386,7 @@ What else the plugin does for such a file:
   - `renderServer()` rejects: client code cannot render server code.
   - A Server Action goes through `callServer()` of Vite RSC, which calls a global that each page of Next sets, to post to that page. While no page is open, the plugin has one there that throws: no page would answer, and the action would wait forever. It sets that one when the first file loads and when a page is left, never over the one of a page that is open.
   - `vi.mock()`, `vi.unmock()`, `vi.doMock()`, `vi.doUnmock()` and `vi.hoisted()` stop the run, see [Mocks](#mocks).
-  - A link or a form that navigates, like Next's `<Link>`, which leaves the navigation to the browser without its router. The page would leave the test, and Vitest would lose the tab. The plugin stops a push or a replace to another document while no page of the app is open, and reports an uncaught error that fails the run. Not a reload, and not a download.
+  - A link or a form that navigates, like Next's `<Link>`, which leaves the navigation to the browser without its router. The page would leave the test, and Vitest would lose the tab. The plugin stops a push or a replace to another document while no page of the app is open, and reports an uncaught error that fails the run. Not a reload, not a navigation to the test's own URL, and not a download.
 - **Next's router.** The hooks of `next/navigation` are Next's, outside its app: `useRouter()` throws `invariant expected app router to be mounted`, and `usePathname()`, `useSearchParams()` and `useParams()` return `null`. The plugin leaves those as they are.
 
 What the file imports is the `browser` layer's copy of a module. So a `db` it imports is not the one the Server Components read.

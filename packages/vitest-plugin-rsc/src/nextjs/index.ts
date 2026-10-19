@@ -1144,23 +1144,21 @@ function reloadsDocument(path: string | undefined): boolean {
   if (destination.sameDocument) page?.nodeOnPage?.at(new URL(destination.url).pathname);
   if (destination.sameDocument || hashChange || !event.cancelable) return;
   const url = new URL(destination.url);
-  // A navigation loads what owns its URL, a reload too. The host owns the
-  // URL of its document, and while a node is open the node's URL, any with
-  // its pathname, stands in for it: the node is the host's, and the app's
-  // route there is another page, at `/` the app's home page. So the plugin
-  // leaves the node, which puts back the host's URL, and the browser loads
-  // the host's document there, as it does for the host's URL itself. Any
-  // other URL is the app's. Hosts leave a page before a reload of their own
-  // (Vite with `vite:beforeFullReload`, Storybook with the story's cleanup),
-  // so a reload with a page open is the app's.
-  if (openedAt(url)?.node) {
+  // A navigation that loads a document loads what owns its URL, a reload
+  // too. The host's URL goes to the browser as it is. While a node is open,
+  // a URL of the app's origin with its pathname stands in for the host's:
+  // the app's route there is another page. Leaving puts back the host's URL.
+  // Any other URL is the app's: hosts leave a page before a reload of their
+  // own (Vite with `vite:beforeFullReload`, Storybook with the story's
+  // cleanup).
+  if (destination.url === documentUrl()) return;
+  if (url.origin === window.location.origin && openedAt(url)?.node) {
     event.preventDefault();
     void leavePage("a navigation to the host's document")
       .catch(() => {})
       .then(() => window.location.reload());
     return;
   }
-  if (destination.url === documentUrl()) return;
   if (!page) {
     // No page of the app to load another one of: a component that a test
     // file with `"use client"` rendered has no router. A link or a form
