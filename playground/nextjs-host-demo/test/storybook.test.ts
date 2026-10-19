@@ -421,9 +421,7 @@ test("a page that loads keeps its own <body> when its story is selected again", 
 // loads, the block is in the document, and after it, the block is gone and
 // the page has its style. The page's stylesheets come late here, so that the
 // load takes a while.
-// Fails: this canary shows a story with `layout: 'document'` before its
-// render (`showMain()` in StoryRender of #36889), which a core PR removes.
-test.fails("a page loads under Storybook's preparing block", async ({ page }) => {
+test("a page loads under Storybook's preparing block", async ({ page }) => {
   const canvas = await openStory(page, site!.url, "greeting--default");
   expect(await rendered(canvas, "greeting--default")).toBe("finished");
   let loading!: () => void;
