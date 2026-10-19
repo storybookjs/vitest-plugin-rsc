@@ -17,7 +17,7 @@ in the browser layer, as React renders a Client Component.
 ## Setup
 
 ```sh
-pnpm add -D @storybook/nextjs-vite-rsc storybook vitest-plugin-rsc
+pnpm add -D @storybook/nextjs-vite-rsc storybook vite vitest-plugin-rsc
 ```
 
 `.storybook/main.ts`:
@@ -196,7 +196,7 @@ which runs before the request, so a control can seed the data the page
 reads. A new value is a new page load.
 
 ```ts
-export const Notes = meta.story({
+export const Notes = meta.type<{ args: { count: number } }>().story({
   parameters: { nextjs: { url: "/notes" } },
   args: { count: 3 },
   beforeEach: ({ args }) => seedNotes(args.count),
@@ -257,7 +257,8 @@ instance, in the preview and in the browser layer: an addon that both
 previews import listens to Storybook's channel once, and a client story's
 `fn()` is the spy that the Actions panel shows. A package that depends on
 React, like `@storybook/addon-docs`, `storybook/theming` or the renderer,
-is the layer's own, as React is.
+is the layer's own, as React is: imported in both previews, it is two
+instances, each listening to the channel.
 
 An addon works for server stories when its preview renders no React: hooks
 like `beforeEach` and `afterEach`, loaders, and decorators that work on the
@@ -339,5 +340,13 @@ for both kinds.
 - The iframe of a server story on a docs page does not follow the height
   of its page.
 - Tags of `preview.server.tsx`: see Two Previews.
+- `storybook build` stops with an error of the plugin about the scan of the
+  browser layer.
+- A docs page shows its server stories in iframes that render at once and
+  share the browser's storage, which each story's cleanup clears: a story
+  that sets `localStorage` for its `play` can find it cleared. Keep such a
+  story out of autodocs with `tags: ["!autodocs"]`.
+- A change of an MDX file that shows a client story with `of={…}` fails
+  that block until the preview loads again.
 - Next's router in a client story: `useRouter()` throws there, and
   `usePathname()` returns `null`. A server story has the router.
