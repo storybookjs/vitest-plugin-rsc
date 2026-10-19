@@ -1,5 +1,4 @@
 import { Canvas, Meta } from "@storybook/addon-docs/blocks";
-import * as Greeting from "./greeting.stories.tsx";
 import { Pressed } from "./press-button.stories.tsx";
 
 <Meta title="Introduction" />
@@ -10,13 +9,13 @@ A docs page renders in the browser, as a file with "use client" does.
 
 ## A server story
 
-It renders on the server, in a page of the app, which the docs page shows in an iframe:
+It renders on the server, in a page of the app, which the docs page shows in an iframe. A docs page cannot import its file, which is server code, so it names the story by its id:
 
-<Canvas of={Greeting.Default} />
+<Canvas id="greeting--default" />
 
 ## A client story
 
-It renders inline, in the project's decorator:
+It renders inline, in the decorator of preview.tsx:
 
 <Canvas of={Pressed} />
 

@@ -106,18 +106,24 @@ test("an MDX page and autodocs, with server stories in iframes and client storie
 });
 
 // What Chromatic does with a build: the stories of every entry of the index,
-// which loads every file, the MDX files too.
-test("extract() of the preview has the stories of every file", async ({ page }) => {
+// which loads every file. The misuse files of this project that do not load
+// reject it with their error, as a file that does not load does in any
+// Storybook. The notes demo's build has every story in extract().
+test("extract() of the preview fails with the error of a file that does not load", async ({
+  page,
+}) => {
   await page.goto(new URL("iframe.html", site!.url).href);
   await page.waitForFunction(
     () => !!(window.__STORYBOOK_PREVIEW__ as Extracting | undefined)?.storyStoreValue,
     null,
     { timeout: 60_000 },
   );
-  const stories = await page.evaluate(async () =>
+  const extract = page.evaluate(async () =>
     Object.keys(await (window.__STORYBOOK_PREVIEW__ as Extracting).extract()),
   );
-  expect(stories).toEqual(expect.arrayContaining(["greeting--default", "press-button--pressed"]));
+  await expect(extract).rejects.toThrow(
+    /has no story of meta\.story\(\)|so its stories render in the browser|so it is server code|declares the globals|defineServerPreview\(\) got a beforeAll/,
+  );
 });
 
 // What the preview has for Chromatic.

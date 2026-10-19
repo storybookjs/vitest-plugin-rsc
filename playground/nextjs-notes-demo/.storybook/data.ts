@@ -7,8 +7,8 @@ import * as authSessionModule from "#lib/auth-session.ts";
 import * as dbModule from "#lib/db.ts";
 import * as flashCookieModule from "#lib/flash-cookie.ts";
 
-// The state of the app's server code that every story starts from, in the rsc
-// layer: what vitest.setup.ts does before every test.
+// The state of the app's server code that every server story starts from:
+// what vitest.setup.ts does before every test.
 
 const { resetDb } = dbModule as typeof import("#lib/__mocks__/db.ts");
 const { setCurrentUser } = authSessionModule as typeof import("#lib/__mocks__/auth-session.ts");
