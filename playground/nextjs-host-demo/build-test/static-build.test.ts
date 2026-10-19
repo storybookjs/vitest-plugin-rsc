@@ -10,6 +10,8 @@ import {
   open as openView,
   style,
 } from "../test/host-page.ts";
+import type { HostWindow } from "../host/state.ts";
+import { expectReferencesRender } from "../test/references-page.ts";
 
 // The host in a static build, which `vite build` makes with Vite's app
 // builder: both of its pages, see ../vite.config.ts. A server of files
@@ -167,4 +169,15 @@ test("a node has the CSS of the files of the host that render it", async ({ page
   expect(callout.__hostReports).toEqual([{ from: "host/callout-note.tsx", react: nextReact }]);
   const host = await open(page, errors, "switch", expectGreetingStylesheets);
   expect(host.__hostCalloutLinked).toBe(true);
+});
+
+test("renders client references with the React of the browser layer", async ({ page, errors }) => {
+  const seen = await expectReferencesRender(page, errors, open);
+  console.log("build no act", JSON.stringify(seen));
+});
+
+test("a client reference called as a function throws", async ({ page, errors }) => {
+  await open(page, errors, "references-called", async () => {});
+  const called = await page.evaluate(() => (window as HostWindow).__hostCalled);
+  expect(called).toMatch(/is a Client Component and cannot be called on the server/);
 });

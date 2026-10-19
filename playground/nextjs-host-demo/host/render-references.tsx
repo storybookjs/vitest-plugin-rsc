@@ -41,9 +41,9 @@ export async function render(
       }
       return;
     }
-    const { promise, resolve } = Promise.withResolvers<void>();
-    root.render(<WithCallback callback={resolve}>{node}</WithCallback>);
-    await promise;
+    await new Promise<void>((resolve) =>
+      root.render(<WithCallback callback={resolve}>{node}</WithCallback>),
+    );
   };
   await renderOnce(node);
   return { rerender: renderOnce };

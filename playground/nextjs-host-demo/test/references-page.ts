@@ -2,7 +2,15 @@ import type { Page } from "playwright";
 import { expect } from "vitest";
 import type { PageErrors } from "../../test-helpers/host.ts";
 import type { HostWindow } from "../host/state.ts";
-import { open, style, type HostSite } from "./host-page.ts";
+import { style } from "./host-page.ts";
+
+/** Opens a view of the host: `open()` of the dev server's test, or the build's. */
+export type OpenView = (
+  page: Page,
+  errors: PageErrors,
+  view: string,
+  run: (page: Page) => Promise<void>,
+) => Promise<HostWindow>;
 
 // JSX of the rsc layer with client references, rendered by the React of the
 // browser layer in the host's document: ?view=references of host/main.tsx.
@@ -29,12 +37,12 @@ export function collectWarnings(page: Page): string[] {
 export async function expectReferencesRender(
   page: Page,
   errors: PageErrors,
-  site: HostSite,
+  open: OpenView,
   query = "",
 ) {
   const warnings = collectWarnings(page);
   let seen: Awaited<ReturnType<typeof references>> | undefined;
-  await open(page, errors, site, `references${query}`, async (page) => {
+  await open(page, errors, `references${query}`, async (page) => {
     seen = await references(page);
     // What a `play` function sees as soon as the render resolved: the tree,
     // whose references had not loaded when it started.

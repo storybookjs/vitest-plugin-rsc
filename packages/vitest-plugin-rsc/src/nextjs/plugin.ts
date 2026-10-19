@@ -437,6 +437,7 @@ export function replaceClientProxies(
   });
   const calls = code.split("registerClientReference(").length - 1;
   const expected = exportNames?.length ?? calls;
+  if (expected === 0 && calls === 0) return code;
   if (replaced === 0 || replaced !== expected || replaced !== calls) {
     throw new Error(
       `vitest-plugin-rsc: the proxy of a client reference in ${id} is not the one of ` +
@@ -457,7 +458,10 @@ function clientProxyPlugin(
     enforce: "post",
     transform(code, id) {
       if (this.environment.name !== rsc) return;
-      const reference = referenceOf(id, this.environment.getTopLevelConfig());
+      const config = this.environment.getTopLevelConfig();
+      // The scan of a build keeps only the imports of a module.
+      if (getPluginApi(config)?.manager.isScanBuild) return;
+      const reference = referenceOf(id, config);
       if (!reference) return;
       try {
         return { code: replaceClientProxies(code, reference.exportNames, id), map: null };
