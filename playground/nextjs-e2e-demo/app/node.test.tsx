@@ -499,6 +499,7 @@ test("loads the page of the app's route when a node links to it", async () => {
   const { container } = await renderServer(<Link href="/notes">All notes</Link>, {
     url: "/notes/7",
   });
+  const loads = stopLoads();
 
   await page.getByRole("link", { name: "All notes" }).click();
 
@@ -508,24 +509,24 @@ test("loads the page of the app's route when a node links to it", async () => {
   await expect.element(page.getByRole("navigation", { name: "Main" })).toBeVisible();
   expect(window.location.pathname).toBe("/notes");
   expect(container).toBeEmptyDOMElement();
+  expect(loads).toEqual([]);
 });
 
-// The reloads of the document that the plugin lets the browser make, which
-// the test stops: the tab would not survive them.
-function stopReloads(): string[] {
-  const reloads: string[] = [];
+// The loads of a document that the plugin lets the browser make, which the
+// test stops: the tab would not survive them.
+function stopLoads(): string[] {
+  const loads: string[] = [];
   const stop = (event: Event) => {
-    const { navigationType, destination } = event as Event & {
-      navigationType: string;
-      destination: { url: string };
+    const { destination } = event as Event & {
+      destination: { url: string; sameDocument: boolean };
     };
-    if (navigationType !== "reload" || event.defaultPrevented) return;
-    reloads.push(destination.url);
+    if (destination.sameDocument || event.defaultPrevented) return;
+    loads.push(destination.url);
     event.preventDefault();
   };
   navigation.addEventListener("navigate", stop);
   onTestFinished(() => navigation.removeEventListener("navigate", stop));
-  return reloads;
+  return loads;
 }
 
 // A node is the test's, in the test's document: a reload is the one of that
@@ -533,19 +534,65 @@ function stopReloads(): string[] {
 test("leaves the node at a reload, which reloads the document of the test", async () => {
   const testUrl = window.location.href;
   const { container } = await renderServer(<h1>Not the home page</h1>);
-  const reloads = stopReloads();
+  const loads = stopLoads();
 
   window.location.reload();
 
-  await expect.poll(() => reloads).toEqual([testUrl]);
+  await expect.poll(() => loads).toEqual([testUrl]);
   expect(container).toBeEmptyDOMElement();
   expect(window.location.href).toBe(testUrl);
   await expect.element(page.getByRole("heading", { name: "Home" })).not.toBeInTheDocument();
 });
 
+// Not only a reload: a navigation to the node's URL is one to the host's,
+// and the browser loads the host's document at the host's URL.
+test("leaves the node at a navigation to its own URL, which loads the document of the test", async () => {
+  const testUrl = window.location.href;
+  const { container } = await renderServer(<h1>Not the note</h1>, { url: "/notes/7?tab=1" });
+  const loads = stopLoads();
+
+  window.location.assign(window.location.href);
+
+  await expect.poll(() => loads).toEqual([testUrl]);
+  expect(container).toBeEmptyDOMElement();
+  expect(window.location.href).toBe(testUrl);
+});
+
+test("leaves the node at a GET form without an action, which loads the document of the test", async () => {
+  const testUrl = window.location.href;
+  const { container } = await renderServer(
+    <form method="get">
+      <input name="q" defaultValue="notes" aria-label="Search" />
+      <button>Search</button>
+    </form>,
+  );
+  const loads = stopLoads();
+
+  await page.getByRole("button", { name: "Search" }).click();
+
+  await expect.poll(() => loads).toEqual([testUrl]);
+  expect(container).toBeEmptyDOMElement();
+  expect(window.location.href).toBe(testUrl);
+});
+
+test("says that a navigation to another origin leaves the app, also at the node's pathname", async () => {
+  await renderServer(<h1>Not the home page</h1>);
+  const reportError = vi.spyOn(window, "reportError").mockImplementation(() => {});
+  const loads = stopLoads();
+
+  window.location.assign("https://example.com/");
+
+  await expect.poll(() => reportError.mock.calls).toHaveLength(1);
+  expect(String(reportError.mock.calls[0]![0])).toMatch(
+    "the app navigated to another origin: https://example.com/",
+  );
+  await expect.element(page.getByRole("heading", { name: "Not the home page" })).toBeVisible();
+  expect(loads).toEqual([]);
+});
+
 test("loads the app's page again at a reload once the app has navigated away from the node", async () => {
   await renderServer(<Link href="/notes">All notes</Link>, { url: "/notes/7", layouts: true });
-  const reloads = stopReloads();
+  const loads = stopLoads();
   // On the client: both routes have the app's root layout.
   await page.getByRole("link", { name: "All notes" }).click();
   await expect.element(page.getByRole("heading", { name: "Notes" })).toBeVisible();
@@ -555,7 +602,7 @@ test("loads the app's page again at a reload once the app has navigated away fro
 
   await expect.element(page.getByRole("link", { name: "After the reload" })).toBeVisible();
   expect(window.location.pathname).toBe("/notes");
-  expect(reloads).toEqual([]);
+  expect(loads).toEqual([]);
 });
 
 test("leaves the node with unmount(), and its route with it", async () => {
