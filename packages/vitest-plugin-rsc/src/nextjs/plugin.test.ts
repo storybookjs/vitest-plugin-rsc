@@ -2,8 +2,9 @@ import fs from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { normalizePath } from "vite";
+import { normalizePath, resolveConfig, type Plugin } from "vite";
 import { expect, test, vi } from "vitest";
+import { vitestPluginRSC } from "../index.ts";
 import { vitestPluginNext, type VitestPluginNextOptions } from "./plugin.ts";
 
 // The tests load Next projects: longer than Vitest's 5 s on a loaded CI.
@@ -109,6 +110,62 @@ test("pre-bundles every module of Next that a module of the plugin imports in th
       expect.arrayContaining(imported.map(preBundledAs)),
     );
   }
+});
+
+// Whoever asks for it: `react`, which the plugin of ../index.ts and a host
+// include, is Next's React of the layer, pre-bundled once. See the
+// `configEnvironment` hook of plugin.ts.
+test("pre-bundles a dependency only under the name its layer resolves it to", async () => {
+  // A host that has the layers pre-bundle React: in its config, which reaches
+  // the rsc layer, and for every environment, after the `config` hooks. And
+  // a module that Next's aliases send to a file of Next.
+  const host: Plugin = {
+    name: "host",
+    config: () => ({
+      optimizeDeps: { include: ["react", "react/jsx-runtime", "react-dom/client"] },
+    }),
+    configEnvironment: () => ({ optimizeDeps: { include: ["react-dom/client", "object-assign"] } }),
+  };
+  const config = await resolveConfig(
+    {
+      root,
+      configFile: false,
+      logLevel: "silent",
+      plugins: [vitestPluginRSC(), vitestPluginNext(), host],
+    },
+    "serve",
+  );
+  const includeOf = (environment: string) =>
+    config.environments[environment]!.optimizeDeps.include ?? [];
+
+  for (const environment of ["client", "next_ssr", "react_client"]) {
+    const include = includeOf(environment);
+    // Not npm React, nor Vite RSC's Flight codec for it.
+    expect(include.filter((name) => /^react(-dom)?(\/|$)|\/vendor\/react-/.test(name))).toEqual([]);
+    expect(include).toEqual([...new Set(include)]);
+    expect(include).not.toContain("object-assign");
+  }
+  expect(includeOf("client")).toEqual(
+    expect.arrayContaining([
+      "next/dist/compiled/react/react.react-server.js",
+      "next/dist/compiled/react/jsx-runtime.react-server.js",
+      "next/dist/compiled/react-dom/react-dom.react-server.js",
+      "next/dist/compiled/react-server-dom-webpack/server.edge.js",
+      // Which only the plugin of ../index.ts and the host ask for here.
+      "next/dist/compiled/react-dom/client.js",
+    ]),
+  );
+  expect(includeOf("react_client")).toEqual(
+    expect.arrayContaining([
+      "next/dist/compiled/react/index.js",
+      "next/dist/compiled/react/jsx-runtime.js",
+      "next/dist/compiled/react-dom/client.js",
+      "next/dist/compiled/react-server-dom-webpack/client.browser.js",
+    ]),
+  );
+  // What Next's compiler has app code import stays as it was: a package Next
+  // depends on, found from Next.
+  expect(includeOf("client")).toContain("next > styled-jsx/style");
 });
 
 test("gives Next's module for the asset prefix of its dev server no prefix: there is no dev server", async () => {
