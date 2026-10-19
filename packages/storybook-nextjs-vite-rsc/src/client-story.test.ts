@@ -50,6 +50,8 @@ vi.mock("./client-canvas.tsx", () => {
 vi.mock("./server-story.ts", () => ({
   render: () => null,
   isPageStory: () => false,
+  layoutOfDocument: ({ argTypes }: { argTypes: object }) => argTypes,
+  serverStoryFiles: new Map(),
 }));
 
 // A story file: what the rsc layer imports, with the order of the stories

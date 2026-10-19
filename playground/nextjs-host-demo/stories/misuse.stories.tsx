@@ -42,6 +42,18 @@ export const MountOnPage: StoryObj = {
   },
 };
 
+// A page whose play fails once Next's not-found page has loaded, which
+// renders the document anew. Storybook shows an exception of play in the
+// Interactions panel, and with `throwPlayFunctionExceptions` in its error
+// display too, in the document of that page.
+export const PlayFailsOnNotFound: StoryObj = {
+  parameters: { nextjs: { url: "/gone" }, throwPlayFunctionExceptions: true },
+  play: async ({ canvas }) => {
+    await canvas.findByText("This page could not be found.");
+    throw new Error("The play failed on the not-found page");
+  },
+};
+
 // A server story that a docs page renders inline, in its own document, as
 // it does a client story: see misuse.mdx.
 export const InlineOnDocs: StoryObj = {

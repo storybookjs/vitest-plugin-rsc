@@ -9,7 +9,7 @@ import type {
 import { preview, previewFile } from "virtual:@storybook/nextjs-vite-rsc/project";
 import { loadClientModule } from "vitest-plugin-rsc/nextjs/testing-library";
 import type { NextjsRscRenderer } from "./index.ts";
-import { isPageStory, render } from "./server-story.ts";
+import { isPageStory, render, serverStoryFiles } from "./server-story.ts";
 
 // A story file with `"use client"` is a client boundary, as in React: its
 // stories are client stories, which render in the browser layer, as React
@@ -102,8 +102,10 @@ export async function loadStoryFile(
   const exports = await loadClientModule(references);
   if (exports === references) {
     clientFiles.delete(path);
+    serverStoryFiles.set(path, imported);
     return imported;
   }
+  serverStoryFiles.delete(path);
   clientFiles.add(path);
   // Storybook loads the file for every story it prepares. A module that
   // loaded before keeps its twins, which its components were evaluated with.

@@ -61,6 +61,8 @@ vi.mock("./server-story.ts", () => ({
   render: () => null,
   isPageStory: () => false,
   renderServerStory: async () => {},
+  layoutOfDocument: ({ argTypes }: { argTypes: object }) => argTypes,
+  serverStoryFiles: new Map(),
 }));
 
 type Enhancer = (context: { parameters: Parameters; argTypes: object }) => object;
@@ -87,7 +89,7 @@ test("a docs page shows a client story inline, a server story in an iframe", asy
   };
   expect(enhanced("./stories/button.stories.tsx")).toEqual({ story: { inline: true } });
   expect(enhanced("./stories/greeting.stories.tsx")).toEqual({
-    story: { iframeHeight: "320px" },
+    story: { inline: false, iframeHeight: "320px" },
   });
   // What the story, its meta or the project says wins, and the object of
   // the meta, which other stories have too, stays as it is.
@@ -95,7 +97,7 @@ test("a docs page shows a client story inline, a server story in an iframe", asy
   expect(enhanced("./stories/button.stories.tsx", ofMeta)).toEqual(ofMeta);
   expect(enhanced("./stories/button.stories.tsx", ofMeta)).not.toBe(ofMeta);
   expect(enhanced("./stories/greeting.stories.tsx", { story: { iframeHeight: "200px" } })).toEqual({
-    story: { iframeHeight: "200px" },
+    story: { inline: false, iframeHeight: "200px" },
   });
 });
 

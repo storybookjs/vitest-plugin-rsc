@@ -77,20 +77,26 @@ test("a client story renders in the browser layer, with fn() for play and Action
     .toContain("onPress: []");
 });
 
+// The document of the preview: Storybook's, or the one of a page, which owns
+// it. The classes as a set: Storybook adds them in an order of its timing.
+const body = (canvas: Frame) =>
+  canvas.evaluate(() => ({
+    classes: [...document.body.classList].sort().join(" "),
+    margin: getComputedStyle(document.body).margin,
+    root: !!document.getElementById("storybook-root"),
+  }));
+
+// A page owns the `<body>`, with the app's style, without Storybook's
+// classes.
+const atPage = { classes: "", margin: "32px", root: false };
+const atComponent = { classes: "sb-main-padded sb-show-main", margin: "0px", root: true };
+
 test("a page story and a Server Action", async ({ page }) => {
   const canvas = await openStory(page, site!.url, "home--home");
   expect(await storyRun(page, canvas, "home--home")).toEqual(passed);
-  // The page owns the `<body>`, with the app's style. Selecting the story
-  // again leaves it as it is, but for Storybook's class of its main mode,
-  // which none of Storybook's layouts styles on its own.
-  // The classes as a set: Storybook adds them in an order of its timing.
-  const body = () =>
-    canvas.evaluate(() => ({
-      classes: [...document.body.classList].sort().join(" "),
-      margin: getComputedStyle(document.body).margin,
-      root: !!document.getElementById("storybook-root"),
-    }));
-  expect(await body()).toEqual({ classes: "", margin: "32px", root: false });
+  expect(await body(canvas)).toEqual(atPage);
+  // Selecting the story again leaves it as it is, but for Storybook's class
+  // of its main mode, which none of Storybook's layouts styles on its own.
   await page.evaluate(() =>
     (
       window as { __STORYBOOK_ADDONS_CHANNEL__?: { emit(...args: unknown[]): void } }
@@ -99,22 +105,61 @@ test("a page story and a Server Action", async ({ page }) => {
       viewMode: "story",
     }),
   );
-  await expect.poll(async () => (await body()).classes).toBe("sb-show-main");
-  expect(await body()).toMatchObject({ margin: "32px", root: false });
+  await expect.poll(() => body(canvas)).toEqual({ ...atPage, classes: "sb-show-main" });
   // A story after the page has Storybook's document, its classes and root.
   expect(await runStory(page, canvas, "greeting--server-action")).toEqual(passed);
-  expect(await body()).toEqual({
-    classes: "sb-main-padded sb-show-main",
-    margin: "0px",
-    root: true,
-  });
+  expect(await body(canvas)).toEqual(atComponent);
 });
+
+test("a page, a client story and a page again, each without the one before", async ({ page }) => {
+  const canvas = await openStory(page, site!.url, "home--home");
+  const home = canvas.getByRole("heading", { name: "Home" });
+  const button = canvas.getByRole("button", { name: /^Press: / });
+  expect(await home.isVisible()).toBe(true);
+  expect(await runStory(page, canvas, "press-button--pressed")).toEqual(passed);
+  expect(await body(canvas)).toEqual(atComponent);
+  expect(await home.count()).toBe(0);
+  expect(await inCanvas(canvas).getByRole("button", { name: "Press: 1" }).isVisible()).toBe(true);
+  expect(await runStory(page, canvas, "home--home")).toEqual(passed);
+  expect(await body(canvas)).toEqual(atPage);
+  expect(await button.count()).toBe(0);
+  expect(await home.isVisible()).toBe(true);
+});
+
+// Next renders the document of its not-found page anew, and React removes
+// what else is in its `<body>`: Storybook puts its error display there as
+// it shows an error.
+test("a page whose play fails on Next's not-found page shows Storybook's error", async ({
+  page,
+  errors,
+}) => {
+  const canvas = await openStory(page, site!.url, "greeting--default");
+  const run = await runStory(page, canvas, "misuse--play-fails-on-not-found");
+  expect(run.reports.join("\n")).toContain("The play failed on the not-found page");
+  const message = canvas.locator("#error-message");
+  await expect.poll(() => message.isVisible()).toBe(true);
+  expect(await message.textContent()).toContain("The play failed on the not-found page");
+  expect(await canvas.getByText("This page could not be found.").count()).toBe(1);
+  errors.list.splice(0);
+  // And the story after it renders without it.
+  expect(await runStory(page, canvas, "home--home")).toEqual(passed);
+  expect(await canvas.locator(".sb-errordisplay").count()).toBe(0);
+  expect(await body(canvas)).toEqual(atPage);
+});
+
+// The layout of the story that the preview renders, as Storybook prepared it.
+const layout = (canvas: Frame) =>
+  canvas.evaluate(() => window.__STORYBOOK_PREVIEW__.currentRender?.story?.parameters.layout);
 
 test("a story in the layouts, and one whose beforeEach sets a cookie", async ({ page }) => {
   const canvas = await openStory(page, site!.url, "greeting--in-layouts");
   expect(await storyRun(page, canvas, "greeting--in-layouts")).toEqual(passed);
+  // A story that owns the document has no layout of Storybook's.
+  expect(await layout(canvas)).toBe("none");
   expect(await runStory(page, canvas, "greeting--seeded")).toEqual(passed);
+  expect(await layout(canvas)).toBeUndefined();
   expect(await runStory(page, canvas, "home--home")).toEqual(passed);
+  expect(await layout(canvas)).toBe("none");
 });
 
 // A server story of a component is a node: the document and its URL are

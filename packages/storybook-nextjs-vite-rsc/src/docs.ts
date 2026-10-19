@@ -78,11 +78,12 @@ const referenceInDocs = (parameter: string) =>
 
 /**
  * How a docs page shows a story, by its kind, when the story does not say:
- * a client story inline, a server story in an iframe high enough for a
- * component. An enhancer, which Storybook calls as it prepares the story,
- * with its own parameters. The `inline` of Storybook is a boolean of the
- * parameters, not a function of the story, and a story that is prepared has
- * no export yet: the kind is the one of its file, by its importPath.
+ * a client story inline, a server story in an iframe of its own, high enough
+ * for a component, as it renders in a page of the app. An enhancer, which
+ * Storybook calls as it prepares the story, with its own parameters. The
+ * `inline` of Storybook is a boolean of the parameters, not a function of the
+ * story, and a story that is prepared has no export yet: the kind is the one
+ * of its file, by its importPath.
  */
 export const docsStoryByKind: ArgTypesEnhancer<NextjsRscRenderer> = (context) => {
   const { parameters } = context;
@@ -93,7 +94,7 @@ export const docsStoryByKind: ArgTypesEnhancer<NextjsRscRenderer> = (context) =>
     ...docs,
     story: isClientStoryFile(parameters.fileName)
       ? { inline: true, ...docs.story }
-      : { iframeHeight: "320px", ...docs.story },
+      : { inline: false, iframeHeight: "320px", ...docs.story },
   };
   return context.argTypes;
 };
