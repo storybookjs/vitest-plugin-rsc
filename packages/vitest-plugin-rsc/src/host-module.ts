@@ -2,9 +2,11 @@
 // runner has a module graph of its own, so what it imports is a copy. Some
 // modules have to be the one instance the page already has: the packages of
 // the test runner, whose `test()` collects for the file that is being
-// imported, and the packages of another host (`host.packages` in
-// nextjs/server-code.ts). (A "host file" is something else: a test file or a
-// setup file, or a file of another host, which the host runs.)
+// imported, the packages of another host (`host.packages` in
+// nextjs/server-code.ts), and a file of the host without `"use client"`,
+// which is evaluated once, by the page (nextjs/client-files.ts). A file of
+// the host is a test file or a setup file, or a file of another host, which
+// the host runs.
 //
 // The server resolves such an import to an id with this prefix. The transport
 // of a runner answers it without asking the server: it is an external module,
@@ -34,7 +36,9 @@ export function isHostModule(url: string): boolean {
 
 /**
  * The URL by which a built layer of the module runner imports a module of
- * the page, by the import it stands for: `host-report` or `storybook/test`.
+ * the page, by the import it stands for: `host-report` or `storybook/test`,
+ * or a file of the host, `/host/shared.ts?host-file` (see
+ * `hostFileSpecifier()` in nextjs/client-files.ts).
  */
 export const builtHostModuleUrl = (specifier: string): string => hostModuleUrl + specifier;
 

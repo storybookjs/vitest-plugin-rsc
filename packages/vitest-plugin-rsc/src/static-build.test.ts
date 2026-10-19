@@ -597,7 +597,7 @@ test("says which module of the page the scan of the browser layer did not find",
     );
   expect(generate).toThrow(
     "vitest-plugin-rsc: the react_client layer imports storybook/test as a module of the page, " +
-      "as `host.packages` of vitestPluginNext() names its package, but the scan of the browser " +
+      "a package of `host.packages` or a file of the host, but the scan of the browser " +
       "layer did not find that import",
   );
   expect(generate).toThrow("a plugin that adds this import has to add it in the scan too");

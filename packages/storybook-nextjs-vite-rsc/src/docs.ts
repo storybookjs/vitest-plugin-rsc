@@ -39,22 +39,32 @@ const componentParameters = ["page", "container"] as const;
 // layer evaluated it, in the place of the rsc layer's, as a client story has
 // the preview file's decorators: by their identity. A component of a story
 // file without `"use client"` is a reference there, which no layer renders.
+// The browser layer has the page's instance of the preview file, a file of
+// the host without the directive (vitest-plugin-rsc), so a twin is the rsc
+// layer's own value, and a component of the preview file with `"use client"`
+// stays a reference, which the browser layer's React renders as its export.
 function withTwins(docs: Parameters, browser: object): Parameters {
   const ofRsc = docsOf(preview);
   const ofBrowser = docsOf(browser);
+  const isOfPreview = (value: unknown, rsc: unknown) => value !== undefined && value === rsc;
   const twin = (value: unknown, rsc: unknown, other: unknown) =>
-    value !== undefined && value === rsc ? other : value;
+    isOfPreview(value, rsc) ? other : value;
   const result: Parameters = { ...docs };
   for (const name of componentParameters) {
     if (docs[name] === undefined) continue;
     result[name] = twin(docs[name], ofRsc[name], ofBrowser[name]);
-    if (isClientReference(result[name])) throw referenceInDocs(`docs.${name}`);
+    if (isClientReference(result[name]) && !isOfPreview(docs[name], ofRsc[name])) {
+      throw referenceInDocs(`docs.${name}`);
+    }
   }
   if (docs.components) {
     result.components = Object.fromEntries(
       Object.entries(docs.components as Record<string, unknown>).map(([name, value]) => {
-        const component = twin(value, ofRsc.components?.[name], ofBrowser.components?.[name]);
-        if (isClientReference(component)) throw referenceInDocs(`docs.components.${name}`);
+        const rsc = ofRsc.components?.[name];
+        const component = twin(value, rsc, ofBrowser.components?.[name]);
+        if (isClientReference(component) && !isOfPreview(value, rsc)) {
+          throw referenceInDocs(`docs.components.${name}`);
+        }
         return [name, component];
       }),
     );

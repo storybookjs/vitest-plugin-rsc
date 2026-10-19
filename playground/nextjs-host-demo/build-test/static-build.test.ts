@@ -125,6 +125,25 @@ test('gives the host the exports of a file of the host with "use client"', async
   ]);
 });
 
+for (const view of ["shared", "shared&late"]) {
+  test(`gives a file of the host with "use client" the page's instance of a file of the host without it: ?view=${view}`, async ({
+    page,
+    errors,
+  }) => {
+    // The host's build has the file, which the build of the browser layer
+    // imports from it: one instance, as with a dev server.
+    const host = await open(page, errors, view, async () => {});
+    expect(host.__hostShared).toEqual({
+      same: true,
+      visits: { "host/client-shared.tsx": 1, "host/main.tsx": 1 },
+    });
+    expect(host.__hostReports).toEqual([
+      { from: "host/shared.ts", react: nextReact },
+      { from: "host/client-shared.tsx", react: nextReact },
+    ]);
+  });
+}
+
 test('keeps the Server Actions of a node that is open while a file with "use client" loads', async ({
   page,
   errors,

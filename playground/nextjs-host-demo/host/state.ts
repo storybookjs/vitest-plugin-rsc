@@ -23,6 +23,13 @@ export type HostWindow = {
     /** What it did for a file of the app: its error. */
     app: string;
   };
+  /** What `?view=shared` saw of a file of the host that both layers import. */
+  __hostShared?: {
+    /** Whether the file with the directive has the page's instance of it. */
+    same: boolean;
+    /** Who visited the page's instance. */
+    visits: Record<string, number>;
+  };
   /** Whether the callout had its stylesheet, before `?view=switch` left it. */
   __hostCalloutLinked?: boolean;
   /** For `?view=references`: see main.tsx. */

@@ -1,10 +1,14 @@
-import type { Plugin } from "vite";
-import { expect, test } from "vitest";
-import { hostModulePrefix, isHostModule } from "../host-module.ts";
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
+import { normalizePath, type Plugin } from "vite";
+import { afterAll, expect, test } from "vitest";
+import { builtHostModuleUrl, hostModulePrefix, isHostModule } from "../host-module.ts";
 import {
   clientFiles,
   clientReferenceOfModule,
   fileOfModule,
+  hostFileSpecifier,
   renderServerError,
 } from "./client-files.ts";
 
@@ -53,6 +57,7 @@ const [plugin, loaders] = clientFiles({
   clientReferenceOf,
 }) as [Plugin, Plugin];
 
+type Resolved = { id: string; external?: boolean | "absolute" };
 type Context = {
   environment: {
     name: string;
@@ -61,23 +66,36 @@ type Context = {
     getTopLevelConfig(): { root: string };
   };
   error(message: string): never;
+  resolve(source: string, importer: string): Promise<Resolved | null>;
 };
 
-// An environment of a dev server, or of a build, of the project at `/`.
-const context = (environment: string, mode: "dev" | "build" = "dev"): Context => ({
+// An environment of a dev server, or of a build, of the project at `root`.
+// Its resolvers find a relative import from the importer, and a package in
+// `node_modules`.
+const context = (environment: string, mode: "dev" | "build" = "dev", root = "/"): Context => ({
   environment: {
     name: environment,
     mode,
-    config: { root: "/" },
-    getTopLevelConfig: () => ({ root: "/" }),
+    config: { root },
+    getTopLevelConfig: () => ({ root }),
   },
   error(message) {
     throw new Error(message);
   },
+  resolve: async (source, importer) => ({
+    id: source.startsWith(".")
+      ? path.posix.join(path.posix.dirname(importer), source)
+      : `${root.replace(/\/$/, "")}/node_modules/${source}/index.js`,
+  }),
 });
 
 const { handler: resolveId } = plugin.resolveId as unknown as {
-  handler(this: Context, source: string, importer: string | undefined): string | undefined;
+  handler(
+    this: Context,
+    source: string,
+    importer: string | undefined,
+    options: object,
+  ): Promise<string | Resolved | null | undefined>;
 };
 const load = plugin.load as unknown as (this: Context, id: string) => string | undefined;
 const transform = plugin.transform as unknown as (
@@ -96,7 +114,8 @@ const resolve = (
   importer?: string,
   environment = "react_client",
   mode: "dev" | "build" = "dev",
-) => resolveId.call(context(environment, mode), source, importer);
+  root = "/",
+) => resolveId.call(context(environment, mode, root), source, importer, {});
 
 // What Vite RSC made of a file with `"use client"` in the rsc layer: a
 // reference for each export, and none of the code of the file.
@@ -258,47 +277,125 @@ test("says so for a client file that mocks a module, which the mocker of its `vi
   await expect(transform.call(rsc, spy, "/app/a.test.tsx")).resolves.toBeUndefined();
 });
 
-test("gives the browser layer the page's own module for a package of the host", () => {
+test("gives the browser layer the page's own module for a package of the host", async () => {
   const importer = "/app/counter.tsx";
 
-  expect(resolve("vitest", importer)).toBe(`${hostModulePrefix}vitest`);
-  expect(resolve("vitest/browser", importer)).toBe(`${hostModulePrefix}vitest/browser`);
-  expect(resolve("@vitest/spy", importer)).toBe(`${hostModulePrefix}@vitest/spy`);
-  expect(resolve(testingLibrary.specifier, importer)).toBe(
+  expect(await resolve("vitest", importer)).toBe(`${hostModulePrefix}vitest`);
+  expect(await resolve("vitest/browser", importer)).toBe(`${hostModulePrefix}vitest/browser`);
+  expect(await resolve("@vitest/spy", importer)).toBe(`${hostModulePrefix}@vitest/spy`);
+  expect(await resolve(testingLibrary.specifier, importer)).toBe(
     hostModulePrefix + testingLibrary.specifier,
   );
   // Not a package that only starts with the name, and not in the rsc layer.
-  expect(resolve("vitest-browser-react", importer)).toBeUndefined();
-  expect(resolve("vitest", importer, "client")).toBeUndefined();
+  expect(await resolve("vitest-browser-react", importer)).toEqual({
+    id: "/node_modules/vitest-browser-react/index.js",
+  });
+  expect(await resolve("vitest", importer, "client")).toBeUndefined();
   // What the page asks the layer for itself is the layer's.
-  expect(resolve("vitest", undefined)).toBeUndefined();
-  expect(resolve("vitest", "/index.html")).toBeUndefined();
+  expect(await resolve("vitest", undefined)).toBeUndefined();
+  expect(await resolve("vitest", "/index.html")).toBeUndefined();
 });
 
-test("has a build of the browser layer import the page's own module by its URL", () => {
+test("has a build of the browser layer import the page's own module by its URL", async () => {
   // The rsc layer, the host's build, has it: see `hostModulesId`.
   const url = "/@id/__x00__vitest-plugin-rsc/host-module/@vitest/spy";
-  expect(resolve("@vitest/spy", "/app/counter.tsx", "react_client", "build")).toEqual({
+  expect(await resolve("@vitest/spy", "/app/counter.tsx", "react_client", "build")).toEqual({
     id: url,
     external: "absolute",
   });
   expect(isHostModule(url)).toBe(true);
   // Which loads the module as the host's build has it.
-  expect(resolve(`${hostModulePrefix}@vitest/spy`, undefined, "client", "build")).toBe(
+  expect(await resolve(`${hostModulePrefix}@vitest/spy`, undefined, "client", "build")).toBe(
     `${hostModulePrefix}@vitest/spy`,
   );
 });
 
-test("leaves every other import of a file of the host to the browser layer", () => {
-  const importer = "/app/a.test.tsx";
+// A project on disk, whose files the plugin reads for their directive: test
+// files with `"use client"`, with `"use server"` and without, a setup file
+// without, a file of the app, an MDX file of the host, and a file of the host
+// outside the root.
+const project = normalizePath(fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "files-"))));
+const root = `${project}/root`;
+const files: Record<string, string> = {
+  "root/app/a.test.tsx": `"use client";\nimport "./b.test.tsx";\n`,
+  "root/app/frame.test.tsx": `"use client";\n\nexport const Frame = () => null;\n`,
+  "root/app/b.test.tsx": `// "use client" only in a comment\nexport const data = {};\n`,
+  "root/vitest.setup.ts": `export {};\n`,
+  "root/app/actions.test.ts": `"use server";\n\nexport async function save() {}\n`,
+  "root/app/counter.tsx": `export const Counter = () => null;\n`,
+  "root/docs/intro.mdx": `# Intro\n`,
+  "shared/c.test.tsx": `export const data = {};\n`,
+};
+for (const [file, code] of Object.entries(files)) {
+  fs.mkdirSync(path.dirname(`${project}/${file}`), { recursive: true });
+  fs.writeFileSync(`${project}/${file}`, code);
+}
+afterAll(() => fs.rmSync(project, { recursive: true, force: true }));
 
-  expect(resolve("react", importer)).toBeUndefined();
-  expect(resolve("./counter.tsx", importer)).toBeUndefined();
-  expect(resolve("vitest-browser-react", importer)).toBeUndefined();
-  // Also another file of the host, with the directive or without: what a
-  // client module imports is client code, as in React.
-  expect(resolve("./frame.test.tsx", importer)).toBeUndefined();
-  expect(resolve("../vitest.setup.ts", importer)).toBeUndefined();
+test("gives the browser layer the page's own module for a file of the host without the directive", async () => {
+  const importer = `${root}/app/a.test.tsx`;
+
+  // Server code, evaluated once, by the page: the layer gets that instance,
+  // by the file's path from the root.
+  expect(await resolve("./b.test.tsx", importer, "react_client", "dev", root)).toBe(
+    `${hostModulePrefix}/app/b.test.tsx?host-file`,
+  );
+  expect(await resolve("../vitest.setup.ts", importer, "react_client", "dev", root)).toBe(
+    `${hostModulePrefix}/vitest.setup.ts?host-file`,
+  );
+  // A build imports it by its URL, as a package of the host.
+  const url = builtHostModuleUrl("/app/b.test.tsx?host-file");
+  expect(await resolve("./b.test.tsx", importer, "react_client", "build", root)).toEqual({
+    id: url,
+    external: "absolute",
+  });
+  expect(url).toBe("/@id/__x00__vitest-plugin-rsc/host-module//app/b.test.tsx?host-file");
+  expect(isHostModule(url)).toBe(true);
+  // Outside the root: by Vite's `/@fs/` with a dev server, which a browser
+  // does not resolve the `..` of, and in a build by the path from the root.
+  expect(await resolve("../../shared/c.test.tsx", importer, "react_client", "dev", root)).toBe(
+    `${hostModulePrefix}/@fs${project}/shared/c.test.tsx?host-file`,
+  );
+  expect(await resolve("../../shared/c.test.tsx", importer, "react_client", "build", root)).toEqual(
+    {
+      id: builtHostModuleUrl("/../shared/c.test.tsx?host-file"),
+      external: "absolute",
+    },
+  );
+});
+
+test("leaves every other import of the browser layer to the layer", async () => {
+  const importer = `${root}/app/a.test.tsx`;
+  const browser = (source: string) => resolve(source, importer, "react_client", "dev", root);
+
+  // A file of the host with the directive: the browser layer's, as what a
+  // client module imports is client code in React.
+  expect(await browser("./frame.test.tsx")).toEqual({ id: `${root}/app/frame.test.tsx` });
+  // One with `"use server"`: the layer has its functions as Server Actions.
+  expect(await browser("./actions.test.ts")).toEqual({ id: `${root}/app/actions.test.ts` });
+  // A file of the app, a package, and a file of the host that is not
+  // JavaScript, like an MDX file or a stylesheet.
+  expect(await browser("./counter.tsx")).toEqual({ id: `${root}/app/counter.tsx` });
+  expect(await browser("react")).toEqual({ id: `${root}/node_modules/react/index.js` });
+  expect(await browser("../docs/intro.mdx")).toEqual({ id: `${root}/docs/intro.mdx` });
+  // Another module of the file than its code, and a file that is not there.
+  expect(await browser("./b.test.tsx?raw")).toEqual({ id: `${root}/app/b.test.tsx?raw` });
+  expect(await browser("./gone.test.tsx")).toEqual({ id: `${root}/app/gone.test.tsx` });
+});
+
+test("names a file of the host by its path from the root", () => {
+  expect(hostFileSpecifier("/root/host/shared.ts", "/root", false)).toBe(
+    "/host/shared.ts?host-file",
+  );
+  expect(hostFileSpecifier("/root/host/shared.ts", "/root", true)).toBe(
+    "/host/shared.ts?host-file",
+  );
+  expect(hostFileSpecifier("/other/shared.ts", "/root", false)).toBe(
+    "/@fs/other/shared.ts?host-file",
+  );
+  expect(hostFileSpecifier("/other/shared.ts", "/root", true)).toBe(
+    "/../other/shared.ts?host-file",
+  );
 });
 
 test("serves a module of the host to the page as the module it stands for", () => {
@@ -318,6 +415,23 @@ test("serves a module of the host to the page as the module it stands for", () =
       `};\n`,
   );
   expect(load.call(rsc, "/app/counter.tsx")).toBeUndefined();
+  // A file of the host, by its path, which is the module that the page
+  // imports.
+  expect(
+    load.call(context("client", "dev", "/root"), `${hostModulePrefix}/host/shared.ts?host-file`),
+  ).toBe(`import * as module from "/root/host/shared.ts";\nexport default module;\n`);
+  expect(
+    load.call(
+      context("client", "dev", "/root"),
+      `${hostModulePrefix}/@fs/other/shared.ts?host-file`,
+    ),
+  ).toBe(`import * as module from "/other/shared.ts";\nexport default module;\n`);
+  expect(
+    load.call(
+      context("client", "build", "/root"),
+      `${hostModulePrefix}/../other/shared.ts?host-file`,
+    ),
+  ).toBe(`import * as module from "/other/shared.ts";\nexport default module;\n`);
 });
 
 test("tells a module of the host apart as a module runner spells it", () => {

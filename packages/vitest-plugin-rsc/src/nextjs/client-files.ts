@@ -1,8 +1,9 @@
+import fs from "node:fs";
 import path from "node:path";
 import { hasDirective } from "@vitejs/plugin-rsc/transforms";
 import { normalizePath, parseAstAsync, type Plugin, type ResolvedConfig } from "vite";
 import { builtHostModuleUrl, hostModulePrefix } from "../host-module.ts";
-import { builtHostFileKey } from "./styles.ts";
+import { builtHostFileKey, realRootOf } from "./styles.ts";
 
 // A file of the host is a test file or a setup file of Vitest. One with
 // `"use client"` is a client boundary, as a file with that directive is in
@@ -20,11 +21,19 @@ import { builtHostFileKey } from "./styles.ts";
 // has the test that is running. So an import of `vitest`, `@vitest/*` or the
 // testing library is of the module the page has, see ../host-module.ts. That
 // goes for every module of the browser layer, like `render()` of
-// vitest-browser-react, which registers a hook with `vitest`. Every other
-// import is the browser layer's, as what a client module imports is client
-// code in React: also another file of the host.
+// vitest-browser-react, which registers a hook with `vitest`.
+//
+// A file of the host is evaluated once, in the layer its directive names. So
+// is a file of the host without the directive that the browser layer imports,
+// like a module of a test's data or the preview of a framework, and without
+// `"use server"`: it is server code, the page's, and the layer gets the
+// page's instance of it, as of a package of the host. One instance, whose state the page and the client file
+// share, and which may import what only the server has, like `server-only`.
+// Every other import is the browser layer's, as what a client module imports
+// is client code in React.
 
-// The files whose code the check of `vi.mock()` parses, before the host's
+// The files whose code the check of `vi.mock()` parses, and whose directive
+// says whether the browser layer gets the page's instance, before the host's
 // plugins ran. A file of the host with another extension, which a plugin of
 // the host compiles to JavaScript, like `.mdx`, is still a client file when
 // Vite RSC made a reference of it: that is what says it has the directive.
@@ -120,10 +129,45 @@ export const renderServerError =
   "`render()` of vitest-browser-react or of @testing-library/react, or test a connected " +
   'component with renderServer() in a test file without "use client".';
 
+/**
+ * How a module of the page names a file of the host, in the URL of
+ * `builtHostModuleUrl()`: by its path from the root of the project, with a
+ * leading slash, as Vite names such a file in a URL, and the query
+ * `?host-file`: `/host/shared.ts?host-file`. Not a path of the machine, which
+ * a static build has none of. The query keeps it apart from a package, and
+ * keeps the module from looking like the file to a plugin that goes by the
+ * end of an id, like Storybook's of a story file. A dev server names a file
+ * outside the root by Vite's `/@fs/` and its path, as the browser would
+ * resolve the `..` of the path from the root away. Nothing for a file on
+ * another drive of Windows, which a build has no way to from the root.
+ */
+export function hostFileSpecifier(file: string, root: string, build: boolean): string | undefined {
+  const relative = builtHostFileKey(file, root);
+  if (relative !== undefined && (build || !relative.startsWith("../"))) {
+    return `/${relative}${hostFileQuery}`;
+  }
+  return build ? undefined : `${fsPrefix}${file.replace(/^\//, "")}${hostFileQuery}`;
+}
+
+const hostFileQuery = "?host-file";
+// Vite's way to name a file by its path in a URL.
+const fsPrefix = "/@fs/";
+
+// The file that a specifier of `hostFileSpecifier()` names.
+function fileOfSpecifier(specifier: string, root: string): string {
+  const named = specifier.slice(0, -hostFileQuery.length);
+  // From the real root, as `builtHostFileKey()` has it: the way from a root
+  // that is a link to a file outside it is another one.
+  if (!named.startsWith(fsPrefix)) return path.posix.join(realRootOf(normalizePath(root)), named);
+  const file = named.slice(fsPrefix.length);
+  return /^[A-Za-z]:\//.test(file) ? file : `/${file}`;
+}
+
 /** What the page imports for a module of the host: see ../host-module.ts. */
 export function hostModuleCode(
   target: string,
   testingLibrary: ClientFilesOptions["testingLibrary"],
+  root: string,
 ): string {
   // A client file renders no server code.
   if (target === testingLibrary.specifier) {
@@ -137,7 +181,33 @@ export function hostModuleCode(
       `};\n`
     );
   }
-  return `import * as module from ${JSON.stringify(target)};\nexport default module;\n`;
+  // A file of the host by its path: the module the page imports it as.
+  const imported = target.endsWith(hostFileQuery) ? fileOfSpecifier(target, root) : target;
+  return `import * as module from ${JSON.stringify(imported)};\nexport default module;\n`;
+}
+
+// Whether a file of the host has neither `"use client"` nor `"use server"`,
+// by its source on disk, once for each version of the file: server code of
+// the page. Not a file with `"use server"`, whose functions the browser
+// layer has as Server Actions. Nothing for a file that is not there, or does
+// not parse, which Vite then fails on where it loads it.
+const plainFiles = new Map<string, { changed: number; plain: boolean }>();
+async function isPlainFile(file: string): Promise<boolean | undefined> {
+  try {
+    const { mtimeMs } = await fs.promises.stat(file);
+    const known = plainFiles.get(file);
+    if (known?.changed === mtimeMs) return known.plain;
+    const code = await fs.promises.readFile(file, "utf8");
+    let plain = true;
+    if (/use (client|server)/.test(code)) {
+      const { body } = await parseAstAsync(code, { lang: languageOf(file) });
+      plain = !hasDirective(body, "use client") && !hasDirective(body, "use server");
+    }
+    plainFiles.set(file, { changed: mtimeMs, plain });
+    return plain;
+  } catch {
+    return undefined;
+  }
 }
 
 /**
@@ -168,20 +238,41 @@ export function clientFiles(options: ClientFilesOptions): Plugin[] {
       resolveId: {
         // Before the resolver of a package manager, or of the host itself.
         order: "pre",
-        handler(source, importer) {
+        async handler(source, importer, resolveOptions) {
           if (source.startsWith(hostModulePrefix)) return source;
           if (this.environment.name !== browser) return;
           // What the page asks a layer for is that layer's. It has no importer,
           // for which Vite names the `index.html` of the root.
           const { root } = this.environment.config;
           if (!importer || importer === path.posix.join(normalizePath(root), "index.html")) return;
-          if (isHostPackage(source) || source === testingLibrary.specifier) {
-            // A build has the page's own module in the host's build, which
-            // the layer imports by its URL, as it is: see ../host-module.ts.
-            return this.environment.mode === "build"
-              ? { id: builtHostModuleUrl(source), external: "absolute" as const }
-              : hostModulePrefix + source;
-          }
+          const build = this.environment.mode === "build";
+          // A build has the page's own module in the host's build, which
+          // the layer imports by its URL, as it is: see ../host-module.ts.
+          const ofPage = (specifier: string) =>
+            build
+              ? { id: builtHostModuleUrl(specifier), external: "absolute" as const }
+              : hostModulePrefix + specifier;
+          if (isHostPackage(source) || source === testingLibrary.specifier) return ofPage(source);
+          // A file of the host without a directive: the page's too. Found
+          // as the rest of the resolvers find it, so what they found is the
+          // answer for any other module.
+          const resolved = await this.resolve(source, importer, {
+            ...resolveOptions,
+            skipSelf: true,
+          });
+          if (!resolved || resolved.external) return resolved;
+          const file = fileOfModule(resolved.id);
+          if (file === undefined || !parsedFile.test(file) || !isHostFile(file)) return resolved;
+          if ((await isPlainFile(file)) !== true) return resolved;
+          const specifier = hostFileSpecifier(file, root, build);
+          if (specifier !== undefined) return ofPage(specifier);
+          this.warn(
+            `vitest-plugin-rsc: ${file} is a file of the host without "use client", which the ` +
+              `browser layer gets the page's instance of, but it is on another drive than the ` +
+              `root of the project, which a build names no file outside of. The browser layer ` +
+              `builds a copy of its own.`,
+          );
+          return resolved;
         },
       },
       load(id) {
@@ -190,7 +281,7 @@ export function clientFiles(options: ClientFilesOptions): Plugin[] {
         // Not the browser layer's to evaluate: the transport of its module
         // runner answers for it, see ../utils.ts. Vite still warms it up.
         if (this.environment.name !== rsc) return "export {};";
-        return hostModuleCode(target, testingLibrary);
+        return hostModuleCode(target, testingLibrary, this.environment.config.root);
       },
       async transform(code, id) {
         if (this.environment.name !== rsc || !code.includes("use client")) return;

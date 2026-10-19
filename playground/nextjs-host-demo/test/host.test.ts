@@ -283,6 +283,27 @@ test('gives the host the exports of a file of the host with "use client"', async
   ]);
 });
 
+for (const view of ["shared", "shared&late"]) {
+  test(`gives a file of the host with "use client" the page's instance of a file of the host without it: ?view=${view}`, async ({
+    page,
+    errors,
+  }) => {
+    const host = await open(page, errors, view, async () => {});
+    // One instance, which both visited: the file with the directive did not
+    // evaluate a copy of its own, which would also have thrown at its
+    // `server-only`. Also when it came first: the page evaluated the file
+    // then.
+    expect(host.__hostShared).toEqual({
+      same: true,
+      visits: { "host/client-shared.tsx": 1, "host/main.tsx": 1 },
+    });
+    expect(host.__hostReports).toEqual([
+      { from: "host/shared.ts", react: nextReact },
+      { from: "host/client-shared.tsx", react: nextReact },
+    ]);
+  });
+}
+
 test('keeps the Server Actions of a node that is open while a file with "use client" loads', async ({
   page,
   errors,

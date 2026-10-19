@@ -622,7 +622,7 @@ type Manager = NonNullable<ReturnType<typeof getPluginApi>>["manager"];
 // module of a build by the real path of its file, and the root as the config
 // has it, which can be a link, like `/tmp` on macOS.
 const realRoots = new Map<string, string>();
-function realRootOf(root: string): string {
+export function realRootOf(root: string): string {
   let real = realRoots.get(root);
   if (real === undefined) {
     real = fs.existsSync(root) ? normalizePath(fs.realpathSync(root)) : normalizePath(root);

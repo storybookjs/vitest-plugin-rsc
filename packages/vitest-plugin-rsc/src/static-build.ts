@@ -532,7 +532,7 @@ export function staticBuild(options: StaticBuildOptions): Plugin {
             if (missing !== undefined) {
               this.error(
                 `vitest-plugin-rsc: the ${name} layer imports ${missing} as a module of the ` +
-                  `page, as \`host.packages\` of vitestPluginNext() names its package, but the ` +
+                  `page, a package of \`host.packages\` or a file of the host, but the ` +
                   `scan of the browser layer did not find that import, so the host's build has ` +
                   `no instance of it to share. The scan sees every import of the browser layer ` +
                   `that its build does: a plugin that adds this import has to add it in the ` +

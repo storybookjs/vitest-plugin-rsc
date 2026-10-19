@@ -135,3 +135,30 @@ for (const [file, from, to] of [
     await page.locator("#host-root").getByText(text).waitFor();
   });
 }
+
+test('a change of a file of the host that a file with "use client" imports loads the host again', async ({
+  page,
+}) => {
+  // A host that takes a change of its own modules in place, as above: the
+  // page would evaluate the file again, and the file with the directive
+  // would keep the instance of before. So the host's document loads again,
+  // and both have the new one.
+  const { copy, url } = await serveCopy((copy) =>
+    fs.appendFileSync(path.join(copy, "host/main.tsx"), "\nimport.meta.hot?.accept();\n"),
+  );
+  const shared = url.replace("?view=page", "?view=shared");
+  await page.goto(shared);
+  await page.waitForFunction(hostState);
+  expect(await page.evaluate(hostState), await page.evaluate(hostError)).toBe("ready");
+  await page.evaluate(() => Object.assign(window, { __beforeTheChange: true }));
+  const file = path.join(copy, "host/shared.ts");
+  fs.writeFileSync(file, `${fs.readFileSync(file, "utf8")}\nvisit("a change");\n`);
+  await page.waitForFunction(
+    () => !("__beforeTheChange" in window) && (window as HostWindow).__hostState,
+  );
+  expect(await page.evaluate(hostState), await page.evaluate(hostError)).toBe("ready");
+  expect(await page.evaluate(() => (window as HostWindow).__hostShared)).toEqual({
+    same: true,
+    visits: { "a change": 1, "host/client-shared.tsx": 1, "host/main.tsx": 1 },
+  });
+});

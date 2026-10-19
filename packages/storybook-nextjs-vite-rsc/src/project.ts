@@ -4,9 +4,9 @@ import { isCSSRequest, normalizePath, type EnvironmentModuleNode, type Plugin } 
 // What the preview knows of the project, as a virtual module: the preview
 // file of `.storybook/`, and where Storybook names a story file from. Both
 // layers import it: the rsc layer, which is the preview, and the browser
-// layer, through the canvas of the client stories (client-canvas.tsx). So the
-// preview file is evaluated in both, as a module without a directive that a
-// Server Component and a Client Component both import is in Next.
+// layer, through the canvas of the client stories (client-canvas.tsx). The
+// preview file is a file of the host without a directive, which the plugin
+// evaluates once, in the rsc layer: the browser layer gets that instance.
 //
 // In the rsc layer its exports are the ones Storybook has: a client story
 // tells the decorators of the preview file apart by their identity. Storybook

@@ -25,8 +25,10 @@ import { show, state } from "./state.ts";
 // browser, as a story's `beforeEach` does. `?view=references` renders JSX of
 // the rsc layer with client references in it with the React of the browser
 // layer, as a framework renders a story, and the views after it what goes
-// wrong there. A second page of the host, with a node of its own, is
-// callout.html.
+// wrong there. `?view=shared` imports a file of the host without the
+// directive, and then a file with it that imports the same file: the page's
+// instance of it, also with `&late`, where the file with the directive comes
+// first. A second page of the host, with a node of its own, is callout.html.
 const view = new URLSearchParams(window.location.search).get("view");
 await show(async () => {
   if (view === "client" || view === "package") {
@@ -37,6 +39,21 @@ await show(async () => {
       await import("host-package");
     }
     // The report it made, through the page's own `host-report`.
+    state.__hostReports = reports;
+    return;
+  }
+  if (view === "shared") {
+    // A file of the host without the directive, server code, which the page
+    // imports before the file with the directive does, or after.
+    const late = new URLSearchParams(window.location.search).has("late");
+    const ofPage = late ? undefined : await import("./shared.ts");
+    const client = await loadClientModule(await import("./client-shared.tsx"));
+    const shared = ofPage ?? (await import("./shared.ts"));
+    shared.visit("host/main.tsx");
+    state.__hostShared = {
+      same: client.visits === shared.visits,
+      visits: Object.fromEntries(shared.visits),
+    };
     state.__hostReports = reports;
     return;
   }

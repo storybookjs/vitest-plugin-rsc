@@ -21,9 +21,9 @@ export const applyDecorators =
   react.applyDecorators as unknown as DecoratorApplicator<NextjsRscRenderer>;
 
 /**
- * The preview file of the browser layer as it is now. The layer evaluates
- * the modules of the app again after a change, the preview file among them,
- * where the canvas, which loads once, would keep what it imported first.
+ * The preview file as the browser layer has it: the page's instance, a file
+ * of the host without a directive (vitest-plugin-rsc), which is the
+ * preview's own after a change too: the document loads again.
  */
 export const loadPreview = async (): Promise<Record<string, unknown>> =>
   (await import("virtual:@storybook/nextjs-vite-rsc/project")).preview;

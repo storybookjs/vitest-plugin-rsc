@@ -137,10 +137,10 @@ function e2eProject({ exclude = [], ...tests }: E2eTests) {
       // The helpers in `test/` work on the page, so they have to see the
       // browser. Every other module that is not a test file is server code.
       // A file of the host, as a test file and a setup file are, renders in
-      // the tab.
+      // the tab, and so do the shared files of app/host-file.test.tsx.
       vitestPluginNext({
         browserModules: ["test/**"],
-        host: { files: ["vitest.render.tsx"] },
+        host: { files: ["vitest.render.tsx", "vitest.shared.ts", "vitest.shared.client.tsx"] },
         affectedTests: true,
         build,
       }),
