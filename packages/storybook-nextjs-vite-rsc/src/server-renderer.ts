@@ -110,15 +110,12 @@ export const beforeEach: BeforeEach<NextjsServerRenderer> = async ({ id }) => {
   const run = <T>(callback: () => T) => callback();
   configure({ eventWrapper: run, asyncWrapper: run, unstable_advanceTimersWrapper: run });
   await cleanup();
-  const { pathname } = window.location;
   return async () => {
     configure({ eventWrapper, asyncWrapper, unstable_advanceTimersWrapper });
     opened.delete(id);
-    // Storybook writes the URL of the story it selects next, at its own
-    // path, before it tears this one down: that URL stays. A story's context
-    // does not have it, so the path tells it from the page's.
-    const at = window.location;
-    await cleanup({ url: at.pathname === pathname ? at.href : undefined });
+    // The URL goes back to the one the page found; Storybook writes the URL
+    // of the story it selects next after this teardown.
+    await cleanup();
   };
 };
 
