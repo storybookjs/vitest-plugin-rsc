@@ -64,7 +64,7 @@ export type BuiltStylesheets = {
   routes: Record<string, Record<string, string[]>>;
   /**
    * For each file of the host that the rsc layer built, by its path from the
-   * root of the project, `host/button.stories.tsx`: the files of the
+   * root of the project, `host/button.demo.tsx`: the files of the
    * stylesheets it imports, as the dev server walks them for `hostFiles` of
    * `renderServer()`. In a build the files of the host are what `host.files`
    * of `vitestPluginNext()` matches. An empty list for one without any.

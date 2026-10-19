@@ -153,6 +153,10 @@ export type StaticBuildOptions = {
   layers: StaticBuildLayers;
 };
 
+// Vite RSC's API for a framework that builds the environments itself, with
+// `vitePluginRscMinimal()`: what it found, and `isScanBuild`, which tells its
+// plugins that a build only looks. The plugin sets it as Vite RSC's own
+// `buildApp()` does, and its examples of a custom `buildApp()`.
 type Manager = NonNullable<ReturnType<typeof getPluginApi>>["manager"];
 
 /** What `moduleRunnerTransform()` makes of `import.meta`. */
@@ -223,6 +227,9 @@ export function staticBuild(options: StaticBuildOptions): Plugin {
   // imports, by the import each stands for: the rsc layer lists them, see
   // `hostModulesId`.
   let hostModules = new Set<string>();
+  // The modules that only the lists of references import with `import()`,
+  // in the build of the environment that is being built: see `onwarn`.
+  let listedOnly = new Set<string>();
 
   // The entries of a layer, by their names in its input: the module that the
   // page starts the layer with, and in the browser layer the list of its
@@ -334,18 +341,10 @@ export function staticBuild(options: StaticBuildOptions): Plugin {
                 // not to split it off: the modules of the app and of a
                 // framework import some of them as well. Not when the app
                 // imports the module that way too.
-                const importers =
-                  warning.code === "INEFFECTIVE_DYNAMIC_IMPORT" &&
-                  / is dynamically imported by (.+?) but also statically imported by /.exec(
-                    warning.message,
-                  )?.[1];
                 const isListedReference =
-                  !!importers &&
-                  importers
-                    .split(", ")
-                    .every(
-                      (id) => id.endsWith(clientReferencesId) || id.endsWith(serverReferencesId),
-                    );
+                  warning.code === "INEFFECTIVE_DYNAMIC_IMPORT" &&
+                  warning.id !== undefined &&
+                  listedOnly.has(warning.id);
                 if (isDirective || isUnresolvedInScan || isListedReference) return;
                 if (userOnwarn) userOnwarn(warning, warn);
                 else warn(warning);
@@ -431,6 +430,21 @@ export function staticBuild(options: StaticBuildOptions): Plugin {
       } finally {
         buildingApp = false;
       }
+    },
+    // Before the bundler warns of an `import()` that splits nothing off,
+    // which it does as it makes the chunks.
+    buildEnd() {
+      if (this.environment.mode !== "build") return;
+      const lists = [`\0${clientReferencesId}`, `\0${serverReferencesId}`];
+      listedOnly = new Set(
+        lists
+          .flatMap((list) => this.getModuleInfo(list)?.dynamicallyImportedIds ?? [])
+          .filter((id) =>
+            (this.getModuleInfo(id)?.dynamicImporters ?? []).every((importer) =>
+              lists.includes(importer),
+            ),
+          ),
+      );
     },
     buildStart() {
       if (this.environment.mode !== "build") return;

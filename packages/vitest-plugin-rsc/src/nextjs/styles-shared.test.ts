@@ -24,7 +24,7 @@ const built: BuiltStylesheets = {
   },
   // The files of the host, by their paths from the root of the project.
   hostFiles: {
-    ".storybook/preview.tsx": ["_next/static/css/theme-111.css"],
+    "host/preview.tsx": ["_next/static/css/theme-111.css"],
     "host/callout.tsx": ["_next/static/css/callout-222.css", "_next/static/css/theme-111.css"],
     "host/plain.tsx": [],
     "callout.tsx": ["_next/static/css/other-333.css"],
@@ -83,7 +83,7 @@ test("gives a node the stylesheets of the files of the host, in their order, eac
     built,
     node,
     site,
-    [".storybook/preview.tsx", "host/callout.tsx"],
+    ["host/preview.tsx", "host/callout.tsx"],
     (file) => missing.push(file),
   );
   expect(paths(stylesheets)).toEqual({

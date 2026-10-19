@@ -106,6 +106,77 @@ test("takes back what React DOM kept on the document, and only that", async () =
   expect(reactTargets().map(reactProperties)).toEqual(runner);
 });
 
+test("takes back every property that was set on the document while the page was open", async () => {
+  // Of no React in particular: what the page set goes with it, whatever its
+  // name. What was there before stays.
+  const container = document.body.appendChild(document.createElement("section"));
+  onTestFinished(() => container.remove());
+  const targets = [document, document.documentElement, document.head, container];
+  const before = Symbol("before");
+  for (const target of targets) Object.assign(target, { fromBefore: true, [before]: true });
+  onTestFinished(() => {
+    for (const target of targets) {
+      Reflect.deleteProperty(target, "fromBefore");
+      Reflect.deleteProperty(target, before);
+    }
+  });
+
+  const { unmount } = await renderServer(<Counter />, { container });
+  const during = Symbol("during");
+  for (const target of targets) Object.assign(target, { duringPage: {}, [during]: {} });
+  await unmount();
+
+  for (const target of targets) {
+    expect(Object.hasOwn(target, "duringPage")).toBe(false);
+    expect(Object.hasOwn(target, during)).toBe(false);
+    expect(Object.hasOwn(target, "fromBefore")).toBe(true);
+    expect(Object.hasOwn(target, before)).toBe(true);
+  }
+});
+
+test("keeps the mark that a host set on the document before its first page, for every page", async () => {
+  // A library that marks the document on its first use, as `prepareDocument()`
+  // of `@testing-library/user-event` does: a symbol on `document`, and a
+  // capture listener of its own.
+  const prepared = Symbol("prepared");
+  const listeners = new Set<unknown>();
+  const prepare = () => {
+    if (Object.hasOwn(document, prepared)) return;
+    const listener = () => {};
+    listeners.add(listener);
+    document.addEventListener("focus", listener, { capture: true });
+    Object.assign(document, { [prepared]: true });
+  };
+  const added = vi.spyOn(document, "addEventListener");
+  const preparations = () =>
+    added.mock.calls.filter(([, listener]) => listeners.has(listener)).length;
+  onTestFinished(() => {
+    for (const listener of listeners) {
+      document.removeEventListener("focus", listener as EventListener, { capture: true });
+    }
+    Reflect.deleteProperty(document, prepared);
+  });
+
+  prepare();
+  await renderServer({ url: "/" });
+  prepare();
+  await renderServer({ url: "/" });
+  prepare();
+  await cleanup();
+  expect(Object.hasOwn(document, prepared)).toBe(true);
+  expect(preparations()).toBe(1);
+
+  // Prepared while a page is open, the mark goes with the page, and the next
+  // page prepares the document again, with one more listener.
+  Reflect.deleteProperty(document, prepared);
+  await renderServer({ url: "/" });
+  prepare();
+  await renderServer({ url: "/" });
+  expect(Object.hasOwn(document, prepared)).toBe(false);
+  prepare();
+  expect(preparations()).toBe(3);
+});
+
 test("lets go of a page that the test has left, with all of its modules", async () => {
   await renderServer({ url: "/" });
   const modules = modulesOfPage();

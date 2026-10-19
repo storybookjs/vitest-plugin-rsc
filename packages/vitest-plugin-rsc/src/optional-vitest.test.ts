@@ -6,7 +6,7 @@ import { describe, expect, test } from "vitest";
 import { assertVitestVersion } from "./nextjs/vitest-version.ts";
 
 // Vitest is an optional peer dependency, of any version: a host other than
-// Vitest, like Storybook, installs the plugin without it, or next to the
+// Vitest installs the plugin without it, or next to the
 // Vitest of the project's own tests. So no file of the build imports Vitest,
 // in its code or in its types, but for the setup files that the plugin gives
 // Vitest by their path, which no other file imports. This reads the build,

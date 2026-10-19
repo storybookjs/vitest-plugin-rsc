@@ -1,5 +1,5 @@
 // The Vitest that the plugin runs in. Vitest is a peer dependency of any
-// version, and an optional one: a host like Storybook installs the plugin
+// version, and an optional one: another host installs the plugin
 // next to the Vitest of the project's own tests, which can be another major,
 // and npm refuses a peer that is there in a version out of its range.
 export const minimumVitest = "5.0.3";

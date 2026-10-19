@@ -14,16 +14,15 @@ import { graphStylesheetAttribute } from "./styles-shared.ts";
 // React DOM keeps what it knows of a node in properties of the node, named
 // for the copy of React DOM that sets them: the page's, which loads with it.
 // On the document those stay, and with them the page: the stylesheets React
-// hoisted, and the listeners it added to them. So what the page's React DOM
-// set on the document, on `<html>` and `<head>`, and on the container of a
-// node goes with the page. Not what was there before it: the host may run a
-// React of its own.
+// hoisted, and the listeners it added to them. So what was set on the
+// document, on `<html>` and `<head>`, and on the container of a node while
+// the page was open goes with the page, whatever its name, as the nodes that
+// came with it do. Not what was there before it: the host may run a React of
+// its own.
 
 const elements = (of: Document) => [of.documentElement, of.head, of.body];
 const attributesOf = (element: Element) =>
   Array.from(element.attributes, ({ name, value }) => [name, value] as const);
-// `__reactFiber$…`, `__reactResources$…`, `_reactListening…` and the like.
-const isReactProperty = (key: string) => /^(?:__react[A-Za-z]+\$|_reactListening)/.test(key);
 
 let unload: (() => void) | undefined;
 // The URL that leaving the page puts back, while a page is open.
@@ -103,7 +102,7 @@ export async function loadDocument(html: string, url: string, container?: Elemen
   // Where the page's React DOM sets its properties.
   const reactTargets: object[] = [document, document.documentElement, document.head];
   if (container) reactTargets.push(container);
-  const runnerProperties = reactTargets.map((target) => new Set(Object.keys(target)));
+  const runnerProperties = reactTargets.map((target) => new Set(Reflect.ownKeys(target)));
   const runnerScripts = new Set(document.querySelectorAll("script"));
   const before = new Set<Node>([...document.head.childNodes, ...runnerBody.childNodes]);
   const parked: Node[] = [];
@@ -149,11 +148,10 @@ export async function loadDocument(html: string, url: string, container?: Elemen
     elements(document).forEach((element, index) =>
       setAttributes(element, runnerAttributes[index]!),
     );
+    // One that is not configurable cannot be deleted, and stays.
     reactTargets.forEach((target, index) => {
-      for (const key of Object.keys(target)) {
-        if (isReactProperty(key) && !runnerProperties[index]!.has(key)) {
-          delete (target as Record<string, unknown>)[key];
-        }
+      for (const key of Reflect.ownKeys(target)) {
+        if (!runnerProperties[index]!.has(key)) Reflect.deleteProperty(target, key);
       }
     });
     // Where Next's scripts leave the Flight payload and the scripts to run
