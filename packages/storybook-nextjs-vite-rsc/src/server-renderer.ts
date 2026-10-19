@@ -55,10 +55,14 @@ export const renderToCanvas: RenderToCanvas<NextjsServerRenderer> = async (
   if (page && !url) throw pageWithoutUrl(id);
   if (page && layouts) throw pageInLayouts(id);
   // A page, and a component in the layouts, own the document, so `play`
-  // looks in all of it: in `<html>`, which stays as pages come and go.
-  if (page || layouts) {
+  // looks in all of it: in `<html>`, which stays as pages come and go. Its
+  // `<body>` is the app's, which React hydrates: Storybook shows the story
+  // in the `<body>` there is, so before the page replaces it.
+  const ownsDocument = page || layouts;
+  if (ownsDocument) {
     const html = document.documentElement;
     Object.assign(context, { canvasElement: html, canvas: within(html) });
+    showMain();
   }
   const node = page
     ? undefined
@@ -89,7 +93,7 @@ export const renderToCanvas: RenderToCanvas<NextjsServerRenderer> = async (
     if (signal.aborted) return;
     throw error;
   }
-  showMain();
+  if (!ownsDocument) showMain();
 };
 
 // `@storybook/react`'s: `mount(<Story />)` in `play` renders that element.
