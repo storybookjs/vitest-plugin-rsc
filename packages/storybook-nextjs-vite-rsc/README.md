@@ -317,11 +317,12 @@ A server story with `parameters.docs.story.inline: true`, or a block's
 `inline` prop, cannot render in the docs page, and shows an error that says
 so.
 
-A docs page does not run the play function of a server story, whatever
-`parameters.docs.story.autoplay` says: the page it plays in shares the
-window's focus and URL with the stories in the docs page's other iframes.
-Open the story to play it. A block's own `autoplay` prop in MDX still runs
-it, as a block's props come before parameters: leave it off a server story.
+A docs page does not run the play function of a server story, as it runs
+none of any story, unless the story's `parameters.docs.story.autoplay` or
+its block's `autoplay` prop asks for it. A server story that plays on a docs
+page shares the window's focus and URL with the stories in the docs page's
+other iframes, so a play that types or navigates can fail there: open the
+story to play it.
 
 An MDX file is a file with `"use client"`, as the framework compiles it, and
 so is what it imports: client story files, for `of={…}`, and components of

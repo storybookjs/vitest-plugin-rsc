@@ -49,19 +49,3 @@ test("extend() and test() derive it again", () => {
   page.test("a test of a page", () => {});
   expect(getStoryChildren(page).map(layoutOf)).toEqual(["document"]);
 });
-
-test("a docs page never plays a server story", () => {
-  const docsStoryOf = (story: { composed: { parameters: { docs?: { story?: object } } } }) =>
-    story.composed.parameters.docs?.story;
-  const playing = { docs: { story: { autoplay: true } } };
-  const page = preview
-    .meta({ parameters: playing })
-    .story({ parameters: { nextjs: { url: "/" } } });
-  const card = preview.meta({ component: Card }).story({ parameters: playing });
-  expect(docsStoryOf(page)).toEqual({ inline: false, autoplay: false });
-  expect(docsStoryOf(card)).toEqual({ inline: false, autoplay: false });
-  expect(docsStoryOf(card.extend({ parameters: playing }))).toEqual({
-    inline: false,
-    autoplay: false,
-  });
-});

@@ -110,18 +110,14 @@ export function defineServerPreview<Addons extends PreviewAddonEntry[] = []>(
 export const isServerPreview = (preview: object): boolean => serverPreview in preview;
 
 /**
- * What the factory sets on every story of the server preview, over a user's
- * value, and again on each that `extend()` and `test()` make of it:
- * - `layout: "document"` for a story that owns the document, a page or a
- *   component in the app's layouts, which Storybook's view and docs read:
- *   its `<body>` is its root, and a docs page shows it in an iframe. A story
- *   that no longer owns the document loses it.
- * - `docs.story.autoplay: false`: a docs page does not run its play, as
- *   the page it plays in shares the window's focus and URL with the stories
- *   in the docs page's other iframes. A block's own `autoplay` prop in MDX
- *   still does, as a block's props come before parameters.
+ * `layout: "document"` for a story of the server preview that owns the
+ * document, a page or a component in the app's layouts, over a user's value,
+ * which Storybook's view and docs read: its `<body>` is its root, and a docs
+ * page shows it in an iframe. Again on each story that `extend()` and
+ * `test()` make of it, where one that no longer owns the document loses it.
  * It amends the input that core's factory made the story of, which core
- * composes only when the story is first read.
+ * composes only when the story is first read, as `@storybook/react`'s
+ * `preview.meta()` amends the stories it makes.
  */
 function serverStory(story: Story<Renderer>): Story<Renderer> {
   const { input, meta } = story;
@@ -131,11 +127,8 @@ function serverStory(story: Story<Renderer>): Story<Renderer> {
     nextjsOf(input).layouts ?? nextjsOf(meta.input).layouts ?? nextjsOf(preview.composed).layouts;
   const render = input.render ?? meta.input.render ?? preview.composed.render;
   const ownsDocument = layouts || isPage(meta.input.component, render);
-  input.parameters = {
-    ...(ownsDocument || layout === "document" ? parameters : input.parameters),
-    ...(ownsDocument && { layout: "document" }),
-    docs: { ...parameters.docs, story: { ...parameters.docs?.story, autoplay: false } },
-  };
+  if (ownsDocument) input.parameters = { ...parameters, layout: "document" };
+  else if (layout === "document") input.parameters = parameters;
   const { extend } = story;
   story.extend = ((input: Story<Renderer>["input"]) =>
     serverStory(extend.call(story, input))) as typeof extend;
