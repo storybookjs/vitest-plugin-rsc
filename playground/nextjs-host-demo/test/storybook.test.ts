@@ -416,6 +416,38 @@ test("a page that loads keeps its own <body> when its story is selected again", 
   expect(errors.list.splice(0), "the errors of the page").toEqual([]);
 });
 
+// Storybook's preparing block stays over the preview until the story
+// rendered, a page with its stylesheets, as for any renderer: while the page
+// loads, its HTML is in the document under the block, and after it, the
+// block is gone and the page has its style. The page's stylesheets come late
+// here, so that the check falls in the load.
+// Fails: this canary shows a story with `layout: 'document'` before its
+// render (`showMain()` in StoryRender of #36889), which a core PR removes.
+test.fails("a page loads under Storybook's preparing block", async ({ page }) => {
+  const canvas = await openStory(page, site!.url, "greeting--default");
+  expect(await rendered(canvas, "greeting--default")).toBe("finished");
+  await page.route(/\.css(\?|$)/, async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+    await route.continue();
+  });
+  await canvas.evaluate(() =>
+    window.__STORYBOOK_PREVIEW__.channel.emit("selectStory", {
+      storyId: "home--home",
+      viewMode: "story",
+    }),
+  );
+  // The page's HTML is in the document, its stylesheets on their way.
+  await canvas.waitForFunction(() => document.querySelector("h1")?.textContent === "Home", null, {
+    polling: 10,
+  });
+  const preparing = () =>
+    canvas.evaluate(() => !!document.querySelector('sb-preview[data-mode="preparing-story"]'));
+  expect(await preparing()).toBe(true);
+  expect(await rendered(canvas, "home--home")).toBe("finished");
+  expect(await preparing()).toBe(false);
+  expect(await body(canvas)).toEqual(atPage);
+});
+
 // A story that does what only the other kind of story can: the message that
 // Storybook shows for it. The page logs the error too, which the test takes
 // from `errors`, so that the end of the test checks the stories after it.

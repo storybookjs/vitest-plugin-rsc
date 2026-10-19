@@ -80,7 +80,8 @@ export const renderToCanvas: RenderToCanvas<NextjsServerRenderer> = async (
     if (signal.aborted) return;
     throw error;
   }
-  // Storybook shows a story that owns the document before its render.
+  // Storybook's preparing block stays over the document until the story
+  // rendered, a page with its stylesheets, as for any renderer.
   showMain();
 };
 

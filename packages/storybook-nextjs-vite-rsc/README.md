@@ -210,6 +210,9 @@ after each render. In `play`, `canvasElement` is that `<body>`, and `canvas`
 queries the document's `<body>` at each query, also after the page renders
 its document anew, as Next's not-found page does.
 
+While the page loads, Storybook's preparing block stays over the preview,
+as for any story; it goes once the page rendered, with its stylesheets.
+
 A page renders without the decorators, which have no node to decorate,
 Storybook's own included: backgrounds, measure and outline do nothing on a
 page. It has no CSS of the preview or its story file, and
@@ -349,6 +352,9 @@ for both kinds.
 - The iframe of a server story on a docs page does not follow the height
   of its page.
 - Tags of `preview.server.tsx`: see Two Previews.
+- The preparing block over a page that loads: this version of Storybook
+  takes it away before the page loads, so the preview is blank until the
+  page rendered.
 - A docs page shows its server stories in iframes that render at once and
   share the browser's storage, which each story's cleanup clears: a page
   that reads what its story's `beforeEach` put in `localStorage` can find
