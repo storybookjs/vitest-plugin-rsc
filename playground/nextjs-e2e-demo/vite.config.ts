@@ -5,9 +5,10 @@ import { vitestPluginNext, type NextBuild } from "vitest-plugin-rsc/nextjs/plugi
 import { vitestPluginRscSourceConditions } from "../../vitest.conditions.ts";
 
 // The plugin without Vitest: `vite build` makes a static build of the app,
-// with the page of `index.html` and `host/main.tsx` as its host. Its test is
-// build-test/static-build.test.ts. The tests of the app itself run with
-// Vitest, see vitest.config.ts.
+// with the page of `index.html` and `host/main.tsx` as its host, and a page
+// that renders a Client Component without a page of the app, `client.html`.
+// Its test is build-test/static-build.test.ts. The tests of the app itself
+// run with Vitest, see vitest.config.ts.
 
 // Google Fonts, without the network: see the file.
 process.env.NEXT_FONT_GOOGLE_MOCKED_RESPONSES = fileURLToPath(
@@ -30,5 +31,12 @@ export default defineConfig({
     // that render it, also in the build.
     vitestPluginNext({ host: { files: ["host/**"] }, build }),
   ],
+  build: {
+    rolldownOptions: {
+      input: ["index.html", "client.html"].map((page) =>
+        fileURLToPath(new URL(page, import.meta.url)),
+      ),
+    },
+  },
   resolve: { conditions: vitestPluginRscSourceConditions },
 });

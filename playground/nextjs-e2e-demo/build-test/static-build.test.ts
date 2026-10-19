@@ -159,6 +159,24 @@ describe.for(builds)("a static build, $build", ({ build, env }) => {
     expect(await page.evaluate(() => "nd" in window)).toBe(build === "development");
   });
 
+  // A page of the host that renders a Client Component itself, with
+  // `loadClientModule()`, and fetches a file of its own, and opens no page of
+  // the app: see host/client.tsx.
+  test('renders a file of the host with "use client" on a page of its own', async ({ page }) => {
+    await page.goto(`${site.url}client.html`);
+    await page.waitForFunction(() => (window as { __hostState?: string }).__hostState);
+    const host = await page.evaluate(() => {
+      const state = window as { __hostState?: string; __hostError?: unknown };
+      return { state: state.__hostState, error: String(state.__hostError) };
+    });
+    expect(host.state, host.error).toBe("ready");
+    expect(await page.evaluate(() => (window as { __hostData?: unknown }).__hostData)).toEqual({
+      from: "public/host.json",
+    });
+    await page.getByRole("button", { name: "Count: 0" }).click();
+    await page.getByRole("button", { name: "Count: 1" }).waitFor();
+  });
+
   // A Server Component of the host, on a route of the app, with a Client
   // Component of the app and the Server Action it calls.
   test("renders a node of the host", async ({ page }) => {

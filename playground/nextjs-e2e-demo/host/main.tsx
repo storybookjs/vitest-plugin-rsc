@@ -22,6 +22,9 @@ const state = window as {
 // of the host that render it, `hostFiles`. The tab keeps what the app has
 // between the calls: its cookies, its data.
 state.__hostOpen = async (url, node, files) => {
+  // When the host asks for the page, from which `pnpm perf:static` counts
+  // the requests of the route.
+  performance.mark("host-open");
   if (!node) {
     const { response } = await renderServer({ url });
     state.__hostRerender = undefined;
