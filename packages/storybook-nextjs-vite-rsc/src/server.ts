@@ -22,31 +22,23 @@ import { beforeAllInServerPreview } from "./errors.ts";
 import { annotations } from "./server-renderer.ts";
 
 // The entry of `.storybook/preview.server.tsx`, a file without "use client",
-// and of the story files that import it: server code. Its stories render on
-// the server through the plugin (server-renderer.ts).
+// and of the story files that import it: server code, whose stories render
+// through the plugin (server-renderer.ts).
 
 /** The request a server story renders in: `parameters.nextjs`. */
 export type NextjsParameters = {
   nextjs?: {
     /**
-     * The URL of the request: what `usePathname()`, `useParams()` and
-     * `useSearchParams()` read. A story without `component` and `render`
-     * is the page of the app at this URL, which it needs. For a component,
-     * defaults to `/`.
+     * The URL of the request, which `usePathname()` and `useParams()` read.
+     * A story without `component` and `render` is the page at this URL.
+     * Defaults to `/` for a component.
      */
     url?: string;
     /** Headers of the requests to the app, next to a browser's, like `cookie`. */
     headers?: Record<string, string>;
-    /**
-     * Whether `proxy.ts` and the routing of `next.config` take the request.
-     * Defaults to `true` for a page, `false` for a component.
-     */
+    /** Whether `proxy.ts` and the routing of `next.config` take it: by default for a page only. */
     proxy?: boolean;
-    /**
-     * Renders the component in place of the page at `url`, in the layouts of
-     * the app, which then own the document. Not for a page, which has its
-     * layouts. Defaults to `false`.
-     */
+    /** The component in place of the page at `url`, in the app's layouts. Not for a page. */
     layouts?: boolean;
   };
 };
@@ -84,10 +76,8 @@ export interface ServerPreview<T extends AddonTypes> extends Omit<
 const serverPreview = Symbol.for("@storybook/nextjs-vite-rsc/server-preview");
 
 /**
- * The preview of the server stories. Storybook reads `beforeAll`, globals
- * and the tags of the index from `.storybook/preview.tsx` only, so this
- * preview has none of them: no `beforeAll` (an error), only globals that
- * preview.tsx declares (an error when a story file loads), and tags in it
+ * The preview of the server stories. Storybook reads `beforeAll`, the
+ * globals and the index's tags from `.storybook/preview.tsx` only: tags here
  * do not reach the sidebar, autodocs or test filtering.
  */
 export function defineServerPreview<Addons extends PreviewAddonEntry[] = []>(
@@ -100,5 +90,4 @@ export function defineServerPreview<Addons extends PreviewAddonEntry[] = []>(
   ) as never;
 }
 
-/** Whether a preview is made with `defineServerPreview()`. */
 export const isServerPreview = (preview: object): boolean => serverPreview in preview;

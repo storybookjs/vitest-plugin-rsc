@@ -17,22 +17,18 @@ import {
 import { nothingToMount, pageInLayouts, pageWithoutUrl, serverStoryInline } from "./errors.ts";
 import type { NextjsParameters, NextjsServerRenderer } from "./server.ts";
 
-// How a server story renders: the way a test renders with the plugin.
-// `renderServer()` has Next render the story on a route of its own, in the
-// request of a page, with its cookies and Server Actions, and Next's client
-// hydrates it in the canvas. The story's `render` and its decorators are
-// Server Components there, which may be async. These are the annotations of
-// the server preview, its first addon.
+// The annotations of the server preview, its first addon: a server story
+// renders as a test renders with the plugin. `renderServer()` has Next
+// render it on a route of its own, in the request of a page, and Next's
+// client hydrates it in the canvas. Its `render` and decorators are Server
+// Components there, which may be async.
 
 type Context = StoryContext<NextjsServerRenderer>;
 
 const nextjsOf = (context: { parameters: object }) =>
   (context.parameters as NextjsParameters).nextjs ?? {};
 
-/**
- * The component with its args. A story without a `component` that renders
- * with this is a page of the app.
- */
+/** The component with its args. A story without a component that renders with this is a page. */
 export const render: ArgsStoryFn<NextjsServerRenderer> = (args, context) => {
   if (!context.component) throw pageWithoutUrl(context.id);
   return createElement(context.component, args);
@@ -40,8 +36,7 @@ export const render: ArgsStoryFn<NextjsServerRenderer> = (args, context) => {
 
 const isPage = (context: Context) => !context.component && context.originalStoryFn === render;
 
-// The pages that are open, by the canvas of the story that opened them: a
-// render with other args renders the story again on that page.
+// The page that each canvas has open: new args render the story again on it.
 const opened = new WeakMap<HTMLElement, RenderServerResult | RenderComponentResult>();
 
 export const renderToCanvas: RenderToCanvas<NextjsServerRenderer> = async (
@@ -54,10 +49,9 @@ export const renderToCanvas: RenderToCanvas<NextjsServerRenderer> = async (
   const page = isPage(context);
   if (page && !url) throw pageWithoutUrl(id);
   if (page && layouts) throw pageInLayouts(id);
-  // A page, and a component in the layouts, own the document, so `play`
-  // looks in all of it: in `<html>`, which stays as pages come and go. Its
-  // `<body>` is the app's, which React hydrates: Storybook shows the story
-  // in the `<body>` there is, so before the page replaces it.
+  // A story that owns the document has all of it for `play`: `<html>`,
+  // which stays as pages come and go. Its `<body>` is the app's, so
+  // Storybook shows the story before the page replaces the one there is.
   const ownsDocument = page || layouts;
   if (ownsDocument) {
     const html = document.documentElement;
@@ -72,7 +66,7 @@ export const renderToCanvas: RenderToCanvas<NextjsServerRenderer> = async (
   const open = opened.get(canvasElement);
   try {
     if (node && open && "rerender" in open && !forceRemount) {
-      // New args or globals: the node again, in place, without a page load.
+      // New args or globals: in place, without a page load.
       await open.rerender(node);
     } else {
       const result = node
@@ -89,7 +83,7 @@ export const renderToCanvas: RenderToCanvas<NextjsServerRenderer> = async (
       if (result.errors.length > 0) throw result.errors[0];
     }
   } catch (error) {
-    // Storybook left the story: the page is left with it.
+    // Storybook left the story, and the page with it.
     if (signal.aborted) return;
     throw error;
   }
@@ -107,12 +101,10 @@ export const mount = (context: Context) => async (ui?: ReactNode) => {
 };
 
 /**
- * Before the story's own `beforeEach`, as the plugin's setup does before a
- * test: `cleanup()`, so what the story's hooks set is there for its render,
- * but for a render with new args, which keeps the page. Testing Library
- * without the `act` of the browser layer's React, which `@storybook/react`
- * configured: a page has a React of its own. What it returns runs as
- * Storybook tears the story down, also after an aborted render.
+ * Before the story's own `beforeEach`, as the plugin's setup before a test:
+ * `cleanup()`, but for new args, which keep the page. Testing Library without
+ * the browser layer's `act`, as a page has a React of its own. What it
+ * returns runs as Storybook tears the story down, also after an abort.
  */
 export const beforeEach: BeforeEach<NextjsServerRenderer> = async ({ canvasElement }) => {
   const { eventWrapper, asyncWrapper, unstable_advanceTimersWrapper } = getConfig();
@@ -123,21 +115,17 @@ export const beforeEach: BeforeEach<NextjsServerRenderer> = async ({ canvasEleme
   return async () => {
     configure({ eventWrapper, asyncWrapper, unstable_advanceTimersWrapper });
     opened.delete(canvasElement);
-    // Leaving puts back the URL of when the page opened, but for the URL of
-    // the story that Storybook selects next, which it writes at its own
-    // path while the page is open, before it tears this story down: that
-    // one stays. It is the URL of Storybook's selection, which only the
-    // reload of a teardown reads, not a story's context, so its path is
-    // what tells it apart.
+    // Storybook writes the URL of the story it selects next, at its own
+    // path, before it tears this one down: that URL stays. A story's context
+    // does not have it, so the path tells it from the page's.
     const at = window.location;
     await cleanup({ url: at.pathname === pathname ? at.href : undefined });
   };
 };
 
 /**
- * `layout: "none"` for a story that owns the document, whose `<body>` is the
- * app's: in the layouts, or a page, which has a URL and no component. An
- * enhancer sees no `render`, so a story of a `render` at a URL is counted too.
+ * `layout: "none"` for a story that owns the document: in the layouts, or a
+ * page. An enhancer sees no `render`, so a `render` at a URL counts too.
  */
 const layoutOfDocument: ArgTypesEnhancer<NextjsServerRenderer> = (context) => {
   const { url, layouts } = nextjsOf(context);
@@ -145,8 +133,8 @@ const layoutOfDocument: ArgTypesEnhancer<NextjsServerRenderer> = (context) => {
   return context.argTypes;
 };
 
-// A story file from the root of the project. Storybook names it from its
-// working directory, which the preset gives from the root.
+// A story file from the root of the project, for its stylesheets. Storybook
+// names it from its working directory, which the preset gives.
 function fromRoot(fileName: string): string {
   const file: string[] = [];
   for (const part of `${import.meta.env.STORYBOOK_NEXTJS_RSC_WORKING_DIR}/${fileName}`.split("/")) {
@@ -165,8 +153,7 @@ export const annotations: ProjectAnnotations<NextjsServerRenderer> = {
   argTypesEnhancers: [layoutOfDocument],
   parameters: {
     renderer: "react",
-    // A server story renders in a page of the app, which a docs page shows
-    // in an iframe.
+    // A docs page shows a server story's page in an iframe.
     docs: { story: { inline: false, iframeHeight: "320px" } },
   },
 };

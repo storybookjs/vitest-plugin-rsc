@@ -12,8 +12,8 @@ import { pluginTwice } from "./errors.ts";
 import type { FrameworkOptions } from "./index.ts";
 
 // The preset: Storybook's Vite builder and React renderer, with
-// vitest-plugin-rsc in the Vite config. Storybook is a host of the plugin, as
-// Vitest is: the preview is the rsc layer, a story file what a test file is.
+// vitest-plugin-rsc, whose host Storybook is, as Vitest is: the preview is
+// the rsc layer, a story file what a test file is.
 
 export const core: PresetProperty<"core"> = {
   builder: import.meta.resolve("@storybook/builder-vite"),
@@ -26,17 +26,13 @@ export const features: PresetProperty<"features"> = async (existing) => ({
   viteAppBuilder: true,
 });
 
-// Next to this file, in `src` or `dist`.
-const ownFile = (name: string) =>
-  normalizePath(
-    fileURLToPath(new URL(`./${name}${path.extname(import.meta.url)}`, import.meta.url)),
-  );
+// What the store gets for each file: load.ts, next to this file.
+export const experimental_moduleLoader = normalizePath(
+  fileURLToPath(new URL(`./load${path.extname(import.meta.url)}`, import.meta.url)),
+);
 
-// What the store gets for each file: load.ts.
-export const experimental_moduleLoader = ownFile("load");
-
-// The React of each layer: by its name, which each environment resolves
-// with its own conditions, `react-server` in the rsc layer.
+// Each layer's React by its name, which each environment resolves with its
+// own conditions: `react-server` in the rsc layer.
 export const resolvedReact = async (existing: object) => ({
   ...existing,
   react: "react",
@@ -55,8 +51,7 @@ export const mdxLoaderOptions = async (options: MdxLoaderOptions) => ({
   },
 });
 
-type Program = { body: unknown[] };
-const recmaUseClient = () => (program: Program) => {
+const recmaUseClient = () => (program: { body: unknown[] }) => {
   program.body.unshift({
     type: "ExpressionStatement",
     expression: { type: "Literal", value: "use client" },
@@ -64,8 +59,8 @@ const recmaUseClient = () => (program: Program) => {
   });
 };
 
-// Where Storybook names the story files from, from the root of the project,
-// for the stylesheets of a story file (server-renderer.ts).
+// The directory of the story files' names, from the root of the project
+// (server-renderer.ts).
 export const env: PresetProperty<"env"> = async (existing, options) => ({
   ...existing,
   STORYBOOK_NEXTJS_RSC_WORKING_DIR: path.posix.relative(
@@ -74,38 +69,36 @@ export const env: PresetProperty<"env"> = async (existing, options) => ({
   ),
 });
 
-// The directory of the framework's own files, in `src` or `dist`. A RegExp:
-// the path of a package can have characters that a glob reads as syntax.
+// The framework's own files, in `src` or `dist`. A RegExp: a glob would read
+// characters of the path as syntax.
 const frameworkDir = normalizePath(fileURLToPath(new URL(".", import.meta.url)));
 const frameworkFiles = new RegExp(`^${frameworkDir.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`);
 
 export const viteFinal: ViteFinal = async (config, options) => {
+  const plugins = config.plugins ?? [];
   if (
     await hasVitePlugins(
-      config.plugins ?? [],
-      vitestPluginRSC().map((plugin) => plugin.name),
+      plugins,
+      vitestPluginRSC().map(({ name }) => name),
     )
   ) {
     throw pluginTwice();
   }
   const { build, browserModules } =
     (await options.presets.apply<FrameworkOptions | undefined>("frameworkOptions")) ?? {};
+  const host = await hostOf(options);
   return {
     ...config,
-    plugins: [
-      ...(config.plugins ?? []),
-      vitestPluginRSC(),
-      vitestPluginNext({ build, browserModules, host: await hostOf(options) }),
-    ],
+    plugins: [...plugins, vitestPluginRSC(), vitestPluginNext({ build, browserModules, host })],
   };
 };
 
-// Storybook is the host: the story files, `.storybook/` and the framework
-// are its files. Storybook's React-free preview runtime and the addons that
-// the presets register are its packages, one instance in the preview and in
-// the browser layer, where a client story's `fn()` is the spy the Actions
-// panel shows. What is bound to a React, like `storybook/theming`, the
-// renderer and the docs blocks, stays the layer's own.
+// Storybook's files: the story files, `.storybook/` and the framework. Its
+// packages: the React-free preview runtime and the registered addons, one
+// instance in the preview and in the browser layer, where a client story's
+// `fn()` is the spy that the Actions panel shows. What is bound to a React,
+// like `storybook/theming`, the renderer and the docs blocks, stays each
+// layer's own.
 async function hostOf(options: Options) {
   const root = path.resolve(options.configDir, "..");
   const stories = normalizeStories(await options.presets.apply("stories", [], options), {
@@ -131,15 +124,11 @@ async function hostOf(options: Options) {
   };
 }
 
-// The package of an addon, by the preview entry that a preset registers:
-// `{ bare, absolute }` for a file in `node_modules`, whose `bare` is its
-// path there, like `@storybook/addon-a11y/dist/preview.js`. The package is
-// every module of it, so the root that a preview imports, `import a11y from
-// "@storybook/addon-a11y"`, and the entry that it imports are one instance,
-// whose listeners of the channel are there once. Not a package that depends
-// on React: its preview may render with React, like addon-docs's docs page
-// or the renderer's stories, and that React is the layer's own. Such an
-// addon is evaluated in each layer that imports it.
+// The package of an addon, from the preview entry that a preset registers
+// by its path in `node_modules`, like `@storybook/addon-a11y/dist/preview.js`.
+// All of the package is one instance, the root that a preview imports and the
+// entry alike. Not a package that depends on React, whose preview may render
+// with it, like addon-docs's docs page: that one is each layer's own.
 function addonOf(entry: PreviewAnnotation): string[] {
   if (typeof entry === "string") return [];
   const bare = normalizePath(entry.bare);
