@@ -1,5 +1,5 @@
 import { expect, test, vi } from "vitest";
-import { hostFilesOf } from "./server-story.ts";
+import { hostFilesOf, layoutOfDocument, serverStoryFiles } from "./server-story.ts";
 
 // Where the project is, as the virtual module has it: from the directory
 // that the root and Storybook's working directory are both in.
@@ -31,4 +31,40 @@ test("a story file outside the root, with Storybook at the root", () => {
     ".storybook/preview.tsx",
     "../shared/x.stories.tsx",
   ]);
+});
+
+// What Storybook gives the enhancer of a story of the file: its parameters
+// and the meta's component, not its render.
+function layoutOf(file: Record<string, unknown>, name: string, parameters = {}) {
+  serverStoryFiles.set("./x.stories.tsx", file);
+  const context = {
+    id: `x--${name}`,
+    componentId: "x",
+    component: (file.default as { component?: unknown }).component,
+    parameters: { fileName: "./x.stories.tsx", ...parameters },
+    argTypes: {},
+  };
+  layoutOfDocument(context as unknown as Parameters<typeof layoutOfDocument>[0]);
+  return (context.parameters as { layout?: string }).layout;
+}
+
+test("a story that owns the document has no layout of Storybook's", () => {
+  const Component = () => null;
+  // A page: no component, no render, also when the story says otherwise.
+  expect(layoutOf({ default: {}, Home: {} }, "home")).toBe("none");
+  expect(layoutOf({ default: {}, InLayouts: {} }, "in-layouts", { layout: "padded" })).toBe("none");
+  // A component in the layouts.
+  expect(
+    layoutOf({ default: { component: Component }, Story: {} }, "story", {
+      nextjs: { layouts: true },
+    }),
+  ).toBe("none");
+  // A node: a component, or a render of the story or its meta.
+  expect(layoutOf({ default: { component: Component }, Story: {} }, "story")).toBeUndefined();
+  expect(layoutOf({ default: {}, Story: { render: () => null } }, "story")).toBeUndefined();
+  expect(layoutOf({ default: { render: () => null }, Story: {} }, "story")).toBeUndefined();
+  expect(layoutOf({ default: {}, Story: () => null }, "story")).toBeUndefined();
+  // A test of a story of CSF Next, as its story.
+  expect(layoutOf({ default: {}, Home: {} }, "home:renders")).toBe("none");
+  expect(layoutOf({ default: {}, Story: { render: () => null } }, "story:renders")).toBeUndefined();
 });

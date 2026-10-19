@@ -17,6 +17,7 @@ import { docsRenderer, docsStoryByKind, loadDocsFile, serverStoryInline } from "
 import {
   beforeEach,
   isPageStory,
+  layoutOfDocument,
   nothingToMount,
   render,
   renderServerStory,
@@ -33,7 +34,7 @@ export { beforeEach, render };
 
 export const parameters = { renderer: "react", docs: { renderer: docsRenderer } };
 
-export const argTypesEnhancers = [docsStoryByKind];
+export const argTypesEnhancers = [docsStoryByKind, layoutOfDocument];
 
 // `@storybook/react`'s: `mount(<Story />)` in `play` renders that element.
 export const mount =

@@ -1,5 +1,13 @@
 import { createElement, type ReactNode } from "react";
-import type { ArgsStoryFn, RenderContext, StoryContext } from "storybook/internal/types";
+import { isStory, storyNameFromExport, toId } from "storybook/internal/csf";
+import type {
+  ArgsStoryFn,
+  ArgTypesEnhancer,
+  ModuleExports,
+  RenderContext,
+  StoryContext,
+  StoryContextForEnhancers,
+} from "storybook/internal/types";
 import { within } from "storybook/test";
 import { previewFile, root, workingDir } from "virtual:@storybook/nextjs-vite-rsc/project";
 import {
@@ -32,6 +40,54 @@ export const render: ArgsStoryFn<NextjsRscRenderer> = (args, context) => {
 export const isPageStory = (context: StoryContext<NextjsRscRenderer>): boolean =>
   !context.component && context.originalStoryFn === render;
 
+// The story files without `"use client"`, as they loaded last, by the
+// importPath that Storybook loaded them with, which is the
+// `parameters.fileName` of their stories (client-story.ts).
+export const serverStoryFiles = new Map<string, ModuleExports>();
+
+/**
+ * `parameters.layout` of a story that owns the document, a page or a
+ * component in the layouts: `"none"`, whatever the story says, as Storybook's
+ * layouts are classes of a `<body>` that is the app's. An enhancer, which
+ * Storybook calls as it prepares the story, with its parameters and the
+ * meta's component, but not its render: whether it is a page is read from
+ * its file.
+ */
+export const layoutOfDocument: ArgTypesEnhancer<NextjsRscRenderer> = (context) => {
+  const { parameters } = context;
+  const { layouts } = (parameters as NextjsParameters).nextjs ?? {};
+  if (layouts === true || isPageInFile(context)) parameters.layout = "none";
+  return context.argTypes;
+};
+
+// `isPageStory()` of a story that is not prepared yet: no component, and no
+// render of the story or its meta. A test of a story of CSF Next is a page
+// when its story is. Not a `render` of the preview file, which is the
+// framework's, nor a story that does not load through the framework, like a
+// portable story: those keep their layout.
+function isPageInFile({
+  id,
+  componentId,
+  component,
+  parameters,
+}: StoryContextForEnhancers<NextjsRscRenderer>): boolean {
+  const file = serverStoryFiles.get(parameters.fileName as string);
+  if (component || !file) return false;
+  const { default: meta, __namedExportsOrder, ...stories } = file;
+  // A test of CSF Next is `<id of its story>:<name of the test>`.
+  const [storyOfId] = id.split(":");
+  for (const [name, value] of Object.entries(stories)) {
+    if (!value || (typeof value !== "object" && typeof value !== "function")) continue;
+    // A story of CSF Next has its annotations and those of its meta as `input`.
+    const story = isStory(value) ? value.input : value;
+    const storyId = story.parameters?.__id ?? toId(componentId, storyNameFromExport(name));
+    if (storyId !== storyOfId) continue;
+    const ofMeta = isStory(value) ? value.meta.input : meta;
+    return typeof story === "object" && !story.render && !ofMeta?.render;
+  }
+  return false;
+}
+
 const pageInLayouts = (id: string) =>
   new Error(
     `The story ${id} is a page, which renders in its layouts already; \`layouts\` is for a ` +
@@ -51,13 +107,6 @@ const pageWithoutUrl = (id: string) =>
       `a URL: add \`parameters: { nextjs: { url: "/notes" } }\` with the path of the page. For ` +
       `a story of a component, give it a \`component\` or a \`render\`.`,
   );
-
-// A render of a server story, by identity.
-type Rendered = object;
-
-// The story on the canvas: the one that counts. A render after it, the
-// framework's `beforeEach` of the next one, or an abort, ends a render.
-let shown: Rendered | undefined;
 
 /** Renders a server story with `renderServer()`. */
 export async function renderServerStory(
@@ -83,14 +132,15 @@ export async function renderServerStory(
         hostFiles: hostFilesOf(context.parameters.fileName as string | undefined),
         ...(layouts ? { layouts } : { container: canvasElement }),
       };
-  // A page and the layouts have the document's `<body>`, which React
-  // hydrates: Storybook's classes on it come first. Every render is a new
-  // page load, also with other args: the framework's `beforeEach` has left
-  // the story before.
+  // A page, and a component in the layouts, own the document, so the render
+  // and `play` look in all of it: in `<html>`, which stays as pages come and
+  // go, each with a `<body>` of its own.
   const ownsDocument = page || layouts === true;
-  const rendered: Rendered = {};
-  shown = rendered;
-  const superseded = () => shown !== rendered || context.abortSignal.aborted;
+  if (ownsDocument) {
+    const html = document.documentElement;
+    Object.assign(context, { canvasElement: html, canvas: within(html) });
+  }
+  const { abortSignal } = context;
   const rendering = (async () => {
     // What the story, a decorator or Flight threw on the server: Next shows
     // its error page in place of the story, and the page reports the error,
@@ -102,38 +152,38 @@ export async function renderServerStory(
     };
     window.addEventListener("error", report);
     try {
+      // The page's `<body>` is the app's, which React hydrates. Storybook
+      // shows that it prepares a story with a block that it puts in the
+      // `<body>` there is, after a moment: in the page's, as it loads,
+      // where hydration fails on it. So it shows the story before.
       if (ownsDocument) showMain();
+      // Every render is a new page load, also with other args: the
+      // framework's `beforeEach` has left the page before.
       const result = await (node === undefined
         ? renderServer(options)
         : renderServer(node, options));
-      if (superseded()) return;
+      if (abortSignal.aborted) return;
       const { status } = result.response;
       if (reported.length > 0 || status >= 500) {
         throw reported[0] ?? new Error(`The server answered ${status} for the story.`);
       }
     } catch (error) {
-      if (superseded()) return;
-      // Storybook shows the error in its own elements of the document, which
-      // Next's error document, or a page that did not load, may have taken.
-      await leave(rendered);
+      if (abortSignal.aborted) return;
       throw explainServerError(reported[0] ?? error, context);
     } finally {
       window.removeEventListener("error", report);
     }
-    if (!ownsDocument) return showMain();
-    // `play` looks in the page, which is the document.
-    Object.assign(context, { canvasElement: document.body, canvas: within(document.body) });
+    if (!ownsDocument) showMain();
   })();
-  await untilAborted(rendering, context.abortSignal);
+  await untilAborted(rendering, abortSignal);
 }
 
 // `cleanup()` leaves the page, and puts back the preview's URL of when the
-// page opened. Storybook writes the query of the next story while the page is
+// page opened. Storybook writes the URL of the next story while the page is
 // open, before it tears this one down, and a URL written then goes with the
 // page: written again, the preview is at the story that is selected, also
 // for a reload. Not a query of the page, after a change of the story file.
-async function leave(rendered: Rendered): Promise<void> {
-  if (shown === rendered) shown = undefined;
+async function leave(): Promise<void> {
   const selection = new URLSearchParams(location.search);
   await cleanup();
   if (selection.has("id") && selection.has("viewMode")) {
@@ -145,19 +195,14 @@ async function leave(rendered: Rendered): Promise<void> {
  * The framework's `beforeEach`, the first hook of the project: `cleanup()`, as
  * before a test, before the story's own `beforeEach`, whose cookies and
  * storage are then there for the render. It runs for every render of a
- * story, also with other args. What it returns Storybook runs as the story
- * is torn down.
+ * story, also with other args, and leaves the page of the render before.
+ * Storybook runs what it returns as it tears the story down, after it has
+ * aborted the render: it leaves the page, also one that is still loading.
+ * Each render adds one, and the ones after the first find no page.
  */
 export async function beforeEach(): Promise<() => Promise<void>> {
-  await (shown ? leave(shown) : cleanup());
-  return leaveShown;
-}
-
-// Leaves the story on the canvas, as Storybook tears the story down: before
-// the next story, and also before it renders the story again after a change
-// of its file, in the elements of the document that a page has taken.
-async function leaveShown(): Promise<void> {
-  if (shown) await leave(shown);
+  await leave();
+  return leave;
 }
 
 /**
@@ -184,10 +229,10 @@ function fromRoot(fileName: string): string {
 }
 
 // Storybook aborts the render of a story it leaves, waits a few tasks for it
-// to end, and reloads the preview otherwise, at a URL that is the page's by
-// then. A page load takes longer: the render ends at the abort, and the
-// teardown, the cleanup of the framework's `beforeEach`, leaves the page that
-// may still load.
+// to end, and loads the preview again otherwise. A page load takes longer:
+// the render ends at the abort, and the cleanup of the framework's
+// `beforeEach`, which Storybook runs next, leaves the page that may still
+// load.
 function untilAborted(rendering: Promise<void>, signal: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
     if (signal.aborted) resolve();

@@ -12,7 +12,11 @@ type Channel = {
 
 type Preview = {
   channel: Channel;
-  currentRender?: { id: string; phase?: string; story?: { playFunction?: unknown } };
+  currentRender?: {
+    id: string;
+    phase?: string;
+    story?: { playFunction?: unknown; parameters: { layout?: string } };
+  };
 };
 
 declare global {

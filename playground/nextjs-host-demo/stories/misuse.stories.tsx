@@ -19,8 +19,8 @@ export const FunctionArg: StoryObj<typeof PressButton> = {
   args: { label: "Press", onPress: fn() },
 };
 
-// A story that fails while the layouts of the app own the document: the
-// error shows in Storybook's own document again.
+// A story that fails while the layouts of the app own the document: Next
+// shows its error page, and Storybook its error display over it.
 export const ThrowsInLayouts: StoryObj = {
   parameters: { nextjs: { url: "/", layouts: true } },
   render: () => {
@@ -39,6 +39,18 @@ export const MountOnPage: StoryObj = {
   parameters: { nextjs: { url: "/" } },
   play: async ({ mount }) => {
     await mount(<p>A component</p>);
+  },
+};
+
+// A page whose play fails once Next's not-found page has loaded, which
+// renders the document anew. Storybook shows an exception of play in the
+// Interactions panel, and with `throwPlayFunctionExceptions` in its error
+// display too, in the document of that page.
+export const PlayFailsOnNotFound: StoryObj = {
+  parameters: { nextjs: { url: "/gone" }, throwPlayFunctionExceptions: true },
+  play: async ({ canvas }) => {
+    await canvas.findByText("This page could not be found.");
+    throw new Error("The play failed on the not-found page");
   },
 };
 
