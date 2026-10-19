@@ -113,7 +113,10 @@ test("the plugin, with Storybook as its host", async () => {
   ];
   await viteFinal(
     {},
-    { frameworkOptions: { build: "production", browserModules: ["msw/**"] }, previewAnnotations },
+    {
+      frameworkOptions: { build: "production", browserModules: ["**/node_modules/msw/**"] },
+      previewAnnotations,
+    },
   );
   const [{ host, build, browserModules }] = vitestPluginNext.mock.calls[0] as [
     {
@@ -122,7 +125,10 @@ test("the plugin, with Storybook as its host", async () => {
       browserModules: string[];
     },
   ];
-  expect({ build, browserModules }).toEqual({ build: "production", browserModules: ["msw/**"] });
+  expect({ build, browserModules }).toEqual({
+    build: "production",
+    browserModules: ["**/node_modules/msw/**"],
+  });
   // The stories and `.storybook`, relative to the root.
   expect(host.files.slice(0, 2)).toEqual(["stories/**/*.stories.tsx", ".storybook/**"]);
   // The framework's own files, next to the preset.
@@ -151,10 +157,7 @@ test("Storybook's packages that the layers share and its builder has no global f
   const [{ host }] = vitestPluginNext.mock.lastCall as [{ host: { packages: string[] } }];
   const globals = Object.keys(globalsNameReferenceMap);
   const runtime = host.packages.filter((name) => name.startsWith("storybook/"));
-  expect(await preset.optimizeViteDeps(["react"])).toEqual([
-    "react",
-    ...runtime.filter((name) => !globals.includes(name)),
-  ]);
+  expect(preset.optimizeViteDeps).toEqual(runtime.filter((name) => !globals.includes(name)));
 });
 
 test("a stories glob at the root of the project matches its files only", async () => {
