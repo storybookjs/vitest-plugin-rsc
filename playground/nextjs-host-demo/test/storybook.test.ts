@@ -37,12 +37,13 @@ const passed: StoryRun = { phase: "finished", reports: [], interactions: "PASS" 
 // The canvas of the story, in the manager.
 const inCanvas = (canvas: Frame) => canvas.locator("#storybook-root");
 
-test("a server story renders in a request of the app, in the project's decorator", async ({
+test("a server story renders in a request of the app, in the server preview's decorator", async ({
   page,
 }) => {
   const canvas = await openStory(page, site!.url, "greeting--default");
   expect(await storyRun(page, canvas, "greeting--default")).toEqual(passed);
-  // The project's decorator, a Client Component, with the CSS of the preview file.
+  // The decorator of preview.server.tsx, a Client Component, with the CSS
+  // that preview imports.
   const theme = inCanvas(canvas).getByTestId("theme");
   await expect.poll(() => theme.getAttribute("data-theme")).toBe("storybook");
   await expect
@@ -59,7 +60,7 @@ test("a client story renders in the browser layer, with fn() for play and Action
   const canvas = await openStory(page, site!.url, "press-button--pressed");
   expect(await storyRun(page, canvas, "press-button--pressed")).toEqual(passed);
   const button = inCanvas(canvas).getByRole("button", { name: "Press: 1" });
-  // The meta's decorator in the project's, both of the browser layer.
+  // The meta's decorator in the one of preview.tsx, both of the browser layer.
   const frame = inCanvas(canvas).getByTestId("theme").getByTestId("meta-decorator");
   await expect.poll(() => frame.getByRole("button").count()).toBe(1);
   // The CSS module of the component, and the CSS of the story file.
@@ -240,13 +241,26 @@ async function misuse(page: Page, canvas: Frame, story: string, errors: { list: 
   return message;
 }
 
+// A story whose file does not load: Storybook shows the error of the
+// loader, without a render of the story.
+async function notLoaded(canvas: Frame, story: string, errors: { list: string[] }) {
+  await canvas.evaluate((storyId) => {
+    window.__STORYBOOK_PREVIEW__.channel.emit("selectStory", { storyId, viewMode: "story" });
+  }, story);
+  const error = canvas.locator("#error-message");
+  await expect.poll(() => error.isVisible(), { message: story, timeout: 30_000 }).toBe(true);
+  errors.list.splice(0);
+  return (await error.textContent()) ?? "";
+}
+
 test("misuse says what to do instead", async ({ page, errors }) => {
   const canvas = await openStory(page, site!.url, "greeting--default");
   expect(await misuse(page, canvas, "misuse--hook-on-server", errors)).toContain(
     'Add the "use client" directive',
   );
+  // React's own error: a function arg that reaches a Client Component.
   expect(await misuse(page, canvas, "misuse--function-arg", errors)).toContain(
-    "is a function, like fn() of storybook/test",
+    "Event handlers cannot be passed to Client Component props",
   );
   expect(await misuse(page, canvas, "misuse--throws-in-layouts", errors)).toContain(
     "The story failed in the layouts",
@@ -264,9 +278,17 @@ test("misuse says what to do instead", async ({ page, errors }) => {
   expect(await misuse(page, canvas, "misuse-client--async-render", errors)).toContain(
     "is an async Client Component",
   );
-  expect(await misuse(page, canvas, "misuse-client--page", errors)).toContain(
-    'its file has "use client": a page renders on the server',
-  );
+  // A story file that the framework does not load: the error of the loader.
+  for (const [story, message] of [
+    ["misuse-csf3--not-csf-next", "has no story of meta.story()"],
+    ["misuse-factory--wrong-factory", 'has "use client", so its stories render in the browser'],
+    ["misuse-before-all--before-all", "defineServerPreview() got a beforeAll"],
+    ["misuse-globals--globals", "globals are declared in preview.tsx"],
+  ]) {
+    await expect
+      .poll(() => notLoaded(canvas, story!, errors), { message: story })
+      .toContain(message);
+  }
   // And the stories after them render as before.
   expect(await runStory(page, canvas, "press-button--pressed")).toEqual(passed);
   expect(await rendered(canvas, "press-button--pressed")).toBe("finished");
