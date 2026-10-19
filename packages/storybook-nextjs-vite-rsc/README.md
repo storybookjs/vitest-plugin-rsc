@@ -349,8 +349,6 @@ for both kinds.
 - The iframe of a server story on a docs page does not follow the height
   of its page.
 - Tags of `preview.server.tsx`: see Two Previews.
-- `storybook build` stops with an error of the plugin about the scan of the
-  browser layer.
 - A docs page shows its server stories in iframes that render at once and
   share the browser's storage, which each story's cleanup clears: a page
   that reads what its story's `beforeEach` put in `localStorage` can find
