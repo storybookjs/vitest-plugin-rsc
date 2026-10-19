@@ -312,6 +312,11 @@ A docs page shows each story the way its kind renders:
 A server story with `parameters.docs.story.inline: true` cannot render in
 the docs page, and shows an error that says so.
 
+A docs page never runs the play function of a server story, whatever
+`parameters.docs.story.autoplay` says: the page it plays in shares the
+window's focus and URL with the stories in the docs page's other iframes.
+Open the story to play it.
+
 An MDX file is a file with `"use client"`, as the framework compiles it, and
 so is what it imports: client story files, for `of={…}`, and components of
 the browser. A server story file is server code, which an MDX file cannot
@@ -347,9 +352,10 @@ for both kinds.
 - `storybook build` stops with an error of the plugin about the scan of the
   browser layer.
 - A docs page shows its server stories in iframes that render at once and
-  share the browser's storage, which each story's cleanup clears: a story
-  that sets `localStorage` for its `play` can find it cleared. Keep such a
-  story out of autodocs with `tags: ["!autodocs"]`.
+  share the browser's storage, which each story's cleanup clears: a page
+  that reads what its story's `beforeEach` put in `localStorage` can find
+  it cleared. Keep such a story out of autodocs with
+  `tags: ["!autodocs"]`.
 - A change of an MDX file that shows a client story with `of={…}` fails
   that block until the preview loads again.
 - Next's router in a client story: `useRouter()` throws there, and

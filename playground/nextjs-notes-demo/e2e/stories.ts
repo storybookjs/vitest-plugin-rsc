@@ -138,7 +138,26 @@ export async function runEveryStory(page: Page, url: string, errors: PageErrors)
 }
 
 /** A story that a docs page shows: inline, or in an iframe of its own, and whether it shows an error. */
-type Shown = { id: string; in: "inline" | "iframe"; error: boolean };
+type Shown = { id: string; in: "inline" | "iframe"; error: boolean; played?: boolean };
+
+// Every preview of the page, a docs page's iframes too, keeps the phases of
+// its renders as Storybook reports them, from the moment it starts.
+async function recordPhases(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    let preview: { channel: { on(event: string, listener: (event: never) => void): void } };
+    Object.defineProperty(window, "__STORYBOOK_PREVIEW__", {
+      configurable: true,
+      get: () => preview,
+      set(value: typeof preview) {
+        preview = value;
+        const phases: string[] = ((window as { phases?: string[] }).phases = []);
+        preview.channel.on("storyRenderPhaseChanged", ({ newPhase }: { newPhase: string }) =>
+          phases.push(newPhase),
+        );
+      },
+    });
+  });
+}
 
 // The stories that the docs page in the preview shows, once each of `ids`
 // has a block and each block has rendered: an inline story once its block
@@ -164,7 +183,10 @@ async function shownStories(canvas: Frame, ids: string[]): Promise<Shown[]> {
             ?.currentRender;
           if (render?.id !== id || !ended.includes(render.phase!)) return false;
           const error = !!iframe.contentDocument?.body.classList.contains("sb-show-errordisplay");
-          stories.push({ id, in: "iframe", error });
+          const phases = (iframe.contentWindow as { phases?: string[] } | null)?.phases;
+          // Whether it played, of a render that the phases saw.
+          const played = phases?.includes("rendering") ? phases.includes("playing") : undefined;
+          stories.push({ id, in: "iframe", error, played });
         } else if (block.querySelector("pre")) {
           stories.push({ id, in: "inline", error: true });
         } else {
@@ -183,9 +205,8 @@ async function shownStories(canvas: Frame, ids: string[]): Promise<Shown[]> {
 /**
  * Selects every docs page of the Storybook at `url` in turn, as the sidebar
  * does. Each shows its stories, a client story inline and a server story in
- * an iframe once, where it renders in a page of the app without an error,
- * and the page logs no error. A docs page runs no play function, in an
- * iframe as inline, unless `docs.story.autoplay` asks for it.
+ * an iframe once, where it renders in a page of the app without an error
+ * and without its play function, and the page logs no error.
  */
 export async function renderEveryDocsPage(
   page: Page,
@@ -193,6 +214,7 @@ export async function renderEveryDocsPage(
   errors: PageErrors,
 ): Promise<void> {
   const [first, ...rest] = (await index(url)).docs;
+  await recordPhases(page);
   const canvas = await openDocs(page, url, first!.id);
   const check = async ({ id, stories }: Docs) => {
     const shown = await shownStories(
@@ -202,11 +224,12 @@ export async function renderEveryDocsPage(
     expect(new Set(shown.map((story) => story.id)), id).toEqual(
       new Set(stories.map((story) => story.id)),
     );
-    const expected = shown.map((story) => ({
-      id: story.id,
-      in: stories.find((of) => of.id === story.id)!.client ? "inline" : "iframe",
-      error: false,
-    }));
+    const expected = shown.map((story) => {
+      const client = stories.find((of) => of.id === story.id)!.client;
+      return client
+        ? { id: story.id, in: "inline", error: false }
+        : { id: story.id, in: "iframe", error: false, played: false };
+    });
     expect(shown, id).toEqual(expected);
     const inIframes = shown.filter((story) => story.in === "iframe").map((story) => story.id);
     expect(inIframes, id).toEqual([...new Set(inIframes)]);

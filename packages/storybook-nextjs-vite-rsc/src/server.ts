@@ -98,7 +98,7 @@ export function defineServerPreview<Addons extends PreviewAddonEntry[] = []>(
       const { story } = meta;
       // A copy of the story's input, which the factory amends.
       meta.story = ((input: Parameters<typeof story>[0] = {}) =>
-        withLayout(
+        serverStory(
           story.call(meta, typeof input === "function" ? input : { ...input }),
         )) as typeof story;
       return meta;
@@ -109,24 +109,31 @@ export function defineServerPreview<Addons extends PreviewAddonEntry[] = []>(
 export const isServerPreview = (preview: object): boolean => serverPreview in preview;
 
 /**
- * `layout: "document"` for a story that owns the document, a page or a
- * component in the app's layouts, which Storybook's view and docs read: the
- * story's `<body>` is its root, and a docs page shows it in an iframe. The
- * factory sets it on every story of the server preview, `extend()` and
- * `test()` too, and takes it from one that no longer owns the document.
+ * What the factory sets on every story of the server preview, over a user's
+ * value, and again on each that `extend()` and `test()` make of it:
+ * - `layout: "document"` for a story that owns the document, a page or a
+ *   component in the app's layouts, which Storybook's view and docs read:
+ *   its `<body>` is its root, and a docs page shows it in an iframe. A story
+ *   that no longer owns the document loses it.
+ * - `docs.story.autoplay: false`: a docs page never runs its play, as the
+ *   page it plays in shares the window's focus and URL with the stories in
+ *   the docs page's other iframes.
  */
-function withLayout(story: Story<Renderer>): Story<Renderer> {
+function serverStory(story: Story<Renderer>): Story<Renderer> {
   const { input, meta } = story;
   const { preview } = meta;
   const { layout, ...parameters } = input.parameters ?? {};
   const layouts =
     nextjsOf(input).layouts ?? nextjsOf(meta.input).layouts ?? nextjsOf(preview.composed).layouts;
   const render = input.render ?? meta.input.render ?? preview.composed.render;
-  if (layouts || isPage(meta.input.component, render)) {
-    input.parameters = { ...parameters, layout: "document" };
-  } else if (layout === "document") input.parameters = parameters;
+  const ownsDocument = layouts || isPage(meta.input.component, render);
+  input.parameters = {
+    ...(ownsDocument || layout === "document" ? parameters : input.parameters),
+    ...(ownsDocument && { layout: "document" }),
+    docs: { ...parameters.docs, story: { ...parameters.docs?.story, autoplay: false } },
+  };
   const { extend } = story;
   story.extend = ((input: Story<Renderer>["input"]) =>
-    withLayout(extend.call(story, input))) as typeof extend;
+    serverStory(extend.call(story, input))) as typeof extend;
   return story;
 }
