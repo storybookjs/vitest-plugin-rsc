@@ -1,5 +1,6 @@
 import { appBootstrap } from "next/dist/client/app-bootstrap";
 import { callServer } from "next/dist/client/app-call-server";
+import { unstable_rethrow } from "next/navigation";
 import ReactDOMClient, { type Root, type RootOptions } from "react-dom/client";
 import { registerModuleLoader } from "./client-modules.ts";
 import { recordListeners, type Leftovers } from "./leftovers.ts";
@@ -17,33 +18,48 @@ declare global {
   var __NEXT_HYDRATED_CB: (() => void) | undefined;
 }
 
-// The options of the root of the app, which also tell the node of the page
-// of the errors React reports: one that a boundary caught, and one that none
-// did. Next's entry passes both, see project/runtime.ts.
+// The options of the root of the app, which also hear of the errors React
+// reports: one that a boundary caught, and one that none did. Next's entry
+// passes both, see project/runtime.ts.
 function reportingErrors<Options extends RootOptions>(
   options: Options | undefined,
-  nodeOnPage: NodeOnPage | undefined,
+  report: (error: unknown) => void,
 ): Options | undefined {
   const { onCaughtError, onUncaughtError } = options ?? {};
-  if (!nodeOnPage || !options || !onCaughtError || !onUncaughtError) return options;
+  if (!options || !onCaughtError || !onUncaughtError) return options;
   return {
     ...options,
     onCaughtError(error, info) {
-      nodeOnPage.errored(error);
+      report(error);
       onCaughtError(error, info);
     },
     onUncaughtError(error, info) {
-      nodeOnPage.errored(error);
+      report(error);
       onUncaughtError(error, info);
     },
   };
+}
+
+// Whether an error is how Next goes on, not a failure: a `redirect()`, a
+// `notFound()` and the like, which Next does not report either. Only the
+// error itself, as Next checks it: not one that has such an error as its
+// `cause`, which `unstable_rethrow()` throws too.
+function isNextControlFlow(error: unknown): boolean {
+  try {
+    unstable_rethrow(error);
+    return false;
+  } catch (thrown) {
+    return thrown === error;
+  }
 }
 
 /**
  * Hydrates the document, or with a `container`, the node of a test in it.
  * Resolves once it has, with how to leave the page. Calls `loaded` once Next's
  * client has loaded, before a module of the app has. A page of a node tells
- * `nodeOnPage` what it does with the node: see node-rendered.tsx.
+ * `nodeOnPage` what it does with the node: see node-rendered.tsx. The errors
+ * that React reports on the root of the app go in `errors`, in order, but
+ * for those of Next's control flow.
  *
  * Rejects once `signal` aborts, when the page is left before it has hydrated.
  * What it started is gone by then: the root, and the listeners React added.
@@ -54,8 +70,15 @@ export async function start(
   container: Element | undefined,
   signal: AbortSignal,
   nodeOnPage: NodeOnPage | undefined,
+  errors: unknown[],
 ): Promise<{ unmount(): void }> {
   setNodeOnPage(nodeOnPage);
+  // A node hears of all of them: a `notFound()` takes its place too. A page
+  // that was left, whose load has aborted, reports no more.
+  const report = (error: unknown) => {
+    nodeOnPage?.errored(error);
+    if (!signal.aborted && !isNextControlFlow(error)) errors.push(error);
+  };
   // Not when this module loads: a page that was left while it loaded must not
   // take over from the page that is there now. The modules of the app wait
   // for Next's client: the Flight client asks for them as soon as it loads.
@@ -104,7 +127,7 @@ export async function start(
   ReactDOMClient.hydrateRoot = (target, children, options) =>
     keep(target, (to, isApp) =>
       hydrateRoot(to, children, {
-        ...(isApp ? reportingErrors(options, nodeOnPage) : options),
+        ...(isApp ? reportingErrors(options, report) : options),
         onRecoverableError(error, info) {
           if (leaving) return;
           if (options?.onRecoverableError) options.onRecoverableError(error, info);
@@ -113,9 +136,7 @@ export async function start(
       }),
     );
   ReactDOMClient.createRoot = (target, options) =>
-    keep(target, (to, isApp) =>
-      createRoot(to, isApp ? reportingErrors(options, nodeOnPage) : options),
-    );
+    keep(target, (to, isApp) => createRoot(to, isApp ? reportingErrors(options, report) : options));
 
   const leave = () => {
     leaving = true;

@@ -92,6 +92,9 @@ function nextImportsOf(file: string): string[] {
 // The file of Next's ESM build that the plugin pre-bundles for a specifier.
 function preBundledAs(specifier: string): string {
   const file = path.relative(nextDir, installed.resolve(specifier));
+  // An API of the package, like `next/navigation`, is a file at its root,
+  // which Next's aliases point to its file in `dist/api`.
+  if (!file.startsWith("dist/")) return `next/dist/esm/api/${normalizePath(file)}`;
   return `next/${normalizePath(file).replace(/^dist\/(?!compiled\/|esm\/)/, "dist/esm/")}`;
 }
 
