@@ -176,7 +176,7 @@ async function buildStylesheets(root: string, real: string, graph: Graph) {
   const manager = {
     isScanBuild: false,
     clientReferenceMetaMap: Object.fromEntries(
-      graph.references.map((id) => [id, { importId: id }]),
+      graph.references.map((id, index) => [id, { importId: id, referenceKey: `key${index}` }]),
     ),
   };
   hook("configResolved").call(undefined, {
@@ -266,6 +266,9 @@ test("lists the stylesheets of every route and of every file of the host in a bu
       "host/plain.tsx": [],
       "host/story.tsx": [named("client")],
     },
+    // Every client reference, by its key, with what it reaches in the
+    // browser layer: the tab's React can render any of them in the host.
+    references: { key0: [named("client")], key1: [named("client")] },
   });
   expect(Object.keys(built.hostFiles)).toEqual(Object.keys(built.hostFiles).sort());
 });
