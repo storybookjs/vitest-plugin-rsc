@@ -22,10 +22,12 @@ jobs:
     if: github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     steps:
-      # Chromatic finds the baseline of a build in the history of its commit.
+      # Chromatic finds the baseline of a build in the history of its commit,
+      # which for a pull request is the head commit, not GitHub's merge commit.
       - uses: actions/checkout@v6
         with:
           fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
       - uses: pnpm/action-setup@v6
       - uses: actions/setup-node@v6
         with:
