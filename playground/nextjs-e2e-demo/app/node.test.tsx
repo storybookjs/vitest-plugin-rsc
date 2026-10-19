@@ -827,6 +827,34 @@ test("has the errors of a page that the app loads from the node, until the test 
   consoleError.mockClear();
 });
 
+test("has the errors of the pages that the app loads one after another from the node", async () => {
+  // Next logs the error on the server, and reports it as uncaught: the app
+  // has Next's own global error page.
+  consoleError.mockImplementation(() => {});
+  const reportError = vi.spyOn(window, "reportError").mockImplementation(() => {});
+  const { errors } = await renderServer(<Link href="/">Go home</Link>, { url: "/notes/7" });
+  await page.getByRole("link", { name: "Go home" }).click();
+  await expect.element(page.getByRole("heading", { name: "Home" })).toBeVisible();
+  vi.spyOn(db, "listNotes").mockRejectedValue(new Error("The notes are gone"));
+
+  // A second page load, from the page that the first one loaded.
+  await page.getByRole("link", { name: "All notes, the long way" }).click();
+
+  await expect
+    .element(page.getByRole("heading", { name: "This page couldn’t load" }))
+    .toBeVisible();
+  expect(errors).toEqual([
+    expect.objectContaining({
+      message:
+        inject("build") === "development"
+          ? "The notes are gone"
+          : expect.stringContaining("Minified React error #441"),
+    }),
+  ]);
+  expect(reportError).toHaveBeenCalled();
+  consoleError.mockClear();
+});
+
 test("puts the host's URL back with cleanup({ url }), in place of the page's, in the same entry of the history", async () => {
   const before = window.location.href;
   onTestFinished(() => window.history.replaceState(window.history.state, "", before));

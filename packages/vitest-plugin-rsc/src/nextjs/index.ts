@@ -929,7 +929,8 @@ type Opening = {
 async function loadPage(url: URL, init: RequestInit, opening?: Opening): Promise<Response> {
   // Where the page reports its errors: to the `renderServer()` that opens
   // it, or for a page the app loads itself, to where the page it replaces
-  // reported them. Before leaving, which forgets that page.
+  // reported them: the app loads one only from a page (see the listener of
+  // `navigate`). Before leaving, which forgets that page.
   const errors = opening?.errors ?? page?.errors ?? [];
   const leaving = leavePage(opening ? "another renderServer()" : "a page load of the app");
   const load = (currentLoad = new AbortController());
