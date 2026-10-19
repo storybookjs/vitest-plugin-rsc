@@ -1,4 +1,5 @@
 import { reports } from "host-report";
+import { tags } from "host-report/tags";
 import { cleanup, loadClientModule, renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
 import { renderCallout } from "./callout.tsx";
 import { greetingFor, renderGreeting } from "./greeting.tsx";
@@ -21,7 +22,8 @@ import { show, state } from "./state.ts";
 // renders its components after the page it loaded during. `?view=pages`
 // moves the URL of the host between two pages of the app. `?view=tag`
 // renders a node with a Client Component of a package that is not
-// pre-bundled, and `?view=rerender` renders a node again with other props,
+// pre-bundled, and leaves what it tagged through the page's
+// `host-report/tags`, and `?view=rerender` renders a node again with other props,
 // without a page load. `?view=stored` opens a page and stores in the
 // browser, as a story's `beforeEach` does. A second page of the host, with a
 // node of its own, is callout.html.
@@ -78,6 +80,9 @@ await show(async () => {
   }
   if (view === "tag") {
     await renderTag(container);
+    // What the component gave a module of the page through a module of its
+    // package without side effects: the page's own instance of it.
+    state.__hostTags = tags;
     return;
   }
   if (view === "rerender") {
