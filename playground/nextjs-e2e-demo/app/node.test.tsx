@@ -735,13 +735,15 @@ function Missing(): never {
 }
 
 test("shows Next's own not-found page for a node that calls notFound()", async () => {
-  const { container, response } = await renderServer(<Missing />);
+  const { container, response, errors } = await renderServer(<Missing />);
 
   expect(response.status).toBe(404);
   // Next sends a document for it and renders the page in the browser, as it
   // does for a route without a root layout to put it in.
   await expect.element(page.getByText("This page could not be found.")).toBeVisible();
   expect(container).toBeEmptyDOMElement();
+  // Next's own control flow, which it does not report.
+  expect(errors).toEqual([]);
 });
 
 test("renders the page of the app at the url a node was at", async () => {
@@ -752,6 +754,125 @@ test("renders the page of the app at the url a node was at", async () => {
 
   await expect.element(page.getByRole("heading", { name: "Home" })).toBeVisible();
   await expect.element(page.getByRole("navigation", { name: "Main" })).toBeVisible();
+});
+
+test("has no errors for a node that renders", async () => {
+  const { errors } = await renderServer(<Counter />);
+
+  await page.getByRole("button", { name: "Count: 0" }).click();
+
+  await expect.element(page.getByRole("button", { name: "Count: 1" })).toBeVisible();
+  expect(errors).toEqual([]);
+});
+
+test("has the error that an error boundary of the node caught", async () => {
+  // React reports the error that the boundary caught.
+  consoleError.mockImplementation(() => {});
+
+  const { errors } = await renderServer(
+    <ClientBoundary>
+      <ThrowsOnClient when />
+    </ClientBoundary>,
+  );
+
+  await expect.element(page.getByText("Caught: Thrown on the client")).toBeVisible();
+  expect(errors).toEqual([new Error("Thrown on the client")]);
+  consoleError.mockClear();
+});
+
+test("has the error of a Server Action, once the page has it, in the order of the page", async () => {
+  // React reports the error that the boundary caught.
+  consoleError.mockImplementation(() => {});
+  const { errors } = await renderServer(
+    <ClientBoundary>
+      <FavoriteButton id="404" favorite={false} />
+    </ClientBoundary>,
+  );
+  expect(errors).toEqual([]);
+
+  await page.getByRole("button", { name: "Favorite" }).click();
+
+  await expect.element(page.getByText("Caught:", { exact: false })).toBeVisible();
+  expect(errors).toEqual([
+    expect.objectContaining({
+      message:
+        inject("build") === "development"
+          ? "No note 404"
+          : expect.stringContaining("Minified React error #441"),
+    }),
+  ]);
+  consoleError.mockClear();
+});
+
+test("has the errors of a page that the app loads from the node, until the test leaves it", async () => {
+  // Next logs the error on the server and React logs it in the browser.
+  consoleError.mockImplementation(() => {});
+  const { errors } = await renderServer(<Link href="/broken">Broken</Link>);
+
+  await page.getByRole("link", { name: "Broken" }).click();
+
+  // The page of the app's route, with its `error.tsx`.
+  await expect.element(page.getByRole("heading", { name: "Something went wrong" })).toBeVisible();
+  expect(errors).toEqual([
+    expect.objectContaining({
+      message:
+        inject("build") === "development"
+          ? "The database is down"
+          : expect.stringContaining("Minified React error #441"),
+    }),
+  ]);
+  const { errors: next } = await renderServer(<Counter />);
+  expect(next).toEqual([]);
+  expect(errors).toHaveLength(1);
+  consoleError.mockClear();
+});
+
+test("has the errors of the pages that the app loads one after another from the node", async () => {
+  // Next logs the error on the server, and reports it as uncaught: the app
+  // has Next's own global error page.
+  consoleError.mockImplementation(() => {});
+  const reportError = vi.spyOn(window, "reportError").mockImplementation(() => {});
+  const { errors } = await renderServer(<Link href="/">Go home</Link>, { url: "/notes/7" });
+  await page.getByRole("link", { name: "Go home" }).click();
+  await expect.element(page.getByRole("heading", { name: "Home" })).toBeVisible();
+  vi.spyOn(db, "listNotes").mockRejectedValue(new Error("The notes are gone"));
+
+  // A second page load, from the page that the first one loaded.
+  await page.getByRole("link", { name: "All notes, the long way" }).click();
+
+  await expect
+    .element(page.getByRole("heading", { name: "This page couldn’t load" }))
+    .toBeVisible();
+  expect(errors).toEqual([
+    expect.objectContaining({
+      message:
+        inject("build") === "development"
+          ? "The notes are gone"
+          : expect.stringContaining("Minified React error #441"),
+    }),
+  ]);
+  expect(reportError).toHaveBeenCalled();
+  consoleError.mockClear();
+});
+
+test("puts the host's URL back with cleanup({ url }), in place of the page's, in the same entry of the history", async () => {
+  const before = window.location.href;
+  onTestFinished(() => window.history.replaceState(window.history.state, "", before));
+  const entries = window.history.length;
+  await renderServer(<p>At a note</p>, { url: "/notes/7" });
+  expect(window.location.pathname).toBe("/notes/7");
+
+  // Relative to the URL of the host's document, not to the page's.
+  await cleanup({ url: "#shown" });
+
+  expect(window.location.href).toBe(`${before.split("#")[0]}#shown`);
+  expect(window.history.length).toBe(entries);
+  await expect.element(page.getByText("At a note")).not.toBeInTheDocument();
+
+  // Without it, the URL the document had as the page opened.
+  await renderServer(<p>At a note</p>, { url: "/notes/7" });
+  await cleanup();
+  expect(window.location.href).toBe(`${before.split("#")[0]}#shown`);
 });
 
 test("removes the container it made when the test ends", async () => {
@@ -789,7 +910,7 @@ test("reports what a node throws, as Next does for a page without an error bound
   // throws gets.
   const reportError = vi.spyOn(window, "reportError").mockImplementation(() => {});
 
-  const { container, response } = await renderServer(<Broken />);
+  const { container, response, errors } = await renderServer(<Broken />);
 
   expect(response.status).toBe(500);
   // Next's own global error page, the one boundary of a node. It is a
@@ -808,6 +929,8 @@ test("reports what a node throws, as Next does for a page without an error bound
     }),
   );
   expect(consoleError.mock.calls.map(([error]) => String(error))).toEqual(["Error: Broken node"]);
+  // What the page reported: the render resolves with it.
+  expect(errors).toEqual([reportError.mock.calls[0]![0]]);
   consoleError.mockClear();
 });
 
