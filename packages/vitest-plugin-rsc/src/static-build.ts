@@ -155,8 +155,8 @@ export type StaticBuildOptions = {
 
 // Vite RSC's API for a framework that builds the environments itself, with
 // `vitePluginRscMinimal()`: what it found, and `isScanBuild`, which tells its
-// plugins that a build only looks, as Vite RSC's own `buildApp()` and its
-// examples of one of a framework's set it.
+// plugins that a build only looks. The plugin sets it as Vite RSC's own
+// `buildApp()` does, and its examples of a custom `buildApp()`.
 type Manager = NonNullable<ReturnType<typeof getPluginApi>>["manager"];
 
 /** What `moduleRunnerTransform()` makes of `import.meta`. */

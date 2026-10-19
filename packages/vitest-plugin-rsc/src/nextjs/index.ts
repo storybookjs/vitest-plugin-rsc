@@ -571,7 +571,8 @@ globalThis.fetch = async (input, init) => {
 // `document.cookie`, as in a browser, where it is a view of the cookie jar.
 // The jar here is the store, and the browser's own is the tab's: the cookies
 // other documents of the origin set, like Vitest's UI, the manager document
-// of another host or another app on `localhost`. The app neither reads nor writes those.
+// of another host or another app on `localhost`. The app neither reads nor
+// writes those.
 Object.defineProperty(document, "cookie", {
   configurable: true,
   get: () => store.documentCookie(),

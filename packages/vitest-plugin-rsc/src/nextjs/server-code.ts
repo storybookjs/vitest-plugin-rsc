@@ -68,15 +68,15 @@ export type ServerCodeOptions = {
    * What runs the app, when that is not Vitest. Under Vitest the plugin knows
    * the host's files from its config, the test files and the setup files, and
    * its packages, `vitest` and `@vitest/*`. Another host says here what is its
-   * own. A file of the host is not server code: it keeps the
-   * browser's `typeof window` and `fetch`, and Next's compiler does not run on
+   * own. A file of the host is not server code: it keeps the browser's
+   * `typeof window` and `fetch`, and Next's compiler does not run on
    * it. With `"use client"` it is a module of the browser layer. A package of
    * the host is the one instance the page has, also in the browser layer.
    */
   host?: {
     /**
-     * The files of the host, like the ones it renders: glob patterns, relative to the
-     * project root. What a test file is to Vitest.
+     * The files of the host, like the ones it renders: glob patterns,
+     * relative to the project root. What a test file is to Vitest.
      *
      * @example ["host/**", "src/**\/*.demo.tsx"]
      */
@@ -88,7 +88,8 @@ export type ServerCodeOptions = {
      * `host-kit/test`, is the page's own, and the package's other modules
      * are not, but the files of the whole package are the host's runtime in
      * the rsc layer. What they depend on is the host's too, but for this
-     * plugin and Vite RSC, which a framework of the host can depend on.
+     * plugin and what it depends on, which a framework of the host can
+     * depend on.
      *
      * Not something the plugin can read off the files: a file of the host
      * with `"use client"` imports `react` and `host-kit/test` the same way,

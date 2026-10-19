@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { runInThisContext } from "node:vm";
@@ -284,9 +285,13 @@ test("leaves this plugin and what it depends on out of the walk of the host's pa
   const { dependencies = {} } = JSON.parse(
     fs.readFileSync(path.join(plugin, "package.json"), "utf8"),
   ) as { dependencies?: Record<string, string> };
-  const ownDependencies = Object.keys(dependencies).map((name) =>
-    fs.realpathSync(path.join(plugin, "node_modules", name)),
-  );
+  // Where Node.js finds them from the plugin, with any package manager.
+  const fromPlugin = createRequire(path.join(plugin, "package.json"));
+  const ownDependencies = Object.keys(dependencies).map((name) => {
+    const paths = fromPlugin.resolve.paths(name) ?? [];
+    const found = paths.find((dir) => fs.existsSync(path.join(dir, name, "package.json")));
+    return fs.realpathSync(path.join(found!, name));
+  });
   const root = fakeProject([], {
     "host-framework": ["renamed-plugin", "@vitejs/plugin-rsc", "theme"],
     theme: [],
@@ -296,7 +301,10 @@ test("leaves this plugin and what it depends on out of the walk of the host's pa
     fs.symlinkSync(to, path.join(root, "node_modules", name), "dir");
   };
   link("renamed-plugin", plugin);
-  link("@vitejs/plugin-rsc", path.join(plugin, "node_modules/@vitejs/plugin-rsc"));
+  link(
+    "@vitejs/plugin-rsc",
+    ownDependencies[Object.keys(dependencies).indexOf("@vitejs/plugin-rsc")]!,
+  );
   const serverCode = createServerCode(registry, { host: { packages: ["host-framework"] } });
   serverCode.configure(root);
   serverCode.addTestFiles(() => false);
