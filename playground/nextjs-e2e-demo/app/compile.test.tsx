@@ -90,6 +90,8 @@ const lateStylesheet = (key: string) =>
 
 test("shows a page once the stylesheets of its head have loaded, and what was there until then", async () => {
   const key = crypto.randomUUID();
+  // However the test ends, the server answers the stylesheet it holds.
+  onTestFinished(() => releaseStylesheet(key));
   const { body, title } = document;
   // The color of the text as it comes into the document.
   const colors: string[] = [];
@@ -115,6 +117,8 @@ test("shows a page once the stylesheets of its head have loaded, and what was th
 
 test("leaves a page whose stylesheet is still loading, which does not show after it", async () => {
   const key = crypto.randomUUID();
+  // However the test ends, the server answers the stylesheet it holds.
+  onTestFinished(() => releaseStylesheet(key));
   const left = renderServer({ url: `/late-css?key=${key}` }).catch((error: unknown) => error);
   await expect.poll(() => lateStylesheet(key)).not.toBeNull();
 

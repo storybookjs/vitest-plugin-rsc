@@ -113,6 +113,8 @@ test("links the CSS of a node, of its Server and Client Components", async () =>
 
 test("puts a node in its container once the stylesheets of its head have loaded", async () => {
   const key = crypto.randomUUID();
+  // However the test ends, the server answers the stylesheet it holds.
+  onTestFinished(() => releaseStylesheet(key));
   const loading = renderServer(<LateStyled stylesheetKey={key} />);
   await expect
     .poll(() => document.querySelector(`link[href="/service/late-stylesheet?key=${key}"]`))
