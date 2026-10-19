@@ -1,13 +1,13 @@
 import { createElement, type ReactNode } from "react";
 import type {
   ArgsStoryFn,
-  ArgTypesEnhancer,
   BeforeEach,
   ProjectAnnotations,
   RenderToCanvas,
   StoryContext,
+  StoryId,
 } from "storybook/internal/types";
-import { configure, getConfig, within } from "storybook/test";
+import { configure, getConfig } from "storybook/test";
 import {
   cleanup,
   renderServer,
@@ -25,19 +25,21 @@ import type { NextjsParameters, NextjsServerRenderer } from "./server.ts";
 
 type Context = StoryContext<NextjsServerRenderer>;
 
-const nextjsOf = (context: { parameters: object }) =>
-  (context.parameters as NextjsParameters).nextjs ?? {};
+export const nextjsOf = (annotations: { parameters?: object }) =>
+  (annotations.parameters as NextjsParameters | undefined)?.nextjs ?? {};
 
-/** The component with its args. A story without a component that renders with this is a page. */
+/** The component with its args. */
 export const render: ArgsStoryFn<NextjsServerRenderer> = (args, context) => {
   if (!context.component) throw pageWithoutUrl(context.id);
   return createElement(context.component, args);
 };
 
-const isPage = (context: Context) => !context.component && context.originalStoryFn === render;
+/** A story without a component that renders with `render` is the page at its URL. */
+export const isPage = (component: unknown, storyFn: unknown): boolean =>
+  !component && storyFn === render;
 
-// The page that each canvas has open: new args render the story again on it.
-const opened = new WeakMap<HTMLElement, RenderServerResult | RenderComponentResult>();
+// The page that each story has open: new args render the story again on it.
+const opened = new Map<StoryId, RenderServerResult | RenderComponentResult>();
 
 export const renderToCanvas: RenderToCanvas<NextjsServerRenderer> = async (
   { storyContext: context, storyFn, showMain, forceRemount },
@@ -46,24 +48,15 @@ export const renderToCanvas: RenderToCanvas<NextjsServerRenderer> = async (
   const { id, abortSignal: signal } = context;
   const { url, headers, proxy, layouts } = nextjsOf(context);
   if (context.viewMode === "docs") throw serverStoryInline(id);
-  const page = isPage(context);
+  const page = isPage(context.component, context.originalStoryFn);
   if (page && !url) throw pageWithoutUrl(id);
   if (page && layouts) throw pageInLayouts(id);
-  // A story that owns the document has all of it for `play`: `<html>`,
-  // which stays as pages come and go. Its `<body>` is the app's, so
-  // Storybook shows the story before the page replaces the one there is.
-  const ownsDocument = page || layouts;
-  if (ownsDocument) {
-    const html = document.documentElement;
-    Object.assign(context, { canvasElement: html, canvas: within(html) });
-    showMain();
-  }
   const node = page
     ? undefined
     : createElement(function Story() {
         return storyFn() as ReactNode;
       });
-  const open = opened.get(canvasElement);
+  const open = opened.get(id);
   try {
     if (node && open && "rerender" in open && !forceRemount) {
       // New args or globals: in place, without a page load.
@@ -79,7 +72,7 @@ export const renderToCanvas: RenderToCanvas<NextjsServerRenderer> = async (
             ...(layouts ? { layouts } : { container: canvasElement }),
           })
         : await renderServer({ url, headers, proxy, signal });
-      opened.set(canvasElement, result);
+      opened.set(id, result);
       if (result.errors.length > 0) throw result.errors[0];
     }
   } catch (error) {
@@ -87,13 +80,14 @@ export const renderToCanvas: RenderToCanvas<NextjsServerRenderer> = async (
     if (signal.aborted) return;
     throw error;
   }
-  if (!ownsDocument) showMain();
+  // Storybook shows a story that owns the document before its render.
+  showMain();
 };
 
 // `@storybook/react`'s: `mount(<Story />)` in `play` renders that element.
 export const mount = (context: Context) => async (ui?: ReactNode) => {
   if (ui != null) {
-    if (isPage(context)) throw nothingToMount(context.id);
+    if (isPage(context.component, context.originalStoryFn)) throw nothingToMount(context.id);
     context.originalStoryFn = () => ui;
   }
   await context.renderToCanvas();
@@ -107,8 +101,8 @@ export const mount = (context: Context) => async (ui?: ReactNode) => {
  * keeps it, and Storybook keeps every teardown until it leaves the story.
  * What it returns runs then, also after an abort.
  */
-export const beforeEach: BeforeEach<NextjsServerRenderer> = async ({ canvasElement }) => {
-  if (opened.has(canvasElement)) return;
+export const beforeEach: BeforeEach<NextjsServerRenderer> = async ({ id }) => {
+  if (opened.has(id)) return;
   const { eventWrapper, asyncWrapper, unstable_advanceTimersWrapper } = getConfig();
   const run = <T>(callback: () => T) => callback();
   configure({ eventWrapper: run, asyncWrapper: run, unstable_advanceTimersWrapper: run });
@@ -116,23 +110,13 @@ export const beforeEach: BeforeEach<NextjsServerRenderer> = async ({ canvasEleme
   const { pathname } = window.location;
   return async () => {
     configure({ eventWrapper, asyncWrapper, unstable_advanceTimersWrapper });
-    opened.delete(canvasElement);
+    opened.delete(id);
     // Storybook writes the URL of the story it selects next, at its own
     // path, before it tears this one down: that URL stays. A story's context
     // does not have it, so the path tells it from the page's.
     const at = window.location;
     await cleanup({ url: at.pathname === pathname ? at.href : undefined });
   };
-};
-
-/**
- * `layout: "none"` for a story that owns the document: in the layouts, or a
- * page. An enhancer sees no `render`, so a `render` at a URL counts too.
- */
-const layoutOfDocument: ArgTypesEnhancer<NextjsServerRenderer> = (context) => {
-  const { url, layouts } = nextjsOf(context);
-  if (layouts || (url && !context.component)) context.parameters.layout = "none";
-  return context.argTypes;
 };
 
 // A story file from the root of the project, for its stylesheets. Storybook
@@ -152,10 +136,9 @@ export const annotations: ProjectAnnotations<NextjsServerRenderer> = {
   renderToCanvas,
   mount,
   beforeEach,
-  argTypesEnhancers: [layoutOfDocument],
   parameters: {
     renderer: "react",
     // A docs page shows a server story's page in an iframe.
-    docs: { story: { inline: false, iframeHeight: "320px" } },
+    docs: { story: { inline: false } },
   },
 };

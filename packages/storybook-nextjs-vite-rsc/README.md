@@ -203,9 +203,12 @@ export const Notes = meta.type<{ args: { count: number } }>().story({
 });
 ```
 
-The page owns the document. In `play`, `canvasElement` is `<html>` and
-`canvas` queries all of it, also after the page renders its document anew,
-as Next's not-found page does.
+The page owns the document: the factory gives it Storybook's
+`layout: "document"`, as it does a component in the app's layouts. Its root
+is the `<body>` the page leaves, which Storybook marks `#storybook-root`
+after each render. In `play`, `canvasElement` is that `<body>`, and `canvas`
+queries the document's `<body>` at each query, also after the page renders
+its document anew, as Next's not-found page does.
 
 A page renders without the decorators, which have no node to decorate,
 Storybook's own included: backgrounds, measure and outline do nothing on a
@@ -302,8 +305,9 @@ A docs page shows each story the way its kind renders:
 - A client story renders in the docs page, inline. A new value from
   Controls renders it again in place, with the state it has.
 - A server story renders in a page of the app, which has a document of its
-  own: the docs page shows it in Storybook's iframe of the story, 320px
-  high. Set another height with `parameters.docs.story.iframeHeight`.
+  own: the docs page shows it in Storybook's iframe of the story. One that
+  owns the document is as high as a small phone's screen. Set another
+  height with `parameters.docs.story.height`.
 
 A server story with `parameters.docs.story.inline: true` cannot render in
 the docs page, and shows an error that says so.
@@ -348,8 +352,5 @@ for both kinds.
   story out of autodocs with `tags: ["!autodocs"]`.
 - A change of an MDX file that shows a client story with `of={…}` fails
   that block until the preview loads again.
-- A change of a page story's file can log React's hydration mismatch of
-  `<body>` at times: Storybook shows its view while the page loads, and
-  puts its class on the page's `<body>`.
 - Next's router in a client story: `useRouter()` throws there, and
   `usePathname()` returns `null`. A server story has the router.

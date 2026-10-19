@@ -190,8 +190,16 @@ test("a page story and a Server Action", async ({ page }) => {
   const canvas = await openStory(page, site!.url, "home--home");
   expect(await storyRun(page, canvas, "home--home")).toEqual(passed);
   expect(await body(canvas)).toEqual(atPage);
-  // Selecting the story again leaves it as it is, but for Storybook's class
-  // of its main mode, which none of Storybook's layouts styles on its own.
+  // Selecting the story again leaves it as it is: Storybook adds nothing to
+  // the `<body>` of a story that owns the document.
+  const unchanged = canvas.evaluate(
+    () =>
+      new Promise((resolve) =>
+        (
+          window as { __STORYBOOK_ADDONS_CHANNEL__?: { once(...args: unknown[]): void } }
+        ).__STORYBOOK_ADDONS_CHANNEL__!.once("storyUnchanged", resolve),
+      ),
+  );
   await page.evaluate(() =>
     (
       window as { __STORYBOOK_ADDONS_CHANNEL__?: { emit(...args: unknown[]): void } }
@@ -200,7 +208,8 @@ test("a page story and a Server Action", async ({ page }) => {
       viewMode: "story",
     }),
   );
-  await expect.poll(() => body(canvas)).toEqual({ ...atPage, classes: "sb-show-main" });
+  await unchanged;
+  expect(await body(canvas)).toEqual(atPage);
   // A story after the page has Storybook's document, its classes and root.
   expect(await runStory(page, canvas, "greeting--server-action")).toEqual(passed);
   expect(await body(canvas)).toEqual(atComponent);
@@ -249,14 +258,14 @@ const layout = (canvas: Frame) =>
 test("a story in the layouts, and one whose beforeEach sets a cookie", async ({ page }) => {
   const canvas = await openStory(page, site!.url, "greeting--in-layouts");
   expect(await storyRun(page, canvas, "greeting--in-layouts")).toEqual(passed);
-  // A story that owns the document has no layout of Storybook's, and its
+  // A story that owns the document has the layout "document", and its
   // `<body>` is its root.
-  expect(await layout(canvas)).toBe("none");
+  expect(await layout(canvas)).toBe("document");
   expect((await body(canvas)).root).toBe("BODY");
   expect(await runStory(page, canvas, "greeting--seeded")).toEqual(passed);
   expect(await layout(canvas)).toBeUndefined();
   expect(await runStory(page, canvas, "home--home")).toEqual(passed);
-  expect(await layout(canvas)).toBe("none");
+  expect(await layout(canvas)).toBe("document");
 });
 
 // A server story of a component is a node: the document and its URL are
@@ -370,15 +379,13 @@ test("a page left while it loads leaves no render and no reload", async ({ page 
   expect(await rendered(canvas, "greeting--server-action")).toBe("finished");
 });
 
-// Fails: the manager selecting the story that renders once more makes
-// Storybook show its main view while the render runs
-// (PreviewWithSelection.tsx:439 of the integration branch), which puts
-// Storybook's class on the `<body>` of the page that loads, and React finds
-// it in the HTML it hydrates. A save of a page story's file does this at
-// times: the new index selects the story again while the render of the new
-// file loads its page. The page's stylesheets come late here, so that the
-// selection always comes during the load.
-test.fails("a page that loads keeps its own <body> when its story is selected again", async ({
+// The manager selecting the story that renders once more makes Storybook
+// show its main view while the render runs, as a save of a page story's file
+// does: Storybook adds nothing to the `<body>` of a story that owns the
+// document, so React hydrates the HTML of the page as the server sent it.
+// The page's stylesheets come late here, so that the selection always comes
+// during the load.
+test("a page that loads keeps its own <body> when its story is selected again", async ({
   page,
   errors,
 }) => {
@@ -398,8 +405,9 @@ test.fails("a page that loads keeps its own <body> when its story is selected ag
       { event, payload },
     );
   await manager("forceReRender");
-  // The page's `<body>` is in the document, its stylesheets on their way.
-  await canvas.waitForFunction(() => !document.body.classList.contains("sb-show-main"), null, {
+  // The page's `<body>` is in the document, not yet the story's root, its
+  // stylesheets on their way.
+  await canvas.waitForFunction(() => document.body.id !== "storybook-root", null, {
     polling: 10,
   });
   await manager("setCurrentStory", { storyId: "home--home", viewMode: "story" });
@@ -478,12 +486,10 @@ const inDocs = (canvas: Frame) => canvas.locator("#storybook-docs");
 
 test("an MDX page: a server story in an iframe, a client story inline", async ({ page }) => {
   const canvas = await openDocs(page, site!.url, "introduction--docs");
-  // The server story, in Storybook's iframe of the story, high enough for it.
+  // The server story, in Storybook's iframe of the story.
   const server = await storyInDocs(canvas, "greeting--default");
   expect(await server.getByText("Hello from Storybook").count()).toBe(1);
   expect(await server.getByTestId("server-decorator").getAttribute("data-agent")).toBe("read");
-  const iframe = inDocs(canvas).locator("iframe");
-  expect(await iframe.evaluate((element) => element.getBoundingClientRect().height)).toBe(320);
   // The client story in the docs page, in the meta's and the project's
   // decorators, of the browser layer, with the CSS of its story file.
   const frame = inDocs(canvas).getByTestId("theme").getByTestId("meta-decorator");
@@ -522,10 +528,14 @@ test("autodocs: a client story file's stories inline, a server story file's in i
     .poll(() => argsTable.getByText("onPress", { exact: true }).count(), { timeout: 30_000 })
     .toBe(1);
   await selectDocs(canvas, "greeting--docs");
-  // The primary story and every story of the file, each in a page of its own.
-  await expect.poll(() => inDocs(canvas).locator("iframe").count()).toBe(4);
+  // Every story of the file once, the primary too, each in a page of its
+  // own. One that owns the document is as high as a small phone's screen.
+  await expect.poll(() => inDocs(canvas).locator("iframe").count()).toBe(3);
   const primaryFrame = await storyInDocs(canvas, "greeting--default");
   expect(await primaryFrame.getByText("Hello from Storybook").count()).toBe(1);
+  const inLayouts = await (await storyInDocs(canvas, "greeting--in-layouts")).frameElement();
+  const height = (element: Node) => (element as Element).getBoundingClientRect().height;
+  expect(await inLayouts.evaluate(height)).toBe(667);
   await expect
     .poll(() => argsTable.getByText("name", { exact: true }).count(), { timeout: 30_000 })
     .toBe(1);

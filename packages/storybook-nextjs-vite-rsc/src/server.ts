@@ -9,6 +9,7 @@ import {
   type MetaTypes,
   type Preview,
   type PreviewAddonEntry,
+  type Story,
 } from "storybook/internal/csf";
 import type {
   Args,
@@ -16,10 +17,11 @@ import type {
   Canvas,
   DecoratorFunction,
   ProjectAnnotations,
+  Renderer,
   WebRenderer,
 } from "storybook/internal/types";
 import { beforeAllInServerPreview } from "./errors.ts";
-import { annotations } from "./server-renderer.ts";
+import { annotations, isPage, nextjsOf } from "./server-renderer.ts";
 
 // The entry of `.storybook/preview.server.tsx`, a file without "use client",
 // and of the story files that import it: server code, whose stories render
@@ -84,10 +86,47 @@ export function defineServerPreview<Addons extends PreviewAddonEntry[] = []>(
   input: ProjectAnnotations<ServerTypes & InferTypes<Addons>> & { addons?: Addons },
 ): ServerPreview<InferTypes<Addons>> {
   if (input.beforeAll) throw beforeAllInServerPreview();
-  return Object.assign(
-    definePreview({ ...input, addons: [argTypes, annotations, ...(input.addons ?? [])] }),
-    { [serverPreview]: true },
-  ) as never;
+  const preview: Preview<Renderer> = definePreview({
+    ...input,
+    addons: [argTypes, annotations, ...(input.addons ?? [])],
+  }) as never;
+  const defineMeta = preview.meta;
+  return Object.assign(preview, {
+    [serverPreview]: true,
+    meta: (input: Meta<Renderer>["input"]) => {
+      const meta: Meta<Renderer> = defineMeta.call(preview, input) as never;
+      const { story } = meta;
+      // A copy of the story's input, which the factory amends.
+      meta.story = ((input: Parameters<typeof story>[0] = {}) =>
+        withLayout(
+          story.call(meta, typeof input === "function" ? input : { ...input }),
+        )) as typeof story;
+      return meta;
+    },
+  }) as never;
 }
 
 export const isServerPreview = (preview: object): boolean => serverPreview in preview;
+
+/**
+ * `layout: "document"` for a story that owns the document, a page or a
+ * component in the app's layouts, which Storybook's view and docs read: the
+ * story's `<body>` is its root, and a docs page shows it in an iframe. The
+ * factory sets it on every story of the server preview, `extend()` and
+ * `test()` too, and takes it from one that no longer owns the document.
+ */
+function withLayout(story: Story<Renderer>): Story<Renderer> {
+  const { input, meta } = story;
+  const { preview } = meta;
+  const { layout, ...parameters } = input.parameters ?? {};
+  const layouts =
+    nextjsOf(input).layouts ?? nextjsOf(meta.input).layouts ?? nextjsOf(preview.composed).layouts;
+  const render = input.render ?? meta.input.render ?? preview.composed.render;
+  if (layouts || isPage(meta.input.component, render)) {
+    input.parameters = { ...parameters, layout: "document" };
+  } else if (layout === "document") input.parameters = parameters;
+  const { extend } = story;
+  story.extend = ((input: Story<Renderer>["input"]) =>
+    withLayout(extend.call(story, input))) as typeof extend;
+  return story;
+}
