@@ -4,6 +4,7 @@ on:
   pull_request:
   push:
     branches: [main]
+  workflow_dispatch:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -64,9 +65,23 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
 
-  test:
-    name: Test (vitest)
+  # The projects of the root vitest.config.ts, in three parts. The Storybook
+  # tests of the demos run `storybook dev`, `storybook build` and Chromium at
+  # once; on one runner with the other projects they need more memory than it
+  # has, and GitHub stops the runner.
+  vitest:
+    name: Test (vitest, ${{ matrix.part }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - part: host demo
+            projects: --project 'nextjs-host-demo*'
+          - part: notes demo Storybook
+            projects: --project 'nextjs-notes-demo-storybook*'
+          - part: other projects
+            projects: --project '!nextjs-host-demo*' --project '!nextjs-notes-demo-storybook*'
     steps:
       - uses: actions/checkout@v6
       - uses: pnpm/action-setup@v6
@@ -77,7 +92,17 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec playwright install --with-deps --only-shell chromium
       - run: pnpm build
-      - run: pnpm test:dist
+      - run: pnpm test:dist ${{ matrix.projects }}
+
+  # The check that branch protection requires: it passes when every part of
+  # the vitest job does.
+  test:
+    name: Test (vitest)
+    if: always()
+    needs: vitest
+    runs-on: ubuntu-latest
+    steps:
+      - run: test "${{ needs.vitest.result }}" = success
 
   # The app as `next start` runs it: see docs/next-routes.md, "Development Or
   # Production".
