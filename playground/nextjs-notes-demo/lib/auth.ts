@@ -1,4 +1,3 @@
-import "#env/load-next.ts";
 import { passkey } from "@better-auth/passkey";
 import { drizzleAdapter } from "@better-auth/drizzle-adapter";
 import { betterAuth, type BaseURLConfig } from "better-auth";

@@ -2,13 +2,13 @@ import { expect, test } from "vitest";
 import { page } from "vitest/browser";
 import { db } from "#lib/db.ts";
 import { notes } from "#db/schema.ts";
-import { signInAs, testUser } from "#test/auth.ts";
+import { signedInAs, testUser } from "#test/auth.ts";
 import { renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
 
 const noteId = "00000000-0000-4000-8000-000000000001";
 
 test("renders the edit form prefilled from the note", async () => {
-  await signInAs();
+  await signedInAs();
   await db.insert(notes).values({
     id: noteId,
     ownerId: testUser.id,
@@ -29,7 +29,7 @@ test("renders the edit form prefilled from the note", async () => {
 });
 
 test("renders server validation errors and keeps attempted edits", async () => {
-  await signInAs();
+  await signedInAs();
   await db.insert(notes).values({
     id: noteId,
     ownerId: testUser.id,

@@ -1,9 +1,9 @@
 import { seed } from "drizzle-seed";
 import * as schema from "#db/schema.ts";
-import { env, type Scenario } from "#env/server.ts";
-import type { DB } from "#lib/db.types.ts";
+import { env } from "#env/server.ts";
+import { db } from "#lib/db.ts";
 
-export { scenarios, type Scenario } from "#env/server.ts";
+export type Scenario = "notes-basic" | "notes-many";
 
 const noteTitles = [
   "Trip ideas",
@@ -54,7 +54,7 @@ export const scenarioUsers = {
   },
 } as const;
 
-async function seedNotes(db: DB, count: number, seedValue: number) {
+async function seedNotes(count: number, seedValue: number) {
   await db.insert(schema.user).values(scenarioUsers.notesOwner).onConflictDoNothing();
 
   await seed(
@@ -78,17 +78,14 @@ async function seedNotes(db: DB, count: number, seedValue: number) {
   }));
 }
 
-export async function applyScenario(db: DB, scenario: Scenario = "empty") {
+export async function applyScenario(scenario: Scenario) {
   switch (scenario) {
-    case "empty":
-      return;
-
     case "notes-basic":
-      await seedNotes(db, 3, scenarioSeeds["notes-basic"]);
+      await seedNotes(3, scenarioSeeds["notes-basic"]);
       return;
 
     case "notes-many":
-      await seedNotes(db, 24, scenarioSeeds["notes-many"]);
+      await seedNotes(24, scenarioSeeds["notes-many"]);
       return;
   }
 }

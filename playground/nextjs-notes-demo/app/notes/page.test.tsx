@@ -2,13 +2,13 @@ import { expect, test } from "vitest";
 import { eq } from "drizzle-orm";
 import { page } from "vitest/browser";
 import { db } from "#lib/db.ts";
-import { notes } from "#db/schema.ts";
+import { notes, user } from "#db/schema.ts";
 import { applyScenario, scenarioUsers } from "#lib/db.scenarios.ts";
-import { otherUser, signInAs, testUser } from "#test/auth.ts";
+import { otherUser, signedInAs, testUser } from "#test/auth.ts";
 import { renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
 
 async function renderNotesPage() {
-  await signInAs();
+  await signedInAs();
   await renderServer({ url: "/notes" });
 }
 
@@ -33,8 +33,8 @@ test("shows empty state when no notes exist", async () => {
 });
 
 test("renders notes from the database", async () => {
-  await applyScenario(db, "notes-basic");
-  await signInAs({
+  await applyScenario("notes-basic");
+  await signedInAs({
     ...testUser,
     id: scenarioUsers.notesOwner.id,
     name: scenarioUsers.notesOwner.name,
@@ -52,7 +52,7 @@ test("renders notes from the database", async () => {
 });
 
 test("lists favorite notes before non-favorites", async () => {
-  await signInAs();
+  await signedInAs();
   await db.insert(notes).values([
     {
       ownerId: testUser.id,
@@ -88,7 +88,7 @@ test("lists favorite notes before non-favorites", async () => {
 });
 
 test("favorite toggle updates stored favorite state", async () => {
-  await signInAs();
+  await signedInAs();
   const [inserted] = await db
     .insert(notes)
     .values({ ownerId: testUser.id, title: "Toggle me", isFavorite: false })
@@ -111,9 +111,8 @@ test("favorite toggle updates stored favorite state", async () => {
 });
 
 test("only renders notes owned by the current user", async () => {
-  await signInAs();
-  await signInAs(otherUser);
-  await signInAs(testUser);
+  await signedInAs();
+  await db.insert(user).values(otherUser);
   await db.insert(notes).values([
     { ownerId: testUser.id, title: "Mine", content: "Visible" },
     { ownerId: otherUser.id, title: "Not mine", content: "Hidden" },

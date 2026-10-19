@@ -1,7 +1,7 @@
 import { expect } from "storybook/test";
 import { notes } from "#db/schema.ts";
 import { db } from "#lib/db.ts";
-import { signInAs, testUser } from "#test/auth.ts";
+import { signedInAs, testUser } from "#test/auth.ts";
 import { roundTrip } from "#.storybook/round-trip.ts";
 import preview from "#.storybook/preview.server.tsx";
 
@@ -11,7 +11,7 @@ const id = "00000000-0000-4000-8000-000000000001";
 const meta = preview.meta({
   parameters: { nextjs: { url: `/notes/${id}/edit` } },
   beforeEach: async () => {
-    await signInAs();
+    await signedInAs();
     await db.insert(notes).values({
       id,
       ownerId: testUser.id,
