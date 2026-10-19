@@ -76,6 +76,25 @@ test("a client story renders in the browser layer, with fn() for play and Action
   await expect
     .poll(() => page.locator("#storybook-panel-root").innerText())
     .toContain("onPress: []");
+  // preview.tsx is evaluated once: the project's preview and the one that a
+  // story file imports have one component of `parameters.docs`.
+  const once = await canvas.evaluate(async () => {
+    type Annotations = { parameters: { docs: { components: { blockquote: unknown } } } };
+    const store = (
+      window.__STORYBOOK_PREVIEW__ as unknown as {
+        storyStore: {
+          projectAnnotations: Annotations;
+          loadCSFFileByStoryId(id: string): Promise<{ projectAnnotations: Annotations }>;
+        };
+      }
+    ).storyStore;
+    const file = await store.loadCSFFileByStoryId("press-button--pressed");
+    const { blockquote } = store.projectAnnotations.parameters.docs.components;
+    return file.projectAnnotations.parameters.docs.components.blockquote === blockquote;
+  });
+  expect(once).toBe(true);
+  // A story that sets its own args with Storybook's `useArgs()`.
+  expect(await runStory(page, canvas, "press-button--renames-itself")).toEqual(passed);
 });
 
 // The document of the preview: Storybook's, or the one of a page, which owns
@@ -106,6 +125,22 @@ test("the runtime and an addon that both previews import listen once", async ({ 
     events,
   );
   expect(listeners).toEqual([1, 1]);
+});
+
+// Storybook's addons that work on the DOM, of every preview, for a server
+// story: their decorators run with Storybook's hooks on the preview's
+// document, where the story is.
+test("backgrounds, outline and measure on a server story", async ({ page }) => {
+  const canvas = await openStory(page, site!.url, "greeting--default");
+  await canvas.evaluate(() =>
+    window.__STORYBOOK_PREVIEW__.channel.emit("updateGlobals", {
+      globals: { backgrounds: { value: "dark" }, outline: true, measureEnabled: true },
+    }),
+  );
+  await expect.poll(() => canvas.locator("style#addon-backgrounds-color").count()).toBe(1);
+  await expect.poll(() => canvas.locator("style#addon-outline").count()).toBe(1);
+  await expect.poll(() => canvas.locator("canvas#storybook-addon-measure").count()).toBe(1);
+  expect(await inCanvas(canvas).getByText("Hello from Storybook").count()).toBe(1);
 });
 
 // user-event marks the document on its first use, with two capture
@@ -260,20 +295,56 @@ test("from a server story to a client story, to another, and back", async ({ pag
   expect(atStory()).toBe("/iframe.html?id=press-button--labelled");
 });
 
-test("new args: a server story loads its page again, a client story keeps its state", async ({
+test("new args: a server story renders again in place, a client story keeps its state", async ({
   page,
 }) => {
   const canvas = await openStory(page, site!.url, "greeting--default");
+  // The story's Client Component, with a state of its own.
+  await inCanvas(canvas).getByRole("button", { name: "Count: 0" }).click();
+  await canvas.evaluate(() => Object.assign(window, { __marked: true }));
   await updateArgs(canvas, "greeting--default", { name: "Controls" });
   await expect
     .poll(() => inCanvas(canvas).getByText("Hello from Controls").count(), { timeout: 30_000 })
     .toBe(1);
+  // In the document it was in, without a page load: the Client Component
+  // has its state.
+  expect(await inCanvas(canvas).getByRole("button", { name: "Count: 1" }).count()).toBe(1);
+  expect(await canvas.evaluate(() => "__marked" in window)).toBe(true);
   await runStory(page, canvas, "press-button--labelled");
   await inCanvas(canvas).getByRole("button", { name: "Labelled: 0" }).click();
   await updateArgs(canvas, "press-button--labelled", { label: "Renamed" });
   await expect
     .poll(() => inCanvas(canvas).getByRole("button", { name: "Renamed: 1" }).count())
     .toBe(1);
+});
+
+// Storybook aborts the render of a story that is left before it ends. A page
+// that is loading stops, and shows nowhere: not over the story after it, and
+// not by a reload of the preview.
+test("a page left while it loads leaves no render and no reload", async ({ page }) => {
+  const canvas = await openStory(page, site!.url, "greeting--default");
+  await canvas.evaluate(() => Object.assign(window, { __marked: true }));
+  await canvas.evaluate(() =>
+    window.__STORYBOOK_PREVIEW__.channel.emit("selectStory", {
+      storyId: "home--home",
+      viewMode: "story",
+    }),
+  );
+  await canvas.waitForFunction(
+    () => {
+      const render = window.__STORYBOOK_PREVIEW__.currentRender;
+      return render?.id === "home--home" && render.phase === "rendering";
+    },
+    null,
+    { polling: "raf" },
+  );
+  expect(await runStory(page, canvas, "greeting--server-action")).toEqual(passed);
+  expect(await canvas.evaluate(() => "__marked" in window)).toBe(true);
+  // Long enough for the page, which loads in about a second here.
+  await new Promise((resolve) => setTimeout(resolve, 3000));
+  expect(await canvas.getByRole("heading", { name: "Home" }).count()).toBe(0);
+  expect(await body(canvas)).toEqual(atComponent);
+  expect(await rendered(canvas, "greeting--server-action")).toBe("finished");
 });
 
 // A story that does what only the other kind of story can: the message that
