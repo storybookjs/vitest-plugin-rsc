@@ -93,10 +93,10 @@ function browserHeaders(
 }
 
 // What was in the browser's storage before the app ran, and what another
-// document of the origin stores in it later, like Vitest's UI or Storybook's
-// manager: the host's to keep. The app runs in this document, and a document
-// gets no `storage` event for its own writes. What the other document removes
-// is no longer the host's.
+// document of the origin stores in it later, like Vitest's UI or the manager
+// document of another host: the host's to keep. The app runs in this
+// document, and a document gets no `storage` event for its own writes. What
+// the other document removes is no longer the host's.
 const storages = new Map(
   [localStorage, sessionStorage].map((storage) => [storage, new Set(Object.keys(storage))]),
 );
@@ -108,17 +108,35 @@ window.addEventListener("storage", ({ key, newValue, storageArea }) => {
   else keys.add(key);
 });
 
-// What Vitest's UI stores on this origin as its settings change, also
-// while the tests run: its panels, and its dark mode through VueUse. Also
-// before this document hears of it: a `storage` event comes later than the
-// write.
-const isVitestKey = (key: string) => key.startsWith("vitest-") || key === "vueuse-color-scheme";
+// The keys that the host says are its own, by call: see `keepStorageKeys()`.
+const hostKeys = new Set<readonly string[]>();
+const isHostKey = (key: string) =>
+  [...hostKeys].some((keys) =>
+    keys.some((name) => (name.endsWith("*") ? key.startsWith(name.slice(0, -1)) : key === name)),
+  );
+
+/**
+ * Says that keys of the browser's storage are the host's, so `cleanup()`
+ * keeps them, in `localStorage` and `sessionStorage`. For what the host
+ * stores while the app runs: in this document, which gets no `storage` event
+ * for its own writes, or in another document just before a cleanup, as a
+ * `storage` event comes later than the write. A key that ends in `*` is every
+ * key that starts with what is before it. What was there before the app ran,
+ * and what another document stores that this one has heard of, is kept
+ * without it. Returns a function that takes these keys back: from then on
+ * they are the app's again, unless another call names them.
+ */
+export function keepStorageKeys(keys: string[]): () => void {
+  const declared = [...keys];
+  hostKeys.add(declared);
+  return () => void hostKeys.delete(declared);
+}
 
 // Removes what the app put in the browser's storage: what is not the host's.
 function forgetStorage(): void {
   for (const [storage, keys] of storages) {
     for (const key of Object.keys(storage)) {
-      if (!keys.has(key) && !isVitestKey(key)) storage.removeItem(key);
+      if (!keys.has(key) && !isHostKey(key)) storage.removeItem(key);
     }
   }
 }
@@ -552,8 +570,9 @@ globalThis.fetch = async (input, init) => {
 // A script of the page reads and writes the app's cookies with
 // `document.cookie`, as in a browser, where it is a view of the cookie jar.
 // The jar here is the store, and the browser's own is the tab's: the cookies
-// other documents of the origin set, like Vitest's UI, Storybook's manager
-// or another app on `localhost`. The app neither reads nor writes those.
+// other documents of the origin set, like Vitest's UI, the manager document
+// of another host or another app on `localhost`. The app neither reads nor
+// writes those.
 Object.defineProperty(document, "cookie", {
   configurable: true,
   get: () => store.documentCookie(),
@@ -668,10 +687,9 @@ export type RenderComponentOptions = RequestOptions & {
   /**
    * For another host than Vitest: the files of the host that render the
    * node, for their CSS. A Vitest test never passes it: the plugin's setup
-   * file fills in the setup files and the test file. Another host, like
-   * Storybook, passes the preview file and the story's file: absolute, or
-   * from the project root without a leading slash, like
-   * `stories/button.stories.tsx`. The node has
+   * file fills in the setup files and the test file. Another host passes
+   * the files of its own that render the node: absolute, or from the project
+   * root without a leading slash, like `host/button.demo.tsx`. The node has
    * the stylesheets that these files import, as a page has those of its
    * route. What is passed replaces the default, it adds nothing to it. A
    * file that is not the host's, like one of the app, is left out, with a
@@ -1168,6 +1186,11 @@ export type CleanupOptions = {
  * and forgets its `headers`, the app's cookies and what the app put in its
  * storage, like a new browser context. The server forgets what it has cached.
  * Runs before and after every test.
+ *
+ * What was set on the document, `<html>`, `<head>` and the container of a
+ * node while the page was open goes with the page; what the host set there
+ * while no page was open stays. So a library that marks the document once,
+ * on its first use, is prepared before the first page.
  */
 export async function cleanup({ url }: CleanupOptions = {}): Promise<void> {
   await leavePage("cleanup()");
@@ -1225,8 +1248,8 @@ function reloadsDocument(path: string | undefined): boolean {
   // a URL of the app's origin with its pathname stands in for the host's:
   // the app's route there is another page. Leaving puts back the host's URL.
   // Any other URL is the app's: hosts leave a page before a reload of their
-  // own (Vite with `vite:beforeFullReload`, Storybook with the story's
-  // cleanup).
+  // own (Vite with `vite:beforeFullReload`, another host with the cleanup of
+  // what it showed).
   if (destination.url === documentUrl()) return;
   if (url.origin === window.location.origin && openedAt(url)?.node) {
     event.preventDefault();

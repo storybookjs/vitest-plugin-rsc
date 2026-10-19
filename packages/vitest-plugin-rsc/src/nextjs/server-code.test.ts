@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { runInThisContext } from "node:vm";
@@ -277,6 +278,48 @@ test("leaves what the project itself depends on to the app, in the walk of the h
   expect(serverCode.isServerCode(moduleOf("host-core/node_modules/react"), "rsc")).toBe(false);
 });
 
+test("leaves this plugin and what it depends on out of the walk of the host's packages, by their directories", () => {
+  // A framework of the host that depends on the plugin, under a name of its
+  // own as with an alias, and on what the plugin depends on.
+  const plugin = fileURLToPath(new URL("../..", import.meta.url));
+  const { dependencies = {} } = JSON.parse(
+    fs.readFileSync(path.join(plugin, "package.json"), "utf8"),
+  ) as { dependencies?: Record<string, string> };
+  // Where Node.js finds them from the plugin, with any package manager.
+  const fromPlugin = createRequire(path.join(plugin, "package.json"));
+  const ownDependencies = Object.keys(dependencies).map((name) => {
+    const paths = fromPlugin.resolve.paths(name) ?? [];
+    const found = paths.find((dir) => fs.existsSync(path.join(dir, name, "package.json")));
+    return fs.realpathSync(path.join(found!, name));
+  });
+  const root = fakeProject([], {
+    "host-framework": ["renamed-plugin", "@vitejs/plugin-rsc", "theme"],
+    theme: [],
+  });
+  const link = (name: string, to: string) => {
+    fs.mkdirSync(path.dirname(path.join(root, "node_modules", name)), { recursive: true });
+    fs.symlinkSync(to, path.join(root, "node_modules", name), "dir");
+  };
+  link("renamed-plugin", plugin);
+  link(
+    "@vitejs/plugin-rsc",
+    ownDependencies[Object.keys(dependencies).indexOf("@vitejs/plugin-rsc")]!,
+  );
+  const serverCode = createServerCode(registry, { host: { packages: ["host-framework"] } });
+  serverCode.configure(root);
+  serverCode.addTestFiles(() => false);
+
+  expect(serverCode.isServerCode(path.join(root, "node_modules/theme/index.js"), "rsc")).toBe(
+    false,
+  );
+  // Every dependency of the plugin stays server code, like Vite RSC's Flight
+  // server in the rsc layer.
+  expect(ownDependencies.length).toBeGreaterThan(0);
+  for (const dir of ownDependencies) {
+    expect(serverCode.isServerCode(path.join(dir, "index.js"), "rsc"), dir).toBe(true);
+  }
+});
+
 test("walks the package of a module of the host that `host.packages` names by its subpath", () => {
   // `host-ui/test` is a module of `host-ui`, which has no `package.json` of
   // its own there. So is `@host/blocks/preview` of `@host/blocks`, and every
@@ -332,6 +375,6 @@ test("stops with a message when nothing says which files are the host's", async 
   });
   // A module that is no file is a plugin's, like the entries of the page of
   // a host, and never server code: the plugin that makes it compiles it.
-  const virtual = "/virtual:/@storybook/builder-vite/vite-app.js";
+  const virtual = "/virtual:/@host-kit/builder/app.js";
   await expect(transform("export const x = typeof window;", virtual)).resolves.toBeUndefined();
 });

@@ -1,6 +1,6 @@
 import { afterEach, beforeAll, beforeEach } from "vitest";
 import { server } from "vitest/browser";
-import { cleanup } from "./index.ts";
+import { cleanup, keepStorageKeys } from "./index.ts";
 import { forgetClientFiles } from "./client-graph.ts";
 import { registry } from "./registry.ts";
 
@@ -29,6 +29,10 @@ beforeAll(({}, suite) => {
   const { filepath } = suite.file;
   registry.nodeFiles = () => [...server.config.setupFiles, filepath];
 });
+
+// What Vitest's UI stores on this origin as its settings change, also while
+// the tests run: its panels, and its dark mode through VueUse.
+keepStorageKeys(["vitest-*", "vueuse-color-scheme"]);
 
 // Without arguments: a hook gets the test's context, which is no options.
 afterEach(() => cleanup());

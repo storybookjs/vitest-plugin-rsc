@@ -44,7 +44,7 @@ const languageOf = (file: string) =>
 // A dev server puts its version of the dependencies in the query of the id of
 // a module in `node_modules` that it does not pre-bundle, by which the browser
 // caches it: `/x/node_modules/a/b.js?v=1a2b3c4d`. A file of the host can be
-// such a module, like a framework of Storybook that `host.files` matches. Any
+// such a module, like a framework of the host that `host.files` matches. Any
 // other query, like `?raw` or `?import`, is another module of the file.
 const versionQuery = /^\?v=[\w.-]+$/;
 
