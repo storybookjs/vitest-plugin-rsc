@@ -126,9 +126,12 @@ export function createRenderClientReference(load: LoadReference) {
       );
     }
     const keys = new Set<string>();
-    referencesIn(props, keys);
+    referencesIn(Object.values(props), keys);
     const tree = treeOf(key, keys);
     holdAct(tree);
+    // Spike only: what suspended, for the host demo.
+    const log = Reflect.get(globalThis, "__spikeReferenceLog") as string[] | undefined;
+    if (log && tree.status !== "fulfilled") log.push(`suspend ${name} (${keys.size} more)`);
     // Every render, also once it has loaded: React tells a component that
     // suspended and did not call `use()` again when it finished.
     const module = React.use(tree as Promise<Record<string, unknown>>);

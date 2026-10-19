@@ -70,6 +70,52 @@ await show(async () => {
     state.__hostReports = reports;
     return;
   }
+  if (view === "references") {
+    // JSX of the rsc layer with client references in it, rendered by the
+    // React of the browser layer: see references.tsx. With `&act`, inside
+    // React's `act()`. Then, at once, what a `play` function sees.
+    const query = new URLSearchParams(window.location.search);
+    const { render, directEvaluation } = await loadClientModule(
+      await import("./render-references.tsx"),
+    );
+    const { tree } = await import("./references.tsx");
+    const log: string[] = [];
+    Object.assign(window, { __spikeReferenceLog: log, __spikeNoActHold: query.has("nohold") });
+    const refs: (string | null)[] = [];
+    const ref = (element: HTMLElement | null) => refs.push(element && element.tagName);
+    let resolve!: (value: string) => void;
+    const promise = new Promise<string>((done) => (resolve = done));
+    const started = performance.now();
+    const rendered = await render(tree(promise, ref, ["a", "b", "c"]), container, {
+      act: query.has("act"),
+    });
+    state.__hostReferences = {
+      // What a `play` function sees once the render resolved.
+      atResolve: {
+        counter: container.querySelector("[data-testid=counter-first]")?.textContent ?? null,
+        late: container.querySelector("[data-testid=late]") !== null,
+        ms: Math.round(performance.now() - started),
+      },
+      log,
+      refs,
+      directEvaluation,
+      resolve,
+      rerender: (order) => rendered.rerender(tree(promise, ref, order)),
+    };
+    return;
+  }
+  if (view === "references-called") {
+    // Server code that calls a reference as a function.
+    await loadClientModule(await import("./render-references.tsx"));
+    const { callsReference } = await import("./references.tsx");
+    try {
+      callsReference();
+      state.__hostCalled = "returned";
+    } catch (error) {
+      state.__hostCalled = String(error);
+    }
+    return;
+  }
   if (view === "tag") {
     await renderTag(container);
     return;

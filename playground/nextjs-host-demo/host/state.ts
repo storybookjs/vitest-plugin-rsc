@@ -25,6 +25,17 @@ export type HostWindow = {
   };
   /** Whether the callout had its stylesheet, before `?view=switch` left it. */
   __hostCalloutLinked?: boolean;
+  /** For `?view=references`: see main.tsx. */
+  __hostReferences?: {
+    atResolve: { counter: string | null; late: boolean; ms: number };
+    log: string[];
+    refs: (string | null)[];
+    directEvaluation: string;
+    resolve(value: string): void;
+    rerender(order: string[]): Promise<void>;
+  };
+  /** For `?view=references-called`: what calling a reference did. */
+  __hostCalled?: string;
   /** For `?view=rerender`: renders the greeting again for another name. */
   __hostRerender?: (name: string) => Promise<void>;
 };
