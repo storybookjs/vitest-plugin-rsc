@@ -147,17 +147,20 @@ function noRouter(url: URL): Error {
   );
 }
 
-// As with `fetch`, a request rejects as soon as its signal aborts. The server
-// may still answer, or fail: a render that goes on without its request fails
-// in its own ways. Nobody reads that answer.
-function unlessAborted<T extends Response | undefined>(
+// As with `fetch`, what waits on a signal rejects as soon as it aborts, with
+// its reason. The answer may still come, or fail: a render that goes on
+// without its request fails in its own ways. Nobody reads that answer, and
+// `abandon` lets go of what it started.
+function unlessAborted<T>(
   answer: Promise<T>,
   signal: AbortSignal,
+  abandon: (answer: Promise<T>) => void,
 ): Promise<T> {
   return new Promise((resolve, reject) => {
     const abort = () => {
       reject(signal.reason);
-      answer.then((response) => response?.body?.cancel()).catch(() => {});
+      answer.catch(() => {});
+      abandon(answer);
     };
     if (signal.aborted) return abort();
     signal.addEventListener("abort", abort, { once: true });
@@ -232,6 +235,7 @@ async function sendRequest(
         },
       ),
       request.signal,
+      (answer) => void answer.then((late) => late?.body?.cancel()).catch(() => {}),
     );
     if (!response) {
       // After a redirect it is another request than the one that was passed in.
@@ -571,8 +575,13 @@ registry.fetch = appFetch(true);
 process.env.__NEXT_PRIVATE_ORIGIN = window.location.origin;
 
 // A page that is open, from when its document is there, with the node of
-// `renderServer()` on it.
-type Page = { started: Promise<unknown>; unmount(): void; nodeOnPage?: NodeOnPage };
+// `renderServer()` on it, and where it reports its errors.
+type Page = {
+  started: Promise<unknown>;
+  unmount(): void;
+  nodeOnPage?: NodeOnPage;
+  errors: unknown[];
+};
 
 let page: Page | undefined;
 // Tells a page load that the test has moved on: to another page, or to the
@@ -594,6 +603,16 @@ type RequestOptions = {
    * script of the page changes them, or the test ends.
    */
   headers?: HeadersInit;
+  /**
+   * Stops the render when it aborts, as it stops a `fetch`: the page load
+   * ends, the page is left, and `renderServer()` rejects at once with the
+   * signal's reason, an `AbortError` unless it has another. Leaving goes on
+   * after that, and the next `renderServer()` or `cleanup()` waits for it.
+   * Once `renderServer()` has resolved, the page stays: leave it with
+   * `unmount()` or `cleanup()`. An aborted signal opens nothing, and leaves
+   * nothing either.
+   */
+  signal?: AbortSignal;
 };
 
 export type RenderServerOptions = RequestOptions & {
@@ -617,6 +636,18 @@ export type RenderServerOptions = RequestOptions & {
 export type RenderServerResult = {
   /** The server's response to the request of the document. */
   response: Response;
+  /**
+   * The errors that React reported on the page, in order: what threw as the
+   * server or the browser rendered, what an error boundary caught, what a
+   * Server Action threw into a form or a transition. Not Next's own, like a
+   * `redirect()` or a `notFound()`, which Next does not report either. Empty
+   * when nothing failed. A render that fails still opens its page, with
+   * Next's error page or the app's `error.tsx`, so `renderServer()` resolves
+   * with the error here; it rejects when there is no page to open. The array
+   * grows while the page is open, also with the pages the app loads from it,
+   * until `unmount()`, `cleanup()` or another `renderServer()` leaves it.
+   */
+  errors: unknown[];
   /** Leaves the page. The cookies and the `headers` stay until the test ends. */
   unmount(): Promise<void>;
 };
@@ -731,6 +762,10 @@ export async function renderServer(
 ): Promise<RenderServerResult | RenderComponentResult> {
   const [first, second] = args;
   const options: RenderComponentOptions = (isOptions(first) ? first : second) ?? {};
+  const { signal } = options;
+  // As `fetch` does: before it leaves the page that is open.
+  signal?.throwIfAborted();
+  const errors: unknown[] = [];
   const url = new URL(options.url ?? "/", window.location.origin);
   const headers = new Headers(options.headers);
   // A `cookie` header sets cookies in the store with the document, and every
@@ -752,7 +787,12 @@ export async function renderServer(
     }
     const opened = { pathname, proxy: first.proxy ?? true };
     return {
-      response: await loadPage(url, { headers }, { opened, headers: sticky, cookie }),
+      response: await loadPage(
+        url,
+        { headers },
+        { opened, headers: sticky, cookie, signal, errors },
+      ),
+      errors,
       unmount,
     };
   }
@@ -784,10 +824,11 @@ export async function renderServer(
     const response = await loadPage(
       url,
       { headers },
-      { opened, headers: sticky, cookie, nodeOnPage },
+      { opened, headers: sticky, cookie, nodeOnPage, signal, errors },
     );
     return {
       response,
+      errors,
       get container() {
         return document.body;
       },
@@ -809,8 +850,10 @@ export async function renderServer(
     );
   }
   // Leaving the page that is there takes what was added to the document
-  // since it loaded, so the container comes after that.
-  await leavePage("another renderServer()");
+  // since it loaded, so the container comes after that. An abort meanwhile
+  // rejects at once, and makes no container.
+  const left = leavePage("another renderServer()");
+  await (signal ? unlessAborted(left, signal, () => {}) : left);
   // A base element of the test's own. Not a body: that is the one of the
   // document, whichever it is by then. A node has a body of its own, and the
   // page after it another.
@@ -829,10 +872,11 @@ export async function renderServer(
   const response = await loadPage(
     url,
     { headers },
-    { container, opened, headers: sticky, cookie, nodeOnPage },
+    { container, opened, headers: sticky, cookie, nodeOnPage, signal, errors },
   );
   return {
     response,
+    errors,
     container,
     get baseElement() {
       return base ?? (defaultsToContainer || document.body);
@@ -876,42 +920,60 @@ type Opening = {
   cookie: string | null;
   /** For a node: what `rerender()` waits for. */
   nodeOnPage?: NodeOnPage;
+  /** What stops the load: see `RequestOptions.signal`. */
+  signal?: AbortSignal;
+  /** Where the page, and the pages the app loads from it, report their errors. */
+  errors: unknown[];
 };
 
 async function loadPage(url: URL, init: RequestInit, opening?: Opening): Promise<Response> {
+  // Where the page reports its errors: to the `renderServer()` that opens
+  // it, or for a page the app loads itself, to where the page it replaces
+  // reported them: the app loads one only from a page (see the listener of
+  // `navigate`). Before leaving, which forgets that page.
+  const errors = opening?.errors ?? page?.errors ?? [];
   const leaving = leavePage(opening ? "another renderServer()" : "a page load of the app");
   const load = (currentLoad = new AbortController());
-  await leaving;
-  load.signal.throwIfAborted();
+  const loading = (async () => {
+    await leaving;
+    load.signal.throwIfAborted();
 
-  // Once the node that was in it is gone.
-  if (opening?.container?.hasChildNodes()) {
-    throw new Error(
-      "vitest-plugin-rsc: the container of a node has to be empty. " +
-        "The node is hydrated in it, and leaving the node empties it.",
-    );
-  }
-  const opened = (registry.opened = opening?.opened);
-  // The store of the test that loads the page, also after the `await`s of
-  // `openPage()`. A page the app loads itself keeps the headers of what the
-  // test opened.
-  const from = store;
-  if (opening) {
-    from.headers = opening.headers;
-    if (opening.cookie !== null) from.seed(opening.cookie);
-  }
-  try {
-    return await openPage(url, init, load.signal, from, opening);
-  } catch (error) {
-    // A load that failed has no requests left, unless the test has moved on
-    // to a page or a node of its own. Only `leavePage()` stops a load. The
-    // server may still render the request of a stopped one, so leaving
-    // forgets what it opened once that request is done.
-    if (opened && registry.opened === opened && !load.signal.aborted) {
-      registry.opened = undefined;
+    // Once the node that was in it is gone.
+    if (opening?.container?.hasChildNodes()) {
+      throw new Error(
+        "vitest-plugin-rsc: the container of a node has to be empty. " +
+          "The node is hydrated in it, and leaving the node empties it.",
+      );
     }
-    throw error;
-  }
+    const opened = (registry.opened = opening?.opened);
+    // The store of the test that loads the page, also after the `await`s of
+    // `openPage()`. A page the app loads itself keeps the headers of what the
+    // test opened.
+    const from = store;
+    if (opening) {
+      from.headers = opening.headers;
+      if (opening.cookie !== null) from.seed(opening.cookie);
+    }
+    try {
+      return await openPage(url, init, load.signal, from, errors, opening);
+    } catch (error) {
+      // A load that failed has no requests left, unless the test has moved on
+      // to a page or a node of its own. Only `leavePage()` stops a load. The
+      // server may still render the request of a stopped one, so leaving
+      // forgets what it opened once that request is done.
+      if (opened && registry.opened === opened && !load.signal.aborted) {
+        registry.opened = undefined;
+      }
+      throw error;
+    }
+  })();
+  if (!opening?.signal) return loading;
+  // Until the load has settled, the abort leaves its page as another
+  // `renderServer()` would, also one that is still loading. Not a page that
+  // came after it. A page that cannot be left is reported.
+  return unlessAborted(loading, opening.signal, () => {
+    if (currentLoad === load) leavePage("the signal of renderServer()").catch(reportError);
+  });
 }
 
 async function openPage(
@@ -919,6 +981,7 @@ async function openPage(
   init: RequestInit,
   signal: AbortSignal,
   from: PageStore,
+  errors: unknown[],
   opening: Opening | undefined,
 ): Promise<Response> {
   // The test has moved on: to another page, or to the next test.
@@ -1006,12 +1069,13 @@ async function openPage(
       environmentModule("react_client", "vitest-plugin-rsc/nextjs/client"),
     );
     superseded();
-    return client.start(loaded, container, signal, opening?.nodeOnPage);
+    return client.start(loaded, container, signal, opening?.nodeOnPage, errors);
   })();
   page = {
     started: started.catch(() => {}),
     unmount: () => leave(),
     nodeOnPage: opening?.nodeOnPage,
+    errors,
   };
   try {
     ({ unmount } = await started);
@@ -1088,19 +1152,31 @@ function leavePage(by: string): Promise<void> {
   return gone;
 }
 
+export type CleanupOptions = {
+  /**
+   * The URL of the document once the page is left: the host's own, like one
+   * that says what it shows next. Leaving puts back the URL that the
+   * document had as the page opened; this one replaces it, in the same entry
+   * of the history, as leaving does. Relative to that URL, and of its
+   * origin. Defaults to the URL that leaving puts back.
+   */
+  url?: string;
+};
+
 /**
  * Leaves the page that `renderServer()` opened, removes the containers it made
  * and forgets its `headers`, the app's cookies and what the app put in its
  * storage, like a new browser context. The server forgets what it has cached.
  * Runs before and after every test.
  */
-export async function cleanup(): Promise<void> {
+export async function cleanup({ url }: CleanupOptions = {}): Promise<void> {
   await leavePage("cleanup()");
   for (const container of containers) container.remove();
   containers.clear();
   store = new PageStore();
   ssr.resetCaches();
   forgetStorage();
+  if (url !== undefined) window.history.replaceState(window.history.state, "", url);
 }
 
 // The app can leave its page without its router: `location.assign()`, a
