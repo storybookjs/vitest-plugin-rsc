@@ -11,7 +11,7 @@ import {
 } from "vite";
 import { expect, onTestFinished, test } from "vitest";
 import type { NextProject } from "./project.ts";
-import { componentPagePath, type BuiltStylesheets } from "./styles-shared.ts";
+import { componentPagePath, type BuiltFiles } from "./styles-shared.ts";
 import { builtHostFileKey, createStyles, exportsOfStylesheet, isCode, linked } from "./styles.ts";
 
 // The module that the installed Vite makes of a stylesheet for a client, of
@@ -135,7 +135,7 @@ test.each([
   expect(isCode(id, ["tsx", "ts", "md"])).toBe(code);
 });
 
-// What a static build writes into `next-stylesheets.json`: the build's plugin,
+// What a static build writes into `next-files.json`: the build's plugin,
 // driven through the hooks of a build of the rsc layer and then the layer of
 // the browser, over a module graph of its own. `root` is the root as the
 // config has it, which `isHostFile` matches against, and `real` where Vite
@@ -168,6 +168,7 @@ async function buildStylesheets(root: string, real: string, graph: Graph) {
     isServerCode: (file) => !file.startsWith(`${root}/host/`),
     isHostFile: (file) => file.startsWith(`${root}/host/`),
     pageRoutes: () => new Map([["/app/notes/page", route as never]]),
+    entryIdOf: () => "\0virtual:vitest-plugin-rsc/next-route/0",
     lists: [list],
   });
   const plugin = styles.plugins.find(({ name }) => name === "vitest-plugin-rsc:next-styles-build")!;
@@ -199,15 +200,16 @@ async function buildStylesheets(root: string, real: string, graph: Graph) {
       hook("transform").call(context, `.${source} {}`, builtCss(real, source));
     }
     await hook("buildEnd").call(context);
-    hook("generateBundle").call(context);
+    // No chunks: the modules of a route are a test of their own, below.
+    hook("generateBundle").call(context, {}, {});
   }
   await build("client", graph.rsc, graph.sources.rsc);
   await build("react_client", graph.browser, graph.sources.browser);
 
   const [file] = styles.builtFiles();
-  expect(file!.pathname).toBe("/vitest-plugin-rsc/next-stylesheets.json");
+  expect(file!.pathname).toBe("/vitest-plugin-rsc/next-files.json");
   return {
-    built: JSON.parse(Buffer.from(file!.body).toString()) as BuiltStylesheets,
+    built: JSON.parse(Buffer.from(file!.body).toString()) as BuiltFiles,
     named: (name: string) => emitted.find((fileName) => fileName.includes(`/${name}-`))!,
   };
 }
@@ -266,6 +268,8 @@ test("lists the stylesheets of every route and of every file of the host in a bu
       "host/plain.tsx": [],
       "host/story.tsx": [named("client")],
     },
+    chunks: [],
+    modules: { "/app/notes/page": [] },
   });
   expect(Object.keys(built.hostFiles)).toEqual(Object.keys(built.hostFiles).sort());
 });
@@ -349,6 +353,7 @@ test("names a file of public/ with a query or a fragment in a stylesheet of a st
     isServerCode: () => true,
     isHostFile: () => false,
     pageRoutes: () => new Map([["/page", route as never]]),
+    entryIdOf: () => layout,
     lists: [],
   });
   const manager = { isScanBuild: false, clientReferenceMetaMap: {} };
@@ -373,4 +378,73 @@ test("names a file of public/ with a query or a fragment in a stylesheet of a st
   expect(source).toContain("url(../../../fonts/icons.woff2?v=4)");
   expect(source).toContain('url("../../../fonts/icons.woff2#iefix")');
   expect(source).toContain("url(../../../dot.png)");
+});
+
+// The modules of a route in a static build, which a page load starts at once:
+// the chunk of its entry, those of what its loader tree imports, and every
+// chunk those import, read off a build of the rsc layer. Not a chunk that a
+// segment imports with `import()`, which the segment loads when it asks.
+test("lists the modules of every route in a static build, without what a segment imports later", async () => {
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "vitest-plugin-rsc-mods-")));
+  onTestFinished(() => fs.rmSync(root, { recursive: true, force: true }));
+  const files = {
+    // The entry of the route, with a loader tree of two segments.
+    "entry.js": 'export const tree = [() => import("./layout.js"), () => import("./page.js")];',
+    "layout.js": 'import { shared } from "./shared.js";\nexport const layout = shared;',
+    "page.js":
+      'import { shared } from "./shared.js";\nimport { deep } from "./deep.js";\n' +
+      'export const page = [shared, deep];\nexport const later = () => import("./lazy.js");',
+    "shared.js": 'export const shared = "shared";',
+    // Only the page imports it, so it is in the chunk of the page.
+    "deep.js": 'export const deep = "deep";',
+    "lazy.js": 'export const lazy = "lazy";',
+  };
+  for (const [name, content] of Object.entries(files)) {
+    fs.writeFileSync(path.join(root, name), content);
+  }
+  const entry = path.join(root, "entry.js");
+  const styles = createStyles({
+    getProject: () =>
+      ({
+        root,
+        assetPath: "/_next/",
+        config: {},
+        loadRouteEntry: async () => ({
+          segments: [{ file: path.join(root, "page.js"), stylesheetsKey: "page" }],
+        }),
+      }) as unknown as NextProject,
+    environments: { rsc: "client", ssr: "next_ssr", browser: "react_client" },
+    isServerCode: () => true,
+    isHostFile: () => false,
+    pageRoutes: () => new Map([["/page", { kind: "page", page: "/page" } as never]]),
+    entryIdOf: () => entry,
+    lists: [],
+  });
+  const manager = { isScanBuild: false, clientReferenceMetaMap: {} };
+  const { output } = (await build({
+    root,
+    configFile: false,
+    logLevel: "silent",
+    plugins: [{ name: "rsc:minimal", api: { manager } }, ...styles.plugins],
+    build: {
+      write: false,
+      minify: false,
+      rolldownOptions: { input: entry, preserveEntrySignatures: "strict" },
+    },
+  })) as Rolldown.RolldownOutput;
+  const chunkOf = (file: string) =>
+    output.find(
+      (chunk): chunk is Rolldown.OutputChunk =>
+        chunk.type === "chunk" && chunk.moduleIds.includes(path.join(root, file)),
+    )!.fileName;
+
+  const [file] = styles.builtFiles();
+  const built = JSON.parse(Buffer.from(file!.body).toString()) as BuiltFiles;
+  const listed = new Set(built.modules["/page"]!.map((index) => built.chunks[index]));
+  for (const segment of ["entry.js", "layout.js", "page.js", "shared.js"]) {
+    expect(listed).toContain(chunkOf(segment));
+  }
+  // Every other chunk, like Vite's helper that the entry imports, but the lazy one.
+  const chunks = output.filter((chunk) => chunk.type === "chunk").map((chunk) => chunk.fileName);
+  expect(listed).toEqual(new Set(chunks.filter((chunk) => chunk !== chunkOf("lazy.js"))));
 });

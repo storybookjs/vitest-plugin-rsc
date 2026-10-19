@@ -21,7 +21,7 @@ import {
 } from "next/dist/server/web/utils";
 import { getRouteMatcher } from "next/dist/shared/lib/router/utils/route-matcher";
 import { getRouteRegex } from "next/dist/shared/lib/router/utils/route-regex";
-import { routes as allRoutes, routing } from "virtual:vitest-plugin-rsc/next-manifest";
+import { routes as allRoutes, nextConfig, routing } from "virtual:vitest-plugin-rsc/next-manifest";
 import { shareIncrementalCache } from "./cache.ts";
 import { registerModuleLoader } from "./client-modules.ts";
 import {
@@ -235,6 +235,12 @@ export type HandleOptions = {
    * route of a node of its own, for this request only.
    */
   opened?: Opened;
+  /**
+   * Whether the request loads a page into the document, which starts the
+   * files of its route as the server renders it: see `preloadRoute()` of the
+   * registry.
+   */
+  pageLoad?: boolean;
 };
 
 // What `handle()` makes of a request, and when the server is done with it.
@@ -251,10 +257,10 @@ export function handleRequest(
 ): Promise<Response | undefined>;
 export function handleRequest(
   request: ServerRequest,
-  { nested = false, unrouted = "not-found", opened }: HandleOptions = {},
+  { nested = false, unrouted = "not-found", opened, pageLoad = false }: HandleOptions = {},
 ): Promise<Response | undefined> {
   if (nested) {
-    return untilAnswered(request, handle(request, unrouted, true, opened)).then(
+    return untilAnswered(request, handle(request, unrouted, true, opened, pageLoad)).then(
       ({ response }) => response,
     );
   }
@@ -268,7 +274,7 @@ export function handleRequest(
     }
     queued--;
     requestQueued = Promise.withResolvers();
-    return untilAnswered(request, handle(request, unrouted, false, opened));
+    return untilAnswered(request, handle(request, unrouted, false, opened, pageLoad));
   });
   // The next request waits for the body too: the server writes it as it
   // renders, long after the response is there.
@@ -416,6 +422,7 @@ async function handle(
   unrouted: "not-found" | "pass",
   nested: boolean,
   openedByRequest: Opened | undefined,
+  pageLoad: boolean,
 ): Promise<Handled> {
   const request = incoming(received);
   const url = new URL(request.url);
@@ -577,8 +584,9 @@ async function handle(
 
     setServerActions(await serverActionsOf(request.method, headers));
     // Next's build also lists the CSS files of every segment, and Next reads
-    // that list before it loads the module of a segment. So they are asked
-    // for first.
+    // that list before it loads the module of a segment, which it does as it
+    // renders. So they are asked for before it renders, as the entry of the
+    // route loads.
     // Next puts the CSS in the page only for a page load, not for its router,
     // and decides so itself: this only keeps CSS it would not use out of the
     // list.
@@ -586,9 +594,22 @@ async function handle(
     // The route of a node has the stylesheets of the files of the host that
     // render the node: `hostFiles` of `renderServer()`.
     const files = component ? (opened?.node?.files ?? []) : [];
-    setStylesheets(await registry.loadStylesheets(entry, inline, files));
-
-    const { handler } = (await registry.loadAppPage(entry)) as { handler: RequestHandler };
+    if (pageLoad && inline) {
+      // Next's production code links a stylesheet at its path alone: its
+      // development code adds the time of the request, and a deployment id
+      // its id, which a preload of the path would miss.
+      const atPath = process.env.NODE_ENV === "production" && !nextConfig.deploymentId;
+      await registry.preloadRoute(
+        entry,
+        files,
+        atPath && { crossOrigin: nextConfig.crossOrigin || undefined },
+      );
+    }
+    const [stylesheets, { handler }] = await Promise.all([
+      registry.loadStylesheets(entry, inline, files),
+      registry.loadAppPage(entry) as Promise<{ handler: RequestHandler }>,
+    ]);
+    setStylesheets(stylesheets);
     // Whoever routes a request to the not-found page sets its status, also
     // for a request to `/_not-found` itself. Before the route runs, as
     // `next start` does: Next reads the status while it renders, for the

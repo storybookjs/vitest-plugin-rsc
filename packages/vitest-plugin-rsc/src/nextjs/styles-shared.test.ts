@@ -4,12 +4,12 @@ import {
   builtFileKey,
   builtStylesheetsOf,
   componentPagePath,
-  type BuiltStylesheets,
+  type BuiltFiles,
 } from "./styles-shared.ts";
 
 // Next links a stylesheet at `${assetPath}${path}`, from the root of the site.
 // The files are in the directory of the build, wherever that is served.
-const built: BuiltStylesheets = {
+const built: BuiltFiles = {
   assetPath: "/_next/",
   routes: {
     "/app/styles/page": {
@@ -29,6 +29,8 @@ const built: BuiltStylesheets = {
     "host/plain.tsx": [],
     "callout.tsx": ["_next/static/css/other-333.css"],
   },
+  chunks: [],
+  modules: {},
 };
 
 const paths = (stylesheets: ReturnType<typeof builtStylesheetsOf>) =>
@@ -61,10 +63,12 @@ test("has nothing for a route the build does not know", () => {
 });
 
 test("names the files under the asset prefix of the app", () => {
-  const prefixed: BuiltStylesheets = {
+  const prefixed: BuiltFiles = {
     assetPath: "/assets/_next/",
     routes: { "/app/page": { "app/page": ["assets/_next/static/css/page-def.css"] } },
     hostFiles: {},
+    chunks: [],
+    modules: {},
   };
   expect(paths(builtStylesheetsOf(prefixed, "/app/page", "http://localhost/"))).toEqual({
     "app/page": ["static/css/page-def.css"],

@@ -29,6 +29,9 @@ const repository = path.resolve(root, "../..");
 
 type HostResponse = { status: number; url: string; redirected: boolean };
 
+/** What the page loads of the routes of the build, besides the layers: see the plugin. */
+type BuiltFiles = { chunks: string[]; modules: Record<string, number[]> };
+
 /**
  * Opens the host page with the URL of the app in its query: see host/main.tsx.
  * Resolves with the response of the server in the browser.
@@ -76,6 +79,17 @@ const style = (page: Page, selector: string, property: string) =>
     ([element, name]) =>
       getComputedStyle(document.querySelector(element!)!).getPropertyValue(name!),
     [selector, property],
+  );
+// The requests of the page so far, by their pathname, in the page's time.
+const resources = (page: Page) =>
+  page.evaluate(() =>
+    (performance.getEntriesByType("resource") as PerformanceResourceTiming[]).map(
+      ({ name, startTime, responseEnd }) => ({
+        pathname: new URL(name).pathname,
+        startTime,
+        responseEnd,
+      }),
+    ),
   );
 const fontLoaded = (page: Page, family: RegExp) =>
   page.waitForFunction(
@@ -258,6 +272,87 @@ describe.for(builds)("a static build, $build", ({ build, env }) => {
     expect(await page.locator("link[rel=stylesheet][href*='note-card']").count()).toBe(0);
   });
 
+  // A page load starts the files of its route at once, by the list of the
+  // build: each module of its loader tree with the entry of the route, where
+  // Next would load them one segment after the other, and the stylesheets
+  // with them, where Next would link them once the HTML is there. Each is
+  // one request: the module or the stylesheet takes the preload.
+  test("starts the files of a route at once", async ({ page }) => {
+    await open(page, site, "/notes/7", { node: "7" });
+    await heading(page, "A node of the host");
+    const built = JSON.parse(
+      fs.readFileSync(path.join(dist, "vitest-plugin-rsc/next-files.json"), "utf8"),
+    ) as BuiltFiles;
+    const files = built.modules["(vitest-plugin-rsc)/notes/[id]"]!.map(
+      (index) => `/${built.chunks[index]}`,
+    );
+    const requests = await resources(page);
+    const chunks = files.map((file) => {
+      const requested = requests.filter((request) => request.pathname === file);
+      expect(requested, file).toHaveLength(1);
+      return requested[0]!;
+    });
+    // The first is the chunk of the entry of the route.
+    for (const chunk of chunks) expect(chunk.startTime).toBeLessThan(chunks[0]!.responseEnd);
+    const stylesheets = requests.filter((request) =>
+      request.pathname.startsWith("/_next/static/css/"),
+    );
+    expect(stylesheets.map((stylesheet) => stylesheet.pathname)).toEqual([
+      expect.stringMatching(/\/note-card\.module-\w+\.css$/),
+    ]);
+    // Next's development code links a stylesheet with the time of the request
+    // in its URL, which no preload can know: there it comes with the HTML.
+    if (build === "production") {
+      const firstChunk = Math.min(...chunks.map((chunk) => chunk.responseEnd));
+      expect(stylesheets[0]!.startTime).toBeLessThan(firstChunk);
+    }
+  });
+
+  // What a segment imports with `import()` loads when the segment asks for
+  // it: `next/dynamic` of a Server Component.
+  test("starts no module that a segment imports later", async ({ page }) => {
+    await open(page, site, "/lazy");
+    await page.getByText("Summary: rendered on the server").waitFor();
+    const built = JSON.parse(
+      fs.readFileSync(path.join(dist, "vitest-plugin-rsc/next-files.json"), "utf8"),
+    ) as BuiltFiles;
+    const files = built.modules["/lazy/page"]!.map((index) => `/${built.chunks[index]}`);
+    const lazy = fs
+      .readdirSync(path.join(dist, "assets"))
+      .filter((file) => file.startsWith("summary-"));
+    expect(lazy).toHaveLength(1);
+    expect(files).not.toContain(`/assets/${lazy[0]}`);
+    // The page loads it, after the module of the page that imports it.
+    const requests = await resources(page);
+    const [summary] = requests.filter((request) => request.pathname === `/assets/${lazy[0]}`);
+    const pageChunk = files.find((file) => /\/page-\w+\.js$/.test(file))!;
+    const [segment] = requests.filter((request) => request.pathname === pageChunk);
+    expect(summary!.startTime).toBeGreaterThanOrEqual(segment!.responseEnd);
+  });
+
+  // The preloads of a page are the page's, and go with it.
+  test("leaves no preload of a page that was left", async ({ page }) => {
+    await open(page, site, "/notes/7", { node: "7" });
+    await heading(page, "A node of the host");
+    await openNext(page, "/notice");
+    await page.getByText("The office is closed on Friday.").waitFor();
+    const built = JSON.parse(
+      fs.readFileSync(path.join(dist, "vitest-plugin-rsc/next-files.json"), "utf8"),
+    ) as BuiltFiles;
+    const filesOf = (route: string) => built.modules[route]!.map((index) => built.chunks[index]!);
+    const next = new Set(filesOf("/notice/page"));
+    const left = filesOf("(vitest-plugin-rsc)/notes/[id]").filter((file) => !next.has(file));
+    expect(left.length).toBeGreaterThan(0);
+    const links = await page.evaluate(() =>
+      Array.from(
+        document.querySelectorAll<HTMLLinkElement>("link[rel=preload], link[rel=modulepreload]"),
+        (link) => new URL(link.href).pathname,
+      ),
+    );
+    expect(links.filter((link) => /note-card/.test(link))).toEqual([]);
+    expect(links.filter((link) => left.includes(link.slice(1)))).toEqual([]);
+  });
+
   // The pages read the `db` that the host seeded in the rsc layer, and Next's
   // router navigates between them.
   test("navigates with Next's router", async ({ page }) => {
@@ -409,7 +504,7 @@ describe.for(builds)("a static build, $build", ({ build, env }) => {
     for (const file of [
       "vitest-plugin-rsc/next_ssr/modules.json",
       "vitest-plugin-rsc/react_client/modules.json",
-      "vitest-plugin-rsc/next-stylesheets.json",
+      "vitest-plugin-rsc/next-files.json",
     ]) {
       const response = await page.request.get(site.url + file);
       expect(response.status(), file).toBe(200);

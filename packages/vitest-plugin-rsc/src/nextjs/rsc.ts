@@ -8,7 +8,8 @@ import routeHandlers from "virtual:vitest-plugin-rsc/next-route-handlers";
 import serverReferences from "virtual:vitest-plugin-rsc/server-references";
 import { createElement, type ReactNode } from "react";
 import type { FlightAdapters } from "./flight.ts";
-import { buildDirectory, builtStylesheets } from "./built-stylesheets.ts";
+import { buildDirectory, builtFiles } from "./built-files.ts";
+import { preloadPage } from "./document.ts";
 import { actionModulePrefix, registry } from "./registry.ts";
 import { askDevServer } from "../utils.ts";
 // By the package, so that it stays a module of its own with its "use client"
@@ -114,11 +115,14 @@ registry.loadAppPage = async (page) => {
 // The stylesheets of a route are the plugin's to say, as they are a build's:
 // see styles.ts. The route of a node also has those of the files of the host
 // that render the node, which ssr.ts passes. A static build has them in a
-// file of its own, in the directory of the build: see built-stylesheets.ts.
-// With a dev server, the dev server answers.
-// A const of this module, which TypeScript narrows in the function below too.
+// file of its own, in the directory of the build, with the modules of every
+// route: see built-files.ts. The page asks for it as it starts, not at its
+// first page load. With a dev server, the dev server answers.
+// A const of this module, which TypeScript narrows in the functions below too.
 const directory = buildDirectory;
 if (directory) {
+  // A file that failed to load is asked for again, by the page load that needs it.
+  builtFiles().catch(() => {});
   // A file the build has no stylesheets for, once for the page, as the dev
   // server warns once.
   const warned = new Set<string>();
@@ -134,7 +138,29 @@ if (directory) {
     );
   };
   registry.loadStylesheets = async (entry, _inline, files) =>
-    builtStylesheetsOf(await builtStylesheets(), entry, directory, files, missing);
+    builtStylesheetsOf(await builtFiles(), entry, directory, files, missing);
+  // A page load starts the files of its route at once, where Next would load
+  // its modules one segment after the other, and link its stylesheets only
+  // once the HTML is there. Next links a stylesheet at its path under the
+  // asset path, encoded segment by segment, and with the CORS mode of
+  // `crossOrigin` of next.config: the preload is of that URL, in that mode,
+  // or the browser fetches the file a second time.
+  registry.preloadRoute = async (entry, files, stylesheets) => {
+    const encoded = (path: string) => path.split("/").map(encodeURIComponent).join("/");
+    // A file that failed to load fails the page load in `loadStylesheets()`.
+    const built = await builtFiles().catch(() => undefined);
+    if (!built) return;
+    const linked = Object.values(builtStylesheetsOf(built, entry, directory, files)).flat();
+    preloadPage({
+      stylesheets: stylesheets
+        ? linked.map(({ path }) => new URL(built.assetPath + encoded(path), location.href).href)
+        : [],
+      crossOrigin: stylesheets ? stylesheets.crossOrigin : undefined,
+      modules: (built.modules[entry] ?? []).map(
+        (index) => new URL(built.chunks[index]!, directory).href,
+      ),
+    });
+  };
 } else {
   registry.loadStylesheets = (entry, inline, files) =>
     askDevServer<Stylesheets>(stylesheetsEvent, {
@@ -142,6 +168,10 @@ if (directory) {
       inline,
       files,
     } satisfies StylesheetsQuestion);
+  // The dev server has a module where the page asks for it, and Next's
+  // development code links a stylesheet with the time of the request in its
+  // URL, which a preload cannot know.
+  registry.preloadRoute = async () => {};
 }
 
 /** The page module of the route of a node: see `loadNodeEntry()` in project/entries.ts. */

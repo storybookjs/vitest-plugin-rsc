@@ -70,7 +70,7 @@ test('runs a file of the host with "use client" in the browser layer', async ({ 
     await page.locator("#client-root").getByRole("button", { name: "Count: 0" }).click();
     await page.locator("#client-root").getByRole("button", { name: "Count: 1" }).waitFor();
     // The CSS module of the component, a stylesheet of the build that the
-    // page links once the file has loaded, from `next-stylesheets.json`.
+    // page links once the file has loaded, from `next-files.json`.
     await page
       .locator("link[rel=stylesheet][href*='_next/static/css/counter.module-']")
       .waitFor({ state: "attached" });
