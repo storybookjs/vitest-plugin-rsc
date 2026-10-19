@@ -40,9 +40,6 @@ export const pageWithoutUrl = (id: string): Error =>
       `a URL: add \`parameters: { nextjs: { url: "/notes" } }\`, or give it a component.`,
   );
 
-export const pageInLayouts = (id: string): Error =>
-  new Error(`The story ${id} is a page, in its layouts already: \`layouts\` is for a component.`);
-
 export const nothingToMount = (id: string): Error =>
   new Error(
     `The story ${id} is a page, which has nothing to mount: call \`mount()\` without arguments.`,

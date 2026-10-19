@@ -14,7 +14,7 @@ import {
   type RenderComponentResult,
   type RenderServerResult,
 } from "vitest-plugin-rsc/nextjs/testing-library";
-import { nothingToMount, pageInLayouts, pageWithoutUrl, serverStoryInline } from "./errors.ts";
+import { nothingToMount, pageWithoutUrl, serverStoryInline } from "./errors.ts";
 import type { NextjsParameters, NextjsServerRenderer } from "./server.ts";
 
 // The annotations of the server preview, its first addon: a server story
@@ -50,7 +50,6 @@ export const renderToCanvas: RenderToCanvas<NextjsServerRenderer> = async (
   if (context.viewMode === "docs") throw serverStoryInline(id);
   const page = isPage(context.component, context.originalStoryFn);
   if (page && !url) throw pageWithoutUrl(id);
-  if (page && layouts) throw pageInLayouts(id);
   const node = page
     ? undefined
     : createElement(function Story() {

@@ -487,9 +487,6 @@ test("misuse says what to do instead", async ({ page, errors }) => {
   expect(await misuse(page, canvas, "misuse--page-without-url", errors)).toContain(
     "so it is a page of the app, which needs a URL",
   );
-  expect(await misuse(page, canvas, "misuse--page-in-layouts", errors)).toContain(
-    "`layouts` is for a component",
-  );
   // An exception of `play`, which Storybook shows in the Interactions panel.
   const mounted = await runStory(page, canvas, "misuse--mount-on-page");
   expect(mounted.reports.join("\n")).toContain("which has nothing to mount");

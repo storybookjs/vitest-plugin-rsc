@@ -41,7 +41,7 @@ export type NextjsParameters = {
     headers?: Record<string, string>;
     /** Whether `proxy.ts` and the routing of `next.config` take it: by default for a page only. */
     proxy?: boolean;
-    /** The component in place of the page at `url`, in the app's layouts. Not for a page. */
+    /** The component in place of the page at `url`, in the app's layouts. A page is in them anyway. */
     layouts?: boolean;
   };
 };

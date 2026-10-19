@@ -217,8 +217,8 @@ A page renders without the decorators, which have no node to decorate,
 Storybook's own included: backgrounds, measure and outline do nothing on a
 page. It has no CSS of the preview or its story file, and
 `parameters.layout` does not style it: the app styles its own `<body>`.
-`layouts` is for a component, and `mount(ui)` has no story to replace: both
-fail with a message.
+A page is in its layouts whatever `layouts` says. `mount(ui)` has no story
+to replace on a page, and fails with a message.
 
 ## Before A Story
 
@@ -250,8 +250,9 @@ The request a server story renders in:
 - `proxy`: whether `proxy.ts` and the routing of `next.config` take the
   request. Defaults to `true` for a page, `false` for a component.
 - `layouts`: renders the component in place of the page at `url`, in the
-  layouts of the app, which then own the document, as a page does. Not for
-  a page. Defaults to `false`.
+  layouts of the app, which then own the document, as a page does. Defaults
+  to `false`. A page is in its layouts whatever it says, so `layouts: true`
+  in `preview.server.tsx` puts every component story in them.
 
 ## Addons
 

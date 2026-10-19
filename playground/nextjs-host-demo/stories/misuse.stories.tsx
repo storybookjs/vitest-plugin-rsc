@@ -33,10 +33,6 @@ export const ThrowsInLayouts = meta.story({
 // Pages: a story without a component and a render.
 export const PageWithoutUrl = meta.story({});
 
-export const PageInLayouts = meta.story({
-  parameters: { nextjs: { url: "/", layouts: true } },
-});
-
 export const MountOnPage = meta.story({
   parameters: { nextjs: { url: "/" } },
   play: async ({ mount }) => {
