@@ -1,11 +1,12 @@
 import { expect } from "storybook/test";
+import { verification } from "#db/schema.ts";
+import { db } from "#lib/db.ts";
 import { roundTrip } from "#.storybook/round-trip.ts";
 import preview from "#.storybook/preview.server.tsx";
 
-// Signing in with a magic link of Better Auth. No story sends one: a
-// static build of Storybook is a production build, where the app needs
-// Resend to send mail, and stops without it. page.test.tsx sends a link
-// and follows it.
+// Signing in with a magic link of Better Auth. Without Resend the app
+// logs the mail, so a story sends nothing over the network: page.test.tsx
+// follows the link.
 const meta = preview.meta({
   parameters: { nextjs: { url: "/auth/sign-in" } },
 });
@@ -42,5 +43,19 @@ export const InvalidEmail = meta.story({
       await canvas.findByText("Enter a valid email address.", {}, roundTrip),
     ).toBeVisible();
     await expect(canvas.getByLabelText("Email")).toHaveValue("not-an-email");
+  },
+});
+
+// The Server Action asks Better Auth for a link, which it keeps in the
+// database, and redirects to say so.
+export const SendLink = meta.story({
+  play: async ({ canvas, userEvent }) => {
+    await userEvent.type(await canvas.findByLabelText("Email"), "ada@example.com");
+    await userEvent.click(canvas.getByRole("button", { name: "Continue with email" }));
+    await expect(
+      await canvas.findByText("Check your inbox for the sign-in link.", {}, roundTrip),
+    ).toBeVisible();
+    const [link] = await db.select().from(verification);
+    await expect(JSON.parse(link!.value)).toMatchObject({ email: "ada@example.com" });
   },
 });

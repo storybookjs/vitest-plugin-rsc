@@ -51,6 +51,7 @@ test("a new user follows the magic link to set up a passkey", async () => {
     .element(page.getByText("Check your inbox for the link to finish creating your account."))
     .toBeInTheDocument();
 
+  expect(sentLinks()).toHaveLength(1);
   const [link] = sentLinks();
   await renderServer({ url: `${link!.pathname}${link!.search}` });
 

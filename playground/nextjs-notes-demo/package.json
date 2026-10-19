@@ -69,7 +69,6 @@
     "@vitest/ui": "5.0.3",
     "babel-plugin-react-compiler": "1.0.0",
     "drizzle-kit": "^0.31.10",
-    "drizzle-seed": "^0.3.1",
     "msw": "2.14.6",
     "playwright": "^1.64.0",
     "storybook": "https://pkg.pr.new/storybookjs/storybook/storybook@9619e382bba35e5abff2505e9e7e1c92001d7ee5",

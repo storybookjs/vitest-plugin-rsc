@@ -3,7 +3,7 @@ import { eq } from "drizzle-orm";
 import { page } from "vitest/browser";
 import { db } from "#lib/db.ts";
 import { notes, user } from "#db/schema.ts";
-import { applyScenario, scenarioUsers } from "#lib/db.scenarios.ts";
+import { seedNotes } from "#.storybook/sample-notes.ts";
 import { otherUser, signedInAs, testUser } from "#test/auth.ts";
 import { renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
 
@@ -33,15 +33,8 @@ test("shows empty state when no notes exist", async () => {
 });
 
 test("renders notes from the database", async () => {
-  await applyScenario("notes-basic");
-  await signedInAs({
-    ...testUser,
-    id: scenarioUsers.notesOwner.id,
-    name: scenarioUsers.notesOwner.name,
-    email: scenarioUsers.notesOwner.email,
-    emailVerified: scenarioUsers.notesOwner.emailVerified,
-    role: scenarioUsers.notesOwner.role,
-  });
+  await signedInAs();
+  await seedNotes(testUser.id, 3);
   const seededNotes = await db.select().from(notes);
 
   await renderServer({ url: "/notes" });

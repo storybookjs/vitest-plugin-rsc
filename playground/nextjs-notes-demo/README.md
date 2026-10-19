@@ -2,7 +2,7 @@
 
 This playground is a small Next.js App Router notes app used to exercise React Server Components with `vitest-plugin-rsc`. It is the acceptance app of this repository: a Next.js app with Better Auth, Drizzle on Postgres, Server Actions and flash cookies.
 
-A browser test opens a route with `renderServer({ url })` from `vitest-plugin-rsc/nextjs/testing-library`, and Next's own request handler, renderer and router do the rest, in the browser test runtime. A story of `.storybook` renders a page the same way.
+A browser test opens a route with `renderServer({ url })` from `vitest-plugin-rsc/nextjs/testing-library`, and Next's own request handler, renderer and router do the rest, in the browser test runtime. A page story, `app/**/page.stories.tsx`, renders a page the same way in Storybook.
 
 The tests and the stories mock one module: the database, `#lib/db.ts`, which is the app's Postgres. In its place they have a PGlite database in memory, one per document, which each test and story empties first (`lib/__mocks__/db.ts`, with `vi.mock()` in `vitest.setup.ts` and `sb.mock()` in `.storybook/preview.tsx`). Everything else is the app's own: Better Auth on that database, its session cookie, `cookies()` and `headers()` of each request, the flash cookies of the forms, redirects. A test signs a user in with `signedInAs()` of `test/auth.ts`, as Better Auth would have: a session in the database and its signed cookie.
 

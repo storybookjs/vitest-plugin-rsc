@@ -19,7 +19,8 @@ const client = new PGlite("memory://");
 const created = client.exec(__SCHEMA_SQL__);
 
 // Drizzle on PGlite, where the app has Drizzle on node-postgres: the same
-// queries, with the type of the app's.
+// queries. Typed as the app's `db`, so that a setup file can cast
+// `#lib/db.ts` to this module, for `resetDb`.
 // oxlint-disable-next-line typescript-eslint/no-unsafe-type-assertion -- The two drivers differ in their client and raw results only.
 export const db = drizzle(client, { schema }) as unknown as typeof appDb;
 
@@ -28,26 +29,17 @@ const tables = Object.values(schema)
   .map((table) => `"${getTableName(table)}"`);
 
 // DELETE, where TRUNCATE would rewrite the file of every table: a few rows
-// are gone in well under a millisecond, where a clone of the database takes
-// over 100 ms. The replica role turns off the triggers of the foreign keys,
-// so the order of the tables does not matter. DELETE does not restart a
-// sequence, so `setval` does.
-let emptyAllTables: Promise<string> | undefined;
-
-async function emptyingSQL() {
-  await created;
-  const { rows } = await client.query<{ restart: string }>(
-    `SELECT format('SELECT setval(%L, %s, false)', format('%I.%I', schemaname, sequencename), start_value) AS restart FROM pg_sequences`,
-  );
-  return [
-    "SET session_replication_role = replica",
-    ...tables.map((table) => `DELETE FROM ${table}`),
-    "SET session_replication_role = DEFAULT",
-    ...rows.map(({ restart }) => restart),
-  ].join(";\n");
-}
+// are gone in well under a millisecond. The replica role turns off the
+// triggers of the foreign keys, so the order of the tables does not matter.
+// The schema has no sequence to restart.
+const emptyAllTables = [
+  "SET session_replication_role = replica",
+  ...tables.map((table) => `DELETE FROM ${table}`),
+  "SET session_replication_role = DEFAULT",
+].join(";\n");
 
 /** Empties every table, as before each test and each story. */
 export async function resetDb(): Promise<void> {
-  await client.exec(await (emptyAllTables ??= emptyingSQL()));
+  await created;
+  await client.exec(emptyAllTables);
 }

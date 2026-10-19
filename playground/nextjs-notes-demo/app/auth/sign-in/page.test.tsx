@@ -71,6 +71,7 @@ test("a user follows the magic link to their notes", async () => {
     .element(page.getByText("Check your inbox for the sign-in link."))
     .toBeInTheDocument();
 
+  expect(sentLinks()).toHaveLength(1);
   const [link] = sentLinks();
   await renderServer({ url: `${link!.pathname}${link!.search}` });
 

@@ -479,9 +479,6 @@ importers:
       drizzle-kit:
         specifier: ^0.31.10
         version: 0.31.10
-      drizzle-seed:
-        specifier: ^0.3.1
-        version: 0.3.1(drizzle-orm@0.45.2(@electric-sql/pglite@0.4.5)(@opentelemetry/api@1.9.1)(@types/pg@8.20.0)(kysely@0.28.17)(pg@8.20.0))
       msw:
         specifier: 2.14.6
         version: 2.14.6(@types/node@24.12.4)(typescript@6.0.3)
@@ -2403,13 +2400,13 @@ packages:
     resolution: {integrity: sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w==}
 
   '@storybook/addon-a11y@https://pkg.pr.new/storybookjs/storybook/@storybook/addon-a11y@9619e382bba35e5abff2505e9e7e1c92001d7ee5':
-    resolution: {integrity: sha512-/xczThC3zcmq1carT/T1Z7l315F4auznVVsyvMNPVtC7rHhqKH6smrl/D3fBpmEAMr7omY6GlbNoIv0QnXjcyw==, tarball: https://pkg.pr.new/storybookjs/storybook/@storybook/addon-a11y@9619e382bba35e5abff2505e9e7e1c92001d7ee5}
+    resolution: {tarball: https://pkg.pr.new/storybookjs/storybook/@storybook/addon-a11y@9619e382bba35e5abff2505e9e7e1c92001d7ee5}
     version: 11.0.0-alpha.6
     peerDependencies:
       storybook: ^11.0.0-alpha.6
 
   '@storybook/addon-docs@https://pkg.pr.new/storybookjs/storybook/@storybook/addon-docs@9619e382bba35e5abff2505e9e7e1c92001d7ee5':
-    resolution: {integrity: sha512-Fpqhwz3ZoJdoVOhVEnN/VxkhArXnk+wuDYXfh710X4FBlxkmkDpm0VGrYY8vTM3ucJukuH8l00RzkP3leD0Vjw==, tarball: https://pkg.pr.new/storybookjs/storybook/@storybook/addon-docs@9619e382bba35e5abff2505e9e7e1c92001d7ee5}
+    resolution: {tarball: https://pkg.pr.new/storybookjs/storybook/@storybook/addon-docs@9619e382bba35e5abff2505e9e7e1c92001d7ee5}
     version: 11.0.0-alpha.6
     peerDependencies:
       '@types/react': ^18.0.0 || ^19.0.0
@@ -2419,7 +2416,7 @@ packages:
         optional: true
 
   '@storybook/builder-vite@https://pkg.pr.new/storybookjs/storybook/@storybook/builder-vite@9619e382bba35e5abff2505e9e7e1c92001d7ee5':
-    resolution: {integrity: sha512-48k6TAM7vR6mLatUVDyU14k81yD4FJMfwVkCT39TBkuFYbBpzn14p21s8p3jwO3UWSTUzFmpoV/A5IT8Fz04nQ==, tarball: https://pkg.pr.new/storybookjs/storybook/@storybook/builder-vite@9619e382bba35e5abff2505e9e7e1c92001d7ee5}
+    resolution: {tarball: https://pkg.pr.new/storybookjs/storybook/@storybook/builder-vite@9619e382bba35e5abff2505e9e7e1c92001d7ee5}
     version: 11.0.0-alpha.6
     peerDependencies:
       storybook: ^11.0.0-alpha.6
@@ -2434,7 +2431,7 @@ packages:
       react: ^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
 
   '@storybook/react@https://pkg.pr.new/storybookjs/storybook/@storybook/react@9619e382bba35e5abff2505e9e7e1c92001d7ee5':
-    resolution: {integrity: sha512-T3NotJMaWmzyvjDYFEVJFtsLfAkxn+rJWvQ6yQJJU19NTGJGRqyGWF21WpaVT4cAdgREow6P2isdIYBiiuHcQQ==, tarball: https://pkg.pr.new/storybookjs/storybook/@storybook/react@9619e382bba35e5abff2505e9e7e1c92001d7ee5}
+    resolution: {tarball: https://pkg.pr.new/storybookjs/storybook/@storybook/react@9619e382bba35e5abff2505e9e7e1c92001d7ee5}
     version: 11.0.0-alpha.6
     peerDependencies:
       '@types/react': ^18.0.0 || ^19.0.0
@@ -3353,14 +3350,6 @@ packages:
       sql.js:
         optional: true
       sqlite3:
-        optional: true
-
-  drizzle-seed@0.3.1:
-    resolution: {integrity: sha512-F/0lgvfOAsqlYoHM/QAGut4xXIOXoE5VoAdv2FIl7DpGYVXlAzKuJO+IphkKUFK3Dz+rFlOsQLnMNrvoQ0cx7g==}
-    peerDependencies:
-      drizzle-orm: '>=0.36.4'
-    peerDependenciesMeta:
-      drizzle-orm:
         optional: true
 
   dts-resolver@3.0.0:
@@ -4521,9 +4510,6 @@ packages:
     resolution: {integrity: sha512-llQsMLSUDUPT44jdrU/O37qlnifitDP+ZwrmmZcoSKyLKvtZxpyV0n2/bD/N4tBAAZ/gJEdZU7KMraoK1+XYAg==}
     engines: {node: '>= 0.10'}
 
-  pure-rand@6.1.0:
-    resolution: {integrity: sha512-bVWawvoZoBYpp6yIoQtQXHZjmz35RSVHnUOTefl8Vcjr8snTPY1wnpSPMWekcFwbxI6gtmT7rSYPFvz71ldiOA==}
-
   pvtsutils@1.3.6:
     resolution: {integrity: sha512-PLgQXQ6H2FWCaeRak8vvk1GW462lMxB5s3Jm673N82zI4vqtVUPuZdffdZbPDFRoU8kAhItWFtPCWiPpp4/EDg==}
 
@@ -4804,7 +4790,7 @@ packages:
     engines: {node: '>=18'}
 
   storybook@https://pkg.pr.new/storybookjs/storybook/storybook@9619e382bba35e5abff2505e9e7e1c92001d7ee5:
-    resolution: {integrity: sha512-3VbQPbARx4xgporgAIpiM2xfy6FHzmnsCftlIXhyiNO1p6Lwuvwn9F4yupQv0K3GbowLj9uI5j0/mVkZznLGvg==, tarball: https://pkg.pr.new/storybookjs/storybook/storybook@9619e382bba35e5abff2505e9e7e1c92001d7ee5}
+    resolution: {tarball: https://pkg.pr.new/storybookjs/storybook/storybook@9619e382bba35e5abff2505e9e7e1c92001d7ee5}
     version: 11.0.0-alpha.6
     hasBin: true
     peerDependencies:
@@ -7455,12 +7441,6 @@ snapshots:
       kysely: 0.28.17
       pg: 8.20.0
 
-  drizzle-seed@0.3.1(drizzle-orm@0.45.2(@electric-sql/pglite@0.4.5)(@opentelemetry/api@1.9.1)(@types/pg@8.20.0)(kysely@0.28.17)(pg@8.20.0)):
-    dependencies:
-      pure-rand: 6.1.0
-    optionalDependencies:
-      drizzle-orm: 0.45.2(@electric-sql/pglite@0.4.5)(@opentelemetry/api@1.9.1)(@types/pg@8.20.0)(kysely@0.28.17)(pg@8.20.0)
-
   dts-resolver@3.0.0(oxc-resolver@11.21.2):
     optionalDependencies:
       oxc-resolver: 11.21.2
@@ -8631,8 +8611,6 @@ snapshots:
     dependencies:
       forwarded: 0.2.0
       ipaddr.js: 1.9.1
-
-  pure-rand@6.1.0: {}
 
   pvtsutils@1.3.6:
     dependencies:

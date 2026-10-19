@@ -14,6 +14,8 @@ const authBaseURL: BaseURLConfig = {
     "localhost:*",
     "127.0.0.1:*",
     "*.vercel.app",
+    // Where Chromatic serves the app's Storybook, whose page stories sign in.
+    "*.chromatic.com",
     ...(env.NODE_ENV === "development" ? ["*.trycloudflare.com"] : []),
   ],
   protocol: env.NODE_ENV === "development" ? "http" : "https",
