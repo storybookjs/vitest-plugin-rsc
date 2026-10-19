@@ -498,6 +498,10 @@ test("misuse says what to do instead", async ({ page, errors }) => {
   for (const [story, message] of [
     ["misuse-csf3--not-csf-next", "has no story of meta.story()"],
     ["misuse-factory--wrong-factory", 'has "use client", so its stories render in the browser'],
+    // Server code gets the client reference of preview.tsx, which has no
+    // `meta`: the file throws while it evaluates, before the loader can
+    // name the rule, so the error is JavaScript's.
+    ["misuse-server-file--client-preview", "preview.meta is not a function"],
     ["misuse-before-all--before-all", "defineServerPreview() got a beforeAll"],
     ["misuse-globals--globals", "globals are declared in preview.tsx"],
   ]) {

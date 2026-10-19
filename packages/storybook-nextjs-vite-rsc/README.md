@@ -121,9 +121,12 @@ Storybook reads some of a preview from the project's preview only, which is
   the tags of `preview.tsx` and of the story files. Set tags there.
 
 A story file imports the preview of its own layer: one with `"use client"`
-imports `preview.tsx`, one without imports `preview.server.tsx`. A file that
-imports the other one, or that is not CSF Next, fails to load with a
-message that says which.
+imports `preview.tsx`, one without imports `preview.server.tsx`. A file with
+`"use client"` that imports `preview.server.tsx`, or a file that is not CSF
+Next, fails to load with a message that says which. A file without
+`"use client"` that imports `preview.tsx` gets its client reference, as any
+server code does, and fails while it loads with
+`preview.meta is not a function`: add `.server` to the import.
 
 ## Server Stories And Client Stories
 
