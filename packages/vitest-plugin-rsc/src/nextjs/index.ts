@@ -12,41 +12,40 @@ import { recordListeners, recordMessageChannels } from "./leftovers.ts";
 import { NodeOnPage } from "./node-on-page.ts";
 import { PageStore } from "./page-store.ts";
 import { openedAt, registry, type Opened } from "./registry.ts";
+import { takesRequest } from "./server-in-front.ts";
+import { ssrLayer } from "./server-layers.ts";
 
 export { loadClientModule } from "./client-graph.ts";
 
-// The layers of Next's server load from here on, and next to them the server
-// in front of the app. That one is the document's: it waits for no layer, and
-// neither does a request that is not the app's. Only a request that the
-// server handles waits for the ssr layer: see `server()`.
-await import("./rsc.ts");
-const ssrLayer = createEnvironmentRunner("next_ssr").import<typeof import("./ssr.ts")>(
-  environmentModule("next_ssr", "vitest-plugin-rsc/nextjs/ssr"),
-);
-const takesRequest = async (_: unknown) => true;
+// What a request of the app waits for: the ssr layer, which starts to load
+// as this module evaluates, see server-layers.ts. Nothing else does. The
+// server in front of the app is the document's, and says without a layer
+// which requests are the app's: see `takesRequest()`. So the host's own
+// requests go to the network at once, and leaving a page before the layer
+// is there has no request of the server to settle, nor a cache to forget.
 type SsrLayer = Awaited<typeof ssrLayer>;
-// The ssr layer, once it has loaded. Until then the server has had no
-// request, so leaving a page has none to settle, and nothing cached to forget.
 let ssr: SsrLayer | undefined;
 void ssrLayer.then(
   (layer) => (ssr = layer),
   () => {},
 );
-// How many times a page was left: see `server()`.
+// How many pages were left: see `serverHandles()`.
 let pagesLeft = 0;
 
-// The ssr layer, for a request that the server handles. A request that waited
-// for it to load while a page was left is one of that page, and is dropped,
-// as `settleRequests()` in ssr.ts drops one that waited for the server. A
-// layer that failed to load fails the request.
-async function server(): Promise<SsrLayer> {
-  if (ssr) return ssr;
+// Hands a request to Next's server, once the ssr layer is there. A request
+// that waited for the layer while a page was left is one of that page, and is
+// dropped, as `settleRequests()` in ssr.ts drops one that waited for the
+// server then. A layer that failed to load fails the request.
+async function serverHandles(
+  ...[request, options]: Parameters<SsrLayer["handleRequest"]>
+): Promise<Response | undefined> {
+  if (ssr) return ssr.handleRequest(request, options);
   const sent = pagesLeft;
   const layer = await ssrLayer;
   if (sent !== pagesLeft) {
     throw new DOMException("The page was left before the server responded.", "AbortError");
   }
-  return layer;
+  return layer.handleRequest(request, options);
 }
 
 const nativeFetch = globalThis.fetch;
@@ -270,15 +269,13 @@ async function sendRequest(
       ? browserHeaders(new Headers(sent), url, method, from, credentials)
       : new Headers(sent);
     const response = await unlessAborted(
-      server().then((layer) =>
-        layer.handleRequest(
-          { url: url.href, method, headers, body, signal: request.signal },
-          {
-            nested: !from,
-            unrouted: network ? "pass" : "not-found",
-            opened: redirected ? undefined : opened,
-          },
-        ),
+      serverHandles(
+        { url: url.href, method, headers, body, signal: request.signal },
+        {
+          nested: !from,
+          unrouted: network ? "pass" : "not-found",
+          opened: redirected ? undefined : opened,
+        },
       ),
       request.signal,
       (answer) => void answer.then((late) => late?.body?.cancel()).catch(() => {}),

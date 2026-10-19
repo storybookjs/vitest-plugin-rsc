@@ -97,6 +97,8 @@ const bridgePrefix = "\0vitest-plugin-rsc/next-bridge/";
 const emptyModuleId = "\0vitest-plugin-rsc/next-empty";
 const serverReferenceInfo = "next/dist/esm/shared/lib/server-reference-info.js";
 const vendoredFlight = (entry: string) => `@vitejs/plugin-rsc/vendor/react-server-dom/${entry}`;
+// The directory of the files of this package: `src` or `dist`.
+const ownDir = normalizePath(fileURLToPath(new URL("..", import.meta.url)));
 // A file of this package, in `src` or in `dist`.
 const ownFile = (name: string) =>
   normalizePath(
@@ -307,7 +309,11 @@ function createLayerResolver(getProject: () => NextProject, layer: NextLayer) {
           return nextFile(serverReferenceInfo);
         }
 
+        // The package's own modules import it, and do not depend on it: it
+        // is the project's. Another importer resolves it as it is, like Vite
+        // RSC, which resolves a package of the rsc layer again at the root.
         if (source === nextRouting) {
+          if (!importer || !normalizePath(importer).startsWith(ownDir)) return;
           return this.resolve(source, path.join(getProject().root, "package.json"), {
             ...options,
             skipSelf: true,

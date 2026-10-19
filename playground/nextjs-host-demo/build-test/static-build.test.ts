@@ -194,7 +194,9 @@ test("a page that renders no route does not wait for the ssr layer", async ({ pa
     });
     const waiting = await page.evaluate(() => {
       const { __dropped, __answered } = window as Early;
-      return Promise.all([__dropped, __answered].map((sent) => Promise.race([sent, "waits"])));
+      return Promise.all(
+        [__dropped, __answered].map((sent) => Promise.race([sent, Promise.resolve("waits")])),
+      );
     });
     expect(waiting).toEqual(["waits", "waits"]);
     release();
