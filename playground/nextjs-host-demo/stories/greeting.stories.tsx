@@ -28,7 +28,10 @@ export const Default = meta.story({
 export const InLayouts = meta.story({
   parameters: { nextjs: { url: "/", layouts: true } },
   play: async ({ canvasElement }) => {
-    await expect(canvasElement.tagName).toBe("HTML");
+    // A story in the layouts owns the document: its canvas is the page's
+    // `<body>`, the story's root.
+    await expect(canvasElement).toBe(document.getElementById("storybook-root"));
+    await expect(canvasElement.tagName).toBe("BODY");
     const main = within(canvasElement).getByRole("main");
     await expect(await within(main).findByText("Hello from Storybook")).toBeVisible();
     await expect(within(main).getByTestId("server-decorator")).toHaveAttribute(

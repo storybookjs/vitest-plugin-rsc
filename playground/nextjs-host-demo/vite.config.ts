@@ -37,5 +37,11 @@ export default defineConfig({
       ),
     },
   },
-  resolve: { conditions: vitestPluginRscSourceConditions },
+  resolve: {
+    conditions: vitestPluginRscSourceConditions,
+    // An alias of React to itself, which a host or another plugin may add,
+    // changes nothing: each layer still gets Next's React. See "Three
+    // Layers, Three Environments" in docs/next-routes.md.
+    alias: { react: "react", "react-dom": "react-dom" },
+  },
 });

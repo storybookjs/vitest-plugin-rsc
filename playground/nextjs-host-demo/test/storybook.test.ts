@@ -103,13 +103,13 @@ const body = (canvas: Frame) =>
   canvas.evaluate(() => ({
     classes: [...document.body.classList].sort().join(" "),
     margin: getComputedStyle(document.body).margin,
-    root: !!document.getElementById("storybook-root"),
+    root: document.getElementById("storybook-root")?.tagName,
   }));
 
 // A page owns the `<body>`, with the app's style, without Storybook's
 // classes.
-const atPage = { classes: "", margin: "32px", root: false };
-const atComponent = { classes: "sb-main-padded sb-show-main", margin: "0px", root: true };
+const atPage = { classes: "", margin: "32px", root: "BODY" };
+const atComponent = { classes: "sb-main-padded sb-show-main", margin: "0px", root: "DIV" };
 
 // Both previews import a11y, and Storybook's runtime is in both layers: the
 // browser layer has the page's instance of each, which listens to the
@@ -249,8 +249,10 @@ const layout = (canvas: Frame) =>
 test("a story in the layouts, and one whose beforeEach sets a cookie", async ({ page }) => {
   const canvas = await openStory(page, site!.url, "greeting--in-layouts");
   expect(await storyRun(page, canvas, "greeting--in-layouts")).toEqual(passed);
-  // A story that owns the document has no layout of Storybook's.
+  // A story that owns the document has no layout of Storybook's, and its
+  // `<body>` is its root.
   expect(await layout(canvas)).toBe("none");
+  expect((await body(canvas)).root).toBe("BODY");
   expect(await runStory(page, canvas, "greeting--seeded")).toEqual(passed);
   expect(await layout(canvas)).toBeUndefined();
   expect(await runStory(page, canvas, "home--home")).toEqual(passed);

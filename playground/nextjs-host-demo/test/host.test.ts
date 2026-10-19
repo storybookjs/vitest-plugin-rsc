@@ -177,12 +177,15 @@ test("a node has the CSS of a Client Component of a package that is not pre-bund
   page.on("request", (request) => {
     if (versioned.test(request.url())) requested = true;
   });
-  await open(page, errors, "tag", async (page) => {
+  const host = await open(page, errors, "tag", async (page) => {
     await page.locator("#host-root").getByText("Tagged by the host").waitFor();
     await page.locator("link[rel=stylesheet][href*='ui/tag.css']").waitFor({ state: "attached" });
     expect(await style(page, "[data-testid=tag]", "color")).toBe("rgb(128, 0, 128)");
   });
   expect(requested).toBe(true);
+  // Through the page's own `host-report/tags`, which React may render more
+  // than once.
+  expect(host.__hostTags).toContain("Tagged by the host");
 });
 
 test("leaves a file of the app out of `hostFiles`, with a warning", async ({ page, errors }) => {

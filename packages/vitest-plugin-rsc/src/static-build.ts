@@ -40,7 +40,11 @@ import {
 // Their ids are not the ones of step 3: Vite RSC names a module of a package
 // by how it was imported, which it only knows of all of them afterwards.
 // Step 2 also finds the modules of the page that the browser layer imports,
-// which step 3 gives the page's own instance of: see host-module.ts.
+// which step 3 gives the page's own instance of: see host-module.ts. It finds
+// them in its module graph, not in its chunks. A bare import binds nothing,
+// so its chunks lack a module whose package says it has no side effects, and
+// what only that module imports, where the build of step 4 keeps it for its
+// exports.
 
 /** What the page imports for the layers that were built: see utils.ts. */
 const layersId = "virtual:vitest-plugin-rsc/layers";
@@ -185,7 +189,8 @@ export async function toRunnerModule(
 }
 
 // The modules of the page that the chunks of a layer import, by the import
-// each stands for: externals, see host-module.ts.
+// each stands for: externals, see host-module.ts. What the build of a layer
+// imports, which the module graph of its scan has to reach.
 function hostModulesOf(bundle: Rolldown.OutputBundle): Set<string> {
   const found = new Set<string>();
   for (const output of Object.values(bundle)) {
@@ -223,9 +228,9 @@ export function staticBuild(options: StaticBuildOptions): Plugin {
   >();
   // While `buildApp()` builds the environments.
   let buildingApp = false;
-  // The modules of the page that the scan of the browser layer found it
-  // imports, by the import each stands for: the rsc layer lists them, see
-  // `hostModulesId`.
+  // The modules of the page that the module graph of the browser layer's
+  // scan reaches, by the import each stands for: the rsc layer lists them,
+  // see `hostModulesId`.
   let hostModules = new Set<string>();
   // The modules that only the lists of references import with `import()`,
   // in the build of the environment that is being built: see `onwarn`.
@@ -529,14 +534,21 @@ export function staticBuild(options: StaticBuildOptions): Plugin {
       handler(_options, bundle) {
         const { name } = this.environment;
         if (runnerLayers().includes(name)) {
-          const imported = hostModulesOf(bundle);
           // The scan of the browser layer, which comes before the rsc layer
-          // that lists them. The layer's own build imports what its scan
-          // did: a module it imports beyond that is not in the list.
+          // that lists them: every one its module graph reaches, also where
+          // its chunks dropped the module that imports it. The layer's own
+          // build imports no module of the page that its scan's graph does
+          // not reach: one it imports beyond that is not in the list.
           if (manager.isScanBuild) {
-            if (name === browser) hostModules = imported;
+            if (name === browser) {
+              hostModules = new Set(
+                [...this.getModuleIds()].filter(isHostModule).map(hostModuleSpecifier),
+              );
+            }
           } else {
-            const missing = [...imported].find((specifier) => !hostModules.has(specifier));
+            const missing = [...hostModulesOf(bundle)].find(
+              (specifier) => !hostModules.has(specifier),
+            );
             if (missing !== undefined) {
               this.error(
                 `vitest-plugin-rsc: the ${name} layer imports ${missing} as a module of the ` +

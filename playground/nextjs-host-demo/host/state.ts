@@ -5,6 +5,8 @@ export type HostWindow = {
   __hostError?: unknown;
   __hostResponse?: { status: number; url: string };
   __hostReports?: unknown[];
+  /** What the Client Component of `?view=tag` tagged, through `host-report/tags`. */
+  __hostTags?: string[];
   /** What `loadClientModule()` gave `?view=module`. */
   __hostModule?: {
     /** Whether the rsc layer's module of the file has references, not the components. */
