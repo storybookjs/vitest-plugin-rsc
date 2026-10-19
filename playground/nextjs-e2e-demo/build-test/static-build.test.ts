@@ -386,6 +386,59 @@ describe.for(builds)("a static build, $build", ({ build, env }) => {
     await page.getByText("Last team: core").waitFor();
   });
 
+  // The server in front of the app decides with the build's routing alone
+  // which requests are the app's: not the proxy, nor a layer. A host that
+  // fetches a file of its own, one that the proxy's matcher leaves out, gets
+  // it from the network while the ssr layer, the largest file of the build,
+  // is still held back, and nothing of the proxy loads for it. Nor do the
+  // stylesheets, which only a file of the host with "use client" asks for.
+  test("sends a file that the proxy does not take to the network, before the ssr layer", async ({
+    page,
+  }) => {
+    let release!: () => void;
+    const released = new Promise<void>((resolve) => (release = resolve));
+    await page.route("**/vitest-plugin-rsc/next_ssr/modules.json", async (route) => {
+      await released;
+      await route.continue();
+    });
+    onTestFinished(() => release());
+    // A file of Next's build, which the matcher of the proxy leaves out: the
+    // image that app/images imports.
+    const media = fs
+      .readdirSync(path.join(dist, "_next/static/media"))
+      .find((name) => name.startsWith("logo."));
+    const file = `/_next/static/media/${media}`;
+    const requested: string[] = [];
+    page.on("request", (request) => requested.push(new URL(request.url()).pathname));
+    await page.goto(`${site.url}?${new URLSearchParams({ fetch: file })}`);
+    await page.waitForFunction(() => (window as { __hostState?: string }).__hostState);
+    const host = await page.evaluate((file) => {
+      const { __hostState, __hostFetched } = window as {
+        __hostState?: string;
+        __hostFetched?: number;
+      };
+      const resources = performance.getEntriesByType("resource") as PerformanceResourceTiming[];
+      const timing = (path: string) =>
+        resources.find((resource) => new URL(resource.name).pathname === path);
+      return {
+        state: __hostState,
+        fetched: __hostFetched,
+        answered: timing(file)?.responseEnd,
+        ssrLayer: timing("/vitest-plugin-rsc/next_ssr/modules.json")?.responseEnd,
+      };
+    }, file);
+    expect(host).toMatchObject({ state: "ready", fetched: 200 });
+    expect(host.answered).toBeGreaterThan(0);
+    // Asked for, and still held: it has not ended.
+    expect(requested).toContain("/vitest-plugin-rsc/next_ssr/modules.json");
+    expect(host.ssrLayer).toBeUndefined();
+    expect(
+      requested.filter((path) =>
+        /\/(next-middleware-entry|instrumentation)-[^/]*\.js$|next-stylesheets\.json$/.test(path),
+      ),
+    ).toEqual([]);
+  });
+
   test("has every file the page asks for", async ({ page }) => {
     // The layers, one file each, and the stylesheets: see the plugin.
     for (const file of [
