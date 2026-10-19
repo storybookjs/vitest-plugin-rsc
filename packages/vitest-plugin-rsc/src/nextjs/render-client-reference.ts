@@ -23,7 +23,10 @@ export type Thenable<T> = Promise<T> & {
  */
 export type LoadReference = (key: string) => Thenable<Record<string, unknown>>;
 
-const elementTags = new Set([Symbol.for("react.transitional.element"), Symbol.for("react.element")]);
+const elementTags = new Set([
+  Symbol.for("react.transitional.element"),
+  Symbol.for("react.element"),
+]);
 const clientReferenceTag = Symbol.for("react.client.reference");
 // How far `referencesIn()` looks into the props of a reference.
 const maxVisited = 2000;
@@ -134,10 +137,10 @@ export function createRenderClientReference(load: LoadReference) {
     if (log && tree.status !== "fulfilled") log.push(`suspend ${name} (${keys.size} more)`);
     // Every render, also once it has loaded: React tells a component that
     // suspended and did not call `use()` again when it finished.
-    const module = React.use(tree as Promise<Record<string, unknown>>);
-    if (!(name in module)) {
+    const exports = React.use(tree as Promise<Record<string, unknown>>);
+    if (!(name in exports)) {
       throw new Error(`vitest-plugin-rsc: ${key} has no export "${name}" in the browser layer.`);
     }
-    return React.createElement(module[name] as React.ElementType, props);
+    return React.createElement(exports[name] as React.ElementType, props);
   };
 }

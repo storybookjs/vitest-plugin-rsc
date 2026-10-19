@@ -28,9 +28,7 @@ test("gives every export of Vite RSC's client reference module the plugin's prox
   const replaced = replaceClientProxies(code, exportNames, "/app/a.tsx");
   expect(replaced).not.toContain("throw new Error");
   for (const name of ["A", "default", "C"]) {
-    expect(replaced).toContain(
-      `$$clientProxy("/app/a.tsx", "${name}"), "/app/a.tsx", "${name}")`,
-    );
+    expect(replaced).toContain(`$$clientProxy("/app/a.tsx", "${name}"), "/app/a.tsx", "${name}")`);
   }
 });
 

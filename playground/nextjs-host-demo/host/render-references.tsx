@@ -15,7 +15,7 @@ import { evaluation } from "../app/components/reference-box.tsx";
 /** The evaluation of reference-box.tsx that this file imported. */
 export const directEvaluation = evaluation;
 
-declare const globalThis: { IS_REACT_ACT_ENVIRONMENT?: boolean };
+const scope = globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean };
 
 function WithCallback({ callback, children }: { callback: () => void; children: React.ReactNode }) {
   React.useLayoutEffect(callback, [callback]);
@@ -30,14 +30,14 @@ export async function render(
   const root: Root = createRoot(container);
   const renderOnce = async (node: React.ReactNode) => {
     if (act) {
-      const previous = globalThis.IS_REACT_ACT_ENVIRONMENT;
-      globalThis.IS_REACT_ACT_ENVIRONMENT = true;
+      const previous = scope.IS_REACT_ACT_ENVIRONMENT;
+      scope.IS_REACT_ACT_ENVIRONMENT = true;
       try {
         await React.act(async () => {
           root.render(node);
         });
       } finally {
-        globalThis.IS_REACT_ACT_ENVIRONMENT = previous;
+        scope.IS_REACT_ACT_ENVIRONMENT = previous;
       }
       return;
     }

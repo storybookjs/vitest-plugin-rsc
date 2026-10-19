@@ -5,7 +5,7 @@ import { registry } from "./registry.ts";
 // key, name)`, see client-reference.ts. Flight never calls the proxy: it
 // reads the reference's `$$id`. Everything else that renders the proxy is
 // the React of the browser layer, in the document of the host: a host that
-// makes JSX in the rsc layer, as a test or a story does, and renders it with
+// makes JSX in the rsc layer, as a test does, and renders it with
 // that React. There the proxy renders the export of the file that the
 // browser layer has, as Flight would have: see render-client-reference.ts.
 //

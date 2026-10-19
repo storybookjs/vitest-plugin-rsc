@@ -131,9 +131,9 @@ const loadReference: LoadReference = (key) => {
   if (!loading) {
     loading = track(
       (async () => {
-        const module = await importReference(key);
+        const exports = await importReference(key);
         await linkStylesheets(await referenceStylesheetsOf(key));
-        return module;
+        return exports;
       })(),
     );
     referenceLoads.set(key, loading);
@@ -217,6 +217,8 @@ export async function loadClientFile(key: string, builtFile?: string): Promise<v
   if (own) evaluatedModules.invalidateModule(own);
   evaluations.set(key, await graph.import(key));
   await linkStylesheets(await stylesheetsOf(key, builtFile));
+  // A reference to the file renders this evaluation, as loadClientModule() gives it.
+  forgetReferences();
 }
 
 /**
@@ -275,6 +277,8 @@ async function linkStylesheets(urls: string[]): Promise<void> {
 export function unlinkClientStylesheets(): void {
   for (const { link } of linked.values()) link.remove();
   linked.clear();
+  // A reference links its stylesheets again as it next renders.
+  forgetReferences();
 }
 
 /**

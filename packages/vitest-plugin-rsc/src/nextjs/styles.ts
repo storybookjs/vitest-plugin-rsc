@@ -834,9 +834,9 @@ function createBuiltStylesheets(
       ];
       // Every client reference too, which the tab's React can render in the
       // document of the host by its key: see `references` of BuiltStylesheets.
-      const everyReference = Object.values(manager.clientReferenceMetaMap).map(
-        ({ importId }) => ({ client: importId }),
-      );
+      const everyReference = Object.values(manager.clientReferenceMetaMap).map(({ importId }) => ({
+        client: importId,
+      }));
       for (const item of [...reached.flat(), ...everyReference]) {
         if (!("client" in item) || clients.has(item.client)) continue;
         const resolved = await this.resolve(item.client, importer);

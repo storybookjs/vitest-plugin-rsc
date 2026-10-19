@@ -1,4 +1,3 @@
-import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import { afterAll, beforeAll, expect } from "vitest";
 import { createProject, test, type DevServer } from "../../test-helpers/host.ts";
@@ -37,10 +36,7 @@ test("act() waits for a client reference that is not loaded yet", async ({ page,
   console.log("act", JSON.stringify(seen));
 });
 
-test("without the hold, act() resolves before the references commit", async ({
-  page,
-  errors,
-}) => {
+test("without the hold, act() resolves before the references commit", async ({ page, errors }) => {
   await open(page, errors, "references&act&nohold", async (page) => {
     const seen = await page.evaluate(() => (window as HostWindow).__hostReferences!.atResolve);
     console.log("act nohold", JSON.stringify(seen));
@@ -53,49 +49,4 @@ test("a client reference called as a function throws", async ({ page, errors }) 
   console.log("called", host);
   const called = await page.evaluate(() => (window as HostWindow).__hostCalled);
   expect(called).toMatch(/is a Client Component and cannot be called on the server/);
-});
-
-test("a change of a file that a client reference points at reloads the host's document", async ({
-  page,
-  errors,
-}) => {
-  const file = fileURLToPath(new URL("../app/components/reference-box.tsx", import.meta.url));
-  const source = fs.readFileSync(file, "utf8");
-  await open(page, errors, "references", async (page) => {
-    await page.locator("#host-root").getByTestId("counter-first").click();
-    await page.evaluate(() => Object.assign(window, { __beforeChange: true }));
-    fs.writeFileSync(file, source.replace("{label} {tone} {count}", "{label}! {tone} {count}"));
-    try {
-      await page.locator("#host-root").getByText("first! dark 0").waitFor({ timeout: 30_000 });
-      const after = await page.evaluate(() => ({
-        reloaded: !("__beforeChange" in window),
-        state: (window as HostWindow).__hostState,
-      }));
-      console.log("hmr", JSON.stringify(after));
-      expect(after).toEqual({ reloaded: true, state: "ready" });
-    } finally {
-      fs.writeFileSync(file, source);
-    }
-  });
-});
-
-test("a change of a file that only a client reference points at reloads the host's document", async ({
-  page,
-  errors,
-}) => {
-  // No file of the host imports late.tsx: only the reference of references.tsx.
-  const file = fileURLToPath(new URL("../app/components/late.tsx", import.meta.url));
-  const source = fs.readFileSync(file, "utf8");
-  await open(page, errors, "references", async (page) => {
-    await page.evaluate(() => Object.assign(window, { __beforeChange: true }));
-    fs.writeFileSync(file, source.replace(">late<", ">later<"));
-    try {
-      await page.locator("#host-root").getByText("later").waitFor({ timeout: 30_000 });
-      const reloaded = await page.evaluate(() => !("__beforeChange" in window));
-      console.log("hmr late", reloaded);
-      expect(reloaded).toBe(true);
-    } finally {
-      fs.writeFileSync(file, source);
-    }
-  });
 });

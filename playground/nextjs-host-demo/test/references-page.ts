@@ -53,7 +53,9 @@ export async function expectReferencesRender(
     await root.getByTestId("counter-first").click();
     await expect.poll(() => root.getByTestId("counter-first").textContent()).toBe("first dark 1");
     const ids = await page.evaluate(() =>
-      ["first", "second"].map((label) => document.querySelector(`[data-testid=counter-${label}]`)!.id),
+      ["first", "second"].map(
+        (label) => document.querySelector(`[data-testid=counter-${label}]`)!.id,
+      ),
     );
     expect(ids[0]).toMatch(/\S/);
     expect(ids[0]).not.toBe(ids[1]);
