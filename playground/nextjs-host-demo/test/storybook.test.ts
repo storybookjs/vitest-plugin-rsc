@@ -418,16 +418,19 @@ test("a page that loads keeps its own <body> when its story is selected again", 
 
 // Storybook's preparing block stays over the preview until the story
 // rendered, a page with its stylesheets, as for any renderer: while the page
-// loads, its HTML is in the document under the block, and after it, the
-// block is gone and the page has its style. The page's stylesheets come late
-// here, so that the check falls in the load.
+// loads, the block is in the document, and after it, the block is gone and
+// the page has its style. The page's stylesheets come late here, so that the
+// load takes a while.
 // Fails: this canary shows a story with `layout: 'document'` before its
 // render (`showMain()` in StoryRender of #36889), which a core PR removes.
 test.fails("a page loads under Storybook's preparing block", async ({ page }) => {
   const canvas = await openStory(page, site!.url, "greeting--default");
   expect(await rendered(canvas, "greeting--default")).toBe("finished");
+  let loading!: () => void;
+  const stylesheets = new Promise<void>((resolve) => (loading = resolve));
   await page.route(/\.css(\?|$)/, async (route) => {
-    await new Promise((resolve) => setTimeout(resolve, 2000));
+    loading();
+    await new Promise((resolve) => setTimeout(resolve, 3000));
     await route.continue();
   });
   await canvas.evaluate(() =>
@@ -436,13 +439,12 @@ test.fails("a page loads under Storybook's preparing block", async ({ page }) =>
       viewMode: "story",
     }),
   );
-  // The page's HTML is in the document, its stylesheets on their way.
-  await canvas.waitForFunction(() => document.querySelector("h1")?.textContent === "Home", null, {
-    polling: 10,
-  });
   const preparing = () =>
     canvas.evaluate(() => !!document.querySelector('sb-preview[data-mode="preparing-story"]'));
-  expect(await preparing()).toBe(true);
+  // The page loads its stylesheets; Storybook shows the block after a delay
+  // of its own.
+  await stylesheets;
+  await expect.poll(preparing, { timeout: 1000 }).toBe(true);
   expect(await rendered(canvas, "home--home")).toBe("finished");
   expect(await preparing()).toBe(false);
   expect(await body(canvas)).toEqual(atPage);
