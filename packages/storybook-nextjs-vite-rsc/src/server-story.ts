@@ -132,14 +132,8 @@ export async function renderServerStory(
         hostFiles: hostFilesOf(context.parameters.fileName as string | undefined),
         ...(layouts ? { layouts } : { container: canvasElement }),
       };
-  // A page, and a component in the layouts, own the document, so the render
-  // and `play` look in all of it: in `<html>`, which stays as pages come and
-  // go, each with a `<body>` of its own.
+  // A page, and a component in the layouts, own the document.
   const ownsDocument = page || layouts === true;
-  if (ownsDocument) {
-    const html = document.documentElement;
-    Object.assign(context, { canvasElement: html, canvas: within(html) });
-  }
   const { abortSignal } = context;
   const rendering = (async () => {
     // What the story, a decorator or Flight threw on the server: Next shows
@@ -173,9 +167,38 @@ export async function renderServerStory(
     } finally {
       window.removeEventListener("error", report);
     }
-    if (!ownsDocument) showMain();
+    if (!ownsDocument) {
+      showMain();
+      return;
+    }
+    const body = rootOfDocument(context.id, document.body);
+    Object.assign(context, { canvasElement: body, canvas: within(body) });
   })();
   await untilAborted(rendering, abortSignal);
+}
+
+// The stories whose body kept an id of the app's, warned of once each.
+const warnedWithoutRoot = new Set<string>();
+
+/**
+ * The root of a story that owns the document: its `<body>`, which Chromatic
+ * captures and `play` queries. It gets the id `storybook-root` of Storybook's
+ * root of a story after the render, as hydration does not expect an id that
+ * the server did not render. A body with an id of the app's keeps it: the
+ * story then has no `#storybook-root`, and a warning says so, once. Storybook
+ * core takes this rule over with `layout: 'document'`.
+ */
+export function rootOfDocument(storyId: string, body: HTMLElement): HTMLElement {
+  if (!body.id) body.id = "storybook-root";
+  else if (body.id !== "storybook-root" && !warnedWithoutRoot.has(storyId)) {
+    warnedWithoutRoot.add(storyId);
+    console.warn(
+      `@storybook/nextjs-vite-rsc: the story ${storyId} owns the document, and its <body> ` +
+        `keeps the app's id "${body.id}", so the story has no #storybook-root, which ` +
+        `Chromatic and the test-runner look for.`,
+    );
+  }
+  return body;
 }
 
 // `cleanup()` leaves the page, and puts back the preview's URL of when the

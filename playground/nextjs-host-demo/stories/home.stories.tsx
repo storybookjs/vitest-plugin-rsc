@@ -13,8 +13,10 @@ export const Home: StoryObj<{ visitor: string }> = {
   args: { visitor: "Ada" },
   beforeEach: ({ args }) => localStorage.setItem("visitor", args.visitor),
   play: async ({ canvas, canvasElement }) => {
-    // The page owns the document: its canvas is `<html>`.
-    await expect(canvasElement.tagName).toBe("HTML");
+    // The page owns the document: its canvas is the page's `<body>`, the
+    // story's root.
+    await expect(canvasElement).toBe(document.getElementById("storybook-root"));
+    await expect(canvasElement.tagName).toBe("BODY");
     await expect(await canvas.findByRole("heading", { name: "Home" })).toBeVisible();
     await expect(localStorage.getItem("visitor")).toBe("Ada");
   },

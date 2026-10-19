@@ -89,7 +89,7 @@ export function atStory(canvas: Frame): string {
 export const body = (canvas: Frame) =>
   canvas.evaluate(() => ({
     classes: [...document.body.classList].sort(),
-    root: !!document.getElementById("storybook-root"),
+    root: document.getElementById("storybook-root")?.tagName,
   }));
 
 // The root layout has the provider of next-themes, whose script React's
@@ -111,7 +111,7 @@ export async function runEveryStory(page: Page, url: string, errors: PageErrors)
   const canvas = await openStory(page, url, first!.id);
   const check = async ({ id, page: isPage, client }: Story, run: StoryRun) => {
     expect(run, id).toEqual(passed);
-    expect((await body(canvas)).root, id).toBe(!isPage);
+    expect((await body(canvas)).root, id).toBe(isPage ? "BODY" : "DIV");
     if (client) expect(atStory(canvas), id).toBe(`/iframe.html?id=${id}`);
     else expect(new URL(canvas.url()).pathname, id).not.toBe("/iframe.html");
     const logged = errors.list.splice(0);
