@@ -106,6 +106,34 @@ test("takes back what React DOM kept on the document, and only that", async () =
   expect(reactTargets().map(reactProperties)).toEqual(runner);
 });
 
+test("takes back every property that was set on the document while the page was open", async () => {
+  // Of no React in particular: what the page set goes with it, whatever its
+  // name. What was there before stays.
+  const container = document.body.appendChild(document.createElement("section"));
+  onTestFinished(() => container.remove());
+  const targets = [document, document.documentElement, document.head, container];
+  const before = Symbol("before");
+  for (const target of targets) Object.assign(target, { fromBefore: true, [before]: true });
+  onTestFinished(() => {
+    for (const target of targets) {
+      Reflect.deleteProperty(target, "fromBefore");
+      Reflect.deleteProperty(target, before);
+    }
+  });
+
+  const { unmount } = await renderServer(<Counter />, { container });
+  const during = Symbol("during");
+  for (const target of targets) Object.assign(target, { duringPage: {}, [during]: {} });
+  await unmount();
+
+  for (const target of targets) {
+    expect(Object.hasOwn(target, "duringPage")).toBe(false);
+    expect(Object.hasOwn(target, during)).toBe(false);
+    expect(Object.hasOwn(target, "fromBefore")).toBe(true);
+    expect(Object.hasOwn(target, before)).toBe(true);
+  }
+});
+
 test("lets go of a page that the test has left, with all of its modules", async () => {
   await renderServer({ url: "/" });
   const modules = modulesOfPage();
