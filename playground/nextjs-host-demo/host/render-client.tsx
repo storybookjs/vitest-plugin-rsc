@@ -7,9 +7,11 @@ import { createRoot } from "react-dom/client";
 // What renders a component in the host's document, as the renderer of a
 // framework does: with the `react-dom` of the browser layer, the one of the
 // component it renders. In the rsc layer, where the host runs, React is the
-// server's.
+// server's. Returns what unmounts it.
 report({ from: "host/render-client.tsx", react: version });
 
-export function renderClient(Component: ComponentType, container: Element): void {
-  createRoot(container).render(createElement(Component));
+export function renderClient(Component: ComponentType, container: Element): () => void {
+  const root = createRoot(container);
+  root.render(createElement(Component));
+  return () => root.unmount();
 }
