@@ -21,12 +21,13 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import type { ReactNode } from "react";
 import { renderedContainers } from "../test/browser.ts";
-import { transformsOf } from "../test/service.ts";
+import { releaseStylesheet, transformsOf } from "../test/service.ts";
 import { ClientBoundary, ThrowsOnClient } from "./components/client-boundary.tsx";
 import { ClientFrame } from "./components/client-frame.tsx";
 import { Counter } from "./components/counter.tsx";
 import { FavoriteButton } from "./components/favorite-button.tsx";
 import { Greeted } from "./components/greeted.tsx";
+import { LateStyled } from "./components/late-styled.tsx";
 import { LingerButton } from "./components/linger-button.tsx";
 import { Locale } from "./components/locale.tsx";
 import { RefreshButton } from "./components/refresh-button.tsx";
@@ -108,6 +109,25 @@ test("links the CSS of a node, of its Server and Client Components", async () =>
   await renderServer({ url: "/notice" });
   await expect.element(page.getByText("The office is closed on Friday.")).toBeVisible();
   expect(getComputedStyle(document.body).backgroundColor).toBe("rgba(0, 0, 0, 0)");
+});
+
+test("puts a node in its container once the stylesheets of its head have loaded", async () => {
+  const key = crypto.randomUUID();
+  // However the test ends, the server answers the stylesheet it holds.
+  onTestFinished(() => releaseStylesheet(key));
+  const loading = renderServer(<LateStyled stylesheetKey={key} />);
+  await expect
+    .poll(() => document.querySelector(`link[href="/service/late-stylesheet?key=${key}"]`))
+    .not.toBeNull();
+  expect(document.querySelector(".late")).toBeNull();
+
+  await releaseStylesheet(key);
+  const { container } = await loading;
+
+  expect(container.querySelector(".late")?.textContent).toBe("Styled by a late stylesheet");
+  await expect
+    .element(page.getByText("Styled by a late stylesheet"))
+    .toHaveStyle({ color: "rgb(0, 0, 255)" });
 });
 
 test("links the CSS of a node in the layouts of a route, and that of the layouts", async () => {

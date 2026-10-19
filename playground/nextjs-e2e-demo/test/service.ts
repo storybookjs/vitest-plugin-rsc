@@ -20,3 +20,8 @@ export async function transformsOf(file: string): Promise<number> {
   const { transforms } = (await response.json()) as { transforms: number };
   return transforms;
 }
+
+// Lets the service in vitest.config.ts answer the late stylesheet of a key.
+export async function releaseStylesheet(key: string): Promise<void> {
+  await fetch(`/service/late-stylesheet/release?key=${key}`);
+}
