@@ -65,8 +65,9 @@ const routeKinds = Object.keys(routeLists) as RouteKind[];
 // it, if the app has one, and its request handler.
 const middlewareId = virtual("middleware");
 const middlewareEntryId = virtual("middleware-entry");
-// Next's route resolution, which the server in front of the app runs in the
-// ssr layer. Not a part of `next`: it is the project's, next to its `next`.
+// Next's route resolution: the rsc layer, the document's, says with it which
+// requests are the app's, and the ssr layer routes with it each request that
+// it handles. Not a part of `next`: it is the project's, next to its `next`.
 const nextRouting = "@next/routing";
 // What the modules of a route are listed by: its page name, which the route
 // of a node shares with a page of the app.
@@ -96,6 +97,8 @@ const bridgePrefix = "\0vitest-plugin-rsc/next-bridge/";
 const emptyModuleId = "\0vitest-plugin-rsc/next-empty";
 const serverReferenceInfo = "next/dist/esm/shared/lib/server-reference-info.js";
 const vendoredFlight = (entry: string) => `@vitejs/plugin-rsc/vendor/react-server-dom/${entry}`;
+// The directory of the files of this package: `src` or `dist`.
+const ownDir = normalizePath(fileURLToPath(new URL("..", import.meta.url)));
 // A file of this package, in `src` or in `dist`.
 const ownFile = (name: string) =>
   normalizePath(
@@ -306,7 +309,11 @@ function createLayerResolver(getProject: () => NextProject, layer: NextLayer) {
           return nextFile(serverReferenceInfo);
         }
 
+        // The package's own modules import it, and have it as a peer: it is
+        // the project's. Another importer resolves it as it is, like Vite
+        // RSC, which resolves a package of the rsc layer again at the root.
         if (source === nextRouting) {
+          if (!importer || !normalizePath(importer).startsWith(ownDir)) return;
           return this.resolve(source, path.join(getProject().root, "package.json"), {
             ...options,
             skipSelf: true,
@@ -522,6 +529,9 @@ const runtimeImports: Record<NextLayer, string[]> = {
     vendoredFlight("server.edge"),
     vendoredFlight("static.edge"),
     vendoredFlight("client.edge"),
+    // server-in-front.ts
+    "next/dist/server/lib/server-ipc/utils",
+    "next/dist/server/web/utils",
   ],
   ssr: [
     ...react,
@@ -529,15 +539,16 @@ const runtimeImports: Record<NextLayer, string[]> = {
     "next/dist/server/route-modules/app-page/module",
     "next/dist/server/lib/incremental-cache",
     "next/dist/server/lib/incremental-cache/tags-manifest.external",
-    // ssr.ts, for the server in front of the app
+    // ssr.ts, for what the server in front of the app routes to it
     "next/dist/client/components/app-router-headers",
     "next/dist/server/lib/is-rsc-request",
-    "next/dist/server/lib/server-ipc/utils",
     "next/dist/shared/lib/router/utils/route-matcher",
     "next/dist/shared/lib/router/utils/route-regex",
+    // server-in-front.ts
+    "next/dist/server/lib/server-ipc/utils",
     // node-server.ts
     "next/dist/server/lib/mock-request",
-    // node-server.ts and ssr.ts
+    // node-server.ts, ssr.ts and server-in-front.ts
     "next/dist/server/web/utils",
     "next/dist/compiled/stream-browserify",
     vendoredFlight("client.edge"),
@@ -726,7 +737,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
         ]);
         const clientBoundaries = findClientBoundaries(project.nextDir, resolvers.rsc);
         const include: Record<NextLayer, string[]> = {
-          rsc: rscInclude,
+          rsc: [...rscInclude, nextRouting],
           ssr: [
             ...toInclude("ssr", [...apiImports("ssr"), ...runtimeImports.ssr, ...clientBoundaries]),
             nextRouting,

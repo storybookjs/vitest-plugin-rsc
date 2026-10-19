@@ -75,13 +75,15 @@ Next imports its Flight codec as `react-server-dom-webpack`. In the `rsc` layer 
 
 Next compiles an App Router app into three layers. Each has its own module graph and its own build of React:
 
-| Layer     | Runs                                                                   | React                | Vite environment |
-| --------- | ---------------------------------------------------------------------- | -------------------- | ---------------- |
-| `rsc`     | Server Components, Server Actions, route handlers                      | `react-server` build | `client`         |
-| `ssr`     | Next's route module, the HTML renderer, the server in front of the app | regular build        | `next_ssr`       |
-| `browser` | Next's router, your Client Components                                  | regular build        | `react_client`   |
+| Layer     | Runs                                                                            | React                | Vite environment |
+| --------- | ------------------------------------------------------------------------------- | -------------------- | ---------------- |
+| `rsc`     | Server Components, Server Actions, route handlers, which requests are the app's | `react-server` build | `client`         |
+| `ssr`     | Next's route module, the HTML renderer, the server in front of the app          | regular build        | `next_ssr`       |
+| `browser` | Next's router, your Client Components                                           | regular build        | `react_client`   |
 
 Here each layer is a Vite environment, with the aliases and constants Next gives that layer. All three run in the browser test runtime. That keeps the test white-box: the `db` your test seeds is the module instance the Server Component reads.
+
+The `rsc` layer is the document's own module graph: the test, or another host, imports `vitest-plugin-rsc/nextjs/testing-library`, and the layer loads with it. The other two run in module runners. The `ssr` layer starts to load once the `rsc` layer has; the `browser` layer has a runner for every page and one for the files with `"use client"` that `loadClientModule()` loads. In a static build the tab fetches the file of each layer at once, as the plugin starts. Nothing that the host imports waits for the `ssr` layer: only a request that Next's server handles does. Which requests those are is decided in the `rsc` layer, with the build's routing alone, before the `ssr` layer has loaded; the `ssr` layer routes each request it handles again, with its own copy of the same module. See [Which Requests Are The App's](#which-requests-are-the-apps). Under Vitest the plugin's setup file waits for the `ssr` layer, so its first load is not a part of a test's timeout. Another host does not wait for it: the first request that Next's server handles does, which with a dev server includes compiling Next's server.
 
 Vite's `resolve.alias` is one table for the three layers, and its entries go before Next's: an alias of `next/headers` to a mock applies to an import of `next/headers` in every layer, with a dev server and in a build. So does a resolver of the app's with `enforce: "pre"` that goes before `vitestPluginNext()`. Both replace a module of Next by the specifier the app imports it by: Next's own files import each other by a relative path, which an alias does not see.
 
@@ -545,7 +547,7 @@ The app's origin is also the origin of the Vite dev server, which serves the tes
 - Next's router or a Server Action sent it, both of which mark their requests with a header, or
 - the server has something for it: one of the app's routes, a redirect or a rewrite from `next.config`, or a proxy whose matcher takes it.
 
-The server answers that question with its route resolution, without running anything. Only running the proxy tells what it does with a request, so a request that its matcher takes goes to the server. If the proxy lets the request through and no route has it, a deployment looks for a file. Here the request then goes to the network after all, which has the files in `public/`.
+The server answers that question with its route resolution, without running anything. That answer is the document's: it is worked out in the `rsc` layer with the routes of the build and `@next/routing`, and needs no other layer, nor the proxy itself. So a request that is not the app's goes to the network at once, also before the `ssr` layer has loaded, and one that is waits for that layer, which handles it. A request that waited for the layer while a page was left is one of that page, and is dropped, as one that waited for the server then (see [What Stands In For A Server](#what-stands-in-for-a-server)). Only running the proxy tells what it does with a request, so a request that its matcher takes goes to the server. If the proxy lets the request through and no route has it, a deployment looks for a file. Here the request then goes to the network after all, which has the files in `public/`.
 
 Everything else goes to the network right away: Vite's modules, files in `public/`, a service worker. A page load always belongs to the app: `renderServer()`, `handleRequest()` and a navigation get the not-found page for a URL that resolves to nothing.
 
