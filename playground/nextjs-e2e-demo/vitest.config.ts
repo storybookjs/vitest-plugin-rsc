@@ -28,6 +28,36 @@ function hitsService(): Plugin {
   };
 }
 
+// Stands in for a stylesheet that the network brings late: it answers a
+// request for a key once the test has released the key.
+function lateStylesheetService(): Plugin {
+  const waiting = new Map<string, Array<() => void>>();
+  const released = new Set<string>();
+  const keyOf = (url = "/") => new URL(url, "http://localhost").searchParams.get("key") ?? "";
+  return {
+    name: "nextjs-e2e-demo:late-stylesheet-service",
+    configureServer(server) {
+      server.middlewares.use("/service/late-stylesheet/release", (request, response) => {
+        const key = keyOf(request.url);
+        released.add(key);
+        for (const answer of waiting.get(key) ?? []) answer();
+        waiting.delete(key);
+        response.end();
+      });
+      server.middlewares.use("/service/late-stylesheet", (request, response) => {
+        const key = keyOf(request.url);
+        const answer = () => {
+          response.setHeader("content-type", "text/css");
+          response.setHeader("cache-control", "no-store");
+          response.end(".late { color: rgb(0, 0, 255); }");
+        };
+        if (released.has(key)) answer();
+        else waiting.set(key, [...(waiting.get(key) ?? []), answer]);
+      });
+    },
+  };
+}
+
 // Stands in for a service of another origin, which the tests reach at
 // `elsewhere.localhost`: it answers with the headers it got.
 function headersService(): Plugin {
@@ -129,6 +159,7 @@ export default defineProject({
     vitestPluginNext({ browserModules: ["test/**"], affectedTests: true, build }),
     hitsService(),
     headersService(),
+    lateStylesheetService(),
     fileChangeService(),
   ],
   resolve: {

@@ -7,6 +7,11 @@ import { graphStylesheetAttribute } from "./styles-shared.ts";
 // there: a second `<title>` would hide the page's, and text in `<body>` is not
 // what React expects to hydrate.
 //
+// A browser shows none of a page before the stylesheets in its `<head>` have
+// loaded, and the page that was there until then. So the `<head>` of the page
+// comes first, where its stylesheets load, and the rest once they have:
+// until then the document shows what was there.
+//
 // A page gets a `<body>` of its own, as it does in a browser, and so does a
 // node. What it leaves on its body goes with it: React adds its listeners to
 // the body when a portal renders there, and they would keep the page.
@@ -61,7 +66,23 @@ function isGraphStylesheet(node: Node): boolean {
   return node instanceof HTMLLinkElement && node.hasAttribute(graphStylesheetAttribute);
 }
 
-// A stylesheet holds up the scripts after it, and the page is not loaded
+// The stylesheets in `parent` that the server serves itself, which the page
+// waits for. One of another server may never answer. One that the browser
+// does not ask for has no `load` and no `error`.
+function stylesheetsOf(parent: ParentNode, url: string): HTMLLinkElement[] {
+  return Array.from(
+    parent.querySelectorAll<HTMLLinkElement>('link[rel~="stylesheet"][href]'),
+  ).filter(
+    (link) =>
+      !link.relList.contains("alternate") &&
+      link.getAttribute("href") &&
+      (!link.type || link.type === "text/css") &&
+      URL.canParse(link.getAttribute("href")!, url) &&
+      new URL(link.getAttribute("href")!, url).origin === window.location.origin,
+  );
+}
+
+// A stylesheet holds up what comes after it, and the page is not loaded
 // before it is. One that fails to load holds up nothing.
 function stylesheetLoaded(link: HTMLLinkElement): Promise<void> {
   return new Promise((resolve) => {
@@ -76,10 +97,11 @@ function setAttributes(element: Element, attributes: Iterable<readonly [string, 
 }
 
 /**
- * Replaces the page in this document with the one the server sent as `html`,
- * and runs its inline scripts in document order, once its stylesheets have
- * loaded. Resolves then, and without running them for a page that was left
- * in the meantime.
+ * Replaces the page in this document with the one the server sent as `html`:
+ * its `<head>` first, the rest once the stylesheets of the `<head>` have
+ * loaded, and runs its inline scripts in document order once the stylesheets
+ * of the rest have too. Resolves then, and without running them for a page
+ * that was left in the meantime.
  *
  * The page is there in full before the app starts, so the document has loaded
  * by the time Next's client looks: it reads the Flight payload that Next's
@@ -106,19 +128,10 @@ export async function loadDocument(html: string, url: string, container?: Elemen
   const runnerScripts = new Set(document.querySelectorAll("script"));
   const before = new Set<Node>([...document.head.childNodes, ...runnerBody.childNodes]);
   const parked: Node[] = [];
-  for (const node of container ? [] : document.head.childNodes) {
-    if (!staysDuringPage(node)) parked.push(node);
-  }
-  for (const node of parked) document.head.removeChild(node);
-  // The body of the page. What the runner needs moves into it, and back.
-  // For a node that is all there is: the document stays the test's.
+  // The body of the page, in the document once the page shows. What the
+  // runner needs moves into it, and back. For a node that is all there is:
+  // the document stays the test's.
   const pageBody = document.createElement("body");
-  const staying = Array.from(runnerBody.childNodes).filter(
-    (node) => container || staysDuringPage(node),
-  );
-  setAttributes(pageBody, attributesOf(runnerBody));
-  document.documentElement.replaceChild(pageBody, runnerBody);
-  pageBody.append(...staying);
 
   // A stylesheet of a page that is gone does not load.
   let leaveNow!: () => void;
@@ -127,7 +140,7 @@ export async function loadDocument(html: string, url: string, container?: Elemen
     try {
       leaveNow();
       container?.replaceChildren();
-      for (const parent of [document.head, document.body]) {
+      for (const parent of [document.head, pageBody]) {
         for (const node of Array.from(parent.childNodes)) {
           if (!before.has(node) && !isViteStyle(node) && !isGraphStylesheet(node)) node.remove();
         }
@@ -144,6 +157,7 @@ export async function loadDocument(html: string, url: string, container?: Elemen
     document.head.append(...parked);
     // In the order they are in: what stayed, and the CSS Vite added.
     runnerBody.append(...pageBody.childNodes);
+    // A body that never showed has no parent: the host's stays.
     pageBody.replaceWith(runnerBody);
     elements(document).forEach((element, index) =>
       setAttributes(element, runnerAttributes[index]!),
@@ -183,37 +197,44 @@ export async function loadDocument(html: string, url: string, container?: Elemen
   for (const link of page.querySelectorAll<HTMLLinkElement>('link[rel="preload"][as="script"]')) {
     if (sources.has(link.href)) link.remove();
   }
-  // The stylesheets of the page that the server serves itself, which the
-  // page waits for. One of another server may never answer. One that the
-  // browser does not ask for has no `load` and no `error`.
-  const stylesheets = Array.from(
-    page.querySelectorAll<HTMLLinkElement>('link[rel~="stylesheet"][href]'),
-  ).filter(
-    (link) =>
-      !link.relList.contains("alternate") &&
-      link.getAttribute("href") &&
-      (!link.type || link.type === "text/css") &&
-      URL.canParse(link.getAttribute("href")!, url) &&
-      new URL(link.getAttribute("href")!, url).origin === window.location.origin,
-  );
+  const stylesheetsOfHead = stylesheetsOf(page.head, url);
+  const stylesheetsOfBody = stylesheetsOf(page.body, url);
+  const loaded = (stylesheets: HTMLLinkElement[]) =>
+    Promise.race([
+      Promise.all(stylesheets.filter((link) => !link.disabled).map(stylesheetLoaded)),
+      left,
+    ]);
   // Where the browser ended up, after any redirects. Before the page is in
   // the document, which requests what its relative URLs resolve to against
   // it, and before its scripts run: one of them may read `location`.
   window.history.replaceState(null, "", url);
 
+  document.head.append(...page.head.childNodes);
+  await loaded(stylesheetsOfHead);
+  if (unload !== leave) return;
+
+  // The page shows, in place of what was there, in one go. What the host
+  // put in its body while the page waited is the host's too.
+  for (const node of runnerBody.childNodes) before.add(node);
+  for (const node of container ? [] : document.head.childNodes) {
+    if (before.has(node) && !staysDuringPage(node)) parked.push(node);
+  }
+  for (const node of parked) document.head.removeChild(node);
+  const staying = Array.from(runnerBody.childNodes).filter(
+    (node) => container || staysDuringPage(node),
+  );
+  setAttributes(pageBody, attributesOf(runnerBody));
+  document.documentElement.replaceChild(pageBody, runnerBody);
+  pageBody.append(...staying);
   if (container) {
-    document.head.append(...page.head.childNodes);
     container.append(...page.body.childNodes);
   } else {
     elements(page).forEach((element, index) =>
       setAttributes(elements(document)[index]!, attributesOf(element)),
     );
-    document.head.append(...page.head.childNodes);
-    document.body.append(...page.body.childNodes);
+    pageBody.append(...page.body.childNodes);
   }
-
-  const loading = stylesheets.filter((link) => !link.disabled).map(stylesheetLoaded);
-  await Promise.race([Promise.all(loading), left]);
+  await loaded(stylesheetsOfBody);
   if (unload !== leave) return;
 
   // The inline scripts: React's, which move content that was waiting for
