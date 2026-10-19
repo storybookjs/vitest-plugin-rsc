@@ -105,7 +105,6 @@ const ownFile = (name: string) =>
 // two are the only files of the layers that import Vitest: a host without
 // Vitest never loads them.
 const setupFile = ownFile("setup");
-const clientProxyFile = ownFile("client-proxy");
 const affectedSetupFile = ownFile("affected/browser");
 // What a test imports `renderServer()` from, and the file that is.
 const testingLibrary = {
@@ -390,154 +389,19 @@ function nextClientBoundaryPlugin(getProject: () => NextProject, resolver: Layer
       if (!code.includes("use client")) return;
 
       const specifier = resolver.toSpecifier(file);
-      const key = JSON.stringify(`/@id/${specifier}`);
       const result = transformDirectiveProxyExport(await parseAstAsync(code), {
         directive: "use client",
         code,
         runtime: (name) =>
           `$$ReactServer.registerClientReference(` +
-          `$$clientProxy(${key}, ${JSON.stringify(name)}), ${key}, ${JSON.stringify(name)})`,
+          `() => { throw new Error(${JSON.stringify(`${specifier}#${name} is a Client Component and cannot be called on the server`)}) }, ` +
+          `${JSON.stringify(`/@id/${specifier}`)}, ${JSON.stringify(name)})`,
       });
       if (!result) return;
       result.output.prepend(
-        `import * as $$ReactServer from ${JSON.stringify(vendoredFlight("server.edge"))};\n` +
-          `import { clientProxy as $$clientProxy } from ${JSON.stringify(clientProxyFile)};\n`,
+        `import * as $$ReactServer from ${JSON.stringify(vendoredFlight("server.edge"))};\n`,
       );
       return { code: result.output.toString(), map: null };
-    },
-  };
-}
-
-type AstNode = { type: string; start: number; end: number } & Record<string, unknown>;
-
-const isAstNode = (value: unknown): value is AstNode =>
-  typeof value === "object" && value !== null && typeof Reflect.get(value, "type") === "string";
-
-// Every call `<object>.<method>(...)` in `node`.
-function* methodCallsIn(node: unknown, method: string): Generator<AstNode> {
-  if (Array.isArray(node)) {
-    for (const item of node) yield* methodCallsIn(item, method);
-    return;
-  }
-  if (!isAstNode(node)) return;
-  const callee = node.callee;
-  if (
-    node.type === "CallExpression" &&
-    isAstNode(callee) &&
-    callee.type === "MemberExpression" &&
-    !callee.computed &&
-    isAstNode(callee.property) &&
-    callee.property.name === method
-  ) {
-    yield node;
-  }
-  for (const value of Object.values(node)) {
-    if (typeof value === "object") yield* methodCallsIn(value, method);
-  }
-}
-
-const stringLiteral = (node: unknown): string | undefined =>
-  isAstNode(node) && node.type === "Literal" && typeof node.value === "string"
-    ? node.value
-    : undefined;
-
-/** What Vite RSC says of a client reference module that it made. */
-type ClientReferenceModule = { referenceKey: string; exportNames?: string[] };
-
-/**
- * The proxy of `clientProxy()` for every client reference that Vite RSC
- * makes in the rsc layer: the one that renders the browser layer's export
- * when the tab's React renders the reference, see client-proxy.ts. Next's
- * own files get it from `nextClientBoundaryPlugin()` in their pre-bundle,
- * where no transform runs.
- *
- * It replaces the first argument of each `registerClientReference(proxy,
- * key, name)` of React's API that the module calls. Unless the module has
- * one such call for each of its exports, by its name, with the module's
- * reference key, both as string literals, it throws, and so fails the
- * request or the build: a version of Vite RSC that makes the module another
- * way would else leave references that throw where the host renders them.
- */
-export async function replaceClientProxies(
-  code: string,
-  { referenceKey, exportNames = [] }: ClientReferenceModule,
-  id: string,
-): Promise<string> {
-  const calls = [...methodCallsIn(await parseAstAsync(code), "registerClientReference")].sort(
-    (a, b) => a.start - b.start,
-  );
-  if (calls.length === 0 && exportNames.length === 0) return code;
-  const fail = (problem: string) =>
-    new Error(
-      `vitest-plugin-rsc: the client reference module that Vite RSC made of ${id} is not one ` +
-        `that the plugin knows: ${problem}. Its references would throw where the React of ` +
-        `the browser layer renders them in the document of the host. vitest-plugin-rsc ` +
-        `depends on one version of @vitejs/plugin-rsc.`,
-    );
-  const names: string[] = [];
-  let replaced = "";
-  let from = 0;
-  for (const call of calls) {
-    const [proxy, ...rest] = call.arguments as unknown[];
-    const [key, name] = rest.map(stringLiteral);
-    if (!isAstNode(proxy) || rest.length !== 2 || key !== referenceKey || name === undefined) {
-      throw fail(`a reference that is not registerClientReference(proxy, "${referenceKey}", name)`);
-    }
-    names.push(name);
-    const args = [key, name].map((value) => JSON.stringify(value)).join(", ");
-    replaced += `${code.slice(from, proxy.start)}$$clientProxy(${args})`;
-    from = proxy.end;
-  }
-  const sorted = (list: readonly string[]) => JSON.stringify([...list].sort());
-  if (sorted(names) !== sorted(exportNames)) {
-    throw fail(`references for ${sorted(names)}, and the exports ${sorted(exportNames)}`);
-  }
-  const own = `import { clientProxy as $$clientProxy } from ${JSON.stringify(clientProxyFile)};\n`;
-  return own + replaced + code.slice(from);
-}
-
-function clientProxyPlugin(
-  rsc: string,
-  referenceOf: (id: string, config: ResolvedConfig) => ClientReferenceModule | undefined,
-): Plugin {
-  // The client reference modules that have the plugin's proxies, as Vite
-  // RSC describes each one it made, anew for every transform.
-  const replaced = new WeakSet<object>();
-  return {
-    name: "vitest-plugin-rsc:next-client-proxy",
-    enforce: "post",
-    async transform(code, id) {
-      if (this.environment.name !== rsc) return;
-      const config = this.environment.getTopLevelConfig();
-      // The scan of a build keeps only the imports of a module.
-      if (getPluginApi(config)?.manager.isScanBuild) return;
-      const reference = referenceOf(id, config);
-      if (!reference) return;
-      try {
-        const replacedCode = await replaceClientProxies(code, reference, id);
-        replaced.add(reference);
-        return { code: replacedCode, map: null };
-      } catch (error) {
-        this.error(error as Error);
-      }
-    },
-    // A client reference module of the build that this transform did not
-    // give the proxy would throw in the host. Of the build: the scan before
-    // it can have had more modules.
-    buildEnd(error) {
-      if (error || this.environment.name !== rsc || this.environment.mode !== "build") return;
-      const config = this.environment.getTopLevelConfig();
-      if (getPluginApi(config)?.manager.isScanBuild) return;
-      const missed = [...this.getModuleIds()].filter((module) => {
-        const reference = referenceOf(module, config);
-        return reference !== undefined && !replaced.has(reference);
-      });
-      if (missed.length > 0) {
-        this.error(
-          `vitest-plugin-rsc: the rsc layer has client reference modules without the proxy ` +
-            `that renders them in the document of the host: ${missed.join(", ")}.`,
-        );
-      }
     },
   };
 }
@@ -1179,7 +1043,6 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
         return serverCode.compile(entry.code, `${id.replace(/\W+/g, "-")}.js`, generatedDefines());
       },
     },
-    clientProxyPlugin(environmentOf.rsc, clientReferenceOf),
     ...clientFiles({
       environments: { rsc: environmentOf.rsc, browser: environmentOf.browser },
       testingLibrary,
