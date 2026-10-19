@@ -1186,6 +1186,11 @@ export type CleanupOptions = {
  * and forgets its `headers`, the app's cookies and what the app put in its
  * storage, like a new browser context. The server forgets what it has cached.
  * Runs before and after every test.
+ *
+ * What was set on the document, `<html>`, `<head>` and the container of a
+ * node while the page was open goes with the page; what the host set there
+ * while no page was open stays. So a library that marks the document once,
+ * on its first use, is prepared before the first page.
  */
 export async function cleanup({ url }: CleanupOptions = {}): Promise<void> {
   await leavePage("cleanup()");
