@@ -48,17 +48,16 @@ test("a story file without a story of meta.story() is an error", async () => {
   ).rejects.toThrow("./csf3.stories.tsx has no story of meta.story()");
 });
 
-test("the factory of the other layer is an error, for a story file and the preview", async () => {
+// A file without "use client" that imports preview.tsx gets its client
+// reference, which has no `meta`: it fails as it evaluates, before the
+// loader, which the host demo's misuse story shows.
+test("the factory of the other layer is an error, for a client story file and the preview", async () => {
   const modules = {
     "./client.stories.tsx": clientFile({ Default: serverPreview.meta({}).story() }),
-    "./server.stories.tsx": { Default: clientPreview.meta({}).story() },
     "./.storybook/preview.tsx": { default: clientPreview },
   };
   await expect(load("./client.stories.tsx", importOf(modules))).rejects.toThrow(
     './client.stories.tsx has "use client", so its stories render in the browser',
-  );
-  await expect(load("./server.stories.tsx", importOf(modules))).rejects.toThrow(
-    './server.stories.tsx has no "use client", so it is server code',
   );
   await expect(load("./.storybook/preview.tsx", importOf(modules))).rejects.toThrow(
     './.storybook/preview.tsx has no "use client"',
