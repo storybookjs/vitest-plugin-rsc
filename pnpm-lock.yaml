@@ -136,15 +136,15 @@ importers:
   packages/storybook-nextjs-vite-rsc:
     dependencies:
       '@storybook/builder-vite':
-        specifier: https://pkg.pr.new/storybookjs/storybook/@storybook/builder-vite@87cda8cbeb16071800271f2f9ef093ae60b2fb5c
-        version: https://pkg.pr.new/storybookjs/storybook/@storybook/builder-vite@87cda8cbeb16071800271f2f9ef093ae60b2fb5c(storybook@https://pkg.pr.new/storybookjs/storybook/storybook@87cda8cbeb16071800271f2f9ef093ae60b2fb5c(@types/react@19.2.14)(react@19.2.6))(vite@8.3.1(@types/node@24.12.4)(esbuild@0.27.7)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))
+        specifier: https://pkg.pr.new/storybookjs/storybook/@storybook/builder-vite@9619e382bba35e5abff2505e9e7e1c92001d7ee5
+        version: https://pkg.pr.new/storybookjs/storybook/@storybook/builder-vite@9619e382bba35e5abff2505e9e7e1c92001d7ee5(storybook@https://pkg.pr.new/storybookjs/storybook/storybook@9619e382bba35e5abff2505e9e7e1c92001d7ee5(@types/react@19.2.14)(react@19.2.6))(vite@8.3.1(@types/node@24.12.4)(esbuild@0.27.7)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))
       '@storybook/react':
-        specifier: https://pkg.pr.new/storybookjs/storybook/@storybook/react@87cda8cbeb16071800271f2f9ef093ae60b2fb5c
-        version: https://pkg.pr.new/storybookjs/storybook/@storybook/react@87cda8cbeb16071800271f2f9ef093ae60b2fb5c(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(storybook@https://pkg.pr.new/storybookjs/storybook/storybook@87cda8cbeb16071800271f2f9ef093ae60b2fb5c(@types/react@19.2.14)(react@19.2.6))(typescript@6.0.3)
+        specifier: https://pkg.pr.new/storybookjs/storybook/@storybook/react@9619e382bba35e5abff2505e9e7e1c92001d7ee5
+        version: https://pkg.pr.new/storybookjs/storybook/@storybook/react@9619e382bba35e5abff2505e9e7e1c92001d7ee5(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(storybook@https://pkg.pr.new/storybookjs/storybook/storybook@9619e382bba35e5abff2505e9e7e1c92001d7ee5(@types/react@19.2.14)(react@19.2.6))(typescript@6.0.3)
     devDependencies:
       '@storybook/addon-docs':
-        specifier: https://pkg.pr.new/storybookjs/storybook/@storybook/addon-docs@87cda8cbeb16071800271f2f9ef093ae60b2fb5c
-        version: https://pkg.pr.new/storybookjs/storybook/@storybook/addon-docs@87cda8cbeb16071800271f2f9ef093ae60b2fb5c(@types/react@19.2.14)(storybook@https://pkg.pr.new/storybookjs/storybook/storybook@87cda8cbeb16071800271f2f9ef093ae60b2fb5c(@types/react@19.2.14)(react@19.2.6))
+        specifier: https://pkg.pr.new/storybookjs/storybook/@storybook/addon-docs@9619e382bba35e5abff2505e9e7e1c92001d7ee5
+        version: https://pkg.pr.new/storybookjs/storybook/@storybook/addon-docs@9619e382bba35e5abff2505e9e7e1c92001d7ee5(@types/react@19.2.14)(storybook@https://pkg.pr.new/storybookjs/storybook/storybook@9619e382bba35e5abff2505e9e7e1c92001d7ee5(@types/react@19.2.14)(react@19.2.6))
       '@types/node':
         specifier: ^24.12.4
         version: 24.12.4
@@ -161,8 +161,8 @@ importers:
         specifier: ^19.2.6
         version: 19.2.6(react@19.2.6)
       storybook:
-        specifier: https://pkg.pr.new/storybookjs/storybook/storybook@87cda8cbeb16071800271f2f9ef093ae60b2fb5c
-        version: https://pkg.pr.new/storybookjs/storybook/storybook@87cda8cbeb16071800271f2f9ef093ae60b2fb5c(@types/react@19.2.14)(react@19.2.6)
+        specifier: https://pkg.pr.new/storybookjs/storybook/storybook@9619e382bba35e5abff2505e9e7e1c92001d7ee5
+        version: https://pkg.pr.new/storybookjs/storybook/storybook@9619e382bba35e5abff2505e9e7e1c92001d7ee5(@types/react@19.2.14)(react@19.2.6)
       tsdown:
         specifier: ^0.22.0
         version: 0.22.0(@typescript/native-preview@7.0.0-dev.20260512.1)(oxc-resolver@11.21.2)(tsx@4.21.0)(typescript@6.0.3)
@@ -308,11 +308,11 @@ importers:
         version: 19.2.6(react@19.2.6)
     devDependencies:
       '@storybook/addon-a11y':
-        specifier: https://pkg.pr.new/storybookjs/storybook/@storybook/addon-a11y@87cda8cbeb16071800271f2f9ef093ae60b2fb5c
-        version: https://pkg.pr.new/storybookjs/storybook/@storybook/addon-a11y@87cda8cbeb16071800271f2f9ef093ae60b2fb5c(storybook@https://pkg.pr.new/storybookjs/storybook/storybook@87cda8cbeb16071800271f2f9ef093ae60b2fb5c(@types/react@19.2.14)(react@19.2.6))
+        specifier: https://pkg.pr.new/storybookjs/storybook/@storybook/addon-a11y@9619e382bba35e5abff2505e9e7e1c92001d7ee5
+        version: https://pkg.pr.new/storybookjs/storybook/@storybook/addon-a11y@9619e382bba35e5abff2505e9e7e1c92001d7ee5(storybook@https://pkg.pr.new/storybookjs/storybook/storybook@9619e382bba35e5abff2505e9e7e1c92001d7ee5(@types/react@19.2.14)(react@19.2.6))
       '@storybook/addon-docs':
-        specifier: https://pkg.pr.new/storybookjs/storybook/@storybook/addon-docs@87cda8cbeb16071800271f2f9ef093ae60b2fb5c
-        version: https://pkg.pr.new/storybookjs/storybook/@storybook/addon-docs@87cda8cbeb16071800271f2f9ef093ae60b2fb5c(@types/react@19.2.14)(storybook@https://pkg.pr.new/storybookjs/storybook/storybook@87cda8cbeb16071800271f2f9ef093ae60b2fb5c(@types/react@19.2.14)(react@19.2.6))
+        specifier: https://pkg.pr.new/storybookjs/storybook/@storybook/addon-docs@9619e382bba35e5abff2505e9e7e1c92001d7ee5
+        version: https://pkg.pr.new/storybookjs/storybook/@storybook/addon-docs@9619e382bba35e5abff2505e9e7e1c92001d7ee5(@types/react@19.2.14)(storybook@https://pkg.pr.new/storybookjs/storybook/storybook@9619e382bba35e5abff2505e9e7e1c92001d7ee5(@types/react@19.2.14)(react@19.2.6))
       '@storybook/nextjs-vite-rsc':
         specifier: workspace:*
         version: link:../../packages/storybook-nextjs-vite-rsc
@@ -335,8 +335,8 @@ importers:
         specifier: ^1.64.0
         version: 1.64.1
       storybook:
-        specifier: https://pkg.pr.new/storybookjs/storybook/storybook@87cda8cbeb16071800271f2f9ef093ae60b2fb5c
-        version: https://pkg.pr.new/storybookjs/storybook/storybook@87cda8cbeb16071800271f2f9ef093ae60b2fb5c(@types/react@19.2.14)(react@19.2.6)
+        specifier: https://pkg.pr.new/storybookjs/storybook/storybook@9619e382bba35e5abff2505e9e7e1c92001d7ee5
+        version: https://pkg.pr.new/storybookjs/storybook/storybook@9619e382bba35e5abff2505e9e7e1c92001d7ee5(@types/react@19.2.14)(react@19.2.6)
       typescript:
         specifier: ^6.0.3
         version: 6.0.3
@@ -441,8 +441,8 @@ importers:
         specifier: ^1.9.1
         version: 1.9.1
       '@storybook/addon-docs':
-        specifier: https://pkg.pr.new/storybookjs/storybook/@storybook/addon-docs@87cda8cbeb16071800271f2f9ef093ae60b2fb5c
-        version: https://pkg.pr.new/storybookjs/storybook/@storybook/addon-docs@87cda8cbeb16071800271f2f9ef093ae60b2fb5c(@types/react@19.2.14)(storybook@https://pkg.pr.new/storybookjs/storybook/storybook@87cda8cbeb16071800271f2f9ef093ae60b2fb5c(@types/react@19.2.14)(react@19.2.6))
+        specifier: https://pkg.pr.new/storybookjs/storybook/@storybook/addon-docs@9619e382bba35e5abff2505e9e7e1c92001d7ee5
+        version: https://pkg.pr.new/storybookjs/storybook/@storybook/addon-docs@9619e382bba35e5abff2505e9e7e1c92001d7ee5(@types/react@19.2.14)(storybook@https://pkg.pr.new/storybookjs/storybook/storybook@9619e382bba35e5abff2505e9e7e1c92001d7ee5(@types/react@19.2.14)(react@19.2.6))
       '@storybook/nextjs-vite-rsc':
         specifier: workspace:*
         version: link:../../packages/storybook-nextjs-vite-rsc
@@ -498,8 +498,8 @@ importers:
         specifier: ^1.64.0
         version: 1.64.1
       storybook:
-        specifier: https://pkg.pr.new/storybookjs/storybook/storybook@87cda8cbeb16071800271f2f9ef093ae60b2fb5c
-        version: https://pkg.pr.new/storybookjs/storybook/storybook@87cda8cbeb16071800271f2f9ef093ae60b2fb5c(@types/react@19.2.14)(react@19.2.6)
+        specifier: https://pkg.pr.new/storybookjs/storybook/storybook@9619e382bba35e5abff2505e9e7e1c92001d7ee5
+        version: https://pkg.pr.new/storybookjs/storybook/storybook@9619e382bba35e5abff2505e9e7e1c92001d7ee5(@types/react@19.2.14)(react@19.2.6)
       tailwindcss:
         specifier: ^4.3.0
         version: 4.3.0
@@ -2415,14 +2415,14 @@ packages:
   '@standard-schema/spec@1.1.0':
     resolution: {integrity: sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w==}
 
-  '@storybook/addon-a11y@https://pkg.pr.new/storybookjs/storybook/@storybook/addon-a11y@87cda8cbeb16071800271f2f9ef093ae60b2fb5c':
-    resolution: {integrity: sha512-jNWBqOvKOpqbjxZo9NZly8GvoNvJDwTuTCGBgU2fG87jZso1wS9mg5t/BcBdOhzFfPo/AK5gEvw6Fdumm7AE5A==, tarball: https://pkg.pr.new/storybookjs/storybook/@storybook/addon-a11y@87cda8cbeb16071800271f2f9ef093ae60b2fb5c}
+  '@storybook/addon-a11y@https://pkg.pr.new/storybookjs/storybook/@storybook/addon-a11y@9619e382bba35e5abff2505e9e7e1c92001d7ee5':
+    resolution: {integrity: sha512-/xczThC3zcmq1carT/T1Z7l315F4auznVVsyvMNPVtC7rHhqKH6smrl/D3fBpmEAMr7omY6GlbNoIv0QnXjcyw==, tarball: https://pkg.pr.new/storybookjs/storybook/@storybook/addon-a11y@9619e382bba35e5abff2505e9e7e1c92001d7ee5}
     version: 11.0.0-alpha.6
     peerDependencies:
       storybook: ^11.0.0-alpha.6
 
-  '@storybook/addon-docs@https://pkg.pr.new/storybookjs/storybook/@storybook/addon-docs@87cda8cbeb16071800271f2f9ef093ae60b2fb5c':
-    resolution: {integrity: sha512-YyT1vxSKoqzhQcapJRsITy8V8gwT2rJ+9s7CByYIlPs9JV6zi6SfShwrCqIR2dfeKnsv2Yx372kzLUoRoHsI3Q==, tarball: https://pkg.pr.new/storybookjs/storybook/@storybook/addon-docs@87cda8cbeb16071800271f2f9ef093ae60b2fb5c}
+  '@storybook/addon-docs@https://pkg.pr.new/storybookjs/storybook/@storybook/addon-docs@9619e382bba35e5abff2505e9e7e1c92001d7ee5':
+    resolution: {integrity: sha512-Fpqhwz3ZoJdoVOhVEnN/VxkhArXnk+wuDYXfh710X4FBlxkmkDpm0VGrYY8vTM3ucJukuH8l00RzkP3leD0Vjw==, tarball: https://pkg.pr.new/storybookjs/storybook/@storybook/addon-docs@9619e382bba35e5abff2505e9e7e1c92001d7ee5}
     version: 11.0.0-alpha.6
     peerDependencies:
       '@types/react': ^18.0.0 || ^19.0.0
@@ -2431,8 +2431,8 @@ packages:
       '@types/react':
         optional: true
 
-  '@storybook/builder-vite@https://pkg.pr.new/storybookjs/storybook/@storybook/builder-vite@87cda8cbeb16071800271f2f9ef093ae60b2fb5c':
-    resolution: {integrity: sha512-g1nkw3akdxEvg6+im+TNVTMqUgfuMg+yzJmx9dAnyhAJh0kc5hYDJOnlIhDuLb5xQ2fveNhGfVCiZ26M3kbZsA==, tarball: https://pkg.pr.new/storybookjs/storybook/@storybook/builder-vite@87cda8cbeb16071800271f2f9ef093ae60b2fb5c}
+  '@storybook/builder-vite@https://pkg.pr.new/storybookjs/storybook/@storybook/builder-vite@9619e382bba35e5abff2505e9e7e1c92001d7ee5':
+    resolution: {integrity: sha512-48k6TAM7vR6mLatUVDyU14k81yD4FJMfwVkCT39TBkuFYbBpzn14p21s8p3jwO3UWSTUzFmpoV/A5IT8Fz04nQ==, tarball: https://pkg.pr.new/storybookjs/storybook/@storybook/builder-vite@9619e382bba35e5abff2505e9e7e1c92001d7ee5}
     version: 11.0.0-alpha.6
     peerDependencies:
       storybook: ^11.0.0-alpha.6
@@ -2446,8 +2446,8 @@ packages:
     peerDependencies:
       react: ^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
 
-  '@storybook/react@https://pkg.pr.new/storybookjs/storybook/@storybook/react@87cda8cbeb16071800271f2f9ef093ae60b2fb5c':
-    resolution: {integrity: sha512-QAkczh8cOIbYW+JWY85Eae30yUzt9VD04w1yl6lVVusr0IJ6jMVmcdOQMAuvHwnlzjrmZKE3QWPpbMp94GDLfQ==, tarball: https://pkg.pr.new/storybookjs/storybook/@storybook/react@87cda8cbeb16071800271f2f9ef093ae60b2fb5c}
+  '@storybook/react@https://pkg.pr.new/storybookjs/storybook/@storybook/react@9619e382bba35e5abff2505e9e7e1c92001d7ee5':
+    resolution: {integrity: sha512-T3NotJMaWmzyvjDYFEVJFtsLfAkxn+rJWvQ6yQJJU19NTGJGRqyGWF21WpaVT4cAdgREow6P2isdIYBiiuHcQQ==, tarball: https://pkg.pr.new/storybookjs/storybook/@storybook/react@9619e382bba35e5abff2505e9e7e1c92001d7ee5}
     version: 11.0.0-alpha.6
     peerDependencies:
       '@types/react': ^18.0.0 || ^19.0.0
@@ -4819,8 +4819,8 @@ packages:
     resolution: {integrity: sha512-UhDfHmA92YAlNnCfhmq0VeNL5bDbiZGg7sZ2IvPsXubGkiNa9EC+tUTsjBRsYUAz87btI6/1wf4XoVvQ3uRnmQ==}
     engines: {node: '>=18'}
 
-  storybook@https://pkg.pr.new/storybookjs/storybook/storybook@87cda8cbeb16071800271f2f9ef093ae60b2fb5c:
-    resolution: {integrity: sha512-Kao1pA6uVxr1/QgnzhKbFgh1hS38E8zJ0t2t1SqFkF/sVwT4vpBcS4BfeSXY2aohd6AYOoPPbVUvjS33IZmxlg==, tarball: https://pkg.pr.new/storybookjs/storybook/storybook@87cda8cbeb16071800271f2f9ef093ae60b2fb5c}
+  storybook@https://pkg.pr.new/storybookjs/storybook/storybook@9619e382bba35e5abff2505e9e7e1c92001d7ee5:
+    resolution: {integrity: sha512-3VbQPbARx4xgporgAIpiM2xfy6FHzmnsCftlIXhyiNO1p6Lwuvwn9F4yupQv0K3GbowLj9uI5j0/mVkZznLGvg==, tarball: https://pkg.pr.new/storybookjs/storybook/storybook@9619e382bba35e5abff2505e9e7e1c92001d7ee5}
     version: 11.0.0-alpha.6
     hasBin: true
     peerDependencies:
@@ -6687,27 +6687,27 @@ snapshots:
 
   '@standard-schema/spec@1.1.0': {}
 
-  '@storybook/addon-a11y@https://pkg.pr.new/storybookjs/storybook/@storybook/addon-a11y@87cda8cbeb16071800271f2f9ef093ae60b2fb5c(storybook@https://pkg.pr.new/storybookjs/storybook/storybook@87cda8cbeb16071800271f2f9ef093ae60b2fb5c(@types/react@19.2.14)(react@19.2.6))':
+  '@storybook/addon-a11y@https://pkg.pr.new/storybookjs/storybook/@storybook/addon-a11y@9619e382bba35e5abff2505e9e7e1c92001d7ee5(storybook@https://pkg.pr.new/storybookjs/storybook/storybook@9619e382bba35e5abff2505e9e7e1c92001d7ee5(@types/react@19.2.14)(react@19.2.6))':
     dependencies:
       '@storybook/global': 5.0.0
       axe-core: 4.14.0
-      storybook: https://pkg.pr.new/storybookjs/storybook/storybook@87cda8cbeb16071800271f2f9ef093ae60b2fb5c(@types/react@19.2.14)(react@19.2.6)
+      storybook: https://pkg.pr.new/storybookjs/storybook/storybook@9619e382bba35e5abff2505e9e7e1c92001d7ee5(@types/react@19.2.14)(react@19.2.6)
 
-  '@storybook/addon-docs@https://pkg.pr.new/storybookjs/storybook/@storybook/addon-docs@87cda8cbeb16071800271f2f9ef093ae60b2fb5c(@types/react@19.2.14)(storybook@https://pkg.pr.new/storybookjs/storybook/storybook@87cda8cbeb16071800271f2f9ef093ae60b2fb5c(@types/react@19.2.14)(react@19.2.6))':
+  '@storybook/addon-docs@https://pkg.pr.new/storybookjs/storybook/@storybook/addon-docs@9619e382bba35e5abff2505e9e7e1c92001d7ee5(@types/react@19.2.14)(storybook@https://pkg.pr.new/storybookjs/storybook/storybook@9619e382bba35e5abff2505e9e7e1c92001d7ee5(@types/react@19.2.14)(react@19.2.6))':
     dependencies:
       '@mdx-js/react': 3.1.1(@types/react@19.2.14)(react@19.2.6)
       '@storybook/icons': 2.2.0(react@19.2.6)
       react: 19.2.6
       react-dom: 19.2.6(react@19.2.6)
-      storybook: https://pkg.pr.new/storybookjs/storybook/storybook@87cda8cbeb16071800271f2f9ef093ae60b2fb5c(@types/react@19.2.14)(react@19.2.6)
+      storybook: https://pkg.pr.new/storybookjs/storybook/storybook@9619e382bba35e5abff2505e9e7e1c92001d7ee5(@types/react@19.2.14)(react@19.2.6)
       ts-dedent: 2.3.0
       unplugin: 2.3.11
     optionalDependencies:
       '@types/react': 19.2.14
 
-  '@storybook/builder-vite@https://pkg.pr.new/storybookjs/storybook/@storybook/builder-vite@87cda8cbeb16071800271f2f9ef093ae60b2fb5c(storybook@https://pkg.pr.new/storybookjs/storybook/storybook@87cda8cbeb16071800271f2f9ef093ae60b2fb5c(@types/react@19.2.14)(react@19.2.6))(vite@8.3.1(@types/node@24.12.4)(esbuild@0.27.7)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))':
+  '@storybook/builder-vite@https://pkg.pr.new/storybookjs/storybook/@storybook/builder-vite@9619e382bba35e5abff2505e9e7e1c92001d7ee5(storybook@https://pkg.pr.new/storybookjs/storybook/storybook@9619e382bba35e5abff2505e9e7e1c92001d7ee5(@types/react@19.2.14)(react@19.2.6))(vite@8.3.1(@types/node@24.12.4)(esbuild@0.27.7)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))':
     dependencies:
-      storybook: https://pkg.pr.new/storybookjs/storybook/storybook@87cda8cbeb16071800271f2f9ef093ae60b2fb5c(@types/react@19.2.14)(react@19.2.6)
+      storybook: https://pkg.pr.new/storybookjs/storybook/storybook@9619e382bba35e5abff2505e9e7e1c92001d7ee5(@types/react@19.2.14)(react@19.2.6)
       ts-dedent: 2.3.0
       vite: 8.3.1(@types/node@24.12.4)(esbuild@0.27.7)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0)
 
@@ -6717,14 +6717,14 @@ snapshots:
     dependencies:
       react: 19.2.6
 
-  '@storybook/react@https://pkg.pr.new/storybookjs/storybook/@storybook/react@87cda8cbeb16071800271f2f9ef093ae60b2fb5c(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(storybook@https://pkg.pr.new/storybookjs/storybook/storybook@87cda8cbeb16071800271f2f9ef093ae60b2fb5c(@types/react@19.2.14)(react@19.2.6))(typescript@6.0.3)':
+  '@storybook/react@https://pkg.pr.new/storybookjs/storybook/@storybook/react@9619e382bba35e5abff2505e9e7e1c92001d7ee5(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(storybook@https://pkg.pr.new/storybookjs/storybook/storybook@9619e382bba35e5abff2505e9e7e1c92001d7ee5(@types/react@19.2.14)(react@19.2.6))(typescript@6.0.3)':
     dependencies:
       '@storybook/global': 5.0.0
       react: 19.2.6
       react-docgen: 8.0.4
       react-docgen-typescript: 2.4.0(typescript@6.0.3)
       react-dom: 19.2.6(react@19.2.6)
-      storybook: https://pkg.pr.new/storybookjs/storybook/storybook@87cda8cbeb16071800271f2f9ef093ae60b2fb5c(@types/react@19.2.14)(react@19.2.6)
+      storybook: https://pkg.pr.new/storybookjs/storybook/storybook@9619e382bba35e5abff2505e9e7e1c92001d7ee5(@types/react@19.2.14)(react@19.2.6)
     optionalDependencies:
       '@types/react': 19.2.14
       '@types/react-dom': 19.2.3(@types/react@19.2.14)
@@ -9017,7 +9017,7 @@ snapshots:
 
   stdin-discarder@0.2.2: {}
 
-  storybook@https://pkg.pr.new/storybookjs/storybook/storybook@87cda8cbeb16071800271f2f9ef093ae60b2fb5c(@types/react@19.2.14)(react@19.2.6):
+  storybook@https://pkg.pr.new/storybookjs/storybook/storybook@9619e382bba35e5abff2505e9e7e1c92001d7ee5(@types/react@19.2.14)(react@19.2.6):
     dependencies:
       '@storybook/global': 5.0.0
       '@storybook/icons': 2.2.0(react@19.2.6)
