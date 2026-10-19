@@ -65,6 +65,26 @@ test("the factory of the other layer is an error, for a story file and the previ
   );
 });
 
+test("every story of a file is checked, not only the first", async () => {
+  const own = defineServerPreview({ globalTypes: { locale: { name: "Locale" } } });
+  const modules = {
+    "./client.stories.tsx": clientFile({
+      Default: clientPreview.meta({}).story(),
+      Server: serverPreview.meta({}).story(),
+    }),
+    "./server.stories.tsx": {
+      Default: serverPreview.meta({}).story(),
+      Own: own.meta({}).story(),
+    },
+  };
+  await expect(load("./client.stories.tsx", importOf(modules))).rejects.toThrow(
+    './client.stories.tsx has "use client"',
+  );
+  await expect(load("./server.stories.tsx", importOf(modules))).rejects.toThrow(
+    "declares the globals locale",
+  );
+});
+
 test("a global of a server preview that preview.tsx does not declare is an error", async () => {
   const declared = defineServerPreview({ initialGlobals: { theme: "dark" } });
   const own = defineServerPreview({ globalTypes: { locale: { name: "Locale" } } });

@@ -26,12 +26,14 @@ export async function load(importPath: string, importFn: ModuleImportFn): Promis
     declared = new Set(globalsOf(exports.default.composed));
     return exports;
   }
-  const story = Object.values(exports).find((value) => isStory(value));
-  if (!story) throw notCsfNext(importPath);
-  const { preview } = story.meta;
-  if (isServerPreview(preview) === client) throw wrongFactory(importPath, client);
-  const undeclared = globalsOf(preview.composed).filter((key) => !declared.has(key));
-  if (undeclared.length > 0) throw undeclaredGlobals(importPath, undeclared);
+  const stories = Object.values(exports).filter((value) => isStory(value));
+  if (stories.length === 0) throw notCsfNext(importPath);
+  // Each story of the file, which may have stories of more than one preview.
+  for (const { meta } of stories) {
+    if (isServerPreview(meta.preview) === client) throw wrongFactory(importPath, client);
+    const undeclared = globalsOf(meta.preview.composed).filter((key) => !declared.has(key));
+    if (undeclared.length > 0) throw undeclaredGlobals(importPath, undeclared);
+  }
   return exports;
 }
 
