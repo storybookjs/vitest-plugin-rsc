@@ -94,7 +94,7 @@ test("a global of a server preview that preview.tsx does not declare is an error
   };
   await expect(load("./declared.stories.tsx", importOf(modules))).resolves.toBeDefined();
   await expect(load("./own.stories.tsx", importOf(modules))).rejects.toThrow(
-    "The preview of ./own.stories.tsx declares the globals locale",
+    "The preview of ./own.stories.tsx, or one of its addons, declares the globals locale",
   );
 });
 

@@ -29,9 +29,9 @@ export const beforeAllInServerPreview = (): Error =>
 
 export const undeclaredGlobals = (file: string, keys: string[]): Error =>
   new Error(
-    `The preview of ${file} declares the globals ${keys.join(", ")}, and .storybook/preview.tsx ` +
-      `does not: globals are declared in preview.tsx, where Storybook reads them for every ` +
-      `story. Server stories read them from context.globals too.`,
+    `The preview of ${file}, or one of its addons, declares the globals ${keys.join(", ")}, ` +
+      `and .storybook/preview.tsx does not: globals are declared in preview.tsx, where ` +
+      `Storybook reads them for every story. Server stories read them from context.globals too.`,
   );
 
 export const pageWithoutUrl = (id: string): Error =>

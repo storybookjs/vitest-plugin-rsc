@@ -119,6 +119,9 @@ Storybook reads some of a preview from the project's preview only, which is
   as client stories do.
 - Tags do not reach the index: the sidebar, autodocs and test filtering read
   the tags of `preview.tsx` and of the story files. Set tags there.
+- `sb.mock()` calls are read from `preview.tsx` only, and mock the module in
+  every layer: put them there, also for a module of server code that a
+  server story renders. In `preview.server.tsx` they mock nothing.
 
 A story file imports the preview of its own layer: one with `"use client"`
 imports `preview.tsx`, one without imports `preview.server.tsx`. A file with
@@ -277,6 +280,15 @@ document; Storybook's backgrounds, outline, measure and viewport are in
 every preview. Import such an addon in `preview.server.tsx` too. An addon
 whose decorator renders a component of its own belongs in `preview.tsx`,
 for client stories.
+
+A package that `preview.server.tsx` imports and that is not one instance is
+server code, as any package that a route imports: `typeof window`,
+`typeof document` and `typeof localStorage` are `"undefined"` in it. An
+addon that depends on React, only for its panel in the manager, is such a
+package, so a preview of it that checks for the browser that way does
+nothing for server stories, without an error. Name it in `browserModules`,
+as `["@storybook/addon-x/**"]`, to give its preview the browser's globals
+for server stories.
 
 ## After A Change
 
