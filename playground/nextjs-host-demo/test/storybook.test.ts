@@ -233,7 +233,9 @@ test("new args: a server story loads its page again, a client story keeps its st
 // from `errors`, so that the end of the test checks the stories after it.
 async function misuse(page: Page, canvas: Frame, story: string, errors: { list: string[] }) {
   await runStory(page, canvas, story);
-  const message = (await canvas.locator("#error-message").textContent()) ?? "";
+  const error = canvas.locator("#error-message");
+  await expect.poll(() => error.isVisible(), { message: story }).toBe(true);
+  const message = (await error.textContent()) ?? "";
   expect(errors.list.splice(0), `what the page logged of ${story}`).not.toEqual([]);
   return message;
 }

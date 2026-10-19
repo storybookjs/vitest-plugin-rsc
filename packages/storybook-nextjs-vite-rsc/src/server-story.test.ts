@@ -64,4 +64,7 @@ test("a story that owns the document has no layout of Storybook's", () => {
   expect(layoutOf({ default: {}, Story: { render: () => null } }, "story")).toBeUndefined();
   expect(layoutOf({ default: { render: () => null }, Story: {} }, "story")).toBeUndefined();
   expect(layoutOf({ default: {}, Story: () => null }, "story")).toBeUndefined();
+  // A test of a story of CSF Next, as its story.
+  expect(layoutOf({ default: {}, Home: {} }, "home:renders")).toBe("none");
+  expect(layoutOf({ default: {}, Story: { render: () => null } }, "story:renders")).toBeUndefined();
 });

@@ -19,8 +19,8 @@ export const FunctionArg: StoryObj<typeof PressButton> = {
   args: { label: "Press", onPress: fn() },
 };
 
-// A story that fails while the layouts of the app own the document: the
-// error shows in Storybook's own document again.
+// A story that fails while the layouts of the app own the document: Next
+// shows its error page, and Storybook its error display over it.
 export const ThrowsInLayouts: StoryObj = {
   parameters: { nextjs: { url: "/", layouts: true } },
   render: () => {

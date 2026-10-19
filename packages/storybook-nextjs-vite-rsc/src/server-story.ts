@@ -61,7 +61,10 @@ export const layoutOfDocument: ArgTypesEnhancer<NextjsRscRenderer> = (context) =
 };
 
 // `isPageStory()` of a story that is not prepared yet: no component, and no
-// render of the story or its meta.
+// render of the story or its meta. A test of a story of CSF Next is a page
+// when its story is. Not a `render` of the preview file, which is the
+// framework's, nor a story that does not load through the framework, like a
+// portable story: those keep their layout.
 function isPageInFile({
   id,
   componentId,
@@ -71,12 +74,14 @@ function isPageInFile({
   const file = serverStoryFiles.get(parameters.fileName as string);
   if (component || !file) return false;
   const { default: meta, __namedExportsOrder, ...stories } = file;
+  // A test of CSF Next is `<id of its story>:<name of the test>`.
+  const [storyOfId] = id.split(":");
   for (const [name, value] of Object.entries(stories)) {
     if (!value || (typeof value !== "object" && typeof value !== "function")) continue;
     // A story of CSF Next has its annotations and those of its meta as `input`.
     const story = isStory(value) ? value.input : value;
     const storyId = story.parameters?.__id ?? toId(componentId, storyNameFromExport(name));
-    if (storyId !== id) continue;
+    if (storyId !== storyOfId) continue;
     const ofMeta = isStory(value) ? value.meta.input : meta;
     return typeof story === "object" && !story.render && !ofMeta?.render;
   }
@@ -127,9 +132,9 @@ export async function renderServerStory(
         hostFiles: hostFilesOf(context.parameters.fileName as string | undefined),
         ...(layouts ? { layouts } : { container: canvasElement }),
       };
-  // A page, and a component in the layouts, own the document, so `play`
-  // looks in all of it: in `<html>`, which stays as pages come and go, each
-  // with a `<body>` of its own.
+  // A page, and a component in the layouts, own the document, so the render
+  // and `play` look in all of it: in `<html>`, which stays as pages come and
+  // go, each with a `<body>` of its own.
   const ownsDocument = page || layouts === true;
   if (ownsDocument) {
     const html = document.documentElement;
@@ -193,6 +198,7 @@ async function leave(): Promise<void> {
  * story, also with other args, and leaves the page of the render before.
  * Storybook runs what it returns as it tears the story down, after it has
  * aborted the render: it leaves the page, also one that is still loading.
+ * Each render adds one, and the ones after the first find no page.
  */
 export async function beforeEach(): Promise<() => Promise<void>> {
   await leave();
