@@ -203,9 +203,10 @@ export const Notes = meta.story({
 });
 ```
 
-The page owns the document. In `play`, `canvasElement` is `<html>` and
-`canvas` queries all of it, also after the page renders its document anew,
-as Next's not-found page does.
+The page owns the document, and its `<body>` is the story's root: the
+element with the id `storybook-root`, as Storybook's own root is for a
+component. In `play`, `canvasElement` is that `<body>` and `canvas` queries
+it. A story in the layouts has the same root.
 
 A page renders without the decorators, which have no node to decorate,
 Storybook's own included: backgrounds, measure and outline do nothing on a

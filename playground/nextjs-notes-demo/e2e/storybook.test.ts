@@ -37,8 +37,8 @@ test("every story renders and plays, at its own URL", async ({ page, errors }) =
 // Storybook's document and URL back: its root, the classes of its layout,
 // and the URL of the story, where a reload lands.
 test("from a page to a component and back", async ({ page }) => {
-  const atPage = { classes: [], root: false };
-  const atComponent = { classes: ["sb-main-padded", "sb-show-main"], root: true };
+  const atPage = { classes: [], root: "BODY" };
+  const atComponent = { classes: ["sb-main-padded", "sb-show-main"], root: "DIV" };
   const path = () => new URL(canvas.url()).pathname;
   const canvas = await openStory(page, site!.url, "pages-notes--with-notes");
   expect(await body(canvas)).toEqual(atPage);

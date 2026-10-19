@@ -28,7 +28,7 @@ export const Default = meta.story({
 export const InLayouts = meta.story({
   parameters: { nextjs: { url: "/", layouts: true } },
   play: async ({ canvasElement }) => {
-    await expect(canvasElement.tagName).toBe("HTML");
+    await expect(canvasElement.tagName).toBe("BODY");
     const main = within(canvasElement).getByRole("main");
     await expect(await within(main).findByText("Hello from Storybook")).toBeVisible();
     await expect(within(main).getByTestId("server-decorator")).toHaveAttribute(

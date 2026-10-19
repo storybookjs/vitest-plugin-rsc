@@ -98,18 +98,19 @@ test("a client story renders in the browser layer, with fn() for play and Action
 });
 
 // The document of the preview: Storybook's, or the one of a page, which owns
-// it. The classes as a set: Storybook adds them in an order of its timing.
+// it, and the story's root in it. The classes as a set: Storybook adds them
+// in an order of its timing.
 const body = (canvas: Frame) =>
   canvas.evaluate(() => ({
     classes: [...document.body.classList].sort().join(" "),
     margin: getComputedStyle(document.body).margin,
-    root: !!document.getElementById("storybook-root"),
+    root: document.getElementById("storybook-root")?.tagName,
   }));
 
 // A page owns the `<body>`, with the app's style, without Storybook's
-// classes.
-const atPage = { classes: "", margin: "32px", root: false };
-const atComponent = { classes: "sb-main-padded sb-show-main", margin: "0px", root: true };
+// classes. The body is the story's root.
+const atPage = { classes: "", margin: "32px", root: "BODY" };
+const atComponent = { classes: "sb-main-padded sb-show-main", margin: "0px", root: "DIV" };
 
 // Both previews import a11y, and Storybook's runtime is in both layers: the
 // browser layer has the page's instance of each, which listens to the
@@ -199,6 +200,8 @@ test("a page, a client story and a page again, each without the one before", asy
   const home = canvas.getByRole("heading", { name: "Home" });
   const button = canvas.getByRole("button", { name: /^Press: / });
   expect(await home.isVisible()).toBe(true);
+  // What looks up the story's root finds the page in it.
+  expect(await inCanvas(canvas).getByRole("heading", { name: "Home" }).isVisible()).toBe(true);
   expect(await runStory(page, canvas, "press-button--pressed")).toEqual(passed);
   expect(await body(canvas)).toEqual(atComponent);
   expect(await home.count()).toBe(0);

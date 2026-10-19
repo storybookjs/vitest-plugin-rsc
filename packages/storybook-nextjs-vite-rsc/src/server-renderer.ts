@@ -49,15 +49,10 @@ export const renderToCanvas: RenderToCanvas<NextjsServerRenderer> = async (
   const page = isPage(context);
   if (page && !url) throw pageWithoutUrl(id);
   if (page && layouts) throw pageInLayouts(id);
-  // A story that owns the document has all of it for `play`: `<html>`,
-  // which stays as pages come and go. Its `<body>` is the app's, so
-  // Storybook shows the story before the page replaces the one there is.
+  // A story that owns the document has the app's `<body>`, so Storybook
+  // shows the story before the page replaces the one there is.
   const ownsDocument = page || layouts;
-  if (ownsDocument) {
-    const html = document.documentElement;
-    Object.assign(context, { canvasElement: html, canvas: within(html) });
-    showMain();
-  }
+  if (ownsDocument) showMain();
   const node = page
     ? undefined
     : createElement(function Story() {
@@ -87,7 +82,17 @@ export const renderToCanvas: RenderToCanvas<NextjsServerRenderer> = async (
     if (signal.aborted) return;
     throw error;
   }
-  if (!ownsDocument) showMain();
+  if (!ownsDocument) {
+    showMain();
+    return;
+  }
+  // The root of a story that owns the document is its `<body>`: the element
+  // that Storybook's convention names `storybook-root`, which `play` and
+  // whatever looks for the story's root find. Each page load brings a body
+  // of its own, which leaves with the page.
+  const { body } = document;
+  body.id = "storybook-root";
+  Object.assign(context, { canvasElement: body, canvas: within(body) });
 };
 
 // `@storybook/react`'s: `mount(<Story />)` in `play` renders that element.
