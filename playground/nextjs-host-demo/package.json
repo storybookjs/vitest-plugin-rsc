@@ -14,8 +14,8 @@
     "react-dom": "19.2.6"
   },
   "devDependencies": {
-    "@storybook/addon-a11y": "https://pkg.pr.new/storybookjs/storybook/@storybook/addon-a11y@817bde3a8bb2b2da825bb1a7e461084f05454920",
-    "@storybook/addon-docs": "https://pkg.pr.new/storybookjs/storybook/@storybook/addon-docs@817bde3a8bb2b2da825bb1a7e461084f05454920",
+    "@storybook/addon-a11y": "https://pkg.pr.new/storybookjs/storybook/@storybook/addon-a11y@87cda8cbeb16071800271f2f9ef093ae60b2fb5c",
+    "@storybook/addon-docs": "https://pkg.pr.new/storybookjs/storybook/@storybook/addon-docs@87cda8cbeb16071800271f2f9ef093ae60b2fb5c",
     "@storybook/nextjs-vite-rsc": "workspace:*",
     "@types/node": "^24.12.4",
     "@types/react": "^19.2.14",
@@ -23,7 +23,7 @@
     "host-package": "file:fixtures/host-package",
     "host-report": "file:fixtures/host-report",
     "playwright": "^1.64.0",
-    "storybook": "https://pkg.pr.new/storybookjs/storybook/storybook@817bde3a8bb2b2da825bb1a7e461084f05454920",
+    "storybook": "https://pkg.pr.new/storybookjs/storybook/storybook@87cda8cbeb16071800271f2f9ef093ae60b2fb5c",
     "typescript": "^6.0.3",
     "vite": "^8.3.1",
     "vitest": "5.0.3",
