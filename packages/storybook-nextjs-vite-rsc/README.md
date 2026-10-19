@@ -348,5 +348,8 @@ for both kinds.
   story out of autodocs with `tags: ["!autodocs"]`.
 - A change of an MDX file that shows a client story with `of={…}` fails
   that block until the preview loads again.
+- A change of a page story's file can log React's hydration mismatch of
+  `<body>` at times: Storybook shows its view while the page loads, and
+  puts its class on the page's `<body>`.
 - Next's router in a client story: `useRouter()` throws there, and
   `usePathname()` returns `null`. A server story has the router.
