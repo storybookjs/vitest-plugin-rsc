@@ -9,7 +9,7 @@ import {
   takeFetchedModules,
 } from "../utils.ts";
 import { buildDirectory, builtStylesheets } from "./built-stylesheets.ts";
-import { clientReferenceKeyOf } from "./client-reference.ts";
+import { clientFileKeyExport } from "./client-file-key.ts";
 import { registry } from "./registry.ts";
 import {
   builtClientStylesheetsOf,
@@ -31,7 +31,8 @@ import {
 //
 // The host imports such a file in the rsc layer, where it is a client
 // reference module. That module evaluates the file here as it loads, see
-// `loadClientFile()`. A host that uses the exports of the file, like a
+// `loadClientFile()`: once for each version of the graph, as the browser
+// evaluates a module once. A host that uses the exports of the file, like a
 // framework that renders a component of it, gets that evaluation with
 // `loadClientModule()`.
 
@@ -41,12 +42,17 @@ let graph: ModuleRunner | undefined;
 
 // The stylesheets that the files of the host linked, one for each URL: the
 // tab's, which a page that comes and goes leaves where they are, see
-// document.ts. `unlinkClientStylesheets()` takes them back.
+// document.ts. `forgetClientFiles()` takes them back.
 const linked = new Map<string, { link: HTMLLinkElement; loaded: Promise<unknown> }>();
 
-// The exports of the last evaluation of each file of the host, by its
-// reference key.
+// The exports of the evaluation of each file of the host that the graph has
+// now, by its reference key.
 const evaluations = new Map<string, object>();
+
+// The URLs of the files of the host that the graph imported, also one whose
+// evaluation failed, which the runner keeps as it does an evaluation:
+// `forgetClientFiles()` has the graph evaluate each again.
+const imported = new Set<string>();
 
 // The exports that each client reference module stands for: the file's last
 // evaluation when the host first asked for the module. The same for the
@@ -90,12 +96,16 @@ type ClientReferences = { default: Record<string, () => Promise<object>> };
  * imports before it. So a test file with the directive registers its tests
  * with Vitest, which imports the file in the rsc layer, and a setup file
  * with it its hooks. In a static build `builtFile` is the key of its
- * stylesheets there: see `loadClientFileCode()` in client-files.ts.
+ * stylesheets there: see `clientFileCode()` in client-files.ts.
  *
- * Every time the host imports the file, as Vitest evaluates the file itself
- * every time: a setup file before every test file. What the file imports,
- * once for the graph, as the browser does for what Vitest evaluates in the
- * tab.
+ * Once for each version of the graph, as the browser evaluates a module
+ * once: a second import of the file gets the evaluation of the first, or
+ * its error. A change of a module of the browser layer, the file's own
+ * too, is a new version, which evaluates the file again, and so is
+ * `forgetClientFiles()`, which the plugin's setup file calls before every
+ * test file, as Vitest evaluates a setup file and a test file again for
+ * each. What the file imports, once for the graph, as the
+ * browser does for what Vitest evaluates in the tab.
  */
 export async function loadClientFile(key: string, builtFile?: string): Promise<void> {
   if (buildDirectory) {
@@ -106,9 +116,8 @@ export async function loadClientFile(key: string, builtFile?: string): Promise<v
     const load = references.default[key];
     if (!load) throw new Error(`vitest-plugin-rsc: the build has no client reference "${key}"`);
     registry.browserRequire = browserRequire;
-    // Once for the document: a build has no HMR, so the host has one module
-    // of the file in the rsc layer, which the browser evaluates once, and
-    // with it this.
+    // Once for the document: a build has no change, and the runner
+    // evaluates the module that the list imports once.
     evaluations.set(key, await load());
     await linkStylesheets(await stylesheetsOf(key, builtFile));
     return;
@@ -129,10 +138,9 @@ export async function loadClientFile(key: string, builtFile?: string): Promise<v
     }
   }
   registry.browserRequire = browserRequire;
-  // The file itself runs every time it loads, as Vitest runs it: its tests,
-  // or the hooks of a setup file, are collected as it does.
-  const own = evaluatedModules.getModuleByUrl(key);
-  if (own) evaluatedModules.invalidateModule(own);
+  // The runner keeps the evaluation of the file until a change, above, or
+  // `forgetClientFiles()` invalidated it.
+  imported.add(key);
   evaluations.set(key, await graph.import(key));
   await linkStylesheets(await stylesheetsOf(key, builtFile));
 }
@@ -140,17 +148,20 @@ export async function loadClientFile(key: string, builtFile?: string): Promise<v
 /**
  * The module that the host imported, as the host uses it. For a file of the
  * host with `"use client"`, which the rsc layer has as a client reference
- * module, the file's own exports from the browser layer: its last evaluation
- * when the host first asks for the module, which the module made as it
- * loaded unless the host imported the file again since. The same object for
- * the same module, every time. Any other module as it is.
+ * module, the file's own exports from the browser layer: the evaluation the
+ * graph has when the host first asks for the module, the one that the
+ * module's line loaded unless the graph evaluated the file again since. The
+ * same object for the same module, every time. Such a module has the export
+ * `clientFileKeyExport`, which the plugin put in front of it, and that alone
+ * tells it: other exports, like one that a plugin of the host adds, change
+ * nothing. Any other module as it is.
  *
  * Rejects for the client reference module of a file that is not the host's,
  * which nothing evaluated in the browser layer.
  */
 export async function loadClientModule<T extends object>(module: T): Promise<T> {
-  const key = clientReferenceKeyOf(module);
-  if (key === undefined) return module;
+  const key: unknown = Reflect.get(module, clientFileKeyExport);
+  if (typeof key !== "string") return module;
   let exports = evaluationOf.get(module);
   if (!exports) {
     exports = evaluations.get(key);
@@ -187,10 +198,18 @@ async function linkStylesheets(urls: string[]): Promise<void> {
 }
 
 /**
- * Takes back the stylesheets that client files linked: the plugin's setup
- * file calls this before every test file. The graph keeps its modules.
+ * Forgets what the files of the host did in the tab: with a dev server the
+ * graph evaluates each again the next time it loads, also one that failed,
+ * and the stylesheets they linked go. The plugin's setup file calls this before every test file,
+ * under Vitest. The graph keeps what the files import, and a module whose
+ * line ran before still gets the evaluation it loaded.
  */
-export function unlinkClientStylesheets(): void {
+export function forgetClientFiles(): void {
+  for (const url of imported) {
+    const own = graph?.evaluatedModules.getModuleByUrl(url);
+    if (own) graph?.evaluatedModules.invalidateModule(own);
+  }
+  imported.clear();
   for (const { link } of linked.values()) link.remove();
   linked.clear();
 }

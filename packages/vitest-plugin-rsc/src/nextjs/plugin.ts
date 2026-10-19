@@ -586,9 +586,13 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
   // flag is a defence, should a version of Vitest turn it on.
   let underVitest = false;
   // The client reference that Vite RSC made of a module of the rsc layer, if
-  // it has `"use client"`.
+  // it has `"use client"`. The post transform of client-files.ts asks for
+  // every module of the layer, so Vite RSC's plugin is looked up once for a
+  // config, not in the list of plugins each time.
+  const pluginApis = new WeakMap<ResolvedConfig, ReturnType<typeof getPluginApi>>();
   const clientReferenceOf = (id: string, config: ResolvedConfig) => {
-    const references = getPluginApi(config)?.manager.clientReferenceMetaMap;
+    if (!pluginApis.has(config)) pluginApis.set(config, getPluginApi(config));
+    const references = pluginApis.get(config)?.manager.clientReferenceMetaMap;
     return references && clientReferenceOfModule(references, id);
   };
   const hostPackagesPlugin = {

@@ -266,7 +266,6 @@ test('gives the host the exports of a file of the host with "use client"', async
     reference: true,
     same: true,
     again: true,
-    kept: true,
     plain: true,
     app: expect.stringContaining(
       '/app/components/counter.tsx has "use client" and is not a file of the host',
@@ -274,12 +273,11 @@ test('gives the host the exports of a file of the host with "use client"', async
   });
   expect(host.__hostModule?.app).toContain("host.files of vitestPluginNext()");
   // Each file ran as its module loaded, with Next's React for the browser:
-  // the file of the stories again for its second import, and never for a
-  // call of loadClientModule().
+  // once, also the file of the stories, which the host imported twice, and
+  // never for a call of loadClientModule().
   expect(host.__hostReports).toEqual([
     { from: "host/client-module.tsx", react: nextReact },
     { from: "host/render-client.tsx", react: nextReact },
-    { from: "host/client-module.tsx", react: nextReact },
   ]);
 });
 

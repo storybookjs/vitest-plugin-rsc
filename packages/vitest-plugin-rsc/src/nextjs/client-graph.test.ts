@@ -1,9 +1,11 @@
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
+import { clientFileKeyExport } from "./client-file-key.ts";
 
 // The tab's graph of the browser layer, without a browser: a module runner
-// whose `import()` evaluates a file into a new exports object, the
-// stylesheets of the dev server, or of a static build, and a document with a
-// `<head>`. Each test gets a client-graph.ts of its own, as a tab does.
+// whose `import()` evaluates a file into a new exports object, which it keeps
+// until the file is invalidated, the stylesheets of the dev server, or of a
+// static build, and a document with a `<head>`. Each test gets a
+// client-graph.ts of its own, as a tab does.
 
 type FakeLink = {
   rel: string;
@@ -24,6 +26,10 @@ const tab = vi.hoisted(() => ({
   buildDirectory: undefined as string | undefined,
   /** The client references of the build, by key: the URL of the file each evaluates. */
   references: {} as Record<string, string>,
+  /** Whether a file changed since the graph last asked the server. */
+  changed: false,
+  /** The URLs of the files whose evaluation throws. */
+  failing: new Set<string>(),
 }));
 
 // A build's stylesheets, by the path of a file of the host from the root.
@@ -42,36 +48,56 @@ vi.mock("./built-stylesheets.ts", () => ({
   },
   builtStylesheets: async () => built,
 }));
+type FakeModule = { id: string; url: string; file: null; exports?: Promise<object> };
+
 vi.mock("../utils.ts", () => ({
   checkFetchedModules: async () => {},
-  takeFetchedModules: async () => false,
+  takeFetchedModules: async () => {
+    const { changed } = tab;
+    tab.changed = false;
+    return changed;
+  },
   askDevServer: async (_event: string, { url }: { url: string }) => tab.stylesheets.get(url) ?? [],
-  createEnvironmentRunner: () => ({
-    evaluatedModules: {
-      idToModuleMap: new Map(),
-      getModuleByUrl: () => undefined,
-      invalidateModule() {},
-    },
-    async import(url: string) {
-      // The list of a build's references, which evaluates a file by its key.
-      if (url === "/built/references.js") {
-        const evaluate = (file: string) => async () => {
-          tab.evaluated.push(file);
-          return { url: file, evaluation: tab.evaluated.length };
-        };
-        return {
-          default: Object.fromEntries(
-            Object.entries(tab.references).map(([key, file]) => [key, evaluate(file)]),
-          ),
-        };
-      }
-      tab.evaluated.push(url);
-      return { url, evaluation: tab.evaluated.length };
-    },
-  }),
+  createEnvironmentRunner: () => {
+    const idToModuleMap = new Map<string, FakeModule>();
+    return {
+      evaluatedModules: {
+        idToModuleMap,
+        getModuleByUrl: (url: string) => idToModuleMap.get(url),
+        invalidateModule(node: FakeModule) {
+          node.exports = undefined;
+        },
+      },
+      import: (url: string) => importInto(idToModuleMap, url),
+    };
+  },
   environmentModule: (_environment: string, id: string) =>
     id === "virtual:vitest-plugin-rsc/client-references" ? "/built/references.js" : id,
 }));
+
+// What the runner's `import()` does: the module as it was evaluated, also an
+// evaluation that threw, or a new evaluation once it was invalidated. The
+// list of a build's references imports a file by its key, as a module of the
+// runner.
+function importInto(modules: Map<string, FakeModule>, url: string): Promise<object> {
+  const node = modules.get(url) ?? { id: url, url, file: null };
+  modules.set(url, node);
+  node.exports ??= evaluate(modules, url);
+  return node.exports;
+}
+
+async function evaluate(modules: Map<string, FakeModule>, url: string): Promise<object> {
+  if (url === "/built/references.js") {
+    const list = Object.entries(tab.references).map(([key, file]) => [
+      key,
+      () => importInto(modules, file),
+    ]);
+    return { default: Object.fromEntries(list) };
+  }
+  tab.evaluated.push(url);
+  if (tab.failing.has(url)) throw new Error(`${url} failed`);
+  return { url, evaluation: tab.evaluated.length };
+}
 
 const head = new Set<FakeLink>();
 const links = () => [...head].map((link) => link.href);
@@ -85,6 +111,8 @@ beforeEach(() => {
   ]);
   tab.buildDirectory = undefined;
   tab.references = {};
+  tab.changed = false;
+  tab.failing = new Set();
   head.clear();
   vi.stubGlobal("__viteRscCallServer", undefined);
   vi.stubGlobal("document", {
@@ -116,19 +144,14 @@ afterEach(() => {
 
 const graph = () => import("./client-graph.ts");
 
-// What Vite RSC makes of a file with `"use client"` in the rsc layer: a
-// reference for each export, see client-reference.test.ts. A new import of
-// the file, after it changed, is a new module.
-const referenceModule = (key: string, ...names: string[]): object =>
-  Object.fromEntries(
-    names.map((name) => [
-      name,
-      Object.defineProperties(() => {}, {
-        $$typeof: { value: Symbol.for("react.client.reference") },
-        $$id: { value: `${key}#${name}` },
-      }),
-    ]),
-  );
+// The module of the rsc layer for a file with `"use client"`: Vite RSC's
+// reference for each export, which `loadClientModule()` reads nothing of,
+// and in front of them the plugin's export with the file's key, see
+// client-files.ts. A new import of the file is a new module.
+const referenceModule = (key: string, ...names: string[]): object => ({
+  [clientFileKeyExport]: key,
+  ...Object.fromEntries(names.map((name) => [name, () => {}])),
+});
 
 // The host imports a file of its own with `"use client"`: the prefix of its
 // reference module evaluates it in the graph as it loads.
@@ -155,13 +178,46 @@ test("gives the evaluation that the reference module made as it loaded", async (
   expect(tab.evaluated).toEqual(["/host/badge.tsx"]);
 });
 
-test("binds a new reference module of the file to the evaluation it made", async () => {
+test("tells the module by the plugin's export alone", async () => {
+  const { loadClientModule } = await graph();
+  const reference = await importHostFile("/host/badge.tsx", "Badge");
+  const exports = await loadClientModule(reference);
+
+  // An export that a plugin of the host added after Vite RSC, like a list of
+  // the file's exports in their order, changes nothing.
+  const withOrder = { ...reference, __exportOrder: ["Badge"], label: "Badge" };
+  expect(await loadClientModule(withOrder)).toBe(exports);
+  // Nor do React's client references without the export: a module that
+  // re-exports them is no module of the file.
+  const references = {
+    Badge: Object.defineProperties(() => {}, {
+      $$typeof: { value: Symbol.for("react.client.reference") },
+      $$id: { value: "/host/badge.tsx#Badge" },
+    }),
+  };
+  expect(await loadClientModule(references)).toBe(references);
+});
+
+test("evaluates a file once for two imports of it", async () => {
+  const { loadClientModule } = await graph();
+  const first = await importHostFile("/host/badge.tsx", "Badge");
+
+  // Another module of the file, like one that Vite's client imports with a
+  // timestamp, of the file as it was.
+  const second = await importHostFile("/host/badge.tsx", "Badge");
+
+  expect(tab.evaluated).toEqual(["/host/badge.tsx"]);
+  expect(await loadClientModule(second)).toBe(await loadClientModule(first));
+});
+
+test("evaluates a file again after a change, for the module that the change made", async () => {
   const { loadClientModule } = await graph();
   const before = await importHostFile("/host/badge.tsx", "Badge");
   const old = await loadClientModule(before);
 
-  // The file changed, and the host imports it again: a new module, whose
+  // A file changed, and the host imports the file again: a new module, whose
   // prefix evaluated the file again.
+  tab.changed = true;
   const after = await importHostFile("/host/badge.tsx", "Badge");
 
   expect(await loadClientModule(after)).toEqual({ url: "/host/badge.tsx", evaluation: 2 });
@@ -170,8 +226,41 @@ test("binds a new reference module of the file to the evaluation it made", async
   expect(tab.evaluated).toEqual(["/host/badge.tsx", "/host/badge.tsx"]);
 });
 
+test("forgets the files for Vitest's setup file, which evaluates them again", async () => {
+  const { forgetClientFiles, loadClientModule } = await graph();
+  const before = await importHostFile("/host/badge.tsx", "Badge");
+  const old = await loadClientModule(before);
+
+  // Before the next test file, which imports the file again. A module whose
+  // line ran before, and that the host asks for only now, still has the
+  // evaluation it loaded.
+  const unasked = await importHostFile("/host/badge.tsx", "Badge");
+  forgetClientFiles();
+  expect(await loadClientModule(unasked)).toBe(old);
+  const after = await importHostFile("/host/badge.tsx", "Badge");
+
+  expect(await loadClientModule(after)).toEqual({ url: "/host/badge.tsx", evaluation: 2 });
+  expect(await loadClientModule(before)).toBe(old);
+});
+
+test("evaluates a setup file that failed once again for the next test file", async () => {
+  const { forgetClientFiles, loadClientFile } = await graph();
+  tab.failing.add("/vitest.setup.tsx");
+  await expect(loadClientFile("/vitest.setup.tsx")).rejects.toThrow("/vitest.setup.tsx failed");
+  // The runner keeps the error, as it keeps an evaluation, for the same file.
+  await expect(loadClientFile("/vitest.setup.tsx")).rejects.toThrow("/vitest.setup.tsx failed");
+  expect(tab.evaluated).toEqual(["/vitest.setup.tsx"]);
+
+  // Fixed, before the next test file.
+  tab.failing.clear();
+  forgetClientFiles();
+  await loadClientFile("/vitest.setup.tsx");
+
+  expect(tab.evaluated).toEqual(["/vitest.setup.tsx", "/vitest.setup.tsx"]);
+});
+
 test("links each stylesheet once for the tab, until Vitest's setup file takes them", async () => {
-  const { unlinkClientStylesheets } = await graph();
+  const { forgetClientFiles } = await graph();
   await importHostFile("/host/badge.tsx", "Badge");
   await importHostFile("/host/badge.tsx", "Badge");
   await importHostFile("/host/card.tsx", "Card");
@@ -180,7 +269,7 @@ test("links each stylesheet once for the tab, until Vitest's setup file takes th
   // Marked as the tab's, which a page that is left leaves: see document.ts.
   for (const link of head) expect(link.attributes).toContain("data-vitest-plugin-rsc-graph");
 
-  unlinkClientStylesheets();
+  forgetClientFiles();
   expect(links()).toEqual([]);
   await importHostFile("/host/badge.tsx", "Badge");
   expect(links()).toEqual(["/_next/static/css/badge.css"]);
@@ -196,7 +285,7 @@ test("gives any other module as it is", async () => {
 
 test("rejects for a file with `use client` that is not the host's", async () => {
   const { loadClientFile, loadClientModule } = await graph();
-  // The app's own: no prefix evaluated it.
+  // The app's own: its module has the key, and no prefix evaluated it.
   const reference = referenceModule("/app/components/counter.tsx", "Counter");
 
   await expect(loadClientModule(reference)).rejects.toThrow(
@@ -231,12 +320,18 @@ test("loads a file of the host in a static build, by its key", async () => {
   await loadClientFile("5f3a9c1e", "host/badge.tsx");
 
   expect(tab.evaluated).toEqual(["/vitest-plugin-rsc/react_client/assets/badge.js"]);
-  expect(await loadClientModule(referenceModule("5f3a9c1e", "Badge"))).toEqual({
+  const exports = await loadClientModule(referenceModule("5f3a9c1e", "Badge"));
+  expect(exports).toEqual({
     url: "/vitest-plugin-rsc/react_client/assets/badge.js",
     evaluation: 1,
   });
   // A file of the build, wherever the build is served.
   expect(links()).toEqual(["https://site.test/docs/_next/static/css/badge-1a2b3c4d.css"]);
+  // Once for two imports, with an export a plugin of the host added.
+  await loadClientFile("5f3a9c1e", "host/badge.tsx");
+  const again = { ...referenceModule("5f3a9c1e", "Badge"), __exportOrder: ["Badge"] };
+  expect(await loadClientModule(again)).toBe(exports);
+  expect(tab.evaluated).toHaveLength(1);
   // One without any, one with no path from the root, like a file on another
   // drive, and a key the build has no reference for.
   await loadClientFile("7d2b4e6a", "host/plain.tsx");

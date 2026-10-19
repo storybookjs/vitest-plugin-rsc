@@ -9,6 +9,7 @@ import {
   type ResolvedConfig,
 } from "vite";
 import { builtHostModuleUrl, hostModulePrefix } from "../host-module.ts";
+import { clientFileKeyExport } from "./client-file-key.ts";
 import { builtHostFileKey } from "./styles.ts";
 
 // A file of the host is a test file or a setup file of Vitest. One with
@@ -18,7 +19,7 @@ import { builtHostFileKey } from "./styles.ts";
 // makes it a client reference, as it does every file with the directive: a
 // module that exports a reference for each export, and runs none of the
 // file's code. The plugin has that module load the file in the browser layer
-// before anything else runs, see `loadClientFiles()` and client-graph.ts,
+// before anything else runs, see `clientFileCode()` and client-graph.ts,
 // and with a dev server a change of what the file imports there changes that
 // module. That is all of it. A file without the directive is server code,
 // and what it imports with the directive is a reference, which loads when
@@ -75,9 +76,8 @@ export function clientReferenceOfModule<Reference>(
 
 /**
  * What Vite RSC made of a module of the rsc layer with `"use client"`: a
- * client reference, with the key that each reference of the module has in
- * its `$$id`. With a dev server that is the URL of the file in the browser
- * layer, in a build a hash of the file.
+ * client reference, with the file's reference key. With a dev server that is
+ * the URL of the file in the browser layer, in a build a hash of the file.
  */
 export type ClientReference = { referenceKey: string };
 
@@ -101,22 +101,28 @@ export type ClientFilesOptions = {
 };
 
 /**
- * What the module of the rsc layer for a file of the host with `"use client"`
- * starts with: it loads the file in the browser layer by its reference key,
- * see client-graph.ts. In front of the reference module, which has none of
- * the code of the file. With a dev server the key is the URL of the file in
- * the browser layer. In a build it is a hash, and the line also has the key
- * of the file's stylesheets in the build, `builtFile`: its path from the
- * root of the project. Not its id, which is a path of the machine.
+ * What the module of the rsc layer for a file with `"use client"` starts
+ * with, in front of the reference module, which has none of the code of the
+ * file: the export `clientFileKeyExport` with the file's reference key, by
+ * which `loadClientModule()` tells the module, see client-file-key.ts. For a
+ * file of the host, `load`, also the line that loads the file in the browser
+ * layer by that key, see client-graph.ts. With a dev server the key is the
+ * URL of the file in the browser layer. In a build it is a hash, and the
+ * line also has the key of the file's stylesheets in the build, `builtFile`:
+ * its path from the root of the project. Not its id, which is a path of the
+ * machine.
  */
-export function loadClientFileCode(
+export function clientFileCode(
   { referenceKey }: ClientReference,
-  internal: string,
-  builtFile?: string,
+  load?: { internal: string; builtFile?: string },
 ): string {
+  const key = `export const ${clientFileKeyExport} = ${JSON.stringify(referenceKey)}; `;
+  if (!load) return key;
+  const { internal, builtFile } = load;
   const args = [referenceKey, ...(builtFile === undefined ? [] : [builtFile])];
   return (
     `import { loadClientFile as __vitestPluginRscLoadClientFile } from ${JSON.stringify(internal)}; ` +
+    key +
     `await __vitestPluginRscLoadClientFile(${args.map((arg) => JSON.stringify(arg)).join(", ")}); `
   );
 }
@@ -154,10 +160,10 @@ export function hostModuleCode(
  * before Vite RSC drops the code of the file, and with a dev server the
  * change of the file's module in the rsc layer for a change of what the file
  * imports in the browser layer. After Vite RSC, which made the file a
- * reference: the line in front of that module, which loads the file in the
- * browser layer by the key of the reference. Not a file without the
- * directive: a test file without it renders with `renderServer()`, in a page
- * with a graph of its own.
+ * reference: the line in front of that module, with the file's reference
+ * key, which for a file of the host loads the file in the browser layer by
+ * that key. Not a file without the directive: a test file without it renders
+ * with `renderServer()`, in a page with a graph of its own.
  */
 export function clientFiles(options: ClientFilesOptions): Plugin[] {
   const { rsc, browser } = options.environments;
@@ -258,14 +264,18 @@ export function clientFiles(options: ClientFilesOptions): Plugin[] {
       enforce: "post",
       transform(code, id) {
         if (this.environment.name !== rsc) return;
-        const file = hostFileOf(id);
-        if (!file) return;
         const config = this.environment.getTopLevelConfig();
         const reference = clientReferenceOf(id, config);
         if (!reference) return;
+        // Also a file that is not the host's, like a component of the app,
+        // so that `loadClientModule()` can say that nothing loaded it.
+        const file = hostFileOf(id);
         const builtFile =
-          this.environment.mode === "build" ? builtHostFileKey(file, config.root) : undefined;
-        return { code: loadClientFileCode(reference, internal, builtFile) + code, map: null };
+          file && this.environment.mode === "build"
+            ? builtHostFileKey(file, config.root)
+            : undefined;
+        const load = file ? { internal, builtFile } : undefined;
+        return { code: clientFileCode(reference, load) + code, map: null };
       },
     },
   ];

@@ -109,7 +109,6 @@ test('gives the host the exports of a file of the host with "use client"', async
   expect(host.__hostModule).toEqual({
     reference: true,
     same: true,
-    kept: true,
     plain: true,
     // The reference key of a build, a hash, which the message says it is.
     app: expect.stringMatching(

@@ -1,7 +1,7 @@
 import { afterEach, beforeAll, beforeEach } from "vitest";
 import { server } from "vitest/browser";
 import { cleanup } from "./index.ts";
-import { unlinkClientStylesheets } from "./client-graph.ts";
+import { forgetClientFiles } from "./client-graph.ts";
 import { registry } from "./registry.ts";
 
 // Registered by `vitestPluginNext()` as a setup file. With affected/browser.ts
@@ -11,9 +11,10 @@ import { registry } from "./registry.ts";
 // server.
 
 // Vitest evaluates a setup file again before every test file, also one whose
-// tests are all skipped. So the CSS that a test file with `"use client"`
-// linked goes once the next file starts.
-unlinkClientStylesheets();
+// tests are all skipped. So the files with `"use client"` are evaluated again
+// for the next file, as Vitest evaluates them, and the CSS that a test file
+// with the directive linked goes once the next file starts.
+forgetClientFiles();
 
 // The node of a test has the stylesheets of the files that render it: the
 // setup files, in the order of the config, and the test file, which Vitest
