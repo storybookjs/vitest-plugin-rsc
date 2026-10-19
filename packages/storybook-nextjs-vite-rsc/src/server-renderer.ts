@@ -123,9 +123,12 @@ export const beforeEach: BeforeEach<NextjsServerRenderer> = async ({ canvasEleme
   return async () => {
     configure({ eventWrapper, asyncWrapper, unstable_advanceTimersWrapper });
     opened.delete(canvasElement);
-    // Leaving puts back the URL of when the page opened. Storybook writes
-    // the URL of what it shows next while the page is open, at its own
-    // path: that one stays.
+    // Leaving puts back the URL of when the page opened, but for the URL of
+    // the story that Storybook selects next, which it writes at its own
+    // path while the page is open, before it tears this story down: that
+    // one stays. It is the URL of Storybook's selection, which only the
+    // reload of a teardown reads, not a story's context, so its path is
+    // what tells it apart.
     const at = window.location;
     await cleanup({ url: at.pathname === pathname ? at.href : undefined });
   };
