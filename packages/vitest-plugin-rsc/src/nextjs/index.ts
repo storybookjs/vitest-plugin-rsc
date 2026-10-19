@@ -12,16 +12,42 @@ import { recordListeners, recordMessageChannels } from "./leftovers.ts";
 import { NodeOnPage } from "./node-on-page.ts";
 import { PageStore } from "./page-store.ts";
 import { openedAt, registry, type Opened } from "./registry.ts";
+import { takesRequest } from "./server-in-front.ts";
+import { ssrLayer } from "./server-layers.ts";
 
 export { loadClientModule } from "./client-graph.ts";
 
-// The server's platform (globals.ts) has to be there before a module of Next's
-// server loads, so the layers load from here on, in order: rsc, then ssr.
-await import("./rsc.ts");
-// One module graph for the tab: the server stays, where a page is loaded anew.
-const ssr = await createEnvironmentRunner("next_ssr").import<typeof import("./ssr.ts")>(
-  environmentModule("next_ssr", "vitest-plugin-rsc/nextjs/ssr"),
+// What a request of the app waits for: the ssr layer, which starts to load
+// as this module evaluates, see server-layers.ts. Nothing else does. Which
+// requests are the app's is the document's to say, without the ssr layer:
+// see `takesRequest()`. So the host's own requests go to the network at
+// once, and leaving a page before the layer is there has no request of the
+// server to settle, nor a cache to forget.
+type SsrLayer = Awaited<typeof ssrLayer>;
+let ssr: SsrLayer | undefined;
+void ssrLayer.then(
+  (layer) => (ssr = layer),
+  () => {},
 );
+// Changes each time leaving a page settles the server, also with no page
+// open: see `handledByServer()`.
+let generation = 0;
+
+// What Next's server answers a request with, once the ssr layer is there. A
+// request that waited for the layer while a page was left is one of that
+// page, and is dropped, as `settleRequests()` in ssr.ts drops one that waited
+// for the server then. A layer that failed to load fails the request.
+async function handledByServer(
+  ...[request, options]: Parameters<SsrLayer["handleRequest"]>
+): Promise<Response | undefined> {
+  if (ssr) return ssr.handleRequest(request, options);
+  const sent = generation;
+  const layer = await ssrLayer;
+  if (sent !== generation) {
+    throw new DOMException("The page was left before the server responded.", "AbortError");
+  }
+  return layer.handleRequest(request, options);
+}
 
 const nativeFetch = globalThis.fetch;
 
@@ -244,7 +270,7 @@ async function sendRequest(
       ? browserHeaders(new Headers(sent), url, method, from, credentials)
       : new Headers(sent);
     const response = await unlessAborted(
-      ssr.handleRequest(
+      handledByServer(
         { url: url.href, method, headers, body, signal: request.signal },
         {
           nested: !from,
@@ -506,7 +532,7 @@ const appFetch =
     const headers = from
       ? browserHeaders(new Headers(sent.headers), sent.url, sent.method, from, credentials)
       : sent.headers;
-    if (!sent.marked && !(await ssr.takesRequest({ url: sent.url.href, headers }))) {
+    if (!sent.marked && !(await takesRequest({ url: sent.url.href, headers }))) {
       return nativeFetch(input, init);
     }
     // After a `redirect()` in a Server Action, Next fetches the page it
@@ -1156,7 +1182,8 @@ function leavePage(by: string): Promise<void> {
         try {
           unloadDocument();
         } finally {
-          await ssr.settleRequests();
+          generation++;
+          await ssr?.settleRequests();
           // What the test opened goes with its page: the route of a node,
           // and a pathname without the proxy.
           registry.opened = undefined;
@@ -1197,7 +1224,7 @@ export async function cleanup({ url }: CleanupOptions = {}): Promise<void> {
   for (const container of containers) container.remove();
   containers.clear();
   store = new PageStore();
-  ssr.resetCaches();
+  ssr?.resetCaches();
   forgetStorage();
   if (url !== undefined) window.history.replaceState(window.history.state, "", url);
 }
