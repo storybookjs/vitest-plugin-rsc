@@ -108,6 +108,37 @@ test("the runtime and an addon that both previews import listen once", async ({ 
   expect(listeners).toEqual([1, 1]);
 });
 
+// user-event marks the document on its first use, with two capture
+// listeners, and leaving a page takes back what was set on the document
+// while it was open: marked first while a page is open, every page would add
+// two listeners more. Storybook's loader of `context.userEvent` sets it up
+// before each render, so before the first page.
+test("user-event prepares the document once, for every page", async ({ page }) => {
+  await page.addInitScript(() => {
+    const listeners = new Set<unknown>();
+    const { addEventListener, removeEventListener } = EventTarget.prototype;
+    const isFocus = (target: EventTarget, type: string, options: unknown) =>
+      target === document && type === "focus" && (options as { capture?: boolean })?.capture;
+    EventTarget.prototype.addEventListener = function (type, listener, options) {
+      if (isFocus(this, type, options)) listeners.add(listener);
+      addEventListener.call(this, type, listener, options);
+    };
+    EventTarget.prototype.removeEventListener = function (type, listener, options) {
+      if (isFocus(this, type, options)) listeners.delete(listener);
+      removeEventListener.call(this, type, listener, options);
+    };
+    Object.assign(window, { focusListeners: () => listeners.size });
+  });
+  const canvas = await openStory(page, site!.url, "home--home");
+  expect(await storyRun(page, canvas, "home--home")).toEqual(passed);
+  expect(await runStory(page, canvas, "greeting--server-action")).toEqual(passed);
+  expect(await runStory(page, canvas, "home--home")).toEqual(passed);
+  const focusListeners = await canvas.evaluate(() =>
+    (window as { focusListeners?: () => number }).focusListeners!(),
+  );
+  expect(focusListeners).toBe(1);
+});
+
 test("a page story and a Server Action", async ({ page }) => {
   const canvas = await openStory(page, site!.url, "home--home");
   expect(await storyRun(page, canvas, "home--home")).toEqual(passed);
