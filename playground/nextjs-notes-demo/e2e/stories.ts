@@ -125,20 +125,23 @@ export async function runEveryStory(page: Page, url: string, errors: PageErrors)
 /** A story that a docs page shows: inline, or in an iframe of its own, and whether it shows an error. */
 type Shown = { id: string; in: "inline" | "iframe"; error: boolean };
 
-// The stories that the docs page in the preview shows, once each has
-// rendered: an inline story once its block has its root or the error in
-// place of it, a story in an iframe once the render of the preview in it has
-// ended. The primary story of an autodocs page has a block of its own too.
-// Storybook makes the next docs page the current render before it removes
-// the blocks of the last one, which `selectDocs()` waits for.
-async function shownStories(canvas: Frame): Promise<Shown[]> {
+// The stories that the docs page in the preview shows, once each of `ids`
+// has a block and each block has rendered: an inline story once its block
+// has its root or the error in place of it, a story in an iframe once the
+// render of the preview in it has ended. A block that names its story by id
+// has none until it loaded the story's file. The primary story of an
+// autodocs page has a block of its own too. Storybook makes the next docs
+// page the current render before it removes the blocks of the last one,
+// which `selectDocs()` waits for.
+async function shownStories(canvas: Frame, ids: string[]): Promise<Shown[]> {
   const shown = await canvas.waitForFunction(
-    (ended) => {
+    ({ ended, ids }) => {
       const blocks = [...document.querySelectorAll("#storybook-docs .sb-story")];
-      if (!blocks.length) return false;
+      const idOf = (block: Element) => block.id.replace(/^story--/, "").replace(/--primary$/, "");
+      if (!ids.every((id) => blocks.some((block) => idOf(block) === id))) return false;
       const stories = [];
       for (const block of blocks) {
-        const id = block.id.replace(/^story--/, "").replace(/--primary$/, "");
+        const id = idOf(block);
         const iframe = block.querySelector("iframe");
         if (iframe) {
           const render = (iframe.contentWindow as Window | null)?.__STORYBOOK_PREVIEW__
@@ -155,7 +158,7 @@ async function shownStories(canvas: Frame): Promise<Shown[]> {
       }
       return stories;
     },
-    ["finished", "errored", "aborted"],
+    { ended: ["finished", "errored", "aborted"], ids },
     { timeout: 90_000, polling: 100 },
   );
   return (await shown.jsonValue()) as Shown[];
@@ -176,7 +179,10 @@ export async function renderEveryDocsPage(
   const [first, ...rest] = (await index(url)).docs;
   const canvas = await openDocs(page, url, first!.id);
   const check = async ({ id, stories }: Docs) => {
-    const shown = await shownStories(canvas);
+    const shown = await shownStories(
+      canvas,
+      stories.map((story) => story.id),
+    );
     expect(new Set(shown.map((story) => story.id)), id).toEqual(
       new Set(stories.map((story) => story.id)),
     );
