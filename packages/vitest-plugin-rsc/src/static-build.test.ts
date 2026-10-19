@@ -554,7 +554,7 @@ test("lists the modules of the page that the scan of the browser layer finds", a
   const entry = "vitest-plugin-rsc/react_client/entry.js";
   const { plugin, builder } = setup({
     react_client: {
-      [entry]: chunk(entry, "", [hostModule("storybook/test")], [hostModule("host-report")]),
+      [entry]: chunk(entry, "", [hostModule("host-ui/test")], [hostModule("host-report")]),
     },
   });
 
@@ -566,7 +566,7 @@ test("lists the modules of the page that the scan of the browser layer finds", a
   expect(call(plugin.load, "client", id)).toBe(
     `export default {\n` +
       `  "${hostModule("host-report")}": () => import("\\u0000vitest-plugin-rsc/host-module/host-report"),\n` +
-      `  "${hostModule("storybook/test")}": () => import("\\u0000vitest-plugin-rsc/host-module/storybook/test"),\n` +
+      `  "${hostModule("host-ui/test")}": () => import("\\u0000vitest-plugin-rsc/host-module/host-ui/test"),\n` +
       `};\n`,
   );
   // Only the host's build has them, and a dev server serves them itself.
@@ -592,10 +592,10 @@ test("says which module of the page the scan of the browser layer did not find",
         },
       },
       {},
-      { [entry]: chunk(entry, "", [hostModule("host-report"), hostModule("storybook/test")]) },
+      { [entry]: chunk(entry, "", [hostModule("host-report"), hostModule("host-ui/test")]) },
     );
   expect(generate).toThrow(
-    "vitest-plugin-rsc: the react_client layer imports storybook/test as a module of the page, " +
+    "vitest-plugin-rsc: the react_client layer imports host-ui/test as a module of the page, " +
       "as `host.packages` of vitestPluginNext() names its package, but the scan of the browser " +
       "layer did not find that import",
   );

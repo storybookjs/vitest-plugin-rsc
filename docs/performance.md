@@ -49,7 +49,7 @@ VITE_PERF_BENCH_TIME_MS=500 VITE_PERF_BENCH_ITERATIONS=20 pnpm perf:micro
 
 ## A Static Build Per Page Load
 
-Chromatic loads every story of a static build in a preview iframe of its own, so what a build costs is the cost of one fresh page load, route by route:
+A host that publishes a static build can load every page of it in an iframe of its own, as a visual test service does, so what a build costs is the cost of one fresh page load, route by route:
 
 ```sh
 pnpm perf:static

@@ -367,6 +367,6 @@ test("stops with a message when nothing says which files are the host's", async 
   });
   // A module that is no file is a plugin's, like the entries of the page of
   // a host, and never server code: the plugin that makes it compiles it.
-  const virtual = "/virtual:/@storybook/builder-vite/vite-app.js";
+  const virtual = "/virtual:/@host-kit/builder/app.js";
   await expect(transform("export const x = typeof window;", virtual)).resolves.toBeUndefined();
 });

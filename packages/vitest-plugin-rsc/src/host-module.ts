@@ -34,7 +34,7 @@ export function isHostModule(url: string): boolean {
 
 /**
  * The URL by which a built layer of the module runner imports a module of
- * the page, by the import it stands for: `host-report` or `storybook/test`.
+ * the page, by the import it stands for: `host-report` or `host-kit/test`.
  */
 export const builtHostModuleUrl = (specifier: string): string => hostModuleUrl + specifier;
 

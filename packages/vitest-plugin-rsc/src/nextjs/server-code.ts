@@ -67,38 +67,38 @@ export type ServerCodeOptions = {
   /**
    * What runs the app, when that is not Vitest. Under Vitest the plugin knows
    * the host's files from its config, the test files and the setup files, and
-   * its packages, `vitest` and `@vitest/*`. Another host, like Storybook, says
-   * here what is its own. A file of the host is not server code: it keeps the
+   * its packages, `vitest` and `@vitest/*`. Another host says here what is its
+   * own. A file of the host is not server code: it keeps the
    * browser's `typeof window` and `fetch`, and Next's compiler does not run on
    * it. With `"use client"` it is a module of the browser layer. A package of
    * the host is the one instance the page has, also in the browser layer.
    */
   host?: {
     /**
-     * The files of the host, like its stories: glob patterns, relative to the
+     * The files of the host, like the ones it renders: glob patterns, relative to the
      * project root. What a test file is to Vitest.
      *
-     * @example [".storybook/**", "src/**\/*.stories.tsx"]
+     * @example ["host/**", "src/**\/*.demo.tsx"]
      */
     files?: string | RegExp | (string | RegExp)[];
     /**
      * The packages of the host, by name. A name that ends in `/*` is every
      * package of that scope the project has, or every module under that path
-     * of a package, like `storybook/internal/*`. A module of a package, like
-     * `storybook/test`, is the page's own, and the package's other modules
+     * of a package, like `host-kit/internal/*`. A module of a package, like
+     * `host-kit/test`, is the page's own, and the package's other modules
      * are not, but the files of the whole package are the host's runtime in
      * the rsc layer. What they depend on is the host's too, but for this
      * plugin and Vite RSC, which a framework of the host can depend on.
      *
      * Not something the plugin can read off the files: a file of the host
-     * with `"use client"` imports `react` and `storybook/test` the same way,
+     * with `"use client"` imports `react` and `host-kit/test` the same way,
      * and the first has to be the browser layer's React, where the second
      * has to be the page's own module, whose spies the host shows. What
      * `vitest` is to a test file. The same list keeps the host's runtime
      * the browser's in the rsc layer, where every other package is server
      * code.
      *
-     * @example ["storybook/test", "storybook/preview-api"]
+     * @example ["host-kit/test", "host-kit/preview"]
      */
     packages?: string[];
   };
@@ -189,13 +189,13 @@ function findPackagesWithDependencies(names: Iterable<string>, root: string): Se
 // name. Their own modules have state that is the page's.
 const hostPackages = (packages: string[]) => ["vitest", "@vitest/*", ...packages];
 
-// The package of a module, by its name: `storybook` of `storybook/test`,
+// The package of a module, by its name: `host-kit` of `host-kit/test`,
 // `@scope/name` of `@scope/name/module`.
 const packageNameOf = (specifier: string) => /^(?:@[^/]+\/)?[^/]+/.exec(specifier)![0];
 
 // Vite and the packages of the host that the project has: Vitest, its browser
 // mode, the provider that drives the browser, coverage; a scope is every
-// package of it. A module of a package, like `storybook/test`, is its
+// package of it. A module of a package, like `host-kit/test`, is its
 // package: the module's files are in that directory, with the rest of the
 // runtime they import, and its `package.json` has what they depend on.
 function* hostPackageNames(root: string, packages: string[]): Generator<string> {
@@ -346,8 +346,8 @@ export function createServerCode(registry: string, options: ServerCodeOptions = 
           const file = id.split("?")[0]!;
           // Not a stylesheet, and not what another plugin compiles to
           // JavaScript. And a file on disk: a module that is no file is a
-          // plugin's, like the `/virtual:/@storybook/…` entries of Storybook's
-          // preview, which run on the page, and is never server code.
+          // plugin's, like the `/virtual:/…` entries of the page of a
+          // host, which run on the page, and is never server code.
           if (!/\.[cm]?[jt]sx?$/.test(file) || !fs.existsSync(file)) return;
           // A dependency is compiled when it is pre-bundled, or not at all.
           if (file.includes("/node_modules/")) return;

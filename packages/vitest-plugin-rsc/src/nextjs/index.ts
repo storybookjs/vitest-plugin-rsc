@@ -93,8 +93,8 @@ function browserHeaders(
 }
 
 // What was in the browser's storage before the app ran, and what another
-// document of the origin stores in it later, like Vitest's UI or Storybook's
-// manager: the host's to keep. The app runs in this document, and a document
+// document of the origin stores in it later, like Vitest's UI or the
+// manager document of another host: the host's to keep. The app runs in this document, and a document
 // gets no `storage` event for its own writes. What the other document removes
 // is no longer the host's.
 const storages = new Map(
@@ -566,8 +566,8 @@ globalThis.fetch = async (input, init) => {
 // A script of the page reads and writes the app's cookies with
 // `document.cookie`, as in a browser, where it is a view of the cookie jar.
 // The jar here is the store, and the browser's own is the tab's: the cookies
-// other documents of the origin set, like Vitest's UI, Storybook's manager
-// or another app on `localhost`. The app neither reads nor writes those.
+// other documents of the origin set, like Vitest's UI, the manager document
+// of another host or another app on `localhost`. The app neither reads nor writes those.
 Object.defineProperty(document, "cookie", {
   configurable: true,
   get: () => store.documentCookie(),
@@ -682,10 +682,9 @@ export type RenderComponentOptions = RequestOptions & {
   /**
    * For another host than Vitest: the files of the host that render the
    * node, for their CSS. A Vitest test never passes it: the plugin's setup
-   * file fills in the setup files and the test file. Another host, like
-   * Storybook, passes the preview file and the story's file: absolute, or
-   * from the project root without a leading slash, like
-   * `stories/button.stories.tsx`. The node has
+   * file fills in the setup files and the test file. Another host passes
+   * the files of its own that render the node: absolute, or from the project
+   * root without a leading slash, like `host/button.demo.tsx`. The node has
    * the stylesheets that these files import, as a page has those of its
    * route. What is passed replaces the default, it adds nothing to it. A
    * file that is not the host's, like one of the app, is left out, with a
@@ -1239,8 +1238,8 @@ function reloadsDocument(path: string | undefined): boolean {
   // a URL of the app's origin with its pathname stands in for the host's:
   // the app's route there is another page. Leaving puts back the host's URL.
   // Any other URL is the app's: hosts leave a page before a reload of their
-  // own (Vite with `vite:beforeFullReload`, Storybook with the story's
-  // cleanup).
+  // own (Vite with `vite:beforeFullReload`, another host with the cleanup of
+  // what it showed).
   if (destination.url === documentUrl()) return;
   if (url.origin === window.location.origin && openedAt(url)?.node) {
     event.preventDefault();

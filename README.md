@@ -90,7 +90,7 @@ Agents do dramatically better when wrapped in a self-healing loop with fast unit
 
 ## Requirements
 
-- Vite 8 or later, and Vitest 5.0.3 or later in [Browser Mode](https://vitest.dev/guide/browser/). The examples use Playwright as the browser provider. A host other than Vitest, like a Storybook framework, runs the plugin in a Vite server of its own: see [Another Host Than Vitest](docs/next-routes.md#another-host-than-vitest).
+- Vite 8 or later, and Vitest 5.0.3 or later in [Browser Mode](https://vitest.dev/guide/browser/). The examples use Playwright as the browser provider. A host other than Vitest, like a framework of a component workshop, runs the plugin in a Vite server of its own: see [Another Host Than Vitest](docs/next-routes.md#another-host-than-vitest).
 - For Next.js: the App Router, `next@16.4` or later, and [`@next/routing`](https://www.npmjs.com/package/@next/routing), Next's own route resolution, at the same version as `next`.
 
 The plugin calls Next.js internals, so CI tests against `next@16.4.0`, `next@latest`, and `next@canary`.
@@ -427,7 +427,7 @@ The plugin keeps your app's cookies for the test, the way a browser keeps a site
 
 `document.cookie` is a view of your app's cookies, as in a browser. Your Client Components read the ones that aren't `HttpOnly` there, and a cookie they write there reaches your server, like the state that shadcn/ui's sidebar keeps. A script can't write an `HttpOnly` cookie or change one, and a `fetch` from client code doesn't see a `Set-Cookie` header, as in a browser. The page has no `cookieStore`, as in a browser without the Cookie Store API. MSW writes the `Set-Cookie` of a response it mocks into `document.cookie`, so a mocked API's cookie that isn't `HttpOnly` becomes your app's, also when your server sent the request.
 
-The browser's own cookies for the origin are not your app's: the ones Vitest's UI, Storybook or another app on `localhost` set. Your app doesn't get them, and the plugin leaves them as they are.
+The browser's own cookies for the origin are not your app's: the ones Vitest's UI, another host or another app on `localhost` set. Your app doesn't get them, and the plugin leaves them as they are.
 
 ```tsx
 import { expect, test } from "vitest";
@@ -947,7 +947,7 @@ App code keeps importing `db` from `#lib/db.ts`. Tests then seed rows with the s
 
 ### A Static Build
 
-`vite build` builds the app into a static site: the three layers, with the server in the browser of whoever opens the page, and no server behind it. That is what a host like `storybook build` needs, so the directory can go to a static host or to Chromatic. The plugin builds with Vite's app builder, as `vite build` does: `await (await createBuilder(config, null)).buildApp()`. Vite's `build()` builds one environment, so the plugin stops it with an error that says so, and it does not build in `--watch` mode.
+`vite build` builds the app into a static site: the three layers, with the server in the browser of whoever opens the page, and no server behind it. That is what a host that publishes the app's pages needs, so the directory can go to a static host. The plugin builds with Vite's app builder, as `vite build` does: `await (await createBuilder(config, null)).buildApp()`. Vite's `build()` builds one environment, so the plugin stops it with an error that says so, and it does not build in `--watch` mode.
 
 Everything that runs with the dev server runs from the build: pages and nodes, Client Components and their references, Server Actions, route handlers, the proxy, cookies, fonts, images and stylesheets. What differs:
 
@@ -958,7 +958,7 @@ Everything that runs with the dev server runs from the build: pages and nodes, C
 - The files of the build name each other by relative paths. To serve the build from a path, build it with that `base`, or with `base: "./"`.
 - The plugin puts no path of the machine into the build. The files of a route are named from the root of the project, `app/layout.tsx`, and so are the paths of the Next config in the layers, like `configFile`, and the files that a compile error quotes. The same tree builds into the same files, byte for byte, in another directory as on another machine, so their content hashes hold. What the app puts in itself stays, like a path in `env` of `next.config`. A source map, with `build.sourcemap`, names its sources by the way from the map, as Vite names them.
 - `experimental.inlineCss` is not honoured in a build: the stylesheets are linked.
-- A file of the host with `"use client"`, like a story file, runs in the browser layer as with a dev server, with its stylesheets from `next-stylesheets.json`, and once for the document: a build has one module of the file. The packages of the host, `host.packages`, are the page's own in the build too: the browser layer imports them from the host's build, so the host and its files with the directive share one instance, like the spies of `storybook/test`.
+- A file of the host with `"use client"`, like a file that the host renders, runs in the browser layer as with a dev server, with its stylesheets from `next-stylesheets.json`, and once for the document: a build has one module of the file. The packages of the host, `host.packages`, are the page's own in the build too: the browser layer imports them from the host's build, so the host and its files with the directive share one instance, like the spies of a testing package of the host.
 - A host with pages of its own, like `index.html` and `callout.html` in `build.rolldownOptions.input`, gets them built as its pages: the layers build their own entries.
 
 `vitestPluginRSC()` on its own builds the same way, without Next.js: its two layers, from a page of the project that calls `renderServer()` of `vitest-plugin-rsc/testing-library`. Server Components, Client Components, Server Actions and the CSS of both run from the build, with React's production code. See [A Static Build](docs/architecture.md#a-static-build) and `playground/rsc-vitest-demo`.
@@ -1004,7 +1004,7 @@ The options for a node, all optional:
 | `baseElement` | Defaults to `container` if you pass one, else `document.body`.                                                                                   |
 | `signal`      | An `AbortSignal`, for a route too. When it aborts, the page load stops, the page is left, and the render rejects, as `fetch` does.               |
 
-A node has the CSS of what its test file and the setup files import. A host other than Vitest, like a Storybook framework, passes one more option, `hostFiles`: the files of the host that render the node, for their CSS. A Vitest test never passes it. See [Another Host Than Vitest](docs/next-routes.md#another-host-than-vitest).
+A node has the CSS of what its test file and the setup files import. A host other than Vitest passes one more option, `hostFiles`: the files of the host that render the node, for their CSS. A Vitest test never passes it. See [Another Host Than Vitest](docs/next-routes.md#another-host-than-vitest).
 
 A node resolves with `{ container, baseElement, asFragment, rerender, unmount, response, errors }`. `errors` has what React reported on the page as it rendered and after, in order: a render that threw, an error that an error boundary caught, a Server Action that threw. A render that throws still resolves, with Next's error page, and its error in `errors`. `rerender(ui)` renders another node in its place without a page load, so the state of its Client Components stays: one request of Next's router, as `router.refresh()` sends, with the same `wrapper`, `url` and `headers`. Every call is a request of its own. It resolves once React has committed the new node and run its effects, and rejects when something else took the node's place, like an error page (a `NodeReplacedError`), or the page was left. See [Rendering The Node Again](docs/next-routes.md#rendering-the-node-again).
 
