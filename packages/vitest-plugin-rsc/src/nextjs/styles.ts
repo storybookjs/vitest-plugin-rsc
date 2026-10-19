@@ -920,9 +920,9 @@ function createBuiltStylesheets(
     for (const file of [...hostFiles.keys()].sort()) {
       built.hostFiles[file] = filesOf(idsOf(hostFiles.get(file)!));
     }
-    const references = Object.values(manager?.clientReferenceMetaMap ?? {}).sort((a, b) =>
-      a.referenceKey.localeCompare(b.referenceKey),
-    );
+    const references = Object.values(manager?.clientReferenceMetaMap ?? {})
+      .filter(({ referenceKey }) => referenceKey !== undefined)
+      .sort((a, b) => a.referenceKey.localeCompare(b.referenceKey));
     built.references = Object.fromEntries(
       references.map(({ referenceKey, importId }) => [
         referenceKey,

@@ -53,6 +53,10 @@ vi.mock("../utils.ts", () => ({
       invalidateModule() {},
     },
     async import(url: string) {
+      // The renderer of client references, which this graph has no React for.
+      if (url === "vitest-plugin-rsc/nextjs/render-client-reference") {
+        return { createRenderClientReference: () => () => null };
+      }
       // The list of a build's references, which evaluates a file by its key.
       if (url === "/built/references.js") {
         const evaluate = (file: string) => async () => {
