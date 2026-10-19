@@ -108,17 +108,31 @@ window.addEventListener("storage", ({ key, newValue, storageArea }) => {
   else keys.add(key);
 });
 
-// What Vitest's UI stores on this origin as its settings change, also
-// while the tests run: its panels, and its dark mode through VueUse. Also
-// before this document hears of it: a `storage` event comes later than the
-// write.
-const isVitestKey = (key: string) => key.startsWith("vitest-") || key === "vueuse-color-scheme";
+// The keys that the host says are its own: see `keepStorageKeys()`.
+const hostKeys = new Set<string>();
+const isHostKey = (key: string) =>
+  hostKeys.has(key) ||
+  [...hostKeys].some((name) => name.endsWith("*") && key.startsWith(name.slice(0, -1)));
+
+/**
+ * Says that keys of the browser's storage are the host's, so `cleanup()`
+ * keeps them, in `localStorage` and `sessionStorage`. For what the host
+ * stores while the app runs: in this document, which gets no `storage` event
+ * for its own writes, or in another document just before a cleanup, as a
+ * `storage` event comes later than the write. A key that ends in `*` is every
+ * key that starts with what is before it. What was there before the app ran,
+ * and what another document stores that this one has heard of, is kept
+ * without it.
+ */
+export function keepStorageKeys(keys: string[]): void {
+  for (const key of keys) hostKeys.add(key);
+}
 
 // Removes what the app put in the browser's storage: what is not the host's.
 function forgetStorage(): void {
   for (const [storage, keys] of storages) {
     for (const key of Object.keys(storage)) {
-      if (!keys.has(key) && !isVitestKey(key)) storage.removeItem(key);
+      if (!keys.has(key) && !isHostKey(key)) storage.removeItem(key);
     }
   }
 }
