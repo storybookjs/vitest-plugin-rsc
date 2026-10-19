@@ -350,6 +350,21 @@ test("new args: a server story renders again in place, a client story keeps its 
     .toBe(1);
 });
 
+// What React reported as the story rendered again shows in Storybook's
+// error display, as on its first render, over the page that stays.
+test("an error of a server story after new args shows, as on its first render", async ({
+  page,
+  errors,
+}) => {
+  const canvas = await openStory(page, site!.url, "misuse--fails-after-new-args");
+  await expect.poll(() => inCanvas(canvas).getByText("Not failed yet").count()).toBe(1);
+  await updateArgs(canvas, "misuse--fails-after-new-args", { fail: true });
+  const message = canvas.locator("#error-message");
+  await expect.poll(() => message.isVisible(), { timeout: 30_000 }).toBe(true);
+  expect(await message.textContent()).toContain("The story failed after new args");
+  errors.list.splice(0);
+});
+
 // Storybook aborts the render of a story that is left before it ends. A page
 // that is loading stops, and shows nowhere: not over the story after it, and
 // not by a reload of the preview.

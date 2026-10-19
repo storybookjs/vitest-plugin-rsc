@@ -58,8 +58,11 @@ export const renderToCanvas: RenderToCanvas<NextjsServerRenderer> = async (
   const open = opened.get(id);
   try {
     if (node && open && "rerender" in open && !forceRemount) {
-      // New args or globals: in place, without a page load.
+      // New args or globals: in place, without a page load. The page reports
+      // to the same errors, so the first since this render is its error.
+      const reported = open.errors.length;
       await open.rerender(node);
+      if (open.errors.length > reported) throw open.errors[reported];
     } else {
       const result = node
         ? await renderServer(node, {

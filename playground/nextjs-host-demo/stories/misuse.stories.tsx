@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { fn } from "storybook/test";
 import preview from "../.storybook/preview.server.tsx";
+import { Boundary } from "../app/components/boundary.tsx";
 import { PressButton } from "../app/components/press-button.tsx";
 
 // Server stories that a user can get wrong: each shows an error that says
@@ -28,6 +29,22 @@ export const ThrowsInLayouts = meta.story({
   render: () => {
     throw new Error("The story failed in the layouts");
   },
+});
+
+// A Server Component of the story that fails once new args ask it to,
+// inside a boundary, which React reports as it catches it.
+function FailsOn({ fail }: { fail: boolean }) {
+  if (fail) throw new Error("The story failed after new args");
+  return <p>Not failed yet</p>;
+}
+
+export const FailsAfterNewArgs = meta.type<{ args: { fail: boolean } }>().story({
+  args: { fail: false },
+  render: ({ fail }) => (
+    <Boundary>
+      <FailsOn fail={fail} />
+    </Boundary>
+  ),
 });
 
 // Pages: a story without a component and a render.
