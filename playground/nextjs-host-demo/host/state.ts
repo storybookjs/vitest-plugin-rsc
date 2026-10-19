@@ -25,30 +25,9 @@ export type HostWindow = {
   };
   /** Whether the callout had its stylesheet, before `?view=switch` left it. */
   __hostCalloutLinked?: boolean;
-  /** For `?view=references`: see main.tsx. */
-  __hostReferences?: {
-    /** What a `play` function sees once the render resolved. */
-    atResolve: ReferencesSeen;
-    refs: (string | null)[];
-    directEvaluation: string;
-    resolve(value: string): void;
-    /** Renders the tree again, and says what is there once that resolved. */
-    rerender(order: string[], added?: boolean): Promise<ReferencesSeen>;
-  };
-  /** For `?view=references-failed`: what the boundary showed as `act()` resolved, and caught. */
-  __hostFailed?: { atResolve: string | null; caught: string[] };
-  /** For `?view=references-reimported`: the evaluations rendered, and of each import. */
-  __hostReimported?: { before?: string; after?: string; first: string; again: string };
-  /** For `?view=references-called`: what calling a reference did. */
-  __hostCalled?: string;
-  /** For `?view=act-canary`: whether React's own `act()` waited for a root that suspended. */
-  __hostActCanary?: boolean;
   /** For `?view=rerender`: renders the greeting again for another name. */
   __hostRerender?: (name: string) => Promise<void>;
 };
-
-/** What a `play` function sees of `?view=references` at once. */
-export type ReferencesSeen = { counter: string | null; late: boolean; added: boolean };
 
 export const state = window as HostWindow;
 

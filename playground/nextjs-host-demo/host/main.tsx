@@ -22,11 +22,8 @@ import { show, state } from "./state.ts";
 // renders a node with a Client Component of a package that is not
 // pre-bundled, and `?view=rerender` renders a node again with other props,
 // without a page load. `?view=stored` opens a page and stores in the
-// browser, as a story's `beforeEach` does. `?view=references` renders JSX of
-// the rsc layer with client references in it with the React of the browser
-// layer, as a framework renders a story, and the views after it what goes
-// wrong there. A second page of the host, with a node of its own, is
-// callout.html.
+// browser, as a story's `beforeEach` does. A second page of the host, with a
+// node of its own, is callout.html.
 const view = new URLSearchParams(window.location.search).get("view");
 await show(async () => {
   if (view === "client" || view === "package") {
@@ -71,93 +68,6 @@ await show(async () => {
       ),
     };
     state.__hostReports = reports;
-    return;
-  }
-  if (view === "references") {
-    // JSX of the rsc layer with client references in it, rendered by the
-    // React of the browser layer: see references.tsx. With `&act`, inside
-    // React's `act()`, and with `&strict` in its `StrictMode`. Then, at once,
-    // what a `play` function sees.
-    const query = new URLSearchParams(window.location.search);
-    const { render, directEvaluation } = await loadClientModule(
-      await import("./render-references.tsx"),
-    );
-    const { tree } = await import("./references.tsx");
-    const refs: (string | null)[] = [];
-    const ref = (element: HTMLElement | null) => refs.push(element && element.tagName);
-    let resolve!: (value: string) => void;
-    const promise = new Promise<string>((done) => (resolve = done));
-    const seen = () => ({
-      counter: container.querySelector("[data-testid=counter-first]")?.textContent ?? null,
-      late: container.querySelector("[data-testid=late]") !== null,
-      added: container.querySelector("[data-testid=added]") !== null,
-    });
-    const rendered = await render(tree(promise, ref, ["a", "b", "c"]), container, {
-      act: query.has("act"),
-      strict: query.has("strict"),
-    });
-    state.__hostReferences = {
-      atResolve: seen(),
-      refs,
-      directEvaluation,
-      resolve,
-      async rerender(order, added) {
-        await rendered.rerender(tree(promise, ref, order, added));
-        return seen();
-      },
-    };
-    return;
-  }
-  if (view === "references-failed") {
-    // A reference whose file fails to load, in an error boundary, inside
-    // `act()`: it resolves, with the error where the reference is.
-    const { render } = await loadClientModule(await import("./render-references.tsx"));
-    const { failingTree } = await import("./references.tsx");
-    const { caught } = await render(failingTree(), container, { act: true });
-    state.__hostFailed = {
-      atResolve: container.querySelector("[data-testid=boundary]")?.textContent ?? null,
-      caught,
-    };
-    return;
-  }
-  if (view === "references-reimported") {
-    // A reference to a file of the host, before and after the host imports
-    // the file again, as Vite's client imports it after a change: it renders
-    // the evaluation that `loadClientModule()` gives the module of each
-    // import. A static build has one module of the file.
-    const { render } = await loadClientModule(await import("./render-references.tsx"));
-    const first = await import("./evaluated.tsx");
-    const firstEvaluation = (await loadClientModule(first)).evaluation;
-    const rendered = await render(<first.Evaluation />, container, { act: true });
-    const shown = () =>
-      container.querySelector<HTMLElement>("[data-testid=evaluation]")?.dataset.evaluation;
-    const before = shown();
-    const again: typeof first = await import(/* @vite-ignore */ `./evaluated.tsx?t=${Date.now()}`);
-    await rendered.rerender(<again.Evaluation />);
-    state.__hostReimported = {
-      before,
-      after: shown(),
-      first: firstEvaluation,
-      again: (await loadClientModule(again)).evaluation,
-    };
-    return;
-  }
-  if (view === "references-called") {
-    // Server code that calls a reference as a function.
-    await loadClientModule(await import("./render-references.tsx"));
-    const { callsReference } = await import("./references.tsx");
-    try {
-      callsReference();
-      state.__hostCalled = "returned";
-    } catch (error) {
-      state.__hostCalled = String(error);
-    }
-    return;
-  }
-  if (view === "act-canary") {
-    // React's `act()` without the plugin, see act-canary.tsx.
-    const { committedWhenActResolves } = await loadClientModule(await import("./act-canary.tsx"));
-    state.__hostActCanary = await committedWhenActResolves(container);
     return;
   }
   if (view === "tag") {

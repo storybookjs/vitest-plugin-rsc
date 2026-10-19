@@ -29,7 +29,6 @@ const built: BuiltStylesheets = {
     "host/plain.tsx": [],
     "callout.tsx": ["_next/static/css/other-333.css"],
   },
-  references: {},
 };
 
 const paths = (stylesheets: ReturnType<typeof builtStylesheetsOf>) =>
@@ -66,7 +65,6 @@ test("names the files under the asset prefix of the app", () => {
     assetPath: "/assets/_next/",
     routes: { "/app/page": { "app/page": ["assets/_next/static/css/page-def.css"] } },
     hostFiles: {},
-    references: {},
   };
   expect(paths(builtStylesheetsOf(prefixed, "/app/page", "http://localhost/"))).toEqual({
     "app/page": ["static/css/page-def.css"],

@@ -126,12 +126,6 @@ export type StaticBuildLayers = {
    * before a module of it runs (nextjs/globals.ts).
    */
   strictExecutionOrder?: boolean;
-  /**
-   * More modules of the browser layer that a runner outside a page imports
-   * by their ids, by their names in the input: entries of the layer, like
-   * the renderer of client references of nextjs/client-graph.ts.
-   */
-  browserEntries?: Record<string, string>;
   /** Files of the build that another plugin made, by the path the browser asks for. */
   files?(): { pathname: string; body: Uint8Array }[];
 };
@@ -239,7 +233,7 @@ export function staticBuild(options: StaticBuildOptions): Plugin {
   // the file it names by its URL, like its CSS, is named from there.
   const inputOf = (name: string): Record<string, string> => ({
     entry: layers.entries[name]!,
-    ...(name === browser && { references: clientReferencesId, ...layers.browserEntries }),
+    ...(name === browser && { references: clientReferencesId }),
   });
 
   const environment = (builder: ViteBuilder, name: string) => {

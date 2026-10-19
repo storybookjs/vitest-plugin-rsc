@@ -2,7 +2,7 @@ import fs from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { normalizePath, type Plugin } from "vite";
+import { normalizePath } from "vite";
 import { expect, test, vi } from "vitest";
 import { vitestPluginNext, type VitestPluginNextOptions } from "./plugin.ts";
 
@@ -22,11 +22,7 @@ const root = fileURLToPath(new URL("../../../../playground/nextjs-e2e-demo", imp
 const installed = createRequire(path.join(root, "package.json"));
 const nextDir = path.dirname(installed.resolve("next/package.json"));
 
-type OptimizeDeps = {
-  entries?: string[];
-  include: string[];
-  rolldownOptions: { plugins: Plugin[] };
-};
+type OptimizeDeps = { entries?: string[]; include: string[] };
 type Config = { environments: Record<string, { optimizeDeps: OptimizeDeps }> };
 
 // The config loads the project, and Next's config with it: once for the file.
@@ -293,76 +289,4 @@ test("takes no other build", () => {
   expect(() => vitestPluginNext({ build: "test" as never })).toThrow(
     '`build` is "development" or "production", not "test".',
   );
-});
-
-// Next's own files with "use client" are pre-bundled, where Vite RSC's
-// transform does not run: the plugin makes their client references itself.
-test("gives each export of a Client Component of Next the proxy that renders it in the host", async () => {
-  const { rsc } = await optimizeDeps;
-  const boundary = rsc.rolldownOptions.plugins.find(
-    ({ name }) => name === "vitest-plugin-rsc:next-client-boundary",
-  )!;
-  const transform = boundary.transform as (code: string, id: string) => Promise<{ code: string }>;
-  const file = path.join(nextDir, "dist/esm/client/app-dir/link.js");
-
-  const { code } = await transform(fs.readFileSync(file, "utf8"), file);
-
-  const key = JSON.stringify("/@id/next/dist/esm/client/app-dir/link.js");
-  for (const name of ["default", "useLinkStatus"]) {
-    const reference = `$$clientProxy(${key}, "${name}"), ${key}, "${name}")`;
-    expect(code).toContain(`registerClientReference(${reference}`);
-  }
-  expect(code.match(/registerClientReference\(/g)).toHaveLength(2);
-  expect(code).toMatch(
-    /^import \{ clientProxy as \$\$clientProxy \} from ".*\/client-proxy\.ts";$/m,
-  );
-});
-
-// The rsc layer of a build, as Vite RSC describes the client reference
-// modules it made: a module that did not get the plugin's proxy fails it.
-test("fails a build whose rsc layer has a client reference module without the proxy", async () => {
-  const proxyPlugin = vitestPluginNext().find(
-    ({ name }) => name === "vitest-plugin-rsc:next-client-proxy",
-  )!;
-  const transform = proxyPlugin.transform as (
-    this: object,
-    code: string,
-    id: string,
-  ) => Promise<unknown>;
-  const buildEnd = proxyPlugin.buildEnd as (this: object, error?: Error) => void;
-  const referenceModule = (key: string) =>
-    `import * as $$ReactServer from "react-server";\n` +
-    `export const A = $$ReactServer.registerClientReference(() => { throw new Error() }, "${key}", "A");\n`;
-  const manager = {
-    isScanBuild: false,
-    clientReferenceMetaMap: {
-      "/app/a.tsx": { referenceKey: "aaa", exportNames: ["A"] },
-      "/app/b.tsx": { referenceKey: "bbb", exportNames: ["A"] },
-    } as Record<string, object>,
-  };
-  const config = { plugins: [{ name: "rsc:minimal", api: { manager } }] };
-  const context = {
-    environment: { name: "client", mode: "build", getTopLevelConfig: () => config },
-    // The modules of the build, which a scan before it may have had more of.
-    getModuleIds: () => ["/app/a.tsx", "/app/b.tsx", "/app/page.tsx"].values(),
-    error(error: string | Error) {
-      throw typeof error === "string" ? new Error(error) : error;
-    },
-  };
-
-  await transform.call(context, referenceModule("aaa"), "/app/a.tsx");
-  expect(() => buildEnd.call(context)).toThrow(
-    "the rsc layer has client reference modules without the proxy that renders them in the " +
-      "document of the host: /app/b.tsx.",
-  );
-
-  await transform.call(context, referenceModule("bbb"), "/app/b.tsx");
-  // One that only the scan had.
-  manager.clientReferenceMetaMap["/app/c.tsx"] = { referenceKey: "ccc", exportNames: ["A"] };
-  expect(() => buildEnd.call(context)).not.toThrow();
-  // The scan of a build keeps only the imports of a module.
-  manager.isScanBuild = true;
-  delete manager.clientReferenceMetaMap["/app/b.tsx"];
-  manager.clientReferenceMetaMap["/app/b.tsx"] = { referenceKey: "bbb", exportNames: ["A"] };
-  expect(() => buildEnd.call(context)).not.toThrow();
 });

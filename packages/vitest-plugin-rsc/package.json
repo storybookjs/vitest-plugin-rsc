@@ -72,11 +72,6 @@
       "vitest-plugin-rsc-source": "./src/nextjs/client.tsx",
       "default": "./dist/nextjs/client.js"
     },
-    "./nextjs/render-client-reference": {
-      "types": "./dist/nextjs/render-client-reference.d.ts",
-      "vitest-plugin-rsc-source": "./src/nextjs/render-client-reference.ts",
-      "default": "./dist/nextjs/render-client-reference.js"
-    },
     "./nextjs/node-rendered": {
       "types": "./dist/nextjs/node-rendered.d.ts",
       "vitest-plugin-rsc-source": "./src/nextjs/node-rendered.tsx",
@@ -132,5 +127,5 @@
       "optional": true
     }
   },
-  "//": "Not API, and they change with any version: ./nextjs/rsc, ./nextjs/ssr, ./nextjs/client, ./nextjs/render-client-reference and ./nextjs/node-rendered are modules that the layers of the plugin import by these ids."
+  "//": "Not API, and they change with any version: ./nextjs/rsc, ./nextjs/ssr, ./nextjs/client and ./nextjs/node-rendered are modules that the layers of the plugin import by these ids."
 }
