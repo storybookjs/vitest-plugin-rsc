@@ -1,8 +1,5 @@
-import { Canvas, Meta } from "@storybook/addon-docs/blocks";
-import * as FlashCookieProbe from "./flash-cookie-probe.stories.tsx";
+import { Canvas } from "@storybook/addon-docs/blocks";
 import * as Button from "./ui/button.stories.tsx";
-
-<Meta title="Introduction" />
 
 # Notes Demo
 
@@ -10,9 +7,9 @@ A docs page renders in the browser, as a file with "use client" does, and shows 
 
 ## A server story
 
-A Server Component, which reads the cookies and headers of its request. It renders on the server, in a page of the app, which the docs page shows in an iframe:
+A Server Component, which reads the cookies and headers of its request. It renders on the server, in a page of the app, which the docs page shows in an iframe. A docs page cannot import its file, which is server code, so it names the story by its id:
 
-<Canvas of={FlashCookieProbe.FromRequest} />
+<Canvas id="components-flash-cookie-probe--from-request" />
 
 ## A client story
 

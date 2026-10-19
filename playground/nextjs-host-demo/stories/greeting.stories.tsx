@@ -1,72 +1,76 @@
-import type { Meta, StoryObj } from "@storybook/nextjs-vite-rsc";
-import { cookies, headers } from "next/headers";
+import { cookies } from "next/headers";
 import { expect, within } from "storybook/test";
 import { runInServerAction } from "vitest-plugin-rsc/nextjs/testing-library";
+import preview from "../.storybook/preview.server.tsx";
 import { Greeting } from "../app/components/greeting.tsx";
 import { Like } from "../app/components/like.tsx";
+import { db } from "../app/db.ts";
 
 // Server stories: a file without "use client" is server code. The component,
 // the render and the decorators are Server Components in the request of a
 // page, with Next's router and Server Actions.
-const meta = {
+const meta = preview.meta({
   component: Greeting,
   tags: ["autodocs"],
   args: { name: "Storybook" },
-  decorators: [
-    // An async decorator that reads the request.
-    async (Story) => {
-      const agent = (await headers()).get("user-agent");
-      return (
-        <div data-testid="server-decorator" data-agent={agent ? "read" : "none"}>
-          <Story />
-        </div>
-      );
-    },
-  ],
-} satisfies Meta<typeof Greeting>;
+});
 
-export default meta;
-
-type Story = StoryObj<typeof meta>;
-
-export const Default: Story = {
+export const Default = meta.story({
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement);
     await expect(await canvas.findByText("Hello from Storybook")).toBeVisible();
     await expect(canvas.getByTestId("server-decorator")).toHaveAttribute("data-agent", "read");
   },
-};
+});
 
 // In the layouts of the app, which own the document, in place of the page at
 // `url`.
-export const InLayouts: Story = {
+export const InLayouts = meta.story({
   parameters: { nextjs: { url: "/", layouts: true } },
   play: async ({ canvasElement }) => {
+    // A story in the layouts owns the document: its canvas is the page's
+    // `<body>`, the story's root.
+    await expect(canvasElement).toBe(document.getElementById("storybook-root"));
+    await expect(canvasElement.tagName).toBe("BODY");
     const main = within(canvasElement).getByRole("main");
     await expect(await within(main).findByText("Hello from Storybook")).toBeVisible();
+    await expect(within(main).getByTestId("server-decorator")).toHaveAttribute(
+      "data-agent",
+      "read",
+    );
   },
-};
+});
 
-// What the story's `beforeEach` sets is there for its render: a cookie of
-// the app, set in a Server Action, and the browser's storage.
-export const Seeded: Story = {
+// What the server preview's `beforeEach` seeds, and what the story's sets,
+// are there for its render: the app's database, a cookie of the app, set in
+// a Server Action, and the browser's storage. Not in autodocs, whose iframes
+// render at once and share the storage that each story's cleanup clears.
+export const Seeded = meta.story({
+  tags: ["!autodocs"],
   beforeEach: async () => {
     await runInServerAction(async () => (await cookies()).set("visitor", "Ada"));
     localStorage.setItem("visitor", "Ada");
   },
-  render: async () => <p>Visitor: {(await cookies()).get("visitor")?.value ?? "none"}</p>,
+  render: async () => (
+    <>
+      <p>Visitor: {(await cookies()).get("visitor")?.value ?? "none"}</p>
+      <p>Seeded: {db.get("visitor") ?? "none"}</p>
+    </>
+  ),
   play: async ({ canvasElement }) => {
-    await expect(await within(canvasElement).findByText("Visitor: Ada")).toBeVisible();
+    const canvas = within(canvasElement);
+    await expect(await canvas.findByText("Visitor: Ada")).toBeVisible();
+    await expect(canvas.getByText("Seeded: Grace")).toBeVisible();
     await expect(localStorage.getItem("visitor")).toBe("Ada");
   },
-};
+});
 
 // A Client Component that calls a Server Action of the app.
-export const ServerAction: Story = {
+export const ServerAction = meta.story({
   render: () => <Like />,
   play: async ({ canvasElement, userEvent }) => {
     const canvas = within(canvasElement);
     await userEvent.click(await canvas.findByRole("button", { name: "Likes: 0" }));
     await expect(await canvas.findByRole("button", { name: "Likes: 1" })).toBeVisible();
   },
-};
+});

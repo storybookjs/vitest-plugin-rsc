@@ -25,9 +25,13 @@ type Docs = { id: string; stories: Story[] };
 
 const root = new URL("../", import.meta.url);
 
-// The stories that each MDX file shows, with `<Canvas of={…} />`.
+// The stories that each MDX file shows, with `<Canvas of={…} />` or
+// `<Canvas id="…" />`.
 const mdx: Record<string, string[]> = {
-  "introduction--docs": ["components-flashcookieprobe--from-request", "ui-button--disabled"],
+  "components-introduction--docs": [
+    "components-flash-cookie-probe--from-request",
+    "components-ui-button--disabled",
+  ],
 };
 
 /**
@@ -43,15 +47,20 @@ export async function index(url: string): Promise<{ stories: Story[]; docs: Docs
   const all = Object.values(entries);
   const storyEntries = all.filter((entry) => entry.type === "story");
   const docsEntries = all.filter((entry) => entry.type === "docs");
+  // The files of the project that `pattern` matches, as the indexer globs
+  // the `stories` of .storybook/main.ts: not in node_modules.
   const files = (pattern: string) =>
-    new Set(fs.globSync(pattern, { cwd: fileURLToPath(root) }).map((file) => `./${file}`));
+    new Set(
+      fs
+        .globSync(pattern, { cwd: fileURLToPath(root), exclude: ["node_modules/**"] })
+        .map((file) => `./${file}`),
+    );
   // Every file of stories of the project is in the index, and so is every
-  // MDX file. The stories of components have a docs page, the pages do not.
-  expect(new Set(storyEntries.map((entry) => entry.importPath))).toEqual(
-    files("{app,components}/**/*.stories.tsx"),
-  );
+  // MDX file. Every file of stories has a docs page.
+  const storyFiles = files("**/*.stories.tsx");
+  expect(new Set(storyEntries.map((entry) => entry.importPath))).toEqual(storyFiles);
   expect(new Set(docsEntries.map((entry) => entry.importPath))).toEqual(
-    new Set([...files("components/**/*.mdx"), ...files("components/**/*.stories.tsx")]),
+    new Set([...files("**/*.mdx"), ...storyFiles]),
   );
   const stories = storyEntries.map(({ id, importPath, tags }) => ({
     id,
@@ -95,8 +104,16 @@ export const body = (canvas: Frame) =>
 // The root layout has the provider of next-themes, whose script React's
 // development build warns of when it renders it in the browser. Next does so
 // with the layouts of its not-found page, also in `next dev`.
-const notFound = new Set(["pages-note--invalid-id", "pages-note--not-yours"]);
+const notFound = new Set(["app-notes-id-page--invalid-id", "app-notes-id-page--not-yours"]);
 const scriptTagWarning = /^console\.error: Encountered a script tag while rendering React/;
+
+// What the page logged since the last check, while it showed the stories
+// `ids`: no error, but the warning of a not-found page.
+function expectNoErrorLogged(errors: PageErrors, label: string, ids: string[]) {
+  const logged = errors.list.splice(0);
+  if (!ids.some((id) => notFound.has(id))) return expect(logged, label).toEqual([]);
+  for (const error of logged) expect(error, label).toMatch(scriptTagWarning);
+}
 
 /**
  * Selects every story of the Storybook at `url` in turn, as the sidebar
@@ -114,38 +131,64 @@ export async function runEveryStory(page: Page, url: string, errors: PageErrors)
     expect((await body(canvas)).root, id).toBe(isPage ? "BODY" : "DIV");
     if (client) expect(atStory(canvas), id).toBe(`/iframe.html?id=${id}`);
     else expect(new URL(canvas.url()).pathname, id).not.toBe("/iframe.html");
-    const logged = errors.list.splice(0);
-    if (!notFound.has(id)) return expect(logged, id).toEqual([]);
-    for (const error of logged) expect(error, id).toMatch(scriptTagWarning);
+    expectNoErrorLogged(errors, id, [id]);
   };
   await check(first!, await storyRun(page, canvas, first!.id));
   for (const story of rest) await check(story, await runStory(page, canvas, story.id));
 }
 
 /** A story that a docs page shows: inline, or in an iframe of its own, and whether it shows an error. */
-type Shown = { id: string; in: "inline" | "iframe"; error: boolean };
+type Shown = { id: string; in: "inline" | "iframe"; error: boolean; played?: boolean };
 
-// The stories that the docs page in the preview shows, once each has
-// rendered: an inline story once its block has its root or the error in
-// place of it, a story in an iframe once the render of the preview in it has
-// ended. The primary story of an autodocs page has a block of its own too.
-// Storybook makes the next docs page the current render before it removes
-// the blocks of the last one, which `selectDocs()` waits for.
-async function shownStories(canvas: Frame): Promise<Shown[]> {
+// Every preview of the page, a docs page's iframes too, keeps the phases of
+// its renders as Storybook reports them, from the moment it starts.
+async function recordPhases(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    let preview: { channel: { on(event: string, listener: (event: never) => void): void } };
+    Object.defineProperty(window, "__STORYBOOK_PREVIEW__", {
+      configurable: true,
+      get: () => preview,
+      set(value: typeof preview) {
+        // Storybook sets it more than once, to the same preview.
+        if (value === preview) return;
+        preview = value;
+        const phases: string[] = ((window as { phases?: string[] }).phases = []);
+        preview.channel.on("storyRenderPhaseChanged", ({ newPhase }: { newPhase: string }) =>
+          phases.push(newPhase),
+        );
+      },
+    });
+  });
+}
+
+// The stories that the docs page in the preview shows, once each of `ids`
+// has a block and each block has rendered: an inline story once its block
+// has its root or the error in place of it, a story in an iframe once the
+// render of the preview in it has ended. A block that names its story by id
+// has none until it loaded the story's file. The primary story of an
+// autodocs page has a block of its own too, unless it renders in an iframe,
+// which a docs page shows once. Storybook makes the next docs
+// page the current render before it removes the blocks of the last one,
+// which `selectDocs()` waits for.
+async function shownStories(canvas: Frame, ids: string[]): Promise<Shown[]> {
   const shown = await canvas.waitForFunction(
-    (ended) => {
+    ({ ended, ids }) => {
       const blocks = [...document.querySelectorAll("#storybook-docs .sb-story")];
-      if (!blocks.length) return false;
+      const idOf = (block: Element) => block.id.replace(/^story--/, "").replace(/--primary$/, "");
+      if (!ids.every((id) => blocks.some((block) => idOf(block) === id))) return false;
       const stories = [];
       for (const block of blocks) {
-        const id = block.id.replace(/^story--/, "").replace(/--primary$/, "");
+        const id = idOf(block);
         const iframe = block.querySelector("iframe");
         if (iframe) {
           const render = (iframe.contentWindow as Window | null)?.__STORYBOOK_PREVIEW__
             ?.currentRender;
           if (render?.id !== id || !ended.includes(render.phase!)) return false;
           const error = !!iframe.contentDocument?.body.classList.contains("sb-show-errordisplay");
-          stories.push({ id, in: "iframe", error });
+          const phases = (iframe.contentWindow as { phases?: string[] } | null)?.phases;
+          // Whether it played, of a render that the phases saw.
+          const played = phases?.includes("rendering") ? phases.includes("playing") : undefined;
+          stories.push({ id, in: "iframe", error, played });
         } else if (block.querySelector("pre")) {
           stories.push({ id, in: "inline", error: true });
         } else {
@@ -155,7 +198,7 @@ async function shownStories(canvas: Frame): Promise<Shown[]> {
       }
       return stories;
     },
-    ["finished", "errored", "aborted"],
+    { ended: ["finished", "errored", "aborted"], ids },
     { timeout: 90_000, polling: 100 },
   );
   return (await shown.jsonValue()) as Shown[];
@@ -164,9 +207,8 @@ async function shownStories(canvas: Frame): Promise<Shown[]> {
 /**
  * Selects every docs page of the Storybook at `url` in turn, as the sidebar
  * does. Each shows its stories, a client story inline and a server story in
- * an iframe, where it renders in a page of the app and runs its play
- * function, without an error, and the page logs no error: a play function
- * that fails logs one.
+ * an iframe once, where it renders in a page of the app without an error
+ * and without its play function, and the page logs no error.
  */
 export async function renderEveryDocsPage(
   page: Page,
@@ -174,19 +216,30 @@ export async function renderEveryDocsPage(
   errors: PageErrors,
 ): Promise<void> {
   const [first, ...rest] = (await index(url)).docs;
+  await recordPhases(page);
   const canvas = await openDocs(page, url, first!.id);
   const check = async ({ id, stories }: Docs) => {
-    const shown = await shownStories(canvas);
+    const shown = await shownStories(
+      canvas,
+      stories.map((story) => story.id),
+    );
     expect(new Set(shown.map((story) => story.id)), id).toEqual(
       new Set(stories.map((story) => story.id)),
     );
-    const expected = shown.map((story) => ({
-      id: story.id,
-      in: stories.find((of) => of.id === story.id)!.client ? "inline" : "iframe",
-      error: false,
-    }));
+    const expected = shown.map((story) => {
+      const client = stories.find((of) => of.id === story.id)!.client;
+      return client
+        ? { id: story.id, in: "inline", error: false }
+        : { id: story.id, in: "iframe", error: false, played: false };
+    });
     expect(shown, id).toEqual(expected);
-    expect(errors.list.splice(0), id).toEqual([]);
+    const inIframes = shown.filter((story) => story.in === "iframe").map((story) => story.id);
+    expect(inIframes, id).toEqual([...new Set(inIframes)]);
+    expectNoErrorLogged(
+      errors,
+      id,
+      stories.map((story) => story.id),
+    );
   };
   await check(first!);
   for (const docs of rest) {

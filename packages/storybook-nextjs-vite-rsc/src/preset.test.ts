@@ -2,6 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { globalsNameReferenceMap } from "storybook/internal/preview/globals";
 import type { Plugin } from "vite";
 import { afterAll, expect, test, vi } from "vitest";
 import * as preset from "@storybook/nextjs-vite-rsc/preset";
@@ -27,7 +28,7 @@ fs.writeFileSync(path.join(configDir, "preview.tsx"), "export default {};\n");
 afterAll(() => fs.rmSync(root, { recursive: true }));
 
 const presets = (values: Record<string, unknown>) => ({
-  apply: async (name: string) => values[name],
+  apply: async (name: string, fallback?: unknown) => values[name] ?? fallback,
 });
 const options = (values: Record<string, unknown> = {}) =>
   ({
@@ -49,25 +50,74 @@ test("Storybook's Vite builder and React renderer, with Vite's app builder", asy
   expect(await features({ other: true })).toEqual({ other: true, viteAppBuilder: true });
 });
 
-test("the preview of the framework in place of the annotations of @storybook/react that render", async () => {
-  const react = (entry: string) => fileURLToPath(import.meta.resolve(`@storybook/react/${entry}`));
-  const annotations = preset.previewAnnotations as (input: unknown[]) => Promise<unknown[]>;
-  // What the renderer's preset gave, which Storybook applies before the
-  // framework's, and the addons' and the project's after it.
-  const argtypes = {
-    bare: "@storybook/react/entry-preview-argtypes",
-    absolute: react("entry-preview-argtypes"),
-  };
-  const result = await annotations([react("entry-preview"), react("entry-preview-docs"), argtypes]);
-  expect(result[0]).toEqual(argtypes);
-  // Next to the preset, in `src` or `dist`.
-  expect(result[1]).toMatch(/storybook-nextjs-vite-rsc\/(src\/preview\.ts|dist\/preview\.js)$/);
-  expect(result).toHaveLength(2);
+test("the store loads each file through load.ts, next to the preset", () => {
+  expect(preset.experimental_moduleLoader).toMatch(
+    /storybook-nextjs-vite-rsc\/(src\/load\.ts|dist\/load\.js)$/,
+  );
 });
 
-test("the plugin, with the stories and .storybook as files of the host", async () => {
+test("React by its name, which each layer resolves with its own conditions", async () => {
+  expect(await preset.resolvedReact({ mdx: "/mdx" })).toEqual({
+    mdx: "/mdx",
+    react: "react",
+    reactDom: "react-dom",
+  });
+});
+
+test('an MDX file compiles with "use client" first', async () => {
+  const other = () => () => {};
+  const { mdxCompileOptions } = await preset.mdxLoaderOptions({
+    mdxCompileOptions: { recmaPlugins: [other] },
+  });
+  const [first, useClient] = mdxCompileOptions.recmaPlugins as (() => (program: object) => void)[];
+  expect(first).toBe(other);
+  const program = { body: [{ type: "ImportDeclaration" }] };
+  useClient!()(program);
+  expect(program.body).toEqual([
+    {
+      type: "ExpressionStatement",
+      expression: { type: "Literal", value: "use client" },
+      directive: "use client",
+    },
+    { type: "ImportDeclaration" },
+  ]);
+});
+
+test("the working directory from the root, for the story files' stylesheets", async () => {
+  const env = preset.env as (existing: object, options: never) => Promise<object>;
+  expect(await env({ OTHER: "1" }, { configDir } as never)).toEqual({
+    OTHER: "1",
+    STORYBOOK_NEXTJS_RSC_WORKING_DIR: path.posix.relative(root, process.cwd()),
+  });
+});
+
+test("the plugin, with Storybook as its host", async () => {
   vitestPluginNext.mockClear();
-  await viteFinal({}, { frameworkOptions: { build: "production", browserModules: ["msw/**"] } });
+  // The preview entries of addons in `node_modules`, as the presets register
+  // them, one of the project, and the renderer's.
+  const entry = (name: string, dependencies: object, peerDependencies: object) => {
+    const dir = path.join(root, "node_modules", name);
+    fs.mkdirSync(path.join(dir, "dist"), { recursive: true });
+    fs.writeFileSync(
+      path.join(dir, "package.json"),
+      JSON.stringify({ name, dependencies, peerDependencies }),
+    );
+    const bare = `${name}/dist/preview.js`;
+    return { bare, absolute: path.join(root, "node_modules", bare) };
+  };
+  const previewAnnotations = [
+    entry("@storybook/addon-a11y", { "axe-core": "*" }, { storybook: "*" }),
+    entry("@storybook/addon-docs", { react: "*", "react-dom": "*" }, { storybook: "*" }),
+    entry("@storybook/react", {}, { react: "*", storybook: "*" }),
+    "/project/annotations.js",
+  ];
+  await viteFinal(
+    {},
+    {
+      frameworkOptions: { build: "production", browserModules: ["**/node_modules/msw/**"] },
+      previewAnnotations,
+    },
+  );
   const [{ host, build, browserModules }] = vitestPluginNext.mock.calls[0] as [
     {
       host: { files: (string | RegExp)[]; packages: string[] };
@@ -75,36 +125,45 @@ test("the plugin, with the stories and .storybook as files of the host", async (
       browserModules: string[];
     },
   ];
-  expect({ build, browserModules }).toEqual({ build: "production", browserModules: ["msw/**"] });
-  // Relative to the root.
+  expect({ build, browserModules }).toEqual({
+    build: "production",
+    browserModules: ["**/node_modules/msw/**"],
+  });
+  // The stories and `.storybook`, relative to the root.
   expect(host.files.slice(0, 2)).toEqual(["stories/**/*.stories.tsx", ".storybook/**"]);
-  // The framework's own files: the canvas, next to the preset.
-  const canvas = fileURLToPath(
-    new URL("./client-canvas.tsx", import.meta.resolve("@storybook/nextjs-vite-rsc/preset")),
+  // The framework's own files, next to the preset.
+  const server = fileURLToPath(
+    new URL("./server.ts", import.meta.resolve("@storybook/nextjs-vite-rsc/preset")),
   );
-  expect((host.files[2] as RegExp).test(canvas)).toBe(true);
-  // The one package of the host: in a build the rsc layer would have its own
-  // `storybook/test`, without a `window`. The rest is each layer's own.
-  expect(host.packages).toEqual(["storybook/test"]);
+  expect((host.files[2] as RegExp).test(server)).toBe(true);
+  // Storybook's preview runtime and the packages of the addons, not one that
+  // depends on React, which it renders with: addon-docs and the renderer.
+  expect(host.packages).toEqual(
+    expect.arrayContaining([
+      "storybook/test",
+      "storybook/preview-api",
+      "storybook/internal/channels",
+      "storybook/internal/csf",
+      "storybook/internal/instrumenter",
+      "storybook/open-service",
+    ]),
+  );
+  const addons = host.packages.filter((name) => name.startsWith("@storybook/"));
+  expect(addons.filter((name) => name !== "@storybook/global")).toEqual(["@storybook/addon-a11y"]);
 });
 
-test("the docs plugins after the plugin's, whose load line of an MDX file they go above", async () => {
-  const { plugins } = await viteFinal({});
-  const names = plugins.map((plugin) => plugin.name);
-  expect(names.indexOf("storybook-nextjs-vite-rsc:mdx-story-files")).toBeGreaterThan(
-    names.indexOf("vitest-plugin-rsc:next"),
-  );
+test("Storybook's packages that the layers share and its builder has no global for are pre-bundled first", async () => {
+  await viteFinal({}, {});
+  const [{ host }] = vitestPluginNext.mock.lastCall as [{ host: { packages: string[] } }];
+  const globals = Object.keys(globalsNameReferenceMap);
+  const runtime = host.packages.filter((name) => name.startsWith("storybook/"));
+  expect(preset.optimizeViteDeps).toEqual(runtime.filter((name) => !globals.includes(name)));
 });
 
-test("the virtual module of the project has the preview file, from the root", async () => {
-  const { plugins } = await viteFinal({});
-  const project = plugins.find((plugin) => plugin.name === "storybook-nextjs-vite-rsc:project")!;
-  const id = (project.resolveId as (source: string) => string)(
-    "virtual:@storybook/nextjs-vite-rsc/project",
-  );
-  const code = (project.load as (id: string) => string)(id);
-  expect(code).toContain(`from ${JSON.stringify(path.join(configDir, "preview.tsx"))};`);
-  expect(code).toContain('export const previewFile = ".storybook/preview.tsx";');
+test("a stories glob at the root of the project matches its files only", async () => {
+  await viteFinal({}, { stories: ["../**/*.stories.tsx"] });
+  const [{ host }] = vitestPluginNext.mock.lastCall as [{ host: { files: string[] } }];
+  expect(host.files[0]).toBe("./**/*.stories.tsx");
 });
 
 test("a Vite config of the project that has the plugin already is an error", async () => {

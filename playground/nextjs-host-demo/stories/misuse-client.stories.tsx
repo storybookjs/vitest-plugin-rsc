@@ -1,15 +1,11 @@
 "use client";
 
-import type { Meta, StoryObj } from "@storybook/nextjs-vite-rsc";
+import preview from "../.storybook/preview.tsx";
 
-// Client stories that do what only a server story can: each shows an error
-// that says what to do instead.
-export default { tags: ["!test"] } satisfies Meta;
+// Client stories that do what only a server story can: React says why not.
+const meta = preview.meta({ tags: ["!test"] });
 
-export const AsyncRender: StoryObj = {
+export const AsyncRender = meta.story({
+  // @ts-expect-error A Client Component is not async.
   render: async () => <p>{await Promise.resolve("A Server Component")}</p>,
-};
-
-export const Page: StoryObj = {
-  parameters: { nextjs: { url: "/" } },
-};
+});

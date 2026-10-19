@@ -8,7 +8,7 @@ process.env.NEXT_FONT_GOOGLE_MOCKED_RESPONSES = fileURLToPath(
 );
 
 export default {
-  stories: ["../components/**/*.mdx", "../app/**/*.stories.tsx", "../components/**/*.stories.tsx"],
+  stories: ["../**/*.@(mdx|stories.tsx)"],
   addons: ["@storybook/addon-docs"],
   framework: {
     name: "@storybook/nextjs-vite-rsc",
