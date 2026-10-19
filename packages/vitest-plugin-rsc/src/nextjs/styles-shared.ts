@@ -70,6 +70,13 @@ export type BuiltStylesheets = {
    * of `vitestPluginNext()` matches. An empty list for one without any.
    */
   hostFiles: Record<string, string[]>;
+  /**
+   * For each client reference of the build, by its reference key: the files
+   * of the stylesheets that its file reaches in the browser layer, which the
+   * tab links before the React of that layer renders the reference in the
+   * document of the host. See client-graph.ts.
+   */
+  references: Record<string, string[]>;
 };
 
 /**

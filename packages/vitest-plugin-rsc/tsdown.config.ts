@@ -15,6 +15,8 @@ export default defineConfig({
     "src/nextjs/ssr.ts",
     "src/nextjs/client.tsx",
     "src/nextjs/internal.ts",
+    "src/nextjs/client-proxy.ts",
+    "src/nextjs/render-client-reference.ts",
     // Files of their own: Vite RSC compiles the module of a "use server" or
     // a "use client" directive.
     "src/nextjs/server-action.ts",

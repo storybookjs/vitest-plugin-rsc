@@ -107,3 +107,31 @@ test("a change of another page of the host keeps the page that is open", async (
   expect(await page.evaluate(() => "__beforeTheChange" in window)).toBe(true);
   expect(await page.getByRole("heading", { name: "Hello from the page" }).count()).toBe(1);
 });
+
+// A change of a file that a client reference points at, while the host's
+// document shows the reference, rendered by the React of the browser layer:
+// see references.test.ts. The first file is imported by a file of the host
+// with "use client" too, the second only by the reference.
+for (const [file, from, to] of [
+  ["app/components/reference-box.tsx", "{label} {tone} {count}", "{label}! {tone} {count}"],
+  ["app/components/late.tsx", ">late<", ">later<"],
+] as const) {
+  test(`a change of a file that a client reference points at reloads the host: ${file}`, async ({
+    page,
+  }) => {
+    const { copy, url } = await serveCopy();
+    await page.goto(url.replace("?view=page", "?view=references"));
+    await page.waitForFunction(hostState);
+    expect(await page.evaluate(hostState), await page.evaluate(hostError)).toBe("ready");
+    await page.locator("#host-root").getByTestId("counter-first").click();
+    await page.evaluate(() => Object.assign(window, { __beforeTheChange: true }));
+    const changed = path.join(copy, file);
+    fs.writeFileSync(changed, fs.readFileSync(changed, "utf8").replace(from, to));
+    await page.waitForFunction(
+      () => !("__beforeTheChange" in window) && (window as HostWindow).__hostState,
+    );
+    expect(await page.evaluate(hostState), await page.evaluate(hostError)).toBe("ready");
+    const text = file.endsWith("late.tsx") ? "later" : "first! dark 0";
+    await page.locator("#host-root").getByText(text).waitFor();
+  });
+}
