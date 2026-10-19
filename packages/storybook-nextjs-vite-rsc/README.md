@@ -9,6 +9,11 @@ hydrates it in the canvas.
 > [!WARNING]
 > Pre-1.0, on a canary of Storybook 11. The API can change in any release.
 
+Storybook is a host of the plugin, as Vitest is. The preview is the rsc
+layer, where Storybook's runtime and store run, and a story file is what a
+test file is: one without `"use client"` is server code, one with it runs
+in the browser layer, as React renders a Client Component.
+
 ## Setup
 
 ```sh
@@ -49,23 +54,46 @@ the plugin already, as one for Vitest does, point `builder.viteConfigPath` at
 another config: the framework adds the plugin itself, and stops with a
 message when it finds it twice.
 
-## Server Stories And Client Stories
+## Two Previews
 
-Which kind a story is follows from its file, as a component's kind does in
-Next.
+Stories are CSF Next: a story file imports a preview and writes its stories
+with `preview.meta()` and `meta.story()`. There is a preview for each layer,
+and a story renders with the preview its file imports.
 
-A story file without `"use client"` is server code. Its stories are server
-stories: the component, `render` and the decorators are Server Components,
-which can be async and read the request.
+`.storybook/preview.tsx` starts with `"use client"`. It is the project's
+preview of Storybook, for the client stories and the docs pages, made with
+`definePreview()` of `@storybook/nextjs-vite-rsc`, which is the one of
+`@storybook/react`:
 
 ```tsx
-import type { Meta, StoryObj } from "@storybook/nextjs-vite-rsc";
-import { headers } from "next/headers";
-import { Greeting } from "./greeting";
+"use client";
 
-const meta = {
-  component: Greeting,
-  args: { name: "Storybook" },
+import { definePreview } from "@storybook/nextjs-vite-rsc";
+import docs from "@storybook/addon-docs";
+import { ThemeProvider } from "../app/theme";
+
+export default definePreview({
+  addons: [docs()],
+  decorators: [
+    (Story) => (
+      <ThemeProvider>
+        <Story />
+      </ThemeProvider>
+    ),
+  ],
+});
+```
+
+`.storybook/preview.server.tsx` has no directive: it is server code, as a
+route of the app is. It is made with `defineServerPreview()` of
+`@storybook/nextjs-vite-rsc/server`, for the server stories:
+
+```tsx
+import { defineServerPreview } from "@storybook/nextjs-vite-rsc/server";
+import { headers } from "next/headers";
+import { db } from "../app/db";
+
+export default defineServerPreview({
   decorators: [
     async (Story) => {
       const agent = (await headers()).get("user-agent");
@@ -76,41 +104,75 @@ const meta = {
       );
     },
   ],
-} satisfies Meta<typeof Greeting>;
+  beforeEach: () => db.seed(),
+});
+```
 
-export default meta;
-export const Default: StoryObj<typeof meta> = {};
+Storybook reads some of a preview from the project's preview only, which is
+`preview.tsx`. So in the server preview:
+
+- `beforeAll` never runs: use `beforeEach` or loaders, which run before each
+  server story. `defineServerPreview()` stops with a message.
+- Globals are declared in `preview.tsx`. A key of `globalTypes` or
+  `initialGlobals` that only the server preview has fails its story files
+  with a message. Server stories read the globals from `context.globals`,
+  as client stories do.
+- Tags do not reach the index: the sidebar, autodocs and test filtering read
+  the tags of `preview.tsx` and of the story files. Set tags there.
+
+A story file imports the preview of its own layer: one with `"use client"`
+imports `preview.tsx`, one without imports `preview.server.tsx`. A file that
+imports the other one, or that is not CSF Next, fails to load with a
+message that says which.
+
+## Server Stories And Client Stories
+
+A story file without `"use client"` is server code. Its stories are server
+stories: the component, `render` and the decorators are Server Components,
+which can be async and read the request.
+
+```tsx
+import preview from "../.storybook/preview.server";
+import { Greeting } from "./greeting";
+
+const meta = preview.meta({
+  component: Greeting,
+  args: { name: "Storybook" },
+});
+
+export const Default = meta.story({});
 ```
 
 The args of a server story go to the server and back, through Flight, as
-props from a Server Component to a Client Component do. A function cannot:
-an arg like `fn()` of `storybook/test` fails, with a message that says so.
+props from a Server Component to a Client Component do. A function that
+reaches a Client Component fails with React's own error. A new value of an
+arg, from Controls, renders the story again in place: its Client
+Components keep their state.
 
 A story file with `"use client"` is a client boundary. Its stories are
-client stories: they render in the browser, as React renders a Client
-Component, without Next's app or router. Their args are passed as they are,
-so `fn()` is the spy that `play` and the Actions panel read.
+client stories of `@storybook/react`: they render in the browser, as React
+renders a Client Component, without Next's app or router. Their args are
+passed as they are, so `fn()` is the spy that `play` and the Actions panel
+read.
 
 ```tsx
 "use client";
 
-import type { Meta, StoryObj } from "@storybook/nextjs-vite-rsc";
 import { expect, fn } from "storybook/test";
+import preview from "../.storybook/preview";
 import { PressButton } from "./press-button";
 
-const meta = {
+const meta = preview.meta({
   component: PressButton,
   args: { onPress: fn() },
-} satisfies Meta<typeof PressButton>;
+});
 
-export default meta;
-
-export const Pressed: StoryObj<typeof meta> = {
+export const Pressed = meta.story({
   play: async ({ args, canvas, userEvent }) => {
     await userEvent.click(canvas.getByRole("button"));
     await expect(args.onPress).toHaveBeenCalled();
   },
-};
+});
 ```
 
 What the file imports is client code too, so a client story cannot render a
@@ -122,8 +184,11 @@ A server story without `component` and `render` is the page of the app at
 its URL, in its layouts:
 
 ```ts
-export default { title: "Pages/Notes" };
-export const Notes = { parameters: { nextjs: { url: "/notes" } } };
+const meta = preview.meta({ title: "Pages/Notes" });
+
+export const Notes = meta.story({
+  parameters: { nextjs: { url: "/notes" } },
+});
 ```
 
 A page has no props. Its `args` are inputs of the story's `beforeEach`,
@@ -131,42 +196,41 @@ which runs before the request, so a control can seed the data the page
 reads. A new value is a new page load.
 
 ```ts
-export const Notes = {
+export const Notes = meta.story({
   parameters: { nextjs: { url: "/notes" } },
   args: { count: 3 },
   beforeEach: ({ args }) => seedNotes(args.count),
-};
+});
 ```
 
-The page owns the document. In `play`, `canvas` and `canvasElement` are
-its `<body>`: query with `canvas`, not `screen` of `storybook/test`, which
-queries the `<body>` of Storybook that the page replaced. A `<Link>`, a
-Server Action and `redirect()` keep that `<body>`. After a navigation that
-loads a new document, query `within(document.body)`.
+The page owns the document. In `play`, `canvasElement` is `<html>` and
+`canvas` queries all of it, also after the page renders its document anew,
+as Next's not-found page does.
 
 A page renders without the decorators, which have no node to decorate,
 Storybook's own included: backgrounds, measure and outline do nothing on a
-page. It has no CSS of the preview file or its story file, and
+page. It has no CSS of the preview or its story file, and
 `parameters.layout` does not style it: the app styles its own `<body>`.
 `layouts` is for a component, and `mount(ui)` has no story to replace: both
 fail with a message.
 
 ## Before A Story
 
-Before each story the framework leaves the previous one and clears the
-app's cookies and storage, as before a test, and then runs the story's
-`beforeEach`. What that sets is there for the render: a cookie of the app,
-set in `runInServerAction()` of `vitest-plugin-rsc/nextjs/testing-library`,
-or an item of `localStorage`.
+Before each server story the framework leaves the previous page and clears
+the app's cookies and storage, as before a test, and then runs the
+`beforeEach` of the server preview and of the story. What that sets is
+there for the render: a row of the app's database, a cookie of the app, set
+in `runInServerAction()` of `vitest-plugin-rsc/nextjs/testing-library`, or
+an item of `localStorage`.
 
 ```ts
-export const SignedIn = {
+export const SignedIn = meta.story({
   beforeEach: async () => {
     await runInServerAction(async () => {
       (await cookies()).set("session", "ada");
     });
   },
-};
+});
 ```
 
 ## `parameters.nextjs`
@@ -183,41 +247,42 @@ The request a server story renders in:
   layouts of the app, which then own the document, as a page does. Not for
   a page. Defaults to `false`.
 
-A new value of an arg, from the Controls panel, renders the story again in
-a new request.
+## Addons
 
-## The Preview File
+An addon is listed in `main.ts`, for its panel, and a preview imports it to
+use it, as `addons: [a11y()]`.
 
-`.storybook/preview.tsx` has no directive, so it is a module that both
-sides import, as a shared module is in Next. The framework evaluates it
-twice: on the server, where its decorators decorate the server stories, and
-in the browser, where they decorate the client stories. A decorator of the
-preview file, like a provider of the app's theme, so applies to every story.
-In a client story it is a Client Component, which cannot be async.
+Storybook's React-free preview runtime and the registered addons are one
+instance, in the preview and in the browser layer: an addon that both
+previews import listens to Storybook's channel once, and a client story's
+`fn()` is the spy that the Actions panel shows. A package that depends on
+React, like `@storybook/addon-docs`, `storybook/theming` or the renderer,
+is the layer's own, as React is.
 
-So the preview file, and what it imports, has to load in a browser too.
-Setup that is only for the server, like a database, goes in a decorator of
-the server stories, in their story file or a file that they import. When
-the preview file fails to load in the browser, a client story shows an
-error that says so.
-
-The CSS that the preview file and a story file import is the story's, in
-both kinds of story.
+An addon works for server stories when its preview renders no React: hooks
+like `beforeEach` and `afterEach`, loaders, and decorators that work on the
+DOM with Storybook's own hooks. a11y runs after each story, on the
+document; Storybook's backgrounds, outline, measure and viewport are in
+every preview. Import such an addon in `preview.server.tsx` too. An addon
+whose decorator renders a component of its own belongs in `preview.tsx`,
+for client stories.
 
 ## After A Change
 
-A change of a story file renders its stories again in place. A change of
-the code of the app, or of the preview file and what it imports, loads the
-preview again: the server code of the app runs once per document. A change
-of a stylesheet that the preview file imports shows in place.
+A change of a story file, of `preview.server.tsx`, or of a component that
+only story files import renders the story again in place, once. A change
+of `preview.tsx` renders it once too, after Storybook's Vite builder loads
+the preview again, as it does for the `sb.mock()` calls of a preview file.
+A change of the code that a route of the app imports loads the preview
+again: the server code of the app runs once per document. A change of a
+stylesheet that a preview imports shows in place.
 
 ## Docs
 
-With `@storybook/addon-docs` a story file can have a docs page, with
-`tags: ["autodocs"]`, and an MDX file is a docs page of its own. The
-framework has addon-docs as an optional peer dependency: install it next to
-`storybook`, in the same version, so the docs page and the blocks of the
-MDX files are one copy.
+`@storybook/addon-docs` is an addon of `preview.tsx`: its docs page and
+blocks render in the browser layer, with its React. The framework has it as
+an optional peer dependency: install it next to `storybook`, in the same
+version.
 
 ```sh
 npm install --save-dev @storybook/addon-docs
@@ -231,8 +296,7 @@ export default {
 } satisfies StorybookConfig;
 ```
 
-A docs page renders in the browser, as a Client Component does. It shows
-each story the way its kind renders:
+A docs page shows each story the way its kind renders:
 
 - A client story renders in the docs page, inline. A new value from
   Controls renders it again in place, with the state it has.
@@ -240,56 +304,27 @@ each story the way its kind renders:
   own: the docs page shows it in Storybook's iframe of the story, 320px
   high. Set another height with `parameters.docs.story.iframeHeight`.
 
-`parameters.docs.story.inline`, or `<Canvas story={{ inline }} />`,
-decides it when a story or a block sets it. A client story with
-`inline: false` renders in an iframe. A server story with `inline: true`
-cannot render in the docs page, and shows an error that says so.
+A server story with `parameters.docs.story.inline: true` cannot render in
+the docs page, and shows an error that says so.
 
-An MDX file is client code, as a file with `"use client"` is, and so is
-what it imports, with one exception: its imports of story files are the
-stories of Storybook, for `of={…}`, so a server story file is fine there.
-Code that is only for the server, like `server-only` or a database, cannot
-be imported at the top of an MDX file: the docs page fails with an error
-that says so. Show server code through a story, with
-`<Canvas of={Stories.Name} />`.
+An MDX file is a file with `"use client"`, as the framework compiles it, and
+so is what it imports: client story files, for `of={…}`, and components of
+the browser. A server story file is server code, which an MDX file cannot
+import: name its story by id.
 
 ```mdx
 import { Canvas, Meta } from "@storybook/addon-docs/blocks";
-import * as Greeting from "./greeting.stories";
+import * as PressButton from "./press-button.stories";
 
-<Meta of={Greeting} />
+<Meta title="Introduction" />
 
-<Canvas of={Greeting.Default} />
+<Canvas id="greeting--default" />
+
+<Canvas of={PressButton.Pressed} />
 ```
 
-Chromatic and other tools that read the stories of a build with
-`extract()` load every file of the index, the MDX files too. One MDX file
-that fails to load fails all of it, while `storybook build` succeeds.
-
-The docs page, its blocks and Storybook's theming render with React DOM,
-in the browser, and the preview file is evaluated on the server too (see
-The Preview File), as a story file without `"use client"` is. So neither
-can import `@storybook/addon-docs/blocks` or `storybook/theming`, which
-stops with a message: import them from a file with `"use client"`, like a
-`docs.page` made of blocks. A theme comes from `storybook/theming/create`:
-
-```ts
-import { themes } from "storybook/theming/create";
-
-export default {
-  parameters: { docs: { theme: themes.dark } },
-} satisfies Preview;
-```
-
-A component of `parameters.docs`, like `container`, `page` or one of
-`components`, renders in the browser: in the preview file, it is the one
-of the browser's evaluation of the file, as its decorators are for a client
-story. In a server story file a component of a file with `"use client"` is
-a reference, which shows an error: set it in the preview file, or in a
-story file with `"use client"`.
-
-The framework sets `parameters.docs.renderer`, which renders the docs page
-in the browser: one of the project's own is not supported.
+Code that is only for the server, like `server-only` or a database, cannot
+be imported in an MDX file either.
 
 `Source` shows the snippet of Storybook's docgen, or the source of the
 story: a server story renders on the server, so there is no snippet of
@@ -303,17 +338,6 @@ for both kinds.
   to change its args.
 - The iframe of a server story on a docs page does not follow the height
   of its page.
-- One instance of a package for an addon and a client story: an addon
-  that a client story needs the same module of, beyond `storybook/test`
-  and Storybook's own modules of the preview, gets one of each.
-- `definePreview()` and the story factories of CSF Next: write the preview
-  file and the stories in CSF 3, as above.
-- A decorator of an addon that renders a component of the addon, like a
-  provider of `@storybook/addon-themes`. One that returns `Story()` applies
-  to both kinds of story.
-- A new value of an arg renders the story again in place, with the state it
-  has: now it is a new request.
-- A change of a component that only client stories import: it shows once
-  the preview loads again.
+- Tags of `preview.server.tsx`: see Two Previews.
 - Next's router in a client story: `useRouter()` throws there, and
   `usePathname()` returns `null`. A server story has the router.
