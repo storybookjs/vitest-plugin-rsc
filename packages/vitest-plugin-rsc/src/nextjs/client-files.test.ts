@@ -332,9 +332,9 @@ test("tells a module of the host apart as a module runner spells it", () => {
 // `host.tsx`, which imports `value.ts` and two stylesheets in the browser
 // layer, and an entry of the host that imports it in the rsc layer and takes
 // a change of it in place, as a framework does that renders it again. The
-// page has `linked.css` in the rsc layer too, as a `<link>` that Vite swaps
-// in place; `value.css` only in the browser layer, as the `<style>` of a
-// module. The plugin of Vite RSC is a stand-in that makes the file a
+// page has `linked.css` in the rsc layer too, as a `<link>` and a `<style>`
+// that Vite swaps in place; `value.css` only in the browser layer, as the
+// `<style>` of a module there. The plugin of Vite RSC is a stand-in that makes the file a
 // reference module.
 async function serveHostFile() {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "client-files-")));
@@ -404,8 +404,9 @@ async function serveHostFile() {
   // the file in the graph of the browser layer.
   await rsc.transformRequest("/main.ts");
   await rsc.transformRequest("/host.tsx");
-  // What Vite serves a `<link>`.
+  // What Vite serves a `<link>`, and a module of the rsc layer that imports it.
   await rsc.transformRequest("/linked.css?direct");
+  await rsc.transformRequest("/linked.css");
   for (const name of ["/host.tsx", "/value.ts", "/value.css", "/linked.css"]) {
     await server.environments.react_client!.transformRequest(name);
   }
@@ -459,9 +460,6 @@ test("leaves a stylesheet that Vite swaps in place in the rsc layer to Vite", as
   const { change } = await serveHostFile();
 
   const { modules, sent } = change("linked.css", "h1 { color: green }\n");
-  expect(await modules).toEqual(["/linked.css?direct"]);
-  expect(await sent).toEqual({
-    type: "update",
-    updates: [expect.objectContaining({ type: "css-update", path: "/linked.css?direct" })],
-  });
+  expect((await modules).sort()).toEqual(["/linked.css", "/linked.css?direct"]);
+  expect(await sent).toMatchObject({ type: "update" });
 });

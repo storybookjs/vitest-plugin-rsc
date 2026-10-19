@@ -1,6 +1,7 @@
 import path from "node:path";
 import { hasDirective } from "@vitejs/plugin-rsc/transforms";
 import {
+  isCSSRequest,
   normalizePath,
   parseAstAsync,
   type EnvironmentModuleNode,
@@ -229,18 +230,15 @@ export function clientFiles(options: ClientFilesOptions): Plugin[] {
       // evaluates the file with what changed. First of the hooks of the rsc
       // layer, so that one that loads the document again instead, like the
       // one for a change of what a route imports, still takes over. Not for
-      // a stylesheet that Vite swaps in place in the rsc layer, through its
-      // link: the file's evaluation stays as it is.
+      // a stylesheet that Vite swaps in place in the rsc layer, as a link or
+      // as its `<style>`: it is the same stylesheet in the one document.
       hotUpdate: {
         order: "pre",
         handler({ file, modules, server }) {
           if (this.environment.name !== rsc) return;
-          if (
-            modules.length > 0 &&
-            modules.every((node) => node.type === "css" && node.isSelfAccepting)
-          ) {
-            return;
-          }
+          const swapped = (node: EnvironmentModuleNode) =>
+            node.isSelfAccepting && isCSSRequest(node.url);
+          if (modules.length > 0 && modules.every(swapped)) return;
           const changed = server.environments[browser]?.moduleGraph.getModulesByFile(file);
           if (!changed) return;
           const config = this.environment.getTopLevelConfig();
