@@ -27,7 +27,7 @@ import { graphStylesheetAttribute } from "./styles-shared.ts";
 //
 // A page load starts the files of its route before the server has rendered
 // it, with a preload of each (`preloadPage()`). Those links are the page's
-// too, and go with it, also when its load stops before it is there.
+// too, and go with it, and with a load that is left before its page is there.
 
 const elements = (of: Document) => [of.documentElement, of.head, of.body];
 const attributesOf = (element: Element) =>
@@ -186,15 +186,7 @@ export async function loadDocument(html: string, url: string, container?: Elemen
       container?.replaceChildren();
       for (const parent of [document.head, pageBody]) {
         for (const node of Array.from(parent.childNodes)) {
-          if (
-            !before.has(node) &&
-            !isViteStyle(node) &&
-            !isGraphStylesheet(node) &&
-            // Of the page that loads next, while this one is left for it.
-            !preloads.includes(node as HTMLLinkElement)
-          ) {
-            node.remove();
-          }
+          if (!before.has(node) && !isViteStyle(node) && !isGraphStylesheet(node)) node.remove();
         }
       }
     } finally {

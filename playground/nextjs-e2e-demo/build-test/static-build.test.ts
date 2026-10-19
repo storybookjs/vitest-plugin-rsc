@@ -80,7 +80,11 @@ const style = (page: Page, selector: string, property: string) =>
       getComputedStyle(document.querySelector(element!)!).getPropertyValue(name!),
     [selector, property],
   );
-// The requests of the page so far, by their pathname, in the page's time.
+// The requests of the page so far, by their pathname, in the page's time. A
+// page keeps 250 by default, fewer than a page of the build may ask for: a
+// test that reads them calls `keepResources()` before the page opens.
+const keepResources = (page: Page) =>
+  page.addInitScript(() => performance.setResourceTimingBufferSize(10_000));
 const resources = (page: Page) =>
   page.evaluate(() =>
     (performance.getEntriesByType("resource") as PerformanceResourceTiming[]).map(
@@ -278,6 +282,7 @@ describe.for(builds)("a static build, $build", ({ build, env }) => {
   // with them, where Next would link them once the HTML is there. Each is
   // one request: the module or the stylesheet takes the preload.
   test("starts the files of a route at once", async ({ page }) => {
+    await keepResources(page);
     await open(page, site, "/notes/7", { node: "7" });
     await heading(page, "A node of the host");
     const built = JSON.parse(
@@ -286,6 +291,7 @@ describe.for(builds)("a static build, $build", ({ build, env }) => {
     const files = built.modules["(vitest-plugin-rsc)/notes/[id]"]!.map(
       (index) => `/${built.chunks[index]}`,
     );
+    expect(files.length).toBeGreaterThan(1);
     const requests = await resources(page);
     const chunks = files.map((file) => {
       const requested = requests.filter((request) => request.pathname === file);
@@ -309,6 +315,7 @@ describe.for(builds)("a static build, $build", ({ build, env }) => {
         () => performance.getEntriesByName("host-open").at(-1)!.startTime,
       );
       const loaded = chunks.filter((chunk) => chunk.startTime >= opened);
+      expect(loaded.length).toBeGreaterThan(0);
       const firstChunk = Math.min(...loaded.map((chunk) => chunk.responseEnd));
       expect(stylesheets[0]!.startTime).toBeLessThan(firstChunk);
     }
@@ -317,6 +324,7 @@ describe.for(builds)("a static build, $build", ({ build, env }) => {
   // What a segment imports with `import()` loads when the segment asks for
   // it: `next/dynamic` of a Server Component.
   test("starts no module that a segment imports later", async ({ page }) => {
+    await keepResources(page);
     await open(page, site, "/lazy");
     await page.getByText("Summary: rendered on the server").waitFor();
     const built = JSON.parse(
@@ -331,7 +339,7 @@ describe.for(builds)("a static build, $build", ({ build, env }) => {
     // The page loads it, after the module of the page that imports it.
     const requests = await resources(page);
     const [summary] = requests.filter((request) => request.pathname === `/assets/${lazy[0]}`);
-    const pageChunk = files.find((file) => /\/page-\w+\.js$/.test(file))!;
+    const pageChunk = files.find((file) => /\/page-[\w-]+\.js$/.test(file))!;
     const [segment] = requests.filter((request) => request.pathname === pageChunk);
     expect(summary!.startTime).toBeGreaterThanOrEqual(segment!.responseEnd);
   });

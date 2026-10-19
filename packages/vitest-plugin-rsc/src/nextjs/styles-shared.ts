@@ -75,11 +75,11 @@ export type BuiltFiles = {
   chunks: string[];
   /**
    * For each page route, by the name of its modules: the files of the rsc
-   * layer that its entry loads, by their index in `chunks`. Its own, those of
-   * the segments and boundaries of its loader tree, and every one those
-   * import, but not one that a segment imports with `import()`, which loads
-   * only when the segment asks for it, nor one the page has before it loads
-   * a route.
+   * layer that its entry loads, by their index in `chunks`, the entry's own
+   * first. Those of the segments and boundaries of its loader tree, and
+   * every one those import, but not one that a segment imports with
+   * `import()`, which loads only when the segment asks for it, nor one the
+   * page has before it loads a route: see route-chunks.ts.
    */
   modules: Record<string, number[]>;
 };

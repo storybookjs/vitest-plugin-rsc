@@ -12,11 +12,11 @@ import {
   type DevEnvironment,
   type EnvironmentModuleNode,
   type Plugin,
-  type Rolldown,
   type TransformResult,
   type ViteDevServer,
 } from "vite";
 import { clientReferenceOfModule } from "./client-files.ts";
+import { routeChunksOf } from "./route-chunks.ts";
 import type { ComponentRoute, NextLayer, NextProject, NextRoute, RouteSegment } from "./project.ts";
 import { clientReferencesId } from "../built-layers.ts";
 import { cssBuildDirPlaceholder, toBuildDir } from "../static-build.ts";
@@ -681,9 +681,7 @@ const cssUrlRE = /\burl\(\s*(?:"([^"]*)"|'([^']*)'|([^'")\s]*))\s*\)|"(\/[^"]*)"
  * project, which is the same on every machine.
  *
  * The file also lists the modules of every page route, which a page load
- * starts at once with the stylesheets (rsc.ts): Next loads them one segment
- * after the other, and a browser does not fetch what a module imports before
- * it has the module. They are read off the chunks of the rsc layer.
+ * starts at once with the stylesheets: see route-chunks.ts.
  */
 function createBuiltFiles(
   options: StylesOptions,
@@ -857,35 +855,13 @@ function createBuiltFiles(
       const layer = layerOf(this.environment.name);
       if (!layer || manager?.isScanBuild) return;
       if (layer === "rsc") {
-        const chunkOf = new Map<string, Rolldown.OutputChunk>();
-        for (const output of Object.values(bundle)) {
-          if (output.type !== "chunk") continue;
-          for (const id of output.moduleIds) chunkOf.set(id, output);
-        }
-        // The chunks of `ids`, each with what it imports, but those in `had`.
-        const chunksOf = (ids: string[], had = new Set<string>()) => {
-          const loaded = new Set<string>();
-          const visit = (chunk: Rolldown.OutputChunk | undefined): void => {
-            if (!chunk || had.has(chunk.fileName) || loaded.has(chunk.fileName)) return;
-            loaded.add(chunk.fileName);
-            for (const fileName of chunk.imports) {
-              const imported = bundle[fileName];
-              if (imported?.type === "chunk") visit(imported);
-            }
-          };
-          ids.forEach((id) => visit(chunkOf.get(id)));
-          return loaded;
-        };
-        // What the page has before it loads a route: the modules that list
-        // the routes, and what they import.
-        const had = chunksOf([...lists]);
-        // The chunk of the entry of a route, and the chunks of what its loader
-        // tree imports, each with what it imports. Not the chunk of a module
-        // that one of them imports with `import()`: that is the app's to load.
-        for (const route of options.pageRoutes().keys()) {
+        const routes = Array.from(options.pageRoutes().keys(), (route) => {
           const entry = options.entryIdOf(route);
           const tree = this.getModuleInfo(entry)?.dynamicallyImportedIds ?? [];
-          modules.set(route, [...chunksOf([entry, ...tree], had)]);
+          return [route, [entry, ...tree]] as [string, string[]];
+        });
+        for (const [route, chunks] of routeChunksOf(bundle, [...lists], routes)) {
+          modules.set(route, chunks);
         }
       }
       const directory = `${getProject().assetPath.slice(1)}static/css/`;

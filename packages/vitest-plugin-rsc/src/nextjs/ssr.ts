@@ -10,7 +10,7 @@ import * as appPageModule from "next/dist/server/route-modules/app-page/module";
 import { normalizeNextQueryParam } from "next/dist/server/web/utils";
 import { getRouteMatcher } from "next/dist/shared/lib/router/utils/route-matcher";
 import { getRouteRegex } from "next/dist/shared/lib/router/utils/route-regex";
-import { routes as allRoutes, nextConfig, routing } from "virtual:vitest-plugin-rsc/next-manifest";
+import { routes as allRoutes, routing } from "virtual:vitest-plugin-rsc/next-manifest";
 import { shareIncrementalCache } from "./cache.ts";
 import { registerModuleLoader } from "./client-modules.ts";
 import {
@@ -510,17 +510,7 @@ async function handle(
     // The route of a node has the stylesheets of the files of the host that
     // render the node: `hostFiles` of `renderServer()`.
     const files = component ? (opened?.node?.files ?? []) : [];
-    if (pageLoad && inline) {
-      // Next's production code links a stylesheet at its path alone: its
-      // development code adds the time of the request, and a deployment id
-      // its id, which a preload of the path would miss.
-      const atPath = process.env.NODE_ENV === "production" && !nextConfig.deploymentId;
-      await registry.preloadRoute(
-        entry,
-        files,
-        atPath && { crossOrigin: nextConfig.crossOrigin || undefined },
-      );
-    }
+    if (pageLoad && inline) await registry.preloadRoute(entry, files, request.signal);
     const [stylesheets, { handler }] = await Promise.all([
       registry.loadStylesheets(entry, inline, files),
       registry.loadAppPage(entry) as Promise<{ handler: RequestHandler }>,

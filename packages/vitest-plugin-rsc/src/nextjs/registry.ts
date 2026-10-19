@@ -90,18 +90,14 @@ export type NextRegistry = {
   loadStylesheets(entry: string, inline: boolean, files: string[]): Promise<Stylesheets>;
   /**
    * Has the browser start the files of a page route at once, for a page load
-   * that the plugin opens, by what `loadStylesheets()` takes: its modules, and
-   * with `stylesheets` its stylesheets, as Next links them, at their path alone
-   * and with its `crossOrigin`. They go with the page (document.ts). Only a
+   * that the plugin opens, by what `loadStylesheets()` takes: its modules and
+   * its stylesheets (rsc.ts). They go with the page (document.ts), and none
+   * come once `signal`, the request's, has aborted: the page is gone. Only a
    * static build has them: a dev server serves a module where it is asked for.
    * Resolves once they are in the document, before the route loads: Vite
    * preloads a module that is imported, for good, unless a link has it.
    */
-  preloadRoute(
-    entry: string,
-    files: string[],
-    stylesheets: { crossOrigin: string | undefined } | false,
-  ): Promise<void>;
+  preloadRoute(entry: string, files: string[], signal: AbortSignal | undefined): Promise<void>;
   /**
    * Internal, not an API: the Vitest default behind `hostFiles` of
    * `renderServer()`, the files of the host that render a node when it is

@@ -383,7 +383,8 @@ test("names a file of public/ with a query or a fragment in a stylesheet of a st
 // The modules of a route in a static build, which a page load starts at once:
 // the chunk of its entry, those of what its loader tree imports, and every
 // chunk those import, read off a build of the rsc layer. Not a chunk that a
-// segment imports with `import()`, which the segment loads when it asks.
+// segment imports with `import()`, which the segment loads when it asks, nor
+// one the module that lists the routes imports, which the page has.
 test("lists the modules of every route in a static build, without what a segment imports later", async () => {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "vitest-plugin-rsc-mods-")));
   onTestFinished(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -398,11 +399,14 @@ test("lists the modules of every route in a static build, without what a segment
     // Only the page imports it, so it is in the chunk of the page.
     "deep.js": 'export const deep = "deep";',
     "lazy.js": 'export const lazy = "lazy";',
+    // The module that lists the routes, which the page has loaded.
+    "list.js": 'import { shared } from "./shared.js";\nexport const list = [shared];',
   };
   for (const [name, content] of Object.entries(files)) {
     fs.writeFileSync(path.join(root, name), content);
   }
   const entry = path.join(root, "entry.js");
+  const list = path.join(root, "list.js");
   const styles = createStyles({
     getProject: () =>
       ({
@@ -418,7 +422,7 @@ test("lists the modules of every route in a static build, without what a segment
     isHostFile: () => false,
     pageRoutes: () => new Map([["/page", { kind: "page", page: "/page" } as never]]),
     entryIdOf: () => entry,
-    lists: [],
+    lists: [list],
   });
   const manager = { isScanBuild: false, clientReferenceMetaMap: {} };
   const { output } = (await build({
@@ -429,7 +433,7 @@ test("lists the modules of every route in a static build, without what a segment
     build: {
       write: false,
       minify: false,
-      rolldownOptions: { input: entry, preserveEntrySignatures: "strict" },
+      rolldownOptions: { input: [entry, list], preserveEntrySignatures: "strict" },
     },
   })) as Rolldown.RolldownOutput;
   const chunkOf = (file: string) =>
@@ -440,11 +444,11 @@ test("lists the modules of every route in a static build, without what a segment
 
   const [file] = styles.builtFiles();
   const built = JSON.parse(Buffer.from(file!.body).toString()) as BuiltFiles;
-  const listed = new Set(built.modules["/page"]!.map((index) => built.chunks[index]));
-  for (const segment of ["entry.js", "layout.js", "page.js", "shared.js"]) {
-    expect(listed).toContain(chunkOf(segment));
+  const listed = built.modules["/page"]!.map((index) => built.chunks[index]);
+  // The entry's own first.
+  expect(listed[0]).toBe(chunkOf("entry.js"));
+  for (const file of ["layout.js", "page.js", "deep.js"]) expect(listed).toContain(chunkOf(file));
+  for (const file of ["lazy.js", "shared.js", "list.js"]) {
+    expect(listed).not.toContain(chunkOf(file));
   }
-  // Every other chunk, like Vite's helper that the entry imports, but the lazy one.
-  const chunks = output.filter((chunk) => chunk.type === "chunk").map((chunk) => chunk.fileName);
-  expect(listed).toEqual(new Set(chunks.filter((chunk) => chunk !== chunkOf("lazy.js"))));
 });

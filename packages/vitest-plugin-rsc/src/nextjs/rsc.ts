@@ -5,6 +5,7 @@ import * as FlightServer from "@vitejs/plugin-rsc/vendor/react-server-dom/server
 import appPages from "virtual:vitest-plugin-rsc/next-app-pages";
 import loadMiddleware from "virtual:vitest-plugin-rsc/next-middleware";
 import routeHandlers from "virtual:vitest-plugin-rsc/next-route-handlers";
+import { nextConfig } from "virtual:vitest-plugin-rsc/next-manifest";
 import serverReferences from "virtual:vitest-plugin-rsc/server-references";
 import { createElement, type ReactNode } from "react";
 import type { FlightAdapters } from "./flight.ts";
@@ -142,20 +143,27 @@ if (directory) {
   // A page load starts the files of its route at once, where Next would load
   // its modules one segment after the other, and link its stylesheets only
   // once the HTML is there. Next links a stylesheet at its path under the
-  // asset path, encoded segment by segment, and with the CORS mode of
+  // asset prefix, encoded segment by segment, in the CORS mode of
   // `crossOrigin` of next.config: the preload is of that URL, in that mode,
-  // or the browser fetches the file a second time.
-  registry.preloadRoute = async (entry, files, stylesheets) => {
-    const encoded = (path: string) => path.split("/").map(encodeURIComponent).join("/");
+  // or the browser fetches the file a second time. Its production code links
+  // it at that path alone. Its development code adds the time of the
+  // request, and a deployment id adds the id, which a preload cannot know:
+  // then only the modules start.
+  const linksAtPath = process.env.NODE_ENV === "production" && !nextConfig.deploymentId;
+  const encoded = (path: string) => path.split("/").map(encodeURIComponent).join("/");
+  registry.preloadRoute = async (entry, files, signal) => {
     // A file that failed to load fails the page load in `loadStylesheets()`.
     const built = await builtFiles().catch(() => undefined);
-    if (!built) return;
+    if (!built || signal?.aborted) return;
     const linked = Object.values(builtStylesheetsOf(built, entry, directory, files)).flat();
     preloadPage({
-      stylesheets: stylesheets
-        ? linked.map(({ path }) => new URL(built.assetPath + encoded(path), location.href).href)
+      stylesheets: linksAtPath
+        ? linked.map(
+            ({ path }) =>
+              new URL(`${nextConfig.assetPrefix}/_next/${encoded(path)}`, location.href).href,
+          )
         : [],
-      crossOrigin: stylesheets ? stylesheets.crossOrigin : undefined,
+      crossOrigin: nextConfig.crossOrigin || undefined,
       modules: (built.modules[entry] ?? []).map(
         (index) => new URL(built.chunks[index]!, directory).href,
       ),
