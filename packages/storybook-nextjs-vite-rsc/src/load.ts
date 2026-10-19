@@ -2,7 +2,7 @@ import { isPreview, isStory } from "storybook/internal/csf";
 import type { ModuleExports, ModuleImportFn } from "storybook/internal/types";
 import { loadClientModule } from "vitest-plugin-rsc/nextjs/testing-library";
 import { notCsfNext, undeclaredGlobals, wrongFactory } from "./errors.ts";
-import { isServerPreview } from "./server.ts";
+import { isServerPreview } from "./server-mark.ts";
 
 // The module loader of Storybook's Vite builder: the module that the store
 // gets for the preview file and for each story and docs file. The preview is

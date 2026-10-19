@@ -21,6 +21,7 @@ import type {
   WebRenderer,
 } from "storybook/internal/types";
 import { beforeAllInServerPreview } from "./errors.ts";
+import { markServerPreview } from "./server-mark.ts";
 import { annotations, isPage, nextjsOf } from "./server-renderer.ts";
 
 // The entry of `.storybook/preview.server.tsx`, a file without "use client",
@@ -75,9 +76,6 @@ export interface ServerPreview<T extends AddonTypes> extends Omit<
   ): Meta<MetaTypes<ServerTypes & T, TArgs, Decorators, TMetaArgKeys>, TMetaArgKeys>;
 }
 
-// A mark of the server preview, of every evaluation of this module.
-const serverPreview = Symbol.for("@storybook/nextjs-vite-rsc/server-preview");
-
 /**
  * The preview of the server stories. Storybook reads `beforeAll`, the
  * globals and the index's tags from `.storybook/preview.tsx` only: tags here
@@ -92,8 +90,7 @@ export function defineServerPreview<Addons extends PreviewAddonEntry[] = []>(
     addons: [argTypes, annotations, ...(input.addons ?? [])],
   }) as never;
   const defineMeta = preview.meta;
-  return Object.assign(preview, {
-    [serverPreview]: true,
+  return Object.assign(markServerPreview(preview), {
     meta: (input: Meta<Renderer>["input"]) => {
       const meta: Meta<Renderer> = defineMeta.call(preview, input) as never;
       const { story } = meta;
@@ -106,8 +103,6 @@ export function defineServerPreview<Addons extends PreviewAddonEntry[] = []>(
     },
   }) as never;
 }
-
-export const isServerPreview = (preview: object): boolean => serverPreview in preview;
 
 /**
  * `layout: "document"` for a story of the server preview that owns the
