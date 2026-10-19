@@ -368,6 +368,44 @@ test("a page left while it loads leaves no render and no reload", async ({ page 
   expect(await rendered(canvas, "greeting--server-action")).toBe("finished");
 });
 
+// Fails: the manager selecting the story that renders once more makes
+// Storybook show its main view while the render runs
+// (PreviewWithSelection.tsx:439 of the integration branch), which puts
+// Storybook's class on the `<body>` of the page that loads, and React finds
+// it in the HTML it hydrates. A save of a page story's file does this at
+// times: the new index selects the story again while the render of the new
+// file loads its page. The page's stylesheets come late here, so that the
+// selection always comes during the load.
+test.fails("a page that loads keeps its own <body> when its story is selected again", async ({
+  page,
+  errors,
+}) => {
+  const canvas = await openStory(page, site!.url, "home--home");
+  await page.route(/\.css(\?|$)/, async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+    await route.continue();
+  });
+  const manager = (event: string, payload?: object) =>
+    page.evaluate(
+      ({ event, payload }) =>
+        (
+          window as unknown as {
+            __STORYBOOK_ADDONS_CHANNEL__: { emit(event: string, payload?: object): void };
+          }
+        ).__STORYBOOK_ADDONS_CHANNEL__.emit(event, payload),
+      { event, payload },
+    );
+  await manager("forceReRender");
+  // The page's `<body>` is in the document, its stylesheets on their way.
+  await canvas.waitForFunction(() => !document.body.classList.contains("sb-show-main"), null, {
+    polling: 10,
+  });
+  await manager("setCurrentStory", { storyId: "home--home", viewMode: "story" });
+  expect(await rendered(canvas, "home--home")).toBe("finished");
+  await new Promise((resolve) => setTimeout(resolve, 2000));
+  expect(errors.list.splice(0), "the errors of the page").toEqual([]);
+});
+
 // A story that does what only the other kind of story can: the message that
 // Storybook shows for it. The page logs the error too, which the test takes
 // from `errors`, so that the end of the test checks the stories after it.
