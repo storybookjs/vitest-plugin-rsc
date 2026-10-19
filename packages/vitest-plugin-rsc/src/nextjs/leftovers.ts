@@ -3,7 +3,8 @@
 // have no way to take them back: a browser drops them with the document. This
 // document stays, and each of them keeps the page that added it, with all of
 // its modules. So they are recorded while the plugin loads and starts Next's
-// client, and only then, to be removed when the page is left.
+// client, and only then, to be removed when the page is left. What React DOM
+// keeps in properties of the document goes with the page too: see document.ts.
 
 export type Leftovers = {
   /** Stops recording. */
