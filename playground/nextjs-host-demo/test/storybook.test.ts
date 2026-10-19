@@ -154,8 +154,10 @@ const layout = (canvas: Frame) =>
 test("a story in the layouts, and one whose beforeEach sets a cookie", async ({ page }) => {
   const canvas = await openStory(page, site!.url, "greeting--in-layouts");
   expect(await storyRun(page, canvas, "greeting--in-layouts")).toEqual(passed);
-  // A story that owns the document has no layout of Storybook's.
+  // A story that owns the document has no layout of Storybook's, and its
+  // `<body>` is its root.
   expect(await layout(canvas)).toBe("none");
+  expect((await body(canvas)).root).toBe("BODY");
   expect(await runStory(page, canvas, "greeting--seeded")).toEqual(passed);
   expect(await layout(canvas)).toBeUndefined();
   expect(await runStory(page, canvas, "home--home")).toEqual(passed);

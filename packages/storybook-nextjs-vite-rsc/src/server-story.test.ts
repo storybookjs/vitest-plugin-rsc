@@ -1,5 +1,5 @@
 import { expect, test, vi } from "vitest";
-import { hostFilesOf, layoutOfDocument, serverStoryFiles } from "./server-story.ts";
+import { hostFilesOf, layoutOfDocument, rootOfDocument, serverStoryFiles } from "./server-story.ts";
 
 // Where the project is, as the virtual module has it: from the directory
 // that the root and Storybook's working directory are both in.
@@ -67,4 +67,24 @@ test("a story that owns the document has no layout of Storybook's", () => {
   // A test of a story of CSF Next, as its story.
   expect(layoutOf({ default: {}, Home: {} }, "home:renders")).toBe("none");
   expect(layoutOf({ default: {}, Story: { render: () => null } }, "story:renders")).toBeUndefined();
+});
+
+// The `<body>` of a story that owns the document is its root, marked as
+// Storybook's, unless it has an id of the app's, which it keeps.
+test("the body of a story that owns the document is its root", () => {
+  const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+  const body = { id: "" } as HTMLElement;
+  expect(rootOfDocument("home--home", body)).toBe(body);
+  expect(body.id).toBe("storybook-root");
+  expect(warn).not.toHaveBeenCalled();
+  const app = { id: "app" } as HTMLElement;
+  expect(rootOfDocument("app--home", app)).toBe(app);
+  expect(rootOfDocument("app--home", app)).toBe(app);
+  expect(app.id).toBe("app");
+  // Once per story.
+  expect(warn).toHaveBeenCalledOnce();
+  expect(warn.mock.calls[0]![0]).toContain(
+    'app--home owns the document, and its <body> keeps the app\'s id "app"',
+  );
+  warn.mockRestore();
 });
