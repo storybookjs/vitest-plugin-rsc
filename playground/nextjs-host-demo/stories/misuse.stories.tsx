@@ -4,8 +4,8 @@ import preview from "../.storybook/preview.server.tsx";
 import { Boundary } from "../app/components/boundary.tsx";
 import { PressButton } from "../app/components/press-button.tsx";
 
-// Server stories that a user can get wrong: each shows an error that says
-// what to do instead.
+// Server stories that a user can get wrong, and that fail: each shows an
+// error, which says what to do instead where the framework knows it.
 const meta = preview.meta({ tags: ["!test"] });
 
 export const HookOnServer = meta.story({

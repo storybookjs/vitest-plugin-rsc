@@ -57,12 +57,11 @@ export const renderToCanvas: RenderToCanvas<NextjsServerRenderer> = async (
       });
   const open = opened.get(id);
   try {
-    if (node && open && "rerender" in open && !forceRemount) {
-      // New args or globals: in place, without a page load. The page reports
-      // to the same errors, so the first since this render is its error.
-      const reported = open.errors.length;
+    // New args or globals render in place, without a page load, on a page
+    // that reported no error: one with an error, like Next's error page in
+    // the node's place, opens anew.
+    if (node && open && "rerender" in open && open.errors.length === 0 && !forceRemount) {
       await open.rerender(node);
-      if (open.errors.length > reported) throw open.errors[reported];
     } else {
       const result = node
         ? await renderServer(node, {
@@ -75,8 +74,10 @@ export const renderToCanvas: RenderToCanvas<NextjsServerRenderer> = async (
           })
         : await renderServer({ url, headers, proxy, signal });
       opened.set(id, result);
-      if (result.errors.length > 0) throw result.errors[0];
     }
+    // The page reports to one list of errors while it is open.
+    const { errors } = opened.get(id)!;
+    if (errors.length > 0) throw errors[0];
   } catch (error) {
     // Storybook left the story, and the page with it.
     if (signal.aborted) return;

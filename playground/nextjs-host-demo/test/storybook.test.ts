@@ -363,6 +363,12 @@ test("an error of a server story after new args shows, as on its first render", 
   await expect.poll(() => message.isVisible(), { timeout: 30_000 }).toBe(true);
   expect(await message.textContent()).toContain("The story failed after new args");
   errors.list.splice(0);
+  // Args that do not fail render the story again, on a page of its own.
+  await updateArgs(canvas, "misuse--fails-after-new-args", { fail: false });
+  await expect
+    .poll(() => inCanvas(canvas).getByText("Not failed yet").count(), { timeout: 30_000 })
+    .toBe(1);
+  await expect.poll(() => message.isVisible()).toBe(false);
 });
 
 // Storybook aborts the render of a story that is left before it ends. A page
