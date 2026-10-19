@@ -40,7 +40,7 @@ function nextConfig(emitted: Record<string, string> = {}): object {
 
 type Bundle = Record<string, object>;
 type Hook = (this: unknown, ...args: any[]) => any;
-type Warning = { code: string; message: string };
+type Warning = { code: string; message: string; id?: string; ids?: string[] };
 type Meta = { referenceKey: string; importId: string };
 
 // A hook of the plugin, called the way Vite calls it for an environment.
@@ -778,20 +778,35 @@ test("does not warn about the directives of Vite RSC and of Next", () => {
 });
 
 test("does not warn about a module that only the lists of references import twice", () => {
-  const { warnings } = setup();
-  const ineffective = (importers: string) => ({
+  const { plugin, warnings } = setup();
+  const globalError = "/app/node_modules/next/dist/esm/client/components/builtin/global-error.js";
+  const lazy = "/app/app/components/lazy.tsx";
+  const appRouter = "/app/node_modules/next/dist/esm/client/components/app-router.js";
+  // The build's module graph: the lists import both with `import()`, and the
+  // app imports `lazy.tsx` that way too.
+  const graph: Record<string, { dynamicallyImportedIds?: string[]; dynamicImporters?: string[] }> =
+    {
+      [clientReferences]: { dynamicallyImportedIds: [globalError, lazy] },
+      [serverReferences]: { dynamicallyImportedIds: [] },
+      [globalError]: { dynamicImporters: [clientReferences] },
+      [lazy]: { dynamicImporters: [clientReferences, "/app/app/page.tsx"] },
+    };
+  (plugin.buildEnd as Hook).call({
+    environment: { name: names.browser, mode: "build" },
+    getModuleInfo: (id: string) => graph[id] ?? null,
+  });
+  // As Rolldown has it: the module, and its importers, static or not. Not
+  // its message, which is for people.
+  const ineffective = (id: string) => ({
     code: "INEFFECTIVE_DYNAMIC_IMPORT",
-    message:
-      `next/dist/esm/client/components/builtin/global-error.js is dynamically imported by ` +
-      `${importers} but also statically imported by next/dist/esm/client/components/app-router.js, ` +
-      `dynamic import will not move module into another chunk.`,
+    message: "a module is dynamically imported but also statically imported",
+    id,
+    ids: [...(graph[id]!.dynamicImporters ?? []), appRouter],
   });
 
-  expect(warnings(ineffective(clientReferences))).toEqual([]);
-  expect(warnings(ineffective(serverReferences))).toEqual([]);
+  expect(warnings(ineffective(globalError))).toEqual([]);
   // The app imports it that way too: that one is the app's to hear of.
-  const ofTheApp = ineffective(`${clientReferences}, app/components/lazy.tsx`);
-  expect(warnings(ofTheApp)).toEqual([ofTheApp]);
+  expect(warnings(ineffective(lazy))).toEqual([ineffective(lazy)]);
 });
 
 test("rewrites a chunk into what a module runner evaluates", async () => {
