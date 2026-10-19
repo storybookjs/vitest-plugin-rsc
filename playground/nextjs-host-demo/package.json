@@ -14,7 +14,7 @@
     "react-dom": "19.2.6"
   },
   "devDependencies": {
-    "@storybook/addon-docs": "https://pkg.pr.new/storybookjs/storybook/@storybook/addon-docs@bdd3d9a778d4d296abcf8e55d2fae4bdbda7e93c",
+    "@storybook/addon-docs": "https://pkg.pr.new/storybookjs/storybook/@storybook/addon-docs@3cd7f9dc23338dab974d277afb14ce7ca2ce9eb7",
     "@storybook/nextjs-vite-rsc": "workspace:*",
     "@types/node": "^24.12.4",
     "@types/react": "^19.2.14",
@@ -22,7 +22,7 @@
     "host-package": "file:fixtures/host-package",
     "host-report": "file:fixtures/host-report",
     "playwright": "^1.64.0",
-    "storybook": "https://pkg.pr.new/storybookjs/storybook/storybook@bdd3d9a778d4d296abcf8e55d2fae4bdbda7e93c",
+    "storybook": "https://pkg.pr.new/storybookjs/storybook/storybook@3cd7f9dc23338dab974d277afb14ce7ca2ce9eb7",
     "typescript": "^6.0.3",
     "vite": "^8.3.1",
     "vitest": "5.0.3",
