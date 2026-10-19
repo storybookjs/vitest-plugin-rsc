@@ -10,7 +10,6 @@ import preview from "#.storybook/preview.server.tsx";
 // The list of notes. A story file is server code, so the `db` it seeds is the
 // one the page reads: see page.test.tsx.
 const meta = preview.meta({
-  title: "Pages/Notes",
   parameters: { nextjs: { url: "/notes" } },
   beforeEach: () => signInAs(),
 });

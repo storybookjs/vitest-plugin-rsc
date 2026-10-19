@@ -25,9 +25,13 @@ type Docs = { id: string; stories: Story[] };
 
 const root = new URL("../", import.meta.url);
 
-// The stories that each MDX file shows, with `<Canvas of={…} />`.
+// The stories that each MDX file shows, with `<Canvas of={…} />` or
+// `<Canvas id="…" />`.
 const mdx: Record<string, string[]> = {
-  "introduction--docs": ["components-flashcookieprobe--from-request", "ui-button--disabled"],
+  "components-introduction--docs": [
+    "components-flash-cookie-probe--from-request",
+    "components-ui-button--disabled",
+  ],
 };
 
 /**
@@ -43,15 +47,19 @@ export async function index(url: string): Promise<{ stories: Story[]; docs: Docs
   const all = Object.values(entries);
   const storyEntries = all.filter((entry) => entry.type === "story");
   const docsEntries = all.filter((entry) => entry.type === "docs");
+  // The files of the project that `pattern` matches, as the indexer globs
+  // the `stories` of .storybook/main.ts: not in node_modules.
   const files = (pattern: string) =>
-    new Set(fs.globSync(pattern, { cwd: fileURLToPath(root) }).map((file) => `./${file}`));
+    new Set(
+      fs
+        .globSync(pattern, { cwd: fileURLToPath(root), exclude: ["node_modules/**"] })
+        .map((file) => `./${file}`),
+    );
   // Every file of stories of the project is in the index, and so is every
   // MDX file. The stories of components have a docs page, the pages do not.
-  expect(new Set(storyEntries.map((entry) => entry.importPath))).toEqual(
-    files("{app,components}/**/*.stories.tsx"),
-  );
+  expect(new Set(storyEntries.map((entry) => entry.importPath))).toEqual(files("**/*.stories.tsx"));
   expect(new Set(docsEntries.map((entry) => entry.importPath))).toEqual(
-    new Set([...files("components/**/*.mdx"), ...files("components/**/*.stories.tsx")]),
+    new Set([...files("**/*.mdx"), ...files("components/**/*.stories.tsx")]),
   );
   const stories = storyEntries.map(({ id, importPath, tags }) => ({
     id,
@@ -95,7 +103,7 @@ export const body = (canvas: Frame) =>
 // The root layout has the provider of next-themes, whose script React's
 // development build warns of when it renders it in the browser. Next does so
 // with the layouts of its not-found page, also in `next dev`.
-const notFound = new Set(["pages-note--invalid-id", "pages-note--not-yours"]);
+const notFound = new Set(["app-notes-id-page--invalid-id", "app-notes-id-page--not-yours"]);
 const scriptTagWarning = /^console\.error: Encountered a script tag while rendering React/;
 
 /**

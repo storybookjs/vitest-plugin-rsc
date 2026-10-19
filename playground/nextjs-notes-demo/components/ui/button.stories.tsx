@@ -8,7 +8,6 @@ import preview from "#.storybook/preview.tsx";
 // renders a Client Component. An arg is passed as it is, so `fn()` is the spy
 // that `play` and the Actions panel read.
 const meta = preview.meta({
-  title: "UI/Button",
   component: Button,
   tags: ["autodocs"],
   args: { children: "Create note", onClick: fn() },

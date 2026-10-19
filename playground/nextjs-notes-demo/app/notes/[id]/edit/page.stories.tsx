@@ -9,7 +9,6 @@ import preview from "#.storybook/preview.server.tsx";
 const id = "00000000-0000-4000-8000-000000000001";
 
 const meta = preview.meta({
-  title: "Pages/Edit note",
   parameters: { nextjs: { url: `/notes/${id}/edit` } },
   beforeEach: async () => {
     await signInAs();

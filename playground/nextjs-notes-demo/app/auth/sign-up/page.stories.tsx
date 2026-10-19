@@ -6,7 +6,6 @@ import preview from "#.storybook/preview.server.tsx";
 // Signing up with a magic link of Better Auth, whose API is a mock: see
 // page.test.tsx.
 const meta = preview.meta({
-  title: "Pages/Sign up",
   parameters: { nextjs: { url: "/auth/sign-up" } },
 });
 

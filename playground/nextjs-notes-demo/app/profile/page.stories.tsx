@@ -7,7 +7,6 @@ import preview from "#.storybook/preview.server.tsx";
 // The profile, whose passkeys come from Better Auth: a story says what the
 // mock of `auth.api` answers, see lib/__mocks__/auth.ts and page.test.tsx.
 const meta = preview.meta({
-  title: "Pages/Profile",
   parameters: { nextjs: { url: "/profile" } },
   beforeEach: () => signInAs(),
 });

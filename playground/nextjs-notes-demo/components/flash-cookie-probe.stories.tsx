@@ -6,7 +6,6 @@ import preview from "#.storybook/preview.server.tsx";
 // A Server Component that reads the cookies and headers of its request, and
 // sets a cookie in a Server Action: see flash-cookie-probe.test.tsx.
 const meta = preview.meta({
-  title: "Components/FlashCookieProbe",
   component: FlashCookieProbe,
   tags: ["autodocs"],
 });

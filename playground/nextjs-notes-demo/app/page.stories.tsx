@@ -8,7 +8,6 @@ import preview from "#.storybook/preview.server.tsx";
 // iframe 320px high, where a whole route says little. The stories of
 // components/ have docs pages.
 const meta = preview.meta({
-  title: "Pages/Home",
   parameters: { nextjs: { url: "/" } },
 });
 

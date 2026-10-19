@@ -8,7 +8,6 @@ import preview from "#.storybook/preview.server.tsx";
 // The form for a new note, whose Server Action validates on the server: see
 // page.test.tsx.
 const meta = preview.meta({
-  title: "Pages/New note",
   parameters: { nextjs: { url: "/notes/new" } },
   beforeEach: () => signInAs(),
 });

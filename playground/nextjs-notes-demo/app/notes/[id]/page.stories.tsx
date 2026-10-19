@@ -10,7 +10,6 @@ const id = "00000000-0000-4000-8000-000000000001";
 const updatedAt = new Date("2026-01-15T12:00:00.000Z");
 
 const meta = preview.meta({
-  title: "Pages/Note",
   parameters: { nextjs: { url: `/notes/${id}` } },
   beforeEach: () => signInAs(),
 });

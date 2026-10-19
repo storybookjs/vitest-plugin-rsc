@@ -6,7 +6,6 @@ import preview from "#.storybook/preview.server.tsx";
 // Component of it gets its args through Flight, as from a page. The forms of
 // the app give the error as children; these are its `errors`.
 const meta = preview.meta({
-  title: "UI/FieldError",
   component: FieldError,
   tags: ["autodocs"],
 });
