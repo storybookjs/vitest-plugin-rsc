@@ -9,7 +9,6 @@ import preview from "#.storybook/preview.tsx";
 // that `play` and the Actions panel read.
 const meta = preview.meta({
   component: Button,
-  tags: ["autodocs"],
   args: { children: "Create note", onClick: fn() },
 });
 

@@ -4,9 +4,6 @@ import { roundTrip } from "#.storybook/round-trip.ts";
 import preview from "#.storybook/preview.server.tsx";
 
 // The home page, in the root layout, whose header knows who is signed in.
-// No `autodocs` for the pages: a docs page shows a server story in an
-// iframe 320px high, where a whole route says little. The stories of
-// components/ have docs pages.
 const meta = preview.meta({
   parameters: { nextjs: { url: "/" } },
 });

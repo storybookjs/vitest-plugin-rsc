@@ -7,7 +7,6 @@ import preview from "#.storybook/preview.server.tsx";
 // the app give the error as children; these are its `errors`.
 const meta = preview.meta({
   component: FieldError,
-  tags: ["autodocs"],
 });
 
 export const SeveralErrors = meta.story({

@@ -56,10 +56,11 @@ export async function index(url: string): Promise<{ stories: Story[]; docs: Docs
         .map((file) => `./${file}`),
     );
   // Every file of stories of the project is in the index, and so is every
-  // MDX file. The stories of components have a docs page, the pages do not.
-  expect(new Set(storyEntries.map((entry) => entry.importPath))).toEqual(files("**/*.stories.tsx"));
+  // MDX file. Every file of stories has a docs page.
+  const storyFiles = files("**/*.stories.tsx");
+  expect(new Set(storyEntries.map((entry) => entry.importPath))).toEqual(storyFiles);
   expect(new Set(docsEntries.map((entry) => entry.importPath))).toEqual(
-    new Set([...files("**/*.mdx"), ...files("components/**/*.stories.tsx")]),
+    new Set([...files("**/*.mdx"), ...storyFiles]),
   );
   const stories = storyEntries.map(({ id, importPath, tags }) => ({
     id,
@@ -106,6 +107,14 @@ export const body = (canvas: Frame) =>
 const notFound = new Set(["app-notes-id-page--invalid-id", "app-notes-id-page--not-yours"]);
 const scriptTagWarning = /^console\.error: Encountered a script tag while rendering React/;
 
+// What the page logged since the last check, while it showed the stories
+// `ids`: no error, but the warning of a not-found page.
+function expectNoErrorLogged(errors: PageErrors, label: string, ids: string[]) {
+  const logged = errors.list.splice(0);
+  if (!ids.some((id) => notFound.has(id))) return expect(logged, label).toEqual([]);
+  for (const error of logged) expect(error, label).toMatch(scriptTagWarning);
+}
+
 /**
  * Selects every story of the Storybook at `url` in turn, as the sidebar
  * does. Each renders, its play function passes and the page logs no error.
@@ -122,9 +131,7 @@ export async function runEveryStory(page: Page, url: string, errors: PageErrors)
     expect((await body(canvas)).root, id).toBe(isPage ? "BODY" : "DIV");
     if (client) expect(atStory(canvas), id).toBe(`/iframe.html?id=${id}`);
     else expect(new URL(canvas.url()).pathname, id).not.toBe("/iframe.html");
-    const logged = errors.list.splice(0);
-    if (!notFound.has(id)) return expect(logged, id).toEqual([]);
-    for (const error of logged) expect(error, id).toMatch(scriptTagWarning);
+    expectNoErrorLogged(errors, id, [id]);
   };
   await check(first!, await storyRun(page, canvas, first!.id));
   for (const story of rest) await check(story, await runStory(page, canvas, story.id));
@@ -138,7 +145,8 @@ type Shown = { id: string; in: "inline" | "iframe"; error: boolean };
 // has its root or the error in place of it, a story in an iframe once the
 // render of the preview in it has ended. A block that names its story by id
 // has none until it loaded the story's file. The primary story of an
-// autodocs page has a block of its own too. Storybook makes the next docs
+// autodocs page has a block of its own too, unless it renders in an iframe,
+// which a docs page shows once. Storybook makes the next docs
 // page the current render before it removes the blocks of the last one,
 // which `selectDocs()` waits for.
 async function shownStories(canvas: Frame, ids: string[]): Promise<Shown[]> {
@@ -175,9 +183,9 @@ async function shownStories(canvas: Frame, ids: string[]): Promise<Shown[]> {
 /**
  * Selects every docs page of the Storybook at `url` in turn, as the sidebar
  * does. Each shows its stories, a client story inline and a server story in
- * an iframe, where it renders in a page of the app and runs its play
- * function, without an error, and the page logs no error: a play function
- * that fails logs one.
+ * an iframe once, where it renders in a page of the app without an error,
+ * and the page logs no error. A docs page runs no play function, in an
+ * iframe as inline, unless `docs.story.autoplay` asks for it.
  */
 export async function renderEveryDocsPage(
   page: Page,
@@ -200,7 +208,13 @@ export async function renderEveryDocsPage(
       error: false,
     }));
     expect(shown, id).toEqual(expected);
-    expect(errors.list.splice(0), id).toEqual([]);
+    const inIframes = shown.filter((story) => story.in === "iframe").map((story) => story.id);
+    expect(inIframes, id).toEqual([...new Set(inIframes)]);
+    expectNoErrorLogged(
+      errors,
+      id,
+      stories.map((story) => story.id),
+    );
   };
   await check(first!);
   for (const docs of rest) {

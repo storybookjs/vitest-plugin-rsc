@@ -7,7 +7,6 @@ import preview from "#.storybook/preview.server.tsx";
 // sets a cookie in a Server Action: see flash-cookie-probe.test.tsx.
 const meta = preview.meta({
   component: FlashCookieProbe,
-  tags: ["autodocs"],
 });
 
 // What `parameters.nextjs.headers` sends with the request of the story.

@@ -9,7 +9,6 @@ import preview from "#.storybook/preview.tsx";
 // a function of the browser, which a server story could not pass.
 const meta = preview.type<{ args: { action: Mock<(data: FormData) => Promise<void>> } }>().meta({
   component: SubmitButton,
-  tags: ["autodocs"],
   args: { children: "Save note", action: fn() },
   render: ({ action, ...args }) => (
     <form action={action}>

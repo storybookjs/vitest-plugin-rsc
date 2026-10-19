@@ -28,4 +28,7 @@ export default definePreview({
   addons: [docs()],
   // A component renders with room around it.
   parameters: { layout: "padded" },
+  // Every story file has a docs page: a page's too, whose stories show in
+  // an iframe each.
+  tags: ["autodocs"],
 });
