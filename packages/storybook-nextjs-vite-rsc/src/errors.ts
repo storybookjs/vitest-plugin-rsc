@@ -51,7 +51,8 @@ export const nothingToMount = (id: string): Error =>
 export const serverStoryInline = (id: string): Error =>
   new Error(
     `The story ${id} renders on the server, in a page of the app, which a docs page shows in ` +
-      `an iframe. Remove \`docs: { story: { inline: true } }\` from its parameters.`,
+      `an iframe. Remove \`docs: { story: { inline: true } }\` from its parameters, or the ` +
+      `\`inline\` prop of its block.`,
   );
 
 export const pluginTwice = (): Error =>

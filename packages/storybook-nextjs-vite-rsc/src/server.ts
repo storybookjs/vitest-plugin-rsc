@@ -25,7 +25,8 @@ import { annotations, isPage, nextjsOf } from "./server-renderer.ts";
 
 // The entry of `.storybook/preview.server.tsx`, a file without "use client",
 // and of the story files that import it: server code, whose stories render
-// through the plugin (server-renderer.ts).
+// through the plugin (server-renderer.ts). Its factories say what Storybook
+// needs to know of each server story.
 
 /** The request a server story renders in: `parameters.nextjs`. */
 export type NextjsParameters = {
@@ -115,9 +116,12 @@ export const isServerPreview = (preview: object): boolean => serverPreview in pr
  *   component in the app's layouts, which Storybook's view and docs read:
  *   its `<body>` is its root, and a docs page shows it in an iframe. A story
  *   that no longer owns the document loses it.
- * - `docs.story.autoplay: false`: a docs page never runs its play, as the
- *   page it plays in shares the window's focus and URL with the stories in
- *   the docs page's other iframes.
+ * - `docs.story.autoplay: false`: a docs page does not run its play, as
+ *   the page it plays in shares the window's focus and URL with the stories
+ *   in the docs page's other iframes. A block's own `autoplay` prop in MDX
+ *   still does, as a block's props come before parameters.
+ * It amends the input that core's factory made the story of, which core
+ * composes only when the story is first read.
  */
 function serverStory(story: Story<Renderer>): Story<Renderer> {
   const { input, meta } = story;

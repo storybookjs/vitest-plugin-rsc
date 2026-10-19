@@ -564,10 +564,11 @@ test("autodocs: a client story file's stories inline, a server story file's in i
   await selectDocs(canvas, "greeting--docs");
   // Every story of the file once, the primary too, each in a page of its
   // own. One that owns the document is as high as a small phone's screen.
-  await expect.poll(() => inDocs(canvas).locator("iframe").count()).toBe(3);
   const primaryFrame = await storyInDocs(canvas, "greeting--default");
-  expect(await primaryFrame.getByText("Hello from Storybook").count()).toBe(1);
   const inLayouts = await (await storyInDocs(canvas, "greeting--in-layouts")).frameElement();
+  await storyInDocs(canvas, "greeting--server-action");
+  expect(await inDocs(canvas).locator("iframe").count()).toBe(3);
+  expect(await primaryFrame.getByText("Hello from Storybook").count()).toBe(1);
   const height = (element: Node) => (element as Element).getBoundingClientRect().height;
   expect(await inLayouts.evaluate(height)).toBe(667);
   await expect

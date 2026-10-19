@@ -309,16 +309,19 @@ A docs page shows each story the way its kind renders:
   Controls renders it again in place, with the state it has.
 - A server story renders in a page of the app, which has a document of its
   own: the docs page shows it in Storybook's iframe of the story. One that
-  owns the document is as high as a small phone's screen. Set another
-  height with `parameters.docs.story.height`.
+  owns the document is as high as a small phone's screen, a component
+  100px, as any story in an iframe. Set another height with
+  `parameters.docs.story.height`, on the meta for every story of a file.
 
-A server story with `parameters.docs.story.inline: true` cannot render in
-the docs page, and shows an error that says so.
+A server story with `parameters.docs.story.inline: true`, or a block's
+`inline` prop, cannot render in the docs page, and shows an error that says
+so.
 
-A docs page never runs the play function of a server story, whatever
+A docs page does not run the play function of a server story, whatever
 `parameters.docs.story.autoplay` says: the page it plays in shares the
 window's focus and URL with the stories in the docs page's other iframes.
-Open the story to play it.
+Open the story to play it. A block's own `autoplay` prop in MDX still runs
+it, as a block's props come before parameters: leave it off a server story.
 
 An MDX file is a file with `"use client"`, as the framework compiles it, and
 so is what it imports: client story files, for `of={…}`, and components of

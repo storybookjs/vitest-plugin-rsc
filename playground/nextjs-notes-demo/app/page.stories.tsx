@@ -4,8 +4,10 @@ import { roundTrip } from "#.storybook/round-trip.ts";
 import preview from "#.storybook/preview.server.tsx";
 
 // The home page, in the root layout, whose header knows who is signed in.
+// It asks a docs page to play its stories, which a docs page does not do
+// for a server story: see renderEveryDocsPage() in e2e/stories.ts.
 const meta = preview.meta({
-  parameters: { nextjs: { url: "/" } },
+  parameters: { nextjs: { url: "/" }, docs: { story: { autoplay: true } } },
 });
 
 export const SignedOut = meta.story({

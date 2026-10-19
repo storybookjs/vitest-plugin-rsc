@@ -149,6 +149,8 @@ async function recordPhases(page: Page): Promise<void> {
       configurable: true,
       get: () => preview,
       set(value: typeof preview) {
+        // Storybook sets it more than once, to the same preview.
+        if (value === preview) return;
         preview = value;
         const phases: string[] = ((window as { phases?: string[] }).phases = []);
         preview.channel.on("storyRenderPhaseChanged", ({ newPhase }: { newPhase: string }) =>
