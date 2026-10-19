@@ -217,13 +217,23 @@ test("shows the error boundary of a route, and recovers from it", async () => {
   // Next logs the error on the server and React logs it in the browser.
   consoleError.mockImplementation(() => {});
 
-  const { response } = await renderServer({ url: "/broken" });
+  const { response, errors } = await renderServer({ url: "/broken" });
   expect(response.status).toBe(500);
   await expect.element(page.getByRole("heading", { name: "Something went wrong" })).toBeVisible();
+  // What the page reported, which it resolves with. React's production
+  // build reports an error of the server by its digest.
+  const failed = expect.objectContaining({
+    message:
+      inject("build") === "development"
+        ? "The database is down"
+        : expect.stringContaining("Minified React error #441"),
+  });
+  expect(errors).toEqual([failed]);
 
   db.notes.set("broken", { id: "broken", title: "Back up", body: "" });
   await page.getByRole("button", { name: "Try again" }).click();
   await expect.element(page.getByRole("heading", { name: "Back up" })).toBeVisible();
+  expect(errors).toEqual([failed]);
   expect(consoleError).toHaveBeenCalled();
   consoleError.mockClear();
 });

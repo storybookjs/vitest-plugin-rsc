@@ -200,3 +200,77 @@ test("sends nothing more for a page once it is left, also what its router sends 
   // "Failed to fetch RSC payload".
   expect(consoleError).not.toHaveBeenCalled();
 });
+
+test("stops a page load when its signal aborts: it rejects at once, as fetch does, and leaves the page", async () => {
+  const [holding, release] = hold();
+  held.slowWidget = holding;
+  const controller = new AbortController();
+  const load = renderServer({ url: "/slow-start", signal: controller.signal });
+  await expect.poll(() => holding.loading, { timeout: 10_000 }).toBe(true);
+  await expect.element(page.getByRole("heading", { name: "Slow start" })).toBeInTheDocument();
+
+  controller.abort();
+
+  // With the signal's reason, while the client code of the page still loads.
+  await expect(load).rejects.toBe(controller.signal.reason);
+  expect(controller.signal.reason).toMatchObject({ name: "AbortError" });
+  expect(holding.loaded).toBe(false);
+  // Leaving goes on, and `cleanup()` waits for it.
+  await cleanup();
+  await expect.element(page.getByRole("heading", { name: "Slow start" })).not.toBeInTheDocument();
+  await expect.element(page.getByText("Slow widget")).not.toBeInTheDocument();
+
+  // The client code of the page that was left, once it is there, does nothing.
+  release();
+  await expect.poll(() => holding.loaded).toBe(true);
+  await renderServer({ url: "/settings" });
+  await page.getByRole("button", { name: "Use Dutch" }).click();
+  await expect.element(page.getByText("Language: nl")).toBeInTheDocument();
+  await expect.element(page.getByText("Slow widget")).not.toBeInTheDocument();
+});
+
+test("stops the page load of a node while the server renders it, with the reason of the signal", async () => {
+  // The route of the node is loaded once, so that what waits is the proxy.
+  await renderServer(<p>Held node</p>, { url: "/held", proxy: true });
+  const [holding, release] = hold();
+  held.heldProxy = holding;
+  const controller = new AbortController();
+  const load = renderServer(<p>Held node</p>, {
+    url: "/held",
+    proxy: true,
+    signal: controller.signal,
+  });
+  await expect.poll(() => holding.loading, { timeout: 10_000 }).toBe(true);
+
+  controller.abort(new Error("The host moved on"));
+
+  await expect(load).rejects.toThrow("The host moved on");
+  // The next page waits for the request of the one that was left.
+  const next = renderServer(<p>Next node</p>);
+  release();
+  await next;
+  await expect.element(page.getByText("Next node")).toBeInTheDocument();
+  await expect.element(page.getByText("Held node")).not.toBeInTheDocument();
+});
+
+test("opens nothing for a signal that has aborted, and keeps the page that is open", async () => {
+  const signal = AbortSignal.abort();
+
+  await expect(renderServer({ url: "/notes", signal })).rejects.toBe(signal.reason);
+  await expect(renderServer(<p>Not opened</p>, { signal })).rejects.toBe(signal.reason);
+
+  // The page of `beforeEach()`.
+  await page.getByRole("button", { name: "Use Dutch" }).click();
+  await expect.element(page.getByText("Language: nl")).toBeInTheDocument();
+});
+
+test("keeps a page that has opened when its signal aborts later", async () => {
+  const controller = new AbortController();
+  const { errors } = await renderServer(<Counter />, { signal: controller.signal });
+
+  controller.abort();
+
+  await page.getByRole("button", { name: "Count: 0" }).click();
+  await expect.element(page.getByRole("button", { name: "Count: 1" })).toBeInTheDocument();
+  expect(errors).toEqual([]);
+});

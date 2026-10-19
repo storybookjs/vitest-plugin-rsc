@@ -29,7 +29,8 @@ beforeAll(({}, suite) => {
   registry.nodeFiles = () => [...server.config.setupFiles, filepath];
 });
 
-afterEach(cleanup);
+// Without arguments: a hook gets the test's context, which is no options.
+afterEach(() => cleanup());
 // Also before a test: Vitest skips the remaining `afterEach` hooks when one
 // of them throws, as a test's own does when it asserts in it.
-beforeEach(cleanup);
+beforeEach(() => cleanup());
