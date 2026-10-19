@@ -108,8 +108,11 @@ async function hostOf(options: Options) {
   const annotations = await options.presets.apply<PreviewAnnotation[]>("previewAnnotations", []);
   return {
     files: [
-      ...stories.map(({ directory, files }) =>
-        path.posix.join(normalizePath(path.relative(root, path.resolve(directory))), files),
+      // `./` for the root itself: a pattern that starts with `**` is not
+      // relative to the root, it matches a file anywhere.
+      ...stories.map(
+        ({ directory, files }) =>
+          `${normalizePath(path.relative(root, path.resolve(directory))) || "."}/${files}`,
       ),
       path.posix.join(normalizePath(path.relative(root, options.configDir)), "**"),
       frameworkFiles,

@@ -145,6 +145,12 @@ test("the plugin, with Storybook as its host", async () => {
   expect(addons.filter((name) => name !== "@storybook/global")).toEqual(["@storybook/addon-a11y"]);
 });
 
+test("a stories glob at the root of the project matches its files only", async () => {
+  await viteFinal({}, { stories: ["../**/*.stories.tsx"] });
+  const [{ host }] = vitestPluginNext.mock.lastCall as [{ host: { files: string[] } }];
+  expect(host.files[0]).toBe("./**/*.stories.tsx");
+});
+
 test("a Vite config of the project that has the plugin already is an error", async () => {
   // The plugin as a project adds it, so that the check holds its name.
   await expect(viteFinal({ plugins: [vitestPluginRSC()] })).rejects.toThrow(
