@@ -266,7 +266,6 @@ test('gives the host the exports of a file of the host with "use client"', async
     reference: true,
     same: true,
     again: true,
-    kept: true,
     plain: true,
     app: expect.stringContaining(
       '/app/components/counter.tsx has "use client" and is not a file of the host',

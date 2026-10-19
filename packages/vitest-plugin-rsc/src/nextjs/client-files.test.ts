@@ -21,11 +21,12 @@ const isHostFile = (file: string) =>
   /\.test\.tsx$|\/vitest\.setup\.tsx?$|^\/docs\/.*\.mdx$/.test(file) ||
   file.startsWith(`${framework}/`);
 // Vite RSC made the modules of these files client references: they have
-// `"use client"`, also a component of the app, which is not the host's. The
-// URL of a file of the project in the browser layer is its path. One of a dependency is a module of Vite RSC that imports it: by
-// its file, which Vite RSC has the reference by, without Vite's version, or
-// by the name of its package, when the page imports it by that, with the
-// reference by the id.
+// `"use client"`. `/app/counter.tsx` is a file of the app, not the host's.
+// The URL of a file of the project in the browser layer is its path. One of
+// a dependency is a module of Vite RSC that imports it: by its file, which
+// Vite RSC has the reference by, without Vite's version, or by the name of
+// its package, when the page imports it by that, with the reference by the
+// id.
 const proxy = "/@id/__x00__virtual:vite-rsc/";
 const references: Record<string, string> = {
   "/app/frame.test.tsx": "/app/frame.test.tsx",

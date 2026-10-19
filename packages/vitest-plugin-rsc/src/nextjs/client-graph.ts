@@ -49,6 +49,11 @@ const linked = new Map<string, { link: HTMLLinkElement; loaded: Promise<unknown>
 // now, by its reference key.
 const evaluations = new Map<string, object>();
 
+// The URLs of the files of the host that the graph imported, also one whose
+// evaluation failed, which the runner keeps as it does an evaluation:
+// `forgetClientFiles()` has the graph evaluate each again.
+const imported = new Set<string>();
+
 // The exports that each client reference module stands for: the file's last
 // evaluation when the host first asked for the module. The same for the
 // module from then on, also after the file was evaluated again for another.
@@ -94,11 +99,12 @@ type ClientReferences = { default: Record<string, () => Promise<object>> };
  * stylesheets there: see `clientFileCode()` in client-files.ts.
  *
  * Once for each version of the graph, as the browser evaluates a module
- * once: a second import of the file gets the evaluation of the first. A
- * change of a file of the app is a new version, which evaluates the file
- * again, and so is `forgetClientFiles()`, which the plugin's setup file
- * calls before every test file, as Vitest evaluates a setup file and a test
- * file again for each. What the file imports, once for the graph, as the
+ * once: a second import of the file gets the evaluation of the first, or
+ * its error. A change of a module of the browser layer, the file's own
+ * too, is a new version, which evaluates the file again, and so is
+ * `forgetClientFiles()`, which the plugin's setup file calls before every
+ * test file, as Vitest evaluates a setup file and a test file again for
+ * each. What the file imports, once for the graph, as the
  * browser does for what Vitest evaluates in the tab.
  */
 export async function loadClientFile(key: string, builtFile?: string): Promise<void> {
@@ -134,6 +140,7 @@ export async function loadClientFile(key: string, builtFile?: string): Promise<v
   registry.browserRequire = browserRequire;
   // The runner keeps the evaluation of the file until a change, above, or
   // `forgetClientFiles()` invalidated it.
+  imported.add(key);
   evaluations.set(key, await graph.import(key));
   await linkStylesheets(await stylesheetsOf(key, builtFile));
 }
@@ -191,17 +198,18 @@ async function linkStylesheets(urls: string[]): Promise<void> {
 }
 
 /**
- * Forgets what the files of the host did in the tab: the graph evaluates
- * each again the next time it loads, and the stylesheets they linked go.
- * The plugin's setup file calls this before every test file. The graph
- * keeps what the files import.
+ * Forgets what the files of the host did in the tab: with a dev server the
+ * graph evaluates each again the next time it loads, also one that failed,
+ * and the stylesheets they linked go. The plugin's setup file calls this before every test file,
+ * under Vitest. The graph keeps what the files import, and a module whose
+ * line ran before still gets the evaluation it loaded.
  */
 export function forgetClientFiles(): void {
-  for (const key of evaluations.keys()) {
-    const own = graph?.evaluatedModules.getModuleByUrl(key);
+  for (const url of imported) {
+    const own = graph?.evaluatedModules.getModuleByUrl(url);
     if (own) graph?.evaluatedModules.invalidateModule(own);
   }
-  evaluations.clear();
+  imported.clear();
   for (const { link } of linked.values()) link.remove();
   linked.clear();
 }

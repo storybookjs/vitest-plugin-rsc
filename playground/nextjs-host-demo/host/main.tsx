@@ -47,11 +47,10 @@ await show(async () => {
     const { renderClient } = await loadClientModule(await import("./render-client.tsx"));
     renderClient(loaded.Badge, container);
     const plain = await import("./state.ts");
-    // The file imported again with a timestamp, as Vite's client imports a
-    // module: another module of the browser, whose prefix gets the
-    // evaluation of the first, as the file has not changed. Vite's dev
-    // server takes the timestamp out of the id. A static build has no server
-    // to ask for such a module.
+    // The file imported again with a query that Vite's dev server takes out
+    // of the id: another module in the host's document, whose line gets the
+    // evaluation of the first, as no module has changed. A static build has
+    // no server to ask for such a module.
     const update = `./client-module.tsx?t=${Date.now()}`;
     const again: typeof reference | undefined = import.meta.env.DEV
       ? await import(/* @vite-ignore */ update)
@@ -60,7 +59,6 @@ await show(async () => {
       reference: Reflect.get(reference.Badge, "$$typeof") === Symbol.for("react.client.reference"),
       same: (await loadClientModule(reference)) === loaded,
       again: again && (await loadClientModule(again)) === loaded,
-      kept: (await loadClientModule(reference)) === loaded,
       plain: (await loadClientModule(plain)) === plain,
       // A file of the app with the directive.
       app: await loadClientModule(await import("../app/components/counter.tsx")).then(

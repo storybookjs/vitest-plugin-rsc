@@ -16,8 +16,6 @@ export type HostWindow = {
      * same exports. Not in a static build, which has one module of the file.
      */
     again?: boolean;
-    /** Whether the first module kept its own after that. */
-    kept: boolean;
     /** Whether a module without the directive came back as it is. */
     plain: boolean;
     /** What it did for a file of the app: its error. */
