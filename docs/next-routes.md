@@ -85,6 +85,8 @@ Here each layer is a Vite environment, with the aliases and constants Next gives
 
 Vite's `resolve.alias` is one table for the three layers, and its entries go before Next's: an alias of `next/headers` to a mock applies to an import of `next/headers` in every layer, with a dev server and in a build. So does a resolver of the app's with `enforce: "pre"` that goes before `vitestPluginNext()`. Both replace a module of Next by the specifier the app imports it by: Next's own files import each other by a relative path, which an alias does not see.
 
+A layer pre-bundles a dependency only under the name it resolves it to. An entry of `optimizeDeps.include`, the plugin's own, the app's or another plugin's, becomes the specifier of the layer: `react` is Next's React of that layer, pre-bundled once. With a dev server, Vite looks for a bare import that an alias matches among the pre-bundled dependencies, by the name it is imported by, before any plugin of the app resolves it. So an alias of `react` to itself changes nothing, where npm React under the name `react` would be a second React in the layer.
+
 Where Next's bundler config moves a module to another layer, the plugin does the same. The route module is created by the `rsc` layer but belongs to `ssr`. The route's request handler is in `rsc` too, next to the page, and makes the route module with the `ssr` layer's class. Client Components load once for `ssr`, to render HTML, and once for `browser`. A route handler is entirely in `rsc`: its `route.ts`, its route module and its request handler.
 
 ## Development Or Production
