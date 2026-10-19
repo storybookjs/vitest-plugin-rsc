@@ -92,9 +92,22 @@ test("the working directory from the root, for the story files' stylesheets", as
 
 test("the plugin, with Storybook as its host", async () => {
   vitestPluginNext.mockClear();
+  // The preview entries of addons in `node_modules`, as the presets register
+  // them, one of the project, and the renderer's.
+  const entry = (name: string, dependencies: object, peerDependencies: object) => {
+    const dir = path.join(root, "node_modules", name);
+    fs.mkdirSync(path.join(dir, "dist"), { recursive: true });
+    fs.writeFileSync(
+      path.join(dir, "package.json"),
+      JSON.stringify({ name, dependencies, peerDependencies }),
+    );
+    const bare = `${name}/dist/preview.js`;
+    return { bare, absolute: path.join(root, "node_modules", bare) };
+  };
   const previewAnnotations = [
-    { bare: "@storybook/addon-a11y/preview", absolute: "/a11y/preview.js" },
-    { bare: "@storybook/react/entry-preview", absolute: "/react/entry-preview.js" },
+    entry("@storybook/addon-a11y", { "axe-core": "*" }, { storybook: "*" }),
+    entry("@storybook/addon-docs", { react: "*", "react-dom": "*" }, { storybook: "*" }),
+    entry("@storybook/react", {}, { react: "*", storybook: "*" }),
     "/project/annotations.js",
   ];
   await viteFinal(
@@ -116,8 +129,8 @@ test("the plugin, with Storybook as its host", async () => {
     new URL("./server.ts", import.meta.resolve("@storybook/nextjs-vite-rsc/preset")),
   );
   expect((host.files[2] as RegExp).test(server)).toBe(true);
-  // Storybook's preview runtime and the previews of the addons, not the
-  // renderer's, which render with React.
+  // Storybook's preview runtime and the packages of the addons, not one that
+  // depends on React, which it renders with: addon-docs and the renderer.
   expect(host.packages).toEqual(
     expect.arrayContaining([
       "storybook/test",
@@ -126,11 +139,10 @@ test("the plugin, with Storybook as its host", async () => {
       "storybook/internal/csf",
       "storybook/internal/instrumenter",
       "storybook/open-service",
-      "@storybook/addon-a11y/preview",
     ]),
   );
-  expect(host.packages.filter((name) => name.startsWith("@storybook/react"))).toEqual([]);
-  expect(host.packages.filter((name) => name.startsWith("/"))).toEqual([]);
+  const addons = host.packages.filter((name) => name.startsWith("@storybook/"));
+  expect(addons.filter((name) => name !== "@storybook/global")).toEqual(["@storybook/addon-a11y"]);
 });
 
 test("a Vite config of the project that has the plugin already is an error", async () => {

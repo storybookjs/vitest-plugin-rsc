@@ -92,6 +92,22 @@ const body = (canvas: Frame) =>
 const atPage = { classes: "", margin: "32px", root: false };
 const atComponent = { classes: "sb-main-padded sb-show-main", margin: "0px", root: true };
 
+// Both previews import a11y, and Storybook's runtime is in both layers: the
+// browser layer has the page's instance of each, which listens to the
+// channel once. A second instance would run a11y twice for the panel's
+// rerun, and add a second root of highlights.
+test("the runtime and an addon that both previews import listen once", async ({ page }) => {
+  const canvas = await openStory(page, site!.url, "press-button--pressed");
+  expect(await storyRun(page, canvas, "press-button--pressed")).toEqual(passed);
+  expect(await runStory(page, canvas, "greeting--default")).toEqual(passed);
+  const events = ["storybook/a11y/manual", "storybook/highlight/add"];
+  const listeners = await canvas.evaluate(
+    (names) => names.map((name) => window.__STORYBOOK_PREVIEW__.channel.listenerCount(name)),
+    events,
+  );
+  expect(listeners).toEqual([1, 1]);
+});
+
 test("a page story and a Server Action", async ({ page }) => {
   const canvas = await openStory(page, site!.url, "home--home");
   expect(await storyRun(page, canvas, "home--home")).toEqual(passed);

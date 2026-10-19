@@ -8,6 +8,7 @@ import { test as hostTest, type PageErrors } from "./host.ts";
 type Channel = {
   emit(event: string, payload: object): void;
   on(event: string, listener: (...args: never[]) => void): void;
+  listenerCount(event: string): number;
 };
 
 type Preview = {

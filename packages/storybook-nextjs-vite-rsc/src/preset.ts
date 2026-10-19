@@ -1,3 +1,4 @@
+import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { hasVitePlugins, type ViteFinal } from "@storybook/builder-vite";
@@ -125,11 +126,29 @@ async function hostOf(options: Options) {
       "storybook/internal/csf",
       "storybook/internal/instrumenter",
       "storybook/open-service",
-      // The preview of an addon, as `{ bare, absolute }`. The renderer's
-      // render with React.
-      ...annotations
-        .map((entry) => (typeof entry === "string" ? entry : entry.bare))
-        .filter((bare) => !path.isAbsolute(bare) && !bare.startsWith("@storybook/react/")),
+      ...new Set(annotations.flatMap(addonOf)),
     ],
   };
+}
+
+// The package of an addon, by the preview entry that a preset registers:
+// `{ bare, absolute }` for a file in `node_modules`, whose `bare` is its
+// path there, like `@storybook/addon-a11y/dist/preview.js`. The package is
+// every module of it, so the root that a preview imports, `import a11y from
+// "@storybook/addon-a11y"`, and the entry that it imports are one instance,
+// whose listeners of the channel are there once. Not a package that depends
+// on React: its preview may render with React, like addon-docs's docs page
+// or the renderer's stories, and that React is the layer's own. Such an
+// addon is evaluated in each layer that imports it.
+function addonOf(entry: PreviewAnnotation): string[] {
+  if (typeof entry === "string") return [];
+  const bare = normalizePath(entry.bare);
+  const absolute = normalizePath(entry.absolute);
+  if (!absolute.endsWith(`/${bare}`)) return [];
+  const name = /^(?:@[^/]+\/)?[^/]+/.exec(bare)![0];
+  const dir = absolute.slice(0, absolute.length - bare.length) + name;
+  const { dependencies, peerDependencies } = JSON.parse(
+    fs.readFileSync(path.join(dir, "package.json"), "utf8"),
+  ) as { dependencies?: object; peerDependencies?: object };
+  return "react" in { ...dependencies, ...peerDependencies } ? [] : [name];
 }
