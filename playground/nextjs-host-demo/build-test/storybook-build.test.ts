@@ -122,7 +122,7 @@ test("extract() of the preview fails with the error of a file that does not load
     Object.keys(await (window.__STORYBOOK_PREVIEW__ as Extracting).extract()),
   );
   await expect(extract).rejects.toThrow(
-    /has no story of meta\.story\(\)|so its stories render in the browser|so it is server code|declares the globals|defineServerPreview\(\) got a beforeAll|preview\.meta is not a function/,
+    /has no story of meta\.story\(\)|so its stories render in the browser|so it is server code|declares the globals|defineServerPreview\(\) got a beforeAll/,
   );
 });
 

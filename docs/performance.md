@@ -4,7 +4,7 @@ This repo keeps three benchmark layers:
 
 - Repo-local Vitest command benchmarks are the portable baseline. They run in CI, produce JSON artifacts, and cover `playground/rsc-vitest-demo` and the Next.js notes demo, which doubles as the comprehensive acceptance app.
 - An optional Vitest bench micro layer for render-helper hotspots. It is supporting evidence only; the main acceptance signal is end-to-end Vitest browser command runtime.
-- An optional page load benchmark of the static build of `playground/nextjs-e2e-demo`, `pnpm perf:static`: see [A Static Build Per Page Load](#a-static-build-per-page-load).
+- Optional page load benchmarks of a static build: of `playground/nextjs-e2e-demo`, `pnpm perf:static`, and of the Storybook of `playground/nextjs-notes-demo`, `pnpm perf:storybook`. See [A Static Build Per Page Load](#a-static-build-per-page-load).
 
 The suite is intentionally informational for now. It fails when benchmark commands fail, but it does not enforce timing thresholds or block PRs on small regressions.
 
@@ -53,16 +53,28 @@ A host that publishes a static build can load every page of it in an iframe of i
 
 ```sh
 pnpm perf:static
-pnpm perf:static --iterations 3 --builds production --routes /,/fonts
+pnpm perf:static --iterations 3 --builds production --routes /,/fonts --profiles cable
 ```
 
-It builds `playground/nextjs-e2e-demo` with `vite build` twice, with `VITEST_PLUGIN_RSC_BUILD=development` and `production`, the default of `vite build`, into `artifacts/perf/local/static-build/dist-*`. It serves each from a server of files and opens the host page with Playwright's Chromium, for six routes of the build test and for a node of the host. Each iteration opens a route twice: cold, in a new browser context, and warm, in a new page of the same context. It writes `results.json`, with every request of every load, and `summary.md`, the medians, which it also prints.
+It builds `playground/nextjs-e2e-demo` with `vite build` twice, with `VITEST_PLUGIN_RSC_BUILD=development` and `production`, the default of `vite build`, into `artifacts/perf/local/static-build/dist-*`. It serves each from a server of files and opens the host page with Playwright's Chromium, for six routes of the build test, for a node of the host, and for `client.html`, a page of the host that renders a Client Component with `loadClientModule()` and opens no page of the app. Each iteration opens a route twice: cold, in a new browser context, and warm, in a new page of the same context. It writes `results.json`, with every request of every load, and `summary.md`, the medians, which it also prints.
 
-- Bytes and requests come from CDP's Network domain: what came over the wire, headers included, and what came from the cache. The server of files does not compress, so the bytes are uncompressed. The gzip column is what the same files would be gzipped, computed with `node:zlib`, and the build table has the gzip and brotli sizes of each `modules.json`.
-- The server sends every file with an `ETag`. The files under `assets/` and `_next/static/` have a hash in their names and are immutable for the browser. Any other file is `no-cache`, so a warm load gets a 304 for it, as for `modules.json`.
-- Ready is the time from the start of the navigation until the host sets `__hostState` to `"ready"`. The load counts what the page fetches after that until the network is quiet, as a visual test service waits for images and fonts. Busy time is how long Chromium's main thread was busy until then, its `TaskDuration`. `results.json` also has its `ScriptDuration`, which leaves out what runs after an `await` of a fetch, most of the host, so take a CPU profile to see what the time is spent on. In production the load includes Next's prefetch of the links on the page.
-- The server is on localhost, so the times are about the CPU. Bytes and requests are what a network adds.
+- Each load runs over each network of `--profiles`, both by default. `local` is localhost as it is: a request costs next to nothing, so the times are about the CPU. `cable` is a fast line as CDP's `Network.emulateNetworkConditions` makes one: 50 Mbit/s down, 10 up, and 20 ms more for every request, so the round trips show.
+- The server serves the build as the README has a static host serve it, in [A Static Build](../README.md#a-static-build): compressed with brotli, the files under `assets/`, `_next/static/` and `vitest-plugin-rsc/*/assets/` immutable, every other file with an `ETag` and `no-cache`, so a warm load gets a 304 for it, as for `modules.json`. Bytes and requests come from CDP's Network domain: what came over the wire, headers included, and what came from the cache. The build table has the gzip and brotli sizes of each `modules.json`.
+- Ready is the time from the start of the navigation until the host sets `__hostState` to `"ready"`. Styled is the first frame with text of the page, beyond the host's status line, and every stylesheet of the document loaded. The load counts what the page fetches after ready until the network is quiet, as a visual test service waits for images and fonts. Busy time is how long Chromium's main thread was busy until ready, its `TaskDuration`. `results.json` also has its `ScriptDuration`, which leaves out what runs after an `await` of a fetch, most of the host, so take a CPU profile to see what the time is spent on. In production the load includes Next's prefetch of the links on the page.
+- Round trips: the host marks when it asks for the page of the app, `performance.mark("host-open")` in `host/main.tsx`. From there the summary has how long after it the page asked for the first script of the route, how long its first stylesheet, which comes with the HTML of the route, waited after that (negative when it comes first), and the serial waves of scripts in between: a script that starts after one of its wave has ended may have waited for it, and starts the next wave. A route without CSS counts its waves until ready. It also has the requests of each layer's `modules.json`, the 304s among them, and when the last ended. `client.html` fetches a file of its own, `host.json`, as a framework fetches its index: the summary has when that request started after the ssr layer's file ended, negative when the page did not wait for the layer.
+- Transfer-bound and chain-bound apart, until ready: wire ms is the time the bytes on the wire take at the download rate of the network (none on localhost), and only fewer bytes make it shorter. Load waves are the serial waves of the requests to the server, and idle ms the time between them in which no request was in flight; fewer round trips make those shorter. A request that the cache answers costs no round trip and is no wave.
+- The server of files speaks HTTP/1.1, so Chromium sends at most six requests to it at once: a host with HTTP/2 gains more from requests that start together. The probe of the styled mark reads the page's text every frame, which the busy time includes.
+- The order of the loads in an iteration is shuffled with `--seed`, 1 by default, so that a slow minute of the machine falls on no load in particular, and a run can be made again in the same order. The browser is the Chromium of the `playwright` of the lockfile; the summary names its version.
 - The run fails when the host reports an error, with the errors of the page. Other errors of a page are in the summary. `--skip-build` measures the builds that are there.
+
+The same for the Storybook of the notes demo, which loads a story in a tab of its own, `iframe.html?id=…`, as Chromatic does:
+
+```sh
+pnpm perf:storybook
+pnpm perf:storybook --stories ui-button--pressed --profiles local
+```
+
+It builds it as the Chromatic workflow does, `pnpm build` of the packages and `storybook build` against them, into `artifacts/perf/local/storybook/storybook-static`, and measures a story of a file with `"use client"`, `ui-button--pressed`, a story of a page of the app, `pages-notes--with-notes`, and a docs page, `ui-button--docs`. Each loads cold and warm over each network, from the same server and in an order of the seed, as above. Styled is the first frame with text of the story, and not Storybook's "preparing", with every stylesheet loaded, and done is when the render ended with its play function, or the docs page shows every story on it rendered, as the notes demo's `e2e/stories.ts` waits for them. The summary has the bytes by kind, the requests of each `modules.json`, wire ms, waves and idle ms until done, and when Storybook asked for its `index.json` after the ssr layer's file ended; `results.json` has every request. The run fails on a story that does not end as `finished`. `--skip-build` measures the build that is there.
 
 ## Comparing Branches
 

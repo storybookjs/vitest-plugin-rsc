@@ -82,14 +82,12 @@ const runtimePackages = [
   "storybook/open-service",
 ];
 
-// Pre-bundled before the first story. Storybook's runtime imports them from
-// a module that is pre-bundled itself, where Vite's scan of the story files
-// does not look: it would find them as the first story loads, and reload the
-// preview, at the URL of a page that a server story has open.
-export const optimizeViteDeps = async (existing: string[] = []) => [
-  ...existing,
-  ...runtimePackages,
-];
+// Pre-bundled before the first story. They are imported from modules that
+// are pre-bundled themselves, which Vite's scan of the story files does not
+// read: it would find them as the first story loads, and reload the preview,
+// at the URL of a page that a server story has open. Storybook concatenates
+// this list with those of the other presets.
+export const optimizeViteDeps = runtimePackages;
 
 export const viteFinal: ViteFinal = async (config, options) => {
   const plugins = config.plugins ?? [];

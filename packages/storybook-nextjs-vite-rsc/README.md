@@ -44,7 +44,9 @@ framework: {
     builder: { viteConfigPath: ".storybook/vite.config.ts" },
     // The options of vitestPluginNext() of the same names.
     build: "production",
-    browserModules: ["msw/**"],
+    // Glob patterns from the root; one for a package starts
+    // with `**`, as it matches the package's real path.
+    browserModules: ["**/node_modules/msw/**"],
   },
 },
 ```
@@ -289,8 +291,8 @@ server code, as any package that a route imports: `typeof window`,
 addon that depends on React, only for its panel in the manager, is such a
 package, so a preview of it that checks for the browser that way does
 nothing for server stories, without an error. Name it in `browserModules`,
-as `["@storybook/addon-x/**"]`, to give its preview the browser's globals
-for server stories.
+as `["**/node_modules/@storybook/addon-x/**"]`, to give its preview the
+browser's globals for server stories.
 
 ## After A Change
 

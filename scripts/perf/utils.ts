@@ -39,6 +39,15 @@ export function numberOption(value: string | undefined, fallback: number): numbe
   return parsed;
 }
 
+/** The items of a comma-separated option, or `undefined` for none. */
+export function list(value: string | undefined): string[] | undefined {
+  const items = value
+    ?.split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
+  return items?.length ? items : undefined;
+}
+
 export function formatSeconds(value: unknown): string {
   if (typeof value !== "number" || !Number.isFinite(value)) return "n/a";
   return `${value.toFixed(3)}s`;
