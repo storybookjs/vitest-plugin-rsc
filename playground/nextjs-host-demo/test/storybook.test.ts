@@ -83,13 +83,13 @@ const body = (canvas: Frame) =>
   canvas.evaluate(() => ({
     classes: [...document.body.classList].sort().join(" "),
     margin: getComputedStyle(document.body).margin,
-    root: !!document.getElementById("storybook-root"),
+    root: document.getElementById("storybook-root")?.tagName,
   }));
 
 // A page owns the `<body>`, with the app's style, without Storybook's
 // classes.
-const atPage = { classes: "", margin: "32px", root: false };
-const atComponent = { classes: "sb-main-padded sb-show-main", margin: "0px", root: true };
+const atPage = { classes: "", margin: "32px", root: "BODY" };
+const atComponent = { classes: "sb-main-padded sb-show-main", margin: "0px", root: "DIV" };
 
 test("a page story and a Server Action", async ({ page }) => {
   const canvas = await openStory(page, site!.url, "home--home");

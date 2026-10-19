@@ -132,14 +132,8 @@ export async function renderServerStory(
         hostFiles: hostFilesOf(context.parameters.fileName as string | undefined),
         ...(layouts ? { layouts } : { container: canvasElement }),
       };
-  // A page, and a component in the layouts, own the document, so the render
-  // and `play` look in all of it: in `<html>`, which stays as pages come and
-  // go, each with a `<body>` of its own.
+  // A page, and a component in the layouts, own the document.
   const ownsDocument = page || layouts === true;
-  if (ownsDocument) {
-    const html = document.documentElement;
-    Object.assign(context, { canvasElement: html, canvas: within(html) });
-  }
   const { abortSignal } = context;
   const rendering = (async () => {
     // What the story, a decorator or Flight threw on the server: Next shows
@@ -173,7 +167,16 @@ export async function renderServerStory(
     } finally {
       window.removeEventListener("error", report);
     }
-    if (!ownsDocument) showMain();
+    if (!ownsDocument) {
+      showMain();
+      return;
+    }
+    // The root of a story that owns the document is its `<body>`: the
+    // element that Storybook's convention names `storybook-root`, which
+    // `play` and whatever looks for the story's root find.
+    const { body } = document;
+    body.id = "storybook-root";
+    Object.assign(context, { canvasElement: body, canvas: within(body) });
   })();
   await untilAborted(rendering, abortSignal);
 }
