@@ -274,6 +274,24 @@ function createLayerResolver(getProject: () => NextProject, layer: NextLayer) {
     return current;
   }
 
+  /**
+   * The name this layer pre-bundles an entry of `optimizeDeps.include` under:
+   * the specifier `plugin()` resolves it to, or none for a module the layer
+   * leaves empty, bridges, or imports by its file.
+   */
+  function preBundledName(entry: string): string | undefined {
+    // Vite's `parent > dependency`: the layer resolves the dependency alike
+    // from any parent, and a specifier of Next from the project.
+    const source = entry.slice(entry.lastIndexOf(">") + 1).trim();
+    const target = normalize(source);
+    if (target === false || target.startsWith("\0")) return;
+    // A package that Next depends on, like `styled-jsx`, found by its name
+    // from Next. Not a file of Next, like its polyfill of `object-assign`.
+    if (isDependencyOfNext(target)) return entry;
+    if (path.isAbsolute(target)) return;
+    return target === source ? entry : target;
+  }
+
   function plugin(): Plugin {
     return {
       name: `vitest-plugin-rsc:next-resolve:${layer}`,
@@ -368,7 +386,7 @@ function createLayerResolver(getProject: () => NextProject, layer: NextLayer) {
     };
   }
 
-  return { normalize, nextFile, toSpecifier, isDependencyOfNext, plugin };
+  return { normalize, nextFile, toSpecifier, isDependencyOfNext, preBundledName, plugin };
 }
 
 type LayerResolver = ReturnType<typeof createLayerResolver>;
@@ -903,12 +921,35 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
           });
         });
       },
-      // After every `config` hook: the plugin of ../index.ts has Vite make
-      // `process.env` an empty object in the layers, for a dev server.
-      configEnvironment(name, _config, { command }) {
-        if (command === "build" && Object.values(environmentOf).includes(name)) {
-          return { keepProcessEnv: true };
-        }
+      // After the `config` hooks and the `configEnvironment` hooks without
+      // `order: "post"`, which add to `optimizeDeps.include` of an
+      // environment: the plugin of ../index.ts, a host, the top-level
+      // `optimizeDeps` of the config, which Vite gives the `client` environment.
+      configEnvironment: {
+        order: "post",
+        handler(name, config, { command }) {
+          const layer = layers.find((layer) => environmentOf[layer] === name);
+          if (!layer) return;
+          // A dependency is pre-bundled under the name the layer resolves it
+          // to, once. With a dev server, Vite looks for a bare import that an
+          // alias matches, even `react` to itself, among the pre-bundled
+          // dependencies by that name, before any plugin of the app resolves
+          // it: `react` pre-bundled as npm React would be a second React. In
+          // place: Vite concatenates the lists it merges.
+          const optimizeDeps = config.optimizeDeps;
+          if (optimizeDeps?.include) {
+            optimizeDeps.include = [
+              ...new Set(
+                optimizeDeps.include.flatMap(
+                  (entry) => resolvers[layer].preBundledName(entry) ?? [],
+                ),
+              ),
+            ];
+          }
+          // The plugin of ../index.ts has Vite make `process.env` an empty
+          // object in the layers, for a dev server.
+          if (command === "build") return { keepProcessEnv: true };
+        },
       },
       // What the app has and does not get here: said once, when a run starts.
       configResolved(config) {
