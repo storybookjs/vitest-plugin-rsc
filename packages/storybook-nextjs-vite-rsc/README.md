@@ -369,3 +369,7 @@ for both kinds.
   that block until the preview loads again.
 - Next's router in a client story: `useRouter()` throws there, and
   `usePathname()` returns `null`. A server story has the router.
+- Storybook's Vitest addon and portable stories (a story's `run()` in a
+  Vitest test) are not supported yet: nothing tests them. Outside
+  Storybook a server story leaves its stylesheets to the plugin's default,
+  those of the setup files and the test file.
