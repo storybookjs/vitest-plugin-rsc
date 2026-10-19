@@ -15,6 +15,7 @@ const state = window as {
   __hostResponse?: HostResponse;
   __hostOpen?: (url: string, node?: string, files?: string[]) => Promise<HostResponse>;
   __hostRerender?: (node: string) => Promise<void>;
+  __hostFetched?: number;
 };
 
 // Opens a page of the app, the way a test calls `renderServer()`, or renders
@@ -38,13 +39,22 @@ state.__hostOpen = async (url, node, files) => {
 
 // What the page shows first is in its query: `?url=/notes/7`, or
 // `?url=/notes/7&node=7` for the node, with `&file=…` for each of its files.
+// With `?fetch=/_next/static/…` it opens no page, and fetches that file
+// instead, as a host does that renders no route.
 const query = new URLSearchParams(window.location.search);
 try {
-  state.__hostResponse = await state.__hostOpen(
-    query.get("url") ?? "/",
-    query.get("node") ?? undefined,
-    query.has("file") ? query.getAll("file") : undefined,
-  );
+  const fetched = query.get("fetch");
+  if (fetched !== null) {
+    const response = await fetch(fetched);
+    await response.arrayBuffer();
+    state.__hostFetched = response.status;
+  } else {
+    state.__hostResponse = await state.__hostOpen(
+      query.get("url") ?? "/",
+      query.get("node") ?? undefined,
+      query.has("file") ? query.getAll("file") : undefined,
+    );
+  }
   state.__hostState = "ready";
 } catch (error) {
   state.__hostState = "error";
