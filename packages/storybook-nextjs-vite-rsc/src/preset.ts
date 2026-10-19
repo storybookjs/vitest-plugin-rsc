@@ -74,6 +74,23 @@ export const env: PresetProperty<"env"> = async (existing, options) => ({
 const frameworkDir = normalizePath(fileURLToPath(new URL(".", import.meta.url)));
 const frameworkFiles = new RegExp(`^${frameworkDir.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`);
 
+// Storybook's packages of the preview that are no global of its builder,
+// one instance in both layers (`hostOf()`).
+const runtimePackages = [
+  "storybook/internal/csf",
+  "storybook/internal/instrumenter",
+  "storybook/open-service",
+];
+
+// Pre-bundled before the first story. Storybook's runtime imports them from
+// a module that is pre-bundled itself, where Vite's scan of the story files
+// does not look: it would find them as the first story loads, and reload the
+// preview, at the URL of a page that a server story has open.
+export const optimizeViteDeps = async (existing: string[] = []) => [
+  ...existing,
+  ...runtimePackages,
+];
+
 export const viteFinal: ViteFinal = async (config, options) => {
   const plugins = config.plugins ?? [];
   if (
@@ -119,9 +136,7 @@ async function hostOf(options: Options) {
     ],
     packages: [
       ...Object.keys(globalsNameReferenceMap),
-      "storybook/internal/csf",
-      "storybook/internal/instrumenter",
-      "storybook/open-service",
+      ...runtimePackages,
       ...new Set(annotations.flatMap(addonOf)),
     ],
   };

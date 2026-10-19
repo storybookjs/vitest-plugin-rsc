@@ -2,6 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { globalsNameReferenceMap } from "storybook/internal/preview/globals";
 import type { Plugin } from "vite";
 import { afterAll, expect, test, vi } from "vitest";
 import * as preset from "@storybook/nextjs-vite-rsc/preset";
@@ -143,6 +144,17 @@ test("the plugin, with Storybook as its host", async () => {
   );
   const addons = host.packages.filter((name) => name.startsWith("@storybook/"));
   expect(addons.filter((name) => name !== "@storybook/global")).toEqual(["@storybook/addon-a11y"]);
+});
+
+test("Storybook's packages that the layers share and its builder has no global for are pre-bundled first", async () => {
+  await viteFinal({}, {});
+  const [{ host }] = vitestPluginNext.mock.lastCall as [{ host: { packages: string[] } }];
+  const globals = Object.keys(globalsNameReferenceMap);
+  const runtime = host.packages.filter((name) => name.startsWith("storybook/"));
+  expect(await preset.optimizeViteDeps(["react"])).toEqual([
+    "react",
+    ...runtime.filter((name) => !globals.includes(name)),
+  ]);
 });
 
 test("a stories glob at the root of the project matches its files only", async () => {
