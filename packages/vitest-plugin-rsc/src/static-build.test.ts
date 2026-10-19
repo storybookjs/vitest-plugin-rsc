@@ -65,14 +65,19 @@ const hostModule = (specifier: string) => `/@id/__x00__vitest-plugin-rsc/host-mo
 // The plugin as a build has it, in a project of its own: the config of Vite
 // that it asks for, and an app builder that says what it was asked to build.
 // A build of a layer starts as Vite starts it, and leaves the bundle of
-// `bundles` for that layer. The host's build goes to `dist`, as the config
-// has it: relative to the root, which is not the directory of the process.
-// With the layers of Next.js, and the files of `emitted`, unless `rsc` says
-// it is `vitestPluginRSC()` on its own.
+// `bundles` for that layer, with the ids of `graphs` for its module graph.
+// The host's build goes to `dist`, as the config has it: relative to the
+// root, which is not the directory of the process. With the layers of
+// Next.js, and the files of `emitted`, unless `rsc` says it is
+// `vitestPluginRSC()` on its own.
 function setup(
   bundles: Record<string, Bundle> = {},
   emitted: Record<string, string> = {},
-  { onwarn, rsc = false }: { onwarn?: (...args: any[]) => void; rsc?: boolean } = {},
+  {
+    onwarn,
+    rsc = false,
+    graphs = {},
+  }: { onwarn?: (...args: any[]) => void; rsc?: boolean; graphs?: Record<string, string[]> } = {},
 ) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "static-build-"));
   onTestFinished(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -133,7 +138,14 @@ function setup(
         write: environments[name]!.config.build.write,
       });
       (plugin.buildStart as Hook).call({ environment: { name, mode: "build" } });
-      call(plugin.generateBundle, name, {}, bundles[name] ?? {});
+      (plugin.generateBundle as { handler: Hook }).handler.call(
+        {
+          environment: { name, mode: "build" },
+          getModuleIds: () => (graphs[name] ?? []).values(),
+        },
+        {},
+        bundles[name] ?? {},
+      );
     },
   };
   const warnings = (warning: Warning) => {
@@ -547,16 +559,28 @@ test("tells the page where the layers are from the directory of the build", () =
 });
 
 // The modules of the page that the browser layer imports, like a package of
-// the host, are externals of its chunks, which its scan finds. The rsc layer,
-// the host's build, lists them, to import each as the host's own scripts do:
-// see host-module.ts.
+// the host, are externals of its chunks, which the module graph of its scan
+// reaches. The rsc layer, the host's build, lists them, to import each as the
+// host's own scripts do: see host-module.ts.
 test("lists the modules of the page that the scan of the browser layer finds", async () => {
   const entry = "vitest-plugin-rsc/react_client/entry.js";
-  const { plugin, builder } = setup({
-    react_client: {
-      [entry]: chunk(entry, "", [hostModule("host-ui/test")], [hostModule("host-report")]),
+  const { plugin, builder } = setup(
+    {
+      react_client: {
+        [entry]: chunk(entry, "", [hostModule("host-ui/test")], [hostModule("host-report")]),
+      },
     },
-  });
+    {},
+    {
+      graphs: {
+        react_client: [
+          "vitest-plugin-rsc/nextjs/client",
+          hostModule("host-ui/test"),
+          hostModule("host-report"),
+        ],
+      },
+    },
+  );
 
   await (plugin.buildApp as Hook)(builder);
 
@@ -575,15 +599,36 @@ test("lists the modules of the page that the scan of the browser layer finds", a
   expect((plugin.load as Hook).call(inDev, id)).toBe("export default undefined;");
 });
 
-test("says which module of the page the scan of the browser layer did not find", async () => {
+// A module of a package that says it has no side effects, which the scan
+// cut down to its imports: its chunks drop it and what only it imports, as
+// nothing binds an export of it. The build of the layer keeps it for the
+// export it uses.
+test("lists a module of the page that the scan's graph reaches and its output dropped", async () => {
   const entry = "vitest-plugin-rsc/react_client/entry.js";
-  const { plugin, builder } = setup({
-    react_client: { [entry]: chunk(entry, "", [hostModule("host-report")]) },
-  });
+  const { plugin, builder } = setup(
+    { react_client: { [entry]: chunk(entry, "", [hostModule("host-report")]) } },
+    {},
+    {
+      graphs: {
+        react_client: [
+          "vitest-plugin-rsc/nextjs/client",
+          "/node_modules/ui-kit/tagged.js",
+          hostModule("host-report"),
+          hostModule("host-ui/test"),
+        ],
+      },
+    },
+  );
   await (plugin.buildApp as Hook)(builder);
 
-  // A build of the layer that imports one more than its scan did.
-  const generate = () =>
+  expect(call(plugin.load, "client", hostModules)).toBe(
+    `export default {\n` +
+      `  "${hostModule("host-report")}": () => import("\\u0000vitest-plugin-rsc/host-module/host-report"),\n` +
+      `  "${hostModule("host-ui/test")}": () => import("\\u0000vitest-plugin-rsc/host-module/host-ui/test"),\n` +
+      `};\n`,
+  );
+  // The build of the layer, which imports it.
+  expect(() =>
     (plugin.generateBundle as { handler: Hook }).handler.call(
       {
         environment: { name: "react_client", mode: "build" },
@@ -593,6 +638,31 @@ test("says which module of the page the scan of the browser layer did not find",
       },
       {},
       { [entry]: chunk(entry, "", [hostModule("host-report"), hostModule("host-ui/test")]) },
+    ),
+  ).not.toThrow();
+});
+
+test("says which module of the page the scan of the browser layer did not find", async () => {
+  const entry = "vitest-plugin-rsc/react_client/entry.js";
+  const { plugin, builder } = setup(
+    { react_client: { [entry]: chunk(entry, "", [hostModule("host-report")]) } },
+    {},
+    { graphs: { react_client: ["vitest-plugin-rsc/nextjs/client", hostModule("host-report")] } },
+  );
+  await (plugin.buildApp as Hook)(builder);
+
+  // A build of the layer that imports one more than its scan's graph reached,
+  // with `import()`.
+  const generate = () =>
+    (plugin.generateBundle as { handler: Hook }).handler.call(
+      {
+        environment: { name: "react_client", mode: "build" },
+        error(message: string) {
+          throw new Error(message);
+        },
+      },
+      {},
+      { [entry]: chunk(entry, "", [hostModule("host-report")], [hostModule("host-ui/test")]) },
     );
   expect(generate).toThrow(
     "vitest-plugin-rsc: the react_client layer imports host-ui/test as a module of the page, " +

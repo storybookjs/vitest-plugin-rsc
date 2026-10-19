@@ -43,6 +43,7 @@ export async function open(
       __hostError,
       __hostResponse,
       __hostReports,
+      __hostTags,
       __hostModule,
       __hostCalloutLinked,
     } = window as HostWindow;
@@ -51,6 +52,7 @@ export async function open(
       __hostError: __hostError === undefined ? undefined : String(__hostError),
       __hostResponse,
       __hostReports,
+      __hostTags,
       __hostModule,
       __hostCalloutLinked,
     };

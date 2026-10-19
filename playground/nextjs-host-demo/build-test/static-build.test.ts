@@ -93,6 +93,21 @@ test('runs a file with "use client" of a package of the host in the browser laye
   ]);
 });
 
+// A Client Component of a package that says it has no side effects, which
+// reaches a module of the page only through a module of its package that the
+// scan of the browser layer drops: see fixtures/host-package/ui/tagged.js.
+test("shares a module of the page that the browser layer reaches through a package without side effects", async ({
+  page,
+  errors,
+}) => {
+  const host = await open(page, errors, "tag", async (page) => {
+    await page.locator("#host-root").getByText("Tagged by the host").waitFor();
+  });
+  // The host reads what the component tagged, which React may render more
+  // than once: one instance, from the host's build.
+  expect(host.__hostTags).toContain("Tagged by the host");
+});
+
 test('gives the host the exports of a file of the host with "use client"', async ({
   page,
   errors,

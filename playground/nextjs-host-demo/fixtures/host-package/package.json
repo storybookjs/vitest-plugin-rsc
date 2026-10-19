@@ -4,6 +4,11 @@
   "private": true,
   "description": "A package of the host in node_modules, as a framework of Storybook is: see ../../vite.config.ts.",
   "type": "module",
+  "sideEffects": [
+    "./client-greeting.js",
+    "./client-story.js",
+    "**/*.css"
+  ],
   "exports": {
     ".": {
       "types": "./index.d.ts",

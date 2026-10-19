@@ -5,9 +5,12 @@
 // The package is not pre-bundled, so a dev server gives the id of this module
 // Vite's version of the dependencies, `?v=1a2b3c4d`, also in the rsc layer,
 // where Vite RSC has its reference by the file. See ../../../vite.config.ts.
+// It tags what it renders through a module of the page: see tagged.js.
 import { createElement } from "react";
 import "./tag.css";
+import { tagged } from "./tagged.js";
 
 export function Tag({ children }) {
+  tagged(children);
   return createElement("span", { className: "host-package-tag", "data-testid": "tag" }, children);
 }
