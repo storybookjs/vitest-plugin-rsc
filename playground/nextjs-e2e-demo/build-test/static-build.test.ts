@@ -303,7 +303,13 @@ describe.for(builds)("a static build, $build", ({ build, env }) => {
     // Next's development code links a stylesheet with the time of the request
     // in its URL, which no preload can know: there it comes with the HTML.
     if (build === "production") {
-      const firstChunk = Math.min(...chunks.map((chunk) => chunk.responseEnd));
+      // Of the chunks the page load asked for, not one the host had loaded
+      // before it opened the page.
+      const opened = await page.evaluate(
+        () => performance.getEntriesByName("host-open").at(-1)!.startTime,
+      );
+      const loaded = chunks.filter((chunk) => chunk.startTime >= opened);
+      const firstChunk = Math.min(...loaded.map((chunk) => chunk.responseEnd));
       expect(stylesheets[0]!.startTime).toBeLessThan(firstChunk);
     }
   });
