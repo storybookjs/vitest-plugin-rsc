@@ -1,30 +1,14 @@
-// The types of modules that come without their own.
+// What the framework imports that comes without types.
 
-// The virtual module of project.ts.
-declare module "virtual:@storybook/nextjs-vite-rsc/project" {
-  /** The exports of `.storybook/preview.tsx`, or none. */
-  export const preview: Record<string, unknown>;
-  /** The preview file, from the root of the project. */
-  export const previewFile: string | undefined;
-  /** The root of the project, from the directory it shares with `workingDir`. */
-  export const root: string;
-  /** Where Storybook names the story files from, from that same directory. */
-  export const workingDir: string;
+// The argTypes of a React component, from its docgen: React-free.
+declare module "@storybook/react/entry-preview-argtypes" {
+  import type { ArgTypesEnhancer, Parameters } from "storybook/internal/types";
+
+  export const argTypesEnhancers: ArgTypesEnhancer[];
+  export const parameters: Parameters;
 }
 
-// The virtual module of docs-plugin.ts: the `DocsRenderer` of
-// `@storybook/addon-docs`, if the project has it.
-declare module "virtual:@storybook/nextjs-vite-rsc/addon-docs" {
-  export const DocsRenderer: typeof import("@storybook/addon-docs").DocsRenderer | undefined;
-}
-
-// The annotations of `@storybook/react` that the canvas of a client story
-// takes, which the package has no types for.
-declare module "@storybook/react/entry-preview" {
-  import type { ReactRenderer } from "@storybook/react";
-  import type { ArgsStoryFn, DecoratorApplicator, RenderToCanvas } from "storybook/internal/types";
-
-  export const render: ArgsStoryFn<ReactRenderer>;
-  export const renderToCanvas: RenderToCanvas<ReactRenderer>;
-  export const applyDecorators: DecoratorApplicator<ReactRenderer>;
+// The `env` of the preset, which Storybook's Vite builder defines.
+interface ImportMeta {
+  readonly env: { readonly STORYBOOK_NEXTJS_RSC_WORKING_DIR: string };
 }

@@ -141,9 +141,6 @@ importers:
       '@storybook/react':
         specifier: https://pkg.pr.new/storybookjs/storybook/@storybook/react@3cd7f9dc23338dab974d277afb14ce7ca2ce9eb7
         version: https://pkg.pr.new/storybookjs/storybook/@storybook/react@3cd7f9dc23338dab974d277afb14ce7ca2ce9eb7(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(storybook@https://pkg.pr.new/storybookjs/storybook/storybook@3cd7f9dc23338dab974d277afb14ce7ca2ce9eb7(@types/react@19.2.14)(react@19.2.6))(typescript@6.0.3)
-      magic-string:
-        specifier: ^1.4.3
-        version: 1.4.3
     devDependencies:
       '@storybook/addon-docs':
         specifier: https://pkg.pr.new/storybookjs/storybook/@storybook/addon-docs@3cd7f9dc23338dab974d277afb14ce7ca2ce9eb7
@@ -310,6 +307,9 @@ importers:
         specifier: 19.2.6
         version: 19.2.6(react@19.2.6)
     devDependencies:
+      '@storybook/addon-a11y':
+        specifier: https://pkg.pr.new/storybookjs/storybook/@storybook/addon-a11y@3cd7f9dc23338dab974d277afb14ce7ca2ce9eb7
+        version: https://pkg.pr.new/storybookjs/storybook/@storybook/addon-a11y@3cd7f9dc23338dab974d277afb14ce7ca2ce9eb7(storybook@https://pkg.pr.new/storybookjs/storybook/storybook@3cd7f9dc23338dab974d277afb14ce7ca2ce9eb7(@types/react@19.2.14)(react@19.2.6))
       '@storybook/addon-docs':
         specifier: https://pkg.pr.new/storybookjs/storybook/@storybook/addon-docs@3cd7f9dc23338dab974d277afb14ce7ca2ce9eb7
         version: https://pkg.pr.new/storybookjs/storybook/@storybook/addon-docs@3cd7f9dc23338dab974d277afb14ce7ca2ce9eb7(@types/react@19.2.14)(storybook@https://pkg.pr.new/storybookjs/storybook/storybook@3cd7f9dc23338dab974d277afb14ce7ca2ce9eb7(@types/react@19.2.14)(react@19.2.6))
@@ -2415,8 +2415,14 @@ packages:
   '@standard-schema/spec@1.1.0':
     resolution: {integrity: sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w==}
 
+  '@storybook/addon-a11y@https://pkg.pr.new/storybookjs/storybook/@storybook/addon-a11y@3cd7f9dc23338dab974d277afb14ce7ca2ce9eb7':
+    resolution: {integrity: sha512-LKuHLy/zh97P7HbcCalU17Mm89/9wm0RsFCguKBaBzmdi6ma/xShKes/slHxzCDM9/tp1BU98I2VIfP8hdGSqw==, tarball: https://pkg.pr.new/storybookjs/storybook/@storybook/addon-a11y@3cd7f9dc23338dab974d277afb14ce7ca2ce9eb7}
+    version: 11.0.0-alpha.6
+    peerDependencies:
+      storybook: ^11.0.0-alpha.6
+
   '@storybook/addon-docs@https://pkg.pr.new/storybookjs/storybook/@storybook/addon-docs@3cd7f9dc23338dab974d277afb14ce7ca2ce9eb7':
-    resolution: {integrity: sha512-Dq4AvHOeCdJlGjno4zSXTrZbghz6MFod3e1fBrHJJ9A1HUZ9urOL70YLZzpWpAt597eF2ZhXyroXRUvIJwDUtw==, tarball: https://pkg.pr.new/storybookjs/storybook/@storybook/addon-docs@3cd7f9dc23338dab974d277afb14ce7ca2ce9eb7}
+    resolution: {tarball: https://pkg.pr.new/storybookjs/storybook/@storybook/addon-docs@3cd7f9dc23338dab974d277afb14ce7ca2ce9eb7}
     version: 11.0.0-alpha.6
     peerDependencies:
       '@types/react': ^18.0.0 || ^19.0.0
@@ -2426,7 +2432,7 @@ packages:
         optional: true
 
   '@storybook/builder-vite@https://pkg.pr.new/storybookjs/storybook/@storybook/builder-vite@3cd7f9dc23338dab974d277afb14ce7ca2ce9eb7':
-    resolution: {integrity: sha512-dMjbpKgc/JYWOHcHo45Hr57DRYp+fBQlqIxc1HiYPmiuB3x5vvd6vDgNLGfKZ2AJoKeCP1M1Wlq/V94gOYbgTw==, tarball: https://pkg.pr.new/storybookjs/storybook/@storybook/builder-vite@3cd7f9dc23338dab974d277afb14ce7ca2ce9eb7}
+    resolution: {tarball: https://pkg.pr.new/storybookjs/storybook/@storybook/builder-vite@3cd7f9dc23338dab974d277afb14ce7ca2ce9eb7}
     version: 11.0.0-alpha.6
     peerDependencies:
       storybook: ^11.0.0-alpha.6
@@ -2441,7 +2447,7 @@ packages:
       react: ^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
 
   '@storybook/react@https://pkg.pr.new/storybookjs/storybook/@storybook/react@3cd7f9dc23338dab974d277afb14ce7ca2ce9eb7':
-    resolution: {integrity: sha512-Pe9uFMaXEMBjS0o82rx8yGqevaoeYiDxqH+T5h6x2ZVQM9fioIw+WRctSLZhqdi+NJBolr/wjt48bPofnzSLVQ==, tarball: https://pkg.pr.new/storybookjs/storybook/@storybook/react@3cd7f9dc23338dab974d277afb14ce7ca2ce9eb7}
+    resolution: {tarball: https://pkg.pr.new/storybookjs/storybook/@storybook/react@3cd7f9dc23338dab974d277afb14ce7ca2ce9eb7}
     version: 11.0.0-alpha.6
     peerDependencies:
       '@types/react': ^18.0.0 || ^19.0.0
@@ -2902,6 +2908,10 @@ packages:
 
   ast-v8-to-istanbul@1.0.7:
     resolution: {integrity: sha512-kFL68AG6ajd8fg248zwM9GQrUWEp79gsmjum34OEXjs4yHuUMZfYKwOLW9GMmB4oNvVrj+EAGxsP7ye2UR9UlA==}
+
+  axe-core@4.14.0:
+    resolution: {integrity: sha512-9WTZxEjsZ7b13TH8JPmbV2z8CHbl80/2hm3XPEG4JgNdQLK81IBRXmSxHfMAOkSqQeRxT/0dwNDz2GOm3zzpcQ==}
+    engines: {node: '>=4'}
 
   babel-plugin-react-compiler@1.0.0:
     resolution: {integrity: sha512-Ixm8tFfoKKIPYdCCKYTsqv+Fd4IJ0DQqMyEimo+pxUOMUR9cVPlwTrFt9Avu+3cb6Zp3mAzl+t1MrG2fxxKsxw==}
@@ -4810,7 +4820,7 @@ packages:
     engines: {node: '>=18'}
 
   storybook@https://pkg.pr.new/storybookjs/storybook/storybook@3cd7f9dc23338dab974d277afb14ce7ca2ce9eb7:
-    resolution: {integrity: sha512-EswRsUTZj+9R26y/ggbLpyaDW8sV44RmT9U/QxP4uSUGzjaEzglFBe6mzJNqPa7RlnjEjQ3j6BV7Xs6KqyPADA==, tarball: https://pkg.pr.new/storybookjs/storybook/storybook@3cd7f9dc23338dab974d277afb14ce7ca2ce9eb7}
+    resolution: {tarball: https://pkg.pr.new/storybookjs/storybook/storybook@3cd7f9dc23338dab974d277afb14ce7ca2ce9eb7}
     version: 11.0.0-alpha.6
     hasBin: true
     peerDependencies:
@@ -6677,6 +6687,12 @@ snapshots:
 
   '@standard-schema/spec@1.1.0': {}
 
+  '@storybook/addon-a11y@https://pkg.pr.new/storybookjs/storybook/@storybook/addon-a11y@3cd7f9dc23338dab974d277afb14ce7ca2ce9eb7(storybook@https://pkg.pr.new/storybookjs/storybook/storybook@3cd7f9dc23338dab974d277afb14ce7ca2ce9eb7(@types/react@19.2.14)(react@19.2.6))':
+    dependencies:
+      '@storybook/global': 5.0.0
+      axe-core: 4.14.0
+      storybook: https://pkg.pr.new/storybookjs/storybook/storybook@3cd7f9dc23338dab974d277afb14ce7ca2ce9eb7(@types/react@19.2.14)(react@19.2.6)
+
   '@storybook/addon-docs@https://pkg.pr.new/storybookjs/storybook/@storybook/addon-docs@3cd7f9dc23338dab974d277afb14ce7ca2ce9eb7(@types/react@19.2.14)(storybook@https://pkg.pr.new/storybookjs/storybook/storybook@3cd7f9dc23338dab974d277afb14ce7ca2ce9eb7(@types/react@19.2.14)(react@19.2.6))':
     dependencies:
       '@mdx-js/react': 3.1.1(@types/react@19.2.14)(react@19.2.6)
@@ -7145,6 +7161,8 @@ snapshots:
       '@jridgewell/trace-mapping': 0.3.31
       estree-walker: 3.0.3
       js-tokens: 10.0.0
+
+  axe-core@4.14.0: {}
 
   babel-plugin-react-compiler@1.0.0:
     dependencies:

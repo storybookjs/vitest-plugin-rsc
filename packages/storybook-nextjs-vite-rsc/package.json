@@ -38,10 +38,10 @@
       "storybook-nextjs-vite-rsc-source": "./src/preset.ts",
       "default": "./dist/preset.js"
     },
-    "./preview": {
-      "types": "./dist/preview.d.ts",
-      "storybook-nextjs-vite-rsc-source": "./src/preview.ts",
-      "default": "./dist/preview.js"
+    "./server": {
+      "types": "./dist/server.d.ts",
+      "storybook-nextjs-vite-rsc-source": "./src/server.ts",
+      "default": "./dist/server.js"
     }
   },
   "publishConfig": {
@@ -56,8 +56,7 @@
   },
   "dependencies": {
     "@storybook/builder-vite": "https://pkg.pr.new/storybookjs/storybook/@storybook/builder-vite@3cd7f9dc23338dab974d277afb14ce7ca2ce9eb7",
-    "@storybook/react": "https://pkg.pr.new/storybookjs/storybook/@storybook/react@3cd7f9dc23338dab974d277afb14ce7ca2ce9eb7",
-    "magic-string": "^1.4.3"
+    "@storybook/react": "https://pkg.pr.new/storybookjs/storybook/@storybook/react@3cd7f9dc23338dab974d277afb14ce7ca2ce9eb7"
   },
   "devDependencies": {
     "@storybook/addon-docs": "https://pkg.pr.new/storybookjs/storybook/@storybook/addon-docs@3cd7f9dc23338dab974d277afb14ce7ca2ce9eb7",
