@@ -214,6 +214,10 @@ test("a server story renders once after a change of its file", async ({ page }) 
   );
   const saved = canvas.locator("#storybook-root").getByText("Saved");
   await expect.poll(() => saved.count(), { timeout: 30_000 }).toBe(1);
+  expect(await storyRun(page, canvas, "greeting--server-action")).toMatchObject({
+    phase: "finished",
+    reports: [],
+  });
   expect(await preview.afterSave()).toEqual({ rendered: ["greeting--server-action"], loads: 0 });
 });
 
