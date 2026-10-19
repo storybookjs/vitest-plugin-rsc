@@ -575,8 +575,13 @@ registry.fetch = appFetch(true);
 process.env.__NEXT_PRIVATE_ORIGIN = window.location.origin;
 
 // A page that is open, from when its document is there, with the node of
-// `renderServer()` on it.
-type Page = { started: Promise<unknown>; unmount(): void; nodeOnPage?: NodeOnPage };
+// `renderServer()` on it, and where it reports its errors.
+type Page = {
+  started: Promise<unknown>;
+  unmount(): void;
+  nodeOnPage?: NodeOnPage;
+  errors: unknown[];
+};
 
 let page: Page | undefined;
 // Tells a page load that the test has moved on: to another page, or to the
@@ -921,14 +926,46 @@ type Opening = {
   errors: unknown[];
 };
 
-// Where the pages that the app loads itself report their errors: to what the
-// test opened last.
-let pageErrors: unknown[] = [];
-
 async function loadPage(url: URL, init: RequestInit, opening?: Opening): Promise<Response> {
+  // Where the page reports its errors: to the `renderServer()` that opens
+  // it, or for a page the app loads itself, to where the page it replaces
+  // reported them. Before leaving, which forgets that page.
+  const errors = opening?.errors ?? page?.errors ?? [];
   const leaving = leavePage(opening ? "another renderServer()" : "a page load of the app");
   const load = (currentLoad = new AbortController());
-  const loading = loadAfter(leaving, load, url, init, opening);
+  const loading = (async () => {
+    await leaving;
+    load.signal.throwIfAborted();
+
+    // Once the node that was in it is gone.
+    if (opening?.container?.hasChildNodes()) {
+      throw new Error(
+        "vitest-plugin-rsc: the container of a node has to be empty. " +
+          "The node is hydrated in it, and leaving the node empties it.",
+      );
+    }
+    const opened = (registry.opened = opening?.opened);
+    // The store of the test that loads the page, also after the `await`s of
+    // `openPage()`. A page the app loads itself keeps the headers of what the
+    // test opened.
+    const from = store;
+    if (opening) {
+      from.headers = opening.headers;
+      if (opening.cookie !== null) from.seed(opening.cookie);
+    }
+    try {
+      return await openPage(url, init, load.signal, from, errors, opening);
+    } catch (error) {
+      // A load that failed has no requests left, unless the test has moved on
+      // to a page or a node of its own. Only `leavePage()` stops a load. The
+      // server may still render the request of a stopped one, so leaving
+      // forgets what it opened once that request is done.
+      if (opened && registry.opened === opened && !load.signal.aborted) {
+        registry.opened = undefined;
+      }
+      throw error;
+    }
+  })();
   if (!opening?.signal) return loading;
   // Until the load has settled, the abort leaves its page as another
   // `renderServer()` would, also one that is still loading. Not a page that
@@ -936,48 +973,6 @@ async function loadPage(url: URL, init: RequestInit, opening?: Opening): Promise
   return unlessAborted(loading, opening.signal, () => {
     if (currentLoad === load) leavePage("the signal of renderServer()").catch(reportError);
   });
-}
-
-// Loads the page once the one before it is left.
-async function loadAfter(
-  leaving: Promise<void>,
-  load: AbortController,
-  url: URL,
-  init: RequestInit,
-  opening: Opening | undefined,
-): Promise<Response> {
-  await leaving;
-  load.signal.throwIfAborted();
-
-  // Once the node that was in it is gone.
-  if (opening?.container?.hasChildNodes()) {
-    throw new Error(
-      "vitest-plugin-rsc: the container of a node has to be empty. " +
-        "The node is hydrated in it, and leaving the node empties it.",
-    );
-  }
-  const opened = (registry.opened = opening?.opened);
-  // The store of the test that loads the page, also after the `await`s of
-  // `openPage()`. A page the app loads itself keeps the headers of what the
-  // test opened.
-  const from = store;
-  if (opening) {
-    from.headers = opening.headers;
-    if (opening.cookie !== null) from.seed(opening.cookie);
-    pageErrors = opening.errors;
-  }
-  try {
-    return await openPage(url, init, load.signal, from, pageErrors, opening);
-  } catch (error) {
-    // A load that failed has no requests left, unless the test has moved on
-    // to a page or a node of its own. Only `leavePage()` stops a load. The
-    // server may still render the request of a stopped one, so leaving
-    // forgets what it opened once that request is done.
-    if (opened && registry.opened === opened && !load.signal.aborted) {
-      registry.opened = undefined;
-    }
-    throw error;
-  }
 }
 
 async function openPage(
@@ -1079,6 +1074,7 @@ async function openPage(
     started: started.catch(() => {}),
     unmount: () => leave(),
     nodeOnPage: opening?.nodeOnPage,
+    errors,
   };
   try {
     ({ unmount } = await started);
