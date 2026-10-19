@@ -16,9 +16,9 @@ import { openedAt, type ServerRequest } from "./registry.ts";
 // of the app: see `NextRouting.appRoutes`.
 //
 // It is the document's: with the build's routing alone it says which requests
-// are the app's, before any layer of the app has loaded, see `takesRequest()`.
-// The ssr layer has a module of its own of it, for the requests it routes
-// there: see `handle()` in ssr.ts.
+// are the app's, before the ssr layer has loaded, see `takesRequest()`. The
+// ssr layer has its own copy of this module, and routes each request that it
+// handles again: see `handle()` in ssr.ts.
 
 // The pathnames of what Next's build made, as its docs for an adapter list
 // them for `resolveRoutes()`.
@@ -68,8 +68,8 @@ export function redirectStatus(resolved: ResolveRoutesResult): number | undefine
  * running the middleware tells what it does with the request. At the pathname
  * a test opened without `proxy`, only the routes count.
  *
- * Nothing runs for the answer, and nothing waits for it: not the layers of
- * the app either.
+ * Nothing runs for the answer, and nothing waits for it: not the ssr layer
+ * either.
  */
 export async function takesRequest(
   request: Pick<ServerRequest, "url" | "headers">,

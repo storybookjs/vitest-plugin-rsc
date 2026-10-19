@@ -1,7 +1,7 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Page } from "playwright";
-import { afterAll, beforeAll, expect } from "vitest";
+import { afterAll, beforeAll, expect, onTestFinished } from "vitest";
 import { filesWithMachinePaths, viteBuild } from "../../test-helpers/build.ts";
 import { serveFiles, test, type PageErrors, type Site } from "../../test-helpers/host.ts";
 import type { HostWindow } from "../host/state.ts";
@@ -176,13 +176,15 @@ test("a page that renders no route does not wait for the ssr layer", async ({ pa
   const released = new Promise<void>((resolve) => (release = resolve));
   await page.route("**/vitest-plugin-rsc/next_ssr/modules.json", async (route) => {
     await released;
-    await route.continue();
+    // Not for a page that a failed test has closed.
+    await route.continue().catch(() => {});
   });
+  onTestFinished(() => release());
   type Early = HostWindow & { __dropped?: Promise<unknown>; __answered?: Promise<unknown> };
   const host = await open(page, errors, "early", async (page) => {
-    // A request to the app, sent while a page is left, is one of that page:
-    // it is dropped, as one that waits for the server. One sent after that
-    // waits for the layer, and is answered.
+    // A request to the app, sent before a `cleanup()`, with no page open, is
+    // one of the page that was left: it is dropped, as one that waits for the
+    // server. One sent after that waits for the layer, and is answered.
     await page.evaluate(() => {
       const host = window as Early;
       host.__dropped = host.__hostRequest!("/");
@@ -218,8 +220,28 @@ test("a page that renders no route does not wait for the ssr layer", async ({ pa
       ssrLayer: end("/vitest-plugin-rsc/next_ssr/modules.json"),
     };
   });
+  // Held until then, so these hold: they say that it was this file that was held.
   expect(timing.ready).toBeLessThan(timing.ssrLayer!);
   expect(timing.fetched).toBeLessThan(timing.ssrLayer!);
+});
+
+// A layer that does not load fails the requests that need it, as the first
+// request does: not the host, nor its own requests.
+test("a page that renders no route works without the ssr layer", async ({ page, errors }) => {
+  // The file of the layer, which the network fails, and which the browser
+  // reports again without its URL.
+  errors.ignore = [
+    /^requestfailed: .*\/vitest-plugin-rsc\/next_ssr\/modules\.json /,
+    /^console\.error: Failed to load resource: net::ERR_FAILED$/,
+  ];
+  await page.route("**/vitest-plugin-rsc/next_ssr/modules.json", (route) => route.abort("failed"));
+  const host = await open(page, errors, "early", async (page) => {
+    const answered = await page.evaluate(() => (window as HostWindow).__hostRequest!("/"));
+    // The name of the error it rejects with: the layer's, not a page's.
+    expect(answered).toEqual(expect.any(String));
+    expect(answered).not.toBe("AbortError");
+  });
+  expect(host.__hostFetched).toBe(200);
 });
 
 test("a node has the CSS of the files of the host that render it", async ({ page, errors }) => {

@@ -18,31 +18,32 @@ import { ssrLayer } from "./server-layers.ts";
 export { loadClientModule } from "./client-graph.ts";
 
 // What a request of the app waits for: the ssr layer, which starts to load
-// as this module evaluates, see server-layers.ts. Nothing else does. The
-// server in front of the app is the document's, and says without a layer
-// which requests are the app's: see `takesRequest()`. So the host's own
-// requests go to the network at once, and leaving a page before the layer
-// is there has no request of the server to settle, nor a cache to forget.
+// as this module evaluates, see server-layers.ts. Nothing else does. Which
+// requests are the app's is the document's to say, without the ssr layer:
+// see `takesRequest()`. So the host's own requests go to the network at
+// once, and leaving a page before the layer is there has no request of the
+// server to settle, nor a cache to forget.
 type SsrLayer = Awaited<typeof ssrLayer>;
 let ssr: SsrLayer | undefined;
 void ssrLayer.then(
   (layer) => (ssr = layer),
   () => {},
 );
-// How many pages were left: see `serverHandles()`.
-let pagesLeft = 0;
+// Changes each time leaving a page settles the server, also with no page
+// open: see `handledByServer()`.
+let generation = 0;
 
-// Hands a request to Next's server, once the ssr layer is there. A request
-// that waited for the layer while a page was left is one of that page, and is
-// dropped, as `settleRequests()` in ssr.ts drops one that waited for the
-// server then. A layer that failed to load fails the request.
-async function serverHandles(
+// What Next's server answers a request with, once the ssr layer is there. A
+// request that waited for the layer while a page was left is one of that
+// page, and is dropped, as `settleRequests()` in ssr.ts drops one that waited
+// for the server then. A layer that failed to load fails the request.
+async function handledByServer(
   ...[request, options]: Parameters<SsrLayer["handleRequest"]>
 ): Promise<Response | undefined> {
   if (ssr) return ssr.handleRequest(request, options);
-  const sent = pagesLeft;
+  const sent = generation;
   const layer = await ssrLayer;
-  if (sent !== pagesLeft) {
+  if (sent !== generation) {
     throw new DOMException("The page was left before the server responded.", "AbortError");
   }
   return layer.handleRequest(request, options);
@@ -269,7 +270,7 @@ async function sendRequest(
       ? browserHeaders(new Headers(sent), url, method, from, credentials)
       : new Headers(sent);
     const response = await unlessAborted(
-      serverHandles(
+      handledByServer(
         { url: url.href, method, headers, body, signal: request.signal },
         {
           nested: !from,
@@ -1181,7 +1182,7 @@ function leavePage(by: string): Promise<void> {
         try {
           unloadDocument();
         } finally {
-          pagesLeft++;
+          generation++;
           await ssr?.settleRequests();
           // What the test opened goes with its page: the route of a node,
           // and a pathname without the proxy.

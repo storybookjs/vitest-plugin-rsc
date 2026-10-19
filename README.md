@@ -1108,11 +1108,11 @@ Next.js is a build and a runtime, and only the build is tied to a bundler. So th
 
 Next compiles an app into three layers, each with its own module graph and its own build of React. Each is a Vite environment here, and all three run in the browser test runtime:
 
-| Layer     | Runs                                                                   | Vite environment |
-| --------- | ---------------------------------------------------------------------- | ---------------- |
-| `rsc`     | Server Components, Server Actions, route handlers                      | `client`         |
-| `ssr`     | Next's route module, the HTML renderer, the server in front of the app | `next_ssr`       |
-| `browser` | Next's router, your Client Components                                  | `react_client`   |
+| Layer     | Runs                                                                            | Vite environment |
+| --------- | ------------------------------------------------------------------------------- | ---------------- |
+| `rsc`     | Server Components, Server Actions, route handlers, which requests are the app's | `client`         |
+| `ssr`     | Next's route module, the HTML renderer, the server in front of the app          | `next_ssr`       |
+| `browser` | Next's router, your Client Components                                           | `react_client`   |
 
 The test runs in `client`, the `rsc` layer's Vite environment. That's why a module your test imports is the instance your Server Components read. A test file with `"use client"` runs in `react_client`, without a page of your app.
 

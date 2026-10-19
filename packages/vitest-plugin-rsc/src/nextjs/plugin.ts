@@ -65,9 +65,9 @@ const routeKinds = Object.keys(routeLists) as RouteKind[];
 // it, if the app has one, and its request handler.
 const middlewareId = virtual("middleware");
 const middlewareEntryId = virtual("middleware-entry");
-// Next's route resolution, which the server in front of the app runs in the
-// rsc layer, the document's, and in the ssr layer, which handles what it
-// routes there. Not a part of `next`: it is the project's, next to its `next`.
+// Next's route resolution: the rsc layer, the document's, says with it which
+// requests are the app's, and the ssr layer routes with it each request that
+// it handles. Not a part of `next`: it is the project's, next to its `next`.
 const nextRouting = "@next/routing";
 // What the modules of a route are listed by: its page name, which the route
 // of a node shares with a page of the app.
@@ -309,8 +309,8 @@ function createLayerResolver(getProject: () => NextProject, layer: NextLayer) {
           return nextFile(serverReferenceInfo);
         }
 
-        // The package's own modules import it, and do not depend on it: it
-        // is the project's. Another importer resolves it as it is, like Vite
+        // The package's own modules import it, and have it as a peer: it is
+        // the project's. Another importer resolves it as it is, like Vite
         // RSC, which resolves a package of the rsc layer again at the root.
         if (source === nextRouting) {
           if (!importer || !normalizePath(importer).startsWith(ownDir)) return;

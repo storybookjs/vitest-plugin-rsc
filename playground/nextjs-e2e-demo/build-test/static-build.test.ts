@@ -399,7 +399,8 @@ describe.for(builds)("a static build, $build", ({ build, env }) => {
     const released = new Promise<void>((resolve) => (release = resolve));
     await page.route("**/vitest-plugin-rsc/next_ssr/modules.json", async (route) => {
       await released;
-      await route.continue();
+      // Not for a page that a failed test has closed.
+      await route.continue().catch(() => {});
     });
     onTestFinished(() => release());
     // A file of Next's build, which the matcher of the proxy leaves out: the
