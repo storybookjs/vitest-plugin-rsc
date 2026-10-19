@@ -126,5 +126,6 @@
     "vitest": {
       "optional": true
     }
-  }
+  },
+  "//": "Not API, and they change with any version: ./nextjs/rsc, ./nextjs/ssr, ./nextjs/client and ./nextjs/node-rendered are modules that the layers of the plugin import by these ids."
 }
