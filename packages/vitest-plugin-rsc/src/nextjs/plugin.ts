@@ -66,7 +66,8 @@ const routeKinds = Object.keys(routeLists) as RouteKind[];
 const middlewareId = virtual("middleware");
 const middlewareEntryId = virtual("middleware-entry");
 // Next's route resolution, which the server in front of the app runs in the
-// ssr layer. Not a part of `next`: it is the project's, next to its `next`.
+// rsc layer, the document's, and in the ssr layer, which handles what it
+// routes there. Not a part of `next`: it is the project's, next to its `next`.
 const nextRouting = "@next/routing";
 // What the modules of a route are listed by: its page name, which the route
 // of a node shares with a page of the app.
@@ -522,6 +523,9 @@ const runtimeImports: Record<NextLayer, string[]> = {
     vendoredFlight("server.edge"),
     vendoredFlight("static.edge"),
     vendoredFlight("client.edge"),
+    // server-in-front.ts
+    "next/dist/server/lib/server-ipc/utils",
+    "next/dist/server/web/utils",
   ],
   ssr: [
     ...react,
@@ -529,15 +533,16 @@ const runtimeImports: Record<NextLayer, string[]> = {
     "next/dist/server/route-modules/app-page/module",
     "next/dist/server/lib/incremental-cache",
     "next/dist/server/lib/incremental-cache/tags-manifest.external",
-    // ssr.ts, for the server in front of the app
+    // ssr.ts, for what the server in front of the app routes to it
     "next/dist/client/components/app-router-headers",
     "next/dist/server/lib/is-rsc-request",
-    "next/dist/server/lib/server-ipc/utils",
     "next/dist/shared/lib/router/utils/route-matcher",
     "next/dist/shared/lib/router/utils/route-regex",
+    // server-in-front.ts
+    "next/dist/server/lib/server-ipc/utils",
     // node-server.ts
     "next/dist/server/lib/mock-request",
-    // node-server.ts and ssr.ts
+    // node-server.ts, ssr.ts and server-in-front.ts
     "next/dist/server/web/utils",
     "next/dist/compiled/stream-browserify",
     vendoredFlight("client.edge"),
@@ -722,7 +727,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
         ]);
         const clientBoundaries = findClientBoundaries(project.nextDir, resolvers.rsc);
         const include: Record<NextLayer, string[]> = {
-          rsc: rscInclude,
+          rsc: [...rscInclude, nextRouting],
           ssr: [
             ...toInclude("ssr", [...apiImports("ssr"), ...runtimeImports.ssr, ...clientBoundaries]),
             nextRouting,

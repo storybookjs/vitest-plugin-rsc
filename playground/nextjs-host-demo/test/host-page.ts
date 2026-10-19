@@ -46,6 +46,7 @@ export async function open(
       __hostTags,
       __hostModule,
       __hostCalloutLinked,
+      __hostFetched,
     } = window as HostWindow;
     return {
       __hostState,
@@ -55,6 +56,7 @@ export async function open(
       __hostTags,
       __hostModule,
       __hostCalloutLinked,
+      __hostFetched,
     };
   });
   expect(host.__hostState, `the host of ?view=${view}: ${host.__hostError}`).toBe("ready");

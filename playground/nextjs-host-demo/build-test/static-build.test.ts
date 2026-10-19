@@ -4,6 +4,7 @@ import type { Page } from "playwright";
 import { afterAll, beforeAll, expect } from "vitest";
 import { filesWithMachinePaths, viteBuild } from "../../test-helpers/build.ts";
 import { serveFiles, test, type PageErrors, type Site } from "../../test-helpers/host.ts";
+import type { HostWindow } from "../host/state.ts";
 import {
   expectGreetingStylesheets,
   nextReact,
@@ -163,6 +164,60 @@ test('keeps the CSS of a file with "use client" that loaded during a page', asyn
       .getByText("a component called the Server Action like, and no page of the app is open")
       .waitFor();
   });
+});
+
+// The server in front of the app is the document's: it says which requests
+// are the app's with the build's routing alone. So a page of the host that
+// renders no route waits for no ssr layer, which is the largest file of the
+// build, and only a request that the server handles does. Here that file is
+// held until the host is ready: a host that waited for it would never be.
+test("a page that renders no route does not wait for the ssr layer", async ({ page, errors }) => {
+  let release!: () => void;
+  const released = new Promise<void>((resolve) => (release = resolve));
+  await page.route("**/vitest-plugin-rsc/next_ssr/modules.json", async (route) => {
+    await released;
+    await route.continue();
+  });
+  type Early = HostWindow & { __dropped?: Promise<unknown>; __answered?: Promise<unknown> };
+  const host = await open(page, errors, "early", async (page) => {
+    // A request to the app, sent while a page is left, is one of that page:
+    // it is dropped, as one that waits for the server. One sent after that
+    // waits for the layer, and is answered.
+    await page.evaluate(() => {
+      const host = window as Early;
+      host.__dropped = host.__hostRequest!("/");
+      return host.__hostCleanup!();
+    });
+    await page.evaluate(() => {
+      const host = window as Early;
+      host.__answered = host.__hostRequest!("/");
+    });
+    const waiting = await page.evaluate(() => {
+      const { __dropped, __answered } = window as Early;
+      return Promise.all([__dropped, __answered].map((sent) => Promise.race([sent, "waits"])));
+    });
+    expect(waiting).toEqual(["waits", "waits"]);
+    release();
+    const settled = await page.evaluate(() => {
+      const { __dropped, __answered } = window as Early;
+      return Promise.all([__dropped, __answered]);
+    });
+    expect(settled).toEqual(["AbortError", 200]);
+  });
+  // The host's own file came from the network.
+  expect(host.__hostFetched).toBe(200);
+  const timing = await page.evaluate(() => {
+    const resources = performance.getEntriesByType("resource") as PerformanceResourceTiming[];
+    const end = (path: string) =>
+      resources.find((resource) => new URL(resource.name).pathname.endsWith(path))?.responseEnd;
+    return {
+      ready: (window as HostWindow).__hostReadyAt,
+      fetched: end("/callout.html"),
+      ssrLayer: end("/vitest-plugin-rsc/next_ssr/modules.json"),
+    };
+  });
+  expect(timing.ready).toBeLessThan(timing.ssrLayer!);
+  expect(timing.fetched).toBeLessThan(timing.ssrLayer!);
 });
 
 test("a node has the CSS of the files of the host that render it", async ({ page, errors }) => {
