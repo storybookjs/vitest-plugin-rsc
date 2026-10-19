@@ -329,17 +329,22 @@ test("tells a module of the host apart as a module runner spells it", () => {
 });
 
 // A dev server of a project with a file of the host with `"use client"`,
-// `host.tsx`, which imports `value.ts` and `value.css` in the browser layer,
-// and an entry of the host that imports it in the rsc layer and takes a change
-// of it in place, as a framework does that renders it again. The plugin of
-// Vite RSC is a stand-in that makes the file a reference module.
+// `host.tsx`, which imports `value.ts` and two stylesheets in the browser
+// layer, and an entry of the host that imports it in the rsc layer and takes
+// a change of it in place, as a framework does that renders it again. The
+// page has `linked.css` in the rsc layer too, as a `<link>` that Vite swaps
+// in place; `value.css` only in the browser layer, as the `<style>` of a
+// module. The plugin of Vite RSC is a stand-in that makes the file a
+// reference module.
 async function serveHostFile() {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "client-files-")));
   onTestFinished(() => fs.rmSync(root, { recursive: true, force: true }));
   const files = {
-    "host.tsx": '"use client";\nimport "./value.css";\nexport { value } from "./value.ts";\n',
+    "host.tsx":
+      '"use client";\nimport "./value.css";\nimport "./linked.css";\nexport { value } from "./value.ts";\n',
     "value.ts": 'export const value = "one";\n',
     "value.css": "p { color: red }\n",
+    "linked.css": "h1 { color: red }\n",
     "main.ts": 'import "./host.tsx";\nimport.meta.hot?.accept("./host.tsx", () => {});\n',
     "internal.ts": "export async function loadClientFile() {}\n",
   };
@@ -399,7 +404,9 @@ async function serveHostFile() {
   // the file in the graph of the browser layer.
   await rsc.transformRequest("/main.ts");
   await rsc.transformRequest("/host.tsx");
-  for (const name of ["/host.tsx", "/value.ts", "/value.css"]) {
+  // What Vite serves a `<link>`.
+  await rsc.transformRequest("/linked.css?direct");
+  for (const name of ["/host.tsx", "/value.ts", "/value.css", "/linked.css"]) {
     await server.environments.react_client!.transformRequest(name);
   }
 
@@ -437,14 +444,24 @@ test("takes a change of what a file of the host imports in the browser layer to 
 test("takes a change of the file itself to the host once", async () => {
   const { change } = await serveHostFile();
 
-  const { modules, sent } = change("host.tsx", '"use client";\nexport const value = "changed";\n');
+  const { modules } = change("host.tsx", '"use client";\nexport const value = "changed";\n');
   expect(await modules).toEqual(["/host.tsx"]);
-  expect(await sent).toEqual({ type: "update", updates: [expect.anything()] });
 });
 
-test("leaves a stylesheet that a file of the host imports to change in place", async () => {
+test("takes a change of a stylesheet that only the browser layer has to the host", async () => {
   const { change } = await serveHostFile();
 
-  // No module of the rsc layer, so Vite sends that layer's page nothing.
-  expect(await change("value.css", "p { color: green }\n").modules).toEqual([]);
+  // Its `<style>` comes back as the file is evaluated again.
+  expect(await change("value.css", "p { color: green }\n").modules).toEqual(["/host.tsx"]);
+});
+
+test("leaves a stylesheet that Vite swaps in place in the rsc layer to Vite", async () => {
+  const { change } = await serveHostFile();
+
+  const { modules, sent } = change("linked.css", "h1 { color: green }\n");
+  expect(await modules).toEqual(["/linked.css?direct"]);
+  expect(await sent).toEqual({
+    type: "update",
+    updates: [expect.objectContaining({ type: "css-update", path: "/linked.css?direct" })],
+  });
 });

@@ -1,7 +1,6 @@
 import path from "node:path";
 import { hasDirective } from "@vitejs/plugin-rsc/transforms";
 import {
-  isCSSRequest,
   normalizePath,
   parseAstAsync,
   type EnvironmentModuleNode,
@@ -150,13 +149,14 @@ export function hostModuleCode(
 
 /**
  * Two plugins. Before Vite RSC: the modules of the page for the browser
- * layer, and the error for a file with `"use client"` that mocks a module,
- * before Vite RSC drops the code of the file. After Vite RSC, which made
- * the file a reference: the line in front of that module, which loads the
- * file in the browser layer by the key of the reference, and with a dev
- * server the change of that module for a change of what the file imports
- * there. Not a file without the directive: a test file without it renders
- * with `renderServer()`, in a page with a graph of its own.
+ * layer, the error for a file with `"use client"` that mocks a module,
+ * before Vite RSC drops the code of the file, and with a dev server the
+ * change of the file's module in the rsc layer for a change of what the file
+ * imports in the browser layer. After Vite RSC, which made the file a
+ * reference: the line in front of that module, which loads the file in the
+ * browser layer by the key of the reference. Not a file without the
+ * directive: a test file without it renders with `renderServer()`, in a page
+ * with a graph of its own.
  */
 export function clientFiles(options: ClientFilesOptions): Plugin[] {
   const { rsc, browser } = options.environments;
@@ -220,6 +220,40 @@ export function clientFiles(options: ClientFilesOptions): Plugin[] {
           );
         }
       },
+      // The module of a file of the host with `"use client"` in the rsc
+      // layer stands for the file's code in the browser layer, of which it
+      // has none (see the plugin below). So a change of a module that the
+      // file imports there, also through other modules, is a change of that
+      // module: Vite takes it to the host as a change of the file itself, the
+      // host imports the file again, and the line of the new module
+      // evaluates the file with what changed. First of the hooks of the rsc
+      // layer, so that one that loads the document again instead, like the
+      // one for a change of what a route imports, still takes over. Not for
+      // a stylesheet that Vite swaps in place in the rsc layer, through its
+      // link: the file's evaluation stays as it is.
+      hotUpdate: {
+        order: "pre",
+        handler({ file, modules, server }) {
+          if (this.environment.name !== rsc) return;
+          if (
+            modules.length > 0 &&
+            modules.every((node) => node.type === "css" && node.isSelfAccepting)
+          ) {
+            return;
+          }
+          const changed = server.environments[browser]?.moduleGraph.getModulesByFile(file);
+          if (!changed) return;
+          const config = this.environment.getTopLevelConfig();
+          const updated = new Set(modules);
+          for (const hostFile of hostFilesImporting(changed, isHostFile)) {
+            for (const node of this.environment.moduleGraph.getModulesByFile(hostFile) ?? []) {
+              if (node.id && clientReferenceOf(node.id, config)) updated.add(node);
+            }
+          }
+          // The module of a file of the host that changed itself is there already.
+          if (updated.size > modules.length) return [...updated];
+        },
+      },
     },
     {
       name: "vitest-plugin-rsc:next-load-client-files",
@@ -235,32 +269,6 @@ export function clientFiles(options: ClientFilesOptions): Plugin[] {
           this.environment.mode === "build" ? builtHostFileKey(file, config.root) : undefined;
         return { code: loadClientFileCode(reference, internal, builtFile) + code, map: null };
       },
-      // That module stands for the file's code in the browser layer, of which
-      // it has none. So a change of a module that the file imports there,
-      // also through other modules, is a change of that module: Vite takes
-      // it to the host as a change of the file itself, the host imports the
-      // file again, and the line of the new module evaluates the file with
-      // what changed. Before the hook that loads the document again for a
-      // change of what a route imports, which then still takes over. Not a
-      // stylesheet, which changes in place through its link.
-      hotUpdate: {
-        order: "pre",
-        handler({ file, modules, server }) {
-          if (this.environment.name !== rsc || isCSSRequest(file)) return;
-          const changed = server.environments[browser]?.moduleGraph.getModulesByFile(file);
-          if (!changed) return;
-          const config = this.environment.getTopLevelConfig();
-          const updated = new Set(modules);
-          for (const hostFile of hostFilesImporting(changed, isHostFile)) {
-            for (const node of this.environment.moduleGraph.getModulesByFile(hostFile) ?? []) {
-              const { id } = node;
-              if (id && hostFileOf(id) && clientReferenceOf(id, config)) updated.add(node);
-            }
-          }
-          // The module of a file of the host that changed itself is there already.
-          return updated.size === modules.length ? undefined : [...updated];
-        },
-      },
     },
   ];
 }
@@ -274,13 +282,10 @@ function hostFilesImporting(
   isHostFile: (file: string) => boolean,
 ): Set<string> {
   const files = new Set<string>();
-  const seen = new Set<EnvironmentModuleNode>();
-  const queue = [...modules];
-  for (let node = queue.pop(); node; node = queue.pop()) {
-    if (seen.has(node)) continue;
-    seen.add(node);
+  const seen = new Set(modules);
+  for (const node of seen) {
     if (node.file && isHostFile(node.file)) files.add(node.file);
-    queue.push(...node.importers);
+    for (const importer of node.importers) seen.add(importer);
   }
   return files;
 }

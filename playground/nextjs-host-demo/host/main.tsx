@@ -72,22 +72,8 @@ await show(async () => {
     return;
   }
   if (view === "in-place") {
-    // A component of a file of the host with `"use client"`, rendered again
-    // in place after a change of the file or of what it imports, as a
-    // framework renders a story again: Vite's client imports the file again,
-    // and `loadClientModule()` gives the new module's evaluation.
-    const { renderClient } = await loadClientModule(await import("./render-client.tsx"));
-    let unmount = () => {};
-    type ClientModule = typeof import("./client-module.tsx");
-    const render = async (module: ClientModule) => {
-      const { Badge } = await loadClientModule(module);
-      unmount();
-      unmount = renderClient(Badge, container);
-    };
-    await render(await import("./client-module.tsx"));
-    import.meta.hot?.accept("./client-module.tsx", (module) => {
-      if (module) void show(() => render(module as unknown as ClientModule));
-    });
+    const { renderInPlace } = await import("./in-place.tsx");
+    await renderInPlace(container);
     state.__hostReports = reports;
     return;
   }
