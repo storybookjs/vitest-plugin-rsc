@@ -188,18 +188,40 @@ a new request.
 
 ## The Preview File
 
-`.storybook/preview.tsx` has no directive, so it is a module that both
-sides import, as a shared module is in Next. The framework evaluates it
-twice: on the server, where its decorators decorate the server stories, and
-in the browser, where they decorate the client stories. A decorator of the
-preview file, like a provider of the app's theme, so applies to every story.
-In a client story it is a Client Component, which cannot be async.
+`.storybook/preview.tsx` has no directive, so it is server code, as a
+layout of the app is in Next. The framework evaluates it once, on the
+server, for both kinds of story, so it can import server code, like
+`server-only` or a database, and set it up in `beforeEach` or a loader.
 
-So the preview file, and what it imports, has to load in a browser too.
-Setup that is only for the server, like a database, goes in a decorator of
-the server stories, in their story file or a file that they import. When
-the preview file fails to load in the browser, a client story shows an
-error that says so.
+A decorator of the preview file decorates every story. It is a synchronous
+function that returns elements: a server story renders them in its
+request, and a client story in the browser, where a Client Component among
+them, like the provider of the app's theme, renders as it would in a page.
+What has state or context is such a component, of a file with
+`"use client"`, which the decorator renders:
+
+```tsx
+import type { Preview } from "@storybook/nextjs-vite-rsc";
+import { ThemeProvider } from "../app/theme"; // "use client"
+
+export default {
+  decorators: [
+    (Story) => (
+      <ThemeProvider theme="light">
+        <Story />
+      </ThemeProvider>
+    ),
+  ],
+} satisfies Preview;
+```
+
+For a client story a decorator cannot be async, read the request, like
+`cookies()`, or call a hook of React: the story shows an error that says
+so. A server story has such a decorator in the meta of its story file, or
+in the preview file, as long as no client story renders it. Storybook's
+hooks, like `useArgs()` and `useGlobals()`, work in every decorator. A
+component of a file with `"use client"` is not a decorator itself: the
+preview file has it as a reference, which renders as an element.
 
 The CSS that the preview file and a story file import is the story's, in
 both kinds of story.
@@ -207,9 +229,9 @@ both kinds of story.
 ## After A Change
 
 A change of a story file renders its stories again in place. A change of
-the code of the app, or of the preview file and what it imports, loads the
-preview again: the server code of the app runs once per document. A change
-of a stylesheet that the preview file imports shows in place.
+the code of the app, or of the preview file, loads the preview again: the
+server code of the app runs once per document. A change of a stylesheet
+that the preview file imports shows in place.
 
 ## Docs
 
@@ -267,8 +289,8 @@ Chromatic and other tools that read the stories of a build with
 that fails to load fails all of it, while `storybook build` succeeds.
 
 The docs page, its blocks and Storybook's theming render with React DOM,
-in the browser, and the preview file is evaluated on the server too (see
-The Preview File), as a story file without `"use client"` is. So neither
+in the browser, and the preview file is evaluated on the server (see The
+Preview File), as a story file without `"use client"` is. So neither
 can import `@storybook/addon-docs/blocks` or `storybook/theming`, which
 stops with a message: import them from a file with `"use client"`, like a
 `docs.page` made of blocks. A theme comes from `storybook/theming/create`:
@@ -282,11 +304,9 @@ export default {
 ```
 
 A component of `parameters.docs`, like `container`, `page` or one of
-`components`, renders in the browser: in the preview file, it is the one
-of the browser's evaluation of the file, as its decorators are for a client
-story. In a server story file a component of a file with `"use client"` is
-a reference, which shows an error: set it in the preview file, or in a
-story file with `"use client"`.
+`components`, renders in the browser: one of a file with `"use client"`,
+which the preview file or a server story file has as a reference, renders
+there as it would in a page.
 
 The framework sets `parameters.docs.renderer`, which renders the docs page
 in the browser: one of the project's own is not supported.
@@ -307,13 +327,16 @@ for both kinds.
   that a client story needs the same module of, beyond `storybook/test`
   and Storybook's own modules of the preview, gets one of each.
 - `definePreview()` and the story factories of CSF Next: write the preview
-  file and the stories in CSF 3, as above.
+  file and the stories in CSF 3, as above. A story file with `"use client"`
+  that imports the preview file shows an error that says so: the preview
+  file is server code.
 - A decorator of an addon that renders a component of the addon, like a
   provider of `@storybook/addon-themes`. One that returns `Story()` applies
   to both kinds of story.
 - A new value of an arg renders the story again in place, with the state it
   has: now it is a new request.
-- A change of a component that only client stories import: it shows once
-  the preview loads again.
+- A change of a component that only client stories, or the decorators of
+  the preview file, render and no route imports: it shows once the preview
+  loads again.
 - Next's router in a client story: `useRouter()` throws there, and
   `usePathname()` returns `null`. A server story has the router.

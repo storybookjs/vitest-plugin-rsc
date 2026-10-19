@@ -20,21 +20,8 @@ const { browserModules, loadClientModule } = vi.hoisted(() => {
 });
 vi.mock("vitest-plugin-rsc/nextjs/testing-library", () => ({ loadClientModule }));
 
-// The components of the docs pages of the preview file, as each layer
-// evaluated it: in the rsc layer one of a file with "use client" is a
-// reference.
-const { rsc, browser } = vi.hoisted(() => {
-  const reference = (name: string) =>
-    Object.assign(() => name, { $$typeof: Symbol.for("react.client.reference") });
-  return {
-    rsc: { container: reference("container"), blockquote: reference("blockquote") },
-    browser: { container: () => "container", blockquote: () => "blockquote" },
-  };
-});
 vi.mock("virtual:@storybook/nextjs-vite-rsc/project", () => ({
-  preview: {
-    parameters: { docs: { container: rsc.container, components: { blockquote: rsc.blockquote } } },
-  },
+  preview: {},
   previewFile: ".storybook/preview.tsx",
   root: "",
   workingDir: "",
@@ -45,11 +32,6 @@ const rendered = vi.hoisted(() => [] as Parameters[]);
 vi.mock("./client-canvas.tsx", () => {
   const reference = {};
   browserModules.set(reference, {
-    loadPreview: async () => ({
-      parameters: {
-        docs: { container: browser.container, components: { blockquote: browser.blockquote } },
-      },
-    }),
     createDocsRenderer: async () => ({
       render: async (_context: unknown, docs: Parameters) => void rendered.push(docs),
       unmount: () => {},
@@ -132,28 +114,17 @@ test("an MDX file is the browser layer's, and one that fails there says why", as
   );
 });
 
-test("the docs renderer of the browser layer, with the preview file's components of that layer", async () => {
+// A component of `parameters.docs` of a file with "use client" is a client
+// reference in the rsc layer, which the docs page's React renders as its
+// export of the browser layer.
+test("the docs renderer of the browser layer, with the components of parameters.docs as they are", async () => {
   const renderer = await (
     parameters.docs.renderer as () => Promise<{
       render(context: object, docs: Parameters, element: object): Promise<void>;
     }>
   )();
-  const page = () => "page";
-  await renderer.render(
-    {},
-    { container: rsc.container, page, components: { blockquote: rsc.blockquote } },
-    {},
-  );
-  expect(rendered.at(-1)).toEqual({
-    container: browser.container,
-    page,
-    components: { blockquote: browser.blockquote },
-  });
-  // A component of a file with "use client" that a server story file set
-  // is a reference, which no layer renders.
-  const other = Object.assign(() => null, { $$typeof: Symbol.for("react.client.reference") });
-  await expect(renderer.render({}, { container: other }, {})).rejects.toThrow(
-    'parameters.docs.container is a component of a file with "use client" that a story file ' +
-      "without the directive imports",
-  );
+  const reference = Object.assign(() => null, { $$typeof: Symbol.for("react.client.reference") });
+  const docs = { container: reference, page: () => "page", components: { blockquote: reference } };
+  await renderer.render({}, docs, {});
+  expect(rendered.at(-1)).toBe(docs);
 });

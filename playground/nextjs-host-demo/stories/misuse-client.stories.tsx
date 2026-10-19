@@ -13,3 +13,15 @@ export const AsyncRender: StoryObj = {
 export const Page: StoryObj = {
   parameters: { nextjs: { url: "/" } },
 };
+
+// The decorators of the preview file that only a server story can have: an
+// async one that reads the request, and one with a hook of React.
+export const AsyncPreviewDecorator: StoryObj = {
+  parameters: { visitor: true },
+  render: () => <p>A client story</p>,
+};
+
+export const HookInPreviewDecorator: StoryObj = {
+  parameters: { reactHook: true },
+  render: () => <p>A client story</p>,
+};

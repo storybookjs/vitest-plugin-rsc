@@ -122,7 +122,13 @@ export type StoryObj<TMetaOrCmpOrArgs = Args> = [TMetaOrCmpOrArgs] extends [
     ? StoryAnnotations<NextjsRscTypes, ComponentProps<TMetaOrCmpOrArgs>>
     : StoryAnnotations<NextjsRscTypes, TMetaOrCmpOrArgs>;
 
-/** A decorator. In a story file without `"use client"`, it may be an async Server Component. */
+/**
+ * A decorator: a function that returns elements. In a story file without
+ * `"use client"` it may be async, as a Server Component. For a client story
+ * it is synchronous, also one of the preview file, which is server code: a
+ * hook of React goes in a component of a file with `"use client"` that it
+ * renders.
+ */
 export type Decorator<TArgs = Args> = DecoratorFunction<NextjsRscTypes, TArgs>;
 /** The context of a story, as `play`, `render` and a decorator get it. */
 export type StoryContext<TArgs = Args> = StoryContextBase<NextjsRscTypes, TArgs>;

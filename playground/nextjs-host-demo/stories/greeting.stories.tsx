@@ -48,15 +48,19 @@ export const InLayouts: Story = {
 };
 
 // What the story's `beforeEach` sets is there for its render: a cookie of
-// the app, set in a Server Action, and the browser's storage.
+// the app, set in a Server Action, and the browser's storage. The decorator
+// of the preview file that reads the cookie, async, as a server story has it.
 export const Seeded: Story = {
+  parameters: { visitor: true },
   beforeEach: async () => {
     await runInServerAction(async () => (await cookies()).set("visitor", "Ada"));
     localStorage.setItem("visitor", "Ada");
   },
   render: async () => <p>Visitor: {(await cookies()).get("visitor")?.value ?? "none"}</p>,
   play: async ({ canvasElement }) => {
-    await expect(await within(canvasElement).findByText("Visitor: Ada")).toBeVisible();
+    const canvas = within(canvasElement);
+    await expect(await canvas.findByText("Visitor: Ada")).toBeVisible();
+    await expect(canvas.getByTestId("visitor")).toHaveAttribute("data-visitor", "Ada");
     await expect(localStorage.getItem("visitor")).toBe("Ada");
   },
 };

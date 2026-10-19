@@ -37,6 +37,17 @@ const passed: StoryRun = { phase: "finished", reports: [], interactions: "PASS" 
 // The canvas of the story, in the manager.
 const inCanvas = (canvas: Frame) => canvas.locator("#storybook-root");
 
+// What the decorator of the preview file with Storybook's hooks read: the
+// args, the globals and a parameter of the story.
+const storybookHooks = async (canvas: Frame) => {
+  const hooks = inCanvas(canvas).getByTestId("storybook-hooks");
+  return {
+    args: await hooks.getAttribute("data-args"),
+    locale: await hooks.getAttribute("data-locale"),
+    file: await hooks.getAttribute("data-file"),
+  };
+};
+
 test("a server story renders in a request of the app, in the project's decorator", async ({
   page,
 }) => {
@@ -45,6 +56,11 @@ test("a server story renders in a request of the app, in the project's decorator
   // The project's decorator, a Client Component, with the CSS of the preview file.
   const theme = inCanvas(canvas).getByTestId("theme");
   await expect.poll(() => theme.getAttribute("data-theme")).toBe("storybook");
+  expect(await storybookHooks(canvas)).toEqual({
+    args: "name",
+    locale: "en",
+    file: "greeting.stories.tsx",
+  });
   await expect
     .poll(() => theme.evaluate((element) => getComputedStyle(element).outlineStyle))
     .toBe("dashed");
@@ -53,15 +69,24 @@ test("a server story renders in a request of the app, in the project's decorator
   await expect.poll(() => greeting.isVisible()).toBe(true);
 });
 
+// The preview file imports `server-only`: it is server code, which the
+// browser does not evaluate for a client story.
 test("a client story renders in the browser layer, with fn() for play and Actions", async ({
   page,
 }) => {
   const canvas = await openStory(page, site!.url, "press-button--pressed");
   expect(await storyRun(page, canvas, "press-button--pressed")).toEqual(passed);
   const button = inCanvas(canvas).getByRole("button", { name: "Press: 1" });
-  // The meta's decorator in the project's, both of the browser layer.
+  // The meta's decorator in the project's, whose ThemeProvider of a file with
+  // "use client" the browser renders, with the context of the button.
   const frame = inCanvas(canvas).getByTestId("theme").getByTestId("meta-decorator");
   await expect.poll(() => frame.getByRole("button").count()).toBe(1);
+  expect(await button.getAttribute("data-theme")).toBe("storybook");
+  expect(await storybookHooks(canvas)).toEqual({
+    args: "label onPress",
+    locale: "en",
+    file: "press-button.stories.tsx",
+  });
   // The CSS module of the component, and the CSS of the story file.
   await expect
     .poll(() => button.evaluate((element) => getComputedStyle(element).color))
@@ -75,6 +100,13 @@ test("a client story renders in the browser layer, with fn() for play and Action
   await expect
     .poll(() => page.locator("#storybook-panel-root").innerText())
     .toContain("onPress: []");
+});
+
+// The first client story of the document: its play runs as the story has
+// rendered, once the browser loaded the ThemeProvider of the preview file.
+test("play of a client story sees the story as it rendered, without waiting", async ({ page }) => {
+  const canvas = await openStory(page, site!.url, "press-button--at-once");
+  expect(await storyRun(page, canvas, "press-button--at-once")).toEqual(passed);
 });
 
 // The document of the preview: Storybook's, or the one of a page, which owns
@@ -266,6 +298,16 @@ test("misuse says what to do instead", async ({ page, errors }) => {
   );
   expect(await misuse(page, canvas, "misuse-client--page", errors)).toContain(
     'its file has "use client": a page renders on the server',
+  );
+  // A decorator of the preview file that is async and reads the request, as
+  // it does for the server story greeting--seeded, and one with a hook of React.
+  expect(await misuse(page, canvas, "misuse-client--async-preview-decorator", errors)).toContain(
+    "A decorator of the client story misuse-client--async-preview-decorator returned a " +
+      "promise. A decorator is a synchronous function that returns elements",
+  );
+  expect(await misuse(page, canvas, "misuse-client--hook-in-preview-decorator", errors)).toContain(
+    "A decorator of the client story misuse-client--hook-in-preview-decorator called a hook " +
+      "of React, in server code.",
   );
   // And the stories after them render as before.
   expect(await runStory(page, canvas, "press-button--pressed")).toEqual(passed);

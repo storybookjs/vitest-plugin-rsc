@@ -1,8 +1,7 @@
 import type { DecoratorFunction, ModuleExports } from "storybook/internal/types";
-import { applyHooks, defaultDecorateStory, HooksContext } from "storybook/preview-api";
+import { applyHooks, HooksContext, useArgs } from "storybook/preview-api";
 import { expect, test, vi } from "vitest";
 import { applyDecorators, experimental_loadStoryFile } from "./preview.ts";
-import { render } from "./server-story.ts";
 
 // The two layers, as the plugin has them: a module of the rsc layer, and of
 // a file with "use client" a module of the browser layer, which
@@ -23,28 +22,39 @@ const { browserModules, loadClientModule, named } = vi.hoisted(() => {
 });
 vi.mock("vitest-plugin-rsc/nextjs/testing-library", () => ({ loadClientModule }));
 
-// The preview file, as each layer evaluates it.
-const { rscTheme, browserTheme, changedTheme } = vi.hoisted(() => ({
-  rscTheme: named("rsc-theme"),
-  browserTheme: named("browser-theme"),
-  changedTheme: named("changed-theme"),
-}));
+// Decorators of the preview file, which the rsc layer evaluates, once: one,
+// and one that does what a decorator of the preview file cannot in a client
+// story, which a parameter turns on, and a component of a file with
+// "use client", which the rsc layer has as a reference.
+const { theme, reference, misuse } = vi.hoisted(() => {
+  const reference = Object.assign(() => "reference", {
+    $$typeof: Symbol.for("react.client.reference"),
+  });
+  const misuse = (Story: () => unknown, { parameters }: { parameters: { misuse?: string } }) => {
+    if (parameters.misuse === "async") return Promise.resolve(Story());
+    // What the rsc layer's React, the server's, does outside of its render.
+    if (parameters.misuse === "hook")
+      throw new TypeError("Cannot read properties of null (reading 'useMemo')");
+    if (parameters.misuse === "useState")
+      throw new TypeError("(0 , __vite__cjsImport0_react.useState) is not a function");
+    if (parameters.misuse === "other") throw new TypeError("x is not a function");
+    return Story();
+  };
+  return {
+    theme: (Story: () => unknown) => `theme(${String(Story())})`,
+    reference,
+    misuse,
+  };
+});
 vi.mock("virtual:@storybook/nextjs-vite-rsc/project", () => ({
-  preview: { decorators: [rscTheme] },
   previewFile: ".storybook/preview.tsx",
   root: "",
   workingDir: "",
 }));
-// The browser layer's preview file, which it evaluates again after a change.
-const browserPreview = vi.hoisted(() => ({ current: { decorators: [browserTheme] } }));
 vi.mock("./client-canvas.tsx", () => {
-  const reference = {};
-  browserModules.set(reference, {
-    applyDecorators: defaultDecorateStory,
-    render: () => "browser-render",
-    loadPreview: async () => browserPreview.current,
-  });
-  return { default: reference };
+  const canvas = {};
+  browserModules.set(canvas, { renderToCanvas: async () => {} });
+  return { default: canvas };
 });
 // What renders a server story is of a browser.
 vi.mock("./server-story.ts", () => ({
@@ -59,6 +69,15 @@ vi.mock("./server-story.ts", () => ({
 function storyFile(exports: ModuleExports) {
   const imported = { ...exports, __namedExportsOrder: Object.keys(exports) };
   return () => experimental_loadStoryFile("./stories/button.stories.tsx", async () => imported);
+}
+
+// A client story's export, of a story file that loaded.
+async function clientStory(): Promise<object> {
+  const meta = { title: "Button" };
+  const Pressed = { args: {} };
+  browserModules.set(meta, { default: meta, Pressed });
+  await storyFile({ default: meta, Pressed: {} })();
+  return Pressed;
 }
 
 test("a story file without a directive is the rsc layer's", async () => {
@@ -86,86 +105,66 @@ test('a story file with "use client" is the browser layer\'s, the same object ea
   expect(second).toBe(first);
 });
 
-test('a story file with "use client" that exports a value of another one is the browser layer\'s', async () => {
-  // A fixture that both files export, which `excludeStories` leaves out.
-  const fixture = { name: "fixture" };
-  const first = { title: "First" };
-  const Shared = { args: {} };
-  browserModules.set(first, { default: first, Shared, fixture });
-  await storyFile({ default: first, Shared: {}, fixture: {} })();
-  const second = { title: "Second" };
-  const Own = { args: {} };
-  browserModules.set(second, { default: second, Own, fixture });
-  await storyFile({ default: second, Own: {}, fixture: {} })();
-  expect(decorated(Own, [rscTheme])).toBe("browser-theme(story)");
-});
-
 // A story decorated and called as Storybook's `prepareStory()` does: with
 // the decorators wrapped for Storybook's hooks.
 function decorated(moduleExport: object, decorators: DecoratorFunction[], context = {}) {
   const story = applyHooks(applyDecorators as never)(() => "story", decorators);
-  return story({ moduleExport, hooks: new HooksContext(), ...context } as never);
+  return story({
+    id: "button--pressed",
+    moduleExport,
+    parameters: {},
+    hooks: new HooksContext(),
+    ...context,
+  } as never);
 }
 
-test("a client story has the decorators of the preview file as the browser layer evaluated them", async () => {
-  const meta = { title: "Button" };
-  const Pressed = { args: {} };
-  browserModules.set(meta, { default: meta, Pressed });
-  await storyFile({ default: meta, Pressed: {} })();
-  // Storybook's order: the story's, the meta's, the preview file's, and
-  // those of an addon, as the preview has them.
-  const decorators = [named("story"), named("meta"), rscTheme, named("addon")];
-  expect(decorated(Pressed, decorators)).toBe("addon(browser-theme(meta(story(story))))");
-  // Without a `render` of its own, the story is rendered by the browser
-  // layer's `render` of `@storybook/react`, not by the framework's.
-  expect(decorated(Pressed, [rscTheme], { originalStoryFn: render })).toBe(
-    "browser-theme(browser-render)",
+test("a story of either kind has its decorators in Storybook's order, none of them twice", async () => {
+  const Pressed = await clientStory();
+  // The story's, the meta's, the preview file's, and those of an addon, as
+  // the preview has them.
+  const decorators = [named("story"), named("meta"), theme, misuse, named("addon")];
+  expect(decorated(Pressed, decorators)).toBe("addon(theme(meta(story(story))))");
+  expect(decorated({}, decorators)).toBe("addon(theme(meta(story(story))))");
+});
+
+test("Storybook's hooks work in a decorator of a client story", async () => {
+  const Pressed = await clientStory();
+  const withArgs = (Story: () => unknown) =>
+    `${Object.keys(useArgs()[0]).join()}(${String(Story())})`;
+  expect(decorated(Pressed, [withArgs], { args: { label: "Press" } })).toBe("label(story)");
+});
+
+// The decorator that a story's parameter has misbehave.
+const misused = (moduleExport: object, kind: string) => () =>
+  decorated(moduleExport, [misuse], { parameters: { misuse: kind } });
+
+test("a decorator that returns a promise fails a client story, not a server story", async () => {
+  const Pressed = await clientStory();
+  expect(misused(Pressed, "async")).toThrow(
+    "A decorator of the client story button--pressed returned a promise. A decorator is a " +
+      "synchronous function that returns elements, which the browser renders for a client " +
+      "story. Those of the preview file are server code",
   );
+  expect(misused(Pressed, "async")).toThrow(expect.objectContaining({ name: "DecoratorError" }));
+  await expect(misused({}, "async")()).resolves.toBe("story");
 });
 
-test("a client story has the twins in the place of the run of the preview file's decorators", async () => {
-  const meta = { title: "Button" };
-  const Pressed = { args: {} };
-  browserModules.set(meta, { default: meta, Pressed });
-  await storyFile({ default: meta, Pressed: {} })();
-  // An addon that has the same function as the preview file keeps it.
-  expect(decorated(Pressed, [named("story"), rscTheme, rscTheme])).toBe(
-    "rsc-theme(browser-theme(story(story)))",
-  );
+test("a decorator that calls a hook of React in server code fails a client story", async () => {
+  const Pressed = await clientStory();
+  for (const kind of ["hook", "useState"]) {
+    expect(misused(Pressed, kind)).toThrow(
+      "A decorator of the client story button--pressed called a hook of React, in server code.",
+    );
+  }
+  // Another error of the decorator is its own.
+  expect(misused(Pressed, "other")).toThrow(new TypeError("x is not a function"));
 });
 
-test("a preview file that fails in the browser layer says so", async () => {
-  const meta = { title: "Button" };
-  browserModules.set(meta, { default: meta, Failing: {} });
-  const current = browserPreview.current;
-  browserPreview.current = Promise.reject(new Error("window.process")) as never;
-  await expect(storyFile({ default: meta, Failing: {} })()).rejects.toThrow(
-    ".storybook/preview.tsx is evaluated in the browser layer too",
-  );
-  browserPreview.current = current;
-});
-
-test("a server story has the decorators of the preview file as the rsc layer evaluated them", () => {
-  expect(decorated({}, [named("story"), rscTheme])).toBe("rsc-theme(story(story))");
-});
-
-test("a story file that loads after a change has the preview file of the browser layer then", async () => {
-  const meta = { title: "Button" };
-  const Before = { args: {} };
-  browserModules.set(meta, { default: meta, Before });
-  await storyFile({ default: meta, Before: {} })();
-  // The story file and the preview file changed, and the layer evaluated the
-  // modules of the app again.
-  browserPreview.current = { decorators: [changedTheme] };
-  const changed = { title: "Button" };
-  const After = { args: {} };
-  browserModules.set(changed, { default: changed, After });
-  await storyFile({ default: changed, After: {} })();
-  expect(decorated(After, [rscTheme])).toBe("changed-theme(story)");
-  // A story of before has the components of before, also when Storybook
-  // loads its file again to prepare another story of it.
-  expect(decorated(Before, [rscTheme])).toBe("browser-theme(story)");
-  await storyFile({ default: meta, Before: {} })();
-  expect(decorated(Before, [rscTheme])).toBe("browser-theme(story)");
-  browserPreview.current = { decorators: [browserTheme] };
+test('a decorator that is a component of a file with "use client" fails every story', async () => {
+  const Pressed = await clientStory();
+  for (const moduleExport of [Pressed, {}]) {
+    expect(() => decorated(moduleExport, [reference])).toThrow(
+      'A decorator of the story button--pressed is a component of a file with "use client"',
+    );
+  }
 });

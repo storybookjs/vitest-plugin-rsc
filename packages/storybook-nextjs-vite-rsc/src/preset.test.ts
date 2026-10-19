@@ -96,14 +96,13 @@ test("the docs plugins after the plugin's, whose load line of an MDX file they g
   );
 });
 
-test("the virtual module of the project has the preview file, from the root", async () => {
+test("the virtual module of the project has where the preview file is, from the root", async () => {
   const { plugins } = await viteFinal({});
   const project = plugins.find((plugin) => plugin.name === "storybook-nextjs-vite-rsc:project")!;
   const id = (project.resolveId as (source: string) => string)(
     "virtual:@storybook/nextjs-vite-rsc/project",
   );
   const code = (project.load as (id: string) => string)(id);
-  expect(code).toContain(`from ${JSON.stringify(path.join(configDir, "preview.tsx"))};`);
   expect(code).toContain('export const previewFile = ".storybook/preview.tsx";');
 });
 

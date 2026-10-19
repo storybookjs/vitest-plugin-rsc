@@ -67,6 +67,29 @@ test("server stories, a page, a Server Action and client stories", async ({ page
     .toBe("rgb(0, 0, 255)");
 });
 
+// The preview file imports `server-only` and is evaluated once, on the
+// server: a client story renders in its decorators, the ThemeProvider of a
+// file with "use client" among them, whose decorator with an async one fails
+// with a message that says so.
+test("a client story in the decorators of the preview file, which is server code", async ({
+  page,
+  errors,
+}) => {
+  const canvas = await openStory(page, site!.url, "press-button--at-once");
+  expect(await storyRun(page, canvas, "press-button--at-once")).toEqual(passed);
+  const hooks = canvas.locator("#storybook-root").getByTestId("storybook-hooks");
+  expect(await hooks.getAttribute("data-args")).toBe("label onPress");
+  expect(await hooks.getAttribute("data-locale")).toBe("en");
+  expect(await runStory(page, canvas, "greeting--seeded")).toEqual(passed);
+  await runStory(page, canvas, "misuse-client--async-preview-decorator");
+  const error = canvas.locator("#error-message");
+  await expect.poll(() => error.isVisible()).toBe(true);
+  expect(await error.textContent()).toContain(
+    "A decorator of the client story misuse-client--async-preview-decorator returned a promise.",
+  );
+  errors.list.splice(0);
+});
+
 // A server story of a component is a node, in the preview's document: a
 // reload loads the preview again, not the app's page at the node's URL.
 test("a reload at a server story of a component shows the story again", async ({ page }) => {

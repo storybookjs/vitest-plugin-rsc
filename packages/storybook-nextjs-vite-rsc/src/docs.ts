@@ -5,11 +5,9 @@ import type {
   ModuleImportFn,
   Parameters,
 } from "storybook/internal/types";
-import { composeConfigs } from "storybook/preview-api";
-import { preview } from "virtual:@storybook/nextjs-vite-rsc/project";
 import { loadClientModule } from "vitest-plugin-rsc/nextjs/testing-library";
 import type { NextjsRscRenderer } from "./index.ts";
-import { browserPreview, isClientStoryFile, loadCanvas } from "./client-story.ts";
+import { isClientStoryFile, loadCanvas } from "./client-story.ts";
 
 // The docs pages of `@storybook/addon-docs`, which render in the browser
 // layer, on Next's browser React: the docs page, its blocks, an MDX file and
@@ -17,64 +15,19 @@ import { browserPreview, isClientStoryFile, loadCanvas } from "./client-story.ts
 // has a document of its own: on a docs page it is Storybook's iframe of the
 // story. See docs-plugin.ts for the MDX files.
 
-/** `parameters.docs.renderer`: the renderer of the browser layer (client-canvas.tsx). */
+/**
+ * `parameters.docs.renderer`: the renderer of the browser layer
+ * (client-canvas.tsx). A component of `parameters.docs`, like `page` or one of
+ * `components`, of a file with `"use client"`, is a client reference in the
+ * rsc layer, which renders as its export of the browser layer (the plugin's).
+ */
 export async function docsRenderer(): Promise<{
   render: DocsRenderFunction<NextjsRscRenderer>;
   unmount: (element: HTMLElement) => void;
 }> {
   const canvas = await loadCanvas();
-  const renderer = await canvas.createDocsRenderer();
-  return {
-    render: async (context, docsParameter, element) =>
-      renderer.render(context, withTwins(docsParameter, await browserPreview(canvas)), element),
-    unmount: (element) => renderer.unmount(element),
-  };
+  return canvas.createDocsRenderer();
 }
-
-// The docs parameters that are a component: the page and its container.
-// `components`, what renders the elements of an MDX file, has one for each.
-const componentParameters = ["page", "container"] as const;
-
-// The docs parameters with the components of the preview file as the browser
-// layer evaluated it, in the place of the rsc layer's, as a client story has
-// the preview file's decorators: by their identity. A component of a story
-// file without `"use client"` is a reference there, which no layer renders.
-function withTwins(docs: Parameters, browser: object): Parameters {
-  const ofRsc = docsOf(preview);
-  const ofBrowser = docsOf(browser);
-  const twin = (value: unknown, rsc: unknown, other: unknown) =>
-    value !== undefined && value === rsc ? other : value;
-  const result: Parameters = { ...docs };
-  for (const name of componentParameters) {
-    if (docs[name] === undefined) continue;
-    result[name] = twin(docs[name], ofRsc[name], ofBrowser[name]);
-    if (isClientReference(result[name])) throw referenceInDocs(`docs.${name}`);
-  }
-  if (docs.components) {
-    result.components = Object.fromEntries(
-      Object.entries(docs.components as Record<string, unknown>).map(([name, value]) => {
-        const component = twin(value, ofRsc.components?.[name], ofBrowser.components?.[name]);
-        if (isClientReference(component)) throw referenceInDocs(`docs.components.${name}`);
-        return [name, component];
-      }),
-    );
-  }
-  return result;
-}
-
-const docsOf = (module: object): Parameters =>
-  (composeConfigs([module]).parameters?.docs as Parameters | undefined) ?? {};
-
-const isClientReference = (value: unknown): boolean =>
-  typeof value === "function" &&
-  (value as { $$typeof?: symbol }).$$typeof === Symbol.for("react.client.reference");
-
-const referenceInDocs = (parameter: string) =>
-  new Error(
-    `parameters.${parameter} is a component of a file with "use client" that a story file ` +
-      `without the directive imports, a server story file, where it is a reference: set it ` +
-      `in .storybook/preview, or in a story file with "use client".`,
-  );
 
 /**
  * How a docs page shows a story, by its kind, when the story does not say:

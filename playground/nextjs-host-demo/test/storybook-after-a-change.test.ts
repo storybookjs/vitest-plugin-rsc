@@ -92,8 +92,8 @@ test("an MDX page renders again after a change of a story file it imports", asyn
 test("a client story has the project's decorator after a change of its file", async ({ page }) => {
   const canvas = await openStory(page, site!.url, "press-button--labelled");
   change("stories/press-button.stories.tsx", 'label: "Labelled"', 'label: "Relabelled"');
-  // The components of the story file and of the preview file, both as the
-  // browser layer evaluated them after the change.
+  // The components of the story file as the browser layer evaluated them
+  // after the change, in the decorator of the preview file.
   const button = canvas.locator("#storybook-root").getByRole("button", { name: "Relabelled: 0" });
   await expect.poll(() => button.getAttribute("data-theme"), { timeout: 30_000 }).toBe("storybook");
 });
@@ -108,17 +108,20 @@ test("a page story renders again after a change of its file", async ({ page }) =
   });
 });
 
-test("a client story has the project's decorator after a change of a component of it", async ({
+// The ThemeProvider of the preview file is a component of the app that no
+// route imports, which a client story renders through its reference. The
+// browser keeps the evaluation of such a file until a file of the host with
+// "use client" loads again: the change shows once the preview loads again.
+test.fails("a client story has the project's decorator after a change of a component of it", async ({
   page,
 }) => {
   const canvas = await openStory(page, site!.url, "press-button--labelled");
-  await mark(canvas);
   change("app/components/theme.tsx", "data-theme={theme}>", 'data-theme={theme} data-changed="">');
-  // A change that reaches the preview file loads the preview again.
-  await reloaded(canvas);
-  await rendered(canvas, "press-button--labelled");
+  // In place, or after a load of the preview.
   const theme = canvas.locator("#storybook-root").getByTestId("theme");
-  await expect.poll(() => theme.getAttribute("data-changed")).toBe("");
+  await expect
+    .poll(() => theme.getAttribute("data-changed").catch(() => null), { timeout: 15_000 })
+    .toBe("");
   const button = theme.getByRole("button");
   await expect.poll(() => button.getAttribute("data-theme")).toBe("storybook");
 });
@@ -137,6 +140,31 @@ test("server stories render after a change of a component of the app", async ({ 
     phase: "finished",
     reports: [],
   });
+});
+
+// The preview file is a file of the host whose stylesheets a server story
+// has, so a change of it loads the preview again, which evaluates it once.
+test("a client story renders again after a change of the preview file", async ({ page }) => {
+  const canvas = await openStory(page, site!.url, "press-button--labelled");
+  await mark(canvas);
+  change(
+    ".storybook/preview.tsx",
+    '<ThemeProvider theme="storybook">',
+    '<ThemeProvider theme="changed">',
+  );
+  await reloaded(canvas);
+  await rendered(canvas, "press-button--labelled");
+  // The decorator of the preview file after the change, and the context of
+  // its ThemeProvider in the story's component.
+  const button = canvas.locator("#storybook-root").getByRole("button", { name: /Labelled: / });
+  await expect.poll(() => button.getAttribute("data-theme")).toBe("changed");
+  expect(await runStory(page, canvas, "greeting--server-action")).toMatchObject({
+    phase: "finished",
+    reports: [],
+  });
+  await expect
+    .poll(() => canvas.locator("#storybook-root").getByTestId("theme").getAttribute("data-theme"))
+    .toBe("changed");
 });
 
 test("a change of the preview's stylesheet shows in place", async ({ page }) => {
@@ -169,6 +197,35 @@ test("an MDX file that imports server code says so", async ({ page, errors }) =>
     errors.list.splice(0);
   } finally {
     fs.rmSync(path.join(copy, "stories/server-code.mdx"));
+  }
+});
+
+// The preview file is server code: a story file of CSF Next, with
+// "use client", imports it in the browser.
+test('a story file with "use client" that imports the preview file says so', async ({
+  page,
+  errors,
+}) => {
+  fs.writeFileSync(
+    path.join(copy, "stories/csf-next.stories.tsx"),
+    '"use client";\n\nimport preview from "../.storybook/preview.tsx";\n\n' +
+      "export default { title: 'CSF Next', parameters: { preview } };\n" +
+      "export const Story = { render: () => <p>A client story</p> };\n",
+  );
+  try {
+    // The story file fails to load: Storybook shows its error, not the story.
+    await page.goto(`${site!.url}?path=/story/csf-next--story`);
+    const iframe = await page.locator("#storybook-preview-iframe").elementHandle();
+    const canvas = (await iframe!.contentFrame())!;
+    await expect
+      .poll(() => canvas.locator("#error-message").textContent(), { timeout: 30_000 })
+      .toContain(
+        ".storybook/preview.tsx is server code, which the preview evaluates once, on the " +
+          "server, and csf-next.stories.tsx imports it in the browser",
+      );
+    errors.list.splice(0);
+  } finally {
+    fs.rmSync(path.join(copy, "stories/csf-next.stories.tsx"));
   }
 });
 

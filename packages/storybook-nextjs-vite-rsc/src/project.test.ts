@@ -1,5 +1,4 @@
-import type { EnvironmentModuleNode, HotUpdateOptions } from "vite";
-import { expect, test, vi } from "vitest";
+import { expect, test } from "vitest";
 import { projectModuleId, projectPlugin, type Project } from "./project.ts";
 
 function projectModule(project: Project): string {
@@ -8,8 +7,7 @@ function projectModule(project: Project): string {
   return (plugin.load as (id: string) => string)(id);
 }
 
-// The preview file is an import, which the build resolves; the directories
-// are no path of the machine: a static build is a site to serve anywhere.
+// No path of the machine: a static build is a site to serve anywhere.
 test("the preview file, and the directories from the one they are both in", () => {
   // Storybook runs at the root of a monorepo, the app is a package of it.
   const code = projectModule({
@@ -19,8 +17,6 @@ test("the preview file, and the directories from the one they are both in", () =
   });
   expect(code).toBe(
     [
-      'import * as preview from "/home/me/repo/apps/web/.storybook/preview.tsx";',
-      "export { preview };",
       'export const previewFile = ".storybook/preview.tsx";',
       'export const root = "apps/web";',
       'export const workingDir = "";',
@@ -30,37 +26,37 @@ test("the preview file, and the directories from the one they are both in", () =
 
 test("a project without a preview file", () => {
   const code = projectModule({ root: "/repo", workingDir: "/repo", previewFile: undefined });
-  expect(code).toContain("const preview = {};");
   expect(code).toContain("export const previewFile = undefined;");
 });
 
-// A change that reaches the preview file loads the preview again: Storybook
-// and the canvas would have two evaluations of the file otherwise.
-function hotUpdate(...modules: Partial<EnvironmentModuleNode>[]) {
-  const previewFile = "/repo/.storybook/preview.tsx";
-  const plugin = projectPlugin({ root: "/repo", workingDir: "/repo", previewFile });
-  const send = vi.fn();
-  const environment = { name: "client", hot: { send } };
-  const handler = plugin.hotUpdate as unknown as (
-    this: { environment: typeof environment },
-    options: Partial<HotUpdateOptions>,
-  ) => unknown;
-  const returned = handler.call({ environment }, { modules } as Partial<HotUpdateOptions>);
-  return { reloads: send.mock.calls.length > 0, returned };
-}
-
-test("a change under the preview file loads the preview again, but for a stylesheet", () => {
-  const preview = { file: "/repo/.storybook/preview.tsx", importers: new Set() };
-  const theme = { file: "/repo/app/theme.tsx", importers: new Set([preview]) };
-  expect(hotUpdate(theme as never)).toEqual({ reloads: true, returned: [] });
-  // `preview.css`: Vite swaps it in place.
-  const css = { file: "/repo/.storybook/preview.css", isSelfAccepting: true };
-  expect(hotUpdate({ ...css, importers: new Set([preview]) } as never).reloads).toBe(false);
-  // A CSS module has exports, which the file that imports it reads.
-  const cssModule = {
-    file: "/repo/.storybook/preview.module.css",
-    isSelfAccepting: false,
-    importers: new Set([preview]),
-  };
-  expect(hotUpdate(cssModule as never).reloads).toBe(true);
+// The preview file is server code, evaluated in the rsc layer: a file with
+// "use client" that imports it, like a story file of CSF Next, would have the
+// browser layer evaluate it again.
+test("the preview file in the browser layer says that it is server code", () => {
+  const plugin = projectPlugin({
+    root: "/repo",
+    workingDir: "/repo",
+    previewFile: "/repo/.storybook/preview.tsx",
+  });
+  const load = (environment: string, id: string) =>
+    (plugin.load as (this: object, id: string) => unknown).call(
+      {
+        environment: { name: environment, mode: "build" },
+        getModuleInfo: () => ({ importers: ["/repo/stories/button.stories.tsx"] }),
+        error: (message: string) => {
+          throw new Error(message);
+        },
+      },
+      id,
+    );
+  expect(() => load("react_client", "/repo/.storybook/preview.tsx?v=1")).toThrow(
+    ".storybook/preview.tsx is server code, which the preview evaluates once, on the server, " +
+      "and button.stories.tsx imports it in the browser",
+  );
+  expect(() => load("react_client", "/repo/.storybook/preview.tsx")).toThrow(
+    'A story file with "use client" is CSF 3',
+  );
+  // The preview, the rsc layer, which is Vite's `client` environment.
+  expect(load("client", "/repo/.storybook/preview.tsx")).toBeUndefined();
+  expect(load("react_client", "/repo/stories/button.stories.tsx")).toBeUndefined();
 });

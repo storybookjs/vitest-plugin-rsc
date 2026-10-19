@@ -30,7 +30,7 @@ export const Pressed: Story = {
   play: async ({ args, canvasElement, userEvent }) => {
     const canvas = within(canvasElement);
     const button = await canvas.findByRole("button", { name: "Press: 0" });
-    // The project's decorator, as the browser layer evaluated the preview file.
+    // The project's decorator, a Client Component that the preview file renders.
     await expect(button).toHaveAttribute("data-theme", "storybook");
     await userEvent.click(button);
     await expect(args.onPress).toHaveBeenCalledOnce();
@@ -42,4 +42,18 @@ export const Pressed: Story = {
 // next renders it in a root of its own.
 export const Labelled: Story = {
   args: { label: "Labelled" },
+};
+
+// What `play` sees as the story has rendered, without waiting: the story in
+// the project's decorator, whose `ThemeProvider` the browser loaded first.
+export const AtOnce: Story = {
+  args: { label: "At once" },
+  play: async ({ canvas }) => {
+    const theme = canvas.getByTestId("theme");
+    await expect(theme).toHaveAttribute("data-theme", "storybook");
+    await expect(canvas.getByRole("button", { name: "At once: 0" })).toHaveAttribute(
+      "data-theme",
+      "storybook",
+    );
+  },
 };
