@@ -40,8 +40,10 @@ export const InLayouts = meta.story({
 
 // What the server preview's `beforeEach` seeds, and what the story's sets,
 // are there for its render: the app's database, a cookie of the app, set in
-// a Server Action, and the browser's storage.
+// a Server Action, and the browser's storage. Not in autodocs, whose iframes
+// render at once and share the storage that each story's cleanup clears.
 export const Seeded = meta.story({
+  tags: ["!autodocs"],
   beforeEach: async () => {
     await runInServerAction(async () => (await cookies()).set("visitor", "Ada"));
     localStorage.setItem("visitor", "Ada");

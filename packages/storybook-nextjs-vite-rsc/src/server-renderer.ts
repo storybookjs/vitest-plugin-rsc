@@ -102,15 +102,17 @@ export const mount = (context: Context) => async (ui?: ReactNode) => {
 
 /**
  * Before the story's own `beforeEach`, as the plugin's setup before a test:
- * `cleanup()`, but for new args, which keep the page. Testing Library without
- * the browser layer's `act`, as a page has a React of its own. What it
- * returns runs as Storybook tears the story down, also after an abort.
+ * `cleanup()`, and Testing Library without the browser layer's `act`, as a
+ * page has a React of its own. Once for the page: a render with new args
+ * keeps it, and Storybook keeps every teardown until it leaves the story.
+ * What it returns runs then, also after an abort.
  */
 export const beforeEach: BeforeEach<NextjsServerRenderer> = async ({ canvasElement }) => {
+  if (opened.has(canvasElement)) return;
   const { eventWrapper, asyncWrapper, unstable_advanceTimersWrapper } = getConfig();
   const run = <T>(callback: () => T) => callback();
   configure({ eventWrapper: run, asyncWrapper: run, unstable_advanceTimersWrapper: run });
-  if (!opened.has(canvasElement)) await cleanup();
+  await cleanup();
   const { pathname } = window.location;
   return async () => {
     configure({ eventWrapper, asyncWrapper, unstable_advanceTimersWrapper });

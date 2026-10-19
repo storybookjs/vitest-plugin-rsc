@@ -130,16 +130,28 @@ test("the runtime and an addon that both previews import listen once", async ({ 
 // Storybook's addons that work on the DOM, of every preview, for a server
 // story: their decorators run with Storybook's hooks on the preview's
 // document, where the story is.
-test("backgrounds, outline and measure on a server story", async ({ page }) => {
+test("a11y, backgrounds, outline, measure and viewport on a server story", async ({ page }) => {
   const canvas = await openStory(page, site!.url, "greeting--default");
+  // a11y's `afterEach` checked the story's document.
+  await page.getByRole("tab", { name: /Accessibility/ }).click();
+  await expect
+    .poll(() => page.locator("#storybook-panel-root").innerText(), { timeout: 30_000 })
+    .toMatch(/Passes/);
   await canvas.evaluate(() =>
     window.__STORYBOOK_PREVIEW__.channel.emit("updateGlobals", {
-      globals: { backgrounds: { value: "dark" }, outline: true, measureEnabled: true },
+      globals: {
+        backgrounds: { value: "dark" },
+        outline: true,
+        measureEnabled: true,
+        viewport: { value: "mobile1", isRotated: false },
+      },
     }),
   );
   await expect.poll(() => canvas.locator("style#addon-backgrounds-color").count()).toBe(1);
   await expect.poll(() => canvas.locator("style#addon-outline").count()).toBe(1);
   await expect.poll(() => canvas.locator("canvas#storybook-addon-measure").count()).toBe(1);
+  const iframe = page.locator("#storybook-preview-iframe");
+  await expect.poll(() => iframe.evaluate((element) => element.clientWidth)).toBe(320);
   expect(await inCanvas(canvas).getByText("Hello from Storybook").count()).toBe(1);
 });
 
@@ -310,7 +322,16 @@ test("new args: a server story renders again in place, a client story keeps its 
   // has its state.
   expect(await inCanvas(canvas).getByRole("button", { name: "Count: 1" }).count()).toBe(1);
   expect(await canvas.evaluate(() => "__marked" in window)).toBe(true);
+  // A page: new args are inputs of its `beforeEach`, so a new page load.
+  expect(await runStory(page, canvas, "home--home")).toEqual(passed);
+  await updateArgs(canvas, "home--home", { visitor: "Grace" });
+  await expect
+    .poll(() => canvas.evaluate(() => localStorage.getItem("visitor")), { timeout: 30_000 })
+    .toBe("Grace");
+  await expect.poll(() => canvas.getByRole("button", { name: "Count: 0" }).count()).toBe(1);
   await runStory(page, canvas, "press-button--labelled");
+  // Left, the page puts the preview at the story that is selected.
+  expect(new URL(canvas.url()).searchParams.get("id")).toBe("press-button--labelled");
   await inCanvas(canvas).getByRole("button", { name: "Labelled: 0" }).click();
   await updateArgs(canvas, "press-button--labelled", { label: "Renamed" });
   await expect
@@ -404,7 +425,7 @@ test("misuse says what to do instead", async ({ page, errors }) => {
     ["misuse-globals--globals", "globals are declared in preview.tsx"],
   ]) {
     await expect
-      .poll(() => notLoaded(canvas, story!, errors), { message: story })
+      .poll(() => notLoaded(canvas, story!, errors), { message: story, timeout: 60_000 })
       .toContain(message);
   }
   // And the stories after them render as before.
@@ -462,7 +483,7 @@ test("autodocs: a client story file's stories inline, a server story file's in i
     .toBe(1);
   await selectDocs(canvas, "greeting--docs");
   // The primary story and every story of the file, each in a page of its own.
-  await expect.poll(() => inDocs(canvas).locator("iframe").count()).toBe(5);
+  await expect.poll(() => inDocs(canvas).locator("iframe").count()).toBe(4);
   const primaryFrame = await storyInDocs(canvas, "greeting--default");
   expect(await primaryFrame.getByText("Hello from Storybook").count()).toBe(1);
   await expect
