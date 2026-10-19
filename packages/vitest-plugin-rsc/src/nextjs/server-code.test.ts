@@ -277,6 +277,41 @@ test("leaves what the project itself depends on to the app, in the walk of the h
   expect(serverCode.isServerCode(moduleOf("host-core/node_modules/react"), "rsc")).toBe(false);
 });
 
+test("leaves this plugin and what it depends on out of the walk of the host's packages, by their directories", () => {
+  // A framework of the host that depends on the plugin, under a name of its
+  // own as with an alias, and on what the plugin depends on.
+  const plugin = fileURLToPath(new URL("../..", import.meta.url));
+  const { dependencies = {} } = JSON.parse(
+    fs.readFileSync(path.join(plugin, "package.json"), "utf8"),
+  ) as { dependencies?: Record<string, string> };
+  const ownDependencies = Object.keys(dependencies).map((name) =>
+    fs.realpathSync(path.join(plugin, "node_modules", name)),
+  );
+  const root = fakeProject([], {
+    "host-framework": ["renamed-plugin", "@vitejs/plugin-rsc", "theme"],
+    theme: [],
+  });
+  const link = (name: string, to: string) => {
+    fs.mkdirSync(path.dirname(path.join(root, "node_modules", name)), { recursive: true });
+    fs.symlinkSync(to, path.join(root, "node_modules", name), "dir");
+  };
+  link("renamed-plugin", plugin);
+  link("@vitejs/plugin-rsc", path.join(plugin, "node_modules/@vitejs/plugin-rsc"));
+  const serverCode = createServerCode(registry, { host: { packages: ["host-framework"] } });
+  serverCode.configure(root);
+  serverCode.addTestFiles(() => false);
+
+  expect(serverCode.isServerCode(path.join(root, "node_modules/theme/index.js"), "rsc")).toBe(
+    false,
+  );
+  // Every dependency of the plugin stays server code, like Vite RSC's Flight
+  // server in the rsc layer.
+  expect(ownDependencies.length).toBeGreaterThan(0);
+  for (const dir of ownDependencies) {
+    expect(serverCode.isServerCode(path.join(dir, "index.js"), "rsc"), dir).toBe(true);
+  }
+});
+
 test("walks the package of a module of the host that `host.packages` names by its subpath", () => {
   // `host-ui/test` is a module of `host-ui`, which has no `package.json` of
   // its own there. So is `@host/blocks/preview` of `@host/blocks`, and every

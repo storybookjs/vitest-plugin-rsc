@@ -123,15 +123,6 @@ function findPackage(name: string, from: string): string | undefined {
   }
 }
 
-// What a host can depend on that is never the host's: this plugin, and what
-// it is built on. A framework of a host brings the plugin, and the walk of
-// the host's dependencies would take it along: `@storybook/nextjs-vite-rsc`
-// matches `@storybook/*`, depends on `vitest-plugin-rsc`, which depends on
-// `@vitejs/plugin-rsc`, whose Flight server has to stay server code in the
-// rsc layer. Without this, that framework turns the plugin's own server
-// code into browser code.
-const ownPackages = new Set(["vitest-plugin-rsc", "@vitejs/plugin-rsc"]);
-
 // The `dependencies` of the package at `dir`, by name.
 function dependenciesOf(dir: string): string[] {
   const file = path.join(dir, "package.json");
@@ -140,6 +131,28 @@ function dependenciesOf(dir: string): string[] {
     dependencies?: Record<string, string>;
   };
   return Object.keys(dependencies);
+}
+
+// The directory of this package, the nearest with a `package.json` above
+// this file, in `src` or in `dist`.
+function ownPackageDir(): string {
+  let dir = path.dirname(fileURLToPath(import.meta.url));
+  while (!fs.existsSync(path.join(dir, "package.json")) && dir !== path.dirname(dir)) {
+    dir = path.dirname(dir);
+  }
+  return fs.realpathSync(dir);
+}
+
+// What a host can depend on that is never the host's: this plugin, and what
+// it is built on, its `dependencies`, by their directories, under whatever
+// name the host has them. A framework of a host brings the plugin, and the
+// walk of the host's dependencies would take it along, to Vite RSC, whose
+// Flight server has to stay server code in the rsc layer. Without this, that
+// framework turns the plugin's own server code into browser code.
+function ownPackageDirs(): Set<string> {
+  const dir = ownPackageDir();
+  const dependencies = dependenciesOf(dir).map((name) => findPackage(name, dir));
+  return new Set([dir, ...dependencies.filter((found) => found !== undefined)]);
 }
 
 // The directories of these packages and of everything they depend on, but
@@ -160,10 +173,10 @@ function findPackagesWithDependencies(names: Iterable<string>, root: string): Se
       .map((name) => findPackage(name, root))
       .filter((dir) => dir !== undefined),
   );
+  const own = ownPackageDirs();
   const visit = (name: string, from: string) => {
-    if (ownPackages.has(name)) return;
     const dir = findPackage(name, from);
-    if (!dir || dirs.has(normalizePath(dir))) return;
+    if (!dir || own.has(dir) || dirs.has(normalizePath(dir))) return;
     if (!named.has(name) && appDirs.has(dir)) return;
     dirs.add(normalizePath(dir));
     for (const dependency of dependenciesOf(dir)) visit(dependency, dir);
