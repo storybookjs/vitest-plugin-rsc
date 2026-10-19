@@ -395,8 +395,9 @@ test("keeps what Vitest stores in the browser while the tests run", async () => 
 test("keeps the keys of the browser's storage that the host says are its own", async () => {
   // What a host stores as it runs, in this document or just before a
   // cleanup, when this document has not heard of it yet.
-  keepStorageKeys(["host-panel", "host-ui-*"]);
+  const forget = keepStorageKeys(["host-panel", "host-ui-*"]);
   onTestFinished(() => {
+    forget();
     for (const key of ["host-panel", "host-panels", "app-draft"]) localStorage.removeItem(key);
     sessionStorage.removeItem("host-ui-tab");
   });
@@ -412,6 +413,12 @@ test("keeps the keys of the browser's storage that the host says are its own", a
   expect(sessionStorage.getItem("host-ui-tab")).toBe("notes");
   expect(localStorage.getItem("host-panels")).toBeNull();
   expect(localStorage.getItem("app-draft")).toBeNull();
+
+  // Taken back, the keys are the app's again.
+  forget();
+  await cleanup();
+  expect(localStorage.getItem("host-panel")).toBeNull();
+  expect(sessionStorage.getItem("host-ui-tab")).toBeNull();
 });
 
 test("keeps what another document of the origin stores in the browser, like the manager of Storybook", async () => {

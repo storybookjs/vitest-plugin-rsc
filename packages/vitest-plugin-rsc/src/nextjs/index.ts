@@ -93,10 +93,10 @@ function browserHeaders(
 }
 
 // What was in the browser's storage before the app ran, and what another
-// document of the origin stores in it later, like Vitest's UI or the
-// manager document of another host: the host's to keep. The app runs in this document, and a document
-// gets no `storage` event for its own writes. What the other document removes
-// is no longer the host's.
+// document of the origin stores in it later, like Vitest's UI or the manager
+// document of another host: the host's to keep. The app runs in this
+// document, and a document gets no `storage` event for its own writes. What
+// the other document removes is no longer the host's.
 const storages = new Map(
   [localStorage, sessionStorage].map((storage) => [storage, new Set(Object.keys(storage))]),
 );
@@ -108,11 +108,12 @@ window.addEventListener("storage", ({ key, newValue, storageArea }) => {
   else keys.add(key);
 });
 
-// The keys that the host says are its own: see `keepStorageKeys()`.
-const hostKeys = new Set<string>();
+// The keys that the host says are its own, by call: see `keepStorageKeys()`.
+const hostKeys = new Set<readonly string[]>();
 const isHostKey = (key: string) =>
-  hostKeys.has(key) ||
-  [...hostKeys].some((name) => name.endsWith("*") && key.startsWith(name.slice(0, -1)));
+  [...hostKeys].some((keys) =>
+    keys.some((name) => (name.endsWith("*") ? key.startsWith(name.slice(0, -1)) : key === name)),
+  );
 
 /**
  * Says that keys of the browser's storage are the host's, so `cleanup()`
@@ -122,10 +123,13 @@ const isHostKey = (key: string) =>
  * `storage` event comes later than the write. A key that ends in `*` is every
  * key that starts with what is before it. What was there before the app ran,
  * and what another document stores that this one has heard of, is kept
- * without it.
+ * without it. Returns a function that takes these keys back: from then on
+ * they are the app's again, unless another call names them.
  */
-export function keepStorageKeys(keys: string[]): void {
-  for (const key of keys) hostKeys.add(key);
+export function keepStorageKeys(keys: string[]): () => void {
+  const declared = [...keys];
+  hostKeys.add(declared);
+  return () => void hostKeys.delete(declared);
 }
 
 // Removes what the app put in the browser's storage: what is not the host's.
