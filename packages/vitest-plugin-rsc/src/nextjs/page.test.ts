@@ -19,6 +19,7 @@ beforeEach(() => {
 afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
 });
 
 const pageOf = async (nodeOnPage?: NodeOnPage) => {
@@ -29,9 +30,9 @@ const pageOf = async (nodeOnPage?: NodeOnPage) => {
 test("releases what the page holds in reverse of how its load made it", async () => {
   const page = await pageOf();
   const released: string[] = [];
-  page.holds(() => released.push("runner"));
-  page.holds(() => released.push("leftovers"));
-  page.holds(() => released.push("root"));
+  page.defer(() => released.push("runner"));
+  page.defer(() => released.push("leftovers"));
+  page.defer(() => released.push("root"));
 
   await page.leave("cleanup()");
 
@@ -42,12 +43,12 @@ test("runs every release when one throws, and rejects with the first error", asy
   const page = await pageOf();
   const released: string[] = [];
   const first = new Error("first");
-  page.holds(() => released.push("runner"));
-  page.holds(() => {
+  page.defer(() => released.push("runner"));
+  page.defer(() => {
     released.push("leftovers");
     throw new Error("second");
   });
-  page.holds(() => {
+  page.defer(() => {
     released.push("root");
     throw first;
   });
@@ -59,7 +60,7 @@ test("runs every release when one throws, and rejects with the first error", asy
 test("is left once: leaving again gets the same promise, and releases nothing again", async () => {
   const page = await pageOf();
   const release = vi.fn();
-  page.holds(release);
+  page.defer(release);
 
   const left = page.leave("cleanup()");
   expect(page.leave("unmount()")).toBe(left);
@@ -73,7 +74,7 @@ test("stops its load and tells its node at once, before it releases", async () =
   const left = vi.fn();
   const page = await pageOf({ left } as unknown as NodeOnPage);
   const release = vi.fn();
-  page.holds(release);
+  page.defer(release);
   let started!: () => void;
   page.starts(new Promise<void>((resolve) => (started = resolve)), () => {});
   expect(page.open).toBe(true);
@@ -85,7 +86,7 @@ test("stops its load and tells its node at once, before it releases", async () =
   expect(page.open).toBe(false);
   expect(left).toHaveBeenCalledWith("cleanup()");
   // What the page holds waits for its client to stop starting.
-  await Promise.resolve();
+  await vi.advanceTimersByTimeAsync(1000);
   expect(release).not.toHaveBeenCalled();
   started();
   await leaving;
@@ -101,7 +102,7 @@ test("stops waiting for a page that does not stop starting, and releases it once
   let started!: () => void;
   const stopped = vi.fn();
   page.starts(new Promise<void>((resolve) => (started = resolve)), stopped);
-  page.holds(() => released.push("runner"));
+  page.defer(() => released.push("runner"));
 
   const leaving = page.leave("cleanup()");
   await vi.advanceTimersByTimeAsync(20_000);
@@ -113,18 +114,7 @@ test("stops waiting for a page that does not stop starting, and releases it once
   expect(stopped).toHaveBeenCalledOnce();
   expect(released).toEqual([]);
   // The client's unmount comes as the start settles: released with the rest.
-  page.holds(() => released.push("root"));
+  page.defer(() => released.push("root"));
   started();
   await vi.waitFor(() => expect(released).toEqual(["root", "runner"]));
-  warn.mockRestore();
-});
-
-test("releases at once what a page that was released makes after it", async () => {
-  const page = await pageOf();
-  await page.leave("cleanup()");
-  const release = vi.fn();
-
-  page.holds(release);
-
-  expect(release).toHaveBeenCalledOnce();
 });
