@@ -23,7 +23,7 @@ export const stylesheetsEvent = "vitest-plugin-rsc:next-stylesheets";
  * the node of the route, in their order, absolute or from the root of the
  * project: see `hostFiles` of `renderServer()`. For the files of the host
  * with `"use client"` that the host uses, `linkStylesheetsOf()`: by their
- * paths, as `files`, with the URLs of their stylesheets.
+ * paths, as `hostFiles`, with the URLs of their stylesheets.
  */
 export type StylesheetsQuestion =
   | { entry: string; inline: boolean; files: string[] }
@@ -71,6 +71,11 @@ export type BuiltFiles = {
    * of `vitestPluginNext()` matches. An empty list for one without any.
    */
   hostFiles: Record<string, string[]>;
+  /**
+   * The files of `hostFiles` with `"use client"`, whose stylesheets a host
+   * links as it uses them (`linkStylesheetsOf()`), sorted.
+   */
+  clientFiles: string[];
   /** The files of the rsc layer that `modules` names, from the directory of the build. */
   chunks: string[];
   /**

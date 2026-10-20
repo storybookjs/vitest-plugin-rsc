@@ -133,10 +133,10 @@ await show(async () => {
   if (view === "after-page") {
     // A file of the host with `"use client"` that loads while a page of the
     // app is open, as a framework prepares the next story before it leaves
-    // the one before: loaded, not used yet. Then the host uses it, a page
-    // comes and goes, which its stylesheet steps aside for, and `cleanup()`
-    // ends what the host used. The host uses the file again, as a framework
-    // shows another story of it.
+    // the one before: loaded, not used yet. Then the host uses it, and a page
+    // comes and goes, which its stylesheet steps aside for. A use that ends
+    // while a page is open takes it, and `cleanup()` ends every use. The host
+    // uses the file again, as a framework shows another story of it.
     const badgeLinked = () => document.querySelector("link[href*='badge.module']") !== null;
     const linked: Record<string, boolean> = {};
     const first = await renderServer({ url: "/" });
@@ -151,6 +151,12 @@ await show(async () => {
     linked.pageLeft = badgeLinked();
     await cleanup();
     linked.cleanedUp = badgeLinked();
+    const use = new AbortController();
+    await linkStylesheetsOf(["host/client-module.tsx"], { signal: use.signal });
+    const third = await renderServer({ url: "/" });
+    use.abort();
+    await third.unmount();
+    linked.endedDuringPage = badgeLinked();
     const { Badge, Like } = await loadClientModule(file);
     await linkStylesheetsOf(["host/client-module.tsx"]);
     state.__hostBadgeLinked = linked;

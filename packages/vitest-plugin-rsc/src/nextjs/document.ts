@@ -77,9 +77,10 @@ function isViteStyle(node: Node): node is HTMLStyleElement {
 }
 
 // The stylesheets that the tab's graph linked for a file of the host with
-// `"use client"` (client-graph.ts) are the host's: they outlive the page they
-// came during, as Vite's `<style>` does. A host loads a client file before it
-// leaves the page that is there.
+// `"use client"` (client-graph.ts) are the host's: they step aside for a page
+// with the rest of the host's `<head>`, and one that the host linked during
+// the page outlives it, as Vite's `<style>` does. One that the graph unlinked
+// meanwhile has the mark no longer, and does not come back.
 function isGraphStylesheet(node: Node): boolean {
   return node instanceof HTMLLinkElement && node.hasAttribute(graphStylesheetAttribute);
 }
@@ -184,6 +185,8 @@ export async function loadDocument(html: string, url: string, container?: Elemen
     ),
   );
   const parked: Node[] = [];
+  // The graph's stylesheets among them.
+  const graphParked = new Set<Node>();
   // Vite's `<style>`s of modules, switched off, with the media each had.
   const switchedOff: [HTMLStyleElement, string | null][] = [];
   // The body of the page, in the document once the page shows. What the
@@ -212,7 +215,9 @@ export async function loadDocument(html: string, url: string, container?: Elemen
       runnerHref = undefined;
       if (window.location.href !== runnerUrl) window.history.replaceState(null, "", runnerUrl);
     }
-    document.head.append(...parked);
+    document.head.append(
+      ...parked.filter((node) => !graphParked.has(node) || isGraphStylesheet(node)),
+    );
     for (const [style, media] of switchedOff) {
       if (media === null) style.removeAttribute("media");
       else style.media = media;
@@ -282,6 +287,7 @@ export async function loadDocument(html: string, url: string, container?: Elemen
     if (!before.has(node)) continue;
     if (isViteStyle(node)) switchedOff.push([node, node.getAttribute("media")]);
     else if (!staysDuringPage(node)) parked.push(node);
+    if (isGraphStylesheet(node)) graphParked.add(node);
   }
   for (const node of parked) document.head.removeChild(node);
   for (const [style] of switchedOff) style.media = "not all";

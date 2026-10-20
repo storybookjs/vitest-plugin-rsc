@@ -268,6 +268,8 @@ test("lists the stylesheets of every route and of every file of the host in a bu
       "host/plain.tsx": [],
       "host/story.tsx": [named("client")],
     },
+    // Those with "use client", which a host links as it uses them.
+    clientFiles: ["host/story.tsx"],
     chunks: [],
     modules: { "/app/notes/page": [] },
   });

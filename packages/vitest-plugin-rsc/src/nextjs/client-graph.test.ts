@@ -14,6 +14,7 @@ type FakeLink = {
   onload: (() => void) | null;
   onerror: (() => void) | null;
   setAttribute(name: string): void;
+  removeAttribute(name: string): void;
   remove(): void;
 };
 
@@ -45,7 +46,10 @@ const built = {
   hostFiles: {
     "host/badge.tsx": ["_next/static/css/badge-1a2b3c4d.css"],
     "host/plain.tsx": [],
+    // A file of the host without "use client", which renders a node.
+    "host/node.tsx": ["_next/static/css/note-5e6f7a8b.css"],
   },
+  clientFiles: ["host/badge.tsx", "host/plain.tsx"],
 };
 
 vi.mock("./built-files.ts", () => ({
@@ -153,6 +157,9 @@ beforeEach(() => {
       onerror: null,
       setAttribute(name) {
         this.attributes.add(name);
+      },
+      removeAttribute(name) {
+        this.attributes.delete(name);
       },
       remove() {
         head.delete(this);
@@ -340,7 +347,7 @@ test("evaluates a setup file that failed once again for the next test file", asy
 // it uses, by their paths, as Vitest's setup file does those of the setup
 // files and the test file before each test, until `cleanup()` unlinks them.
 test("links the stylesheets of the files that the host uses, until they are unlinked", async () => {
-  const { loadClientModule, linkStylesheetsOf, unlinkClientStylesheets, forgetClientFiles } =
+  const { loadClientModule, linkStylesheetsOf, unlinkStylesheets, forgetClientFiles } =
     await graph();
   const badge = await importHostFile("/host/badge.tsx", "Badge");
   await importHostFile("/host/card.tsx", "Card");
@@ -356,7 +363,7 @@ test("links the stylesheets of the files that the host uses, until they are unli
   // Marked as the host's, which a page that is left leaves: see document.ts.
   for (const link of head) expect(link.attributes).toContain("data-vitest-plugin-rsc-graph");
 
-  unlinkClientStylesheets();
+  unlinkStylesheets();
   expect(links()).toEqual([]);
   // As they are now: an edit gave the CSS another version.
   tab.stylesheets.set("/host/badge.tsx", ["/_next/static/css/badge-2.css"]);
@@ -370,7 +377,7 @@ test("links the stylesheets of the files that the host uses, until they are unli
 // A document can have several uses at once, like the stories of a docs
 // page, each with its own end: the signal that a host gives it.
 test("keeps a stylesheet while a use holds it, and ends a use as its signal aborts", async () => {
-  const { linkStylesheetsOf, unlinkClientStylesheets } = await graph();
+  const { linkStylesheetsOf, unlinkStylesheets } = await graph();
   const first = new AbortController();
   const second = new AbortController();
   await linkStylesheetsOf(["/host/badge.tsx"], { signal: first.signal });
@@ -388,7 +395,7 @@ test("keeps a stylesheet while a use holds it, and ends a use as its signal abor
   const third = new AbortController();
   await linkStylesheetsOf(["/host/badge.tsx"], { signal: third.signal });
   await linkStylesheetsOf(["/host/card.tsx"]);
-  unlinkClientStylesheets();
+  unlinkStylesheets();
   expect(links()).toEqual([]);
   await linkStylesheetsOf(["/host/badge.tsx"]);
   third.abort();
@@ -396,7 +403,7 @@ test("keeps a stylesheet while a use holds it, and ends a use as its signal abor
 });
 
 test("ends a use whose signal aborts before its stylesheets load, as renderServer() does", async () => {
-  const { linkStylesheetsOf, unlinkClientStylesheets } = await graph();
+  const { linkStylesheetsOf, unlinkStylesheets } = await graph();
   const left = new AbortController();
   left.abort();
   // An aborted signal links nothing.
@@ -417,7 +424,7 @@ test("ends a use whose signal aborts before its stylesheets load, as renderServe
   // loads resolves: a link out of the document fires no `load`.
   const waiting = linkStylesheetsOf(["/host/badge.tsx"]);
   await vi.waitFor(() => expect(links()).toEqual(["/_next/static/css/badge.css"]));
-  unlinkClientStylesheets();
+  unlinkStylesheets();
   await expect(waiting).resolves.toBeUndefined();
 });
 
@@ -479,10 +486,11 @@ test("loads a file of the host in a static build, by its key", async () => {
   const again = { ...referenceModule("5f3a9c1e", "Badge"), __exportOrder: ["Badge"] };
   expect(await loadClientModule(again)).toBe(exports);
   expect(tab.evaluated).toHaveLength(1);
-  // One without any, and one that the build has none for, like a file of
-  // another project.
+  // One without any, one that the build has none for, like a file of
+  // another project, and one without the directive, as the dev server
+  // answers for none.
   await loadClientFile("7d2b4e6a");
-  await linkStylesheetsOf(["host/plain.tsx", "/elsewhere/far.tsx"]);
+  await linkStylesheetsOf(["host/plain.tsx", "/elsewhere/far.tsx", "host/node.tsx"]);
   expect(links()).toHaveLength(1);
   // A key the build has no reference for.
   await expect(loadClientFile("0000")).rejects.toThrow(

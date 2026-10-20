@@ -473,7 +473,7 @@ test("takes a change of the file itself to the host once", async () => {
 test("takes a change of a stylesheet that only the browser layer has to the host", async () => {
   const { change } = await serveHostFile();
 
-  // The file's line links its stylesheets again as it is evaluated again.
+  // The host imports the file again, and links its stylesheets as they are now.
   expect(await change("value.css", "p { color: green }\n").modules).toEqual(["/host.tsx"]);
 });
 
@@ -490,7 +490,7 @@ test("takes a change of a file that a stylesheet of the browser layer depends on
 });
 
 // Vite swaps it in place in the rsc layer, and the browser layer links its
-// own, which the file's line links again.
+// own, which the host links again as it renders the file again.
 test("takes a change of a stylesheet that Vite swaps in place in the rsc layer to the host too", async () => {
   const { change } = await serveHostFile();
 

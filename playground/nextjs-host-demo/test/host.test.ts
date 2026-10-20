@@ -326,5 +326,6 @@ test('links the CSS of a file with "use client" as the host uses it, until clean
     duringPage: false,
     pageLeft: true,
     cleanedUp: false,
+    endedDuringPage: false,
   });
 });

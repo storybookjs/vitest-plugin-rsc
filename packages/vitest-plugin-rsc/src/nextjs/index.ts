@@ -6,7 +6,7 @@ import "./globals.ts";
 import { createElement, type JSXElementConstructor, type ReactNode } from "react";
 import { resetAsyncLocalStorage } from "../async-local-storage.ts";
 import { checkFetchedModules, createEnvironmentRunner, environmentModule } from "../utils.ts";
-import { callServerWithoutPage, unlinkClientStylesheets } from "./client-graph.ts";
+import { callServerWithoutPage, unlinkStylesheets } from "./client-graph.ts";
 import { documentUrl, loadDocument, unloadDocument } from "./document.ts";
 import { recordListeners, recordMessageChannels } from "./leftovers.ts";
 import { NodeOnPage } from "./node-on-page.ts";
@@ -1198,7 +1198,7 @@ export async function cleanup({ url }: CleanupOptions = {}): Promise<void> {
   await leavePage("cleanup()");
   for (const container of containers) container.remove();
   containers.clear();
-  unlinkClientStylesheets();
+  unlinkStylesheets();
   store = new PageStore();
   storage = new PageStorage();
   ssr?.resetCaches();

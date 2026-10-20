@@ -749,6 +749,8 @@ function createBuiltFiles(
   // What each file of the host reaches in the rsc layer, by its path from the
   // root of the project.
   const hostFiles = new Map<string, Reached[]>();
+  // Those of them with `"use client"`.
+  const clientFiles = new Set<string>();
   // The stylesheets each Client Component reaches in the layer of the browser.
   const clients = new Map<string, string[]>();
   // The chunks of the rsc layer that each page route loads.
@@ -831,6 +833,7 @@ function createBuiltFiles(
       if (layer === "rsc") {
         routes.clear();
         hostFiles.clear();
+        clientFiles.clear();
         modules.clear();
       } else clients.clear();
     },
@@ -870,6 +873,7 @@ function createBuiltFiles(
           const file = builtHostFileOf(id, project.root, options.isHostFile);
           if (file === undefined) continue;
           hostFiles.set(file, reachIn(imports, [id], manager.clientReferenceMetaMap));
+          if (clientReferenceOfModule(manager.clientReferenceMetaMap, id)) clientFiles.add(file);
         }
         return;
       }
@@ -961,6 +965,7 @@ function createBuiltFiles(
       assetPath: getProject().assetPath,
       routes: {},
       hostFiles: {},
+      clientFiles: [...clientFiles].sort(),
       chunks: [],
       modules: {},
     };

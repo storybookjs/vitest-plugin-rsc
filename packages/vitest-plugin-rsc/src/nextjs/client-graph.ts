@@ -52,16 +52,24 @@ let graph: ModuleRunner | undefined;
 
 // A stylesheet that the files of the host linked, and how many uses of
 // files hold it: the host's, which a page steps aside for and leaves where it
-// is, see document.ts. `loaded` settles as it loads, fails, or is unlinked.
-type Linked = { href: string; link: HTMLLinkElement; loaded: Promise<void>; uses: number };
+// is, see document.ts. `loaded` settles as it loads or fails, and `settle()`
+// as it is unlinked before: a link out of the document fires neither `load`
+// nor `error`.
+type Linked = {
+  href: string;
+  link: HTMLLinkElement;
+  loaded: Promise<void>;
+  settle: () => void;
+  uses: number;
+};
 
 // The stylesheets in the document, one for each URL. Each goes once no use
 // holds it, and `cleanup()` takes them all back.
 const linked = new Map<string, Linked>();
 
-// What settles `loaded` of each, also when it is unlinked before it loads:
-// a link that is taken out of the document fires neither `load` nor `error`.
-const settle = new WeakMap<Linked, () => void>();
+// How many times `cleanup()` ended every use: a use that was asking for its
+// stylesheets meanwhile ended with them.
+let cleanups = 0;
 
 // The exports of the evaluation of each file of the host that the graph has
 // now, by its reference key.
@@ -219,18 +227,24 @@ export async function linkStylesheetsOf(
   { signal }: { signal?: AbortSignal } = {},
 ): Promise<void> {
   signal?.throwIfAborted();
+  const cleanupsBefore = cleanups;
   const urls = await stylesheetsOfHostFiles(hostFiles);
   signal?.throwIfAborted();
+  if (cleanups !== cleanupsBefore) return;
   const held = urls.map(hold);
-  if (!signal) {
-    await Promise.all(held.map(({ loaded }) => loaded));
-    return;
-  }
-  signal.addEventListener("abort", () => held.forEach(release), { once: true });
-  const aborted = new Promise<void>((resolve) =>
-    signal.addEventListener("abort", () => resolve(), { once: true }),
+  const loaded = Promise.all(held.map((stylesheet) => stylesheet.loaded));
+  if (!signal) return void (await loaded);
+  const ended = new Promise<void>((resolve) =>
+    signal.addEventListener(
+      "abort",
+      () => {
+        held.forEach(release);
+        resolve();
+      },
+      { once: true },
+    ),
   );
-  await Promise.race([Promise.all(held.map(({ loaded }) => loaded)), aborted]);
+  await Promise.race([loaded, ended]);
   signal.throwIfAborted();
 }
 
@@ -241,10 +255,10 @@ async function stylesheetsOfHostFiles(hostFiles: string[]): Promise<string[]> {
   if (!buildDirectory) {
     return askDevServer<string[]>(stylesheetsEvent, { hostFiles } satisfies StylesheetsQuestion);
   }
+  // Of a file with `"use client"`, as the dev server answers.
   const built = await builtFiles();
-  const keys = Object.keys(built.hostFiles);
   const urls = hostFiles.flatMap((file) => {
-    const key = builtFileKey(file, keys);
+    const key = builtFileKey(file, built.clientFiles);
     return key === undefined ? [] : builtClientStylesheetsOf(built, key, buildDirectory!);
   });
   return [...new Set(urls)];
@@ -262,13 +276,12 @@ function hold(href: string): Linked {
   }
   const link = Object.assign(document.createElement("link"), { rel: "stylesheet", href });
   link.setAttribute(graphStylesheetAttribute, "");
-  let settled!: () => void;
+  let settle!: () => void;
   // A stylesheet that fails to load holds up nothing.
   const loaded = new Promise<void>(
-    (resolve) => (settled = link.onload = link.onerror = () => resolve()),
+    (resolve) => (settle = link.onload = link.onerror = () => resolve()),
   );
-  const stylesheet: Linked = { href, link, loaded, uses: 1 };
-  settle.set(stylesheet, settled);
+  const stylesheet: Linked = { href, link, loaded, settle, uses: 1 };
   linked.set(href, stylesheet);
   document.head.append(link);
   return stylesheet;
@@ -281,17 +294,21 @@ function release(stylesheet: Linked): void {
   if (--stylesheet.uses === 0) unlink(stylesheet);
 }
 
+// Also one that a page that is open has parked: it is no longer the host's,
+// and leaving the page does not put it back (document.ts).
 function unlink(stylesheet: Linked): void {
   stylesheet.link.remove();
+  stylesheet.link.removeAttribute(graphStylesheetAttribute);
   linked.delete(stylesheet.href);
-  settle.get(stylesheet)?.();
+  stylesheet.settle();
 }
 
 /**
  * Unlinks the stylesheets of the files of the host, which ends every use of
  * them: `cleanup()` calls this, once it has left the page.
  */
-export function unlinkClientStylesheets(): void {
+export function unlinkStylesheets(): void {
+  cleanups++;
   for (const stylesheet of linked.values()) unlink(stylesheet);
 }
 
@@ -309,7 +326,7 @@ export function forgetClientFiles(): void {
     if (own) graph?.evaluatedModules.invalidateModule(own);
   }
   imported.clear();
-  unlinkClientStylesheets();
+  unlinkStylesheets();
 }
 
 /**

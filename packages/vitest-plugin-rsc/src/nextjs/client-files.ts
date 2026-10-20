@@ -231,7 +231,7 @@ export function clientFiles(options: ClientFilesOptions): Plugin[] {
       // one for a change of what a route imports, still takes over. Also for
       // a stylesheet that Vite swaps in place in the rsc layer, as a link or
       // as its `<style>`: the browser layer links its own (client-graph.ts),
-      // which the file's line links again as it is now.
+      // which a host that renders the file again links again as it is now.
       hotUpdate: {
         order: "pre",
         handler({ file, modules, server }) {
