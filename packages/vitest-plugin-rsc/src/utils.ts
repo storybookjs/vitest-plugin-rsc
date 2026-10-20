@@ -187,7 +187,12 @@ export function createEnvironmentRunner(
       ? invokeForPageLoad(environment, payload, modules)
       : invokeEnvironment(environment, payload);
   };
-  const runner = createRunner(environment, invoke, pageLoadEvaluator, { sourcemaps });
+  const runner = createRunner(
+    environment,
+    invoke,
+    droppingImportsOnceClosed(() => runner),
+    { sourcemaps },
+  );
   // The modules of a build do not change.
   if (builtLayers?.[environment]) return runner;
   takes.set(runner, async () => {
@@ -441,6 +446,35 @@ const pageLoadEvaluator: ModuleEvaluator = {
     return ((await load()) as { default?: unknown }).default;
   },
 };
+
+// A runner that is closed, like the one of a page that has been left, settles
+// no more `import()` of its modules, as a browser drops what a page loads once
+// the page has gone: also one that it started before, and one that fails
+// because the runner is closed.
+function droppingImportsOnceClosed(runner: () => ModuleRunner): ModuleEvaluator {
+  const dropped = () => new Promise<never>(() => {});
+  return {
+    ...pageLoadEvaluator,
+    runInlinedModule(context, code, module) {
+      const load = context[ssrDynamicImportKey];
+      return pageLoadEvaluator.runInlinedModule(
+        {
+          ...context,
+          [ssrDynamicImportKey]: (...args) =>
+            load(...args).then(
+              (loaded) => (runner().isClosed() ? dropped() : loaded),
+              (error: unknown) => {
+                if (runner().isClosed()) return dropped();
+                throw error;
+              },
+            ),
+        },
+        code,
+        module,
+      );
+    },
+  };
+}
 
 async function withReactClientCoverage(result: InvokeResult) {
   if (
