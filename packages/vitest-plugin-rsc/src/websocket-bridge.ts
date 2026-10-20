@@ -13,6 +13,12 @@ export const webSocketQuery = "vitest-plugin-rsc-react-client";
 export const invokeEvent = "vitest-plugin-rsc:react-client:invoke";
 /** Where the page asks for the version of the modules of an environment. */
 export const versionEvent = "vitest-plugin-rsc:react-client:version";
+/**
+ * Where the page asks which modules of an environment changed after a
+ * version of them: their ids.
+ */
+export const changedEvent = "vitest-plugin-rsc:react-client:changed";
+export type ChangedQuestion = { environment: string; since: number };
 /** Where the dev server answers what the page asks over the websocket. */
 export const answerEvent = "vitest-plugin-rsc:react-client:invoke-result";
 
