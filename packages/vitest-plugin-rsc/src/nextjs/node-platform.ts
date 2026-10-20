@@ -5,6 +5,7 @@
 // browser's side is node-server.ts, and globals.ts for the globals.
 
 import zlib from "node:zlib";
+import { exportsOf, missing } from "./node-builtins.ts";
 
 /**
  * The stand-ins, for a `registry` in the browser that some of them call and a
@@ -43,6 +44,16 @@ export function createNodePlatform(registry: string, prefix: string) {
   export const { Writable, Duplex, Transform, PassThrough, Stream, finished, pipeline } = stream;
   export { Readable };
   `;
+  const cryptoImplemented = [
+    "webcrypto",
+    "randomUUID",
+    "randomFillSync",
+    "randomBytes",
+    "getRandomValues",
+    "createHash",
+    "subtle",
+  ];
+  const cryptoMissing = exportsOf("crypto").filter((name) => !cryptoImplemented.includes(name));
   const modules: Record<string, string> = {
     "node-stream": nodeStream,
     "node-stream-promises": `
@@ -94,6 +105,40 @@ export function createNodePlatform(registry: string, prefix: string) {
   export const setInterval = (...args) => globalThis.setInterval(...args);
   export const clearInterval = (...args) => globalThis.clearInterval(...args);
   export default { setImmediate, clearImmediate, setTimeout, clearTimeout, setInterval, clearInterval };
+  `,
+    // The timers of the page, as promises: unenv's resolve at once.
+    "node-timers-promises": `
+  const aborted = (signal) =>
+    Object.assign(new Error("The operation was aborted"), { name: "AbortError", code: "ABORT_ERR", cause: signal.reason });
+  const after = (start, clear, value, options) =>
+    new Promise((resolve, reject) => {
+      const signal = options?.signal;
+      if (signal?.aborted) return reject(aborted(signal));
+      const abort = () => {
+        clear(id);
+        reject(aborted(signal));
+      };
+      const id = start(() => {
+        signal?.removeEventListener("abort", abort);
+        resolve(value);
+      });
+      signal?.addEventListener("abort", abort, { once: true });
+    });
+  export const setTimeout = (delay, value, options) =>
+    after((done) => globalThis.setTimeout(done, delay), globalThis.clearTimeout, value, options);
+  export const setImmediate = (value, options) =>
+    after((done) => ${registry}.setImmediate(done), (id) => ${registry}.clearImmediate(id), value, options);
+  export async function* setInterval(delay, value, options) {
+    for (;;) {
+      await setTimeout(delay, undefined, options);
+      yield value;
+    }
+  }
+  export const scheduler = {
+    wait: (delay, options) => setTimeout(delay, undefined, options),
+    yield: () => setImmediate(),
+  };
+  export default { setTimeout, setImmediate, setInterval, scheduler };
   `,
     // Of Node's \`crypto\`, what Next's server uses where it has no Web Crypto
     // branch: the ids of nanoid.
@@ -158,7 +203,26 @@ export function createNodePlatform(registry: string, prefix: string) {
     };
     return hash;
   };
-  export default { webcrypto, randomUUID, randomFillSync, randomBytes, getRandomValues, createHash };
+  export const subtle = web.subtle;
+  // The rest of Node's \`crypto\`, so that code which imports it loads.
+  ${missing}
+  ${cryptoMissing
+    .map((name) =>
+      name === "constants"
+        ? "export const constants = {};"
+        : `export const ${name} = missing("crypto.${name}");`,
+    )
+    .join("\n  ")}
+  export default {
+    webcrypto, randomUUID, randomFillSync, randomBytes, getRandomValues, createHash, subtle,
+    ${cryptoMissing.join(", ")},
+  };
+  `,
+    // Next measures its bloom filter of the routes with this, to warn about
+    // its size, and it reads files and streams for that. No warning here.
+    "gzip-size": `
+  export const sync = () => 0;
+  export default { sync };
   `,
     // Next patches the global \`setImmediate\` when this loads, to run the
     // stages of a prerender in one task. That is for Cache Components, and the
@@ -190,7 +254,8 @@ export function createNodePlatform(registry: string, prefix: string) {
     // Next asks Node.js for the source map of a file in a stack. Vite has them.
     "node-module": `
   export const findSourceMap = () => undefined;
-  export default { findSourceMap };
+  export const builtinModules = [];
+  export default { findSourceMap, builtinModules };
   `,
     "ssr-app-page-module": `
   export const AppPageRouteModule = new Proxy(class {}, {
@@ -233,8 +298,10 @@ export function createNodePlatform(registry: string, prefix: string) {
       "fast-set-immediate",
     ],
     [/^(node:)?timers$/, "node-timers"],
+    [/^(node:)?timers\/promises$/, "node-timers-promises"],
     [/^(node:)?crypto$/, "node-crypto"],
     [/^(node:)?zlib$/, "node-zlib"],
+    [/^next\/dist\/compiled\/gzip-size(\/index(\.js)?)?$/, "gzip-size"],
     [
       /^next\/dist\/(esm\/)?server\/route-modules\/app-page\/vendored\/(rsc|ssr)\/entrypoints(\.js)?$/,
       "vendored-react",

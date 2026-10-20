@@ -21,6 +21,7 @@ import { flightBridge, type FlightEntry } from "./flight.ts";
 import { nextBuilds, nextProductionPlugin, type NextBuild } from "./build.ts";
 import { clientFiles, clientReferenceOfModule } from "./client-files.ts";
 import { createCompilePlugin, createDependencyCompilePlugin } from "./compile.ts";
+import { createNodeBuiltins } from "./node-builtins.ts";
 import { createNodePlatform } from "./node-platform.ts";
 import {
   loadNextProject,
@@ -167,6 +168,7 @@ const devAssetPrefix = /^next\/dist\/(esm\/)?client\/dev\/hot-reloader\/app\/ass
 const devAssetPrefixShim = `export const assetPrefix = "";\n`;
 
 const nodePlatform = createNodePlatform(registry, bridgePrefix);
+const nodeBuiltins = createNodeBuiltins(bridgePrefix);
 
 type Alias = { key: string; exact: boolean; target: string | false };
 
@@ -294,6 +296,8 @@ function createLayerResolver(getProject: () => NextProject, layer: NextLayer) {
       if (next === undefined || next === current) break;
       current = next;
     }
+    // A module of Node.js that the server layers still import.
+    if (layer !== "browser" && current) current = nodeBuiltins.moduleOf(current) ?? current;
     normalized.set(source, current);
     return current;
   }
@@ -325,6 +329,20 @@ function createLayerResolver(getProject: () => NextProject, layer: NextLayer) {
         // such an id as it is, and a build asks.
         if (source.startsWith(bridgePrefix) || source === emptyModuleId) return source;
         if (source.startsWith("\0")) return;
+        if (nodeBuiltins.importsOwn(source, importer)) {
+          const resolved = await this.resolve(source, path.join(ownDir, "package.json"), {
+            ...options,
+            skipSelf: true,
+          });
+          // With a dev server, pre-bundled: memfs is CommonJS. Vite does that
+          // for an import that the scan of the app did not find only when the
+          // importer is not in \`node_modules\`, and installed, this package is.
+          const optimizer =
+            this.environment?.mode === "dev" ? this.environment.depsOptimizer : undefined;
+          if (!resolved || !optimizer || optimizer.isOptimizedDepFile(resolved.id)) return resolved;
+          const info = optimizer.registerMissingImport(source, resolved.id.split("?")[0]!);
+          return { id: optimizer.getOptimizedDepId(info) };
+        }
         // The shim wraps the module it replaces.
         if (importer === `${bridgePrefix}server-reference-info`) {
           return nextFile(serverReferenceInfo);
@@ -355,6 +373,7 @@ function createLayerResolver(getProject: () => NextProject, layer: NextLayer) {
 
         const target = normalize(specifier);
         if (target === false) return emptyModuleId;
+        if (nodeBuiltins.isStandIn(target) && nodeBuiltins.mappedBy(source, importer)) return;
         if (target.startsWith("\0")) return target;
         if (target === source) return;
         // Not found as a file of the `next` package: leave the import alone.
@@ -405,7 +424,7 @@ function createLayerResolver(getProject: () => NextProject, layer: NextLayer) {
         const name = id.slice(bridgePrefix.length);
         if (name === "server-reference-info") return serverReferenceInfoShim;
         if (name === "dev-asset-prefix") return devAssetPrefixShim;
-        const nodeModule = nodePlatform.load(name);
+        const nodeModule = nodePlatform.load(name) ?? nodeBuiltins.load(name);
         if (nodeModule) return nodeModule;
         const { flightExports, version } = getProject();
         const entry = name.slice("flight-".length) as FlightEntry;

@@ -1042,17 +1042,17 @@ This `renderServer` takes `{ container, baseElement, wrapper }` and resolves wit
 
 The plugin runs server code inside the browser test runtime. That sounds wrong, but the surface is closer than it looks: Node.js has most of the web APIs a browser has, and server code that sticks to those runs in a browser too.
 
-The plugin shims what Next's server needs from Node.js, like `AsyncLocalStorage`, `Buffer`, and `process.env`.
+The plugin shims what Next's server needs from Node.js, like `AsyncLocalStorage`, `Buffer`, and `process.env`. With `vitestPluginNext()` the server code has the other modules of Node.js too, in the `rsc` and `ssr` layers: `fs` is a disk in memory that every test starts empty, see [The Server's Disk](docs/next-routes.md#the-servers-disk), and the rest are [unenv](https://github.com/unjs/unenv)'s stand-ins, made of what a browser has.
 
 A fast unit test shouldn't touch the real database, filesystem, or network — those make tests slow and flaky. Standard practice is to keep IO inside the test runtime, which here is the browser:
 
 - **Database**: an in-memory implementation like [PGlite](https://pglite.dev/) for Postgres or [sql.js](https://github.com/sql-js/sql.js) for SQLite.
-- **File system**: an in-memory implementation like [`memfs` via Vitest](https://vitest.dev/guide/mocking/file-system).
+- **File system**: an in-memory implementation like [`memfs` via Vitest](https://vitest.dev/guide/mocking/file-system). With `vitestPluginNext()` the server code's `fs` is one already.
 - **HTTP**: a request interceptor like [MSW in Vitest browser mode](https://mswjs.io/docs/recipes/vitest-browser-mode), or a mocked module.
 
 When you have a choice, prefer the APIs that Node and browsers share: Web Streams, `Uint8Array`, Web Crypto, `Blob` and `File`, and `fetch`, `Request`, `Response`, `Headers`, `URL`, and `FormData`.
 
-If a dependency still imports a Node module that isn't shimmed, drop in [`vite-plugin-node-polyfills`](https://github.com/davidmyersdev/vite-plugin-node-polyfills) for the rest:
+Without `vitestPluginNext()`, if a dependency still imports a Node module that isn't shimmed, drop in [`vite-plugin-node-polyfills`](https://github.com/davidmyersdev/vite-plugin-node-polyfills) for the rest:
 
 ```ts
 import { nodePolyfills } from "vite-plugin-node-polyfills";

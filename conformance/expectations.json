@@ -118,7 +118,7 @@
       "failed": {}
     },
     "navigation": {
-      "passed": 39,
+      "passed": 41,
       "failed": {
         "navigation.test.ts > app dir - navigation > query string > useParams identity between renders > should be stable in app": "react-development-build",
         "navigation.test.ts > app dir - navigation > query string > useParams identity between renders > should be stable in pages": "pages-router",
@@ -131,8 +131,6 @@
         "navigation.test.ts > app dir - navigation > navigation between pages and app > should not contain _rsc query while navigating from pages to app": "pages-router",
         "navigation.test.ts > app dir - navigation > navigation between pages and app > should not omit the hash while navigating from app to pages": "pages-router",
         "navigation.test.ts > app dir - navigation > navigation between pages and app > should not continously initiate a mpa navigation to the same URL when router state changes": "page-load-requests",
-        "navigation.test.ts > app dir - navigation > navigating to a page with async metadata > shows a fallback when prefetch was pending": "node-builtin",
-        "navigation.test.ts > app dir - navigation > navigating to a page with async metadata > shows a fallback when prefetch completed": "node-builtin",
         "navigation.test.ts > app dir - navigation > browser back after a push followed by a refresh > should load the previous page": "shared-history"
       }
     },

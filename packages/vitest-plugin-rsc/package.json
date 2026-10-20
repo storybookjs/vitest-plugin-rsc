@@ -98,7 +98,9 @@
     "@jridgewell/gen-mapping": "^0.3.13",
     "@vitejs/plugin-rsc": "0.5.36",
     "cjs-module-lexer": "^2.3.0",
-    "convert-source-map": "^2.0.0"
+    "convert-source-map": "^2.0.0",
+    "memfs": "4.80.0",
+    "unenv": "2.0.0-rc.24"
   },
   "devDependencies": {
     "@next/routing": "16.4.0",

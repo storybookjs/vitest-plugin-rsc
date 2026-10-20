@@ -13,13 +13,13 @@ Measured against `next@16.4.0`, with `pnpm conformance --docs`.
 |                                                     |         Tests |
 | --------------------------------------------------- | ------------: |
 | Run                                                 |           522 |
-| **Pass**                                            | **400** (77%) |
+| **Pass**                                            | **402** (77%) |
 | Fail: a bug in the plugin                           |             4 |
-| Fail: Not Yet                                       |            70 |
+| Fail: Not Yet                                       |            68 |
 | Fail: not applicable                                |            48 |
 | Skipped by the test itself, for a run like this one |             4 |
 
-Of the 474 tests that apply, 400 pass: **84%**.
+Of the 474 tests that apply, 402 pass: **85%**.
 
 ### Per Fixture
 
@@ -28,7 +28,7 @@ Of the 474 tests that apply, 400 pass: **84%**.
 | **Pages and rendering**                           |          |     |         |     |         |
 | `hello-world`                                     |   4 of 4 |     |         |     |         |
 | **Navigation**                                    |          |     |         |     |         |
-| `navigation`                                      | 39 of 53 |     |      10 |   4 |         |
+| `navigation`                                      | 41 of 53 |     |       8 |   4 |         |
 | `shallow-routing`                                 | 16 of 17 |   1 |         |     |         |
 | `hooks`                                           | 19 of 27 |     |       8 |     |         |
 | `use-params`                                      |   6 of 7 |     |       1 |     |         |
@@ -109,7 +109,7 @@ Of the 474 tests that apply, 400 pass: **84%**.
 
 </details>
 
-### Not Yet: 70 Tests
+### Not Yet: 68 Tests
 
 <details><summary>21 × A page or an API route of the Pages Router. The plugin runs the routes of `app/`.</summary>
 
@@ -208,13 +208,6 @@ Of the 474 tests that apply, 400 pass: **84%**.
 
 - `trailingslash`: app-dir trailingSlash handling › should revalidate a page with generated static params (withSlash=true)
 - `trailingslash`: app-dir trailingSlash handling › should revalidate a page with generated static params (withSlash=false)
-
-</details>
-
-<details><summary>2 × Server code that imports a builtin module of Node.js that has no stand-in here, like `node:timers/promises`.</summary>
-
-- `navigation`: app dir - navigation › navigating to a page with async metadata › shows a fallback when prefetch was pending
-- `navigation`: app dir - navigation › navigating to a page with async metadata › shows a fallback when prefetch completed
 
 </details>
 
