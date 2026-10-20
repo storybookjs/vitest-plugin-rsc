@@ -10,10 +10,11 @@ import { clientFileKeyExport } from "./client-file-key.ts";
 type FakeLink = {
   rel: string;
   href: string;
-  attributes: Set<string>;
+  attributes: Map<string, string>;
   onload: (() => void) | null;
   onerror: (() => void) | null;
-  setAttribute(name: string): void;
+  setAttribute(name: string, value: string): void;
+  getAttribute(name: string): string | null;
   removeAttribute(name: string): void;
   remove(): void;
 };
@@ -152,11 +153,14 @@ beforeEach(() => {
     createElement: (): FakeLink => ({
       rel: "",
       href: "",
-      attributes: new Set(),
+      attributes: new Map(),
       onload: null,
       onerror: null,
-      setAttribute(name) {
-        this.attributes.add(name);
+      setAttribute(name, value) {
+        this.attributes.set(name, value);
+      },
+      getAttribute(name) {
+        return this.attributes.get(name) ?? null;
       },
       removeAttribute(name) {
         this.attributes.delete(name);
@@ -165,6 +169,11 @@ beforeEach(() => {
         head.delete(this);
       },
     }),
+    // The links with an attribute, `link[name]`.
+    querySelectorAll: (selector: string) => {
+      const name = /^link\[(.+)\]$/.exec(selector)![1]!;
+      return [...head].filter((link) => link.attributes.has(name));
+    },
     head: {
       append(link: FakeLink) {
         head.add(link);
@@ -361,7 +370,7 @@ test("links the stylesheets of the files that the host uses, until they are unli
   await linkStylesheetsOf(["/host/badge.tsx", "/host/card.tsx"]);
   expect(links()).toEqual(["/_next/static/css/badge.css", "/_next/static/css/card.css"]);
   // Marked as the host's, which a page that is left leaves: see document.ts.
-  for (const link of head) expect(link.attributes).toContain("data-vitest-plugin-rsc-graph");
+  for (const link of head) expect(link.attributes.has("data-vitest-plugin-rsc-graph")).toBe(true);
 
   unlinkStylesheets();
   expect(links()).toEqual([]);
@@ -376,6 +385,25 @@ test("links the stylesheets of the files that the host uses, until they are unli
 
 // A document can have several uses at once, like the stories of a docs
 // page, each with its own end: the signal that a host gives it.
+// Vite's client swaps the `<link>` of a stylesheet whose CSS changed for a
+// copy, with its attributes, and removes the one it copied.
+test("unlinks the copy that Vite's client swapped a link for", async () => {
+  const { linkStylesheetsOf, unlinkStylesheets } = await graph();
+  await importHostFile("/host/card.tsx", "Card");
+  await linkStylesheetsOf(["/host/card.tsx"]);
+  const [badge] = head;
+  const copy = document.createElement("link") as unknown as FakeLink;
+  copy.href = "/app/badge.css?t=1";
+  for (const [name, value] of badge!.attributes) copy.setAttribute(name, value);
+  badge!.remove();
+  document.head.append(copy as unknown as HTMLLinkElement);
+  expect(links()).toEqual(["/_next/static/css/card.css", "/app/badge.css?t=1"]);
+
+  unlinkStylesheets();
+  expect(links()).toEqual([]);
+  expect(copy.attributes.size).toBe(0);
+});
+
 test("keeps a stylesheet while a use holds it, and ends a use as its signal aborts", async () => {
   const { linkStylesheetsOf, unlinkStylesheets } = await graph();
   const first = new AbortController();

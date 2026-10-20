@@ -295,14 +295,16 @@ function release(stylesheet: Linked): void {
 }
 
 // Also one that a page that is open has parked: it is no longer the host's,
-// and leaving the page does not put it back (document.ts). And the copy that
-// Vite's client swapped it for after a change of its CSS, with its mark (see
-// `cssUrlOf()` in styles.ts).
+// and leaving the page does not put it back (document.ts). After a change of
+// its CSS, Vite's client swaps the `<link>` for a copy, with its attributes,
+// and removes the one it copied (see `cssUrlOf()` in styles.ts): so the
+// links of a stylesheet are those with its mark for its URL, and not only the
+// one the graph made.
 function unlink(stylesheet: Linked): void {
-  const swapped = document.querySelectorAll<HTMLLinkElement>(
-    `link[${graphStylesheetAttribute}="${CSS.escape(stylesheet.href)}"]`,
-  );
-  for (const link of [stylesheet.link, ...swapped]) {
+  const copies = Array.from(
+    document.querySelectorAll<HTMLLinkElement>(`link[${graphStylesheetAttribute}]`),
+  ).filter((link) => link.getAttribute(graphStylesheetAttribute) === stylesheet.href);
+  for (const link of new Set([stylesheet.link, ...copies])) {
     link.remove();
     link.removeAttribute(graphStylesheetAttribute);
   }
