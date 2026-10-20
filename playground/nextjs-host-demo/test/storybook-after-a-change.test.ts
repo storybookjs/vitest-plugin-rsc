@@ -40,11 +40,7 @@ afterAll(async () => {
 // Marks the document of the canvas, which a full reload replaces.
 const mark = (canvas: Frame) => canvas.evaluate(() => Object.assign(window, { __marked: true }));
 const reloaded = (canvas: Frame) =>
-  expect
-    .poll(() => canvas.evaluate(() => !("__marked" in window)).catch(() => false), {
-      timeout: 30_000,
-    })
-    .toBe(true);
+  expect.poll(() => canvas.evaluate(() => !("__marked" in window)).catch(() => false)).toBe(true);
 
 function change(file: string, from: string, to: string) {
   const changed = path.join(copy, file);
@@ -86,14 +82,14 @@ async function watchPreview(page: Page) {
     page.evaluate(() => [...(window as unknown as { __rendered: string[] }).__rendered]);
   return {
     async since(story: string) {
-      await expect.poll(rendered, { timeout: 30_000 }).toContain(story);
+      await expect.poll(rendered).toContain(story);
       await page.evaluate(() => {
         (window as unknown as { __rendered: string[] }).__rendered.length = 0;
       });
       loads = 0;
     },
     async afterSave() {
-      await expect.poll(async () => (await rendered()).length, { timeout: 30_000 }).not.toBe(0);
+      await expect.poll(async () => (await rendered()).length).not.toBe(0);
       await new Promise((resolve) => setTimeout(resolve, 2000));
       return { rendered: await rendered(), loads };
     },
@@ -114,9 +110,7 @@ test("an MDX page renders again after a change of the file", async ({ page, erro
   await storyInDocs(canvas, "greeting--default");
   change("stories/introduction.mdx", "# Introduction", "# Introduction, changed");
   await expect
-    .poll(() => inDocs(canvas).getByRole("heading", { name: "Introduction, changed" }).count(), {
-      timeout: 30_000,
-    })
+    .poll(() => inDocs(canvas).getByRole("heading", { name: "Introduction, changed" }).count())
     .toBe(1);
   await storyInDocs(canvas, "greeting--default");
 });
@@ -132,9 +126,7 @@ test("an MDX page renders again after a change of a story file it imports", asyn
   change("stories/press-button.stories.tsx", 'label: "Press"', 'label: "Pushed"');
   // The story of the store after the change, in place.
   await expect
-    .poll(() => inDocs(canvas).getByRole("button", { name: "Pushed: 0" }).count(), {
-      timeout: 30_000,
-    })
+    .poll(() => inDocs(canvas).getByRole("button", { name: "Pushed: 0" }).count())
     .toBe(1);
   expect(await canvas.evaluate(() => "__marked" in window)).toBe(true);
 });
@@ -148,7 +140,7 @@ test("a client story has the project's decorator after a change of its file", as
   // The components of the story file and of the preview file, both as the
   // browser layer evaluated them after the change.
   const button = canvas.locator("#storybook-root").getByRole("button", { name: "Relabelled: 0" });
-  await expect.poll(() => button.getAttribute("data-theme"), { timeout: 30_000 }).toBe("storybook");
+  await expect.poll(() => button.getAttribute("data-theme")).toBe("storybook");
   expect(await preview.afterSave()).toEqual({ rendered: ["press-button--labelled"], loads: 0 });
   expect(await canvas.evaluate(() => "__marked" in window)).toBe(true);
 });
@@ -169,7 +161,7 @@ test("a client story renders once after a change of the preview file", async ({ 
   await preview.since("press-button--labelled");
   change(".storybook/preview.tsx", "<Story />", '<Story />\n        <span data-testid="saved" />');
   const saved = canvas.locator("#storybook-root").getByTestId("theme").getByTestId("saved");
-  await expect.poll(() => saved.count(), { timeout: 30_000 }).toBe(1);
+  await expect.poll(() => saved.count()).toBe(1);
   expect(await preview.afterSave()).toEqual({ rendered: ["press-button--labelled"], loads: 1 });
 });
 
@@ -185,7 +177,7 @@ test("a client story renders once after a change of its component", async ({ pag
     'data-theme={useTheme()} data-saved=""',
   );
   const button = canvas.locator("#storybook-root").getByRole("button", { name: "Relabelled: 0" });
-  await expect.poll(() => button.getAttribute("data-saved"), { timeout: 30_000 }).toBe("");
+  await expect.poll(() => button.getAttribute("data-saved")).toBe("");
   expect(await preview.afterSave()).toEqual({ rendered: ["press-button--labelled"], loads: 0 });
 });
 
@@ -199,7 +191,7 @@ test("a server story renders once after a change of the server preview", async (
     'data-testid="server-decorator" data-saved=""',
   );
   const decorator = canvas.locator("#storybook-root").getByTestId("server-decorator");
-  await expect.poll(() => decorator.getAttribute("data-saved"), { timeout: 30_000 }).toBe("");
+  await expect.poll(() => decorator.getAttribute("data-saved")).toBe("");
   expect(await preview.afterSave()).toEqual({ rendered: ["greeting--default"], loads: 0 });
 });
 
@@ -213,7 +205,7 @@ test("a server story renders once after a change of its file", async ({ page }) 
     'render: () => [<Like key="like" />, <p key="saved">Saved</p>]',
   );
   const saved = canvas.locator("#storybook-root").getByText("Saved");
-  await expect.poll(() => saved.count(), { timeout: 30_000 }).toBe(1);
+  await expect.poll(() => saved.count()).toBe(1);
   expect(await storyRun(page, canvas, "greeting--server-action")).toMatchObject({
     phase: "finished",
     reports: [],
@@ -230,7 +222,7 @@ test("a server story renders once after a change of a component only it imports"
   await preview.since("greeting--server-action");
   change("app/components/like.tsx", "<button\n", '<button\n        data-saved=""\n');
   const button = canvas.locator("#storybook-root").getByRole("button", { name: /^Likes: / });
-  await expect.poll(() => button.getAttribute("data-saved"), { timeout: 30_000 }).toBe("");
+  await expect.poll(() => button.getAttribute("data-saved")).toBe("");
   expect(await preview.afterSave()).toEqual({ rendered: ["greeting--server-action"], loads: 0 });
 });
 
@@ -240,7 +232,7 @@ test("a page story renders again after a change of its file", async ({ page }) =
   await preview.since("home--home");
   await mark(canvas);
   change("stories/home.stories.tsx", 'url: "/"', 'url: "/?changed"');
-  await expect.poll(() => new URL(canvas.url()).search, { timeout: 30_000 }).toBe("?changed");
+  await expect.poll(() => new URL(canvas.url()).search).toBe("?changed");
   expect(await storyRun(page, canvas, "home--home")).toMatchObject({
     phase: "finished",
     reports: [],
@@ -259,7 +251,7 @@ test("a client story renders once after a change of a component of the preview f
   // A browser module of the preview file: the preview file changes with it,
   // in place.
   const theme = canvas.locator("#storybook-root").getByTestId("theme");
-  await expect.poll(() => theme.getAttribute("data-changed"), { timeout: 30_000 }).toBe("");
+  await expect.poll(() => theme.getAttribute("data-changed")).toBe("");
   const button = theme.getByRole("button");
   await expect.poll(() => button.getAttribute("data-theme")).toBe("storybook");
   expect(await preview.afterSave()).toEqual({ rendered: ["press-button--labelled"], loads: 0 });
@@ -290,9 +282,7 @@ test("a change of the preview's stylesheet shows in place", async ({ page }) => 
   change(".storybook/preview.css", "rgb(255, 0, 0)", "rgb(0, 128, 0)");
   const theme = canvas.locator("#storybook-root").getByTestId("theme");
   await expect
-    .poll(() => theme.evaluate((element) => getComputedStyle(element).outlineColor), {
-      timeout: 30_000,
-    })
+    .poll(() => theme.evaluate((element) => getComputedStyle(element).outlineColor))
     .toBe("rgb(0, 128, 0)");
   expect(await canvas.evaluate(() => "__marked" in window)).toBe(true);
 });
@@ -313,7 +303,7 @@ test.fails("an MDX file that imports server code shows Next's error", async ({ p
     const iframe = await page.locator("#storybook-preview-iframe").elementHandle();
     const canvas = (await iframe!.contentFrame())!;
     await expect
-      .poll(() => canvas.locator("#error-message").textContent(), { timeout: 30_000 })
+      .poll(() => canvas.locator("#error-message").textContent())
       .toContain("This module cannot be imported from a Client Component module");
     errors.list.splice(0);
   } finally {

@@ -65,9 +65,7 @@ test("from a page to a component and back", async ({ page }) => {
 test("a new count in Controls seeds the database again and loads the page", async ({ page }) => {
   const canvas = await openStory(page, site!.url, "app-notes-page--with-notes");
   await updateArgs(canvas, "app-notes-page--with-notes", { count: 12 });
-  await expect
-    .poll(() => canvas.getByText("12 notes · 2 favorited").count(), { timeout: 30_000 })
-    .toBe(1);
+  await expect.poll(() => canvas.getByText("12 notes · 2 favorited").count()).toBe(1);
   await expect.poll(() => canvas.getByRole("heading", { level: 2 }).count()).toBe(12);
   expect(await storyRun(page, canvas, "app-notes-page--with-notes")).toEqual(passed);
 });
