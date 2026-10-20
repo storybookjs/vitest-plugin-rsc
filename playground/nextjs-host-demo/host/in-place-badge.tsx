@@ -9,3 +9,4 @@ import { version } from "react";
 report({ from: "host/in-place-badge.tsx", react: version });
 
 export { Badge } from "../app/components/badge.tsx";
+export { note } from "./in-place-note.tsx";
