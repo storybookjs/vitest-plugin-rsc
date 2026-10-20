@@ -1,13 +1,16 @@
-// The server's disk, memfs, which the stand-in for `fs` of node-builtins.ts
+// The server's disk, memfs, which the package's `node:fs` (src/node/fs.ts)
 // makes when it first loads. It is on a global of its own, not in
 // `registry`: a module of the host can import `fs` before any module of the
 // plugin has loaded. Both server layers and the test files have their copy of
-// the stand-in, and they share the disk.
+// that module, and they share the disk. Nothing here imports memfs: the test
+// files import this for `resetDisk()`, and only a layer that imports `fs`
+// has memfs.
 
 /** The global the disk is on. */
 export const diskGlobal = "__vitest_plugin_rsc_disk__";
 
-type Disk = { reset(): void };
+/** The disk: the `fs` of memfs, and what empties it. */
+export type Disk = { fs: Record<string, any>; reset(): void };
 
 /**
  * Empties the disk, as it is before any test: nothing but `/tmp`, which

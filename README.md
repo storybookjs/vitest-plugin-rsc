@@ -1042,7 +1042,7 @@ This `renderServer` takes `{ container, baseElement, wrapper }` and resolves wit
 
 The plugin runs server code inside the browser test runtime. That sounds wrong, but the surface is closer than it looks: Node.js has most of the web APIs a browser has, and server code that sticks to those runs in a browser too.
 
-The plugin shims what Next's server needs from Node.js, like `AsyncLocalStorage`, `Buffer`, and `process.env`. With `vitestPluginNext()` the server code has the other modules of Node.js too, in the `rsc` and `ssr` layers: `fs` is a disk in memory that every test starts empty, see [The Server's Disk](docs/next-routes.md#the-servers-disk), and the rest are [unenv](https://github.com/unjs/unenv)'s stand-ins, made of what a browser has.
+The plugin shims what Next's server needs from Node.js, like `AsyncLocalStorage`, `Buffer`, and `process.env`. With `vitestPluginNext()` the server code has the other modules of Node.js too, in the `rsc` and `ssr` layers: `fs` is a disk in memory that every test starts empty, see [The Server's Disk](docs/next-routes.md#the-servers-disk), `crypto` is Web Crypto with a `createHash` for SHA-256, and the rest are [unenv](https://github.com/unjs/unenv)'s stand-ins, made of what a browser has.
 
 A fast unit test shouldn't touch the real database, filesystem, or network — those make tests slow and flaky. Standard practice is to keep IO inside the test runtime, which here is the browser:
 

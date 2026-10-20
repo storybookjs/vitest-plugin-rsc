@@ -5,7 +5,6 @@
 // browser's side is node-server.ts, and globals.ts for the globals.
 
 import zlib from "node:zlib";
-import { exportsOf, missing } from "./node-builtins.ts";
 
 /**
  * The stand-ins, for a `registry` in the browser that some of them call and a
@@ -44,16 +43,6 @@ export function createNodePlatform(registry: string, prefix: string) {
   export const { Writable, Duplex, Transform, PassThrough, Stream, finished, pipeline } = stream;
   export { Readable };
   `;
-  const cryptoImplemented = [
-    "webcrypto",
-    "randomUUID",
-    "randomFillSync",
-    "randomBytes",
-    "getRandomValues",
-    "createHash",
-    "subtle",
-  ];
-  const cryptoMissing = exportsOf("crypto").filter((name) => !cryptoImplemented.includes(name));
   const modules: Record<string, string> = {
     "node-stream": nodeStream,
     "node-stream-promises": `
@@ -128,10 +117,34 @@ export function createNodePlatform(registry: string, prefix: string) {
     after((done) => globalThis.setTimeout(done, delay), globalThis.clearTimeout, value, options);
   export const setImmediate = (value, options) =>
     after((done) => ${registry}.setImmediate(done), (id) => ${registry}.clearImmediate(id), value, options);
+  // Ticks while the consumer works, as Node's does: a tick it has not
+  // taken yet comes at once.
   export async function* setInterval(delay, value, options) {
-    for (;;) {
-      await setTimeout(delay, undefined, options);
-      yield value;
+    const signal = options?.signal;
+    if (signal?.aborted) throw aborted(signal);
+    let pending = 0;
+    let wake;
+    const tick = () => {
+      pending++;
+      wake?.();
+    };
+    const id = globalThis.setInterval(tick, delay);
+    signal?.addEventListener("abort", tick, { once: true });
+    try {
+      for (;;) {
+        while (pending === 0 && !signal?.aborted) {
+          await new Promise((resolve) => {
+            wake = resolve;
+          });
+          wake = undefined;
+        }
+        if (signal?.aborted) throw aborted(signal);
+        pending--;
+        yield value;
+      }
+    } finally {
+      globalThis.clearInterval(id);
+      signal?.removeEventListener("abort", tick);
     }
   }
   export const scheduler = {
@@ -139,84 +152,6 @@ export function createNodePlatform(registry: string, prefix: string) {
     yield: () => setImmediate(),
   };
   export default { setTimeout, setImmediate, setInterval, scheduler };
-  `,
-    // Of Node's \`crypto\`, what Next's server uses where it has no Web Crypto
-    // branch: the ids of nanoid.
-    "node-crypto": `
-  const web = globalThis.crypto;
-  export const webcrypto = web;
-  export const randomUUID = () => web.randomUUID();
-  export const randomFillSync = (buffer) => (web.getRandomValues(buffer), buffer);
-  export const randomBytes = (size) => web.getRandomValues(Buffer.alloc(size));
-  export const getRandomValues = (buffer) => web.getRandomValues(buffer);
-  // Web Crypto hashes asynchronously. Next's cache keys are SHA-256, at once.
-  const K = new Uint32Array(64);
-  for (let n = 2, i = 0; i < 64; n++) {
-    let prime = true;
-    for (let d = 2; d * d <= n; d++) if (n % d === 0) { prime = false; break; }
-    if (prime) K[i++] = (Math.cbrt(n) % 1) * 2 ** 32;
-  }
-  function sha256(bytes) {
-    const h = new Uint32Array([0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19]);
-    const length = bytes.length;
-    const padded = new Uint8Array(((length + 9 + 63) >> 6) << 6);
-    padded.set(bytes);
-    padded[length] = 0x80;
-    const view = new DataView(padded.buffer);
-    view.setUint32(padded.length - 8, Math.floor((length * 8) / 2 ** 32));
-    view.setUint32(padded.length - 4, (length * 8) >>> 0);
-    const w = new Uint32Array(64);
-    const rotr = (x, n) => (x >>> n) | (x << (32 - n));
-    for (let offset = 0; offset < padded.length; offset += 64) {
-      for (let i = 0; i < 16; i++) w[i] = view.getUint32(offset + i * 4);
-      for (let i = 16; i < 64; i++) {
-        const s0 = rotr(w[i - 15], 7) ^ rotr(w[i - 15], 18) ^ (w[i - 15] >>> 3);
-        const s1 = rotr(w[i - 2], 17) ^ rotr(w[i - 2], 19) ^ (w[i - 2] >>> 10);
-        w[i] = (w[i - 16] + s0 + w[i - 7] + s1) | 0;
-      }
-      let [a, b, c, d, e, f, g, hh] = h;
-      for (let i = 0; i < 64; i++) {
-        const t1 = (hh + (rotr(e, 6) ^ rotr(e, 11) ^ rotr(e, 25)) + ((e & f) ^ (~e & g)) + K[i] + w[i]) | 0;
-        const t2 = ((rotr(a, 2) ^ rotr(a, 13) ^ rotr(a, 22)) + ((a & b) ^ (a & c) ^ (b & c))) | 0;
-        hh = g; g = f; f = e; e = (d + t1) | 0; d = c; c = b; b = a; a = (t1 + t2) | 0;
-      }
-      h[0] += a; h[1] += b; h[2] += c; h[3] += d; h[4] += e; h[5] += f; h[6] += g; h[7] += hh;
-    }
-    const out = new Uint8Array(32);
-    h.forEach((word, i) => new DataView(out.buffer).setUint32(i * 4, word));
-    return out;
-  }
-  export const createHash = (algorithm) => {
-    if (!/^sha-?256$/i.test(algorithm)) {
-      throw new Error("vitest-plugin-rsc: node:crypto's createHash(" + JSON.stringify(algorithm) + ") is not there in a browser");
-    }
-    const chunks = [];
-    const hash = {
-      update(data) {
-        chunks.push(typeof data === "string" ? new TextEncoder().encode(data) : new Uint8Array(data.buffer ?? data, data.byteOffset ?? 0, data.byteLength));
-        return hash;
-      },
-      digest(encoding) {
-        const digest = Buffer.from(sha256(Buffer.concat(chunks)));
-        return encoding ? digest.toString(encoding) : digest;
-      },
-    };
-    return hash;
-  };
-  export const subtle = web.subtle;
-  // The rest of Node's \`crypto\`, so that code which imports it loads.
-  ${missing}
-  ${cryptoMissing
-    .map((name) =>
-      name === "constants"
-        ? "export const constants = {};"
-        : `export const ${name} = missing("crypto.${name}");`,
-    )
-    .join("\n  ")}
-  export default {
-    webcrypto, randomUUID, randomFillSync, randomBytes, getRandomValues, createHash, subtle,
-    ${cryptoMissing.join(", ")},
-  };
   `,
     // Next measures its bloom filter of the routes with this, to warn about
     // its size, and it reads files and streams for that. No warning here.
@@ -299,7 +234,6 @@ export function createNodePlatform(registry: string, prefix: string) {
     ],
     [/^(node:)?timers$/, "node-timers"],
     [/^(node:)?timers\/promises$/, "node-timers-promises"],
-    [/^(node:)?crypto$/, "node-crypto"],
     [/^(node:)?zlib$/, "node-zlib"],
     [/^next\/dist\/compiled\/gzip-size(\/index(\.js)?)?$/, "gzip-size"],
     [

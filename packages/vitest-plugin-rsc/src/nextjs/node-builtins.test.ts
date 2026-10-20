@@ -1,101 +1,105 @@
 import fs from "node:fs";
 import { builtinModules } from "node:module";
-import os from "node:os";
 import path from "node:path";
-import { parseAst } from "vite";
+import os from "node:os";
 import { expect, test } from "vitest";
-import { createNodeBuiltins } from "./node-builtins.ts";
-import { createNodePlatform } from "./node-platform.ts";
+import {
+  generated,
+  handWritten,
+  outputDir,
+  unenvModules,
+  written,
+} from "../../scripts/node-modules.ts";
+import { browserMapping, isNodeModule, nodeModuleOf } from "./node-builtins.ts";
 
-const builtins = createNodeBuiltins("\0bridge/");
-const platform = createNodePlatform("registry", "\0bridge/");
-
-test("stands in for a module of Node.js with or without `node:`, once for both", () => {
-  expect(builtins.moduleOf("node:fs")).toBe("\0bridge/builtin:fs");
-  expect(builtins.moduleOf("fs")).toBe("\0bridge/builtin:fs");
-  expect(builtins.moduleOf("node:fs/promises")).toBe("\0bridge/builtin:fs/promises");
-  expect(builtins.moduleOf("os")).toBe("\0bridge/builtin:os");
-  expect(builtins.moduleOf("node:sqlite")).toBe("\0bridge/builtin:sqlite");
+test("names the package's module for a module of Node.js, with or without `node:`", () => {
+  expect(nodeModuleOf("node:fs")).toBe("vitest-plugin-rsc/node/fs");
+  expect(nodeModuleOf("fs")).toBe("vitest-plugin-rsc/node/fs");
+  expect(nodeModuleOf("node:fs/promises")).toBe("vitest-plugin-rsc/node/fs/promises");
+  expect(nodeModuleOf("os")).toBe("vitest-plugin-rsc/node/os");
+  expect(nodeModuleOf("node:sqlite")).toBe("vitest-plugin-rsc/node/sqlite");
+  expect(nodeModuleOf("node:crypto")).toBe("vitest-plugin-rsc/node/crypto");
+  expect(isNodeModule("vitest-plugin-rsc/node/fs")).toBe(true);
+  expect(isNodeModule("vitest-plugin-rsc/nextjs/ssr")).toBe(false);
 });
 
 test("leaves a package alone, and the package's own `async_hooks`", () => {
-  expect(builtins.moduleOf("memfs")).toBeUndefined();
-  expect(builtins.moduleOf("fs-extra")).toBeUndefined();
-  expect(builtins.moduleOf("node:async_hooks")).toBeUndefined();
+  expect(nodeModuleOf("memfs")).toBeUndefined();
+  expect(nodeModuleOf("fs-extra")).toBeUndefined();
+  expect(nodeModuleOf("node:async_hooks")).toBeUndefined();
 });
 
-test("has a stand-in that parses for every module of Node.js but a few", () => {
-  const without: string[] = [];
-  for (const name of builtinModules.filter((name) => !name.startsWith("_"))) {
-    const id = builtins.moduleOf(name) ?? platform.moduleOf(name);
-    if (!id) {
-      without.push(name);
-      continue;
-    }
-    const code = builtins.load(id.slice("\0bridge/".length)) ?? platform.load(id.slice(8));
-    expect(() => parseAst(code!), name).not.toThrow();
-  }
-  // The package's own `async_hooks`, and what a browser has no use for.
-  // Next's aliases come first in a layer, see project/layers.ts.
+test("has a module for every module of Node.js but a few", () => {
+  // Not the internals of Node's own, like `_stream_duplex`.
+  const names = builtinModules.filter((name) => !name.startsWith("_"));
+  const without = names.filter((name) => !nodeModuleOf(name));
   expect(without.sort()).toEqual(["async_hooks", "node:sea", "node:test", "node:test/reporters"]);
 });
 
-test("gives `fs` the exports of unenv's, from the disk on its global", () => {
-  const code = builtins.load("builtin:fs")!;
-
-  expect(code).toContain("globalThis.__vitest_plugin_rsc_disk__ ??=");
-  expect(code).toContain("export const readFileSync = fs.readFileSync");
-  expect(code).toContain("export const promises = fs.promises");
-});
-
-test("gives `process` the page's, with its own functions", () => {
-  const code = builtins.load("builtin:process")!;
-
-  expect(code).toContain("const process = (globalThis.process ??= { env: {} });");
-  expect(code).toContain("export const hrtime = process.hrtime;");
-  expect(code).toContain("export const env = process.env;");
-});
-
-test("gives another module unenv's, from the package, with its default export", () => {
-  expect(builtins.load("builtin:path/posix")).toBe(
-    'import * as unenv from "unenv/node/path/posix";\n' +
-      'export * from "unenv/node/path/posix";\n' +
-      "export default unenv.default;\n",
-  );
-  expect(builtins.importsOwn("unenv/node/path/posix", "\0bridge/builtin:path/posix")).toBe(true);
-  expect(builtins.importsOwn("unenv/node/os", "/app/lib/os.ts")).toBe(false);
-});
-
-test("imports memfs from this package", () => {
-  expect(builtins.importsOwn("memfs", "\0bridge/builtin:fs")).toBe(true);
-  expect(builtins.importsOwn("memfs", "/app/lib/disk.ts")).toBe(false);
-});
-
-test("leaves a module to Vite for a dependency whose `browser` field maps it", () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "node-builtins-"));
-  const dependency = path.join(dir, "node_modules", "dependency");
-  fs.mkdirSync(path.join(dependency, "dist"), { recursive: true });
-  const browser = { fs: false, "node:os": false, url: "./url.js" };
-  for (const root of [dir, dependency]) {
-    fs.writeFileSync(path.join(root, "package.json"), JSON.stringify({ browser }));
+test("ships a module for everything unenv stands in for, as the generator writes it", () => {
+  for (const name of unenvModules()) {
+    expect(fs.existsSync(path.join(outputDir, `${name}.ts`)), name).toBe(true);
   }
-  const importer = path.join(dependency, "dist", "index.js?v=1");
-
-  expect(builtins.mappedBy("fs", importer)).toBe(true);
-  expect(builtins.mappedBy("node:fs", importer)).toBe(true);
-  expect(builtins.mappedBy("os", importer)).toBe(true);
-  // To a file of its own, which Vite then gives it.
-  expect(builtins.mappedBy("url", importer)).toBe(true);
-  expect(builtins.mappedBy("http", importer)).toBe(false);
-  expect(builtins.mappedBy("fs", "\0bridge/builtin:fs")).toBe(false);
-  // Not the app's own field: Next's server does not read it.
-  expect(builtins.mappedBy("fs", path.join(dir, "app", "page.tsx"))).toBe(false);
+  // The files on disk are what `pnpm generate` writes: a bump of unenv, or a
+  // change of the script, is followed by a run of it.
+  const files = generated();
+  expect([...written().keys()].sort()).toEqual([...files.keys()].sort());
+  for (const [file, code] of files) expect(written().get(file), file).toBe(code);
+  expect([...handWritten]).toEqual(["crypto"]);
+  expect(fs.existsSync(path.join(outputDir, "crypto.ts"))).toBe(true);
 });
 
-test("gives `crypto` the rest of Node's exports, which throw", () => {
-  const code = platform.load("node-crypto")!;
+test("gives `fs` the exports of unenv's, from the disk on its global", () => {
+  const code = generated().get("fs.ts")!;
+  expect(code).toContain("[diskGlobal] ??= createDisk()");
+  expect(code).toContain(
+    'export const readFileSync = fs.readFileSync ?? missing("fs.readFileSync");',
+  );
+  expect(code).toContain('export const promises = fs.promises ?? missing("fs.promises");');
+  expect(generated().get("fs/promises.ts")).toContain(
+    'export const readFile = promises.readFile ?? missing("fs/promises.readFile");',
+  );
+});
 
-  expect(code).toContain('export const createHmac = missing("crypto.createHmac");');
-  expect(code).toContain("export const constants = {};");
-  expect(code).toContain("export const subtle = web.subtle;");
+test("gives `process` the page's, with its own functions, and unenv's for the rest", () => {
+  const code = generated().get("process.ts")!;
+  expect(code).toContain("(globalThis as Record<string, any>).process ??= {");
+  expect(code).toContain("export default new Proxy(process, {");
+  expect(code).toContain("export const hrtime = process.hrtime ?? unenv.hrtime;");
+  expect(code).toContain("export const env = process.env ?? unenv.env;");
+  expect(code).toContain("export const emitWarning = process.emitWarning ?? unenv.emitWarning;");
+});
+
+test("gives another module unenv's, with its default export", () => {
+  expect(generated().get("path/posix.ts")).toBe(
+    "// Generated by scripts/node-modules.ts: do not edit, run `pnpm generate`.\n" +
+      "// `node:path/posix` of Node.js, as unenv has it in a browser.\n" +
+      'export * from "unenv/node/path/posix";\n' +
+      'export { default } from "unenv/node/path/posix";\n',
+  );
+});
+
+test("reads what a dependency's `browser` field says it uses for a module", () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "node-builtins-"));
+  try {
+    const pkg = path.join(dir, "node_modules", "some-db");
+    fs.mkdirSync(path.join(pkg, "dist"), { recursive: true });
+    fs.writeFileSync(
+      path.join(pkg, "package.json"),
+      JSON.stringify({ name: "some-db", browser: { fs: false, url: false, os: "./os.js" } }),
+    );
+    const importer = path.join(pkg, "dist", "index.js");
+    expect(browserMapping("fs", importer)).toBe(false);
+    expect(browserMapping("url", `${importer}?v=1`)).toBe(false);
+    expect(browserMapping("os", importer)).toBe("./os.js");
+    expect(browserMapping("http", importer)).toBeUndefined();
+    // By the specifier as written, as Vite maps it.
+    expect(browserMapping("node:fs", importer)).toBeUndefined();
+    // Not the app's own field: Next's server does not read it.
+    fs.writeFileSync(path.join(dir, "package.json"), JSON.stringify({ browser: { fs: false } }));
+    expect(browserMapping("fs", path.join(dir, "app", "page.tsx"))).toBeUndefined();
+    expect(browserMapping("fs", undefined)).toBeUndefined();
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });
