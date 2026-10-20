@@ -181,6 +181,48 @@ test("a client story renders once after a change of its component", async ({ pag
   expect(await preview.afterSave()).toEqual({ rendered: ["press-button--labelled"], loads: 0 });
 });
 
+// The render on screen keeps the stylesheets of its file until the render
+// after the change has mounted in its place: no frame without them.
+test("a client story keeps its stylesheets through a change of its file", async ({ page }) => {
+  const canvas = await openStory(page, site!.url, "press-button--labelled");
+  const stylesheet = canvas.locator('link[rel="stylesheet"][href*="press-button.stories.css"]');
+  expect(await stylesheet.count()).toBe(1);
+  await canvas.evaluate(() => {
+    const seen = { removed: [] as string[], unstyled: 0 };
+    Object.assign(window, { __styles: seen });
+    new MutationObserver((records) => {
+      for (const { removedNodes } of records) {
+        for (const node of removedNodes) {
+          if (node instanceof HTMLLinkElement && node.rel === "stylesheet") {
+            seen.removed.push(node.href);
+          }
+        }
+      }
+    }).observe(document.head, { childList: true });
+    // Each frame, the button with the color of press-button.module.css.
+    const frame = () => {
+      const button = document.querySelector("#storybook-root button");
+      if (button && getComputedStyle(button).color !== "rgb(0, 0, 255)") seen.unstyled++;
+      requestAnimationFrame(frame);
+    };
+    requestAnimationFrame(frame);
+  });
+  change(
+    "stories/press-button.stories.tsx",
+    'data-testid="meta-decorator"',
+    'data-testid="meta-decorator" data-restyled=""',
+  );
+  const decorator = canvas.locator("#storybook-root").getByTestId("meta-decorator");
+  await expect.poll(() => decorator.getAttribute("data-restyled"), { timeout: 30_000 }).toBe("");
+  expect(await rendered(canvas, "press-button--labelled")).toBe("finished");
+  expect(await canvas.evaluate(() => (window as unknown as { __styles: object }).__styles)).toEqual(
+    { removed: [], unstyled: 0 },
+  );
+  // They go with the story.
+  await runStory(page, canvas, "greeting--default");
+  expect(await stylesheet.count()).toBe(0);
+});
+
 test("a server story renders once after a change of the server preview", async ({ page }) => {
   const preview = await watchPreview(page);
   const canvas = await openStory(page, site!.url, "greeting--default");
