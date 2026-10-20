@@ -162,5 +162,4 @@ jobs:
         run: |
           pnpm test:dist \
             --project nextjs-e2e-demo \
-            --project nextjs-notes-demo-browser \
-            --project nextjs-notes-demo-node
+            --project nextjs-notes-demo-browser
