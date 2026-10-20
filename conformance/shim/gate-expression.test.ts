@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { declaredConditions, evaluateGate } from "./gate-expression.ts";
+import { evaluateGate, gateConditions } from "./gate-expression.ts";
 
 const run = {
   mode: "start",
@@ -49,9 +49,13 @@ await test("rejects what is not a condition", () => {
 });
 
 await test("gives a function the conditions, and throws on one that no run has", () => {
-  const conditions = declaredConditions(run);
+  const conditions = gateConditions(run);
   assert.equal(conditions.start, true);
   assert.equal("cacheComponent" in conditions, true);
+  assert.equal((conditions as Record<symbol, unknown>)[Symbol.iterator], undefined);
+  assert.deepEqual(Object.keys(conditions), []);
   assert.throws(() => conditions.cacheComponent, /undeclared condition "cacheComponent"/);
   assert.throws(() => conditions.constructor, /undeclared condition "constructor"/);
+  conditions.dev = true;
+  assert.equal(run.dev, false);
 });

@@ -1,15 +1,13 @@
 // Stands in for `test/lib/next-test-utils.ts`: the helpers that work on a
 // page or a response. The ones that start a process, read a build or open a
 // socket have no place in a tab; the runner gives each of those a stub that
-// says so (see `stubsFor()` in src/vite-plugin.ts).
+// says so (see the `load` of `next-test-utils` in src/vite-plugin.ts).
 //
 // The bodies follow Next's own, so that a test waits and retries as it does
 // there.
 import type * as cheerio from "cheerio";
 import { expect } from "vitest";
 import type { Browser } from "./browser.ts";
-import { declaredConditions, evaluateGate } from "./gate-expression.ts";
-import { conditions } from "./gate.ts";
 import { currentNext, withQuery, type Query } from "./next-instance.ts";
 import { isUnsupported } from "./unsupported.ts";
 
@@ -17,6 +15,7 @@ import { isUnsupported } from "./unsupported.ts";
 const setTimeout = globalThis.setTimeout;
 
 export { withQuery };
+export { gate } from "./gate.ts";
 
 export const debugPrint = (..._args: unknown[]) => {};
 export const shouldUseTurbopack = () => false;
@@ -64,17 +63,6 @@ export function renderViaHTTP(
   init?: RequestInit,
 ): Promise<string> {
   return fetchViaHTTP(appPort, pathname, query, init).then((response) => response.text());
-}
-
-// The runtime form of the `@gate` pragma (test/lib/gate/runtime.ts), for a
-// test that asserts one thing or another by the conditions of the run: a
-// pragma's expression, or a function of the conditions.
-export async function gate(
-  arg: string | ((conditions: Record<string, unknown>) => unknown),
-): Promise<boolean> {
-  return Boolean(
-    typeof arg === "string" ? evaluateGate(arg, conditions) : arg(declaredConditions(conditions)),
-  );
 }
 
 export async function waitFor(millisOrCondition: number | (() => boolean)): Promise<void> {

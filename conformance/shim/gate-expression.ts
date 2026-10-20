@@ -1,4 +1,6 @@
-// The condition of a `// @gate` pragma, with the grammar that
+// The conditions of a run, read by name: by the expression of a `// @gate`
+// pragma or by the function that `gate()` calls. A name that no run has
+// throws either way. The expression has the grammar that
 // test/lib/gate/expr.ts of Next's repository has for it:
 //
 //   expression → binary ( ( "||" | "&&" ) binary )*
@@ -67,13 +69,14 @@ function readCondition(name: string, conditions: Record<string, unknown>): unkno
   return conditions[name];
 }
 
-/**
- * The conditions as the function form of `gate()` gets them: a name that no
- * run has throws, as in a pragma.
- */
-export function declaredConditions(conditions: Record<string, unknown>): Record<string, unknown> {
-  return new Proxy(conditions, {
-    get: (target, name) => (typeof name === "string" ? readCondition(name, target) : undefined),
-    has: () => true,
-  });
+/** The conditions as the function that `gate()` calls gets them, as in Next: no more than reads. */
+export function gateConditions(conditions: Record<string, unknown>): Record<string, unknown> {
+  return new Proxy(
+    {},
+    {
+      get: (_target, name) =>
+        typeof name === "string" ? readCondition(name, conditions) : undefined,
+      has: () => true,
+    },
+  );
 }

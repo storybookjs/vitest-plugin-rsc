@@ -2,16 +2,16 @@
 // <condition>` when it only holds for some runs: a mode, a bundler, a flag of
 // `next.config` (test/lib/gate/README.md in Next's repository). Next's own
 // transform rewrites the pragma into a call of `_test_gate`; this is that
-// function, for the conditions as they are in this run.
+// function, for the conditions as they are in this run, and `gate()` the
+// form of it that a test calls in its body.
 import { describe, it } from "vitest";
 import { gateConfig, mode } from "virtual:next-conformance/config";
-import { evaluateGate } from "./gate-expression.ts";
+import { evaluateGate, gateConditions } from "./gate-expression.ts";
 
 type Pragma = { force: boolean; source: string };
 type Callee = ((...args: never[]) => unknown) & { skip: (...args: never[]) => unknown };
 
-/** The conditions of this run, by the names of Next's `test/lib/gate/conditions.ts`. */
-export const conditions: Record<string, unknown> = {
+const conditions: Record<string, unknown> = {
   mode,
   dev: mode === "dev",
   start: mode === "start",
@@ -41,6 +41,17 @@ export const conditions: Record<string, unknown> = {
 };
 
 const holds = ({ source }: Pragma) => Boolean(evaluateGate(source, conditions));
+
+// Next's `gate()` of next-test-utils (test/lib/gate/runtime.ts), for a test
+// that asserts one thing or another by the conditions of the run: a pragma's
+// expression, or a function of the conditions.
+export async function gate(
+  arg: string | ((conditions: Record<string, unknown>) => unknown),
+): Promise<boolean> {
+  return Boolean(
+    typeof arg === "string" ? evaluateGate(arg, conditions) : arg(gateConditions(conditions)),
+  );
+}
 
 // A test of Jest is `(name, fn, timeout)`. Vitest takes its options before
 // the function.
