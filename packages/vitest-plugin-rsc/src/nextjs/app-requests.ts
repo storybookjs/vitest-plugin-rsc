@@ -21,16 +21,19 @@ import { loadedSsrLayer, ssrLayer } from "./server-layers.ts";
 type SsrLayer = Awaited<ReturnType<typeof ssrLayer>>;
 
 // What Next's server answers a request with, once the ssr layer is there.
-// One that waits for the layer is of no page: a page is open only once its
-// document came through the layer. So leaving a page meanwhile, as a host
-// cleans up before what it shows, keeps it, like a request of the host's
-// own that the proxy runs on. A request of a page that was left the server
-// drops: see `settleRequests()` in ssr.ts. A layer that failed to load fails
-// the request.
+// As with `fetch`, a request whose signal has aborted is not sent: the
+// document of a page load that was left while it waited for the layer, as a
+// host cleans up before what it shows next. Every other request that waited
+// is sent, like one of the host's own that the proxy runs on. A request of a
+// page that was left once the layer is there, the server drops: see
+// `settleRequests()` in ssr.ts. A layer that failed to load fails the
+// request.
 async function handledByServer(
   ...[request, options]: Parameters<SsrLayer["handleRequest"]>
 ): Promise<Response | undefined> {
-  return (loadedSsrLayer() ?? (await ssrLayer())).handleRequest(request, options);
+  const layer = loadedSsrLayer() ?? (await ssrLayer());
+  request.signal?.throwIfAborted();
+  return layer.handleRequest(request, options);
 }
 
 const nativeFetch = globalThis.fetch;

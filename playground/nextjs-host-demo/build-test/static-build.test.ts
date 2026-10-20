@@ -305,6 +305,46 @@ test("a page that renders no route does not wait for the ssr layer", async ({ pa
   expect(timing.fetched).toBeLessThan(timing.ssrLayer!);
 });
 
+// The document request of a page load waits for the layer like any other,
+// and carries the load's signal. Leaving the page meanwhile, as a host
+// cleans up before what it shows next, aborts it: as with `fetch`, the
+// server never gets it, so nothing of it renders, with the cookies of the
+// test before, in the next one's place. The next page load is the one that
+// renders.
+test("a page load that is left while it waits for the ssr layer never reaches the server", async ({
+  page,
+  errors,
+}) => {
+  let release!: () => void;
+  const released = new Promise<void>((resolve) => (release = resolve));
+  await page.route("**/vitest-plugin-rsc/next_ssr/modules.json", async (route) => {
+    await released;
+    // Not for a page that a failed test has closed.
+    await route.continue().catch(() => {});
+  });
+  onTestFinished(() => release());
+  type Early = HostWindow & { __left?: Promise<string>; __next?: Promise<string> };
+  await open(page, errors, "early", async (page) => {
+    await page.evaluate(() => {
+      const host = window as Early;
+      host.__left = host.__hostRenderProbe!();
+    });
+    await page.evaluate(() => {
+      const host = window as Early;
+      return host.__hostCleanup!().then(() => {
+        host.__next = host.__hostRenderProbe!();
+      });
+    });
+    release();
+    const rendered = await page.evaluate(() => {
+      const { __left, __next } = window as Early;
+      return Promise.all([__left, __next]);
+    });
+    expect(rendered).toEqual(["AbortError", "rendered"]);
+    expect(await page.evaluate(() => (window as HostWindow).__hostProbeRenders)).toBe(1);
+  });
+});
+
 // A layer that does not load fails the requests that need it, as the first
 // request does: not the host, nor its own requests.
 test("a page that renders no route works without the ssr layer", async ({ page, errors }) => {

@@ -63,6 +63,11 @@ await show(async () => {
         (error: Error) => error.name,
       );
     state.__hostCleanup = cleanup;
+    state.__hostRenderProbe = () =>
+      renderServer(<Probe />, { hostFiles: [] }).then(
+        () => "rendered",
+        (error: Error) => error.name,
+      );
     return;
   }
   if (view === "module") {
@@ -197,3 +202,10 @@ await show(async () => {
         : await renderServer({ url: "/" });
   state.__hostResponse = { status: response.status, url: response.url };
 });
+
+// A Server Component of the host for `?view=early`, which counts how often
+// the server renders it.
+function Probe() {
+  state.__hostProbeRenders = (state.__hostProbeRenders ?? 0) + 1;
+  return <p>A probe of the host</p>;
+}
