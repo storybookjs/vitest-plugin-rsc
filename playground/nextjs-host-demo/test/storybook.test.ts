@@ -362,14 +362,19 @@ test("new args: a server story renders again in place, a client story keeps its 
   await expect
     .poll(() => canvas.evaluate(() => localStorage.getItem("visitor")), { timeout: 30_000 })
     .toBe("Grace");
-  await expect.poll(() => canvas.getByRole("button", { name: "Count: 0" }).count()).toBe(1);
+  // A new page load: as long as one may take on CI, as the polls before.
+  await expect
+    .poll(() => canvas.getByRole("button", { name: "Count: 0" }).count(), { timeout: 30_000 })
+    .toBe(1);
   await runStory(page, canvas, "press-button--labelled");
   // Left, the page puts the preview at the story that is selected.
   expect(new URL(canvas.url()).searchParams.get("id")).toBe("press-button--labelled");
   await inCanvas(canvas).getByRole("button", { name: "Labelled: 0" }).click();
   await updateArgs(canvas, "press-button--labelled", { label: "Renamed" });
   await expect
-    .poll(() => inCanvas(canvas).getByRole("button", { name: "Renamed: 1" }).count())
+    .poll(() => inCanvas(canvas).getByRole("button", { name: "Renamed: 1" }).count(), {
+      timeout: 30_000,
+    })
     .toBe(1);
 });
 
