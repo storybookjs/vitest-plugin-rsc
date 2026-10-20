@@ -25,6 +25,11 @@ export type HostWindow = {
   };
   /** For `?view=after-page`: whether the stylesheet of the badge was linked, at each step. */
   __hostBadgeLinked?: Record<string, boolean>;
+  /**
+   * For `?view=in-place`: whether the host's own read of in-place-note.tsx
+   * has the object that in-place-badge.tsx imports of it.
+   */
+  __hostOneNote?: boolean;
   /** Whether the callout had its stylesheet, before `?view=switch` left it. */
   __hostCalloutLinked?: boolean;
   /** For `?view=rerender`: renders the greeting again for another name. */
