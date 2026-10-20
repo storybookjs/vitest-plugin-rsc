@@ -20,7 +20,7 @@ import { cookies, headers } from "next/headers";
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import type { ReactNode } from "react";
-import { renderedContainers } from "../test/browser.ts";
+import { cssRules, renderedContainers } from "../test/browser.ts";
 import { releaseStylesheet, transformsOf } from "../test/service.ts";
 import { ClientBoundary, ThrowsOnClient } from "./components/client-boundary.tsx";
 import { ClientFrame } from "./components/client-frame.tsx";
@@ -163,12 +163,19 @@ test("renders a node in a page with the CSS of the browser, and not that of Vite
   expect(getComputedStyle(document.body).margin).toBe("8px");
 });
 
-test("keeps the CSS that a test file imports itself, from one page to the next", async () => {
+// Vite's `<style>`, which a page of the app steps aside for, as for the
+// `<link>` of its chunk in a build: the page has the CSS of its route.
+test("keeps the CSS that a test file imports itself for its nodes, and not for a page", async () => {
+  const fromTest = () =>
+    cssRules().some((rule) => rule instanceof CSSStyleRule && rule.selectorText === ".from-test");
   await renderServer(<p className="from-test">From the test</p>);
   await expect.element(page.getByText("From the test")).toHaveStyle({ color: "rgb(255, 0, 255)" });
 
   await renderServer({ url: "/notice" });
+  await expect.element(page.getByText("The office is closed on Friday.")).toBeVisible();
+  expect(fromTest()).toBe(false);
   await renderServer(<p className="from-test">From the test again</p>);
+  expect(fromTest()).toBe(true);
   await expect
     .element(page.getByText("From the test again"))
     .toHaveStyle({ color: "rgb(255, 0, 255)" });

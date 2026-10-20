@@ -23,6 +23,8 @@ export type HostWindow = {
     /** What it did for a file of the app: its error. */
     app: string;
   };
+  /** For `?view=after-page`: whether the stylesheet of the badge was linked, at each step. */
+  __hostBadgeLinked?: Record<string, boolean>;
   /** Whether the callout had its stylesheet, before `?view=switch` left it. */
   __hostCalloutLinked?: boolean;
   /** For `?view=rerender`: renders the greeting again for another name. */

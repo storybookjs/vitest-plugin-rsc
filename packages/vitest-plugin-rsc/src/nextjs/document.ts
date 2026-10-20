@@ -2,10 +2,15 @@ import { graphStylesheetAttribute } from "./styles-shared.ts";
 
 // A page load, without loading a page: the test runs in this
 // document and has to stay in it. So the document the server sends is moved
-// into this one. What the test runner needs stays, its scripts and styles. The
-// rest of what is in the document steps aside for as long as the page is
-// there: a second `<title>` would hide the page's, and text in `<body>` is not
-// what React expects to hydrate.
+// into this one. What the test runner needs stays: its scripts, and the
+// `<style>`s of its HTML, which style what it shows over the page. The rest
+// of what is in the document steps aside for as long as the page is there: a
+// second `<title>` would hide the page's, and text in `<body>` is not what
+// React expects to hydrate. So does the CSS of the host's modules, which is
+// no CSS of the app: Vite's `<style>` of a module with a dev server, as the
+// `<link>` of its chunk in a build, and the stylesheets of the files of the
+// host with `"use client"` (client-graph.ts). A page has the CSS of its
+// route, as with `next start`.
 //
 // A browser shows none of a page before the stylesheets in its `<head>` have
 // loaded, and the page that was there until then. So the `<head>` of the page
@@ -50,9 +55,8 @@ export function documentUrl(): string {
 function staysDuringPage(node: Node): boolean {
   return (
     node instanceof HTMLScriptElement ||
-    node instanceof HTMLStyleElement ||
-    isPreload(node) ||
-    isGraphStylesheet(node)
+    (node instanceof HTMLStyleElement && !isViteStyle(node)) ||
+    isPreload(node)
   );
 }
 
@@ -67,18 +71,18 @@ function isPreload(node: Node): boolean {
   );
 }
 
-// Vite puts the CSS a module imports in a `<style>`, once. That is not the
-// CSS of the app, which a page links (styles.ts). It is what a test file
-// imports itself, and it has to outlive the page it came during: the module
-// will not load again.
+// Vite puts the CSS a module imports in a `<style>`, once, and marks it with
+// the module's id. That is not the CSS of the app, which a page links
+// (styles.ts). It is what a module of the host imports, like a test file, and
+// it has to outlive the page it came during: the module will not load again.
 function isViteStyle(node: Node): boolean {
   return node instanceof HTMLStyleElement && node.hasAttribute("data-vite-dev-id");
 }
 
 // The stylesheets that the tab's graph linked for a file of the host with
-// `"use client"` (client-graph.ts) are the tab's, as the graph is: they stay
-// for the pages, and outlive the page they came during, as Vite's `<style>`
-// does. A host loads a client file before it leaves the page that is there.
+// `"use client"` (client-graph.ts) are the host's: they outlive the page they
+// came during, as Vite's `<style>` does. A host loads a client file before it
+// leaves the page that is there.
 function isGraphStylesheet(node: Node): boolean {
   return node instanceof HTMLLinkElement && node.hasAttribute(graphStylesheetAttribute);
 }

@@ -40,10 +40,14 @@ import {
 // stylesheet belongs to a page, and goes with it.
 //
 // Vite does it another way: a module that imports CSS puts it in a `<style>`
-// when it loads, once for the browser. That stays for the CSS a test file imports
-// itself. For the CSS of the app, this file is the part of Next's build:
+// when it loads, once for the browser. That stays for the CSS that a module
+// of the host's document imports, like a test file without `"use client"`.
+// For the CSS of the app, this file is the part of Next's build, and for that
+// of a file of the host with `"use client"` too, whose graph links it as a
+// page links its route's (client-graph.ts):
 //
-//   - An import of CSS in the code of the app gets a query, `?next-linked`.
+//   - An import of CSS in the code of the app, and in a file of the host with
+//     `"use client"`, gets a query, `?next-linked`.
 //   - The module of such an import puts nothing in the document. It exports
 //     the class names of a CSS module, as Vite's module for a server does.
 //   - The list of a segment is read off Vite's module graphs, before Next
@@ -202,8 +206,7 @@ export type StylesOptions = {
   isServerCode(file: string): boolean;
   /**
    * Whether a file is the host's: a test file or a setup file of Vitest, or a
-   * file of another host. In the layer of the browser that is such a file
-   * with `"use client"`, whose own CSS is Vite's, as in the rsc layer.
+   * file of another host.
    */
   isHostFile(file: string): boolean;
   /** The page routes, by the name of their modules. */
@@ -594,11 +597,11 @@ export function createStyles(options: StylesOptions): Styles {
         // like `@fontsource/inter`, and so can an alias.
         if (!layer || !importer || source.includes("?") || isScriptRequest(source)) return;
         // The rsc layer shares its environment with the test: the CSS a test
-        // file imports stays the browser's. In the other two every module is the
-        // app's, but for a test file with `"use client"` in the layer of the
-        // browser.
+        // file imports stays the browser's. The other two are module graphs
+        // of the plugin's: their CSS is linked, the app's for a page and that
+        // of a file of the host with `"use client"` by the tab's graph.
         const file = importer.split("?")[0]!;
-        if (layer === "rsc" ? !options.isServerCode(file) : options.isHostFile(file)) return;
+        if (layer === "rsc" && !options.isServerCode(file)) return;
         const resolved = await this.resolve(source, importer, {
           ...resolveOptions,
           skipSelf: true,

@@ -35,23 +35,40 @@ import {
 // evaluates a module once. A host that uses the exports of the file, like a
 // framework that renders a component of it, gets that evaluation with
 // `loadClientModule()`.
+//
+// The CSS of such a file is in the document while the host uses the file, as
+// a page's is while the page is open: from `linkStylesheetsOf()` until
+// `cleanup()`, which ends what the host used. Not as the file loads: a host
+// may load a file that it does not use yet, as Storybook preloads the file
+// of a story. Under Vitest every test uses the setup files and the test file
+// (setup.ts).
 
 const environment = "react_client";
 
 let graph: ModuleRunner | undefined;
 
 // The stylesheets that the files of the host linked, one for each URL: the
-// tab's, which a page that comes and goes leaves where they are, see
-// document.ts. `forgetClientFiles()` takes them back.
+// host's, which a page steps aside for and leaves where they are, see
+// document.ts. `cleanup()` takes them back.
 const linked = new Map<string, { link: HTMLLinkElement; loaded: Promise<unknown> }>();
+
+// Each file of the host that the graph loaded, by its reference key: the key
+// of its stylesheets in a static build, and their URLs as the graph last
+// linked them.
+const files = new Map<string, { builtFile: string | undefined; stylesheets?: string[] }>();
+
+// The reference keys of the files that the host uses now: `linked` has their
+// stylesheets.
+const used = new Set<string>();
 
 // The exports of the evaluation of each file of the host that the graph has
 // now, by its reference key.
 const evaluations = new Map<string, object>();
 
-// The URLs of the files of the host that the graph imported, also one whose
-// evaluation failed, which the runner keeps as it does an evaluation:
-// `forgetClientFiles()` has the graph evaluate each again.
+// The reference keys of the files of the host that the graph loaded since
+// `forgetClientFiles()`, also one whose evaluation failed, which the runner
+// keeps as it does an evaluation: with a dev server, their URLs, which
+// `forgetClientFiles()` has the graph evaluate again.
 const imported = new Set<string>();
 
 // The exports that each client reference module stands for: the file's last
@@ -116,10 +133,11 @@ export async function loadClientFile(key: string, builtFile?: string): Promise<v
     const load = references.default[key];
     if (!load) throw new Error(`vitest-plugin-rsc: the build has no client reference "${key}"`);
     registry.browserRequire = browserRequire;
+    imported.add(key);
     // Once for the document: a build has no change, and the runner
     // evaluates the module that the list imports once.
+    files.set(key, { builtFile });
     evaluations.set(key, await load());
-    await linkStylesheets(await stylesheetsOf(key, builtFile));
     return;
   }
   // The server's modules as they are now: the graph outlives a page load.
@@ -132,7 +150,8 @@ export async function loadClientFile(key: string, builtFile?: string): Promise<v
   // changed, as another runner may have fetched them again already. What a
   // setup file with the directive had set up comes back with the setup file,
   // which Vitest runs before every test file.
-  if (await takeFetchedModules(graph)) {
+  const changed = await takeFetchedModules(graph);
+  if (changed) {
     for (const node of evaluatedModules.idToModuleMap.values()) {
       if (!isDependency(node)) evaluatedModules.invalidateModule(node);
     }
@@ -141,8 +160,9 @@ export async function loadClientFile(key: string, builtFile?: string): Promise<v
   // The runner keeps the evaluation of the file until a change, above, or
   // `forgetClientFiles()` invalidated it.
   imported.add(key);
+  files.set(key, { builtFile });
   evaluations.set(key, await graph.import(key));
-  await linkStylesheets(await stylesheetsOf(key, builtFile));
+  if (changed) await linkUsedFilesAgain();
 }
 
 /**
@@ -154,7 +174,8 @@ export async function loadClientFile(key: string, builtFile?: string): Promise<v
  * same object for the same module, every time. Such a module has the export
  * `clientFileKeyExport`, which the plugin put in front of it, and that alone
  * tells it: other exports, like one that a plugin of the host adds, change
- * nothing. Any other module as it is.
+ * nothing. Any other module as it is. Links nothing: a host that uses the
+ * file links its stylesheets with `linkStylesheetsOf()`.
  *
  * Rejects for the client reference module of a file that is not the host's,
  * which nothing evaluated in the browser layer.
@@ -168,7 +189,7 @@ export async function loadClientModule<T extends object>(module: T): Promise<T> 
     if (!exports) {
       throw new Error(
         `vitest-plugin-rsc: ${key} has "use client" and is not a file of the host, so nothing ` +
-          `loaded it in the browser layer for loadClientModule(). ${key} is the reference key ` +
+          `loaded it in the browser layer. ${key} is the reference key ` +
           `that Vite RSC gives the file: its URL with a dev server, and in a static build a ` +
           `hash of the file. The files of the host are the ones that host.files of ` +
           `vitestPluginNext() matches.`,
@@ -179,9 +200,35 @@ export async function loadClientModule<T extends object>(module: T): Promise<T> 
   return exports as T;
 }
 
-// The CSS of what a file with `"use client"` imports, linked in the document,
-// as a page of the app links its CSS: see styles.ts. Vite's `<style>` of a
-// module would stay for the pages of the files after it.
+/**
+ * Links the stylesheets of the file of `module` in the document, those of
+ * what it imports in the browser layer, until `cleanup()` unlinks them: what
+ * a host calls as it uses the file, like a framework that shows a story of
+ * it, or renders it as it loads. As they are now: with a dev server, an edit
+ * since the file loaded gives one another version. Resolves once they have
+ * loaded. Nothing for a module that `loadClientModule()` gives as it is, and
+ * rejects where it rejects.
+ */
+export async function linkStylesheetsOf(module: object): Promise<void> {
+  await loadClientModule(module);
+  const key: unknown = Reflect.get(module, clientFileKeyExport);
+  if (typeof key !== "string") return;
+  used.add(key);
+  await linkStylesheets(await stylesheetsOfFile(key, { again: true }));
+}
+
+// The URLs of the stylesheets of a file that the graph loaded: those it last
+// linked, unless they are asked for `again`.
+async function stylesheetsOfFile(key: string, { again }: { again: boolean }): Promise<string[]> {
+  const file = files.get(key)!;
+  if (again || !file.stylesheets) file.stylesheets = await stylesheetsOf(key, file.builtFile);
+  return file.stylesheets;
+}
+
+// The CSS of what a file with `"use client"` imports, its own too, linked in
+// the document, as a page of the app links its CSS: see styles.ts. Vite's
+// `<style>` of a module would stay for every file after it, and the `<link>`
+// of a chunk of a build goes with a page that is open as the file loads.
 async function linkStylesheets(urls: string[]): Promise<void> {
   const loads = urls.map((href) => {
     const known = linked.get(href);
@@ -198,11 +245,53 @@ async function linkStylesheets(urls: string[]): Promise<void> {
 }
 
 /**
+ * Unlinks the stylesheets of the files of the host: `cleanup()` calls this,
+ * once it has left the page.
+ */
+export function unlinkClientStylesheets(): void {
+  for (const { link } of linked.values()) link.remove();
+  linked.clear();
+  used.clear();
+}
+
+// After a change, the stylesheets of the files in use as they are now, as
+// Vite puts the new CSS of a module in its `<style>`: an edit gives a
+// stylesheet another version, and the one before goes.
+async function linkUsedFilesAgain(): Promise<void> {
+  const urls = await Promise.all([...used].map((key) => stylesheetsOfFile(key, { again: true })));
+  const now = new Set(urls.flat());
+  for (const [href, { link }] of linked) {
+    if (now.has(href)) continue;
+    link.remove();
+    linked.delete(href);
+  }
+  await linkStylesheets([...now]);
+}
+
+/**
+ * Links the stylesheets of every file of the host that the graph loaded
+ * since `forgetClientFiles()`. Under Vitest those are the setup files and
+ * the test file with `"use client"`, which every test uses: the plugin's
+ * setup file calls this before the tests of a file, and again before each,
+ * after `cleanup()`. Asks for a file's once: a change of one runs the test
+ * file again.
+ */
+export async function linkClientStylesheets(): Promise<void> {
+  for (const key of imported) used.add(key);
+  // In the order the files loaded, as their CSS cascades.
+  const urls = await Promise.all(
+    [...imported].map((key) => stylesheetsOfFile(key, { again: false })),
+  );
+  await linkStylesheets(urls.flat());
+}
+
+/**
  * Forgets what the files of the host did in the tab: with a dev server the
  * graph evaluates each again the next time it loads, also one that failed,
- * and the stylesheets they linked go. The plugin's setup file calls this before every test file,
- * under Vitest. The graph keeps what the files import, and a module whose
- * line ran before still gets the evaluation it loaded.
+ * and the stylesheets they linked go. The plugin's setup file calls this
+ * before every test file, under Vitest. The graph keeps what the files
+ * import, and a module whose line ran before still gets the evaluation it
+ * loaded.
  */
 export function forgetClientFiles(): void {
   for (const url of imported) {
@@ -210,8 +299,7 @@ export function forgetClientFiles(): void {
     if (own) graph?.evaluatedModules.invalidateModule(own);
   }
   imported.clear();
-  for (const { link } of linked.values()) link.remove();
-  linked.clear();
+  unlinkClientStylesheets();
 }
 
 /**

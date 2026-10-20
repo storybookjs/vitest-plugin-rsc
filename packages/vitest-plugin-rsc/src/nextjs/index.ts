@@ -6,7 +6,7 @@ import "./globals.ts";
 import { createElement, type JSXElementConstructor, type ReactNode } from "react";
 import { resetAsyncLocalStorage } from "../async-local-storage.ts";
 import { checkFetchedModules, createEnvironmentRunner, environmentModule } from "../utils.ts";
-import { callServerWithoutPage } from "./client-graph.ts";
+import { callServerWithoutPage, unlinkClientStylesheets } from "./client-graph.ts";
 import { documentUrl, loadDocument, unloadDocument } from "./document.ts";
 import { recordListeners, recordMessageChannels } from "./leftovers.ts";
 import { NodeOnPage } from "./node-on-page.ts";
@@ -16,7 +16,7 @@ import { takesRequest } from "./server-in-front.ts";
 import { ssrLayer, ssrLayerNow } from "./server-layers.ts";
 import { PageStorage, storageOf } from "./storage.ts";
 
-export { loadClientModule } from "./client-graph.ts";
+export { linkStylesheetsOf, loadClientModule } from "./client-graph.ts";
 
 // What a request of the app waits for: the ssr layer, which starts to load
 // as this module evaluates, see server-layers.ts. Nothing else does. Which
@@ -1180,7 +1180,10 @@ export type CleanupOptions = {
  * Leaves the page that `renderServer()` opened, removes the containers it made
  * and forgets its `headers`, the app's cookies and what the app put in its
  * storage, like a new browser context. The server forgets what it has cached.
- * Runs before and after every test.
+ * Unlinks the stylesheets of the files of the host with `"use client"`: the
+ * host links a file's again as it uses it, with `linkStylesheetsOf()`. Runs
+ * before and after every test, after which the plugin's setup file links
+ * those of the setup files and the test file again.
  *
  * What was set on the document, `<html>`, `<head>` and the container of a
  * node while the page was open goes with the page; what the host set there
@@ -1191,6 +1194,7 @@ export async function cleanup({ url }: CleanupOptions = {}): Promise<void> {
   await leavePage("cleanup()");
   for (const container of containers) container.remove();
   containers.clear();
+  unlinkClientStylesheets();
   store = new PageStore();
   storage = new PageStorage();
   ssr?.resetCaches();

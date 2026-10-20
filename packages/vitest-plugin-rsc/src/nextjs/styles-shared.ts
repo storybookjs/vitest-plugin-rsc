@@ -31,8 +31,8 @@ export type StylesheetsQuestion =
 
 /**
  * What marks the `<link>` of a stylesheet of a file of the host with
- * `"use client"`, which the tab's graph linked (client-graph.ts): the tab's,
- * not a page's, so it stays while pages come and go (document.ts).
+ * `"use client"`, which the tab's graph linked (client-graph.ts): the host's,
+ * not a page's, so a page that is left does not take it (document.ts).
  */
 export const graphStylesheetAttribute = "data-vitest-plugin-rsc-graph";
 

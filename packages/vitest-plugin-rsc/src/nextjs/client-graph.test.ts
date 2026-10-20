@@ -226,6 +226,21 @@ test("evaluates a file again after a change, for the module that the change made
   expect(tab.evaluated).toEqual(["/host/badge.tsx", "/host/badge.tsx"]);
 });
 
+// As Vite puts the new CSS of a module in its `<style>`: the stylesheets of
+// the files in use, which an edit gave another version, and not one that the
+// host only loaded.
+test("links the stylesheets of the files in use again after a change", async () => {
+  const { linkStylesheetsOf } = await graph();
+  await linkStylesheetsOf(await importHostFile("/host/badge.tsx", "Badge"));
+  expect(links()).toEqual(["/_next/static/css/badge.css"]);
+
+  tab.stylesheets.set("/host/badge.tsx", ["/_next/static/css/badge-2.css"]);
+  tab.changed = true;
+  await importHostFile("/host/card.tsx", "Card");
+
+  expect(links()).toEqual(["/_next/static/css/badge-2.css"]);
+});
+
 test("forgets the files for Vitest's setup file, which evaluates them again", async () => {
   const { forgetClientFiles, loadClientModule } = await graph();
   const before = await importHostFile("/host/badge.tsx", "Badge");
@@ -259,20 +274,59 @@ test("evaluates a setup file that failed once again for the next test file", asy
   expect(tab.evaluated).toEqual(["/vitest.setup.tsx", "/vitest.setup.tsx"]);
 });
 
-test("links each stylesheet once for the tab, until Vitest's setup file takes them", async () => {
-  const { forgetClientFiles } = await graph();
+// Loading a file is not using it. Vitest's setup file links the
+// stylesheets of every file the graph loaded for the test file.
+test("links the stylesheets of the files it loaded once each, until Vitest's setup file forgets them", async () => {
+  const { forgetClientFiles, linkClientStylesheets } = await graph();
   await importHostFile("/host/badge.tsx", "Badge");
   await importHostFile("/host/badge.tsx", "Badge");
   await importHostFile("/host/card.tsx", "Card");
+  expect(links()).toEqual([]);
 
+  await linkClientStylesheets();
   expect(links()).toEqual(["/_next/static/css/badge.css", "/_next/static/css/card.css"]);
-  // Marked as the tab's, which a page that is left leaves: see document.ts.
+  // Marked as the host's, which a page that is left leaves: see document.ts.
   for (const link of head) expect(link.attributes).toContain("data-vitest-plugin-rsc-graph");
 
   forgetClientFiles();
   expect(links()).toEqual([]);
   await importHostFile("/host/badge.tsx", "Badge");
+  await linkClientStylesheets();
   expect(links()).toEqual(["/_next/static/css/badge.css"]);
+});
+
+// A host links the stylesheets of a file as it uses the file, and `cleanup()`
+// unlinks them. Vitest's setup file links those of every file the graph
+// loaded, which each test uses.
+test("links the stylesheets of a file as the host uses it, until they are unlinked", async () => {
+  const { loadClientModule, linkStylesheetsOf, unlinkClientStylesheets, linkClientStylesheets } =
+    await graph();
+  const badge = await importHostFile("/host/badge.tsx", "Badge");
+  await importHostFile("/host/card.tsx", "Card");
+
+  // The exports alone, as a host loads a file it does not show yet.
+  await loadClientModule(badge);
+  expect(links()).toEqual([]);
+  await linkStylesheetsOf(badge);
+  expect(links()).toEqual(["/_next/static/css/badge.css"]);
+  await linkStylesheetsOf(badge);
+  expect(links()).toEqual(["/_next/static/css/badge.css"]);
+  // As they are now: an edit gave the CSS another version.
+  tab.stylesheets.set("/host/badge.tsx", ["/_next/static/css/badge-2.css"]);
+  unlinkClientStylesheets();
+  await linkStylesheetsOf(badge);
+  expect(links()).toEqual(["/_next/static/css/badge-2.css"]);
+  await linkStylesheetsOf({ renderGreeting() {} });
+  expect(links()).toEqual(["/_next/static/css/badge-2.css"]);
+
+  // Vitest's setup file: every file the graph loaded, as it last linked it.
+  unlinkClientStylesheets();
+  await linkClientStylesheets();
+  expect(links()).toEqual([
+    "/_next/static/css/badge-2.css",
+    "/_next/static/css/badge.css",
+    "/_next/static/css/card.css",
+  ]);
 });
 
 test("gives any other module as it is", async () => {
@@ -315,7 +369,8 @@ test("loads a file of the host in a static build, by its key", async () => {
     "7d2b4e6a": "/vitest-plugin-rsc/react_client/assets/plain.js",
     "9c8e1f3b": "/vitest-plugin-rsc/react_client/assets/far.js",
   };
-  const { loadClientFile, loadClientModule } = await graph();
+  const { loadClientFile, loadClientModule, linkStylesheetsOf, linkClientStylesheets } =
+    await graph();
 
   await loadClientFile("5f3a9c1e", "host/badge.tsx");
 
@@ -326,6 +381,7 @@ test("loads a file of the host in a static build, by its key", async () => {
     evaluation: 1,
   });
   // A file of the build, wherever the build is served.
+  await linkStylesheetsOf(referenceModule("5f3a9c1e", "Badge"));
   expect(links()).toEqual(["https://site.test/docs/_next/static/css/badge-1a2b3c4d.css"]);
   // Once for two imports, with an export a plugin of the host added.
   await loadClientFile("5f3a9c1e", "host/badge.tsx");
@@ -336,6 +392,7 @@ test("loads a file of the host in a static build, by its key", async () => {
   // drive, and a key the build has no reference for.
   await loadClientFile("7d2b4e6a", "host/plain.tsx");
   await loadClientFile("9c8e1f3b");
+  await linkClientStylesheets();
   expect(links()).toHaveLength(1);
   await expect(loadClientFile("0000", "host/badge.tsx")).rejects.toThrow(
     'vitest-plugin-rsc: the build has no client reference "0000"',
