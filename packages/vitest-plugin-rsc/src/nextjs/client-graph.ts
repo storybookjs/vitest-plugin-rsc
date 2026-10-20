@@ -274,9 +274,9 @@ async function stylesheetsOfHostFiles(hostFiles: string[]): Promise<string[]> {
 // The CSS of what a file with `"use client"` imports, its own too, linked in
 // the document, as a page of the app links its CSS: see styles.ts. Vite's
 // `<style>` of a module would stay for every file after it, and the `<link>`
-// of a chunk of a build goes with a page that is open as the file loads.
-// A use of a stylesheet as it is now: one that is linked already, in another
-// version, moves to this one.
+// of a chunk of a build goes with a page that is open as the file loads. A
+// use of a stylesheet that is linked already, in another version, moves it
+// to this one, as it is now.
 function hold(href: string): Linked {
   const known = linked.get(keyOf(href));
   if (known) {

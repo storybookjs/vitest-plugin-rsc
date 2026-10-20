@@ -85,9 +85,12 @@ const isLinked = (id: string) => linkedRE.test(id);
 const metaKey = "vitest-plugin-rsc:next-linked";
 type LinkedMeta = { [metaKey]?: { classNames: boolean } };
 
-// The module of a stylesheet that Next links, without class names: it
-// exports nothing, and its CSS is that of its links.
-const isLinkWithoutClassNames = (node: EnvironmentModuleNode) =>
+/**
+ * Whether a module is that of a stylesheet that Next links without class
+ * names: it exports nothing, and after a change its links move to the
+ * version of now (`stylesheetsChangedEvent`).
+ */
+export const isLinkWithoutClassNames = (node: EnvironmentModuleNode) =>
   (node.info?.meta as LinkedMeta | undefined)?.[metaKey]?.classNames === false;
 
 /**
