@@ -25,7 +25,7 @@ test("gives the static build Next's layers, its directives, its order and its fi
         next_ssr: "vitest-plugin-rsc/nextjs/ssr",
         react_client: "vitest-plugin-rsc/nextjs/client",
       },
-      directives: ["turbopack"],
+      directives: ["use turbopack: no side effects"],
       strictExecutionOrder: true,
       files: emittedFiles,
     }),
