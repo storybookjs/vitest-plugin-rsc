@@ -85,6 +85,8 @@ export type ClientFilesOptions = {
   environments: { rsc: string; browser: string };
   /** `vitest-plugin-rsc/nextjs/testing-library`, and the file it is. */
   testingLibrary: { specifier: string; file: string };
+  /** `vitest-plugin-rsc/nextjs/client-components`, the other entry of a host. */
+  clientComponents: string;
   /** The file of the plugin that loads a client file: internal.ts. */
   internal: string;
   /** Whether a file is the host's: a test file or a setup file. */
@@ -161,7 +163,8 @@ export function hostModuleCode(
  */
 export function clientFiles(options: ClientFilesOptions): Plugin[] {
   const { rsc, browser } = options.environments;
-  const { testingLibrary, internal, isHostFile, isHostPackage, clientReferenceOf } = options;
+  const { testingLibrary, clientComponents, internal, isHostFile, isHostPackage } = options;
+  const { clientReferenceOf } = options;
 
   // A file of the host in the rsc layer, with no query but the version of a
   // dependency: not Vite's `?import`, which the browser asks for.
@@ -185,7 +188,10 @@ export function clientFiles(options: ClientFilesOptions): Plugin[] {
           // for which Vite names the `index.html` of the root.
           const { root } = this.environment.config;
           if (!importer || importer === path.posix.join(normalizePath(root), "index.html")) return;
-          if (isHostPackage(source) || source === testingLibrary.specifier) {
+          // The entries of the plugin too: the tab has one server in front
+          // of the app, and one graph of the files with `"use client"`.
+          const entry = source === testingLibrary.specifier || source === clientComponents;
+          if (isHostPackage(source) || entry) {
             // A build has the page's own module in the host's build, which
             // the layer imports by its URL, as it is: see ../host-module.ts.
             return this.environment.mode === "build"

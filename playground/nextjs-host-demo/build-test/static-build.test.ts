@@ -178,12 +178,12 @@ test('links the CSS of a file with "use client" as the host uses it, until clean
 
 // Every page of the host runs the browser layer, so its HTML starts the file
 // of that layer, before a script has loaded, and the tab's `fetch` of it
-// takes that preload: one request. The ssr layer's file, which shares the
-// network, starts once that one has ended, as nothing needs it before. Also
-// for a page in a directory of its own, whose preload names the file by the
-// way from there.
+// takes that preload: one request. The host imports the server's API, which
+// starts the ssr layer's file as it evaluates, also in a view that sends no
+// request to the app: one request too. Also for a page in a directory of its
+// own, whose preload names the file by the way from there.
 test.for(["index.html", "nested/index.html"])(
-  "starts the browser layer from the HTML of %s, and the ssr layer after it",
+  "starts the browser layer from the HTML of %s, and the ssr layer as the host imports the server's API",
   async (html, { page, errors }) => {
     const requested: string[] = [];
     page.on("request", (request) => requested.push(new URL(request.url()).pathname));
@@ -212,19 +212,6 @@ test.for(["index.html", "nested/index.html"])(
     );
     expect(requested.filter((path) => path === browserLayer)).toHaveLength(1);
     expect(requested.filter((path) => path === ssrLayer)).toHaveLength(1);
-    const timing = await page.evaluate(
-      (files) => {
-        const resources = performance.getEntriesByType("resource") as PerformanceResourceTiming[];
-        return files.map((file) => {
-          const { startTime, responseEnd } = resources.find(
-            (resource) => new URL(resource.name).pathname === file,
-          )!;
-          return { startTime, responseEnd };
-        });
-      },
-      [browserLayer, ssrLayer],
-    );
-    expect(timing[1]!.startTime).toBeGreaterThanOrEqual(timing[0]!.responseEnd);
   },
 );
 
@@ -272,33 +259,34 @@ test("a page that renders no route does not wait for the ssr layer", async ({ pa
     await route.continue().catch(() => {});
   });
   onTestFinished(() => release());
-  type Early = HostWindow & { __dropped?: Promise<unknown>; __answered?: Promise<unknown> };
+  type Early = HostWindow & { __before?: Promise<unknown>; __after?: Promise<unknown> };
   const host = await open(page, errors, "early", async (page) => {
-    // A request to the app, sent before a `cleanup()`, with no page open, is
-    // one of the page that was left: it is dropped, as one that waits for the
-    // server. One sent after that waits for the layer, and is answered.
+    // A request that waits for the layer is of no page, as none is open: a
+    // `cleanup()` meanwhile, as a framework's before what it shows next,
+    // leaves no page, and keeps it. It waits for the layer, as one sent
+    // after the `cleanup()` does, and both are answered.
     await page.evaluate(() => {
       const host = window as Early;
-      host.__dropped = host.__hostRequest!("/");
+      host.__before = host.__hostRequest!("/");
       return host.__hostCleanup!();
     });
     await page.evaluate(() => {
       const host = window as Early;
-      host.__answered = host.__hostRequest!("/");
+      host.__after = host.__hostRequest!("/");
     });
     const waiting = await page.evaluate(() => {
-      const { __dropped, __answered } = window as Early;
+      const { __before, __after } = window as Early;
       return Promise.all(
-        [__dropped, __answered].map((sent) => Promise.race([sent, Promise.resolve("waits")])),
+        [__before, __after].map((sent) => Promise.race([sent, Promise.resolve("waits")])),
       );
     });
     expect(waiting).toEqual(["waits", "waits"]);
     release();
     const settled = await page.evaluate(() => {
-      const { __dropped, __answered } = window as Early;
-      return Promise.all([__dropped, __answered]);
+      const { __before, __after } = window as Early;
+      return Promise.all([__before, __after]);
     });
-    expect(settled).toEqual(["AbortError", 200]);
+    expect(settled).toEqual([200, 200]);
   });
   // The host's own file came from the network.
   expect(host.__hostFetched).toBe(200);
@@ -315,6 +303,46 @@ test("a page that renders no route does not wait for the ssr layer", async ({ pa
   // Held until then, so these hold: they say that it was this file that was held.
   expect(timing.ready).toBeLessThan(timing.ssrLayer!);
   expect(timing.fetched).toBeLessThan(timing.ssrLayer!);
+});
+
+// The document request of a page load waits for the layer like any other,
+// and carries the load's signal. Leaving the page meanwhile, as a host
+// cleans up before what it shows next, aborts it: as with `fetch`, the
+// server never gets it, so nothing of it renders, with the cookies of the
+// test before, in the next one's place. The next page load is the one that
+// renders.
+test("a page load that is left while it waits for the ssr layer never reaches the server", async ({
+  page,
+  errors,
+}) => {
+  let release!: () => void;
+  const released = new Promise<void>((resolve) => (release = resolve));
+  await page.route("**/vitest-plugin-rsc/next_ssr/modules.json", async (route) => {
+    await released;
+    // Not for a page that a failed test has closed.
+    await route.continue().catch(() => {});
+  });
+  onTestFinished(() => release());
+  type Early = HostWindow & { __left?: Promise<string>; __next?: Promise<string> };
+  await open(page, errors, "early", async (page) => {
+    await page.evaluate(() => {
+      const host = window as Early;
+      host.__left = host.__hostRenderProbe!();
+    });
+    await page.evaluate(() => {
+      const host = window as Early;
+      return host.__hostCleanup!().then(() => {
+        host.__next = host.__hostRenderProbe!();
+      });
+    });
+    release();
+    const rendered = await page.evaluate(() => {
+      const { __left, __next } = window as Early;
+      return Promise.all([__left, __next]);
+    });
+    expect(rendered).toEqual(["AbortError", "rendered"]);
+    expect(await page.evaluate(() => (window as HostWindow).__hostProbeRenders)).toBe(1);
+  });
 });
 
 // A layer that does not load fails the requests that need it, as the first

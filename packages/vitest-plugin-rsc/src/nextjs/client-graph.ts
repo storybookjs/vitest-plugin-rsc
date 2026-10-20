@@ -1,3 +1,6 @@
+// Types `import.meta.hot` below, as Vite gives it a module, without the rest
+// of `vite/client`.
+/// <reference types="vite/types/importMeta.d.ts" />
 import type { EvaluatedModuleNode, ModuleRunner } from "vite/module-runner";
 import { clientReferencesId } from "../built-layers.ts";
 import { isHostModule } from "../host-module.ts";
@@ -16,10 +19,11 @@ import {
   builtFileKey,
   graphStylesheetAttribute,
   stylesheetOfUrl,
+  stylesheetsChangedEvent,
   stylesheetsEvent,
   type StylesheetsQuestion,
 } from "./styles-shared.ts";
-import { moveLink, type StylesheetVersions } from "./stylesheet-versions.ts";
+import { moveLink, stylesheetVersions, type StylesheetVersions } from "./stylesheet-versions.ts";
 
 // A file with `"use client"` is a client boundary: code of the browser layer,
 // see client-files.ts. A test file with the directive renders a Client
@@ -325,6 +329,11 @@ export function moveGraphLinks(versions: StylesheetVersions): void {
     if (href !== undefined && href !== stylesheet.href) move(stylesheet, href);
   }
 }
+// With a dev server, after each change of such CSS (styles.ts), in either
+// entry of the plugin: a host that only links the files' CSS has no page.
+import.meta.hot?.on(stylesheetsChangedEvent, (urls: string[]) =>
+  moveGraphLinks(stylesheetVersions(urls)),
+);
 
 // The end of one use of a stylesheet. Not of one that `cleanup()` took back
 // meanwhile, which a later use may have linked again.

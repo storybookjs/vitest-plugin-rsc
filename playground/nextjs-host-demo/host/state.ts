@@ -45,6 +45,13 @@ export type HostWindow = {
   __hostRequest?: (path: string) => Promise<number | string>;
   /** For `?view=early`: the plugin's `cleanup()`. */
   __hostCleanup?: () => Promise<void>;
+  /**
+   * For `?view=early`: renders a node that counts its renders on the server,
+   * and resolves with `"rendered"`, or the name of the error.
+   */
+  __hostRenderProbe?: () => Promise<string>;
+  /** For `?view=early`: how often the server rendered that node. */
+  __hostProbeRenders?: number;
 };
 
 export const state = window as HostWindow;

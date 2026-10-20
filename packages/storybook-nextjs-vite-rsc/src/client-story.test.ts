@@ -1,10 +1,10 @@
 import { expect, test, vi } from "vitest";
 import { beforeEach } from "./client-story.ts";
 
-// What the plugin's testing library is asked, and how a use goes.
+// What the plugin's entry of Client Components is asked, and how a use goes.
 const uses = vi.hoisted((): { files: string[]; signal: AbortSignal }[] => []);
 let linking: (signal: AbortSignal) => Promise<void> = async () => {};
-vi.mock("vitest-plugin-rsc/nextjs/testing-library", () => ({
+vi.mock("vitest-plugin-rsc/nextjs/client-components", () => ({
   linkStylesheetsOf: (files: string[], { signal }: { signal: AbortSignal }) => {
     uses.push({ files, signal });
     return linking(signal);

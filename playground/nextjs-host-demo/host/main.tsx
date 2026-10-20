@@ -1,12 +1,7 @@
 import { reports } from "host-report";
 import { tags } from "host-report/tags";
-import {
-  cleanup,
-  handleRequest,
-  linkStylesheetsOf,
-  loadClientModule,
-  renderServer,
-} from "vitest-plugin-rsc/nextjs/testing-library";
+import { linkStylesheetsOf, loadClientModule } from "vitest-plugin-rsc/nextjs/client-components";
+import { cleanup, handleRequest, renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
 import { renderCallout } from "./callout.tsx";
 import { greetingFor, renderGreeting } from "./greeting.tsx";
 import { renderTag } from "./tag.tsx";
@@ -69,6 +64,11 @@ await show(async () => {
         (error: Error) => error.name,
       );
     state.__hostCleanup = cleanup;
+    state.__hostRenderProbe = () =>
+      renderServer(<Probe />, { hostFiles: [] }).then(
+        () => "rendered",
+        (error: Error) => error.name,
+      );
     return;
   }
   if (view === "module") {
@@ -205,3 +205,10 @@ await show(async () => {
           });
   state.__hostResponse = { status: response.status, url: response.url };
 });
+
+// A Server Component of the host for `?view=early`, which counts how often
+// the server renders it.
+function Probe() {
+  state.__hostProbeRenders = (state.__hostProbeRenders ?? 0) + 1;
+  return <p>A probe of the host</p>;
+}

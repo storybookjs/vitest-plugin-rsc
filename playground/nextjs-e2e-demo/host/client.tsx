@@ -1,4 +1,4 @@
-import { linkStylesheetsOf, loadClientModule } from "vitest-plugin-rsc/nextjs/testing-library";
+import { linkStylesheetsOf, loadClientModule } from "vitest-plugin-rsc/nextjs/client-components";
 import * as counter from "./render-counter.tsx";
 
 // The page of client.html: a file of the host with `"use client"`, and no

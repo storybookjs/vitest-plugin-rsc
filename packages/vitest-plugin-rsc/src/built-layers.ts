@@ -3,17 +3,14 @@ import type { ModuleRunnerTransport } from "vite/module-runner";
 // A static build has no dev server to ask for a module. The environments that
 // run through a module runner were built into the format the runner evaluates,
 // each into one file with every module of it, by its id: see static-build.ts.
-// A tab fetches that file once, at the start, and its runners evaluate from
-// it, like the one of each page load of the browser layer: no request for a
+// A tab fetches that file once, and its runners evaluate from it, like the one of each page load of the browser layer: no request for a
 // module, and none of them waits for the one that imports it. The id of a
 // module is the path that it would have as a file of the build, so what it
 // names by its URL, like its CSS, is where it says.
 //
-// The files share the network, so the tab fetches them one after the other,
-// in the order of the build: the first is the layer that every page runs,
-// which a page with no route of the app waits for alone. The others start
-// once the tab has read that one, or at once when something needs one of
-// them.
+// The first is the layer that every page runs, which the tab fetches at
+// once: a page of the build preloads it from its HTML. Each of the others
+// when a runner of it first asks for a module.
 
 /**
  * For the layers but the rsc layer: the modules a Flight payload can refer
@@ -57,8 +54,8 @@ export function builtUrl(layer: BuiltLayer, file: string): string {
 
 /**
  * What the transport of a runner of a built layer answers, from the files of
- * the layers that `fetch` fetches, in the order of `layers`: the first at
- * once, the others once the tab has read it. Every runner of a tab asks the same
+ * the layers that `fetch` fetches: the first of `layers` at once, the others
+ * when a runner asks. Every runner of a tab asks the same
  * one, which answers with the same object for a module every time: the code
  * is the same for every page, so `pageLoadEvaluator` in utils.ts compiles it
  * once.
@@ -66,9 +63,6 @@ export function builtUrl(layer: BuiltLayer, file: string): string {
 export function createBuiltLayers(fetch: typeof globalThis.fetch, layers: BuiltLayer[]) {
   // By the URL of the file of a layer.
   const fetched = new Map<string, Promise<Map<string, BuiltModule>>>();
-  // The layers that wait for the first one, by the URL of their file: once
-  // it resolves, the file may be fetched.
-  const turns = new Map<string, { started: Promise<void>; start: () => void }>();
 
   /** The modules of a layer, which the tab fetches once, now. */
   function modulesOf(layer: BuiltLayer): Promise<Map<string, BuiltModule>> {
@@ -105,34 +99,8 @@ export function createBuiltLayers(fetch: typeof globalThis.fetch, layers: BuiltL
     return modules;
   }
 
-  /**
-   * Has the tab fetch the modules of a layer now, where it waits for its
-   * turn. Once: after that a runner that asks fetches it, also again after
-   * a failure.
-   */
-  function fetchNow(layer: BuiltLayer): void {
-    const url = builtUrl(layer, layer.modules);
-    const turn = turns.get(url);
-    if (!turn) return;
-    turns.delete(url);
-    turn.start();
-    // A runner that asks gets the error.
-    modulesOf(layer).catch(() => {});
-  }
-
-  const [first, ...others] = layers;
-  for (const layer of others) {
-    let start!: () => void;
-    const started = new Promise<void>((resolve) => (start = resolve));
-    turns.set(builtUrl(layer, layer.modules), { started, start });
-  }
-  // Also when it failed: a runner of the first layer gets that error, and
-  // one of another layer may still load.
-  if (first) {
-    void modulesOf(first)
-      .catch(() => {})
-      .then(() => others.forEach(fetchNow));
-  }
+  // A runner of the first layer gets an error of it.
+  if (layers[0]) modulesOf(layers[0]).catch(() => {});
 
   /** What the transport of a runner of `layer` answers. */
   async function invoke(layer: BuiltLayer, payload: InvokePayload): Promise<InvokeResult> {
@@ -143,7 +111,6 @@ export function createBuiltLayers(fetch: typeof globalThis.fetch, layers: BuiltL
     }
     const id = data[0] as string;
     try {
-      await turns.get(builtUrl(layer, layer.modules))?.started;
       const modules = await modulesOf(layer);
       // Also by a URL of it, which encodes what a path does not.
       const found = modules.get(id) ?? modules.get(safeDecodeURI(id));
@@ -156,5 +123,5 @@ export function createBuiltLayers(fetch: typeof globalThis.fetch, layers: BuiltL
     }
   }
 
-  return { invoke, fetchNow };
+  return { invoke };
 }

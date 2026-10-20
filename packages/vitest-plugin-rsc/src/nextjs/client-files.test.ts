@@ -51,6 +51,7 @@ const clientReferenceOf = (id: string) => {
 const [plugin, loaders] = clientFiles({
   environments: { rsc: "client", browser: "react_client" },
   testingLibrary,
+  clientComponents: "vitest-plugin-rsc/nextjs/client-components",
   internal: "/plugin/nextjs/internal.js",
   isHostFile,
   isHostPackage: (specifier) => /^vitest(\/|$)|^@vitest\//.test(specifier),
@@ -276,6 +277,9 @@ test("gives the browser layer the page's own module for a package of the host", 
   expect(resolve(testingLibrary.specifier, importer)).toBe(
     hostModulePrefix + testingLibrary.specifier,
   );
+  expect(resolve("vitest-plugin-rsc/nextjs/client-components", importer)).toBe(
+    `${hostModulePrefix}vitest-plugin-rsc/nextjs/client-components`,
+  );
   // Not a package that only starts with the name, and not in the rsc layer.
   expect(resolve("vitest-browser-react", importer)).toBeUndefined();
   expect(resolve("vitest", importer, "client")).toBeUndefined();
@@ -369,6 +373,7 @@ async function serveHostFile() {
   const [own, loaders] = clientFiles({
     environments: { rsc: "client", browser: "react_client" },
     testingLibrary,
+    clientComponents: "vitest-plugin-rsc/nextjs/client-components",
     internal: at("internal.ts"),
     isHostFile: (file) => file === at("host.tsx"),
     isHostPackage: () => false,

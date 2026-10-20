@@ -1,6 +1,6 @@
 import type { ReactRenderer } from "@storybook/react";
 import type { BeforeEach, ProjectAnnotations } from "storybook/internal/types";
-import { linkStylesheetsOf } from "vitest-plugin-rsc/nextjs/testing-library";
+import { linkStylesheetsOf } from "vitest-plugin-rsc/nextjs/client-components";
 import { hostFilesOf } from "./host-files.ts";
 
 // The annotations of the project's preview, its first addon: a client story
