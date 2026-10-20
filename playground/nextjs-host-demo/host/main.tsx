@@ -15,7 +15,7 @@ import { show, state } from "./state.ts";
 // The host of the app: what a test file is to Vitest, and a story to
 // Storybook. It runs in the rsc layer, with the browser's globals, as a test
 // file does. What it shows is in its query: `?view=page` for a page of the
-// app, `?view=node` for a node in a container of the host, `?view=switch`
+// app, at `?url=` or `/`, `?view=node` for a node in a container of the host, `?view=switch`
 // for one node after another in the one document, as Storybook's canvas
 // renders story after story, `?view=app-file` for a node whose `hostFiles`
 // name a file of the app, `?view=client` for a file of the host with
@@ -199,6 +199,8 @@ await show(async () => {
       ? await renderGreeting(container)
       : view === "app-file"
         ? await renderGreeting(container, ["app/components/greeting.tsx"])
-        : await renderServer({ url: "/" });
+        : await renderServer({
+            url: new URLSearchParams(window.location.search).get("url") ?? "/",
+          });
   state.__hostResponse = { status: response.status, url: response.url };
 });

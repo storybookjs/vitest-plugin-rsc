@@ -10,6 +10,7 @@ import {
   send,
   version as viteVersion,
   type DevEnvironment,
+  type EnvironmentModuleGraph,
   type EnvironmentModuleNode,
   type Plugin,
   type TransformResult,
@@ -24,6 +25,7 @@ import { answerPage } from "../websocket-bridge.ts";
 import {
   builtFilesPath,
   componentPagePath,
+  stylesheetsChangedEvent,
   stylesheetsEvent,
   type BuiltFiles,
   type Stylesheets,
@@ -56,8 +58,9 @@ import {
 //     `/_next/static/css/`: the CSS Vite makes of the file, so with PostCSS
 //     and with the class names its module exports. Its path has a hash of
 //     that CSS, as a file of Next's build has, so the browser keeps it.
-//     After an edit of the stylesheet, or of one it `@import`s, Vite's client
-//     swaps the `<link>` in place: see `cssUrlOf()`.
+//     After a change of a stylesheet without class names, of one it
+//     `@import`s or of a file it depends on, the page moves its links to the
+//     version of now, as Next's client does with its links: see `hotUpdate`.
 //   - A static build has each stylesheet in a file of its own there, and the
 //     lists of every route and of every file of the host in a file next to
 //     the layers, with the modules of every route, which a page load starts
@@ -79,42 +82,23 @@ const isLinked = (id: string) => linkedRE.test(id);
 // What the module of a stylesheet that Next links says of itself, in its
 // `meta`, Rollup's for what a plugin knows of a module: whether it exports
 // class names, as the module of a CSS module does.
-type LinkedMeta = { [linkedQuery]?: { classNames: boolean } };
+const metaKey = "vitest-plugin-rsc:next-linked";
+type LinkedMeta = { [metaKey]?: { classNames: boolean } };
 
-// Whether a module is that of a stylesheet that Next links, without class
-// names: it exports nothing, and its CSS is the `<link>`'s.
+// The module of a stylesheet that Next links, without class names: it
+// exports nothing, and its CSS is that of its links.
 const isLinkWithoutClassNames = (node: EnvironmentModuleNode) =>
-  (node.info?.meta as LinkedMeta | undefined)?.[linkedQuery]?.classNames === false;
+  (node.info?.meta as LinkedMeta | undefined)?.[metaKey]?.classNames === false;
 
 /**
- * The URL of Vite's module of the CSS of a stylesheet that Next links, which
- * the dev server serves at its path.
- *
- * For one without class names, the module that a `<link>` of the file has.
- * After a change of the file, or of a stylesheet it `@import`s, Vite sends a
- * `css-update` of that URL, which the path of the stylesheet ends with, and
- * its client swaps the page's `<link>` for one of the file now, as it does
- * for a `<link>` in the HTML of a page. The page stays: the module of the
- * stylesheet in the code takes no update, see the plugin's `hotUpdate`.
- *
- * For a CSS module, the CSS that its class names are made of: Vite names the
- * classes by the id of the module, its query included. A change of one loads
- * the page again, as the class names can change: see `importedByRoute()` in
- * plugin.ts.
- */
-function cssUrlOf(stylesheet: EnvironmentModuleNode): string {
-  const url = isLinkWithoutClassNames(stylesheet)
-    ? stylesheet.url.replace(linkedRE, "")
-    : stylesheet.url;
-  return `${url}${url.includes("?") ? "&" : "?"}direct`;
-}
-
-/**
- * Whether Vite swaps a module in place after a change: a stylesheet that
- * accepts its own update, as a `<link>` or as its `<style>`.
+ * Whether a stylesheet changes in place after a change, and what imports it
+ * sees nothing of it: one that accepts its own update, which Vite swaps as a
+ * `<link>` or as its `<style>`, and the module of a stylesheet that Next
+ * links without class names, whose links the page moves to the version of
+ * now (`stylesheetsChangedEvent`).
  */
 export const isSwappedStylesheet = (node: EnvironmentModuleNode) =>
-  node.isSelfAccepting === true && isCSSRequest(node.url);
+  isCSSRequest(node.url) && (node.isSelfAccepting === true || isLinkWithoutClassNames(node));
 
 // An import that names a module of JavaScript, which is no stylesheet.
 const isScriptRequest = (source: string) => /\.[cm]?[jt]sx?$/.test(source);
@@ -273,10 +257,9 @@ export function createStyles(options: StylesOptions): Styles {
   const { getProject, environments } = options;
   const layers = new Map(Object.entries(environments).map(([layer, name]) => [name, layer]));
   const lists = new Set(options.lists);
-  // The stylesheets the browser was told of, by their path under `/_next/`: the
-  // URL of the module of their CSS, see `cssUrlOf()`. The dev server serves
-  // these, and no other file.
-  const stylesheetUrls = new Map<string, string>();
+  // The stylesheets the browser was told of, by their path under `/_next/`: the id
+  // of their module. The dev server serves these, and no other file.
+  const stylesheetIds = new Map<string, string>();
 
   // The path of a stylesheet under `/_next/`, which is in the HTML of a page:
   // the URL Vite has for the file, so from the root of the project. A
@@ -287,7 +270,7 @@ export function createStyles(options: StylesOptions): Styles {
     const name = url.startsWith("/")
       ? url
       : `/${createHash("sha1").update(url).digest("hex").slice(0, 16)}.css`;
-    stylesheetUrls.set(directory + name, cssUrlOf(stylesheet));
+    stylesheetIds.set(directory + name, stylesheet.id!);
     return directory + name;
   }
   // The files of the segments of a route, once per route. A layout that is
@@ -385,14 +368,7 @@ export function createStyles(options: StylesOptions): Styles {
       await Promise.all(
         Array.from(node.importedModules, async (imported) => {
           // Without an id it is a file that is only watched.
-          if (!imported.id) return;
-          // The module of a stylesheet that Next links says whether it has
-          // class names, which `cssUrlOf()` asks: the browser loads it right
-          // after.
-          if (isLinked(imported.id) && !imported.transformResult) {
-            await load(layer, imported.url);
-          }
-          if (isCSSRequest(imported.id)) return;
+          if (!imported.id || isCSSRequest(imported.id)) return;
           // A file that is no code has no stylesheet to find, like an image
           // or the `.wasm` of a package that loads it with `new URL(…,
           // import.meta.url)`, which Vite adds to the imports of the module.
@@ -551,12 +527,33 @@ export function createStyles(options: StylesOptions): Styles {
     );
   }
 
+  // The stylesheets the browser was told of whose CSS a change of `modules`
+  // reaches, once they are invalidated, so that their version is that of
+  // now. The CSS of a stylesheet has what it `@import`s and the files it
+  // depends on as its imports. Only the CSS that Vite takes in place: that
+  // of a CSS module is not, as its class names change with it, and the page
+  // loads again for it.
+  function changedStylesheets(
+    graph: EnvironmentModuleGraph,
+    modules: EnvironmentModuleNode[],
+  ): string[] {
+    const reached = new Set(modules.flatMap((node) => [node, ...node.importers]));
+    const paths: string[] = [];
+    for (const [path, id] of stylesheetIds) {
+      const css = graph.getModuleById(`${id}&direct`);
+      if (!css || !reached.has(css) || !isSwappedStylesheet(css)) continue;
+      graph.invalidateModule(css);
+      paths.push(path);
+    }
+    return paths;
+  }
+
   // The CSS of a stylesheet that Next links, by its path under `/_next/`: the
   // CSS Vite makes of the file, the same one its module is made of, so with
   // the class names that module exports.
   async function cssOf(server: ViteDevServer, path: string) {
-    const url = stylesheetUrls.get(path);
-    return url ? server.environments[environments.rsc]!.transformRequest(url) : null;
+    const id = stylesheetIds.get(path);
+    return id ? server.environments[environments.rsc]!.transformRequest(`${id}&direct`) : null;
   }
 
   // The version of the CSS of a stylesheet: a hash of it and its source map,
@@ -602,7 +599,7 @@ export function createStyles(options: StylesOptions): Styles {
     }
     const [, hash, rest] = versionRE.exec(path) ?? [];
     const version =
-      hash && !stylesheetUrls.has(path) && stylesheetUrls.has(directory + rest) ? hash : undefined;
+      hash && !stylesheetIds.has(path) && stylesheetIds.has(directory + rest) ? hash : undefined;
     if (version) path = directory + rest;
     const css = await cssOf(server, path);
     if (!css) return false;
@@ -654,14 +651,27 @@ export function createStyles(options: StylesOptions): Styles {
           if (!served) next();
         });
       },
-      // What changes of a stylesheet that Next links without class names is
-      // its `<link>`, which Vite swaps, see `cssUrlOf()`. Its module in the
-      // code exports nothing: it takes no update, which Vite would take on
-      // to what imports it, in every layer.
+      // A change that reaches the CSS of a stylesheet that the browser was
+      // told of, without class names: of the stylesheet, of one it
+      // `@import`s, or of a file it depends on, as Tailwind's PostCSS
+      // plugin makes every file it scans one. The plugin made its links, so
+      // it moves them: the page gets the URLs of the versions of now, and
+      // moves every link of each, see stylesheet-versions.ts. Vite's client
+      // looks for a `<link>` of the module's own URL, which Next's path is
+      // not. The modules of such stylesheets in the code export nothing and
+      // take no update, in every layer: Vite would take it on to what
+      // imports them, up to a route.
       hotUpdate: {
         order: "pre",
-        handler({ modules }) {
+        async handler({ modules, server }) {
           if (!layers.has(this.environment.name)) return;
+          if (this.environment.name === environments.rsc) {
+            const paths = changedStylesheets(this.environment.moduleGraph, modules);
+            if (paths.length > 0) {
+              const data = await linkedAt(server, paths);
+              this.environment.hot.send({ type: "custom", event: stylesheetsChangedEvent, data });
+            }
+          }
           const updated = modules.filter((node) => !isLinkWithoutClassNames(node));
           if (updated.length < modules.length) return updated;
         },
@@ -695,7 +705,7 @@ export function createStyles(options: StylesOptions): Styles {
       transform(code, id) {
         if (!isLinked(id) || directRE.test(id)) return;
         const exports = exportsOfStylesheet(code, id);
-        const meta: LinkedMeta = { [linkedQuery]: { classNames: exports !== noExports } };
+        const meta: LinkedMeta = { [metaKey]: { classNames: exports !== noExports } };
         return { code: exports, map: { mappings: "" }, meta };
       },
     },

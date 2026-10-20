@@ -18,6 +18,36 @@ export const builtFilesPath = "vitest-plugin-rsc/next-files.json";
 export const stylesheetsEvent = "vitest-plugin-rsc:next-stylesheets";
 
 /**
+ * What the dev server tells the page after a change of stylesheets that it
+ * links, without class names: the URL of the version of now of each, which
+ * the page moves every link of the stylesheet to (stylesheet-versions.ts).
+ */
+export const stylesheetsChangedEvent = "vitest-plugin-rsc:next-stylesheets-changed";
+
+// The part of the path of a stylesheet that Next links that is its version,
+// after the directory: `static/css/<version>/`, see styles.ts.
+const versionSegmentRE = /\/static\/css\/[0-9a-f]{16}\//;
+
+/**
+ * The stylesheet that a URL of a link is of, whatever its version and however
+ * its path is encoded: the path of the URL without its version, decoded.
+ * Nothing for a URL that is no stylesheet of the dev server.
+ */
+export function stylesheetOfUrl(url: string): string | undefined {
+  const { pathname } = new URL(url, "http://n");
+  if (!versionSegmentRE.test(pathname)) return undefined;
+  try {
+    return pathname
+      .replace(versionSegmentRE, "/static/css/")
+      .split("/")
+      .map(decodeURIComponent)
+      .join("/");
+  } catch {
+    return undefined;
+  }
+}
+
+/**
  * What the page asks at `stylesheetsEvent`. For a route: by the name of its
  * modules, with `Stylesheets`, and `files`, the files of the host that render
  * the node of the route, in their order, absolute or from the root of the
@@ -32,9 +62,7 @@ export type StylesheetsQuestion =
 /**
  * What marks the `<link>` of a stylesheet of a file of the host with
  * `"use client"`, which the tab's graph linked (client-graph.ts): the host's,
- * not a page's, so a page that is left does not take it (document.ts). Its
- * value is the URL the graph linked, which the copy that Vite's client swaps
- * the `<link>` for after a change keeps.
+ * not a page's, so a page that is left does not take it (document.ts).
  */
 export const graphStylesheetAttribute = "data-vitest-plugin-rsc-graph";
 

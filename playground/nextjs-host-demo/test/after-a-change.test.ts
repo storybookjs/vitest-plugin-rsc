@@ -303,6 +303,95 @@ test("a change of a stylesheet that a stylesheet of the app imports updates the 
   expect(await page.evaluate(() => "__beforeTheChange" in window)).toBe(true);
 });
 
+// The path of a stylesheet that Next links has each segment encoded as a
+// URL component: in a dynamic route and in a slot it differs from the URL of
+// the file.
+function serveRoutesCopy() {
+  return serveCopy((copy) => {
+    const write = (file: string, content: string) => {
+      fs.mkdirSync(path.dirname(path.join(copy, file)), { recursive: true });
+      fs.writeFileSync(path.join(copy, file), content);
+    };
+    write("app/notes/[slug]/note.css", "h1 { color: rgb(255, 0, 0); }\n");
+    write(
+      "app/notes/[slug]/page.tsx",
+      'import "./note.css";\n\nexport default function Note() {\n  return <h1>A note</h1>;\n}\n',
+    );
+    write("app/@modal/modal.css", "aside { color: rgb(255, 0, 0); }\n");
+    write(
+      "app/@modal/default.tsx",
+      'import "./modal.css";\n\nexport default function Modal() {\n  return <aside>A modal</aside>;\n}\n',
+    );
+    const layout = path.join(copy, "app/layout.tsx");
+    fs.writeFileSync(
+      layout,
+      fs
+        .readFileSync(layout, "utf8")
+        .replace(
+          "{ children }: { children: ReactNode }",
+          "{ children, modal }: { children: ReactNode; modal: ReactNode }",
+        )
+        .replace("<main>{children}</main>", "<main>{children}</main>\n        {modal}"),
+    );
+  });
+}
+
+test("a change of a stylesheet in a dynamic route and in a slot updates it in place", async ({
+  page,
+}) => {
+  const { copy, url } = await serveRoutesCopy();
+  await openPage(page, `${url}&url=/notes/a`);
+  expect(await styleOf(page, "h1", "color")).toBe("rgb(255, 0, 0)");
+  expect(await styleOf(page, "aside", "color")).toBe("rgb(255, 0, 0)");
+  fs.writeFileSync(path.join(copy, "app/notes/[slug]/note.css"), "h1 { color: rgb(0, 128, 0); }\n");
+  await expect.poll(() => styleOf(page, "h1", "color"), { timeout: 30_000 }).toBe("rgb(0, 128, 0)");
+  fs.writeFileSync(path.join(copy, "app/@modal/modal.css"), "aside { color: rgb(0, 128, 0); }\n");
+  await expect
+    .poll(() => styleOf(page, "aside", "color"), { timeout: 30_000 })
+    .toBe("rgb(0, 128, 0)");
+  expect(await page.evaluate(() => "__beforeTheChange" in window)).toBe(true);
+});
+
+// Next's development code puts the time of the request in the URL of a
+// stylesheet, `?v=`, so every render of the page links it at another URL,
+// and React keeps the links before. Each of them moves, or the one that is
+// last would win with the CSS of before.
+test("every link of a stylesheet moves, also after the page rendered again", async ({ page }) => {
+  const { copy, url } = await serveCopy((copy) => {
+    fs.writeFileSync(
+      path.join(copy, "app/components/refresh.tsx"),
+      '"use client";\n\nimport { useRouter } from "next/navigation";\n\n' +
+        "export function Refresh() {\n  const router = useRouter();\n" +
+        "  return <button onClick={() => router.refresh()}>Refresh</button>;\n}\n",
+    );
+    const home = path.join(copy, "app/page.tsx");
+    fs.writeFileSync(
+      home,
+      `import { Refresh } from "./components/refresh.tsx";\n${fs.readFileSync(home, "utf8")}`.replace(
+        "<h1>Home</h1>",
+        "<h1>Home</h1>\n      <Refresh />",
+      ),
+    );
+  });
+  await openPage(page, url);
+  const globalsLinks = () =>
+    page.evaluate(() =>
+      Array.from(document.querySelectorAll<HTMLLinkElement>("link[rel=stylesheet]"))
+        .map((link) => link.href)
+        .filter((href) => href.includes("/app/globals.css")),
+    );
+  await page.getByRole("button", { name: "Refresh" }).click();
+  await expect.poll(async () => (await globalsLinks()).length, { timeout: 30_000 }).toBe(2);
+  const before = await globalsLinks();
+  const globals = path.join(copy, "app/globals.css");
+  fs.writeFileSync(globals, fs.readFileSync(globals, "utf8").replace("2rem", "3rem"));
+  await expect.poll(() => styleOf(page, "body", "margin-top"), { timeout: 30_000 }).toBe("48px");
+  const after = await globalsLinks();
+  expect(after.filter((href) => before.includes(href))).toEqual([]);
+  expect(new Set(after).size).toBe(1);
+  expect(await page.evaluate(() => "__beforeTheChange" in window)).toBe(true);
+});
+
 // A stylesheet that a file of the host with "use client" links, through a
 // Client Component of the app that imports it: Vite's client swaps its
 // `<link>` too, and the host's use of it ends with the copy.
@@ -352,6 +441,38 @@ test('a change of a stylesheet that a file with "use client" links updates it in
     );
   await expect.poll(toneLinks, { timeout: 30_000 }).toBe(1);
   expect(await styleOf(page, "button", "background-color")).toBe("rgb(0, 128, 0)");
+  expect(await page.evaluate(() => "__beforeTheChange" in window)).toBe(true);
+});
+
+// A host that uses a file with "use client" without importing it again
+// after a change, as `?view=module` does: a change of a stylesheet that the
+// file links is no change of the file, and the document stays.
+test('a change of a stylesheet that a file with "use client" links keeps a host that does not take changes', async ({
+  page,
+}) => {
+  const { copy, url } = await serveCopy((copy) => {
+    fs.writeFileSync(
+      path.join(copy, "app/components/tone.css"),
+      "button { background-color: rgb(255, 0, 0); }\n",
+    );
+    const badge = path.join(copy, "app/components/badge.tsx");
+    fs.writeFileSync(
+      badge,
+      fs
+        .readFileSync(badge, "utf8")
+        .replace('import styles from "./badge.module.css";', '$&\nimport "./tone.css";'),
+    );
+  });
+  await openPage(page, url.replace("view=page", "view=module"));
+  await page.getByRole("button", { name: "Clicks: 0" }).waitFor();
+  expect(await styleOf(page, "button", "background-color")).toBe("rgb(255, 0, 0)");
+  fs.writeFileSync(
+    path.join(copy, "app/components/tone.css"),
+    "button { background-color: rgb(0, 128, 0); }\n",
+  );
+  await expect
+    .poll(() => styleOf(page, "button", "background-color"), { timeout: 30_000 })
+    .toBe("rgb(0, 128, 0)");
   expect(await page.evaluate(() => "__beforeTheChange" in window)).toBe(true);
 });
 

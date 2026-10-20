@@ -10,13 +10,15 @@ import { clientFileKeyExport } from "./client-file-key.ts";
 type FakeLink = {
   rel: string;
   href: string;
-  attributes: Map<string, string>;
-  onload: (() => void) | null;
-  onerror: (() => void) | null;
-  setAttribute(name: string, value: string): void;
-  getAttribute(name: string): string | null;
+  attributes: Set<string>;
+  listeners: Map<string, (() => void)[]>;
+  readonly isConnected: boolean;
+  setAttribute(name: string): void;
   removeAttribute(name: string): void;
+  addEventListener(type: string, listener: () => void): void;
   remove(): void;
+  after(link: FakeLink): void;
+  cloneNode(): FakeLink;
 };
 
 const tab = vi.hoisted(() => ({
@@ -133,6 +135,44 @@ async function evaluate(modules: Map<string, FakeModule>, url: string): Promise<
 const head = new Set<FakeLink>();
 const links = () => [...head].map((link) => link.href);
 
+// A link in the head loads, once the test lets it.
+function appendLink(link: FakeLink): void {
+  head.add(link);
+  if (tab.loads)
+    queueMicrotask(() => link.listeners.get("load")?.forEach((listener) => listener()));
+}
+
+function fakeLink(): FakeLink {
+  return {
+    rel: "",
+    href: "",
+    attributes: new Set(),
+    listeners: new Map(),
+    get isConnected() {
+      return head.has(this);
+    },
+    setAttribute(name) {
+      this.attributes.add(name);
+    },
+    removeAttribute(name) {
+      this.attributes.delete(name);
+    },
+    addEventListener(type, listener) {
+      this.listeners.set(type, [...(this.listeners.get(type) ?? []), listener]);
+    },
+    remove() {
+      head.delete(this);
+    },
+    after: appendLink,
+    cloneNode() {
+      const copy = fakeLink();
+      Object.assign(copy, { rel: this.rel, href: this.href });
+      for (const name of this.attributes) copy.setAttribute(name);
+      return copy;
+    },
+  };
+}
+
 beforeEach(() => {
   vi.resetModules();
   tab.evaluated = [];
@@ -150,36 +190,8 @@ beforeEach(() => {
   head.clear();
   vi.stubGlobal("__viteRscCallServer", undefined);
   vi.stubGlobal("document", {
-    createElement: (): FakeLink => ({
-      rel: "",
-      href: "",
-      attributes: new Map(),
-      onload: null,
-      onerror: null,
-      setAttribute(name, value) {
-        this.attributes.set(name, value);
-      },
-      getAttribute(name) {
-        return this.attributes.get(name) ?? null;
-      },
-      removeAttribute(name) {
-        this.attributes.delete(name);
-      },
-      remove() {
-        head.delete(this);
-      },
-    }),
-    // The links with an attribute, `link[name]`.
-    querySelectorAll: (selector: string) => {
-      const name = /^link\[(.+)\]$/.exec(selector)![1]!;
-      return [...head].filter((link) => link.attributes.has(name));
-    },
-    head: {
-      append(link: FakeLink) {
-        head.add(link);
-        if (tab.loads) queueMicrotask(() => link.onload?.());
-      },
-    },
+    createElement: () => fakeLink(),
+    head: { append: appendLink },
   });
 });
 
@@ -370,7 +382,7 @@ test("links the stylesheets of the files that the host uses, until they are unli
   await linkStylesheetsOf(["/host/badge.tsx", "/host/card.tsx"]);
   expect(links()).toEqual(["/_next/static/css/badge.css", "/_next/static/css/card.css"]);
   // Marked as the host's, which a page that is left leaves: see document.ts.
-  for (const link of head) expect(link.attributes.has("data-vitest-plugin-rsc-graph")).toBe(true);
+  for (const link of head) expect(link.attributes).toContain("data-vitest-plugin-rsc-graph");
 
   unlinkStylesheets();
   expect(links()).toEqual([]);
@@ -385,23 +397,28 @@ test("links the stylesheets of the files that the host uses, until they are unli
 
 // A document can have several uses at once, like the stories of a docs
 // page, each with its own end: the signal that a host gives it.
-// Vite's client swaps the `<link>` of a stylesheet whose CSS changed for a
-// copy, with its attributes, and removes the one it copied.
-test("unlinks the copy that Vite's client swapped a link for", async () => {
-  const { linkStylesheetsOf, unlinkStylesheets } = await graph();
-  await importHostFile("/host/card.tsx", "Card");
-  await linkStylesheetsOf(["/host/card.tsx"]);
-  const [badge] = head;
-  const copy = document.createElement("link") as unknown as FakeLink;
-  copy.href = "/app/badge.css?t=1";
-  for (const [name, value] of badge!.attributes) copy.setAttribute(name, value);
-  badge!.remove();
-  document.head.append(copy as unknown as HTMLLinkElement);
-  expect(links()).toEqual(["/_next/static/css/card.css", "/app/badge.css?t=1"]);
+// After a change of its CSS, a stylesheet of a file of the host moves to the
+// version of now: a link of it next to the one before, which goes once it has
+// loaded. A use of a later version moves it too, and it stays one stylesheet.
+test("moves a stylesheet to the version of now, with one link of it", async () => {
+  const version = (hash: string) => `/_next/static/css/${hash.repeat(16)}/host/badge.css`;
+  tab.stylesheets.set("/host/badge.tsx", [version("a")]);
+  const { linkStylesheetsOf, moveGraphLinks, unlinkStylesheets } = await graph();
+  const { stylesheetVersions } = await import("./stylesheet-versions.ts");
+  await importHostFile("/host/badge.tsx", "Badge");
+  await linkStylesheetsOf(["/host/badge.tsx"]);
 
+  moveGraphLinks(stylesheetVersions([version("b")]));
+  expect(links()).toEqual([version("a"), version("b")]);
+  await new Promise((resolve) => setTimeout(resolve));
+  expect(links()).toEqual([version("b")]);
+  for (const link of head) expect(link.attributes).toContain("data-vitest-plugin-rsc-graph");
+
+  tab.stylesheets.set("/host/badge.tsx", [version("c")]);
+  await linkStylesheetsOf(["/host/badge.tsx"]);
+  expect(links()).toEqual([version("c")]);
   unlinkStylesheets();
   expect(links()).toEqual([]);
-  expect(copy.attributes.size).toBe(0);
 });
 
 test("keeps a stylesheet while a use holds it, and ends a use as its signal aborts", async () => {
