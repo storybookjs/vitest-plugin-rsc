@@ -1,4 +1,6 @@
-// The condition of a `// @gate` pragma, with the grammar that
+// The conditions of a run, read by name: by the expression of a `// @gate`
+// pragma or by the function that `gate()` calls. A name that no run has
+// throws either way. The expression has the grammar that
 // test/lib/gate/expr.ts of Next's repository has for it:
 //
 //   expression → binary ( ( "||" | "&&" ) binary )*
@@ -29,11 +31,7 @@ export function evaluateGate(source: string, conditions: Record<string, unknown>
     }
     if (/^['"]/.test(token)) return token.slice(1, -1);
     if (token === "true" || token === "false") return token === "true";
-    // A typo must not turn a gate off without a word, as in Next's own runs.
-    if (!Object.hasOwn(conditions, token)) {
-      throw new Error(`\`@gate\` references an undeclared condition "${token}".`);
-    }
-    return conditions[token];
+    return readCondition(token, conditions);
   };
   const unary = (): unknown => {
     if (tokens[at] !== "!") return primary();
@@ -61,4 +59,24 @@ export function evaluateGate(source: string, conditions: Record<string, unknown>
   const value = expression();
   if (at !== tokens.length) throw unparsable();
   return value;
+}
+
+// A typo must not turn a gate off without a word, as in Next's own runs.
+function readCondition(name: string, conditions: Record<string, unknown>): unknown {
+  if (!Object.hasOwn(conditions, name)) {
+    throw new Error(`\`@gate\` references an undeclared condition "${name}".`);
+  }
+  return conditions[name];
+}
+
+/** The conditions as the function that `gate()` calls gets them, as in Next: no more than reads. */
+export function gateConditions(conditions: Record<string, unknown>): Record<string, unknown> {
+  return new Proxy(
+    {},
+    {
+      get: (_target, name) =>
+        typeof name === "string" ? readCondition(name, conditions) : undefined,
+      has: () => true,
+    },
+  );
 }
