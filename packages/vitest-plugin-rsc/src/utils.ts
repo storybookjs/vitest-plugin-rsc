@@ -193,9 +193,14 @@ export function createEnvironmentRunner(
   takes.set(runner, async () => {
     const modules = await fetchedModules(environment);
     const since = first?.version;
+    if (since !== undefined && since !== modules.version) {
+      const question: ChangedQuestion = { environment, since };
+      const changed = await askDevServer<string[]>(changedEvent, question);
+      first = modules;
+      return changed;
+    }
     first = modules;
-    if (since === undefined || since === modules.version) return [];
-    return askDevServer<string[]>(changedEvent, { environment, since } satisfies ChangedQuestion);
+    return [];
   });
   return runner;
 }
@@ -206,12 +211,13 @@ const takes = new WeakMap<ModuleRunner, () => Promise<string[]>>();
  * For a runner of `createEnvironmentRunner()` that outlives a page load: it
  * takes the modules that the tab has fetched now, as the runner of the next
  * page load does, where it would ask the server for each one from then on.
- * Call `checkFetchedModules()` first. Resolves with the ids of the modules
- * that changed since the version the runner had: the ones Vite invalidated,
- * for a change of a file the file's and those that import it. The runner
- * keeps what it evaluated, also a module that changed: invalidate those.
+ * Call `checkFetchedModules()` first, and one at a time. Resolves with the
+ * ids of the modules that Vite invalidated since the version that the runner
+ * had: for a change of a file, its modules and the ones that import them.
+ * The runner keeps what it evaluated, also a module that changed: invalidate
+ * those.
  */
-export function takeFetchedModules(runner: ModuleRunner): Promise<string[]> {
+export function takeChangedModules(runner: ModuleRunner): Promise<string[]> {
   return takes.get(runner)?.() ?? Promise.resolve([]);
 }
 

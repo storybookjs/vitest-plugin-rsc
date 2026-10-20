@@ -24,7 +24,8 @@ export async function renderInPlace(container: Element): Promise<void> {
     unmount = renderClient(Badge, container);
   };
   await render();
-  // A change of the note is one of both files: one after the other.
+  // A change of the note changes both modules: Vite calls this once for
+  // each, and the renders run one after the other.
   let rendered = Promise.resolve();
   import.meta.hot?.accept(["./in-place-badge.tsx", "./in-place-note.tsx"], ([badge, note]) => {
     modules = {

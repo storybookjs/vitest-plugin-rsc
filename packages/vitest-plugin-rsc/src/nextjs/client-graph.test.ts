@@ -28,6 +28,8 @@ const tab = vi.hoisted(() => ({
   references: {} as Record<string, string>,
   /** The URLs of the modules that Vite invalidated since the graph last asked. */
   changed: [] as string[],
+  /** What the answer to the graph's next question of what changed waits for. */
+  answered: undefined as Promise<void> | undefined,
   /** The URLs that a file imports, by its URL. */
   imports: new Map<string, string[]>(),
   /** The URLs of the files whose evaluation throws. */
@@ -50,13 +52,21 @@ vi.mock("./built-files.ts", () => ({
   },
   builtFiles: async () => built,
 }));
-type FakeModule = { id: string; url: string; file: null; exports?: Promise<object> };
+type FakeModule = {
+  id: string;
+  url: string;
+  file: null;
+  importers: Set<string>;
+  exports?: Promise<object>;
+};
 
 vi.mock("../utils.ts", () => ({
   checkFetchedModules: async () => {},
-  takeFetchedModules: async () => {
-    const { changed } = tab;
+  takeChangedModules: async () => {
+    const { changed, answered } = tab;
     tab.changed = [];
+    tab.answered = undefined;
+    await answered;
     return changed;
   },
   askDevServer: async (_event: string, { url }: { url: string }) => tab.stylesheets.get(url) ?? [],
@@ -82,9 +92,14 @@ vi.mock("../utils.ts", () => ({
 // evaluation that threw, or a new evaluation once it was invalidated. The
 // list of a build's references imports a file by its key, as a module of the
 // runner.
-function importInto(modules: Map<string, FakeModule>, url: string): Promise<object> {
-  const node = modules.get(url) ?? { id: url, url, file: null };
+function importInto(
+  modules: Map<string, FakeModule>,
+  url: string,
+  importer?: string,
+): Promise<object> {
+  const node = modules.get(url) ?? { id: url, url, file: null, importers: new Set() };
   modules.set(url, node);
+  if (importer) node.importers.add(importer);
   node.exports ??= evaluate(modules, url);
   return node.exports;
 }
@@ -98,7 +113,7 @@ async function evaluate(modules: Map<string, FakeModule>, url: string): Promise<
     return { default: Object.fromEntries(list) };
   }
   const imports = await Promise.all(
-    (tab.imports.get(url) ?? []).map((imported) => importInto(modules, imported)),
+    (tab.imports.get(url) ?? []).map((imported) => importInto(modules, imported, url)),
   );
   tab.evaluated.push(url);
   if (tab.failing.has(url)) throw new Error(`${url} failed`);
@@ -119,6 +134,7 @@ beforeEach(() => {
   tab.buildDirectory = undefined;
   tab.references = {};
   tab.changed = [];
+  tab.answered = undefined;
   tab.imports = new Map();
   tab.failing = new Set();
   head.clear();
@@ -234,8 +250,7 @@ test("evaluates a file again after a change, for the module that the change made
   expect(tab.evaluated).toEqual(["/host/badge.tsx", "/host/badge.tsx"]);
 });
 
-// A file of the host that imports another one, as a docs page imports the
-// stories it shows, which the host also reads itself.
+// A file of the host that imports another one, which the host reads too.
 test("gives every reader of a file its one evaluation, also after a change of another", async () => {
   type Evaluation = { url: string; imports?: object[] };
   tab.imports.set("/host/page.tsx", ["/host/badge.tsx"]);
@@ -251,13 +266,36 @@ test("gives every reader of a file its one evaluation, also after a change of an
   expect((await read("/host/page.tsx")).imports?.[0]).toBe(badge);
   expect(tab.evaluated).toEqual(["/host/badge.tsx", "/host/page.tsx", "/host/page.tsx"]);
 
-  // The badge changed: Vite invalidated it and the page, and the host
-  // imports both again.
-  tab.changed = ["/host/badge.tsx", "/host/page.tsx"];
+  // The badge changed, and the host imports both again. Vite invalidated the
+  // badge alone, as it does when the page takes the change of it with HMR,
+  // which the graph runs without: the page imports the badge as it is now.
+  tab.changed = ["/host/badge.tsx"];
   const changed = await read("/host/badge.tsx");
   expect(changed).not.toBe(badge);
   expect((await read("/host/page.tsx")).imports?.[0]).toBe(changed);
   expect(tab.evaluated.slice(3)).toEqual(["/host/badge.tsx", "/host/page.tsx"]);
+});
+
+test("invalidates what changed before a file that loads meanwhile imports it", async () => {
+  type Evaluation = { url: string; imports?: object[] };
+  tab.imports.set("/host/page.tsx", ["/host/badge.tsx"]);
+  const { loadClientModule } = await graph();
+  await importHostFile("/host/badge.tsx");
+  await importHostFile("/host/page.tsx");
+
+  // A change of the badge, after which the host imports both files again at
+  // once. The answer to the first question of what changed comes last.
+  tab.changed = ["/host/badge.tsx", "/host/page.tsx"];
+  const answer = Promise.withResolvers<void>();
+  tab.answered = answer.promise;
+  const loads = Promise.all([importHostFile("/host/badge.tsx"), importHostFile("/host/page.tsx")]);
+  await new Promise((resolve) => setTimeout(resolve));
+  answer.resolve();
+  const [badge, page] = await loads;
+
+  const read = async (module: object) => (await loadClientModule(module)) as Evaluation;
+  expect((await read(page)).imports?.[0]).toBe(await read(badge));
+  expect(tab.evaluated.slice(2)).toEqual(["/host/badge.tsx", "/host/page.tsx"]);
 });
 
 test("forgets the files for Vitest's setup file, which evaluates them again", async () => {

@@ -1,12 +1,8 @@
-import {
-  type DevEnvironment,
-  type EnvironmentModuleNode,
-  type Plugin,
-  type ViteDevServer,
-} from "vite";
+import { type DevEnvironment, type Plugin, type ViteDevServer } from "vite";
 import { vitePluginRscMinimal } from "@vitejs/plugin-rsc/plugin";
 import { createReactClientCoveragePlugin } from "./coverage.ts";
 import { dependencyTransformPlugin } from "./dependency-transforms.ts";
+import { changedAfter, versionOf } from "./module-versions.ts";
 import { createRunnerEnvironmentPlugins } from "./runner-environment.ts";
 import { staticBuild } from "./static-build.ts";
 import { pageViteClientPlugin } from "./vite-client.ts";
@@ -76,14 +72,10 @@ export function vitestPluginRSC(): Plugin[] {
       configureServer(server) {
         // The ids of the modules of an environment that Vite invalidated
         // after a version of them, for a runner of the page that has that
-        // version: see `takeFetchedModules()` in utils.ts.
-        answerPage(server, changedEvent, ({ environment, since }: ChangedQuestion) => {
-          const graph = server.environments[environment]?.moduleGraph;
-          if (!graph) return [];
-          return [...graph.idToModuleMap.values()]
-            .filter((node) => invalidatedAt(node) > since)
-            .map((node) => node.id);
-        });
+        // version: see `takeChangedModules()` in utils.ts.
+        answerPage(server, changedEvent, ({ environment, since }: ChangedQuestion) =>
+          changedAfter(server.environments[environment]?.moduleGraph, since),
+        );
 
         server.ws.on("connection", (socket, req) => {
           const url = new URL(req.url ?? "/", "https://any.local");
@@ -99,7 +91,7 @@ export function vitestPluginRSC(): Plugin[] {
             // runner of its own, see utils.ts.
             const environment = server.environments[invoke.environment];
             const result = !invoke.payload
-              ? versionOf(environment)
+              ? versionOf(environment?.moduleGraph)
               : environment && invoke.environment !== "client"
                 ? describeModule(environment, await environment.hot.handleInvoke(invoke.payload))
                 : {
@@ -192,24 +184,6 @@ export function vitestPluginRSC(): Plugin[] {
     createReactClientCoveragePlugin(),
     ...createRunnerEnvironmentPlugins("react_client"),
   ];
-}
-
-// When Vite last invalidated the module, or 0: for a change of its file, or
-// of a module it imports, also through others, and when a plugin says so.
-// Vite's timestamps only grow.
-const invalidatedAt = (node: EnvironmentModuleNode) =>
-  Math.max(node.lastInvalidationTimestamp, node.lastHMRTimestamp);
-
-// The version of the modules of an environment, which a page keeps the
-// modules it fetched for, for its next page loads: see utils.ts. It is when
-// Vite last invalidated one of them, after which the environment has another
-// answer for it.
-function versionOf(environment: DevEnvironment | undefined): number {
-  let version = 0;
-  for (const node of environment?.moduleGraph.idToModuleMap.values() ?? []) {
-    version = Math.max(version, invalidatedAt(node));
-  }
-  return version;
 }
 
 // With the answer for a module, what that module imports: the page asks for
