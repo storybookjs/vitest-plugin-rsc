@@ -59,11 +59,17 @@ async function changeGreeting(page: Page, copy: string, url: string, greetingWor
   const greeting = path.join(copy, "app/components/greeting.tsx");
   const source = fs.readFileSync(greeting, "utf8");
   fs.writeFileSync(greeting, source.replace(/<h2>\w+ from/, `<h2>${greetingWord} from`));
+  await loadedAgain(page, url);
+  await page.getByRole("heading", { name: `${greetingWord} from the page` }).waitFor();
+}
+
+// Resolves once the host's document has loaded again at the host's `url`,
+// not the page's, and has opened the page again.
+async function loadedAgain(page: Page, url: string) {
   await page.waitForFunction(
     () => !("__beforeTheChange" in window) && (window as HostWindow).__hostState,
   );
   expect(await page.evaluate(hostState), await page.evaluate(hostError)).toBe("ready");
-  await page.getByRole("heading", { name: `${greetingWord} from the page` }).waitFor();
   // The URL that the document loaded with: the open page shows the app's.
   const loadedWith = await page.evaluate(
     () => (performance.getEntriesByType("navigation")[0] as PerformanceNavigationTiming).name,
@@ -86,6 +92,18 @@ test("also for a host that takes a change of its own modules in place", async ({
   );
   await openPage(page, url);
   await changeGreeting(page, copy, url, "Hey");
+});
+
+// Vite's client loads the document again once a dev server that went away
+// answers again, as after a restart, without `vite:beforeFullReload`.
+test("a restart of the dev server loads the host's document again", async ({ page }) => {
+  const { copy, url } = await serveCopy();
+  await openPage(page, url);
+  // Vite restarts its server after a change of the config file.
+  const now = new Date();
+  fs.utimesSync(path.join(copy, "vite.config.ts"), now, now);
+  await loadedAgain(page, url);
+  await page.getByRole("heading", { name: "Hello from the page" }).waitFor();
 });
 
 test("a change of another page of the host keeps the page that is open", async ({ page }) => {

@@ -51,8 +51,19 @@ function staysDuringPage(node: Node): boolean {
   return (
     node instanceof HTMLScriptElement ||
     node instanceof HTMLStyleElement ||
-    (node instanceof HTMLLinkElement && node.rel === "modulepreload") ||
+    isPreload(node) ||
     isGraphStylesheet(node)
+  );
+}
+
+// A preload of the host shows nothing, and one that is put back fetches its
+// file again. Not one of a stylesheet, which a page may make a stylesheet
+// once it has loaded.
+function isPreload(node: Node): boolean {
+  return (
+    node instanceof HTMLLinkElement &&
+    (node.relList.contains("modulepreload") ||
+      (node.relList.contains("preload") && node.as !== "style"))
   );
 }
 

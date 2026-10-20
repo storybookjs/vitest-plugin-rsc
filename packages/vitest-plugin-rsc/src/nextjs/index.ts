@@ -13,7 +13,7 @@ import { NodeOnPage } from "./node-on-page.ts";
 import { PageStore } from "./page-store.ts";
 import { openedAt, registry, type Opened } from "./registry.ts";
 import { takesRequest } from "./server-in-front.ts";
-import { ssrLayer } from "./server-layers.ts";
+import { ssrLayer, ssrLayerNow } from "./server-layers.ts";
 
 export { loadClientModule } from "./client-graph.ts";
 
@@ -33,16 +33,17 @@ void ssrLayer.then(
 // open: see `handledByServer()`.
 let generation = 0;
 
-// What Next's server answers a request with, once the ssr layer is there. A
-// request that waited for the layer while a page was left is one of that
-// page, and is dropped, as `settleRequests()` in ssr.ts drops one that waited
-// for the server then. A layer that failed to load fails the request.
+// What Next's server answers a request with, once the ssr layer is there,
+// which a build then fetches at once. A request that waited for the layer
+// while a page was left is one of that page, and is dropped, as
+// `settleRequests()` in ssr.ts drops one that waited for the server then. A
+// layer that failed to load fails the request.
 async function handledByServer(
   ...[request, options]: Parameters<SsrLayer["handleRequest"]>
 ): Promise<Response | undefined> {
   if (ssr) return ssr.handleRequest(request, options);
   const sent = generation;
-  const layer = await ssrLayer;
+  const layer = await ssrLayerNow();
   if (sent !== generation) {
     throw new DOMException("The page was left before the server responded.", "AbortError");
   }
@@ -1252,6 +1253,12 @@ type NavigateEvent = Event & {
 import.meta.hot?.on("vite:beforeFullReload", ({ path }) => {
   if (reloadsDocument(path)) return leavePage("a reload of the page");
 });
+// It also loads the document again once a dev server that it lost the
+// connection to answers again, as after a restart. Taken as the app's, that
+// reload would keep the host's document, with a connection to a server that
+// is gone. So the page is left as the connection goes, and the host shows
+// without it until the server answers.
+import.meta.hot?.on("vite:ws:disconnect", () => leavePage("a lost connection to the dev server"));
 
 // Whether Vite's client goes on to load the document again, as it decides
 // once the page is left: for a change of an HTML file only if it is the one
@@ -1278,9 +1285,9 @@ function reloadsDocument(path: string | undefined): boolean {
   // too. The host's URL goes to the browser as it is. While a node is open,
   // a URL of the app's origin with its pathname stands in for the host's:
   // the app's route there is another page. Leaving puts back the host's URL.
-  // Any other URL is the app's: hosts leave a page before a reload of their
-  // own (Vite with `vite:beforeFullReload`, another host with the cleanup of
-  // what it showed).
+  // Any other URL is the app's: a page is left before a reload of the host's
+  // (the ones Vite's client announces, above; another host's with the
+  // cleanup of what it showed).
   if (destination.url === documentUrl()) return;
   if (url.origin === window.location.origin && openedAt(url)?.node) {
     event.preventDefault();
