@@ -290,8 +290,8 @@ export function staticBuild(options: StaticBuildOptions): Plugin {
   // is built.
   let layers = options.layers;
   const runnerLayers = () => Object.keys(layers.entries);
-  // In the order a tab fetches their files, which share its network: the
-  // browser layer, which every page runs, first. See built-layers.ts.
+  // The browser layer first, which every page runs: a tab fetches its file
+  // at once, and another layer's when it needs it. See built-layers.ts.
   const fetchOrder = () => [
     browser,
     ...runnerLayers()

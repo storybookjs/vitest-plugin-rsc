@@ -3,16 +3,14 @@ import type { ModuleRunnerTransport } from "vite/module-runner";
 // A static build has no dev server to ask for a module. The environments that
 // run through a module runner were built into the format the runner evaluates,
 // each into one file with every module of it, by its id: see static-build.ts.
-// A tab fetches that file once, at the start, and its runners evaluate from
-// it, like the one of each page load of the browser layer: no request for a
+// A tab fetches that file once, and its runners evaluate from it, like the one of each page load of the browser layer: no request for a
 // module, and none of them waits for the one that imports it. The id of a
 // module is the path that it would have as a file of the build, so what it
 // names by its URL, like its CSS, is where it says.
 //
 // The first is the layer that every page runs, which the tab fetches at
 // once: a page of the build preloads it from its HTML. Each of the others
-// when a runner of it first asks for a module, which is when the tab needs
-// that layer.
+// when a runner of it first asks for a module.
 
 /**
  * For the layers but the rsc layer: the modules a Flight payload can refer

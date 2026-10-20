@@ -1146,6 +1146,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
     ...clientFiles({
       environments: { rsc: environmentOf.rsc, browser: environmentOf.browser },
       testingLibrary,
+      clientComponents: "vitest-plugin-rsc/nextjs/client-components",
       internal: ownFile("internal"),
       isHostFile: serverCode.isHostFile,
       isHostPackage: serverCode.isHostPackage,

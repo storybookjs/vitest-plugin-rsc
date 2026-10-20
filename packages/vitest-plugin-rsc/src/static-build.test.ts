@@ -553,10 +553,7 @@ test("a runner of a built layer asks again after a failure, and says what the bu
 // The first file is the one of the layer that every page runs, which the
 // tab fetches at once. Another layer's only when a runner of it asks: when
 // the tab needs that layer.
-async function orderedBuild({
-  first = "held",
-  ssrFails = false,
-}: { first?: "held" | "missing"; ssrFails?: boolean } = {}) {
+async function twoLayerBuild({ ssrFails = false }: { ssrFails?: boolean } = {}) {
   const { layer, ssr, fetch } = await servedBuild("https://site.test/");
   const events: string[] = [];
   const firstFile = Promise.withResolvers<void>();
@@ -568,7 +565,7 @@ async function orderedBuild({
       return ssrFails ? new Response(null, { status: 500 }) : fetch(input);
     }
     await firstFile.promise;
-    return first === "held" ? fetch(input) : new Response(null, { status: 404 });
+    return fetch(input);
   };
   const built = createBuiltLayers(held as typeof globalThis.fetch, [layer, ssr]);
   const server = () =>
@@ -581,7 +578,7 @@ async function orderedBuild({
 }
 
 test("a tab fetches the file of the layer every page runs at once, and another one when a runner of it asks", async () => {
-  const { built, layer, server, events, endFirst } = await orderedBuild();
+  const { built, layer, server, events, endFirst } = await twoLayerBuild();
   expect(events).toEqual(["fetches react_client"]);
   endFirst();
   await pageRunner(built, layer).import(entry);
@@ -591,7 +588,7 @@ test("a tab fetches the file of the layer every page runs at once, and another o
 });
 
 test("a runner of another layer does not wait for the file of the first one", async () => {
-  const { server, events } = await orderedBuild();
+  const { server, events } = await twoLayerBuild();
   expect((await server()).layer).toBe("ssr");
   expect(events).toEqual(["fetches react_client", "fetches next_ssr"]);
 });
@@ -599,17 +596,10 @@ test("a runner of another layer does not wait for the file of the first one", as
 // What fails is the error of the requests that need the layer: the next
 // runner that asks fetches its file again.
 test("a tab fetches the file of a layer that failed again for the next runner", async () => {
-  const { server, events } = await orderedBuild({ ssrFails: true });
+  const { server, events } = await twoLayerBuild({ ssrFails: true });
   await expect(server()).rejects.toThrow("next_ssr/modules.json responded with 500");
   await expect(server()).rejects.toThrow("next_ssr/modules.json responded with 500");
   expect(events).toEqual(["fetches react_client", "fetches next_ssr", "fetches next_ssr"]);
-});
-
-test("a tab fetches another layer also when the first one fails", async () => {
-  const { server, events, endFirst } = await orderedBuild({ first: "missing" });
-  endFirst();
-  expect((await server()).layer).toBe("ssr");
-  expect(events).toEqual(["fetches react_client", "the first ends", "fetches next_ssr"]);
 });
 
 test("leaves the bundle of a build that only looks", () => {

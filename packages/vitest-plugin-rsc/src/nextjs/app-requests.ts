@@ -107,7 +107,7 @@ export function newPageStore(): void {
 let page: object | undefined;
 
 /** Says which page of the app is open: none once it is left. */
-export function openedPage(opened: object | undefined): void {
+export function setOpenPage(opened: object | undefined): void {
   page = opened;
 }
 

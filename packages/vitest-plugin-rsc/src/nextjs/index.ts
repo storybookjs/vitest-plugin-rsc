@@ -9,7 +9,7 @@ import { checkFetchedModules, createEnvironmentRunner, environmentModule } from 
 import {
   leftTheApp,
   newPageStore,
-  openedPage,
+  setOpenPage,
   pageStore,
   sendRequest,
   settleRequests,
@@ -164,7 +164,8 @@ export async function runInServerAction<T>(
     if (ran.outcome) {
       // The response, which no page is there to show, is read to its end, as
       // a browser reads it, so that the server has written it. It is short:
-      // the route renders nothing, also after a `redirect()`, see `appFetch()`.
+      // the route renders nothing, also after a `redirect()`, see `appFetch()` in
+      // app-requests.ts.
       // What fails in it, Next reports itself.
       await response.body?.pipeTo(new WritableStream()).catch(() => {});
     } else {
@@ -714,7 +715,7 @@ async function openPage(
     nodeOnPage: opening?.nodeOnPage,
     errors,
   };
-  openedPage(page);
+  setOpenPage(page);
   try {
     ({ unmount } = await started);
   } catch (error) {
@@ -752,7 +753,7 @@ function leavePage(by: string): Promise<void> {
   currentLoad = undefined;
   const left = page;
   page = undefined;
-  openedPage(undefined);
+  setOpenPage(undefined);
   left?.nodeOnPage?.left(by);
   // Also after a page that could not be left: that one fails its own test.
   const gone = leaving

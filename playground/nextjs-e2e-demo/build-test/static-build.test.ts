@@ -254,6 +254,13 @@ describe.for(builds)("a static build, $build", ({ build, env }) => {
     )!;
     expect(ssrLayer.startTime).toBeGreaterThanOrEqual(clicked);
     expect(ssrLayer.startTime).toBeLessThanOrEqual(nextTask);
+    // Nor did the rsc layer load before it: the plugin's module of it is a
+    // chunk of its own, which the request imports with the ssr layer.
+    const rscChunks = (await resources(page)).filter(({ pathname }) =>
+      /^\/assets\/rsc-[^/]*\.js$/.test(pathname),
+    );
+    expect(rscChunks.length).toBeGreaterThan(0);
+    for (const chunk of rscChunks) expect(chunk.startTime).toBeGreaterThanOrEqual(clicked);
   });
 
   // The ssr layer lists the Client Components that server code reaches: a

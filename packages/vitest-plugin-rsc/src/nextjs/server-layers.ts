@@ -4,9 +4,9 @@ import { createEnvironmentRunner, environmentModule } from "../utils.ts";
 // The layers of Next's server in the tab. The server's platform (globals.ts)
 // has to be there before a module of Next's server loads, so they load from
 // here on. One module graph of each for the tab: the server stays, where a
-// page is loaded anew. Nothing loads them as this module evaluates: an entry
-// of the plugin that a host imports says when, see index.ts and
-// client-components.ts.
+// page is loaded anew. Nothing loads them as this module evaluates: the
+// entry of the server's API starts them, see index.ts, and so does the first
+// request that the server handles, see app-requests.ts.
 
 type SsrLayer = typeof import("./ssr.ts");
 
