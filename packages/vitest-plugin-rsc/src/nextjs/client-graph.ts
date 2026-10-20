@@ -15,9 +15,11 @@ import {
   builtClientStylesheetsOf,
   builtFileKey,
   graphStylesheetAttribute,
+  stylesheetOfUrl,
   stylesheetsEvent,
   type StylesheetsQuestion,
 } from "./styles-shared.ts";
+import { moveLink, type StylesheetVersions } from "./stylesheet-versions.ts";
 
 // A file with `"use client"` is a client boundary: code of the browser layer,
 // see client-files.ts. A test file with the directive renders a Client
@@ -52,20 +54,25 @@ let graph: ModuleRunner | undefined;
 
 // A stylesheet that the files of the host linked, and how many uses of
 // files hold it: the host's, which a page steps aside for and leaves where it
-// is, see document.ts. `loaded` settles as it loads or fails, and `settle()`
-// as it is unlinked before: a link out of the document fires neither `load`
-// nor `error`.
+// is, see document.ts. `href` is the URL of its link, which moves to a later
+// version (stylesheet-versions.ts), and `previous` the link it takes the
+// place of until it has loaded. `loaded` settles as the link loads or fails,
+// and `settle()` as it is unlinked before: a link out of the document fires
+// neither `load` nor `error`.
 type Linked = {
   href: string;
   link: HTMLLinkElement;
+  previous?: HTMLLinkElement;
   loaded: Promise<void>;
   settle: () => void;
   uses: number;
 };
 
-// The stylesheets in the document, one for each URL. Each goes once no use
-// holds it, and `cleanup()` takes them all back.
+// The stylesheets in the document, one for each stylesheet, whatever its
+// version: by `stylesheetOfUrl()`, or by the URL of one of a static build.
+// Each goes once no use holds it, and `cleanup()` takes them all back.
 const linked = new Map<string, Linked>();
+const keyOf = (href: string) => stylesheetOfUrl(href) ?? href;
 
 // How many times `cleanup()` ended every use: a use that was asking for its
 // stylesheets meanwhile ended with them.
@@ -267,39 +274,73 @@ async function stylesheetsOfHostFiles(hostFiles: string[]): Promise<string[]> {
 // The CSS of what a file with `"use client"` imports, its own too, linked in
 // the document, as a page of the app links its CSS: see styles.ts. Vite's
 // `<style>` of a module would stay for every file after it, and the `<link>`
-// of a chunk of a build goes with a page that is open as the file loads.
+// of a chunk of a build goes with a page that is open as the file loads. A
+// use of a stylesheet that is linked already, in another version, moves it
+// to this one, as it is now.
 function hold(href: string): Linked {
-  const known = linked.get(href);
+  const known = linked.get(keyOf(href));
   if (known) {
     known.uses++;
+    if (known.href !== href) move(known, href);
     return known;
   }
   const link = Object.assign(document.createElement("link"), { rel: "stylesheet", href });
   link.setAttribute(graphStylesheetAttribute, "");
-  let settle!: () => void;
-  // A stylesheet that fails to load holds up nothing.
-  const loaded = new Promise<void>(
-    (resolve) => (settle = link.onload = link.onerror = () => resolve()),
-  );
-  const stylesheet: Linked = { href, link, loaded, settle, uses: 1 };
-  linked.set(href, stylesheet);
+  const stylesheet: Linked = { href, link, uses: 1, ...loading(link) };
+  linked.set(keyOf(href), stylesheet);
   document.head.append(link);
   return stylesheet;
+}
+
+// A stylesheet that fails to load holds up nothing.
+function loading(link: HTMLLinkElement): Pick<Linked, "loaded" | "settle"> {
+  let settle!: () => void;
+  const loaded = new Promise<void>((resolve) => {
+    settle = () => resolve();
+    link.addEventListener("load", settle, { once: true });
+    link.addEventListener("error", settle, { once: true });
+  });
+  return { loaded, settle };
+}
+
+// Moves the link of a stylesheet to `href`. One that a page has parked out of
+// the document gets the URL, and loads it once it is back.
+function move(stylesheet: Linked, href: string): void {
+  const link = moveLink(stylesheet.link, href);
+  stylesheet.href = href;
+  if (link === stylesheet.link) return;
+  stylesheet.settle();
+  stylesheet.previous = stylesheet.link;
+  stylesheet.link = link;
+  Object.assign(stylesheet, loading(link));
+}
+
+/**
+ * Moves the stylesheets that the files of the host linked to the versions of
+ * now, after a change of their CSS: see stylesheet-versions.ts.
+ */
+export function moveGraphLinks(versions: StylesheetVersions): void {
+  for (const [key, stylesheet] of linked) {
+    const href = versions.get(key);
+    if (href !== undefined && href !== stylesheet.href) move(stylesheet, href);
+  }
 }
 
 // The end of one use of a stylesheet. Not of one that `cleanup()` took back
 // meanwhile, which a later use may have linked again.
 function release(stylesheet: Linked): void {
-  if (linked.get(stylesheet.href) !== stylesheet) return;
+  if (linked.get(keyOf(stylesheet.href)) !== stylesheet) return;
   if (--stylesheet.uses === 0) unlink(stylesheet);
 }
 
 // Also one that a page that is open has parked: it is no longer the host's,
 // and leaving the page does not put it back (document.ts).
 function unlink(stylesheet: Linked): void {
-  stylesheet.link.remove();
-  stylesheet.link.removeAttribute(graphStylesheetAttribute);
-  linked.delete(stylesheet.href);
+  for (const link of [stylesheet.link, stylesheet.previous]) {
+    link?.remove();
+    link?.removeAttribute(graphStylesheetAttribute);
+  }
+  linked.delete(keyOf(stylesheet.href));
   stylesheet.settle();
 }
 
