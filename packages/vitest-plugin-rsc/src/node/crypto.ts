@@ -1,8 +1,9 @@
 // `node:crypto` for a browser: Web Crypto for random values and `subtle`,
-// and a SHA-256 in JavaScript for `createHash`, which Next's cache keys need
-// synchronously, where Next has no Web Crypto branch, like the ids of nanoid.
-// The rest is unenv's: its constants, and functions that throw when called,
-// like `createHmac`, so that code which imports one loads.
+// which is what Next's server uses where it has no Web Crypto branch, like
+// `randomFillSync` for the ids of nanoid, and a SHA-256 in JavaScript for
+// `createHash`, which Next's cache keys need synchronously. The rest is
+// unenv's: its constants, and functions that throw when called, like
+// `createHmac`, so that code which imports one loads.
 
 import unenv from "unenv/node/crypto";
 
