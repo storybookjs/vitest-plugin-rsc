@@ -1,7 +1,15 @@
 import fs from "node:fs";
 import path from "node:path";
 import { getPluginApi } from "@vitejs/plugin-rsc/plugin";
-import { moduleRunnerTransform, type Plugin, type Rolldown, type ViteBuilder } from "vite";
+import {
+  moduleRunnerTransform,
+  parseAstAsync,
+  Visitor,
+  type ESTree,
+  type Plugin,
+  type Rolldown,
+  type ViteBuilder,
+} from "vite";
 import { clientReferencesId } from "./built-layers.ts";
 import {
   builtHostModuleUrl,
@@ -121,8 +129,8 @@ export type StaticBuildLayers = {
   entries: Record<string, string>;
   /**
    * The directives of a framework's own files that a bundler would warn
-   * about, like Next's `use turbopack`. Not Vite RSC's: those are references
-   * by then.
+   * about, as they are written, like Next's `use turbopack: no side effects`.
+   * Not Vite RSC's: those are references by then.
    */
   directives?: string[];
   /**
@@ -165,28 +173,66 @@ export type StaticBuildOptions = {
 // `buildApp()` does, and its examples of a custom `buildApp()`.
 type Manager = NonNullable<ReturnType<typeof getPluginApi>>["manager"];
 
-/** What `moduleRunnerTransform()` makes of `import.meta`. */
-const importMeta = "__vite_ssr_import_meta__";
-
-// A module of a build as a module runner takes it. Its imports are by the
-// path of the file, from the directory of the build: a runner resolves a
-// relative import against what the importer was asked by, which for a build
-// is not always a path.
+// A module of a build as a module runner takes it. A runner asks for an
+// import as the code names it, and resolves a relative `import()` against
+// what the importer was asked by, which for a build is not always a path: a
+// dev server resolves the imports of a module before Vite transforms it for
+// a runner. So the imports of a chunk, which the bundler names by the way
+// from the chunk, are by the path of the file, from the directory of the
+// build, before the transform.
 export async function toRunnerModule(
   chunk: Pick<Rolldown.OutputChunk, "fileName" | "code">,
 ): Promise<string> {
   const id = `/${chunk.fileName}`;
-  const transformed = await moduleRunnerTransform(chunk.code, null, id, chunk.code);
-  const directory = path.posix.dirname(id);
-  const code = (transformed?.code ?? chunk.code).replace(
-    /(__vite_ssr_(?:dynamic_)?import__\()(["'])(\.\.?\/[^"']*)\2/g,
-    (_match, call: string, _quote: string, specifier: string) =>
-      `${call}${JSON.stringify(path.posix.resolve(directory, specifier))}`,
-  );
-  // A runner has an `import.meta.resolve()` that throws. Vite asks it where
-  // the CSS of a chunk is, before it takes the URL of the module for that.
-  return code.includes(`${importMeta}.resolve`)
-    ? `${importMeta}.resolve = (specifier) => new URL(specifier, ${importMeta}.url).href;\n${code}`
+  const source = await runnerSource(chunk.code, path.posix.dirname(id));
+  const transformed = await moduleRunnerTransform(source, null, id, source);
+  return transformed?.code ?? source;
+}
+
+// The code of a chunk of `directory` as a runner takes it, before Vite
+// transforms it: with the imports it names by a way from there by their path,
+// `import`, `export … from` and `import()` of a string, also of a template
+// literal that is one. And with an `import.meta.resolve()` where it asks for
+// one: a runner's throws, and Vite asks it where the CSS of a chunk is,
+// before it takes the URL of the module for that.
+async function runnerSource(code: string, directory: string): Promise<string> {
+  const sources: { start: number; end: number; specifier: string }[] = [];
+  let resolvesImportMeta = false;
+  const add = (source: ESTree.Expression | ESTree.StringLiteral | null) => {
+    const specifier =
+      source?.type === "Literal"
+        ? source.value
+        : source?.type === "TemplateLiteral" && source.expressions.length === 0
+          ? source.quasis[0]!.value.cooked
+          : undefined;
+    if (typeof specifier === "string" && /^\.\.?\//.test(specifier)) {
+      sources.push({ start: source!.start, end: source!.end, specifier });
+    }
+  };
+  new Visitor({
+    ImportDeclaration: (node) => add(node.source),
+    ExportAllDeclaration: (node) => add(node.source),
+    ExportNamedDeclaration: (node) => add(node.source),
+    ImportExpression: (node) => add(node.source),
+    MemberExpression: (node) => {
+      const { object, property } = node;
+      if (
+        object.type === "MetaProperty" &&
+        object.meta.name === "import" &&
+        property.type === "Identifier" &&
+        property.name === "resolve"
+      ) {
+        resolvesImportMeta = true;
+      }
+    },
+  }).visit(await parseAstAsync(code));
+  // From the end, so that the offsets of the ones before stay.
+  for (const { start, end, specifier } of sources.sort((a, b) => b.start - a.start)) {
+    const resolved = JSON.stringify(path.posix.resolve(directory, specifier));
+    code = code.slice(0, start) + resolved + code.slice(end);
+  }
+  return resolvesImportMeta
+    ? `import.meta.resolve = (specifier) => new URL(specifier, import.meta.url).href;\n${code}`
     : code;
 }
 
@@ -266,6 +312,20 @@ export function staticBuild(options: StaticBuildOptions): Plugin {
   // The modules that only the lists of references import with `import()`,
   // in the build of the environment that is being built: see `onwarn`.
   let listedOnly = new Set<string>();
+  // What the bundler parsed of each module, by its id, in the build of the
+  // environment that is being built: the code a warning's position is in.
+  const parsed = new Map<string, Rolldown.ModuleInfo>();
+
+  // The directive that a warning of the bundler is about: the string at its
+  // position in the code of its module, as the bundler parsed it.
+  const directiveOf = ({ id, pos }: Rolldown.RolldownLog): string | undefined => {
+    const code = id === undefined ? undefined : parsed.get(id)?.code;
+    if (!code || pos === undefined) return undefined;
+    const quote = code[pos];
+    if (quote !== '"' && quote !== "'") return undefined;
+    const end = code.indexOf(quote, pos + 1);
+    return end === -1 ? undefined : code.slice(pos + 1, end);
+  };
 
   // The entries of a layer, by their names in its input: the module that the
   // page starts the layer with, and in the browser layer the list of its
@@ -309,9 +369,7 @@ export function staticBuild(options: StaticBuildOptions): Plugin {
         // The config's own, which this one replaces: it gets what is left.
         const userOnwarn = userConfig.build?.rolldownOptions?.onwarn;
         const userRenderBuiltUrl = userConfig.experimental?.renderBuiltUrl;
-        const directives = new RegExp(
-          `\\buse (${["client", "server", ...(layers.directives ?? [])].join("|")})\\b`,
-        );
+        const directives = new Set(["use client", "use server", ...(layers.directives ?? [])]);
         const layer = (name: string) => ({
           build: {
             copyPublicDir: false,
@@ -367,7 +425,8 @@ export function staticBuild(options: StaticBuildOptions): Plugin {
                 // A directive is what Vite RSC has made a reference of by then,
                 // or one that a framework's own files have for its bundler.
                 const isDirective =
-                  warning.code === "MODULE_LEVEL_DIRECTIVE" && directives.test(warning.message);
+                  warning.code === "MODULE_LEVEL_DIRECTIVE" &&
+                  directives.has(directiveOf(warning) ?? "");
                 // A build that only looks is left with the imports of a module,
                 // also the ones that are no path until the code runs. It is
                 // thrown away, so what it cannot find it can leave out.
@@ -466,6 +525,7 @@ export function staticBuild(options: StaticBuildOptions): Plugin {
         for (const { pathname, body } of layers.files?.() ?? []) write(pathname, body);
       } finally {
         buildingApp = false;
+        parsed.clear();
       }
     },
     // Before the bundler warns of an `import()` that splits nothing off,
@@ -483,8 +543,13 @@ export function staticBuild(options: StaticBuildOptions): Plugin {
           ),
       );
     },
+    moduleParsed(info) {
+      if (this.environment.mode !== "build") return;
+      parsed.set(info.id, info);
+    },
     buildStart() {
       if (this.environment.mode !== "build") return;
+      parsed.clear();
       // Outside the plugin's `buildApp()`, like with Vite's `build()`, only
       // the environment of the host is built: a site without the other
       // layers, which would fail when it is opened.
