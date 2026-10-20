@@ -1,6 +1,6 @@
 import { expect, test } from "vitest";
 import {
-  builtClientStylesheetsOf,
+  builtHostFileStylesheetsOf,
   builtFileKey,
   builtStylesheetsOf,
   componentPagePath,
@@ -29,7 +29,6 @@ const built: BuiltFiles = {
     "host/plain.tsx": [],
     "callout.tsx": ["_next/static/css/other-333.css"],
   },
-  clientFiles: [],
   chunks: [],
   modules: {},
 };
@@ -68,7 +67,6 @@ test("names the files under the asset prefix of the app", () => {
     assetPath: "/assets/_next/",
     routes: { "/app/page": { "app/page": ["assets/_next/static/css/page-def.css"] } },
     hostFiles: {},
-    clientFiles: [],
     chunks: [],
     modules: {},
   };
@@ -138,14 +136,14 @@ test("finds a file of the host by its path from the root, or by an absolute path
   expect(builtFileKey("../host/callout.tsx", keys)).toBeUndefined();
 });
 
-// A file of the host with `"use client"` renders without a page: the tab
+// A file of the host that the host uses renders without a page: the page
 // links its stylesheets itself, as URLs, from wherever the build is served.
-test("gives a file of the host with `use client` the stylesheets of the build, as URLs", () => {
-  expect(builtClientStylesheetsOf(built, "host/callout.tsx", "https://site.test/docs/")).toEqual([
+test("gives a file of the host the stylesheets of the build, as URLs", () => {
+  expect(builtHostFileStylesheetsOf(built, "host/callout.tsx", "https://site.test/docs/")).toEqual([
     "https://site.test/docs/_next/static/css/callout-222.css",
     "https://site.test/docs/_next/static/css/theme-111.css",
   ]);
-  expect(builtClientStylesheetsOf(built, "host/plain.tsx", "https://site.test/")).toEqual([]);
+  expect(builtHostFileStylesheetsOf(built, "host/plain.tsx", "https://site.test/")).toEqual([]);
   // One the build has no stylesheets for.
-  expect(builtClientStylesheetsOf(built, "host/gone.tsx", "https://site.test/")).toEqual([]);
+  expect(builtHostFileStylesheetsOf(built, "host/gone.tsx", "https://site.test/")).toEqual([]);
 });

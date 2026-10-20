@@ -221,11 +221,12 @@ test("lists the stylesheets of every route and of every file of the host in a bu
     rsc: {
       [`${root}/app/layout.tsx`]: [css("app/global.css")],
       // A host file that renders a node, with a Server Component of the
-      // app, a Client Component of the app, and a stylesheet of its own.
+      // app, a Client Component of the app, and a stylesheet of its own,
+      // which is linked as the app's is.
       [`${root}/host/node.tsx`]: [
         `${root}/app/card.tsx`,
         `${root}/app/client.tsx`,
-        `${root}/host/own.css`,
+        css("host/own.css"),
       ],
       [`${root}/app/card.tsx`]: [css("app/card.module.css")],
       [`${root}/app/client.tsx`]: [],
@@ -240,7 +241,6 @@ test("lists the stylesheets of every route and of every file of the host in a bu
         `\0${root}/host/virtual.tsx`,
         `${root}/host/logo.svg`,
       ],
-      [`${root}/host/own.css`]: [],
       // A host file with `"use client"`.
       [`${root}/host/story.tsx`]: [],
     },
@@ -250,7 +250,7 @@ test("lists the stylesheets of every route and of every file of the host in a bu
     },
     references: [`${root}/app/client.tsx`, `${root}/host/story.tsx`],
     sources: {
-      rsc: ["app/global.css", "app/card.module.css", "app/page.css"],
+      rsc: ["app/global.css", "app/card.module.css", "app/page.css", "host/own.css"],
       browser: ["app/client.css"],
     },
   });
@@ -259,17 +259,16 @@ test("lists the stylesheets of every route and of every file of the host in a bu
     routes: {
       "/app/notes/page": { "app/layout": [named("global")], [componentPagePath]: [] },
     },
-    // By their paths from the root, in their order: no file of the app, and
-    // no stylesheet. What a file reaches goes up to the lists of the routes,
-    // and into the browser layer from a Client Component.
+    // By their paths from the root, in their order, with the directive or
+    // without: no file of the app, and no stylesheet. What a file reaches
+    // goes up to the lists of the routes, and into the browser layer from a
+    // Client Component.
     hostFiles: {
-      "host/main.tsx": [named("card.module"), named("client")],
-      "host/node.tsx": [named("card.module"), named("client")],
+      "host/main.tsx": [named("card.module"), named("client"), named("own")],
+      "host/node.tsx": [named("card.module"), named("client"), named("own")],
       "host/plain.tsx": [],
       "host/story.tsx": [named("client")],
     },
-    // Those with "use client", which a host links as it uses them.
-    clientFiles: ["host/story.tsx"],
     chunks: [],
     modules: { "/app/notes/page": [] },
   });

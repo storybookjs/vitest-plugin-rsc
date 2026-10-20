@@ -17,6 +17,8 @@ import { show, state } from "./state.ts";
 // host with `"use client"`, `?view=package` for the ones of a package of
 // the host in `node_modules`: one by the name of the package, one through
 // its entry.
+// `?view=own-css` uses a file of the host without the directive that imports
+// CSS of its own.
 // `?view=module` renders a component of a file of the host with
 // `"use client"` itself, as a framework renders a story, and
 // `?view=in-place` renders it again after a change. `?view=action`
@@ -165,6 +167,47 @@ await show(async () => {
     for (const Component of [Badge, Like]) {
       renderClient(Component, container.appendChild(document.createElement("div")));
     }
+    return;
+  }
+  if (view === "own-css") {
+    // A file of the host without "use client" that imports CSS of its own:
+    // loaded, not used yet. Then the host uses it, and a page comes and goes,
+    // which its stylesheet steps aside for, and the use ends. Then a node
+    // that the file renders, and leaving it.
+    const framedApplies = () =>
+      [...document.styleSheets].some(
+        (sheet) =>
+          !sheet.disabled &&
+          (sheet.media.length === 0 || matchMedia(sheet.media.mediaText).matches) &&
+          [...sheet.cssRules].some(
+            (rule) => rule instanceof CSSStyleRule && rule.selectorText === ".framed",
+          ),
+      );
+    // A stylesheet that a page put back loads again, after leaving resolved.
+    const loaded = () =>
+      Promise.all(
+        [...document.querySelectorAll<HTMLLinkElement>("link[rel=stylesheet]")]
+          .filter((link) => !link.sheet)
+          .map((link) => new Promise((resolve) => link.addEventListener("load", resolve))),
+      );
+    const applied: Record<string, boolean> = {};
+    const { renderFramed } = await import("./framed.tsx");
+    applied.loaded = framedApplies();
+    const use = new AbortController();
+    await linkStylesheetsOf(["host/framed.tsx"], { signal: use.signal });
+    applied.used = framedApplies();
+    const opened = await renderServer({ url: "/" });
+    applied.duringPage = framedApplies();
+    await opened.unmount();
+    await loaded();
+    applied.pageLeft = framedApplies();
+    use.abort();
+    applied.ended = framedApplies();
+    const node = await renderFramed(container);
+    applied.node = framedApplies();
+    await node.unmount();
+    applied.nodeLeft = framedApplies();
+    state.__hostFramedApplied = applied;
     return;
   }
   if (view === "stored") {

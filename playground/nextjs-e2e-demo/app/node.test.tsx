@@ -163,9 +163,12 @@ test("renders a node in a page with the CSS of the browser, and not that of Vite
   expect(getComputedStyle(document.body).margin).toBe("8px");
 });
 
-// Vite's `<style>`, which a page of the app steps aside for, as for the
-// `<link>` of its chunk in a build: the page has the CSS of its route.
-test("keeps the CSS that a test file imports itself for its nodes, and not for a page", async () => {
+// Linked as the CSS of the app is, not Vite's `<style>`: in the document
+// while a use of the test file holds it, which the plugin's setup file makes
+// for every test. So a test has it without a node, and a node in the
+// layouts of the app too. A page steps aside for it, as for the `<link>` of
+// its chunk in a build: the page has the CSS of its route.
+test("keeps the CSS that a test file imports itself for its tests and nodes, and not for a page", async () => {
   const fromTest = () =>
     cssRules().some(
       (rule) =>
@@ -173,12 +176,19 @@ test("keeps the CSS that a test file imports itself for its nodes, and not for a
         rule.selectorText === ".from-test" &&
         matchMedia(rule.parentStyleSheet!.media.mediaText || "all").matches,
     );
+  expect(fromTest()).toBe(true);
+  expect(document.querySelector('style[data-vite-dev-id$="/app/node.test.css"]')).toBeNull();
   await renderServer(<p className="from-test">From the test</p>);
   await expect.element(page.getByText("From the test")).toHaveStyle({ color: "rgb(255, 0, 255)" });
 
   await renderServer({ url: "/notice" });
   await expect.element(page.getByText("The office is closed on Friday.")).toBeVisible();
   expect(fromTest()).toBe(false);
+  await renderServer(<p className="from-test">In the layouts</p>, {
+    url: "/notice",
+    layouts: true,
+  });
+  await expect.element(page.getByText("In the layouts")).toHaveStyle({ color: "rgb(255, 0, 255)" });
   await renderServer(<p className="from-test">From the test again</p>);
   expect(fromTest()).toBe(true);
   await expect

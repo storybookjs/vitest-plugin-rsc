@@ -44,14 +44,15 @@ import {
 // stylesheet belongs to a page, and goes with it.
 //
 // Vite does it another way: a module that imports CSS puts it in a `<style>`
-// when it loads, once for the browser. That stays for the CSS that a module
-// of the host's document imports, like a test file without `"use client"`.
-// For the CSS of the app, this file is the part of Next's build, and for that
-// of a file of the host with `"use client"` too, whose graph links it as a
-// page links its route's (client-graph.ts):
+// when it loads, once for the browser. That stays for the CSS of the host's
+// runtime: its packages, the `browserModules` and the plugin. For the CSS of
+// the app, this file is the part of Next's build, and for that of a file of
+// the host too, which is in the document while a use of the file holds it, as
+// a page links its route's: the node it renders, or `linkStylesheetsOf()`
+// (client-graph.ts):
 //
-//   - An import of CSS in the code of the app, and in a file of the host with
-//     `"use client"`, gets a query, `?next-linked`.
+//   - An import of CSS in the code of the app, and in a file of the host,
+//     gets a query, `?next-linked`.
 //   - The module of such an import puts nothing in the document. It exports
 //     the class names of a CSS module, as Vite's module for a server does.
 //   - The list of a segment is read off Vite's module graphs, before Next
@@ -511,19 +512,14 @@ export function createStyles(options: StylesOptions): Styles {
   }
 
   /**
-   * The stylesheets of the files of the host with `"use client"` that the
-   * host uses, `linkStylesheetsOf()`: what each imports in the browser layer,
-   * as for a file that renders a node, in their order, each once. It renders
-   * without a page of the app, so the page links them itself: see
-   * client-graph.ts. Not those of a file without the directive, whose CSS is
-   * Vite's `<style>` in the document already, as the host's module imports it.
+   * The stylesheets of the files of the host that the host uses,
+   * `linkStylesheetsOf()`: what each imports, as for a file that renders a
+   * node, in their order, each once. Such a use has no page of the app, so
+   * the page links them itself: see client-graph.ts.
    */
   async function hostFilesStylesheetsOf(vite: ViteDevServer, files: string[]): Promise<string[]> {
     const { follow, collect } = reach(vite);
-    const references = getPluginApi(vite.config)?.manager.clientReferenceMetaMap ?? {};
-    const nodes = hostFileNodes(vite, files, "`linkStylesheetsOf()`").filter(
-      (node) => node.id && clientReferenceOfModule(references, node.id),
-    );
+    const nodes = hostFileNodes(vite, files, "`linkStylesheetsOf()`");
     await Promise.all(nodes.map((node) => follow("rsc", node)));
     return linkedAt(vite, collect(nodes));
   }
@@ -632,8 +628,8 @@ export function createStyles(options: StylesOptions): Styles {
       name: "vitest-plugin-rsc:next-styles",
       enforce: "pre",
       configureServer(vite) {
-        // What the page asks the plugin: the stylesheets of a route, or of a
-        // client file. See `stylesheetsEvent` in styles-shared.ts.
+        // What the page asks the plugin: the stylesheets of a route, or of
+        // files of the host. See `stylesheetsEvent` in styles-shared.ts.
         answerPage(vite, stylesheetsEvent, (question: StylesheetsQuestion) =>
           "hostFiles" in question
             ? hostFilesStylesheetsOf(vite, question.hostFiles.map(fileOf))
@@ -697,12 +693,12 @@ export function createStyles(options: StylesOptions): Styles {
         // a stylesheet is clear once it is resolved: a package can be one,
         // like `@fontsource/inter`, and so can an alias.
         if (!layer || !importer || source.includes("?") || isScriptRequest(source)) return;
-        // The rsc layer shares its environment with the test: the CSS a test
-        // file imports stays the browser's. The other two are module graphs
-        // of the plugin's: their CSS is linked, the app's for a page and that
-        // of a file of the host with `"use client"` by the tab's graph.
+        // The rsc layer shares its environment with the host's runtime, whose
+        // CSS stays the document's. That of the app and of a file of the host
+        // is linked, as in the other two, which are module graphs of the
+        // plugin's: the app's for a page, a host file's while a use holds it.
         const file = importer.split("?")[0]!;
-        if (layer === "rsc" && !options.isServerCode(file)) return;
+        if (layer === "rsc" && !options.isServerCode(file) && !options.isHostFile(file)) return;
         const resolved = await this.resolve(source, importer, {
           ...resolveOptions,
           skipSelf: true,
@@ -833,8 +829,6 @@ function createBuiltFiles(
   // What each file of the host reaches in the rsc layer, by its path from the
   // root of the project.
   const hostFiles = new Map<string, Reached[]>();
-  // Those of them with `"use client"`.
-  const clientFiles = new Set<string>();
   // The stylesheets each Client Component reaches in the layer of the browser.
   const clients = new Map<string, string[]>();
   // The chunks of the rsc layer that each page route loads.
@@ -917,7 +911,6 @@ function createBuiltFiles(
       if (layer === "rsc") {
         routes.clear();
         hostFiles.clear();
-        clientFiles.clear();
         modules.clear();
       } else clients.clear();
     },
@@ -947,9 +940,8 @@ function createBuiltFiles(
           routes.set(entry, segments);
         }
         // The files of the host that the build has, as `stylesheetsOf()`
-        // walks them for `hostFiles` of renderServer(): any of them can render a
-        // node. The CSS one imports itself is Vite's, in the chunks of the
-        // host's build.
+        // walks them for `hostFiles` of renderServer() and
+        // `linkStylesheetsOf()`: any of them can render a node, or be used.
         const project = getProject();
         const { pageExtensions = [] } = project.config as { pageExtensions?: string[] };
         for (const id of this.getModuleIds()) {
@@ -957,7 +949,6 @@ function createBuiltFiles(
           const file = builtHostFileOf(id, project.root, options.isHostFile);
           if (file === undefined) continue;
           hostFiles.set(file, reachIn(imports, [id], manager.clientReferenceMetaMap));
-          if (clientReferenceOfModule(manager.clientReferenceMetaMap, id)) clientFiles.add(file);
         }
         return;
       }
@@ -1049,7 +1040,6 @@ function createBuiltFiles(
       assetPath: getProject().assetPath,
       routes: {},
       hostFiles: {},
-      clientFiles: [...clientFiles].sort(),
       chunks: [],
       modules: {},
     };

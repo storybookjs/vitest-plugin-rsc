@@ -15,8 +15,7 @@ import { vitestPluginRscSourceConditions } from "../../vitest.conditions.ts";
 // their query: `?v=1a2b3c4d`. Its `ui/` is no file of the host: a Client
 // Component of a package that the app's layers have, with a stylesheet, like
 // one of a UI library. So `host.files` has only the `*.js` at the top of the
-// package: the CSS that a file of the host imports in the browser layer is
-// Vite's `<style>`, never a link, see styles.ts.
+// package: `ui/` is the app's, as a package of a UI library is.
 //
 // `vite build` builds the pages of the host into a static site, with the
 // files of the host that have `"use client"` and the page's own `host-report`:

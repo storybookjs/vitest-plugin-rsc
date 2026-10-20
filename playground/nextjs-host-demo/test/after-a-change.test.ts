@@ -207,8 +207,9 @@ module.exports.postcss = true;
 
 // A copy whose app's stylesheet depends on `host/tone.tsx`, with a host
 // that imports that stylesheet itself, as a framework's preview does, and
-// takes a change of its own modules in place. It keeps the `renderServer`
-// of each evaluation of its module.
+// takes a change of its own modules in place. The import is linked, as the
+// app's is: a change of the stylesheet moves links, and evaluates nothing of
+// the host. It keeps the `renderServer` of each evaluation of its module.
 function serveToneCopy() {
   return serveCopy((copy) => {
     // Next's shape of a config of PostCSS: plugins by the name it requires.
@@ -228,25 +229,22 @@ function serveToneCopy() {
   });
 }
 
-// The CSS of the stylesheet that the host imports itself: Vite's `<style>`.
-const hostStylesheet = (page: Page) =>
-  page.evaluate(
-    () => document.querySelector('style[data-vite-dev-id$="/app/globals.css"]')?.textContent,
-  );
+// Vite's `<style>` of the stylesheet, which the host's import of it does not add.
+const viteStyle = (page: Page) =>
+  page.evaluate(() => document.querySelector('style[data-vite-dev-id$="/app/globals.css"]'));
 
 test("a change of a file that a stylesheet of the app depends on updates the stylesheet in place", async ({
   page,
 }) => {
   const { copy, url } = await serveToneCopy();
   await openPage(page, url);
-  expect(await hostStylesheet(page)).toContain("h1 { color: rgb(255, 0, 0)");
+  expect(await viteStyle(page)).toBeNull();
+  expect(await styleOf(page, "h1", "color")).toBe("rgb(255, 0, 0)");
   const [before] = await linksOf(page, "/app/globals.css");
   fs.writeFileSync(path.join(copy, "host/tone.tsx"), 'export const tone = "rgb(0, 128, 0)";\n');
-  await expect.poll(() => hostStylesheet(page)).toContain("h1 { color: rgb(0, 128, 0)");
-  // The page's link of it moved to the version of now too.
-  await expect
-    .poll(async () => (await linksOf(page, "/app/globals.css")).includes(before!))
-    .toBe(false);
+  // The page's link of it moved to the version of now.
+  await expect.poll(() => styleOf(page, "h1", "color")).toBe("rgb(0, 128, 0)");
+  await expect.poll(() => linksOf(page, "/app/globals.css")).not.toContain(before);
   expect(await page.evaluate(() => "__beforeTheChange" in window)).toBe(true);
   // The host evaluates its module again after a change of it, with the
   // plugin's runtime that it had: the change of the stylesheet, which a

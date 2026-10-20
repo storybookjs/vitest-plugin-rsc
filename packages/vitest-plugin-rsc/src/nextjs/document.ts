@@ -8,10 +8,10 @@ import { graphStylesheetAttribute } from "./styles-shared.ts";
 // `<title>` would hide the page's, and text in `<body>` is not what React
 // expects to hydrate. So does the CSS of the host's modules, which is no CSS
 // of the app: the `<link>` of a chunk in a build, the stylesheets of the
-// files of the host with `"use client"` (client-graph.ts), and Vite's
-// `<style>` of a module with a dev server. That one stays where it is,
-// switched off with a media that matches nothing, as Vite's client swaps and
-// removes it in place. A page has the CSS of its route, as with `next start`.
+// files of the host (client-graph.ts), and Vite's `<style>` of a module with
+// a dev server. That one stays where it is, switched off with a media that
+// matches nothing, as Vite's client swaps and removes it in place. A page
+// has the CSS of its route, as with `next start`.
 //
 // A browser shows none of a page before the stylesheets in its `<head>` have
 // loaded, and the page that was there until then. So the `<head>` of the page
@@ -70,16 +70,17 @@ function isPreload(node: Node): boolean {
 
 // Vite puts the CSS a module imports in a `<style>`, once, and marks it with
 // the module's id. That is not the CSS of the app, which a page links
-// (styles.ts). It is what a module of the host imports, like a test file, and
-// it has to outlive the page it came during: the module will not load again.
+// (styles.ts). It is what the host's runtime imports, like a package of the
+// host, and it has to outlive the page it came during: the module will not
+// load again.
 function isViteStyle(node: Node): node is HTMLStyleElement {
   return node instanceof HTMLStyleElement && node.hasAttribute("data-vite-dev-id");
 }
 
-// The stylesheets that the tab's graph linked for a file of the host with
-// `"use client"` (client-graph.ts) are the host's: they step aside for a page
-// with the rest of the host's `<head>`, and one that the host linked during
-// the page outlives it, as Vite's `<style>` does. One that the graph unlinked
+// The stylesheets that `linkStylesheetsOf()` linked for a file of the host
+// (client-graph.ts) are the host's: they step aside for a page with the rest
+// of the host's `<head>`, and one that the host linked during the page
+// outlives it, as Vite's `<style>` does. One that the graph unlinked
 // meanwhile has the mark no longer, and does not come back.
 function isGraphStylesheet(node: Node): boolean {
   return node instanceof HTMLLinkElement && node.hasAttribute(graphStylesheetAttribute);

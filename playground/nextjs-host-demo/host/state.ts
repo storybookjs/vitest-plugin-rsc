@@ -26,6 +26,11 @@ export type HostWindow = {
   /** For `?view=after-page`: whether the stylesheet of the badge was linked, at each step. */
   __hostBadgeLinked?: Record<string, boolean>;
   /**
+   * For `?view=own-css`: whether the CSS of host/framed.tsx applied, at each
+   * step.
+   */
+  __hostFramedApplied?: Record<string, boolean>;
+  /**
    * For `?view=in-place`: whether the host's own read of in-place-note.tsx
    * has the object that in-place-badge.tsx imports of it.
    */
