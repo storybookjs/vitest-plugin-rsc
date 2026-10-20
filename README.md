@@ -869,79 +869,42 @@ afterEach(() => {
 
 ### Example: Drizzle + PGlite
 
-PGlite runs Postgres in-process, so it works inside the browser test runtime, and every test can have its own database. This is how `playground/nextjs-notes-demo` does it.
+PGlite runs Postgres in-process, so it works inside the browser test runtime. This is how `playground/nextjs-notes-demo` does it: one PGlite in memory for the document, which every test empties first.
 
-Two files sit next to each other:
+Three files take part:
 
 - `lib/db.ts` — the database adapter your app code imports.
-- `lib/__mocks__/db.ts` — the test stand-in that `vi.mock("#lib/db.ts")` swaps in. Exposes `db` plus a `resetDb` setter so the setup file can point it at a fresh PGlite clone per test.
+- `lib/__mocks__/db.ts` — the test stand-in that `vi.mock("#lib/db.ts")` swaps in. It makes the PGlite database as the module loads, with the tables of the schema, and exports `db`, Drizzle on that database, and `resetDb()`, which empties every table.
+- `test/schema-sql.ts` — the SQL that makes the tables of the Drizzle schema in an empty database. Drizzle Kit runs in Node, so the Vitest config imports it and defines it for the mock as `__SCHEMA_SQL__`.
 
 ```ts
-// lib/__mocks__/db.ts
-import type { DB } from "#lib/db.types.ts";
-
-let db: DB;
-
-function resetDb(value: DB) {
-  db = value;
-}
-
-export { db, resetDb };
-```
-
-Global setup generates SQL from the current Drizzle schema, in Node:
-
-```ts
-// vitest.global-setup.ts
-import type { TestProject } from "vitest/node";
+// test/schema-sql.ts
 import { generateDrizzleJson, generateMigration } from "drizzle-kit/api";
-import * as schema from "./db/schema.ts";
+import * as schema from "../db/schema.ts";
 
-export async function setup(project: TestProject) {
-  const empty = generateDrizzleJson({});
-  const current = generateDrizzleJson(schema);
-  const statements = await generateMigration(empty, current);
-  project.provide("testSchemaSQL", statements.join("\n"));
-}
+const statements = await generateMigration(generateDrizzleJson({}), generateDrizzleJson(schema));
 
-declare module "vitest" {
-  export interface ProvidedContext {
-    testSchemaSQL: string;
-  }
-}
+export const schemaSQL = statements.join("\n");
 ```
 
-The setup file creates one migrated database, and clones it for every test:
+```ts
+// vitest.config.ts, in the project
+define: { __SCHEMA_SQL__: JSON.stringify(schemaSQL) },
+```
+
+`resetDb()` empties the tables with `DELETE`, under `SET session_replication_role = replica`, so that the foreign keys do not fix the order of the tables. The setup file mocks the module and empties the database before each test:
 
 ```ts
 // vitest.setup.ts
-import { PGlite } from "@electric-sql/pglite";
-import { drizzle } from "drizzle-orm/pglite";
-import { afterAll, beforeAll, beforeEach, inject, vi } from "vitest";
-import * as schema from "#db/schema.ts";
+import { beforeEach, vi } from "vitest";
 import * as dbModule from "#lib/db.ts";
 
 vi.mock("#lib/db.ts");
 
 const { resetDb } = dbModule as typeof import("#lib/__mocks__/db.ts");
 
-let base: PGlite;
-
-beforeAll(async () => {
-  base = await PGlite.create("memory://");
-  await base.exec(inject("testSchemaSQL"));
-});
-
 beforeEach(async () => {
-  const clone = await base.clone();
-  if (!(clone instanceof PGlite)) {
-    throw new TypeError("Expected PGlite.clone() to return a PGlite instance");
-  }
-  resetDb(drizzle(clone, { schema }));
-});
-
-afterAll(async () => {
-  await base.close();
+  await resetDb();
 });
 ```
 
@@ -1130,7 +1093,7 @@ For the full walkthrough, see [docs/next-routes.md](docs/next-routes.md). [docs/
 ## Playgrounds
 
 - `playground/nextjs-e2e-demo` — a small Next.js app with a test for every feature of the Next.js support. Most samples above come from its tests. Its `build-test/` builds the app with `vite build` and opens the build in a browser: see [A Static Build](#a-static-build).
-- `playground/nextjs-notes-demo` — a fuller Next.js notes app with Better Auth, Drizzle, PGlite test databases, and shadcn/ui. Its tests open whole routes with the database and the session mocked in the test runtime. This is the repository's acceptance app.
+- `playground/nextjs-notes-demo` — a fuller Next.js notes app with Better Auth, Drizzle, PGlite test databases, and shadcn/ui. Its tests open whole routes with the database mocked in the test runtime, and the rest of the app real: a test signs in with a Better Auth session on that database. This is the repository's acceptance app.
 - `playground/rsc-vitest-demo` — a minimal non-Next RSC app. Use this as the smallest end-to-end example of `vitest-plugin-rsc` on its own. Its `build-test/` builds the page of `host/main.tsx` with `vite build` and opens the build in a browser.
 - `playground/nextjs-host-demo` — the Next.js plugin in a Vite dev server without Vitest, as another host runs it. Its tests start that server and drive it with Playwright.
 
@@ -1139,7 +1102,7 @@ Vitest suites are wired through the root workspace, while each package or playgr
 ```bash
 pnpm test
 pnpm test --project nextjs-e2e-demo
-pnpm test --project nextjs-notes-demo-browser --project nextjs-notes-demo-node
+pnpm test --project nextjs-notes-demo-browser
 ```
 
 `VITEST_PLUGIN_RSC_BUILD=production` runs the two Next.js playgrounds as `next start` would, as CI does too.
