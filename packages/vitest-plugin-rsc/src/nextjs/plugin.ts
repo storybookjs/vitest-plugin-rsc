@@ -5,7 +5,6 @@ import { getPluginApi } from "@vitejs/plugin-rsc/plugin";
 import { hasDirective, transformDirectiveProxyExport } from "@vitejs/plugin-rsc/transforms";
 import {
   createFilter,
-  isCSSRequest,
   normalizePath,
   parseAst,
   parseAstAsync,
@@ -82,14 +81,15 @@ const isRouteModule = (id: string) =>
 
 // Whether a module of the rsc layer is one that a route or the middleware
 // imports, also through other modules: code of the app that the plugin's
-// runtime loads. Not through a stylesheet that Vite swaps in place, as code
-// reaches one: a stylesheet imports no code, so that edge is a dependency of
-// its CSS, as Tailwind's PostCSS plugin makes every file it scans one. The
-// change is the stylesheet's, and what a page renders of the code is what a
-// route imports.
+// runtime loads. Not through a stylesheet that Vite swaps in place, as a
+// `<link>` or as its `<style>`: the change is the stylesheet's, also one of
+// a file it depends on, as Tailwind's PostCSS plugin makes every file it
+// scans one, or of a stylesheet it `@import`s. A stylesheet imports no code,
+// and what a page renders of the code is what a route imports.
 function importedByRoute(module: EnvironmentModuleNode): boolean {
   const seen = new Set<EnvironmentModuleNode>([module]);
   for (const node of seen) {
+    if (isSwappedStylesheet(node)) continue;
     for (const importer of node.importers) {
       const id = importer.id?.startsWith("\0") ? importer.id.slice(1) : undefined;
       if (
@@ -97,7 +97,6 @@ function importedByRoute(module: EnvironmentModuleNode): boolean {
         (isRouteModule(id) || id === middlewareId || id === middlewareEntryId)
       )
         return true;
-      if (!isCSSRequest(node.url) && isSwappedStylesheet(importer)) continue;
       seen.add(importer);
     }
   }
@@ -1051,8 +1050,8 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
       // place, like a framework that renders its own modules again, would
       // evaluate a second runtime next to the first, with another page
       // registry and other globals. A page load evaluates them all again,
-      // once. A file that a stylesheet only depends on is the stylesheet's
-      // change, which Vite takes in place: see `importedByRoute()` and
+      // once. A change of a stylesheet, or of a file that it only depends on,
+      // is the stylesheet's, which Vite takes in place: see `importedByRoute()` and
       // `hmrBoundary()`. Only the rsc layer's graph is walked: a module that only a
       // Client Component imports is not in it. A file of the host with
       // `"use client"` that imports it changes with it (client-files.ts), and

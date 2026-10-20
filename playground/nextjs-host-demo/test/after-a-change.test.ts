@@ -183,8 +183,7 @@ test('a change of what a file with "use client" imports renders it again in plac
 // What Tailwind's PostCSS plugin does with a file it scans for class names:
 // the file is a dependency of the stylesheet, which has the CSS of what it
 // finds there. In Vite's module graph the stylesheet imports the file, and
-// the root layout of the app imports the stylesheet. `tone.css`, which the
-// stylesheet imports with `@import`, is part of its CSS.
+// the root layout of the app imports the stylesheet.
 const tonePlugin = `const fs = require("node:fs");
 const path = require("node:path");
 
@@ -214,9 +213,6 @@ function serveToneCopy() {
     );
     fs.writeFileSync(path.join(copy, "postcss-tone.cjs"), tonePlugin);
     fs.writeFileSync(path.join(copy, "host/tone.tsx"), 'export const tone = "rgb(255, 0, 0)";\n');
-    fs.writeFileSync(path.join(copy, "app/tone.css"), "h2 { color: rgb(255, 0, 0); }\n");
-    const globals = path.join(copy, "app/globals.css");
-    fs.writeFileSync(globals, `@import "./tone.css";\n${fs.readFileSync(globals, "utf8")}`);
     const main = path.join(copy, "host/main.tsx");
     fs.writeFileSync(
       main,
@@ -260,16 +256,46 @@ test("a change of a file that a stylesheet of the app depends on updates the sty
   expect(await page.evaluate(() => "__beforeTheChange" in window)).toBe(true);
 });
 
-// A stylesheet that the app's stylesheet imports is a part of its CSS, which
-// a route links: a change of it loads the host's document again, as a change
-// of the app's stylesheet does.
-test("a change of a stylesheet that a stylesheet of the app imports loads the host's document again", async ({
+// A copy whose app's stylesheet imports `tone.css` with `@import`, a part of
+// its CSS. The page links the stylesheet, and the host does not import it:
+// the `<link>` is all the page has of its CSS.
+function serveLinkedCopy() {
+  return serveCopy((copy) => {
+    fs.writeFileSync(path.join(copy, "app/tone.css"), "h2 { color: rgb(255, 0, 0); }\n");
+    const globals = path.join(copy, "app/globals.css");
+    fs.writeFileSync(globals, `@import "./tone.css";\n${fs.readFileSync(globals, "utf8")}`);
+  });
+}
+
+// A property of the style of the first element that `selector` matches.
+const styleOf = (page: Page, selector: string, property: string) =>
+  page.evaluate(
+    ([selector, property]) =>
+      getComputedStyle(document.querySelector(selector)!).getPropertyValue(property),
+    [selector, property],
+  );
+
+// Vite's client swaps the `<link>` of a stylesheet that changed, as it does
+// for one in the HTML of a page: the page stays, with its state.
+test("a change of a stylesheet of the app updates the page's link in place", async ({ page }) => {
+  const { copy, url } = await serveLinkedCopy();
+  await openPage(page, url);
+  expect(await styleOf(page, "body", "margin-top")).toBe("32px");
+  const globals = path.join(copy, "app/globals.css");
+  fs.writeFileSync(globals, fs.readFileSync(globals, "utf8").replace("2rem", "3rem"));
+  await expect.poll(() => styleOf(page, "body", "margin-top"), { timeout: 30_000 }).toBe("48px");
+  expect(await page.evaluate(() => "__beforeTheChange" in window)).toBe(true);
+});
+
+test("a change of a stylesheet that a stylesheet of the app imports updates the link in place", async ({
   page,
 }) => {
-  const { copy, url } = await serveToneCopy();
+  const { copy, url } = await serveLinkedCopy();
   await openPage(page, url);
+  expect(await styleOf(page, "h2", "color")).toBe("rgb(255, 0, 0)");
   fs.writeFileSync(path.join(copy, "app/tone.css"), "h2 { color: rgb(0, 128, 0); }\n");
-  await loadedAgain(page, url);
+  await expect.poll(() => styleOf(page, "h2", "color"), { timeout: 30_000 }).toBe("rgb(0, 128, 0)");
+  expect(await page.evaluate(() => "__beforeTheChange" in window)).toBe(true);
 });
 
 // Two readers of one file with "use client": the host, with
