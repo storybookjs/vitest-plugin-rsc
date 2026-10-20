@@ -4,6 +4,7 @@ import { headers } from "next/headers";
 import { ThemeProvider } from "../app/components/theme.tsx";
 import { db } from "../app/db.ts";
 import "./preview.css";
+import "./preview.server.css";
 
 // The preview of the stories of files without "use client", which render on
 // the server: server code, as the app's routes are.

@@ -287,6 +287,18 @@ test("a change of the preview's stylesheet shows in place", async ({ page }) => 
   expect(await canvas.evaluate(() => "__marked" in window)).toBe(true);
 });
 
+// The server preview's own stylesheet, which the story's node links.
+test("a change of the server preview's stylesheet shows in place", async ({ page }) => {
+  const canvas = await openStory(page, site!.url, "greeting--server-action");
+  await mark(canvas);
+  change(".storybook/preview.server.css", "rgb(0, 128, 0)", "rgb(0, 0, 255)");
+  const decorator = canvas.locator("#storybook-root").getByTestId("server-decorator");
+  await expect
+    .poll(() => decorator.evaluate((element) => getComputedStyle(element).borderLeftColor))
+    .toBe("rgb(0, 0, 255)");
+  expect(await canvas.evaluate(() => "__marked" in window)).toBe(true);
+});
+
 // An MDX file is a file with "use client": Next's own error of server code
 // in the browser. Fails: the browser layer finds `server-only` to pre-bundle
 // only as the MDX file imports it, and the docs page keeps Vite's error of

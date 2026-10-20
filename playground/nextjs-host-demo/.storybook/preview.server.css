@@ -1,0 +1,5 @@
+/* CSS that preview.server.tsx alone imports: on a server story of a
+   component, and on no other entry. */
+[data-testid="server-decorator"] {
+  border-left: 4px solid rgb(0, 128, 0);
+}
