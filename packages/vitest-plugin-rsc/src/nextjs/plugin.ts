@@ -117,10 +117,10 @@ function importedByRoute(module: EnvironmentModuleNode): boolean {
 // loads the page again for a change of what a route imports, see `hotUpdate`.
 const hmrBoundary = (entries: string[]) => `import.meta.hot?.accept([${entries.join(", ")}]);\n`;
 const bridgePrefix = "\0vitest-plugin-rsc/next-bridge/";
-// What an alias of Next's to \`false\` gets, and an import a dependency's
-// \`browser\` field maps to \`false\`: a module of nothing, as webpack's is for
+// What an alias of Next's to `false` gets, and an import a dependency's
+// `browser` field maps to `false`: a module of nothing, as webpack's is for
 // Next, with an empty object as its default export. A named import of it is
-// \`undefined\`, by \`shimMissingExports\` of the pre-bundling.
+// `undefined`, by `shimMissingExports` of the pre-bundling.
 const emptyModuleId = "\0vitest-plugin-rsc/next-empty";
 const emptyModule = "const empty = {};\nexport default empty;\n";
 const serverReferenceInfo = "next/dist/esm/shared/lib/server-reference-info.js";
