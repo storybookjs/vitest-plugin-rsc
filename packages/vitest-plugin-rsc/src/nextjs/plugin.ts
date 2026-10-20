@@ -20,6 +20,7 @@ import { flightBridge, type FlightEntry } from "./flight.ts";
 import { nextBuilds, nextProductionPlugin, type NextBuild } from "./build.ts";
 import { clientFiles, clientReferenceOfModule } from "./client-files.ts";
 import { createCompilePlugin, createDependencyCompilePlugin } from "./compile.ts";
+import { importersOf } from "./importers.ts";
 import { createNodePlatform } from "./node-platform.ts";
 import {
   loadNextProject,
@@ -77,22 +78,27 @@ const isRouteModule = (id: string) =>
 
 // Whether a module of the rsc layer is one that a route or the middleware
 // imports, also through other modules: code of the app that the plugin's
-// runtime loads.
+// runtime loads. Not through a stylesheet that depends on it: see
+// importers.ts.
 function importedByRoute(module: EnvironmentModuleNode): boolean {
-  const seen = new Set<EnvironmentModuleNode>([module]);
-  for (const node of seen) {
-    for (const importer of node.importers) {
-      const id = importer.id?.startsWith("\0") ? importer.id.slice(1) : undefined;
-      if (
-        id !== undefined &&
-        (isRouteModule(id) || id === middlewareId || id === middlewareEntryId)
-      )
-        return true;
-      seen.add(importer);
-    }
+  for (const node of importersOf([module])) {
+    const id = node.id?.startsWith("\0") ? node.id.slice(1) : undefined;
+    if (id !== undefined && (isRouteModule(id) || id === middlewareId || id === middlewareEntryId))
+      return true;
   }
   return false;
 }
+// The line of a list of the routes, or of the middleware, that has it take a
+// change of its modules, of `entries`, for Vite's HMR. Vite invalidates a
+// module and what imports it, also through other modules, up to a module that
+// takes the change: so a change of the app stops at the list, and the runtime
+// that imports it keeps its modules. A host that imports the runtime again
+// after a change, as a framework does that renders its own modules again,
+// gets the one it has, also after a change of a stylesheet of a route, which
+// Vite swaps in place. A change of what a route imports loads the page again
+// instead: see `hotUpdate` below.
+const acceptsChanges = (entries: string[]) =>
+  entries.length > 0 ? `import.meta.hot?.accept([${entries.join(", ")}]);\n` : "";
 const bridgePrefix = "\0vitest-plugin-rsc/next-bridge/";
 const emptyModuleId = "\0vitest-plugin-rsc/next-empty";
 const serverReferenceInfo = "next/dist/esm/shared/lib/server-reference-info.js";
@@ -1068,8 +1074,9 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
         const hasMiddleware =
           project.middlewareFile !== undefined && this.environment.name === environmentOf.rsc;
         if (id === `\0${middlewareId}`) {
-          const load = `() => import(${JSON.stringify(middlewareEntryId)})`;
-          return `export default ${hasMiddleware ? load : "undefined"};\n`;
+          if (!hasMiddleware) return "export default undefined;\n";
+          const entry = JSON.stringify(middlewareEntryId);
+          return `export default () => import(${entry});\n${acceptsChanges([entry])}`;
         }
         if (id === `\0${middlewareEntryId}`) {
           const code = hasMiddleware && (await project.loadMiddlewareEntry());
@@ -1087,13 +1094,13 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
         if (listed) {
           const entries = routes.flatMap((route, index) =>
             route.kind === listed
-              ? [
-                  `  ${JSON.stringify(entryOf(route))}: ` +
-                    `() => import(${JSON.stringify(routeEntryPrefix + index)}),`,
-                ]
+              ? [[entryOf(route), JSON.stringify(routeEntryPrefix + index)]]
               : [],
           );
-          return `export default {\n${entries.join("\n")}\n};\n`;
+          const lines = entries.map(
+            ([name, entry]) => `  ${JSON.stringify(name)}: () => import(${entry}),`,
+          );
+          return `export default {\n${lines.join("\n")}\n};\n${acceptsChanges(entries.map(([, entry]) => entry!))}`;
         }
 
         const route = routes[Number(id.slice(routeEntryPrefix.length + 1))]!;

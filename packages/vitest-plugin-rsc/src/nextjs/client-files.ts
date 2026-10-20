@@ -10,6 +10,7 @@ import {
 } from "vite";
 import { builtHostModuleUrl, hostModulePrefix } from "../host-module.ts";
 import { clientFileKeyExport } from "./client-file-key.ts";
+import { importersOf } from "./importers.ts";
 import { builtHostFileKey } from "./styles.ts";
 
 // A file of the host is a test file or a setup file of Vitest. One with
@@ -283,17 +284,15 @@ export function clientFiles(options: ClientFilesOptions): Plugin[] {
 
 /**
  * The files of the host among `modules` and the modules that import them in
- * a module graph, also through other modules.
+ * a module graph, also through other modules: see importers.ts.
  */
 function hostFilesImporting(
   modules: Iterable<EnvironmentModuleNode>,
   isHostFile: (file: string) => boolean,
 ): Set<string> {
   const files = new Set<string>();
-  const seen = new Set(modules);
-  for (const node of seen) {
+  for (const node of importersOf(modules)) {
     if (node.file && isHostFile(node.file)) files.add(node.file);
-    for (const importer of node.importers) seen.add(importer);
   }
   return files;
 }

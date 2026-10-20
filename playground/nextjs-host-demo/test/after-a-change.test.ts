@@ -114,6 +114,8 @@ test("a change of another page of the host keeps the page that is open", async (
   page.on("websocket", (socket) =>
     socket.on("framereceived", ({ payload }) => frames.push(String(payload))),
   );
+  page.on("console", (m) => frames.push("CONSOLE " + m.text()));
+  page.on("request", (r) => r.url().includes("globals") && frames.push("REQ " + r.url()));
   await openPage(page, url);
   const callout = path.join(copy, "callout.html");
   fs.writeFileSync(callout, fs.readFileSync(callout, "utf8").replace("</body>", "<p></p></body>"));
@@ -155,5 +157,79 @@ test('a change of what a file with "use client" imports renders it again in plac
     .toMatchObject({ changed: true });
   expect(await page.evaluate(moduleReports)).toHaveLength(3);
   await page.getByRole("button", { name: "Taps: 0" }).waitFor();
+  expect(await page.evaluate(() => "__beforeTheChange" in window)).toBe(true);
+});
+
+// What Tailwind's PostCSS plugin does with a file it scans for class names,
+// like a story file: the file is a dependency of the stylesheet, which has
+// the CSS of what it finds there. In Vite's module graph the stylesheet
+// imports the file, and the root layout of the app imports the stylesheet.
+const tonePlugin = `const fs = require("node:fs");
+const path = require("node:path");
+
+module.exports = () => ({
+  postcssPlugin: "tone",
+  Once(root, { result }) {
+    if (!root.source.input.file.includes("/app/globals.css")) return;
+    const file = path.resolve("host/tone.tsx");
+    const [, tone] = /tone = "(.+)"/.exec(fs.readFileSync(file, "utf8"));
+    root.append(\`h1 { color: \${tone}; }\`);
+    result.messages.push({ type: "dependency", plugin: "tone", file });
+  },
+});
+module.exports.postcss = true;
+`;
+
+// The CSS of the stylesheet that the host imports itself, as a preview of
+// Storybook imports the app's: Vite's `<style>` of it.
+const hostStylesheet = (page: Page) =>
+  page.evaluate(
+    () => document.querySelector('style[data-vite-dev-id$="/app/globals.css"]')?.textContent,
+  );
+
+test("a change of a file that a stylesheet of the app depends on updates the stylesheet in place", async ({
+  page,
+}) => {
+  const { copy, url } = await serveCopy((copy) => {
+    // Next's shape of a config of PostCSS: plugins by the name it requires.
+    fs.writeFileSync(
+      path.join(copy, "postcss.config.mjs"),
+      'export default { plugins: { "./postcss-tone.cjs": {} } };\n',
+    );
+    fs.writeFileSync(path.join(copy, "postcss-tone.cjs"), tonePlugin);
+    fs.writeFileSync(path.join(copy, "host/tone.tsx"), 'export const tone = "rgb(255, 0, 0)";\n');
+    // A host that imports the app's stylesheet, and takes a change of its
+    // own modules in place, as a framework does.
+    const main = path.join(copy, "host/main.tsx");
+    fs.writeFileSync(
+      main,
+      `import "../app/globals.css";\n${fs.readFileSync(main, "utf8")}\nimport.meta.hot?.accept();\n`,
+    );
+  });
+  await openPage(page, url);
+  expect(await hostStylesheet(page)).toContain("color: rgb(255, 0, 0)");
+  const tone = path.join(copy, "host/tone.tsx");
+  fs.writeFileSync(tone, 'export const tone = "rgb(0, 128, 0)";\n');
+  await expect
+    .poll(() => hostStylesheet(page), { timeout: 30_000 })
+    .toContain("color: rgb(0, 128, 0)");
+  expect(await page.evaluate(() => "__beforeTheChange" in window)).toBe(true);
+  // The host imports its module again after a change of it, with the
+  // modules of the plugin that it had: the change of the stylesheet left
+  // them as they were, though a route imports the stylesheet.
+  const fetched = () =>
+    page.evaluate(() => performance.getEntriesByType("resource").map((entry) => entry.name));
+  const before = (await fetched()).length;
+  await page.evaluate(() => delete (window as HostWindow).__hostState);
+  fs.appendFileSync(path.join(copy, "host/main.tsx"), "\n// changed\n");
+  await page.waitForFunction(hostState, undefined, { timeout: 30_000 });
+  expect(await page.evaluate(hostState), await page.evaluate(hostError)).toBe("ready");
+  expect((await fetched()).slice(before)).toContainEqual(
+    expect.stringContaining("/host/main.tsx?t="),
+  );
+  const plugin = (await fetched())
+    .slice(before)
+    .filter((name) => name.includes("vitest-plugin-rsc"));
+  expect(plugin).toEqual([]);
   expect(await page.evaluate(() => "__beforeTheChange" in window)).toBe(true);
 });

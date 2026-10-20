@@ -346,8 +346,9 @@ test("tells a module of the host apart as a module runner spells it", () => {
 // a change of it in place, as a framework does that renders it again. The
 // page has `linked.css` in the rsc layer too, as a `<link>` and a `<style>`
 // that Vite swaps in place; `value.css` only in the browser layer, as the
-// `<style>` of a module there. The plugin of Vite RSC is a stand-in that makes the file a
-// reference module.
+// `<style>` of a module there, whose CSS depends on `scanned.tsx`, as
+// Tailwind's does on a file it scans. The plugin of Vite RSC is a stand-in
+// that makes the file a reference module.
 async function serveHostFile() {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "client-files-")));
   onTestFinished(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -359,6 +360,7 @@ async function serveHostFile() {
     "linked.css": "h1 { color: red }\n",
     "main.ts": 'import "./host.tsx";\nimport.meta.hot?.accept("./host.tsx", () => {});\n',
     "internal.ts": "export async function loadClientFile() {}\n",
+    "scanned.tsx": 'export const Scanned = () => <p className="red" />;\n',
   };
   for (const [name, code] of Object.entries(files)) fs.writeFileSync(path.join(root, name), code);
   const at = (name: string) => path.join(root, name);
@@ -384,6 +386,19 @@ async function serveHostFile() {
     logLevel: "silent",
     server: { middlewareMode: true, ws: false },
     environments: { client: {}, react_client: { consumer: "client" } },
+    css: {
+      postcss: {
+        plugins: [
+          {
+            postcssPlugin: "scan",
+            Once(root, { result }) {
+              if (!root.source?.input.file?.endsWith("value.css")) return;
+              result.messages.push({ type: "dependency", plugin: "scan", file: at("scanned.tsx") });
+            },
+          },
+        ],
+      },
+    },
     plugins: [
       own!,
       {
@@ -466,6 +481,17 @@ test("takes a change of a stylesheet that only the browser layer has to the host
 
   // Its `<style>` comes back as the file is evaluated again.
   expect(await change("value.css", "p { color: green }\n").modules).toEqual(["/host.tsx"]);
+});
+
+test("leaves a change of a file that a stylesheet of the file depends on to the stylesheet", async () => {
+  const { change } = await serveHostFile();
+
+  // Vite updates the stylesheet: the file imports no code of `scanned.tsx`.
+  const { modules } = change(
+    "scanned.tsx",
+    'export const Scanned = () => <p className="green" />;\n',
+  );
+  expect(await modules).toEqual([]);
 });
 
 test("leaves a stylesheet that Vite swaps in place in the rsc layer to Vite", async () => {
