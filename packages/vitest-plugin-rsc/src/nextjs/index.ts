@@ -5,12 +5,7 @@
 import "./globals.ts";
 import { createElement, type JSXElementConstructor, type ReactNode } from "react";
 import { resetAsyncLocalStorage } from "../async-local-storage.ts";
-import {
-  checkFetchedModules,
-  createEnvironmentRunner,
-  environmentModule,
-  fetchLayerNow,
-} from "../utils.ts";
+import { checkFetchedModules, createEnvironmentRunner, environmentModule } from "../utils.ts";
 import { callServerWithoutPage } from "./client-graph.ts";
 import { documentUrl, loadDocument, unloadDocument } from "./document.ts";
 import { recordListeners, recordMessageChannels } from "./leftovers.ts";
@@ -18,7 +13,7 @@ import { NodeOnPage } from "./node-on-page.ts";
 import { PageStore } from "./page-store.ts";
 import { openedAt, registry, type Opened } from "./registry.ts";
 import { takesRequest } from "./server-in-front.ts";
-import { ssrLayer } from "./server-layers.ts";
+import { ssrLayer, ssrLayerNow } from "./server-layers.ts";
 
 export { loadClientModule } from "./client-graph.ts";
 
@@ -47,9 +42,8 @@ async function handledByServer(
   ...[request, options]: Parameters<SsrLayer["handleRequest"]>
 ): Promise<Response | undefined> {
   if (ssr) return ssr.handleRequest(request, options);
-  fetchLayerNow("next_ssr");
   const sent = generation;
-  const layer = await ssrLayer;
+  const layer = await ssrLayerNow();
   if (sent !== generation) {
     throw new DOMException("The page was left before the server responded.", "AbortError");
   }

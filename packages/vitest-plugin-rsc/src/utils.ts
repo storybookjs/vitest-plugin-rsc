@@ -84,7 +84,7 @@ export async function askDevServer<T>(event: string, question: object): Promise<
 
 // The modules of a static build, see built-layers.ts. The tab asks for them
 // before a runner does, in the order of the build: the browser layer, which
-// every page runs, first, and the others once it has ended.
+// every page runs, first, and the others once the tab has read it.
 const built = createBuiltLayers(
   nativeFetch,
   Object.values(builtLayers ?? {}).filter((layer) => layer !== undefined),

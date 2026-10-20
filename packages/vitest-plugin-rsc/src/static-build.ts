@@ -246,6 +246,9 @@ export function staticBuild(options: StaticBuildOptions): Plugin {
   ];
   // Set once the config is resolved.
   let manager!: Manager;
+  // Where the build is served from, as the config says: `./` or empty for
+  // anywhere. Set once the config is resolved.
+  let base = "/";
   // What the builds of the layers that run through a module runner made, by
   // environment: their modules by id, and their other files. A module is
   // there once it is rewritten for the runner, which the build of its layer
@@ -393,6 +396,7 @@ export function staticBuild(options: StaticBuildOptions): Plugin {
       const api = getPluginApi(resolved);
       if (!api) throw new Error("vitest-plugin-rsc: a static build needs Vite RSC's plugin.");
       manager = api.manager;
+      base = resolved.base;
       // The layers are read from their bundles, in `generateBundle`, and
       // written as one file each: see `buildApp()`. Vite writes nothing of
       // them. Set here, where no plugin of the host changes it anymore.
@@ -549,8 +553,10 @@ export function staticBuild(options: StaticBuildOptions): Plugin {
     // A page of the host's build whose scripts load the layers starts the
     // file of the first one from its HTML, before any script has loaded: a
     // preload that the tab's `fetch` of it takes (see built-layers.ts), by
-    // the way from the HTML to the directory of the build. Not the others':
-    // they wait for the first one. A dev server has no such file.
+    // the URL of the base, or for a build that is served from anywhere by
+    // the way from the HTML to the directory of the build, as Vite names the
+    // scripts of the page. Not the others': they wait for the first one. A
+    // dev server has no such file.
     transformIndexHtml: {
       // Once Vite has resolved the URLs of the HTML, which this one is not.
       order: "post",
@@ -564,7 +570,9 @@ export function staticBuild(options: StaticBuildOptions): Plugin {
               as: "fetch",
               // The mode of a `fetch()`: without it the browser fetches twice.
               crossorigin: true,
-              href: toBuildDir(page.slice(1)) + modulesPath(browser),
+              href:
+                (base === "./" || base === "" ? toBuildDir(page.slice(1)) : base) +
+                modulesPath(browser),
             },
             injectTo: "head-prepend",
           },

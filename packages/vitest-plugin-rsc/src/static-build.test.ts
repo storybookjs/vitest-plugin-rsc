@@ -69,7 +69,8 @@ const hostModule = (specifier: string) => `/@id/__x00__vitest-plugin-rsc/host-mo
 // The host's build goes to `dist`, as the config has it: relative to the
 // root, which is not the directory of the process. With the layers of
 // Next.js, and the files of `emitted`, unless `rsc` says it is
-// `vitestPluginRSC()` on its own.
+// `vitestPluginRSC()` on its own. Served from anywhere, unless `base` says
+// where.
 function setup(
   bundles: Record<string, Bundle> = {},
   emitted: Record<string, string> = {},
@@ -77,7 +78,13 @@ function setup(
     onwarn,
     rsc = false,
     graphs = {},
-  }: { onwarn?: (...args: any[]) => void; rsc?: boolean; graphs?: Record<string, string[]> } = {},
+    base = "./",
+  }: {
+    onwarn?: (...args: any[]) => void;
+    rsc?: boolean;
+    graphs?: Record<string, string[]>;
+    base?: string;
+  } = {},
 ) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "static-build-"));
   onTestFinished(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -117,6 +124,7 @@ function setup(
   (plugin.configResolved as Hook)({
     command: "build",
     root,
+    base,
     plugins: [{ name: "rsc:minimal", api: { manager } }],
     environments: layers,
   });
@@ -533,7 +541,10 @@ test("a runner of a built layer asks again after a failure, and says what the bu
 // The files of the layers share the network of the tab. The first one is the
 // layer that every page runs: the others start once it has ended, or at once
 // when something needs one of them.
-async function orderedBuild({ first = "held" }: { first?: "held" | "missing" } = {}) {
+async function orderedBuild({
+  first = "held",
+  ssrFails = false,
+}: { first?: "held" | "missing"; ssrFails?: boolean } = {}) {
   const { layer, ssr, fetch } = await servedBuild("https://site.test/");
   const events: string[] = [];
   const firstFile = Promise.withResolvers<void>();
@@ -541,7 +552,9 @@ async function orderedBuild({ first = "held" }: { first?: "held" | "missing" } =
   const held = async (input: string | URL | Request) => {
     const name = String(input).split("/").at(-2)!;
     events.push(`fetches ${name}`);
-    if (name !== layer.modules.split("/").at(-2)) return fetch(input);
+    if (name !== layer.modules.split("/").at(-2)) {
+      return ssrFails ? new Response(null, { status: 500 }) : fetch(input);
+    }
     await firstFile.promise;
     return first === "held" ? fetch(input) : new Response(null, { status: 404 });
   };
@@ -564,7 +577,7 @@ async function orderedBuild({ first = "held" }: { first?: "held" | "missing" } =
     events.push("the first ends");
     firstFile.resolve();
   };
-  return { built, ssr, server, events, endFirst };
+  return { built, layer, ssr, server, events, endFirst };
 }
 
 test("a tab fetches the file of the layer every page runs first, and the others once it has ended", async () => {
@@ -580,6 +593,27 @@ test("a tab fetches the file of a layer at once when something needs it", async 
   built.fetchNow(ssr);
   expect((await server).layer).toBe("ssr");
   expect(events).toEqual(["fetches react_client", "fetches next_ssr"]);
+});
+
+// The page imports the layer once: what fails is the error of the requests
+// that need it. Only a runner that asks for it fetches its file again.
+test("a tab fetches the file of a layer that failed again only for a runner", async () => {
+  const { built, layer, ssr, server, events, endFirst } = await orderedBuild({ ssrFails: true });
+  built.fetchNow(ssr);
+  await expect(server).rejects.toThrow("next_ssr/modules.json responded with 500");
+  built.fetchNow(ssr);
+  endFirst();
+  // Once the tab has read the first one, which starts no other one now.
+  await pageRunner(built, layer).import(entry);
+  await expect(
+    pageRunner(built, ssr).import("/vitest-plugin-rsc/next_ssr/entry.js"),
+  ).rejects.toThrow("responded with 500");
+  expect(events).toEqual([
+    "fetches react_client",
+    "fetches next_ssr",
+    "the first ends",
+    "fetches next_ssr",
+  ]);
 });
 
 test("a tab fetches the other layers also when the first one fails", async () => {
@@ -641,62 +675,68 @@ test("tells the page where the layers are from the directory of the build", () =
 });
 
 // A page of the host whose scripts load the layers, by a chain of imports,
-// starts the file of the browser layer from its HTML, by the way from where
-// the page is: also from a directory of its own. No other layer's, which
-// waits for that one, and nothing for a page that loads no layer.
-test("starts the browser layer from the HTML of a page that loads the layers", () => {
-  const { plugin } = setup();
-  const layers = "\0virtual:vitest-plugin-rsc/layers/built";
-  const bundle = {
-    "assets/page.js": {
-      type: "chunk",
-      moduleIds: ["/host/page.ts"],
-      imports: ["assets/a.js"],
-      dynamicImports: [],
-    },
-    "assets/a.js": {
-      type: "chunk",
-      moduleIds: ["/host/a.ts"],
-      imports: [],
-      dynamicImports: ["assets/b.js"],
-    },
-    "assets/b.js": {
-      type: "chunk",
-      moduleIds: [layers, "/src/utils.ts"],
-      imports: [],
-      dynamicImports: [],
-    },
-    "assets/other.js": {
-      type: "chunk",
-      moduleIds: ["/host/other.ts"],
-      imports: [],
-      dynamicImports: [],
-    },
-  };
-  const transform = (page: string, chunk: string, inDev = false) =>
-    call(plugin.transformIndexHtml, "client", "<html></html>", {
-      path: page,
-      filename: `/root${page}`,
-      ...(inDev ? { server: {} } : { bundle, chunk: bundle[chunk as keyof typeof bundle] }),
-    });
-  const preload = (href: string) => [
-    {
-      tag: "link",
-      attrs: { rel: "preload", as: "fetch", crossorigin: true, href },
-      injectTo: "head-prepend",
-    },
-  ];
+// starts the file of the browser layer from its HTML, at the URL that Vite
+// names the scripts of the page by: for a build served from anywhere the way
+// from where the page is, also from a directory of its own, and otherwise
+// from the base. No other layer's, which waits for that one, and nothing
+// for a page that loads no layer.
+test.for(["./", "/sub/"])(
+  "starts the browser layer from the HTML of a page that loads the layers, with base %s",
+  (base) => {
+    const { plugin } = setup({}, {}, { base });
+    const layers = "\0virtual:vitest-plugin-rsc/layers/built";
+    const bundle = {
+      "assets/page.js": {
+        type: "chunk",
+        moduleIds: ["/host/page.ts"],
+        imports: ["assets/a.js"],
+        dynamicImports: [],
+      },
+      "assets/a.js": {
+        type: "chunk",
+        moduleIds: ["/host/a.ts"],
+        imports: [],
+        dynamicImports: ["assets/b.js"],
+      },
+      "assets/b.js": {
+        type: "chunk",
+        moduleIds: [layers, "/src/utils.ts"],
+        imports: [],
+        dynamicImports: [],
+      },
+      "assets/other.js": {
+        type: "chunk",
+        moduleIds: ["/host/other.ts"],
+        imports: [],
+        dynamicImports: [],
+      },
+    };
+    const transform = (page: string, chunk: string, inDev = false) =>
+      call(plugin.transformIndexHtml, "client", "<html></html>", {
+        path: page,
+        filename: `/root${page}`,
+        ...(inDev ? { server: {} } : { bundle, chunk: bundle[chunk as keyof typeof bundle] }),
+      });
+    const preload = (href: string) => [
+      {
+        tag: "link",
+        attrs: { rel: "preload", as: "fetch", crossorigin: true, href },
+        injectTo: "head-prepend",
+      },
+    ];
 
-  expect(transform("/index.html", "assets/page.js")).toEqual(
-    preload("./vitest-plugin-rsc/react_client/modules.json"),
-  );
-  expect(transform("/stories/nested/page.html", "assets/page.js")).toEqual(
-    preload("../../vitest-plugin-rsc/react_client/modules.json"),
-  );
-  expect(transform("/other.html", "assets/other.js")).toBeUndefined();
-  // A dev server has no file of a layer.
-  expect(transform("/index.html", "assets/page.js", true)).toBeUndefined();
-});
+    const file = "vitest-plugin-rsc/react_client/modules.json";
+    expect(transform("/index.html", "assets/page.js")).toEqual(
+      preload(base === "./" ? `./${file}` : `${base}${file}`),
+    );
+    expect(transform("/stories/nested/page.html", "assets/page.js")).toEqual(
+      preload(base === "./" ? `../../${file}` : `${base}${file}`),
+    );
+    expect(transform("/other.html", "assets/other.js")).toBeUndefined();
+    // A dev server has no file of a layer.
+    expect(transform("/index.html", "assets/page.js", true)).toBeUndefined();
+  },
+);
 
 // The modules of the page that the browser layer imports, like a package of
 // the host, are externals of its chunks, which the module graph of its scan

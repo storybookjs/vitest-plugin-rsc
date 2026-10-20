@@ -12,7 +12,8 @@ import type { ModuleRunnerTransport } from "vite/module-runner";
 // The files share the network, so the tab fetches them one after the other,
 // in the order of the build: the first is the layer that every page runs,
 // which a page with no route of the app waits for alone. The others start
-// once that one has ended, or at once when something needs one of them.
+// once the tab has read that one, or at once when something needs one of
+// them.
 
 /**
  * For the layers but the rsc layer: the modules a Flight payload can refer
@@ -57,7 +58,7 @@ export function builtUrl(layer: BuiltLayer, file: string): string {
 /**
  * What the transport of a runner of a built layer answers, from the files of
  * the layers that `fetch` fetches, in the order of `layers`: the first at
- * once, the others once it has ended. Every runner of a tab asks the same
+ * once, the others once the tab has read it. Every runner of a tab asks the same
  * one, which answers with the same object for a module every time: the code
  * is the same for every page, so `pageLoadEvaluator` in utils.ts compiles it
  * once.
@@ -67,7 +68,7 @@ export function createBuiltLayers(fetch: typeof globalThis.fetch, layers: BuiltL
   const fetched = new Map<string, Promise<Map<string, BuiltModule>>>();
   // The layers that wait for the first one, by the URL of their file: once
   // it resolves, the file may be fetched.
-  const turns = new Map<string, PromiseWithResolvers<void>>();
+  const turns = new Map<string, { started: Promise<void>; start: () => void }>();
 
   /** The modules of a layer, which the tab fetches once, now. */
   function modulesOf(layer: BuiltLayer): Promise<Map<string, BuiltModule>> {
@@ -75,7 +76,9 @@ export function createBuiltLayers(fetch: typeof globalThis.fetch, layers: BuiltL
     let modules = fetched.get(url);
     if (modules) return modules;
     // Its name does not change with its content: ask the server whether the
-    // copy the browser has is still the one it serves.
+    // copy the browser has is still the one it serves. The page's preload of
+    // the first layer, which this takes, asks in the default mode of the
+    // cache: there the server's `no-cache` is what has the browser ask.
     modules = fetch(url, { cache: "no-cache" }).then(async (response) => {
       if (!response.ok) {
         throw new Error(`vitest-plugin-rsc: ${url} responded with ${response.status}`);
@@ -102,15 +105,27 @@ export function createBuiltLayers(fetch: typeof globalThis.fetch, layers: BuiltL
     return modules;
   }
 
-  /** Has the tab fetch the modules of a layer now, where it may have waited for its turn. */
+  /**
+   * Has the tab fetch the modules of a layer now, where it waits for its
+   * turn. Once: after that a runner that asks fetches it, also again after
+   * a failure.
+   */
   function fetchNow(layer: BuiltLayer): void {
-    turns.get(builtUrl(layer, layer.modules))?.resolve();
+    const url = builtUrl(layer, layer.modules);
+    const turn = turns.get(url);
+    if (!turn) return;
+    turns.delete(url);
+    turn.start();
     // A runner that asks gets the error.
     modulesOf(layer).catch(() => {});
   }
 
   const [first, ...others] = layers;
-  for (const layer of others) turns.set(builtUrl(layer, layer.modules), Promise.withResolvers());
+  for (const layer of others) {
+    let start!: () => void;
+    const started = new Promise<void>((resolve) => (start = resolve));
+    turns.set(builtUrl(layer, layer.modules), { started, start });
+  }
   // Also when it failed: a runner of the first layer gets that error, and
   // one of another layer may still load.
   if (first) {
@@ -128,7 +143,7 @@ export function createBuiltLayers(fetch: typeof globalThis.fetch, layers: BuiltL
     }
     const id = data[0] as string;
     try {
-      await turns.get(builtUrl(layer, layer.modules))?.promise;
+      await turns.get(builtUrl(layer, layer.modules))?.started;
       const modules = await modulesOf(layer);
       // Also by a URL of it, which encodes what a path does not.
       const found = modules.get(id) ?? modules.get(safeDecodeURI(id));

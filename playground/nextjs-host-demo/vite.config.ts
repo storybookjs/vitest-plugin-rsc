@@ -20,10 +20,13 @@ import { vitestPluginRscSourceConditions } from "../../vitest.conditions.ts";
 //
 // `vite build` builds the pages of the host into a static site, with the
 // files of the host that have `"use client"` and the page's own `host-report`:
-// see build-test/static-build.test.ts. `nested/index.html` is the page of
-// index.html in a directory of its own.
+// see build-test/static-build.test.ts. Served from anywhere, `base: "./"`,
+// as Storybook builds: a file of the build names another one by the way
+// from itself. `nested/index.html` is the page of index.html in a directory
+// of its own.
 export default defineConfig({
   root: fileURLToPath(new URL("./", import.meta.url)),
+  base: "./",
   plugins: [
     vitestPluginRSC(),
     vitestPluginNext({

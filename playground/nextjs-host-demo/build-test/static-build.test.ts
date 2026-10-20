@@ -222,14 +222,30 @@ test.for(["index.html", "nested/index.html"])(
 // it back when it is left: not the host's preload, which shows nothing, and
 // which the browser would fetch again once it is back.
 test("keeps the preload of the host's HTML while a page is open", async ({ page, errors }) => {
+  // Whether the host's preload ever left the document, from when it is parsed.
+  await page.addInitScript(() => {
+    new MutationObserver((records) => {
+      for (const record of records) {
+        for (const node of record.removedNodes) {
+          if (node instanceof HTMLLinkElement && node.href.endsWith("/modules.json")) {
+            (window as { __preloadLeft?: boolean }).__preloadLeft = true;
+          }
+        }
+      }
+    }).observe(document, { childList: true, subtree: true });
+  });
   const requested: string[] = [];
   page.on("request", (request) => requested.push(new URL(request.url()).pathname));
   await open(page, errors, "pages", async () => {});
-  const browserLayer = "/vitest-plugin-rsc/react_client/modules.json";
   expect(
-    await page.evaluate(() => document.head.querySelectorAll("link[rel=preload][as=fetch]").length),
-  ).toBe(1);
-  expect(requested.filter((path) => path === browserLayer)).toHaveLength(1);
+    await page.evaluate(() => ({
+      left: (window as { __preloadLeft?: boolean }).__preloadLeft ?? false,
+      links: document.head.querySelectorAll("link[rel=preload][as=fetch]").length,
+    })),
+  ).toEqual({ left: false, links: 1 });
+  expect(
+    requested.filter((path) => path === "/vitest-plugin-rsc/react_client/modules.json"),
+  ).toHaveLength(1);
 });
 
 // The server in front of the app is the document's: it says which requests

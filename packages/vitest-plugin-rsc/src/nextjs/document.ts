@@ -56,12 +56,14 @@ function staysDuringPage(node: Node): boolean {
   );
 }
 
-// A link that only fetches a file for later shows nothing of the host, and
-// one that is put back fetches its file again.
+// A preload of the host shows nothing, and one that is put back fetches its
+// file again. Not one of a stylesheet, which a page may make a stylesheet
+// once it has loaded.
 function isPreload(node: Node): boolean {
   return (
     node instanceof HTMLLinkElement &&
-    (node.relList.contains("preload") || node.relList.contains("modulepreload"))
+    (node.relList.contains("modulepreload") ||
+      (node.relList.contains("preload") && node.as !== "style"))
   );
 }
 
