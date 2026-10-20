@@ -14,6 +14,7 @@ import { PageStore } from "./page-store.ts";
 import { openedAt, registry, type Opened } from "./registry.ts";
 import { takesRequest } from "./server-in-front.ts";
 import { ssrLayer, ssrLayerNow } from "./server-layers.ts";
+import { PageStorage, storageOf } from "./storage.ts";
 
 export { loadClientModule } from "./client-graph.ts";
 
@@ -91,6 +92,9 @@ function sameOriginRequest(
 // `cleanup()` makes a new one: a request that answers after its test does not
 // write to the next test's.
 let store = new PageStore();
+// The items of the page's `localStorage` and `sessionStorage`, until the test
+// ends: `cleanup()` makes a new one, as it makes a new store. See storage.ts.
+let storage = new PageStorage();
 
 // What a browser adds to a request for the app's origin, with the headers and
 // the cookies of the store. A request with `credentials: "omit"` has none of
@@ -118,60 +122,6 @@ function browserHeaders(
   }
   return headers;
 }
-
-// What was in the browser's storage before the app ran, and what another
-// document of the origin stores in it later, like Vitest's UI or the manager
-// document of another host: the host's to keep. The app runs in this
-// document, and a document gets no `storage` event for its own writes. What
-// the other document removes is no longer the host's.
-const storages = new Map(
-  [localStorage, sessionStorage].map((storage) => [storage, new Set(Object.keys(storage))]),
-);
-window.addEventListener("storage", ({ key, newValue, storageArea }) => {
-  const keys = storageArea && storages.get(storageArea);
-  if (!keys) return;
-  if (key === null) keys.clear();
-  else if (newValue === null) keys.delete(key);
-  else keys.add(key);
-});
-
-// The keys that the host says are its own, by call: see `keepStorageKeys()`.
-const hostKeys = new Set<readonly string[]>();
-const isHostKey = (key: string) =>
-  [...hostKeys].some((keys) =>
-    keys.some((name) => (name.endsWith("*") ? key.startsWith(name.slice(0, -1)) : key === name)),
-  );
-
-/**
- * Says that keys of the browser's storage are the host's, so `cleanup()`
- * keeps them, in `localStorage` and `sessionStorage`. For what the host
- * stores while the app runs: in this document, which gets no `storage` event
- * for its own writes, or in another document just before a cleanup, as a
- * `storage` event comes later than the write. A key that ends in `*` is every
- * key that starts with what is before it. What was there before the app ran,
- * and what another document stores that this one has heard of, is kept
- * without it. Returns a function that takes these keys back: from then on
- * they are the app's again, unless another call names them.
- */
-export function keepStorageKeys(keys: string[]): () => void {
-  const declared = [...keys];
-  hostKeys.add(declared);
-  return () => void hostKeys.delete(declared);
-}
-
-// Removes what the app put in the browser's storage: what is not the host's.
-function forgetStorage(): void {
-  for (const [storage, keys] of storages) {
-    for (const key of Object.keys(storage)) {
-      if (!keys.has(key) && !isHostKey(key)) storage.removeItem(key);
-    }
-  }
-}
-// Also when the document goes without `cleanup()`, like an iframe that is
-// taken out of its page: every other document of the origin heard of what
-// the app stored, and would keep it as the host's, also after a reload. So a
-// reload starts without it, as a test does.
-window.addEventListener("pagehide", forgetStorage);
 
 // A page of another origin is not the app's: a browser would leave the app for
 // it, and this document has the test to keep.
@@ -611,6 +561,22 @@ Object.defineProperty(document, "cookie", {
 // like Next's own.
 for (const name of ["cookieStore", "CookieStore", "CookieChangeEvent"]) {
   Reflect.deleteProperty(window, name);
+}
+// A script of the page stores in `localStorage` and `sessionStorage`, as in a
+// browser. Those are the page's own, as its cookies are: the browser's own
+// storage is the origin's, with what other documents store in it, like
+// Vitest's UI, the manager document of another host or another page of the
+// app next to this one. The app neither reads nor writes it. Each is one
+// object until the document goes, so code that took it as it loaded has the
+// items of the page that is open. The page hears the browser's `storage`
+// events, which are about the host's storage, never its own.
+for (const name of ["localStorage", "sessionStorage"] as const) {
+  const pageStorage = storageOf(() => storage[name]);
+  Object.defineProperty(window, name, {
+    configurable: true,
+    enumerable: true,
+    get: () => pageStorage,
+  });
 }
 // The server's `fetch`. A request to the app itself is one the server makes
 // while it handles another: Next renders the page a Server Action redirects
@@ -1229,8 +1195,8 @@ export async function cleanup({ url }: CleanupOptions = {}): Promise<void> {
   for (const container of containers) container.remove();
   containers.clear();
   store = new PageStore();
+  storage = new PageStorage();
   ssr?.resetCaches();
-  forgetStorage();
   if (url !== undefined) window.history.replaceState(window.history.state, "", url);
 }
 

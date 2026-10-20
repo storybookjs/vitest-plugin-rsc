@@ -68,39 +68,40 @@ test("leaving a page puts back the URL the host had as the page opened", async (
   });
 });
 
-test("puts back the storage of a document that goes, which another document heard of", async ({
-  page,
-  errors,
-}) => {
+test("keeps what a document of the host stores to that document", async ({ page, errors }) => {
   await open(page, errors, "node", async (page) => {
     // A second document of the host next to this one, as a page of docs has
-    // one for each story, which stores in the browser. This one hears of it,
-    // as of what any other document of the origin stores: the host's, for
-    // all it knows. Then the second document goes, without `cleanup()`.
+    // one for each story, whose page stores in the browser. Neither this one
+    // nor the browser's storage of the origin has it.
     const frame = await page.evaluate(async () => {
-      const heard = new Set<Storage | null>();
-      const hear = ({ key, storageArea }: StorageEvent) => {
-        if (key === "visitor") heard.add(storageArea);
-      };
-      window.addEventListener("storage", hear);
       const iframe = document.body.appendChild(document.createElement("iframe"));
       iframe.src = "?view=stored";
-      const other = () => iframe.contentWindow as HostWindow | null;
-      while (heard.size < 2 && other()?.__hostState !== "error") {
-        await new Promise((resolve) => setTimeout(resolve, 50));
-      }
-      window.removeEventListener("storage", hear);
-      const { __hostState, __hostError } = other() ?? {};
+      const other = () => iframe.contentWindow as (Window & HostWindow) | null;
+      while (!other()?.__hostState) await new Promise((resolve) => setTimeout(resolve, 50));
+      const { __hostState, __hostError } = other()!;
+      const stored = [other()!.localStorage, other()!.sessionStorage].map((storage) =>
+        storage.getItem("visitor"),
+      );
+      // A document of the origin without the plugin has the browser's storage.
+      const blank = document.body.appendChild(document.createElement("iframe"));
+      const browser = [blank.contentWindow!.localStorage, blank.contentWindow!.sessionStorage];
+      const inBrowser = browser.map((storage) => storage.getItem("visitor"));
       iframe.remove();
-      return { state: __hostState, error: String(__hostError) };
+      blank.remove();
+      return {
+        state: __hostState,
+        error: String(__hostError),
+        stored,
+        inBrowser,
+        here: [localStorage.getItem("visitor"), sessionStorage.getItem("visitor")],
+      };
     });
     expect(frame.state, frame.error).toBe("ready");
-
-    await expect
-      .poll(() =>
-        page.evaluate(() => [localStorage.getItem("visitor"), sessionStorage.getItem("visitor")]),
-      )
-      .toEqual([null, null]);
+    expect(frame).toMatchObject({
+      stored: ["Ada", "Ada"],
+      inBrowser: [null, null],
+      here: [null, null],
+    });
   });
 });
 
