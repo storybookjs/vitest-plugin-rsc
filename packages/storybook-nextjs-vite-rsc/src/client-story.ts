@@ -1,35 +1,31 @@
 import type { ReactRenderer } from "@storybook/react";
 import type { BeforeEach, ProjectAnnotations } from "storybook/internal/types";
-import { cleanup, linkStylesheetsOf } from "vitest-plugin-rsc/nextjs/testing-library";
+import { linkStylesheetsOf } from "vitest-plugin-rsc/nextjs/testing-library";
 import { hostFilesOf } from "./host-files.ts";
 
 // The annotations of the project's preview, its first addon: a client story
 // renders as `@storybook/react` renders it, with the stylesheets of its file
 // while Storybook shows it, as a server story has those of its page. The
 // plugin links them as the host uses the file, with `linkStylesheetsOf()`,
-// and `cleanup()` unlinks them. Not as Storybook loads the file, which it
-// also does for a story that it does not show, as the manager preloads it.
+// for as long as the story's signal says. Not as Storybook loads the file,
+// which it also does for a story that it does not show, as the manager
+// preloads it.
 
 /**
  * Before a client story: the stylesheets of its file, until Storybook leaves
- * the story. A docs page shows its client stories inline, each with its own,
- * and a story twice, the primary one, with one each.
+ * the story and aborts its signal, also while they load. A docs page shows
+ * its client stories inline, each a use of its own, so one that goes takes
+ * nothing that another one shows.
  */
 export const beforeEach: BeforeEach<ReactRenderer> = async ({ parameters, abortSignal }) => {
   const files = hostFilesOf(parameters.fileName as string);
   if (!files) return;
-  // Until they have loaded, or Storybook left the story: it loads the
-  // preview again when it leaves a story whose `beforeEach` goes on.
-  const linked = linkStylesheetsOf(files);
-  await Promise.race([linked, left(abortSignal)]);
-  if (abortSignal.aborted) linked.catch(() => {});
-  return () => cleanup();
+  try {
+    await linkStylesheetsOf(files, { signal: abortSignal });
+  } catch (error) {
+    // Storybook left the story.
+    if (!abortSignal.aborted) throw error;
+  }
 };
-
-const left = (signal: AbortSignal) =>
-  new Promise<void>((resolve) => {
-    if (signal.aborted) resolve();
-    else signal.addEventListener("abort", () => resolve(), { once: true });
-  });
 
 export const annotations: ProjectAnnotations<ReactRenderer> = { beforeEach };

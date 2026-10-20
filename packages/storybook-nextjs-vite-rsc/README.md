@@ -240,8 +240,7 @@ the app's cookies and storage, as before a test, and then runs the
 `beforeEach` of the server preview and of the story. What that sets is
 there for the render: a row of the app's database, a cookie of the app, set
 in `runInServerAction()` of `vitest-plugin-rsc/nextjs/testing-library`, or
-an item of `localStorage`. Leaving a client story does the same, as it takes
-the stylesheets of its file away.
+an item of `localStorage`.
 
 ```ts
 export const SignedIn = meta.story({
