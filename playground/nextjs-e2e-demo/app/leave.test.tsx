@@ -4,6 +4,7 @@ import { afterEach, beforeEach, expect, onTestFinished, test, vi, type MockInsta
 import { page } from "vitest/browser";
 import { Counter } from "./components/counter.tsx";
 import { FavoriteButton } from "./components/favorite-button.tsx";
+import { LateImport } from "./components/late-import.tsx";
 import { RefreshButton } from "./components/refresh-button.tsx";
 import { db } from "./lib/notes.ts";
 import { seenByProxy } from "./lib/proxy-log.ts";
@@ -199,6 +200,21 @@ test("sends nothing more for a page once it is left, also what its router sends 
   // The router of the page that was left would report the dropped request:
   // "Failed to fetch RSC payload".
   expect(consoleError).not.toHaveBeenCalled();
+});
+
+test("loads nothing more for a page once it is left, also a module that its code imports later", async () => {
+  onTestFinished(() => {
+    delete globalThis.lateImport;
+  });
+  await renderServer(<LateImport />);
+  await expect.poll(() => globalThis.lateImport).toBe("listening");
+  await cleanup();
+
+  window.dispatchEvent(new Event("late-import"));
+  await renderServer(<Counter />);
+
+  // As a browser drops it: the import neither loads, nor fails.
+  expect(globalThis.lateImport).toBe("listening");
 });
 
 test("stops a page load when its signal aborts: it rejects at once, as fetch does, and leaves the page", async () => {
