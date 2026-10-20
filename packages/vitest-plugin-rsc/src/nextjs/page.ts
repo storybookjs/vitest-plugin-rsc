@@ -9,7 +9,7 @@ import { loadDocument, unloadDocument } from "./document.ts";
 import { recordListeners, recordMessageChannels } from "./leftovers.ts";
 import type { NodeOnPage } from "./node-on-page.ts";
 import type { PageStore } from "./page-store.ts";
-import { registry, type Opened } from "./registry.ts";
+import { loadsNothing, registry, type Opened } from "./registry.ts";
 import { loadedSsrLayer } from "./server-layers.ts";
 
 // How long leaving a page waits for it to stop starting, at most: less than
@@ -267,7 +267,7 @@ async function openPage(
   // The browser's Flight client reads properties off `__webpack_require__`
   // when it loads, which is before the page can say how it loads a module,
   // and wraps some of them. One that the pages shared would keep every page.
-  const browserRequire = (id: string) => registry.loadBrowserModule(id);
+  const browserRequire = (id: string) => registry.loadBrowserModule?.(id) ?? loadsNothing();
   registry.browserRequire = browserRequire;
   // What the page's Flight client wrapped of it keeps the page. Once it is
   // left, it loads nothing more, as its closed runner.
@@ -313,9 +313,6 @@ async function openPage(
   superseded();
   return response;
 }
-
-// What a `__webpack_require__` of a page that was left loads.
-const loadsNothing = () => new Promise<never>(() => {});
 
 // One at a time: a page that is being left is left before the next one is.
 // Also with no page: what a page load leaves in the document, the server

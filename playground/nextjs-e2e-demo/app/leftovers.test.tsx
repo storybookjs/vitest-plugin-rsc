@@ -6,6 +6,8 @@ import { expect, onTestFinished, test, vi } from "vitest";
 // its page, and runs the work its page queued in the next one.
 
 test("closes the ports of the message channels that a page opened, once it is left", async () => {
+  // What lives as long as the tab loads with the first page: not this one.
+  await renderServer({ url: "/" });
   // Under the plugin's own recording, which a page load puts in front.
   const Native = globalThis.MessageChannel;
   const opened: MessageChannel[] = [];
@@ -19,6 +21,7 @@ test("closes the ports of the message channels that a page opened, once it is le
     globalThis.MessageChannel = Native;
   });
   const close = vi.spyOn(MessagePort.prototype, "close");
+  onTestFinished(() => close.mockRestore());
   const closed = () => close.mock.contexts as unknown[];
 
   const { unmount } = await renderServer({ url: "/" });

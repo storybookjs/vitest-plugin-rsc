@@ -142,7 +142,11 @@ export type NextRegistry = {
    * Client Component by its module id, in that layer. One for every page.
    */
   browserRequire(id: string): Promise<unknown>;
-  loadBrowserModule(id: string): Promise<unknown>;
+  /**
+   * Loads a Client Component by its module id, in the browser layer: the
+   * loader of the page that started last, until it is left.
+   */
+  loadBrowserModule?(id: string): Promise<unknown>;
   ssr: { AppPageRouteModule: new (options: unknown) => unknown };
   /** For Next's Node.js server: what stands in for the files of a build. */
   node: Record<string, AnyFunction>;
@@ -154,6 +158,12 @@ export const registry = (scope.__vitest_plugin_rsc_next__ ??= {
   appPages: {},
   serverActions: new Map(),
 }) as NextRegistry;
+
+/**
+ * What the browser layer loads with no page to load it in: nothing, ever, as
+ * the closed runner of a page that was left.
+ */
+export const loadsNothing = (): Promise<never> => new Promise(() => {});
 
 /**
  * What `renderServer()` opened, at a URL that belongs to it: one with its
