@@ -21,6 +21,9 @@ test("a client story links the stylesheets of its file for as long as its signal
 
   expect(await beforeEach(story("./stories/button.stories.tsx", shown.signal))).toBeUndefined();
   expect(uses).toEqual([{ files: ["web/stories/button.stories.tsx"], signal: shown.signal }]);
+  // New args, in the same render: the same use.
+  await beforeEach(story("./stories/button.stories.tsx", shown.signal));
+  expect(uses).toHaveLength(1);
 });
 
 test("a client story that Storybook leaves before its stylesheets load ends at once", async () => {

@@ -19,7 +19,9 @@ import { hostFilesOf } from "./host-files.ts";
  */
 export const beforeEach: BeforeEach<ReactRenderer> = async ({ parameters, abortSignal }) => {
   const files = hostFilesOf(parameters.fileName as string);
-  if (!files) return;
+  // Once for a render: new args run `beforeEach` again with its signal.
+  if (!files || uses.has(abortSignal)) return;
+  uses.add(abortSignal);
   try {
     await linkStylesheetsOf(files, { signal: abortSignal });
   } catch (error) {
@@ -27,5 +29,8 @@ export const beforeEach: BeforeEach<ReactRenderer> = async ({ parameters, abortS
     if (!abortSignal.aborted) throw error;
   }
 };
+
+// The signal of each render of a client story that links its stylesheets.
+const uses = new WeakSet<AbortSignal>();
 
 export const annotations: ProjectAnnotations<ReactRenderer> = { beforeEach };
