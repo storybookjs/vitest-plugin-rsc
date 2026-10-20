@@ -3,6 +3,7 @@ import { getTableName, is } from "drizzle-orm";
 import { PgTable } from "drizzle-orm/pg-core";
 import { drizzle } from "drizzle-orm/pglite";
 import * as schema from "#db/schema.ts";
+import dataDirUrl from "#lib/__mocks__/db.tgz?url";
 import type { db as appDb } from "../db.ts";
 
 // `#lib/db.ts` in the tests and the stories, which vitest.setup.ts and
@@ -10,13 +11,23 @@ import type { db as appDb } from "../db.ts";
 // one for the document, with the tables of db/schema.ts. Each test and each
 // story empties it first.
 
-// The SQL of the schema: see test/schema-sql.ts.
-declare const __SCHEMA_SQL__: string;
+// The tables, in the data dir of test/db-data-dir.ts, which PGlite loads:
+// without one, it runs initdb in a second PGlite, which it throws away. A
+// URL that Vite serves, and that a build ships. By the package's import,
+// not a relative path: Storybook serves this file as `lib/db.ts`. Made
+// absolute, as on a server: the `fetch` of the server has no page to
+// resolve a path against.
+const response = await fetch(new URL(dataDirUrl, import.meta.url));
+if (!response.ok) throw new Error(`The data dir of the database: ${response.status}`);
 
-// Made as the module loads, so that PGlite downloads and starts while the
-// rest of the app loads. A query waits until it has.
-const client = new PGlite("memory://");
-const created = client.exec(__SCHEMA_SQL__);
+// Made as the module loads, so that PGlite starts while the rest of the app
+// loads. A query waits until it has. Shared buffers of 16 MB, where initdb
+// writes 128 MB, which Postgres takes as it starts: the database is about
+// 7 MB.
+const client = new PGlite({
+  loadDataDir: await response.blob(),
+  startParams: [...PGlite.defaultStartParams, "-c", "shared_buffers=16MB"],
+});
 
 // Drizzle on PGlite, where the app has Drizzle on node-postgres: the same
 // queries. Typed as the app's `db`, so that a setup file can cast
@@ -40,6 +51,5 @@ const emptyAllTables = [
 
 /** Empties every table, as before each test and each story. */
 export async function resetDb(): Promise<void> {
-  await created;
   await client.exec(emptyAllTables);
 }
