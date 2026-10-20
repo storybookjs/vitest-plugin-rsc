@@ -213,7 +213,7 @@ test("a client story keeps its stylesheets through a change of its file", async 
     'data-testid="meta-decorator" data-restyled=""',
   );
   const decorator = canvas.locator("#storybook-root").getByTestId("meta-decorator");
-  await expect.poll(() => decorator.getAttribute("data-restyled"), { timeout: 30_000 }).toBe("");
+  await expect.poll(() => decorator.getAttribute("data-restyled")).toBe("");
   expect(await rendered(canvas, "press-button--labelled")).toBe("finished");
   expect(await canvas.evaluate(() => (window as unknown as { __styles: object }).__styles)).toEqual(
     { removed: [], unstyled: 0 },
