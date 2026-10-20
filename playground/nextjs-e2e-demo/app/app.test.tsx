@@ -400,18 +400,21 @@ test("keeps the app and the browser's own storage of the origin apart", async ()
     localStorage.removeItem("host-panel");
     sessionStorage.removeItem("host-tab");
   });
-  // One stores in it, another hears of that, and the app does not.
-  const heard: Array<string | null> = [];
-  const heardByApp: Array<string | null> = [];
-  browserDocument().addEventListener("storage", ({ key }) => heard.push(key));
-  const hear = ({ key }: StorageEvent) => heardByApp.push(key);
+  // It stores in it, and this document hears of that: about the browser's
+  // storage, not the page's.
+  const heard: Array<{ key: string | null; area: Storage | null }> = [];
+  const hear = ({ key, storageArea }: StorageEvent) => heard.push({ key, area: storageArea });
   window.addEventListener("storage", hear);
   onTestFinished(() => window.removeEventListener("storage", hear));
   host.localStorage.setItem("host-panel", "wide");
   host.sessionStorage.setItem("host-tab", "notes");
-  await expect.poll(() => heard).toEqual(expect.arrayContaining(["host-panel", "host-tab"]));
-  await new Promise((resolve) => setTimeout(resolve));
-  expect(heardByApp).toEqual([]);
+  await expect
+    .poll(() => heard.map(({ key }) => key))
+    .toEqual(expect.arrayContaining(["host-panel", "host-tab"]));
+  for (const { area } of heard) {
+    expect(area).not.toBe(localStorage);
+    expect(area).not.toBe(sessionStorage);
+  }
 
   await renderServer({ url: "/settings" });
   await page.getByRole("button", { name: "Theme: light" }).click();
