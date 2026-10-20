@@ -3,13 +3,14 @@
 // gives the document one storage for its origin, which every other document
 // of the origin shares, like the host's own or another page of the app next
 // to this one. So the page's storage is a `Storage` of the plugin's, as its
-// cookie jar is: see page-store.ts.
+// cookie jar is: see page-store.ts. Evaluating this module installs it, as
+// app-requests.ts installs the page's `document.cookie`.
 
 /**
  * The items of the page's `localStorage` and `sessionStorage`. One for the
  * document between two cleanups: `cleanup()` makes a new one.
  */
-export class PageStorage {
+class PageStorage {
   readonly localStorage = new Map<string, string>();
   readonly sessionStorage = new Map<string, string>();
 }
@@ -57,7 +58,7 @@ const storagePrototype = Object.create(Storage.prototype, {
  * or deleting a property sets or removes an item. A name of `Storage`, like
  * `key` or `length`, hides the item of that name.
  */
-export function storageOf(items: () => Map<string, string>): Storage {
+function storageOf(items: () => Map<string, string>): Storage {
   const target = Object.create(storagePrototype) as Storage;
   const isItem = (name: string | symbol): name is string =>
     typeof name === "string" && !(name in target) && items().has(name);
@@ -96,4 +97,28 @@ export function storageOf(items: () => Map<string, string>): Storage {
   });
   sources.set(storage, items);
   return storage;
+}
+
+let storage = new PageStorage();
+
+/** Forgets the items: the page's storage is empty from here on. */
+export function newPageStorage(): void {
+  storage = new PageStorage();
+}
+
+// A script of the page stores in `localStorage` and `sessionStorage`, as in a
+// browser. Those are the page's own, as its cookies are: the browser's own
+// storage is the origin's, with what other documents store in it, like
+// Vitest's UI, the manager document of another host or another page of the
+// app next to this one. The app neither reads nor writes it. Each is one
+// object until the document goes, so code that took it as it loaded has the
+// items of the page that is open. The page hears the browser's `storage`
+// events, which are about the host's storage, never its own.
+for (const name of ["localStorage", "sessionStorage"] as const) {
+  const pageStorage = storageOf(() => storage[name]);
+  Object.defineProperty(window, name, {
+    configurable: true,
+    enumerable: true,
+    get: () => pageStorage,
+  });
 }

@@ -1,4 +1,11 @@
-import { graphStylesheetAttribute, stylesheetOfUrl } from "./styles-shared.ts";
+// Types `import.meta.hot` below, as Vite gives it a module, without the rest
+// of `vite/client`.
+/// <reference types="vite/types/importMeta.d.ts" />
+import {
+  graphStylesheetAttribute,
+  stylesheetOfUrl,
+  stylesheetsChangedEvent,
+} from "./styles-shared.ts";
 
 // The links of a stylesheet that Next links, moved to the version of now
 // after a change of its CSS, as Next's client moves its own links: the page
@@ -8,7 +15,8 @@ import { graphStylesheetAttribute, stylesheetOfUrl } from "./styles-shared.ts";
 // path is encoded: React adds a link for every render of a page with
 // another URL, and keeps the ones before. The links that the files of the
 // host made are the graph's to move, also while a page has parked them
-// (client-graph.ts).
+// (client-graph.ts). Evaluating this module moves the page's links on each
+// change.
 
 /**
  * The URLs of the versions of now, by the stylesheet they are of: see
@@ -52,7 +60,7 @@ export function moveLink(link: HTMLLinkElement, url: string): HTMLLinkElement {
 }
 
 /** Moves the links of the page, not the graph's, to the versions of now. */
-export function movePageLinks(versions: StylesheetVersions): void {
+function movePageLinks(versions: StylesheetVersions): void {
   const links = document.querySelectorAll<HTMLLinkElement>('link[rel~="stylesheet"][href]');
   for (const link of links) {
     if (replaced.has(link) || link.hasAttribute(graphStylesheetAttribute)) continue;
@@ -64,3 +72,10 @@ export function movePageLinks(versions: StylesheetVersions): void {
     }
   }
 }
+
+// A change of stylesheets that a page links: its links move to the versions
+// of now, and the page stays (styles.ts). The files of the host move theirs
+// themselves, also without a page: see client-graph.ts.
+import.meta.hot?.on(stylesheetsChangedEvent, (urls: string[]) =>
+  movePageLinks(stylesheetVersions(urls)),
+);

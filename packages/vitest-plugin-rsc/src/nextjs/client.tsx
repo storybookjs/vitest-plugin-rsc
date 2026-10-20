@@ -10,7 +10,7 @@ import { setNodeOnPage } from "vitest-plugin-rsc/nextjs/node-rendered";
 
 // The browser layer. This module is the app's client entry: what Next's
 // `main-app.js` chunk is for a deployment. Like that chunk, it runs once per
-// page load, in a module graph of its own (see `renderServer()`), and starts the app
+// page load, in a module graph of its own (see `openPage()` in page.ts), and starts the app
 // from the document the server sent.
 
 declare global {
@@ -192,7 +192,7 @@ export async function start(
   } finally {
     // A page that was left keeps the ones that give it a root that renders
     // nothing: Next may still get to create one. This React DOM is the page's
-    // own, see `renderServer()`.
+    // own, see `openPage()` in page.ts.
     if (!signal.aborted) {
       ReactDOMClient.hydrateRoot = hydrateRoot;
       ReactDOMClient.createRoot = createRoot;

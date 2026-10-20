@@ -5,7 +5,7 @@ import { useEffect, useLayoutEffect, type ReactNode } from "react";
 import type { NodeReports } from "./node-on-page.ts";
 
 // The node of `renderServer()` that this page renders. Every page has a
-// module graph of its own in the browser layer (see `renderServer()`), so a
+// module graph of its own in the browser layer (see `openPage()` in page.ts), so a
 // page that was left keeps telling its own node, which nobody waits on any
 // more. The ssr layer has none.
 let nodeOnPage: NodeReports | undefined;
