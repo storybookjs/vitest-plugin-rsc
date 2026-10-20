@@ -2,13 +2,17 @@ import { type DevEnvironment, type Plugin, type ViteDevServer } from "vite";
 import { vitePluginRscMinimal } from "@vitejs/plugin-rsc/plugin";
 import { createReactClientCoveragePlugin } from "./coverage.ts";
 import { dependencyTransformPlugin } from "./dependency-transforms.ts";
+import { changedAfter, versionOf } from "./module-versions.ts";
 import { createRunnerEnvironmentPlugins } from "./runner-environment.ts";
 import { staticBuild } from "./static-build.ts";
 import { pageViteClientPlugin } from "./vite-client.ts";
 import {
   answerEvent,
+  answerPage,
+  changedEvent,
   invokeEvent,
   versionEvent,
+  type ChangedQuestion,
   webSocketInfoPath,
   webSocketQuery,
 } from "./websocket-bridge.ts";
@@ -66,19 +70,12 @@ export function vitestPluginRSC(): Plugin[] {
     {
       name: "rsc:run-in-browser",
       configureServer(server) {
-        // A page keeps the modules it fetched for its next page loads, see
-        // utils.ts. An environment has another answer for a module once that
-        // module is invalidated: a file changed, or a plugin said so. The
-        // version of an environment counts those, so a page that sees
-        // another one fetches its modules again.
-        const moduleVersions = new Map<string, number>();
-        for (const [name, { moduleGraph }] of Object.entries(server.environments)) {
-          const invalidateModule = moduleGraph.invalidateModule;
-          moduleGraph.invalidateModule = function (...args) {
-            moduleVersions.set(name, (moduleVersions.get(name) ?? 0) + 1);
-            return invalidateModule.apply(this, args);
-          };
-        }
+        // The ids of the modules of an environment that Vite invalidated
+        // after a version of them, for a runner of the page that has that
+        // version: see `takeChangedModules()` in utils.ts.
+        answerPage(server, changedEvent, ({ environment, since }: ChangedQuestion) =>
+          changedAfter(server.environments[environment]?.moduleGraph, since),
+        );
 
         server.ws.on("connection", (socket, req) => {
           const url = new URL(req.url ?? "/", "https://any.local");
@@ -94,7 +91,7 @@ export function vitestPluginRSC(): Plugin[] {
             // runner of its own, see utils.ts.
             const environment = server.environments[invoke.environment];
             const result = !invoke.payload
-              ? (moduleVersions.get(invoke.environment) ?? 0)
+              ? versionOf(environment?.moduleGraph)
               : environment && invoke.environment !== "client"
                 ? describeModule(environment, await environment.hot.handleInvoke(invoke.payload))
                 : {
