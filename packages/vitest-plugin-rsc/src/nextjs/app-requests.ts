@@ -88,14 +88,15 @@ export function newPageStore(): void {
   store = new PageStore();
 }
 
-// The page of the app that is open, which Next's requests are of: see the
-// browser's `fetch` below. Without one, a request of Next's has no page to
+// The signal of the page of the app that is open, which Next's requests are
+// of: see the browser's `fetch` below. It aborts as the page is left, and
+// goes once the page is. Without a page, a request of Next's has none to
 // hear it.
-let page: object | undefined;
+let page: AbortSignal | undefined;
 
-/** Says which page of the app is open: none once it is left. */
-export function setOpenPage(opened: object | undefined): void {
-  page = opened;
+/** Says which page of the app is open, by its signal, which aborts as it is left. */
+export function setOpenPage(signal: AbortSignal | undefined): void {
+  page = signal;
 }
 
 // What a browser adds to a request for the app's origin, with the headers and
@@ -367,9 +368,9 @@ const never = () => new Promise<never>(() => {});
 // there, would report that as an error while the next page runs: "Failed to
 // fetch RSC payload". Nobody reads the body of a response that comes after
 // that, so it stops.
-async function heardBy(sender: object, response: Promise<Response>): Promise<Response> {
+async function heardBy(sender: AbortSignal, response: Promise<Response>): Promise<Response> {
   const answered = await response.catch(() => undefined);
-  if (page === sender) return response;
+  if (!sender.aborted) return response;
   void answered?.body?.cancel().catch(() => {});
   return never();
 }
@@ -385,7 +386,7 @@ const browserFetch = appFetch(false);
 globalThis.fetch = async (input, init) => {
   if (!sameOriginRequest(input, init)?.marked) return browserFetch(input, init);
   const sender = page;
-  return sender ? heardBy(sender, browserFetch(input, init)) : never();
+  return sender && !sender.aborted ? heardBy(sender, browserFetch(input, init)) : never();
 };
 // A script of the page reads and writes the app's cookies with
 // `document.cookie`, as in a browser, where it is a view of the cookie jar.

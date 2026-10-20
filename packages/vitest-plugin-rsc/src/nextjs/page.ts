@@ -12,23 +12,118 @@ import type { PageStore } from "./page-store.ts";
 import { registry, type Opened } from "./registry.ts";
 import { loadedSsrLayer } from "./server-layers.ts";
 
-// A page that is open, from when its document is there, with the node of
-// `renderServer()` on it, and where it reports its errors.
-type Page = {
-  started: Promise<unknown>;
-  unmount(): void;
-  nodeOnPage?: NodeOnPage;
-  errors: unknown[];
-};
+// How long leaving a page waits for it to stop starting, at most: less than
+// the 30 seconds of a hook in Browser Mode, so that this says why it waits.
+const startTimeout = 20_000;
+// A test's own timers may be fake.
+const setTimeout = globalThis.setTimeout;
+const clearTimeout = globalThis.clearTimeout;
 
-let page: Page | undefined;
-// Tells a page load that the test has moved on: to another page, or to the
-// next test.
-let currentLoad: AbortController | undefined;
+/**
+ * A page of the app, from the first line of its load until it is left, with
+ * the node of `renderServer()` on it, and where it reports its errors. Its
+ * load makes it part by part, and each part that would outlive the page says
+ * how it is released. Leaving stops the load at once, and releases the
+ * parts, the last first.
+ */
+export class Page {
+  readonly #load = new AbortController();
+  /** Aborts as the page is left: what the load does takes it. */
+  readonly signal = this.#load.signal;
+  readonly #releases: (() => void)[] = [];
+  #started: Promise<void> | undefined;
+  #stopped = () => {};
+  #left: Promise<void> | undefined;
 
-/** The page that is open: from when its document is there until it is left. */
+  constructor(
+    readonly errors: unknown[],
+    readonly nodeOnPage?: NodeOnPage,
+  ) {}
+
+  /** Whether the page is open: from when its client starts until it is left. */
+  get open(): boolean {
+    return this.#started !== undefined && !this.signal.aborted;
+  }
+
+  /**
+   * Runs `release` as the page is left: before what the load made before
+   * it. As `defer()` of a `DisposableStack`.
+   */
+  defer(release: () => void): void {
+    this.#releases.push(release);
+  }
+
+  /**
+   * Opens the page: its client starts. Leaving waits for `started` to
+   * settle, at most `startTimeout`, before it releases what the page holds.
+   * `stopped` runs once the start is over for the page: once `started` has
+   * settled, or once leaving stops waiting for it.
+   */
+  starts(started: Promise<unknown>, stopped: () => void): void {
+    this.#started = started.then(stopped, stopped);
+    this.#stopped = stopped;
+  }
+
+  /**
+   * Leaves the page: `by` is what leaves it, for its node. Stops its load at
+   * once. Resolves once what the page holds is released, or rejects with the
+   * first error of a release, after every release has run. A page still
+   * starting after `startTimeout` is released once it has stopped, and
+   * `reportError()` gets that error: leaving resolves without it. Once:
+   * leaving it again gets the same promise.
+   */
+  leave(by: string): Promise<void> {
+    return (this.#left ??= this.#leave(by));
+  }
+
+  async #leave(by: string): Promise<void> {
+    this.#load.abort(new DOMException("The page was left before it had loaded.", "AbortError"));
+    this.nodeOnPage?.left(by);
+    // An app that is still starting would go on to hydrate the next page
+    // with the client code of this one. The abort above stops it, and it is
+    // gone once `started` has settled: see `start()` in client.tsx. Until
+    // then it may still load Next's client, which reads the payload of the
+    // document it finds. Only a load that hangs takes long: the next page
+    // loads anyway, and this one is released once it has stopped.
+    const released = (this.#started ?? Promise.resolve()).then(() => this.#release());
+    let timeout: ReturnType<typeof setTimeout> | undefined;
+    const stopped = await Promise.race([
+      released.then(
+        () => true,
+        () => true,
+      ),
+      new Promise<false>((resolve) => (timeout = setTimeout(resolve, startTimeout, false))),
+    ]);
+    clearTimeout(timeout);
+    if (stopped) return released;
+    console.warn(
+      `vitest-plugin-rsc: the page that was left was still loading its client code ` +
+        `${startTimeout / 1000}s later. The next page loads anyway.`,
+    );
+    this.#stopped();
+    released.catch(reportError);
+  }
+
+  // Every release runs, the last first, also after one that throws.
+  #release(): void {
+    let failed: { error: unknown } | undefined;
+    for (const release of this.#releases.splice(0).reverse()) {
+      try {
+        release();
+      } catch (error) {
+        failed ??= { error };
+      }
+    }
+    if (failed) throw failed.error;
+  }
+}
+
+// The page of the latest load, from its first line until it is left.
+let current: Page | undefined;
+
+/** The page that is open: see `Page.open`. */
 export function currentPage(): Page | undefined {
-  return page;
+  return current?.open ? current : undefined;
 }
 
 // What a test opens: a page, or a node in a container, with the `headers` of
@@ -53,12 +148,14 @@ export async function loadPage(url: URL, init: RequestInit, opening?: Opening): 
   // it, or for a page the app loads itself, to where the page it replaces
   // reported them: the app loads one only from a page (see the listener of
   // `navigate` in document-loads.ts). Before leaving, which forgets that page.
-  const errors = opening?.errors ?? page?.errors ?? [];
+  const errors = opening?.errors ?? currentPage()?.errors ?? [];
   const leaving = leavePage(opening ? "another renderServer()" : "a page load of the app");
-  const load = (currentLoad = new AbortController());
+  // The page from here: the test moves on from it by leaving it, also while
+  // it loads.
+  const page = (current = new Page(errors, opening?.nodeOnPage));
   const loading = (async () => {
     await leaving;
-    load.signal.throwIfAborted();
+    page.signal.throwIfAborted();
 
     // Once the node that was in it is gone.
     if (opening?.container?.hasChildNodes()) {
@@ -77,13 +174,13 @@ export async function loadPage(url: URL, init: RequestInit, opening?: Opening): 
       if (opening.cookie !== null) from.seed(opening.cookie);
     }
     try {
-      return await openPage(url, init, load.signal, from, errors, opening);
+      return await openPage(page, url, init, from, opening);
     } catch (error) {
       // A load that failed has no requests left, unless the test has moved on
       // to a page or a node of its own. Only `leavePage()` stops a load. The
       // server may still render the request of a stopped one, so leaving
       // forgets what it opened once that request is done.
-      if (opened && registry.opened === opened && !load.signal.aborted) {
+      if (opened && registry.opened === opened && !page.signal.aborted) {
         registry.opened = undefined;
       }
       throw error;
@@ -94,18 +191,18 @@ export async function loadPage(url: URL, init: RequestInit, opening?: Opening): 
   // `renderServer()` would, also one that is still loading. Not a page that
   // came after it. A page that cannot be left is reported.
   return unlessAborted(loading, opening.signal, () => {
-    if (currentLoad === load) leavePage("the signal of renderServer()").catch(reportError);
+    if (current === page) leavePage("the signal of renderServer()").catch(reportError);
   });
 }
 
 async function openPage(
+  page: Page,
   url: URL,
   init: RequestInit,
-  signal: AbortSignal,
   from: PageStore,
-  errors: unknown[],
   opening: Opening | undefined,
 ): Promise<Response> {
+  const { signal } = page;
   // The test has moved on: to another page, or to the next test.
   const superseded = () => signal.throwIfAborted();
 
@@ -162,8 +259,11 @@ async function openPage(
   await loadDocument(html, response.url, container);
   superseded();
   // A page load runs the app's scripts from scratch, so every page gets a
-  // module graph of its own for the browser layer.
+  // module graph of its own for the browser layer. A page that is left keeps
+  // no module graph: what of it stays, like an error whose stack has the
+  // frames that loaded a module, cannot reach its modules through the runner.
   const runner = createEnvironmentRunner("react_client");
+  page.defer(() => void runner.close());
   // The browser's Flight client reads properties off `__webpack_require__`
   // when it loads, which is before the page can say how it loads a module,
   // and wraps some of them. One that the pages shared would keep every page.
@@ -177,102 +277,69 @@ async function openPage(
   // of the app's that was added in it would be taken from the app when the
   // page is left.
   const leftovers = [recordListeners(window), recordMessageChannels()];
+  for (const leftover of leftovers) page.defer(() => leftover.remove());
   const loaded = () => leftovers.forEach((leftover) => leftover.stop());
-  // The page counts as open from here, so that leaving it stops it, also
-  // while its scripts load and while it hydrates.
-  let unmount: (() => void) | undefined;
-  let left = false;
-  let leave = () => {
-    left = true;
-    loaded();
-  };
   const started = (async () => {
     const client = await runner.import<typeof import("./client.tsx")>(
       environmentModule("react_client", "vitest-plugin-rsc/nextjs/client"),
     );
     superseded();
-    return client.start(loaded, container, signal, opening?.nodeOnPage, errors);
+    const { unmount } = await client.start(
+      loaded,
+      container,
+      signal,
+      opening?.nodeOnPage,
+      page.errors,
+    );
+    page.defer(unmount);
   })();
-  page = {
-    started: started.catch(() => {}),
-    unmount: () => leave(),
-    nodeOnPage: opening?.nodeOnPage,
-    errors,
-  };
-  setOpenPage(page);
+  // The page is open from here: `currentPage()` has it, for the navigations
+  // of its app (document-loads.ts), and leaving waits for its start.
+  page.starts(started, loaded);
+  setOpenPage(signal);
   try {
-    ({ unmount } = await started);
+    await started;
   } catch (error) {
     // Starting an app whose page is gone fails in its own ways.
     superseded();
     throw error;
-  } finally {
-    loaded();
-    leave = () => {
-      unmount?.();
-      leftovers.forEach((leftover) => leftover.remove());
-      // A page that is left keeps no module graph: what of it stays, like an
-      // error whose stack has the frames that loaded a module, cannot reach
-      // its modules through the runner.
-      void runner.close();
-    };
-    if (left) leave();
   }
   superseded();
   return response;
 }
 
 // One at a time: a page that is being left is left before the next one is.
+// Also with no page: what a page load leaves in the document, the server
+// and the globals is the document's between pages, not one page's.
 let leaving: Promise<void> = Promise.resolve();
-// How long leaving a page waits for it to stop starting, at most: less than
-// the 30 seconds of a hook in Browser Mode, so that this says why it waits.
-const startTimeout = 20_000;
-// A test's own timers may be fake.
-const setTimeout = globalThis.setTimeout;
-const clearTimeout = globalThis.clearTimeout;
 
-// Leaves the page that is open: `by` is what leaves it, for its node.
+// Leaves the page of the latest load: `by` is what leaves it, for its node.
 export function leavePage(by: string): Promise<void> {
-  currentLoad?.abort(new DOMException("The page was left before it had loaded.", "AbortError"));
-  currentLoad = undefined;
-  const left = page;
-  page = undefined;
-  setOpenPage(undefined);
-  left?.nodeOnPage?.left(by);
+  const left = current;
+  current = undefined;
+  const pageLeft = left?.leave(by);
   // Also after a page that could not be left: that one fails its own test.
   const gone = leaving
     .catch(() => {})
     .then(async () => {
-      // An app that is still starting would go on to hydrate the next page
-      // with the client code of this one. The abort above stops it, and it is
-      // gone once `started` has settled: see `start()` in client.tsx. Until
-      // then it may still load Next's client, which reads the payload of the
-      // document it finds. Only a load that hangs takes long.
-      let timeout: ReturnType<typeof setTimeout> | undefined;
-      const stopped = await Promise.race([
-        left?.started.then(() => true),
-        new Promise<false>((resolve) => (timeout = setTimeout(resolve, startTimeout, false))),
-      ]);
-      clearTimeout(timeout);
-      if (stopped === false) {
-        console.warn(
-          `vitest-plugin-rsc: the page that was left was still loading its client code ` +
-            `${startTimeout / 1000}s later. The next page loads anyway.`,
-        );
-      }
       try {
-        left?.unmount();
+        await pageLeft;
       } finally {
         try {
           unloadDocument();
         } finally {
-          await loadedSsrLayer()?.settleRequests();
-          // What the test opened goes with its page: the route of a node,
-          // and a pathname without the proxy.
-          registry.opened = undefined;
-          // A Server Action has no page to post to until the next one starts.
-          globalThis.__viteRscCallServer = callServerWithoutPage;
-          resetAsyncLocalStorage();
+          try {
+            await loadedSsrLayer()?.settleRequests();
+          } finally {
+            // What the test opened goes with its page: the route of a node,
+            // and a pathname without the proxy.
+            registry.opened = undefined;
+            // No page hears a request of Next's until the next one starts.
+            setOpenPage(undefined);
+            // A Server Action has no page to post to until the next one starts.
+            globalThis.__viteRscCallServer = callServerWithoutPage;
+            resetAsyncLocalStorage();
+          }
         }
       }
     });
