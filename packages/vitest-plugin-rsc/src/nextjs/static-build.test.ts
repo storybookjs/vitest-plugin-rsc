@@ -11,9 +11,11 @@ type Hook = (this: unknown, ...args: any[]) => any;
 
 const plugin = (emittedFiles = () => [] as { pathname: string; body: Uint8Array }[]) =>
   nextStaticBuild({
-    environments: { ssr: "next_ssr", browser: "react_client" },
+    environments: { rsc: "client", ssr: "next_ssr", browser: "react_client" },
     entries: { ssr: "vitest-plugin-rsc/nextjs/ssr", browser: "vitest-plugin-rsc/nextjs/client" },
     emittedFiles,
+    rscModule: "/vitest-plugin-rsc/nextjs/rsc.ts",
+    isHostFile: () => false,
   });
 
 test("gives the static build Next's layers, its directives, its order and its files", () => {
@@ -28,6 +30,7 @@ test("gives the static build Next's layers, its directives, its order and its fi
       directives: ["use turbopack: no side effects"],
       strictExecutionOrder: true,
       files: emittedFiles,
+      references: { next_ssr: expect.any(Function) },
     }),
   );
   // A dev server is not a build.

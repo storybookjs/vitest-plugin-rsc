@@ -4,15 +4,20 @@ import { NoteCard } from "../app/components/note-card.tsx";
 import { db } from "../app/lib/notes.ts";
 
 // A node of the host, as a test renders one: a Server Component of its own,
-// with a Server Component of the app that has a CSS module, and a Client
-// Component of the app that calls a Server Action.
+// with a Server Component of the app that has a CSS module, a Client
+// Component of the app that calls a Server Action, and one of the host. That
+// one is imported as the node renders: a file of the host with "use client"
+// is evaluated in the browser layer before the module that imports it, and
+// the page of the host opens a page of the app before that layer has loaded.
 async function HostNode({ id }: { id: string }) {
   const note = await db.getNote(id);
+  const { HostBadge } = await import("./badge.tsx");
   return (
     <section>
       <h1>A node of the host</h1>
       <NoteCard>{note?.title ?? "No note"}</NoteCard>
       <FavoriteButton id={id} favorite={note?.favorite ?? false} />
+      <HostBadge />
     </section>
   );
 }

@@ -1153,6 +1153,8 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
       environments: environmentOf,
       entries: { ssr: "vitest-plugin-rsc/nextjs/ssr", browser: "vitest-plugin-rsc/nextjs/client" },
       emittedFiles: () => [...project.emittedFiles(), ...styles.builtFiles()],
+      rscModule: ownFile("rsc"),
+      isHostFile: serverCode.isHostFile,
     }),
   ];
 }

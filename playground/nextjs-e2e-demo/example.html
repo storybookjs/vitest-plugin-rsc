@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Host: an example</title>
+  </head>
+  <body>
+    <div id="host-root"></div>
+    <!-- The host's runtime, which is no file of the host: see host/example.tsx. -->
+    <script type="module">
+      import { loadClientModule } from "vitest-plugin-rsc/nextjs/testing-library";
+      import * as example from "/host/example.tsx";
+
+      const { renderExample } = await loadClientModule(example);
+      renderExample(document.getElementById("host-root"));
+      window.__hostState = "ready";
+    </script>
+  </body>
+</html>

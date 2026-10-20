@@ -203,13 +203,44 @@ describe.for(builds)("a static build, $build", ({ build, env }) => {
     await page.getByRole("button", { name: "Count: 1" }).waitFor();
   });
 
+  // A page of the host whose own module script renders a file of the host
+  // with "use client", which no server code imports: see host/example.tsx.
+  test('renders a file of the host with "use client" that only the page imports', async ({
+    page,
+  }) => {
+    await page.goto(`${site.url}example.html`);
+    await page.waitForFunction(() => (window as { __hostState?: string }).__hostState);
+    await page.locator("#host-root").getByText("An example of the host").waitFor();
+  });
+
+  // The ssr layer lists the Client Components that server code reaches: a
+  // file of the host with "use client" that a node of the host renders, and
+  // not one that only the page imports, which the browser layer renders. The
+  // browser layer lists every one.
+  test("lists in the ssr layer the Client Components that server code reaches", () => {
+    const key = (file: string) => createHash("sha256").update(file).digest("hex").slice(0, 12);
+    const listed = (layer: string) => {
+      const modules = fs.readFileSync(
+        path.join(dist, "vitest-plugin-rsc", layer, "modules.json"),
+        "utf8",
+      );
+      return ["host/badge.tsx", "host/example.tsx"].filter((file) => modules.includes(key(file)));
+    };
+    expect(listed("next_ssr")).toEqual(["host/badge.tsx"]);
+    expect(listed("react_client")).toEqual(["host/badge.tsx", "host/example.tsx"]);
+  });
+
   // A Server Component of the host, on a route of the app, with a Client
-  // Component of the app and the Server Action it calls.
+  // Component of the app and the Server Action it calls, and a Client
+  // Component of the host, which the ssr layer renders and the page hydrates.
   test("renders a node of the host", async ({ page }) => {
     const response = await open(page, site, "/notes/7", { node: "7" });
     expect(response.status).toBe(200);
     await heading(page, "A node of the host");
     await page.getByText("Seeded by the host").waitFor();
+    await page
+      .locator("p[data-hydrated=true]", { hasText: "A Client Component of the host" })
+      .waitFor();
     expect(await pathname(page)).toBe("/notes/7");
     const favorite = page.getByRole("button", { name: "Favorite" });
     expect(await favorite.getAttribute("aria-pressed")).toBe("false");
