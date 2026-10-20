@@ -656,6 +656,23 @@ export function builtHostFileKey(id: string, root: string): string | undefined {
   return path.isAbsolute(file) ? undefined : file;
 }
 
+/**
+ * The key of a module of a build, as `builtHostFileKey()` has it, when the
+ * module is a file of the host: matched by its path from the root, as
+ * `host.files` are from the root as the config has it. Nothing for a module
+ * that is no file, or one with a query.
+ */
+export function builtHostFileOf(
+  id: string,
+  root: string,
+  isHostFile: (file: string) => boolean,
+): string | undefined {
+  if (id.startsWith("\0") || id.includes("?")) return undefined;
+  const file = builtHostFileKey(id, root);
+  if (file === undefined || !isHostFile(path.posix.join(normalizePath(root), file))) return;
+  return file;
+}
+
 // What Vite's CSS plugin leaves in the CSS of a build for a file it names,
 // until the file has its name: one the build emits, and one of `public/`.
 const builtAssetRE = /__VITE_ASSET__([\w$]+)__/g;
@@ -830,15 +847,12 @@ function createBuiltFiles(
         // walks them for `hostFiles` of renderServer(): any of them can render a
         // node. The CSS one imports itself is Vite's, in the chunks of the
         // host's build.
-        // By the path from the root, which is also how the file is matched
-        // against `host.files`, which are from the root as the config has it.
         const project = getProject();
-        const root = normalizePath(project.root);
         const { pageExtensions = [] } = project.config as { pageExtensions?: string[] };
         for (const id of this.getModuleIds()) {
-          if (id.startsWith("\0") || id.includes("?") || !isCode(id, pageExtensions)) continue;
-          const file = builtHostFileKey(id, root);
-          if (file === undefined || !options.isHostFile(path.posix.join(root, file))) continue;
+          if (!isCode(id, pageExtensions)) continue;
+          const file = builtHostFileOf(id, project.root, options.isHostFile);
+          if (file === undefined) continue;
           hostFiles.set(file, reachIn(imports, [id], manager.clientReferenceMetaMap));
         }
         return;

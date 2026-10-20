@@ -34,7 +34,7 @@ import { compileServerCode, createServerCode, type ServerCodeOptions } from "./s
 import { affectedTests } from "./affected/index.ts";
 import { createPathsPlugin } from "./paths.ts";
 import { nextStaticBuild, withPathsFromRoot } from "./static-build.ts";
-import { createStyles, isSwappedStylesheet } from "./styles.ts";
+import { builtHostFileOf, createStyles, isSwappedStylesheet } from "./styles.ts";
 import { assertVitestVersion } from "./vitest-version.ts";
 
 // Each layer of Next is a Vite environment, and all three run in the
@@ -1171,6 +1171,8 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
       environments: environmentOf,
       entries: { ssr: "vitest-plugin-rsc/nextjs/ssr", browser: "vitest-plugin-rsc/nextjs/client" },
       emittedFiles: () => [...project.emittedFiles(), ...styles.builtFiles()],
+      rscModule: ownFile("rsc"),
+      isHostFile: (id) => builtHostFileOf(id, project.root, serverCode.isHostFile) !== undefined,
     }),
   ];
 }
