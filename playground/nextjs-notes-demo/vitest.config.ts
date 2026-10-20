@@ -5,7 +5,7 @@ import { defineConfig, defineProject } from "vitest/config";
 import { vitestPluginRSC } from "vitest-plugin-rsc";
 import { vitestPluginNext, type NextBuild } from "vitest-plugin-rsc/nextjs/plugin";
 import { vitestPluginRscSourceConditions } from "../../vitest.conditions.ts";
-import { writeDbDataDir } from "./test/db-data-dir.ts";
+import { writePgliteFiles } from "./test/pglite-files.ts";
 import { ignoreWatchedOnlyModules } from "./test/ignore-watched-only-modules.ts";
 
 // Make Vitest UI trace/source clicks a no-op instead of opening Cursor.
@@ -18,8 +18,8 @@ process.env.NEXT_FONT_GOOGLE_MOCKED_RESPONSES = fileURLToPath(
   new URL("../../vitest.google-fonts.cjs", import.meta.url),
 );
 
-// The database of a test: see test/db-data-dir.ts.
-await writeDbDataDir();
+// The database of a test: see test/pglite-files.ts.
+await writePgliteFiles();
 
 const root = fileURLToPath(new URL("./", import.meta.url));
 const nextNotesRequire = createRequire(new URL("./package.json", import.meta.url));

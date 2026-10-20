@@ -2,7 +2,7 @@ import { rename, writeFile } from "node:fs/promises";
 import { text } from "node:stream/consumers";
 import { PGlite } from "@electric-sql/pglite";
 
-// Makes the data dir of test/db-data-dir.ts: a PGlite in memory runs the SQL
+// Makes the data dir of test/pglite-files.ts: a PGlite in memory runs the SQL
 // on stdin, and its data dir goes to the file of the first argument. In a
 // process of its own: a PGlite keeps about 500 MB of its process after it
 // closes.

@@ -3,7 +3,10 @@ import { getTableName, is } from "drizzle-orm";
 import { PgTable } from "drizzle-orm/pg-core";
 import { drizzle } from "drizzle-orm/pglite";
 import * as schema from "#db/schema.ts";
-import dataDirUrl from "#test/db.tgz?url";
+// The files of test/pglite-files.ts, by URLs that Vite serves and that a
+// build ships. By the package's import, not a relative path: Storybook
+// serves this file as `lib/db.ts`.
+import dataDirUrl from "#test/pglite/db.tgz?url";
 import fsBundleUrl from "#test/pglite/pglite.data?url";
 import pgliteWasmUrl from "#test/pglite/pglite.wasm?url";
 import initdbWasmUrl from "#test/pglite/initdb.wasm?url";
@@ -14,11 +17,9 @@ import type { db as appDb } from "../db.ts";
 // one for the document, with the tables of db/schema.ts. Each test and each
 // story empties it first.
 
-// A file of test/db-data-dir.ts, by a URL that Vite serves and that a build
-// ships. By the package's import, not a relative path: Storybook serves this
-// file as `lib/db.ts`. Made absolute, as on a server: the `fetch` of the
-// server has no page to resolve a path against.
-async function load(url: string): Promise<Response> {
+// Made absolute, as on a server: the `fetch` of the server has no page to
+// resolve a path against.
+async function fetchFile(url: string): Promise<Response> {
   const response = await fetch(new URL(url, import.meta.url));
   if (!response.ok) throw new Error(`${url} of the database: ${response.status}`);
   return response;
@@ -34,10 +35,10 @@ async function load(url: string): Promise<Response> {
 //   response it reads a clone of. And PGlite starts a fetch of initdb's
 //   wasm, which it never runs with a data dir and never reads.
 const [loadDataDir, pgliteWasmModule, initdbWasmModule, fsBundle] = await Promise.all([
-  load(dataDirUrl).then((response) => response.blob()),
-  WebAssembly.compileStreaming(load(pgliteWasmUrl)),
-  WebAssembly.compileStreaming(load(initdbWasmUrl)),
-  load(fsBundleUrl).then((response) => response.blob()),
+  fetchFile(dataDirUrl).then((response) => response.blob()),
+  WebAssembly.compileStreaming(fetchFile(pgliteWasmUrl)),
+  WebAssembly.compileStreaming(fetchFile(initdbWasmUrl)),
+  fetchFile(fsBundleUrl).then((response) => response.blob()),
 ]);
 
 // Made as the module loads: what imports the database waits for its files.
