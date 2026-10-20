@@ -259,33 +259,34 @@ test("a page that renders no route does not wait for the ssr layer", async ({ pa
     await route.continue().catch(() => {});
   });
   onTestFinished(() => release());
-  type Early = HostWindow & { __dropped?: Promise<unknown>; __answered?: Promise<unknown> };
+  type Early = HostWindow & { __before?: Promise<unknown>; __after?: Promise<unknown> };
   const host = await open(page, errors, "early", async (page) => {
-    // A request to the app, sent before a `cleanup()`, with no page open, is
-    // one of the page that was left: it is dropped, as one that waits for the
-    // server. One sent after that waits for the layer, and is answered.
+    // A request that waits for the layer is of no page, as none is open: a
+    // `cleanup()` meanwhile, as a framework's before what it shows next,
+    // leaves no page, and keeps it. It waits for the layer, as one sent
+    // after the `cleanup()` does, and both are answered.
     await page.evaluate(() => {
       const host = window as Early;
-      host.__dropped = host.__hostRequest!("/");
+      host.__before = host.__hostRequest!("/");
       return host.__hostCleanup!();
     });
     await page.evaluate(() => {
       const host = window as Early;
-      host.__answered = host.__hostRequest!("/");
+      host.__after = host.__hostRequest!("/");
     });
     const waiting = await page.evaluate(() => {
-      const { __dropped, __answered } = window as Early;
+      const { __before, __after } = window as Early;
       return Promise.all(
-        [__dropped, __answered].map((sent) => Promise.race([sent, Promise.resolve("waits")])),
+        [__before, __after].map((sent) => Promise.race([sent, Promise.resolve("waits")])),
       );
     });
     expect(waiting).toEqual(["waits", "waits"]);
     release();
     const settled = await page.evaluate(() => {
-      const { __dropped, __answered } = window as Early;
-      return Promise.all([__dropped, __answered]);
+      const { __before, __after } = window as Early;
+      return Promise.all([__before, __after]);
     });
-    expect(settled).toEqual(["AbortError", 200]);
+    expect(settled).toEqual([200, 200]);
   });
   // The host's own file came from the network.
   expect(host.__hostFetched).toBe(200);

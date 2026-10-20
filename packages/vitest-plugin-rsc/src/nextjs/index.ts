@@ -12,7 +12,6 @@ import {
   setOpenPage,
   pageStore,
   sendRequest,
-  settleRequests,
   unlessAborted,
 } from "./app-requests.ts";
 import { callServerWithoutPage, unlinkStylesheets } from "./client-graph.ts";
@@ -782,7 +781,7 @@ function leavePage(by: string): Promise<void> {
         try {
           unloadDocument();
         } finally {
-          await settleRequests();
+          await loadedSsrLayer()?.settleRequests();
           // What the test opened goes with its page: the route of a node,
           // and a pathname without the proxy.
           registry.opened = undefined;

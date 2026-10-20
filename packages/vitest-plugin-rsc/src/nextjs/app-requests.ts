@@ -19,34 +19,18 @@ import { loadedSsrLayer, ssrLayer } from "./server-layers.ts";
 // cache to forget.
 
 type SsrLayer = Awaited<ReturnType<typeof ssrLayer>>;
-// Changes each time leaving a page settles the server, also with no page
-// open: see `handledByServer()`.
-let generation = 0;
 
-// What Next's server answers a request with, once the ssr layer is there. A
-// request that waited for the layer while a page was left is one of that
-// page, and is dropped, as `settleRequests()` in ssr.ts drops one that waited
-// for the server then. A layer that failed to load fails the request.
+// What Next's server answers a request with, once the ssr layer is there.
+// One that waits for the layer is of no page: a page is open only once its
+// document came through the layer. So leaving a page meanwhile, as a host
+// cleans up before what it shows, keeps it, like a request of the host's
+// own that the proxy runs on. A request of a page that was left the server
+// drops: see `settleRequests()` in ssr.ts. A layer that failed to load fails
+// the request.
 async function handledByServer(
   ...[request, options]: Parameters<SsrLayer["handleRequest"]>
 ): Promise<Response | undefined> {
-  const loaded = loadedSsrLayer();
-  if (loaded) return loaded.handleRequest(request, options);
-  const sent = generation;
-  const layer = await ssrLayer();
-  if (sent !== generation) {
-    throw new DOMException("The page was left before the server responded.", "AbortError");
-  }
-  return layer.handleRequest(request, options);
-}
-
-/**
- * Settles the requests of a page that is left: the ones that wait for the
- * server, and the ones that wait for the ssr layer to load, are dropped.
- */
-export async function settleRequests(): Promise<void> {
-  generation++;
-  await loadedSsrLayer()?.settleRequests();
+  return (loadedSsrLayer() ?? (await ssrLayer())).handleRequest(request, options);
 }
 
 const nativeFetch = globalThis.fetch;
