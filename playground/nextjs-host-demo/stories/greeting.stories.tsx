@@ -44,9 +44,11 @@ export const InLayouts = meta.story({
 
 // What the server preview's `beforeEach` seeds, and what the story's sets,
 // are there for its render: the app's database, a cookie of the app, set in
-// a Server Action, and the browser's storage. Each is the page's own, so a
-// story next to it on a docs page, in an iframe of its own, sees none of it.
+// a Server Action, and an item of `localStorage`. Each is the page's own, so
+// a story next to it on a docs page, in an iframe of its own, sees none of
+// it. On a docs page its iframe is taller than a component's 100px.
 export const Seeded = meta.story({
+  parameters: { docs: { story: { height: "150px" } } },
   beforeEach: async () => {
     await runInServerAction(async () => (await cookies()).set("visitor", "Ada"));
     localStorage.setItem("visitor", "Ada");

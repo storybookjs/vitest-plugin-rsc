@@ -204,21 +204,18 @@ async function shownStories(canvas: Frame, ids: string[]): Promise<Shown[]> {
   return (await shown.jsonValue()) as Shown[];
 }
 
-// The iframes of the docs page in the preview: the story each renders, its
-// height, and the height that the story sets.
+// The iframes of the story blocks of the docs page in the preview, with the
+// story each renders and its height.
 async function iframesOf(canvas: Frame) {
-  const elements = await canvas.locator("#storybook-docs iframe").elementHandles();
+  const elements = await canvas.locator("#storybook-docs .sb-story iframe").elementHandles();
   return Promise.all(
     elements.map(async (element) => {
       const frame = (await element.contentFrame())!;
-      const story = await frame.evaluate(() => {
-        const render = window.__STORYBOOK_PREVIEW__.currentRender!;
-        return { id: render.id, storyHeight: render.story?.parameters.docs?.story?.height };
-      });
+      const id = await frame.evaluate(() => window.__STORYBOOK_PREVIEW__.currentRender!.id);
       const height = await element.evaluate(
         (iframe) => (iframe as Element).getBoundingClientRect().height,
       );
-      return { ...story, frame, height: `${Math.round(height)}px` };
+      return { id, frame, height };
     }),
   );
 }
@@ -262,13 +259,13 @@ export async function renderEveryDocsPage(
         .sort(),
     );
     // A page owns the document: its iframe is as high as a small phone's
-    // screen, unless the story sets `parameters.docs.story.height`.
+    // screen. No story of the project sets `parameters.docs.story.height`.
     for (const iframe of iframes) {
-      const { page } = stories.find((story) => story.id === iframe.id)!;
-      if (page) expect(iframe.height, iframe.id).toBe(iframe.storyHeight ?? "667px");
+      const { page: isPage } = stories.find((story) => story.id === iframe.id)!;
+      if (isPage) expect(Math.round(iframe.height), iframe.id).toBe(667);
     }
-    // The page in each iframe has a storage of its own: what one writes,
-    // the iframes next to it do not read.
+    // The page in each iframe has a storage of its own: each writes before
+    // any reads, so in a storage they shared all would read the last one.
     for (const { frame, id } of iframes) {
       await frame.evaluate((id) => {
         localStorage.setItem("written-by", id);

@@ -638,26 +638,34 @@ test("autodocs: a client story file's stories inline, a server story file's in i
   await expect.poll(() => argsTable.getByText("onPress", { exact: true }).count()).toBe(1);
   await selectDocs(canvas, "greeting--docs");
   // Every story of the file once, the primary too, each in a page of its
-  // own. One that owns the document is as high as a small phone's screen.
+  // own. One that owns the document is as high as a small phone's screen, a
+  // component 100px, unless its story sets a height.
   const primaryFrame = await storyInDocs(canvas, "greeting--default");
-  const inLayouts = await (await storyInDocs(canvas, "greeting--in-layouts")).frameElement();
+  const inLayouts = await storyInDocs(canvas, "greeting--in-layouts");
   const seeded = await storyInDocs(canvas, "greeting--seeded");
-  await storyInDocs(canvas, "greeting--server-action");
+  const serverAction = await storyInDocs(canvas, "greeting--server-action");
   expect(await inDocs(canvas).locator("iframe").count()).toBe(4);
   expect(await primaryFrame.getByText("Hello from Storybook").count()).toBe(1);
-  const height = (element: Node) => (element as Element).getBoundingClientRect().height;
-  expect(await inLayouts.evaluate(height)).toBe(667);
+  const height = async (frame: Frame) =>
+    (await frame.frameElement()).evaluate(
+      (iframe) => (iframe as Element).getBoundingClientRect().height,
+    );
+  expect(await height(primaryFrame)).toBe(100);
+  expect(await height(inLayouts)).toBe(667);
+  expect(await height(seeded)).toBe(150);
   // What a story's `beforeEach` sets is its page's: the cookies and the
-  // storage of the iframe next to it have none of it.
-  const seededBy = (frame: Frame) =>
+  // storage of the iframes next to it have none of it.
+  const visitorIn = (frame: Frame) =>
     frame.evaluate(() => ({
       cookie: document.cookie.includes("visitor="),
       stored: localStorage.getItem("visitor"),
     }));
   expect(await seeded.getByText("Visitor: Ada").count()).toBe(1);
   expect(await seeded.getByText("Seeded: Grace").count()).toBe(1);
-  expect(await seededBy(seeded)).toEqual({ cookie: true, stored: "Ada" });
-  expect(await seededBy(primaryFrame)).toEqual({ cookie: false, stored: null });
+  expect(await visitorIn(seeded)).toEqual({ cookie: true, stored: "Ada" });
+  for (const sibling of [primaryFrame, inLayouts, serverAction]) {
+    expect(await visitorIn(sibling)).toEqual({ cookie: false, stored: null });
+  }
   await expect.poll(() => argsTable.getByText("name", { exact: true }).count()).toBe(1);
 });
 

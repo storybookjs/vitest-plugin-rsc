@@ -242,10 +242,6 @@ there for the render: a row of the app's database, a cookie of the app, set
 in `runInServerAction()` of `vitest-plugin-rsc/nextjs/testing-library`, or
 an item of `localStorage`.
 
-The page's `localStorage` and `sessionStorage` are its own, as its cookies
-are: Storybook's items in the browser's storage are invisible to the app,
-and what the app stores does not reach them.
-
 ```ts
 export const SignedIn = meta.story({
   beforeEach: async () => {
@@ -255,6 +251,11 @@ export const SignedIn = meta.story({
   },
 });
 ```
+
+The page's `localStorage` and `sessionStorage` are its own, as its cookies
+are: Storybook's items in the browser's storage are invisible to the app,
+and what the app stores does not reach them. The browser's DevTools show
+the browser's storage, not the page's.
 
 ## `parameters.nextjs`
 
@@ -343,9 +344,9 @@ A docs page shows each story the way its kind renders:
   does not follow the height of its page: set a taller one with
   `parameters.docs.story.height`, on the meta for every story of a file.
 - The page in each iframe has cookies, `localStorage` and `sessionStorage`
-  of its own, as if it were the only page of its origin: what a story's
-  `beforeEach` or its page sets there, the stories in the iframes next to
-  it do not read, and their cleanups do not clear it.
+  of its own, which start empty, as in a new browser context: what a
+  story's `beforeEach` or its page sets there, the stories in the iframes
+  next to it do not read, and their cleanups do not clear it.
 
 A server story with `parameters.docs.story.inline: true`, or a block's
 `inline` prop, cannot render in the docs page, and shows an error that says
@@ -388,6 +389,9 @@ for both kinds.
   iframe, as they reach no story in an iframe in Storybook: open the story
   to change its args.
 - Tags of `preview.server.tsx`: see Two Previews.
+- A client story has the browser's `localStorage` and `sessionStorage`
+  until the preview loads a server story file, and the page's storage of
+  the server stories after it, which nothing clears before a client story.
 - A change of an MDX file that shows a client story with `of={…}` fails
   that block until the preview loads again.
 - Next's router in a client story: `useRouter()` throws there, and
