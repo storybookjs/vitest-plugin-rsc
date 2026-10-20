@@ -131,6 +131,14 @@ const moduleReports = () =>
   ((window as HostWindow).__hostReports ?? []).filter(
     (entry) => (entry as { from: string }).from === "host/in-place-badge.tsx",
   );
+// And host/in-place-note.tsx, which it imports.
+const noteReports = () =>
+  ((window as HostWindow).__hostReports ?? []).filter(
+    (entry) => (entry as { from: string }).from === "host/in-place-note.tsx",
+  );
+const oneNote = () => (window as HostWindow).__hostOneNote;
+// Until the host renders again.
+const forgetOneNote = () => delete (window as HostWindow).__hostOneNote;
 
 test('a change of what a file with "use client" imports renders it again in place', async ({
   page,
@@ -155,5 +163,35 @@ test('a change of what a file with "use client" imports renders it again in plac
     .toMatchObject({ changed: true });
   expect(await page.evaluate(moduleReports)).toHaveLength(3);
   await page.getByRole("button", { name: "Taps: 0" }).waitFor();
+  expect(await page.evaluate(() => "__beforeTheChange" in window)).toBe(true);
+});
+
+// Two readers of one file with "use client": the host, with
+// `loadClientModule()`, and another file of the host that imports it in the
+// browser layer, as a docs page imports the stories it shows. Both have the
+// one evaluation of the file for every version of it.
+test('a file with "use client" is one evaluation for the host and a file that imports it', async ({
+  page,
+}) => {
+  const { copy, url } = await serveCopy();
+  await openPage(page, url.replace("view=page", "view=in-place"));
+  await page.getByRole("button", { name: "Clicks: 0" }).waitFor();
+  expect(await page.evaluate(oneNote)).toBe(true);
+  // A change of the file that imports it, which the host renders again.
+  await page.evaluate(forgetOneNote);
+  const file = path.join(copy, "host/in-place-badge.tsx");
+  fs.writeFileSync(file, `${fs.readFileSync(file, "utf8")}\nexport const changed = true;\n`);
+  await expect.poll(() => page.evaluate(oneNote), { timeout: 30_000 }).toBeDefined();
+  expect(await page.evaluate(oneNote)).toBe(true);
+  expect(await page.evaluate(moduleReports)).toHaveLength(2);
+  expect(await page.evaluate(noteReports)).toHaveLength(1);
+  // A change of the file itself: a new evaluation, which both have.
+  await page.evaluate(forgetOneNote);
+  const note = path.join(copy, "host/in-place-note.tsx");
+  fs.writeFileSync(note, fs.readFileSync(note, "utf8").replace("A note", "A changed note"));
+  await expect.poll(() => page.evaluate(oneNote), { timeout: 30_000 }).toBeDefined();
+  expect(await page.evaluate(oneNote)).toBe(true);
+  expect(await page.evaluate(noteReports)).toHaveLength(2);
+  expect(await page.evaluate(moduleReports)).toHaveLength(3);
   expect(await page.evaluate(() => "__beforeTheChange" in window)).toBe(true);
 });

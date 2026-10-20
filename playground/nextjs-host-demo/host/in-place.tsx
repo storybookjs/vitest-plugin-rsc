@@ -1,26 +1,36 @@
 import { loadClientModule } from "vitest-plugin-rsc/nextjs/testing-library";
 import * as badgeModule from "./in-place-badge.tsx";
-import { show } from "./state.ts";
+import * as noteModule from "./in-place-note.tsx";
+import { show, state } from "./state.ts";
 
 // `?view=in-place`: a component of a file of the host with `"use client"`,
 // rendered again in place after a change of the file or of what it imports,
 // as a framework renders a story again. Vite's client imports the file
 // again, and `loadClientModule()` gives the new module's evaluation. Only
 // this module takes that change: in a view that imports the file otherwise,
-// it loads the document again.
+// it loads the document again. The host also reads a file that the first
+// one imports, in-place-note.tsx, as a docs page imports the stories that
+// it shows.
 
-type BadgeModule = typeof badgeModule;
+let modules = { badge: badgeModule, note: noteModule };
 
 export async function renderInPlace(container: Element): Promise<void> {
   const { renderClient } = await loadClientModule(await import("./render-client.tsx"));
   let unmount = () => {};
-  const render = async (module: BadgeModule) => {
-    const { Badge } = await loadClientModule(module);
+  const render = async () => {
+    const { Badge, note } = await loadClientModule(modules.badge);
+    state.__hostOneNote = (await loadClientModule(modules.note)).note === note;
     unmount();
     unmount = renderClient(Badge, container);
   };
-  await render(badgeModule);
-  import.meta.hot?.accept("./in-place-badge.tsx", (module) => {
-    if (module) void show(() => render(module as unknown as BadgeModule));
+  await render();
+  // A change of the note is one of both files: one after the other.
+  let rendered = Promise.resolve();
+  import.meta.hot?.accept(["./in-place-badge.tsx", "./in-place-note.tsx"], ([badge, note]) => {
+    modules = {
+      badge: (badge as typeof badgeModule | undefined) ?? modules.badge,
+      note: (note as typeof noteModule | undefined) ?? modules.note,
+    };
+    rendered = rendered.then(() => show(render));
   });
 }

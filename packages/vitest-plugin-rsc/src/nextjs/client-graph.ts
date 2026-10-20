@@ -31,10 +31,10 @@ import {
 //
 // The host imports such a file in the rsc layer, where it is a client
 // reference module. That module evaluates the file here as it loads, see
-// `loadClientFile()`: once for each version of the graph, as the browser
+// `loadClientFile()`: once for each version of the file, as the browser
 // evaluates a module once. A host that uses the exports of the file, like a
 // framework that renders a component of it, gets that evaluation with
-// `loadClientModule()`.
+// `loadClientModule()`, and a file that imports it here gets the same one.
 
 const environment = "react_client";
 
@@ -59,8 +59,9 @@ const imported = new Set<string>();
 // module from then on, also after the file was evaluated again for another.
 const evaluationOf = new WeakMap<object, object>();
 
-// What stays the same when a file of the app changes: a package, and a module
-// of the page (../host-module.ts). React stays, with the roots it made.
+// What the graph keeps when Vite invalidates it, as Vite does every module
+// after it pre-bundled the dependencies again: a package, and a module of the
+// page (../host-module.ts). React stays, with the roots it made.
 const isDependency = ({ id, file }: { id: string; file: string | null }) =>
   isHostModule(id) || (file ?? id).includes("/node_modules/");
 
@@ -100,11 +101,11 @@ type ClientReferences = { default: Record<string, () => Promise<object>> };
  *
  * Once for each version of the graph, as the browser evaluates a module
  * once: a second import of the file gets the evaluation of the first, or
- * its error. A change of a module of the browser layer, the file's own
- * too, is a new version, which evaluates the file again, and so is
+ * its error. A change of the file, or of a module that it imports, is a new
+ * version of it, which evaluates the file again, and so is
  * `forgetClientFiles()`, which the plugin's setup file calls before every
  * test file, as Vitest evaluates a setup file and a test file again for
- * each. What the file imports, once for the graph, as the
+ * each. What the file imports, once for the graph until it changes, as the
  * browser does for what Vitest evaluates in the tab.
  */
 export async function loadClientFile(key: string, builtFile?: string): Promise<void> {
@@ -127,15 +128,15 @@ export async function loadClientFile(key: string, builtFile?: string): Promise<v
   // A test that fails says where, in the file as it is written.
   graph ??= createEnvironmentRunner(environment, { sourcemaps: true });
   const { evaluatedModules } = graph;
-  // After a change of a file the graph evaluates the modules of the app
-  // again, as a page load does: the server cannot tell which of them
-  // changed, as another runner may have fetched them again already. What a
-  // setup file with the directive had set up comes back with the setup file,
-  // which Vitest runs before every test file.
-  if (await takeFetchedModules(graph)) {
-    for (const node of evaluatedModules.idToModuleMap.values()) {
-      if (!isDependency(node)) evaluatedModules.invalidateModule(node);
-    }
+  // After a change of a file the graph evaluates again what changed, as
+  // Vite says: the file's modules and the ones that import them, also
+  // through others. Any other module keeps its evaluation, which every
+  // reader of it shares: a module that imports it here, and
+  // `loadClientModule()` for the module of a file of the host that did not
+  // change in the rsc layer.
+  for (const id of await takeFetchedModules(graph)) {
+    const node = evaluatedModules.getModuleById(id);
+    if (node && !isDependency(node)) evaluatedModules.invalidateModule(node);
   }
   registry.browserRequire = browserRequire;
   // The runner keeps the evaluation of the file until a change, above, or

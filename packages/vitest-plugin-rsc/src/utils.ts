@@ -22,10 +22,12 @@ import {
 import { isHostModule } from "./host-module.ts";
 import {
   answerEvent,
+  changedEvent,
   invokeEvent,
   versionEvent,
   webSocketInfoPath,
   webSocketQuery,
+  type ChangedQuestion,
   type PageAnswer,
 } from "./websocket-bridge.ts";
 
@@ -190,26 +192,27 @@ export function createEnvironmentRunner(
   if (builtLayers?.[environment]) return runner;
   takes.set(runner, async () => {
     const modules = await fetchedModules(environment);
-    const changed = first !== undefined && first !== modules;
+    const since = first?.version;
     first = modules;
-    return changed;
+    if (since === undefined || since === modules.version) return [];
+    return askDevServer<string[]>(changedEvent, { environment, since } satisfies ChangedQuestion);
   });
   return runner;
 }
 
-const takes = new WeakMap<ModuleRunner, () => Promise<boolean>>();
+const takes = new WeakMap<ModuleRunner, () => Promise<string[]>>();
 
 /**
  * For a runner of `createEnvironmentRunner()` that outlives a page load: it
  * takes the modules that the tab has fetched now, as the runner of the next
  * page load does, where it would ask the server for each one from then on.
- * Call `checkFetchedModules()` first. Resolves with whether those are of
- * another version than the runner had: a file has changed. The modules that
- * the runner has evaluated stay as they are, also one that changed, which the
- * server cannot tell this runner. Invalidate the ones that may have.
+ * Call `checkFetchedModules()` first. Resolves with the ids of the modules
+ * that changed since the version the runner had: the ones Vite invalidated,
+ * for a change of a file the file's and those that import it. The runner
+ * keeps what it evaluated, also a module that changed: invalidate those.
  */
-export function takeFetchedModules(runner: ModuleRunner): Promise<boolean> {
-  return takes.get(runner)?.() ?? Promise.resolve(false);
+export function takeFetchedModules(runner: ModuleRunner): Promise<string[]> {
+  return takes.get(runner)?.() ?? Promise.resolve([]);
 }
 
 // A module of the page is not the environment's to serve: the runner imports
@@ -244,9 +247,9 @@ async function invokeEnvironment(environment: string, payload: InvokePayload) {
 // server for a module again. Vite's module runner asks for every import of
 // every module, also for a module it already has, which is hundreds of
 // requests for one page. They are answered here, for as long as the server
-// says that its modules are the ones that were fetched: see `moduleVersions`
+// says that its modules are the ones that were fetched: see `versionOf()`
 // in index.ts.
-type FetchedModules = { version: unknown; results: Map<string, Promise<InvokeResult>> };
+type FetchedModules = { version: number; results: Map<string, Promise<InvokeResult>> };
 
 const fetchedModulesOf = new Map<string, Promise<FetchedModules>>();
 
@@ -259,7 +262,9 @@ function fetchedModules(environment: string): Promise<FetchedModules> {
 function askForModules(environment: string, known?: FetchedModules): Promise<FetchedModules> {
   const fetched = requestOverWebSocket(versionEvent, { environment }).then(
     (version): FetchedModules =>
-      known && known.version === version ? known : { version, results: new Map() },
+      known && known.version === version
+        ? known
+        : { version: version as number, results: new Map() },
   );
   fetchedModulesOf.set(environment, fetched);
   // Not kept: the next module asks again. Modules that were fetched stay, and

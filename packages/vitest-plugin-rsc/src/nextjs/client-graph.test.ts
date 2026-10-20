@@ -26,8 +26,10 @@ const tab = vi.hoisted(() => ({
   buildDirectory: undefined as string | undefined,
   /** The client references of the build, by key: the URL of the file each evaluates. */
   references: {} as Record<string, string>,
-  /** Whether a file changed since the graph last asked the server. */
-  changed: false,
+  /** The URLs of the modules that Vite invalidated since the graph last asked. */
+  changed: [] as string[],
+  /** The URLs that a file imports, by its URL. */
+  imports: new Map<string, string[]>(),
   /** The URLs of the files whose evaluation throws. */
   failing: new Set<string>(),
 }));
@@ -54,7 +56,7 @@ vi.mock("../utils.ts", () => ({
   checkFetchedModules: async () => {},
   takeFetchedModules: async () => {
     const { changed } = tab;
-    tab.changed = false;
+    tab.changed = [];
     return changed;
   },
   askDevServer: async (_event: string, { url }: { url: string }) => tab.stylesheets.get(url) ?? [],
@@ -63,6 +65,7 @@ vi.mock("../utils.ts", () => ({
     return {
       evaluatedModules: {
         idToModuleMap,
+        getModuleById: (id: string) => idToModuleMap.get(id),
         getModuleByUrl: (url: string) => idToModuleMap.get(url),
         invalidateModule(node: FakeModule) {
           node.exports = undefined;
@@ -94,9 +97,13 @@ async function evaluate(modules: Map<string, FakeModule>, url: string): Promise<
     ]);
     return { default: Object.fromEntries(list) };
   }
+  const imports = await Promise.all(
+    (tab.imports.get(url) ?? []).map((imported) => importInto(modules, imported)),
+  );
   tab.evaluated.push(url);
   if (tab.failing.has(url)) throw new Error(`${url} failed`);
-  return { url, evaluation: tab.evaluated.length };
+  const evaluation = { url, evaluation: tab.evaluated.length };
+  return imports.length > 0 ? { ...evaluation, imports } : evaluation;
 }
 
 const head = new Set<FakeLink>();
@@ -111,7 +118,8 @@ beforeEach(() => {
   ]);
   tab.buildDirectory = undefined;
   tab.references = {};
-  tab.changed = false;
+  tab.changed = [];
+  tab.imports = new Map();
   tab.failing = new Set();
   head.clear();
   vi.stubGlobal("__viteRscCallServer", undefined);
@@ -217,13 +225,39 @@ test("evaluates a file again after a change, for the module that the change made
 
   // A file changed, and the host imports the file again: a new module, whose
   // prefix evaluated the file again.
-  tab.changed = true;
+  tab.changed = ["/host/badge.tsx"];
   const after = await importHostFile("/host/badge.tsx", "Badge");
 
   expect(await loadClientModule(after)).toEqual({ url: "/host/badge.tsx", evaluation: 2 });
   // The module of before keeps its own.
   expect(await loadClientModule(before)).toBe(old);
   expect(tab.evaluated).toEqual(["/host/badge.tsx", "/host/badge.tsx"]);
+});
+
+// A file of the host that imports another one, as a docs page imports the
+// stories it shows, which the host also reads itself.
+test("gives every reader of a file its one evaluation, also after a change of another", async () => {
+  type Evaluation = { url: string; imports?: object[] };
+  tab.imports.set("/host/page.tsx", ["/host/badge.tsx"]);
+  const { loadClientModule } = await graph();
+  const read = async (key: string) =>
+    (await loadClientModule(await importHostFile(key))) as Evaluation;
+  const badge = await read("/host/badge.tsx");
+  expect((await read("/host/page.tsx")).imports?.[0]).toBe(badge);
+
+  // The page changed, which nothing imports: Vite invalidated it alone, and
+  // the host imports it again.
+  tab.changed = ["/host/page.tsx"];
+  expect((await read("/host/page.tsx")).imports?.[0]).toBe(badge);
+  expect(tab.evaluated).toEqual(["/host/badge.tsx", "/host/page.tsx", "/host/page.tsx"]);
+
+  // The badge changed: Vite invalidated it and the page, and the host
+  // imports both again.
+  tab.changed = ["/host/badge.tsx", "/host/page.tsx"];
+  const changed = await read("/host/badge.tsx");
+  expect(changed).not.toBe(badge);
+  expect((await read("/host/page.tsx")).imports?.[0]).toBe(changed);
+  expect(tab.evaluated.slice(3)).toEqual(["/host/badge.tsx", "/host/page.tsx"]);
 });
 
 test("forgets the files for Vitest's setup file, which evaluates them again", async () => {
