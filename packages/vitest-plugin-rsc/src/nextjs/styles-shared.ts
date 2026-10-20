@@ -2,13 +2,14 @@
 // of a file of the host with `"use client"`: see styles.ts. The page asks for
 // them before Next renders the route. With a dev server it asks the dev
 // server over the page's websocket (`stylesheetsEvent`). A static build has
-// them in a file.
+// them in a file, with the modules of every route.
 
 /**
- * The file of a static build with the stylesheets of every page route, and
+ * The file of a static build with the files a page loads besides the layers:
+ * the stylesheets and the modules of every page route, and the stylesheets
  * of every file of the host, in its directory.
  */
-export const builtStylesheetsFile = "vitest-plugin-rsc/next-stylesheets.json";
+export const builtFilesPath = "vitest-plugin-rsc/next-files.json";
 
 /**
  * Where the dev server answers the page with stylesheets, over the websocket
@@ -50,8 +51,8 @@ export const componentPagePath = "vitest-plugin-rsc/component";
  */
 export type Stylesheets = Record<string, { path: string; content?: string }[]>;
 
-/** What `builtStylesheetsFile` has: the stylesheets of a build, as files of it. */
-export type BuiltStylesheets = {
+/** What `builtFilesPath` has: the stylesheets and the modules of a build, as files of it. */
+export type BuiltFiles = {
   /** Where the browser asks for the files of the app, `/_next/`, from which Next links a stylesheet. */
   assetPath: string;
   /**
@@ -70,10 +71,21 @@ export type BuiltStylesheets = {
    * of `vitestPluginNext()` matches. An empty list for one without any.
    */
   hostFiles: Record<string, string[]>;
+  /** The files of the rsc layer that `modules` names, from the directory of the build. */
+  chunks: string[];
+  /**
+   * For each page route, by the name of its modules: the files of the rsc
+   * layer that its entry loads, by their index in `chunks`, the entry's own
+   * first. Those of the segments and boundaries of its loader tree, and
+   * every one those import, but not one that a segment imports with
+   * `import()`, which loads only when the segment asks for it, nor one the
+   * page has before it loads a route: see route-chunks.ts.
+   */
+  modules: Record<string, number[]>;
 };
 
 /**
- * The key of a file of the host in `BuiltStylesheets.hostFiles`, of a path that
+ * The key of a file of the host in `BuiltFiles.hostFiles`, of a path that
  * the host names it by: from the root of the project, which `./` and `..`
  * may be part of, or absolute. A build has no path of the machine, so an
  * absolute path is the longest key that it ends with.
@@ -112,7 +124,7 @@ export function builtFileKey(file: string, keys: string[]): string | undefined {
  * font, is named by the way from that stylesheet.
  */
 export function builtStylesheetsOf(
-  built: BuiltStylesheets,
+  built: BuiltFiles,
   entry: string,
   directory: string,
   files: string[] = [],
@@ -153,7 +165,7 @@ export function builtStylesheetsOf(
  * file at `stylesheetsEvent`.
  */
 export function builtClientStylesheetsOf(
-  built: BuiltStylesheets,
+  built: BuiltFiles,
   file: string,
   directory: string,
 ): string[] {

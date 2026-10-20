@@ -24,12 +24,18 @@ import { graphStylesheetAttribute } from "./styles-shared.ts";
 // the page was open goes with the page, whatever its name, as the nodes that
 // came with it do. Not what was there before it: the host may run a React of
 // its own.
+//
+// A page load starts the files of its route before the server has rendered
+// it, with a preload of each (`preloadPage()`). Those links are the page's
+// too, and go with it, and with a load that is left before its page is there.
 
 const elements = (of: Document) => [of.documentElement, of.head, of.body];
 const attributesOf = (element: Element) =>
   Array.from(element.attributes, ({ name, value }) => [name, value] as const);
 
 let unload: (() => void) | undefined;
+// The preloads of the page that loads next, until it is there.
+let preloads: HTMLLinkElement[] = [];
 // The URL that leaving the page puts back, while a page is open.
 let runnerHref: string | undefined;
 
@@ -97,6 +103,37 @@ function setAttributes(element: Element, attributes: Iterable<readonly [string, 
 }
 
 /**
+ * Starts the files of the route of the page that loads next, as the server
+ * renders it: `stylesheets` as Next links them, in the CORS mode of
+ * `crossOrigin`, and `modules`. By their URLs. They go with that page.
+ */
+export function preloadPage({
+  stylesheets,
+  crossOrigin,
+  modules,
+}: {
+  stylesheets: string[];
+  crossOrigin: string | undefined;
+  modules: string[];
+}): void {
+  const links = [
+    ...stylesheets.map((href) => ({ href, rel: "preload", as: "style", crossOrigin })),
+    // In the mode of a module that a module script imports, as Vite preloads one.
+    ...modules.map((href) => ({ href, rel: "modulepreload", as: "", crossOrigin: "" })),
+  ];
+  for (const { href, rel, as, crossOrigin } of links) {
+    if (preloads.some((link) => link.href === href)) continue;
+    const link = document.createElement("link");
+    link.rel = rel;
+    if (as) link.as = as;
+    if (crossOrigin !== undefined) link.crossOrigin = crossOrigin;
+    link.href = href;
+    document.head.append(link);
+    preloads.push(link);
+  }
+}
+
+/**
  * Replaces the page in this document with the one the server sent as `html`:
  * its `<head>` first, the rest once the stylesheets of the `<head>` have
  * loaded, and runs its inline scripts in document order once the stylesheets
@@ -113,7 +150,10 @@ function setAttributes(element: Element, attributes: Iterable<readonly [string, 
  * scripts it renders, and after it the scripts of Next and React.
  */
 export async function loadDocument(html: string, url: string, container?: Element): Promise<void> {
-  unloadDocument();
+  leaveDocument();
+  // The preloads of its route are this page's.
+  const ownPreloads = new Set(preloads);
+  preloads = [];
 
   // What was here before the page. Everything else is the page's to lose.
   // The URL too: a host may move it between pages, to say what it shows next.
@@ -126,7 +166,11 @@ export async function loadDocument(html: string, url: string, container?: Elemen
   if (container) reactTargets.push(container);
   const runnerProperties = reactTargets.map((target) => new Set(Reflect.ownKeys(target)));
   const runnerScripts = new Set(document.querySelectorAll("script"));
-  const before = new Set<Node>([...document.head.childNodes, ...runnerBody.childNodes]);
+  const before = new Set<Node>(
+    [...document.head.childNodes, ...runnerBody.childNodes].filter(
+      (node) => !ownPreloads.has(node as HTMLLinkElement),
+    ),
+  );
   const parked: Node[] = [];
   // The body of the page, in the document once the page shows. What the
   // runner needs moves into it, and back. For a node that is all there is:
@@ -283,10 +327,23 @@ Object.defineProperty(self, "$RC", {
     }),
 });
 
-/** Leaves the page: the document is as it was before the page. */
-export function unloadDocument(): void {
+// Leaves the page that is there, if any.
+function leaveDocument(): void {
   // Once, also when it throws: the next page is not to find this one.
   const leave = unload;
   unload = undefined;
   leave?.();
+}
+
+/**
+ * Leaves the page, and the one that was loading: the document is as it was
+ * before the page.
+ */
+export function unloadDocument(): void {
+  try {
+    leaveDocument();
+  } finally {
+    for (const link of preloads) link.remove();
+    preloads = [];
+  }
 }

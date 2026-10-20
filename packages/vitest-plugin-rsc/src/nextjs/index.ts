@@ -276,6 +276,7 @@ async function sendRequest(
           nested: !from,
           unrouted: network ? "pass" : "not-found",
           opened: redirected ? undefined : opened,
+          pageLoad: navigation,
         },
       ),
       request.signal,

@@ -8,7 +8,7 @@ import {
   environmentModule,
   takeFetchedModules,
 } from "../utils.ts";
-import { buildDirectory, builtStylesheets } from "./built-stylesheets.ts";
+import { buildDirectory, builtFiles } from "./built-files.ts";
 import { clientFileKeyExport } from "./client-file-key.ts";
 import { registry } from "./registry.ts";
 import {
@@ -80,7 +80,7 @@ async function stylesheetsOf(key: string, builtFile: string | undefined): Promis
     return askDevServer<string[]>(stylesheetsEvent, { url: key } satisfies StylesheetsQuestion);
   }
   if (builtFile === undefined) return [];
-  return builtClientStylesheetsOf(await builtStylesheets(), builtFile, buildDirectory);
+  return builtClientStylesheetsOf(await builtFiles(), builtFile, buildDirectory);
 }
 
 // In a static build: the modules of the browser layer that a Flight payload
