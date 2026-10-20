@@ -89,12 +89,13 @@ export function newPageStore(): void {
 }
 
 // The signal of the page of the app that is open, which Next's requests are
-// of: see the browser's `fetch` below. It aborts as the page is left. Without
-// a page, a request of Next's has none to hear it.
+// of: see the browser's `fetch` below. It aborts as the page is left, and
+// goes once the page is. Without a page, a request of Next's has none to
+// hear it.
 let page: AbortSignal | undefined;
 
-/** Says which page of the app is open, by its signal, which aborts once it is left. */
-export function setOpenPage(signal: AbortSignal): void {
+/** Says which page of the app is open, by its signal, which aborts as it is left. */
+export function setOpenPage(signal: AbortSignal | undefined): void {
   page = signal;
 }
 

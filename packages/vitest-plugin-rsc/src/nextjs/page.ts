@@ -30,8 +30,7 @@ export class Page {
   readonly #load = new AbortController();
   /** Aborts as the page is left: what the load does takes it. */
   readonly signal = this.#load.signal;
-  // Until the page is released: then a part is released as it is made.
-  #releases: (() => void)[] | undefined = [];
+  readonly #releases: (() => void)[] = [];
   #started: Promise<void> | undefined;
   #stopped = () => {};
   #left: Promise<void> | undefined;
@@ -47,12 +46,11 @@ export class Page {
   }
 
   /**
-   * Releases `release` as the page is left: before what the load made
-   * before it.
+   * Runs `release` as the page is left: before what the load made before
+   * it. As `defer()` of a `DisposableStack`.
    */
-  holds(release: () => void): void {
-    if (this.#releases) this.#releases.push(release);
-    else release();
+  defer(release: () => void): void {
+    this.#releases.push(release);
   }
 
   /**
@@ -69,8 +67,10 @@ export class Page {
   /**
    * Leaves the page: `by` is what leaves it, for its node. Stops its load at
    * once. Resolves once what the page holds is released, or rejects with the
-   * first error of a release, after every release has run. Once: leaving it
-   * again gets the same promise.
+   * first error of a release, after every release has run. A page still
+   * starting after `startTimeout` is released once it has stopped, and
+   * `reportError()` gets that error: leaving resolves without it. Once:
+   * leaving it again gets the same promise.
    */
   leave(by: string): Promise<void> {
     return (this.#left ??= this.#leave(by));
@@ -106,10 +106,8 @@ export class Page {
 
   // Every release runs, the last first, also after one that throws.
   #release(): void {
-    const releases = this.#releases ?? [];
-    this.#releases = undefined;
     let failed: { error: unknown } | undefined;
-    for (const release of releases.reverse()) {
+    for (const release of this.#releases.splice(0).reverse()) {
       try {
         release();
       } catch (error) {
@@ -265,12 +263,15 @@ async function openPage(
   // no module graph: what of it stays, like an error whose stack has the
   // frames that loaded a module, cannot reach its modules through the runner.
   const runner = createEnvironmentRunner("react_client");
-  page.holds(() => void runner.close());
-  const browserRequire = browserRequireOfPage();
+  page.defer(() => void runner.close());
+  // The browser's Flight client reads properties off `__webpack_require__`
+  // when it loads, which is before the page can say how it loads a module,
+  // and wraps some of them. One that the pages shared would keep every page.
+  const browserRequire = (id: string) => registry.loadBrowserModule(id);
   registry.browserRequire = browserRequire;
   // What the page's Flight client wrapped of it keeps the page. Once it is
   // left, it loads nothing more, as its closed runner.
-  page.holds(() => {
+  page.defer(() => {
     if (registry.browserRequire === browserRequire) registry.browserRequire = loadsNothing;
   });
   // React's scheduler, Next's router and Next's dev overlay each leave
@@ -282,7 +283,7 @@ async function openPage(
   // of the app's that was added in it would be taken from the app when the
   // page is left.
   const leftovers = [recordListeners(window), recordMessageChannels()];
-  page.holds(() => leftovers.forEach((leftover) => leftover.remove()));
+  for (const leftover of leftovers) page.defer(() => leftover.remove());
   const loaded = () => leftovers.forEach((leftover) => leftover.stop());
   const started = (async () => {
     const client = await runner.import<typeof import("./client.tsx")>(
@@ -296,10 +297,10 @@ async function openPage(
       opening?.nodeOnPage,
       page.errors,
     );
-    page.holds(unmount);
+    page.defer(unmount);
   })();
-  // The page counts as open from here, so that leaving it stops it, also
-  // while its scripts load and while it hydrates.
+  // The page is open from here: `currentPage()` has it, for the navigations
+  // of its app (document-loads.ts), and leaving waits for its start.
   page.starts(started, loaded);
   setOpenPage(signal);
   try {
@@ -313,12 +314,7 @@ async function openPage(
   return response;
 }
 
-// The browser's Flight client reads properties off `__webpack_require__`
-// when it loads, which is before the page can say how it loads a module,
-// and wraps some of them. One that the pages shared would keep every page,
-// so each page gets one of its own. Made here, and not in `openPage()`,
-// whose closures hold the page's runner.
-const browserRequireOfPage = () => (id: string) => registry.loadBrowserModule(id);
+// What a `__webpack_require__` of a page that was left loads.
 const loadsNothing = () => new Promise<never>(() => {});
 
 // One at a time: a page that is being left is left before the next one is.
@@ -341,13 +337,18 @@ export function leavePage(by: string): Promise<void> {
         try {
           unloadDocument();
         } finally {
-          await loadedSsrLayer()?.settleRequests();
-          // What the test opened goes with its page: the route of a node,
-          // and a pathname without the proxy.
-          registry.opened = undefined;
-          // A Server Action has no page to post to until the next one starts.
-          globalThis.__viteRscCallServer = callServerWithoutPage;
-          resetAsyncLocalStorage();
+          try {
+            await loadedSsrLayer()?.settleRequests();
+          } finally {
+            // What the test opened goes with its page: the route of a node,
+            // and a pathname without the proxy.
+            registry.opened = undefined;
+            // No page hears a request of Next's until the next one starts.
+            setOpenPage(undefined);
+            // A Server Action has no page to post to until the next one starts.
+            globalThis.__viteRscCallServer = callServerWithoutPage;
+            resetAsyncLocalStorage();
+          }
         }
       }
     });
