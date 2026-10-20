@@ -26,20 +26,31 @@ afterEach(() => {
 const modulesOfPage = () =>
   new WeakRef((globalThis as { __viteRscCallServer?: object }).__viteRscCallServer!);
 
-// Passes once the browser has let go of what `modules` refer to: after the
-// tasks that the pages had queued have run. The garbage collection is forced
-// through the Chrome DevTools Protocol, which Chromium always has.
-async function expectCollected(...modules: WeakRef<object>[]): Promise<void> {
+// Every page that a test of this file has left. One of them may stay,
+// whichever test left it: since V8 7dcf3d06ea (Chromium 153), a live shape
+// keeps every descriptor of its array, also those that only longer shapes
+// use. The first page whose objects extend a shape of the tab, like the
+// interop object of a CommonJS package, puts its getters there, and they lead
+// back to the page: V8 keeps that page for as long as the tab has an object
+// of the shape. That is one page per such shape for the tab, not one per
+// test, so every test leaves two pages or more: what a page leaves behind
+// keeps them all.
+const left: WeakRef<object>[] = [];
+
+// Passes once the browser has let go of all pages in `left` but at most one:
+// after the tasks that the pages had queued have run. The garbage collection
+// is forced through the Chrome DevTools Protocol, which Chromium always has.
+async function expectCollected(): Promise<void> {
   await expect
     .poll(
       async () => {
         await cdp().send("HeapProfiler.collectGarbage");
         // Not the objects themselves: the assertion would keep them.
-        return modules.filter((of) => of.deref() !== undefined).length;
+        return left.filter((of) => of.deref() !== undefined).length;
       },
       { timeout: 4000, interval: 100 },
     )
-    .toBe(0);
+    .toBeLessThanOrEqual(1);
 }
 
 // Next's router, as Next's own e2e tests reach it.
@@ -51,10 +62,10 @@ test("lets go of every page that navigated to a route with stylesheets", async (
   // with a timer of a minute that it does not clear once it has: that timer
   // would keep the page. So the browser has loaded them already.
   await renderServer({ url: "/styles" });
-  // Many pages, and first in the file: whether V8 keeps a page can depend on
-  // the shape that the document has at that moment. One page, or a garbage
-  // collection before them, can let go of it by luck.
-  const left: WeakRef<object>[] = [];
+  // Many pages, and first in the file: whether what a page left on the
+  // document keeps it can depend on the shape that the document has at that
+  // moment. One page, or a garbage collection before them, can let go of it
+  // by luck. One of them may stay all the same: see `left`.
   for (let pages = 0; pages < 12; pages++) {
     await renderServer({ url: "/" });
     // React inserts the stylesheets of the route, keeps them on the document,
@@ -67,7 +78,7 @@ test("lets go of every page that navigated to a route with stylesheets", async (
   await renderServer({ url: "/" });
   await page.getByRole("heading", { name: "Home" }).hover();
 
-  await expectCollected(...left);
+  await expectCollected();
 });
 
 // The properties React DOM keeps on a node, named for the copy of React DOM
@@ -178,48 +189,54 @@ test("keeps the mark that a host set on the document before its first page, for 
 });
 
 test("lets go of a page that the test has left, with all of its modules", async () => {
-  await renderServer({ url: "/" });
-  const modules = modulesOfPage();
+  for (let pages = 0; pages < 2; pages++) {
+    await renderServer({ url: "/" });
+    left.push(modulesOfPage());
+  }
 
   await renderServer({ url: "/" });
   // The browser keeps the element that the pointer is over, and with it its
   // page, until the pointer is over another one.
   await page.getByRole("heading", { name: "Home" }).hover();
 
-  await expectCollected(modules);
+  await expectCollected();
 });
 
 test("lets go of a page that rendered a portal in the body", async () => {
-  await renderServer({ url: "/help" });
-  // React adds its listeners to where a portal renders: the body.
-  await page.getByRole("button", { name: "Help" }).click();
-  await page.getByRole("dialog", { name: "Help" }).getByRole("button", { name: "Close" }).click();
-  await expect.element(page.getByRole("dialog")).not.toBeInTheDocument();
-  const modules = modulesOfPage();
+  for (let pages = 0; pages < 2; pages++) {
+    await renderServer({ url: "/help" });
+    // React adds its listeners to where a portal renders: the body.
+    await page.getByRole("button", { name: "Help" }).click();
+    await page.getByRole("dialog", { name: "Help" }).getByRole("button", { name: "Close" }).click();
+    await expect.element(page.getByRole("dialog")).not.toBeInTheDocument();
+    left.push(modulesOfPage());
+  }
 
   await renderServer({ url: "/" });
   // The browser keeps the element that was clicked last, and with it its
   // page, until the pointer is somewhere else.
   await page.getByRole("heading", { name: "Home" }).hover();
 
-  await expectCollected(modules);
+  await expectCollected();
 });
 
 test("lets go of a node that rendered a portal in the body", async () => {
   // What the test has in the body stays there for the node.
   const mine = document.body.appendChild(document.createElement("aside"));
-  await renderServer(<HelpDialog />);
-  // Not the elements themselves: the assertion would keep them.
-  expect(mine.parentElement === document.body).toBe(true);
-  await page.getByRole("button", { name: "Help" }).click();
-  await page.getByRole("dialog", { name: "Help" }).getByRole("button", { name: "Close" }).click();
-  await expect.element(page.getByRole("dialog")).not.toBeInTheDocument();
-  const modules = modulesOfPage();
+  for (let pages = 0; pages < 2; pages++) {
+    await renderServer(<HelpDialog />);
+    // Not the elements themselves: the assertion would keep them.
+    expect(mine.parentElement === document.body).toBe(true);
+    await page.getByRole("button", { name: "Help" }).click();
+    await page.getByRole("dialog", { name: "Help" }).getByRole("button", { name: "Close" }).click();
+    await expect.element(page.getByRole("dialog")).not.toBeInTheDocument();
+    left.push(modulesOfPage());
+  }
 
   await renderServer({ url: "/" });
   await page.getByRole("heading", { name: "Home" }).hover();
 
-  await expectCollected(modules);
+  await expectCollected();
   await cleanup();
   expect(mine.parentElement).toBe(document.body);
   mine.remove();
@@ -229,14 +246,16 @@ test("lets go of a node that the test has left, also in a container of the test'
   // The test keeps this container, and React adds its listeners to it, not
   // to the document.
   const container = document.body.appendChild(document.createElement("section"));
-  await renderServer(<Counter />, { container });
-  const modules = modulesOfPage();
+  for (let pages = 0; pages < 2; pages++) {
+    await renderServer(<Counter />, { container });
+    left.push(modulesOfPage());
+  }
 
   await renderServer(<Counter />);
   // The pointer may be over the button of the node that was left.
   await page.getByRole("button", { name: "Count: 0" }).hover();
 
-  await expectCollected(modules);
+  await expectCollected();
   // React DOM marked the container as the root of the node's page.
   expect(reactProperties(container)).toEqual([]);
   container.remove();
