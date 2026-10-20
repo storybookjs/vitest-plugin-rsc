@@ -2,7 +2,14 @@ import fs from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { normalizePath, resolveConfig, type Plugin } from "vite";
+import {
+  normalizePath,
+  resolveConfig,
+  type MinimalPluginContextWithoutEnvironment,
+  type Plugin,
+  type UserConfig,
+  type ViteDevServer,
+} from "vite";
 import { expect, test, vi } from "vitest";
 import { vitestPluginRSC } from "../index.ts";
 import { vitestPluginNext, type VitestPluginNextOptions } from "./plugin.ts";
@@ -23,7 +30,7 @@ const root = fileURLToPath(new URL("../../../../playground/nextjs-e2e-demo", imp
 const installed = createRequire(path.join(root, "package.json"));
 const nextDir = path.dirname(installed.resolve("next/package.json"));
 
-type OptimizeDeps = { entries?: string[]; include: string[] };
+type OptimizeDeps = { include: string[] };
 type Config = { environments: Record<string, { optimizeDeps: OptimizeDeps }> };
 
 // The config loads the project, and Next's config with it: once for the file.
@@ -37,15 +44,67 @@ const optimizeDeps = (async () => {
   };
 })();
 
-test("has Vite scan the proxy of the app, next to its routes", async () => {
-  const { rsc } = await optimizeDeps;
+// What the layers scan with a dev server, for a host with this config, and
+// the entries that a host like Vitest names on the resolved config: the
+// hooks that name the entries, in the order Vite runs them.
+async function scanEntries(hostConfig: UserConfig, resolvedEntries?: string[]) {
+  const config = await resolveConfig(
+    {
+      root,
+      configFile: false,
+      logLevel: "silent",
+      ...hostConfig,
+      plugins: [vitestPluginRSC(), vitestPluginNext()],
+    },
+    "serve",
+  );
+  if (resolvedEntries) config.environments.client!.optimizeDeps.entries = resolvedEntries;
+  const server = { config } as ViteDevServer;
+  const scans = ["vitest-plugin-rsc:next-scan", "rsc:runner-environment-optimizer:react_client"];
+  for (const { name, configureServer } of config.getSortedPlugins("configureServer")) {
+    if (!scans.includes(name)) continue;
+    const hook = typeof configureServer === "function" ? configureServer : configureServer.handler;
+    await hook.call({} as MinimalPluginContextWithoutEnvironment, server);
+  }
+  return {
+    rsc: config.environments.client!.optimizeDeps.entries,
+    browser: config.environments.react_client!.optimizeDeps.entries,
+  };
+}
 
-  // No file of `app/` imports the proxy, so the scan of `app/` does not find
-  // what only the proxy imports.
-  expect(rsc.entries).toEqual([
-    normalizePath(path.join(root, "app/**/*.{js,jsx,ts,tsx}")),
-    normalizePath(path.join(root, "proxy.ts")),
+// Routes load when they are first requested, and so does the proxy, which
+// no file of `app/` imports.
+const app = [
+  normalizePath(path.join(root, "app/**/*.{js,jsx,ts,tsx}")),
+  normalizePath(path.join(root, "proxy.ts")),
+];
+
+test("has Vite scan the host's pages and the app, for a host that names no entries", async () => {
+  // Vite's default, which a config with entries has no more: every HTML file.
+  expect(await scanEntries({})).toEqual({
+    rsc: ["**/*.html", ...app],
+    browser: ["**/*.html", ...app],
+  });
+  // Or the input of the build, where the config has one.
+  const input = { main: "index.html", callout: path.join(root, "callout.html") };
+  expect((await scanEntries({ build: { rolldownOptions: { input } } })).rsc).toEqual([
+    "index.html",
+    normalizePath(path.join(root, "callout.html")),
+    ...app,
   ]);
+});
+
+test("has Vite scan the entries of a host and the app", async () => {
+  const optimizeDeps = { entries: ["src/**/*.demo.tsx"] };
+  expect(await scanEntries({ optimizeDeps })).toEqual({
+    rsc: ["src/**/*.demo.tsx", ...app],
+    browser: ["src/**/*.demo.tsx", ...app],
+  });
+  // Vitest names its test files and setup files once the config is resolved.
+  expect(await scanEntries({}, ["app/page.test.tsx"])).toEqual({
+    rsc: ["app/page.test.tsx", ...app],
+    browser: ["app/page.test.tsx", ...app],
+  });
 });
 
 test("pre-bundles every Client Component of Next for the layers that render one", async () => {
