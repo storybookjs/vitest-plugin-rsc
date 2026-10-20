@@ -62,7 +62,7 @@ Your assertions stay user-facing and your setup stays direct:
 ```tsx
 test("archive a note", async () => {
   // seed DB
-  await signInAs(testUser);
+  await signedInAs(testUser);
   await db.insert(notes).values({ ownerId: testUser.id, title: "Inbox triage" });
 
   // RSC -> pixels
@@ -321,11 +321,11 @@ import { renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
 
 import { db } from "#lib/db.ts";
 import { notes } from "#db/schema.ts";
-import { signInAs, testUser } from "#test/auth.ts";
+import { signedInAs, testUser } from "#test/auth.ts";
 import NewNotePage from "./page.tsx";
 
 test("validates a new note without losing entered content", async () => {
-  await signInAs(testUser);
+  await signedInAs(testUser);
   localStorage.setItem("theme", "dark");
 
   await db.insert(notes).values({
@@ -346,12 +346,12 @@ test("validates a new note without losing entered content", async () => {
 
 That single test sets up:
 
-- **Server-side state**: the signed-in user (`signInAs`) and a seeded database row (`db.insert`)
+- **Server-side state**: the signed-in user (`signedInAs`) and a seeded database row (`db.insert`)
 - **Browser-side state**: a client-side preference written to `localStorage`
 
 Setting server and browser state in the same setup is something a pure unit test cannot reach and a full E2E test can only do through the real UI.
 
-`vi.mock("#lib/db.ts")` in the setup file replaces the production database adapter with the Vitest `__mocks__` version next to it (`lib/__mocks__/db.ts`). The mock exposes a `db` reference and a `resetDb` helper that the setup file points at a fresh PGlite clone per test. See [Drizzle + PGlite](#example-drizzle--pglite) below for the wiring.
+`vi.mock("#lib/db.ts")` in the setup file replaces the production database adapter with the Vitest `__mocks__` version next to it (`lib/__mocks__/db.ts`). The mock exports `db`, on a PGlite database in memory, and `resetDb()`, which empties every table: the setup file calls it before each test. See [Drizzle + PGlite](#example-drizzle--pglite) below for the wiring.
 
 ### Router Hooks And Links
 
@@ -869,28 +869,12 @@ afterEach(() => {
 
 ### Example: Drizzle + PGlite
 
-PGlite runs Postgres in-process, so it works inside the browser test runtime. This is how `playground/nextjs-notes-demo` does it: one PGlite in memory for the document, which every test empties first.
+PGlite runs Postgres in-process, so it works inside the browser test runtime. This is how `playground/nextjs-notes-demo` does it: one PGlite database for each browser page that runs tests (with `isolate: false`, the test files of a worker share one), which every test empties first.
 
-Three files take part:
+Two files sit next to each other:
 
 - `lib/db.ts` — the database adapter your app code imports.
-- `lib/__mocks__/db.ts` — the test stand-in that `vi.mock("#lib/db.ts")` swaps in. It makes the PGlite database as the module loads, with the tables of the schema, and exports `db`, Drizzle on that database, and `resetDb()`, which empties every table.
-- `test/schema-sql.ts` — the SQL that makes the tables of the Drizzle schema in an empty database. Drizzle Kit runs in Node, so the Vitest config imports it and defines it for the mock as `__SCHEMA_SQL__`.
-
-```ts
-// test/schema-sql.ts
-import { generateDrizzleJson, generateMigration } from "drizzle-kit/api";
-import * as schema from "../db/schema.ts";
-
-const statements = await generateMigration(generateDrizzleJson({}), generateDrizzleJson(schema));
-
-export const schemaSQL = statements.join("\n");
-```
-
-```ts
-// vitest.config.ts, in the project
-define: { __SCHEMA_SQL__: JSON.stringify(schemaSQL) },
-```
+- `lib/__mocks__/db.ts` — the test stand-in that `vi.mock("#lib/db.ts")` swaps in. It makes the PGlite database as the module loads, with the tables of the Drizzle schema, and exports `db`, Drizzle on that database, and `resetDb()`, which empties every table. Drizzle Kit, which turns the schema into SQL, runs in Node, so the Vitest config prepares the tables and hands them to the mock.
 
 `resetDb()` empties the tables with `DELETE`, under `SET session_replication_role = replica`, so that the foreign keys do not fix the order of the tables. The setup file mocks the module and empties the database before each test:
 

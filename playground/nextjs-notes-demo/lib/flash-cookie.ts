@@ -25,10 +25,3 @@ export async function setFlashCookie(key: string, value: string) {
     secure: env.NODE_ENV === "production",
   });
 }
-
-export async function deleteFlashCookies() {
-  const cookieStore = await cookies();
-  for (const { name } of cookieStore.getAll()) {
-    if (isFlashCookieName(name)) cookieStore.delete(name);
-  }
-}
