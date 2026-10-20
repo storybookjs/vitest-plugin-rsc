@@ -240,7 +240,8 @@ the app's cookies and storage, as before a test, and then runs the
 `beforeEach` of the server preview and of the story. What that sets is
 there for the render: a row of the app's database, a cookie of the app, set
 in `runInServerAction()` of `vitest-plugin-rsc/nextjs/testing-library`, or
-an item of `localStorage`.
+an item of `localStorage`. Leaving a client story does the same, as it takes
+the stylesheets of its file away.
 
 ```ts
 export const SignedIn = meta.story({
@@ -397,7 +398,7 @@ for both kinds.
   framework's examples do, look the same either way.
 - A docs page has the CSS of the client stories it shows inline: not that
   of the MDX file itself, or of `preview.tsx` on a page without a client
-  story, once Storybook has shown a story before it.
+  story.
 - Storybook's Vitest addon and portable stories (a story's `run()` in a
   Vitest test) are not supported yet: nothing tests them. Outside
   Storybook a server story leaves its stylesheets to the plugin's default,

@@ -33,11 +33,6 @@
       "storybook-nextjs-vite-rsc-source": "./src/index.ts",
       "default": "./dist/index.js"
     },
-    "./client-renderer": {
-      "types": "./dist/client-renderer.d.ts",
-      "storybook-nextjs-vite-rsc-source": "./src/client-renderer.ts",
-      "default": "./dist/client-renderer.js"
-    },
     "./preset": {
       "types": "./dist/preset.d.ts",
       "storybook-nextjs-vite-rsc-source": "./src/preset.ts",

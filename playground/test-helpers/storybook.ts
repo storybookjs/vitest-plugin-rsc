@@ -53,7 +53,9 @@ export const test = hostTest.extend(
  * The CSS of the document of each story of `order`, which the manager at
  * `url` opens one after the other: the rules of the stylesheets in its
  * `<head>`, each once, as a sorted list. What styles a story, whichever
- * element brought it: Vite's `<style>`, or a `<link>`.
+ * element brought it: Vite's `<style>`, or a `<link>`. A rule by its
+ * selector: a build minifies the CSS of the host's chunks, and not the
+ * same way as a stylesheet of the app.
  */
 export async function stylesInOrder(
   page: Page,
@@ -63,8 +65,15 @@ export async function stylesInOrder(
   const styles = (canvas: Frame) =>
     canvas.evaluate(() => {
       const rules = [...document.styleSheets]
-        .filter((sheet) => !sheet.disabled && document.head.contains(sheet.ownerNode))
-        .flatMap((sheet) => [...sheet.cssRules].map((rule) => rule.cssText));
+        // Those that apply: not one switched off, or of another medium.
+        .filter(
+          (sheet) =>
+            !sheet.disabled &&
+            document.head.contains(sheet.ownerNode) &&
+            (sheet.media.length === 0 || matchMedia(sheet.media.mediaText).matches),
+        )
+        .flatMap((sheet) => [...sheet.cssRules])
+        .map((rule) => (rule instanceof CSSStyleRule ? rule.selectorText : rule.cssText));
       return [...new Set(rules)].sort();
     });
   const canvas = await openStory(page, url, order[0]!);

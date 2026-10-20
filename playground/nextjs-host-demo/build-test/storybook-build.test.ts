@@ -85,8 +85,7 @@ test("a story has the CSS of its file and its route, in any order of the stories
     "press-button--pressed",
   ]);
   expect(backwards).toEqual(forwards);
-  const has = (story: string, selector: string) =>
-    forwards[story]!.some((rule) => rule.startsWith(`${selector} {`));
+  const has = (story: string, selector: string) => forwards[story]!.includes(selector);
   expect(stories.map((story) => has(story, ".story-frame"))).toEqual([true, false, false]);
   expect(stories.map((story) => has(story, '[data-testid="theme"]'))).toEqual([true, true, false]);
 });
