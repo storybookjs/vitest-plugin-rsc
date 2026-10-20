@@ -13,7 +13,9 @@ test("leaving waits for a request that the server has not answered yet", async (
     method: "POST",
     headers: { cookie: "session=ada" },
   });
-  await expect.poll(() => slowWork.started).toBe(1);
+  // The first request to the route loads its code, which takes a while when
+  // every core runs a worker. It waits as long as a page load in leave.test.tsx.
+  await expect.poll(() => slowWork.started, { timeout: 10_000 }).toBe(1);
 
   // What ends a test.
   await cleanup();
