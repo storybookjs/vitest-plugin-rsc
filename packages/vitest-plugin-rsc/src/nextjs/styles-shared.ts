@@ -18,6 +18,41 @@ export const builtFilesPath = "vitest-plugin-rsc/next-files.json";
 export const stylesheetsEvent = "vitest-plugin-rsc:next-stylesheets";
 
 /**
+ * What the dev server tells the page after a change of stylesheets that it
+ * links, without class names: the URL of the version of now of each, which
+ * the page moves every link of the stylesheet to (stylesheet-versions.ts).
+ */
+export const stylesheetsChangedEvent = "vitest-plugin-rsc:next-stylesheets-changed";
+
+/** Where Next's build puts the CSS of an app, under `/_next/`. */
+export const cssDirectory = "static/css";
+/**
+ * The version of its CSS that the path of a stylesheet of the dev server has
+ * after the directory, `static/css/<version>/app/globals.css`: see styles.ts.
+ */
+export const cssVersionPattern = "[0-9a-f]{16}";
+const versionSegmentRE = new RegExp(`/${cssDirectory}/${cssVersionPattern}/`);
+
+/**
+ * The stylesheet that a URL of a link is of, whatever its version and however
+ * its path is encoded: the path of the URL without its version, decoded.
+ * Nothing for a URL that is no stylesheet of the dev server.
+ */
+export function stylesheetOfUrl(url: string): string | undefined {
+  const { pathname } = new URL(url, "http://n");
+  if (!versionSegmentRE.test(pathname)) return undefined;
+  try {
+    return pathname
+      .replace(versionSegmentRE, `/${cssDirectory}/`)
+      .split("/")
+      .map(decodeURIComponent)
+      .join("/");
+  } catch {
+    return undefined;
+  }
+}
+
+/**
  * What the page asks at `stylesheetsEvent`. For a route: by the name of its
  * modules, with `Stylesheets`, and `files`, the files of the host that render
  * the node of the route, in their order, absolute or from the root of the

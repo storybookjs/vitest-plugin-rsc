@@ -6,7 +6,7 @@ import "./globals.ts";
 import { createElement, type JSXElementConstructor, type ReactNode } from "react";
 import { resetAsyncLocalStorage } from "../async-local-storage.ts";
 import { checkFetchedModules, createEnvironmentRunner, environmentModule } from "../utils.ts";
-import { callServerWithoutPage, unlinkStylesheets } from "./client-graph.ts";
+import { callServerWithoutPage, moveGraphLinks, unlinkStylesheets } from "./client-graph.ts";
 import { documentUrl, loadDocument, unloadDocument } from "./document.ts";
 import { recordListeners, recordMessageChannels } from "./leftovers.ts";
 import { NodeOnPage } from "./node-on-page.ts";
@@ -15,6 +15,8 @@ import { openedAt, registry, type Opened } from "./registry.ts";
 import { takesRequest } from "./server-in-front.ts";
 import { ssrLayer, ssrLayerNow } from "./server-layers.ts";
 import { PageStorage, storageOf } from "./storage.ts";
+import { movePageLinks, stylesheetVersions } from "./stylesheet-versions.ts";
+import { stylesheetsChangedEvent } from "./styles-shared.ts";
 
 export { linkStylesheetsOf, loadClientModule } from "./client-graph.ts";
 
@@ -1230,6 +1232,13 @@ import.meta.hot?.on("vite:beforeFullReload", ({ path }) => {
 // is gone. So the page is left as the connection goes, and the host shows
 // without it until the server answers.
 import.meta.hot?.on("vite:ws:disconnect", () => leavePage("a lost connection to the dev server"));
+// A change of stylesheets that a page or the files of the host link: their
+// links move to the versions of now, and the page stays (styles.ts).
+import.meta.hot?.on(stylesheetsChangedEvent, (urls: string[]) => {
+  const versions = stylesheetVersions(urls);
+  movePageLinks(versions);
+  moveGraphLinks(versions);
+});
 
 // Whether Vite's client goes on to load the document again, as it decides
 // once the page is left: for a change of an HTML file only if it is the one
