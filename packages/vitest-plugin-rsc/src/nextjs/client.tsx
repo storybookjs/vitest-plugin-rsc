@@ -190,6 +190,8 @@ export async function start(
       });
     } finally {
       delete (document as { currentScript?: unknown }).currentScript;
+      // Its closure reaches the root, which would outlive the page.
+      delete globalThis.__NEXT_HYDRATED_CB;
     }
   } catch (error) {
     // A page that did not start leaves nothing running in the next one.

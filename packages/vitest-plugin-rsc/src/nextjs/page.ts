@@ -266,7 +266,13 @@ async function openPage(
   // frames that loaded a module, cannot reach its modules through the runner.
   const runner = createEnvironmentRunner("react_client");
   page.holds(() => void runner.close());
-  registry.browserRequire = browserRequireOfPage();
+  const browserRequire = browserRequireOfPage();
+  registry.browserRequire = browserRequire;
+  // What the page's Flight client wrapped of it keeps the page. Once it is
+  // left, it loads nothing more, as its closed runner.
+  page.holds(() => {
+    if (registry.browserRequire === browserRequire) registry.browserRequire = loadsNothing;
+  });
   // React's scheduler, Next's router and Next's dev overlay each leave
   // something behind when they load: see leftovers.ts. That is from here
   // until `start()` says that Next's client has loaded.
@@ -313,6 +319,7 @@ async function openPage(
 // so each page gets one of its own. Made here, and not in `openPage()`,
 // whose closures hold the page's runner.
 const browserRequireOfPage = () => (id: string) => registry.loadBrowserModule(id);
+const loadsNothing = () => new Promise<never>(() => {});
 
 // One at a time: a page that is being left is left before the next one is.
 // Also with no page: what a page load leaves in the document, the server
