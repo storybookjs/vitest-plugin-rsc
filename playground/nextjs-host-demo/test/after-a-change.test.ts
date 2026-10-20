@@ -188,8 +188,7 @@ test('a change of what a file with "use client" imports renders it again in plac
 // What Tailwind's PostCSS plugin does with a file it scans for class names:
 // the file is a dependency of the stylesheet, which has the CSS of what it
 // finds there. In Vite's module graph the stylesheet imports the file, and
-// the root layout of the app imports the stylesheet. `tone.css`, which the
-// stylesheet imports with `@import`, is part of its CSS.
+// the root layout of the app imports the stylesheet.
 const tonePlugin = `const fs = require("node:fs");
 const path = require("node:path");
 
@@ -219,9 +218,6 @@ function serveToneCopy() {
     );
     fs.writeFileSync(path.join(copy, "postcss-tone.cjs"), tonePlugin);
     fs.writeFileSync(path.join(copy, "host/tone.tsx"), 'export const tone = "rgb(255, 0, 0)";\n');
-    fs.writeFileSync(path.join(copy, "app/tone.css"), "h2 { color: rgb(255, 0, 0); }\n");
-    const globals = path.join(copy, "app/globals.css");
-    fs.writeFileSync(globals, `@import "./tone.css";\n${fs.readFileSync(globals, "utf8")}`);
     const main = path.join(copy, "host/main.tsx");
     fs.writeFileSync(
       main,
@@ -244,10 +240,17 @@ test("a change of a file that a stylesheet of the app depends on updates the sty
   const { copy, url } = await serveToneCopy();
   await openPage(page, url);
   expect(await hostStylesheet(page)).toContain("h1 { color: rgb(255, 0, 0)");
+  const [before] = await linksOf(page, "/app/globals.css");
   fs.writeFileSync(path.join(copy, "host/tone.tsx"), 'export const tone = "rgb(0, 128, 0)";\n');
   await expect
     .poll(() => hostStylesheet(page), { timeout: 30_000 })
     .toContain("h1 { color: rgb(0, 128, 0)");
+  // The page's link of it moved to the version of now too.
+  await expect
+    .poll(async () => (await linksOf(page, "/app/globals.css")).includes(before!), {
+      timeout: 30_000,
+    })
+    .toBe(false);
   expect(await page.evaluate(() => "__beforeTheChange" in window)).toBe(true);
   // The host evaluates its module again after a change of it, with the
   // plugin's runtime that it had: the change of the stylesheet, which a
@@ -265,16 +268,254 @@ test("a change of a file that a stylesheet of the app depends on updates the sty
   expect(await page.evaluate(() => "__beforeTheChange" in window)).toBe(true);
 });
 
-// A stylesheet that the app's stylesheet imports is a part of its CSS, which
-// a route links: a change of it loads the host's document again, as a change
-// of the app's stylesheet does.
-test("a change of a stylesheet that a stylesheet of the app imports loads the host's document again", async ({
+// A copy whose app's stylesheet imports `tone.css` with `@import`, a part of
+// its CSS. The page links the stylesheet, and the host does not import it:
+// the `<link>` is all the page has of its CSS.
+function serveLinkedCopy() {
+  return serveCopy((copy) => {
+    fs.writeFileSync(path.join(copy, "app/tone.css"), "h2 { color: rgb(255, 0, 0); }\n");
+    const globals = path.join(copy, "app/globals.css");
+    fs.writeFileSync(globals, `@import "./tone.css";\n${fs.readFileSync(globals, "utf8")}`);
+  });
+}
+
+// The URLs of the page's links of the stylesheet of `file`.
+const linksOf = (page: Page, file: string) =>
+  page.evaluate(
+    (file) =>
+      Array.from(document.querySelectorAll<HTMLLinkElement>("link[rel=stylesheet]"))
+        .map((link) => link.href)
+        .filter((href) => href.includes(file)),
+    file,
+  );
+
+// A property of the style of the first element that `selector` matches.
+const styleOf = (page: Page, selector: string, property: string) =>
+  page.evaluate(
+    ([selector, property]) =>
+      getComputedStyle(document.querySelector(selector)!).getPropertyValue(property),
+    [selector, property],
+  );
+
+// The plugin moves the page's link of a stylesheet that changed to the
+// version of now: the page stays, with its state.
+test("a change of a stylesheet of the app updates the page's link in place", async ({ page }) => {
+  const { copy, url } = await serveLinkedCopy();
+  await openPage(page, url);
+  expect(await styleOf(page, "body", "margin-top")).toBe("32px");
+  const globals = path.join(copy, "app/globals.css");
+  fs.writeFileSync(globals, fs.readFileSync(globals, "utf8").replace("2rem", "3rem"));
+  await expect.poll(() => styleOf(page, "body", "margin-top"), { timeout: 30_000 }).toBe("48px");
+  expect(await page.evaluate(() => "__beforeTheChange" in window)).toBe(true);
+});
+
+test("a change of a stylesheet that a stylesheet of the app imports updates the link in place", async ({
   page,
 }) => {
-  const { copy, url } = await serveToneCopy();
+  const { copy, url } = await serveLinkedCopy();
   await openPage(page, url);
+  expect(await styleOf(page, "h2", "color")).toBe("rgb(255, 0, 0)");
   fs.writeFileSync(path.join(copy, "app/tone.css"), "h2 { color: rgb(0, 128, 0); }\n");
+  await expect.poll(() => styleOf(page, "h2", "color"), { timeout: 30_000 }).toBe("rgb(0, 128, 0)");
+  expect(await page.evaluate(() => "__beforeTheChange" in window)).toBe(true);
+});
+
+// With `experimental.inlineCss`, Next puts the CSS of a page load in a
+// `<style>`, which is no link to move: the page loads again.
+test("with inlineCss, a change of a stylesheet of the app loads the host's document again", async ({
+  page,
+}) => {
+  const { copy, url } = await serveCopy((copy) =>
+    fs.writeFileSync(
+      path.join(copy, "next.config.ts"),
+      "export default { experimental: { inlineCss: true } };\n",
+    ),
+  );
+  await openPage(page, url);
+  const globals = path.join(copy, "app/globals.css");
+  fs.writeFileSync(globals, fs.readFileSync(globals, "utf8").replace("2rem", "3rem"));
   await loadedAgain(page, url);
+  expect(await styleOf(page, "body", "margin-top")).toBe("48px");
+});
+
+// The path of a stylesheet that Next links has each segment encoded as a
+// URL component: in a dynamic route and in a slot it differs from the URL of
+// the file.
+function serveRoutesCopy() {
+  return serveCopy((copy) => {
+    const write = (file: string, content: string) => {
+      fs.mkdirSync(path.dirname(path.join(copy, file)), { recursive: true });
+      fs.writeFileSync(path.join(copy, file), content);
+    };
+    write("app/notes/[slug]/note.css", "h1 { color: rgb(255, 0, 0); }\n");
+    write(
+      "app/notes/[slug]/page.tsx",
+      'import "./note.css";\n\nexport default function Note() {\n  return <h1>A note</h1>;\n}\n',
+    );
+    write("app/@modal/modal.css", "aside { color: rgb(255, 0, 0); }\n");
+    write(
+      "app/@modal/default.tsx",
+      'import "./modal.css";\n\nexport default function Modal() {\n  return <aside>A modal</aside>;\n}\n',
+    );
+    const layout = path.join(copy, "app/layout.tsx");
+    fs.writeFileSync(
+      layout,
+      fs
+        .readFileSync(layout, "utf8")
+        .replace(
+          "{ children }: { children: ReactNode }",
+          "{ children, modal }: { children: ReactNode; modal: ReactNode }",
+        )
+        .replace("<main>{children}</main>", "<main>{children}</main>\n        {modal}"),
+    );
+  });
+}
+
+test("a change of a stylesheet in a dynamic route and in a slot updates it in place", async ({
+  page,
+}) => {
+  const { copy, url } = await serveRoutesCopy();
+  await openPage(page, `${url}&url=/notes/a`);
+  expect(await styleOf(page, "h1", "color")).toBe("rgb(255, 0, 0)");
+  expect(await styleOf(page, "aside", "color")).toBe("rgb(255, 0, 0)");
+  fs.writeFileSync(path.join(copy, "app/notes/[slug]/note.css"), "h1 { color: rgb(0, 128, 0); }\n");
+  await expect.poll(() => styleOf(page, "h1", "color"), { timeout: 30_000 }).toBe("rgb(0, 128, 0)");
+  fs.writeFileSync(path.join(copy, "app/@modal/modal.css"), "aside { color: rgb(0, 128, 0); }\n");
+  await expect
+    .poll(() => styleOf(page, "aside", "color"), { timeout: 30_000 })
+    .toBe("rgb(0, 128, 0)");
+  expect(await page.evaluate(() => "__beforeTheChange" in window)).toBe(true);
+});
+
+// Next's development code puts the time of the request in the URL of a
+// stylesheet, `?v=`, so every render of the page links it at another URL,
+// and React keeps the links before. Each of them moves, or the one that is
+// last would win with the CSS of before.
+test("every link of a stylesheet moves, also after the page rendered again", async ({ page }) => {
+  const { copy, url } = await serveCopy((copy) => {
+    fs.writeFileSync(
+      path.join(copy, "app/components/refresh.tsx"),
+      '"use client";\n\nimport { useRouter } from "next/navigation";\n\n' +
+        "export function Refresh() {\n  const router = useRouter();\n" +
+        "  return <button onClick={() => router.refresh()}>Refresh</button>;\n}\n",
+    );
+    const home = path.join(copy, "app/page.tsx");
+    fs.writeFileSync(
+      home,
+      `import { Refresh } from "./components/refresh.tsx";\n${fs.readFileSync(home, "utf8")}`.replace(
+        "<h1>Home</h1>",
+        "<h1>Home</h1>\n      <Refresh />",
+      ),
+    );
+  });
+  await openPage(page, url);
+  const globalsLinks = () => linksOf(page, "/app/globals.css");
+  await page.getByRole("button", { name: "Refresh" }).click();
+  await expect.poll(async () => (await globalsLinks()).length, { timeout: 30_000 }).toBe(2);
+  const before = await globalsLinks();
+  const globals = path.join(copy, "app/globals.css");
+  fs.writeFileSync(globals, fs.readFileSync(globals, "utf8").replace("2rem", "3rem"));
+  await expect.poll(() => styleOf(page, "body", "margin-top"), { timeout: 30_000 }).toBe("48px");
+  const after = await globalsLinks();
+  expect(after.filter((href) => before.includes(href))).toEqual([]);
+  expect(new Set(after).size).toBe(1);
+  expect(await page.evaluate(() => "__beforeTheChange" in window)).toBe(true);
+});
+
+// A stylesheet that a file of the host with "use client" links, through a
+// Client Component of the app that imports it: the plugin moves that link
+// too, and the host's next use of it moves it again, as one stylesheet.
+test('a change of a stylesheet that a file with "use client" links updates it in place', async ({
+  page,
+}) => {
+  const { copy, url } = await serveCopy((copy) => {
+    fs.writeFileSync(
+      path.join(copy, "app/components/tone.css"),
+      "button { background-color: rgb(255, 0, 0); }\n",
+    );
+    const badge = path.join(copy, "app/components/badge.tsx");
+    fs.writeFileSync(
+      badge,
+      fs
+        .readFileSync(badge, "utf8")
+        .replace('import styles from "./badge.module.css";', '$&\nimport "./tone.css";'),
+    );
+  });
+  await openPage(page, url.replace("view=page", "view=in-place"));
+  await page.getByRole("button", { name: "Clicks: 0" }).waitFor();
+  expect(await styleOf(page, "button", "background-color")).toBe("rgb(255, 0, 0)");
+  fs.writeFileSync(
+    path.join(copy, "app/components/tone.css"),
+    "button { background-color: rgb(0, 128, 0); }\n",
+  );
+  await expect
+    .poll(() => styleOf(page, "button", "background-color"), { timeout: 30_000 })
+    .toBe("rgb(0, 128, 0)");
+  expect(await page.evaluate(() => "__beforeTheChange" in window)).toBe(true);
+  // A render after a change of the file ends the use of the stylesheet as it
+  // was: its copy goes with it, and the new use has one link of it.
+  const file = path.join(copy, "host/in-place-badge.tsx");
+  fs.writeFileSync(
+    file,
+    fs.readFileSync(file, "utf8").replace("react: version", "react: version, changed: true"),
+  );
+  await expect
+    .poll(async () => (await page.evaluate(moduleReports)).at(-1), { timeout: 30_000 })
+    .toMatchObject({ changed: true });
+  const toneLinks = () =>
+    page.evaluate(
+      () =>
+        Array.from(document.querySelectorAll<HTMLLinkElement>("link[rel=stylesheet]")).filter(
+          (link) => link.href.includes("/app/components/tone.css"),
+        ).length,
+    );
+  await expect.poll(toneLinks, { timeout: 30_000 }).toBe(1);
+  expect(await styleOf(page, "button", "background-color")).toBe("rgb(0, 128, 0)");
+  expect(await page.evaluate(() => "__beforeTheChange" in window)).toBe(true);
+});
+
+// A host that uses a file with "use client" without importing it again
+// after a change, as `?view=module` does: a change of a stylesheet that the
+// file links is no change of the file, and the document stays.
+test('a change of a stylesheet that a file with "use client" links keeps a host that does not take changes', async ({
+  page,
+}) => {
+  const { copy, url } = await serveCopy((copy) => {
+    fs.writeFileSync(
+      path.join(copy, "app/components/tone.css"),
+      '@import "./edge.css";\nbutton { background-color: rgb(255, 0, 0); }\n',
+    );
+    fs.writeFileSync(
+      path.join(copy, "app/components/edge.css"),
+      "button { outline-color: rgb(255, 0, 0); }\n",
+    );
+    const badge = path.join(copy, "app/components/badge.tsx");
+    fs.writeFileSync(
+      badge,
+      fs
+        .readFileSync(badge, "utf8")
+        .replace('import styles from "./badge.module.css";', '$&\nimport "./tone.css";'),
+    );
+  });
+  await openPage(page, url.replace("view=page", "view=module"));
+  await page.getByRole("button", { name: "Clicks: 0" }).waitFor();
+  expect(await styleOf(page, "button", "background-color")).toBe("rgb(255, 0, 0)");
+  fs.writeFileSync(
+    path.join(copy, "app/components/tone.css"),
+    '@import "./edge.css";\nbutton { background-color: rgb(0, 128, 0); }\n',
+  );
+  await expect
+    .poll(() => styleOf(page, "button", "background-color"), { timeout: 30_000 })
+    .toBe("rgb(0, 128, 0)");
+  // And of one that it imports.
+  fs.writeFileSync(
+    path.join(copy, "app/components/edge.css"),
+    "button { outline-color: rgb(0, 128, 0); }\n",
+  );
+  await expect
+    .poll(() => styleOf(page, "button", "outline-color"), { timeout: 30_000 })
+    .toBe("rgb(0, 128, 0)");
+  expect(await page.evaluate(() => "__beforeTheChange" in window)).toBe(true);
 });
 
 // Two readers of one file with "use client": the host, with

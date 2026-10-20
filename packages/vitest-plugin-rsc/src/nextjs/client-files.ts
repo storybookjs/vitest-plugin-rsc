@@ -9,6 +9,7 @@ import {
 } from "vite";
 import { builtHostModuleUrl, hostModulePrefix } from "../host-module.ts";
 import { clientFileKeyExport } from "./client-file-key.ts";
+import { movesItsLinks } from "./styles.ts";
 
 // A file of the host is a test file or a setup file of Vitest. One with
 // `"use client"` is a client boundary, as a file with that directive is in
@@ -234,10 +235,13 @@ export function clientFiles(options: ClientFilesOptions): Plugin[] {
       // host imports the file again, and the line of the new module
       // evaluates the file with what changed. First of the hooks of the rsc
       // layer, so that one that loads the document again instead, like the
-      // one for a change of what a route imports, still takes over. Also for
-      // a stylesheet that Vite swaps in place in the rsc layer, as a link or
-      // as its `<style>`: the browser layer links its own (client-graph.ts),
-      // which a host that renders the file again links again as it is now.
+      // one for a change of what a route imports, still takes over. Not
+      // through a stylesheet whose links move to the version of now, also
+      // those that the graph made for the host (styles.ts): a change of it,
+      // of one it `@import`s or of a file it depends on is the stylesheet's,
+      // and a host that does not import the file again would load its
+      // document again. A CSS module changes the class names that the file
+      // renders with: it is a change of the file.
       hotUpdate: {
         order: "pre",
         handler({ file, modules, server }) {
@@ -275,7 +279,8 @@ export function clientFiles(options: ClientFilesOptions): Plugin[] {
 
 /**
  * The files of the host among `modules` and the modules that import them in
- * a module graph, also through other modules.
+ * a module graph, also through other modules. Not through a stylesheet whose
+ * links move to the version of now (`movesItsLinks()`).
  */
 function hostFilesImporting(
   modules: Iterable<EnvironmentModuleNode>,
@@ -284,6 +289,7 @@ function hostFilesImporting(
   const files = new Set<string>();
   const seen = new Set(modules);
   for (const node of seen) {
+    if (movesItsLinks(node)) continue;
     if (node.file && isHostFile(node.file)) files.add(node.file);
     for (const importer of node.importers) seen.add(importer);
   }

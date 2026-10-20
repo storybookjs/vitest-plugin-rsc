@@ -22,6 +22,8 @@ import type { PageStore } from "./page-store.ts";
 import { openedAt, registry, type Opened } from "./registry.ts";
 import { loadedSsrLayer, rscLayer, ssrLayer } from "./server-layers.ts";
 import { PageStorage, storageOf } from "./storage.ts";
+import { movePageLinks, stylesheetVersions } from "./stylesheet-versions.ts";
+import { stylesheetsChangedEvent } from "./styles-shared.ts";
 
 // The entry of the server's API. A host that imports it sends requests to
 // the app, so both layers of Next's server start to load as it evaluates,
@@ -856,6 +858,12 @@ import.meta.hot?.on("vite:beforeFullReload", ({ path }) => {
 // is gone. So the page is left as the connection goes, and the host shows
 // without it until the server answers.
 import.meta.hot?.on("vite:ws:disconnect", () => leavePage("a lost connection to the dev server"));
+// A change of stylesheets that a page links: its links move to the versions
+// of now, and the page stays (styles.ts). The files of the host move theirs
+// themselves, also without a page: see client-graph.ts.
+import.meta.hot?.on(stylesheetsChangedEvent, (urls: string[]) =>
+  movePageLinks(stylesheetVersions(urls)),
+);
 
 // Whether Vite's client goes on to load the document again, as it decides
 // once the page is left: for a change of an HTML file only if it is the one

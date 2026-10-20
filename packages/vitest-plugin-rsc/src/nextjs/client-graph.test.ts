@@ -11,11 +11,15 @@ type FakeLink = {
   rel: string;
   href: string;
   attributes: Set<string>;
-  onload: (() => void) | null;
-  onerror: (() => void) | null;
+  listeners: Map<string, (() => void)[]>;
+  sheet: object | null;
+  readonly isConnected: boolean;
   setAttribute(name: string): void;
   removeAttribute(name: string): void;
+  addEventListener(type: string, listener: () => void): void;
   remove(): void;
+  after(link: FakeLink): void;
+  cloneNode(): FakeLink;
 };
 
 const tab = vi.hoisted(() => ({
@@ -132,6 +136,48 @@ async function evaluate(modules: Map<string, FakeModule>, url: string): Promise<
 const head = new Set<FakeLink>();
 const links = () => [...head].map((link) => link.href);
 
+// A link in the head loads, once the test lets it.
+function appendLink(link: FakeLink): void {
+  head.add(link);
+  if (!tab.loads) return;
+  queueMicrotask(() => {
+    link.sheet = {};
+    link.listeners.get("load")?.forEach((listener) => listener());
+  });
+}
+
+function fakeLink(): FakeLink {
+  return {
+    rel: "",
+    href: "",
+    attributes: new Set(),
+    listeners: new Map(),
+    sheet: null,
+    get isConnected() {
+      return head.has(this);
+    },
+    setAttribute(name) {
+      this.attributes.add(name);
+    },
+    removeAttribute(name) {
+      this.attributes.delete(name);
+    },
+    addEventListener(type, listener) {
+      this.listeners.set(type, [...(this.listeners.get(type) ?? []), listener]);
+    },
+    remove() {
+      head.delete(this);
+    },
+    after: appendLink,
+    cloneNode() {
+      const copy = fakeLink();
+      Object.assign(copy, { rel: this.rel, href: this.href });
+      for (const name of this.attributes) copy.setAttribute(name);
+      return copy;
+    },
+  };
+}
+
 beforeEach(() => {
   vi.resetModules();
   tab.evaluated = [];
@@ -149,28 +195,8 @@ beforeEach(() => {
   head.clear();
   vi.stubGlobal("__viteRscCallServer", undefined);
   vi.stubGlobal("document", {
-    createElement: (): FakeLink => ({
-      rel: "",
-      href: "",
-      attributes: new Set(),
-      onload: null,
-      onerror: null,
-      setAttribute(name) {
-        this.attributes.add(name);
-      },
-      removeAttribute(name) {
-        this.attributes.delete(name);
-      },
-      remove() {
-        head.delete(this);
-      },
-    }),
-    head: {
-      append(link: FakeLink) {
-        head.add(link);
-        if (tab.loads) queueMicrotask(() => link.onload?.());
-      },
-    },
+    createElement: () => fakeLink(),
+    head: { append: appendLink },
   });
 });
 
@@ -371,6 +397,30 @@ test("links the stylesheets of the files that the host uses, until they are unli
   expect(links()).toEqual(["/_next/static/css/badge-2.css"]);
   // Vitest's setup file, for the next test file.
   forgetClientFiles();
+  expect(links()).toEqual([]);
+});
+
+// After a change of its CSS, a stylesheet of a file of the host moves to the
+// version of now: a link of it next to the one before, which goes once it has
+// loaded. A use of a later version moves it too, and it stays one stylesheet.
+test("moves a stylesheet to the version of now, with one link of it", async () => {
+  const version = (hash: string) => `/_next/static/css/${hash.repeat(16)}/host/badge.css`;
+  tab.stylesheets.set("/host/badge.tsx", [version("a")]);
+  const { linkStylesheetsOf, moveGraphLinks, unlinkStylesheets } = await graph();
+  const { stylesheetVersions } = await import("./stylesheet-versions.ts");
+  await importHostFile("/host/badge.tsx", "Badge");
+  await linkStylesheetsOf(["/host/badge.tsx"]);
+
+  moveGraphLinks(stylesheetVersions([version("b")]));
+  expect(links()).toEqual([version("a"), version("b")]);
+  await new Promise((resolve) => setTimeout(resolve));
+  expect(links()).toEqual([version("b")]);
+  for (const link of head) expect(link.attributes).toContain("data-vitest-plugin-rsc-graph");
+
+  tab.stylesheets.set("/host/badge.tsx", [version("c")]);
+  await linkStylesheetsOf(["/host/badge.tsx"]);
+  expect(links()).toEqual([version("c")]);
+  unlinkStylesheets();
   expect(links()).toEqual([]);
 });
 
