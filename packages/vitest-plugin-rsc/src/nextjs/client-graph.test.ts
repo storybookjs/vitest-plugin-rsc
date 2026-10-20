@@ -41,6 +41,8 @@ const tab = vi.hoisted(() => ({
   failing: new Set<string>(),
   /** Whether a stylesheet that is linked loads, as the browser fetches it. */
   loads: true,
+  /** What the answer of the stylesheets of files waits for: the dev server's, or the build's. */
+  stylesheetsAnswered: undefined as Promise<void> | undefined,
 }));
 
 // A build's stylesheets, by the path of a file of the host from the root.
@@ -59,7 +61,10 @@ vi.mock("./built-files.ts", () => ({
   get buildDirectory() {
     return tab.buildDirectory;
   },
-  builtFiles: async () => built,
+  builtFiles: async () => {
+    await tab.stylesheetsAnswered;
+    return built;
+  },
 }));
 type FakeModule = {
   id: string;
@@ -78,9 +83,10 @@ vi.mock("../utils.ts", () => ({
     await answered;
     return changed;
   },
-  askDevServer: async (_event: string, { hostFiles }: { hostFiles: string[] }) => [
-    ...new Set(hostFiles.flatMap((file) => tab.stylesheets.get(file) ?? [])),
-  ],
+  askDevServer: async (_event: string, { hostFiles }: { hostFiles: string[] }) => {
+    await tab.stylesheetsAnswered;
+    return [...new Set(hostFiles.flatMap((file) => tab.stylesheets.get(file) ?? []))];
+  },
   createEnvironmentRunner: () => {
     const idToModuleMap = new Map<string, FakeModule>();
     return {
@@ -191,6 +197,7 @@ beforeEach(() => {
   tab.imports = new Map();
   tab.failing = new Set();
   tab.loads = true;
+  tab.stylesheetsAnswered = undefined;
   head.clear();
   vi.stubGlobal("__viteRscCallServer", undefined);
   vi.stubGlobal("document", {
@@ -475,6 +482,55 @@ test("ends a use whose signal aborts before its stylesheets load, as renderServe
   await vi.waitFor(() => expect(links()).toEqual(["/_next/static/css/badge.css"]));
   unlinkStylesheets();
   await expect(waiting).resolves.toBeUndefined();
+});
+
+// The first time the dev server compiles a file's CSS, its answer can take
+// seconds. A use that ends meanwhile, as the host leaves what it showed,
+// ends at once, and the answer links nothing for it.
+test.each([
+  ["the dev server", undefined, "/host/badge.tsx", "/_next/static/css/badge.css"],
+  [
+    "a static build",
+    "https://site.test/docs/",
+    "host/badge.tsx",
+    "https://site.test/docs/_next/static/css/badge-1a2b3c4d.css",
+  ],
+])(
+  "ends a use whose signal aborts while it asks %s for its stylesheets",
+  async (_, buildDirectory, file, stylesheet) => {
+    tab.buildDirectory = buildDirectory;
+    const { linkStylesheetsOf } = await graph();
+    const answer = Promise.withResolvers<void>();
+    tab.stylesheetsAnswered = answer.promise;
+    const leaving = new AbortController();
+    const left = linkStylesheetsOf([file], { signal: leaving.signal });
+    // Another use of the file, which stays.
+    const staying = new AbortController();
+    const stayed = linkStylesheetsOf([file], { signal: staying.signal });
+
+    leaving.abort(new Error("left"));
+    await expect(left).rejects.toThrow("left");
+
+    answer.resolve();
+    await stayed;
+    expect(links()).toEqual([stylesheet]);
+    // The use that was left holds none of it.
+    staying.abort();
+    expect(links()).toEqual([]);
+  },
+);
+
+test("links nothing for a use that `cleanup()` ended while it asked for its stylesheets", async () => {
+  const { linkStylesheetsOf, unlinkStylesheets } = await graph();
+  const answer = Promise.withResolvers<void>();
+  tab.stylesheetsAnswered = answer.promise;
+  const use = linkStylesheetsOf(["/host/badge.tsx"]);
+
+  unlinkStylesheets();
+  answer.resolve();
+
+  await expect(use).resolves.toBeUndefined();
+  expect(links()).toEqual([]);
 });
 
 test("gives any other module as it is", async () => {

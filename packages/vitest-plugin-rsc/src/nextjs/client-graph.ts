@@ -231,7 +231,8 @@ export async function loadClientModule<T extends object>(module: T): Promise<T> 
  * The use ends as `signal` aborts, and without one at `cleanup()`, which ends
  * every use: a stylesheet goes once no use holds it. An aborted signal links
  * nothing, and a use whose signal aborts rejects at once with the signal's
- * reason, as `renderServer()` does.
+ * reason, as `renderServer()` does: also while it asks for the stylesheets,
+ * whose answer then links nothing.
  */
 export async function linkStylesheetsOf(
   hostFiles: string[],
@@ -239,24 +240,27 @@ export async function linkStylesheetsOf(
 ): Promise<void> {
   signal?.throwIfAborted();
   const cleanupsBefore = cleanups;
-  const urls = await stylesheetsOfHostFiles(hostFiles);
-  signal?.throwIfAborted();
-  if (cleanups !== cleanupsBefore) return;
-  const held = urls.map(hold);
-  const loaded = Promise.all(held.map((stylesheet) => stylesheet.loaded));
-  if (!signal) return void (await loaded);
-  const ended = new Promise<void>((resolve) =>
+  let held: Linked[] = [];
+  const use = (async () => {
+    const urls = await stylesheetsOfHostFiles(hostFiles);
+    if (signal?.aborted || cleanups !== cleanupsBefore) return;
+    held = urls.map(hold);
+    await Promise.all(held.map((stylesheet) => stylesheet.loaded));
+  })();
+  if (!signal) return use;
+  // The use ends as the signal aborts, whatever it waits for: the answer with
+  // its stylesheets, or their load.
+  const ended = new Promise<never>((_, reject) =>
     signal.addEventListener(
       "abort",
       () => {
         held.forEach(release);
-        resolve();
+        reject(signal.reason);
       },
       { once: true },
     ),
   );
-  await Promise.race([loaded, ended]);
-  signal.throwIfAborted();
+  return Promise.race([use, ended]);
 }
 
 // The URLs of the stylesheets of files of the host by their paths: from the
