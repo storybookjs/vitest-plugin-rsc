@@ -275,7 +275,7 @@ function hold(href: string): Linked {
     return known;
   }
   const link = Object.assign(document.createElement("link"), { rel: "stylesheet", href });
-  link.setAttribute(graphStylesheetAttribute, "");
+  link.setAttribute(graphStylesheetAttribute, href);
   let settle!: () => void;
   // A stylesheet that fails to load holds up nothing.
   const loaded = new Promise<void>(
@@ -295,10 +295,17 @@ function release(stylesheet: Linked): void {
 }
 
 // Also one that a page that is open has parked: it is no longer the host's,
-// and leaving the page does not put it back (document.ts).
+// and leaving the page does not put it back (document.ts). And the copy that
+// Vite's client swapped it for after a change of its CSS, with its mark (see
+// `cssUrlOf()` in styles.ts).
 function unlink(stylesheet: Linked): void {
-  stylesheet.link.remove();
-  stylesheet.link.removeAttribute(graphStylesheetAttribute);
+  const swapped = document.querySelectorAll<HTMLLinkElement>(
+    `link[${graphStylesheetAttribute}="${CSS.escape(stylesheet.href)}"]`,
+  );
+  for (const link of [stylesheet.link, ...swapped]) {
+    link.remove();
+    link.removeAttribute(graphStylesheetAttribute);
+  }
   linked.delete(stylesheet.href);
   stylesheet.settle();
 }

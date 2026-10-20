@@ -303,6 +303,58 @@ test("a change of a stylesheet that a stylesheet of the app imports updates the 
   expect(await page.evaluate(() => "__beforeTheChange" in window)).toBe(true);
 });
 
+// A stylesheet that a file of the host with "use client" links, through a
+// Client Component of the app that imports it: Vite's client swaps its
+// `<link>` too, and the host's use of it ends with the copy.
+test('a change of a stylesheet that a file with "use client" links updates it in place', async ({
+  page,
+}) => {
+  const { copy, url } = await serveCopy((copy) => {
+    fs.writeFileSync(
+      path.join(copy, "app/components/tone.css"),
+      "button { background-color: rgb(255, 0, 0); }\n",
+    );
+    const badge = path.join(copy, "app/components/badge.tsx");
+    fs.writeFileSync(
+      badge,
+      fs
+        .readFileSync(badge, "utf8")
+        .replace('import styles from "./badge.module.css";', '$&\nimport "./tone.css";'),
+    );
+  });
+  await openPage(page, url.replace("view=page", "view=in-place"));
+  await page.getByRole("button", { name: "Clicks: 0" }).waitFor();
+  expect(await styleOf(page, "button", "background-color")).toBe("rgb(255, 0, 0)");
+  fs.writeFileSync(
+    path.join(copy, "app/components/tone.css"),
+    "button { background-color: rgb(0, 128, 0); }\n",
+  );
+  await expect
+    .poll(() => styleOf(page, "button", "background-color"), { timeout: 30_000 })
+    .toBe("rgb(0, 128, 0)");
+  expect(await page.evaluate(() => "__beforeTheChange" in window)).toBe(true);
+  // A render after a change of the file ends the use of the stylesheet as it
+  // was: its copy goes with it, and the new use has one link of it.
+  const file = path.join(copy, "host/in-place-badge.tsx");
+  fs.writeFileSync(
+    file,
+    fs.readFileSync(file, "utf8").replace("react: version", "react: version, changed: true"),
+  );
+  await expect
+    .poll(async () => (await page.evaluate(moduleReports)).at(-1), { timeout: 30_000 })
+    .toMatchObject({ changed: true });
+  const toneLinks = () =>
+    page.evaluate(
+      () =>
+        Array.from(document.querySelectorAll<HTMLLinkElement>("link[rel=stylesheet]")).filter(
+          (link) => link.href.includes("/app/components/tone.css"),
+        ).length,
+    );
+  await expect.poll(toneLinks, { timeout: 30_000 }).toBe(1);
+  expect(await styleOf(page, "button", "background-color")).toBe("rgb(0, 128, 0)");
+  expect(await page.evaluate(() => "__beforeTheChange" in window)).toBe(true);
+});
+
 // Two readers of one file with "use client": the host, with
 // `loadClientModule()`, and another file of the host that imports it in the
 // browser layer, as a docs page imports the stories it shows. Both have the

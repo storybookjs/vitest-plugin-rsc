@@ -32,7 +32,9 @@ export type StylesheetsQuestion =
 /**
  * What marks the `<link>` of a stylesheet of a file of the host with
  * `"use client"`, which the tab's graph linked (client-graph.ts): the host's,
- * not a page's, so a page that is left does not take it (document.ts).
+ * not a page's, so a page that is left does not take it (document.ts). Its
+ * value is the URL the graph linked, which the copy that Vite's client swaps
+ * the `<link>` for after a change keeps.
  */
 export const graphStylesheetAttribute = "data-vitest-plugin-rsc-graph";
 
