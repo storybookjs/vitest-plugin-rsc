@@ -1100,6 +1100,10 @@ async function openPage(
     leave = () => {
       unmount?.();
       leftovers.forEach((leftover) => leftover.remove());
+      // A page that is left keeps no module graph: what of it stays, like an
+      // error whose stack has the frames that loaded a module, cannot reach
+      // its modules through the runner.
+      void runner.close();
     };
     if (left) leave();
   }
