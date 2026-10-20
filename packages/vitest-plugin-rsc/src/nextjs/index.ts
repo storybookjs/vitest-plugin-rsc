@@ -15,7 +15,7 @@ import {
   settleRequests,
   unlessAborted,
 } from "./app-requests.ts";
-import { callServerWithoutPage } from "./client-graph.ts";
+import { callServerWithoutPage, unlinkStylesheets } from "./client-graph.ts";
 import { documentUrl, loadDocument, unloadDocument } from "./document.ts";
 import { recordListeners, recordMessageChannels } from "./leftovers.ts";
 import { NodeOnPage } from "./node-on-page.ts";
@@ -811,7 +811,10 @@ export type CleanupOptions = {
  * Leaves the page that `renderServer()` opened, removes the containers it made
  * and forgets its `headers`, the app's cookies and what the app put in its
  * storage, like a new browser context. The server forgets what it has cached.
- * Runs before and after every test.
+ * Unlinks the stylesheets of the files of the host with `"use client"`: the
+ * host links a file's again as it uses it, with `linkStylesheetsOf()`. Runs
+ * before and after every test, after which the plugin's setup file links
+ * those of the setup files and the test file again.
  *
  * What was set on the document, `<html>`, `<head>` and the container of a
  * node while the page was open goes with the page; what the host set there
@@ -822,6 +825,7 @@ export async function cleanup({ url }: CleanupOptions = {}): Promise<void> {
   await leavePage("cleanup()");
   for (const container of containers) container.remove();
   containers.clear();
+  unlinkStylesheets();
   newPageStore();
   storage = new PageStorage();
   loadedSsrLayer()?.resetCaches();

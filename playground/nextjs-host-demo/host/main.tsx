@@ -1,6 +1,6 @@
 import { reports } from "host-report";
 import { tags } from "host-report/tags";
-import { loadClientModule } from "vitest-plugin-rsc/nextjs/client-components";
+import { linkStylesheetsOf, loadClientModule } from "vitest-plugin-rsc/nextjs/client-components";
 import { cleanup, handleRequest, renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
 import { renderCallout } from "./callout.tsx";
 import { greetingFor, renderGreeting } from "./greeting.tsx";
@@ -34,8 +34,11 @@ const view = new URLSearchParams(window.location.search).get("view");
 await show(async () => {
   if (view === "client" || view === "package") {
     // A client boundary, as in React: the file runs in the browser layer.
-    if (view === "client") await import("./client.tsx");
-    else {
+    // The host uses it as it loads, with the stylesheets of what it renders.
+    if (view === "client") {
+      await import("./client.tsx");
+      await linkStylesheetsOf(["host/client.tsx"]);
+    } else {
       await import("host-package/client-greeting");
       await import("host-package");
     }
@@ -69,6 +72,7 @@ await show(async () => {
     const reference = await import("./client-module.tsx");
     const loaded = await loadClientModule(reference);
     const { renderClient } = await loadClientModule(await import("./render-client.tsx"));
+    await linkStylesheetsOf(["host/client-module.tsx"]);
     renderClient(loaded.Badge, container);
     const plain = await import("./state.ts");
     // The file imported again with a query that Vite's dev server takes out
@@ -124,12 +128,33 @@ await show(async () => {
   if (view === "after-page") {
     // A file of the host with `"use client"` that loads while a page of the
     // app is open, as a framework prepares the next story before it leaves
-    // the one before. Then that page is left, and another one comes and goes.
-    await renderServer({ url: "/" });
-    const { Badge, Like } = await loadClientModule(await import("./client-module.tsx"));
+    // the one before: loaded, not used yet. Then the host uses it, and a page
+    // comes and goes, which its stylesheet steps aside for. A use that ends
+    // while a page is open takes it, and `cleanup()` ends every use. The host
+    // uses the file again, as a framework shows another story of it.
+    const badgeLinked = () => document.querySelector("link[href*='badge.module']") !== null;
+    const linked: Record<string, boolean> = {};
+    const first = await renderServer({ url: "/" });
+    const file = await import("./client-module.tsx");
+    linked.loadedDuringPage = badgeLinked();
+    await first.unmount();
+    await linkStylesheetsOf(["host/client-module.tsx"]);
+    linked.used = badgeLinked();
+    const second = await renderServer({ url: "/" });
+    linked.duringPage = badgeLinked();
+    await second.unmount();
+    linked.pageLeft = badgeLinked();
     await cleanup();
-    await renderServer({ url: "/" });
-    await cleanup();
+    linked.cleanedUp = badgeLinked();
+    const use = new AbortController();
+    await linkStylesheetsOf(["host/client-module.tsx"], { signal: use.signal });
+    const third = await renderServer({ url: "/" });
+    use.abort();
+    await third.unmount();
+    linked.endedDuringPage = badgeLinked();
+    const { Badge, Like } = await loadClientModule(file);
+    await linkStylesheetsOf(["host/client-module.tsx"]);
+    state.__hostBadgeLinked = linked;
     const { renderClient } = await loadClientModule(await import("./render-client.tsx"));
     for (const Component of [Badge, Like]) {
       renderClient(Component, container.appendChild(document.createElement("div")));

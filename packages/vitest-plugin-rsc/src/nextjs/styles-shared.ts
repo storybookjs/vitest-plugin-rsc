@@ -21,18 +21,18 @@ export const stylesheetsEvent = "vitest-plugin-rsc:next-stylesheets";
  * What the page asks at `stylesheetsEvent`. For a route: by the name of its
  * modules, with `Stylesheets`, and `files`, the files of the host that render
  * the node of the route, in their order, absolute or from the root of the
- * project: see `hostFiles` of `renderServer()`. For a file of the host with
- * `"use client"`: by its URL in the browser layer, with the URLs of its
- * stylesheets.
+ * project: see `hostFiles` of `renderServer()`. For the files of the host
+ * with `"use client"` that the host uses, `linkStylesheetsOf()`: by their
+ * paths, as `hostFiles`, with the URLs of their stylesheets.
  */
 export type StylesheetsQuestion =
   | { entry: string; inline: boolean; files: string[] }
-  | { url: string };
+  | { hostFiles: string[] };
 
 /**
  * What marks the `<link>` of a stylesheet of a file of the host with
- * `"use client"`, which the tab's graph linked (client-graph.ts): the tab's,
- * not a page's, so it stays while pages come and go (document.ts).
+ * `"use client"`, which the tab's graph linked (client-graph.ts): the host's,
+ * not a page's, so a page that is left does not take it (document.ts).
  */
 export const graphStylesheetAttribute = "data-vitest-plugin-rsc-graph";
 
@@ -71,6 +71,11 @@ export type BuiltFiles = {
    * of `vitestPluginNext()` matches. An empty list for one without any.
    */
   hostFiles: Record<string, string[]>;
+  /**
+   * The files of `hostFiles` with `"use client"`, whose stylesheets a host
+   * links as it uses them (`linkStylesheetsOf()`), sorted.
+   */
+  clientFiles: string[];
   /** The files of the rsc layer that `modules` names, from the directory of the build. */
   chunks: string[];
   /**

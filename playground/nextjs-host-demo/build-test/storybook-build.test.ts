@@ -12,6 +12,7 @@ import {
   runStory,
   storyInDocs,
   storyRun,
+  stylesInOrder,
   type StoryRun,
 } from "../../test-helpers/storybook.ts";
 
@@ -65,6 +66,28 @@ test("server stories, a page, a Server Action and client stories", async ({ page
         .evaluate((element) => getComputedStyle(element).color),
     )
     .toBe("rgb(0, 0, 255)");
+});
+
+// A story has the CSS of its own file and of its route, whatever story ran
+// before it, in the build as with the dev server: a client story that of its file, which imports preview.tsx and
+// press-button.stories.css, a server story that of preview.server.tsx and
+// its node, and a page that of its route alone.
+test("a story has the CSS of its file and its route, in any order of the stories", async ({
+  page,
+}) => {
+  const stories = ["press-button--pressed", "greeting--default", "home--home"];
+  // The server stories after a client story, and before one.
+  const forwards = await stylesInOrder(page, site!.url, [...stories, "press-button--labelled"]);
+  const backwards = await stylesInOrder(page, site!.url, [
+    "home--home",
+    "greeting--default",
+    "press-button--labelled",
+    "press-button--pressed",
+  ]);
+  expect(backwards).toEqual(forwards);
+  const has = (story: string, selector: string) => forwards[story]!.includes(selector);
+  expect(stories.map((story) => has(story, ".story-frame"))).toEqual([true, false, false]);
+  expect(stories.map((story) => has(story, '[data-testid="theme"]'))).toEqual([true, true, false]);
 });
 
 // A server story of a component is a node, in the preview's document: a
