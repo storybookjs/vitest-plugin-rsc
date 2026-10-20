@@ -1133,6 +1133,9 @@ async function openPage(
     leave = () => {
       unmount?.();
       leftovers.forEach((leftover) => leftover.remove());
+      // A page that is left keeps no module graph: what of the page stays
+      // reachable, like its React, reaches none of its modules through it.
+      void runner.close();
     };
     if (left) leave();
   }
