@@ -345,9 +345,9 @@ test("tells a module of the host apart as a module runner spells it", () => {
 // layer, and an entry of the host that imports it in the rsc layer and takes
 // a change of it in place, as a framework does that renders it again. The
 // page has `linked.css` in the rsc layer too, as a `<link>` and a `<style>`
-// that Vite swaps in place; `value.css` only in the browser layer, as the
-// `<style>` of a module there. The plugin of Vite RSC is a stand-in that makes the file a
-// reference module.
+// that Vite swaps in place; `value.css` only in the browser layer, where the
+// graph links both. The plugin of Vite RSC is a stand-in that makes the file
+// a reference module.
 async function serveHostFile() {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "client-files-")));
   onTestFinished(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -464,14 +464,16 @@ test("takes a change of the file itself to the host once", async () => {
 test("takes a change of a stylesheet that only the browser layer has to the host", async () => {
   const { change } = await serveHostFile();
 
-  // Its `<style>` comes back as the file is evaluated again.
+  // The file's line links its stylesheets again as it is evaluated again.
   expect(await change("value.css", "p { color: green }\n").modules).toEqual(["/host.tsx"]);
 });
 
-test("leaves a stylesheet that Vite swaps in place in the rsc layer to Vite", async () => {
+// Vite swaps it in place in the rsc layer, and the browser layer links its
+// own, which the file's line links again.
+test("takes a change of a stylesheet that Vite swaps in place in the rsc layer to the host too", async () => {
   const { change } = await serveHostFile();
 
   const { modules, sent } = change("linked.css", "h1 { color: green }\n");
-  expect((await modules).sort()).toEqual(["/linked.css", "/linked.css?direct"]);
+  expect((await modules).sort()).toEqual(["/host.tsx", "/linked.css", "/linked.css?direct"]);
   expect(await sent).toMatchObject({ type: "update" });
 });

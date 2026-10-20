@@ -393,7 +393,6 @@ export function createStyles(options: StylesOptions): Styles {
     const route = options.pageRoutes().get(entry);
     if (!route) return {};
     const { load, follow, collect } = reach(vite);
-    const rsc = vite.environments[environments.rsc]!;
     const starts = new Map<string, EnvironmentModuleNode[]>();
 
     await Promise.all(
@@ -405,30 +404,11 @@ export function createStyles(options: StylesOptions): Styles {
     if ("component" in route) {
       starts.set(
         componentPagePath,
-        files.flatMap((file) => {
-          // Only a file of the host is the host's to say: not a file of the
-          // app, whose CSS is its route's. A test file or a setup file of
-          // Vitest, or what `host.files` matches; an in-source test file is
-          // a file of the app, see plugin.ts.
-          if (!options.isHostFile(file)) {
-            vite.config.logger.warnOnce(
-              `vitest-plugin-rsc: the files that render a node, \`hostFiles\` of renderServer(), ` +
-                `name ${file}, which is neither a test file or setup file of Vitest nor ` +
-                `matched by \`host.files\` of vitestPluginNext(); an in-source test file is ` +
-                `a file of the app. Its stylesheets are not linked.`,
-            );
-            return [];
-          }
-          const nodes = rsc.moduleGraph.getModulesByFile(file);
-          if (!nodes?.size) {
-            vite.config.logger.warnOnce(
-              `vitest-plugin-rsc: the files that render a node, \`hostFiles\` of renderServer() ` +
-                `or its default under Vitest, name ${file}, which the rsc layer has not ` +
-                `loaded: the stylesheets it imports are not linked.`,
-            );
-          }
-          return [...(nodes ?? [])];
-        }),
+        hostFileNodes(
+          vite,
+          files,
+          "the files that render a node, `hostFiles` of renderServer() or its default under Vitest,",
+        ),
       );
     }
 
@@ -455,6 +435,33 @@ export function createStyles(options: StylesOptions): Styles {
     );
   }
 
+  // The modules of the rsc layer for files of the host, which `named` names.
+  function hostFileNodes(vite: ViteDevServer, files: string[], named: string) {
+    const rsc = vite.environments[environments.rsc]!;
+    return files.flatMap((file) => {
+      // Only a file of the host is the host's to say: not a file of the
+      // app, whose CSS is its route's. A test file or a setup file of
+      // Vitest, or what `host.files` matches; an in-source test file is
+      // a file of the app, see plugin.ts.
+      if (!options.isHostFile(file)) {
+        vite.config.logger.warnOnce(
+          `vitest-plugin-rsc: ${named} name ${file}, which is neither a test file or setup ` +
+            `file of Vitest nor matched by \`host.files\` of vitestPluginNext(); an in-source ` +
+            `test file is a file of the app. Its stylesheets are not linked.`,
+        );
+        return [];
+      }
+      const nodes = rsc.moduleGraph.getModulesByFile(file);
+      if (!nodes?.size) {
+        vite.config.logger.warnOnce(
+          `vitest-plugin-rsc: ${named} name ${file}, which the rsc layer has not loaded: the ` +
+            `stylesheets it imports are not linked.`,
+        );
+      }
+      return [...(nodes ?? [])];
+    });
+  }
+
   // A file of the host, as the page names it: absolute, or from the root of
   // the project.
   const fileOf = (file: string) => normalizePath(path.resolve(getProject().root, file));
@@ -478,12 +485,27 @@ export function createStyles(options: StylesOptions): Styles {
     const node = await load("browser", url);
     if (!node) return [];
     await follow("browser", node);
-    // Encoded segment by segment, as Next does.
+    return linkedAt(vite, collect([node]));
+  }
+
+  /**
+   * The stylesheets of files of the host that the host uses,
+   * `linkStylesheetsOf()`: what each reaches from its module in the rsc
+   * layer, as for the files that render a node, in their order, each once.
+   */
+  async function hostFilesStylesheetsOf(vite: ViteDevServer, files: string[]): Promise<string[]> {
+    const { follow, collect } = reach(vite);
+    const nodes = hostFileNodes(vite, files, "`linkStylesheetsOf()`");
+    await Promise.all(nodes.map((node) => follow("rsc", node)));
+    return linkedAt(vite, collect(nodes));
+  }
+
+  // Where the page links stylesheets, by their paths: under the asset path,
+  // with their versions, encoded segment by segment, as Next does.
+  function linkedAt(vite: ViteDevServer, paths: string[]): Promise<string[]> {
     const urlOf = (path: string) => path.split("/").map(encodeURIComponent).join("/");
     return Promise.all(
-      collect([node]).map(
-        async (path) => getProject().assetPath + urlOf(await versioned(vite, path)),
-      ),
+      paths.map(async (path) => getProject().assetPath + urlOf(await versioned(vite, path))),
     );
   }
 
@@ -564,7 +586,9 @@ export function createStyles(options: StylesOptions): Styles {
         answerPage(vite, stylesheetsEvent, (question: StylesheetsQuestion) =>
           "url" in question
             ? clientStylesheetsOf(vite, question.url)
-            : stylesheetsOf(vite, question.files.map(fileOf), question.entry, question.inline),
+            : "hostFiles" in question
+              ? hostFilesStylesheetsOf(vite, question.hostFiles.map(fileOf))
+              : stylesheetsOf(vite, question.files.map(fileOf), question.entry, question.inline),
         );
         // A load that failed may not after a change. One that did is
         // reloaded when Vite invalidates its module.

@@ -40,8 +40,10 @@ await show(async () => {
   if (view === "client" || view === "package") {
     // A client boundary, as in React: the file runs in the browser layer.
     // The host uses it as it loads, with the stylesheets of what it renders.
-    if (view === "client") await linkStylesheetsOf(await import("./client.tsx"));
-    else {
+    if (view === "client") {
+      await import("./client.tsx");
+      await linkStylesheetsOf(["host/client.tsx"]);
+    } else {
       await import("host-package/client-greeting");
       await import("host-package");
     }
@@ -75,7 +77,7 @@ await show(async () => {
     const reference = await import("./client-module.tsx");
     const loaded = await loadClientModule(reference);
     const { renderClient } = await loadClientModule(await import("./render-client.tsx"));
-    await linkStylesheetsOf(reference);
+    await linkStylesheetsOf(["host/client-module.tsx"]);
     renderClient(loaded.Badge, container);
     const plain = await import("./state.ts");
     // The file imported again with a query that Vite's dev server takes out
@@ -141,7 +143,7 @@ await show(async () => {
     const file = await import("./client-module.tsx");
     linked.loadedDuringPage = badgeLinked();
     await first.unmount();
-    await linkStylesheetsOf(file);
+    await linkStylesheetsOf(["host/client-module.tsx"]);
     linked.used = badgeLinked();
     const second = await renderServer({ url: "/" });
     linked.duringPage = badgeLinked();
@@ -150,7 +152,7 @@ await show(async () => {
     await cleanup();
     linked.cleanedUp = badgeLinked();
     const { Badge, Like } = await loadClientModule(file);
-    await linkStylesheetsOf(file);
+    await linkStylesheetsOf(["host/client-module.tsx"]);
     state.__hostBadgeLinked = linked;
     const { renderClient } = await loadClientModule(await import("./render-client.tsx"));
     for (const Component of [Badge, Like]) {

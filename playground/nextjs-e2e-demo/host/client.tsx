@@ -10,7 +10,7 @@ const state = window as { __hostState?: string; __hostError?: unknown; __hostDat
 try {
   const data = fetch("host.json").then((response) => response.json());
   const { renderCounter } = await loadClientModule(counter);
-  await linkStylesheetsOf(counter);
+  await linkStylesheetsOf(["host/render-counter.tsx"]);
   renderCounter(document.getElementById("host-root")!);
   state.__hostData = await data;
   state.__hostState = "ready";

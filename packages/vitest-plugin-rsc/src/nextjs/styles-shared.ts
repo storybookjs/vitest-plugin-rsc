@@ -23,11 +23,14 @@ export const stylesheetsEvent = "vitest-plugin-rsc:next-stylesheets";
  * the node of the route, in their order, absolute or from the root of the
  * project: see `hostFiles` of `renderServer()`. For a file of the host with
  * `"use client"`: by its URL in the browser layer, with the URLs of its
+ * stylesheets. For the files of the host that the host uses,
+ * `linkStylesheetsOf()`: by their paths, as `files`, with the URLs of their
  * stylesheets.
  */
 export type StylesheetsQuestion =
   | { entry: string; inline: boolean; files: string[] }
-  | { url: string };
+  | { url: string }
+  | { hostFiles: string[] };
 
 /**
  * What marks the `<link>` of a stylesheet of a file of the host with

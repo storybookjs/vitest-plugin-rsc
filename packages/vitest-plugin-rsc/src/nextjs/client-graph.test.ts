@@ -57,7 +57,10 @@ vi.mock("../utils.ts", () => ({
     tab.changed = false;
     return changed;
   },
-  askDevServer: async (_event: string, { url }: { url: string }) => tab.stylesheets.get(url) ?? [],
+  askDevServer: async (_event: string, question: { url: string } | { hostFiles: string[] }) =>
+    "url" in question
+      ? (tab.stylesheets.get(question.url) ?? [])
+      : [...new Set(question.hostFiles.flatMap((file) => tab.stylesheets.get(file) ?? []))],
   createEnvironmentRunner: () => {
     const idToModuleMap = new Map<string, FakeModule>();
     return {
@@ -226,21 +229,6 @@ test("evaluates a file again after a change, for the module that the change made
   expect(tab.evaluated).toEqual(["/host/badge.tsx", "/host/badge.tsx"]);
 });
 
-// As Vite puts the new CSS of a module in its `<style>`: the stylesheets of
-// the files in use, which an edit gave another version, and not one that the
-// host only loaded.
-test("links the stylesheets of the files in use again after a change", async () => {
-  const { linkStylesheetsOf } = await graph();
-  await linkStylesheetsOf(await importHostFile("/host/badge.tsx", "Badge"));
-  expect(links()).toEqual(["/_next/static/css/badge.css"]);
-
-  tab.stylesheets.set("/host/badge.tsx", ["/_next/static/css/badge-2.css"]);
-  tab.changed = true;
-  await importHostFile("/host/card.tsx", "Card");
-
-  expect(links()).toEqual(["/_next/static/css/badge-2.css"]);
-});
-
 test("forgets the files for Vitest's setup file, which evaluates them again", async () => {
   const { forgetClientFiles, loadClientModule } = await graph();
   const before = await importHostFile("/host/badge.tsx", "Badge");
@@ -307,16 +295,14 @@ test("links the stylesheets of a file as the host uses it, until they are unlink
   // The exports alone, as a host loads a file it does not show yet.
   await loadClientModule(badge);
   expect(links()).toEqual([]);
-  await linkStylesheetsOf(badge);
+  await linkStylesheetsOf(["/host/badge.tsx"]);
   expect(links()).toEqual(["/_next/static/css/badge.css"]);
-  await linkStylesheetsOf(badge);
-  expect(links()).toEqual(["/_next/static/css/badge.css"]);
+  await linkStylesheetsOf(["/host/badge.tsx", "/host/card.tsx"]);
+  expect(links()).toEqual(["/_next/static/css/badge.css", "/_next/static/css/card.css"]);
   // As they are now: an edit gave the CSS another version.
   tab.stylesheets.set("/host/badge.tsx", ["/_next/static/css/badge-2.css"]);
   unlinkClientStylesheets();
-  await linkStylesheetsOf(badge);
-  expect(links()).toEqual(["/_next/static/css/badge-2.css"]);
-  await linkStylesheetsOf({ renderGreeting() {} });
+  await linkStylesheetsOf(["/host/badge.tsx"]);
   expect(links()).toEqual(["/_next/static/css/badge-2.css"]);
 
   // Vitest's setup file: every file the graph loaded, as it last linked it.
@@ -381,7 +367,7 @@ test("loads a file of the host in a static build, by its key", async () => {
     evaluation: 1,
   });
   // A file of the build, wherever the build is served.
-  await linkStylesheetsOf(referenceModule("5f3a9c1e", "Badge"));
+  await linkStylesheetsOf(["host/badge.tsx"]);
   expect(links()).toEqual(["https://site.test/docs/_next/static/css/badge-1a2b3c4d.css"]);
   // Once for two imports, with an export a plugin of the host added.
   await loadClientFile("5f3a9c1e", "host/badge.tsx");

@@ -167,7 +167,12 @@ test("renders a node in a page with the CSS of the browser, and not that of Vite
 // `<link>` of its chunk in a build: the page has the CSS of its route.
 test("keeps the CSS that a test file imports itself for its nodes, and not for a page", async () => {
   const fromTest = () =>
-    cssRules().some((rule) => rule instanceof CSSStyleRule && rule.selectorText === ".from-test");
+    cssRules().some(
+      (rule) =>
+        rule instanceof CSSStyleRule &&
+        rule.selectorText === ".from-test" &&
+        matchMedia(rule.parentStyleSheet!.media.mediaText || "all").matches,
+    );
   await renderServer(<p className="from-test">From the test</p>);
   await expect.element(page.getByText("From the test")).toHaveStyle({ color: "rgb(255, 0, 255)" });
 

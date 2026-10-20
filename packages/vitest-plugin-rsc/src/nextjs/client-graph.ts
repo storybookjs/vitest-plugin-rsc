@@ -13,6 +13,7 @@ import { clientFileKeyExport } from "./client-file-key.ts";
 import { registry } from "./registry.ts";
 import {
   builtClientStylesheetsOf,
+  builtFileKey,
   graphStylesheetAttribute,
   stylesheetsEvent,
   type StylesheetsQuestion,
@@ -39,8 +40,8 @@ import {
 // The CSS of such a file is in the document while the host uses the file, as
 // a page's is while the page is open: from `linkStylesheetsOf()` until
 // `cleanup()`, which ends what the host used. Not as the file loads: a host
-// may load a file that it does not use yet, as Storybook preloads the file
-// of a story. Under Vitest every test uses the setup files and the test file
+// may load a file that it does not show yet, as it prepares what it shows
+// next. Under Vitest every test uses the setup files and the test file
 // (setup.ts).
 
 const environment = "react_client";
@@ -53,13 +54,9 @@ let graph: ModuleRunner | undefined;
 const linked = new Map<string, { link: HTMLLinkElement; loaded: Promise<unknown> }>();
 
 // Each file of the host that the graph loaded, by its reference key: the key
-// of its stylesheets in a static build, and their URLs as the graph last
-// linked them.
+// of its stylesheets in a static build, and their URLs once Vitest's setup
+// file has linked them.
 const files = new Map<string, { builtFile: string | undefined; stylesheets?: string[] }>();
-
-// The reference keys of the files that the host uses now: `linked` has their
-// stylesheets.
-const used = new Set<string>();
 
 // The exports of the evaluation of each file of the host that the graph has
 // now, by its reference key.
@@ -150,8 +147,7 @@ export async function loadClientFile(key: string, builtFile?: string): Promise<v
   // changed, as another runner may have fetched them again already. What a
   // setup file with the directive had set up comes back with the setup file,
   // which Vitest runs before every test file.
-  const changed = await takeFetchedModules(graph);
-  if (changed) {
+  if (await takeFetchedModules(graph)) {
     for (const node of evaluatedModules.idToModuleMap.values()) {
       if (!isDependency(node)) evaluatedModules.invalidateModule(node);
     }
@@ -162,7 +158,6 @@ export async function loadClientFile(key: string, builtFile?: string): Promise<v
   imported.add(key);
   files.set(key, { builtFile });
   evaluations.set(key, await graph.import(key));
-  if (changed) await linkUsedFilesAgain();
 }
 
 /**
@@ -189,7 +184,7 @@ export async function loadClientModule<T extends object>(module: T): Promise<T> 
     if (!exports) {
       throw new Error(
         `vitest-plugin-rsc: ${key} has "use client" and is not a file of the host, so nothing ` +
-          `loaded it in the browser layer. ${key} is the reference key ` +
+          `loaded it in the browser layer for loadClientModule(). ${key} is the reference key ` +
           `that Vite RSC gives the file: its URL with a dev server, and in a static build a ` +
           `hash of the file. The files of the host are the ones that host.files of ` +
           `vitestPluginNext() matches.`,
@@ -201,27 +196,38 @@ export async function loadClientModule<T extends object>(module: T): Promise<T> 
 }
 
 /**
- * Links the stylesheets of the file of `module` in the document, those of
- * what it imports in the browser layer, until `cleanup()` unlinks them: what
- * a host calls as it uses the file, like a framework that shows a story of
- * it, or renders it as it loads. As they are now: with a dev server, an edit
- * since the file loaded gives one another version. Resolves once they have
- * loaded. Nothing for a module that `loadClientModule()` gives as it is, and
- * rejects where it rejects.
+ * Links the stylesheets of files of the host with `"use client"` that the
+ * host uses, like a framework that renders a component of one, or one that
+ * renders as it loads: what each imports in the browser layer, in their order, as they
+ * are now. Until `cleanup()` unlinks them. The files as for `hostFiles` of
+ * `renderServer()`: absolute, or from the root of the project. Resolves once
+ * the stylesheets have loaded.
  */
-export async function linkStylesheetsOf(module: object): Promise<void> {
-  await loadClientModule(module);
-  const key: unknown = Reflect.get(module, clientFileKeyExport);
-  if (typeof key !== "string") return;
-  used.add(key);
-  await linkStylesheets(await stylesheetsOfFile(key, { again: true }));
+export async function linkStylesheetsOf(hostFiles: string[]): Promise<void> {
+  await linkStylesheets(await stylesheetsOfHostFiles(hostFiles));
 }
 
-// The URLs of the stylesheets of a file that the graph loaded: those it last
-// linked, unless they are asked for `again`.
-async function stylesheetsOfFile(key: string, { again }: { again: boolean }): Promise<string[]> {
+// The URLs of the stylesheets of files of the host by their paths: from the
+// dev server, see styles.ts, or from the files of a static build.
+async function stylesheetsOfHostFiles(hostFiles: string[]): Promise<string[]> {
+  if (hostFiles.length === 0) return [];
+  if (!buildDirectory) {
+    return askDevServer<string[]>(stylesheetsEvent, { hostFiles } satisfies StylesheetsQuestion);
+  }
+  const built = await builtFiles();
+  const keys = Object.keys(built.hostFiles);
+  const urls = hostFiles.flatMap((file) => {
+    const key = builtFileKey(file, keys);
+    return key === undefined ? [] : builtClientStylesheetsOf(built, key, buildDirectory!);
+  });
+  return [...new Set(urls)];
+}
+
+// The URLs of the stylesheets of a file that the graph loaded, once for
+// each evaluation of it.
+async function stylesheetsOfFile(key: string): Promise<string[]> {
   const file = files.get(key)!;
-  if (again || !file.stylesheets) file.stylesheets = await stylesheetsOf(key, file.builtFile);
+  file.stylesheets ??= await stylesheetsOf(key, file.builtFile);
   return file.stylesheets;
 }
 
@@ -251,21 +257,6 @@ async function linkStylesheets(urls: string[]): Promise<void> {
 export function unlinkClientStylesheets(): void {
   for (const { link } of linked.values()) link.remove();
   linked.clear();
-  used.clear();
-}
-
-// After a change, the stylesheets of the files in use as they are now, as
-// Vite puts the new CSS of a module in its `<style>`: an edit gives a
-// stylesheet another version, and the one before goes.
-async function linkUsedFilesAgain(): Promise<void> {
-  const urls = await Promise.all([...used].map((key) => stylesheetsOfFile(key, { again: true })));
-  const now = new Set(urls.flat());
-  for (const [href, { link }] of linked) {
-    if (now.has(href)) continue;
-    link.remove();
-    linked.delete(href);
-  }
-  await linkStylesheets([...now]);
 }
 
 /**
@@ -277,11 +268,8 @@ async function linkUsedFilesAgain(): Promise<void> {
  * file again.
  */
 export async function linkClientStylesheets(): Promise<void> {
-  for (const key of imported) used.add(key);
   // In the order the files loaded, as their CSS cascades.
-  const urls = await Promise.all(
-    [...imported].map((key) => stylesheetsOfFile(key, { again: false })),
-  );
+  const urls = await Promise.all([...imported].map((key) => stylesheetsOfFile(key)));
   await linkStylesheets(urls.flat());
 }
 
