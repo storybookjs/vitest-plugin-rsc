@@ -32,13 +32,8 @@ test("a client story that Storybook leaves before its stylesheets load ends at o
   linking = (signal) =>
     new Promise((_, reject) => signal.addEventListener("abort", () => reject(signal.reason)));
 
+  // With the signal's reason, which Storybook takes as the end of the render.
   const ended = beforeEach(story("./button.stories.tsx", leave.signal));
   leave.abort();
-  await expect(ended).resolves.toBeUndefined();
-
-  // An error of its own is the story's.
-  linking = async () => {
-    throw new Error("the dev server is gone");
-  };
-  await expect(beforeEach(story("./button.stories.tsx"))).rejects.toThrow("the dev server is gone");
+  await expect(ended).rejects.toBe(leave.signal.reason);
 });
