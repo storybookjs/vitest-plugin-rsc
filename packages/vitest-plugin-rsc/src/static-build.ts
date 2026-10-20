@@ -1,7 +1,15 @@
 import fs from "node:fs";
 import path from "node:path";
 import { getPluginApi } from "@vitejs/plugin-rsc/plugin";
-import { moduleRunnerTransform, type Plugin, type Rolldown, type ViteBuilder } from "vite";
+import {
+  moduleRunnerTransform,
+  parseAstAsync,
+  Visitor,
+  type ESTree,
+  type Plugin,
+  type Rolldown,
+  type ViteBuilder,
+} from "vite";
 import { clientReferencesId } from "./built-layers.ts";
 import {
   builtHostModuleUrl,
@@ -168,26 +176,55 @@ type Manager = NonNullable<ReturnType<typeof getPluginApi>>["manager"];
 /** What `moduleRunnerTransform()` makes of `import.meta`. */
 const importMeta = "__vite_ssr_import_meta__";
 
-// A module of a build as a module runner takes it. Its imports are by the
-// path of the file, from the directory of the build: a runner resolves a
-// relative import against what the importer was asked by, which for a build
-// is not always a path.
+// A module of a build as a module runner takes it. A runner asks for an
+// import as the code names it, and resolves a relative `import()` against
+// what the importer was asked by, which for a build is not always a path: a
+// dev server resolves the imports of a module before Vite transforms it for
+// a runner. So the imports of a chunk, which the bundler names by the way
+// from the chunk, are by the path of the file, from the directory of the
+// build, before the transform.
 export async function toRunnerModule(
   chunk: Pick<Rolldown.OutputChunk, "fileName" | "code">,
 ): Promise<string> {
   const id = `/${chunk.fileName}`;
-  const transformed = await moduleRunnerTransform(chunk.code, null, id, chunk.code);
-  const directory = path.posix.dirname(id);
-  const code = (transformed?.code ?? chunk.code).replace(
-    /(__vite_ssr_(?:dynamic_)?import__\()(["'])(\.\.?\/[^"']*)\2/g,
-    (_match, call: string, _quote: string, specifier: string) =>
-      `${call}${JSON.stringify(path.posix.resolve(directory, specifier))}`,
-  );
+  const resolved = await withResolvedImports(chunk.code, path.posix.dirname(id));
+  const transformed = await moduleRunnerTransform(resolved, null, id, resolved);
+  const code = transformed?.code ?? resolved;
   // A runner has an `import.meta.resolve()` that throws. Vite asks it where
   // the CSS of a chunk is, before it takes the URL of the module for that.
   return code.includes(`${importMeta}.resolve`)
     ? `${importMeta}.resolve = (specifier) => new URL(specifier, ${importMeta}.url).href;\n${code}`
     : code;
+}
+
+// The code of a module of `directory`, with the imports it names by a way
+// from there by their path: `import`, `export … from` and `import()` of a
+// string, also of a template literal that is one.
+async function withResolvedImports(code: string, directory: string): Promise<string> {
+  const sources: { start: number; end: number; specifier: string }[] = [];
+  const add = (source: ESTree.Expression | ESTree.StringLiteral | null) => {
+    const specifier =
+      source?.type === "Literal"
+        ? source.value
+        : source?.type === "TemplateLiteral" && source.expressions.length === 0
+          ? source.quasis[0]!.value.cooked
+          : undefined;
+    if (typeof specifier === "string" && /^\.\.?\//.test(specifier)) {
+      sources.push({ start: source!.start, end: source!.end, specifier });
+    }
+  };
+  new Visitor({
+    ImportDeclaration: (node) => add(node.source),
+    ExportAllDeclaration: (node) => add(node.source),
+    ExportNamedDeclaration: (node) => add(node.source),
+    ImportExpression: (node) => add(node.source),
+  }).visit(await parseAstAsync(code));
+  // From the end, so that the offsets of the ones before stay.
+  for (const { start, end, specifier } of sources.sort((a, b) => b.start - a.start)) {
+    const resolved = JSON.stringify(path.posix.resolve(directory, specifier));
+    code = code.slice(0, start) + resolved + code.slice(end);
+  }
+  return code;
 }
 
 // The modules of the page that the chunks of a layer import, by the import

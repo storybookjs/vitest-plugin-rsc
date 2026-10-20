@@ -1115,7 +1115,11 @@ test("rewrites a chunk into what a module runner evaluates", async () => {
     code:
       `import { a } from "./a.js";\n` +
       `import { b } from "../entry.js";\n` +
+      `export * from "./c.js";\n` +
+      `export { d } from './d.js';\n` +
       `export const load = () => import("./lazy.js");\n` +
+      "export const later = () => import(`./later.js`);\n" +
+      `export const name = "./a.js";\n` +
       `export const page = [a, b];\n`,
   });
 
@@ -1123,9 +1127,16 @@ test("rewrites a chunk into what a module runner evaluates", async () => {
   // of the entry, which is a directory up.
   expect(rewritten).toContain(`__vite_ssr_import__("/vitest-plugin-rsc/react_client/assets/a.js"`);
   expect(rewritten).toContain(`__vite_ssr_import__("/vitest-plugin-rsc/react_client/entry.js"`);
+  expect(rewritten).toContain(`__vite_ssr_import__("/vitest-plugin-rsc/react_client/assets/c.js"`);
+  expect(rewritten).toContain(`__vite_ssr_import__("/vitest-plugin-rsc/react_client/assets/d.js"`);
   expect(rewritten).toContain(
     `__vite_ssr_dynamic_import__("/vitest-plugin-rsc/react_client/assets/lazy.js"`,
   );
+  expect(rewritten).toContain(
+    `__vite_ssr_dynamic_import__("/vitest-plugin-rsc/react_client/assets/later.js"`,
+  );
+  // A string that is no import is as it was.
+  expect(rewritten).toContain(`"./a.js"`);
   expect(rewritten).not.toContain("__vite_ssr_import_meta__");
 });
 
