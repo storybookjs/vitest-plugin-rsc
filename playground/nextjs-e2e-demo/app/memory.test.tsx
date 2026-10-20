@@ -202,6 +202,34 @@ test("lets go of a page that the test has left, with all of its modules", async 
   await expectCollected();
 });
 
+test("lets go of the last page after cleanup(), with no page after it", async () => {
+  // A page after another: V8 may keep the first page whose objects extend a
+  // shape of the tab, see `left`.
+  await renderServer({ url: "/" });
+  await renderServer({ url: "/" });
+  // The only page that this test asks about, so not one of `left`, which
+  // may keep one.
+  const last = modulesOfPage();
+
+  await cleanup();
+  // The browser keeps the element that the pointer is over, and with it its
+  // page, until the pointer is over another one.
+  const elsewhere = document.body.appendChild(document.createElement("button"));
+  elsewhere.textContent = "Elsewhere";
+  onTestFinished(() => elsewhere.remove());
+  await page.getByRole("button", { name: "Elsewhere" }).hover();
+
+  await expect
+    .poll(
+      async () => {
+        await cdp().send("HeapProfiler.collectGarbage");
+        return last.deref() === undefined;
+      },
+      { timeout: 4000, interval: 100 },
+    )
+    .toBe(true);
+});
+
 test("lets go of a page that rendered a portal in the body", async () => {
   for (let pages = 0; pages < 2; pages++) {
     await renderServer({ url: "/help" });
