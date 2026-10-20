@@ -47,15 +47,18 @@ export function recordListeners(target: EventTarget): Leftovers {
   };
 }
 
-/** Records the message channels that are opened, until `stop()`. */
+/**
+ * Records the message channels that are opened, until `stop()`. `remove()`
+ * closes each of them once no message is on its way on it.
+ */
 export function recordMessageChannels(): Leftovers {
   const Native = globalThis.MessageChannel;
-  const opened: MessageChannel[] = [];
+  const opened: { close(): void }[] = [];
   let recording = true;
   const Recorded = class MessageChannel extends Native {
     constructor() {
       super();
-      if (recording) opened.push(this);
+      if (recording) opened.push(closingOnceQuiet(this));
     }
   };
   globalThis.MessageChannel = Recorded;
@@ -67,11 +70,37 @@ export function recordMessageChannels(): Leftovers {
     stop,
     remove() {
       stop();
-      // A port with a message handler lives until it is closed.
-      for (const channel of opened.splice(0)) {
-        channel.port1.close();
-        channel.port2.close();
-      }
+      for (const channel of opened.splice(0)) channel.close();
+    },
+  };
+}
+
+// A port with a message handler lives until it is closed. A channel is closed
+// once what was posted on it has been delivered: a scheduler that posts to
+// itself to run its queue then runs what it had queued, which finds the page
+// gone. Closed at once, the scheduler would keep that queue, and in it the page.
+function closingOnceQuiet(channel: MessageChannel): { close(): void } {
+  let onItsWay = 0;
+  let closing = false;
+  const close = () => {
+    channel.port1.close();
+    channel.port2.close();
+  };
+  for (const port of [channel.port1, channel.port2]) {
+    const post = port.postMessage;
+    port.postMessage = function (this: MessagePort, ...args: unknown[]) {
+      post.apply(this, args as Parameters<typeof post>);
+      onItsWay++;
+    };
+    port.addEventListener("message", () => {
+      onItsWay--;
+      if (closing && onItsWay === 0) close();
+    });
+  }
+  return {
+    close() {
+      closing = true;
+      if (onItsWay === 0) close();
     },
   };
 }
