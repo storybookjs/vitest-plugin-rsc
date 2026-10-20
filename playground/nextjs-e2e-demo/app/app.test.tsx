@@ -1,9 +1,4 @@
-import {
-  cleanup,
-  handleRequest,
-  keepStorageKeys,
-  renderServer,
-} from "vitest-plugin-rsc/nextjs/testing-library";
+import { cleanup, handleRequest, renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
 import {
   afterEach,
   beforeEach,
@@ -18,6 +13,8 @@ import { page } from "vitest/browser";
 import { db, type Note } from "./lib/notes.ts";
 
 let consoleError: MockInstance<typeof console.error>;
+// As a library of the app takes it when it loads.
+const storageAtImport = localStorage;
 
 beforeEach(() => {
   vi.restoreAllMocks();
@@ -374,84 +371,83 @@ test("starts every test without what the app stored in the browser", async () =>
   await expect.element(page.getByRole("button", { name: "Theme: light" })).toBeVisible();
 });
 
-test("keeps what Vitest stores in the browser while the tests run", async () => {
-  // The dark mode of Vitest's UI may be set already: it is the developer's.
-  const colorScheme = localStorage.getItem("vueuse-color-scheme");
-  onTestFinished(() => {
-    localStorage.removeItem("vitest-ui_test-setting");
-    if (colorScheme === null) localStorage.removeItem("vueuse-color-scheme");
-    else localStorage.setItem("vueuse-color-scheme", colorScheme);
-  });
-  // Like the settings of Vitest's UI, which it stores when they change.
-  localStorage.setItem("vitest-ui_test-setting", "on");
-  localStorage.setItem("vueuse-color-scheme", colorScheme ?? "auto");
-
-  await cleanup();
-
-  expect(localStorage.getItem("vitest-ui_test-setting")).toBe("on");
-  expect(localStorage.getItem("vueuse-color-scheme")).toBe(colorScheme ?? "auto");
-});
-
-test("keeps the keys of the browser's storage that the host says are its own", async () => {
-  // What a host stores as it runs, in this document or just before a
-  // cleanup, when this document has not heard of it yet.
-  const forget = keepStorageKeys(["host-panel", "host-ui-*"]);
-  onTestFinished(() => {
-    forget();
-    for (const key of ["host-panel", "host-panels", "app-draft"]) localStorage.removeItem(key);
-    sessionStorage.removeItem("host-ui-tab");
-  });
-  localStorage.setItem("host-panel", "wide");
-  sessionStorage.setItem("host-ui-tab", "notes");
-  // Not a key the host names: the app's.
-  localStorage.setItem("host-panels", "wide");
-  localStorage.setItem("app-draft", "Hello");
-
-  await cleanup();
-
-  expect(localStorage.getItem("host-panel")).toBe("wide");
-  expect(sessionStorage.getItem("host-ui-tab")).toBe("notes");
-  expect(localStorage.getItem("host-panels")).toBeNull();
-  expect(localStorage.getItem("app-draft")).toBeNull();
-
-  // Taken back, the keys are the app's again.
-  forget();
-  await cleanup();
-  expect(localStorage.getItem("host-panel")).toBeNull();
-  expect(sessionStorage.getItem("host-ui-tab")).toBeNull();
-});
-
-test("keeps what another document of the origin stores in the browser, like the manager of Storybook", async () => {
+test("forgets what the app stored in the browser after cleanup()", async () => {
   await renderServer({ url: "/settings" });
-  // The app stores its theme.
   await page.getByRole("button", { name: "Theme: light" }).click();
   await expect.element(page.getByRole("button", { name: "Theme: dark" })).toBeVisible();
+  sessionStorage.setItem("draft", "Hello");
   expect(localStorage.getItem("theme")).toBe("dark");
-
-  // A document of the same origin next to the app's, as the manager of
-  // Storybook is next to its preview.
-  const other = document.body.appendChild(document.createElement("iframe"));
-  onTestFinished(() => {
-    other.remove();
-    localStorage.removeItem("host-setting");
-    sessionStorage.removeItem("host-session");
-  });
-  // What this document hears of, once the other one has written.
-  const heard = new Set<string | null>();
-  const hear = ({ key }: StorageEvent) => heard.add(key);
-  window.addEventListener("storage", hear);
-  onTestFinished(() => window.removeEventListener("storage", hear));
-  other.contentWindow!.localStorage.setItem("host-setting", "on");
-  other.contentWindow!.sessionStorage.setItem("host-session", "on");
-  await expect
-    .poll(() => [...heard])
-    .toEqual(expect.arrayContaining(["host-setting", "host-session"]));
 
   await cleanup();
 
-  expect(localStorage.getItem("host-setting")).toBe("on");
-  expect(sessionStorage.getItem("host-session")).toBe("on");
   expect(localStorage.getItem("theme")).toBeNull();
+  expect(sessionStorage.getItem("draft")).toBeNull();
+  expect([localStorage.length, sessionStorage.length]).toEqual([0, 0]);
+});
+
+test("keeps the app and the browser's own storage of the origin apart", async () => {
+  // A document of the origin without the plugin, like the UI of a host, has
+  // the browser's storage. The page goes with the documents of the host, so
+  // the test makes one each time it looks.
+  const browserDocument = () => {
+    const frame = document.body.appendChild(document.createElement("iframe"));
+    onTestFinished(() => frame.remove());
+    return frame.contentWindow!;
+  };
+  const host = browserDocument();
+  onTestFinished(() => {
+    const { localStorage, sessionStorage } = browserDocument();
+    localStorage.removeItem("host-panel");
+    sessionStorage.removeItem("host-tab");
+  });
+  // It stores in it, and this document hears of that: about the browser's
+  // storage, not the page's.
+  const heard: Array<{ key: string | null; area: Storage | null }> = [];
+  const hear = ({ key, storageArea }: StorageEvent) => heard.push({ key, area: storageArea });
+  window.addEventListener("storage", hear);
+  onTestFinished(() => window.removeEventListener("storage", hear));
+  host.localStorage.setItem("host-panel", "wide");
+  host.sessionStorage.setItem("host-tab", "notes");
+  await expect
+    .poll(() => heard.map(({ key }) => key))
+    .toEqual(expect.arrayContaining(["host-panel", "host-tab"]));
+  for (const { area } of heard) {
+    expect(area).not.toBe(localStorage);
+    expect(area).not.toBe(sessionStorage);
+  }
+
+  await renderServer({ url: "/settings" });
+  await page.getByRole("button", { name: "Theme: light" }).click();
+  await expect.element(page.getByRole("button", { name: "Theme: dark" })).toBeVisible();
+
+  // The page has none of the host's items.
+  expect(localStorage.getItem("host-panel")).toBeNull();
+  expect(sessionStorage.getItem("host-tab")).toBeNull();
+  expect(Object.keys(localStorage)).toEqual(["theme"]);
+
+  await cleanup();
+
+  // The browser's storage has the host's items still, and none of the app's.
+  const after = browserDocument();
+  expect(after.localStorage.getItem("host-panel")).toBe("wide");
+  expect(after.sessionStorage.getItem("host-tab")).toBe("notes");
+  expect(after.localStorage.getItem("theme")).toBeNull();
+});
+
+test("has one storage of the page, which a library may take as it loads", async () => {
+  expect(storageAtImport).toBe(localStorage);
+  expect(window.localStorage).toBe(localStorage);
+  await renderServer({ url: "/" });
+  storageAtImport.setItem("draft", "Hello");
+  expect(localStorage.getItem("draft")).toBe("Hello");
+
+  await cleanup();
+
+  expect(window.localStorage).toBe(storageAtImport);
+  expect(storageAtImport.getItem("draft")).toBeNull();
+  await renderServer({ url: "/" });
+  localStorage.setItem("draft", "Again");
+  expect(storageAtImport.getItem("draft")).toBe("Again");
 });
 
 test("replaces the page when a component redirects in the render after a Server Action", async () => {
