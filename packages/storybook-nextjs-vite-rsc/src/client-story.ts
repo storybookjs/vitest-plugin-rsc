@@ -15,11 +15,21 @@ import { hostFilesOf } from "./host-files.ts";
  * the story. A docs page shows its client stories inline, each with its own,
  * and a story twice, the primary one, with one each.
  */
-export const beforeEach: BeforeEach<ReactRenderer> = async ({ parameters }) => {
+export const beforeEach: BeforeEach<ReactRenderer> = async ({ parameters, abortSignal }) => {
   const files = hostFilesOf(parameters.fileName as string);
   if (!files) return;
-  await linkStylesheetsOf(files);
+  // Until they have loaded, or Storybook left the story: it loads the
+  // preview again when it leaves a story whose `beforeEach` goes on.
+  const linked = linkStylesheetsOf(files);
+  await Promise.race([linked, left(abortSignal)]);
+  if (abortSignal.aborted) linked.catch(() => {});
   return () => cleanup();
 };
+
+const left = (signal: AbortSignal) =>
+  new Promise<void>((resolve) => {
+    if (signal.aborted) resolve();
+    else signal.addEventListener("abort", () => resolve(), { once: true });
+  });
 
 export const annotations: ProjectAnnotations<ReactRenderer> = { beforeEach };
