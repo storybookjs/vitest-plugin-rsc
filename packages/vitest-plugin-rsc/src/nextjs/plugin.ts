@@ -648,6 +648,10 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
       }
       return pageRoutes.routes;
     },
+    entryIdOf: (entry) =>
+      `\0${routeEntryPrefix}${[...project.routes, ...project.componentRoutes].findIndex(
+        (route) => route.kind === "page" && entryOf(route) === entry,
+      )}`,
     lists: routeKinds.map((kind) => `\0${routeLists[kind]}`),
   });
   // The constants of what Next's build generates for the rsc layer, the entry

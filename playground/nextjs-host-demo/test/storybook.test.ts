@@ -482,15 +482,32 @@ async function misuse(page: Page, canvas: Frame, story: string, errors: { list: 
 }
 
 // A story whose file does not load: Storybook shows the error of the
-// loader, without a render of the story.
-async function notLoaded(canvas: Frame, story: string, errors: { list: string[] }) {
+// loader, without a render of the story, and logs it. The story is selected
+// once: the error of the story before it is still on the canvas, so the
+// error is the story's once it names the rule, and its log is the one that
+// carries the same message.
+async function notLoaded(
+  canvas: Frame,
+  story: string,
+  message: string,
+  errors: { list: string[] },
+) {
   await canvas.evaluate((storyId) => {
     window.__STORYBOOK_PREVIEW__.channel.emit("selectStory", { storyId, viewMode: "story" });
   }, story);
   const error = canvas.locator("#error-message");
-  await expect.poll(() => error.isVisible(), { message: story, timeout: 30_000 }).toBe(true);
+  await expect
+    .poll(async () => ((await error.isVisible()) ? await error.textContent() : ""), {
+      message: story,
+      timeout: 60_000,
+    })
+    .toContain(message);
+  await expect
+    .poll(() => errors.list.some((logged) => logged.includes(message)), {
+      message: `what the page logged of ${story}`,
+    })
+    .toBe(true);
   errors.list.splice(0);
-  return (await error.textContent()) ?? "";
 }
 
 test("misuse says what to do instead", async ({ page, errors }) => {
@@ -526,9 +543,7 @@ test("misuse says what to do instead", async ({ page, errors }) => {
     ["misuse-before-all--before-all", "defineServerPreview() got a beforeAll"],
     ["misuse-globals--globals", "globals are declared in preview.tsx"],
   ]) {
-    await expect
-      .poll(() => notLoaded(canvas, story!, errors), { message: story, timeout: 60_000 })
-      .toContain(message);
+    await notLoaded(canvas, story!, message!, errors);
   }
   // And the stories after them render as before.
   expect(await runStory(page, canvas, "press-button--pressed")).toEqual(passed);

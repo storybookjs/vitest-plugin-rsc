@@ -42,11 +42,11 @@ const built = {
   },
 };
 
-vi.mock("./built-stylesheets.ts", () => ({
+vi.mock("./built-files.ts", () => ({
   get buildDirectory() {
     return tab.buildDirectory;
   },
-  builtStylesheets: async () => built,
+  builtFiles: async () => built,
 }));
 type FakeModule = { id: string; url: string; file: null; exports?: Promise<object> };
 
