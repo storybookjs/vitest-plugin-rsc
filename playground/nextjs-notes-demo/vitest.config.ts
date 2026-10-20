@@ -74,6 +74,12 @@ export const nextjsNotesProjects = [
       // so cleanup belongs in beforeEach. Do not disable file parallelism
       // and do not switch this to isolate: true for hanging state.
       isolate: false,
+      // How long `expect.poll()` waits for what a click or a Server Action
+      // does: a request to the app, its render and a write to the database,
+      // which takes longer than Vitest's default of 1 s on a slow machine, as
+      // on CI. The stories wait as long: see .storybook/round-trip.ts.
+      // `expect.element()` waits until the test's own timeout.
+      expect: { poll: { timeout: 10_000 } },
       setupFiles: ["./vitest.setup.ts"],
     },
   }),
