@@ -49,6 +49,10 @@ const environmentOf: Record<NextLayer, string> = {
 const layers = Object.keys(environmentOf) as NextLayer[];
 
 const registry = "globalThis.__vitest_plugin_rsc_next__";
+
+// What a dependency scan of the app starts from: every module of `app/`.
+const appEntriesOf = (project: NextProject) =>
+  normalizePath(path.join(project.appDir, "**/*.{js,jsx,ts,tsx}"));
 // Shared by the layers: the routes and the `next.config`.
 const manifestId = "virtual:vitest-plugin-rsc/next-manifest";
 // The modules of the routes, all in the rsc layer: one for each route, by its
@@ -668,6 +672,35 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
   });
 
   return [
+    // The scan of the rsc layer, which the host's page is, starts where the
+    // host's starts, and from the app: a route loads when it is first
+    // requested, and so does the proxy, which no file of `app/` imports, so
+    // without them Vite finds the dependencies of a page as it loads, and
+    // pre-bundles again. Vite scans its default, the input of the build or
+    // every HTML file, only when no entries are named, so it is named here
+    // where the host named none, as for the pages of Vite's own dev server.
+    // In `configureServer`: Vitest names its entries on the resolved config,
+    // after every `config` hook. `order: "pre"`: before runner-environment.ts
+    // copies them for the browser layer's scan.
+    {
+      name: "vitest-plugin-rsc:next-scan",
+      configureServer: {
+        order: "pre",
+        handler(server) {
+          const rsc = server.config.environments[environmentOf.rsc]!;
+          const input = rsc.input ?? rsc.build.rolldownOptions.input;
+          const inputFiles = typeof input === "string" ? [input] : Object.values(input ?? {});
+          const hostEntries =
+            rsc.optimizeDeps.entries ??
+            (inputFiles.length > 0 ? inputFiles.map(normalizePath) : "**/*.html");
+          rsc.optimizeDeps.entries = [
+            ...[hostEntries].flat(),
+            appEntriesOf(project),
+            ...(project.middlewareFile ? [normalizePath(project.middlewareFile)] : []),
+          ];
+        },
+      },
+    },
     ...createRunnerEnvironmentPlugins(environmentOf.ssr),
     createPathsPlugin(getProject),
     // Watch mode and `vitest --changed` find the test files of a route. On
@@ -764,12 +797,6 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
               : [],
           );
 
-        const appEntries = normalizePath(path.join(project.appDir, "**/*.{js,jsx,ts,tsx}"));
-        // The proxy of the app is a module of the rsc layer that no file of
-        // `app/` imports.
-        const middlewareEntries = project.middlewareFile
-          ? [normalizePath(project.middlewareFile)]
-          : [];
         const optimizeDeps = (layer: NextLayer) => ({
           include: [...include[layer], ...dependenciesOfNext(layer)],
           rolldownOptions: {
@@ -888,13 +915,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
           environments: {
             [environmentOf.rsc]: {
               ...builtLayer("rsc"),
-              optimizeDeps: {
-                ...optimizeDeps("rsc"),
-                // A route loads when it is first requested, and so does the
-                // proxy. Scan the app up front, or Vite finds the
-                // dependencies of a page mid-test and reloads the page.
-                entries: [appEntries, ...middlewareEntries],
-              },
+              optimizeDeps: optimizeDeps("rsc"),
             },
             [environmentOf.ssr]: {
               ...builtLayer("ssr"),
@@ -914,7 +935,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
               optimizeDeps: {
                 ...optimizeDeps("ssr"),
                 // The Client Components it renders are the app's.
-                entries: [appEntries],
+                entries: [appEntriesOf(project)],
                 exclude: ["vitest-plugin-rsc", "@vitejs/plugin-rsc"],
               },
             },
