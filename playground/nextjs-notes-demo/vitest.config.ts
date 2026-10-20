@@ -5,8 +5,8 @@ import { defineConfig, defineProject } from "vitest/config";
 import { vitestPluginRSC } from "vitest-plugin-rsc";
 import { vitestPluginNext, type NextBuild } from "vitest-plugin-rsc/nextjs/plugin";
 import { vitestPluginRscSourceConditions } from "../../vitest.conditions.ts";
+import { writePgliteFiles } from "./test/pglite-files.ts";
 import { ignoreWatchedOnlyModules } from "./test/ignore-watched-only-modules.ts";
-import { schemaSQL } from "./test/schema-sql.ts";
 
 // Make Vitest UI trace/source clicks a no-op instead of opening Cursor.
 // oxlint-disable-next-line no-process-env
@@ -17,6 +17,9 @@ process.env.LAUNCH_EDITOR = "/usr/bin/true";
 process.env.NEXT_FONT_GOOGLE_MOCKED_RESPONSES = fileURLToPath(
   new URL("../../vitest.google-fonts.cjs", import.meta.url),
 );
+
+// The database of a test: see test/pglite-files.ts.
+await writePgliteFiles();
 
 const root = fileURLToPath(new URL("./", import.meta.url));
 const nextNotesRequire = createRequire(new URL("./package.json", import.meta.url));
@@ -39,8 +42,6 @@ export const nextjsNotesProjects = [
       tsconfigPaths: true,
       conditions: [...vitestPluginRscSourceConditions, "test"],
     },
-    // The schema of the database of a test: see lib/__mocks__/db.ts.
-    define: { __SCHEMA_SQL__: JSON.stringify(schemaSQL) },
     // What lib/__mocks__/db.ts imports, which no file that Vite scans for
     // dependencies imports: found while the tests run, they would make Vite
     // optimize again, and reload the tests.

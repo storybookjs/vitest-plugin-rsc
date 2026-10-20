@@ -16,6 +16,10 @@
 /build
 /storybook-static
 
+# what the database of the tests and the stories hands PGlite: see
+# test/pglite-files.ts
+/test/pglite/
+
 # misc
 .DS_Store
 *.pem
