@@ -30,3 +30,22 @@ test("renders server validation errors and keeps old input", async () => {
   await expect.element(page.getByLabelText("Title")).toHaveAttribute("aria-invalid", "true");
   await expect.element(page.getByLabelText("Content")).toHaveValue("Keep this body");
 });
+
+test("shows the flashed errors once, not on a later visit", async () => {
+  await signedInAs();
+  await renderServer({ url: "/notes/new" });
+
+  await page.getByLabelText("Content").fill("Keep this body");
+  await page.getByRole("button", { name: "Create note" }).click();
+  await expect.element(page.getByText("Title is required.")).toBeInTheDocument();
+
+  await page.getByRole("link", { name: "All notes" }).click();
+  await expect.element(page.getByRole("heading", { level: 1, name: "Notes" })).toBeInTheDocument();
+  await page.getByRole("link", { name: "New note" }).first().click();
+
+  await expect
+    .element(page.getByRole("heading", { level: 1, name: "New note" }))
+    .toBeInTheDocument();
+  await expect.element(page.getByText("Title is required.")).not.toBeInTheDocument();
+  await expect.element(page.getByLabelText("Content")).toHaveValue("");
+});
