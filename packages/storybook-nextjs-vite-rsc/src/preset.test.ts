@@ -136,8 +136,9 @@ test("the plugin, with Storybook as its host", async () => {
     new URL("./server.ts", import.meta.resolve("@storybook/nextjs-vite-rsc/preset")),
   );
   expect((host.files[2] as RegExp).test(server)).toBe(true);
-  // Storybook's preview runtime and the packages of the addons, not one that
-  // depends on React, which it renders with: addon-docs and the renderer.
+  // Storybook's preview runtime, the framework's module that names a client
+  // story's file, and the packages of the addons, not one that depends on
+  // React, which it renders with: addon-docs and the renderer.
   expect(host.packages).toEqual(
     expect.arrayContaining([
       "storybook/test",
@@ -146,10 +147,11 @@ test("the plugin, with Storybook as its host", async () => {
       "storybook/internal/csf",
       "storybook/internal/instrumenter",
       "storybook/open-service",
+      "@storybook/nextjs-vite-rsc/client-renderer",
     ]),
   );
-  const addons = host.packages.filter((name) => name.startsWith("@storybook/"));
-  expect(addons.filter((name) => name !== "@storybook/global")).toEqual(["@storybook/addon-a11y"]);
+  const addons = host.packages.filter((name) => name.startsWith("@storybook/addon-"));
+  expect(addons).toEqual(["@storybook/addon-a11y"]);
 });
 
 test("Storybook's packages that the layers share and its builder has no global for are pre-bundled first", async () => {

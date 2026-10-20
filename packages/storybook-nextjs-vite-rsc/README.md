@@ -186,6 +186,11 @@ export const Pressed = meta.story({
 What the file imports is client code too, so a client story cannot render a
 Server Component or call `next/headers`.
 
+A story has the CSS of its file, with what the file imports, the preview's
+too, whatever story Storybook showed before it: a client story while
+Storybook shows it, a server story in the request of its page. A page has
+the CSS of its route alone, as with `next start`.
+
 ## Pages
 
 A server story without `component` and `render` is the page of the app at
@@ -385,6 +390,14 @@ for both kinds.
   that block until the preview loads again.
 - Next's router in a client story: `useRouter()` throws there, and
   `usePathname()` returns `null`. A server story has the router.
+- The CSS that `preview.server.tsx` or a server story file imports itself
+  stays in the preview's document once Storybook has loaded the file, as
+  Vite keeps a module's CSS: a client story after a server story has it
+  too. A page does not. Previews that import the same CSS, as the
+  framework's examples do, look the same either way.
+- A docs page has the CSS of the client stories it shows inline: not that
+  of the MDX file itself, or of `preview.tsx` on a page without a client
+  story, once Storybook has shown a story before it.
 - Storybook's Vitest addon and portable stories (a story's `run()` in a
   Vitest test) are not supported yet: nothing tests them. Outside
   Storybook a server story leaves its stylesheets to the plugin's default,

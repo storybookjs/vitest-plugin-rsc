@@ -1,4 +1,8 @@
 import type { BuilderOptions, StorybookConfigVite } from "@storybook/builder-vite";
+// The package's own module, by its name: a package of the host, one instance
+// in both layers, see client-renderer.ts.
+import { annotations } from "@storybook/nextjs-vite-rsc/client-renderer";
+import { __definePreview } from "@storybook/react";
 import type {
   CompatibleString,
   StorybookConfig as StorybookConfigBase,
@@ -10,8 +14,15 @@ import type { VitestPluginNextOptions } from "vitest-plugin-rsc/nextjs/plugin";
 // the browser layer, as ordinary stories of `@storybook/react`. The server
 // stories have their own entry: `@storybook/nextjs-vite-rsc/server`.
 
-export { __definePreview as definePreview } from "@storybook/react";
 export type { Decorator, Loader, StoryContext } from "@storybook/react";
+
+/**
+ * The project's preview, `preview.tsx`: `definePreview()` of
+ * `@storybook/react`, whose first addon gives a client story the
+ * stylesheets of its file (client-renderer.ts).
+ */
+export const definePreview: typeof __definePreview = (input) =>
+  __definePreview({ ...input, addons: [annotations, ...(input.addons ?? [])] as never });
 
 type FrameworkName = CompatibleString<"@storybook/nextjs-vite-rsc">;
 

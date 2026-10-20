@@ -82,6 +82,11 @@ const runtimePackages = [
   "storybook/open-service",
 ];
 
+// The framework's module that names the module of a client story's file for
+// the browser layer, one instance in both layers too: client-renderer.ts. Not
+// pre-bundled, which would make a copy of the one that load.ts imports.
+const clientRenderer = "@storybook/nextjs-vite-rsc/client-renderer";
+
 // Pre-bundled before the first story. They are imported from modules that
 // are pre-bundled themselves, which Vite's scan of the story files does not
 // read: it would find them as the first story loads, and reload the preview,
@@ -135,6 +140,7 @@ async function hostOf(options: Options) {
     packages: [
       ...Object.keys(globalsNameReferenceMap),
       ...runtimePackages,
+      clientRenderer,
       ...new Set(annotations.flatMap(addonOf)),
     ],
   };

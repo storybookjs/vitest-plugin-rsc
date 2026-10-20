@@ -10,6 +10,7 @@ import {
   selectDocs,
   storyInDocs,
   storyRun,
+  stylesInOrder,
   test,
   updateArgs,
   type StoryRun,
@@ -316,6 +317,29 @@ test("from a server story to a client story, to another, and back", async ({ pag
   await canvas.evaluate(() => location.reload());
   expect(await rendered(canvas, "press-button--labelled")).toBe("finished");
   expect(atStory()).toBe("/iframe.html?id=press-button--labelled");
+});
+
+// A story has the CSS of its own file and of its route, whatever story ran
+// before it: a client story that of its file, which imports preview.tsx and
+// press-button.stories.css, a server story that of preview.server.tsx and
+// its node, and a page that of its route alone.
+test("a story has the CSS of its file and its route, in any order of the stories", async ({
+  page,
+}) => {
+  const stories = ["press-button--pressed", "greeting--default", "home--home"];
+  // The server stories after a client story, and before one.
+  const forwards = await stylesInOrder(page, site!.url, [...stories, "press-button--labelled"]);
+  const backwards = await stylesInOrder(page, site!.url, [
+    "home--home",
+    "greeting--default",
+    "press-button--labelled",
+    "press-button--pressed",
+  ]);
+  expect(backwards).toEqual(forwards);
+  const has = (story: string, selector: string) =>
+    forwards[story]!.some((rule) => rule.startsWith(`${selector} {`));
+  expect(stories.map((story) => has(story, ".story-frame"))).toEqual([true, false, false]);
+  expect(stories.map((story) => has(story, '[data-testid="theme"]'))).toEqual([true, true, false]);
 });
 
 test("new args: a server story renders again in place, a client story keeps its state", async ({

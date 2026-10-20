@@ -49,6 +49,34 @@ export const test = hostTest.extend(
   }),
 );
 
+/**
+ * The CSS of the document of each story of `order`, which the manager at
+ * `url` opens one after the other: the rules of the stylesheets in its
+ * `<head>`, each once, as a sorted list. What styles a story, whichever
+ * element brought it: Vite's `<style>`, or a `<link>`.
+ */
+export async function stylesInOrder(
+  page: Page,
+  url: string,
+  order: string[],
+): Promise<Record<string, string[]>> {
+  const styles = (canvas: Frame) =>
+    canvas.evaluate(() => {
+      const rules = [...document.styleSheets]
+        .filter((sheet) => !sheet.disabled && document.head.contains(sheet.ownerNode))
+        .flatMap((sheet) => [...sheet.cssRules].map((rule) => rule.cssText));
+      return [...new Set(rules)].sort();
+    });
+  const canvas = await openStory(page, url, order[0]!);
+  const seen: Record<string, string[]> = { [order[0]!]: await styles(canvas) };
+  for (const story of order.slice(1)) {
+    const { phase } = await runStory(page, canvas, story);
+    if (phase !== "finished") throw new Error(`${story} ended ${phase}`);
+    seen[story] = await styles(canvas);
+  }
+  return seen;
+}
+
 /** The canvas of the manager at `url`, with a story open, as a user opens it. */
 export async function openStory(page: Page, url: string, story: string): Promise<Frame> {
   await page.goto(`${url}?path=/story/${story}`);
