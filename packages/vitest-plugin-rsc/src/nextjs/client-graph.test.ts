@@ -50,10 +50,9 @@ const built = {
   hostFiles: {
     "host/badge.tsx": ["_next/static/css/badge-1a2b3c4d.css"],
     "host/plain.tsx": [],
-    // A file of the host without "use client", which renders a node.
+    // A file of the host without "use client", like one that renders a node.
     "host/node.tsx": ["_next/static/css/note-5e6f7a8b.css"],
   },
-  clientFiles: ["host/badge.tsx", "host/plain.tsx"],
 };
 
 vi.mock("./built-files.ts", () => ({
@@ -536,12 +535,18 @@ test("loads a file of the host in a static build, by its key", async () => {
   const again = { ...referenceModule("5f3a9c1e", "Badge"), __exportOrder: ["Badge"] };
   expect(await loadClientModule(again)).toBe(exports);
   expect(tab.evaluated).toHaveLength(1);
-  // One without any, one that the build has none for, like a file of
-  // another project, and one without the directive, as the dev server
-  // answers for none.
+  // One without any, and one that the build has none for, like a file of
+  // another project.
   await loadClientFile("7d2b4e6a");
-  await linkStylesheetsOf(["host/plain.tsx", "/elsewhere/far.tsx", "host/node.tsx"]);
+  await linkStylesheetsOf(["host/plain.tsx", "/elsewhere/far.tsx"]);
   expect(links()).toHaveLength(1);
+  // One without the directive, by its absolute path, as the dev server
+  // answers for it: what it imports.
+  await linkStylesheetsOf(["/home/ada/app/host/node.tsx"]);
+  expect(links()).toEqual([
+    "https://site.test/docs/_next/static/css/badge-1a2b3c4d.css",
+    "https://site.test/docs/_next/static/css/note-5e6f7a8b.css",
+  ]);
   // A key the build has no reference for.
   await expect(loadClientFile("0000")).rejects.toThrow(
     'vitest-plugin-rsc: the build has no client reference "0000"',

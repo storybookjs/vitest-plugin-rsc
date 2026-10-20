@@ -50,12 +50,15 @@ export const test = hostTest.extend(
 );
 
 /**
- * The CSS of the document of each story of `order`, which the manager at
- * `url` opens one after the other: the rules of the stylesheets in its
- * `<head>`, each once, as a sorted list. What styles a story, whichever
- * element brought it: Vite's `<style>`, or a `<link>`. A rule by its
- * selector: a build minifies the CSS of the host's chunks, and not the
- * same way as a stylesheet of the app.
+ * The CSS of the document of each entry of `order`, a story or a docs page
+ * (`…--docs`), which the manager at `url` opens one after the other: the
+ * rules of the stylesheets in its `<head>`, as a sorted list, a rule as often
+ * as the document has it. What a file brought, whichever element: Vite's
+ * `<style>`, or a `<link>`, not Storybook's own inline `<style>`s, which its
+ * docs and addons add as they first show something. A rule by its selector:
+ * a build minifies the CSS of the host's chunks, and not the same way as a
+ * stylesheet of the app. A docs page once its stories have rendered, an
+ * inline one after its stylesheets.
  */
 export async function stylesInOrder(
   page: Page,
@@ -70,18 +73,53 @@ export async function stylesInOrder(
           (sheet) =>
             !sheet.disabled &&
             document.head.contains(sheet.ownerNode) &&
+            (sheet.ownerNode instanceof HTMLLinkElement ||
+              (sheet.ownerNode as Element).hasAttribute("data-vite-dev-id")) &&
             (sheet.media.length === 0 || matchMedia(sheet.media.mediaText).matches),
         )
         .flatMap((sheet) => [...sheet.cssRules])
         .map((rule) => (rule instanceof CSSStyleRule ? rule.selectorText : rule.cssText));
-      return [...new Set(rules)].sort();
+      return rules.sort();
     });
-  const canvas = await openStory(page, url, order[0]!);
-  const seen: Record<string, string[]> = { [order[0]!]: await styles(canvas) };
-  for (const story of order.slice(1)) {
-    const { phase } = await runStory(page, canvas, story);
-    if (phase !== "finished") throw new Error(`${story} ended ${phase}`);
-    seen[story] = await styles(canvas);
+  const isDocs = (entry: string) => entry.endsWith("--docs");
+  // Every story of a docs page: none still loading, as one that a
+  // `<Canvas id>` names is until its file has loaded, one inline in the
+  // element Storybook's docs render it into, and one in an iframe once its
+  // render has ended, which a docs page after it would stop while it loads.
+  // Not one in an iframe below the fold, which the browser loads lazily.
+  const storiesShown = (canvas: Frame) =>
+    canvas.waitForFunction(
+      (ended) => {
+        const docs = document.querySelector("#storybook-docs")!;
+        const inline = [...docs.querySelectorAll("[id^='story--'][id$='-inner']")];
+        const frames = [...docs.querySelectorAll("iframe")];
+        return (
+          !docs.querySelector('[role="status"][aria-label="Content is loading..."]') &&
+          inline.every((story) => story.childElementCount > 0) &&
+          frames.every((frame) =>
+            ended.includes(
+              (frame.contentWindow as Window | null)?.__STORYBOOK_PREVIEW__?.currentRender?.phase ??
+                "",
+            ),
+          )
+        );
+      },
+      done,
+      { timeout: 90_000, polling: 100 },
+    );
+  const canvas = isDocs(order[0]!)
+    ? await openDocs(page, url, order[0]!)
+    : await openStory(page, url, order[0]!);
+  const seen: Record<string, string[]> = {};
+  for (const [index, entry] of order.entries()) {
+    if (isDocs(entry)) {
+      if (index > 0) await selectDocs(canvas, entry);
+      await storiesShown(canvas);
+    } else if (index > 0) {
+      const { phase } = await runStory(page, canvas, entry);
+      if (phase !== "finished") throw new Error(`${entry} ended ${phase}`);
+    }
+    seen[entry] = await styles(canvas);
   }
   return seen;
 }

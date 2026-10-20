@@ -5,7 +5,8 @@ import { hostFilesOf } from "./host-files.ts";
 
 // The annotations of the project's preview, its first addon: a client story
 // renders as `@storybook/react` renders it, with the stylesheets of its file
-// while Storybook shows it, as a server story has those of its page. The
+// while Storybook shows it, as a server story has those of its file on its
+// node (`hostFiles` of `renderServer()`), and a page those of its route. The
 // plugin links them as the host uses the file, with `linkStylesheetsOf()`,
 // for as long as the story's signal says. Not as Storybook loads the file,
 // which it also does for a story that it does not show, as the manager

@@ -15,7 +15,7 @@ import { buildDirectory, builtFiles } from "./built-files.ts";
 import { clientFileKeyExport } from "./client-file-key.ts";
 import { registry } from "./registry.ts";
 import {
-  builtClientStylesheetsOf,
+  builtHostFileStylesheetsOf,
   builtFileKey,
   graphStylesheetAttribute,
   stylesheetOfUrl,
@@ -43,14 +43,14 @@ import { moveLink, stylesheetVersions, type StylesheetVersions } from "./stylesh
 // framework that renders a component of it, gets that evaluation with
 // `loadClientModule()`, and a file that imports it here gets the same one.
 //
-// The CSS of such a file is in the document while the host uses the file, as
-// a page's is while the page is open: from `linkStylesheetsOf()` until the
-// signal of that use aborts, or `cleanup()`, which ends every use. A
-// document can have several uses at once, like the stories of a docs page:
-// a stylesheet stays while one of them holds it. Not as the file loads: a host
-// may load a file that it does not show yet, as it prepares what it shows
-// next. Under Vitest every test uses the setup files and the test file
-// (setup.ts).
+// The CSS of such a file, as of any file of the host, is in the document
+// while the host uses the file, as a page's is while the page is open: from
+// `linkStylesheetsOf()` until the signal of that use aborts, or `cleanup()`,
+// which ends every use. A document can have several uses at once, like the
+// stories of a docs page: a stylesheet stays while one of them holds it. Not
+// as the file loads: a host may load a file that it does not show yet, as it
+// prepares what it shows next. Under Vitest every test uses the setup files
+// and the test file (setup.ts).
 
 const environment = "react_client";
 
@@ -221,12 +221,12 @@ export async function loadClientModule<T extends object>(module: T): Promise<T> 
 }
 
 /**
- * Links the stylesheets of files of the host with `"use client"` that the
- * host uses, like a framework that renders a component of one, or one that
- * renders as it loads: what each imports in the browser layer, in their
- * order, as they are now. The files as for `hostFiles` of `renderServer()`:
- * absolute, or from the root of the project. Resolves once the stylesheets
- * have loaded.
+ * Links the stylesheets of files of the host that the host uses, like a
+ * framework that renders a component of one, or one that renders as it
+ * loads: what each imports, in the browser layer for a file with
+ * `"use client"`, in their order, as they are now. The files as for
+ * `hostFiles` of `renderServer()`: absolute, or from the root of the
+ * project. Resolves once the stylesheets have loaded.
  *
  * The use ends as `signal` aborts, and without one at `cleanup()`, which ends
  * every use: a stylesheet goes once no use holds it. An aborted signal links
@@ -266,17 +266,17 @@ async function stylesheetsOfHostFiles(hostFiles: string[]): Promise<string[]> {
   if (!buildDirectory) {
     return askDevServer<string[]>(stylesheetsEvent, { hostFiles } satisfies StylesheetsQuestion);
   }
-  // Of a file with `"use client"`, as the dev server answers.
   const built = await builtFiles();
+  const keys = Object.keys(built.hostFiles);
   const urls = hostFiles.flatMap((file) => {
-    const key = builtFileKey(file, built.clientFiles);
-    return key === undefined ? [] : builtClientStylesheetsOf(built, key, buildDirectory!);
+    const key = builtFileKey(file, keys);
+    return key === undefined ? [] : builtHostFileStylesheetsOf(built, key, buildDirectory!);
   });
   return [...new Set(urls)];
 }
 
-// The CSS of what a file with `"use client"` imports, its own too, linked in
-// the document, as a page of the app links its CSS: see styles.ts. Vite's
+// The CSS of what a file of the host imports, its own too, linked in the
+// document, as a page of the app links its CSS: see styles.ts. Vite's
 // `<style>` of a module would stay for every file after it, and the `<link>`
 // of a chunk of a build goes with a page that is open as the file loads. A
 // use of a stylesheet that is linked already, in another version, moves it

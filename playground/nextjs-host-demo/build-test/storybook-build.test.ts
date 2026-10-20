@@ -12,9 +12,9 @@ import {
   runStory,
   storyInDocs,
   storyRun,
-  stylesInOrder,
   type StoryRun,
 } from "../../test-helpers/storybook.ts";
+import { expectEachEntryHasItsOwnCss } from "../test/story-styles.ts";
 
 // `storybook build` of the project with @storybook/nextjs-vite-rsc, which
 // builds the layers with Vite's app builder, behind a server of files: the
@@ -68,26 +68,33 @@ test("server stories, a page, a Server Action and client stories", async ({ page
     .toBe("rgb(0, 0, 255)");
 });
 
-// A story has the CSS of its own file and of its route, whatever story ran
-// before it, in the build as with the dev server: a client story that of its file, which imports preview.tsx and
-// press-button.stories.css, a server story that of preview.server.tsx and
-// its node, and a page that of its route alone.
-test("a story has the CSS of its file and its route, in any order of the stories", async ({
+// In the build as with the dev server: see ../test/story-styles.ts.
+test("a story or docs page has the CSS of its files and its route, in any order", async ({
   page,
 }) => {
-  const stories = ["press-button--pressed", "greeting--default", "home--home"];
-  // The server stories after a client story, and before one.
-  const forwards = await stylesInOrder(page, site!.url, [...stories, "press-button--labelled"]);
-  const backwards = await stylesInOrder(page, site!.url, [
-    "home--home",
-    "greeting--default",
-    "press-button--labelled",
-    "press-button--pressed",
+  await expectEachEntryHasItsOwnCss(page, site!.url);
+});
+
+// The stylesheets of every file of the host, with "use client" or without,
+// which a node's files and `linkStylesheetsOf()` look up.
+test('lists the stylesheets of each file of the host, with "use client" or without', () => {
+  const built = JSON.parse(
+    fs.readFileSync(path.join(out, "vitest-plugin-rsc/next-files.json"), "utf8"),
+  ) as { hostFiles: Record<string, string[]> };
+  expect(built).not.toHaveProperty("clientFiles");
+  for (const file of [".storybook/preview.server.tsx", "stories/greeting.stories.tsx"]) {
+    expect(built.hostFiles).toHaveProperty([file]);
+  }
+  const names = (file: string) =>
+    built.hostFiles[file]!.map((stylesheet) => path.basename(stylesheet).replace(/-\w+\.css$/, ""));
+  expect(names(".storybook/preview.server.tsx")).toEqual(["preview", "preview.server"]);
+  expect(names(".storybook/preview.tsx")).toEqual(["preview"]);
+  expect(names("stories/greeting.stories.tsx")).toEqual([
+    "preview",
+    "preview.server",
+    "counter.module",
+    "greeting.module",
   ]);
-  expect(backwards).toEqual(forwards);
-  const has = (story: string, selector: string) => forwards[story]!.includes(selector);
-  expect(stories.map((story) => has(story, ".story-frame"))).toEqual([true, false, false]);
-  expect(stories.map((story) => has(story, '[data-testid="theme"]'))).toEqual([true, true, false]);
 });
 
 // A server story of a component is a node, in the preview's document: a

@@ -13,8 +13,8 @@ import { ssrLayer } from "./server-layers.ts";
 
 // Vitest evaluates a setup file again before every test file, also one whose
 // tests are all skipped. So the files with `"use client"` are evaluated again
-// for the next file, as Vitest evaluates them, and the CSS of a test file with
-// the directive goes once the next file starts.
+// for the next file, as Vitest evaluates them, and the CSS of a test file
+// goes once the next file starts.
 forgetClientFiles();
 
 // The node of a test has the stylesheets of the files that render it: the
@@ -29,8 +29,8 @@ registry.nodeFiles = () => nodeFiles;
 // oxlint-disable-next-line no-empty-pattern
 beforeAll(async ({}, suite) => {
   nodeFiles = [...server.config.setupFiles, suite.file.filepath];
-  // The stylesheets of those with `"use client"`, which every test of the
-  // file uses, its `beforeAll` hooks too.
+  // Their stylesheets, which every test of the file uses, its `beforeAll`
+  // hooks too.
   await linkStylesheetsOf(nodeFiles);
 });
 
@@ -44,8 +44,8 @@ await ssrLayer();
 afterEach(() => cleanup());
 // Also before a test: Vitest skips the remaining `afterEach` hooks when one
 // of them throws, as a test's own does when it asserts in it. Every test uses
-// the setup files and the test file, so the stylesheets of those with
-// `"use client"` come back, which `cleanup()` unlinked.
+// the setup files and the test file, so their stylesheets come back, which
+// `cleanup()` unlinked.
 beforeEach(async () => {
   await cleanup();
   await linkStylesheetsOf(nodeFiles);

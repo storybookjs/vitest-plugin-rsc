@@ -298,6 +298,24 @@ test('keeps the Server Actions of a node that is open while a file with "use cli
   expect(host.__hostReports).toEqual([{ from: "host/client-module.tsx", react: nextReact }]);
 });
 
+test('has the CSS of a file of the host without "use client" while a use holds it, not as it loads', async ({
+  page,
+  errors,
+}) => {
+  const host = await open(page, errors, "own-css", async () => {});
+  // Linked as the CSS of the app is, never Vite's `<style>`, which would
+  // apply from the import on and stay.
+  expect(host.__hostFramedApplied).toEqual({
+    loaded: false,
+    used: true,
+    duringPage: false,
+    pageLeft: true,
+    ended: false,
+    node: true,
+    nodeLeft: false,
+  });
+});
+
 test('links the CSS of a file with "use client" as the host uses it, until cleanup()', async ({
   page,
   errors,
