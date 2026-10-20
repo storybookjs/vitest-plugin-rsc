@@ -605,13 +605,22 @@ test("autodocs: a client story file's stories inline, a server story file's in i
 }) => {
   const canvas = await openDocs(page, site!.url, "press-button--docs");
   expect(await inDocs(canvas).locator("iframe").count()).toBe(0);
-  const primary = inDocs(canvas).getByRole("button", { name: "Press: 0" }).first();
+  // The primary story's block: autodocs renders that story in the list
+  // below too, as a render of its own, which either may finish first.
+  const primary = inDocs(canvas)
+    .locator("#story--press-button--pressed--primary")
+    .getByRole("button", { name: "Press: 0" });
   await primary.click();
   // A new value from Controls renders the inline story again in place, with
   // the state it has.
   await updateArgs(canvas, "press-button--pressed", { label: "Renamed" });
   await expect
-    .poll(() => inDocs(canvas).getByRole("button", { name: "Renamed: 1" }).count())
+    .poll(() =>
+      inDocs(canvas)
+        .locator("#story--press-button--pressed--primary")
+        .getByRole("button", { name: "Renamed: 1" })
+        .count(),
+    )
     .toBe(1);
   // The args table, from the component's docgen, which Storybook's server
   // reads.
