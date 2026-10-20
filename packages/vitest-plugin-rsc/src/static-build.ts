@@ -142,6 +142,14 @@ export type StaticBuildLayers = {
   strictExecutionOrder?: boolean;
   /** Files of the build that another plugin made, by the path the browser asks for. */
   files?(): { pathname: string; body: Uint8Array }[];
+  /**
+   * The client references that a layer other than the browser lists, by
+   * environment: their keys, once the rsc layer is built. A layer that is not
+   * here, or has no keys, lists every one, as the browser layer does, which
+   * evaluates any of them: a file of the host with `"use client"` by its key,
+   * too.
+   */
+  clientReferences?: Record<string, () => ReadonlySet<string> | undefined>;
 };
 
 // Where the plugin of a framework, like `vitestPluginNext()`, gives the
@@ -573,7 +581,12 @@ export function staticBuild(options: StaticBuildOptions): Plugin {
       const isBuild = this.environment.mode === "build";
       if (id === `\0${clientReferencesId}`) {
         if (!isBuild) return "export default undefined;";
-        return referenceList(Object.values(manager.clientReferenceMetaMap));
+        const references = Object.values(manager.clientReferenceMetaMap);
+        const { name } = this.environment;
+        const listed = name === browser ? undefined : layers.clientReferences?.[name]?.();
+        return referenceList(
+          listed ? references.filter(({ referenceKey }) => listed.has(referenceKey)) : references,
+        );
       }
       if (id === `\0${serverReferencesId}`) {
         if (!isBuild) return "export default undefined;";

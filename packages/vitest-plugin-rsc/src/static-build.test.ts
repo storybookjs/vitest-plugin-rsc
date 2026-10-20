@@ -26,17 +26,26 @@ const rscLayers: StaticBuildLayers = {
 const createPlugin = () =>
   staticBuild({ rsc: names.rsc, browser: names.browser, layers: rscLayers });
 
-// What `vitestPluginNext()` puts in the config for the static build: its
-// layers, and the files of `emitted`.
-function nextConfig(emitted: Record<string, string> = {}): object {
-  const plugin = nextStaticBuild({
+// The plugin's module of the rsc layer, and the files of the host, for
+// `vitestPluginNext()`.
+const rscModule = "/vitest-plugin-rsc/nextjs/rsc.ts";
+const isHostFile = (id: string) => id.startsWith("/host/");
+
+// Next's part of the static build, with the files of `emitted`.
+const createNextPlugin = (emitted: Record<string, string> = {}) =>
+  nextStaticBuild({
     environments: names,
     entries: { ssr: "vitest-plugin-rsc/nextjs/ssr", browser: "vitest-plugin-rsc/nextjs/client" },
     emittedFiles: () =>
       Object.entries(emitted).map(([pathname, body]) => ({ pathname, body: Buffer.from(body) })),
+    rscModule,
+    isHostFile,
   });
-  return (plugin.config as Hook)({}, { command: "build" }) as object;
-}
+
+// What `vitestPluginNext()` puts in the config for the static build: its
+// layers, and the files of `emitted`.
+const nextConfig = (next = createNextPlugin()): object =>
+  (next.config as Hook)({}, { command: "build" }) as object;
 
 type Bundle = Record<string, object>;
 type Hook = (this: unknown, ...args: any[]) => any;
@@ -95,9 +104,10 @@ function setup(
     serverReferences: { metaMap: new Map<string, Meta>() },
   };
   const plugin = createPlugin();
+  const next = createNextPlugin(emitted);
   const userConfig = {
     build: { rolldownOptions: { onwarn } },
-    ...(!rsc && nextConfig(emitted)),
+    ...(!rsc && nextConfig(next)),
   };
   const config = call(plugin.config, names.rsc, userConfig, { command: "build" }) as {
     builder: object;
@@ -121,13 +131,15 @@ function setup(
   const layers = Object.fromEntries(
     runnerLayers.map((name) => [name, { build: { outDir: "dist", emptyOutDir: false } }]),
   );
-  (plugin.configResolved as Hook)({
+  const resolved = {
     command: "build",
     root,
     base,
-    plugins: [{ name: "rsc:minimal", api: { manager } }],
+    plugins: [{ name: "rsc:minimal", api: { manager } }, plugin],
     environments: layers,
-  });
+  };
+  (plugin.configResolved as Hook)(resolved);
+  if (!rsc) (next.configResolved as Hook)(resolved);
 
   const environments = Object.fromEntries(
     Object.values(names).map((name) => [
@@ -161,7 +173,7 @@ function setup(
     config.build.rolldownOptions.onwarn(warning, (shownWarning) => shown.push(shownWarning));
     return shown;
   };
-  return { root, outDir, plugin, config, manager, layers, builder, builds, warnings };
+  return { root, outDir, plugin, next, config, manager, layers, builder, builds, warnings };
 }
 
 test("builds the layers in the order that gives every reference its id", async () => {
@@ -990,6 +1002,7 @@ test("lists the modules a Flight payload can refer to, by the id it has for each
   expect(listed("react_client", clientReferences)).toBe(
     `export default {\n  "a1b2c3": () => import("/app/counter.tsx"),\n};\n`,
   );
+  // Every one, until the rsc layer's build says which ones server code reaches.
   expect(listed("next_ssr", clientReferences)).toBe(listed("react_client", clientReferences));
   expect(listed("client", serverReferences)).toBe(
     `export default {\n  "d4e5f6": () => import("/app/actions.ts"),\n};\n`,
@@ -1000,6 +1013,70 @@ test("lists the modules a Flight payload can refer to, by the id it has for each
     clientReferences,
   );
   expect(dev).toBe("export default undefined;");
+});
+
+// The ssr layer renders what server code renders: the plugin's module of the
+// rsc layer, with the routes, and a file of the host that is no reference
+// itself, which can render a node. The browser layer evaluates any reference,
+// a file of the host with "use client" by its key.
+test("lists in the ssr layer the client references that server code reaches", () => {
+  const { plugin, next, manager } = setup();
+  const reference = (key: string) => ({ referenceKey: key, importId: `/${key}.tsx` });
+  manager.clientReferenceMetaMap = {
+    "/vitest-plugin-rsc/nextjs/node-rendered.tsx": reference("node-rendered"),
+    "/next/global-error.js": reference("global-error"),
+    "/app/like.tsx": reference("like"),
+    "/host/field.tsx": reference("field"),
+    "/host/button.demo.tsx": reference("button-demo"),
+    "/app/dialog.tsx": reference("dialog"),
+  };
+  // The module graph of the rsc layer's build: each module, and what it
+  // imports, statically and with `import()`.
+  const graph: Record<string, [string[], string[]?]> = {
+    // The plugin's module, which renders the routes of the list, each with
+    // Next's own Client Components, and the plugin's own.
+    [rscModule]: [["/vitest-plugin-rsc/nextjs/node-rendered.tsx", "\0routes"]],
+    "\0routes": [[], ["\0route/0"]],
+    "\0route/0": [["/app/page.tsx", "/next/global-error.js"]],
+    "/app/page.tsx": [["/app/like.tsx"]],
+    // A file of the host that renders a node with a file of the host with
+    // "use client".
+    "/host/field.demo.tsx": [[rscModule, "/host/field.tsx"]],
+    // The host's runtime, no file of the host, which imports both, and a
+    // module of the app that imports a Client Component no server code
+    // imports.
+    "/runtime/demos.js": [
+      ["/app/dialog-trigger.ts"],
+      ["/host/field.demo.tsx", "/host/button.demo.tsx"],
+    ],
+    "/app/dialog-trigger.ts": [["/app/dialog.tsx"]],
+  };
+  const keys = (environment: string) =>
+    [...(call(plugin.load, environment, clientReferences) as string).matchAll(/"(.+)": /g)].map(
+      ([, key]) => key,
+    );
+
+  (next.buildEnd as Hook).call(
+    {
+      environment: { name: names.rsc, mode: "build" },
+      getModuleIds: () => [...Object.keys(graph), ...Object.keys(manager.clientReferenceMetaMap)],
+      getModuleInfo: (id: string) => ({
+        importedIds: graph[id]?.[0] ?? [],
+        dynamicallyImportedIds: graph[id]?.[1] ?? [],
+      }),
+    },
+    undefined,
+  );
+
+  expect(keys(names.ssr)).toEqual(["field", "global-error", "like", "node-rendered"]);
+  expect(keys(names.browser)).toEqual([
+    "button-demo",
+    "dialog",
+    "field",
+    "global-error",
+    "like",
+    "node-rendered",
+  ]);
 });
 
 test("leaves out an import that a build which only looks cannot find", () => {

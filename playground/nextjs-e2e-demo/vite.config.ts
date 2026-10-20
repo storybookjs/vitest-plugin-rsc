@@ -5,8 +5,9 @@ import { vitestPluginNext, type NextBuild } from "vitest-plugin-rsc/nextjs/plugi
 import { vitestPluginRscSourceConditions } from "../../vitest.conditions.ts";
 
 // The plugin without Vitest: `vite build` makes a static build of the app,
-// with the page of `index.html` and `host/main.tsx` as its host, and a page
-// that renders a Client Component without a page of the app, `client.html`.
+// with the page of `index.html` and `host/main.tsx` as its host, a page
+// that renders a Client Component without a page of the app, `client.html`,
+// and one whose own module script renders a file of the host, `example.html`.
 // Its test is build-test/static-build.test.ts. The tests of the app itself
 // run with Vitest, see vitest.config.ts.
 
@@ -33,7 +34,7 @@ export default defineConfig({
   ],
   build: {
     rolldownOptions: {
-      input: ["index.html", "client.html"].map((page) =>
+      input: ["index.html", "client.html", "example.html"].map((page) =>
         fileURLToPath(new URL(page, import.meta.url)),
       ),
     },
