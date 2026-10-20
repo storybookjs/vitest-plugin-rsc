@@ -240,10 +240,17 @@ test("a change of a file that a stylesheet of the app depends on updates the sty
   const { copy, url } = await serveToneCopy();
   await openPage(page, url);
   expect(await hostStylesheet(page)).toContain("h1 { color: rgb(255, 0, 0)");
+  const [before] = await linksOf(page, "/app/globals.css");
   fs.writeFileSync(path.join(copy, "host/tone.tsx"), 'export const tone = "rgb(0, 128, 0)";\n');
   await expect
     .poll(() => hostStylesheet(page), { timeout: 30_000 })
     .toContain("h1 { color: rgb(0, 128, 0)");
+  // The page's link of it moved to the version of now too.
+  await expect
+    .poll(async () => (await linksOf(page, "/app/globals.css")).includes(before!), {
+      timeout: 30_000,
+    })
+    .toBe(false);
   expect(await page.evaluate(() => "__beforeTheChange" in window)).toBe(true);
   // The host evaluates its module again after a change of it, with the
   // plugin's runtime that it had: the change of the stylesheet, which a
@@ -272,6 +279,16 @@ function serveLinkedCopy() {
   });
 }
 
+// The URLs of the page's links of the stylesheet of `file`.
+const linksOf = (page: Page, file: string) =>
+  page.evaluate(
+    (file) =>
+      Array.from(document.querySelectorAll<HTMLLinkElement>("link[rel=stylesheet]"))
+        .map((link) => link.href)
+        .filter((href) => href.includes(file)),
+    file,
+  );
+
 // A property of the style of the first element that `selector` matches.
 const styleOf = (page: Page, selector: string, property: string) =>
   page.evaluate(
@@ -280,8 +297,8 @@ const styleOf = (page: Page, selector: string, property: string) =>
     [selector, property],
   );
 
-// Vite's client swaps the `<link>` of a stylesheet that changed, as it does
-// for one in the HTML of a page: the page stays, with its state.
+// The plugin moves the page's link of a stylesheet that changed to the
+// version of now: the page stays, with its state.
 test("a change of a stylesheet of the app updates the page's link in place", async ({ page }) => {
   const { copy, url } = await serveLinkedCopy();
   await openPage(page, url);
@@ -301,6 +318,24 @@ test("a change of a stylesheet that a stylesheet of the app imports updates the 
   fs.writeFileSync(path.join(copy, "app/tone.css"), "h2 { color: rgb(0, 128, 0); }\n");
   await expect.poll(() => styleOf(page, "h2", "color"), { timeout: 30_000 }).toBe("rgb(0, 128, 0)");
   expect(await page.evaluate(() => "__beforeTheChange" in window)).toBe(true);
+});
+
+// With `experimental.inlineCss`, Next puts the CSS of a page load in a
+// `<style>`, which is no link to move: the page loads again.
+test("with inlineCss, a change of a stylesheet of the app loads the host's document again", async ({
+  page,
+}) => {
+  const { copy, url } = await serveCopy((copy) =>
+    fs.writeFileSync(
+      path.join(copy, "next.config.ts"),
+      "export default { experimental: { inlineCss: true } };\n",
+    ),
+  );
+  await openPage(page, url);
+  const globals = path.join(copy, "app/globals.css");
+  fs.writeFileSync(globals, fs.readFileSync(globals, "utf8").replace("2rem", "3rem"));
+  await loadedAgain(page, url);
+  expect(await styleOf(page, "body", "margin-top")).toBe("48px");
 });
 
 // The path of a stylesheet that Next links has each segment encoded as a
@@ -374,12 +409,7 @@ test("every link of a stylesheet moves, also after the page rendered again", asy
     );
   });
   await openPage(page, url);
-  const globalsLinks = () =>
-    page.evaluate(() =>
-      Array.from(document.querySelectorAll<HTMLLinkElement>("link[rel=stylesheet]"))
-        .map((link) => link.href)
-        .filter((href) => href.includes("/app/globals.css")),
-    );
+  const globalsLinks = () => linksOf(page, "/app/globals.css");
   await page.getByRole("button", { name: "Refresh" }).click();
   await expect.poll(async () => (await globalsLinks()).length, { timeout: 30_000 }).toBe(2);
   const before = await globalsLinks();
@@ -393,8 +423,8 @@ test("every link of a stylesheet moves, also after the page rendered again", asy
 });
 
 // A stylesheet that a file of the host with "use client" links, through a
-// Client Component of the app that imports it: Vite's client swaps its
-// `<link>` too, and the host's use of it ends with the copy.
+// Client Component of the app that imports it: the plugin moves that link
+// too, and the host's next use of it moves it again, as one stylesheet.
 test('a change of a stylesheet that a file with "use client" links updates it in place', async ({
   page,
 }) => {
@@ -453,7 +483,11 @@ test('a change of a stylesheet that a file with "use client" links keeps a host 
   const { copy, url } = await serveCopy((copy) => {
     fs.writeFileSync(
       path.join(copy, "app/components/tone.css"),
-      "button { background-color: rgb(255, 0, 0); }\n",
+      '@import "./edge.css";\nbutton { background-color: rgb(255, 0, 0); }\n',
+    );
+    fs.writeFileSync(
+      path.join(copy, "app/components/edge.css"),
+      "button { outline-color: rgb(255, 0, 0); }\n",
     );
     const badge = path.join(copy, "app/components/badge.tsx");
     fs.writeFileSync(
@@ -468,10 +502,18 @@ test('a change of a stylesheet that a file with "use client" links keeps a host 
   expect(await styleOf(page, "button", "background-color")).toBe("rgb(255, 0, 0)");
   fs.writeFileSync(
     path.join(copy, "app/components/tone.css"),
-    "button { background-color: rgb(0, 128, 0); }\n",
+    '@import "./edge.css";\nbutton { background-color: rgb(0, 128, 0); }\n',
   );
   await expect
     .poll(() => styleOf(page, "button", "background-color"), { timeout: 30_000 })
+    .toBe("rgb(0, 128, 0)");
+  // And of one that it imports.
+  fs.writeFileSync(
+    path.join(copy, "app/components/edge.css"),
+    "button { outline-color: rgb(0, 128, 0); }\n",
+  );
+  await expect
+    .poll(() => styleOf(page, "button", "outline-color"), { timeout: 30_000 })
     .toBe("rgb(0, 128, 0)");
   expect(await page.evaluate(() => "__beforeTheChange" in window)).toBe(true);
 });

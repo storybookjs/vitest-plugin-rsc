@@ -32,11 +32,12 @@ const replaced = new WeakSet<HTMLLinkElement>();
 /**
  * Moves `link` to `url`: a link of `url` comes next to it, with the same
  * attributes, and `link` goes once that one has loaded or failed, so the
- * document is never without the CSS. A link out of the document gets the
- * URL itself. Returns the link of `url`.
+ * document is never without the CSS. A link that has no CSS yet, out of the
+ * document or still loading, gets the URL itself: what waits for its `load`
+ * gets that of `url`. Returns the link of `url`.
  */
 export function moveLink(link: HTMLLinkElement, url: string): HTMLLinkElement {
-  if (!link.isConnected) {
+  if (!link.isConnected || !link.sheet) {
     link.href = url;
     return link;
   }
@@ -57,6 +58,9 @@ export function movePageLinks(versions: StylesheetVersions): void {
     if (replaced.has(link) || link.hasAttribute(graphStylesheetAttribute)) continue;
     const stylesheet = stylesheetOfUrl(link.href);
     const url = stylesheet === undefined ? undefined : versions.get(stylesheet);
-    if (url !== undefined && new URL(url, link.href).href !== link.href) moveLink(link, url);
+    // Not one of that version already, also with another `?v=` of Next's.
+    if (url !== undefined && new URL(url, link.href).pathname !== new URL(link.href).pathname) {
+      moveLink(link, url);
+    }
   }
 }

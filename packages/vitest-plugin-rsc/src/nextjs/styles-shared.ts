@@ -24,9 +24,14 @@ export const stylesheetsEvent = "vitest-plugin-rsc:next-stylesheets";
  */
 export const stylesheetsChangedEvent = "vitest-plugin-rsc:next-stylesheets-changed";
 
-// The part of the path of a stylesheet that Next links that is its version,
-// after the directory: `static/css/<version>/`, see styles.ts.
-const versionSegmentRE = /\/static\/css\/[0-9a-f]{16}\//;
+/** Where Next's build puts the CSS of an app, under `/_next/`. */
+export const cssDirectory = "static/css";
+/**
+ * The version of its CSS that the path of a stylesheet of the dev server has
+ * after the directory, `static/css/<version>/app/globals.css`: see styles.ts.
+ */
+export const cssVersionPattern = "[0-9a-f]{16}";
+const versionSegmentRE = new RegExp(`/${cssDirectory}/${cssVersionPattern}/`);
 
 /**
  * The stylesheet that a URL of a link is of, whatever its version and however
@@ -38,7 +43,7 @@ export function stylesheetOfUrl(url: string): string | undefined {
   if (!versionSegmentRE.test(pathname)) return undefined;
   try {
     return pathname
-      .replace(versionSegmentRE, "/static/css/")
+      .replace(versionSegmentRE, `/${cssDirectory}/`)
       .split("/")
       .map(decodeURIComponent)
       .join("/");

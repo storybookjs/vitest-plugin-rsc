@@ -12,6 +12,7 @@ type FakeLink = {
   href: string;
   attributes: Set<string>;
   listeners: Map<string, (() => void)[]>;
+  sheet: object | null;
   readonly isConnected: boolean;
   setAttribute(name: string): void;
   removeAttribute(name: string): void;
@@ -138,8 +139,11 @@ const links = () => [...head].map((link) => link.href);
 // A link in the head loads, once the test lets it.
 function appendLink(link: FakeLink): void {
   head.add(link);
-  if (tab.loads)
-    queueMicrotask(() => link.listeners.get("load")?.forEach((listener) => listener()));
+  if (!tab.loads) return;
+  queueMicrotask(() => {
+    link.sheet = {};
+    link.listeners.get("load")?.forEach((listener) => listener());
+  });
 }
 
 function fakeLink(): FakeLink {
@@ -148,6 +152,7 @@ function fakeLink(): FakeLink {
     href: "",
     attributes: new Set(),
     listeners: new Map(),
+    sheet: null,
     get isConnected() {
       return head.has(this);
     },
@@ -395,8 +400,6 @@ test("links the stylesheets of the files that the host uses, until they are unli
   expect(links()).toEqual([]);
 });
 
-// A document can have several uses at once, like the stories of a docs
-// page, each with its own end: the signal that a host gives it.
 // After a change of its CSS, a stylesheet of a file of the host moves to the
 // version of now: a link of it next to the one before, which goes once it has
 // loaded. A use of a later version moves it too, and it stays one stylesheet.
@@ -421,6 +424,8 @@ test("moves a stylesheet to the version of now, with one link of it", async () =
   expect(links()).toEqual([]);
 });
 
+// A document can have several uses at once, like the stories of a docs
+// page, each with its own end: the signal that a host gives it.
 test("keeps a stylesheet while a use holds it, and ends a use as its signal aborts", async () => {
   const { linkStylesheetsOf, unlinkStylesheets } = await graph();
   const first = new AbortController();

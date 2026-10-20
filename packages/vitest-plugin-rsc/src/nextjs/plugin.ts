@@ -33,7 +33,7 @@ import { compileServerCode, createServerCode, type ServerCodeOptions } from "./s
 import { affectedTests } from "./affected/index.ts";
 import { createPathsPlugin } from "./paths.ts";
 import { nextStaticBuild, withPathsFromRoot } from "./static-build.ts";
-import { builtHostFileOf, createStyles, isSwappedStylesheet } from "./styles.ts";
+import { builtHostFileOf, createStyles, changesInPlace } from "./styles.ts";
 import { assertVitestVersion } from "./vitest-version.ts";
 
 // Each layer of Next is a Vite environment, and all three run in the
@@ -83,14 +83,14 @@ const isRouteModule = (id: string) =>
 // imports, also through other modules: code of the app that the plugin's
 // runtime loads. Not through a stylesheet that changes in place, which Vite
 // swaps as its `<style>` or whose links the page moves to the version of now
-// (`isSwappedStylesheet()`): the change is the stylesheet's, also one of a
+// (`changesInPlace()`): the change is the stylesheet's, also one of a
 // stylesheet it `@import`s or of a file it depends on, as Tailwind's PostCSS
 // plugin makes every file it scans one. A stylesheet imports no code, and
 // what a page renders of the code is what a route imports.
 function importedByRoute(module: EnvironmentModuleNode): boolean {
   const seen = new Set<EnvironmentModuleNode>([module]);
   for (const node of seen) {
-    if (isSwappedStylesheet(node)) continue;
+    if (changesInPlace(node)) continue;
     for (const importer of node.importers) {
       const id = importer.id?.startsWith("\0") ? importer.id.slice(1) : undefined;
       if (
