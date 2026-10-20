@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { fn } from "storybook/test";
 import preview from "../.storybook/preview.server.tsx";
+import { roundTrip } from "../.storybook/round-trip.ts";
 import { Boundary } from "../app/components/boundary.tsx";
 import { PressButton } from "../app/components/press-button.tsx";
 
@@ -64,7 +65,7 @@ export const MountOnPage = meta.story({
 export const PlayFailsOnNotFound = meta.story({
   parameters: { nextjs: { url: "/gone" }, throwPlayFunctionExceptions: true },
   play: async ({ canvas }) => {
-    await canvas.findByText("This page could not be found.");
+    await canvas.findByText("This page could not be found.", {}, roundTrip);
     throw new Error("The play failed on the not-found page");
   },
 });

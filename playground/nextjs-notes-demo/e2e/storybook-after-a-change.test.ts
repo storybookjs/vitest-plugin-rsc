@@ -58,7 +58,7 @@ test("a page story renders again in place after a change of its file", async ({ 
   const canvas = await openStory(page, site!.url, "app-page--signed-out");
   await mark(canvas);
   change("app/page.stories.tsx", 'url: "/"', 'url: "/?changed"');
-  await expect.poll(() => new URL(canvas.url()).search, { timeout: 30_000 }).toBe("?changed");
+  await expect.poll(() => new URL(canvas.url()).search).toBe("?changed");
   expect(await rendered(canvas, "app-page--signed-out")).toBe("finished");
   expect(await storyRun(page, canvas, "app-page--signed-out")).toEqual(passed);
   expect(await marked(canvas)).toBe(true);
@@ -68,9 +68,7 @@ test("a server story renders again in place after a change of its file", async (
   const canvas = await openAfterPage(page, "components-ui-field--several-errors");
   await mark(canvas);
   change("components/ui/field.stories.tsx", '"Title is too long."', '"Title is far too long."');
-  await expect
-    .poll(() => canvas.getByText("Title is far too long.").count(), { timeout: 30_000 })
-    .toBe(1);
+  await expect.poll(() => canvas.getByText("Title is far too long.").count()).toBe(1);
   expect(await storyRun(page, canvas, "components-ui-field--several-errors")).toEqual(passed);
   expect(await marked(canvas)).toBe(true);
 });
@@ -89,7 +87,7 @@ test("a client story renders again in place after a change of its file, with Tai
   );
   const button = canvas.getByRole("button", { name: "Create note" });
   await expect
-    .poll(() => button.evaluate((element) => getComputedStyle(element).color), { timeout: 30_000 })
+    .poll(() => button.evaluate((element) => getComputedStyle(element).color))
     .toBe("rgb(0, 128, 0)");
   expect(await storyRun(page, canvas, "components-ui-button--pressed")).toEqual(passed);
   expect(await marked(canvas)).toBe(true);

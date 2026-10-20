@@ -174,7 +174,7 @@ test('a change of what a file with "use client" imports renders it again in plac
     fs.readFileSync(file, "utf8").replace("react: version", "react: version, changed: true"),
   );
   await expect
-    .poll(async () => (await page.evaluate(moduleReports)).at(-1), { timeout: 30_000 })
+    .poll(async () => (await page.evaluate(moduleReports)).at(-1))
     .toMatchObject({ changed: true });
   expect(await page.evaluate(moduleReports)).toHaveLength(3);
   await page.getByRole("button", { name: "Taps: 0" }).waitFor();
@@ -242,14 +242,10 @@ test("a change of a file that a stylesheet of the app depends on updates the sty
   expect(await hostStylesheet(page)).toContain("h1 { color: rgb(255, 0, 0)");
   const [before] = await linksOf(page, "/app/globals.css");
   fs.writeFileSync(path.join(copy, "host/tone.tsx"), 'export const tone = "rgb(0, 128, 0)";\n');
-  await expect
-    .poll(() => hostStylesheet(page), { timeout: 30_000 })
-    .toContain("h1 { color: rgb(0, 128, 0)");
+  await expect.poll(() => hostStylesheet(page)).toContain("h1 { color: rgb(0, 128, 0)");
   // The page's link of it moved to the version of now too.
   await expect
-    .poll(async () => (await linksOf(page, "/app/globals.css")).includes(before!), {
-      timeout: 30_000,
-    })
+    .poll(async () => (await linksOf(page, "/app/globals.css")).includes(before!))
     .toBe(false);
   expect(await page.evaluate(() => "__beforeTheChange" in window)).toBe(true);
   // The host evaluates its module again after a change of it, with the
@@ -305,7 +301,7 @@ test("a change of a stylesheet of the app updates the page's link in place", asy
   expect(await styleOf(page, "body", "margin-top")).toBe("32px");
   const globals = path.join(copy, "app/globals.css");
   fs.writeFileSync(globals, fs.readFileSync(globals, "utf8").replace("2rem", "3rem"));
-  await expect.poll(() => styleOf(page, "body", "margin-top"), { timeout: 30_000 }).toBe("48px");
+  await expect.poll(() => styleOf(page, "body", "margin-top")).toBe("48px");
   expect(await page.evaluate(() => "__beforeTheChange" in window)).toBe(true);
 });
 
@@ -316,7 +312,7 @@ test("a change of a stylesheet that a stylesheet of the app imports updates the 
   await openPage(page, url);
   expect(await styleOf(page, "h2", "color")).toBe("rgb(255, 0, 0)");
   fs.writeFileSync(path.join(copy, "app/tone.css"), "h2 { color: rgb(0, 128, 0); }\n");
-  await expect.poll(() => styleOf(page, "h2", "color"), { timeout: 30_000 }).toBe("rgb(0, 128, 0)");
+  await expect.poll(() => styleOf(page, "h2", "color")).toBe("rgb(0, 128, 0)");
   expect(await page.evaluate(() => "__beforeTheChange" in window)).toBe(true);
 });
 
@@ -379,11 +375,9 @@ test("a change of a stylesheet in a dynamic route and in a slot updates it in pl
   expect(await styleOf(page, "h1", "color")).toBe("rgb(255, 0, 0)");
   expect(await styleOf(page, "aside", "color")).toBe("rgb(255, 0, 0)");
   fs.writeFileSync(path.join(copy, "app/notes/[slug]/note.css"), "h1 { color: rgb(0, 128, 0); }\n");
-  await expect.poll(() => styleOf(page, "h1", "color"), { timeout: 30_000 }).toBe("rgb(0, 128, 0)");
+  await expect.poll(() => styleOf(page, "h1", "color")).toBe("rgb(0, 128, 0)");
   fs.writeFileSync(path.join(copy, "app/@modal/modal.css"), "aside { color: rgb(0, 128, 0); }\n");
-  await expect
-    .poll(() => styleOf(page, "aside", "color"), { timeout: 30_000 })
-    .toBe("rgb(0, 128, 0)");
+  await expect.poll(() => styleOf(page, "aside", "color")).toBe("rgb(0, 128, 0)");
   expect(await page.evaluate(() => "__beforeTheChange" in window)).toBe(true);
 });
 
@@ -411,11 +405,11 @@ test("every link of a stylesheet moves, also after the page rendered again", asy
   await openPage(page, url);
   const globalsLinks = () => linksOf(page, "/app/globals.css");
   await page.getByRole("button", { name: "Refresh" }).click();
-  await expect.poll(async () => (await globalsLinks()).length, { timeout: 30_000 }).toBe(2);
+  await expect.poll(async () => (await globalsLinks()).length).toBe(2);
   const before = await globalsLinks();
   const globals = path.join(copy, "app/globals.css");
   fs.writeFileSync(globals, fs.readFileSync(globals, "utf8").replace("2rem", "3rem"));
-  await expect.poll(() => styleOf(page, "body", "margin-top"), { timeout: 30_000 }).toBe("48px");
+  await expect.poll(() => styleOf(page, "body", "margin-top")).toBe("48px");
   const after = await globalsLinks();
   expect(after.filter((href) => before.includes(href))).toEqual([]);
   expect(new Set(after).size).toBe(1);
@@ -448,9 +442,7 @@ test('a change of a stylesheet that a file with "use client" links updates it in
     path.join(copy, "app/components/tone.css"),
     "button { background-color: rgb(0, 128, 0); }\n",
   );
-  await expect
-    .poll(() => styleOf(page, "button", "background-color"), { timeout: 30_000 })
-    .toBe("rgb(0, 128, 0)");
+  await expect.poll(() => styleOf(page, "button", "background-color")).toBe("rgb(0, 128, 0)");
   expect(await page.evaluate(() => "__beforeTheChange" in window)).toBe(true);
   // A render after a change of the file ends the use of the stylesheet as it
   // was: its copy goes with it, and the new use has one link of it.
@@ -460,7 +452,7 @@ test('a change of a stylesheet that a file with "use client" links updates it in
     fs.readFileSync(file, "utf8").replace("react: version", "react: version, changed: true"),
   );
   await expect
-    .poll(async () => (await page.evaluate(moduleReports)).at(-1), { timeout: 30_000 })
+    .poll(async () => (await page.evaluate(moduleReports)).at(-1))
     .toMatchObject({ changed: true });
   const toneLinks = () =>
     page.evaluate(
@@ -469,7 +461,7 @@ test('a change of a stylesheet that a file with "use client" links updates it in
           (link) => link.href.includes("/app/components/tone.css"),
         ).length,
     );
-  await expect.poll(toneLinks, { timeout: 30_000 }).toBe(1);
+  await expect.poll(toneLinks).toBe(1);
   expect(await styleOf(page, "button", "background-color")).toBe("rgb(0, 128, 0)");
   expect(await page.evaluate(() => "__beforeTheChange" in window)).toBe(true);
 });
@@ -504,17 +496,13 @@ test('a change of a stylesheet that a file with "use client" links keeps a host 
     path.join(copy, "app/components/tone.css"),
     '@import "./edge.css";\nbutton { background-color: rgb(0, 128, 0); }\n',
   );
-  await expect
-    .poll(() => styleOf(page, "button", "background-color"), { timeout: 30_000 })
-    .toBe("rgb(0, 128, 0)");
+  await expect.poll(() => styleOf(page, "button", "background-color")).toBe("rgb(0, 128, 0)");
   // And of one that it imports.
   fs.writeFileSync(
     path.join(copy, "app/components/edge.css"),
     "button { outline-color: rgb(0, 128, 0); }\n",
   );
-  await expect
-    .poll(() => styleOf(page, "button", "outline-color"), { timeout: 30_000 })
-    .toBe("rgb(0, 128, 0)");
+  await expect.poll(() => styleOf(page, "button", "outline-color")).toBe("rgb(0, 128, 0)");
   expect(await page.evaluate(() => "__beforeTheChange" in window)).toBe(true);
 });
 
@@ -533,7 +521,7 @@ test('a file with "use client" is one evaluation for the host and a file that im
   await page.evaluate(forgetOneNote);
   const file = path.join(copy, "host/in-place-badge.tsx");
   fs.writeFileSync(file, `${fs.readFileSync(file, "utf8")}\nexport const changed = true;\n`);
-  await expect.poll(() => page.evaluate(oneNote), { timeout: 30_000 }).toBeDefined();
+  await expect.poll(() => page.evaluate(oneNote)).toBeDefined();
   expect(await page.evaluate(oneNote)).toBe(true);
   expect(await page.evaluate(moduleReports)).toHaveLength(2);
   expect(await page.evaluate(noteReports)).toHaveLength(1);
@@ -541,7 +529,7 @@ test('a file with "use client" is one evaluation for the host and a file that im
   await page.evaluate(forgetOneNote);
   const note = path.join(copy, "host/in-place-note.tsx");
   fs.writeFileSync(note, fs.readFileSync(note, "utf8").replace("A note", "A changed note"));
-  await expect.poll(() => page.evaluate(oneNote), { timeout: 30_000 }).toBeDefined();
+  await expect.poll(() => page.evaluate(oneNote)).toBeDefined();
   expect(await page.evaluate(oneNote)).toBe(true);
   expect(await page.evaluate(noteReports)).toHaveLength(2);
   expect(await page.evaluate(moduleReports)).toHaveLength(3);

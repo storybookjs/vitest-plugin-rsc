@@ -135,9 +135,7 @@ test("a11y, backgrounds, outline, measure and viewport on a server story", async
   const canvas = await openStory(page, site!.url, "greeting--default");
   // a11y's `afterEach` checked the story's document.
   await page.getByRole("tab", { name: /Accessibility/ }).click();
-  await expect
-    .poll(() => page.locator("#storybook-panel-root").innerText(), { timeout: 30_000 })
-    .toMatch(/Passes/);
+  await expect.poll(() => page.locator("#storybook-panel-root").innerText()).toMatch(/Passes/);
   await canvas.evaluate(() =>
     window.__STORYBOOK_PREVIEW__.channel.emit("updateGlobals", {
       globals: {
@@ -349,9 +347,7 @@ test("new args: a server story renders again in place, a client story keeps its 
   await inCanvas(canvas).getByRole("button", { name: "Count: 0" }).click();
   await canvas.evaluate(() => Object.assign(window, { __marked: true }));
   await updateArgs(canvas, "greeting--default", { name: "Controls" });
-  await expect
-    .poll(() => inCanvas(canvas).getByText("Hello from Controls").count(), { timeout: 30_000 })
-    .toBe(1);
+  await expect.poll(() => inCanvas(canvas).getByText("Hello from Controls").count()).toBe(1);
   // In the document it was in, without a page load: the Client Component
   // has its state.
   expect(await inCanvas(canvas).getByRole("button", { name: "Count: 1" }).count()).toBe(1);
@@ -359,22 +355,16 @@ test("new args: a server story renders again in place, a client story keeps its 
   // A page: new args are inputs of its `beforeEach`, so a new page load.
   expect(await runStory(page, canvas, "home--home")).toEqual(passed);
   await updateArgs(canvas, "home--home", { visitor: "Grace" });
-  await expect
-    .poll(() => canvas.evaluate(() => localStorage.getItem("visitor")), { timeout: 30_000 })
-    .toBe("Grace");
-  // A new page load: as long as one may take on CI, as the polls before.
-  await expect
-    .poll(() => canvas.getByRole("button", { name: "Count: 0" }).count(), { timeout: 30_000 })
-    .toBe(1);
+  await expect.poll(() => canvas.evaluate(() => localStorage.getItem("visitor"))).toBe("Grace");
+  // A new page load.
+  await expect.poll(() => canvas.getByRole("button", { name: "Count: 0" }).count()).toBe(1);
   await runStory(page, canvas, "press-button--labelled");
   // Left, the page puts the preview at the story that is selected.
   expect(new URL(canvas.url()).searchParams.get("id")).toBe("press-button--labelled");
   await inCanvas(canvas).getByRole("button", { name: "Labelled: 0" }).click();
   await updateArgs(canvas, "press-button--labelled", { label: "Renamed" });
   await expect
-    .poll(() => inCanvas(canvas).getByRole("button", { name: "Renamed: 1" }).count(), {
-      timeout: 30_000,
-    })
+    .poll(() => inCanvas(canvas).getByRole("button", { name: "Renamed: 1" }).count())
     .toBe(1);
 });
 
@@ -388,14 +378,12 @@ test("an error of a server story after new args shows, as on its first render", 
   await expect.poll(() => inCanvas(canvas).getByText("Not failed yet").count()).toBe(1);
   await updateArgs(canvas, "misuse--fails-after-new-args", { fail: true });
   const message = canvas.locator("#error-message");
-  await expect.poll(() => message.isVisible(), { timeout: 30_000 }).toBe(true);
+  await expect.poll(() => message.isVisible()).toBe(true);
   expect(await message.textContent()).toContain("The story failed after new args");
   errors.list.splice(0);
   // Args that do not fail render the story again, on a page of its own.
   await updateArgs(canvas, "misuse--fails-after-new-args", { fail: false });
-  await expect
-    .poll(() => inCanvas(canvas).getByText("Not failed yet").count(), { timeout: 30_000 })
-    .toBe(1);
+  await expect.poll(() => inCanvas(canvas).getByText("Not failed yet").count()).toBe(1);
   await expect.poll(() => message.isVisible()).toBe(false);
 });
 
@@ -630,9 +618,7 @@ test("autodocs: a client story file's stories inline, a server story file's in i
   // The args table, from the component's docgen, which Storybook's server
   // reads.
   const argsTable = inDocs(canvas).locator("table");
-  await expect
-    .poll(() => argsTable.getByText("onPress", { exact: true }).count(), { timeout: 30_000 })
-    .toBe(1);
+  await expect.poll(() => argsTable.getByText("onPress", { exact: true }).count()).toBe(1);
   await selectDocs(canvas, "greeting--docs");
   // Every story of the file once, the primary too, each in a page of its
   // own. One that owns the document is as high as a small phone's screen.
@@ -643,9 +629,7 @@ test("autodocs: a client story file's stories inline, a server story file's in i
   expect(await primaryFrame.getByText("Hello from Storybook").count()).toBe(1);
   const height = (element: Node) => (element as Element).getBoundingClientRect().height;
   expect(await inLayouts.evaluate(height)).toBe(667);
-  await expect
-    .poll(() => argsTable.getByText("name", { exact: true }).count(), { timeout: 30_000 })
-    .toBe(1);
+  await expect.poll(() => argsTable.getByText("name", { exact: true }).count()).toBe(1);
 });
 
 test("from a docs page to a story, and back", async ({ page }) => {

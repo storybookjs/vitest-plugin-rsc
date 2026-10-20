@@ -2,6 +2,7 @@ import { cookies } from "next/headers";
 import { expect, within } from "storybook/test";
 import { runInServerAction } from "vitest-plugin-rsc/nextjs/testing-library";
 import preview from "../.storybook/preview.server.tsx";
+import { roundTrip } from "../.storybook/round-trip.ts";
 import { Greeting } from "../app/components/greeting.tsx";
 import { Like } from "../app/components/like.tsx";
 import { db } from "../app/db.ts";
@@ -71,6 +72,6 @@ export const ServerAction = meta.story({
   play: async ({ canvasElement, userEvent }) => {
     const canvas = within(canvasElement);
     await userEvent.click(await canvas.findByRole("button", { name: "Likes: 0" }));
-    await expect(await canvas.findByRole("button", { name: "Likes: 1" })).toBeVisible();
+    await expect(await canvas.findByRole("button", { name: "Likes: 1" }, roundTrip)).toBeVisible();
   },
 });
