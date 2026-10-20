@@ -36,13 +36,13 @@ const storagePrototype = Object.create(Storage.prototype, {
       return [...itemsOf(this).keys()][index >>> 0] ?? null;
     },
     getItem(this: Storage, key: string): string | null {
-      return itemsOf(this).get(String(key)) ?? null;
+      return itemsOf(this).get(`${key}`) ?? null;
     },
     setItem(this: Storage, key: string, value: string): void {
-      itemsOf(this).set(String(key), String(value));
+      itemsOf(this).set(`${key}`, `${value}`);
     },
     removeItem(this: Storage, key: string): void {
-      itemsOf(this).delete(String(key));
+      itemsOf(this).delete(`${key}`);
     },
     clear(this: Storage): void {
       itemsOf(this).clear();
@@ -55,7 +55,7 @@ const storagePrototype = Object.create(Storage.prototype, {
  * items are its properties too, as in a browser: `storage.theme`,
  * `Object.keys(storage)` and `JSON.stringify(storage)` have them, and setting
  * or deleting a property sets or removes an item. A name of `Storage`, like
- * `key` or `length`, hides the item of that name when read.
+ * `key` or `length`, hides the item of that name.
  */
 export function storageOf(items: () => Map<string, string>): Storage {
   const target = Object.create(storagePrototype) as Storage;
@@ -64,11 +64,14 @@ export function storageOf(items: () => Map<string, string>): Storage {
   const storage = new Proxy(target, {
     get: (target, name, receiver) =>
       isItem(name) ? items().get(name) : Reflect.get(target, name, receiver),
+    // A name of `Storage`, like `setItem`, is an ordinary property when set
+    // or defined, as in the browser: a spy on `storage.setItem` sees the
+    // calls.
     set(target, name, value, receiver) {
-      if (typeof name !== "string" || receiver !== storage) {
+      if (typeof name !== "string" || name in target || receiver !== storage) {
         return Reflect.set(target, name, value, receiver);
       }
-      items().set(name, String(value));
+      items().set(name, `${value}`);
       return true;
     },
     has: (target, name) => isItem(name) || Reflect.has(target, name),
@@ -80,10 +83,12 @@ export function storageOf(items: () => Map<string, string>): Storage {
         ? { value: items().get(name), writable: true, enumerable: true, configurable: true }
         : Reflect.getOwnPropertyDescriptor(target, name),
     defineProperty(target, name, descriptor) {
-      if (typeof name !== "string") return Reflect.defineProperty(target, name, descriptor);
+      if (typeof name !== "string" || name in target) {
+        return Reflect.defineProperty(target, name, descriptor);
+      }
       // As in a browser, a property with a value is an item.
       if (!("value" in descriptor)) return false;
-      items().set(name, String(descriptor.value));
+      items().set(name, `${descriptor.value}`);
       return true;
     },
     // As in a browser, a storage cannot be frozen or sealed.

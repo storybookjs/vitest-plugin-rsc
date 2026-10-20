@@ -11,10 +11,10 @@ import { documentUrl, loadDocument, unloadDocument } from "./document.ts";
 import { recordListeners, recordMessageChannels } from "./leftovers.ts";
 import { NodeOnPage } from "./node-on-page.ts";
 import { PageStore } from "./page-store.ts";
-import { PageStorage, storageOf } from "./storage.ts";
 import { openedAt, registry, type Opened } from "./registry.ts";
 import { takesRequest } from "./server-in-front.ts";
 import { ssrLayer } from "./server-layers.ts";
+import { PageStorage, storageOf } from "./storage.ts";
 
 export { loadClientModule } from "./client-graph.ts";
 
@@ -567,8 +567,10 @@ for (const name of ["cookieStore", "CookieStore", "CookieChangeEvent"]) {
 // Vitest's UI, the manager document of another host or another page of the
 // app next to this one. The app neither reads nor writes it. Each is one
 // object until the document goes, so code that took it as it loaded has the
-// items of the page that is open. Its `storage` events, of what another
-// document stored in the browser's storage, are not the app's either.
+// items of the page that is open. The browser's `storage` events, of what
+// another document stored in the browser's storage, are not the app's
+// either: those are the trusted ones. One that a script dispatches, as a
+// library does to tell its hooks in this document of a change, is.
 for (const name of ["localStorage", "sessionStorage"] as const) {
   const pageStorage = storageOf(() => storage[name]);
   Object.defineProperty(window, name, {
@@ -577,7 +579,13 @@ for (const name of ["localStorage", "sessionStorage"] as const) {
     get: () => pageStorage,
   });
 }
-window.addEventListener("storage", (event) => event.stopImmediatePropagation(), { capture: true });
+window.addEventListener(
+  "storage",
+  (event) => {
+    if (event.isTrusted) event.stopImmediatePropagation();
+  },
+  { capture: true },
+);
 // The server's `fetch`. A request to the app itself is one the server makes
 // while it handles another: Next renders the page a Server Action redirects
 // to that way. It is chosen as the browser's is, and goes through the proxy

@@ -74,14 +74,29 @@ test("cannot be frozen, nor have an accessor for an item", () => {
   expect(localStorage.length).toBe(0);
 });
 
-test("calls a spy on its prototype", () => {
-  const setItem = vi.spyOn(Object.getPrototypeOf(localStorage) as Storage, "setItem");
+test("calls a spy on a method, as an own property", () => {
+  const setItem = vi.spyOn(localStorage, "setItem");
 
   localStorage.setItem("theme", "dark");
 
   expect(setItem).toHaveBeenCalledWith("theme", "dark");
   expect(localStorage.getItem("theme")).toBe("dark");
+  expect(localStorage.getItem("setItem")).toBeNull();
   setItem.mockRestore();
+  expect(Object.keys(localStorage)).toEqual(["theme"]);
+});
+
+test("passes on a storage event that a script of the document dispatches", () => {
+  // As a library tells its hooks in this document of a change.
+  const heard: Array<string | null> = [];
+  const hear = ({ key }: StorageEvent) => heard.push(key);
+  window.addEventListener("storage", hear);
+  try {
+    window.dispatchEvent(new StorageEvent("storage", { key: "theme", newValue: "dark" }));
+  } finally {
+    window.removeEventListener("storage", hear);
+  }
+  expect(heard).toEqual(["theme"]);
 });
 
 test("leaves the browser's storage of another document as the browser has it", () => {

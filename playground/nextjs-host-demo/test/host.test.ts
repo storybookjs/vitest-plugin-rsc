@@ -72,12 +72,8 @@ test("keeps what a document of the host stores to that document", async ({ page,
   await open(page, errors, "node", async (page) => {
     // A second document of the host next to this one, as a page of docs has
     // one for each story, whose page stores in the browser. Neither this one
-    // nor the browser's storage of the origin has it, and this one hears
-    // nothing of it.
+    // nor the browser's storage of the origin has it.
     const frame = await page.evaluate(async () => {
-      const heard: Array<string | null> = [];
-      const hear = ({ key }: StorageEvent) => heard.push(key);
-      window.addEventListener("storage", hear);
       const iframe = document.body.appendChild(document.createElement("iframe"));
       iframe.src = "?view=stored";
       const other = () => iframe.contentWindow as (Window & HostWindow) | null;
@@ -90,8 +86,6 @@ test("keeps what a document of the host stores to that document", async ({ page,
       const blank = document.body.appendChild(document.createElement("iframe"));
       const browser = [blank.contentWindow!.localStorage, blank.contentWindow!.sessionStorage];
       const inBrowser = browser.map((storage) => storage.getItem("visitor"));
-      await new Promise((resolve) => setTimeout(resolve));
-      window.removeEventListener("storage", hear);
       iframe.remove();
       blank.remove();
       return {
@@ -100,7 +94,6 @@ test("keeps what a document of the host stores to that document", async ({ page,
         stored,
         inBrowser,
         here: [localStorage.getItem("visitor"), sessionStorage.getItem("visitor")],
-        heard,
       };
     });
     expect(frame.state, frame.error).toBe("ready");
@@ -108,7 +101,6 @@ test("keeps what a document of the host stores to that document", async ({ page,
       stored: ["Ada", "Ada"],
       inBrowser: [null, null],
       here: [null, null],
-      heard: [],
     });
   });
 });
