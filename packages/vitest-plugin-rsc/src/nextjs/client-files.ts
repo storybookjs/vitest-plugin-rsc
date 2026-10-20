@@ -9,7 +9,6 @@ import {
 } from "vite";
 import { builtHostModuleUrl, hostModulePrefix } from "../host-module.ts";
 import { clientFileKeyExport } from "./client-file-key.ts";
-import { builtHostFileKey, isSwappedStylesheet } from "./styles.ts";
 
 // A file of the host is a test file or a setup file of Vitest. One with
 // `"use client"` is a client boundary, as a file with that directive is in
@@ -106,23 +105,18 @@ export type ClientFilesOptions = {
  * which `loadClientModule()` tells the module, see client-file-key.ts. For a
  * file of the host, `load`, also the line that loads the file in the browser
  * layer by that key, see client-graph.ts. With a dev server the key is the
- * URL of the file in the browser layer. In a build it is a hash, and the
- * line also has the key of the file's stylesheets in the build, `builtFile`:
- * its path from the root of the project. Not its id, which is a path of the
- * machine.
+ * URL of the file in the browser layer. In a build it is a hash.
  */
 export function clientFileCode(
   { referenceKey }: ClientReference,
-  load?: { internal: string; builtFile?: string },
+  load?: { internal: string },
 ): string {
   const key = `export const ${clientFileKeyExport} = ${JSON.stringify(referenceKey)}; `;
   if (!load) return key;
-  const { internal, builtFile } = load;
-  const args = [referenceKey, ...(builtFile === undefined ? [] : [builtFile])];
   return (
-    `import { loadClientFile as __vitestPluginRscLoadClientFile } from ${JSON.stringify(internal)}; ` +
+    `import { loadClientFile as __vitestPluginRscLoadClientFile } from ${JSON.stringify(load.internal)}; ` +
     key +
-    `await __vitestPluginRscLoadClientFile(${args.map((arg) => JSON.stringify(arg)).join(", ")}); `
+    `await __vitestPluginRscLoadClientFile(${JSON.stringify(referenceKey)}); `
   );
 }
 
@@ -234,14 +228,14 @@ export function clientFiles(options: ClientFilesOptions): Plugin[] {
       // host imports the file again, and the line of the new module
       // evaluates the file with what changed. First of the hooks of the rsc
       // layer, so that one that loads the document again instead, like the
-      // one for a change of what a route imports, still takes over. Not for
+      // one for a change of what a route imports, still takes over. Also for
       // a stylesheet that Vite swaps in place in the rsc layer, as a link or
-      // as its `<style>`: it is the same stylesheet in the one document.
+      // as its `<style>`: the browser layer links its own (client-graph.ts),
+      // which a host that renders the file again links again as it is now.
       hotUpdate: {
         order: "pre",
         handler({ file, modules, server }) {
           if (this.environment.name !== rsc) return;
-          if (modules.length > 0 && modules.every(isSwappedStylesheet)) return;
           const changed = server.environments[browser]?.moduleGraph.getModulesByFile(file);
           if (!changed) return;
           const config = this.environment.getTopLevelConfig();
@@ -266,12 +260,7 @@ export function clientFiles(options: ClientFilesOptions): Plugin[] {
         if (!reference) return;
         // Also a file that is not the host's, like a component of the app,
         // so that `loadClientModule()` can say that nothing loaded it.
-        const file = hostFileOf(id);
-        const builtFile =
-          file && this.environment.mode === "build"
-            ? builtHostFileKey(file, config.root)
-            : undefined;
-        const load = file ? { internal, builtFile } : undefined;
+        const load = hostFileOf(id) ? { internal } : undefined;
         return { code: clientFileCode(reference, load) + code, map: null };
       },
     },

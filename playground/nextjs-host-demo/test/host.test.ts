@@ -214,7 +214,7 @@ test('runs a file of the host with "use client" in the browser layer', async ({ 
     await page.locator("#client-root").getByRole("button", { name: "Count: 0" }).click();
     await page.locator("#client-root").getByRole("button", { name: "Count: 1" }).waitFor();
     // The CSS module of the component, a stylesheet of the app that the page
-    // links once the file has loaded: from the dev server, not Vite's
+    // links as the host uses the file: from the dev server, not Vite's
     // `<style>` of a module.
     await page
       .locator("link[rel=stylesheet][href*='counter.module.css']")
@@ -259,7 +259,7 @@ test('gives the host the exports of a file of the host with "use client"', async
     // with the renderer of another such file.
     await page.locator("#host-root").getByRole("button", { name: "Clicks: 0" }).click();
     await page.locator("#host-root").getByRole("button", { name: "Clicks: 1" }).waitFor();
-    // Its CSS module, linked once: as the file loaded, and not again by the
+    // Its CSS module, linked once: as the host used the file, and not by the
     // import of the file after it.
     const badge = page.locator("link[rel=stylesheet][href*='badge.module.css']");
     await badge.waitFor({ state: "attached" });
@@ -298,12 +298,12 @@ test('keeps the Server Actions of a node that is open while a file with "use cli
   expect(host.__hostReports).toEqual([{ from: "host/client-module.tsx", react: nextReact }]);
 });
 
-test('keeps the CSS of a file with "use client" that loaded during a page', async ({
+test('links the CSS of a file with "use client" as the host uses it, until cleanup()', async ({
   page,
   errors,
 }) => {
-  await open(page, errors, "after-page", async (page) => {
-    // The tab's, not the page's: two pages came and went, and the link is
+  const host = await open(page, errors, "after-page", async (page) => {
+    // The host's, not the page's: two pages came and went, and the link is
     // there once.
     await page.locator("#host-root").getByRole("button", { name: "Clicks: 0" }).waitFor();
     const badge = page.locator("link[rel=stylesheet][href*='badge.module.css']");
@@ -317,5 +317,15 @@ test('keeps the CSS of a file with "use client" that loaded during a page', asyn
       .getByRole("alert")
       .getByText("a component called the Server Action like, and no page of the app is open")
       .waitFor();
+  });
+  // A page has the CSS of its route alone, and `cleanup()` unlinks what the
+  // host used, which links again as the host uses the file.
+  expect(host.__hostBadgeLinked).toEqual({
+    loadedDuringPage: false,
+    used: true,
+    duringPage: false,
+    pageLeft: true,
+    cleanedUp: false,
+    endedDuringPage: false,
   });
 });
