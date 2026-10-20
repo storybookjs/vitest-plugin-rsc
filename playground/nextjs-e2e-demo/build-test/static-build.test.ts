@@ -95,6 +95,14 @@ const resources = (page: Page) =>
       }),
     ),
   );
+// The pathnames of the preloads in the document.
+const preloads = (page: Page) =>
+  page.evaluate(() =>
+    Array.from(
+      document.querySelectorAll<HTMLLinkElement>("link[rel=preload], link[rel=modulepreload]"),
+      (link) => new URL(link.href).pathname,
+    ),
+  );
 const fontLoaded = (page: Page, family: RegExp) =>
   page.waitForFunction(
     (source) =>
@@ -279,12 +287,12 @@ describe.for(builds)("a static build, $build", ({ build, env }) => {
   // A page load starts the files of its route at once, by the list of the
   // build: each module of its loader tree with the entry of the route, where
   // Next would load them one segment after the other, and the stylesheets
-  // with them, where Next would link them once the HTML is there. Each is
-  // one request: the module or the stylesheet takes the preload.
+  // with them, where Next would link them once the HTML is there. Next asks
+  // for a segment only once it has run the entry: a file with a preload in
+  // the document before the browser has the entry starts before Next could
+  // ask for it. The test looks while it holds the request of the entry. And
+  // each file is one request: the preload's.
   test("starts the files of a route at once", async ({ page }) => {
-    await keepResources(page);
-    await open(page, site, "/notes/7", { node: "7" });
-    await heading(page, "A node of the host");
     const built = JSON.parse(
       fs.readFileSync(path.join(dist, "vitest-plugin-rsc/next-files.json"), "utf8"),
     ) as BuiltFiles;
@@ -292,33 +300,32 @@ describe.for(builds)("a static build, $build", ({ build, env }) => {
       (index) => `/${built.chunks[index]}`,
     );
     expect(files.length).toBeGreaterThan(1);
-    const requests = await resources(page);
-    const chunks = files.map((file) => {
-      const requested = requests.filter((request) => request.pathname === file);
-      expect(requested, file).toHaveLength(1);
-      return requested[0]!;
-    });
+    const requested: string[] = [];
+    page.on("request", (request) => requested.push(new URL(request.url()).pathname));
+    let preloaded: string[] | undefined;
     // The first is the chunk of the entry of the route.
-    for (const chunk of chunks) expect(chunk.startTime).toBeLessThan(chunks[0]!.responseEnd);
-    const stylesheets = requests.filter((request) =>
-      request.pathname.startsWith("/_next/static/css/"),
+    await page.route(
+      (url) => url.pathname === files[0],
+      async (route) => {
+        preloaded = await preloads(page);
+        await route.continue();
+      },
+      { times: 1 },
     );
-    expect(stylesheets.map((stylesheet) => stylesheet.pathname)).toEqual([
-      expect.stringMatching(/\/note-card\.module-\w+\.css$/),
-    ]);
+    await open(page, site, "/notes/7", { node: "7" });
+    await heading(page, "A node of the host");
+    expect(preloaded).toEqual(expect.arrayContaining(files));
+    for (const file of files) {
+      expect(
+        requested.filter((url) => url === file),
+        file,
+      ).toHaveLength(1);
+    }
+    const stylesheets = requested.filter((url) => url.startsWith("/_next/static/css/"));
+    expect(stylesheets).toEqual([expect.stringMatching(/\/note-card\.module-\w+\.css$/)]);
     // Next's development code links a stylesheet with the time of the request
     // in its URL, which no preload can know: there it comes with the HTML.
-    if (build === "production") {
-      // Of the chunks the page load asked for, not one the host had loaded
-      // before it opened the page.
-      const opened = await page.evaluate(
-        () => performance.getEntriesByName("host-open").at(-1)!.startTime,
-      );
-      const loaded = chunks.filter((chunk) => chunk.startTime >= opened);
-      expect(loaded.length).toBeGreaterThan(0);
-      const firstChunk = Math.min(...loaded.map((chunk) => chunk.responseEnd));
-      expect(stylesheets[0]!.startTime).toBeLessThan(firstChunk);
-    }
+    if (build === "production") expect(preloaded).toContain(stylesheets[0]);
   });
 
   // What a segment imports with `import()` loads when the segment asks for
@@ -357,12 +364,7 @@ describe.for(builds)("a static build, $build", ({ build, env }) => {
     const next = new Set(filesOf("/notice/page"));
     const left = filesOf("(vitest-plugin-rsc)/notes/[id]").filter((file) => !next.has(file));
     expect(left.length).toBeGreaterThan(0);
-    const links = await page.evaluate(() =>
-      Array.from(
-        document.querySelectorAll<HTMLLinkElement>("link[rel=preload], link[rel=modulepreload]"),
-        (link) => new URL(link.href).pathname,
-      ),
-    );
+    const links = await preloads(page);
     expect(links.filter((link) => /note-card/.test(link))).toEqual([]);
     expect(links.filter((link) => left.includes(link.slice(1)))).toEqual([]);
   });
