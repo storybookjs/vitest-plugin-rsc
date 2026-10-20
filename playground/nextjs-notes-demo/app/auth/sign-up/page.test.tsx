@@ -33,6 +33,24 @@ test("renders an inline error when the email is invalid", async () => {
   await expect.element(page.getByLabelText("Email")).toHaveValue("not-an-email");
 });
 
+test("shows each flashed error once, not on a later visit", async () => {
+  await renderServer({ url: "/auth/sign-up" });
+
+  await page.getByRole("button", { name: "Create account" }).click();
+  await expect.element(page.getByRole("main").getByRole("alert")).toBeInTheDocument();
+  // A second flash, while the page still shows the first.
+  await page.getByLabelText("Email").fill("not-an-email");
+  await page.getByRole("button", { name: "Create account" }).click();
+  await expect.element(page.getByText("Enter a valid email address.")).toBeInTheDocument();
+
+  await page.getByRole("main").getByRole("link", { name: "Sign in" }).click();
+  await page.getByRole("main").getByRole("link", { name: "Sign up" }).click();
+
+  await expect.element(page.getByRole("button", { name: "Create account" })).toBeInTheDocument();
+  await expect.element(page.getByRole("main").getByRole("alert")).not.toBeInTheDocument();
+  await expect.element(page.getByLabelText("Email")).toHaveValue("");
+});
+
 test("shows the magic link sent confirmation banner", async () => {
   await renderServer({ url: "/auth/sign-up?sent=magic-link" });
 
