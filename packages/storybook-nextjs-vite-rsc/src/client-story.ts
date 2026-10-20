@@ -14,21 +14,18 @@ import { hostFilesOf } from "./host-files.ts";
 
 /**
  * Before a client story: the stylesheets of its file, until Storybook leaves
- * the story and aborts its signal, also while they load. A docs page shows
- * its client stories inline, each a use of its own, so one that goes takes
- * nothing that another one shows.
+ * the story and aborts its signal, also while they load. Left while they
+ * load, it rejects with the signal's reason, which Storybook takes as the
+ * end of the render: it reports nothing, and runs the cleanups of the hooks
+ * before this one. A docs page shows its client stories inline, each a use
+ * of its own, so one that goes takes nothing that another one shows.
  */
 export const beforeEach: BeforeEach<ReactRenderer> = async ({ parameters, abortSignal }) => {
   const files = hostFilesOf(parameters.fileName as string);
   // Once for a render: new args run `beforeEach` again with its signal.
   if (!files || uses.has(abortSignal)) return;
   uses.add(abortSignal);
-  try {
-    await linkStylesheetsOf(files, { signal: abortSignal });
-  } catch (error) {
-    // Storybook left the story.
-    if (!abortSignal.aborted) throw error;
-  }
+  await linkStylesheetsOf(files, { signal: abortSignal });
 };
 
 // The signal of each render of a client story that links its stylesheets.

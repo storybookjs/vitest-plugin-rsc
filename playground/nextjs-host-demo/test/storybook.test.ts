@@ -401,6 +401,38 @@ test("a page left while it loads leaves no render and no reload", async ({ page 
   expect(await rendered(canvas, "greeting--server-action")).toBe("finished");
 });
 
+// Storybook leaves a client story while the stylesheet of its file is held
+// back: it reports nothing of it, the preview does not reload, and the next
+// story runs as usual. A report of the left story would be the next one's,
+// the story the preview renders by then.
+test("a client story left while its stylesheets load reports nothing", async ({ page }) => {
+  const canvas = await openStory(page, site!.url, "greeting--default");
+  expect(await storyRun(page, canvas, "greeting--default")).toEqual(passed);
+  await canvas.evaluate(() => Object.assign(window, { __marked: true }));
+  let loading!: () => void;
+  const stylesheet = new Promise<void>((resolve) => (loading = resolve));
+  let release!: () => void;
+  const released = new Promise<void>((resolve) => (release = resolve));
+  // Not the story file's import of it, which is a module.
+  await page.route(/press-button\.stories\.css/, async (route) => {
+    if (route.request().resourceType() !== "stylesheet") return route.fallback();
+    loading();
+    await released;
+    await route.continue();
+  });
+  await canvas.evaluate(() =>
+    window.__STORYBOOK_PREVIEW__.channel.emit("selectStory", {
+      storyId: "press-button--pressed",
+      viewMode: "story",
+    }),
+  );
+  await stylesheet;
+  expect(await runStory(page, canvas, "greeting--server-action")).toEqual(passed);
+  expect(await canvas.evaluate(() => window.__storyReports)).toEqual({});
+  expect(await canvas.evaluate(() => "__marked" in window)).toBe(true);
+  release();
+});
+
 // The manager selecting the story that renders once more makes Storybook
 // show its main view while the render runs, as a save of a page story's file
 // does: Storybook adds nothing to the `<body>` of a story that owns the
