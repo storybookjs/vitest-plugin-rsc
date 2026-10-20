@@ -7,6 +7,7 @@ import { afterAll, expect } from "vitest";
 import { copyProject } from "../../test-helpers/build.ts";
 import { createProject, test, type DevServer } from "../../test-helpers/host.ts";
 import type { HostWindow } from "../host/state.ts";
+import { style } from "./host-page.ts";
 
 // A change of a file of the app while the host has a page of the app open,
 // on Vite's dev server without Vitest. Each test serves a copy of the project
@@ -177,6 +178,10 @@ test('a change of what a file with "use client" imports renders it again in plac
     .toMatchObject({ changed: true });
   expect(await page.evaluate(moduleReports)).toHaveLength(3);
   await page.getByRole("button", { name: "Taps: 0" }).waitFor();
+  // Each render a use of the file's stylesheets, which ends once the next
+  // one's have loaded: its CSS module stays, linked once.
+  expect(await style(page, "#host-root button", "color")).toBe("rgb(0, 128, 0)");
+  expect(await page.locator("link[rel=stylesheet][href*='badge.module']").count()).toBe(1);
   expect(await page.evaluate(() => "__beforeTheChange" in window)).toBe(true);
 });
 

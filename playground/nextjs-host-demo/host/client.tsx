@@ -10,7 +10,7 @@ import { Counter } from "../app/components/counter.tsx";
 // without the app of Next around it, with the React that Next has for the
 // browser. `host-report` is the page's own: the host reads what it reports.
 // The CSS of the component is a stylesheet of the app, which the page links
-// once this file has loaded: see client-graph.ts of the plugin.
+// as the host uses this file: see main.tsx, and client-graph.ts of the plugin.
 report({ from: "host/client.tsx", react: version });
 
 const root = document.createElement("div");

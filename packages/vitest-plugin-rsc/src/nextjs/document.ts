@@ -2,10 +2,16 @@ import { graphStylesheetAttribute } from "./styles-shared.ts";
 
 // A page load, without loading a page: the test runs in this
 // document and has to stay in it. So the document the server sends is moved
-// into this one. What the test runner needs stays, its scripts and styles. The
-// rest of what is in the document steps aside for as long as the page is
-// there: a second `<title>` would hide the page's, and text in `<body>` is not
-// what React expects to hydrate.
+// into this one. What the test runner needs stays: its scripts, and its
+// `<style>`s, which style what it shows over the page. The rest of what is in
+// the document steps aside for as long as the page is there: a second
+// `<title>` would hide the page's, and text in `<body>` is not what React
+// expects to hydrate. So does the CSS of the host's modules, which is no CSS
+// of the app: the `<link>` of a chunk in a build, the stylesheets of the
+// files of the host with `"use client"` (client-graph.ts), and Vite's
+// `<style>` of a module with a dev server. That one stays where it is,
+// switched off with a media that matches nothing, as Vite's client swaps and
+// removes it in place. A page has the CSS of its route, as with `next start`.
 //
 // A browser shows none of a page before the stylesheets in its `<head>` have
 // loaded, and the page that was there until then. So the `<head>` of the page
@@ -48,12 +54,7 @@ export function documentUrl(): string {
 }
 
 function staysDuringPage(node: Node): boolean {
-  return (
-    node instanceof HTMLScriptElement ||
-    node instanceof HTMLStyleElement ||
-    isPreload(node) ||
-    isGraphStylesheet(node)
-  );
+  return node instanceof HTMLScriptElement || node instanceof HTMLStyleElement || isPreload(node);
 }
 
 // A preload of the host shows nothing, and one that is put back fetches its
@@ -67,18 +68,19 @@ function isPreload(node: Node): boolean {
   );
 }
 
-// Vite puts the CSS a module imports in a `<style>`, once. That is not the
-// CSS of the app, which a page links (styles.ts). It is what a test file
-// imports itself, and it has to outlive the page it came during: the module
-// will not load again.
-function isViteStyle(node: Node): boolean {
+// Vite puts the CSS a module imports in a `<style>`, once, and marks it with
+// the module's id. That is not the CSS of the app, which a page links
+// (styles.ts). It is what a module of the host imports, like a test file, and
+// it has to outlive the page it came during: the module will not load again.
+function isViteStyle(node: Node): node is HTMLStyleElement {
   return node instanceof HTMLStyleElement && node.hasAttribute("data-vite-dev-id");
 }
 
 // The stylesheets that the tab's graph linked for a file of the host with
-// `"use client"` (client-graph.ts) are the tab's, as the graph is: they stay
-// for the pages, and outlive the page they came during, as Vite's `<style>`
-// does. A host loads a client file before it leaves the page that is there.
+// `"use client"` (client-graph.ts) are the host's: they step aside for a page
+// with the rest of the host's `<head>`, and one that the host linked during
+// the page outlives it, as Vite's `<style>` does. One that the graph unlinked
+// meanwhile has the mark no longer, and does not come back.
 function isGraphStylesheet(node: Node): boolean {
   return node instanceof HTMLLinkElement && node.hasAttribute(graphStylesheetAttribute);
 }
@@ -183,6 +185,10 @@ export async function loadDocument(html: string, url: string, container?: Elemen
     ),
   );
   const parked: Node[] = [];
+  // The graph's stylesheets among them.
+  const graphParked = new Set<Node>();
+  // Vite's `<style>`s of modules, switched off, with the media each had.
+  const switchedOff: [HTMLStyleElement, string | null][] = [];
   // The body of the page, in the document once the page shows. What the
   // runner needs moves into it, and back. For a node that is all there is:
   // the document stays the test's.
@@ -209,7 +215,13 @@ export async function loadDocument(html: string, url: string, container?: Elemen
       runnerHref = undefined;
       if (window.location.href !== runnerUrl) window.history.replaceState(null, "", runnerUrl);
     }
-    document.head.append(...parked);
+    document.head.append(
+      ...parked.filter((node) => !graphParked.has(node) || isGraphStylesheet(node)),
+    );
+    for (const [style, media] of switchedOff) {
+      if (media === null) style.removeAttribute("media");
+      else style.media = media;
+    }
     // In the order they are in: what stayed, and the CSS Vite added.
     runnerBody.append(...pageBody.childNodes);
     // A body that never showed has no parent: the host's stays.
@@ -272,9 +284,13 @@ export async function loadDocument(html: string, url: string, container?: Elemen
   // put in its body while the page waited is the host's too.
   for (const node of runnerBody.childNodes) before.add(node);
   for (const node of container ? [] : document.head.childNodes) {
-    if (before.has(node) && !staysDuringPage(node)) parked.push(node);
+    if (!before.has(node)) continue;
+    if (isViteStyle(node)) switchedOff.push([node, node.getAttribute("media")]);
+    else if (!staysDuringPage(node)) parked.push(node);
+    if (isGraphStylesheet(node)) graphParked.add(node);
   }
   for (const node of parked) document.head.removeChild(node);
+  for (const [style] of switchedOff) style.media = "not all";
   const staying = Array.from(runnerBody.childNodes).filter(
     (node) => container || staysDuringPage(node),
   );

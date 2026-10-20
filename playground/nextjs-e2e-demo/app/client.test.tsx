@@ -7,7 +7,7 @@ import { Component, useState, version, type ReactNode } from "react";
 import { afterEach, beforeEach, expect, inject, test, vi, type MockInstance } from "vitest";
 import { page } from "vitest/browser";
 import { render } from "vitest-browser-react";
-import { renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
+import { cleanup, renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
 import { linkedStylesheets, renderedContainers } from "../test/browser.ts";
 import { Locale } from "./components/locale.tsx";
 import { localeSets } from "./lib/locale.ts";
@@ -146,6 +146,25 @@ test("links the CSS of a Client Component that this file imports, and none of an
   expect(linkedStylesheets()).toContainEqual(expect.stringContaining("client-card.module.css"));
   // That of the badge that client-cleanup.test.tsx imports went with it.
   expect(linkedStylesheets()).not.toContainEqual(expect.stringContaining("client-badge.css"));
+});
+
+// The CSS of a file with "use client" is the host's for as long as it uses
+// the file: `cleanup()` unlinks it, and the plugin's setup file links that of
+// the setup files and the test file again before the next test.
+test("unlinks the CSS of this file with cleanup()", async () => {
+  expect(linkedStylesheets()).toContainEqual(expect.stringContaining("client-card.module.css"));
+
+  await cleanup();
+
+  expect(linkedStylesheets()).not.toContainEqual(expect.stringContaining("client-card.module.css"));
+});
+
+test("links the CSS of this file again for the test after a cleanup()", async () => {
+  const { getByText } = await render(<ClientCard />);
+
+  await expect
+    .element(getByText("Styled by a CSS module in a Client Component"))
+    .toHaveStyle({ color: "rgb(128, 0, 0)" });
 });
 
 test("says that renderServer() renders on the server, which client code cannot", async () => {
