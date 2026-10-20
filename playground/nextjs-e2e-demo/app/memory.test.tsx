@@ -202,6 +202,40 @@ test("lets go of a page that the test has left, with all of its modules", async 
   await expectCollected();
 });
 
+test("lets go of the last page after cleanup(), with no page after it", async () => {
+  // A page after another: V8 may keep the first page whose objects extend a
+  // shape of the tab, see `left`.
+  await renderServer({ url: "/" });
+  await renderServer({ url: "/" });
+  // The only page that this test asks about, so not one of `left`, which
+  // may keep one.
+  const last = modulesOfPage();
+
+  await cleanup();
+  // Not yet the plugin's: Next's client sets globals on `window` as it loads
+  // and hydrates, which reach its router and its root. The next page sets its
+  // own in their place; with no page after it, they keep the last one. A
+  // page takes back what it set on the document, not on `window`, where a
+  // test or a host sets its own globals too.
+  for (const key of ["next", "nd", "_N_E_STYLE_LOAD"]) Reflect.deleteProperty(window, key);
+  // The browser keeps the element that the pointer is over, and with it its
+  // page, until the pointer is over another one.
+  const elsewhere = document.body.appendChild(document.createElement("button"));
+  elsewhere.textContent = "Elsewhere";
+  onTestFinished(() => elsewhere.remove());
+  await page.getByRole("button", { name: "Elsewhere" }).hover();
+
+  await expect
+    .poll(
+      async () => {
+        await cdp().send("HeapProfiler.collectGarbage");
+        return last.deref() === undefined;
+      },
+      { timeout: 4000, interval: 100 },
+    )
+    .toBe(true);
+});
+
 test("lets go of a page that rendered a portal in the body", async () => {
   for (let pages = 0; pages < 2; pages++) {
     await renderServer({ url: "/help" });

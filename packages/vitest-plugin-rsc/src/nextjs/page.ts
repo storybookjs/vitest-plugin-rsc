@@ -9,7 +9,7 @@ import { loadDocument, unloadDocument } from "./document.ts";
 import { recordListeners, recordMessageChannels } from "./leftovers.ts";
 import type { NodeOnPage } from "./node-on-page.ts";
 import type { PageStore } from "./page-store.ts";
-import { registry, type Opened } from "./registry.ts";
+import { loadsNothing, registry, type Opened } from "./registry.ts";
 import { loadedSsrLayer } from "./server-layers.ts";
 
 // How long leaving a page waits for it to stop starting, at most: less than
@@ -267,7 +267,13 @@ async function openPage(
   // The browser's Flight client reads properties off `__webpack_require__`
   // when it loads, which is before the page can say how it loads a module,
   // and wraps some of them. One that the pages shared would keep every page.
-  registry.browserRequire = (id) => registry.loadBrowserModule(id);
+  const browserRequire = (id: string) => registry.loadBrowserModule?.(id) ?? loadsNothing();
+  registry.browserRequire = browserRequire;
+  // What the page's Flight client wrapped of it keeps the page. Once it is
+  // left, it loads nothing more, as its closed runner.
+  page.defer(() => {
+    if (registry.browserRequire === browserRequire) registry.browserRequire = loadsNothing;
+  });
   // React's scheduler, Next's router and Next's dev overlay each leave
   // something behind when they load: see leftovers.ts. That is from here
   // until `start()` says that Next's client has loaded.

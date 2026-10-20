@@ -32,7 +32,20 @@ function createModuleLoader(ready?: Promise<void>): (id: string) => Promise<unkn
   };
 }
 
-export function registerModuleLoader(layer: "ssr" | "browser", ready?: Promise<void>): void {
-  if (layer === "ssr") registry.loadSsrModule = createModuleLoader(ready);
-  else registry.loadBrowserModule = createModuleLoader(ready);
+/**
+ * Has the layer load its Client Components with a loader of its own.
+ * Returns how to forget the loader of the browser layer, which keeps the
+ * modules that it loaded: the layer then has none, as before its first
+ * page, unless another page's has come since.
+ */
+export function registerModuleLoader(layer: "ssr" | "browser", ready?: Promise<void>): () => void {
+  const loader = createModuleLoader(ready);
+  if (layer === "ssr") {
+    registry.loadSsrModule = loader;
+    return () => {};
+  }
+  registry.loadBrowserModule = loader;
+  return () => {
+    if (registry.loadBrowserModule === loader) delete registry.loadBrowserModule;
+  };
 }

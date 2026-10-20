@@ -13,7 +13,7 @@ import {
 } from "../utils.ts";
 import { buildDirectory, builtFiles } from "./built-files.ts";
 import { clientFileKeyExport } from "./client-file-key.ts";
-import { registry } from "./registry.ts";
+import { loadsNothing, registry } from "./registry.ts";
 import {
   builtHostFileStylesheetsOf,
   builtFileKey,
@@ -107,7 +107,7 @@ const isDependency = ({ id, file }: { id: string; file: string | null }) =>
 // (`openPage()` in page.ts): one that the graph and a page shared would keep
 // the page. A page that is open meanwhile calls the graph's after a load, which
 // loads a module as its own does.
-const browserRequire = (id: string) => registry.loadBrowserModule(id);
+const browserRequire = (id: string) => registry.loadBrowserModule?.(id) ?? loadsNothing();
 
 // In a static build: the modules of the browser layer that a Flight payload
 // can refer to, by their reference keys, which the graph evaluates a client
