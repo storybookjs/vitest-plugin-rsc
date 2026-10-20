@@ -130,7 +130,10 @@ export class NodeOnPage {
     this.#leave(error, error());
   }
 
-  /** The page was left: by `cleanup()`, `unmount()`, another `renderServer()` or the app. */
+  /**
+   * The page was left: by `cleanup()`, `unmount()`, another `renderServer()`,
+   * the app or the dev server.
+   */
   left(by: string): void {
     if (this.#gone) return;
     this.#leave(
