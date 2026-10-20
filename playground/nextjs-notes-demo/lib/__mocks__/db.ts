@@ -4,6 +4,9 @@ import { PgTable } from "drizzle-orm/pg-core";
 import { drizzle } from "drizzle-orm/pglite";
 import * as schema from "#db/schema.ts";
 import dataDirUrl from "#test/db.tgz?url";
+import fsBundleUrl from "#test/pglite/pglite.data?url";
+import pgliteWasmUrl from "#test/pglite/pglite.wasm?url";
+import initdbWasmUrl from "#test/pglite/initdb.wasm?url";
 import type { db as appDb } from "../db.ts";
 
 // `#lib/db.ts` in the tests and the stories, which vitest.setup.ts and
@@ -11,21 +14,41 @@ import type { db as appDb } from "../db.ts";
 // one for the document, with the tables of db/schema.ts. Each test and each
 // story empties it first.
 
-// The tables, in the data dir of test/db-data-dir.ts, which PGlite loads:
-// without one, it runs initdb in a second PGlite, which it throws away. A
-// URL that Vite serves, and that a build ships. By the package's import,
-// not a relative path: Storybook serves this file as `lib/db.ts`. Made
-// absolute, as on a server: the `fetch` of the server has no page to
-// resolve a path against.
-const response = await fetch(new URL(dataDirUrl, import.meta.url));
-if (!response.ok) throw new Error(`The data dir of the database: ${response.status}`);
+// A file of test/db-data-dir.ts, by a URL that Vite serves and that a build
+// ships. By the package's import, not a relative path: Storybook serves this
+// file as `lib/db.ts`. Made absolute, as on a server: the `fetch` of the
+// server has no page to resolve a path against.
+async function load(url: string): Promise<Response> {
+  const response = await fetch(new URL(url, import.meta.url));
+  if (!response.ok) throw new Error(`${url} of the database: ${response.status}`);
+  return response;
+}
 
-// Made as the module loads, once the data dir is there: what imports the
-// database waits for it, as PGlite takes it as a Blob. A query waits until
-// PGlite has started. Shared buffers of 16 MB, where initdb writes 128 MB,
-// which Postgres takes as it starts: the database is about 7 MB.
+// What PGlite starts from, fetched once and handed to it, so that PGlite
+// fetches nothing of its own:
+// - the data dir with the tables: without one, PGlite runs initdb in a
+//   second PGlite, which it throws away;
+// - its wasm, its initdb wasm and its file bundle, as PGlite's docs on
+//   bundlers hand them. Fetched by PGlite, the wasm and the bundle stay in
+//   the document's memory a second time, about 14 MB, as PGlite keeps the
+//   response it reads a clone of. And PGlite starts a fetch of initdb's
+//   wasm, which it never runs with a data dir and never reads.
+const [loadDataDir, pgliteWasmModule, initdbWasmModule, fsBundle] = await Promise.all([
+  load(dataDirUrl).then((response) => response.blob()),
+  WebAssembly.compileStreaming(load(pgliteWasmUrl)),
+  WebAssembly.compileStreaming(load(initdbWasmUrl)),
+  load(fsBundleUrl).then((response) => response.blob()),
+]);
+
+// Made as the module loads: what imports the database waits for its files.
+// A query waits until PGlite has started. Shared buffers of 16 MB, where
+// initdb writes 128 MB, which Postgres takes as it starts: the database is
+// about 7 MB.
 const client = new PGlite({
-  loadDataDir: await response.blob(),
+  loadDataDir,
+  pgliteWasmModule,
+  initdbWasmModule,
+  fsBundle,
   startParams: [...PGlite.defaultStartParams, "-c", "shared_buffers=16MB"],
 });
 

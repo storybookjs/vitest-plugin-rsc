@@ -16,8 +16,10 @@
 /build
 /storybook-static
 
-# the data dir of the database of the tests and the stories: see test/db-data-dir.ts
+# the data dir of the database of the tests and the stories, and PGlite's
+# files: see test/db-data-dir.ts
 /test/db.tgz*
+/test/pglite/
 
 # misc
 .DS_Store
