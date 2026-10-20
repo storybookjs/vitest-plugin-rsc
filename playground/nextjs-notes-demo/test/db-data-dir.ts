@@ -15,19 +15,20 @@ import * as schema from "../db/schema.ts";
 // again when either changed.
 const dataDir = fileURLToPath(new URL("./db.tgz", import.meta.url));
 const keyFile = `${dataDir}.key`;
+const dumpScript = fileURLToPath(new URL("./dump-db-data-dir.ts", import.meta.url));
 
 export async function writeDbDataDir(): Promise<void> {
   const statements = await generateMigration(generateDrizzleJson({}), generateDrizzleJson(schema));
   const sql = statements.join("\n");
   // PGlite by the code of its entry, which a new version changes.
   const pglite = await readFile(createRequire(import.meta.url).resolve("@electric-sql/pglite"));
-  const key = createHash("sha256").update(sql).update(pglite).digest("hex");
+  const dump = await readFile(dumpScript);
+  const key = createHash("sha256").update(sql).update(pglite).update(dump).digest("hex");
   const made = await readFile(keyFile, "utf8").catch(() => undefined);
   if (made === key && existsSync(dataDir)) return;
-  execFileSync(
-    process.execPath,
-    [fileURLToPath(new URL("./dump-db-data-dir.ts", import.meta.url)), dataDir],
-    { input: sql, stdio: ["pipe", "inherit", "inherit"] },
-  );
+  execFileSync(process.execPath, [dumpScript, dataDir], {
+    input: sql,
+    stdio: ["pipe", "inherit", "inherit"],
+  });
   await writeFile(keyFile, key);
 }
