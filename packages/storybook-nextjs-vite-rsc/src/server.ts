@@ -9,7 +9,6 @@ import {
   type MetaTypes,
   type Preview,
   type PreviewAddonEntry,
-  type Story,
 } from "storybook/internal/csf";
 import type {
   Args,
@@ -18,6 +17,7 @@ import type {
   DecoratorFunction,
   ProjectAnnotations,
   Renderer,
+  StoryAnnotations,
   WebRenderer,
 } from "storybook/internal/types";
 import { beforeAllInServerPreview } from "./errors.ts";
@@ -85,47 +85,30 @@ export function defineServerPreview<Addons extends PreviewAddonEntry[] = []>(
   input: ProjectAnnotations<ServerTypes & InferTypes<Addons>> & { addons?: Addons },
 ): ServerPreview<InferTypes<Addons>> {
   if (input.beforeAll) throw beforeAllInServerPreview();
-  const preview: Preview<Renderer> = definePreview({
+  const preview = definePreview({
     ...input,
     addons: [argTypes, annotations, ...(input.addons ?? [])],
-  }) as never;
-  const defineMeta = preview.meta;
-  return Object.assign(markServerPreview(preview), {
-    meta: (input: Meta<Renderer>["input"]) => {
-      const meta: Meta<Renderer> = defineMeta.call(preview, input) as never;
-      const { story } = meta;
-      // A copy of the story's input, which the factory amends.
-      meta.story = ((input: Parameters<typeof story>[0] = {}) =>
-        serverStory(
-          story.call(meta, typeof input === "function" ? input : { ...input }),
-        )) as typeof story;
-      return meta;
-    },
-  }) as never;
+    experimental_storyInput: serverStoryInput,
+  });
+  return markServerPreview(preview) as never;
 }
 
 /**
  * `layout: "document"` for a story of the server preview that owns the
  * document, a page or a component in the app's layouts, over a user's value,
  * which Storybook's view and docs read: its `<body>` is its root, and a docs
- * page shows it in an iframe. Again on each story that `extend()` and
- * `test()` make of it, where one that no longer owns the document loses it.
- * It amends the input that core's factory made the story of, which core
- * composes only when the story is first read, as `@storybook/react`'s
- * `preview.meta()` amends the stories it makes.
+ * page shows it in an iframe. Storybook calls it with the input the user
+ * gave each story, also each one that `extend()` and `test()` make, so a
+ * story that does not own the document keeps the user's layout.
  */
-function serverStory(story: Story<Renderer>): Story<Renderer> {
-  const { input, meta } = story;
+function serverStoryInput<T extends Renderer>(
+  input: StoryAnnotations<T, T["args"]>,
+  meta: Meta<T>,
+): StoryAnnotations<T, T["args"]> {
   const { preview } = meta;
-  const { layout, ...parameters } = input.parameters ?? {};
   const layouts =
     nextjsOf(input).layouts ?? nextjsOf(meta.input).layouts ?? nextjsOf(preview.composed).layouts;
   const render = input.render ?? meta.input.render ?? preview.composed.render;
-  const ownsDocument = layouts || isPage(meta.input.component, render);
-  if (ownsDocument) input.parameters = { ...parameters, layout: "document" };
-  else if (layout === "document") input.parameters = parameters;
-  const { extend } = story;
-  story.extend = ((input: Story<Renderer>["input"]) =>
-    serverStory(extend.call(story, input))) as typeof extend;
-  return story;
+  if (!layouts && !isPage(meta.input.component, render)) return input;
+  return { ...input, parameters: { ...input.parameters, layout: "document" } };
 }

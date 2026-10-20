@@ -7,7 +7,6 @@ import type {
   StoryContext,
   StoryId,
 } from "storybook/internal/types";
-import { configure, getConfig } from "storybook/test";
 import {
   cleanup,
   renderServer,
@@ -56,34 +55,27 @@ export const renderToCanvas: RenderToCanvas<NextjsServerRenderer> = async (
     : createElement(function Story() {
         return storyFn() as ReactNode;
       });
-  const open = opened.get(id);
-  try {
-    // New args or globals render in place, without a page load, on a page
-    // that reported no error: one with an error, like Next's error page in
-    // the node's place, opens anew.
-    if (node && open && "rerender" in open && open.errors.length === 0 && !forceRemount) {
-      await open.rerender(node);
-    } else {
-      const result = node
-        ? await renderServer(node, {
-            url,
-            headers,
-            proxy,
-            signal,
-            hostFiles: hostFilesOf(context.parameters.fileName as string),
-            ...(layouts ? { layouts } : { container: canvasElement }),
-          })
-        : await renderServer({ url, headers, proxy, signal });
-      opened.set(id, result);
-    }
-    // The page reports to one list of errors while it is open.
-    const { errors } = opened.get(id)!;
-    if (errors.length > 0) throw errors[0];
-  } catch (error) {
-    // Storybook left the story, and the page with it.
-    if (signal.aborted) return;
-    throw error;
+  let open = opened.get(id);
+  // New args or globals render in place, without a page load, on a page that
+  // reported no error: one with an error, like Next's error page in the
+  // node's place, opens anew.
+  if (node && open && "rerender" in open && open.errors.length === 0 && !forceRemount) {
+    await open.rerender(node);
+  } else {
+    open = node
+      ? await renderServer(node, {
+          url,
+          headers,
+          proxy,
+          signal,
+          hostFiles: hostFilesOf(context.parameters.fileName as string),
+          ...(layouts ? { layouts } : { container: canvasElement }),
+        })
+      : await renderServer({ url, headers, proxy, signal });
+    opened.set(id, open);
   }
+  // The page reports to one list of errors while it is open.
+  if (open.errors.length > 0) throw open.errors[0];
   // Storybook's preparing block stays over the document until the story
   // rendered, a page with its stylesheets, as for any renderer.
   showMain();
@@ -101,19 +93,14 @@ export const mount = (context: Context) => async (ui?: ReactNode) => {
 
 /**
  * Before the story's own `beforeEach`, as the plugin's setup before a test:
- * `cleanup()`, and Testing Library without the browser layer's `act`, as a
- * page has a React of its own. Once for the page: a render with new args
- * keeps it, and Storybook keeps every teardown until it leaves the story.
- * What it returns runs then, also after an abort.
+ * `cleanup()`. Once for the page: a render with new args keeps it. What it
+ * returns runs when Storybook leaves or remounts the story, however far its
+ * render got.
  */
 export const beforeEach: BeforeEach<NextjsServerRenderer> = async ({ id }) => {
   if (opened.has(id)) return;
-  const { eventWrapper, asyncWrapper, unstable_advanceTimersWrapper } = getConfig();
-  const run = <T>(callback: () => T) => callback();
-  configure({ eventWrapper: run, asyncWrapper: run, unstable_advanceTimersWrapper: run });
   await cleanup();
   return async () => {
-    configure({ eventWrapper, asyncWrapper, unstable_advanceTimersWrapper });
     opened.delete(id);
     // The URL goes back to the one the page found; Storybook writes the URL
     // of the story it selects next after this teardown.

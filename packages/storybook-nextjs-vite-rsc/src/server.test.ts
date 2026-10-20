@@ -40,12 +40,26 @@ test("a story that owns the document has its layout over the user's", () => {
   ).toBe("centered");
 });
 
+test("the input the user gave stays as it is", () => {
+  const parameters = { layout: "centered" as const, nextjs: { url: "/" } };
+  const input = { parameters };
+  const page = preview.meta({}).story(input);
+  expect(layoutOf(page)).toBe("document");
+  expect(input).toEqual({ parameters: { layout: "centered", nextjs: { url: "/" } } });
+  expect(input.parameters).toBe(parameters);
+});
+
 test("extend() and test() derive it again", () => {
   const page = preview.meta({}).story({ parameters: { nextjs: { url: "/" } } });
   expect(layoutOf(page.extend({ args: {} }))).toBe("document");
   expect(layoutOf(page.extend({ render: () => null }))).toBeUndefined();
   const card = preview.meta({ component: Card }).story();
   expect(layoutOf(card.extend({ parameters: { nextjs: { layouts: true } } }))).toBe("document");
+  // The user's layout, which the page's own was over.
+  const centered = preview
+    .meta({})
+    .story({ parameters: { layout: "centered", nextjs: { url: "/" } } });
+  expect(layoutOf(centered.extend({ render: () => null }))).toBe("centered");
   page.test("a test of a page", () => {});
   expect(getStoryChildren(page).map(layoutOf)).toEqual(["document"]);
 });
