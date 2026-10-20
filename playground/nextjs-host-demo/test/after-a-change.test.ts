@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { stripVTControlCharacters } from "node:util";
 import type { Page } from "playwright";
 import { afterAll, expect } from "vitest";
 import { copyProject } from "../../test-helpers/build.ts";
@@ -37,7 +38,11 @@ async function serveCopy(edit: (copy: string) => void = () => {}) {
     "--strictPort",
   ]);
   sites.push(site);
-  return { copy, url: `${site.url}?view=page` };
+  return {
+    copy,
+    url: `${site.url}?view=page`,
+    output: () => stripVTControlCharacters(site.output()),
+  };
 }
 
 const hostState = () => (window as HostWindow).__hostState;
@@ -76,6 +81,15 @@ async function loadedAgain(page: Page, url: string) {
   );
   expect(loadedWith).toBe(url);
 }
+
+// A copy has no pre-bundled dependencies. Each layer pre-bundles what the
+// host's pages and the app import once, before the first page: what Vite
+// finds only after that, it bundles again, and loads the page again for.
+test("a dev server pre-bundles once, before the first page", async ({ page }) => {
+  const { url, output } = await serveCopy();
+  await openPage(page, url);
+  expect(output()).not.toMatch(/new dependencies optimized|optimized dependencies changed/);
+});
 
 test("a change of a file of the app loads the host's document again", async ({ page }) => {
   const { copy, url } = await serveCopy();

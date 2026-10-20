@@ -99,6 +99,11 @@ export type ServerCodeOptions = {
      * the browser's in the rsc layer, where every other package is server
      * code.
      *
+     * A package of the list that the browser layer imports only from inside
+     * another package reaches the rsc layer through the page, which no scan
+     * of Vite's reads: list it in `optimizeDeps.include` too, or Vite
+     * pre-bundles it as the first page loads.
+     *
      * @example ["host-kit/test", "host-kit/preview"]
      */
     packages?: string[];
