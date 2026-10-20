@@ -16,12 +16,14 @@ import { passed } from "./stories.ts";
 // see it.
 
 const root = fileURLToPath(new URL("../", import.meta.url));
-const copy = fs.mkdtempSync(path.join(root, "..", ".nextjs-notes-demo-"));
-copyProject(root, copy);
-
+// Made in `beforeAll`, which a run that skips every test here does not run,
+// as it does not run `afterAll`.
+let copy = "";
 let site: DevServer | undefined;
 
 beforeAll(async () => {
+  copy = fs.mkdtempSync(path.join(root, "..", ".nextjs-notes-demo-"));
+  copyProject(root, copy);
   site = await createProject(copy, { env: { STORYBOOK_DISABLE_TELEMETRY: "1" } }).serve(
     (port) => ["storybook", "dev", "--port", String(port), "--ci", "--exact-port"],
     { timeout: 120_000 },
@@ -30,7 +32,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await site?.close();
-  fs.rmSync(copy, { recursive: true, force: true });
+  if (copy) fs.rmSync(copy, { recursive: true, force: true });
 });
 
 // Marks the document of the canvas, which a full reload replaces.
