@@ -55,17 +55,17 @@
     "prepack": "tsdown"
   },
   "dependencies": {
-    "@storybook/builder-vite": "https://pkg.pr.new/storybookjs/storybook/@storybook/builder-vite@9619e382bba35e5abff2505e9e7e1c92001d7ee5",
-    "@storybook/react": "https://pkg.pr.new/storybookjs/storybook/@storybook/react@9619e382bba35e5abff2505e9e7e1c92001d7ee5"
+    "@storybook/builder-vite": "https://pkg.pr.new/storybookjs/storybook/@storybook/builder-vite@419ef13a5ccc21c347028b8b5748dfc33c253d24",
+    "@storybook/react": "https://pkg.pr.new/storybookjs/storybook/@storybook/react@419ef13a5ccc21c347028b8b5748dfc33c253d24"
   },
   "devDependencies": {
-    "@storybook/addon-docs": "https://pkg.pr.new/storybookjs/storybook/@storybook/addon-docs@9619e382bba35e5abff2505e9e7e1c92001d7ee5",
+    "@storybook/addon-docs": "https://pkg.pr.new/storybookjs/storybook/@storybook/addon-docs@419ef13a5ccc21c347028b8b5748dfc33c253d24",
     "@types/node": "^24.12.4",
     "@types/react": "^19.2.14",
     "next": "16.4.0",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
-    "storybook": "https://pkg.pr.new/storybookjs/storybook/storybook@9619e382bba35e5abff2505e9e7e1c92001d7ee5",
+    "storybook": "https://pkg.pr.new/storybookjs/storybook/storybook@419ef13a5ccc21c347028b8b5748dfc33c253d24",
     "tsdown": "^0.22.0",
     "vite": "^8.3.1",
     "vitest-plugin-rsc": "workspace:*"
