@@ -5,6 +5,7 @@ import { getPluginApi } from "@vitejs/plugin-rsc/plugin";
 import { hasDirective, transformDirectiveProxyExport } from "@vitejs/plugin-rsc/transforms";
 import {
   createFilter,
+  isCSSRequest,
   normalizePath,
   parseAst,
   parseAstAsync,
@@ -33,7 +34,7 @@ import { compileServerCode, createServerCode, type ServerCodeOptions } from "./s
 import { affectedTests } from "./affected/index.ts";
 import { createPathsPlugin } from "./paths.ts";
 import { nextStaticBuild, withPathsFromRoot } from "./static-build.ts";
-import { createStyles } from "./styles.ts";
+import { builtHostFileOf, createStyles, isSwappedStylesheet } from "./styles.ts";
 import { assertVitestVersion } from "./vitest-version.ts";
 
 // Each layer of Next is a Vite environment, and all three run in the
@@ -81,7 +82,11 @@ const isRouteModule = (id: string) =>
 
 // Whether a module of the rsc layer is one that a route or the middleware
 // imports, also through other modules: code of the app that the plugin's
-// runtime loads.
+// runtime loads. Not through a stylesheet that Vite swaps in place, as code
+// reaches one: a stylesheet imports no code, so that edge is a dependency of
+// its CSS, as Tailwind's PostCSS plugin makes every file it scans one. The
+// change is the stylesheet's, and what a page renders of the code is what a
+// route imports.
 function importedByRoute(module: EnvironmentModuleNode): boolean {
   const seen = new Set<EnvironmentModuleNode>([module]);
   for (const node of seen) {
@@ -92,11 +97,18 @@ function importedByRoute(module: EnvironmentModuleNode): boolean {
         (isRouteModule(id) || id === middlewareId || id === middlewareEntryId)
       )
         return true;
+      if (!isCSSRequest(node.url) && isSwappedStylesheet(importer)) continue;
       seen.add(importer);
     }
   }
   return false;
 }
+// The line of a list of the routes, or of the middleware, that makes it the
+// boundary of Vite's HMR for its entries. Vite invalidates a changed module
+// and what imports it up to an importer that accepts it, so the runtime that
+// imports the list keeps its modules. No update reaches the list: the plugin
+// loads the page again for a change of what a route imports, see `hotUpdate`.
+const hmrBoundary = (entries: string[]) => `import.meta.hot?.accept([${entries.join(", ")}]);\n`;
 const bridgePrefix = "\0vitest-plugin-rsc/next-bridge/";
 const emptyModuleId = "\0vitest-plugin-rsc/next-empty";
 const serverReferenceInfo = "next/dist/esm/shared/lib/server-reference-info.js";
@@ -1039,7 +1051,9 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
       // place, like a framework that renders its own modules again, would
       // evaluate a second runtime next to the first, with another page
       // registry and other globals. A page load evaluates them all again,
-      // once. Only the rsc layer's graph is walked: a module that only a
+      // once. A file that a stylesheet only depends on is the stylesheet's
+      // change, which Vite takes in place: see `importedByRoute()` and
+      // `hmrBoundary()`. Only the rsc layer's graph is walked: a module that only a
       // Client Component imports is not in it. A file of the host with
       // `"use client"` that imports it changes with it (client-files.ts), and
       // the host sees any other one as a page renders it again. Under Vitest
@@ -1089,8 +1103,9 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
         const hasMiddleware =
           project.middlewareFile !== undefined && this.environment.name === environmentOf.rsc;
         if (id === `\0${middlewareId}`) {
-          const load = `() => import(${JSON.stringify(middlewareEntryId)})`;
-          return `export default ${hasMiddleware ? load : "undefined"};\n`;
+          if (!hasMiddleware) return "export default undefined;\n";
+          const entry = JSON.stringify(middlewareEntryId);
+          return `export default () => import(${entry});\n${hmrBoundary([entry])}`;
         }
         if (id === `\0${middlewareEntryId}`) {
           const code = hasMiddleware && (await project.loadMiddlewareEntry());
@@ -1109,12 +1124,15 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
           const entries = routes.flatMap((route, index) =>
             route.kind === listed
               ? [
-                  `  ${JSON.stringify(entryOf(route))}: ` +
-                    `() => import(${JSON.stringify(routeEntryPrefix + index)}),`,
+                  {
+                    name: JSON.stringify(entryOf(route)),
+                    entry: JSON.stringify(routeEntryPrefix + index),
+                  },
                 ]
               : [],
           );
-          return `export default {\n${entries.join("\n")}\n};\n`;
+          const lines = entries.map(({ name, entry }) => `  ${name}: () => import(${entry}),`);
+          return `export default {\n${lines.join("\n")}\n};\n${hmrBoundary(entries.map(({ entry }) => entry))}`;
         }
 
         const route = routes[Number(id.slice(routeEntryPrefix.length + 1))]!;
@@ -1153,6 +1171,8 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
       environments: environmentOf,
       entries: { ssr: "vitest-plugin-rsc/nextjs/ssr", browser: "vitest-plugin-rsc/nextjs/client" },
       emittedFiles: () => [...project.emittedFiles(), ...styles.builtFiles()],
+      rscModule: ownFile("rsc"),
+      isHostFile: (id) => builtHostFileOf(id, project.root, serverCode.isHostFile) !== undefined,
     }),
   ];
 }

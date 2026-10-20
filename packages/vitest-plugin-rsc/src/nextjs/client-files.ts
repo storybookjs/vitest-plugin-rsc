@@ -1,7 +1,6 @@
 import path from "node:path";
 import { hasDirective } from "@vitejs/plugin-rsc/transforms";
 import {
-  isCSSRequest,
   normalizePath,
   parseAstAsync,
   type EnvironmentModuleNode,
@@ -10,7 +9,7 @@ import {
 } from "vite";
 import { builtHostModuleUrl, hostModulePrefix } from "../host-module.ts";
 import { clientFileKeyExport } from "./client-file-key.ts";
-import { builtHostFileKey } from "./styles.ts";
+import { builtHostFileKey, isSwappedStylesheet } from "./styles.ts";
 
 // A file of the host is a test file or a setup file of Vitest. One with
 // `"use client"` is a client boundary, as a file with that directive is in
@@ -242,9 +241,7 @@ export function clientFiles(options: ClientFilesOptions): Plugin[] {
         order: "pre",
         handler({ file, modules, server }) {
           if (this.environment.name !== rsc) return;
-          const swapped = (node: EnvironmentModuleNode) =>
-            node.isSelfAccepting && isCSSRequest(node.url);
-          if (modules.length > 0 && modules.every(swapped)) return;
+          if (modules.length > 0 && modules.every(isSwappedStylesheet)) return;
           const changed = server.environments[browser]?.moduleGraph.getModulesByFile(file);
           if (!changed) return;
           const config = this.environment.getTopLevelConfig();

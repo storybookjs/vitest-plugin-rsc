@@ -62,7 +62,7 @@ Your assertions stay user-facing and your setup stays direct:
 ```tsx
 test("archive a note", async () => {
   // seed DB
-  await signInAs(testUser);
+  await signedInAs(testUser);
   await db.insert(notes).values({ ownerId: testUser.id, title: "Inbox triage" });
 
   // RSC -> pixels
@@ -321,11 +321,11 @@ import { renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
 
 import { db } from "#lib/db.ts";
 import { notes } from "#db/schema.ts";
-import { signInAs, testUser } from "#test/auth.ts";
+import { signedInAs, testUser } from "#test/auth.ts";
 import NewNotePage from "./page.tsx";
 
 test("validates a new note without losing entered content", async () => {
-  await signInAs(testUser);
+  await signedInAs(testUser);
   localStorage.setItem("theme", "dark");
 
   await db.insert(notes).values({
@@ -346,12 +346,12 @@ test("validates a new note without losing entered content", async () => {
 
 That single test sets up:
 
-- **Server-side state**: the signed-in user (`signInAs`) and a seeded database row (`db.insert`)
+- **Server-side state**: the signed-in user (`signedInAs`) and a seeded database row (`db.insert`)
 - **Browser-side state**: a client-side preference written to `localStorage`
 
 Setting server and browser state in the same setup is something a pure unit test cannot reach and a full E2E test can only do through the real UI.
 
-`vi.mock("#lib/db.ts")` in the setup file replaces the production database adapter with the Vitest `__mocks__` version next to it (`lib/__mocks__/db.ts`). The mock exposes a `db` reference and a `resetDb` helper that the setup file points at a fresh PGlite clone per test. See [Drizzle + PGlite](#example-drizzle--pglite) below for the wiring.
+`vi.mock("#lib/db.ts")` in the setup file replaces the production database adapter with the Vitest `__mocks__` version next to it (`lib/__mocks__/db.ts`). The mock exports `db`, on a PGlite database in memory, and `resetDb()`, which empties every table: the setup file calls it before each test. See [Drizzle + PGlite](#example-drizzle--pglite) below for the wiring.
 
 ### Router Hooks And Links
 
@@ -869,79 +869,26 @@ afterEach(() => {
 
 ### Example: Drizzle + PGlite
 
-PGlite runs Postgres in-process, so it works inside the browser test runtime, and every test can have its own database. This is how `playground/nextjs-notes-demo` does it.
+PGlite runs Postgres in-process, so it works inside the browser test runtime. This is how `playground/nextjs-notes-demo` does it: one PGlite database for each browser page that runs tests (with `isolate: false`, the test files of a worker share one), which every test empties first.
 
 Two files sit next to each other:
 
 - `lib/db.ts` — the database adapter your app code imports.
-- `lib/__mocks__/db.ts` — the test stand-in that `vi.mock("#lib/db.ts")` swaps in. Exposes `db` plus a `resetDb` setter so the setup file can point it at a fresh PGlite clone per test.
+- `lib/__mocks__/db.ts` — the test stand-in that `vi.mock("#lib/db.ts")` swaps in. It makes the PGlite database as the module loads, with the tables of the Drizzle schema, and exports `db`, Drizzle on that database, and `resetDb()`, which empties every table. Drizzle Kit, which turns the schema into SQL, runs in Node, so the Vitest config prepares the tables and hands them to the mock.
 
-```ts
-// lib/__mocks__/db.ts
-import type { DB } from "#lib/db.types.ts";
-
-let db: DB;
-
-function resetDb(value: DB) {
-  db = value;
-}
-
-export { db, resetDb };
-```
-
-Global setup generates SQL from the current Drizzle schema, in Node:
-
-```ts
-// vitest.global-setup.ts
-import type { TestProject } from "vitest/node";
-import { generateDrizzleJson, generateMigration } from "drizzle-kit/api";
-import * as schema from "./db/schema.ts";
-
-export async function setup(project: TestProject) {
-  const empty = generateDrizzleJson({});
-  const current = generateDrizzleJson(schema);
-  const statements = await generateMigration(empty, current);
-  project.provide("testSchemaSQL", statements.join("\n"));
-}
-
-declare module "vitest" {
-  export interface ProvidedContext {
-    testSchemaSQL: string;
-  }
-}
-```
-
-The setup file creates one migrated database, and clones it for every test:
+`resetDb()` empties the tables with `DELETE`, under `SET session_replication_role = replica`, so that the foreign keys do not fix the order of the tables. The setup file mocks the module and empties the database before each test:
 
 ```ts
 // vitest.setup.ts
-import { PGlite } from "@electric-sql/pglite";
-import { drizzle } from "drizzle-orm/pglite";
-import { afterAll, beforeAll, beforeEach, inject, vi } from "vitest";
-import * as schema from "#db/schema.ts";
+import { beforeEach, vi } from "vitest";
 import * as dbModule from "#lib/db.ts";
 
 vi.mock("#lib/db.ts");
 
 const { resetDb } = dbModule as typeof import("#lib/__mocks__/db.ts");
 
-let base: PGlite;
-
-beforeAll(async () => {
-  base = await PGlite.create("memory://");
-  await base.exec(inject("testSchemaSQL"));
-});
-
 beforeEach(async () => {
-  const clone = await base.clone();
-  if (!(clone instanceof PGlite)) {
-    throw new TypeError("Expected PGlite.clone() to return a PGlite instance");
-  }
-  resetDb(drizzle(clone, { schema }));
-});
-
-afterAll(async () => {
-  await base.close();
+  await resetDb();
 });
 ```
 
@@ -960,7 +907,7 @@ Everything that runs with the dev server runs from the build: pages and nodes, C
 - The files of the build name each other by relative paths. To serve the build from a path, build it with that `base`, or with `base: "./"`.
 - The plugin puts no path of the machine into the build. The files of a route are named from the root of the project, `app/layout.tsx`, and so are the paths of the Next config in the layers, like `configFile`, and the files that a compile error quotes. The same tree builds into the same files, byte for byte, in another directory as on another machine, so their content hashes hold. What the app puts in itself stays, like a path in `env` of `next.config`. A source map, with `build.sourcemap`, names its sources by the way from the map, as Vite names them.
 - `experimental.inlineCss` is not honoured in a build: the stylesheets are linked.
-- A file of the host with `"use client"`, like a file that the host renders, runs in the browser layer as with a dev server, with its stylesheets from `next-files.json`, and once for the document: a build has one module of the file. The packages of the host, `host.packages`, are the page's own in the build too: the browser layer imports them from the host's build, so the host and its files with the directive share one instance, like the spies of a testing package of the host.
+- A file of the host with `"use client"`, like a file that the host renders, runs in the browser layer as with a dev server, with its stylesheets from `next-files.json`, and once for the document: a build has one module of the file. The ssr layer has the Client Components that server code reaches: the ones the routes render, and the ones that a file of the host without the directive imports, which can render them in a node. A file with the directive that only the host's runtime imports, a module that is no file of `host.files`, is the browser layer's alone, so the ssr layer's file does not carry it, or what only it imports: see [A Static Build](docs/next-routes.md#a-static-build). The packages of the host, `host.packages`, are the page's own in the build too: the browser layer imports them from the host's build, so the host and its files with the directive share one instance, like the spies of a testing package of the host.
 - A host with pages of its own, like `index.html` and `callout.html` in `build.rolldownOptions.input`, gets them built as its pages: the layers build their own entries.
 
 A static host serves the build with these headers, by the path of a file in the directory of the build:
@@ -973,7 +920,7 @@ A static host serves the build with these headers, by the path of a file in the 
 
 `vitestPluginRSC()` on its own builds the same way, without Next.js: its two layers, from a page of the project that calls `renderServer()` of `vitest-plugin-rsc/testing-library`. Server Components, Client Components, Server Actions and the CSS of both run from the build, with React's production code. See [A Static Build](docs/architecture.md#a-static-build) and `playground/rsc-vitest-demo`.
 
-`playground/nextjs-e2e-demo` builds its app with a page of its own, `index.html`, that calls `renderServer()` as a test does, and one that renders a Client Component with `loadClientModule()`, `client.html`, and a test project opens the build in a browser from a server of files: see its `build-test/`. `playground/nextjs-host-demo` builds its two pages the same way, with its files of the host that have `"use client"` and a package of the host, and opens them in its own `build-test/`. `pnpm perf:static` measures what one page load of its build costs per route, in bytes, requests, round trips and time, for both builds, on localhost and over an emulated network: see [docs/performance.md](docs/performance.md#a-static-build-per-page-load).
+`playground/nextjs-e2e-demo` builds its app with a page of its own, `index.html`, that calls `renderServer()` as a test does, one that renders a Client Component with `loadClientModule()`, `client.html`, and one whose own module script does so, `example.html`, and a test project opens the build in a browser from a server of files: see its `build-test/`. `playground/nextjs-host-demo` builds its two pages the same way, with its files of the host that have `"use client"` and a package of the host, and opens them in its own `build-test/`. `pnpm perf:static` measures what one page load of its build costs per route, in bytes, requests, round trips and time, for both builds, on localhost and over an emulated network: see [docs/performance.md](docs/performance.md#a-static-build-per-page-load).
 
 ### API
 
@@ -1130,7 +1077,7 @@ For the full walkthrough, see [docs/next-routes.md](docs/next-routes.md). [docs/
 ## Playgrounds
 
 - `playground/nextjs-e2e-demo` — a small Next.js app with a test for every feature of the Next.js support. Most samples above come from its tests. Its `build-test/` builds the app with `vite build` and opens the build in a browser: see [A Static Build](#a-static-build).
-- `playground/nextjs-notes-demo` — a fuller Next.js notes app with Better Auth, Drizzle, PGlite test databases, and shadcn/ui. Its tests open whole routes with the database and the session mocked in the test runtime. This is the repository's acceptance app.
+- `playground/nextjs-notes-demo` — a fuller Next.js notes app with Better Auth, Drizzle, PGlite test databases, and shadcn/ui. Its tests open whole routes with the database mocked in the test runtime, and the rest of the app real: a test signs in with a Better Auth session on that database. This is the repository's acceptance app.
 - `playground/rsc-vitest-demo` — a minimal non-Next RSC app. Use this as the smallest end-to-end example of `vitest-plugin-rsc` on its own. Its `build-test/` builds the page of `host/main.tsx` with `vite build` and opens the build in a browser.
 - `playground/nextjs-host-demo` — the Next.js plugin in a Vite dev server without Vitest, as another host runs it. Its tests start that server and drive it with Playwright.
 
@@ -1139,7 +1086,7 @@ Vitest suites are wired through the root workspace, while each package or playgr
 ```bash
 pnpm test
 pnpm test --project nextjs-e2e-demo
-pnpm test --project nextjs-notes-demo-browser --project nextjs-notes-demo-node
+pnpm test --project nextjs-notes-demo-browser
 ```
 
 `VITEST_PLUGIN_RSC_BUILD=production` runs the two Next.js playgrounds as `next start` would, as CI does too.

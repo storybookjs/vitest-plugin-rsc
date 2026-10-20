@@ -180,6 +180,98 @@ test('a change of what a file with "use client" imports renders it again in plac
   expect(await page.evaluate(() => "__beforeTheChange" in window)).toBe(true);
 });
 
+// What Tailwind's PostCSS plugin does with a file it scans for class names:
+// the file is a dependency of the stylesheet, which has the CSS of what it
+// finds there. In Vite's module graph the stylesheet imports the file, and
+// the root layout of the app imports the stylesheet. `tone.css`, which the
+// stylesheet imports with `@import`, is part of its CSS.
+const tonePlugin = `const fs = require("node:fs");
+const path = require("node:path");
+
+module.exports = () => ({
+  postcssPlugin: "tone",
+  Once(root, { result }) {
+    if (!root.source.input.file.includes("/app/globals.css")) return;
+    const file = path.join(__dirname, "host/tone.tsx");
+    const [, tone] = /tone = "(.+)"/.exec(fs.readFileSync(file, "utf8"));
+    root.append(\`h1 { color: \${tone}; }\`);
+    result.messages.push({ type: "dependency", plugin: "tone", file });
+  },
+});
+module.exports.postcss = true;
+`;
+
+// A copy whose app's stylesheet depends on `host/tone.tsx`, with a host
+// that imports that stylesheet itself, as a framework's preview does, and
+// takes a change of its own modules in place. It keeps the `renderServer`
+// of each evaluation of its module.
+function serveToneCopy() {
+  return serveCopy((copy) => {
+    // Next's shape of a config of PostCSS: plugins by the name it requires.
+    fs.writeFileSync(
+      path.join(copy, "postcss.config.mjs"),
+      'export default { plugins: { "./postcss-tone.cjs": {} } };\n',
+    );
+    fs.writeFileSync(path.join(copy, "postcss-tone.cjs"), tonePlugin);
+    fs.writeFileSync(path.join(copy, "host/tone.tsx"), 'export const tone = "rgb(255, 0, 0)";\n');
+    fs.writeFileSync(path.join(copy, "app/tone.css"), "h2 { color: rgb(255, 0, 0); }\n");
+    const globals = path.join(copy, "app/globals.css");
+    fs.writeFileSync(globals, `@import "./tone.css";\n${fs.readFileSync(globals, "utf8")}`);
+    const main = path.join(copy, "host/main.tsx");
+    fs.writeFileSync(
+      main,
+      `import "../app/globals.css";\n${fs.readFileSync(main, "utf8")}\n` +
+        "Object.assign(window, { __renderServers: [...((window as { __renderServers?: unknown[] }).__renderServers ?? []), renderServer] });\n" +
+        "import.meta.hot?.accept();\n",
+    );
+  });
+}
+
+// The CSS of the stylesheet that the host imports itself: Vite's `<style>`.
+const hostStylesheet = (page: Page) =>
+  page.evaluate(
+    () => document.querySelector('style[data-vite-dev-id$="/app/globals.css"]')?.textContent,
+  );
+
+test("a change of a file that a stylesheet of the app depends on updates the stylesheet in place", async ({
+  page,
+}) => {
+  const { copy, url } = await serveToneCopy();
+  await openPage(page, url);
+  expect(await hostStylesheet(page)).toContain("h1 { color: rgb(255, 0, 0)");
+  fs.writeFileSync(path.join(copy, "host/tone.tsx"), 'export const tone = "rgb(0, 128, 0)";\n');
+  await expect
+    .poll(() => hostStylesheet(page), { timeout: 30_000 })
+    .toContain("h1 { color: rgb(0, 128, 0)");
+  expect(await page.evaluate(() => "__beforeTheChange" in window)).toBe(true);
+  // The host evaluates its module again after a change of it, with the
+  // plugin's runtime that it had: the change of the stylesheet, which a
+  // route imports, left the runtime's modules as they were.
+  await page.evaluate(() => delete (window as HostWindow).__hostState);
+  fs.appendFileSync(path.join(copy, "host/main.tsx"), "\n// changed\n");
+  await page.waitForFunction(hostState, undefined, { timeout: 30_000 });
+  expect(await page.evaluate(hostState), await page.evaluate(hostError)).toBe("ready");
+  const renderServers = () =>
+    page.evaluate(() => {
+      const [first, ...rest] = (window as { __renderServers?: unknown[] }).__renderServers ?? [];
+      return { evaluations: rest.length + 1, same: rest.every((again) => again === first) };
+    });
+  expect(await renderServers()).toEqual({ evaluations: 2, same: true });
+  expect(await page.evaluate(() => "__beforeTheChange" in window)).toBe(true);
+});
+
+// A stylesheet that the app's stylesheet imports is a part of its CSS, which
+// a route links: a change of it loads the host's document again, as a change
+// of the app's stylesheet does.
+test("a change of a stylesheet that a stylesheet of the app imports loads the host's document again", async ({
+  page,
+}) => {
+  const { copy, url } = await serveToneCopy();
+  await openPage(page, url);
+  fs.writeFileSync(path.join(copy, "app/tone.css"), "h2 { color: rgb(0, 128, 0); }\n");
+  await loadedAgain(page, url);
+});
+
 // Two readers of one file with "use client": the host, with
 // `loadClientModule()`, and another file of the host that imports it in the
 // browser layer, as a docs page imports the stories it shows. Both have the
