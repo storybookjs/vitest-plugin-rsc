@@ -17,7 +17,7 @@
 /storybook-static
 
 # the data dir of the database of the tests and the stories: see test/db-data-dir.ts
-/lib/__mocks__/db.tgz*
+/test/db.tgz*
 
 # misc
 .DS_Store

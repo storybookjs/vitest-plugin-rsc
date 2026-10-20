@@ -3,7 +3,7 @@ import { getTableName, is } from "drizzle-orm";
 import { PgTable } from "drizzle-orm/pg-core";
 import { drizzle } from "drizzle-orm/pglite";
 import * as schema from "#db/schema.ts";
-import dataDirUrl from "#lib/__mocks__/db.tgz?url";
+import dataDirUrl from "#test/db.tgz?url";
 import type { db as appDb } from "../db.ts";
 
 // `#lib/db.ts` in the tests and the stories, which vitest.setup.ts and
@@ -20,10 +20,10 @@ import type { db as appDb } from "../db.ts";
 const response = await fetch(new URL(dataDirUrl, import.meta.url));
 if (!response.ok) throw new Error(`The data dir of the database: ${response.status}`);
 
-// Made as the module loads, so that PGlite starts while the rest of the app
-// loads. A query waits until it has. Shared buffers of 16 MB, where initdb
-// writes 128 MB, which Postgres takes as it starts: the database is about
-// 7 MB.
+// Made as the module loads, once the data dir is there: what imports the
+// database waits for it, as PGlite takes it as a Blob. A query waits until
+// PGlite has started. Shared buffers of 16 MB, where initdb writes 128 MB,
+// which Postgres takes as it starts: the database is about 7 MB.
 const client = new PGlite({
   loadDataDir: await response.blob(),
   startParams: [...PGlite.defaultStartParams, "-c", "shared_buffers=16MB"],
