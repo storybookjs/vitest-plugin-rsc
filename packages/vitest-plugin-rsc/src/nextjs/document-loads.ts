@@ -21,18 +21,6 @@ function noRouter(url: URL): Error {
   );
 }
 
-// The app can leave its page without its router: `location.assign()`, a
-// `<form>` or an `<a>` that React does not handle, Next's own fallback when a
-// client-side navigation is not possible. For a browser that is a page load.
-// Here it would replace the test with the app, so load the page the
-// way `renderServer()` does instead.
-type NavigateEvent = Event & {
-  navigationType: "push" | "replace" | "reload" | "traverse";
-  destination: { url: string; sameDocument: boolean };
-  hashChange: boolean;
-  formData: FormData | null;
-  downloadRequest: string | null;
-};
 // Vite's client loads the document again after a change that nothing takes
 // in place. With a page open that would be a reload of the page, which the
 // listener below loads as the app's, at the page's URL: the host's document
@@ -60,6 +48,18 @@ function reloadsDocument(path: string | undefined): boolean {
   );
 }
 
+// The app can leave its page without its router: `location.assign()`, a
+// `<form>` or an `<a>` that React does not handle, Next's own fallback when a
+// client-side navigation is not possible. For a browser that is a page load.
+// Here it would replace the test with the app, so load the page the
+// way `renderServer()` does instead.
+type NavigateEvent = Event & {
+  navigationType: "push" | "replace" | "reload" | "traverse";
+  destination: { url: string; sameDocument: boolean };
+  hashChange: boolean;
+  formData: FormData | null;
+  downloadRequest: string | null;
+};
 (window as { navigation?: EventTarget }).navigation?.addEventListener("navigate", (event) => {
   const { destination, hashChange, formData, downloadRequest } = event as NavigateEvent;
   // A navigation of Next's router on the client, in the layouts of a route,

@@ -348,7 +348,7 @@ export async function renderServer(
   const url = new URL(options.url ?? "/", window.location.origin);
   const headers = new Headers(options.headers);
   // A `cookie` header sets cookies in the store with the document, and every
-  // request sends the cookies of the store: see `loadPage()`.
+  // request sends the cookies of the store: see `loadPage()` in page.ts.
   const cookie = headers.get("cookie");
   headers.delete("cookie");
   // Each request after the document says itself what it accepts.
@@ -421,7 +421,7 @@ export async function renderServer(
   }
   // The container becomes the node's: React hydrates all of it, and leaving
   // the node empties it. The document is the test's to keep, and so is a
-  // container with content: see `loadPage()`.
+  // container with content: see `loadPage()` in page.ts.
   if (options.container === document.body || options.container === document.documentElement) {
     throw new Error(
       "vitest-plugin-rsc: the container of a node cannot be the <body> or the <html> of the " +

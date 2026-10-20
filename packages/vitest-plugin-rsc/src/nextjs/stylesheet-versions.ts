@@ -15,7 +15,8 @@ import {
 // path is encoded: React adds a link for every render of a page with
 // another URL, and keeps the ones before. The links that the files of the
 // host made are the graph's to move, also while a page has parked them
-// (client-graph.ts).
+// (client-graph.ts). Evaluating this module moves the page's links on each
+// change.
 
 /**
  * The URLs of the versions of now, by the stylesheet they are of: see
