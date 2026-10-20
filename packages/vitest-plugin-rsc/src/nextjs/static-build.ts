@@ -69,7 +69,7 @@ export function nextStaticBuild(options: NextStaticBuildOptions): Plugin {
       return withStaticBuild({
         entries: { [ssr]: options.entries.ssr, [browser]: options.entries.browser },
         // Next's own files have directives for Turbopack.
-        directives: ["turbopack"],
+        directives: ["use turbopack: no side effects"],
         // The server's platform comes before a module of Next's server.
         strictExecutionOrder: true,
         // What Next's loaders made for the browser, fonts and images, by the
