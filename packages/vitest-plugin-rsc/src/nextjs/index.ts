@@ -13,7 +13,7 @@ import { NodeOnPage } from "./node-on-page.ts";
 import { PageStore } from "./page-store.ts";
 import { openedAt, registry, type Opened } from "./registry.ts";
 import { takesRequest } from "./server-in-front.ts";
-import { ssrLayer } from "./server-layers.ts";
+import { ssrLayer, ssrLayerNow } from "./server-layers.ts";
 import { PageStorage, storageOf } from "./storage.ts";
 
 export { loadClientModule } from "./client-graph.ts";
@@ -34,16 +34,17 @@ void ssrLayer.then(
 // open: see `handledByServer()`.
 let generation = 0;
 
-// What Next's server answers a request with, once the ssr layer is there. A
-// request that waited for the layer while a page was left is one of that
-// page, and is dropped, as `settleRequests()` in ssr.ts drops one that waited
-// for the server then. A layer that failed to load fails the request.
+// What Next's server answers a request with, once the ssr layer is there,
+// which a build then fetches at once. A request that waited for the layer
+// while a page was left is one of that page, and is dropped, as
+// `settleRequests()` in ssr.ts drops one that waited for the server then. A
+// layer that failed to load fails the request.
 async function handledByServer(
   ...[request, options]: Parameters<SsrLayer["handleRequest"]>
 ): Promise<Response | undefined> {
   if (ssr) return ssr.handleRequest(request, options);
   const sent = generation;
-  const layer = await ssrLayer;
+  const layer = await ssrLayerNow();
   if (sent !== generation) {
     throw new DOMException("The page was left before the server responded.", "AbortError");
   }
