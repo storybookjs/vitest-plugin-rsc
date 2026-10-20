@@ -139,7 +139,7 @@ type Opening = {
   cookie: string | null;
   /** For a node: what `rerender()` waits for. */
   nodeOnPage?: NodeOnPage;
-  /** What stops the load: see `RequestOptions.signal`. */
+  /** What stops the load: see `RequestOptions.signal` in index.ts. */
   signal?: AbortSignal;
   /** Where the page, and the pages the app loads from it, report their errors. */
   errors: unknown[];

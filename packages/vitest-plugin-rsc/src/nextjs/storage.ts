@@ -99,8 +99,6 @@ function storageOf(items: () => Map<string, string>): Storage {
   return storage;
 }
 
-// The items of the page's `localStorage` and `sessionStorage`, until the test
-// ends: `cleanup()` makes a new one, as it makes a new store.
 let storage = new PageStorage();
 
 /** Forgets the items: the page's storage is empty from here on. */
