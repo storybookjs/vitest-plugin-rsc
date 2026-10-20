@@ -51,7 +51,11 @@ const demo = path.join(repoRoot, "playground", "nextjs-notes-demo");
 
 // A story of a file with `"use client"`, a story of a page of the app, and
 // the docs page of the first, which renders its stories inline.
-const defaultStories = ["ui-button--pressed", "pages-notes--with-notes", "ui-button--docs"];
+const defaultStories = [
+  "components-ui-button--pressed",
+  "app-notes-page--with-notes",
+  "components-ui-button--docs",
+];
 
 type Condition = "cold" | "warm";
 

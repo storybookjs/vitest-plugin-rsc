@@ -59,6 +59,8 @@ const layersDir = "vitest-plugin-rsc";
  * `index.html` of the host, that a site serves without a long cache.
  */
 const modulesFile = "modules.json";
+/** Where that file of a layer is, in the directory of the build. */
+const modulesPath = (layer: string) => `${layersDir}/${layer}/${modulesFile}`;
 
 // A build can be served from any path, so a file of it names another one by
 // the way from itself. These stand in for the way from a file of the build to
@@ -202,6 +204,24 @@ function hostModulesOf(bundle: Rolldown.OutputBundle): Set<string> {
   return found;
 }
 
+// Whether a page whose scripts start with `chunk` may load `id`: by a chain
+// of imports, static or dynamic, of the chunks of `bundle`.
+function reaches(chunk: Rolldown.OutputChunk, id: string, bundle: Rolldown.OutputBundle): boolean {
+  const seen = new Set<string>();
+  const queue = [chunk];
+  for (const current of queue) {
+    if (current.moduleIds.includes(id)) return true;
+    for (const fileName of [...current.imports, ...current.dynamicImports]) {
+      const next = bundle[fileName];
+      if (next?.type === "chunk" && !seen.has(fileName)) {
+        seen.add(fileName);
+        queue.push(next);
+      }
+    }
+  }
+  return false;
+}
+
 // The layers a build has, said in words: the rsc layer and the others.
 const countOf = (layers: number) => ["two", "three"][layers - 2] ?? String(layers);
 
@@ -216,8 +236,19 @@ export function staticBuild(options: StaticBuildOptions): Plugin {
   // is built.
   let layers = options.layers;
   const runnerLayers = () => Object.keys(layers.entries);
+  // In the order a tab fetches their files, which share its network: the
+  // browser layer, which every page runs, first. See built-layers.ts.
+  const fetchOrder = () => [
+    browser,
+    ...runnerLayers()
+      .filter((name) => name !== browser)
+      .sort(),
+  ];
   // Set once the config is resolved.
   let manager!: Manager;
+  // Where the build is served from, as the config says: `./` or empty for
+  // anywhere. Set once the config is resolved.
+  let base = "/";
   // What the builds of the layers that run through a module runner made, by
   // environment: their modules by id, and their other files. A module is
   // there once it is rewritten for the runner, which the build of its layer
@@ -365,6 +396,7 @@ export function staticBuild(options: StaticBuildOptions): Plugin {
       const api = getPluginApi(resolved);
       if (!api) throw new Error("vitest-plugin-rsc: a static build needs Vite RSC's plugin.");
       manager = api.manager;
+      base = resolved.base;
       // The layers are read from their bundles, in `generateBundle`, and
       // written as one file each: see `buildApp()`. Vite writes nothing of
       // them. Set here, where no plugin of the host changes it anymore.
@@ -427,7 +459,7 @@ export function staticBuild(options: StaticBuildOptions): Plugin {
           const ids = [...modules.keys()].sort();
           const codes = await Promise.all(ids.map((id) => modules.get(id)!));
           write(
-            `${layersDir}/${name}/${modulesFile}`,
+            modulesPath(name),
             JSON.stringify(Object.fromEntries(ids.map((id, index) => [id, codes[index]]))),
           );
         }
@@ -501,24 +533,51 @@ export function staticBuild(options: StaticBuildOptions): Plugin {
       if (id === `\0${layersId}`) return "export default undefined;\n";
       if (id === `\0${layersId}/built`) {
         // A file of a layer is named from the directory of the build.
-        const entries = runnerLayers()
-          .sort()
-          .map(
-            (name) =>
-              `  ${JSON.stringify(name)}: { base: directory, entries: ${JSON.stringify(
-                Object.fromEntries(
-                  Object.entries(inputOf(name)).map(([input, id]) => [
-                    id,
-                    `${layersDir}/${name}/${input}.js`,
-                  ]),
-                ),
-              )}, modules: ${JSON.stringify(`${layersDir}/${name}/${modulesFile}`)} },`,
-          );
+        const entries = fetchOrder().map(
+          (name) =>
+            `  ${JSON.stringify(name)}: { base: directory, entries: ${JSON.stringify(
+              Object.fromEntries(
+                Object.entries(inputOf(name)).map(([input, id]) => [
+                  id,
+                  `${layersDir}/${name}/${input}.js`,
+                ]),
+              ),
+            )}, modules: ${JSON.stringify(modulesPath(name))} },`,
+        );
         return (
           `const directory = new URL(${buildDirPlaceholder}, import.meta.url).href;\n` +
           `export default {\n${entries.join("\n")}\n};\n`
         );
       }
+    },
+    // A page of the host's build whose scripts load the layers starts the
+    // file of the first one from its HTML, before any script has loaded: a
+    // preload that the tab's `fetch` of it takes (see built-layers.ts), by
+    // the URL of the base, or for a build that is served from anywhere by
+    // the way from the HTML to the directory of the build, as Vite names the
+    // scripts of the page. Not the others': they wait for the first one. A
+    // dev server has no such file.
+    transformIndexHtml: {
+      // Once Vite has resolved the URLs of the HTML, which this one is not.
+      order: "post",
+      handler(_html, { path: page, chunk, bundle }) {
+        if (!chunk || !bundle || !reaches(chunk, `\0${layersId}/built`, bundle)) return;
+        return [
+          {
+            tag: "link",
+            attrs: {
+              rel: "preload",
+              as: "fetch",
+              // The mode of a `fetch()`: without it the browser fetches twice.
+              crossorigin: true,
+              href:
+                (base === "./" || base === "" ? toBuildDir(page.slice(1)) : base) +
+                modulesPath(browser),
+            },
+            injectTo: "head-prepend",
+          },
+        ];
+      },
     },
     // Where the directory of the build is, from the file that asks.
     renderChunk(code, chunk) {

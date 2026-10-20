@@ -532,6 +532,8 @@ describe.for(builds)("a static build, $build", ({ build, env }) => {
       await route.continue().catch(() => {});
     });
     onTestFinished(() => release());
+    // Once the browser layer's file has ended: see the test after this one.
+    const ssrAsked = page.waitForRequest("**/vitest-plugin-rsc/next_ssr/modules.json");
     // A file of Next's build, which the matcher of the proxy leaves out: the
     // image that app/images imports.
     const media = fs
@@ -542,6 +544,7 @@ describe.for(builds)("a static build, $build", ({ build, env }) => {
     page.on("request", (request) => requested.push(new URL(request.url()).pathname));
     await page.goto(`${site.url}?${new URLSearchParams({ fetch: file })}`);
     await page.waitForFunction(() => (window as { __hostState?: string }).__hostState);
+    await ssrAsked;
     const host = await page.evaluate((file) => {
       const { __hostState, __hostFetched } = window as {
         __hostState?: string;
@@ -567,6 +570,39 @@ describe.for(builds)("a static build, $build", ({ build, env }) => {
         /\/(next-middleware-entry|instrumentation)-[^/]*\.js$|next-stylesheets\.json$/.test(path),
       ),
     ).toEqual([]);
+  });
+
+  // The files of the layers share the network: the ssr layer's waits for the
+  // browser layer's, which every page runs, unless a request needs the ssr
+  // layer first. A page that the host opens at once is such a request: its
+  // file starts while the browser layer's is still held.
+  test("starts the ssr layer at once for a page that the host opens before the browser layer has loaded", async ({
+    page,
+  }) => {
+    await keepResources(page);
+    let release!: () => void;
+    const released = new Promise<void>((resolve) => (release = resolve));
+    await page.route("**/vitest-plugin-rsc/react_client/modules.json", async (route) => {
+      await released;
+      // Not for a page that a failed test has closed.
+      await route.continue().catch(() => {});
+    });
+    onTestFinished(() => release());
+    const ssrAsked = page.waitForRequest("**/vitest-plugin-rsc/next_ssr/modules.json");
+    const opened = open(page, site, "/notes");
+    await ssrAsked;
+    release();
+    await opened;
+    await heading(page, "Notes");
+    const requests = await resources(page);
+    const timing = (path: string) => {
+      const found = requests.filter((request) => request.pathname === path);
+      expect(found, path).toHaveLength(1);
+      return found[0]!;
+    };
+    const browserLayer = timing("/vitest-plugin-rsc/react_client/modules.json");
+    const ssrLayer = timing("/vitest-plugin-rsc/next_ssr/modules.json");
+    expect(ssrLayer.startTime).toBeLessThan(browserLayer.responseEnd);
   });
 
   test("has every file the page asks for", async ({ page }) => {
