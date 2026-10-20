@@ -24,6 +24,7 @@ import { Input } from "#components/ui/input.tsx";
 import { Textarea } from "#components/ui/textarea.tsx";
 import { requireUser } from "#lib/auth-session.ts";
 import { db } from "#lib/db.ts";
+import { ForgetFlash } from "#components/forget-flash.tsx";
 import { getForm, setForm } from "#lib/form-flash.ts";
 import { notes } from "#db/schema.ts";
 
@@ -38,6 +39,7 @@ export default async function NewNotePage() {
 
   return (
     <main className="relative mx-auto flex w-full max-w-2xl flex-1 flex-col px-4 pt-8 pb-16 sm:px-6 sm:pt-12 sm:pb-24">
+      <ForgetFlash id={form.flashId} />
       <div
         aria-hidden
         className="pointer-events-none absolute inset-x-0 -top-12 -z-10 h-[320px] bg-[radial-gradient(60%_60%_at_50%_0%,oklch(0.94_0.08_82/0.6),transparent_70%)] dark:bg-[radial-gradient(60%_60%_at_50%_0%,oklch(0.4_0.08_75/0.3),transparent_70%)]"

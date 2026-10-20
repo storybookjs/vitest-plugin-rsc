@@ -30,11 +30,14 @@ type FieldErrors = Record<string, string[] | undefined>;
 type OldInput = Record<string, string | string[] | undefined>;
 
 type FormFlash = {
+  id: string;
   errors: FieldErrors;
   old: OldInput;
 };
 
 export type FlashedForm<TSchema extends z.ZodType> = {
+  /** The id of the flash the form shows, for `<ForgetFlash>`: new for each. */
+  flashId: string | undefined;
   old: OldValues<TSchema>;
   errors: ErrorValues<TSchema>;
 };
@@ -74,27 +77,24 @@ function isOldValue(value: unknown): value is OldInput[string] {
 function isFormFlash(value: unknown): value is FormFlash {
   return (
     isRecord(value) &&
+    typeof value.id === "string" &&
     isFieldRecord(value.errors, isErrorValue) &&
     isFieldRecord(value.old, isOldValue)
   );
-}
-
-function emptyFlash(): FormFlash {
-  return { errors: {}, old: {} };
 }
 
 function encodeFlash(flash: FormFlash) {
   return encodeURIComponent(JSON.stringify(flash));
 }
 
-function decodeFlash(value: string | null): FormFlash {
-  if (!value) return emptyFlash();
+function decodeFlash(value: string | null): FormFlash | undefined {
+  if (!value) return undefined;
 
   try {
     const decoded = JSON.parse(decodeURIComponent(value)) as unknown;
-    return isFormFlash(decoded) ? decoded : emptyFlash();
+    return isFormFlash(decoded) ? decoded : undefined;
   } catch {
-    return emptyFlash();
+    return undefined;
   }
 }
 
@@ -131,12 +131,13 @@ function fieldProxy<TValues extends object>(getValue: (name: string) => unknown)
   ) as TValues;
 }
 
-function makeForm<TSchema extends z.ZodType>(flash: FormFlash): FlashedForm<TSchema> {
+function makeForm<TSchema extends z.ZodType>(flash: FormFlash | undefined): FlashedForm<TSchema> {
   return {
-    old: fieldProxy<OldValues<TSchema>>((name) => flash.old[name]),
+    flashId: flash?.id,
+    old: fieldProxy<OldValues<TSchema>>((name) => flash?.old[name]),
     errors: fieldProxy<ErrorValues<TSchema>>((name) => {
-      const messages = flash.errors[name];
-      return Array.isArray(flash.old[name]) ? messages : messages?.[0];
+      const messages = flash?.errors[name];
+      return Array.isArray(flash?.old[name]) ? messages : messages?.[0];
     }),
   };
 }
@@ -160,6 +161,7 @@ export async function setForm<TSchema extends z.ZodType>(
     await setFlashCookie(
       formFlashKey(options.id),
       encodeFlash({
+        id: crypto.randomUUID(),
         errors: result.error.flatten().fieldErrors,
         old: collectOldInput(formData, options),
       }),
