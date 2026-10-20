@@ -202,7 +202,12 @@ test("lets go of a page that the test has left, with all of its modules", async 
   await expectCollected();
 });
 
-test("lets go of the last page after cleanup(), with no page after it", async () => {
+// Not yet: Next's client sets globals on `window` as it loads and hydrates,
+// `next`, `nd` and `_N_E_STYLE_LOAD`, which reach its router and its root.
+// The next page sets its own in their place; with no page after it, they
+// keep the last one. A page takes back what it set on the document, not on
+// `window`, where a test or a host sets its own globals too.
+test.fails("lets go of the last page after cleanup(), with no page after it", async () => {
   // A page after another: V8 may keep the first page whose objects extend a
   // shape of the tab, see `left`.
   await renderServer({ url: "/" });
