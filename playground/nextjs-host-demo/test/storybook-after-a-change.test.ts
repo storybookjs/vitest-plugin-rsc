@@ -143,12 +143,14 @@ test("a client story has the project's decorator after a change of its file", as
   const preview = await watchPreview(page);
   const canvas = await openStory(page, site!.url, "press-button--labelled");
   await preview.since("press-button--labelled");
+  await mark(canvas);
   change("stories/press-button.stories.tsx", 'label: "Labelled"', 'label: "Relabelled"');
   // The components of the story file and of the preview file, both as the
   // browser layer evaluated them after the change.
   const button = canvas.locator("#storybook-root").getByRole("button", { name: "Relabelled: 0" });
   await expect.poll(() => button.getAttribute("data-theme"), { timeout: 30_000 }).toBe("storybook");
   expect(await preview.afterSave()).toEqual({ rendered: ["press-button--labelled"], loads: 0 });
+  expect(await canvas.evaluate(() => "__marked" in window)).toBe(true);
 });
 
 // Storybook's Vite builder loads the preview again after any change of the
@@ -236,6 +238,7 @@ test("a page story renders again after a change of its file", async ({ page }) =
   const preview = await watchPreview(page);
   const canvas = await openStory(page, site!.url, "home--home");
   await preview.since("home--home");
+  await mark(canvas);
   change("stories/home.stories.tsx", 'url: "/"', 'url: "/?changed"');
   await expect.poll(() => new URL(canvas.url()).search, { timeout: 30_000 }).toBe("?changed");
   expect(await storyRun(page, canvas, "home--home")).toMatchObject({
@@ -243,6 +246,7 @@ test("a page story renders again after a change of its file", async ({ page }) =
     reports: [],
   });
   expect(await preview.afterSave()).toEqual({ rendered: ["home--home"], loads: 0 });
+  expect(await canvas.evaluate(() => "__marked" in window)).toBe(true);
 });
 
 test("a client story renders once after a change of a component of the preview file", async ({

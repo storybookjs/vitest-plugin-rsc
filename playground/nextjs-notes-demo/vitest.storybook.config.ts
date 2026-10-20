@@ -22,6 +22,17 @@ export const nextjsNotesStorybookProjects = [
   defineProject({
     root,
     test: {
+      name: "nextjs-notes-demo-storybook-after-a-change",
+      include: ["e2e/storybook-after-a-change.test.ts"],
+      environment: "node",
+      testTimeout: 120_000,
+      hookTimeout: 120_000,
+      globalSetup,
+    },
+  }),
+  defineProject({
+    root,
+    test: {
       name: "nextjs-notes-demo-storybook-build",
       include: ["e2e/storybook-build.test.ts"],
       environment: "node",
