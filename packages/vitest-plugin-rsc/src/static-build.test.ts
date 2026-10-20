@@ -1019,7 +1019,7 @@ test("leaves out an import that a build which only looks cannot find", () => {
 function parsedDirective(plugin: ReturnType<typeof createPlugin>, directive: string) {
   const id = `/app/${directive.replace(/\W+/g, "-")}.js`;
   const code = `/* © ${directive} */\n"${directive}";\nexport const a = 1;\n`;
-  (plugin.moduleParsed as Hook)({ id, code });
+  call(plugin.moduleParsed, names.browser, { id, code });
   return {
     code: "MODULE_LEVEL_DIRECTIVE",
     message: 'The semantics of the module level directive "use client" may not be preserved',
@@ -1062,7 +1062,12 @@ test("finds the directive of a warning where Rolldown parsed it", async () => {
     plugins: [
       // A plugin before the bundler that moves the directive.
       { name: "comment", transform: (code) => `/* é ✓ 😀 */\n${code}` },
-      { name: "static-build", moduleParsed: plugin.moduleParsed as Hook },
+      {
+        name: "static-build",
+        moduleParsed(info) {
+          call(plugin.moduleParsed, names.browser, info);
+        },
+      },
     ],
     onwarn: (warning) =>
       config.build.rolldownOptions.onwarn(warning as Warning, (shownWarning) =>

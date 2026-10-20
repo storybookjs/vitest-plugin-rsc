@@ -173,9 +173,6 @@ export type StaticBuildOptions = {
 // `buildApp()` does, and its examples of a custom `buildApp()`.
 type Manager = NonNullable<ReturnType<typeof getPluginApi>>["manager"];
 
-/** What `moduleRunnerTransform()` makes of `import.meta`. */
-const importMeta = "__vite_ssr_import_meta__";
-
 // A module of a build as a module runner takes it. A runner asks for an
 // import as the code names it, and resolves a relative `import()` against
 // what the importer was asked by, which for a build is not always a path: a
@@ -187,21 +184,20 @@ export async function toRunnerModule(
   chunk: Pick<Rolldown.OutputChunk, "fileName" | "code">,
 ): Promise<string> {
   const id = `/${chunk.fileName}`;
-  const resolved = await withResolvedImports(chunk.code, path.posix.dirname(id));
-  const transformed = await moduleRunnerTransform(resolved, null, id, resolved);
-  const code = transformed?.code ?? resolved;
-  // A runner has an `import.meta.resolve()` that throws. Vite asks it where
-  // the CSS of a chunk is, before it takes the URL of the module for that.
-  return code.includes(`${importMeta}.resolve`)
-    ? `${importMeta}.resolve = (specifier) => new URL(specifier, ${importMeta}.url).href;\n${code}`
-    : code;
+  const source = await runnerSource(chunk.code, path.posix.dirname(id));
+  const transformed = await moduleRunnerTransform(source, null, id, source);
+  return transformed?.code ?? source;
 }
 
-// The code of a module of `directory`, with the imports it names by a way
-// from there by their path: `import`, `export … from` and `import()` of a
-// string, also of a template literal that is one.
-async function withResolvedImports(code: string, directory: string): Promise<string> {
+// The code of a chunk of `directory` as a runner takes it, before Vite
+// transforms it: with the imports it names by a way from there by their path,
+// `import`, `export … from` and `import()` of a string, also of a template
+// literal that is one. And with an `import.meta.resolve()` where it asks for
+// one: a runner's throws, and Vite asks it where the CSS of a chunk is,
+// before it takes the URL of the module for that.
+async function runnerSource(code: string, directory: string): Promise<string> {
   const sources: { start: number; end: number; specifier: string }[] = [];
+  let resolvesImportMeta = false;
   const add = (source: ESTree.Expression | ESTree.StringLiteral | null) => {
     const specifier =
       source?.type === "Literal"
@@ -218,13 +214,26 @@ async function withResolvedImports(code: string, directory: string): Promise<str
     ExportAllDeclaration: (node) => add(node.source),
     ExportNamedDeclaration: (node) => add(node.source),
     ImportExpression: (node) => add(node.source),
+    MemberExpression: (node) => {
+      const { object, property } = node;
+      if (
+        object.type === "MetaProperty" &&
+        object.meta.name === "import" &&
+        property.type === "Identifier" &&
+        property.name === "resolve"
+      ) {
+        resolvesImportMeta = true;
+      }
+    },
   }).visit(await parseAstAsync(code));
   // From the end, so that the offsets of the ones before stay.
   for (const { start, end, specifier } of sources.sort((a, b) => b.start - a.start)) {
     const resolved = JSON.stringify(path.posix.resolve(directory, specifier));
     code = code.slice(0, start) + resolved + code.slice(end);
   }
-  return code;
+  return resolvesImportMeta
+    ? `import.meta.resolve = (specifier) => new URL(specifier, import.meta.url).href;\n${code}`
+    : code;
 }
 
 // The modules of the page that the chunks of a layer import, by the import
@@ -535,6 +544,7 @@ export function staticBuild(options: StaticBuildOptions): Plugin {
       );
     },
     moduleParsed(info) {
+      if (this.environment.mode !== "build") return;
       parsed.set(info.id, info);
     },
     buildStart() {
