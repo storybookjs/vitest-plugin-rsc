@@ -14,8 +14,12 @@ import type { db as appDb } from "../db.ts";
 declare const __SCHEMA_SQL__: string;
 
 // Made as the module loads, so that PGlite downloads and starts while the
-// rest of the app loads. A query waits until it has.
-const client = new PGlite("memory://");
+// rest of the app loads. A query waits until it has. Shared buffers of
+// 16 MB, where initdb writes 128 MB, which Postgres takes as it starts: the
+// database is about 7 MB.
+const client = new PGlite("memory://", {
+  startParams: [...PGlite.defaultStartParams, "-c", "shared_buffers=16MB"],
+});
 const created = client.exec(__SCHEMA_SQL__);
 
 // Drizzle on PGlite, where the app has Drizzle on node-postgres: the same
