@@ -8,7 +8,9 @@ import { db } from "../app/lib/notes.ts";
 // Component of the app that calls a Server Action, and one of the host. That
 // one is imported as the node renders: a file of the host with "use client"
 // is evaluated in the browser layer before the module that imports it, and
-// the page of the host opens a page of the app before that layer has loaded.
+// the page of the host opens a page of the app before that layer has loaded
+// (the build test "starts the ssr layer at once for a page that the host
+// opens before the browser layer has loaded").
 async function HostNode({ id }: { id: string }) {
   const note = await db.getNote(id);
   const { HostBadge } = await import("./badge.tsx");

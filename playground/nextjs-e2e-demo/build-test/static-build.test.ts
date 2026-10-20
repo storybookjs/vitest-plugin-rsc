@@ -210,6 +210,11 @@ describe.for(builds)("a static build, $build", ({ build, env }) => {
   }) => {
     await page.goto(`${site.url}example.html`);
     await page.waitForFunction(() => (window as { __hostState?: string }).__hostState);
+    const host = await page.evaluate(() => {
+      const state = window as { __hostState?: string; __hostError?: unknown };
+      return { state: state.__hostState, error: String(state.__hostError) };
+    });
+    expect(host.state, host.error).toBe("ready");
     await page.locator("#host-root").getByText("An example of the host").waitFor();
   });
 

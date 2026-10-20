@@ -30,7 +30,7 @@ test("gives the static build Next's layers, its directives, its order and its fi
       directives: ["use turbopack: no side effects"],
       strictExecutionOrder: true,
       files: emittedFiles,
-      references: { next_ssr: expect.any(Function) },
+      clientReferences: { next_ssr: expect.any(Function) },
     }),
   );
   // A dev server is not a build.

@@ -62,7 +62,7 @@ export type NextStaticBuildOptions = {
   emittedFiles(): { pathname: string; body: Uint8Array }[];
   /** The plugin's module of the rsc layer, which renders the routes: rsc.ts. */
   rscModule: string;
-  /** Whether a module of the rsc layer is a file of the host. */
+  /** Whether a module of the rsc layer's build is a file of the host. */
   isHostFile(id: string): boolean;
 };
 
@@ -73,8 +73,8 @@ export function nextStaticBuild(options: NextStaticBuildOptions): Plugin {
   // Set once the config is resolved.
   let manager: Manager | undefined;
   // The keys of the client references that server code reaches in the rsc
-  // layer: see `buildEnd`.
-  let reached: ReadonlySet<string> = new Set();
+  // layer, once it is built: see `buildEnd`.
+  let reached: ReadonlySet<string> | undefined;
   return {
     name: "vitest-plugin-rsc:next-static-build",
     config(_config, { command }) {
@@ -89,7 +89,7 @@ export function nextStaticBuild(options: NextStaticBuildOptions): Plugin {
         // path it asks for, and the stylesheets of the routes.
         files: options.emittedFiles,
         // The Client Components that the ssr layer renders: see `buildEnd`.
-        references: { [ssr]: () => reached },
+        clientReferences: { [ssr]: () => reached },
       });
     },
     configResolved(resolved) {
@@ -104,14 +104,18 @@ export function nextStaticBuild(options: NextStaticBuildOptions): Plugin {
     // the rsc layer, in the build that gives each the key of a Flight
     // payload, before the ssr layer's. Server code starts in the plugin's
     // module of the layer, which renders the routes, and in every file of the
-    // host that is not a reference itself, which can render a node, like a
-    // test file. It goes through static and dynamic imports, up to a
-    // reference: what that one imports is the browser's code. Any other is
-    // imported only by another reference or by the host's runtime, like the
-    // module script of a page of the host: the browser layer evaluates it.
+    // host that is not a reference itself, `host.files`, which can render a
+    // node. It goes through static and dynamic imports, up to a reference:
+    // what that one imports is the browser's code. Any other is imported only
+    // by the host's runtime, a module that is no file of the host, like the
+    // module script of a page or a package of the host: the browser layer
+    // evaluates it. A graph without the plugin's module renders no route,
+    // and lists every one.
     buildEnd(error) {
       if (error || this.environment.mode !== "build" || this.environment.name !== rsc) return;
       if (!manager || manager.isScanBuild) return;
+      reached = undefined;
+      if (!this.getModuleInfo(options.rscModule)) return;
       const references = manager.clientReferenceMetaMap;
       const found = new Set<string>();
       const queue = [...this.getModuleIds()].filter(

@@ -1002,6 +1002,8 @@ test("lists the modules a Flight payload can refer to, by the id it has for each
   expect(listed("react_client", clientReferences)).toBe(
     `export default {\n  "a1b2c3": () => import("/app/counter.tsx"),\n};\n`,
   );
+  // Every one, until the rsc layer's build says which ones server code reaches.
+  expect(listed("next_ssr", clientReferences)).toBe(listed("react_client", clientReferences));
   expect(listed("client", serverReferences)).toBe(
     `export default {\n  "d4e5f6": () => import("/app/actions.ts"),\n};\n`,
   );
@@ -1015,8 +1017,8 @@ test("lists the modules a Flight payload can refer to, by the id it has for each
 
 // The ssr layer renders what server code renders: the plugin's module of the
 // rsc layer, with the routes, and a file of the host that is no reference
-// itself, like a test file or a story with a node. The browser layer
-// evaluates any reference, a file of the host with "use client" by its key.
+// itself, which can render a node. The browser layer evaluates any reference,
+// a file of the host with "use client" by its key.
 test("lists in the ssr layer the client references that server code reaches", () => {
   const { plugin, next, manager } = setup();
   const reference = (key: string) => ({ referenceKey: key, importId: `/${key}.tsx` });
@@ -1025,7 +1027,7 @@ test("lists in the ssr layer the client references that server code reaches", ()
     "/next/global-error.js": reference("global-error"),
     "/app/like.tsx": reference("like"),
     "/host/field.tsx": reference("field"),
-    "/host/button.stories.tsx": reference("button-stories"),
+    "/host/button.demo.tsx": reference("button-demo"),
     "/app/dialog.tsx": reference("dialog"),
   };
   // The module graph of the rsc layer's build: each module, and what it
@@ -1037,12 +1039,17 @@ test("lists in the ssr layer the client references that server code reaches", ()
     "\0routes": [[], ["\0route/0"]],
     "\0route/0": [["/app/page.tsx", "/next/global-error.js"]],
     "/app/page.tsx": [["/app/like.tsx"]],
-    // A story with a node of a file of the host with "use client".
-    "/host/field.stories.tsx": [[rscModule, "/host/field.tsx"]],
-    // The host's runtime, which imports a client story, which imports a
-    // Client Component of the app that no server code imports.
-    "/runtime/stories.js": [[], ["/host/field.stories.tsx", "/host/button.stories.tsx"]],
-    "/host/button.stories.tsx": [["/app/dialog.tsx"]],
+    // A file of the host that renders a node with a file of the host with
+    // "use client".
+    "/host/field.demo.tsx": [[rscModule, "/host/field.tsx"]],
+    // The host's runtime, no file of the host, which imports both, and a
+    // module of the app that imports a Client Component no server code
+    // imports.
+    "/runtime/demos.js": [
+      ["/app/dialog-trigger.ts"],
+      ["/host/field.demo.tsx", "/host/button.demo.tsx"],
+    ],
+    "/app/dialog-trigger.ts": [["/app/dialog.tsx"]],
   };
   const keys = (environment: string) =>
     [...(call(plugin.load, environment, clientReferences) as string).matchAll(/"(.+)": /g)].map(
@@ -1063,7 +1070,7 @@ test("lists in the ssr layer the client references that server code reaches", ()
 
   expect(keys(names.ssr)).toEqual(["field", "global-error", "like", "node-rendered"]);
   expect(keys(names.browser)).toEqual([
-    "button-stories",
+    "button-demo",
     "dialog",
     "field",
     "global-error",

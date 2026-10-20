@@ -11,9 +11,15 @@
       import { loadClientModule } from "vitest-plugin-rsc/nextjs/testing-library";
       import * as example from "/host/example.tsx";
 
-      const { renderExample } = await loadClientModule(example);
-      renderExample(document.getElementById("host-root"));
-      window.__hostState = "ready";
+      try {
+        const { renderExample } = await loadClientModule(example);
+        renderExample(document.getElementById("host-root"));
+        window.__hostState = "ready";
+      } catch (error) {
+        window.__hostState = "error";
+        window.__hostError = error;
+        console.error(error);
+      }
     </script>
   </body>
 </html>
