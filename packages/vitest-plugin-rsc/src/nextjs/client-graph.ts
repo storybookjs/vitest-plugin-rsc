@@ -13,6 +13,7 @@ import { clientFileKeyExport } from "./client-file-key.ts";
 import { registry } from "./registry.ts";
 import {
   builtClientStylesheetsOf,
+  builtFileKey,
   graphStylesheetAttribute,
   stylesheetsEvent,
   type StylesheetsQuestion,
@@ -35,15 +36,40 @@ import {
 // evaluates a module once. A host that uses the exports of the file, like a
 // framework that renders a component of it, gets that evaluation with
 // `loadClientModule()`, and a file that imports it here gets the same one.
+//
+// The CSS of such a file is in the document while the host uses the file, as
+// a page's is while the page is open: from `linkStylesheetsOf()` until the
+// signal of that use aborts, or `cleanup()`, which ends every use. A
+// document can have several uses at once, like the stories of a docs page:
+// a stylesheet stays while one of them holds it. Not as the file loads: a host
+// may load a file that it does not show yet, as it prepares what it shows
+// next. Under Vitest every test uses the setup files and the test file
+// (setup.ts).
 
 const environment = "react_client";
 
 let graph: ModuleRunner | undefined;
 
-// The stylesheets that the files of the host linked, one for each URL: the
-// tab's, which a page that comes and goes leaves where they are, see
-// document.ts. `forgetClientFiles()` takes them back.
-const linked = new Map<string, { link: HTMLLinkElement; loaded: Promise<unknown> }>();
+// A stylesheet that the files of the host linked, and how many uses of
+// files hold it: the host's, which a page steps aside for and leaves where it
+// is, see document.ts. `loaded` settles as it loads or fails, and `settle()`
+// as it is unlinked before: a link out of the document fires neither `load`
+// nor `error`.
+type Linked = {
+  href: string;
+  link: HTMLLinkElement;
+  loaded: Promise<void>;
+  settle: () => void;
+  uses: number;
+};
+
+// The stylesheets in the document, one for each URL. Each goes once no use
+// holds it, and `cleanup()` takes them all back.
+const linked = new Map<string, Linked>();
+
+// How many times `cleanup()` ended every use: a use that was asking for its
+// stylesheets meanwhile ended with them.
+let cleanups = 0;
 
 // The exports of the evaluation of each file of the host that the graph has
 // now, by its reference key.
@@ -72,17 +98,6 @@ const isDependency = ({ id, file }: { id: string; file: string | null }) =>
 // loads a module as its own does.
 const browserRequire = (id: string) => registry.loadBrowserModule(id);
 
-// The URLs of the stylesheets of a client file: from the dev server, by its
-// URL, see styles.ts. A static build has them in a file, by the path of the
-// file from the root of the project.
-async function stylesheetsOf(key: string, builtFile: string | undefined): Promise<string[]> {
-  if (!buildDirectory) {
-    return askDevServer<string[]>(stylesheetsEvent, { url: key } satisfies StylesheetsQuestion);
-  }
-  if (builtFile === undefined) return [];
-  return builtClientStylesheetsOf(await builtFiles(), builtFile, buildDirectory);
-}
-
 // In a static build: the modules of the browser layer that a Flight payload
 // can refer to, by their reference keys, which the graph evaluates a client
 // file from.
@@ -95,8 +110,7 @@ type ClientReferences = { default: Record<string, () => Promise<object>> };
  * calls this before its own code runs, as Vitest evaluates what a file
  * imports before it. So a test file with the directive registers its tests
  * with Vitest, which imports the file in the rsc layer, and a setup file
- * with it its hooks. In a static build `builtFile` is the key of its
- * stylesheets there: see `clientFileCode()` in client-files.ts.
+ * with it its hooks.
  *
  * Once for each version of the file, as the browser evaluates a module
  * once: a second import of the file gets the evaluation of the first, or
@@ -107,7 +121,7 @@ type ClientReferences = { default: Record<string, () => Promise<object>> };
  * each. What the file imports, once for the graph until it changes, as the
  * browser does for what Vitest evaluates in the tab.
  */
-export async function loadClientFile(key: string, builtFile?: string): Promise<void> {
+export async function loadClientFile(key: string): Promise<void> {
   if (buildDirectory) {
     graph ??= createEnvironmentRunner(environment);
     const references = await graph.import<ClientReferences>(
@@ -119,7 +133,6 @@ export async function loadClientFile(key: string, builtFile?: string): Promise<v
     // Once for the document: a build has no change, and the runner
     // evaluates the module that the list imports once.
     evaluations.set(key, await load());
-    await linkStylesheets(await stylesheetsOf(key, builtFile));
     return;
   }
   // A test that fails says where, in the file as it is written.
@@ -135,7 +148,6 @@ export async function loadClientFile(key: string, builtFile?: string): Promise<v
   // `forgetClientFiles()` invalidated it.
   imported.add(key);
   evaluations.set(key, await graph.import(key));
-  await linkStylesheets(await stylesheetsOf(key, builtFile));
 }
 
 let catchingUp: Promise<void> = Promise.resolve();
@@ -171,7 +183,8 @@ async function catchUp(graph: ModuleRunner): Promise<void> {
  * same object for the same module, every time. Such a module has the export
  * `clientFileKeyExport`, which the plugin put in front of it, and that alone
  * tells it: other exports, like one that a plugin of the host adds, change
- * nothing. Any other module as it is.
+ * nothing. Any other module as it is. Links nothing: a host that uses the
+ * file links its stylesheets with `linkStylesheetsOf()`.
  *
  * Rejects for the client reference module of a file that is not the host's,
  * which nothing evaluated in the browser layer.
@@ -196,30 +209,116 @@ export async function loadClientModule<T extends object>(module: T): Promise<T> 
   return exports as T;
 }
 
-// The CSS of what a file with `"use client"` imports, linked in the document,
-// as a page of the app links its CSS: see styles.ts. Vite's `<style>` of a
-// module would stay for the pages of the files after it.
-async function linkStylesheets(urls: string[]): Promise<void> {
-  const loads = urls.map((href) => {
-    const known = linked.get(href);
-    if (known) return known.loaded;
-    const link = Object.assign(document.createElement("link"), { rel: "stylesheet", href });
-    link.setAttribute(graphStylesheetAttribute, "");
-    // A stylesheet that fails to load holds up nothing.
-    const loaded = new Promise((resolve) => (link.onload = link.onerror = resolve));
-    linked.set(href, { link, loaded });
-    document.head.append(link);
-    return loaded;
+/**
+ * Links the stylesheets of files of the host with `"use client"` that the
+ * host uses, like a framework that renders a component of one, or one that
+ * renders as it loads: what each imports in the browser layer, in their
+ * order, as they are now. The files as for `hostFiles` of `renderServer()`:
+ * absolute, or from the root of the project. Resolves once the stylesheets
+ * have loaded.
+ *
+ * The use ends as `signal` aborts, and without one at `cleanup()`, which ends
+ * every use: a stylesheet goes once no use holds it. An aborted signal links
+ * nothing, and a use whose signal aborts rejects at once with the signal's
+ * reason, as `renderServer()` does.
+ */
+export async function linkStylesheetsOf(
+  hostFiles: string[],
+  { signal }: { signal?: AbortSignal } = {},
+): Promise<void> {
+  signal?.throwIfAborted();
+  const cleanupsBefore = cleanups;
+  const urls = await stylesheetsOfHostFiles(hostFiles);
+  signal?.throwIfAborted();
+  if (cleanups !== cleanupsBefore) return;
+  const held = urls.map(hold);
+  const loaded = Promise.all(held.map((stylesheet) => stylesheet.loaded));
+  if (!signal) return void (await loaded);
+  const ended = new Promise<void>((resolve) =>
+    signal.addEventListener(
+      "abort",
+      () => {
+        held.forEach(release);
+        resolve();
+      },
+      { once: true },
+    ),
+  );
+  await Promise.race([loaded, ended]);
+  signal.throwIfAborted();
+}
+
+// The URLs of the stylesheets of files of the host by their paths: from the
+// dev server, see styles.ts, or from the files of a static build.
+async function stylesheetsOfHostFiles(hostFiles: string[]): Promise<string[]> {
+  if (hostFiles.length === 0) return [];
+  if (!buildDirectory) {
+    return askDevServer<string[]>(stylesheetsEvent, { hostFiles } satisfies StylesheetsQuestion);
+  }
+  // Of a file with `"use client"`, as the dev server answers.
+  const built = await builtFiles();
+  const urls = hostFiles.flatMap((file) => {
+    const key = builtFileKey(file, built.clientFiles);
+    return key === undefined ? [] : builtClientStylesheetsOf(built, key, buildDirectory!);
   });
-  await Promise.all(loads);
+  return [...new Set(urls)];
+}
+
+// The CSS of what a file with `"use client"` imports, its own too, linked in
+// the document, as a page of the app links its CSS: see styles.ts. Vite's
+// `<style>` of a module would stay for every file after it, and the `<link>`
+// of a chunk of a build goes with a page that is open as the file loads.
+function hold(href: string): Linked {
+  const known = linked.get(href);
+  if (known) {
+    known.uses++;
+    return known;
+  }
+  const link = Object.assign(document.createElement("link"), { rel: "stylesheet", href });
+  link.setAttribute(graphStylesheetAttribute, "");
+  let settle!: () => void;
+  // A stylesheet that fails to load holds up nothing.
+  const loaded = new Promise<void>(
+    (resolve) => (settle = link.onload = link.onerror = () => resolve()),
+  );
+  const stylesheet: Linked = { href, link, loaded, settle, uses: 1 };
+  linked.set(href, stylesheet);
+  document.head.append(link);
+  return stylesheet;
+}
+
+// The end of one use of a stylesheet. Not of one that `cleanup()` took back
+// meanwhile, which a later use may have linked again.
+function release(stylesheet: Linked): void {
+  if (linked.get(stylesheet.href) !== stylesheet) return;
+  if (--stylesheet.uses === 0) unlink(stylesheet);
+}
+
+// Also one that a page that is open has parked: it is no longer the host's,
+// and leaving the page does not put it back (document.ts).
+function unlink(stylesheet: Linked): void {
+  stylesheet.link.remove();
+  stylesheet.link.removeAttribute(graphStylesheetAttribute);
+  linked.delete(stylesheet.href);
+  stylesheet.settle();
+}
+
+/**
+ * Unlinks the stylesheets of the files of the host, which ends every use of
+ * them: `cleanup()` calls this, once it has left the page.
+ */
+export function unlinkStylesheets(): void {
+  cleanups++;
+  for (const stylesheet of linked.values()) unlink(stylesheet);
 }
 
 /**
  * Forgets what the files of the host did in the tab: with a dev server the
  * graph evaluates each again the next time it loads, also one that failed,
- * and the stylesheets they linked go. The plugin's setup file calls this before every test file,
- * under Vitest. The graph keeps what the files import, and a module whose
- * line ran before still gets the evaluation it loaded.
+ * and the stylesheets they linked go. The plugin's setup file calls this
+ * before every test file, under Vitest. The graph keeps what the files
+ * import, and a module whose line ran before still gets the evaluation it
+ * loaded.
  */
 export function forgetClientFiles(): void {
   for (const url of imported) {
@@ -227,8 +326,7 @@ export function forgetClientFiles(): void {
     if (own) graph?.evaluatedModules.invalidateModule(own);
   }
   imported.clear();
-  for (const { link } of linked.values()) link.remove();
-  linked.clear();
+  unlinkStylesheets();
 }
 
 /**

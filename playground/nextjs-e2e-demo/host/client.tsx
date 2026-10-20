@@ -1,4 +1,4 @@
-import { loadClientModule } from "vitest-plugin-rsc/nextjs/testing-library";
+import { linkStylesheetsOf, loadClientModule } from "vitest-plugin-rsc/nextjs/testing-library";
 import * as counter from "./render-counter.tsx";
 
 // The page of client.html: a file of the host with `"use client"`, and no
@@ -10,6 +10,7 @@ const state = window as { __hostState?: string; __hostError?: unknown; __hostDat
 try {
   const data = fetch("host.json").then((response) => response.json());
   const { renderCounter } = await loadClientModule(counter);
+  await linkStylesheetsOf(["host/render-counter.tsx"]);
   renderCounter(document.getElementById("host-root")!);
   state.__hostData = await data;
   state.__hostState = "ready";

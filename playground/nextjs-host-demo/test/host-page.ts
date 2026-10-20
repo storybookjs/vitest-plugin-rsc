@@ -46,6 +46,7 @@ export async function open(
       __hostTags,
       __hostModule,
       __hostCalloutLinked,
+      __hostBadgeLinked,
       __hostFetched,
     } = window as HostWindow;
     return {
@@ -56,6 +57,7 @@ export async function open(
       __hostTags,
       __hostModule,
       __hostCalloutLinked,
+      __hostBadgeLinked,
       __hostFetched,
     };
   });

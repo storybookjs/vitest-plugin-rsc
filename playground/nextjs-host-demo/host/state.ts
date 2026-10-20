@@ -23,6 +23,8 @@ export type HostWindow = {
     /** What it did for a file of the app: its error. */
     app: string;
   };
+  /** For `?view=after-page`: whether the stylesheet of the badge was linked, at each step. */
+  __hostBadgeLinked?: Record<string, boolean>;
   /**
    * For `?view=in-place`: whether the host's own read of in-place-note.tsx
    * has the object that in-place-badge.tsx imports of it.
