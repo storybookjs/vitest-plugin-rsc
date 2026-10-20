@@ -29,11 +29,7 @@ export function evaluateGate(source: string, conditions: Record<string, unknown>
     }
     if (/^['"]/.test(token)) return token.slice(1, -1);
     if (token === "true" || token === "false") return token === "true";
-    // A typo must not turn a gate off without a word, as in Next's own runs.
-    if (!Object.hasOwn(conditions, token)) {
-      throw new Error(`\`@gate\` references an undeclared condition "${token}".`);
-    }
-    return conditions[token];
+    return readCondition(token, conditions);
   };
   const unary = (): unknown => {
     if (tokens[at] !== "!") return primary();
@@ -61,4 +57,23 @@ export function evaluateGate(source: string, conditions: Record<string, unknown>
   const value = expression();
   if (at !== tokens.length) throw unparsable();
   return value;
+}
+
+// A typo must not turn a gate off without a word, as in Next's own runs.
+function readCondition(name: string, conditions: Record<string, unknown>): unknown {
+  if (!Object.hasOwn(conditions, name)) {
+    throw new Error(`\`@gate\` references an undeclared condition "${name}".`);
+  }
+  return conditions[name];
+}
+
+/**
+ * The conditions as the function form of `gate()` gets them: a name that no
+ * run has throws, as in a pragma.
+ */
+export function declaredConditions(conditions: Record<string, unknown>): Record<string, unknown> {
+  return new Proxy(conditions, {
+    get: (target, name) => (typeof name === "string" ? readCondition(name, target) : undefined),
+    has: () => true,
+  });
 }

@@ -10,7 +10,8 @@ import { evaluateGate } from "./gate-expression.ts";
 type Pragma = { force: boolean; source: string };
 type Callee = ((...args: never[]) => unknown) & { skip: (...args: never[]) => unknown };
 
-const conditions: Record<string, unknown> = {
+/** The conditions of this run, by the names of Next's `test/lib/gate/conditions.ts`. */
+export const conditions: Record<string, unknown> = {
   mode,
   dev: mode === "dev",
   start: mode === "start",

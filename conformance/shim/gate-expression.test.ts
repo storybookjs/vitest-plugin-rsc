@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { evaluateGate } from "./gate-expression.ts";
+import { declaredConditions, evaluateGate } from "./gate-expression.ts";
 
 const run = {
   mode: "start",
@@ -46,4 +46,12 @@ await test("rejects what is not a condition", () => {
   for (const source of ["", "dev &&", "(dev", "dev)", "dev start", "dev; alert(1)", "&& dev"]) {
     assert.throws(() => holds(source), /Unparsable @gate pragma|undeclared condition/, source);
   }
+});
+
+await test("gives a function the conditions, and throws on one that no run has", () => {
+  const conditions = declaredConditions(run);
+  assert.equal(conditions.start, true);
+  assert.equal("cacheComponent" in conditions, true);
+  assert.throws(() => conditions.cacheComponent, /undeclared condition "cacheComponent"/);
+  assert.throws(() => conditions.constructor, /undeclared condition "constructor"/);
 });
