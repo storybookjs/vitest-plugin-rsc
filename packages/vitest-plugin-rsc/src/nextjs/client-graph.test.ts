@@ -34,6 +34,8 @@ const tab = vi.hoisted(() => ({
   imports: new Map<string, string[]>(),
   /** The URLs of the files whose evaluation throws. */
   failing: new Set<string>(),
+  /** Whether a stylesheet that is linked loads, as the browser fetches it. */
+  loads: true,
 }));
 
 // A build's stylesheets, by the path of a file of the host from the root.
@@ -139,6 +141,7 @@ beforeEach(() => {
   tab.answered = undefined;
   tab.imports = new Map();
   tab.failing = new Set();
+  tab.loads = true;
   head.clear();
   vi.stubGlobal("__viteRscCallServer", undefined);
   vi.stubGlobal("document", {
@@ -158,7 +161,7 @@ beforeEach(() => {
     head: {
       append(link: FakeLink) {
         head.add(link);
-        queueMicrotask(() => link.onload?.());
+        if (tab.loads) queueMicrotask(() => link.onload?.());
       },
     },
   });
@@ -362,6 +365,60 @@ test("links the stylesheets of the files that the host uses, until they are unli
   // Vitest's setup file, for the next test file.
   forgetClientFiles();
   expect(links()).toEqual([]);
+});
+
+// A document can have several uses at once, like the stories of a docs
+// page, each with its own end: the signal that a host gives it.
+test("keeps a stylesheet while a use holds it, and ends a use as its signal aborts", async () => {
+  const { linkStylesheetsOf, unlinkClientStylesheets } = await graph();
+  const first = new AbortController();
+  const second = new AbortController();
+  await linkStylesheetsOf(["/host/badge.tsx"], { signal: first.signal });
+  await linkStylesheetsOf(["/host/card.tsx"], { signal: second.signal });
+  expect(links()).toEqual(["/_next/static/css/badge.css", "/_next/static/css/card.css"]);
+
+  // badge.css is the second use's too.
+  first.abort();
+  expect(links()).toEqual(["/_next/static/css/badge.css", "/_next/static/css/card.css"]);
+  second.abort();
+  expect(links()).toEqual([]);
+
+  // A use without a signal ends at `cleanup()`, which ends every use, and
+  // the abort of a use that it ended takes nothing that is linked again.
+  const third = new AbortController();
+  await linkStylesheetsOf(["/host/badge.tsx"], { signal: third.signal });
+  await linkStylesheetsOf(["/host/card.tsx"]);
+  unlinkClientStylesheets();
+  expect(links()).toEqual([]);
+  await linkStylesheetsOf(["/host/badge.tsx"]);
+  third.abort();
+  expect(links()).toEqual(["/_next/static/css/badge.css"]);
+});
+
+test("ends a use whose signal aborts before its stylesheets load, as renderServer() does", async () => {
+  const { linkStylesheetsOf, unlinkClientStylesheets } = await graph();
+  const left = new AbortController();
+  left.abort();
+  // An aborted signal links nothing.
+  await expect(linkStylesheetsOf(["/host/badge.tsx"], { signal: left.signal })).rejects.toThrow(
+    "aborted",
+  );
+  expect(links()).toEqual([]);
+
+  tab.loads = false;
+  const leaving = new AbortController();
+  const use = linkStylesheetsOf(["/host/badge.tsx"], { signal: leaving.signal });
+  await vi.waitFor(() => expect(links()).toEqual(["/_next/static/css/badge.css"]));
+  leaving.abort(new Error("left the story"));
+  await expect(use).rejects.toThrow("left the story");
+  expect(links()).toEqual([]);
+
+  // A use that waits for a stylesheet that `cleanup()` takes back before it
+  // loads resolves: a link out of the document fires no `load`.
+  const waiting = linkStylesheetsOf(["/host/badge.tsx"]);
+  await vi.waitFor(() => expect(links()).toEqual(["/_next/static/css/badge.css"]));
+  unlinkClientStylesheets();
+  await expect(waiting).resolves.toBeUndefined();
 });
 
 test("gives any other module as it is", async () => {

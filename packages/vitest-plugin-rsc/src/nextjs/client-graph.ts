@@ -38,8 +38,10 @@ import {
 // `loadClientModule()`, and a file that imports it here gets the same one.
 //
 // The CSS of such a file is in the document while the host uses the file, as
-// a page's is while the page is open: from `linkStylesheetsOf()` until
-// `cleanup()`, which ends what the host used. Not as the file loads: a host
+// a page's is while the page is open: from `linkStylesheetsOf()` until the
+// signal of that use aborts, or `cleanup()`, which ends every use. A
+// document can have several uses at once, like the stories of a docs page:
+// a stylesheet stays while one of them holds it. Not as the file loads: a host
 // may load a file that it does not show yet, as it prepares what it shows
 // next. Under Vitest every test uses the setup files and the test file
 // (setup.ts).
@@ -48,10 +50,18 @@ const environment = "react_client";
 
 let graph: ModuleRunner | undefined;
 
-// The stylesheets that the files of the host linked, one for each URL: the
-// host's, which a page steps aside for and leaves where they are, see
-// document.ts. `cleanup()` takes them back.
-const linked = new Map<string, { link: HTMLLinkElement; loaded: Promise<unknown> }>();
+// A stylesheet that the files of the host linked, and how many uses of
+// files hold it: the host's, which a page steps aside for and leaves where it
+// is, see document.ts. `loaded` settles as it loads, fails, or is unlinked.
+type Linked = { href: string; link: HTMLLinkElement; loaded: Promise<void>; uses: number };
+
+// The stylesheets in the document, one for each URL. Each goes once no use
+// holds it, and `cleanup()` takes them all back.
+const linked = new Map<string, Linked>();
+
+// What settles `loaded` of each, also when it is unlinked before it loads:
+// a link that is taken out of the document fires neither `load` nor `error`.
+const settle = new WeakMap<Linked, () => void>();
 
 // The exports of the evaluation of each file of the host that the graph has
 // now, by its reference key.
@@ -194,13 +204,34 @@ export async function loadClientModule<T extends object>(module: T): Promise<T> 
 /**
  * Links the stylesheets of files of the host with `"use client"` that the
  * host uses, like a framework that renders a component of one, or one that
- * renders as it loads: what each imports in the browser layer, in their order, as they
- * are now. Until `cleanup()` unlinks them. The files as for `hostFiles` of
- * `renderServer()`: absolute, or from the root of the project. Resolves once
- * the stylesheets have loaded.
+ * renders as it loads: what each imports in the browser layer, in their
+ * order, as they are now. The files as for `hostFiles` of `renderServer()`:
+ * absolute, or from the root of the project. Resolves once the stylesheets
+ * have loaded.
+ *
+ * The use ends as `signal` aborts, and without one at `cleanup()`, which ends
+ * every use: a stylesheet goes once no use holds it. An aborted signal links
+ * nothing, and a use whose signal aborts rejects at once with the signal's
+ * reason, as `renderServer()` does.
  */
-export async function linkStylesheetsOf(hostFiles: string[]): Promise<void> {
-  await linkStylesheets(await stylesheetsOfHostFiles(hostFiles));
+export async function linkStylesheetsOf(
+  hostFiles: string[],
+  { signal }: { signal?: AbortSignal } = {},
+): Promise<void> {
+  signal?.throwIfAborted();
+  const urls = await stylesheetsOfHostFiles(hostFiles);
+  signal?.throwIfAborted();
+  const held = urls.map(hold);
+  if (!signal) {
+    await Promise.all(held.map(({ loaded }) => loaded));
+    return;
+  }
+  signal.addEventListener("abort", () => held.forEach(release), { once: true });
+  const aborted = new Promise<void>((resolve) =>
+    signal.addEventListener("abort", () => resolve(), { once: true }),
+  );
+  await Promise.race([Promise.all(held.map(({ loaded }) => loaded)), aborted]);
+  signal.throwIfAborted();
 }
 
 // The URLs of the stylesheets of files of the host by their paths: from the
@@ -223,28 +254,45 @@ async function stylesheetsOfHostFiles(hostFiles: string[]): Promise<string[]> {
 // the document, as a page of the app links its CSS: see styles.ts. Vite's
 // `<style>` of a module would stay for every file after it, and the `<link>`
 // of a chunk of a build goes with a page that is open as the file loads.
-async function linkStylesheets(urls: string[]): Promise<void> {
-  const loads = urls.map((href) => {
-    const known = linked.get(href);
-    if (known) return known.loaded;
-    const link = Object.assign(document.createElement("link"), { rel: "stylesheet", href });
-    link.setAttribute(graphStylesheetAttribute, "");
-    // A stylesheet that fails to load holds up nothing.
-    const loaded = new Promise((resolve) => (link.onload = link.onerror = resolve));
-    linked.set(href, { link, loaded });
-    document.head.append(link);
-    return loaded;
-  });
-  await Promise.all(loads);
+function hold(href: string): Linked {
+  const known = linked.get(href);
+  if (known) {
+    known.uses++;
+    return known;
+  }
+  const link = Object.assign(document.createElement("link"), { rel: "stylesheet", href });
+  link.setAttribute(graphStylesheetAttribute, "");
+  let settled!: () => void;
+  // A stylesheet that fails to load holds up nothing.
+  const loaded = new Promise<void>(
+    (resolve) => (settled = link.onload = link.onerror = () => resolve()),
+  );
+  const stylesheet: Linked = { href, link, loaded, uses: 1 };
+  settle.set(stylesheet, settled);
+  linked.set(href, stylesheet);
+  document.head.append(link);
+  return stylesheet;
+}
+
+// The end of one use of a stylesheet. Not of one that `cleanup()` took back
+// meanwhile, which a later use may have linked again.
+function release(stylesheet: Linked): void {
+  if (linked.get(stylesheet.href) !== stylesheet) return;
+  if (--stylesheet.uses === 0) unlink(stylesheet);
+}
+
+function unlink(stylesheet: Linked): void {
+  stylesheet.link.remove();
+  linked.delete(stylesheet.href);
+  settle.get(stylesheet)?.();
 }
 
 /**
- * Unlinks the stylesheets of the files of the host: `cleanup()` calls this,
- * once it has left the page.
+ * Unlinks the stylesheets of the files of the host, which ends every use of
+ * them: `cleanup()` calls this, once it has left the page.
  */
 export function unlinkClientStylesheets(): void {
-  for (const { link } of linked.values()) link.remove();
-  linked.clear();
+  for (const stylesheet of linked.values()) unlink(stylesheet);
 }
 
 /**
