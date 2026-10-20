@@ -5,9 +5,8 @@ import { builtFilesPath, type BuiltFiles } from "./styles-shared.ts";
 // The files a page of a static build loads besides the layers, which the
 // build lists in a file of its own, `builtFilesPath`: the stylesheets and the
 // modules of every route, for Next and for the page load (rsc.ts), and the
-// stylesheets of every file of the host, also one with `"use client"`
-// (client-graph.ts). The page fetches it once. Nothing with a dev server,
-// which answers for them itself.
+// stylesheets of every file of the host (client-graph.ts). The page fetches
+// it once. Nothing with a dev server, which answers for them itself.
 
 /** The URL of the directory of the build. Nothing with a dev server. */
 export const buildDirectory: string | undefined =

@@ -812,10 +812,10 @@ export type CleanupOptions = {
  * Leaves the page that `renderServer()` opened, removes the containers it made
  * and forgets its `headers`, the app's cookies and what the app put in its
  * storage, like a new browser context. The server forgets what it has cached.
- * Unlinks the stylesheets of the files of the host with `"use client"`: the
- * host links a file's again as it uses it, with `linkStylesheetsOf()`. Runs
- * before and after every test, after which the plugin's setup file links
- * those of the setup files and the test file again.
+ * Unlinks the stylesheets of the files of the host: the host links a file's
+ * again as it uses it, with `linkStylesheetsOf()`. Runs before and after
+ * every test, after which the plugin's setup file links those of the setup
+ * files and the test file again.
  *
  * What was set on the document, `<html>`, `<head>` and the container of a
  * node while the page was open goes with the page; what the host set there

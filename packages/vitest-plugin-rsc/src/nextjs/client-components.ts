@@ -1,7 +1,8 @@
-// The entry of a host that uses Client Components of its own files, and not
-// the server's API: `loadClientModule()`, and `linkStylesheetsOf()` for
-// their CSS. It loads no layer of Next's server as it evaluates. The server
-// in front of the app is the document's all the same, so a request that a
+// The entry of a host that uses its own files, and not the server's API:
+// `loadClientModule()` for the Client Components of one with `"use client"`,
+// and `linkStylesheetsOf()` for the CSS of any. It loads no layer of Next's
+// server as it evaluates. The server in front of the app is the document's
+// all the same, so a request that a
 // component sends to the app, like a `fetch` to a route handler, gets the
 // app's answer: the first that the server handles loads the layers, see
 // app-requests.ts. A host that renders a page or a node of the app imports

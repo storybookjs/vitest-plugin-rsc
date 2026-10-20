@@ -1,0 +1,4 @@
+/* CSS of a file of the host itself, and not of the app. */
+.framed {
+  outline: 2px solid rgb(0, 0, 128);
+}
