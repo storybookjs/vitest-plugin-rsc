@@ -1,6 +1,6 @@
 import { isPreview, isStory } from "storybook/internal/csf";
 import type { ModuleExports, ModuleImportFn } from "storybook/internal/types";
-import { loadClientModule } from "vitest-plugin-rsc/nextjs/testing-library";
+import { loadClientModule } from "vitest-plugin-rsc/nextjs/client-components";
 import { notCsfNext, undeclaredGlobals, wrongFactory } from "./errors.ts";
 import { isServerPreview } from "./server-mark.ts";
 

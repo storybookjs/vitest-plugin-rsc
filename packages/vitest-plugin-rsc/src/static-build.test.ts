@@ -550,9 +550,9 @@ test("a runner of a built layer asks again after a failure, and says what the bu
   );
 });
 
-// The files of the layers share the network of the tab. The first one is the
-// layer that every page runs: the others start once it has ended, or at once
-// when something needs one of them.
+// The first file is the one of the layer that every page runs, which the
+// tab fetches at once. Another layer's only when a runner of it asks: when
+// the tab needs that layer.
 async function orderedBuild({
   first = "held",
   ssrFails = false,
@@ -571,67 +571,44 @@ async function orderedBuild({
     return first === "held" ? fetch(input) : new Response(null, { status: 404 });
   };
   const built = createBuiltLayers(held as typeof globalThis.fetch, [layer, ssr]);
-  // A runner of the ssr layer, which asks for its entry as soon as the page
-  // imports it: when the page starts.
-  const asked = Promise.withResolvers<void>();
-  const askedOnce = {
-    invoke: (on: BuiltLayer, payload: Parameters<typeof built.invoke>[1]) => {
-      const answer = built.invoke(on, payload);
-      if ((payload as { data?: { name?: string } }).data?.name === "fetchModule") asked.resolve();
-      return answer;
-    },
-  };
-  const server = pageRunner(askedOnce, ssr).import<{ layer: string }>(
-    "/vitest-plugin-rsc/next_ssr/entry.js",
-  );
-  await asked.promise;
+  const server = () =>
+    pageRunner(built, ssr).import<{ layer: string }>("/vitest-plugin-rsc/next_ssr/entry.js");
   const endFirst = () => {
     events.push("the first ends");
     firstFile.resolve();
   };
-  return { built, layer, ssr, server, events, endFirst };
+  return { built, layer, server, events, endFirst };
 }
 
-test("a tab fetches the file of the layer every page runs first, and the others once it has ended", async () => {
-  const { server, events, endFirst } = await orderedBuild();
+test("a tab fetches the file of the layer every page runs at once, and another one when a runner of it asks", async () => {
+  const { built, layer, server, events, endFirst } = await orderedBuild();
   expect(events).toEqual(["fetches react_client"]);
   endFirst();
-  expect((await server).layer).toBe("ssr");
+  await pageRunner(built, layer).import(entry);
+  expect(events).toEqual(["fetches react_client", "the first ends"]);
+  expect((await server()).layer).toBe("ssr");
   expect(events).toEqual(["fetches react_client", "the first ends", "fetches next_ssr"]);
 });
 
-test("a tab fetches the file of a layer at once when something needs it", async () => {
-  const { built, ssr, server, events } = await orderedBuild();
-  built.fetchNow(ssr);
-  expect((await server).layer).toBe("ssr");
+test("a runner of another layer does not wait for the file of the first one", async () => {
+  const { server, events } = await orderedBuild();
+  expect((await server()).layer).toBe("ssr");
   expect(events).toEqual(["fetches react_client", "fetches next_ssr"]);
 });
 
-// The page imports the layer once: what fails is the error of the requests
-// that need it. Only a runner that asks for it fetches its file again.
-test("a tab fetches the file of a layer that failed again only for a runner", async () => {
-  const { built, layer, ssr, server, events, endFirst } = await orderedBuild({ ssrFails: true });
-  built.fetchNow(ssr);
-  await expect(server).rejects.toThrow("next_ssr/modules.json responded with 500");
-  built.fetchNow(ssr);
-  endFirst();
-  // Once the tab has read the first one, which starts no other one now.
-  await pageRunner(built, layer).import(entry);
-  await expect(
-    pageRunner(built, ssr).import("/vitest-plugin-rsc/next_ssr/entry.js"),
-  ).rejects.toThrow("responded with 500");
-  expect(events).toEqual([
-    "fetches react_client",
-    "fetches next_ssr",
-    "the first ends",
-    "fetches next_ssr",
-  ]);
+// What fails is the error of the requests that need the layer: the next
+// runner that asks fetches its file again.
+test("a tab fetches the file of a layer that failed again for the next runner", async () => {
+  const { server, events } = await orderedBuild({ ssrFails: true });
+  await expect(server()).rejects.toThrow("next_ssr/modules.json responded with 500");
+  await expect(server()).rejects.toThrow("next_ssr/modules.json responded with 500");
+  expect(events).toEqual(["fetches react_client", "fetches next_ssr", "fetches next_ssr"]);
 });
 
-test("a tab fetches the other layers also when the first one fails", async () => {
+test("a tab fetches another layer also when the first one fails", async () => {
   const { server, events, endFirst } = await orderedBuild({ first: "missing" });
   endFirst();
-  expect((await server).layer).toBe("ssr");
+  expect((await server()).layer).toBe("ssr");
   expect(events).toEqual(["fetches react_client", "the first ends", "fetches next_ssr"]);
 });
 

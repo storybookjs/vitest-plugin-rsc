@@ -218,6 +218,44 @@ describe.for(builds)("a static build, $build", ({ build, env }) => {
     await page.locator("#host-root").getByText("An example of the host").waitFor();
   });
 
+  // The page of example.html imports the entry of Client Components alone,
+  // which loads no layer of Next's server, and sends no request of its own.
+  // The server in front of the app is the document's all the same: a Client
+  // Component's `fetch` to a route handler gets the app's answer, and that
+  // request starts the ssr layer's file, in the task that sends it.
+  test("loads the ssr layer on a page of Client Components for its first request to the app", async ({
+    page,
+  }) => {
+    await keepResources(page);
+    const ssrFiles: string[] = [];
+    page.on("request", (request) => {
+      const { pathname } = new URL(request.url());
+      if (pathname.startsWith("/vitest-plugin-rsc/next_ssr/")) ssrFiles.push(pathname);
+    });
+    await page.goto(`${site.url}example.html`);
+    await page.waitForFunction(() => (window as { __hostState?: string }).__hostState);
+    const ask = page.getByRole("button", { name: "Ask the app" });
+    await ask.waitFor();
+    expect(ssrFiles).toEqual([]);
+
+    // The click, and the task after it: the component sends its request in
+    // the click's.
+    const { clicked, nextTask } = await ask.evaluate((button: HTMLElement) => {
+      const clicked = performance.now();
+      button.click();
+      return new Promise<{ clicked: number; nextTask: number }>((resolve) =>
+        setTimeout(() => resolve({ clicked, nextTask: performance.now() })),
+      );
+    });
+    await page.getByRole("button", { name: "The app: plain" }).waitFor();
+    expect(ssrFiles).toEqual(["/vitest-plugin-rsc/next_ssr/modules.json"]);
+    const ssrLayer = (await resources(page)).find(
+      ({ pathname }) => pathname === "/vitest-plugin-rsc/next_ssr/modules.json",
+    )!;
+    expect(ssrLayer.startTime).toBeGreaterThanOrEqual(clicked);
+    expect(ssrLayer.startTime).toBeLessThanOrEqual(nextTask);
+  });
+
   // The ssr layer lists the Client Components that server code reaches: a
   // file of the host with "use client" that a node of the host renders, and
   // not one that only the page imports, which the browser layer renders. The
@@ -568,7 +606,7 @@ describe.for(builds)("a static build, $build", ({ build, env }) => {
       await route.continue().catch(() => {});
     });
     onTestFinished(() => release());
-    // Once the browser layer's file has ended: see the test after this one.
+    // As the host imports the server's API: see the test after this one.
     const ssrAsked = page.waitForRequest("**/vitest-plugin-rsc/next_ssr/modules.json");
     // A file of Next's build, which the matcher of the proxy leaves out: the
     // image that app/images imports.
@@ -608,10 +646,10 @@ describe.for(builds)("a static build, $build", ({ build, env }) => {
     ).toEqual([]);
   });
 
-  // The files of the layers share the network: the ssr layer's waits for the
-  // browser layer's, which every page runs, unless a request needs the ssr
-  // layer first. A page that the host opens at once is such a request: its
-  // file starts while the browser layer's is still held.
+  // The ssr layer's file does not wait for the browser layer's, which every
+  // page runs: the host imports the server's API, which starts it, and opens
+  // a page at once, which needs it. Its file starts while the browser
+  // layer's is still held.
   test("starts the ssr layer at once for a page that the host opens before the browser layer has loaded", async ({
     page,
   }) => {

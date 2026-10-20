@@ -35,7 +35,7 @@ beforeAll(({}, suite) => {
 // first time it loads compiles Next's server, which takes longer than a test
 // may. In a setup file it does not count towards a test's timeout. A layer
 // that fails to load fails the test file here.
-await ssrLayer;
+await ssrLayer();
 
 // Without arguments: a hook gets the test's context, which is no options.
 afterEach(() => cleanup());

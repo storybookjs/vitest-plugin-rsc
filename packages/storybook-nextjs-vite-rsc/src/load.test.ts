@@ -6,9 +6,11 @@ import { defineServerPreview } from "./server.ts";
 // A module of a file with "use client" is the plugin's client reference
 // module, for which `loadClientModule()` gives the browser layer's exports.
 const browser = new WeakMap<object, object>();
-vi.mock("vitest-plugin-rsc/nextjs/testing-library", () => ({
+vi.mock("vitest-plugin-rsc/nextjs/client-components", () => ({
   loadClientModule: async (module: object) => browser.get(module) ?? module,
 }));
+// What server.ts imports of the server's API, which no test here calls.
+vi.mock("vitest-plugin-rsc/nextjs/testing-library", () => ({}));
 
 // A file with "use client", as the rsc layer imports it.
 const clientFile = (exports: object) => {

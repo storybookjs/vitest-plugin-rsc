@@ -1,11 +1,7 @@
 import { reports } from "host-report";
 import { tags } from "host-report/tags";
-import {
-  cleanup,
-  handleRequest,
-  loadClientModule,
-  renderServer,
-} from "vitest-plugin-rsc/nextjs/testing-library";
+import { loadClientModule } from "vitest-plugin-rsc/nextjs/client-components";
+import { cleanup, handleRequest, renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
 import { renderCallout } from "./callout.tsx";
 import { greetingFor, renderGreeting } from "./greeting.tsx";
 import { renderTag } from "./tag.tsx";

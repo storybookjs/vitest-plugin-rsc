@@ -1,4 +1,4 @@
-import { loadClientModule } from "vitest-plugin-rsc/nextjs/testing-library";
+import { loadClientModule } from "vitest-plugin-rsc/nextjs/client-components";
 import * as badgeModule from "./in-place-badge.tsx";
 import * as noteModule from "./in-place-note.tsx";
 import { show, state } from "./state.ts";

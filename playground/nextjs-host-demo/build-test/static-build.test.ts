@@ -168,12 +168,12 @@ test('keeps the CSS of a file with "use client" that loaded during a page', asyn
 
 // Every page of the host runs the browser layer, so its HTML starts the file
 // of that layer, before a script has loaded, and the tab's `fetch` of it
-// takes that preload: one request. The ssr layer's file, which shares the
-// network, starts once that one has ended, as nothing needs it before. Also
-// for a page in a directory of its own, whose preload names the file by the
-// way from there.
+// takes that preload: one request. The host imports the server's API, which
+// starts the ssr layer's file as it evaluates, also in a view that sends no
+// request to the app: one request too. Also for a page in a directory of its
+// own, whose preload names the file by the way from there.
 test.for(["index.html", "nested/index.html"])(
-  "starts the browser layer from the HTML of %s, and the ssr layer after it",
+  "starts the browser layer from the HTML of %s, and the ssr layer as the host imports the server's API",
   async (html, { page, errors }) => {
     const requested: string[] = [];
     page.on("request", (request) => requested.push(new URL(request.url()).pathname));
@@ -202,19 +202,6 @@ test.for(["index.html", "nested/index.html"])(
     );
     expect(requested.filter((path) => path === browserLayer)).toHaveLength(1);
     expect(requested.filter((path) => path === ssrLayer)).toHaveLength(1);
-    const timing = await page.evaluate(
-      (files) => {
-        const resources = performance.getEntriesByType("resource") as PerformanceResourceTiming[];
-        return files.map((file) => {
-          const { startTime, responseEnd } = resources.find(
-            (resource) => new URL(resource.name).pathname === file,
-          )!;
-          return { startTime, responseEnd };
-        });
-      },
-      [browserLayer, ssrLayer],
-    );
-    expect(timing[1]!.startTime).toBeGreaterThanOrEqual(timing[0]!.responseEnd);
   },
 );
 

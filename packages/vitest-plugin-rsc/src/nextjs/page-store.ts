@@ -3,7 +3,7 @@
 // its request store, in AsyncLocalStorage, of the request it gets, here as on
 // Node.js. So the plugin keeps them in one store for the test's document, and
 // writes them on each request where it becomes one for the server: see
-// `sendRequest()` in index.ts. The `Set-Cookie` headers of the response go
+// `sendRequest()` in app-requests.ts. The `Set-Cookie` headers of the response go
 // back into the store.
 //
 // The store is the browser's cookie jar, and `document.cookie` of the test's
