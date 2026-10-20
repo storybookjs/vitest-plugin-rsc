@@ -16,7 +16,10 @@ type Preview = {
   currentRender?: {
     id: string;
     phase?: string;
-    story?: { playFunction?: unknown; parameters: { layout?: string } };
+    story?: {
+      playFunction?: unknown;
+      parameters: { layout?: string; docs?: { story?: { height?: string } } };
+    };
   };
 };
 

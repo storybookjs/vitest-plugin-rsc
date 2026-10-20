@@ -609,11 +609,23 @@ test("autodocs: a client story file's stories inline, a server story file's in i
   // own. One that owns the document is as high as a small phone's screen.
   const primaryFrame = await storyInDocs(canvas, "greeting--default");
   const inLayouts = await (await storyInDocs(canvas, "greeting--in-layouts")).frameElement();
+  const seeded = await storyInDocs(canvas, "greeting--seeded");
   await storyInDocs(canvas, "greeting--server-action");
-  expect(await inDocs(canvas).locator("iframe").count()).toBe(3);
+  expect(await inDocs(canvas).locator("iframe").count()).toBe(4);
   expect(await primaryFrame.getByText("Hello from Storybook").count()).toBe(1);
   const height = (element: Node) => (element as Element).getBoundingClientRect().height;
   expect(await inLayouts.evaluate(height)).toBe(667);
+  // What a story's `beforeEach` sets is its page's: the cookies and the
+  // storage of the iframe next to it have none of it.
+  const seededBy = (frame: Frame) =>
+    frame.evaluate(() => ({
+      cookie: document.cookie.includes("visitor="),
+      stored: localStorage.getItem("visitor"),
+    }));
+  expect(await seeded.getByText("Visitor: Ada").count()).toBe(1);
+  expect(await seeded.getByText("Seeded: Grace").count()).toBe(1);
+  expect(await seededBy(seeded)).toEqual({ cookie: true, stored: "Ada" });
+  expect(await seededBy(primaryFrame)).toEqual({ cookie: false, stored: null });
   await expect.poll(() => argsTable.getByText("name", { exact: true }).count()).toBe(1);
 });
 
