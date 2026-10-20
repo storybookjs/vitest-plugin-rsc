@@ -1,43 +1,17 @@
-import {
-  vi,
-  beforeAll,
-  beforeEach,
-  afterEach,
-  afterAll,
-  expect,
-  inject,
-  type MockInstance,
-} from "vitest";
+import { vi, beforeAll, beforeEach, afterEach, afterAll, expect, type MockInstance } from "vitest";
 import { page } from "vitest/browser";
-import { PGlite } from "@electric-sql/pglite";
-import { drizzle } from "drizzle-orm/pglite";
 import { setupWorker } from "msw/browser";
-import * as schema from "#db/schema.ts";
-import * as authSessionModule from "#lib/auth-session.ts";
 import * as dbModule from "#lib/db.ts";
-import * as flashCookieModule from "#lib/flash-cookie.ts";
 import { nextCacheProbeFetchHandler } from "#components/next-cache-msw.ts";
 
+// The one module the tests mock: the database, which is the app's Postgres,
+// and a PGlite in memory here. Everything else of the app is real: Better
+// Auth on that database, its cookies, the flash cookies. The plugin starts
+// each test without the app's cookies.
 vi.mock("#lib/db.ts");
 
 const { resetDb } = dbModule as typeof import("#lib/__mocks__/db.ts");
-const { setCurrentUser } = authSessionModule as typeof import("#lib/__mocks__/auth-session.ts");
-const { deleteFlashCookies } = flashCookieModule as typeof import("#lib/__mocks__/flash-cookie.ts");
 
-vi.mock("#lib/auth.ts", () => ({
-  auth: {
-    api: {
-      deletePasskey: vi.fn(),
-      listPasskeys: vi.fn(async () => []),
-      signInEmail: vi.fn(),
-      signInMagicLink: vi.fn(),
-      signOut: vi.fn(),
-      signUpEmail: vi.fn(),
-    },
-  },
-}));
-vi.mock("#lib/auth-session.ts");
-vi.mock("#lib/flash-cookie.ts");
 const disableMotionStyle = document.createElement("style");
 disableMotionStyle.textContent = `
   *,
@@ -53,8 +27,6 @@ document.head.appendChild(disableMotionStyle);
 const MOBILE_VIEWPORT = { width: 390, height: 844 } as const;
 const TEST_NOW = "2026-05-06T00:00:00.000Z";
 
-let base: PGlite;
-let currentDbClient: PGlite | undefined;
 let pointerResetTarget: HTMLElement | undefined;
 const worker = setupWorker(...nextCacheProbeFetchHandler);
 
@@ -80,21 +52,12 @@ async function resetInteractiveState() {
   await page.elementLocator(pointerResetTarget).hover();
 }
 
-async function closeCurrentDbClient() {
-  if (currentDbClient && !currentDbClient.closed) {
-    await currentDbClient.close();
-  }
-  currentDbClient = undefined;
-}
-
 beforeAll(async () => {
   await worker.start({
     onUnhandledRequest: "bypass",
     quiet: true,
     serviceWorker: { url: "/mockServiceWorker.js" },
   });
-  base = await PGlite.create("memory://");
-  await base.exec(inject("testSchemaSQL"));
 });
 
 let consoleError: MockInstance<typeof console.error>;
@@ -106,15 +69,7 @@ beforeEach(async () => {
   // moves in a document that no longer changes.
   await resetInteractiveState();
   worker.resetHandlers();
-  await closeCurrentDbClient();
-  setCurrentUser(null);
-  deleteFlashCookies();
-  const clone = await base.clone();
-  if (!(clone instanceof PGlite)) {
-    throw new TypeError("Expected PGlite.clone() to return a PGlite instance");
-  }
-  currentDbClient = clone;
-  resetDb(drizzle(clone, { schema }));
+  await resetDb();
 
   vi.setSystemTime(new Date(TEST_NOW));
 
@@ -130,8 +85,6 @@ afterEach(async () => {
   expect(consoleError.mock.calls).toEqual([]);
 });
 
-afterAll(async () => {
-  await closeCurrentDbClient();
-  await base.close();
+afterAll(() => {
   worker.stop();
 });

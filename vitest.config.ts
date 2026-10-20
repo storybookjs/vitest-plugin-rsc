@@ -34,7 +34,7 @@ export default defineConfig({
         "**/vitest*.{ts,tsx}",
         "playground/nextjs-notes-demo/{.storybook,db,e2e,env,scripts,test}/**/*.{ts,tsx}",
         "playground/nextjs-notes-demo/**/*.stories.tsx",
-        "playground/nextjs-notes-demo/lib/db{,.dev}.ts",
+        "playground/nextjs-notes-demo/lib/db.ts",
       ],
     },
     // oxlint-disable-next-line no-process-env

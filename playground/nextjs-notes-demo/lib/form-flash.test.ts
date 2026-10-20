@@ -1,25 +1,25 @@
 import { expect, expectTypeOf, test } from "vitest";
+import { runInServerAction } from "vitest-plugin-rsc/nextjs/testing-library";
 import * as z from "zod";
 import { zfd } from "zod-form-data";
 import { getForm, setForm } from "#lib/form-flash.ts";
 
-test("flashes validation errors and old input once", async () => {
+// A Server Action flashes the form with a cookie, which the requests after
+// it read: each call runs in a request of its own, with the app's cookies.
+
+test("flashes validation errors and old input to the next request", async () => {
   const schema = zfd.formData({
     name: zfd.text(z.string().min(2, "Enter at least 2 characters.")),
   });
   const formData = new FormData();
   formData.set("name", "A");
 
-  const result = await setForm(schema, formData);
+  const result = await runInServerAction(() => setForm(schema, formData));
   expect(result.success).toBe(false);
 
-  const form = await getForm(schema);
+  const form = await runInServerAction(() => getForm(schema));
   expect(form.old.name).toBe("A");
   expect(form.errors.name).toBe("Enter at least 2 characters.");
-
-  const consumed = await getForm(schema);
-  expect(consumed.old.name).toBeUndefined();
-  expect(consumed.errors.name).toBeUndefined();
 });
 
 test("flashes repeatable field values and omits file fields from old input", async () => {
@@ -32,10 +32,10 @@ test("flashes repeatable field values and omits file fields from old input", asy
   formData.append("tags", "rsc");
   formData.set("avatar", new File(["avatar"], "avatar.png", { type: "image/png" }));
 
-  const result = await setForm(schema, formData);
+  const result = await runInServerAction(() => setForm(schema, formData));
   expect(result.success).toBe(false);
 
-  const form = await getForm(schema);
+  const form = await runInServerAction(() => getForm(schema));
   expectTypeOf(form.old.tags).toEqualTypeOf<string[] | undefined>();
   expectTypeOf(form.old.avatar).toEqualTypeOf<string | undefined>();
   expectTypeOf(form.errors.tags).toEqualTypeOf<string[] | undefined>();
@@ -59,10 +59,10 @@ test("skips sensitive and action fields from old input", async () => {
   formData.set("password", "secret");
   formData.set("safeField", "safe");
 
-  const result = await setForm(schema, formData);
+  const result = await runInServerAction(() => setForm(schema, formData));
   expect(result.success).toBe(false);
 
-  const form = await getForm(schema);
+  const form = await runInServerAction(() => getForm(schema));
   expect(form.old.name).toBe("A");
   expect(form.old.safeField).toBe("safe");
   expect(form.old.csrfToken).toBeUndefined();

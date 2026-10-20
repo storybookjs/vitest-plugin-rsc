@@ -1,9 +1,9 @@
 import { eq } from "drizzle-orm";
 import { expect, waitForElementToBeRemoved, within } from "storybook/test";
 import { seedNotes } from "#.storybook/sample-notes.ts";
-import { notes } from "#db/schema.ts";
+import { notes, session } from "#db/schema.ts";
 import { db } from "#lib/db.ts";
-import { signInAs, signOut, testUser } from "#test/auth.ts";
+import { signedInAs, testUser } from "#test/auth.ts";
 import { roundTrip } from "#.storybook/round-trip.ts";
 import preview from "#.storybook/preview.server.tsx";
 
@@ -11,7 +11,7 @@ import preview from "#.storybook/preview.server.tsx";
 // one the page reads: see page.test.tsx.
 const meta = preview.meta({
   parameters: { nextjs: { url: "/notes" } },
-  beforeEach: () => signInAs(),
+  beforeEach: () => signedInAs(),
 });
 
 // A fixed date, so a story looks the same every day.
@@ -71,9 +71,11 @@ export const DeleteNote = meta.story({
   },
 });
 
-// `requireUser()` sends a visitor without a session to sign in.
+// `requireUser()` sends a visitor whose session has ended to sign in.
 export const SignedOut = meta.story({
-  beforeEach: signOut,
+  beforeEach: async () => {
+    await db.delete(session);
+  },
   play: async ({ canvas }) => {
     await expect(
       await canvas.findByRole("heading", { level: 1, name: "Welcome back to Notes Demo" }),

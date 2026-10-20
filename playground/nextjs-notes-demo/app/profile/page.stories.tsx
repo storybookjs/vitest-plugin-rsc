@@ -1,17 +1,19 @@
-import { expect, mocked } from "storybook/test";
-import { auth } from "#lib/auth.ts";
-import { signInAs, testUser } from "#test/auth.ts";
+import { expect } from "storybook/test";
+import { passkey, session } from "#db/schema.ts";
+import { db } from "#lib/db.ts";
+import { signedInAs, testUser } from "#test/auth.ts";
 import { roundTrip } from "#.storybook/round-trip.ts";
 import preview from "#.storybook/preview.server.tsx";
 
-// The profile, whose passkeys come from Better Auth: a story says what the
-// mock of `auth.api` answers, see lib/__mocks__/auth.ts and page.test.tsx.
+// The profile of the user who is signed in, whose passkeys Better Auth
+// reads from the database: see page.test.tsx.
 const meta = preview.meta({
   parameters: { nextjs: { url: "/profile" } },
-  beforeEach: () => signInAs(),
+  beforeEach: () => signedInAs(),
 });
 
-const passkey = {
+// A passkey as Better Auth keeps it after a device registered it.
+const registered = {
   publicKey: "pk",
   userId: testUser.id,
   counter: 0,
@@ -27,18 +29,16 @@ export const NoPasskeys = meta.story({
 });
 
 export const WithPasskeys = meta.story({
-  beforeEach: () => {
-    mocked(auth.api.listPasskeys).mockResolvedValue([
+  beforeEach: async () => {
+    await db.insert(passkey).values([
       {
-        ...passkey,
-        id: "11111111-1111-4111-8111-111111111111",
+        ...registered,
         name: "iPhone passkey",
         credentialID: "credential-1",
         createdAt: new Date("2026-02-14T10:00:00.000Z"),
       },
       {
-        ...passkey,
-        id: "22222222-2222-4222-8222-222222222222",
+        ...registered,
         name: "Work laptop",
         credentialID: "credential-2",
         createdAt: new Date("2026-03-20T10:00:00.000Z"),
@@ -61,7 +61,8 @@ export const PasskeySetup = meta.story({
   },
 });
 
-// A Server Action that signs out with Better Auth and redirects to sign in.
+// A Server Action that signs out with Better Auth, which ends the session,
+// and redirects to sign in.
 export const SignOut = meta.story({
   play: async ({ canvas, userEvent }) => {
     await userEvent.click(await canvas.findByRole("button", { name: "Sign out" }));
@@ -72,6 +73,6 @@ export const SignOut = meta.story({
         roundTrip,
       ),
     ).toBeVisible();
-    await expect(auth.api.signOut).toHaveBeenCalledOnce();
+    await expect(await db.select().from(session)).toEqual([]);
   },
 });

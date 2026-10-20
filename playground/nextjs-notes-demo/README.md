@@ -1,27 +1,34 @@
-# PGlite Notes Demo
+# Notes Demo
 
-This playground is a small Next.js App Router notes app used to exercise React Server Components with `vitest-plugin-rsc`. It is the acceptance app of this repository.
+This playground is a small Next.js App Router notes app used to exercise React Server Components with `vitest-plugin-rsc`. It is the acceptance app of this repository: a Next.js app with Better Auth, Drizzle on Postgres, Server Actions and flash cookies.
 
-A browser test opens a route with `renderServer({ url })` from `vitest-plugin-rsc/nextjs/testing-library`, and Next's own request handler, renderer and router do the rest, in the browser test runtime. The tests mock the modules the server reads there, in `vitest.setup.ts`: the database (a PGlite clone per test), the session and the auth API.
+A browser test opens a route with `renderServer({ url })` from `vitest-plugin-rsc/nextjs/testing-library`, and Next's own request handler, renderer and router do the rest, in the browser test runtime. A page story, `app/**/page.stories.tsx`, renders a page the same way in Storybook.
+
+The tests and the stories mock one module: the database, `#lib/db.ts`, which is the app's Postgres. In its place they have a PGlite database in memory, one per document, which each test and story empties first (`lib/__mocks__/db.ts`, with `vi.mock()` in `vitest.setup.ts` and `sb.mock()` in `.storybook/preview.tsx`). Everything else is the app's own: Better Auth on that database, its session cookie, `cookies()` and `headers()` of each request, the flash cookies of the forms, redirects. A test signs a user in with `signedInAs()` of `test/auth.ts`, as Better Auth would have: a session in the database and its signed cookie.
 
 - `app/**/page.test.tsx` open the pages of the app.
 - `components/*.test.tsx` render a probe component on its own, with `renderServer(<Probe />, { url })`: in a container, without the layouts of the app, with the params the app's route for the URL has.
 - `components/next-cache.test.tsx` covers Next's Data Cache: `unstable_cache`, cached `fetch` and what invalidates them.
 
-It intentionally uses local PGlite + Drizzle instead of external services. Named scenarios seed the in-memory database on startup:
+## Development
+
+`pnpm dev` runs on Postgres at `DATABASE_URL`, in `.env.local` (see `.env.example`). A Postgres in Docker:
 
 ```bash
-SCENARIO=empty pnpm dev
-SCENARIO=notes-basic pnpm dev
-SCENARIO=notes-many pnpm dev
+docker run -d --name notes-demo-postgres -p 5432:5432 \
+  -e POSTGRES_PASSWORD=postgres postgres:17
+echo 'DATABASE_URL="postgres://postgres:postgres@localhost:5432/postgres"' > .env.local
+pnpm db:push
+pnpm dev
 ```
 
-`notes-basic` is the default so the app opens with realistic notes.
+`pnpm db:push` makes the tables of `db/schema.ts`. Sign up with any email address: without Resend, `pnpm dev` prints the magic link in the terminal.
 
 ## Commands
 
 ```bash
 pnpm dev
 pnpm build
-pnpm --dir ../.. test:run --project nextjs-notes-demo-browser --project nextjs-notes-demo-node
+pnpm storybook
+pnpm --dir ../.. test:run --project nextjs-notes-demo-browser
 ```
