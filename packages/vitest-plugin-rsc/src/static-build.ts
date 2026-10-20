@@ -121,8 +121,8 @@ export type StaticBuildLayers = {
   entries: Record<string, string>;
   /**
    * The directives of a framework's own files that a bundler would warn
-   * about, like Next's `use turbopack`. Not Vite RSC's: those are references
-   * by then.
+   * about, as they are written, like Next's `use turbopack: no side effects`.
+   * Not Vite RSC's: those are references by then.
    */
   directives?: string[];
   /**
@@ -266,6 +266,20 @@ export function staticBuild(options: StaticBuildOptions): Plugin {
   // The modules that only the lists of references import with `import()`,
   // in the build of the environment that is being built: see `onwarn`.
   let listedOnly = new Set<string>();
+  // What the bundler parsed of each module, by its id, in the build of the
+  // environment that is being built: the code a warning's position is in.
+  const parsed = new Map<string, Rolldown.ModuleInfo>();
+
+  // The directive that a warning of the bundler is about: the string at its
+  // position in the code of its module, as the bundler parsed it.
+  const directiveOf = ({ id, pos }: Rolldown.RolldownLog): string | undefined => {
+    const code = id === undefined ? undefined : parsed.get(id)?.code;
+    if (!code || pos === undefined) return undefined;
+    const quote = code[pos];
+    if (quote !== '"' && quote !== "'") return undefined;
+    const end = code.indexOf(quote, pos + 1);
+    return end === -1 ? undefined : code.slice(pos + 1, end);
+  };
 
   // The entries of a layer, by their names in its input: the module that the
   // page starts the layer with, and in the browser layer the list of its
@@ -309,9 +323,7 @@ export function staticBuild(options: StaticBuildOptions): Plugin {
         // The config's own, which this one replaces: it gets what is left.
         const userOnwarn = userConfig.build?.rolldownOptions?.onwarn;
         const userRenderBuiltUrl = userConfig.experimental?.renderBuiltUrl;
-        const directives = new RegExp(
-          `\\buse (${["client", "server", ...(layers.directives ?? [])].join("|")})\\b`,
-        );
+        const directives = new Set(["use client", "use server", ...(layers.directives ?? [])]);
         const layer = (name: string) => ({
           build: {
             copyPublicDir: false,
@@ -367,7 +379,8 @@ export function staticBuild(options: StaticBuildOptions): Plugin {
                 // A directive is what Vite RSC has made a reference of by then,
                 // or one that a framework's own files have for its bundler.
                 const isDirective =
-                  warning.code === "MODULE_LEVEL_DIRECTIVE" && directives.test(warning.message);
+                  warning.code === "MODULE_LEVEL_DIRECTIVE" &&
+                  directives.has(directiveOf(warning) ?? "");
                 // A build that only looks is left with the imports of a module,
                 // also the ones that are no path until the code runs. It is
                 // thrown away, so what it cannot find it can leave out.
@@ -466,6 +479,7 @@ export function staticBuild(options: StaticBuildOptions): Plugin {
         for (const { pathname, body } of layers.files?.() ?? []) write(pathname, body);
       } finally {
         buildingApp = false;
+        parsed.clear();
       }
     },
     // Before the bundler warns of an `import()` that splits nothing off,
@@ -483,8 +497,12 @@ export function staticBuild(options: StaticBuildOptions): Plugin {
           ),
       );
     },
+    moduleParsed(info) {
+      parsed.set(info.id, info);
+    },
     buildStart() {
       if (this.environment.mode !== "build") return;
+      parsed.clear();
       // Outside the plugin's `buildApp()`, like with Vite's `build()`, only
       // the environment of the host is built: a site without the other
       // layers, which would fail when it is opened.

@@ -40,7 +40,7 @@ function nextConfig(emitted: Record<string, string> = {}): object {
 
 type Bundle = Record<string, object>;
 type Hook = (this: unknown, ...args: any[]) => any;
-type Warning = { code: string; message: string; id?: string; ids?: string[] };
+type Warning = { code: string; message: string; id?: string; ids?: string[]; pos?: number };
 type Meta = { referenceKey: string; importId: string };
 
 // A hook of the plugin, called the way Vite calls it for an environment.
@@ -915,7 +915,7 @@ test("builds the layers that a framework's plugin gives it", () => {
     next_ssr: { build: { rolldownOptions: { input: { entry: "vitest-plugin-rsc/nextjs/ssr" } } } },
   });
   expect(nextConfig()).toEqual(
-    withStaticBuild(expect.objectContaining({ directives: ["turbopack"] })),
+    withStaticBuild(expect.objectContaining({ directives: ["use turbopack: no side effects"] })),
   );
 });
 
@@ -1014,17 +1014,67 @@ test("leaves out an import that a build which only looks cannot find", () => {
   expect(warnings(other)).toEqual([other]);
 });
 
-test("does not warn about the directives of Vite RSC and of Next", () => {
-  const { warnings } = setup();
-  const directive = (name: string) => ({
+// A module as the bundler parsed it, which a warning names by its id, and
+// the warning about the directive at `pos` in it: its message is for people.
+function parsedDirective(plugin: ReturnType<typeof createPlugin>, directive: string) {
+  const id = `/app/${directive.replace(/\W+/g, "-")}.js`;
+  const code = `/* © ${directive} */\n"${directive}";\nexport const a = 1;\n`;
+  (plugin.moduleParsed as Hook)({ id, code });
+  return {
     code: "MODULE_LEVEL_DIRECTIVE",
-    message: `The semantics of the module level directive "${name}" may not be preserved`,
-  });
+    message: 'The semantics of the module level directive "use client" may not be preserved',
+    id,
+    pos: code.indexOf(`"${directive}"`),
+  };
+}
+
+test("does not warn about the directives of Vite RSC and of Next", () => {
+  const { plugin, warnings } = setup();
+  const directive = (name: string) => parsedDirective(plugin, name);
 
   expect(warnings(directive("use client"))).toEqual([]);
   expect(warnings(directive("use server"))).toEqual([]);
   expect(warnings(directive("use turbopack: no side effects"))).toEqual([]);
+  // What the module has at the position, not what the message says.
   expect(warnings(directive("use strict"))).toEqual([directive("use strict")]);
+  expect(warnings(directive("use client-side"))).toEqual([directive("use client-side")]);
+  // A warning about a module that the build did not parse.
+  const unknown = { ...directive("use client"), id: "/app/other.js" };
+  expect(warnings(unknown)).toEqual([unknown]);
+});
+
+// As Rolldown warns: by the id of the module and the position in the code
+// that it parsed, after the plugins transformed it.
+test("finds the directive of a warning where Rolldown parsed it", async () => {
+  const { plugin, config } = setup();
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "static-build-directives-"));
+  onTestFinished(() => fs.rmSync(root, { recursive: true, force: true }));
+  const files = {
+    "main.js": 'import { a } from "./a.js";\nimport { b } from "./b.js";\nconsole.log(a, b);\n',
+    "a.js": '"use client";\nexport const a = 1;\n',
+    "b.js": '"use cache";\nexport const b = 2;\n',
+  };
+  for (const [name, code] of Object.entries(files)) fs.writeFileSync(path.join(root, name), code);
+  const shown: Warning[] = [];
+  const { rolldown } = await import("rolldown");
+  const bundle = await rolldown({
+    input: path.join(root, "main.js"),
+    plugins: [
+      // A plugin before the bundler that moves the directive.
+      { name: "comment", transform: (code) => `/* é ✓ 😀 */\n${code}` },
+      { name: "static-build", moduleParsed: plugin.moduleParsed as Hook },
+    ],
+    onwarn: (warning) =>
+      config.build.rolldownOptions.onwarn(warning as Warning, (shownWarning) =>
+        shown.push(shownWarning),
+      ),
+  });
+  await bundle.generate({});
+  await bundle.close();
+
+  expect(shown.map(({ code, id }) => ({ code, id }))).toEqual([
+    { code: "MODULE_LEVEL_DIRECTIVE", id: path.join(fs.realpathSync(root), "b.js") },
+  ]);
 });
 
 test("does not warn about a module that only the lists of references import twice", () => {
@@ -1122,12 +1172,8 @@ test("passes a warning that it shows on to the config's own handler", () => {
   const onwarn = vi.fn((warning: Warning, warn: (w: Warning) => void) => {
     if (warning.code !== "THE_CONFIG_HIDES") warn(warning);
   });
-  const { warnings } = setup({}, {}, { onwarn });
-  const directive = {
-    code: "MODULE_LEVEL_DIRECTIVE",
-    message:
-      'Module level directives cause errors when bundled, "use client" in "a.tsx" was ignored.',
-  };
+  const { plugin, warnings } = setup({}, {}, { onwarn });
+  const directive = parsedDirective(plugin, "use client");
   const hidden = { code: "THE_CONFIG_HIDES", message: "" };
   const shown = { code: "CIRCULAR_DEPENDENCY", message: "a.js -> b.js -> a.js" };
 
