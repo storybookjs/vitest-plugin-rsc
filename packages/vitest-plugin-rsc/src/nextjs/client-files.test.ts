@@ -130,15 +130,12 @@ test("has the module of a file with `use client` of the host load the file in th
   );
 });
 
-test("loads a file of the host in a build by its key, with the key of its stylesheets", () => {
+test("loads a file of the host in a build by its key", () => {
   const loader = transformLoader.call(context("client", "build"), reference, "/app/built.test.tsx");
 
-  // The key of a build, a hash, which the file's evaluation is recorded by,
-  // and its path from the root of the project, by which the build has its
-  // stylesheets: not its id, which is a path of the machine.
-  expect(loader?.code).toContain(
-    `__vitestPluginRscLoadClientFile("5f3a9c1e", "app/built.test.tsx")`,
-  );
+  // The key of a build, a hash, which the file's evaluation is recorded by:
+  // not its id, which is a path of the machine.
+  expect(loader?.code).toContain(`__vitestPluginRscLoadClientFile("5f3a9c1e"); `);
   expect(loader?.code).toContain(`export const __vitest_plugin_rsc_client_file__ = "5f3a9c1e"; `);
   expect(loader?.code).not.toContain("/app/built.test.tsx");
 });
@@ -176,9 +173,6 @@ test("loads a file of the host with another extension, whose code a plugin of th
   expect(transformLoader.call(rsc, reference, "/docs/intro.mdx")?.code).toContain(
     `__vitestPluginRscLoadClientFile("/docs/intro.mdx"); `,
   );
-  expect(
-    transformLoader.call(context("client", "build"), reference, "/docs/intro.mdx")?.code,
-  ).toContain(`__vitestPluginRscLoadClientFile("/docs/intro.mdx", "docs/intro.mdx"); `);
   // One without the directive is no client file: Vite RSC made no reference of it.
   const page = `export default function Content() { return <h1>Notes</h1>; }\n`;
   expect(transformLoader.call(rsc, page, "/docs/notes.mdx")).toBeUndefined();
@@ -345,10 +339,10 @@ test("tells a module of the host apart as a module runner spells it", () => {
 // layer, and an entry of the host that imports it in the rsc layer and takes
 // a change of it in place, as a framework does that renders it again. The
 // page has `linked.css` in the rsc layer too, as a `<link>` and a `<style>`
-// that Vite swaps in place; `value.css` only in the browser layer, as the
-// `<style>` of a module there, whose CSS depends on `scanned.tsx`, as
-// Tailwind's does on a file it scans. The plugin of Vite RSC is a stand-in
-// that makes the file a reference module.
+// that Vite swaps in place; `value.css` only in the browser layer, where the
+// graph links both, whose CSS depends on `scanned.tsx`, as Tailwind's does
+// on a file it scans. The plugin of Vite RSC is a stand-in that makes the
+// file a reference module.
 async function serveHostFile() {
   const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), "client-files-")));
   onTestFinished(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -479,7 +473,7 @@ test("takes a change of the file itself to the host once", async () => {
 test("takes a change of a stylesheet that only the browser layer has to the host", async () => {
   const { change } = await serveHostFile();
 
-  // Its `<style>` comes back as the file is evaluated again.
+  // The host imports the file again, and links its stylesheets as they are now.
   expect(await change("value.css", "p { color: green }\n").modules).toEqual(["/host.tsx"]);
 });
 
@@ -495,10 +489,12 @@ test("takes a change of a file that a stylesheet of the browser layer depends on
   expect(await modules).toEqual(["/host.tsx"]);
 });
 
-test("leaves a stylesheet that Vite swaps in place in the rsc layer to Vite", async () => {
+// Vite swaps it in place in the rsc layer, and the browser layer links its
+// own, which the host links again as it renders the file again.
+test("takes a change of a stylesheet that Vite swaps in place in the rsc layer to the host too", async () => {
   const { change } = await serveHostFile();
 
   const { modules, sent } = change("linked.css", "h1 { color: green }\n");
-  expect((await modules).sort()).toEqual(["/linked.css", "/linked.css?direct"]);
+  expect((await modules).sort()).toEqual(["/host.tsx", "/linked.css", "/linked.css?direct"]);
   expect(await sent).toMatchObject({ type: "update" });
 });
