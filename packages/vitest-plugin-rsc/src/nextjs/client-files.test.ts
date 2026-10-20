@@ -130,15 +130,12 @@ test("has the module of a file with `use client` of the host load the file in th
   );
 });
 
-test("loads a file of the host in a build by its key, with the key of its stylesheets", () => {
+test("loads a file of the host in a build by its key", () => {
   const loader = transformLoader.call(context("client", "build"), reference, "/app/built.test.tsx");
 
-  // The key of a build, a hash, which the file's evaluation is recorded by,
-  // and its path from the root of the project, by which the build has its
-  // stylesheets: not its id, which is a path of the machine.
-  expect(loader?.code).toContain(
-    `__vitestPluginRscLoadClientFile("5f3a9c1e", "app/built.test.tsx")`,
-  );
+  // The key of a build, a hash, which the file's evaluation is recorded by:
+  // not its id, which is a path of the machine.
+  expect(loader?.code).toContain(`__vitestPluginRscLoadClientFile("5f3a9c1e"); `);
   expect(loader?.code).toContain(`export const __vitest_plugin_rsc_client_file__ = "5f3a9c1e"; `);
   expect(loader?.code).not.toContain("/app/built.test.tsx");
 });
@@ -176,9 +173,6 @@ test("loads a file of the host with another extension, whose code a plugin of th
   expect(transformLoader.call(rsc, reference, "/docs/intro.mdx")?.code).toContain(
     `__vitestPluginRscLoadClientFile("/docs/intro.mdx"); `,
   );
-  expect(
-    transformLoader.call(context("client", "build"), reference, "/docs/intro.mdx")?.code,
-  ).toContain(`__vitestPluginRscLoadClientFile("/docs/intro.mdx", "docs/intro.mdx"); `);
   // One without the directive is no client file: Vite RSC made no reference of it.
   const page = `export default function Content() { return <h1>Notes</h1>; }\n`;
   expect(transformLoader.call(rsc, page, "/docs/notes.mdx")).toBeUndefined();

@@ -53,19 +53,13 @@ let graph: ModuleRunner | undefined;
 // document.ts. `cleanup()` takes them back.
 const linked = new Map<string, { link: HTMLLinkElement; loaded: Promise<unknown> }>();
 
-// Each file of the host that the graph loaded, by its reference key: the key
-// of its stylesheets in a static build, and their URLs once Vitest's setup
-// file has linked them.
-const files = new Map<string, { builtFile: string | undefined; stylesheets?: string[] }>();
-
 // The exports of the evaluation of each file of the host that the graph has
 // now, by its reference key.
 const evaluations = new Map<string, object>();
 
-// The reference keys of the files of the host that the graph loaded since
-// `forgetClientFiles()`, also one whose evaluation failed, which the runner
-// keeps as it does an evaluation: with a dev server, their URLs, which
-// `forgetClientFiles()` has the graph evaluate again.
+// The URLs of the files of the host that the graph imported, also one whose
+// evaluation failed, which the runner keeps as it does an evaluation:
+// `forgetClientFiles()` has the graph evaluate each again.
 const imported = new Set<string>();
 
 // The exports that each client reference module stands for: the file's last
@@ -86,17 +80,6 @@ const isDependency = ({ id, file }: { id: string; file: string | null }) =>
 // loads a module as its own does.
 const browserRequire = (id: string) => registry.loadBrowserModule(id);
 
-// The URLs of the stylesheets of a client file: from the dev server, by its
-// URL, see styles.ts. A static build has them in a file, by the path of the
-// file from the root of the project.
-async function stylesheetsOf(key: string, builtFile: string | undefined): Promise<string[]> {
-  if (!buildDirectory) {
-    return askDevServer<string[]>(stylesheetsEvent, { url: key } satisfies StylesheetsQuestion);
-  }
-  if (builtFile === undefined) return [];
-  return builtClientStylesheetsOf(await builtFiles(), builtFile, buildDirectory);
-}
-
 // In a static build: the modules of the browser layer that a Flight payload
 // can refer to, by their reference keys, which the graph evaluates a client
 // file from.
@@ -109,8 +92,7 @@ type ClientReferences = { default: Record<string, () => Promise<object>> };
  * calls this before its own code runs, as Vitest evaluates what a file
  * imports before it. So a test file with the directive registers its tests
  * with Vitest, which imports the file in the rsc layer, and a setup file
- * with it its hooks. In a static build `builtFile` is the key of its
- * stylesheets there: see `clientFileCode()` in client-files.ts.
+ * with it its hooks.
  *
  * Once for each version of the file, as the browser evaluates a module
  * once: a second import of the file gets the evaluation of the first, or
@@ -121,7 +103,7 @@ type ClientReferences = { default: Record<string, () => Promise<object>> };
  * each. What the file imports, once for the graph until it changes, as the
  * browser does for what Vitest evaluates in the tab.
  */
-export async function loadClientFile(key: string, builtFile?: string): Promise<void> {
+export async function loadClientFile(key: string): Promise<void> {
   if (buildDirectory) {
     graph ??= createEnvironmentRunner(environment);
     const references = await graph.import<ClientReferences>(
@@ -130,10 +112,8 @@ export async function loadClientFile(key: string, builtFile?: string): Promise<v
     const load = references.default[key];
     if (!load) throw new Error(`vitest-plugin-rsc: the build has no client reference "${key}"`);
     registry.browserRequire = browserRequire;
-    imported.add(key);
     // Once for the document: a build has no change, and the runner
     // evaluates the module that the list imports once.
-    files.set(key, { builtFile });
     evaluations.set(key, await load());
     return;
   }
@@ -149,7 +129,6 @@ export async function loadClientFile(key: string, builtFile?: string): Promise<v
   // The runner keeps the evaluation of the file until a change, above, or
   // `forgetClientFiles()` invalidated it.
   imported.add(key);
-  files.set(key, { builtFile });
   evaluations.set(key, await graph.import(key));
 }
 
@@ -240,14 +219,6 @@ async function stylesheetsOfHostFiles(hostFiles: string[]): Promise<string[]> {
   return [...new Set(urls)];
 }
 
-// The URLs of the stylesheets of a file that the graph loaded, once for
-// each evaluation of it.
-async function stylesheetsOfFile(key: string): Promise<string[]> {
-  const file = files.get(key)!;
-  file.stylesheets ??= await stylesheetsOf(key, file.builtFile);
-  return file.stylesheets;
-}
-
 // The CSS of what a file with `"use client"` imports, its own too, linked in
 // the document, as a page of the app links its CSS: see styles.ts. Vite's
 // `<style>` of a module would stay for every file after it, and the `<link>`
@@ -274,20 +245,6 @@ async function linkStylesheets(urls: string[]): Promise<void> {
 export function unlinkClientStylesheets(): void {
   for (const { link } of linked.values()) link.remove();
   linked.clear();
-}
-
-/**
- * Links the stylesheets of every file of the host that the graph loaded
- * since `forgetClientFiles()`. Under Vitest those are the setup files and
- * the test file with `"use client"`, which every test uses: the plugin's
- * setup file calls this before the tests of a file, and again before each,
- * after `cleanup()`. Asks for a file's once: a change of one runs the test
- * file again.
- */
-export async function linkClientStylesheets(): Promise<void> {
-  // In the order the files loaded, as their CSS cascades.
-  const urls = await Promise.all([...imported].map((key) => stylesheetsOfFile(key)));
-  await linkStylesheets(urls.flat());
 }
 
 /**

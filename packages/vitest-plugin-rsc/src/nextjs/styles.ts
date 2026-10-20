@@ -474,28 +474,19 @@ export function createStyles(options: StylesOptions): Styles {
   }
 
   /**
-   * The stylesheets of a file of the host with `"use client"`, by its URL in
-   * the browser layer: what it imports there, as for a file of a segment. It
-   * renders without a page of the app, so the page links them itself, once it
-   * has evaluated the file: see client-graph.ts. A setup file with the
-   * directive the same, before every test file.
-   */
-  async function clientStylesheetsOf(vite: ViteDevServer, url: string): Promise<string[]> {
-    const { load, follow, collect } = reach(vite);
-    const node = await load("browser", url);
-    if (!node) return [];
-    await follow("browser", node);
-    return linkedAt(vite, collect([node]));
-  }
-
-  /**
-   * The stylesheets of files of the host that the host uses,
-   * `linkStylesheetsOf()`: what each reaches from its module in the rsc
-   * layer, as for the files that render a node, in their order, each once.
+   * The stylesheets of the files of the host with `"use client"` that the
+   * host uses, `linkStylesheetsOf()`: what each imports in the browser layer,
+   * as for a file that renders a node, in their order, each once. It renders
+   * without a page of the app, so the page links them itself: see
+   * client-graph.ts. Not those of a file without the directive, whose CSS is
+   * Vite's `<style>` in the document already, as the host's module imports it.
    */
   async function hostFilesStylesheetsOf(vite: ViteDevServer, files: string[]): Promise<string[]> {
     const { follow, collect } = reach(vite);
-    const nodes = hostFileNodes(vite, files, "`linkStylesheetsOf()`");
+    const references = getPluginApi(vite.config)?.manager.clientReferenceMetaMap ?? {};
+    const nodes = hostFileNodes(vite, files, "`linkStylesheetsOf()`").filter(
+      (node) => node.id && clientReferenceOfModule(references, node.id),
+    );
     await Promise.all(nodes.map((node) => follow("rsc", node)));
     return linkedAt(vite, collect(nodes));
   }
@@ -584,11 +575,9 @@ export function createStyles(options: StylesOptions): Styles {
         // What the page asks the plugin: the stylesheets of a route, or of a
         // client file. See `stylesheetsEvent` in styles-shared.ts.
         answerPage(vite, stylesheetsEvent, (question: StylesheetsQuestion) =>
-          "url" in question
-            ? clientStylesheetsOf(vite, question.url)
-            : "hostFiles" in question
-              ? hostFilesStylesheetsOf(vite, question.hostFiles.map(fileOf))
-              : stylesheetsOf(vite, question.files.map(fileOf), question.entry, question.inline),
+          "hostFiles" in question
+            ? hostFilesStylesheetsOf(vite, question.hostFiles.map(fileOf))
+            : stylesheetsOf(vite, question.files.map(fileOf), question.entry, question.inline),
         );
         // A load that failed may not after a change. One that did is
         // reloaded when Vite invalidates its module.

@@ -1,7 +1,7 @@
 import { afterEach, beforeAll, beforeEach } from "vitest";
 import { server } from "vitest/browser";
 import { cleanup } from "./index.ts";
-import { forgetClientFiles, linkClientStylesheets } from "./client-graph.ts";
+import { forgetClientFiles, linkStylesheetsOf } from "./client-graph.ts";
 import { registry } from "./registry.ts";
 import { ssrLayer } from "./server-layers.ts";
 
@@ -24,14 +24,14 @@ forgetClientFiles();
 // Until then, as a setup file or a test file collects, the setup files
 // alone: not the test file of before, with `isolate: false`. See `nodeFiles`
 // in registry.ts.
-registry.nodeFiles = () => [...server.config.setupFiles];
+let nodeFiles = [...server.config.setupFiles];
+registry.nodeFiles = () => nodeFiles;
 // oxlint-disable-next-line no-empty-pattern
 beforeAll(async ({}, suite) => {
-  const { filepath } = suite.file;
-  registry.nodeFiles = () => [...server.config.setupFiles, filepath];
-  // The stylesheets of the setup files and the test file with `"use client"`,
-  // which every test of the file uses, its `beforeAll` hooks too.
-  await linkClientStylesheets();
+  nodeFiles = [...server.config.setupFiles, suite.file.filepath];
+  // The stylesheets of those with `"use client"`, which every test of the
+  // file uses, its `beforeAll` hooks too.
+  await linkStylesheetsOf(nodeFiles);
 });
 
 // The ssr layer, which the entry does not wait for: with a dev server, the
@@ -48,5 +48,5 @@ afterEach(() => cleanup());
 // `"use client"` come back, which `cleanup()` unlinked.
 beforeEach(async () => {
   await cleanup();
-  await linkClientStylesheets();
+  await linkStylesheetsOf(nodeFiles);
 });
