@@ -483,15 +483,16 @@ test("takes a change of a stylesheet that only the browser layer has to the host
   expect(await change("value.css", "p { color: green }\n").modules).toEqual(["/host.tsx"]);
 });
 
-test("leaves a change of a file that a stylesheet of the file depends on to the stylesheet", async () => {
+test("takes a change of a file that a stylesheet of the browser layer depends on to the host", async () => {
   const { change } = await serveHostFile();
 
-  // Vite updates the stylesheet: the file imports no code of `scanned.tsx`.
+  // The stylesheet comes back with its new CSS as the file is evaluated
+  // again, as for a change of the stylesheet itself.
   const { modules } = change(
     "scanned.tsx",
     'export const Scanned = () => <p className="green" />;\n',
   );
-  expect(await modules).toEqual([]);
+  expect(await modules).toEqual(["/host.tsx"]);
 });
 
 test("leaves a stylesheet that Vite swaps in place in the rsc layer to Vite", async () => {

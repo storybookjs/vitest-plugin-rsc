@@ -65,6 +65,13 @@ const directRE = /[?&]direct\b/;
 // stylesheet of a `?url` import: the plugin makes the file of it itself.
 const transformOnly = "transform-only";
 
+/**
+ * Whether Vite swaps a module in place after a change: a stylesheet that
+ * accepts its own update, as a `<link>` or as its `<style>`.
+ */
+export const isSwappedStylesheet = (node: EnvironmentModuleNode) =>
+  node.isSelfAccepting === true && isCSSRequest(node.url);
+
 /** The id of a stylesheet that Next links, of the id of its file, in a build or not. */
 export const linked = (id: string, build = false) =>
   `${id}${id.includes("?") ? "&" : "?"}${linkedQuery}${build ? `&${transformOnly}` : ""}`;

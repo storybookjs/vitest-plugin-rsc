@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import type { Frame } from "playwright";
+import type { Frame, Page } from "playwright";
 import { afterAll, beforeAll, expect } from "vitest";
 import { copyProject } from "../../test-helpers/build.ts";
 import { createProject, type DevServer } from "../../test-helpers/host.ts";
@@ -37,6 +37,14 @@ afterAll(async () => {
 const mark = (canvas: Frame) => canvas.evaluate(() => Object.assign(window, { __marked: true }));
 const marked = (canvas: Frame) => canvas.evaluate(() => "__marked" in window);
 
+// Opens a story after a page story, so that the root layout, and the
+// stylesheet it imports, are in the module graph, as a user has them who
+// opened a page before.
+async function openAfterPage(page: Page, story: string) {
+  await openStory(page, site!.url, "app-page--signed-in");
+  return openStory(page, site!.url, story);
+}
+
 function change(file: string, from: string, to: string) {
   const changed = path.join(copy, file);
   const source = fs.readFileSync(changed, "utf8");
@@ -44,8 +52,6 @@ function change(file: string, from: string, to: string) {
   fs.writeFileSync(changed, source.replace(from, to));
 }
 
-// A page story first, so that the root layout, and the stylesheet it
-// imports, are in the module graph for the tests after it.
 test("a page story renders again in place after a change of its file", async ({ page }) => {
   const canvas = await openStory(page, site!.url, "app-page--signed-out");
   await mark(canvas);
@@ -57,7 +63,7 @@ test("a page story renders again in place after a change of its file", async ({ 
 });
 
 test("a server story renders again in place after a change of its file", async ({ page }) => {
-  const canvas = await openStory(page, site!.url, "components-ui-field--several-errors");
+  const canvas = await openAfterPage(page, "components-ui-field--several-errors");
   await mark(canvas);
   change("components/ui/field.stories.tsx", '"Title is too long."', '"Title is far too long."');
   await expect
@@ -72,7 +78,7 @@ test("a server story renders again in place after a change of its file", async (
 test("a client story renders again in place after a change of its file, with Tailwind's CSS of it", async ({
   page,
 }) => {
-  const canvas = await openStory(page, site!.url, "components-ui-button--pressed");
+  const canvas = await openAfterPage(page, "components-ui-button--pressed");
   await mark(canvas);
   change(
     "components/ui/button.stories.tsx",
