@@ -105,12 +105,10 @@ const inDocs = (canvas: Frame) => canvas.locator("#storybook-docs");
 // stories, and an iframe that it replaces stops what it was loading.
 const replacedIframe = /^requestfailed: .* net::ERR_ABORTED$/;
 
-// Fails: the plugin evaluates every file of the browser layer again after a
-// change (client-graph.ts:135), so the MDX file imports a new evaluation of
-// the story file, while `loadClientModule()` of the story file's module,
-// which did not change, keeps the one the store has (client-graph.ts:165).
-// `<Canvas of>` then names a story that the store does not know.
-test.fails("an MDX page renders again after a change of the file", async ({ page, errors }) => {
+// The MDX file imports the story file's evaluation that the store has: the
+// story file did not change, so it is the one evaluation of it, and
+// `<Canvas of>` names a story that the store knows.
+test("an MDX page renders again after a change of the file", async ({ page, errors }) => {
   errors.ignore!.push(replacedIframe);
   const canvas = await openDocs(page, site!.url, "introduction--docs");
   await storyInDocs(canvas, "greeting--default");
