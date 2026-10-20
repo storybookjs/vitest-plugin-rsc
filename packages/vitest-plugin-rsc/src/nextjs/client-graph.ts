@@ -34,7 +34,7 @@ import { moveLink, stylesheetVersions, type StylesheetVersions } from "./stylesh
 // lives as long as the tab, as the modules of a test do without Next. What a
 // file imports loads there once, with Next's React for the browser, and so
 // does the library that renders. Every page of the app has a graph of its
-// own (`openPage()` in index.ts), which this one shares no module with.
+// own (`openPage()` in page.ts), which this one shares no module with.
 //
 // The host imports such a file in the rsc layer, where it is a client
 // reference module. That module evaluates the file here as it loads, see
@@ -104,7 +104,7 @@ const isDependency = ({ id, file }: { id: string; file: string | null }) =>
 // What Next's Flight client of the browser layer reads as `__webpack_require__`
 // when it loads, and wraps a property of. A Server Action that a client file
 // imports brings that client. A page sets one of its own when it loads
-// (`openPage()` in index.ts): one that the graph and a page shared would keep
+// (`openPage()` in page.ts): one that the graph and a page shared would keep
 // the page. A page that is open meanwhile calls the graph's after a load, which
 // loads a module as its own does.
 const browserRequire = (id: string) => registry.loadBrowserModule(id);
@@ -386,7 +386,7 @@ export function forgetClientFiles(): void {
  * A page sets Next's own, which posts to that page (client.tsx). A client
  * file has no page, and the router of a page that was left would never
  * answer. So this one is there from the start, and again once a page is left
- * (`leavePage()` in index.ts).
+ * (`leavePage()` in page.ts).
  */
 export async function callServerWithoutPage(id: string): Promise<never> {
   const name = id.split("#").at(-1);
@@ -398,5 +398,5 @@ export async function callServerWithoutPage(id: string): Promise<never> {
   );
 }
 
-// Before any page: index.ts imports this module, and opens the pages.
+// Before any page: index.ts imports this module, and page.ts opens the pages.
 globalThis.__viteRscCallServer = callServerWithoutPage;
