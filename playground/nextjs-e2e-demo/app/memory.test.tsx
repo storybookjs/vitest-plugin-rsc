@@ -1,7 +1,17 @@
 import { cleanup, renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
-import { afterEach, beforeEach, expect, onTestFinished, test, vi, type MockInstance } from "vitest";
+import {
+  afterEach,
+  beforeEach,
+  expect,
+  inject,
+  onTestFinished,
+  test,
+  vi,
+  type MockInstance,
+} from "vitest";
 import { cdp, page } from "vitest/browser";
 import { Counter } from "./components/counter.tsx";
+import { ErrorOfPage } from "./components/error-of-page.tsx";
 import { HelpDialog } from "./components/help-dialog.tsx";
 import { Shortcuts } from "./components/shortcuts.tsx";
 
@@ -26,31 +36,31 @@ afterEach(() => {
 const modulesOfPage = () =>
   new WeakRef((globalThis as { __viteRscCallServer?: object }).__viteRscCallServer!);
 
-// Every page that a test of this file has left. One of them may stay,
-// whichever test left it: since V8 7dcf3d06ea (Chromium 153), a live shape
-// keeps every descriptor of its array, also those that only longer shapes
-// use. The first page whose objects extend a shape of the tab, like the
-// interop object of a CommonJS package, puts its getters there, and they lead
-// back to the page: V8 keeps that page for as long as the tab has an object
-// of the shape. That is one page per such shape for the tab, not one per
-// test, so every test leaves two pages or more: what a page leaves behind
-// keeps them all.
+// Every page that a test of this file has left. Since V8 7dcf3d06ea
+// (Chromium 153) a shape that the tab shares keeps the getters that the
+// CommonJS interop of a page put on it, and with them the exports of the
+// page's React. The React of a page that is left reaches none of its modules,
+// so no page stays: in production. In development one may stay, whichever
+// test left it: see "lets go of a page whose React the test still has". So
+// every test leaves two pages or more: what a page leaves behind keeps them
+// all.
 const left: WeakRef<object>[] = [];
+const leftMayStay = inject("build") === "development" ? 1 : 0;
 
-// Passes once the browser has let go of all pages in `left` but at most one:
-// after the tasks that the pages had queued have run. The garbage collection
-// is forced through the Chrome DevTools Protocol, which Chromium always has.
-async function expectCollected(): Promise<void> {
+// Passes once the browser has let go of `pages` but `mayStay` of them, after
+// the tasks that the pages had queued have run. The garbage collection is
+// forced through the Chrome DevTools Protocol, which Chromium always has.
+async function expectCollected(pages = left, mayStay = leftMayStay): Promise<void> {
   await expect
     .poll(
       async () => {
         await cdp().send("HeapProfiler.collectGarbage");
         // Not the objects themselves: the assertion would keep them.
-        return left.filter((of) => of.deref() !== undefined).length;
+        return pages.filter((of) => of.deref() !== undefined).length;
       },
       { timeout: 4000, interval: 100 },
     )
-    .toBeLessThanOrEqual(1);
+    .toBeLessThanOrEqual(mayStay);
 }
 
 // Next's router, as Next's own e2e tests reach it.
@@ -200,6 +210,40 @@ test("lets go of a page that the test has left, with all of its modules", async 
   await page.getByRole("heading", { name: "Home" }).hover();
 
   await expectCollected();
+});
+
+// In development React DOM keeps the last root whose effects updated it, also
+// once the root has been unmounted, and that root leads to the page: that is
+// React's, not the plugin's.
+test.skipIf(inject("build") === "development")(
+  "lets go of a page whose React the test still has",
+  async () => {
+    await renderServer({ url: "/react-of-page" });
+    // What V8 may keep of a page that is left, see `left`.
+    const react = globalThis.reactOfPage;
+    delete globalThis.reactOfPage;
+    const modules = modulesOfPage();
+
+    await renderServer({ url: "/" });
+    await page.getByRole("heading", { name: "Home" }).hover();
+
+    await expectCollected([modules], 0);
+    expect(react).toBeDefined();
+  },
+);
+
+test("lets go of a node whose error the test still has", async () => {
+  await renderServer(<ErrorOfPage />);
+  // V8 keeps the frames of its stack, and the page's module runner with them.
+  const error = globalThis.errorOfPage;
+  delete globalThis.errorOfPage;
+  const modules = modulesOfPage();
+
+  await renderServer({ url: "/" });
+  await page.getByRole("heading", { name: "Home" }).hover();
+
+  await expectCollected([modules], 0);
+  expect(error).toBeInstanceOf(Error);
 });
 
 test("lets go of a page that rendered a portal in the body", async () => {
