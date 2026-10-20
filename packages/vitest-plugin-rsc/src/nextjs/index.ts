@@ -1243,12 +1243,15 @@ type NavigateEvent = Event & {
   downloadRequest: string | null;
 };
 // Vite's client loads the document again after a change that nothing takes
-// in place. With a page open that would be a reload of the page, which the
-// listener below loads as the app's, at the page's URL: the host's document
-// would stay. Left first, the document and its URL are the host's again.
+// in place, and once the dev server answers again after it lost the
+// connection, as after a restart. With a page open that would be a reload of
+// the page, which the listener below loads as the app's, at the page's URL:
+// the host's document would stay, with a connection to a server that is
+// gone. Left first, the document and its URL are the host's again.
 import.meta.hot?.on("vite:beforeFullReload", ({ path }) => {
   if (reloadsDocument(path)) return leavePage("a reload of the page");
 });
+import.meta.hot?.on("vite:ws:disconnect", () => leavePage("a lost connection to the dev server"));
 
 // Whether Vite's client goes on to load the document again, as it decides
 // once the page is left: for a change of an HTML file only if it is the one
@@ -1275,9 +1278,9 @@ function reloadsDocument(path: string | undefined): boolean {
   // too. The host's URL goes to the browser as it is. While a node is open,
   // a URL of the app's origin with its pathname stands in for the host's:
   // the app's route there is another page. Leaving puts back the host's URL.
-  // Any other URL is the app's: hosts leave a page before a reload of their
-  // own (Vite with `vite:beforeFullReload`, another host with the cleanup of
-  // what it showed).
+  // Any other URL is the app's: a page is left before a reload of the host's
+  // (one of Vite's client above, another host's with the cleanup of what it
+  // showed).
   if (destination.url === documentUrl()) return;
   if (url.origin === window.location.origin && openedAt(url)?.node) {
     event.preventDefault();
