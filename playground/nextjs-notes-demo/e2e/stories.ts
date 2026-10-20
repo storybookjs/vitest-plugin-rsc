@@ -204,11 +204,28 @@ async function shownStories(canvas: Frame, ids: string[]): Promise<Shown[]> {
   return (await shown.jsonValue()) as Shown[];
 }
 
+// The iframes of the story blocks of the docs page in the preview, with the
+// story each renders and its height.
+async function iframesOf(canvas: Frame) {
+  const elements = await canvas.locator("#storybook-docs .sb-story iframe").elementHandles();
+  return Promise.all(
+    elements.map(async (element) => {
+      const frame = (await element.contentFrame())!;
+      const id = await frame.evaluate(() => window.__STORYBOOK_PREVIEW__.currentRender!.id);
+      const height = await element.evaluate(
+        (iframe) => (iframe as Element).getBoundingClientRect().height,
+      );
+      return { id, frame, height };
+    }),
+  );
+}
+
 /**
  * Selects every docs page of the Storybook at `url` in turn, as the sidebar
  * does. Each shows its stories, a client story inline and a server story in
  * an iframe once, where it renders in a page of the app without an error
- * and without its play function, and the page logs no error.
+ * and without its play function, and the page logs no error. A page's
+ * iframe is 667px high, and each iframe has a storage of its own.
  */
 export async function renderEveryDocsPage(
   page: Page,
@@ -233,8 +250,34 @@ export async function renderEveryDocsPage(
         : { id: story.id, in: "iframe", error: false, played: false };
     });
     expect(shown, id).toEqual(expected);
-    const inIframes = shown.filter((story) => story.in === "iframe").map((story) => story.id);
-    expect(inIframes, id).toEqual([...new Set(inIframes)]);
+    // Each server story in one iframe, the primary too.
+    const iframes = await iframesOf(canvas);
+    expect(iframes.map((iframe) => iframe.id).sort(), id).toEqual(
+      stories
+        .filter((story) => !story.client)
+        .map((story) => story.id)
+        .sort(),
+    );
+    // A page owns the document: its iframe is as high as a small phone's
+    // screen. No story of the project sets `parameters.docs.story.height`.
+    for (const iframe of iframes) {
+      const { page: isPage } = stories.find((story) => story.id === iframe.id)!;
+      if (isPage) expect(Math.round(iframe.height), iframe.id).toBe(667);
+    }
+    // The page in each iframe has a storage of its own: each writes before
+    // any reads, so in a storage they shared all would read the last one.
+    for (const { frame, id } of iframes) {
+      await frame.evaluate((id) => {
+        localStorage.setItem("written-by", id);
+        sessionStorage.setItem("written-by", id);
+      }, id);
+    }
+    for (const { frame, id } of iframes) {
+      const read = await frame.evaluate(() =>
+        [localStorage, sessionStorage].map((storage) => storage.getItem("written-by")),
+      );
+      expect(read, id).toEqual([id, id]);
+    }
     expectNoErrorLogged(
       errors,
       id,

@@ -252,6 +252,11 @@ export const SignedIn = meta.story({
 });
 ```
 
+The page's `localStorage` and `sessionStorage` are its own, as its cookies
+are: Storybook's items in the browser's storage are invisible to the app,
+and what the app stores does not reach them. The browser's DevTools show
+the browser's storage, not the page's.
+
 ## `parameters.nextjs`
 
 The request a server story renders in:
@@ -333,10 +338,15 @@ A docs page shows each story the way its kind renders:
 - A client story renders in the docs page, inline. A new value from
   Controls renders it again in place, with the state it has.
 - A server story renders in a page of the app, which has a document of its
-  own: the docs page shows it in Storybook's iframe of the story. One that
-  owns the document is as high as a small phone's screen, a component
-  100px, as any story in an iframe. Set another height with
+  own: the docs page shows it in Storybook's iframe of the story, once, the
+  primary story too. One that owns the document is 667px high, as a small
+  phone's screen, a component 100px, as any story in an iframe. The iframe
+  does not follow the height of its page: set a taller one with
   `parameters.docs.story.height`, on the meta for every story of a file.
+- The page in each iframe has cookies, `localStorage` and `sessionStorage`
+  of its own, which start empty, as in a new browser context: what a
+  story's `beforeEach` or its page sets there, the stories in the iframes
+  next to it do not read, and their cleanups do not clear it.
 
 A server story with `parameters.docs.story.inline: true`, or a block's
 `inline` prop, cannot render in the docs page, and shows an error that says
@@ -378,14 +388,10 @@ for both kinds.
 - Controls on a docs page do not reach a server story, which is in an
   iframe, as they reach no story in an iframe in Storybook: open the story
   to change its args.
-- The iframe of a server story on a docs page does not follow the height
-  of its page.
 - Tags of `preview.server.tsx`: see Two Previews.
-- A docs page shows its server stories in iframes that render at once and
-  share the browser's storage, which each story's cleanup clears: a page
-  that reads what its story's `beforeEach` put in `localStorage` can find
-  it cleared. Keep such a story out of autodocs with
-  `tags: ["!autodocs"]`.
+- A client story has the browser's `localStorage` and `sessionStorage`
+  until the preview loads a server story file, and the page's storage of
+  the server stories after it, which nothing clears before a client story.
 - A change of an MDX file that shows a client story with `of={…}` fails
   that block until the preview loads again.
 - Next's router in a client story: `useRouter()` throws there, and
