@@ -1,7 +1,7 @@
 // Stands in for `test/lib/next-test-utils.ts`: the helpers that work on a
 // page or a response. The ones that start a process, read a build or open a
 // socket have no place in a tab; the runner gives each of those a stub that
-// says so (see `stubsFor()` in src/vite-plugin.ts).
+// says so (see the `load` of `next-test-utils` in src/vite-plugin.ts).
 //
 // The bodies follow Next's own, so that a test waits and retries as it does
 // there.
@@ -15,6 +15,7 @@ import { isUnsupported } from "./unsupported.ts";
 const setTimeout = globalThis.setTimeout;
 
 export { withQuery };
+export { gate } from "./gate.ts";
 
 export const debugPrint = (..._args: unknown[]) => {};
 export const shouldUseTurbopack = () => false;
