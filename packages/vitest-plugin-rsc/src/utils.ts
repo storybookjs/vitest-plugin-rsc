@@ -82,10 +82,24 @@ export async function askDevServer<T>(event: string, question: object): Promise<
   return result.answer;
 }
 
-// The modules of a static build, see built-layers.ts. A page runs every
-// layer of it, so the tab asks for all of them at once, before a runner does.
-const built = createBuiltLayers(nativeFetch);
-for (const layer of Object.values(builtLayers ?? {})) if (layer) built.preload(layer);
+// The modules of a static build, see built-layers.ts. The tab asks for them
+// before a runner does, in the order of the build: the browser layer, which
+// every page runs, first, and the others once it has ended.
+const built = createBuiltLayers(
+  nativeFetch,
+  Object.values(builtLayers ?? {}).filter((layer) => layer !== undefined),
+);
+
+/**
+ * Has the tab fetch the modules of a layer of a static build now, where it
+ * would wait for the browser layer's: a request needs that layer. Nothing
+ * with a dev server, which serves the modules of every layer as they are
+ * asked for.
+ */
+export function fetchLayerNow(environment: string): void {
+  const layer = builtLayers?.[environment];
+  if (layer) built.fetchNow(layer);
+}
 
 let webSocket: WebSocket | undefined;
 let webSocketPromise: Promise<WebSocket> | undefined;

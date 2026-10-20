@@ -71,10 +71,10 @@ The same for the Storybook of the notes demo, which loads a story in a tab of it
 
 ```sh
 pnpm perf:storybook
-pnpm perf:storybook --stories ui-button--pressed --profiles local
+pnpm perf:storybook --stories components-ui-button--pressed --profiles local
 ```
 
-It builds it as the Chromatic workflow does, `pnpm build` of the packages and `storybook build` against them, into `artifacts/perf/local/storybook/storybook-static`, and measures a story of a file with `"use client"`, `ui-button--pressed`, a story of a page of the app, `pages-notes--with-notes`, and a docs page, `ui-button--docs`. Each loads cold and warm over each network, from the same server and in an order of the seed, as above. Styled is the first frame with text of the story, and not Storybook's "preparing", with every stylesheet loaded, and done is when the render ended with its play function, or the docs page shows every story on it rendered, as the notes demo's `e2e/stories.ts` waits for them. The summary has the bytes by kind, the requests of each `modules.json`, wire ms, waves and idle ms until done, and when Storybook asked for its `index.json` after the ssr layer's file ended; `results.json` has every request. The run fails on a story that does not end as `finished`. `--skip-build` measures the build that is there.
+It builds it as the Chromatic workflow does, `pnpm build` of the packages and `storybook build` against them, into `artifacts/perf/local/storybook/storybook-static`, and measures a story of a file with `"use client"`, `components-ui-button--pressed`, a story of a page of the app, `app-notes-page--with-notes`, and a docs page, `components-ui-button--docs`. Each loads cold and warm over each network, from the same server and in an order of the seed, as above. Styled is the first frame with text of the story, and not Storybook's "preparing", with every stylesheet loaded, and done is when the render ended with its play function, or the docs page shows every story on it rendered, as the notes demo's `e2e/stories.ts` waits for them. The summary has the bytes by kind, the requests of each `modules.json`, wire ms, waves and idle ms until done, and when Storybook asked for its `index.json` after the ssr layer's file ended; `results.json` has every request. The run fails on a story that does not end as `finished`. `--skip-build` measures the build that is there.
 
 ## Comparing Branches
 

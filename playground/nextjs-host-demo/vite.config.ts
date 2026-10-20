@@ -18,9 +18,10 @@ import { vitestPluginRscSourceConditions } from "../../vitest.conditions.ts";
 // package: the CSS that a file of the host imports in the browser layer is
 // Vite's `<style>`, never a link, see styles.ts.
 //
-// `vite build` builds both pages of the host into a static site, with the
+// `vite build` builds the pages of the host into a static site, with the
 // files of the host that have `"use client"` and the page's own `host-report`:
-// see build-test/static-build.test.ts.
+// see build-test/static-build.test.ts. `nested/index.html` is the page of
+// index.html in a directory of its own.
 export default defineConfig({
   root: fileURLToPath(new URL("./", import.meta.url)),
   plugins: [
@@ -32,7 +33,7 @@ export default defineConfig({
   optimizeDeps: { exclude: ["host-package"] },
   build: {
     rolldownOptions: {
-      input: ["index.html", "callout.html"].map((page) =>
+      input: ["index.html", "callout.html", "nested/index.html"].map((page) =>
         fileURLToPath(new URL(page, import.meta.url)),
       ),
     },

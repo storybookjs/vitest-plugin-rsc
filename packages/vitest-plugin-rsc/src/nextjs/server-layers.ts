@@ -11,7 +11,9 @@ await import("./rsc.ts");
  * The ssr layer: Next's request handler and HTML renderer, see ssr.ts. It
  * starts to load once the rsc layer has, and what the host imports does not
  * wait for it: only what needs it does, a request that the server handles.
- * The server in front of the app needs none: see server-in-front.ts.
+ * The server in front of the app needs none: see server-in-front.ts. A build
+ * fetches its file after the browser layer's, unless a request needs it
+ * first: see built-layers.ts.
  */
 export const ssrLayer = createEnvironmentRunner("next_ssr").import<typeof import("./ssr.ts")>(
   environmentModule("next_ssr", "vitest-plugin-rsc/nextjs/ssr"),

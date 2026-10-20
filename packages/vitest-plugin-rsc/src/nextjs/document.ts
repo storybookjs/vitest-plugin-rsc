@@ -51,8 +51,17 @@ function staysDuringPage(node: Node): boolean {
   return (
     node instanceof HTMLScriptElement ||
     node instanceof HTMLStyleElement ||
-    (node instanceof HTMLLinkElement && node.rel === "modulepreload") ||
+    isPreload(node) ||
     isGraphStylesheet(node)
+  );
+}
+
+// A link that only fetches a file for later shows nothing of the host, and
+// one that is put back fetches its file again.
+function isPreload(node: Node): boolean {
+  return (
+    node instanceof HTMLLinkElement &&
+    (node.relList.contains("preload") || node.relList.contains("modulepreload"))
   );
 }
 

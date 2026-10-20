@@ -166,6 +166,72 @@ test('keeps the CSS of a file with "use client" that loaded during a page', asyn
   });
 });
 
+// Every page of the host runs the browser layer, so its HTML starts the file
+// of that layer, before a script has loaded, and the tab's `fetch` of it
+// takes that preload: one request. The ssr layer's file, which shares the
+// network, starts once that one has ended, as nothing needs it before. Also
+// for a page in a directory of its own, whose preload names the file by the
+// way from there.
+test.for(["index.html", "nested/index.html"])(
+  "starts the browser layer from the HTML of %s, and the ssr layer after it",
+  async (html, { page, errors }) => {
+    const requested: string[] = [];
+    page.on("request", (request) => requested.push(new URL(request.url()).pathname));
+    await open(page, errors, "client", async () => {}, html);
+    const preloads = await page.evaluate(() =>
+      Array.from(
+        document.querySelectorAll<HTMLLinkElement>("link[rel=preload][as=fetch]"),
+        (link) => [link.getAttribute("href"), new URL(link.href).pathname, link.crossOrigin],
+      ),
+    );
+    const browserLayer = "/vitest-plugin-rsc/react_client/modules.json";
+    const ssrLayer = "/vitest-plugin-rsc/next_ssr/modules.json";
+    expect(preloads).toEqual([
+      [
+        `${html.startsWith("nested/") ? "../" : "./"}${browserLayer.slice(1)}`,
+        browserLayer,
+        "anonymous",
+      ],
+    ]);
+    await page.waitForFunction(
+      (file) =>
+        performance
+          .getEntriesByType("resource")
+          .some((resource) => new URL(resource.name).pathname === file),
+      ssrLayer,
+    );
+    expect(requested.filter((path) => path === browserLayer)).toHaveLength(1);
+    expect(requested.filter((path) => path === ssrLayer)).toHaveLength(1);
+    const timing = await page.evaluate(
+      (files) => {
+        const resources = performance.getEntriesByType("resource") as PerformanceResourceTiming[];
+        return files.map((file) => {
+          const { startTime, responseEnd } = resources.find(
+            (resource) => new URL(resource.name).pathname === file,
+          )!;
+          return { startTime, responseEnd };
+        });
+      },
+      [browserLayer, ssrLayer],
+    );
+    expect(timing[1]!.startTime).toBeGreaterThanOrEqual(timing[0]!.responseEnd);
+  },
+);
+
+// A page of the app steps aside what the host has in its document, and puts
+// it back when it is left: not the host's preload, which shows nothing, and
+// which the browser would fetch again once it is back.
+test("keeps the preload of the host's HTML while a page is open", async ({ page, errors }) => {
+  const requested: string[] = [];
+  page.on("request", (request) => requested.push(new URL(request.url()).pathname));
+  await open(page, errors, "pages", async () => {});
+  const browserLayer = "/vitest-plugin-rsc/react_client/modules.json";
+  expect(
+    await page.evaluate(() => document.head.querySelectorAll("link[rel=preload][as=fetch]").length),
+  ).toBe(1);
+  expect(requested.filter((path) => path === browserLayer)).toHaveLength(1);
+});
+
 // The server in front of the app is the document's: it says which requests
 // are the app's with the build's routing alone. So a page of the host that
 // renders no route waits for no ssr layer, which is the largest file of the

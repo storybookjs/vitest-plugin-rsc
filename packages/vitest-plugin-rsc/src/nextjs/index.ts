@@ -5,7 +5,12 @@
 import "./globals.ts";
 import { createElement, type JSXElementConstructor, type ReactNode } from "react";
 import { resetAsyncLocalStorage } from "../async-local-storage.ts";
-import { checkFetchedModules, createEnvironmentRunner, environmentModule } from "../utils.ts";
+import {
+  checkFetchedModules,
+  createEnvironmentRunner,
+  environmentModule,
+  fetchLayerNow,
+} from "../utils.ts";
 import { callServerWithoutPage } from "./client-graph.ts";
 import { documentUrl, loadDocument, unloadDocument } from "./document.ts";
 import { recordListeners, recordMessageChannels } from "./leftovers.ts";
@@ -33,14 +38,16 @@ void ssrLayer.then(
 // open: see `handledByServer()`.
 let generation = 0;
 
-// What Next's server answers a request with, once the ssr layer is there. A
-// request that waited for the layer while a page was left is one of that
-// page, and is dropped, as `settleRequests()` in ssr.ts drops one that waited
-// for the server then. A layer that failed to load fails the request.
+// What Next's server answers a request with, once the ssr layer is there,
+// which a build then fetches at once. A request that waited for the layer
+// while a page was left is one of that page, and is dropped, as
+// `settleRequests()` in ssr.ts drops one that waited for the server then. A
+// layer that failed to load fails the request.
 async function handledByServer(
   ...[request, options]: Parameters<SsrLayer["handleRequest"]>
 ): Promise<Response | undefined> {
   if (ssr) return ssr.handleRequest(request, options);
+  fetchLayerNow("next_ssr");
   const sent = generation;
   const layer = await ssrLayer;
   if (sent !== generation) {
