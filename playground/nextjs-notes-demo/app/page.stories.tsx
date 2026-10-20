@@ -1,5 +1,5 @@
 import { expect, waitFor } from "storybook/test";
-import { signInAs, testUser } from "#test/auth.ts";
+import { signedInAs, testUser } from "#test/auth.ts";
 import { roundTrip } from "#.storybook/round-trip.ts";
 import preview from "#.storybook/preview.server.tsx";
 
@@ -16,7 +16,7 @@ export const SignedOut = meta.story({
 });
 
 export const SignedIn = meta.story({
-  beforeEach: () => signInAs(),
+  beforeEach: () => signedInAs(),
   play: async ({ canvas }) => {
     await expect(
       await canvas.findByRole("link", { name: `Signed in as ${testUser.email}, open profile` }),
@@ -36,7 +36,7 @@ export const DarkMode = meta.story({
 
 // A `<Link>` of the page: Next's router loads the route in the same document.
 export const OpenNotes = meta.story({
-  beforeEach: () => signInAs(),
+  beforeEach: () => signedInAs(),
   play: async ({ canvas, userEvent }) => {
     await userEvent.click(await canvas.findByRole("link", { name: "Open notes" }));
     await expect(

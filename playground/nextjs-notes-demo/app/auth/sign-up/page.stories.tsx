@@ -1,10 +1,12 @@
 import { expect } from "storybook/test";
-import { auth } from "#lib/auth.ts";
+import { verification } from "#db/schema.ts";
+import { db } from "#lib/db.ts";
 import { roundTrip } from "#.storybook/round-trip.ts";
 import preview from "#.storybook/preview.server.tsx";
 
-// Signing up with a magic link of Better Auth, whose API is a mock: see
-// page.test.tsx.
+// Signing up with a magic link of Better Auth. Without Resend the app
+// logs the mail, so a story sends nothing over the network: page.test.tsx
+// follows the link.
 const meta = preview.meta({
   parameters: { nextjs: { url: "/auth/sign-up" } },
 });
@@ -37,8 +39,8 @@ export const InvalidEmail = meta.story({
   },
 });
 
-// The Server Action asks Better Auth for a link, which a new user follows
-// to set up a passkey.
+// The Server Action asks Better Auth for a link, which it keeps in the
+// database: a new user who follows it sets up a passkey.
 export const CreateAccount = meta.story({
   play: async ({ canvas, userEvent }) => {
     await userEvent.type(await canvas.findByLabelText("Email"), "ada@example.com");
@@ -50,10 +52,7 @@ export const CreateAccount = meta.story({
         roundTrip,
       ),
     ).toBeVisible();
-    await expect(auth.api.signInMagicLink).toHaveBeenCalledWith(
-      expect.objectContaining({
-        body: expect.objectContaining({ newUserCallbackURL: "/profile?setup=passkey" }),
-      }),
-    );
+    const [link] = await db.select().from(verification);
+    await expect(JSON.parse(link!.value)).toMatchObject({ email: "ada@example.com" });
   },
 });

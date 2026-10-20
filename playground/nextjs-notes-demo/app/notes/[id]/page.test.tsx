@@ -2,7 +2,7 @@ import { expect, test } from "vitest";
 import { page } from "vitest/browser";
 import { db } from "#lib/db.ts";
 import { notes } from "#db/schema.ts";
-import { signInAs, testUser } from "#test/auth.ts";
+import { signedInAs, testUser } from "#test/auth.ts";
 import { renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
 
 const noteId = "00000000-0000-4000-8000-000000000001";
@@ -10,7 +10,7 @@ const databaseGeneratedNoteId = "70458a4b-ecef-4a2a-00e1-53f5b00c951e";
 const updatedAt = new Date("2026-01-15T12:00:00.000Z");
 
 test("renders the note title and content with metadata", async () => {
-  await signInAs();
+  await signedInAs();
   await db.insert(notes).values({
     id: noteId,
     ownerId: testUser.id,
@@ -32,7 +32,7 @@ test("renders the note title and content with metadata", async () => {
 });
 
 test("renders note when id matches database-stored uuid", async () => {
-  await signInAs();
+  await signedInAs();
   await db.insert(notes).values({
     id: databaseGeneratedNoteId,
     ownerId: testUser.id,
@@ -52,7 +52,7 @@ test("renders note when id matches database-stored uuid", async () => {
 });
 
 test("shows an empty content placeholder when the note has no body", async () => {
-  await signInAs();
+  await signedInAs();
   await db.insert(notes).values({
     id: noteId,
     ownerId: testUser.id,
@@ -67,7 +67,7 @@ test("shows an empty content placeholder when the note has no body", async () =>
 });
 
 test("renders the favorite badge for favorited notes", async () => {
-  await signInAs();
+  await signedInAs();
   await db.insert(notes).values({
     id: noteId,
     ownerId: testUser.id,

@@ -1,7 +1,7 @@
 import { expect } from "storybook/test";
-import { notes } from "#db/schema.ts";
+import { notes, user } from "#db/schema.ts";
 import { db } from "#lib/db.ts";
-import { otherUser, signInAs, testUser } from "#test/auth.ts";
+import { otherUser, signedInAs, testUser } from "#test/auth.ts";
 import { roundTrip } from "#.storybook/round-trip.ts";
 import preview from "#.storybook/preview.server.tsx";
 
@@ -11,7 +11,7 @@ const updatedAt = new Date("2026-01-15T12:00:00.000Z");
 
 const meta = preview.meta({
   parameters: { nextjs: { url: `/notes/${id}` } },
-  beforeEach: () => signInAs(),
+  beforeEach: () => signedInAs(),
 });
 
 export const Note = meta.story({
@@ -74,9 +74,8 @@ export const InvalidId = meta.story({
 // The note of another user is not found either.
 export const NotYours = meta.story({
   beforeEach: async () => {
-    await signInAs(otherUser);
+    await db.insert(user).values(otherUser);
     await db.insert(notes).values({ id, ownerId: otherUser.id, title: "Private" });
-    await signInAs(testUser);
   },
   play: async ({ canvas }) => {
     await expect(await canvas.findByText("This page could not be found.")).toBeVisible();

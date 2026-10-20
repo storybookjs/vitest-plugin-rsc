@@ -6,6 +6,7 @@ import { vitestPluginRSC } from "vitest-plugin-rsc";
 import { vitestPluginNext, type NextBuild } from "vitest-plugin-rsc/nextjs/plugin";
 import { vitestPluginRscSourceConditions } from "../../vitest.conditions.ts";
 import { ignoreWatchedOnlyModules } from "./test/ignore-watched-only-modules.ts";
+import { schemaSQL } from "./test/schema-sql.ts";
 
 // Make Vitest UI trace/source clicks a no-op instead of opening Cursor.
 // oxlint-disable-next-line no-process-env
@@ -27,8 +28,8 @@ const { loadEnvConfig } = nextNotesRequire("@next/env") as {
 const nextNotesDev = process.env.NODE_ENV !== "production" && process.env.NODE_ENV !== "test";
 loadEnvConfig(root, nextNotesDev);
 
-function createSharedProjectConfig() {
-  return {
+export const nextjsNotesProjects = [
+  defineProject({
     root,
     // MSW's worker lives in the repo-root public/ (package.json#msw). Vitest 5
     // serves browser tests from the project's own Vite server and publicDir.
@@ -38,12 +39,12 @@ function createSharedProjectConfig() {
       tsconfigPaths: true,
       conditions: [...vitestPluginRscSourceConditions, "test"],
     },
-  };
-}
-
-export const nextjsNotesProjects = [
-  defineProject({
-    ...createSharedProjectConfig(),
+    // The schema of the database of a test: see lib/__mocks__/db.ts.
+    define: { __SCHEMA_SQL__: JSON.stringify(schemaSQL) },
+    // What lib/__mocks__/db.ts imports, which no file that Vite scans for
+    // dependencies imports: found while the tests run, they would make Vite
+    // optimize again, and reload the tests.
+    optimizeDeps: { include: ["@electric-sql/pglite", "drizzle-orm/pglite"] },
     plugins: [
       vitestPluginRSC(),
       // Next's production code with `VITEST_PLUGIN_RSC_BUILD=production`,
@@ -59,7 +60,7 @@ export const nextjsNotesProjects = [
       name: "nextjs-notes-demo-browser",
       include: ["**/*.test.{ts,tsx}"],
       // e2e/ runs Storybook: see vitest.storybook.config.ts.
-      exclude: ["**/*.node.test.{ts,tsx}", "e2e/**", "node_modules"],
+      exclude: ["e2e/**", "node_modules"],
       browser: {
         enabled: true,
         headless: true,
@@ -72,18 +73,7 @@ export const nextjsNotesProjects = [
       // so cleanup belongs in beforeEach. Do not disable file parallelism
       // and do not switch this to isolate: true for hanging state.
       isolate: false,
-      globalSetup: ["./vitest.global-setup.ts"],
       setupFiles: ["./vitest.setup.ts"],
-    },
-  }),
-  defineProject({
-    ...createSharedProjectConfig(),
-    test: {
-      name: "nextjs-notes-demo-node",
-      include: ["**/*.node.test.ts"],
-      exclude: ["node_modules"],
-      environment: "node",
-      setupFiles: ["./vitest.setup.node.ts"],
     },
   }),
 ];

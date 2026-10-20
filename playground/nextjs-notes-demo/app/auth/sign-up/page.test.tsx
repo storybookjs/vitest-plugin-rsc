@@ -1,6 +1,7 @@
 import { expect, test } from "vitest";
 import { page } from "vitest/browser";
 import { renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
+import { watchSentLinks } from "#test/email.ts";
 
 test("renders the email-only sign-up form", async () => {
   await renderServer({ url: "/auth/sign-up" });
@@ -37,5 +38,27 @@ test("shows the magic link sent confirmation banner", async () => {
 
   await expect
     .element(page.getByText("Check your inbox for the link to finish creating your account."))
+    .toBeInTheDocument();
+});
+
+test("a new user follows the magic link to set up a passkey", async () => {
+  const sentLinks = watchSentLinks();
+  await renderServer({ url: "/auth/sign-up" });
+
+  await page.getByLabelText("Email").fill("ada@example.com");
+  await page.getByRole("button", { name: "Create account" }).click();
+  await expect
+    .element(page.getByText("Check your inbox for the link to finish creating your account."))
+    .toBeInTheDocument();
+
+  expect(sentLinks()).toHaveLength(1);
+  const [link] = sentLinks();
+  await renderServer({ url: `${link!.pathname}${link!.search}` });
+
+  await expect
+    .element(page.getByRole("heading", { level: 1, name: "Add a passkey" }))
+    .toBeInTheDocument();
+  await expect
+    .element(page.getByText("Finish setting up passwordless sign-in for ada@example.com."))
     .toBeInTheDocument();
 });

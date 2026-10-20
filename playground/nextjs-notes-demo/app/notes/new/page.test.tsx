@@ -1,10 +1,10 @@
 import { expect, test } from "vitest";
 import { page } from "vitest/browser";
-import { signInAs } from "#test/auth.ts";
+import { signedInAs } from "#test/auth.ts";
 import { renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
 
 test("renders the new note form with empty fields", async () => {
-  await signInAs();
+  await signedInAs();
   await renderServer({ url: "/notes/new" });
 
   await expect
@@ -20,7 +20,7 @@ test("renders the new note form with empty fields", async () => {
 });
 
 test("renders server validation errors and keeps old input", async () => {
-  await signInAs();
+  await signedInAs();
   await renderServer({ url: "/notes/new" });
 
   await page.getByLabelText("Content").fill("Keep this body");

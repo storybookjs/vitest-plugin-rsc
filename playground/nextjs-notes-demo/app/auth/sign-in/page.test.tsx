@@ -1,6 +1,10 @@
 import { expect, test } from "vitest";
 import { page } from "vitest/browser";
 import { renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
+import { user } from "#db/schema.ts";
+import { db } from "#lib/db.ts";
+import { testUser } from "#test/auth.ts";
+import { watchSentLinks } from "#test/email.ts";
 
 test("renders sign-in form with email, passkey, and link to sign up", async () => {
   await renderServer({ url: "/auth/sign-in" });
@@ -54,4 +58,25 @@ test("renders an inline error when the email is invalid", async () => {
   await expect.element(page.getByText("Enter a valid email address.")).toBeInTheDocument();
   await expect.element(page.getByLabelText("Email")).toHaveAttribute("aria-invalid", "true");
   await expect.element(page.getByLabelText("Email")).toHaveValue("not-an-email");
+});
+
+test("a user follows the magic link to their notes", async () => {
+  await db.insert(user).values(testUser);
+  const sentLinks = watchSentLinks();
+  await renderServer({ url: "/auth/sign-in" });
+
+  await page.getByLabelText("Email").fill(testUser.email);
+  await page.getByRole("button", { name: "Continue with email" }).click();
+  await expect
+    .element(page.getByText("Check your inbox for the sign-in link."))
+    .toBeInTheDocument();
+
+  expect(sentLinks()).toHaveLength(1);
+  const [link] = sentLinks();
+  await renderServer({ url: `${link!.pathname}${link!.search}` });
+
+  await expect.element(page.getByRole("heading", { level: 1, name: "Notes" })).toBeInTheDocument();
+  await expect
+    .element(page.getByRole("link", { name: `Signed in as ${testUser.email}, open profile` }))
+    .toBeInTheDocument();
 });

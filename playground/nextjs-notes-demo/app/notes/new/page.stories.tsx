@@ -1,7 +1,7 @@
 import { expect } from "storybook/test";
 import { notes } from "#db/schema.ts";
 import { db } from "#lib/db.ts";
-import { signInAs } from "#test/auth.ts";
+import { signedInAs } from "#test/auth.ts";
 import { roundTrip } from "#.storybook/round-trip.ts";
 import preview from "#.storybook/preview.server.tsx";
 
@@ -9,7 +9,7 @@ import preview from "#.storybook/preview.server.tsx";
 // page.test.tsx.
 const meta = preview.meta({
   parameters: { nextjs: { url: "/notes/new" } },
-  beforeEach: () => signInAs(),
+  beforeEach: () => signedInAs(),
 });
 
 export const Default = meta.story({

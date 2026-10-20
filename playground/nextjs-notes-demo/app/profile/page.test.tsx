@@ -1,11 +1,12 @@
-import { expect, test, vi } from "vitest";
+import { expect, test } from "vitest";
 import { page } from "vitest/browser";
-import { auth } from "#lib/auth.ts";
-import { signInAs, testUser } from "#test/auth.ts";
+import { passkey } from "#db/schema.ts";
+import { db } from "#lib/db.ts";
+import { signedInAs, testUser } from "#test/auth.ts";
 import { renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
 
 test("shows the empty passkeys hint when the user has none", async () => {
-  await signInAs();
+  await signedInAs();
 
   await renderServer({ url: "/profile" });
 
@@ -19,7 +20,7 @@ test("shows the empty passkeys hint when the user has none", async () => {
 });
 
 test("shows account email on profile", async () => {
-  await signInAs();
+  await signedInAs();
 
   await renderServer({ url: "/profile" });
 
@@ -27,7 +28,7 @@ test("shows account email on profile", async () => {
 });
 
 test("renders a sign-out button", async () => {
-  await signInAs();
+  await signedInAs();
 
   await renderServer({ url: "/profile" });
 
@@ -35,31 +36,29 @@ test("renders a sign-out button", async () => {
 });
 
 test("lists existing passkeys with their creation dates", async () => {
-  await signInAs();
-  vi.mocked(auth.api.listPasskeys).mockResolvedValueOnce([
+  await signedInAs();
+  // Two passkeys as Better Auth keeps them after a device registered them.
+  const registered = {
+    userId: testUser.id,
+    counter: 0,
+    deviceType: "multiDevice",
+    backedUp: true,
+    transports: "internal",
+  };
+  await db.insert(passkey).values([
     {
-      id: "11111111-1111-4111-8111-111111111111",
+      ...registered,
       name: "iPhone passkey",
-      createdAt: new Date("2026-02-14T10:00:00.000Z"),
       publicKey: "pk1",
-      userId: testUser.id,
       credentialID: "credential-1",
-      counter: 0,
-      deviceType: "singleDevice",
-      backedUp: true,
-      transports: "internal",
+      createdAt: new Date("2026-02-14T10:00:00.000Z"),
     },
     {
-      id: "22222222-2222-4222-8222-222222222222",
+      ...registered,
       name: "Work laptop",
-      createdAt: new Date("2026-03-20T10:00:00.000Z"),
       publicKey: "pk2",
-      userId: testUser.id,
       credentialID: "credential-2",
-      counter: 0,
-      deviceType: "multiDevice",
-      backedUp: true,
-      transports: "internal",
+      createdAt: new Date("2026-03-20T10:00:00.000Z"),
     },
   ]);
 
@@ -73,7 +72,7 @@ test("lists existing passkeys with their creation dates", async () => {
 });
 
 test("renders the passkey setup hero after first sign-in", async () => {
-  await signInAs();
+  await signedInAs();
 
   await renderServer({ url: "/profile?setup=passkey" });
 
