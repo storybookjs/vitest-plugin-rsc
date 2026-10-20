@@ -32,7 +32,20 @@ function createModuleLoader(ready?: Promise<void>): (id: string) => Promise<unkn
   };
 }
 
-export function registerModuleLoader(layer: "ssr" | "browser", ready?: Promise<void>): void {
-  if (layer === "ssr") registry.loadSsrModule = createModuleLoader(ready);
-  else registry.loadBrowserModule = createModuleLoader(ready);
+// What the browser layer loads once its page is left: nothing, as the
+// page's closed runner. A loader keeps the modules that it loaded.
+const loadsNothing = () => new Promise<never>(() => {});
+
+/**
+ * Has the layer load its Client Components with a loader of its own.
+ * Returns how to forget it: the layer then loads nothing, unless another
+ * loader has come since.
+ */
+export function registerModuleLoader(layer: "ssr" | "browser", ready?: Promise<void>): () => void {
+  const key = layer === "ssr" ? "loadSsrModule" : "loadBrowserModule";
+  const loader = createModuleLoader(ready);
+  registry[key] = loader;
+  return () => {
+    if (registry[key] === loader) registry[key] = loadsNothing;
+  };
 }

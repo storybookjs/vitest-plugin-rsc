@@ -83,7 +83,10 @@ export async function start(
   // take over from the page that is there now. The modules of the app wait
   // for Next's client: the Flight client asks for them as soon as it loads.
   let nextLoaded!: () => void;
-  registerModuleLoader("browser", new Promise((resolve) => (nextLoaded = resolve)));
+  const forgetModules = registerModuleLoader(
+    "browser",
+    new Promise((resolve) => (nextLoaded = resolve)),
+  );
   // A Server Action imported by a Client Component calls the server the way
   // Next's router does: a POST to the current page.
   globalThis.__viteRscCallServer = callServer;
@@ -142,6 +145,9 @@ export async function start(
     leaving = true;
     root?.unmount();
     for (const added of listeners) added.remove();
+    // A page that is left loads no more Client Components, and the loader
+    // would keep the ones it loaded.
+    forgetModules();
   };
 
   try {
