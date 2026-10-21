@@ -18,7 +18,7 @@ While the package is pre-1.0, breaking changes are acceptable when intentional. 
 
 ## Releases
 
-Official npm `latest` releases are created by Release Please after its release PR is merged. Do not add long-lived npm token publishing or publish PR commits to npm `latest`.
+Official npm releases are created by Release Please after its release PR is merged. They are alphas for now, on the `alpha` dist-tag: see `docs/releasing.md`. Do not add long-lived npm token publishing or publish PR commits to npm `latest`.
 
 Preview packages for PR commits are handled by `pkg.pr.new`, which publishes installable preview URLs outside the npm registry.
 
