@@ -20,6 +20,7 @@ import { scrypt as nobleScrypt, scryptAsync } from "@noble/hashes/scrypt.js";
 import { sha224, sha256, sha384, sha512, sha512_224, sha512_256 } from "@noble/hashes/sha2.js";
 import { sha3_224, sha3_256, sha3_384, sha3_512, shake128, shake256 } from "@noble/hashes/sha3.js";
 import unenv from "unenv/node/crypto";
+import { StringDecoder as OwnStringDecoder } from "vitest-plugin-rsc/node/string_decoder";
 import { Buffer as OwnBuffer } from "vitest-plugin-rsc/node/buffer";
 import { Transform as OwnTransform } from "vitest-plugin-rsc/node/stream";
 
@@ -28,6 +29,7 @@ export * from "unenv/node/crypto";
 // The package's own, typed as Node's: the built files have no types.
 const Buffer = OwnBuffer as unknown as typeof globalThis.Buffer;
 const Transform = OwnTransform as unknown as typeof import("node:stream").Transform;
+const StringDecoder = OwnStringDecoder as typeof import("node:string_decoder").StringDecoder;
 
 type Data = string | ArrayBufferView | ArrayBuffer;
 type Callback<T> = (error: Error | null, result?: T) => void;
@@ -716,17 +718,15 @@ function blockEngine(
       return run(bytes.subarray(0, ready));
     },
     final() {
+      // Without padding, what is pending is whole blocks or nothing: a
+      // block kept for the padding, before it was turned off, goes as it is.
+      if (!padding()) {
+        if (pending.length % 16) throw wrongFinalBlock();
+        return run(pending);
+      }
       if (!decrypt) {
-        if (!padding()) {
-          if (pending.length) throw wrongFinalBlock();
-          return new Uint8Array(0);
-        }
         const size = 16 - pending.length;
         return run(concat(pending, new Uint8Array(size).fill(size)));
-      }
-      if (!padding()) {
-        if (pending.length) throw wrongFinalBlock();
-        return new Uint8Array(0);
       }
       if (pending.length !== 16) throw wrongFinalBlock();
       const last = run(pending);
@@ -751,6 +751,9 @@ class CipherBase extends Transform {
   #padding = true;
   #tag: Uint8Array | undefined;
   #done = false;
+  // Of the output as a string: across `update()` and `final()`, so that a
+  // character or a base64 group that spans two of them comes out whole.
+  #decoder: { write(bytes: Buffer): string; end(): string; encoding: string } | undefined;
   constructor(
     decrypt: boolean,
     algorithm: string,
@@ -791,6 +794,15 @@ class CipherBase extends Transform {
   #state(): void {
     if (this.#done) throw codeError(new Error("Unsupported state"), "ERR_CRYPTO_INVALID_STATE");
   }
+  #output(bytes: Uint8Array, encoding: BufferEncoding | undefined, last: boolean): Buffer | string {
+    if (!encoding || (encoding as string) === "buffer") return output(bytes);
+    if (this.#decoder && this.#decoder.encoding !== encoding) {
+      throw new Error("Cannot change encoding");
+    }
+    const decoder = (this.#decoder ??= Object.assign(new StringDecoder(encoding), { encoding }));
+    const text = decoder.write(output(bytes));
+    return last ? text + decoder.end() : text;
+  }
   update(data: Data, inputEncoding?: BufferEncoding): Buffer;
   update(
     data: Data,
@@ -806,7 +818,7 @@ class CipherBase extends Transform {
     const input = Uint8Array.from(bytesOf(data, inputEncoding));
     if (this.#mode === "gcm") this.#chunks.push(input);
     const engine = this.#engineOf();
-    return output(engine ? engine.update(input) : new Uint8Array(0), outputEncoding);
+    return this.#output(engine ? engine.update(input) : new Uint8Array(0), outputEncoding, false);
   }
   final(): Buffer;
   final(outputEncoding: BufferEncoding): string;
@@ -814,13 +826,17 @@ class CipherBase extends Transform {
     this.#state();
     this.#done = true;
     const engine = this.#engineOf();
-    if (this.#mode !== "gcm") return output(engine!.final(), outputEncoding);
+    if (this.#mode !== "gcm") return this.#output(engine!.final(), outputEncoding, true);
     const all = Buffer.concat(this.#chunks);
     const aead = gcm(this.#key, this.#iv, this.#aad);
     if (!this.#decrypt) {
       const sealed = aead.encrypt(all);
       this.#tag = sealed.slice(sealed.length - 16);
-      return output(engine ? new Uint8Array(0) : sealed.subarray(0, -16), outputEncoding);
+      return this.#output(
+        engine ? new Uint8Array(0) : sealed.subarray(0, -16),
+        outputEncoding,
+        true,
+      );
     }
     if (!this.#tag) throw authFailed();
     let plain: Uint8Array;
@@ -829,7 +845,7 @@ class CipherBase extends Transform {
     } catch {
       throw authFailed();
     }
-    return output(engine ? new Uint8Array(0) : plain, outputEncoding);
+    return this.#output(engine ? new Uint8Array(0) : plain, outputEncoding, true);
   }
   // More than one call authenticates all of them, as OpenSSL does.
   setAAD(aad: Data): this {
@@ -856,7 +872,15 @@ class CipherBase extends Transform {
         "ERR_CRYPTO_INVALID_STATE",
       );
     }
-    this.#tag = Uint8Array.from(bytesOf(tag));
+    const bytes = Uint8Array.from(bytesOf(tag));
+    // Node.js takes a tag of 4 to 16 bytes: the noble package's AEAD, 16.
+    if (bytes.length !== 16) {
+      throw codeError(
+        new TypeError(`Invalid authentication tag length: ${bytes.length}`),
+        "ERR_CRYPTO_INVALID_AUTH_TAG",
+      );
+    }
+    this.#tag = bytes;
     return this;
   }
   override _transform(chunk: Uint8Array, _encoding: string, callback: (error?: Error) => void) {

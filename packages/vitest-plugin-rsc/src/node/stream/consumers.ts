@@ -1,8 +1,7 @@
 // `node:stream/consumers` for a browser: what a stream reads to, as Node's
 // does it. A stream of Node.js, a web stream, or any async iterable of
 // strings and bytes. Text is the browser's TextDecoder of the bytes as they
-// come, and strings as they are; bytes are copied as they come, as a
-// stream may write the next chunk into the same buffer.
+// come, and strings as they are; the rest is a Blob of the chunks.
 
 import { Buffer as OwnBuffer } from "vitest-plugin-rsc/node/buffer";
 
@@ -32,31 +31,31 @@ const notBytes = () =>
     ),
     { code: "ERR_INVALID_ARG_TYPE" },
   );
-function bytesOf(chunk: unknown): Uint8Array {
-  if (typeof chunk === "string") return Buffer.from(chunk);
-  if (ArrayBuffer.isView(chunk)) {
-    return Uint8Array.from(new Uint8Array(chunk.buffer, chunk.byteOffset, chunk.byteLength));
-  }
-  if (chunk instanceof ArrayBuffer) return Uint8Array.from(new Uint8Array(chunk));
-  throw notBytes();
-}
 
-async function collect(source: Source): Promise<Uint8Array[]> {
-  const parts: Uint8Array[] = [];
-  for await (const chunk of chunksOf(source)) parts.push(bytesOf(chunk));
+// What `blob()` is made of, as Node's is: a Blob of the chunks, which takes
+// strings, bytes and Blobs, and makes a string of anything else. The bytes
+// are copied, as a stream may write its next chunk into the same buffer.
+async function partsOf(source: Source): Promise<BlobPart[]> {
+  const parts: BlobPart[] = [];
+  for await (const chunk of chunksOf(source)) {
+    if (ArrayBuffer.isView(chunk)) {
+      parts.push(Uint8Array.from(new Uint8Array(chunk.buffer, chunk.byteOffset, chunk.byteLength)));
+    } else if (chunk instanceof ArrayBuffer) {
+      parts.push(chunk.slice(0));
+    } else {
+      parts.push(chunk as BlobPart);
+    }
+  }
   return parts;
 }
 
-export const blob = async (source: Source): Promise<Blob> =>
-  new Blob((await collect(source)) as BlobPart[]);
+export const blob = async (source: Source): Promise<Blob> => new Blob(await partsOf(source));
+export const arrayBuffer = async (source: Source): Promise<ArrayBuffer> =>
+  (await blob(source)).arrayBuffer();
 export const buffer = async (source: Source): Promise<Buffer> =>
-  Buffer.concat(await collect(source));
+  Buffer.from(await arrayBuffer(source));
 export const bytes = async (source: Source): Promise<Uint8Array> =>
-  new Uint8Array(await buffer(source));
-export const arrayBuffer = async (source: Source): Promise<ArrayBuffer> => {
-  const all = await buffer(source);
-  return all.buffer.slice(all.byteOffset, all.byteOffset + all.byteLength) as ArrayBuffer;
-};
+  new Uint8Array(await arrayBuffer(source));
 export async function text(source: Source): Promise<string> {
   const decoder = new TextDecoder();
   let result = "";

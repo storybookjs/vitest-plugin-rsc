@@ -100,48 +100,57 @@ const missing = (name: string) =>
     throw new Error(`vitest-plugin-rsc: stream.${name} of Node.js is not there in the browser`);
   };
 // Two Duplexes, each of which reads what the other is written, as the two
-// ends of a socket. A write calls back once the other end reads it. One
-// destroyed destroys the other, as in Node.js, and a write that waits
-// calls back with the error.
+// ends of a socket: Node's own, lib/internal/streams/duplexpair.js. A write
+// calls back once the other end reads it, and an end once the other end
+// has read all. One destroyed destroys the other, on the next tick, with
+// no error, or ends it when it was destroyed with none.
 type Side = {
   push(chunk: unknown): boolean;
-  destroy(error?: Error): unknown;
+  destroy(): unknown;
   destroyed: boolean;
+  on(event: string, listener: () => void): unknown;
+  callback: (() => void) | undefined;
 };
 export function duplexPair(options?: object): [unknown, unknown] {
   const sides: Side[] = [];
-  const waiting = new Map<Side, (error?: Error | null) => void>();
-  const release = (side: Side, error: Error) => {
-    const parked = waiting.get(side);
-    waiting.delete(side);
-    parked?.(error);
-  };
   const sideOf = (index: number) =>
-    new Duplex({
-      ...options,
-      read(this: Side) {
-        const next = waiting.get(this);
-        waiting.delete(this);
-        next?.();
-      },
-      write(chunk: unknown, _encoding: string, callback: (error?: Error | null) => void) {
-        const other = sides[1 - index]!;
-        if (other.push(chunk)) callback();
-        else waiting.set(other, callback);
-      },
-      final(callback: () => void) {
-        sides[1 - index]!.push(null);
-        callback();
-      },
-      destroy(this: Side, error: Error | null, callback: (error: Error | null) => void) {
-        const other = sides[1 - index]!;
-        const reason = error ?? new Error("Premature close");
-        release(this, reason);
-        release(other, reason);
-        if (!other.destroyed) other.destroy();
-        callback(error);
-      },
-    }) as unknown as Side;
+    Object.assign(
+      new Duplex({
+        ...options,
+        read() {
+          const self = this as unknown as Side;
+          const callback = self.callback;
+          self.callback = undefined;
+          callback?.();
+        },
+        write(chunk: { length: number }, _encoding: string, callback: () => void) {
+          const other = sides[1 - index]!;
+          if (chunk.length === 0) {
+            queueMicrotask(callback);
+            return;
+          }
+          other.push(chunk);
+          other.callback = callback;
+        },
+        final(callback: () => void) {
+          const other = sides[1 - index]!;
+          other.on("end", callback);
+          other.push(null);
+        },
+        destroy(error: Error | null, callback: (error: Error | null) => void) {
+          const other = sides[1 - index]!;
+          if (!other.destroyed) {
+            queueMicrotask(() => {
+              if (other.destroyed) return;
+              if (error) other.destroy();
+              else other.push(null);
+            });
+          }
+          callback(error);
+        },
+      }),
+      { callback: undefined },
+    ) as unknown as Side;
   sides.push(sideOf(0), sideOf(1));
   return sides as [unknown, unknown];
 }

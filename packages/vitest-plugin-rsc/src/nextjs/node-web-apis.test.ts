@@ -616,3 +616,197 @@ test("`buffer.transcode()` follows Node's ICU, for every pair of its encodings",
     }
   }
 });
+
+// A gzip member with a name, as a file has: RFC 1952's header with FNAME.
+const gzipMember = (content: string, name: string): Buffer => {
+  const data = Buffer.from(content);
+  const trailer = Buffer.alloc(8);
+  trailer.writeUInt32LE(nodeZlib.crc32(data), 0);
+  trailer.writeUInt32LE(data.length, 4);
+  return Buffer.concat([
+    Buffer.from([0x1f, 0x8b, 8, 8, 0, 0, 0, 0, 0, 3]),
+    Buffer.from(name),
+    Buffer.from([0]),
+    nodeZlib.deflateRawSync(data),
+    trailer,
+  ]);
+};
+
+test("`zlib` reads gzip's and zlib's framing as zlib does: what follows, a checksum anywhere, a name", async () => {
+  const gz = nodeZlib.gzipSync("hello");
+  const df = nodeZlib.deflateSync("hello");
+  const cases: [string, (lib: typeof nodeZlib) => Buffer][] = [
+    ["gzip and zeros", (lib) => lib.gunzipSync(Buffer.concat([gz, Buffer.alloc(4)]))],
+    ["gzip and garbage", (lib) => lib.gunzipSync(Buffer.concat([gz, Buffer.from("garbage")]))],
+    [
+      "gzip and a byte of a header",
+      (lib) => lib.gunzipSync(Buffer.concat([gz, Buffer.from([0x1f])])),
+    ],
+    ["deflate and garbage", (lib) => lib.inflateSync(Buffer.concat([df, Buffer.from("garbage")]))],
+    [
+      "unzip of gzip and garbage",
+      (lib) => lib.unzipSync(Buffer.concat([gz, Buffer.from("garbage")])),
+    ],
+    [
+      "unzip of deflate and garbage",
+      (lib) => lib.unzipSync(Buffer.concat([df, Buffer.from("garbage")])),
+    ],
+    [
+      "raw and garbage",
+      (lib) =>
+        lib.inflateRawSync(
+          Buffer.concat([nodeZlib.deflateRawSync("hello"), Buffer.from("garbage")]),
+        ),
+    ],
+    [
+      "a bad magic number",
+      (lib) => lib.gunzipSync(Buffer.from([0x1f, 0x8c, 8, 0, 0, 0, 0, 0, 0, 3])),
+    ],
+    ["a bad method", (lib) => lib.gunzipSync(Buffer.from([0x1f, 0x8b, 7, 0, 0, 0, 0, 0, 0, 3]))],
+    ["a bad zlib header", (lib) => lib.inflateSync(Buffer.from([0x78, 0x9d, 1, 2, 3, 4, 5, 6]))],
+    [
+      "a bad Adler-32 with the good one after it",
+      (lib) => {
+        const bad = Buffer.from(df);
+        bad[bad.length - 1]! ^= 1;
+        return lib.inflateSync(Buffer.concat([bad, df.subarray(-4)]));
+      },
+    ],
+    ["a named member", (lib) => lib.gunzipSync(gzipMember("named", "a".repeat(3000)))],
+    ["gzip of no bytes", (lib) => lib.gunzipSync(nodeZlib.gzipSync(""))],
+    ...[1, 2, 3, 7, 9, 10, 12, gz.length - 8, gz.length - 4].map(
+      (n): [string, (lib: typeof nodeZlib) => Buffer] => [
+        `${n} bytes of a gzip`,
+        (lib) => lib.gunzipSync(gz.subarray(0, n)),
+      ],
+    ),
+    ...[1, 2, 3, 6].map((n): [string, (lib: typeof nodeZlib) => Buffer] => [
+      `${n} bytes of a deflate`,
+      (lib) => lib.inflateSync(df.subarray(0, n)),
+    ]),
+    ["gzipSync over maxOutputLength", (lib) => lib.gzipSync("hello", { maxOutputLength: 1 })],
+  ];
+  const dictionary = Buffer.from("a dictionary");
+  const withDictionary = nodeZlib.deflateSync("hello", { dictionary });
+  cases.push(
+    [
+      "a wrong dictionary",
+      (lib) => lib.inflateSync(withDictionary, { dictionary: Buffer.from("wrong") }),
+    ],
+    ["a missing dictionary", (lib) => lib.inflateSync(withDictionary)],
+    ["a dictionary not needed", (lib) => lib.inflateSync(df, { dictionary })],
+  );
+  const run = (lib: typeof nodeZlib, call: (lib: typeof nodeZlib) => Buffer) => {
+    try {
+      return call(lib).toString();
+    } catch (error) {
+      const { code, message } = error as { code: string; message: string };
+      return `${code}: ${message}`;
+    }
+  };
+  for (const [name, call] of cases) {
+    expect(run(zlib as unknown as typeof nodeZlib, call), name).toBe(run(nodeZlib, call));
+  }
+
+  // The CRC-32 of a member whose next member's header is long, written in
+  // small chunks: the first member's end is well behind by then.
+  const first = gzipMember("first", "f");
+  first[first.length - 8]! ^= 1;
+  const stream = zlib.createGunzip();
+  const failed = new Promise((resolve) => stream.on("error", resolve));
+  stream.resume();
+  const all = Buffer.concat([first, gzipMember("second", "s".repeat(3000))]);
+  for (let at = 0; at < all.length; at += 128) stream.write(all.subarray(at, at + 128));
+  stream.end();
+  expect(await failed).toMatchObject({ code: "Z_DATA_ERROR" });
+  // A gzip that ends too soon, streamed.
+  const short = zlib.createGunzip();
+  const shortFailed = new Promise((resolve) => short.on("error", resolve));
+  short.resume();
+  short.end(gz.subarray(0, 7));
+  expect(await shortFailed).toMatchObject({ code: "Z_BUF_ERROR" });
+});
+
+test("`zlib`'s `flush()` goes through the queue, and `Z_FINISH` ends the data", async () => {
+  const gzip = zlib.createGzip();
+  const chunks: Buffer[] = [];
+  gzip.on("data", (chunk: Buffer) => chunks.push(chunk));
+  const ended = new Promise((resolve) => gzip.on("end", resolve));
+  gzip.write("hello");
+  gzip.flush();
+  gzip.end();
+  await ended;
+  expect(nodeZlib.gunzipSync(Buffer.concat(chunks)).toString()).toBe("hello");
+
+  const finished = zlib.createGzip();
+  const out: Buffer[] = [];
+  finished.on("data", (chunk: Buffer) => out.push(chunk));
+  finished.on("error", () => {});
+  finished.write("done");
+  await new Promise<void>((resolve) => finished.flush(nodeZlib.constants.Z_FINISH, resolve));
+  expect(nodeZlib.gunzipSync(Buffer.concat(out)).toString()).toBe("done");
+  const late = new Promise((resolve) => finished.write("more", resolve));
+  expect(await late).toMatchObject({ code: "Z_STREAM_ERROR" });
+});
+
+test("`crypto`'s ciphers give strings as Node's do across chunks, and take a tag of 16 bytes only", () => {
+  const key = Buffer.alloc(32, 1);
+  const iv = Buffer.alloc(16, 2);
+  const ours = crypto.createCipheriv("aes-256-cbc", key, iv);
+  const node = nodeCrypto.createCipheriv("aes-256-cbc", key, iv);
+  expect([ours.update(Buffer.alloc(16), undefined, "base64"), ours.final("base64")]).toEqual([
+    node.update(Buffer.alloc(16), undefined, "base64"),
+    node.final("base64"),
+  ]);
+  const sealed = nodeCrypto.createCipheriv("aes-256-ctr", key, iv);
+  const bytes = Buffer.concat([sealed.update("你好世界"), sealed.final()]);
+  const opened = crypto.createDecipheriv("aes-256-ctr", key, iv);
+  let text = "";
+  for (const byte of bytes) text += opened.update(Buffer.from([byte]), undefined, "utf8");
+  expect(text + opened.final("utf8")).toBe("你好世界");
+  const changing = crypto.createCipheriv("aes-256-cbc", key, iv);
+  changing.update("x", undefined, "base64");
+  expect(() => changing.update("y", undefined, "hex")).toThrow("Cannot change encoding");
+
+  const nonce = Buffer.alloc(12, 3);
+  const cipher = crypto.createCipheriv("aes-256-gcm", key, nonce);
+  const secret = Buffer.concat([cipher.update("secret"), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  const decipher = crypto.createDecipheriv("aes-256-gcm", key, nonce);
+  expect(() => decipher.setAuthTag(Buffer.concat([secret.subarray(-1), tag]))).toThrow(
+    expect.objectContaining({ code: "ERR_CRYPTO_INVALID_AUTH_TAG" }),
+  );
+  expect(() => decipher.setAuthTag(tag.subarray(0, 12))).toThrow(
+    expect.objectContaining({ code: "ERR_CRYPTO_INVALID_AUTH_TAG" }),
+  );
+
+  // Padding turned off after a block was kept for it.
+  const cbc = nodeCrypto.createCipheriv("aes-256-cbc", key, iv);
+  const block = Buffer.concat([cbc.update(Buffer.alloc(16)), cbc.final()]);
+  const off = crypto.createDecipheriv("aes-256-cbc", key, iv);
+  expect(off.update(block.subarray(0, 16)).length).toBe(0);
+  off.setAutoPadding(false);
+  expect(off.final()).toEqual(Buffer.alloc(16));
+});
+
+test("`duplexPair()` ends one side once the other has read all, as Node's does", async () => {
+  const [a, b] = duplexPair() as [Duplex, Duplex];
+  a.end("request");
+  b.resume();
+  b.end("response");
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  let read = "";
+  for await (const chunk of a) read += chunk;
+  expect(read).toBe("response");
+});
+
+test("`stream/consumers` takes a Blob as a chunk, as Node's does", async () => {
+  async function* parts() {
+    yield new Blob(["hel"]);
+    yield "lo";
+    yield new Uint8Array([33]);
+  }
+  expect(await (await consumers.blob(parts())).text()).toBe("hello!");
+  expect((await consumers.buffer(parts())).toString()).toBe("hello!");
+  expect([...(await consumers.bytes(parts()))].length).toBe(6);
+});
