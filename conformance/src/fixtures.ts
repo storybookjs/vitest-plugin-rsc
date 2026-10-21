@@ -13,6 +13,12 @@ export type Fixture = {
   /** Packages its test lists as dependencies that its app does not import. */
   assumeInstalled?: string[];
   /**
+   * Packages the app gets under another name than the one `package.json` of
+   * the runner installs them by: another major of a package the runner has,
+   * as an npm alias. The runner links them into `node_modules` of the copy.
+   */
+  linked?: Record<string, string>;
+  /**
    * Options of `nextTestSetup()` that change the app before Next builds it,
    * and what the runner does to the copy of the fixture instead. Without it,
    * a test that passes such an option is reported as not applicable.
@@ -93,15 +99,13 @@ export const fixtures: Fixture[] = [
   appDir("next-font", "font", ["next-font.test.ts"], { assumeInstalled: ["@next/font"] }),
   appDir("next-image", "image", ["next-image.test.ts"]),
 
-  // Next's own tests of CSS. Not `scss`, a directory of 40 apps of their own,
-  // for Sass. A fixture whose app needs a package the runner does not install
-  // stops before its tests run, so these are not here either:
-  // - `app-css`, its config needs `@next/mdx`.
-  // - `css-modules-rsc-postcss`, its PostCSS config needs `postcss-nested`.
-  // - `tailwind-css`, its PostCSS config needs Tailwind 3.
-  // - `no-double-tailwind-execution`, its PostCSS config needs Tailwind 4.
+  // Next's own tests of CSS, with the packages their tests install: Sass,
+  // Lightning CSS, Tailwind, `postcss-nested` and `@next/mdx`. Of `scss`, a
+  // directory of 40 apps of their own, only `scss-mixins` has an `app/`: the
+  // others are apps of the Pages Router. Not here either:
   // - `css-order`, it builds its app with `nextTestSetup({ files })`, which the runner does not.
   // - `turbopack-postcss-multiple-configs` and `css-modules-data-urls`, which only Turbopack runs.
+  appDir("app-css", "css", ["index.test.ts"]),
   appDir("app-css-pageextensions", "css", ["index.test.ts"]),
   appDir("app-inline-css", "css", ["index.test.ts"]),
   appDir("autoscroll-with-css-modules", "css", ["index.test.ts"]),
@@ -112,6 +116,7 @@ export const fixtures: Fixture[] = [
   ]),
   appDir("css-media-query", "css", ["css-media-query.test.ts"]),
   appDir("css-modules-pure-no-check", "css", ["css-modules-pure-no-check.test.ts"]),
+  appDir("css-modules-rsc-postcss", "css", ["css-modules-rsc-postcss.test.ts"]),
   appDir("css-modules-scoping", "css", ["css-modules-scoping.test.ts"]),
   appDir("css-server-chunks", "css", ["css-server-chunks.test.ts"]),
   appDir("cssnano-colormin", "css", ["index.test.ts"]),
@@ -122,8 +127,14 @@ export const fixtures: Fixture[] = [
   appDir("initial-css-not-found", "css", ["initial-css-not-found.test.ts"]),
   appDir("initial-css-order", "css", ["initial-css-order.test.ts"]),
   appDir("next-dynamic-css", "css", ["next-dynamic-css.test.ts"]),
+  // The runner has Tailwind 3 as `tailwindcss`, for `tailwind-css`.
+  appDir("no-double-tailwind-execution", "css", ["no-double-tailwind-execution.test.ts"], {
+    linked: { tailwindcss: "tailwindcss-4" },
+  }),
   appDir("parallel-routes-css", "css", ["parallel-routes-css.test.ts"]),
   appDir("random-in-sass", "css", ["random-in-sass.test.ts"]),
+  appDir("scss/scss-mixins", "css", ["scss-mixins.test.ts"]),
+  appDir("tailwind-css", "css", ["tailwind-css.test.ts"]),
 
   appDir("revalidate-dynamic", "cache", ["revalidate-dynamic.test.ts"]),
   appDir("revalidatetag-rsc", "cache", ["revalidatetag-rsc.test.ts"]),

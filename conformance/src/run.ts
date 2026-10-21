@@ -149,6 +149,12 @@ function copyFixture(fixture: Fixture): string {
   for (const test of fixture.tests) {
     if (!fs.existsSync(path.join(root, test))) throw new Error(`${fixture.dir} has no ${test}`);
   }
+  // Before the runner's own `node_modules`, where the app looks for a package.
+  for (const [name, installedAs] of Object.entries(fixture.linked ?? {})) {
+    const link = path.join(root, "node_modules", name);
+    fs.mkdirSync(path.dirname(link), { recursive: true });
+    fs.symlinkSync(fs.realpathSync(path.join(here, "node_modules", installedAs)), link, "dir");
+  }
   if (!fs.existsSync(path.join(root, "package.json"))) {
     fs.writeFileSync(
       path.join(root, "package.json"),

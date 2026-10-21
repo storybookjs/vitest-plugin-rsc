@@ -64,7 +64,7 @@
     },
     "cli-output": {
       "category": "not-applicable",
-      "text": "Reads what the Next.js CLI prints: the table of routes of a build, or a warning when it starts."
+      "text": "Reads what the Next.js CLI prints: the table of routes of a build, a warning when it starts, or what Tailwind logs as the build compiles the CSS."
     },
     "playwright-page": {
       "category": "not-applicable",
@@ -91,7 +91,7 @@
     "changes-the-app": {
       "category": "not-applicable",
       "text": "Changes a file of the app, or builds or starts the app itself.",
-      "match": "needs a new build, or a dev server|runs the Next\\.js CLI itself"
+      "match": "needs a new build, or a dev server|runs the Next\\.js CLI itself|changes the app before it is built"
     },
     "dev-overlay": {
       "category": "not-applicable",
@@ -102,14 +102,13 @@
       "category": "not-yet",
       "text": "The CSS of a component of `next/dynamic`, which Next links from its manifest of dynamic imports, with `precedence=\"dynamic\"`, next to a preload of its JavaScript. Here it is a stylesheet of the segment that imports the component."
     },
-    "npm-packages": {
-      "category": "not-applicable",
-      "text": "The app needs an npm package that its test installs, and the runner does not: Sass, Lightning CSS, a CSS framework.",
-      "match": "the fixture needs npm packages that are not installed"
-    },
     "css-not-minified": {
       "category": "not-applicable",
       "text": "Expects the CSS that Next's build minified. Here it is the CSS that Vite compiles, as it is."
+    },
+    "css-chunks": {
+      "category": "not-applicable",
+      "text": "Counts the stylesheets of a page. Next's build puts the CSS files that a segment imports in one chunk. Here each file is a stylesheet of its own."
     }
   },
   "fixtures": {
@@ -371,10 +370,8 @@
       }
     },
     "app-css-pageextensions": {
-      "passed": 0,
-      "failed": {
-        "index.test.ts > app dir - css with pageextensions > css support with pageextensions > page in app directory with pageextention, css should work > should support global css inside layout": "npm-packages"
-      }
+      "passed": 1,
+      "failed": {}
     },
     "app-inline-css": {
       "passed": 6,
@@ -431,9 +428,9 @@
     "experimental-lightningcss-features": {
       "passed": 0,
       "failed": {
-        "experimental-lightningcss-features.test.ts > experimental-lightningcss-features > include > should transpile light-dark() when included in lightningCssFeatures": "npm-packages",
-        "experimental-lightningcss-features.test.ts > experimental-lightningcss-features > custom-media-queries > should substitute @custom-media when custom-media-queries is included": "npm-packages",
-        "experimental-lightningcss-features.test.ts > experimental-lightningcss-features > exclude > should preserve light-dark() when excluded from lightningCssFeatures": "npm-packages"
+        "experimental-lightningcss-features.test.ts > experimental-lightningcss-features > include > should transpile light-dark() when included in lightningCssFeatures": "changes-the-app",
+        "experimental-lightningcss-features.test.ts > experimental-lightningcss-features > custom-media-queries > should substitute @custom-media when custom-media-queries is included": "changes-the-app",
+        "experimental-lightningcss-features.test.ts > experimental-lightningcss-features > exclude > should preserve light-dark() when excluded from lightningCssFeatures": "changes-the-app"
       }
     },
     "initial-css-not-found": {
@@ -453,10 +450,34 @@
       "failed": {}
     },
     "random-in-sass": {
+      "passed": 1,
+      "failed": {}
+    },
+    "app-css": {
+      "passed": 32,
+      "failed": {
+        "index.test.ts > app dir - css > css support > special entries > should include css imported in loading.js": "css-chunks",
+        "index.test.ts > app dir - css > css support > chunks > should bundle css resources into chunks": "css-chunks",
+        "index.test.ts > app dir - css > pages dir > should include css modules and global css after page transition": "pages-router"
+      }
+    },
+    "css-modules-rsc-postcss": {
+      "passed": 1,
+      "failed": {}
+    },
+    "no-double-tailwind-execution": {
       "passed": 0,
       "failed": {
-        "random-in-sass.test.ts > random-in-sass > should work using browser": "npm-packages"
+        "no-double-tailwind-execution.test.ts > no-double-tailwind-execution > should run tailwind only once initially and per change": "cli-output"
       }
+    },
+    "scss__scss-mixins": {
+      "passed": 1,
+      "failed": {}
+    },
+    "tailwind-css": {
+      "passed": 1,
+      "failed": {}
     }
   }
 }

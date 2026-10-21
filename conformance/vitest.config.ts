@@ -86,6 +86,10 @@ export default defineConfig({
       headless: true,
       provider: playwright(),
       instances: [{ browser: "chromium" }],
+      // The size of Playwright's page, which Next's tests open theirs in. The
+      // default of Vitest is a phone's, which a media query of the app's CSS
+      // tells apart.
+      viewport: { width: 1280, height: 720 },
       commands: {
         conformanceReadFile: readFileCommand(root),
         conformanceFileExists: fileExistsCommand(root),

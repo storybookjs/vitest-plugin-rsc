@@ -344,11 +344,11 @@ Where the plugin runs something, it mostly runs it as Next does: 400 of the 404 
 
 Four causes are not in the "Not Yet" list of `docs/next-routes.md`: the Pages Router, the ids of Server Actions (4 tests), a builtin module of Node.js without a stand-in (2), and a prerendered page (2), which that document has under "The Node.js Runtime".
 
-**Not applicable: 48 tests.** More than half of them are JavaScript off (10), the output of a build (12), and an npm package that the runner does not install (5).
+**Not applicable: 48 tests.** Almost half of them are JavaScript off (10) and the output of a build (12).
 
 **The server in front of the app.** Five fixtures are there for the proxy, the redirects and rewrites of `next.config`, and `trailingSlash`. 37 of their 48 tests pass. Of the 11 that do not, 6 ask for an API route of the Pages Router, 2 expect a prerendered page, 2 cannot run in a browser, and 1 is the bug above.
 
-**CSS.** 18 fixtures are Next's own tests of CSS: global CSS and CSS modules, their order, client navigation, parallel routes, `next/dynamic`, inline CSS and the pure mode of a CSS module. 29 of their 38 tests pass, and none fails for a bug of the plugin. Of the 9 that do not, 5 need an npm package that the runner does not install (Sass, Lightning CSS, a CSS framework), 1 reads a file with Node.js, 1 expects CSS that Next's build minified, 1 asks for the Pages Router, and 1 expects the CSS of a component of `next/dynamic` from Next's manifest of dynamic imports. Seven more of Next's fixtures for CSS do not run here: five need a package or a feature that the runner does not have, two only Turbopack runs. `conformance/src/fixtures.ts` says which.
+**CSS.** 23 fixtures are Next's own tests of CSS: global CSS and CSS modules, their order, client navigation, parallel routes, `next/dynamic`, inline CSS, the pure mode of a CSS module, Sass, Tailwind 3 and 4, a PostCSS config with plugins of its own, and an MDX page with `@next/mdx`. The runner installs the packages their tests install, and links Tailwind 4 into the copy of the one fixture that asks for it, as it has Tailwind 3 under the name. 66 of their 77 tests pass, and none fails for a bug of the plugin. Of the 11 that do not, 3 give each test a `next.config` of its own, for `experimental.lightningCssFeatures`, 2 count the stylesheets of a page, which Next's build puts in chunks, 2 ask for the Pages Router, 1 reads a file with Node.js, 1 expects CSS that Next's build minified, 1 counts what Tailwind logs as the build compiles, and 1 expects the CSS of a component of `next/dynamic` from Next's manifest of dynamic imports. Of `scss`, a directory of 40 apps, only `scss-mixins` has an `app/`; the others are apps of the Pages Router and do not run here. Nor do three more of Next's fixtures for CSS: one builds its app out of files its test names, two only Turbopack runs. `conformance/src/fixtures.ts` says which.
 
 ### Found Along The Way
 
@@ -357,6 +357,9 @@ What the list above does not have:
 - **A pending refresh outlived its page.** Fixed with the runner: see "What Stands In For A Server" in `docs/next-routes.md`. Next sends a `<meta http-equiv="refresh">` with a `redirect()` in a response that had started. It came due a second later, in the page of the next test, or between two tests, where nothing stopped the tab from leaving and the rest of the test file did not run.
 - **`history.back()` past the entry a page was opened in leaves the test.** The tab goes back to the test runner's own entry, and Vitest loses the tab.
 - **The first run of an app can fail where the second passes.** With a cold cache, Vite finds `next/legacy/image` for the `ssr` layer while a test runs, and pre-bundles again. The page that asked for it gets a 404. Two tests of `next-image` fail that way on a fresh checkout, and pass from then on. The runner runs such a fixture again and says so.
+- **The order of cascade layers after an `@import` with `layer()`.** Fixed in the plugin. `postcss-import`, with which Vite inlines an `@import`, put an `@layer` statement that follows the import before the CSS of the import, so the layers came in another order than the stylesheet names them (`app-css`). The plugin now declares the layers of the imports at the top of such a stylesheet.
+- **An `.mdx` page with `@next/mdx`.** Fixed in the plugin: it applies the rules and aliases of a `webpack` function in `next.config` (`app-css`).
+- **The size of the tab.** Vitest opens a tab the size of a phone, and Playwright's page, which Next's tests use, is 1280 by 720. A media query of the app's CSS tells them apart (`app-css`, with Pico CSS). The runner gives the tab Playwright's size.
 - **`handleRequest()` answers 404 for `/_next/image` and the files of fonts and images.** The dev server serves those, and `handleRequest()` only reaches the routes of the app, where a `fetch` of the page finds both.
 
 ## Running It
@@ -520,5 +523,7 @@ A test of Next expects a browser and a server. Where the tab is neither, the run
 ## Adding A Fixture
 
 Add it to `conformance/src/fixtures.ts`, run `pnpm conformance <id> --update`, and give each new failure in `expectations.json` a reason. A reason is worth the look: the same message can be a bug in the plugin in one test and a missing feature in the next. `--grep` and `--print`, which shows what the page and the server log, help with one test.
+
+A package that a test lists in `dependencies` goes into `conformance/package.json`, at the version the test asks for. Another major of a package the runner has already, like Tailwind 4 next to Tailwind 3, is an npm alias there, which `linked` of the fixture links into `node_modules` of its copy under the package's own name.
 
 A fixture whose test passes `nextConfig`, `buildArgs` or `overrideFiles` to `nextTestSetup()` asks Next to change the app before it builds. The runner cannot do that when the test asks, so those tests are not applicable, unless the fixture says what to do to the copy instead: see `prepared` of `trailingslash`. A test file that starts two apps cannot run at all.
