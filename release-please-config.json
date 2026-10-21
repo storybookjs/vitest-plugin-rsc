@@ -8,6 +8,9 @@
       "package-name": "vitest-plugin-rsc",
       "initial-version": "0.1.0",
       "include-component-in-tag": false,
+      "versioning": "prerelease",
+      "prerelease": true,
+      "prerelease-type": "alpha.0",
       "bump-minor-pre-major": true,
       "bump-patch-for-minor-pre-major": true,
       "pull-request-title-pattern": "chore: release ${component} ${version}"
