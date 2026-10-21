@@ -6,7 +6,11 @@ import {
   type ResolveRoutesResult,
 } from "@next/routing";
 import { filterInternalHeaders } from "next/dist/server/lib/server-ipc/utils";
-import { fromNodeOutgoingHttpHeaders, toNodeOutgoingHttpHeaders } from "next/dist/server/web/utils";
+import {
+  fromNodeOutgoingHttpHeaders,
+  splitCookiesString,
+  toNodeOutgoingHttpHeaders,
+} from "next/dist/server/web/utils";
 import { routing } from "virtual:vitest-plugin-rsc/next-manifest";
 import { openedAt, type ServerRequest } from "./registry.ts";
 
@@ -45,13 +49,13 @@ export function incoming<T extends Pick<ServerRequest, "url" | "headers">>(reque
   return { ...request, headers: fromNodeOutgoingHttpHeaders(headers) };
 }
 
-export function resolve(
+export async function resolve(
   request: Pick<ServerRequest, "url" | "headers">,
   requestBody: ReadableStream<Uint8Array>,
   invokeMiddleware: InvokeMiddleware,
   proxy: boolean,
 ): Promise<ResolveRoutesResult> {
-  return resolveRoutes({
+  const resolved = await resolveRoutes({
     url: new URL(request.url),
     headers: request.headers,
     requestBody,
@@ -61,6 +65,17 @@ export function resolve(
     routes: proxy ? routing.routes : routing.appRoutes,
     invokeMiddleware,
   });
+  // The `Set-Cookie` headers of one rule of `headers()` in `next.config` come
+  // as one, joined with a comma: see `joinSetCookies()` in project/routing.ts.
+  // Apart again, as `next start` sends them, with the split Next's own
+  // `toNodeOutgoingHttpHeaders()` has for such a value.
+  const headers = resolved.resolvedHeaders;
+  const cookies = headers?.getSetCookie() ?? [];
+  if (headers && cookies.length > 0) {
+    headers.delete("set-cookie");
+    for (const cookie of cookies.flatMap(splitCookiesString)) headers.append("set-cookie", cookie);
+  }
+  return resolved;
 }
 
 /**
