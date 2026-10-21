@@ -20,6 +20,7 @@ import {
   type InvokeResult,
 } from "./built-layers.ts";
 import { isHostModule } from "./host-module.ts";
+import { globalTimers, pageTimers, timersKey, type Timers } from "./timers.ts";
 import {
   answerEvent,
   changedEvent,
@@ -117,7 +118,10 @@ function getRunner(environment: string): ModuleRunner {
   let runner = runners.get(environment);
   if (!runner) {
     const invoke = (payload: InvokePayload) => invokeEnvironment(environment, payload);
-    runners.set(environment, (runner = createRunner(environment, invoke, pageLoadEvaluator)));
+    runners.set(
+      environment,
+      (runner = createRunner(environment, invoke, pageLoadEvaluator, globalTimers)),
+    );
   }
   return runner;
 }
@@ -128,6 +132,7 @@ function createRunner(
   environment: string,
   invoke: NonNullable<ModuleRunnerTransport["invoke"]>,
   evaluator: ModuleEvaluator,
+  timers: Timers,
   { sourcemaps = false } = {},
 ): ModuleRunner {
   const layer = builtLayers?.[environment];
@@ -143,14 +148,14 @@ function createRunner(
           hostModule(payload) ?? (layer ? built.invoke(layer, payload) : invoke(payload)),
       },
       hmr: false,
-      // A module of a build has the URL of the file it would be, from which
-      // it names the files of the build, like its CSS.
-      ...(layer && {
-        createImportMeta: (file) => ({
-          ...createDefaultImportMeta(file),
-          url: builtUrl(layer, file),
+      createImportMeta: (file) =>
+        Object.assign(createDefaultImportMeta(file), {
+          // A module of a build has the URL of the file it would be, from
+          // which it names the files of the build, like its CSS.
+          ...(layer && { url: builtUrl(layer, file) }),
+          // The timers its code calls: see timers.ts.
+          [timersKey]: timers,
         }),
-      }),
     },
     evaluator,
   );
@@ -180,6 +185,9 @@ export function createEnvironmentRunner(
     environment,
     invoke,
     droppingImportsOnceClosed(() => runner),
+    // A runner that is closed, like the one of a page that has been left,
+    // runs no timer of its modules either.
+    pageTimers(() => runner.isClosed()),
     { sourcemaps },
   );
   // The modules of a build do not change.

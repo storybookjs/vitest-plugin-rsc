@@ -36,6 +36,7 @@ import { describeEnv, envFilesOf, type PageEnv } from "./project/env.ts";
 import { compileServerCode, createServerCode, type ServerCodeOptions } from "./server-code.ts";
 import { createUseCachePlugin, useCacheId, useCacheModule, usesCache } from "./use-cache.ts";
 import { createPathsPlugin } from "./paths.ts";
+import { pageTimersPlugin } from "./page-timers.ts";
 import { nextStaticBuild, withPathsFromRoot } from "./static-build.ts";
 import { builtHostFileOf, createStyles, changesInPlace } from "./styles.ts";
 import { assertVitestVersion } from "./vitest-version.ts";
@@ -1207,6 +1208,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
       clientReferenceOf,
     }),
     serverCode.plugin({ [environmentOf.rsc]: "rsc", [environmentOf.ssr]: "ssr" }),
+    pageTimersPlugin(environmentOf.browser),
     ...styles.plugins,
     serverCode.asyncFunctionsPlugin(environmentOf.rsc),
     createUseCachePlugin(
