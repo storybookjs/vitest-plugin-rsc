@@ -1,10 +1,35 @@
 import { expect, test, vi } from "vitest";
-import { incoming, middlewareResult } from "./server-in-front.ts";
+import { incoming, middlewareResult, resolve } from "./server-in-front.ts";
 
-// What the plugin gives the module in the app's server layers.
-vi.mock("virtual:vitest-plugin-rsc/next-manifest", () => ({
-  routing: { outputs: {}, routes: {}, appRoutes: {}, basePath: "", buildId: "test" },
-}));
+// What the plugin gives the module in the app's server layers: the routes
+// Next's build hands an adapter, with a rule of `headers()` for `/cookies`.
+vi.mock("virtual:vitest-plugin-rsc/next-manifest", () => {
+  const phases = {
+    beforeMiddleware: [],
+    middlewareMatchers: [],
+    beforeFiles: [],
+    afterFiles: [],
+    dynamicRoutes: [],
+    onMatch: [],
+    fallback: [],
+  };
+  const cookies = {
+    sourceRegex: "^/cookies$",
+    headers: {
+      "set-cookie": "a=1; Expires=Wed, 01 Jan 2044 00:00:00 GMT, b=2; Path=/",
+      "x-rule": "yes",
+    },
+  };
+  return {
+    routing: {
+      outputs: { "/cookies": "/cookies/route" },
+      routes: { ...phases, beforeMiddleware: [cookies] },
+      appRoutes: phases,
+      basePath: "",
+      buildId: "test",
+    },
+  };
+});
 
 const url = new URL("http://localhost/located");
 const elsewhere = "https://example.com/api/random";
@@ -86,4 +111,17 @@ test("takes off the headers that only Next's own server sets", () => {
   const headers = headersOf("http://localhost/", { "x-middleware-set-cookie": "a=1" });
 
   expect(headers).not.toHaveProperty("x-middleware-set-cookie");
+});
+
+test("sends the Set-Cookie headers of a rule of next.config apart, as next start does", async () => {
+  const request = { url: "http://localhost/cookies", headers: new Headers() };
+
+  const resolved = await resolve(request, new ReadableStream(), async () => ({}), true);
+
+  expect(resolved.resolvedPathname).toBe("/cookies");
+  expect(resolved.resolvedHeaders?.getSetCookie()).toEqual([
+    "a=1; Expires=Wed, 01 Jan 2044 00:00:00 GMT",
+    "b=2; Path=/",
+  ]);
+  expect(resolved.resolvedHeaders?.get("x-rule")).toBe("yes");
 });
