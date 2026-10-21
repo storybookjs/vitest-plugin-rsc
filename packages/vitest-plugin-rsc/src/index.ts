@@ -3,6 +3,7 @@ import { vitePluginRscMinimal } from "@vitejs/plugin-rsc/plugin";
 import { createReactClientCoveragePlugin } from "./coverage.ts";
 import { dependencyTransformPlugin } from "./dependency-transforms.ts";
 import { changedAfter, versionOf } from "./module-versions.ts";
+import { ownModulesToExclude } from "./own-package.ts";
 import { createRunnerEnvironmentPlugins } from "./runner-environment.ts";
 import { staticBuild } from "./static-build.ts";
 import { pageViteClientPlugin } from "./vite-client.ts";
@@ -149,7 +150,7 @@ export function vitestPluginRSC(): Plugin[] {
                   vendoredFlight("server.edge"),
                   vendoredFlight("client.edge"),
                 ],
-                exclude: ["vite", "vitest-plugin-rsc", "@vitejs/plugin-rsc"],
+                exclude: ["vite", ...ownModulesToExclude, "@vitejs/plugin-rsc"],
               },
             },
             react_client: {
@@ -172,7 +173,7 @@ export function vitestPluginRSC(): Plugin[] {
                   "react/jsx-dev-runtime",
                   vendoredFlight("client.browser"),
                 ],
-                exclude: ["vitest-plugin-rsc", "@vitejs/plugin-rsc"],
+                exclude: [...ownModulesToExclude, "@vitejs/plugin-rsc"],
               },
             },
           },

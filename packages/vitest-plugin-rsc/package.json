@@ -62,6 +62,11 @@
       "vitest-plugin-rsc-source": "./src/nextjs/plugin.ts",
       "default": "./dist/nextjs/plugin.js"
     },
+    "./node/*": {
+      "types": "./dist/node/*.d.ts",
+      "vitest-plugin-rsc-source": "./src/node/*.ts",
+      "default": "./dist/node/*.js"
+    },
     "./nextjs/rsc": {
       "types": "./dist/nextjs/rsc.d.ts",
       "vitest-plugin-rsc-source": "./src/nextjs/rsc.ts",
@@ -92,13 +97,16 @@
     "test:run": "vitest run",
     "dev": "tsdown --sourcemap --watch src",
     "build": "tsdown",
-    "prepack": "tsdown"
+    "prepack": "tsdown",
+    "generate": "node scripts/node-modules.ts"
   },
   "dependencies": {
     "@jridgewell/gen-mapping": "^0.3.13",
     "@vitejs/plugin-rsc": "0.5.36",
     "cjs-module-lexer": "^2.3.0",
-    "convert-source-map": "^2.0.0"
+    "convert-source-map": "^2.0.0",
+    "memfs": "4.80.0",
+    "unenv": "2.0.0-rc.24"
   },
   "devDependencies": {
     "@next/routing": "16.4.0",
@@ -132,5 +140,5 @@
       "optional": true
     }
   },
-  "//": "Not API, and they change with any version: ./nextjs/rsc, ./nextjs/ssr, ./nextjs/client and ./nextjs/node-rendered are modules that the layers of the plugin import by these ids."
+  "//": "Not API, and they change with any version: ./nextjs/rsc, ./nextjs/ssr, ./nextjs/client and ./nextjs/node-rendered are modules that the layers of the plugin import by these ids, and ./node/* are the modules of Node.js that the server layers get for node:<name>."
 }

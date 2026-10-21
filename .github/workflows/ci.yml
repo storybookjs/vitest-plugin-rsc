@@ -122,7 +122,7 @@ jobs:
       - name: Test the Next.js playgrounds
         env:
           VITEST_PLUGIN_RSC_BUILD: production
-        run: pnpm test:dist --project nextjs-e2e-demo --project nextjs-notes-demo-browser
+        run: pnpm test:dist --project nextjs-e2e-demo --project nextjs-notes-demo-browser --project nextjs-db-recipes
 
   next:
     name: Next.js ${{ matrix.next }}, ${{ matrix.build }}
@@ -153,6 +153,7 @@ jobs:
           version=$(npm view next@${{ matrix.next }} version)
           pnpm --filter nextjs-e2e-demo add --config.minimum-release-age=0 next@$version @next/routing@$version
           pnpm --filter nextjs-notes-demo add --config.minimum-release-age=0 next@$version @next/env@$version @next/routing@$version
+          pnpm --filter nextjs-db-recipes add --config.minimum-release-age=0 next@$version @next/routing@$version
           pnpm --filter nextjs-e2e-demo exec node -p "'next@' + require('next/package.json').version"
       - run: pnpm exec playwright install --with-deps --only-shell chromium
       - run: pnpm build
@@ -162,4 +163,5 @@ jobs:
         run: |
           pnpm test:dist \
             --project nextjs-e2e-demo \
-            --project nextjs-notes-demo-browser
+            --project nextjs-notes-demo-browser \
+            --project nextjs-db-recipes
