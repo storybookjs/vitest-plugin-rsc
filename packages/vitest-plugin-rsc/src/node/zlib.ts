@@ -11,7 +11,7 @@
 // time in its header, as Node's has none, so that the same data compresses
 // to the same bytes. The rest is unenv's: its constants, and streams and
 // functions that throw when called, like `createGzip()` and Brotli's. See
-// "Node.js In The Browser" in the README for what is here and what is not.
+// docs/nodejs-in-the-browser.md for what is here and what is not.
 
 import {
   deflateSync as fflateDeflateSync,
