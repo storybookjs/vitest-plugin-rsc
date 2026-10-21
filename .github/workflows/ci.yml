@@ -10,9 +10,14 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
+# A pull request of Release Please changes only versions and changelogs, so
+# no job runs on it: they run on main once it merges. Every job says so with
+# its own `if`, so that it reports as skipped, which a required check counts
+# as passed; a workflow that does not start leaves the check pending.
 jobs:
   format:
     name: Format (oxfmt)
+    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -26,6 +31,7 @@ jobs:
 
   lint:
     name: Lint (oxlint)
+    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -40,6 +46,7 @@ jobs:
 
   typecheck:
     name: Type Check (tsgo)
+    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -54,6 +61,7 @@ jobs:
 
   build:
     name: Build
+    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -65,21 +73,28 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm build
 
-  # The projects of the root vitest.config.ts, in three parts. The Storybook
+  # The projects of the root vitest.config.ts, in five parts. The Storybook
   # tests of the demos run `storybook dev`, `storybook build` and Chromium at
   # once; on one runner with the other projects they need more memory than it
-  # has, and GitHub stops the runner.
+  # has, and GitHub stops the runner. The longest test file of each demo, the
+  # one that runs its `storybook dev`, is a project of its own, on a runner of
+  # its own: they are CPU-bound, and set how long CI takes.
   vitest:
     name: Test (vitest, ${{ matrix.part }})
+    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         include:
+          - part: host demo Storybook
+            projects: --project nextjs-host-demo-storybook
           - part: host demo
-            projects: --project 'nextjs-host-demo*'
+            projects: --project 'nextjs-host-demo*' --project '!nextjs-host-demo-storybook'
           - part: notes demo Storybook
-            projects: --project 'nextjs-notes-demo-storybook*'
+            projects: --project nextjs-notes-demo-storybook
+          - part: notes demo Storybook build and changes
+            projects: --project 'nextjs-notes-demo-storybook*' --project '!nextjs-notes-demo-storybook'
           - part: other projects
             projects: --project '!nextjs-host-demo*' --project '!nextjs-notes-demo-storybook*'
     steps:
@@ -98,7 +113,7 @@ jobs:
   # the vitest job does.
   test:
     name: Test (vitest)
-    if: always()
+    if: ${{ always() && !startsWith(github.head_ref, 'release-please--') }}
     needs: vitest
     runs-on: ubuntu-latest
     steps:
@@ -108,6 +123,7 @@ jobs:
   # Production".
   production:
     name: Test (production build)
+    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -126,6 +142,7 @@ jobs:
 
   next:
     name: Next.js ${{ matrix.next }}, ${{ matrix.build }}
+    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
