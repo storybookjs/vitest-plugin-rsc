@@ -2,7 +2,7 @@
 
 > Test React Server Components and Next.js App Router apps in Vitest Browser Mode.
 
-[![npm version](https://img.shields.io/npm/v/vitest-plugin-rsc?color=cb3837)](https://www.npmjs.com/package/vitest-plugin-rsc)
+[![npm version](https://img.shields.io/npm/v/vitest-plugin-rsc/alpha?color=cb3837&label=npm%40alpha)](https://www.npmjs.com/package/vitest-plugin-rsc?activeTab=versions)
 [![CI](https://github.com/storybookjs/vitest-plugin-rsc/actions/workflows/ci.yml/badge.svg)](https://github.com/storybookjs/vitest-plugin-rsc/actions/workflows/ci.yml)
 [![License](https://img.shields.io/npm/l/vitest-plugin-rsc)](LICENSE)
 [![Node](https://img.shields.io/badge/node-%3E%3D24-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
@@ -72,14 +72,14 @@ Vitest isn't the only possible host. Another one, such as a component workshop, 
 ### 1. Install
 
 ```bash
-npm install -D vitest-plugin-rsc vitest @vitest/browser-playwright playwright @types/node@24
+npm install -D vitest-plugin-rsc@alpha vitest @vitest/browser-playwright playwright @types/node@24
 # Next's own route resolution, at the same version as your `next`
 npm install -D -E @next/routing@$(node -p "require('next/package.json').version")
 # The browser that the tests run in
 npx playwright install chromium
 ```
 
-`@next/routing` has to be the same version as your `next`, so upgrade them together, as you would `eslint-config-next`. Vitest 5 needs `@types/node` 22 or later, and create-next-app installs 20, so the first line upgrades it.
+The plugin is in alpha, so its releases are on the `alpha` dist-tag, and an alpha can break its API. `@next/routing` has to be the same version as your `next`, so upgrade them together, as you would `eslint-config-next`. Vitest 5 needs `@types/node` 22 or later, and create-next-app installs 20, so the first line upgrades it.
 
 ### 2. Configure Vitest
 
