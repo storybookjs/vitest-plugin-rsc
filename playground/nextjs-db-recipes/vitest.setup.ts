@@ -11,6 +11,7 @@ import * as mysqlSql from "#recipes/mysql-sql/db.ts";
 import * as sqliteSql from "#recipes/sqlite-sql/db.ts";
 import * as sqliteDrizzle from "#recipes/sqlite-drizzle/db.ts";
 import * as sqlitePrisma from "#recipes/sqlite-prisma/db.ts";
+import * as redisIoredis from "#recipes/redis-ioredis/db.ts";
 import { TEST_NOW } from "#test/todo-recipe.ts";
 
 // The one module of each recipe that the tests mock: its database, with the
@@ -28,6 +29,7 @@ vi.mock("#recipes/sqlite-kysely/db.ts");
 vi.mock("#recipes/postgres-sql/db.ts");
 vi.mock("#recipes/mysql-sql/db.ts");
 vi.mock("#recipes/sqlite-sql/db.ts");
+vi.mock("#recipes/redis-ioredis/db.ts");
 
 type Mocked = { resetDb(): Promise<void> };
 
@@ -46,6 +48,7 @@ beforeEach(async () => {
     postgresSql,
     mysqlSql,
     sqliteSql,
+    redisIoredis,
   ]) {
     await (recipe as unknown as Mocked).resetDb();
   }

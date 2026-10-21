@@ -163,6 +163,8 @@ When you have a choice, prefer the APIs that Node.js and browsers share: Web Str
 
 The SQL column is hand-written SQL on the app's driver: `pg`, `@libsql/client` and `mysql2`.
 
+Redis has a recipe too, for an app on `ioredis`. Its tests have [ioredis-mock](https://github.com/stipsan/ioredis-mock) in place of the client, in the tab: not a real Redis, but the API of ioredis, with Lua scripts.
+
 The app keeps its ORM, its queries and its migrations. On Postgres the driver is the app's `pg` too; on SQLite it is libsql's WebAssembly client, and on MySQL a stand-in for a pool of mysql2. The tests mock one module, `db.ts`, with a file next to it in `__mocks__/`, which gives the same ORM a pool of the database in the tab:
 
 ```ts
@@ -205,7 +207,7 @@ To use a recipe in your app, copy its `__mocks__/db.ts`, the helper for its data
 
 The notes demo, `playground/nextjs-notes-demo`, mocks its database the same way for a whole app with Better Auth, with Drizzle's driver for PGlite in place of the app's `pg`. Drizzle Kit, which turns its schema into SQL, runs in Node.js, so its Vitest config prepares the tables before the tests run.
 
-Planned: Redis with ioredis, MongoDB with Mongoose, and TypeORM on Postgres and MySQL.
+Planned: MongoDB with Mongoose, and TypeORM on Postgres and MySQL.
 
 ## Requirements
 
@@ -1227,7 +1229,7 @@ For the full walkthrough, see [docs/next-routes.md](docs/next-routes.md). [docs/
 
 - `playground/nextjs-e2e-demo`: a small Next.js app with a test for every feature of the Next.js support. Most samples above come from its tests. Its `build-test/` builds the app with `vite build` and opens the build in a browser: see [A Static Build](#a-static-build).
 - `playground/nextjs-notes-demo`: a fuller Next.js notes app with Better Auth, Drizzle, PGlite test databases and shadcn/ui. Its tests open whole routes with the database mocked in the test runtime and the rest of the app real. A test signs in with a Better Auth session on that database. This is the repository's acceptance app.
-- `playground/nextjs-db-recipes`: a recipe for each database and ORM. It covers Postgres, SQLite and MySQL, with Drizzle, Prisma, Kysely or plain SQL on the app's driver. See [Databases](#databases).
+- `playground/nextjs-db-recipes`: a recipe for each database and ORM. It covers Postgres, SQLite and MySQL, with Drizzle, Prisma, Kysely or plain SQL on the app's driver, and Redis with ioredis. See [Databases](#databases).
 - `playground/rsc-vitest-demo`: a minimal non-Next RSC app. Use it as the smallest end-to-end example of `vitest-plugin-rsc` on its own. Its `build-test/` builds the `host/main.tsx` page with `vite build` and opens the build in a browser.
 - `playground/nextjs-host-demo`: the Next.js plugin in a Vite dev server without Vitest, the way another host runs it. Its tests start that server and drive it with Playwright.
 

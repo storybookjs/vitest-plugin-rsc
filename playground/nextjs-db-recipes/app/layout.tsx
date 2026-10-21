@@ -18,7 +18,8 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           <Link href="/mysql-kysely">MySQL + Kysely</Link>{" "}
           <Link href="/sqlite-kysely">SQLite + Kysely</Link>{" "}
           <Link href="/postgres-sql">Postgres + SQL</Link>{" "}
-          <Link href="/mysql-sql">MySQL + SQL</Link> <Link href="/sqlite-sql">SQLite + SQL</Link>
+          <Link href="/mysql-sql">MySQL + SQL</Link> <Link href="/sqlite-sql">SQLite + SQL</Link>{" "}
+          <Link href="/redis-ioredis">Redis + ioredis</Link>
         </nav>
         <main>{children}</main>
       </body>

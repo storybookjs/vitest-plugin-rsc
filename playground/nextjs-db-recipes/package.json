@@ -21,6 +21,7 @@
     "@prisma/adapter-pg": "7.10.1",
     "@prisma/client": "7.10.1",
     "drizzle-orm": "^0.45.2",
+    "ioredis": "^5.11.1",
     "kysely": "^0.29.7",
     "mysql2": "^3.15.3",
     "next": "16.4.0",
@@ -31,6 +32,7 @@
   "devDependencies": {
     "@electric-sql/pglite": "^0.4.5",
     "@libsql/client-wasm": "0.18.0",
+    "@types/ioredis-mock": "^8.2.8",
     "@types/node": "^24.12.4",
     "@types/pg": "^8.20.0",
     "@types/react": "^19.2.14",
@@ -38,6 +40,7 @@
     "@vitest/browser": "5.0.3",
     "@vitest/browser-playwright": "5.0.3",
     "drizzle-kit": "^0.31.10",
+    "ioredis-mock": "8.13.1",
     "lite4mariadb": "0.1.2",
     "playwright": "^1.64.0",
     "prisma": "7.10.1",

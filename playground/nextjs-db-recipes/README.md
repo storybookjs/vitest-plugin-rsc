@@ -1,6 +1,6 @@
 # Database recipes
 
-The same todo list on three databases, with three ORMs and with SQL of its own: a page of the App Router that lists the todos, a Server Action that adds one, and one that marks a todo done in a transaction. Each recipe is a test of it in Vitest Browser Mode, on a database in the page.
+The same todo list on three databases, with three ORMs and with SQL of its own, and on Redis: a page of the App Router that lists the todos, a Server Action that adds one, and one that marks a todo done in a transaction. Each recipe is a test of it in Vitest Browser Mode, on a database in the page.
 
 The driver of the app, which it keeps in the tests:
 
@@ -16,16 +16,18 @@ What the tests have in place of the database server:
 - **SQLite**: [`@libsql/client-wasm`](https://www.npmjs.com/package/@libsql/client-wasm), SQLite in WebAssembly, with the API of the app's libsql client.
 - **MySQL**: [lite4mariadb](https://github.com/shyim/lite4mariadb), MariaDB with InnoDB in WebAssembly.
 
+And one recipe of a store that is not a database of SQL: **Redis**, with `ioredis`, which keeps a todo as a hash and the ids in a list, and adds and toggles one with a Lua script. Its tests have [ioredis-mock](https://github.com/stipsan/ioredis-mock) in place of the server, with the API of ioredis and a Lua of its own.
+
 The recipes do what the notes demo, `playground/nextjs-notes-demo`, does for its database, for the drivers of the app: the notes demo has Drizzle's driver for PGlite in its tests, where its app has `pg`.
 
-Each recipe stands for an app of its own: their `db.ts` files have the same names for the app's database, `DATABASE_URL`, `MYSQL_URL`, `SQLITE_URL`, and the same table. The playground runs its tests, not `next dev`.
+Each recipe stands for an app of its own: their `db.ts` files have the same names for the app's database, `DATABASE_URL`, `MYSQL_URL`, `SQLITE_URL`, `REDIS_URL`, and the same todos. The playground runs its tests, not `next dev`.
 
 ## The Rule
 
-The app keeps its ORM and its driver. The tests mock one module of a recipe, `db.ts`, with the file next to it in `__mocks__/`: the same ORM, with a pool or client of the database in the page. A recipe of SQL has no ORM: its `db.ts` is the pool or the client. Everything else is the app's own: its queries, its migrations, its transactions.
+The app keeps its ORM and its driver. The tests mock one module of a recipe, `db.ts`, with the file next to it in `__mocks__/`: the same ORM, with a pool or client of the database in the page. A recipe of SQL has no ORM: its `db.ts` is the pool or the client, as it is the client of ioredis for Redis. Everything else is the app's own: its queries, its migrations, its transactions.
 
-- **A database as the migrations left it, for every test.** What an earlier test wrote is gone, and the first row a test adds is #1.
-- **The time of the test.** `vi.setSystemTime()` is the clock of Postgres and MySQL too, for `now()` and `CURRENT_TIMESTAMP`. Prisma and the SQLite recipes take the time from the app's clock, which is the test's.
+- **A database as the migrations left it, for every test.** What an earlier test wrote is gone, and the first row a test adds is #1. Redis has no migrations: its reset is a `FLUSHALL`.
+- **The time of the test.** `vi.setSystemTime()` is the clock of Postgres and MySQL too, for `now()` and `CURRENT_TIMESTAMP`. Prisma, the SQLite recipes and Redis take the time from the app's clock, which is the test's.
 - **The app's migrations.** The SQL files that Drizzle and Prisma make, Kysely's own migrator, or the SQL files of a recipe of SQL.
 
 ```tsx
@@ -74,6 +76,7 @@ The test databases are in `test/`:
 - **Cross-origin isolation.** lite4mariadb runs MariaDB on threads, which a page has with `Cross-Origin-Opener-Policy` and `Cross-Origin-Embedder-Policy`. `credentialless`, so that the page can still load what another origin has.
 - **A time zone that is not UTC**, `Pacific/Auckland`: a value that a driver writes or reads in the wrong one moves by hours.
 - **`optimizeDeps`.** What the files in `__mocks__/` import is in `include`. lite4mariadb and libsql's WebAssembly are in `exclude`, as they load their files from their own URLs.
+- **ioredis-mock's build for browsers.** As it loads, it calls `require()` for `fs` and `path`, which throws in any page. And it sets `window.Buffer` to a polyfill of its own, in place of the plugin's, which Next's server uses. `test/ioredis-mock.ts` takes both out of `browser.js`, in the dependency optimizer and in Vite. It throws when a version of ioredis-mock has other code there, which is why it is pinned to 8.13.1.
 
 ## What Is Not Here Yet
 
@@ -95,4 +98,10 @@ The test databases are in `test/`:
 - **`@libsql/client-wasm` is experimental.**
   - Its transaction takes the client's connection, and the client opens the file again, so each database is a file in the memory of SQLite's WebAssembly, not `:memory:`. The files of earlier tests stay there.
   - It has no types of the columns.
+- **ioredis-mock**:
+  - Its Lua has a number that a command gives as a float: `"todo:" .. id` is `todo:1.0`. The Redis recipe's script makes the id with `string.format("%d", ...)`, which is the same on Redis.
+  - It has no `eval()` in a MULTI. A script that ioredis defines with `defineCommand()` is there.
+  - Its EXEC does not end a WATCH: the EXEC's own write makes the next EXEC fail, so a toggle with WATCH fails every other time. The recipe toggles a todo with a Lua script.
+  - Its Lua has no `redis.error_reply()`: the toggle's script answers `false` for no todo.
+  - A command that fails in its MULTI rejects the EXEC. Redis answers the error of each command in the answer of EXEC, which `addTodos()` checks.
 - **Prisma's engines.** `pnpm install` does not run their download, which `prisma generate` does not need. `prisma migrate diff`, for a change of a Prisma schema, does.
