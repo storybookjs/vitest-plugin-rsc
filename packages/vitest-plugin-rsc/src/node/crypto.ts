@@ -7,8 +7,8 @@
 // too. MD5, SHA-1 and SHA-2, which a server's code hashes with; another
 // algorithm throws, as in Node.js. The rest is unenv's: its constants, and
 // functions that throw when called, like `createCipheriv` and `pbkdf2`, so
-// that code which imports one loads. See "Node.js In The Browser" in the
-// README for what is here and what is not.
+// that code which imports one loads. See docs/nodejs-in-the-browser.md for
+// what is here and what is not.
 
 import { hmac } from "@noble/hashes/hmac.js";
 import { md5, sha1 } from "@noble/hashes/legacy.js";

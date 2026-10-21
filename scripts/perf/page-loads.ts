@@ -41,15 +41,15 @@ export function profilesOption(value: string | undefined): Profile[] {
   });
 }
 
-// The files that a build names with a hash of their content, as the README's
-// "A Static Build" has a static host serve them: Vite's, Next's and those of
-// the plugin's layers. The browser keeps them without asking again.
+// The files that a build names with a hash of their content, as
+// docs/static-build.md has a static host serve them: Vite's, Next's and those
+// of the plugin's layers. The browser keeps them without asking again.
 export const hashed = /^(assets|_next\/static|vitest-plugin-rsc\/[^/]+\/assets)\//;
 
 /**
- * Serves a build as the README has a static host serve it: compressed, the
- * files of `hashed` immutable, and any other file with an ETag and
- * `no-cache`, so a warm load asks for it again and gets a 304.
+ * Serves a build as docs/static-build.md has a static host serve it:
+ * compressed, the files of `hashed` immutable, and any other file with an
+ * ETag and `no-cache`, so a warm load asks for it again and gets a 304.
  */
 export function serveBuild(dir: string): Promise<Site> {
   return serveFiles(dir, "/", { cache: { hashed }, compress: true });
