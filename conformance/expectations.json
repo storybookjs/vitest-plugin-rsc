@@ -88,10 +88,6 @@
       "text": "Asks for another app than the fixture: files of its own, or another `next.config`. The runner runs one app for a fixture, the fixture as it is or as `fixtures.ts` prepares it.",
       "match": "builds the app out of files the test names|changes the app before it is built"
     },
-    "next-development-checks": {
-      "category": "not-yet",
-      "text": "Expects the production code of Next, which leaves out the checks of its development code, like the error for a `<Link>` with a dynamic `href`. The plugin runs Next's development code by default, as its `build` option says."
-    },
     "dynamic-params": {
       "category": "not-yet",
       "text": "A path that `generateStaticParams` does not list, of a route with `dynamicParams = false`. Next answers 404 for it from the paths its build prerendered. Here no build lists them, and the page renders."
@@ -606,11 +602,8 @@
       "failed": {}
     },
     "dynamic-href": {
-      "passed": 0,
-      "failed": {
-        "dynamic-href.test.ts > dynamic-href > should not error on /object in prod": "next-development-checks",
-        "dynamic-href.test.ts > dynamic-href > should not error on /string in prod": "next-development-checks"
-      }
+      "passed": 2,
+      "failed": {}
     },
     "rsc-redirect": {
       "passed": 2,
