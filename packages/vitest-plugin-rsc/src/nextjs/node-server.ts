@@ -191,7 +191,12 @@ function createNodeResponse(request: ServerRequest) {
   // Next's stand-in rejects this for a response that ends with an error.
   // Nobody waits for it here: the body ends with the error.
   (res as unknown as { hasStreamed: Promise<unknown> }).hasStreamed.catch(() => {});
-  request.signal?.addEventListener("abort", () => res.destroy(), { once: true });
+  // Whoever asked can leave until the response closes, and no longer: the
+  // signal can outlive the request, like the one of a page.
+  const { signal } = request;
+  const leave = () => res.destroy();
+  signal?.addEventListener("abort", leave, { once: true });
+  res.once("close", () => signal?.removeEventListener("abort", leave));
 
   const response = (written: Promise<unknown>): Promise<Response> => {
     const sent = head.then(() => {
@@ -204,15 +209,23 @@ function createNodeResponse(request: ServerRequest) {
       });
     });
     // Next's handler is done with the request, often long after the head.
-    // With a head, the answer is the response of that head.
+    // With a head, the answer is the response of that head. Without one,
+    // the response is over, and closes as a socket would.
     const settled = written.then(
       // Without a head: Next ended the response with an error before its
       // first byte, or whoever asked has left.
-      () => (headSent ? sent : Promise.reject(failure ?? leftBeforeSent())),
+      () => {
+        if (headSent) return sent;
+        res.destroy();
+        throw failure ?? leftBeforeSent();
+      },
       (error) => {
         // What fails before the head is the failure of the request. After
         // it, the body ends with the error.
-        if (!headSent) throw error;
+        if (!headSent) {
+          res.destroy();
+          throw error;
+        }
         res.destroy(error ?? new Error("The request handler failed."));
         return sent;
       },
