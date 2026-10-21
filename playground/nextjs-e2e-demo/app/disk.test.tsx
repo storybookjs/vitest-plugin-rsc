@@ -1,4 +1,6 @@
 import fs from "node:fs";
+import { Writable } from "node:stream";
+import { pipeline } from "node:stream/promises";
 import { cleanup, renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
 import { beforeEach, describe, expect, test } from "vitest";
 import { page, userEvent } from "vitest/browser";
@@ -80,4 +82,20 @@ test("closes what watches a file of the disk when the test ends", async () => {
   await cleanup();
 
   expect(closed).toBe(true);
+});
+
+test("streams a file of the disk into a stream of the server code's", async () => {
+  fs.writeFileSync("/tmp/note.txt", "from a stream");
+  const chunks: Uint8Array[] = [];
+  const collect = new Writable({
+    write(chunk: Uint8Array, _encoding, done) {
+      chunks.push(chunk);
+      done();
+    },
+  });
+
+  await pipeline(fs.createReadStream("/tmp/note.txt"), collect);
+
+  const decoder = new TextDecoder();
+  expect(chunks.map((chunk) => decoder.decode(chunk)).join("")).toBe("from a stream");
 });

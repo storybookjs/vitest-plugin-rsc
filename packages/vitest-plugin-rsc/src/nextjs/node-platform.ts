@@ -1,10 +1,9 @@
-// What Next's Node.js server imports that a browser does not have: Node's own
-// modules, and the modules of Next that set a Node.js process up or read the
-// files of a build. Each of Next's is one module that Next itself keeps
-// apart. This is the build side of it: the modules, as code for Vite. The
-// browser's side is node-server.ts, and globals.ts for the globals.
-
-import zlib from "node:zlib";
+// What Next's Node.js server imports of its own that a browser does not have:
+// the modules of Next that set a Node.js process up or read the files of a
+// build, each one module that Next itself keeps apart. This is the build side
+// of it: the modules, as code for Vite. The browser's side is node-server.ts,
+// and globals.ts for the globals. The modules of Node.js themselves are the
+// package's, see node-builtins.ts.
 
 /**
  * The stand-ins, for a `registry` in the browser that some of them call and a
@@ -15,49 +14,7 @@ export function createNodePlatform(registry: string, prefix: string) {
     names
       .map((name) => `export const ${name} = (...args) => ${registry}.${owner}.${name}(...args);`)
       .join("\n");
-  const nodeStream = `
-  import stream from "next/dist/compiled/stream-browserify";
-  const { Readable } = stream;
-  // Next's polyfill is an older \`stream\`, without the bridge to web streams.
-  Readable.toWeb ??= (readable) =>
-    new ReadableStream({
-      start(controller) {
-        readable.on("data", (chunk) => controller.enqueue(new Uint8Array(chunk)));
-        readable.on("end", () => controller.close());
-        readable.on("error", (error) => controller.error(error));
-      },
-      cancel: (reason) => void readable.destroy(reason),
-    });
-  Readable.fromWeb ??= (web) => {
-    const reader = web.getReader();
-    return new Readable({
-      read() {
-        reader.read().then(
-          ({ done, value }) => void this.push(done ? null : Buffer.from(value)),
-          (error) => this.destroy(error),
-        );
-      },
-    });
-  };
-  export default stream;
-  export const { Writable, Duplex, Transform, PassThrough, Stream, finished, pipeline } = stream;
-  export { Readable };
-  `;
   const modules: Record<string, string> = {
-    "node-stream": nodeStream,
-    "node-stream-promises": `
-  import stream from ${JSON.stringify(`${prefix}node-stream`)};
-  const isStream = (value) => value && (typeof value.pipe === "function" || typeof value.write === "function");
-  export const pipeline = (...streams) => {
-    // The options, with a signal: the request ends with the test here.
-    if (!isStream(streams.at(-1))) streams.pop();
-    return new Promise((resolve, reject) =>
-      stream.pipeline(...streams, (error) => (error ? reject(error) : resolve())),
-    );
-  };
-  export const finished = (target) =>
-    new Promise((resolve, reject) => stream.finished(target, (error) => (error ? reject(error) : resolve())));
-  `,
     "react-server-node": forward("flightServer", [
       "createTemporaryReferenceSet",
       "decodeReply",
@@ -85,74 +42,6 @@ export function createNodePlatform(registry: string, prefix: string) {
     // Next's bundle for Node.js brings React for both server layers, and its
     // route module hands them to those patches. Here a layer has its own.
     "vendored-react": `export const React = undefined;`,
-    // For the server code of the app. Next's own importer of it is replaced below.
-    "node-timers": `
-  export const setImmediate = (...args) => ${registry}.setImmediate(...args);
-  export const clearImmediate = (...args) => ${registry}.clearImmediate(...args);
-  export const setTimeout = (...args) => globalThis.setTimeout(...args);
-  export const clearTimeout = (...args) => globalThis.clearTimeout(...args);
-  export const setInterval = (...args) => globalThis.setInterval(...args);
-  export const clearInterval = (...args) => globalThis.clearInterval(...args);
-  export default { setImmediate, clearImmediate, setTimeout, clearTimeout, setInterval, clearInterval };
-  `,
-    // The timers of the page, as promises: unenv's resolve at once.
-    "node-timers-promises": `
-  const aborted = (signal) =>
-    Object.assign(new Error("The operation was aborted"), { name: "AbortError", code: "ABORT_ERR", cause: signal.reason });
-  const after = (start, clear, value, options) =>
-    new Promise((resolve, reject) => {
-      const signal = options?.signal;
-      if (signal?.aborted) return reject(aborted(signal));
-      const abort = () => {
-        clear(id);
-        reject(aborted(signal));
-      };
-      const id = start(() => {
-        signal?.removeEventListener("abort", abort);
-        resolve(value);
-      });
-      signal?.addEventListener("abort", abort, { once: true });
-    });
-  export const setTimeout = (delay, value, options) =>
-    after((done) => globalThis.setTimeout(done, delay), globalThis.clearTimeout, value, options);
-  export const setImmediate = (value, options) =>
-    after((done) => ${registry}.setImmediate(done), (id) => ${registry}.clearImmediate(id), value, options);
-  // Ticks while the consumer works, as Node's does: a tick it has not
-  // taken yet comes at once.
-  export async function* setInterval(delay, value, options) {
-    const signal = options?.signal;
-    if (signal?.aborted) throw aborted(signal);
-    let pending = 0;
-    let wake;
-    const tick = () => {
-      pending++;
-      wake?.();
-    };
-    const id = globalThis.setInterval(tick, delay);
-    signal?.addEventListener("abort", tick, { once: true });
-    try {
-      for (;;) {
-        while (pending === 0 && !signal?.aborted) {
-          await new Promise((resolve) => {
-            wake = resolve;
-          });
-          wake = undefined;
-        }
-        if (signal?.aborted) throw aborted(signal);
-        pending--;
-        yield value;
-      }
-    } finally {
-      globalThis.clearInterval(id);
-      signal?.removeEventListener("abort", tick);
-    }
-  }
-  export const scheduler = {
-    wait: (delay, options) => setTimeout(delay, undefined, options),
-    yield: () => setImmediate(),
-  };
-  export default { setTimeout, setImmediate, setInterval, scheduler };
-  `,
     // Next measures its bloom filter of the routes with this, to warn about
     // its size, and it reads files and streams for that. No warning here.
     "gzip-size": `
@@ -168,41 +57,6 @@ export function createNodePlatform(registry: string, prefix: string) {
     throw new Error("vitest-plugin-rsc: Next's staged rendering, for Cache Components, is not supported.");
   }
   export function expectNoPendingImmediates() {}
-  `,
-    // Next compresses what a prerender leaves for the request that resumes
-    // it, and no page is prerendered here. Every export of Node's \`zlib\` is
-    // there, so that code which imports one loads: the functions throw.
-    "node-zlib": `
-  const missing = (name) =>
-    function () {
-      throw new Error("vitest-plugin-rsc: node:zlib's " + name + " is not there in the browser");
-    };
-  ${Object.entries(zlib)
-    .map(([name, value]) =>
-      typeof value === "function"
-        ? `export const ${name} = missing(${JSON.stringify(name)});`
-        : `export const ${name} = ${JSON.stringify(value)};`,
-    )
-    .join("\n  ")}
-  export default { ${Object.keys(zlib).join(", ")} };
-  `,
-    // Next asks Node.js for the source map of a file in a stack. Vite has them.
-    // A package of ESM makes itself a \`require\` as it loads, as Prisma's
-    // client does, and calls it for what it needs on Node.js only: it loads,
-    // and the call throws.
-    "node-module": `
-  const missing = (name) =>
-    function () {
-      throw new Error("vitest-plugin-rsc: " + name + " of Node.js is not there in the browser");
-    };
-  export const findSourceMap = () => undefined;
-  export const builtinModules = [];
-  export const createRequire = () =>
-    Object.assign(missing("module.createRequire()'s require"), {
-      resolve: missing("module.createRequire()'s require.resolve"),
-      cache: {},
-    });
-  export default { findSourceMap, builtinModules, createRequire };
   `,
     "ssr-app-page-module": `
   export const AppPageRouteModule = new Proxy(class {}, {
@@ -223,8 +77,6 @@ export function createNodePlatform(registry: string, prefix: string) {
   `,
   };
   const patterns: [RegExp, string][] = [
-    [/^(node:)?stream$/, "node-stream"],
-    [/^(node:)?stream\/promises$/, "node-stream-promises"],
     [/^next\/dist\/(esm\/)?server\/app-render\/react-server\.node(\.js)?$/, "react-server-node"],
     [/^next\/dist\/(esm\/)?server\/load-manifest\.external(\.js)?$/, "load-manifest"],
     [
@@ -239,14 +91,10 @@ export function createNodePlatform(registry: string, prefix: string) {
     // What sets up a Node.js process for Next: the patches above, a hook on
     // \`require\`, a \`crypto\` global.
     [/^next\/dist\/(esm\/)?build\/adapter\/setup-node-env\.external(\.js)?$/, "node-environment"],
-    [/^(node:)?module$/, "node-module"],
     [
       /^next\/dist\/(esm\/)?server\/node-environment-extensions\/fast-set-immediate\.external(\.js)?$/,
       "fast-set-immediate",
     ],
-    [/^(node:)?timers$/, "node-timers"],
-    [/^(node:)?timers\/promises$/, "node-timers-promises"],
-    [/^(node:)?zlib$/, "node-zlib"],
     [/^next\/dist\/compiled\/gzip-size(\/index(\.js)?)?$/, "gzip-size"],
     [
       /^next\/dist\/(esm\/)?server\/route-modules\/app-page\/vendored\/(rsc|ssr)\/entrypoints(\.js)?$/,

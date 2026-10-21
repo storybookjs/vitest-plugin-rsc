@@ -92,15 +92,16 @@ export async function layerTables(context: NextContext, build: NextBuild) {
     const aliases: Record<string, string | false> = {
       "@opentelemetry/api$": "next/dist/compiled/@opentelemetry/api",
     };
-    // The Node modules that Next's edge runtime has too. A browser has
-    // none of them, so use the polyfills Next ships for its own client
-    // bundles. The others that Next's server asks for are in plugin.ts.
-    for (const name of SUPPORTED_NATIVE_MODULES) {
-      if (name === "async_hooks") continue;
-      aliases[`${name}$`] = aliases[`node:${name}$`] = `next/dist/compiled/${name}`;
-    }
-    if (layer !== "browser") {
-      aliases.path$ = aliases["node:path$"] = "next/dist/compiled/path-browserify";
+    // The browser layer gets the four modules of Node.js that Next's edge
+    // runtime has, as before, from Next's polyfills, and nothing for the
+    // rest. The server layers get every module of Node.js from the package
+    // (nextjs/node-builtins.ts).
+    if (layer === "browser") {
+      for (const name of SUPPORTED_NATIVE_MODULES) {
+        if (name === "async_hooks") continue;
+        aliases[`${name}$`] = aliases[`node:${name}$`] = `next/dist/compiled/${name}`;
+      }
+    } else {
       // Next's route modules load a bundle of Next's own for Node.js. The
       // module that bundle is made of, as Next's edge build takes it.
       for (const kind of ["app-page", "app-route"]) {

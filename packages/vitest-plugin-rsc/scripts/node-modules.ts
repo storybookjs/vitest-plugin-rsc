@@ -2,14 +2,15 @@
 // for, but `async_hooks`, which the package has one of its own for, and a
 // module with a file of its own there already, like crypto.ts. Each is a
 // module of the package, `vitest-plugin-rsc/node/<name>`, that the server
-// layers get for `node:<name>` (nextjs/node-builtins.ts): a dependency of the
-// app like any other, which Vite resolves, pre-bundles and bundles as one.
+// layers get for `node:<name>` (nextjs/node-builtins.ts), built to one file
+// of its own with memfs or unenv in it (tsdown.config.ts).
 //
 // `pnpm generate` in the package, after a change here or of unenv's version.
 // node-builtins.test.ts fails while the files are not what this writes.
 
 import fs from "node:fs";
 import { createRequire } from "node:module";
+import nodeZlib from "node:zlib";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { type ESTree, parseAst } from "vite";
@@ -100,10 +101,12 @@ function exportsOfFile(file: string): string[] {
 export const exportsOf = (name: string): string[] =>
   exportsOfFile(path.join(unenvDir, `${name}.mjs`));
 
+// A function, not an arrow: code that extends or constructs one loads.
 const missing = `
-const missing = (name: string) => () => {
-  throw new Error(\`vitest-plugin-rsc: \${name} of Node.js is not there in the browser\`);
-};
+const missing = (name: string) =>
+  function () {
+    throw new Error(\`vitest-plugin-rsc: \${name} of Node.js is not there in the browser\`);
+  };
 `;
 
 // A line per name, broken as oxfmt breaks one that is over its width.
@@ -164,8 +167,9 @@ export default fs;
 ${ofNames(exportsOf("fs"), (name) => `fs.${name} ?? missing("fs.${name}")`)}
 `,
   "fs/promises": () => `${header}
-// \`node:fs/promises\`: of the disk of ../fs.ts.
-import fs from "../fs.ts";
+// \`node:fs/promises\`: of the disk of ../fs.ts. By the package's name, so
+// that the build keeps it an import: memfs is in \`fs\` alone.
+import fs from "vitest-plugin-rsc/node/fs";
 ${missing}
 const promises: Record<string, any> = fs.promises;
 export default promises;
@@ -190,6 +194,25 @@ export const fileURLToPath: typeof node.fileURLToPath = (url, options) => {
 };
 export default { ...unenv, fileURLToPath };
 `,
+  // Next asks Node.js for the source map of a file in a stack: Vite has
+  // them. A package of ESM makes itself a \`require\` as it loads, as
+  // Prisma's client does, and calls it for what it needs on Node.js only:
+  // it loads, and the call throws.
+  module: () => `${header}
+// \`node:module\` of Node.js, as unenv has it in a browser, with a
+// \`createRequire()\` whose \`require\` throws when called, and no source map.
+import unenv from "unenv/node/module";
+
+export * from "unenv/node/module";
+${missing}
+export const findSourceMap = (): undefined => undefined;
+export const createRequire = (): Record<string, any> =>
+  Object.assign(missing("module.createRequire()'s require"), {
+    resolve: missing("module.createRequire()'s require.resolve"),
+    cache: {},
+  });
+export default { ...unenv, findSourceMap, createRequire };
+`,
   process: () => `${header}
 // \`node:process\`: the page's \`process\`, which the plugin makes Next's
 // server's too (nextjs/globals.ts), so the test and the server share its
@@ -211,10 +234,108 @@ export default new Proxy(process, {
 });
 ${ofNames(exportsOf("process"), (name) => `process.${name} ?? unenv.${name}`)}
 `,
+  // Next compresses what a prerender leaves for the request that resumes
+  // it, and no page is prerendered here. Every export of Node's \`zlib\` is
+  // there, so that code which imports one loads: what unenv lacks throws.
+  zlib: () => {
+    const rest = Object.keys(nodeZlib).filter((name) => !exportsOf("zlib").includes(name));
+    return `${header}
+// \`node:zlib\` of Node.js, as unenv has it in a browser, with the rest of
+// Node's exports: the constants, and functions that throw when called.
+import unenv from "unenv/node/zlib";
+
+export * from "unenv/node/zlib";
+${missing}
+${ofNames(rest, (name) =>
+  typeof (nodeZlib as Record<string, unknown>)[name] === "function"
+    ? `missing("zlib.${name}")`
+    : JSON.stringify((nodeZlib as Record<string, unknown>)[name]),
+)}
+export default {
+  ...unenv,
+${rest.map((name) => `  ${name},`).join("\n")}
+};
+`;
+  },
+  // The strict assert of the package's own assert, with the same exports.
+  "assert/strict": () => `${header}
+// \`node:assert/strict\`: the \`strict\` of the package's \`assert\`, as in Node.js.
+import assert from "vitest-plugin-rsc/node/assert";
+${missing}
+const own: Record<string, any> = assert.strict;
+export default own;
+${ofNames(exportsOf("assert/strict"), (name) => `own.${name} ?? missing("assert/strict.${name}")`)}
+`,
+  // The POSIX path of the package's own path, which \`win32\` is too here.
+  ...Object.fromEntries(
+    ["path/posix", "path/win32"].map((name) => [
+      name,
+      () => `${header}
+// \`node:${name}\`: the \`${name.slice("path/".length)}\` of the package's \`path\`, which is its POSIX path.
+import path from "vitest-plugin-rsc/node/path";
+${missing}
+const own: Record<string, any> = path.${name.slice("path/".length)};
+export default own;
+${ofNames(exportsOf(name), (key) => `own.${key} ?? missing("${name}.${key}")`)}
+`,
+    ]),
+  ),
+  // The util package's predicates, which unenv's throw for, with unenv's
+  // for what the package lacks: \`node:util\`'s \`types\` too, through unenv.
+  "util/types": () => `${header}
+// \`node:util/types\`: the util package's, Node's own for a browser, where
+// unenv's throw, like \`isUint8Array()\`; unenv's for the rest.
+import unenv from "unenv/node/util/types";
+import own from "util/support/types.js";
+
+// What the package leaves to its \`util\`, and what a browser can tell.
+const nativeError = (value: unknown): boolean =>
+  value instanceof Error || Object.prototype.toString.call(value) === "[object Error]";
+const cryptoKey = (value: unknown): boolean =>
+  typeof CryptoKey !== "undefined" && value instanceof CryptoKey;
+const types: Record<string, any> = {
+  ...unenv,
+  ...own,
+  isNativeError: nativeError,
+  isCryptoKey: cryptoKey,
+};
+export default types;
+${ofNames(exportsOf("util/types"), (name) => `types.${name}`)}
+`,
+  // Node's old name of util.
+  sys: () => `${header}
+// \`node:sys\`: \`util\` by its old name, the package's own.
+import util from "vitest-plugin-rsc/node/util";
+
+export * from "vitest-plugin-rsc/node/util";
+export default util;
+`,
+  events: () => `${header}
+// \`node:events\` for a browser: the events package, the EventEmitter of
+// Node.js for a browser. readable-stream calls it as a function,
+// \`EventEmitter.call(this)\`, which unenv's, a class, throws for. What it
+// lacks, like \`on()\` and \`EventEmitterAsyncResource\`, is unenv's.
+import EventEmitter from "events/events.js";
+
+export * from "unenv/node/events";
+export default EventEmitter;
+export { EventEmitter };
+export const { once } = EventEmitter;
+`,
 };
 
 /** The modules with a file of their own in src/node/, not written here. */
-export const handWritten = new Set(["crypto"]);
+export const handWritten = new Set([
+  "assert",
+  "crypto",
+  "path",
+  "stream",
+  "stream/promises",
+  "string_decoder",
+  "timers",
+  "timers/promises",
+  "util",
+]);
 
 /** The files to write, by their path in src/node/. */
 export function generated(): Map<string, string> {

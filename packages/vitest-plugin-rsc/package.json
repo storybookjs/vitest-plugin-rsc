@@ -62,11 +62,7 @@
       "vitest-plugin-rsc-source": "./src/nextjs/plugin.ts",
       "default": "./dist/nextjs/plugin.js"
     },
-    "./node/*": {
-      "types": "./dist/node/*.d.ts",
-      "vitest-plugin-rsc-source": "./src/node/*.ts",
-      "default": "./dist/node/*.js"
-    },
+    "./node/*": "./dist/node/*.js",
     "./nextjs/rsc": {
       "types": "./dist/nextjs/rsc.d.ts",
       "vitest-plugin-rsc-source": "./src/nextjs/rsc.ts",
@@ -104,9 +100,7 @@
     "@jridgewell/gen-mapping": "^0.3.13",
     "@vitejs/plugin-rsc": "0.5.36",
     "cjs-module-lexer": "^2.3.0",
-    "convert-source-map": "^2.0.0",
-    "memfs": "4.80.0",
-    "unenv": "2.0.0-rc.24"
+    "convert-source-map": "^2.0.0"
   },
   "devDependencies": {
     "@next/routing": "16.4.0",
@@ -114,11 +108,20 @@
     "@types/node": "^24.12.4",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
+    "assert": "2.1.0",
+    "events": "3.3.0",
+    "memfs": "4.80.0",
     "next": "16.4.0",
+    "node-inspect-extracted": "3.3.4",
+    "path-browserify": "1.0.1",
     "react": "^19.2.6",
     "react-dom": "^19.2.6",
+    "readable-stream": "4.8.0",
     "rolldown": "^1.0.0",
+    "string_decoder": "1.3.0",
     "tsdown": "^0.22.0",
+    "unenv": "2.0.0-rc.24",
+    "util": "0.12.5",
     "vite": "^8.3.1"
   },
   "peerDependencies": {

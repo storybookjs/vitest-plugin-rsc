@@ -202,7 +202,8 @@ function runFixture(fixture: Fixture, isSecondRun: boolean): Promise<FixtureRun>
       cwd: root,
       env: {
         ...process.env,
-        // The source of the plugin, so that a run needs no build of it.
+        // The source of the plugin, but its modules of Node.js, which are
+        // the built files: `pnpm conformance` builds the package first.
         NODE_OPTIONS:
           `${process.env.NODE_OPTIONS ?? ""} --conditions=vitest-plugin-rsc-source`.trim(),
         NEXT_CONFORMANCE_ROOT: root,

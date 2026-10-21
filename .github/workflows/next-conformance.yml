@@ -37,6 +37,7 @@ jobs:
           node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter vitest-plugin-rsc build
       # The fixtures are fetched at the tag of the Next.js that is installed.
       # The expectations are of the pinned one: against another Next.js, what
       # differs is what the run is for. `@next/routing` is released with

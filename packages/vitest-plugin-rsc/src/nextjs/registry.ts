@@ -1,4 +1,5 @@
 import type { LoadedKind } from "./affected/command.ts";
+import { registryGlobal } from "./registry-global.ts";
 import type { Stylesheets } from "./styles-shared.ts";
 
 // The three layers of the app are three module graphs with one `window`.
@@ -152,9 +153,9 @@ export type NextRegistry = {
   node: Record<string, AnyFunction>;
 };
 
-const scope = globalThis as { __vitest_plugin_rsc_next__?: Partial<NextRegistry> };
+const scope = globalThis as { [registryGlobal]?: Partial<NextRegistry> };
 
-export const registry = (scope.__vitest_plugin_rsc_next__ ??= {
+export const registry = (scope[registryGlobal] ??= {
   appPages: {},
   serverActions: new Map(),
 }) as NextRegistry;

@@ -41,3 +41,44 @@ declare module "virtual:vitest-plugin-rsc/host-modules" {
   const hostModules: Record<string, () => Promise<unknown>> | undefined;
   export default hostModules;
 }
+
+declare module "readable-stream" {
+  /** The streams of Node.js as a package: see src/node/stream.ts. */
+  export const Stream: typeof import("node:stream") & Record<string, any>;
+  export default Stream;
+}
+
+declare module "assert/build/internal/util/comparisons.js" {
+  export const isDeepStrictEqual: typeof import("node:util").isDeepStrictEqual;
+}
+
+declare module "util/support/types.js" {
+  const types: typeof import("node:util").types;
+  export default types;
+}
+
+declare module "string_decoder/lib/string_decoder.js" {
+  export const StringDecoder: typeof import("node:string_decoder").StringDecoder;
+}
+
+declare module "events/events.js" {
+  /** The EventEmitter of Node.js for a browser: see src/node/events.ts. */
+  const EventEmitter: typeof import("node:events").EventEmitter;
+  export default EventEmitter;
+}
+
+// Node's `path`, for a browser: no types of its own.
+declare module "path-browserify" {
+  const path: typeof import("node:path");
+  export default path;
+}
+
+// The util and assert packages, Node's own for a browser, by their files.
+declare module "util/util.js" {
+  const util: Record<string, any>;
+  export default util;
+}
+declare module "assert/build/assert.js" {
+  const assert: typeof import("node:assert");
+  export default assert;
+}

@@ -7,9 +7,10 @@
 import { createFsFromVolume, Volume } from "memfs";
 import { diskGlobal, type Disk } from "../nextjs/disk.ts";
 
-const missing = (name: string) => () => {
-  throw new Error(`vitest-plugin-rsc: ${name} of Node.js is not there in the browser`);
-};
+const missing = (name: string) =>
+  function () {
+    throw new Error(`vitest-plugin-rsc: ${name} of Node.js is not there in the browser`);
+  };
 
 type Watcher = { close(): void };
 type Watching = {
