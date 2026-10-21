@@ -18,9 +18,19 @@ registry.Response = Response;
 // The project runs with `--expose-gc`: see vitest.config.ts.
 const { gc } = globalThis as unknown as { gc: () => void };
 
-const request = () => ({ url: "http://localhost/", method: "GET", headers: new Headers() });
+const request = (signal?: AbortSignal) => ({
+  url: "http://localhost/",
+  method: "GET",
+  headers: new Headers(),
+  signal,
+});
 
-type NodeResponse = { write(chunk: string): void; end(chunk: string): void };
+type NodeResponse = {
+  write(chunk: string): void;
+  end(chunk: string): void;
+  once(event: "close", listener: () => void): void;
+  destroyed: boolean;
+};
 
 test.each<[string, RequestHandler, (response: Response) => Promise<unknown>]>([
   [
@@ -57,3 +67,41 @@ test.each<[string, RequestHandler, (response: Response) => Promise<unknown>]>([
       .toBe(0);
   },
 );
+
+test("lets go of a response that has ended while the signal of its request stays", async () => {
+  // A signal that outlives its requests, like the one of a page.
+  const page = new AbortController();
+  async function readResponse(): Promise<WeakRef<object>[]> {
+    let res!: NodeResponse;
+    const response = await handleRequest(request(page.signal), {}, async (_, of) => {
+      res = of as NodeResponse;
+      res.end("<html></html>");
+    });
+    await response.text();
+    return [new WeakRef(res), new WeakRef(response)];
+  }
+  const responses: WeakRef<object>[] = [];
+  for (let pages = 0; pages < 20; pages++) responses.push(...(await readResponse()));
+
+  await expect
+    .poll(() => {
+      gc();
+      return responses.filter((of) => of.deref() !== undefined).length;
+    })
+    .toBe(0);
+  expect(page.signal.aborted).toBe(false);
+});
+
+test("ends a response whose request is aborted while the server answers it", async () => {
+  const page = new AbortController();
+  let res!: NodeResponse;
+  const response = await handleRequest(request(page.signal), {}, async (_, of) => {
+    res = of as NodeResponse;
+    res.write("<html>");
+    await new Promise<void>((resolve) => res.once("close", resolve));
+  });
+  page.abort();
+
+  await expect(response.text()).rejects.toMatchObject({ name: "AbortError" });
+  expect(res.destroyed).toBe(true);
+});
