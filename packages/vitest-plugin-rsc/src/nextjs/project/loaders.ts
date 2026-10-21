@@ -70,6 +70,40 @@ function hasOtherPostCssConfig(root: string): boolean {
 }
 
 /**
+ * `sassOptions` of `next.config`, as Vite's options of Sass. Next gives
+ * sass-loader the options of Sass, and `additionalData`, or `prependData`,
+ * which goes before the source of each file, as it does for Vite. A path to
+ * load from is one of the project, where Next's build runs. Not
+ * `implementation`: Vite takes `sass-embedded` where it is installed, and
+ * `sass` otherwise.
+ */
+export function sassPreprocessorOptions(
+  sassOptions: Record<string, unknown>,
+  root: string,
+): Record<string, unknown> | undefined {
+  const { prependData, additionalData, implementation: _, loadPaths, ...options } = sassOptions;
+  const data = prependData ?? additionalData;
+  const sass: Record<string, unknown> = {
+    ...options,
+    ...(Array.isArray(loadPaths) && {
+      loadPaths: loadPaths.map((entry) => path.resolve(root, String(entry))),
+    }),
+    ...(data !== undefined && {
+      // sass-loader calls a function with its loader context.
+      additionalData:
+        typeof data === "function"
+          ? (source: string, file: string) =>
+              (data as (source: string, context: object) => string)(source, {
+                resourcePath: file,
+                rootContext: root,
+              })
+          : data,
+    }),
+  };
+  return Object.keys(sass).length > 0 ? sass : undefined;
+}
+
+/**
  * Next's webpack loaders for fonts and images, what they emit for the
  * browser, and Next's image optimizer.
  */
@@ -265,8 +299,8 @@ export function createLoaders(context: NextContext): Pick<
 
   // What Next's rules for CSS decide that is not bundling, for Vite, which
   // bundles: the PostCSS plugins, read from the app's config as Next reads
-  // it, or Next's own when there is none; the mode of a CSS module; and the
-  // class name of a CSS module, as Next makes it. `@import` and `url()` are
+  // it, or Next's own when there is none; the options of Sass; the mode of a
+  // CSS module; and the class name of a CSS module, as Next makes it. `@import` and `url()` are
   // the bundler's, so Vite's. The browsers are those of a build. And what is
   // done otherwise than by Next, to say so.
   const loadCssOptions = async () => {
@@ -294,8 +328,10 @@ export function createLoaders(context: NextContext): Pick<
         "the app's PostCSS config is one only Vite reads: a CSS module is not held to Next's mode for it",
       );
     }
+    const sass = sassPreprocessorOptions(config.sassOptions ?? {}, root);
     const options: CSSOptions = {
       postcss,
+      ...(sass && { preprocessorOptions: { scss: sass, sass } }),
       modules: {
         // A stylesheet the plugin links, or one it serves, has a query: the
         // class names are those of the file. As `css-loader` calls it.

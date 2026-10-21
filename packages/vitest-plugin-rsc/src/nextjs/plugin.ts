@@ -817,7 +817,11 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
           );
 
         const optimizeDeps = (layer: NextLayer) => ({
-          include: [...include[layer], ...dependenciesOfNext(layer)],
+          include: [
+            ...include[layer],
+            ...dependenciesOfNext(layer),
+            ...project.webpackPackages[layer],
+          ],
           rolldownOptions: {
             plugins: [
               // First: the other plugins see Next's production code.
@@ -858,6 +862,12 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
         const css = await project.loadCssOptions();
         cssDifferences = [...css.differences];
         const cssOptions = { ...css.options };
+        if (config.css?.preprocessorOptions !== undefined && cssOptions.preprocessorOptions) {
+          delete cssOptions.preprocessorOptions;
+          cssDifferences.push(
+            "`css.preprocessorOptions` of the Vitest config is used, not `sassOptions` of next.config",
+          );
+        }
         if (config.css?.transformer === "lightningcss") {
           // Then Vite runs no PostCSS at all.
           delete cssOptions.postcss;
@@ -1017,7 +1027,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
       // What the app has and does not get here: said once, when a run starts.
       configResolved(config) {
         config.logger.info(describeEnv(env, config.command === "build"));
-        for (const difference of cssDifferences) {
+        for (const difference of [...cssDifferences, ...project.webpackDifferences]) {
           config.logger.warnOnce(`vitest-plugin-rsc: ${difference}.`);
         }
         if (project.edgeRouteFiles.length > 0) {

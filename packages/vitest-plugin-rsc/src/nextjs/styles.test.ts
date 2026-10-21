@@ -5,6 +5,8 @@ import {
   build,
   createServer,
   normalizePath,
+  preprocessCSS,
+  resolveConfig,
   type CSSOptions,
   type Plugin,
   type Rolldown,
@@ -12,7 +14,14 @@ import {
 import { expect, onTestFinished, test } from "vitest";
 import type { NextProject } from "./project.ts";
 import { componentPagePath, type BuiltFiles } from "./styles-shared.ts";
-import { builtHostFileKey, createStyles, exportsOfStylesheet, isCode, linked } from "./styles.ts";
+import {
+  builtHostFileKey,
+  createStyles,
+  declareImportedLayers,
+  exportsOfStylesheet,
+  isCode,
+  linked,
+} from "./styles.ts";
 
 // The module that the installed Vite makes of a stylesheet for a client, of
 // which the plugin keeps the exports, and not the `<style>`. As the plugin
@@ -102,6 +111,53 @@ test("exports nothing for a stylesheet that is no CSS module", async () => {
   const { code } = await compileStylesheet("global.css", "body { color: red }");
 
   expect(exportsOfStylesheet(code, "global.css")).toBe("export {}");
+});
+
+// As in Next's `app-css` fixture: `new` comes first, so `default` wins.
+const relativeLayer = [
+  "@import './import.css' layer(new);",
+  "",
+  "@layer default, new;",
+  "",
+  "@layer default {",
+  "  h2 { color: red; }",
+  "}",
+].join("\n");
+
+test("declares the layers of the imports first, when an @layer statement follows them", () => {
+  expect(declareImportedLayers(relativeLayer)).toBe(`@layer new, default;${relativeLayer}`);
+  expect(
+    declareImportedLayers(
+      '@charset "utf-8";\n/* a */ @import url("a.css") layer(a.b) supports(display: grid);\n@layer c, a.b;',
+    ),
+  ).toBe(
+    '@charset "utf-8";@layer a.b, c;\n/* a */ @import url("a.css") layer(a.b) supports(display: grid);\n@layer c, a.b;',
+  );
+});
+
+test.each([
+  ["no layer", "@import './a.css';\n@layer a;\nh1 { color: red }"],
+  ["a statement before the imports", "@layer a, b;\n@import './a.css' layer(b);"],
+  ["a statement after the first rule", "@import './a.css' layer(a);\nh1 {}\n@layer b, a;"],
+])("leaves a stylesheet as it is with %s", (_, css) => {
+  expect(declareImportedLayers(css)).toBe(css);
+});
+
+test("keeps the order of the layers where Vite inlines an @import with a layer", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "vitest-plugin-rsc-layers-"));
+  onTestFinished(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(root, "import.css"), "h2 { color: blue; }\n");
+  const file = path.join(root, "relative-layer.css");
+  const config = await resolveConfig({ root, configFile: false, logLevel: "silent" }, "serve");
+
+  const asItIs = await preprocessCSS(relativeLayer, file, config);
+  const declared = await preprocessCSS(declareImportedLayers(relativeLayer), file, config);
+
+  // The statement of the file first, without the order that the import gave.
+  expect(asItIs.code.indexOf("@layer default, new;")).toBeLessThan(
+    asItIs.code.indexOf("@layer new"),
+  );
+  expect(declared.code.trimStart()).toMatch(/^@layer new, default;/);
 });
 
 test("says so when the exports of Vite's module need more than the class names", () => {

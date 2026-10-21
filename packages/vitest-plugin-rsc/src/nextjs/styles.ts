@@ -128,6 +128,50 @@ export function isCode(id: string, pageExtensions: string[]): boolean {
   );
 }
 
+/**
+ * The order of the cascade layers of a stylesheet, kept where Vite inlines
+ * its `@import`s. A layer comes in the order in which a stylesheet names it
+ * first, and an `@import` with `layer()` names it before an `@layer`
+ * statement that follows the import. `postcss-import`, with which Vite
+ * inlines an import, puts such a statement before the CSS of the import, so
+ * that its layers come first. With a statement of every layer of the imports
+ * at the top, which can precede an `@import`, the order is the stylesheet's
+ * own. Not that of a stylesheet it imports, which `postcss-import` reads
+ * itself, nor of a layer without a name, which a statement cannot name.
+ */
+export function declareImportedLayers(css: string): string {
+  const layers: string[] = [];
+  let start = 0;
+  let importsLayer = false;
+  let reordered = false;
+  for (let at = 0; ; ) {
+    // Whitespace and comments.
+    const space = /^(?:\s+|\/\*[\s\S]*?\*\/)*/.exec(css.slice(at))![0];
+    at += space.length;
+    const rule = /^@(charset|import|layer)\b((?:"[^"]*"|'[^']*'|\([^)]*\)|[^;{"'(])*);/i.exec(
+      css.slice(at),
+    );
+    if (!rule) break;
+    const [statement, name, prelude] = rule as unknown as [string, string, string];
+    at += statement.length;
+    if (name.toLowerCase() === "charset") {
+      start = at;
+    } else if (name.toLowerCase() === "import") {
+      const layer = /\blayer\(\s*([^)\s]+)\s*\)/i.exec(prelude.replace(/"[^"]*"|'[^']*'/g, ""));
+      if (layer && !layers.includes(layer[1]!)) layers.push(layer[1]!);
+      importsLayer ||= Boolean(layer);
+    } else {
+      reordered ||= importsLayer;
+      for (const layer of prelude.split(",").map((part) => part.trim())) {
+        if (layer && !layers.includes(layer)) layers.push(layer);
+      }
+    }
+  }
+  if (!reordered) return css;
+  // On the line it is put on, so that every line keeps its number.
+  return `${css.slice(0, start)}@layer ${layers.join(", ")};${css.slice(start)}`;
+}
+
 const directory = cssDirectory;
 const versionRE = new RegExp(`^${directory}/(${cssVersionPattern})(/.*)$`);
 
@@ -706,6 +750,13 @@ export function createStyles(options: StylesOptions): Styles {
         if (!resolved || resolved.external || resolved.id.includes("?")) return resolved;
         if (!isCSSRequest(resolved.id)) return resolved;
         return { ...resolved, id: linked(resolved.id, this.environment.mode === "build") };
+      },
+      // Before Vite's CSS plugin inlines the imports of a stylesheet. Not the
+      // file as it is, `?raw`, nor its URL.
+      transform(code, id) {
+        if (!/\.css(?:$|\?)/.test(id) || /[?&](?:raw|url)\b/.test(id)) return;
+        const declared = declareImportedLayers(code);
+        if (declared !== code) return { code: declared, map: null };
       },
     },
     {
