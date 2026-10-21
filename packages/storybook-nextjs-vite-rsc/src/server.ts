@@ -15,6 +15,7 @@ import type {
   ArgsStoryFn,
   Canvas,
   DecoratorFunction,
+  Globals,
   ProjectAnnotations,
   Renderer,
   StoryAnnotations,
@@ -30,14 +31,15 @@ import { annotations, isPage, nextjsOf } from "./server-renderer.ts";
 // needs to know of each server story.
 
 /** The request a server story renders in: `parameters.nextjs`. */
-export type NextjsParameters = {
+export type NextjsParameters<TArgs = Args> = {
   nextjs?: {
     /**
-     * The URL of the request, which `usePathname()` and `useParams()` read.
-     * A story without `component` and `render` is the page at this URL.
-     * Defaults to `/` for a component.
+     * The URL of the request, which `usePathname()` and `useParams()` read,
+     * or a function of the story's args and globals that returns it, for
+     * each render. A story without `component` and `render` is the page at
+     * this URL. Defaults to `/` for a component.
      */
-    url?: string;
+    url?: string | ((context: { args: TArgs; globals: Globals }) => string);
     /** Headers of the requests to the app, next to a browser's, like `cookie`. */
     headers?: Record<string, string>;
     /** Whether `proxy.ts` and the routing of `next.config` take it: by default for a page only. */
@@ -51,29 +53,40 @@ export type NextjsParameters = {
 export interface NextjsServerRenderer extends WebRenderer {
   component: ComponentType<this["T"]>;
   storyResult: ReactNode | Promise<ReactNode>;
+  /** `parameters.nextjs`, with the story's args for a function of `url`. */
+  parameters?: NextjsParameters<this["args"]>;
   /** In `play`: renders the story, or `ui` in its place. */
   mount: (ui?: ReactNode) => Promise<Canvas>;
 }
 
-type ServerTypes = NextjsServerRenderer & { parameters: NextjsParameters };
-
 /** The server preview: `preview.meta()` for the story files without "use client". */
 export interface ServerPreview<T extends AddonTypes> extends Omit<
-  Preview<ServerTypes & T>,
+  Preview<NextjsServerRenderer & T>,
   "meta" | "type"
 > {
   type<R>(): ServerPreview<T & R>;
   meta<
     TArgs extends Args,
     // oxlint-disable-next-line no-explicit-any
-    Decorators extends DecoratorFunction<ServerTypes & T, any>,
+    Decorators extends DecoratorFunction<NextjsServerRenderer & T, any>,
     TMetaArgKeys extends PropertyKey = never,
   >(
     meta: {
-      render?: ArgsStoryFn<ServerTypes & T, TArgs & T["args"]>;
+      render?: ArgsStoryFn<NextjsServerRenderer & T, TArgs & T["args"]>;
       component?: ComponentType<TArgs>;
-    } & MetaInput<ServerTypes & T, TArgs, Decorators, TMetaArgKeys>,
-  ): Meta<MetaTypes<ServerTypes & T, TArgs, Decorators, TMetaArgKeys>, TMetaArgKeys>;
+    } & Omit<MetaInput<NextjsServerRenderer & T, TArgs, Decorators, TMetaArgKeys>, "parameters"> &
+      // The parameters with the args of the component or the render, for a
+      // function of `url`.
+      Pick<
+        MetaInput<
+          NextjsServerRenderer & T & { args: NoInfer<TArgs> },
+          TArgs,
+          Decorators,
+          TMetaArgKeys
+        >,
+        "parameters"
+      >,
+  ): Meta<MetaTypes<NextjsServerRenderer & T, TArgs, Decorators, TMetaArgKeys>, TMetaArgKeys>;
 }
 
 /**
@@ -82,7 +95,7 @@ export interface ServerPreview<T extends AddonTypes> extends Omit<
  * do not reach the sidebar, autodocs or test filtering.
  */
 export function defineServerPreview<Addons extends PreviewAddonEntry[] = []>(
-  input: ProjectAnnotations<ServerTypes & InferTypes<Addons>> & { addons?: Addons },
+  input: ProjectAnnotations<NextjsServerRenderer & InferTypes<Addons>> & { addons?: Addons },
 ): ServerPreview<InferTypes<Addons>> {
   if (input.beforeAll) throw beforeAllInServerPreview();
   const preview = definePreview({

@@ -1,5 +1,5 @@
 import { getStoryChildren } from "storybook/internal/csf";
-import { expect, test, vi } from "vitest";
+import { expect, expectTypeOf, test, vi } from "vitest";
 import { defineServerPreview } from "./server.ts";
 
 vi.mock("vitest-plugin-rsc/nextjs/testing-library", () => ({}));
@@ -62,4 +62,40 @@ test("extend() and test() derive it again", () => {
   expect(layoutOf(centered.extend({ render: () => null }))).toBe("centered");
   page.test("a test of a page", () => {});
   expect(getStoryChildren(page).map(layoutOf)).toEqual(["document"]);
+});
+
+test("a URL of the story's args and globals, which the story keeps as a function", () => {
+  const url = ({ args }: { args: { step: string } }) => `/session/${args.step}`;
+  const pages = preview.meta({}).type<{ args: { step: string } }>();
+  const story = pages.story({ args: { step: "1.0" }, parameters: { nextjs: { url } } });
+  expect(story.composed.parameters.nextjs.url).toBe(url);
+  expect(layoutOf(story)).toBe("document");
+  // The args of the story type the context.
+  pages.story({
+    args: { step: "2.0" },
+    parameters: {
+      nextjs: {
+        url: ({ args }) => {
+          expectTypeOf(args.step).toEqualTypeOf<string>();
+          return `/session/${args.step}`;
+        },
+      },
+    },
+  });
+  // On the meta too, with the args of its component.
+  const Step = (_: { label: string }) => null;
+  preview.meta({
+    component: Step,
+    parameters: {
+      nextjs: {
+        url: ({ args }) => {
+          expectTypeOf(args.label).toEqualTypeOf<string>();
+          return `/session/${args.label}`;
+        },
+      },
+    },
+  });
+  preview.meta({ component: Card }).story({
+    parameters: { nextjs: { url: ({ globals }) => `/${globals.locale}` } },
+  });
 });

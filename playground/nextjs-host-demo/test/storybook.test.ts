@@ -353,6 +353,36 @@ test("new args: a server story renders again in place, a client story keeps its 
     .toBe(1);
 });
 
+// A URL of the args: a new value of an arg that the URL reads renders the
+// story at the new URL, on a page of its own, and a page loads there.
+test("new args: a story whose URL reads them renders at the new URL", async ({ page }) => {
+  const canvas = await openStory(page, site!.url, "pathname--step");
+  expect(await storyRun(page, canvas, "pathname--step")).toEqual(passed);
+  await inCanvas(canvas).getByRole("button", { name: "Count: 0" }).click();
+  // Another label, at the same URL: in place, so the counter has its state.
+  await updateArgs(canvas, "pathname--step", { label: "Renamed" });
+  await expect.poll(() => inCanvas(canvas).getByText("Renamed at /steps/1.0").count()).toBe(1);
+  expect(await inCanvas(canvas).getByRole("button", { name: "Count: 1" }).count()).toBe(1);
+  // Another step: a page at its URL, with a new counter.
+  await updateArgs(canvas, "pathname--step", { step: "2.0" });
+  await expect.poll(() => inCanvas(canvas).getByText("Renamed at /steps/2.0").count()).toBe(1);
+  expect(await inCanvas(canvas).getByRole("button", { name: "Count: 0" }).count()).toBe(1);
+  // Without an error, and its play passed at the new URL.
+  expect(await storyRun(page, canvas, "pathname--step")).toEqual(passed);
+  // A page, at the URL of its args.
+  expect(await runStory(page, canvas, "home--at-path")).toMatchObject({
+    phase: "finished",
+    reports: [],
+  });
+  expect(await canvas.getByRole("heading", { name: "Home" }).count()).toBe(1);
+  await updateArgs(canvas, "home--at-path", { path: "/gone" });
+  await expect.poll(() => canvas.getByText("This page could not be found.").count()).toBe(1);
+  expect(await storyRun(page, canvas, "home--at-path")).toMatchObject({
+    phase: "finished",
+    reports: [],
+  });
+});
+
 // What React reported as the story rendered again shows in Storybook's
 // error display, as on its first render, over the page that stays.
 test("an error of a server story after new args shows, as on its first render", async ({
