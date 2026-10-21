@@ -5,7 +5,7 @@
 import * as cheerio from "cheerio";
 import { handleRequest } from "vitest-plugin-rsc/nextjs/testing-library";
 import { commands } from "vitest/browser";
-import { root } from "virtual:next-conformance/config";
+import { prepared, root } from "virtual:next-conformance/config";
 import { openBrowser, type Browser, type BrowserOptions } from "./browser.ts";
 import { consoleCapture } from "./console.ts";
 import { Readable } from "./stream.ts";
@@ -182,8 +182,12 @@ export class NextInstance {
   private runsNext(what: string): never {
     return unsupported(`${what}: the test runs the Next.js CLI itself`);
   }
-  build = async () => this.runsNext("next.build()");
-  start = async () => this.runsNext("next.start()");
+  // A test with `skipStart` builds and starts the app itself. For a fixture
+  // that says so, the runner did that before the run: see `prepared` in
+  // src/fixtures.ts. Nothing is printed for a build here.
+  build = async () =>
+    prepared.includes("skipStart") ? { exitCode: 0, cliOutput: "" } : this.runsNext("next.build()");
+  start = async () => (prepared.includes("skipStart") ? undefined : this.runsNext("next.start()"));
   stop = async () => this.runsNext("next.stop()");
   clean = async () => this.runsNext("next.clean()");
   runCommand = async () => this.runsNext("next.runCommand()");

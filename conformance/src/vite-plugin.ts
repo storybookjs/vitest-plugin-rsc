@@ -15,6 +15,7 @@ const shim = (file: string) => fileURLToPath(new URL(`../shim/${file}`, import.m
 const configId = "virtual:next-conformance/config";
 const testUtilsId = "\0next-conformance/next-test-utils";
 const stubPrefix = "\0next-conformance/stub/";
+const sandboxId = "\0next-conformance/development-sandbox";
 
 // A test file, or a module of `test/lib` that one imports.
 const isTestFile = (id: string) => /\.test\.[cm]?[jt]sx?$/.test(id.replace(/[?#].*$/, ""));
@@ -160,6 +161,16 @@ export function conformance(options: ConformanceOptions): Plugin {
       const fromTestLib = importer?.startsWith(options.nextTestLib);
       if (!importer || !(isTestFile(importer) || fromTestLib || importer.startsWith(shim(""))))
         return;
+      // A module of `test/lib` that a test file imports by its path in Next's
+      // repository, which is not where the copy of the fixture is.
+      const ofTestLib = /^(?:\.\.\/)+lib\/(.+)$/.exec(source);
+      if (ofTestLib && isTestFile(importer)) {
+        if (ofTestLib[1] === "development-sandbox") return sandboxId;
+        return this.resolve(path.join(options.nextTestLib, ofTestLib[1]!), importer, {
+          ...resolveOptions,
+          skipSelf: true,
+        });
+      }
 
       if (source.startsWith("e2e-utils/")) {
         return this.resolve(path.join(options.nextTestLib, source), importer, {
@@ -179,8 +190,12 @@ export function conformance(options: ConformanceOptions): Plugin {
       if (builtinModules.includes(builtin)) return `${stubPrefix}node:${builtin}`;
       if (source.startsWith(".") || source.startsWith("/") || source.startsWith("\0")) return;
       // A package that is not installed here: what Next's own test setup
-      // uses, like `playwright` or `http-proxy`.
-      const resolved = await this.resolve(source, importer, { ...resolveOptions, skipSelf: true });
+      // uses, like `playwright` or `http-proxy`. And the proxy server of
+      // Next's test mode, which a test starts in Node.js.
+      const isTestMode = source.startsWith("next/experimental/testmode/");
+      const resolved =
+        !isTestMode &&
+        (await this.resolve(source, importer, { ...resolveOptions, skipSelf: true }));
       if (resolved) return resolved;
       const names = importedNames(fs.readFileSync(importer.replace(/[?#].*$/, ""), "utf8"), source);
       return `${stubPrefix}${source}?names=${names.join(",")}`;
@@ -229,6 +244,13 @@ export function conformance(options: ConformanceOptions): Plugin {
           `export const packages = ${JSON.stringify(Array.from(packages).sort())};`,
           `export const prepared = ${JSON.stringify(options.prepared ?? [])};`,
           `export const gateConfig = ${JSON.stringify(gateConfig, (_, value: unknown) => value ?? false)};`,
+        ].join("\n");
+      }
+      if (id === sandboxId) {
+        // A sandbox of `next dev` writes files into the app and starts it again.
+        return [
+          `import { unsupported } from ${JSON.stringify(shim("unsupported.ts"))};`,
+          `export const createSandbox = async () => unsupported("createSandbox() of development-sandbox: a change to the files of the app needs a new build, or a dev server");`,
         ].join("\n");
       }
       if (id === testUtilsId) {
