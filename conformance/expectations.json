@@ -66,12 +66,12 @@
       "text": "The CSS of a component of `next/dynamic`, which Next links from its manifest of dynamic imports, with `precedence=\"dynamic\"`, next to a preload of its JavaScript. Here it is a stylesheet of the segment that imports the component."
     },
     "css-not-minified": {
-      "category": "not-applicable",
-      "text": "Expects the CSS that Next's build minified. Here it is the CSS that Vite compiles, as it is."
+      "category": "not-yet",
+      "text": "Expects the CSS that Next's build minified. The run serves the CSS that Vite compiles, as it is."
     },
     "css-chunks": {
-      "category": "not-applicable",
-      "text": "Counts the stylesheets of a page. Next's build puts the CSS files that a segment imports in one chunk. Here each file is a stylesheet of its own."
+      "category": "not-yet",
+      "text": "Counts the stylesheets of a page. Next's build puts the CSS files that a segment imports in one chunk. The run serves the CSS of the dev server, where each file is a stylesheet of its own."
     },
     "og-image-response": {
       "category": "not-yet",
