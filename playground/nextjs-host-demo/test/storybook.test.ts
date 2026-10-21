@@ -405,7 +405,10 @@ test("a page left while it loads leaves no render and no reload", async ({ page 
 // back: it reports nothing of it, the preview does not reload, and the next
 // story runs as usual. A report of the left story would be the next one's,
 // the story the preview renders by then.
-test("a client story left while its stylesheets load reports nothing", async ({ page }) => {
+test("a client story left while its stylesheets load reports nothing", async ({ page, errors }) => {
+  // The left story's link goes, so the browser cancels the held request once
+  // it is released.
+  errors.ignore!.push(/^requestfailed: .*press-button\.stories\.css net::ERR_ABORTED$/);
   const canvas = await openStory(page, site!.url, "greeting--default");
   expect(await storyRun(page, canvas, "greeting--default")).toEqual(passed);
   await canvas.evaluate(() => Object.assign(window, { __marked: true }));
