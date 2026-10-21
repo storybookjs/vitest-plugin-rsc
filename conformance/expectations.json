@@ -118,7 +118,7 @@
     },
     "commonjs-source": {
       "category": "not-yet",
-      "text": "A source file of the app with `require` or `module.exports`. Vite serves the source files of the app as ES modules."
+      "text": "A Client Component in a file of CommonJS: `exports.Cjs = …` under `\"use client\"`. Its client reference has no export of that name."
     },
     "opens-a-response": {
       "category": "not-yet",
@@ -145,13 +145,9 @@
       "category": "not-yet",
       "text": "Server code that reads a file of the project with `node:fs`, like `./posts/first-post.txt`. The server's disk is in memory, and has no file of the project."
     },
-    "react-development-build": {
-      "category": "not-yet",
-      "text": "A production build of React. The plugin runs React's development build: an error of the server reaches the client with its message, where production sends a digest and a minified message, and Strict Mode runs an effect twice."
-    },
-    "metadata-files": {
-      "category": "not-yet",
-      "text": "Metadata files: `favicon.ico`, `icon.png`, `opengraph-image`, `sitemap.ts`, `robots.txt`, `manifest.webmanifest`."
+    "next-router-in-server-component": {
+      "category": "plugin-bug",
+      "text": "A Server Component that imports `next/router`. Next runs it. Here its module calls `createContext()` with React's server build, which has none, and the page fails."
     }
   },
   "fixtures": {
@@ -948,7 +944,7 @@
       "passed": 32,
       "failed": {
         "rsc-basic.test.ts > app dir - rsc basics > next internal shared context > should not error if just load next/navigation module in pages/api": "pages-router",
-        "rsc-basic.test.ts > app dir - rsc basics > next internal shared context > should not error if just load next/router module in app page": "commonjs-source",
+        "rsc-basic.test.ts > app dir - rsc basics > next internal shared context > should not error if just load next/router module in app page": "next-router-in-server-component",
         "rsc-basic.test.ts > app dir - rsc basics > should handle various kinds of exports correctly": "commonjs-source",
         "rsc-basic.test.ts > app dir - rsc basics > should not apply rsc syntax checks in pages/api": "pages-router",
         "rsc-basic.test.ts > app dir - rsc basics > should not use bundled react for pages with app": "pages-router",
@@ -1007,13 +1003,10 @@
       "failed": {}
     },
     "dynamic-data__main": {
-      "passed": 0,
+      "passed": 3,
       "failed": {
-        "dynamic-data.test.ts > dynamic-data > should render the dynamic apis dynamically when used in a top-level scope": "commonjs-source",
-        "dynamic-data.test.ts > dynamic-data > should render the dynamic apis dynamically when used in a top-level scope with force dynamic": "commonjs-source",
-        "dynamic-data.test.ts > dynamic-data > should render empty objects for dynamic APIs when rendering with force-static": "commonjs-source",
-        "dynamic-data.test.ts > dynamic-data > should track searchParams access as dynamic when the Page is a client component": "commonjs-source",
-        "dynamic-data.test.ts > dynamic-data > should track dynamic apis when rendering app routes": "commonjs-source"
+        "dynamic-data.test.ts > dynamic-data > should render empty objects for dynamic APIs when rendering with force-static": "prerendered-pages",
+        "dynamic-data.test.ts > dynamic-data > should track dynamic apis when rendering app routes": "prerendered-pages"
       }
     },
     "dynamic-data__require-static": {
@@ -1143,7 +1136,7 @@
       }
     },
     "use-cache": {
-      "passed": 41,
+      "passed": 42,
       "failed": {
         "use-cache.test.ts > use-cache > should warn that the `experimental.useCache` config option is deprecated": "cli-output",
         "use-cache.test.ts > use-cache > should cache results for cached functions imported from client components": "cached-function-as-action",
@@ -1158,7 +1151,6 @@
         "use-cache.test.ts > use-cache > works with useActionState if previousState parameter is not used in \"use cache\" function (separate export)": "cached-function-as-action",
         "use-cache.test.ts > use-cache > works with \"use cache\" in method props": "cached-function-as-action",
         "use-cache.test.ts > use-cache > works with \"use cache\" in static class methods": "cached-function-as-action",
-        "use-cache.test.ts > use-cache > should not read nor write cached data when draft mode is enabled > js enabled, with cookies": "react-development-build",
         "use-cache.test.ts > use-cache > should not read nor write cached data when draft mode is enabled > js disabled, with cookies": "javascript-off",
         "use-cache.test.ts > use-cache > should not read nor write cached data when draft mode is enabled > js disabled, without cookies": "javascript-off",
         "use-cache.test.ts > use-cache > should allow nested short-lived caches after connection()": "javascript-off",
@@ -1202,16 +1194,16 @@
     "use-cache-metadata-route-handler": {
       "passed": 0,
       "failed": {
-        "use-cache-metadata-route-handler.test.ts > use-cache-metadata-route-handler > should generate an opengraph image with a metadata route handler that uses \"use cache\"": "metadata-files",
-        "use-cache-metadata-route-handler.test.ts > use-cache-metadata-route-handler > should generate an opengraph image with a custom (local) font": "metadata-files",
+        "use-cache-metadata-route-handler.test.ts > use-cache-metadata-route-handler > should generate an opengraph image with a metadata route handler that uses \"use cache\"": "og-image-response",
+        "use-cache-metadata-route-handler.test.ts > use-cache-metadata-route-handler > should generate an opengraph image with a custom (local) font": "files-of-the-project",
         "use-cache-metadata-route-handler.test.ts > use-cache-metadata-route-handler > should prerender a page that shares a segment with an opengraph image that uses a custom font": "files-of-the-project",
-        "use-cache-metadata-route-handler.test.ts > use-cache-metadata-route-handler > should generate an icon image with a metadata route handler that uses \"use cache\"": "metadata-files",
-        "use-cache-metadata-route-handler.test.ts > use-cache-metadata-route-handler > should statically prerender an image whose component uses \"use cache\" directly": "metadata-files",
-        "use-cache-metadata-route-handler.test.ts > use-cache-metadata-route-handler > should treat a twitter image that reads request data as dynamic": "metadata-files",
-        "use-cache-metadata-route-handler.test.ts > use-cache-metadata-route-handler > should generate sitemaps with a metadata route handler that uses \"use cache\"": "metadata-files",
-        "use-cache-metadata-route-handler.test.ts > use-cache-metadata-route-handler > should generate multiple sitemaps with a metadata route handler that uses \"use cache\"": "metadata-files",
-        "use-cache-metadata-route-handler.test.ts > use-cache-metadata-route-handler > should generate robots.txt with a metadata route handler that uses \"use cache\"": "metadata-files",
-        "use-cache-metadata-route-handler.test.ts > use-cache-metadata-route-handler > should generate manifest.json with a metadata route handler that uses \"use cache\"": "metadata-files",
+        "use-cache-metadata-route-handler.test.ts > use-cache-metadata-route-handler > should generate an icon image with a metadata route handler that uses \"use cache\"": "og-image-response",
+        "use-cache-metadata-route-handler.test.ts > use-cache-metadata-route-handler > should statically prerender an image whose component uses \"use cache\" directly": "og-image-response",
+        "use-cache-metadata-route-handler.test.ts > use-cache-metadata-route-handler > should treat a twitter image that reads request data as dynamic": "og-image-response",
+        "use-cache-metadata-route-handler.test.ts > use-cache-metadata-route-handler > should generate sitemaps with a metadata route handler that uses \"use cache\"": "prerendered-pages",
+        "use-cache-metadata-route-handler.test.ts > use-cache-metadata-route-handler > should generate multiple sitemaps with a metadata route handler that uses \"use cache\"": "prerendered-pages",
+        "use-cache-metadata-route-handler.test.ts > use-cache-metadata-route-handler > should generate robots.txt with a metadata route handler that uses \"use cache\"": "prerendered-pages",
+        "use-cache-metadata-route-handler.test.ts > use-cache-metadata-route-handler > should generate manifest.json with a metadata route handler that uses \"use cache\"": "prerendered-pages",
         "use-cache-metadata-route-handler.test.ts > use-cache-metadata-route-handler > should include the client reference manifest in the route.js.nft.json files of dynamic metadata routes": "build-output",
         "use-cache-metadata-route-handler.test.ts > use-cache-metadata-route-handler > should not include the client reference manifest in the route.js.nft.json files of static metadata routes": "build-output"
       }
