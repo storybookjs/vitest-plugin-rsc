@@ -336,7 +336,7 @@ async function configure(config: Record<string, unknown>) {
   };
   const warnings: string[] = [];
   (plugin.configResolved as (config: object) => void)({
-    logger: { warnOnce: (message: string) => warnings.push(message) },
+    logger: { warnOnce: (message: string) => warnings.push(message), info: () => {} },
   });
   return { css: result.css, testerHtmlPath: input.test?.browser?.testerHtmlPath, warnings };
 }

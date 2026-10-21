@@ -11,6 +11,9 @@ export const env = createEnv({
     PORT: z.coerce.number().int().positive().default(3000),
     RESEND_API_KEY: z.string().optional(),
     RESEND_FROM_EMAIL: z.string().optional(),
+    // Required, with no default: the tests and the stories have it from
+    // .env.test.
+    SUPPORT_EMAIL: z.email(),
   },
   shared: {
     NODE_ENV: z.enum(["development", "production", "test"]).default("development"),

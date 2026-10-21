@@ -1,5 +1,6 @@
 import { Link } from "#components/link.tsx";
 import { buttonVariants } from "#components/ui/button-variants.ts";
+import { env } from "#env/server.ts";
 import { APP_NAME } from "#lib/config.ts";
 
 export default function Home() {
@@ -25,6 +26,15 @@ export default function Home() {
             Sign in
           </Link>
         </div>
+        <p className="mt-8 text-sm text-muted-foreground">
+          Questions? Write to{" "}
+          <a
+            href={`mailto:${env.SUPPORT_EMAIL}`}
+            className="font-medium underline-offset-4 hover:text-foreground hover:underline"
+          >
+            {env.SUPPORT_EMAIL}
+          </a>
+        </p>
       </div>
     </main>
   );

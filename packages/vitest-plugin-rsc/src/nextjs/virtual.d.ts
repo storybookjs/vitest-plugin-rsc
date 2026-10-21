@@ -14,6 +14,12 @@ declare module "virtual:vitest-plugin-rsc/next-manifest" {
   export const preview: import("./project.ts").NextProject["preview"];
 }
 
+declare module "virtual:vitest-plugin-rsc/next-env" {
+  /** What the page's `process.env` gets: see project/env.ts. */
+  const env: Record<string, string>;
+  export default env;
+}
+
 declare module "virtual:vitest-plugin-rsc/next-middleware" {
   /** Nothing for an app without a `proxy.ts` or a `middleware.ts`. */
   const loadMiddleware:

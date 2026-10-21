@@ -13,6 +13,7 @@ import {
   type EnvironmentModuleNode,
   type Plugin,
   type ResolvedConfig,
+  type ViteDevServer,
 } from "vite";
 import type { TestProject, Vitest } from "vitest/node";
 import { createRunnerEnvironmentPlugins } from "../runner-environment.ts";
@@ -29,6 +30,7 @@ import {
   type NextRoute,
 } from "./project.ts";
 import { moduleFileAt } from "./project/context.ts";
+import { describeEnv, envFilesOf, type PageEnv } from "./project/env.ts";
 import { compileServerCode, createServerCode, type ServerCodeOptions } from "./server-code.ts";
 import { affectedTests } from "./affected/index.ts";
 import { createPathsPlugin } from "./paths.ts";
@@ -69,6 +71,9 @@ const routeKinds = Object.keys(routeLists) as RouteKind[];
 // it, if the app has one, and its request handler.
 const middlewareId = virtual("middleware");
 const middlewareEntryId = virtual("middleware-entry");
+// The env of the run, which globals.ts puts in the page's `process.env`: see
+// project/env.ts.
+const envId = virtual("env");
 // Next's route resolution: the rsc layer, the document's, says with it which
 // requests are the app's, and the ssr layer routes with it each request that
 // it handles. Not a part of `next`: it is the project's, next to its `next`.
@@ -626,6 +631,11 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
   // it: development for a test run and a dev server, production for a static
   // build, which is a site to look at, not a test that reads React's warnings.
   let build: NextBuild = options.build ?? "development";
+  // What `envId` has: the project's, until an env file changes. One load
+  // after the other, so that the last change has the last word.
+  let env: PageEnv;
+  let envLoad: Promise<unknown> = Promise.resolve();
+  let server: ViteDevServer | undefined;
   // Whether Vitest runs the plugin, which takes a change of a file itself.
   // Vitest turns Vite's HMR off, so `hotUpdate` never runs under it: this
   // flag is a defence, should a version of Vitest turn it on.
@@ -738,6 +748,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
           static: isBuild,
         });
         serverCode.configure(project.root);
+        env = project.env;
         // A static build runs without Vitest, so it has no test files: every
         // file of the project is server code in the rsc layer, but for
         // `host.files`, which the page of the host is in, and the
@@ -953,6 +964,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
         };
       },
       configureServer(vite) {
+        server = vite;
         // The script of Next's build that starts the app, which the server
         // puts in the HTML of every page (`rootMainFiles` in node-server.ts).
         // The browser asks for it when the page is loaded, and nothing is in
@@ -1001,6 +1013,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
       },
       // What the app has and does not get here: said once, when a run starts.
       configResolved(config) {
+        config.logger.info(describeEnv(env, config.command === "build"));
         for (const difference of cssDifferences) {
           config.logger.warnOnce(`vitest-plugin-rsc: ${difference}.`);
         }
@@ -1058,8 +1071,31 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
       // `"use client"` that imports it changes with it (client-files.ts), and
       // the host sees any other one as a page renders it again. Under Vitest
       // a change runs test files again: see Watch Mode.
-      hotUpdate({ file, modules }) {
-        if (underVitest || this.environment.name !== environmentOf.rsc) return;
+      async hotUpdate({ file, modules }) {
+        if (underVitest) return;
+        // An env file that Vite does not restart for, as it is not of its
+        // mode: the page loads again with the new env, which the modules of
+        // the app read as they evaluate. Once, from the rsc layer, for the
+        // page that every layer is in.
+        if (
+          envFilesOf(false).some((name) => normalizePath(path.join(project.root, name)) === file)
+        ) {
+          if (this.environment.name !== environmentOf.rsc) return [];
+          const loaded = envLoad.then(() => project.loadEnv());
+          envLoad = loaded.catch(() => {});
+          env = await loaded;
+          for (const environment of Object.values(server?.environments ?? {})) {
+            const envModule = environment.moduleGraph.getModuleById(`\0${envId}`);
+            if (envModule) environment.moduleGraph.invalidateModule(envModule);
+          }
+          this.environment.logger.info(
+            `page reload ${path.relative(this.environment.config.root, file)} (vitest-plugin-rsc: an env file changed)`,
+            { timestamp: true },
+          );
+          this.environment.hot.send({ type: "full-reload", path: "*", triggeredBy: file });
+          return [];
+        }
+        if (this.environment.name !== environmentOf.rsc) return;
         if (!modules.some(importedByRoute)) return;
         this.environment.logger.info(
           `page reload ${path.relative(this.environment.config.root, file)} (vitest-plugin-rsc: a file of the app changed)`,
@@ -1069,7 +1105,9 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
         return [];
       },
       resolveId(source) {
-        if (source === manifestId || isRouteModule(source)) return `\0${source}`;
+        if (source === manifestId || source === envId || isRouteModule(source)) {
+          return `\0${source}`;
+        }
         if (source === middlewareId || source === middlewareEntryId) return `\0${source}`;
         // TODO: run Next's metadata loaders for these inline loader requests.
         // Until then a page has no metadata from files: see configResolved.
@@ -1078,6 +1116,12 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
       async load(id) {
         if (id === `${bridgePrefix}metadata`) {
           return `export default async function metadata() { return []; }`;
+        }
+
+        // Of every layer: the page's `process.env` is one.
+        if (id === `\0${envId}`) {
+          for (const name of env.files) this.addWatchFile(path.join(project.root, name));
+          return `export default ${JSON.stringify(env.values)};\n`;
         }
 
         if (id === `\0${manifestId}`) {

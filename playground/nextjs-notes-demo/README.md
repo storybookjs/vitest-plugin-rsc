@@ -12,12 +12,13 @@ The tests and the stories mock one module: the database, `#lib/db.ts`, which is 
 
 ## Development
 
-`pnpm dev` runs on Postgres at `DATABASE_URL`, in `.env.local` (see `.env.example`). A Postgres in Docker:
+`pnpm dev` runs on Postgres at `DATABASE_URL`, and shows `SUPPORT_EMAIL`, both in `.env.local` (see `.env.example`). The tests and the stories read `.env.test` instead. A Postgres in Docker:
 
 ```bash
 docker run -d --name notes-demo-postgres -p 5432:5432 \
   -e POSTGRES_PASSWORD=postgres postgres:17
 echo 'DATABASE_URL="postgres://postgres:postgres@localhost:5432/postgres"' > .env.local
+echo 'SUPPORT_EMAIL="support@notes.example"' >> .env.local
 pnpm db:push
 pnpm dev
 ```

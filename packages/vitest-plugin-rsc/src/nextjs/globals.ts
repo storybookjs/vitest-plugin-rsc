@@ -1,4 +1,5 @@
 import { Buffer } from "node:buffer";
+import env from "virtual:vitest-plugin-rsc/next-env";
 import { enterAmbientScope, SequentialAsyncLocalStorage } from "../async-local-storage.ts";
 import { registry, type Opened } from "./registry.ts";
 
@@ -137,6 +138,9 @@ const scope = globalThis as Record<string, any>;
 
 scope.process ??= { env: {} };
 scope.process.env ??= {};
+// The env of the run (project/env.ts), before any module of the app reads
+// it. For a name the page does not have: the page's own value wins.
+for (const [name, value] of Object.entries(env)) scope.process.env[name] ??= value;
 scope.global ??= scope;
 scope.global.process ??= scope.process;
 scope.Buffer ??= Buffer;

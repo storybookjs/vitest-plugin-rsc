@@ -233,6 +233,28 @@ page. It has no CSS of the preview or its story file, and
 A page is in its layouts whatever `layouts` says. `mount(ui)` has no story
 to replace on a page, and fails with a message.
 
+## Environment Variables
+
+A story's server code reads `process.env` as the app's tests do: from the
+project's test env, Next's env files of its test mode. `storybook dev`
+reads `.env.test.local`, `.env.test` and `.env`, `storybook build` reads
+`.env.test` and `.env`, and no `.local` file. Never `.env.local` or
+`.env.development`, which Storybook loads into its own Node process, and
+no value of the shell, unless `env` of `next.config` puts it in.
+`NEXT_PUBLIC_` variables and `env` of `next.config` are in `process.env`
+too, before the first module of `preview.tsx` runs.
+
+`storybook build` puts the values into the static site, which Chromatic
+publishes: keep secrets out of `.env.test` and `.env`. A secret that the
+stories need on your machine goes in `.env.test.local`. The build says the
+files and the names it puts in, never their values.
+
+An app that has its values only in `.env.development`, for `next dev`,
+moves them to `.env`, to `.env.test`, or for one machine to
+`.env.test.local`. `import.meta.env.STORYBOOK_*` still comes from
+Storybook's own env files. See
+[Environment Variables](https://github.com/storybookjs/vitest-plugin-rsc/blob/main/docs/next-routes.md#environment-variables).
+
 ## Before A Story
 
 Before each server story the framework leaves the previous page and clears

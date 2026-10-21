@@ -1,6 +1,8 @@
 import fs from "node:fs";
+import { createRequire } from "node:module";
 import path from "node:path";
 import type { AppLoaderContext } from "./entries.ts";
+import { pageEnvOf, readTestEnv } from "./env.ts";
 import type { Loader } from "./loaders.ts";
 
 // The project, and the build code of its own `next`: what the other files in
@@ -41,7 +43,11 @@ export type NextContext = Awaited<ReturnType<typeof openNextProject>>;
 export async function openNextProject(
   root: string,
   projectRequire: NodeJS.Require,
-  options: { static?: boolean } = {},
+  options: {
+    static?: boolean;
+    /** The file of env-worker.ts. */
+    envWorker: string;
+  },
 ) {
   const nextDir = path.dirname(projectRequire.resolve("next/package.json"));
   const { version } = projectRequire("next/package.json") as { version: string };
@@ -116,6 +122,8 @@ export async function openNextProject(
   const { generateBuildId } =
     load<typeof import("next/dist/build/generate-build-id.js")>("build/generate-build-id");
   const { getDefineEnv } = load<typeof import("next/dist/build/define-env.js")>("build/define-env");
+  const { getNextPublicEnvironmentVariables, getNextConfigEnv } =
+    load<typeof import("next/dist/lib/static-env.js")>("lib/static-env");
   const { SUPPORTED_NATIVE_MODULES } = load<
     typeof import("next/dist/build/webpack/plugins/middleware-plugin.js")
   >("build/webpack/plugins/middleware-plugin");
@@ -205,6 +213,37 @@ export async function openNextProject(
   const { getContentType, getExtension } =
     load<typeof import("next/dist/server/serve-static.js")>("server/serve-static");
 
+  // The env of the run, see env.ts, with the `@next/env` that Next's config
+  // loader uses.
+  let nextEnv: string;
+  try {
+    nextEnv = createRequire(path.join(nextDir, "package.json")).resolve("@next/env");
+  } catch (error) {
+    return fail(`@next/env is not found next to next (${(error as Error).message})`, error);
+  }
+  const readEnv = () =>
+    readTestEnv(root, { nextEnv, envWorker: options.envWorker, build: !!options.static }).catch(
+      (error: Error) => {
+        throw new Error(
+          `vitest-plugin-rsc: the env files of ${root} do not load: ${error.message}`,
+          {
+            cause: error,
+          },
+        );
+      },
+    );
+  const testEnv = await readEnv();
+  // Before the config is loaded, for the names the host's process does not
+  // have, so that a `next.config` that validates the env, as with t3-env,
+  // sees the env of the page. Next's loader in `loadConfig()` then keeps
+  // them, as it keeps any name of the process. A host that loaded env files
+  // of its own before, like `.env.local`, keeps its value of a name that the
+  // test env has too: the config is validated with that value, and a config
+  // that reads it gets that one, while the page gets the test env's. Where
+  // the host called Next's loader first, the names are not in the snapshot
+  // of the process that it took, and a forced reload of it would drop them.
+  for (const [name, value] of Object.entries(testEnv.values)) process.env[name] ??= value;
+
   // The app is served the way a deployment serves it: production Next on its
   // Node.js runtime. Next's code and React's run in development unless the
   // `build` option says otherwise, see build.ts.
@@ -251,6 +290,10 @@ export async function openNextProject(
 
   return {
     root,
+    /** What the page's `process.env` gets, see env.ts. */
+    env: pageEnvOf(testEnv, getNextConfigEnv(config)),
+    /** The env again, as the env files have it now. */
+    loadEnv: async () => pageEnvOf(await readEnv(), getNextConfigEnv(config)),
     /** Finds `next`, and what the project has installed next to it. Not the global one. */
     projectRequire,
     nextDir,
@@ -286,6 +329,8 @@ export async function openNextProject(
       isMetadataRouteFile,
       DEFAULT_METADATA_ROUTE_EXTENSIONS,
       getDefineEnv,
+      getNextPublicEnvironmentVariables,
+      getNextConfigEnv,
       SUPPORTED_NATIVE_MODULES,
       compilerAliases,
       needsExperimentalReact,
