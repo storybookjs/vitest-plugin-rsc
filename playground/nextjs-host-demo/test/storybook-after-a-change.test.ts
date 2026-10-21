@@ -356,8 +356,10 @@ test.fails("an MDX file that imports server code shows Next's error", async ({ p
     await page.goto(`${site!.url}?path=/docs/server-code--docs`);
     const iframe = await page.locator("#storybook-preview-iframe").elementHandle();
     const canvas = (await iframe!.contentFrame())!;
+    // The error is on the page as the docs page loads, if at all: a short
+    // poll, so that the expected failure does not wait the project's 30 s.
     await expect
-      .poll(() => canvas.locator("#error-message").textContent())
+      .poll(() => canvas.locator("#error-message").textContent(), { timeout: 5_000 })
       .toContain("This module cannot be imported from a Client Component module");
     errors.list.splice(0);
   } finally {

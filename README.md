@@ -1281,6 +1281,9 @@ Vitest suites are wired through the root workspace, and each package or playgrou
 pnpm test
 pnpm test --project nextjs-e2e-demo
 pnpm test --project nextjs-notes-demo-browser
+pnpm test:slow
 ```
+
+`pnpm test` runs the fast projects. `pnpm test:slow` runs the ones that start a dev server, `storybook dev`, `storybook build` or a static build, and `pnpm test:all` runs every project. A file or a `--project` on the command line selects from every project.
 
 `VITEST_PLUGIN_RSC_BUILD=production` runs the two Next.js playgrounds the way `next start` would. CI runs them that way too.
