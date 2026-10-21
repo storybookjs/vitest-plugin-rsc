@@ -96,10 +96,6 @@
       "category": "not-yet",
       "text": "A navigation of Next's router to a route handler that answers with JSON, which a browser shows in place of the app. The tab cannot leave the test, so the page stays, with an uncaught error."
     },
-    "exited-action-store": {
-      "category": "plugin-bug",
-      "text": "A promise of a Server Action, passed to `after()`, that calls a request API once the action is done. Next renders the page after the action outside the store of the action, with `AsyncLocalStorage.exit()`. Here the store stays exited for the rest of the request, so Next takes the call for one of the page."
-    },
     "opens-a-response": {
       "category": "not-yet",
       "text": "Opens the response of a route handler that a browser shows as it is, like plain text or JSON. The plugin opens the pages of the app, and the test stays where it is.",
@@ -893,18 +889,14 @@
       }
     },
     "next-after-app-api-usage": {
-      "passed": 18,
+      "passed": 22,
       "failed": {
         "index.test.ts > nextjs APIs in after() > request APIs inside after() > cannot be called in a prerendered page > with `dynamic = \"error\"`": "prerendered-pages",
         "index.test.ts > nextjs APIs in after() > request APIs inside after() > cannot be called in a prerendered page > with `dynamic = \"force-static\"`": "prerendered-pages",
         "index.test.ts > nextjs APIs in after() > request APIs inside after() > can be called in a prerendered route handler with `dynamic = \"force-static\"`": "prerendered-pages",
         "index.test.ts > nextjs APIs in after() > request APIs inside after() > can be called in a prerendered route handler with `dynamic = \"error\" (but throw, because dynamic should error)`": "prerendered-pages",
         "index.test.ts > nextjs APIs in after() > draftMode status is readable, but cannot be changed > static page": "prerendered-pages",
-        "index.test.ts > nextjs APIs in after() > draftMode status is readable, but cannot be changed > static route handler": "prerendered-pages",
-        "index.test.ts > nextjs APIs in after() > async APIs in promises passed to after > in server actions > does not error - headers": "exited-action-store",
-        "index.test.ts > nextjs APIs in after() > async APIs in promises passed to after > in server actions > does not error - cookies": "exited-action-store",
-        "index.test.ts > nextjs APIs in after() > async APIs in promises passed to after > in server actions > does not error - connection": "exited-action-store",
-        "index.test.ts > nextjs APIs in after() > async APIs in promises passed to after > in server actions > does not error - io": "exited-action-store"
+        "index.test.ts > nextjs APIs in after() > draftMode status is readable, but cannot be changed > static route handler": "prerendered-pages"
       }
     },
     "revalidate-tag-in-after": {

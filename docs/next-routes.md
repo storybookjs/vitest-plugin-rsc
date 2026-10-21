@@ -609,7 +609,7 @@ The server layers run as Next's Node.js server does, with the web APIs that Node
 
 - **`Request` and `Response`** that keep `Cookie` and `Set-Cookie`, which a browser drops from its own.
 - **`fetch`**, so that Next patches the server's `fetch`, not the page's. Next patches it from the `rsc` layer when it first renders, and both server layers call the result. The server's `fetch` and the page's reach the same network.
-- **`AsyncLocalStorage`**. A browser cannot carry a store across `await`. Requests are handled one at a time, and the store a request entered first stays readable until the request ends. A store that Next enters for part of a request, like a cached function's store, is put back after an `await` by the app's own code, which is compiled to do so in an app with Cache Components. See [The Scope Of A Cached Function](#the-scope-of-a-cached-function). Without it, that store lasts until the first `await`: see [A Cache Scope Ends At Its First `await`](#a-cache-scope-ends-at-its-first-await).
+- **`AsyncLocalStorage`**. A browser cannot carry a store across `await`. Requests are handled one at a time, and the store a request entered first stays readable until the request ends. A store that Next enters for part of a request, like a cached function's store, or leaves for part of it, like a Server Action's store for the render after the action, is put back after an `await` by the code that awaits there, which is compiled to do so: the app's own source files, and the modules of Next's server that enter or leave a store. See [The Scope Of A Cached Function](#the-scope-of-a-cached-function).
 - **`Buffer`**, **`process`**, and the Node modules that Next's server imports.
 
 The server's console is the page's, so what the server logs is in the output of the test once. In development, React's Flight server sends what a request logs to the page, which logs it again. The plugin turns that off. React would also send what client code logs while a request is open, as that code reads the request's scope (see `AsyncLocalStorage` above), and its response could stay open.
@@ -687,40 +687,25 @@ async function getQuote(topic) {
 
 `e` remembers the stores the function was called with. `s` leaves them right before the function waits, and `r` puts them back when it goes on. A `catch` and a `finally` put them back too, for an `await` that rejects, and `x` leaves them when the function is done. So the stores of a cached function are the current ones only while its own code runs. React renders the rest of the page in the meantime, and reads the store of the request. Nothing of the browser is patched: not `Promise`, not a timer.
 
-Only in an app with `cacheComponents` or `experimental.useCache`, the ones that take the directive, two things are compiled this way, both in the `rsc` layer, which is where a cached function runs:
+Two kinds of module are compiled this way, in every app, in the `rsc` layer, which is where a store is entered:
 
 - The source files of the app that are [server code](#server-code-in-the-browser) there. So not a test file.
-- Next's wrapper of a `"use cache"` function, `next/dist/server/use-cache/use-cache-wrapper.js`. It enters the scope and awaits before it has React call the function.
+- The modules of Next's server that await inside a store they entered, or left with `exit()`, each for the store it carries: the wrapper of a `"use cache"` function, `next/dist/server/use-cache/use-cache-wrapper.js`, which enters the scope and awaits before it has React call the function; the handler of a Server Action, `app-render/action-handler.js`, which enters the action's store and leaves it for the render after the action; and `app-render/app-render.js`, the render, which awaits before it starts React's. The list is `nextModulesWithStores` in `server-code.ts`.
+
+`e` takes the stores the function is called with as they are then, those of the request included, as Node's context does: not what the request has when the function goes on, which an `exit()` may have changed by then. So does `AsyncLocalStorage.bind()`. A function or a bound callback of a render that outlives its test puts nothing back in the next one.
 
 And one callback has the stores of the code that passed it, as on Node.js: the one that React's Flight server in the `rsc` layer queues a microtask with. That module is compiled to call the server's own `queueMicrotask`, as server code calls the server's `fetch`. React starts a render in a microtask, and that is how Next has React call a cached function: in the scope it entered for the function, and in React's own store for that render. No other module calls it.
 
 React renders in steps, and starts the later ones when a promise it waits for settles, like that of an async component. On Node.js such a step has the stores of the step that waited. Here it has none, so the `performWork()` of the Flight server, which does one step, is compiled to run each step of a render with the stores of its first. So what a cached component returns renders in its scope, as in a deployment: `cookies()` throws in a component under it, `cacheTag()` tags its entry, and a cached component under it adds its tags to it. The run stops with an error when the Flight server has no `performWork()` to compile.
 
-So the code of a cached function has its scope, before and after an `await`, and so has a function of the app that it calls, and what it renders. That goes for `"use cache"`, and for `unstable_cache` in such an app. An app without Cache Components keeps its code as it is: see [below](#a-cache-scope-ends-at-its-first-await). What does not have it reads the store of the request, where `cookies()` works and `cacheTag()` throws:
+So the code of a cached function has its scope, before and after an `await`, and so has a function of the app that it calls, and what it renders. That goes for `"use cache"`, and for `unstable_cache`. What is not compiled reads the store of the request, where `cookies()` works and `cacheTag()` throws:
 
 - **A callback**, of `then()`, of a timer, or of `process.nextTick()`, which is the browser's `queueMicrotask` here. Only `await` is compiled.
 - **What a thenable does in its `then()`**, like a query builder that runs its query when it is awaited. `await` calls `then()` a microtask later, after the function has left its scope to wait. The value comes back to the function, in its scope.
-- **A package.** The code in `node_modules` is not compiled, so a function of a package has no scope after an `await` of its own. Your function has it back when the package returns.
+- **A package.** The code in `node_modules` is not compiled, other than the modules of Next's server above, so a function of a package has no scope after an `await` of its own. Your function has it back when the package returns.
 - **A function with a `for await` or an `await using`, and an async generator.** They wait where the compile step has no call to put, so they are left as they are, and have no scope after their first `await`.
 
-A store that is left for a part of a request, with `exit()`, is kept left in code that is not compiled, like Next's own. Next leaves the store of a Server Action for the render after it, and the plugin keeps it left for the rest of the request, so a `redirect()` in a component replaces the page, as in a deployment. A compiled function that awaits an `exit()` has its store back after it, as on Node.js.
-
-### A Cache Scope Ends At Its First `await`
-
-In an app without Cache Components, nothing is compiled for the scope of a cached function: see [above](#the-scope-of-a-cached-function).
-
-While a cached function runs, Next keeps a store for it in `AsyncLocalStorage`. That store is how `cookies()` knows to throw inside `unstable_cache`, and how a `fetch` inside it knows not to be cached on its own.
-
-Node carries that store to the code after an `await` in the cached function, and to nothing else. A browser cannot tell the two apart. When code runs after an `await`, nothing says whether it belongs to the cached function or to a component next to it that is rendering in the meantime. So one of the two reads the wrong store. Here the cached function does. Its store lasts for the synchronous part of the function, and after the first `await` the function reads the request's store. The other choice breaks pages that work: if the store were kept until the function is done, a component that renders during a cache miss would read the cache's store, and its `cookies()` would throw.
-
-So inside a function cached with `unstable_cache`, after its first `await`:
-
-- `cookies()` and `headers()` work. In a deployment they throw.
-- A nested `unstable_cache` keeps its own result, and so does a `fetch` with `cache: "force-cache"` or `next: { revalidate }`. In a deployment both run again whenever the outer function does. Here, when the outer function runs again because its tag was revalidated, it can get the inner one's old result.
-
-Before the first `await` all of these behave as in a deployment. For a cached function with no cached function or cached `fetch` inside it, what a test sees is correct: its value, whether it ran again, and what invalidates it.
-
-The same rule decides what `redirect()` does in the render after a Server Action. Next exits the action's store for that render, and the plugin keeps it exited for the rest of the request. So a `redirect()` in a component replaces the page, as in a deployment.
+The same goes for a store that is left for a part of a request, with `exit()`. Next leaves the store of a Server Action for the render after the action, and awaits that render: the render starts in the frame of the `exit()`, outside the store, and stays outside across its own awaits as `app-render.js` is compiled, so what it renders has none, and a `redirect()` in a component replaces the page, as in a deployment. The handler has the store back after the `await`, as on Node.js, and so has what the action started before the `exit()` and compiled or bound code goes on with, like a promise the action passed to `after()` that calls `headers()` once the action is done. What is not compiled reads the exited store for the rest of the request. That also goes for two places where Next leaves `workUnitAsyncStorage` with an `exit()` whose callback returns a promise: the render of an `ImageResponse` that Cache Components keeps, in `og/cache-image-response.js`, and a span of OpenTelemetry started with `startActiveSpan()`, in `instrumentation-node-extensions.js`.
 
 ## Server Code In The Browser
 
@@ -731,7 +716,7 @@ A browser has a `window`, and a `fetch` that Next has not patched. A browser can
 
 Apart from `setImmediate` and `clearImmediate`, which become the server's, nothing else is replaced. Code that reads `window.innerWidth` without checking `typeof window` first throws on a server, and reads the browser's `window` here.
 
-In an app with Cache Components, the async functions in the source files of the `rsc` layer are compiled as well, to keep those stores across an `await`: see [The Scope Of A Cached Function](#the-scope-of-a-cached-function).
+The async functions in the source files of the `rsc` layer are compiled as well, to keep the stores of `AsyncLocalStorage` across an `await`: see [The Scope Of A Cached Function](#the-scope-of-a-cached-function).
 
 A Client Component is a module in two layers. It is told it has no `window` while Next renders it to HTML in `ssr`, and it has one in `browser`.
 

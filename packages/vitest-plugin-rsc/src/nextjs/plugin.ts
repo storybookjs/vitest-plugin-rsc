@@ -35,7 +35,7 @@ import { moduleFileAt } from "./project/context.ts";
 import { describeEnv, envFilesOf, type PageEnv } from "./project/env.ts";
 import { compileServerCode, createServerCode, type ServerCodeOptions } from "./server-code.ts";
 import { createCommonJsPlugin } from "./commonjs.ts";
-import { createUseCachePlugin, useCacheId, useCacheModule, usesCache } from "./use-cache.ts";
+import { createUseCachePlugin, useCacheId, useCacheModule } from "./use-cache.ts";
 import { createPathsPlugin } from "./paths.ts";
 import { nextStaticBuild, withPathsFromRoot } from "./static-build.ts";
 import { builtHostFileOf, createStyles, changesInPlace } from "./styles.ts";
@@ -656,7 +656,6 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
   // What the CSS of the app gets otherwise than from Next: see `loadCssOptions()`.
   let cssDifferences: string[] = [];
   const serverCode = createServerCode(registry, options);
-  serverCode.cachedFunctions(() => usesCache(getProject()));
   const getProject = () => project;
   if (options.build !== undefined && !nextBuilds.includes(options.build)) {
     throw new Error(
@@ -1316,11 +1315,12 @@ function dependencyBuildPlugin(
       if (!normalizePath(file).includes("/node_modules/") || !/\.[cm]?js$/.test(file)) return;
       const compiled = await compile.transform(code, file);
       const isServerCode = layer !== "browser" && serverCode.isServerCode(file, layer);
-      // What keeps the stores of a cached function, as the optimizer does it.
-      const forCache = isServerCode
-        ? serverCode.forCachedFunctions(this, compiled?.code ?? code, file, layer)
+      // What keeps the stores of a module of Next across an `await` and a
+      // render, as the optimizer does it.
+      const forStores = isServerCode
+        ? serverCode.forStores(this, compiled?.code ?? code, file, layer)
         : undefined;
-      const source = forCache?.code ?? compiled?.code ?? code;
+      const source = forStores?.code ?? compiled?.code ?? code;
       const kept = source === (compiled?.code ?? code) ? compiled : { code: source };
       // The ones it names: most modules name none.
       const define = Object.fromEntries(
@@ -1331,7 +1331,7 @@ function dependencyBuildPlugin(
       if (!isServerCode && Object.keys(define).length === 0) return kept;
       try {
         const defined = isServerCode
-          ? await compileServerCode(source, file, registry, { ...define, ...forCache?.define })
+          ? await compileServerCode(source, file, registry, { ...define, ...forStores?.define })
           : await transformWithOxc(source, file, { lang: "js", define });
         return defined ?? kept;
       } catch (error) {

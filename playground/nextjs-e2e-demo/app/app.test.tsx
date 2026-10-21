@@ -560,6 +560,12 @@ test("keeps a spy on fetch that the test set in a browser context", async () => 
   expect(spy).toHaveBeenCalledOnce();
 });
 
+// On Node.js Next renders the page after a Server Action outside the
+// action's store, with `exit()`, so a redirect() in a component is one of the
+// render, which replaces the page, not one of the action. Here the handler of
+// the action is compiled: it awaits the render inside the `exit()`, and the
+// render starts there. See app/action-stores.test.tsx for what the action has
+// after it.
 test("replaces the page when a component redirects in the render after a Server Action", async () => {
   await renderServer({ url: "/members" });
   await expect.element(page.getByRole("heading", { name: "Members" })).toBeVisible();
