@@ -137,7 +137,7 @@ test("pre-bundles every Client Component of Next for the layers that render one"
 // The modules of this package that run in a layer in the browser and import a
 // module of Next: the entry of the layer, and what it imports from here.
 const runtimeFiles = {
-  ssr: ["ssr.ts", "cache.ts", "node-server.ts"],
+  ssr: ["ssr.ts", "cache.ts", "node-server.ts", "build-output.ts"],
   browser: ["client.tsx"],
 } as const;
 

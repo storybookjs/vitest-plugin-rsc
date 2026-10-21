@@ -11,14 +11,10 @@ import { getRouteMatcher } from "next/dist/shared/lib/router/utils/route-matcher
 import { getRouteRegex } from "next/dist/shared/lib/router/utils/route-regex";
 import { routes as allRoutes, routing } from "virtual:vitest-plugin-rsc/next-manifest";
 import { actionIdsOf } from "./action-ids.ts";
+import { anyKey, setServerActions, setStylesheets } from "./build-output.ts";
 import { loadCacheHandlers, shareIncrementalCache } from "./cache.ts";
 import { registerModuleLoader } from "./client-modules.ts";
-import {
-  anyKey,
-  handleRequest as handleWith,
-  setServerActions,
-  setStylesheets,
-} from "./node-server.ts";
+import { handleRequest as handleWith } from "./node-server.ts";
 import {
   actionModulePrefix,
   openedAt,
@@ -37,8 +33,9 @@ import {
 
 export { resetCaches } from "./cache.ts";
 
-// The ssr layer: Next's request handler and HTML renderer. node-server.ts is
-// what Next's Node.js server has around them, and a browser does not.
+// The ssr layer: Next's request handler and HTML renderer. node-server.ts and
+// build-output.ts are what Next's Node.js server has around them, and a
+// browser does not.
 
 registry.ssr = {
   AppPageRouteModule: appPageModule.AppPageRouteModule as never,

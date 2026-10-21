@@ -18,6 +18,7 @@ export function checkRuntime(context: NextContext) {
     requestHeaders: {},
     fetchCacheKeyPrefix: "prefix",
     previewProps,
+    // As `prerenderManifest` of build-output.ts.
     prerenderManifest: {
       version: 4,
       routes: {},
@@ -119,7 +120,7 @@ export function checkRuntime(context: NextContext) {
   ]) {
     serverReferenceInfo.export(name);
   }
-  // node-server.ts provides the manifests of a build: through the module
+  // build-output.ts provides the manifests of a build: through the module
   // Next's server reads the files of `.next/` with, and for each request.
   runtimeFile("server/route-modules/route-module").contains(
     "load-manifest.external",
@@ -131,7 +132,7 @@ export function checkRuntime(context: NextContext) {
   runtimeFile("build/templates/app-page-runtime").contains(
     "server/route-modules/app-page/module.compiled",
   );
-  // node-server.ts lists the stylesheets of a route where Next's renderer
+  // build-output.ts lists the stylesheets of a route where Next's renderer
   // looks for those of a segment: in `entryCSSFiles` of the client reference
   // manifest, by the file of the segment without its extension. Next links
   // each by its path under `/_next/`. Without this a page has no CSS, and

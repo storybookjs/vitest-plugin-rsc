@@ -8,6 +8,7 @@ import {
 import type { CacheFs } from "next/dist/shared/lib/utils";
 import { cacheHandler, cacheHandlers } from "virtual:vitest-plugin-rsc/next-cache-handlers";
 import { nextConfig, preview } from "virtual:vitest-plugin-rsc/next-manifest";
+import { prerenderManifest } from "./build-output.ts";
 import { registry } from "./registry.ts";
 
 // Next's Data Cache: what `unstable_cache` and a cached `fetch` keep between
@@ -97,8 +98,8 @@ export function shareIncrementalCache(headers = new Headers()): void {
     maxMemoryCacheSize: nextConfig.cacheMaxMemorySize,
     previewProps: preview,
     CurCacheHandler: CurCacheHandler as never,
-    // No route is prerendered: nothing is built.
-    prerenderManifest: { version: 4, routes: {}, dynamicRoutes: {}, notFoundRoutes: [], preview },
+    // What Next's route module reads too: build-output.ts.
+    prerenderManifest,
   });
 }
 

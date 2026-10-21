@@ -1003,7 +1003,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
       configureServer(vite) {
         server = vite;
         // The script of Next's build that starts the app, which the server
-        // puts in the HTML of every page (`rootMainFiles` in node-server.ts).
+        // puts in the HTML of every page (`rootMainFiles` in build-output.ts).
         // The browser asks for it when the page is loaded, and nothing is in
         // it: `renderServer()` starts the app. Not a 404, which a host may
         // count as an error of the page.
