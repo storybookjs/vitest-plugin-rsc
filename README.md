@@ -1046,7 +1046,7 @@ The plugin shims what Next's server needs from Node.js, like `AsyncLocalStorage`
 
 A fast unit test shouldn't touch the real database, filesystem, or network — those make tests slow and flaky. Standard practice is to keep IO inside the test runtime, which here is the browser:
 
-- **Database**: an in-memory implementation like [PGlite](https://pglite.dev/) for Postgres or [sql.js](https://github.com/sql-js/sql.js) for SQLite.
+- **Database**: an in-memory implementation like [PGlite](https://pglite.dev/) for Postgres or [`@libsql/client-wasm`](https://www.npmjs.com/package/@libsql/client-wasm) for SQLite. [playground/nextjs-db-recipes](playground/nextjs-db-recipes) has recipes for Postgres, SQLite and MySQL, with Drizzle, Prisma, Kysely or SQL of their own: the app keeps its ORM and driver, and every test has a database of its own.
 - **File system**: an in-memory implementation like [`memfs` via Vitest](https://vitest.dev/guide/mocking/file-system). With `vitestPluginNext()` the server code's `fs` is one already.
 - **HTTP**: a request interceptor like [MSW in Vitest browser mode](https://mswjs.io/docs/recipes/vitest-browser-mode), or a mocked module.
 
