@@ -6,12 +6,13 @@
 import nodeBuffer from "node:buffer";
 import nodeCrypto from "node:crypto";
 import { promisify } from "node:util";
+import type { Duplex } from "node:stream";
 import nodeZlib from "node:zlib";
 import { expect, test } from "vitest";
 import * as buffer from "../node/buffer.ts";
 import * as crypto from "../node/crypto.ts";
 import events, { EventEmitter, listenerCount, setMaxListeners } from "../node/events.ts";
-import { Readable } from "../node/stream.ts";
+import stream, { duplexPair, Readable } from "../node/stream.ts";
 import * as consumers from "../node/stream/consumers.ts";
 import * as url from "../node/url.ts";
 import { aborted, styleText, stripVTControlCharacters, toUSVString } from "../node/util.ts";
@@ -46,7 +47,7 @@ test("`zlib`'s sync functions compress as Node's decompress, and decompress what
   expect(() => zlib.gunzipSync(nodeZlib.gzipSync(text).subarray(0, 20))).toThrow(
     expect.objectContaining({ code: "Z_BUF_ERROR" }),
   );
-  expect(() => zlib.brotliCompressSync(text)).toThrow("brotliCompressSync is not there");
+  expect(() => zlib.brotliCompressSync(text)).toThrow("brotliCompressSync of Node.js is not there");
 });
 
 test("`zlib`'s async functions go through the web's compression streams", async () => {
@@ -322,4 +323,296 @@ test("`util.types` tells a namespace of a module and a Float16Array, and no prox
 
 test("`url` has the browser's URLPattern", () => {
   expect(url.URLPattern).toBe((globalThis as { URLPattern?: unknown }).URLPattern);
+});
+
+test("`zlib` checks what it decompresses as zlib does: members, checksums, short and empty data", async () => {
+  const twice = Buffer.concat([nodeZlib.gzipSync("hello "), nodeZlib.gzipSync("world")]);
+  expect(zlib.gunzipSync(twice).toString()).toBe("hello world");
+  expect(zlib.unzipSync(twice).toString()).toBe("hello world");
+  expect((await promised<Buffer>((done) => zlib.gunzip(twice, done))).toString()).toBe(
+    "hello world",
+  );
+  expect(await consumers.text(Readable.from([twice]).pipe(zlib.createGunzip()))).toBe(
+    "hello world",
+  );
+
+  const badCrc = nodeZlib.gzipSync("hello");
+  badCrc[badCrc.length - 8]! ^= 1;
+  const badAdler = nodeZlib.deflateSync("hello");
+  badAdler[badAdler.length - 1]! ^= 1;
+  for (const [decompress, data] of [
+    [zlib.gunzipSync, badCrc],
+    [zlib.inflateSync, badAdler],
+    [zlib.unzipSync, badCrc],
+  ] as const) {
+    expect(() => decompress(data)).toThrow(expect.objectContaining({ code: "Z_DATA_ERROR" }));
+  }
+  const short = nodeZlib.gzipSync(text).subarray(0, 15);
+  for (const data of [short, Buffer.alloc(0)]) {
+    for (const decompress of [
+      zlib.gunzipSync,
+      zlib.inflateSync,
+      zlib.inflateRawSync,
+      zlib.unzipSync,
+    ]) {
+      let node: unknown;
+      try {
+        nodeZlib[decompress.name as "gunzipSync"](data);
+      } catch (error) {
+        node = (error as { code: string }).code;
+      }
+      if (!node) continue;
+      expect(() => decompress(data), `${decompress.name} of ${data.length} bytes`).toThrow(
+        expect.objectContaining({ code: node }),
+      );
+    }
+  }
+  const failed = await new Promise<Error | null>((resolve) => zlib.gunzip(short, resolve));
+  expect(failed).toMatchObject({ code: "Z_BUF_ERROR", message: "unexpected end of file" });
+  const gunzip = zlib.createGunzip();
+  const streamFailed = new Promise((resolve) => gunzip.on("error", resolve));
+  gunzip.end(short);
+  expect(await streamFailed).toMatchObject({ code: "Z_BUF_ERROR" });
+
+  expect(() => zlib.gunzipSync(nodeZlib.gzipSync("hello"), { maxOutputLength: 1 })).toThrow(
+    expect.objectContaining({ code: "ERR_BUFFER_TOO_LARGE" }),
+  );
+});
+
+test("`zlib` flushes a stream, takes a dictionary and a level, and has the constants by their old names", async () => {
+  const gzip = zlib.createGzip();
+  const chunks: Buffer[] = [];
+  gzip.on("data", (chunk: Buffer) => chunks.push(chunk));
+  gzip.write("hello");
+  await new Promise<void>((resolve) => gzip.flush(nodeZlib.constants.Z_SYNC_FLUSH, resolve));
+  const flushed = nodeZlib.createGunzip();
+  const read = new Promise<string>((resolve) =>
+    flushed.once("data", (chunk) => resolve(String(chunk))),
+  );
+  flushed.write(Buffer.concat(chunks));
+  expect(await read).toBe("hello");
+  gzip.end();
+
+  const dictionary = Buffer.from("the notes of today");
+  const withDictionary = nodeZlib.deflateSync(text, { dictionary });
+  expect(zlib.inflateSync(withDictionary, { dictionary }).toString()).toBe(text);
+  expect(
+    nodeZlib.inflateSync(zlib.deflateSync(text, { dictionary }), { dictionary }).toString(),
+  ).toBe(text);
+  // Level 0 stores, as zlib's does.
+  expect(zlib.deflateSync(text, { level: 0 }).length).toBeGreaterThan(text.length);
+  expect(zlib.deflateSync(text, { level: 9 }).length).toBeLessThan(text.length / 10);
+
+  // A gzip whose first chunk is a byte: two tell `unzip` it is gzip.
+  const gzipped = nodeZlib.gzipSync("unzipped");
+  const unzip = zlib.createUnzip();
+  const unzipped = consumers.text(unzip);
+  unzip.write(gzipped.subarray(0, 1));
+  unzip.end(gzipped.subarray(1));
+  expect(await unzipped).toBe("unzipped");
+
+  const names = Object.getOwnPropertyNames(nodeZlib).filter((name) => name.startsWith("Z_"));
+  expect(names.length).toBeGreaterThan(20);
+  for (const name of names) {
+    expect(zlib, name).toHaveProperty(name, (nodeZlib as unknown as Record<string, number>)[name]);
+    expect(zlib.default, name).toHaveProperty(name);
+  }
+});
+
+test("`crypto`'s ciphers give at `update()` what Node's do, chunk by chunk", () => {
+  const plaintext = Buffer.from("a note to keep to myself, ".repeat(5));
+  const sizes = [1, 15, 16, 17, 3, 40, 0, 33];
+  for (const algorithm of crypto.getCiphers()) {
+    for (const padding of [true, false]) {
+      const bits = Number(/aes-(\d+)/.exec(algorithm)![1]);
+      const key = nodeCrypto.randomBytes(bits / 8);
+      const iv = algorithm.endsWith("ecb")
+        ? null
+        : nodeCrypto.randomBytes(algorithm.endsWith("gcm") ? 12 : 16);
+      const input = padding ? plaintext : plaintext.subarray(0, 128);
+      const ours = crypto.createCipheriv(algorithm, key, iv).setAutoPadding(padding);
+      const node = nodeCrypto.createCipheriv(algorithm, key, iv).setAutoPadding(padding);
+      const decipher = crypto.createDecipheriv(algorithm, key, iv).setAutoPadding(padding);
+      const nodeDecipher = nodeCrypto.createDecipheriv(algorithm, key, iv).setAutoPadding(padding);
+      let at = 0;
+      const sealed: Buffer[] = [];
+      for (const size of [...sizes, input.length]) {
+        const chunk = input.subarray(at, at + size);
+        at += chunk.length;
+        const mine = ours.update(chunk);
+        expect(mine, `${algorithm} ${padding} update of ${size}`).toEqual(node.update(chunk));
+        sealed.push(mine);
+      }
+      const last = ours.final();
+      expect(last, `${algorithm} final`).toEqual(node.final());
+      sealed.push(last);
+      const all = Buffer.concat(sealed);
+      if (algorithm.endsWith("gcm")) {
+        const tag = (node as nodeCrypto.CipherGCM).getAuthTag();
+        expect(ours.getAuthTag()).toEqual(tag);
+        decipher.setAuthTag(tag);
+        (nodeDecipher as nodeCrypto.DecipherGCM).setAuthTag(tag);
+      }
+      at = 0;
+      for (const size of [...sizes, all.length]) {
+        const chunk = all.subarray(at, at + size);
+        at += chunk.length;
+        expect(decipher.update(chunk), `${algorithm} ${padding} decipher of ${size}`).toEqual(
+          nodeDecipher.update(chunk),
+        );
+      }
+      expect(decipher.final(), `${algorithm} decipher final`).toEqual(nodeDecipher.final());
+    }
+  }
+});
+
+test("`crypto`'s ciphers keep their key and IV, authenticate every AAD, and fail as OpenSSL does", () => {
+  const key = Buffer.alloc(32, 1);
+  const iv = Buffer.alloc(12, 2);
+  const ours = crypto.createCipheriv("aes-256-gcm", key, iv);
+  const node = nodeCrypto.createCipheriv("aes-256-gcm", Buffer.from(key), Buffer.from(iv));
+  key.fill(9);
+  iv.fill(9);
+  ours.setAAD(Buffer.from("a")).setAAD(Buffer.from("b"));
+  node.setAAD(Buffer.from("a")).setAAD(Buffer.from("b"));
+  expect(Buffer.concat([ours.update("text"), ours.final()])).toEqual(
+    Buffer.concat([node.update("text"), node.final()]),
+  );
+  expect(ours.getAuthTag()).toEqual(node.getAuthTag());
+
+  const cbcKey = Buffer.alloc(16, 3);
+  const cbcIv = Buffer.alloc(16, 4);
+  const wrong = crypto.createDecipheriv("aes-128-cbc", cbcKey, cbcIv);
+  wrong.update(
+    nodeCrypto.createCipheriv("aes-128-cbc", Buffer.alloc(16, 5), cbcIv).update(Buffer.alloc(32)),
+  );
+  expect(() => wrong.final()).toThrow(expect.objectContaining({ code: "ERR_OSSL_BAD_DECRYPT" }));
+  const unpadded = crypto.createCipheriv("aes-128-cbc", cbcKey, cbcIv).setAutoPadding(false);
+  unpadded.update(Buffer.alloc(5));
+  expect(() => unpadded.final()).toThrow(
+    expect.objectContaining({ code: "ERR_OSSL_WRONG_FINAL_BLOCK_LENGTH" }),
+  );
+});
+
+test("`crypto`'s Hash and Hmac give their digest after a pipe, and copy SHAKE at a length", async () => {
+  const piped = crypto.createHash("sha256");
+  await new Promise((resolve) => Readable.from(["abc"]).pipe(piped).on("finish", resolve));
+  expect(piped.digest("hex")).toBe(nodeCrypto.createHash("sha256").update("abc").digest("hex"));
+  const ended = crypto.createHash("md5").update("a");
+  ended.digest();
+  ended.end();
+  await new Promise((resolve) => ended.on("finish", resolve));
+
+  const shake = crypto.createHash("shake256").update("hello");
+  expect(shake.copy({ outputLength: 8 }).digest("hex")).toBe(
+    nodeCrypto.createHash("shake256").update("hello").copy({ outputLength: 8 }).digest("hex"),
+  );
+  expect(
+    crypto.createHmac("sha256", "deadbeef", { encoding: "hex" }).update("x").digest("hex"),
+  ).toBe(nodeCrypto.createHmac("sha256", Buffer.from("deadbeef", "hex")).update("x").digest("hex"));
+  expect(() => crypto.createHmac("md55", "k")).toThrow(
+    expect.objectContaining({ code: "ERR_CRYPTO_INVALID_DIGEST" }),
+  );
+});
+
+test("`crypto` checks its arguments as Node.js does, and keeps what the async forms were given", async () => {
+  const codeOf = (run: () => unknown) => {
+    try {
+      run();
+    } catch (error) {
+      return (error as { code?: string }).code;
+    }
+    return undefined;
+  };
+  const noop = () => {};
+  const calls: [string, (lib: typeof nodeCrypto) => unknown][] = [
+    ["pbkdf2Sync iterations", (lib) => lib.pbkdf2Sync("p", "s", 0, 8, "sha256")],
+    ["pbkdf2 iterations", (lib) => lib.pbkdf2("p", "s", 0, 8, "sha256", noop)],
+    ["pbkdf2Sync keylen", (lib) => lib.pbkdf2Sync("p", "s", 1, -1, "sha256")],
+    ["pbkdf2 digest", (lib) => lib.pbkdf2("p", "s", 1, 8, "md55", noop)],
+    ["hkdfSync keylen", (lib) => lib.hkdfSync("sha256", "k", "s", "i", 255 * 32 + 1)],
+    ["hkdf digest", (lib) => lib.hkdf("md55", "k", "s", "i", 8, noop)],
+    ["scryptSync maxmem", (lib) => lib.scryptSync("p", "s", 16, { N: 1024, maxmem: 1024 })],
+    ["scryptSync N", (lib) => lib.scryptSync("p", "s", 16, { N: 32768 })],
+    ["randomFillSync offset", (lib) => lib.randomFillSync(new Uint8Array(4), 5)],
+    ["randomFillSync size", (lib) => lib.randomFillSync(new Uint8Array(4), 4, 1)],
+    ["randomInt range", (lib) => lib.randomInt(0, 2 ** 48)],
+  ];
+  for (const [name, call] of calls) {
+    const node = codeOf(() => call(nodeCrypto));
+    expect(node, name).toBeDefined();
+    expect(
+      codeOf(() => call(crypto as unknown as typeof nodeCrypto)),
+      name,
+    ).toBe(node);
+  }
+  expect(crypto.randomInt(0, 2 ** 48 - 1)).toBeGreaterThanOrEqual(0);
+
+  const salt = Buffer.from("s");
+  const derived = promised<Buffer>((done) => crypto.pbkdf2("p", salt, 1, 8, "sha256", done));
+  salt[0] = "x".charCodeAt(0);
+  expect((await derived).toString("hex")).toBe(
+    nodeCrypto.pbkdf2Sync("p", "s", 1, 8, "sha256").toString("hex"),
+  );
+});
+
+test("`duplexPair()` destroys one end with the other, and is on the default export", async () => {
+  const [left, right] = duplexPair() as [Duplex, Duplex];
+  const closed = new Promise((resolve) => right.on("close", resolve));
+  left.on("error", () => {});
+  left.destroy(new Error("gone"));
+  await closed;
+  expect(right.destroyed).toBe(true);
+  expect(typeof (stream as unknown as Record<string, unknown>).duplexPair).toBe("function");
+});
+
+test("`stream/consumers` decodes text as it comes and copies bytes as they come, as Node's does", async () => {
+  const emoji = Buffer.from(JSON.stringify({ x: "😀" }));
+  const parts = [emoji.subarray(0, 8), emoji.subarray(8)];
+  expect(await consumers.json(Readable.from(parts))).toEqual({ x: "😀" });
+  const reused = new Uint8Array(1);
+  async function* writesInPlace() {
+    reused[0] = 65;
+    yield reused;
+    reused[0] = 66;
+    yield reused;
+  }
+  expect(await consumers.text(writesInPlace())).toBe("AB");
+  expect((await consumers.buffer(writesInPlace())).toString()).toBe("AB");
+  await expect(consumers.text(Readable.from([{ an: "object" }]))).rejects.toMatchObject({
+    code: "ERR_INVALID_ARG_TYPE",
+  });
+});
+
+test("`buffer.transcode()` follows Node's ICU, for every pair of its encodings", () => {
+  const encodings = ["ascii", "latin1", "utf8", "utf16le"] as const;
+  const sources = [
+    Buffer.from([0xe9]),
+    Buffer.from([0x41, 0x00, 0x42]),
+    Buffer.from([0x41]),
+    Buffer.from([0xc3]),
+    Buffer.from("€ and é 😀"),
+    Buffer.from("€ and é 😀", "utf16le"),
+    Buffer.from([0x3d, 0xd8]),
+    Buffer.from([0x80, 0x9f, 0xff]),
+    Buffer.from([0xff, 0xfe, 0x41, 0x00]),
+    Buffer.from([0xef, 0xbb, 0xbf, 0x41]),
+  ];
+  const run = (lib: typeof nodeBuffer, source: Buffer, from: string, to: string) => {
+    try {
+      return [...lib.transcode(source, from as never, to as never)];
+    } catch (error) {
+      return (error as { code: string }).code;
+    }
+  };
+  for (const source of sources) {
+    for (const from of encodings) {
+      for (const to of encodings) {
+        expect(
+          run(buffer as never, source, from, to),
+          `${[...source].join(",")} ${from} to ${to}`,
+        ).toEqual(run(nodeBuffer, source, from, to));
+      }
+    }
+  }
 });

@@ -11,7 +11,7 @@
 // functions that throw when called, like `createSign`, so that code which
 // imports one loads.
 
-import { cbc, cfb, ctr, ecb, gcm } from "@noble/ciphers/aes.js";
+import { gcm, unsafe as aesBlock } from "@noble/ciphers/aes.js";
 import { hkdf as nobleHkdf } from "@noble/hashes/hkdf.js";
 import { hmac } from "@noble/hashes/hmac.js";
 import { md5, ripemd160, sha1 } from "@noble/hashes/legacy.js";
@@ -34,10 +34,27 @@ type Callback<T> = (error: Error | null, result?: T) => void;
 
 const web = globalThis.crypto;
 export const webcrypto = web;
-export const subtle = web.subtle;
+// Not there on a page that is no secure context, like one served over
+// http at the address of the network: the async derivations are noble's
+// there too.
+export const subtle = web.subtle as SubtleCrypto | undefined;
 export const randomUUID = () => web.randomUUID();
 
 const codeError = <E extends Error>(error: E, code: string): E => Object.assign(error, { code });
+
+// Node's error of a number out of its range.
+const outOfRange = (name: string, range: string, received: number) =>
+  codeError(
+    new RangeError(
+      `The value of "${name}" is out of range. It must be ${range}. Received ${received}`,
+    ),
+    "ERR_OUT_OF_RANGE",
+  );
+function integerIn(name: string, value: number, min: number, max: number): void {
+  if (!Number.isInteger(value) || value < min || value > max) {
+    throw outOfRange(name, `>= ${min} && <= ${max}`, value);
+  }
+}
 
 // `getRandomValues()` fills 64 KiB at most a call. The offset and the size
 // are in bytes, of a view or of an ArrayBuffer.
@@ -50,6 +67,10 @@ const fill = <T extends ArrayBufferView | ArrayBuffer>(
     view instanceof ArrayBuffer
       ? new Uint8Array(view)
       : new Uint8Array(view.buffer, view.byteOffset, view.byteLength);
+  integerIn("offset", offset, 0, whole.length);
+  if (!Number.isInteger(size) || size < 0 || size + offset > whole.length) {
+    throw outOfRange("size + offset", `<= ${whole.length}`, size + offset);
+  }
   const bytes = whole.subarray(offset, offset + size);
   for (let at = 0; at < bytes.length; at += 65536) {
     web.getRandomValues(bytes.subarray(at, at + 65536));
@@ -97,9 +118,7 @@ export function randomInt(...args: unknown[]): number | undefined {
     );
   }
   const range = max - min;
-  if (range > 2 ** 48) {
-    throw codeError(new RangeError('The value of "max - min" is out of range'), "ERR_OUT_OF_RANGE");
-  }
+  if (range > 2 ** 48 - 1) throw outOfRange("max - min", `<= ${2 ** 48 - 1}`, range);
   const limit = 2 ** 48 - (2 ** 48 % range);
   const pick = (): number => {
     for (;;) {
@@ -172,6 +191,7 @@ function output(bytes: Uint8Array, encoding?: BufferEncoding | "buffer"): Buffer
 type State = {
   update(bytes: Uint8Array): unknown;
   digest(): Uint8Array;
+  xof?(length: number): Uint8Array;
   clone(): State;
 };
 type Hasher = ((bytes: Uint8Array) => Uint8Array) & {
@@ -208,32 +228,88 @@ const nameOf = (algorithm: string): string =>
     .replace(/^sha2?-(1|224|256|384|512)$/, "sha$1")
     .replace(/^sha512\/(224|256)$/, "sha512-$1");
 
-function hasherOf(algorithm: string): Hasher {
+// Node's error of an algorithm it does not have: `createHash()`'s, or that
+// of a function that takes a digest, like `pbkdf2()`.
+function hasherOf(algorithm: string, use: "hash" | "digest" = "hash"): Hasher {
   const hasher = typeof algorithm === "string" ? hashers[nameOf(algorithm)] : undefined;
-  if (!hasher) throw new Error("Digest method not supported");
-  return hasher;
+  if (hasher) return hasher;
+  if (use === "hash") throw new Error("Digest method not supported");
+  throw codeError(new TypeError(`Invalid digest: ${algorithm}`), "ERR_CRYPTO_INVALID_DIGEST");
 }
 
 const finalized = () => codeError(new Error("Digest already called"), "ERR_CRYPTO_HASH_FINALIZED");
 
-// What `createHash()` returns: a hash of what `update()` is given, and a
-// stream too, which writes its digest when it ends.
-export class Hash extends Transform {
+// What `createHash()` and `createHmac()` return: a digest of what
+// `update()` is given, and a stream too, which writes its digest when it
+// ends. As in Node.js, `digest()` after the stream's end gives that digest.
+abstract class Digest extends Transform {
   #state: State;
+  // SHAKE's: as many bytes as it is asked for.
+  #length: number | undefined;
+  #result: Uint8Array | undefined;
   #digested = false;
-  constructor(algorithm: string | State, options?: { outputLength?: number }) {
+  constructor(state: State, length: number | undefined, options?: object) {
     super(options as never);
+    this.#state = state;
+    this.#length = length;
+  }
+  #compute(): Uint8Array {
+    return (this.#result ??=
+      this.#length === undefined ? this.#state.digest() : this.#state.xof!(this.#length));
+  }
+  protected get finished(): boolean {
+    return this.#digested || this.#result !== undefined;
+  }
+  protected get state(): State {
+    return this.#state;
+  }
+  protected get length(): number | undefined {
+    return this.#length;
+  }
+  update(data: Data, encoding?: BufferEncoding): this {
+    if (this.finished) throw finalized();
+    this.#state.update(bytesOf(data, encoding));
+    return this;
+  }
+  digest(): Buffer;
+  digest(encoding: BufferEncoding): string;
+  digest(encoding?: BufferEncoding | "buffer"): Buffer | string {
+    if (this.#digested) return this.again(encoding);
+    this.#digested = true;
+    return output(Uint8Array.from(this.#compute()), encoding);
+  }
+  // A second `digest()`.
+  protected abstract again(encoding?: BufferEncoding | "buffer"): Buffer | string;
+  override _transform(chunk: Uint8Array, _encoding: string, callback: (error?: Error) => void) {
+    try {
+      this.update(chunk);
+    } catch (error) {
+      callback(error as Error);
+      return;
+    }
+    callback();
+  }
+  override _flush(callback: () => void): void {
+    this.push(Buffer.from(this.#compute()));
+    callback();
+  }
+}
+
+export class Hash extends Digest {
+  #xof: boolean;
+  constructor(
+    algorithm: string | { state: State; xof: boolean },
+    options?: { outputLength?: number },
+  ) {
+    const length = options?.outputLength;
     if (typeof algorithm !== "string") {
-      this.#state = algorithm;
+      super(algorithm.state, algorithm.xof ? length : undefined, options);
+      this.#xof = algorithm.xof;
       return;
     }
     const hasher = hasherOf(algorithm);
-    const length = options?.outputLength;
-    if (
-      length !== undefined &&
-      length !== hasher.outputLen &&
-      !nameOf(algorithm).startsWith("shake")
-    ) {
+    const xof = nameOf(algorithm).startsWith("shake");
+    if (length !== undefined && length !== hasher.outputLen && !xof) {
       throw codeError(
         new Error(
           `Output length ${length} is invalid for ${algorithm}, which does not support XOF`,
@@ -241,31 +317,19 @@ export class Hash extends Transform {
         "ERR_OSSL_EVP_NOT_XOF_OR_INVALID_LENGTH",
       );
     }
-    this.#state = hasher.create(length === undefined ? undefined : { dkLen: length });
+    super(hasher.create(), xof ? (length ?? hasher.outputLen) : undefined, options);
+    this.#xof = xof;
   }
-  update(data: Data, encoding?: BufferEncoding): this {
-    if (this.#digested) throw finalized();
-    this.#state.update(bytesOf(data, encoding));
-    return this;
-  }
-  digest(): Buffer;
-  digest(encoding: BufferEncoding): string;
-  digest(encoding?: BufferEncoding | "buffer"): Buffer | string {
-    if (this.#digested) throw finalized();
-    this.#digested = true;
-    return output(this.#state.digest(), encoding);
-  }
+  // A copy of SHAKE gives as many bytes as the original, or as it is asked.
   copy(options?: { outputLength?: number }): Hash {
-    if (this.#digested) throw finalized();
-    return new Hash(this.#state.clone(), options);
+    if (this.finished) throw finalized();
+    return new Hash(
+      { state: this.state.clone(), xof: this.#xof },
+      { ...options, outputLength: options?.outputLength ?? this.length },
+    );
   }
-  override _transform(chunk: Uint8Array, _encoding: string, callback: () => void): void {
-    this.update(chunk);
-    callback();
-  }
-  override _flush(callback: () => void): void {
-    this.push(this.digest());
-    callback();
+  protected again(): never {
+    throw finalized();
   }
 }
 export const createHash = (algorithm: string, options?: { outputLength?: number }): Hash =>
@@ -278,38 +342,23 @@ export function hash(algorithm: string, data: Data, encoding: BufferEncoding | "
   return output(hasherOf(algorithm)(bytesOf(data)), encoding);
 }
 
-// What `createHmac()` returns: the HMAC of RFC 2104 of what `update()` is
-// given, a stream as Hash is. A second digest is empty, as in Node.js.
-export class Hmac extends Transform {
-  #state: State;
-  #digested = false;
-  constructor(algorithm: string, key: Data | KeyObject, options?: object) {
-    super(options as never);
-    this.#state = hmac.create(hasherOf(algorithm) as never, bytesOf(key)) as unknown as State;
+// The HMAC of RFC 2104. A key that is a string is in `options.encoding`, as
+// in Node.js. A second digest is empty, as in Node.js.
+export class Hmac extends Digest {
+  constructor(algorithm: string, key: Data | KeyObject, options?: { encoding?: BufferEncoding }) {
+    const hasher = hasherOf(algorithm, "digest");
+    const secret = bytesOf(key, typeof key === "string" ? options?.encoding : undefined);
+    super(hmac.create(hasher as never, secret) as unknown as State, undefined, options);
   }
-  update(data: Data, encoding?: BufferEncoding): this {
-    if (this.#digested) throw finalized();
-    this.#state.update(bytesOf(data, encoding));
-    return this;
-  }
-  digest(): Buffer;
-  digest(encoding: BufferEncoding): string;
-  digest(encoding?: BufferEncoding | "buffer"): Buffer | string {
-    if (this.#digested) return output(new Uint8Array(0), encoding);
-    this.#digested = true;
-    return output(this.#state.digest(), encoding);
-  }
-  override _transform(chunk: Uint8Array, _encoding: string, callback: () => void): void {
-    this.update(chunk);
-    callback();
-  }
-  override _flush(callback: () => void): void {
-    this.push(this.digest());
-    callback();
+  protected again(encoding?: BufferEncoding | "buffer"): Buffer | string {
+    return output(new Uint8Array(0), encoding);
   }
 }
-export const createHmac = (algorithm: string, key: Data | KeyObject, options?: object): Hmac =>
-  new Hmac(algorithm, key, options);
+export const createHmac = (
+  algorithm: string,
+  key: Data | KeyObject,
+  options?: { encoding?: BufferEncoding },
+): Hmac => new Hmac(algorithm, key, options);
 
 // Whether two buffers have the same bytes, in a time that does not depend
 // on where they differ. Two of another length throw, as in Node.js.
@@ -348,19 +397,37 @@ async function settle<T>(promise: Promise<T>, callback: Callback<T>): Promise<vo
   callback(null, value);
 }
 
-export const pbkdf2Sync = (
+// Node's checks of the arguments, before it derives: they throw, also of
+// the async forms, where the derivation itself calls back.
+function pbkdf2Arguments(
   password: Data,
   salt: Data,
   iterations: number,
   keylen: number,
   digest: string,
-): Buffer =>
-  Buffer.from(
-    noblePbkdf2(hasherOf(digest) as never, bytesOf(password), bytesOf(salt), {
-      c: iterations,
-      dkLen: keylen,
-    }),
+) {
+  const hasher = hasherOf(digest, "digest");
+  integerIn("iterations", iterations, 1, 2 ** 31 - 1);
+  integerIn("keylen", keylen, 0, 2 ** 31 - 1);
+  // Copies: what the caller changes after the call is not the derivation's.
+  return {
+    hasher,
+    secret: Uint8Array.from(bytesOf(password)),
+    salt: Uint8Array.from(bytesOf(salt)),
+  };
+}
+export function pbkdf2Sync(
+  password: Data,
+  salt: Data,
+  iterations: number,
+  keylen: number,
+  digest: string,
+): Buffer {
+  const own = pbkdf2Arguments(password, salt, iterations, keylen, digest);
+  return Buffer.from(
+    noblePbkdf2(own.hasher as never, own.secret, own.salt, { c: iterations, dkLen: keylen }),
   );
+}
 export function pbkdf2(
   password: Data,
   salt: Data,
@@ -369,40 +436,67 @@ export function pbkdf2(
   digest: string,
   callback: Callback<Buffer>,
 ): void {
-  const hasher = hasherOf(digest);
-  const [secret, bytes] = [bytesOf(password), bytesOf(salt)];
+  const own = pbkdf2Arguments(password, salt, iterations, keylen, digest);
   const webDigest = webDigests[nameOf(digest)];
-  const derived =
-    webDigest && keylen > 0
-      ? subtle
-          .importKey("raw", secret as BufferSource, "PBKDF2", false, ["deriveBits"])
-          .then((key) =>
-            subtle.deriveBits(
-              { name: "PBKDF2", hash: webDigest, salt: bytes as BufferSource, iterations },
-              key,
-              keylen * 8,
-            ),
-          )
-          .then((bits) => Buffer.from(bits))
-      : pbkdf2Async(hasher as never, secret, bytes, { c: iterations, dkLen: keylen }).then((bits) =>
-          Buffer.from(bits),
-        );
-  void settle(derived, callback);
+  const derived = async (): Promise<Buffer> => {
+    if (!webDigest || !subtle || keylen === 0) {
+      return Buffer.from(
+        await pbkdf2Async(own.hasher as never, own.secret, own.salt, {
+          c: iterations,
+          dkLen: keylen,
+        }),
+      );
+    }
+    const key = await subtle.importKey("raw", own.secret as BufferSource, "PBKDF2", false, [
+      "deriveBits",
+    ]);
+    const salt = own.salt as BufferSource;
+    const bits = await subtle.deriveBits(
+      { name: "PBKDF2", hash: webDigest, salt, iterations },
+      key,
+      keylen * 8,
+    );
+    return Buffer.from(bits);
+  };
+  void settle(derived(), callback);
 }
 
-// Node's `hkdf()` gives an ArrayBuffer.
-const arrayBufferOf = (bytes: Uint8Array): ArrayBuffer =>
-  bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
-export const hkdfSync = (
+function hkdfArguments(
   digest: string,
   ikm: Data | KeyObject,
   salt: Data,
   info: Data,
   keylen: number,
-): ArrayBuffer =>
-  arrayBufferOf(
-    nobleHkdf(hasherOf(digest) as never, bytesOf(ikm), bytesOf(salt), bytesOf(info), keylen),
-  );
+) {
+  const hasher = hasherOf(digest, "digest");
+  integerIn("keylen", keylen, 0, 2 ** 31 - 1);
+  if (keylen > 255 * hasher.outputLen) {
+    throw codeError(new RangeError("Invalid key length"), "ERR_CRYPTO_INVALID_KEYLEN");
+  }
+  const infoBytes = Uint8Array.from(bytesOf(info));
+  if (infoBytes.length > 1024) {
+    throw outOfRange("info.byteLength", "<= 1024", infoBytes.length);
+  }
+  return {
+    hasher,
+    ikm: Uint8Array.from(bytesOf(ikm)),
+    salt: Uint8Array.from(bytesOf(salt)),
+    info: infoBytes,
+  };
+}
+// Node's `hkdf()` gives an ArrayBuffer.
+const arrayBufferOf = (bytes: Uint8Array): ArrayBuffer =>
+  bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer;
+export function hkdfSync(
+  digest: string,
+  ikm: Data | KeyObject,
+  salt: Data,
+  info: Data,
+  keylen: number,
+): ArrayBuffer {
+  const own = hkdfArguments(digest, ikm, salt, info, keylen);
+  return arrayBufferOf(nobleHkdf(own.hasher as never, own.ikm, own.salt, own.info, keylen));
+}
 export function hkdf(
   digest: string,
   ikm: Data | KeyObject,
@@ -411,26 +505,24 @@ export function hkdf(
   keylen: number,
   callback: Callback<ArrayBuffer>,
 ): void {
-  hasherOf(digest);
+  const own = hkdfArguments(digest, ikm, salt, info, keylen);
   const webDigest = webDigests[nameOf(digest)];
-  const derived =
-    webDigest && keylen > 0
-      ? subtle
-          .importKey("raw", bytesOf(ikm) as BufferSource, "HKDF", false, ["deriveBits"])
-          .then((key) =>
-            subtle.deriveBits(
-              {
-                name: "HKDF",
-                hash: webDigest,
-                salt: bytesOf(salt) as BufferSource,
-                info: bytesOf(info) as BufferSource,
-              },
-              key,
-              keylen * 8,
-            ),
-          )
-      : Promise.resolve().then(() => hkdfSync(digest, ikm, salt, info, keylen));
-  void settle(derived, callback);
+  const derived = async (): Promise<ArrayBuffer> => {
+    if (!webDigest || !subtle || keylen === 0) {
+      await Promise.resolve();
+      return arrayBufferOf(nobleHkdf(own.hasher as never, own.ikm, own.salt, own.info, keylen));
+    }
+    const key = await subtle.importKey("raw", own.ikm as BufferSource, "HKDF", false, [
+      "deriveBits",
+    ]);
+    const [hkdfSalt, hkdfInfo] = [own.salt as BufferSource, own.info as BufferSource];
+    return subtle.deriveBits(
+      { name: "HKDF", hash: webDigest, salt: hkdfSalt, info: hkdfInfo },
+      key,
+      keylen * 8,
+    );
+  };
+  void settle(derived(), callback);
 }
 
 type ScryptOptions = {
@@ -442,15 +534,30 @@ type ScryptOptions = {
   parallelization?: number;
   maxmem?: number;
 };
-// Node's defaults, by either of its names.
-const scryptOptions = (keylen: number, options: ScryptOptions = {}) => ({
-  N: options.N ?? options.cost ?? 16384,
-  r: options.r ?? options.blockSize ?? 8,
-  p: options.p ?? options.parallelization ?? 1,
-  dkLen: keylen,
-});
-export const scryptSync = (password: Data, salt: Data, keylen: number, options?: ScryptOptions) =>
-  Buffer.from(nobleScrypt(bytesOf(password), bytesOf(salt), scryptOptions(keylen, options)));
+// Node's defaults, by either of its names, and OpenSSL's checks: N a power
+// of 2, and the memory it takes, 128 bytes for each of r(N + 2) and rp, at
+// most `maxmem`, 32 MiB by default.
+function scryptArguments(password: Data, salt: Data, keylen: number, options: ScryptOptions = {}) {
+  const N = options.N ?? options.cost ?? 16384;
+  const r = options.r ?? options.blockSize ?? 8;
+  const p = options.p ?? options.parallelization ?? 1;
+  const maxmem = options.maxmem ?? 32 * 1024 * 1024;
+  integerIn("keylen", keylen, 0, 2 ** 31 - 1);
+  const invalid = (why: string) =>
+    codeError(new RangeError(`Invalid scrypt params: ${why}`), "ERR_CRYPTO_INVALID_SCRYPT_PARAMS");
+  if (!Number.isInteger(N) || N < 2 || (N & (N - 1)) !== 0) throw invalid("N must be a power of 2");
+  if (!Number.isInteger(r) || r < 1 || !Number.isInteger(p) || p < 1) throw invalid("r and p");
+  if (128 * r * (N + 2) + 128 * r * p > maxmem) throw invalid("memory limit exceeded");
+  return {
+    secret: Uint8Array.from(bytesOf(password)),
+    salt: Uint8Array.from(bytesOf(salt)),
+    options: { N, r, p, dkLen: keylen, maxmem: Number.MAX_SAFE_INTEGER },
+  };
+}
+export const scryptSync = (password: Data, salt: Data, keylen: number, options?: ScryptOptions) => {
+  const own = scryptArguments(password, salt, keylen, options);
+  return Buffer.from(nobleScrypt(own.secret, own.salt, own.options));
+};
 export function scrypt(
   password: Data,
   salt: Data,
@@ -466,27 +573,22 @@ export function scrypt(
 ): void;
 export function scrypt(password: Data, salt: Data, keylen: number, ...rest: unknown[]): void {
   const callback = rest.pop() as Callback<Buffer>;
-  const options = scryptOptions(keylen, rest[0] as ScryptOptions);
+  const own = scryptArguments(password, salt, keylen, rest[0] as ScryptOptions);
   void settle(
-    scryptAsync(bytesOf(password), bytesOf(salt), options).then((bytes) => Buffer.from(bytes)),
+    scryptAsync(own.secret, own.salt, own.options).then((bytes) => Buffer.from(bytes)),
     callback,
   );
 }
 
-// The ciphers, by Node's names: "aes-256-gcm" and the others. `update()` keeps what it is given, and `final()`
-// gives all of it: what the two give together is Node's.
+// The ciphers, by Node's names: "aes-256-gcm" and the others. Each mode is
+// written here on AES's block of the noble package, so that `update()`
+// gives what it can at once, as Node's does: CTR and CFB every byte, CBC
+// and ECB every whole block, but the last one when it decrypts, which has
+// the padding. GCM gives at once what CTR would, and its tag at `final()`,
+// which the noble package computes of all of it: an IV of GCM that is not
+// 12 bytes long gives all at `final()`.
 type Mode = "gcm" | "cbc" | "ctr" | "cfb" | "ecb";
-type Cipher = { encrypt(bytes: Uint8Array): Uint8Array; decrypt(bytes: Uint8Array): Uint8Array };
-const modes: Record<
-  Mode,
-  (key: Uint8Array, iv: Uint8Array, aad: Uint8Array | undefined, padding: boolean) => Cipher
-> = {
-  gcm: (key, iv, aad) => gcm(key, iv, aad),
-  cbc: (key, iv, _aad, padding) => cbc(key, iv, { disablePadding: !padding }),
-  ctr: (key, iv) => ctr(key, iv),
-  cfb: (key, iv) => cfb(key, iv),
-  ecb: (key, _iv, _aad, padding) => ecb(key, { disablePadding: !padding }),
-};
+type Engine = { update(input: Uint8Array): Uint8Array; final(): Uint8Array };
 export const getCiphers = (): string[] =>
   [128, 192, 256].flatMap((bits) =>
     ["cbc", "cfb", "ctr", "ecb", "gcm"].map((mode) => `aes-${bits}-${mode}`),
@@ -499,11 +601,12 @@ function cipherOf(algorithm: string, key: Data | KeyObject, iv: Data | null) {
     throw codeError(new TypeError("Invalid cipher type"), "ERR_CRYPTO_UNKNOWN_CIPHER");
   }
   const mode = aes[2] as Mode;
-  const keyBytes = bytesOf(key);
+  // Copies: what the caller changes after this is not the cipher's.
+  const keyBytes = Uint8Array.from(bytesOf(key));
   if (keyBytes.length !== Number(aes[1]) / 8) {
     throw codeError(new RangeError("Invalid key length"), "ERR_CRYPTO_INVALID_KEYLEN");
   }
-  const ivBytes = iv === null ? new Uint8Array(0) : bytesOf(iv);
+  const ivBytes = iv === null ? new Uint8Array(0) : Uint8Array.from(bytesOf(iv));
   if (mode === "gcm" ? ivBytes.length === 0 : ivBytes.length !== (mode === "ecb" ? 0 : 16)) {
     throw codeError(new TypeError("Invalid initialization vector"), "ERR_CRYPTO_INVALID_IV");
   }
@@ -511,15 +614,140 @@ function cipherOf(algorithm: string, key: Data | KeyObject, iv: Data | null) {
 }
 
 const authFailed = () => new Error("Unsupported state or unable to authenticate data");
+const badDecrypt = () => codeError(new Error("bad decrypt"), "ERR_OSSL_BAD_DECRYPT");
+const wrongFinalBlock = () =>
+  codeError(new Error("wrong final block length"), "ERR_OSSL_WRONG_FINAL_BLOCK_LENGTH");
+
+const concat = (a: Uint8Array, b: Uint8Array): Uint8Array => {
+  if (!a.length) return b;
+  const both = new Uint8Array(a.length + b.length);
+  both.set(a);
+  both.set(b, a.length);
+  return both;
+};
+
+// One block through AES, in a block of its own, as the noble package
+// takes it.
+const blockCipher = (key: Uint8Array) => {
+  const encryptKey = aesBlock.expandKeyLE(key);
+  let decryptKey: Uint32Array | undefined;
+  return {
+    encrypt: (block: Uint8Array) => aesBlock.encryptBlock(encryptKey, Uint8Array.from(block)),
+    decrypt: (block: Uint8Array) =>
+      aesBlock.decryptBlock((decryptKey ??= aesBlock.expandKeyDecLE(key)), Uint8Array.from(block)),
+  };
+};
+
+// A counter of CTR, of all 16 bytes, or of GCM, of the last 4.
+function increment(counter: Uint8Array, from: number): void {
+  for (let i = 15; i >= from; i--) {
+    counter[i] = (counter[i]! + 1) & 0xff;
+    if (counter[i] !== 0) return;
+  }
+}
+
+// CTR, and CFB of 128 bits: a byte at a time, with the keystream of AES.
+function streamEngine(
+  key: Uint8Array,
+  iv: Uint8Array,
+  mode: "ctr" | "cfb" | "gcm",
+  decrypt: boolean,
+): Engine {
+  const aes = blockCipher(key);
+  const register = Uint8Array.from(iv);
+  let keystream = new Uint8Array(16);
+  let used = 16;
+  return {
+    update(input) {
+      const out = new Uint8Array(input.length);
+      for (let i = 0; i < input.length; i++) {
+        if (used === 16) {
+          keystream = aes.encrypt(register);
+          if (mode !== "cfb") increment(register, mode === "gcm" ? 12 : 0);
+          used = 0;
+        }
+        out[i] = input[i]! ^ keystream[used]!;
+        // CFB feeds its ciphertext back.
+        if (mode === "cfb") register[used] = decrypt ? input[i]! : out[i]!;
+        used++;
+      }
+      return out;
+    },
+    final: () => new Uint8Array(0),
+  };
+}
+
+// CBC and ECB: whole blocks, with PKCS #7 padding unless it is turned off.
+function blockEngine(
+  key: Uint8Array,
+  iv: Uint8Array,
+  mode: "cbc" | "ecb",
+  decrypt: boolean,
+  padding: () => boolean,
+): Engine {
+  const aes = blockCipher(key);
+  let previous = Uint8Array.from(iv);
+  let pending = new Uint8Array(0);
+  const run = (bytes: Uint8Array): Uint8Array => {
+    const out = new Uint8Array(bytes.length);
+    for (let at = 0; at < bytes.length; at += 16) {
+      const block = bytes.subarray(at, at + 16);
+      if (decrypt) {
+        const plain = aes.decrypt(block);
+        if (mode === "cbc") for (let i = 0; i < 16; i++) plain[i]! ^= previous[i]!;
+        previous = Uint8Array.from(block);
+        out.set(plain, at);
+      } else {
+        const input = Uint8Array.from(block);
+        if (mode === "cbc") for (let i = 0; i < 16; i++) input[i]! ^= previous[i]!;
+        previous = aes.encrypt(input);
+        out.set(previous, at);
+      }
+    }
+    return out;
+  };
+  return {
+    update(input) {
+      const bytes = concat(pending, input);
+      // A decryption with padding keeps its last whole block for `final()`.
+      let ready = bytes.length - (bytes.length % 16);
+      if (decrypt && padding() && ready === bytes.length && ready > 0) ready -= 16;
+      pending = bytes.slice(ready);
+      return run(bytes.subarray(0, ready));
+    },
+    final() {
+      if (!decrypt) {
+        if (!padding()) {
+          if (pending.length) throw wrongFinalBlock();
+          return new Uint8Array(0);
+        }
+        const size = 16 - pending.length;
+        return run(concat(pending, new Uint8Array(size).fill(size)));
+      }
+      if (!padding()) {
+        if (pending.length) throw wrongFinalBlock();
+        return new Uint8Array(0);
+      }
+      if (pending.length !== 16) throw wrongFinalBlock();
+      const last = run(pending);
+      const size = last[15]!;
+      if (size < 1 || size > 16 || last.subarray(16 - size).some((byte) => byte !== size)) {
+        throw badDecrypt();
+      }
+      return last.subarray(0, 16 - size);
+    },
+  };
+}
 
 class CipherBase extends Transform {
   #mode: Mode;
   #key: Uint8Array;
   #iv: Uint8Array;
   #decrypt: boolean;
-  #tagLength: number;
+  #engine: Engine | undefined;
+  // GCM's: all of it, for its tag.
   #chunks: Uint8Array[] = [];
-  #aad: Uint8Array | undefined;
+  #aad: Uint8Array = new Uint8Array(0);
   #padding = true;
   #tag: Uint8Array | undefined;
   #done = false;
@@ -536,12 +764,32 @@ class CipherBase extends Transform {
     this.#key = keyBytes;
     this.#iv = ivBytes;
     this.#decrypt = decrypt;
-    this.#tagLength = options?.authTagLength ?? 16;
-    if (mode === "gcm" && this.#tagLength !== 16) {
+    const tagLength = options?.authTagLength ?? 16;
+    if (mode === "gcm" && tagLength !== 16) {
       throw new Error(
-        `vitest-plugin-rsc: an authTagLength of ${this.#tagLength} is not there in the browser, only 16`,
+        `vitest-plugin-rsc: an authTagLength of ${tagLength} is not there in the browser, only 16`,
       );
     }
+  }
+  // Made at the first `update()`, after `setAutoPadding()`.
+  #engineOf(): Engine | undefined {
+    if (this.#engine) return this.#engine;
+    const [key, iv, decrypt, mode] = [this.#key, this.#iv, this.#decrypt, this.#mode];
+    if (mode === "cbc" || mode === "ecb") {
+      this.#engine = blockEngine(key, iv, mode, decrypt, () => this.#padding);
+    } else if (mode !== "gcm") {
+      this.#engine = streamEngine(key, iv, mode, decrypt);
+    } else if (iv.length === 12) {
+      // GCM's counter starts at the IV and 1, and its data at 2.
+      const counter = new Uint8Array(16);
+      counter.set(iv);
+      counter[15] = 2;
+      this.#engine = streamEngine(key, counter, "gcm", decrypt);
+    }
+    return this.#engine;
+  }
+  #state(): void {
+    if (this.#done) throw codeError(new Error("Unsupported state"), "ERR_CRYPTO_INVALID_STATE");
   }
   update(data: Data, inputEncoding?: BufferEncoding): Buffer;
   update(
@@ -554,41 +802,38 @@ class CipherBase extends Transform {
     inputEncoding?: BufferEncoding,
     outputEncoding?: BufferEncoding,
   ): Buffer | string {
-    if (this.#done) throw codeError(new Error("Unsupported state"), "ERR_CRYPTO_INVALID_STATE");
-    this.#chunks.push(Uint8Array.from(bytesOf(data, inputEncoding)));
-    return output(new Uint8Array(0), outputEncoding);
+    this.#state();
+    const input = Uint8Array.from(bytesOf(data, inputEncoding));
+    if (this.#mode === "gcm") this.#chunks.push(input);
+    const engine = this.#engineOf();
+    return output(engine ? engine.update(input) : new Uint8Array(0), outputEncoding);
   }
   final(): Buffer;
   final(outputEncoding: BufferEncoding): string;
   final(outputEncoding?: BufferEncoding): Buffer | string {
-    if (this.#done) throw codeError(new Error("Unsupported state"), "ERR_CRYPTO_INVALID_STATE");
+    this.#state();
     this.#done = true;
-    const input = Buffer.concat(this.#chunks);
-    const cipher = modes[this.#mode](this.#key, this.#iv, this.#aad, this.#padding);
-    if (this.#mode !== "gcm") {
-      try {
-        return output(
-          this.#decrypt ? cipher.decrypt(input) : cipher.encrypt(input),
-          outputEncoding,
-        );
-      } catch (error) {
-        throw codeError(new Error((error as Error).message), "ERR_OSSL_BAD_DECRYPT");
-      }
-    }
+    const engine = this.#engineOf();
+    if (this.#mode !== "gcm") return output(engine!.final(), outputEncoding);
+    const all = Buffer.concat(this.#chunks);
+    const aead = gcm(this.#key, this.#iv, this.#aad);
     if (!this.#decrypt) {
-      const sealed = cipher.encrypt(input);
+      const sealed = aead.encrypt(all);
       this.#tag = sealed.slice(sealed.length - 16);
-      return output(sealed.subarray(0, sealed.length - 16), outputEncoding);
+      return output(engine ? new Uint8Array(0) : sealed.subarray(0, -16), outputEncoding);
     }
     if (!this.#tag) throw authFailed();
+    let plain: Uint8Array;
     try {
-      return output(cipher.decrypt(Buffer.concat([input, this.#tag])), outputEncoding);
+      plain = aead.decrypt(Buffer.concat([all, this.#tag]));
     } catch {
       throw authFailed();
     }
+    return output(engine ? new Uint8Array(0) : plain, outputEncoding);
   }
+  // More than one call authenticates all of them, as OpenSSL does.
   setAAD(aad: Data): this {
-    this.#aad = Uint8Array.from(bytesOf(aad));
+    this.#aad = concat(this.#aad, Uint8Array.from(bytesOf(aad)));
     return this;
   }
   setAutoPadding(padding = true): this {
@@ -614,17 +859,23 @@ class CipherBase extends Transform {
     this.#tag = Uint8Array.from(bytesOf(tag));
     return this;
   }
-  override _transform(chunk: Uint8Array, _encoding: string, callback: () => void): void {
-    this.update(chunk);
+  override _transform(chunk: Uint8Array, _encoding: string, callback: (error?: Error) => void) {
+    try {
+      this.push(this.update(chunk));
+    } catch (error) {
+      callback(error as Error);
+      return;
+    }
     callback();
   }
   override _flush(callback: (error?: Error) => void): void {
     try {
       this.push(this.final());
-      callback();
     } catch (error) {
       callback(error as Error);
+      return;
     }
+    callback();
   }
 }
 export class Cipheriv extends CipherBase {

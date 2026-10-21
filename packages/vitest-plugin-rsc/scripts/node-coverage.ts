@@ -1,6 +1,7 @@
-// How much of each module of Node.js the package's built one has: of the
-// exports of Node's own, which work, which throw when called, and which are
-// not there. Writes docs/node-coverage.md, for the Node.js it runs on.
+// What each module of Node.js the package builds has of Node's own: of its
+// exports, which are there, which throw when called, and which are not
+// there. An inventory of the exports, not a test of what they do: the tests
+// are. Writes docs/node-coverage.md, for the Node.js it runs on.
 //
 // `pnpm node-coverage` in the package, after `pnpm build`.
 //
@@ -60,21 +61,25 @@ function throws(value: unknown): boolean {
   return code.startsWith("class") && parent !== Function.prototype && throws(parent);
 }
 
-type Row = { name: string; node: number; works: number; throwing: string[]; missing: string[] };
+type Row = { name: string; node: number; there: number; throwing: string[]; missing: string[] };
 const rows: Row[] = [];
 for (const name of names) {
   if (!isBuiltin(`node:${name}`)) continue;
   const ours = (await import(`${distUrl}${name}.js`)) as Record<string, unknown>;
   const ownDefault = (ours.default ?? {}) as Record<string, unknown>;
   const real = nodeRequire(`node:${name}`) as Record<string, unknown>;
-  const row: Row = { name, node: 0, works: 0, throwing: [], missing: [] };
-  for (const key of Object.keys(real)) {
-    if (key.startsWith("_") || key === "default") continue;
+  const row: Row = { name, node: 0, there: 0, throwing: [], missing: [] };
+  // Also what Node.js does not enumerate, like zlib's \`Z_SYNC_FLUSH\`. Not
+  // what a function has of its own, for a module that is one, and not what
+  // depends on how this script runs, like \`process.mainModule\`.
+  for (const key of Object.getOwnPropertyNames(real)) {
+    if (key.startsWith("_") || key === "default" || real[key] === undefined) continue;
+    if (typeof real === "function" && ["length", "name", "prototype"].includes(key)) continue;
     row.node++;
     const value = key in ours ? ours[key] : ownDefault[key];
     if (value === undefined || value === null) row.missing.push(key);
     else if (throws(value)) row.throwing.push(key);
-    else row.works++;
+    else row.there++;
   }
   rows.push(row);
 }
@@ -82,7 +87,7 @@ for (const name of names) {
 const sum = (pick: (row: Row) => number) => rows.reduce((total, row) => total + pick(row), 0);
 const total = {
   node: sum((row) => row.node),
-  works: sum((row) => row.works),
+  there: sum((row) => row.there),
   throwing: sum((row) => row.throwing.length),
   missing: sum((row) => row.missing.length),
 };
@@ -92,15 +97,17 @@ const names_ = (list: string[]) =>
 
 const markdown = `# The modules of Node.js, covered
 
-What the server layers have of each module of Node.js, \`vitest-plugin-rsc/node/<name>\`: of the exports of Node's own module, how many work, which throw when called, and which are not there. Written by \`pnpm node-coverage\` in packages/vitest-plugin-rsc, after \`pnpm build\`, on Node.js ${process.version}: a newer Node.js has more exports.
+What the server layers have of each module of Node.js, \`vitest-plugin-rsc/node/<name>\`: of the exports of Node's own module, how many are there, which throw when called, and which are not there. Written by \`pnpm node-coverage\` in packages/vitest-plugin-rsc, after \`pnpm build\`, on Node.js ${process.version}: a newer Node.js has more exports.
+
+This is an inventory of the exports, read from their code: what is there may do less than Node's, as \`dgram\`'s socket sends nothing. The tests tell what works, as \`node-web-apis.test.ts\` does for \`zlib\` and \`crypto\`. Brotli and Zstandard in \`zlib\` are there where the browser's compression streams have them, and throw where not.
 
 An export that throws is there so that code which imports it loads. It throws with what it is: \`vitest-plugin-rsc: zlib.brotliCompressSync of Node.js is not there in the browser\`, or unenv's \`[unenv] crypto.createSign is not implemented yet!\`.
 
-Of ${total.node} exports: ${total.works} work (${percent(total.works)}), ${total.throwing} throw (${percent(total.throwing)}), ${total.missing} are not there (${percent(total.missing)}).
+Of ${total.node} exports: ${total.there} are there (${percent(total.there)}), ${total.throwing} throw (${percent(total.throwing)}), ${total.missing} are not there (${percent(total.missing)}).
 
-| Module | Exports | Work | Throw | Not there |
+| Module | Exports | There | Throw | Not there |
 | --- | ---: | ---: | ---: | ---: |
-${rows.map((row) => `| \`${row.name}\` | ${row.node} | ${row.works} | ${row.throwing.length} | ${row.missing.length} |`).join("\n")}
+${rows.map((row) => `| \`${row.name}\` | ${row.node} | ${row.there} | ${row.throwing.length} | ${row.missing.length} |`).join("\n")}
 
 ## What throws and what is not there
 
@@ -119,5 +126,5 @@ ${rows
 `;
 fs.writeFileSync(output, markdown);
 console.log(
-  `${total.works} of ${total.node} exports work, ${total.throwing} throw, ${total.missing} are not there: ${path.relative(process.cwd(), output)}`,
+  `${total.there} of ${total.node} exports are there, ${total.throwing} throw, ${total.missing} are not there: ${path.relative(process.cwd(), output)}`,
 );

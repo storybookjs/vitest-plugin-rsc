@@ -64,9 +64,6 @@ export const aborted = (signal: AbortSignal, _resource: object): Promise<void> =
     ? Promise.resolve()
     : new Promise((resolve) => signal.addEventListener("abort", () => resolve(), { once: true }));
 
-// Node's to send to a worker: a browser's signal is, here, the one there is.
-export const transferableAbortSignal = (signal: AbortSignal): AbortSignal => signal;
-export const transferableAbortController = (): AbortController => new AbortController();
 // Node's own symbol for a function's promise form, `promisify.custom`: the
 // package has one of its own.
 const custom = Symbol.for("nodejs.util.promisify.custom");
@@ -124,8 +121,6 @@ export default {
   toUSVString,
   styleText,
   aborted,
-  transferableAbortSignal,
-  transferableAbortController,
   promisify,
   types,
 };

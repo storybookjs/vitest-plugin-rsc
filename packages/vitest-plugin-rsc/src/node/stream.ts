@@ -100,20 +100,31 @@ const missing = (name: string) =>
     throw new Error(`vitest-plugin-rsc: stream.${name} of Node.js is not there in the browser`);
   };
 // Two Duplexes, each of which reads what the other is written, as the two
-// ends of a socket. A write calls back once the other end reads it.
-type Pushing = { push(chunk: unknown): boolean };
+// ends of a socket. A write calls back once the other end reads it. One
+// destroyed destroys the other, as in Node.js, and a write that waits
+// calls back with the error.
+type Side = {
+  push(chunk: unknown): boolean;
+  destroy(error?: Error): unknown;
+  destroyed: boolean;
+};
 export function duplexPair(options?: object): [unknown, unknown] {
-  const sides: Pushing[] = [];
-  const waiting = new Map<Pushing, () => void>();
+  const sides: Side[] = [];
+  const waiting = new Map<Side, (error?: Error | null) => void>();
+  const release = (side: Side, error: Error) => {
+    const parked = waiting.get(side);
+    waiting.delete(side);
+    parked?.(error);
+  };
   const sideOf = (index: number) =>
     new Duplex({
       ...options,
-      read(this: Pushing) {
+      read(this: Side) {
         const next = waiting.get(this);
         waiting.delete(this);
         next?.();
       },
-      write(chunk: unknown, _encoding: string, callback: () => void) {
+      write(chunk: unknown, _encoding: string, callback: (error?: Error | null) => void) {
         const other = sides[1 - index]!;
         if (other.push(chunk)) callback();
         else waiting.set(other, callback);
@@ -122,7 +133,15 @@ export function duplexPair(options?: object): [unknown, unknown] {
         sides[1 - index]!.push(null);
         callback();
       },
-    }) as unknown as Pushing;
+      destroy(this: Side, error: Error | null, callback: (error: Error | null) => void) {
+        const other = sides[1 - index]!;
+        const reason = error ?? new Error("Premature close");
+        release(this, reason);
+        release(other, reason);
+        if (!other.destroyed) other.destroy();
+        callback(error);
+      },
+    }) as unknown as Side;
   sides.push(sideOf(0), sideOf(1));
   return sides as [unknown, unknown];
 }
@@ -133,6 +152,9 @@ for (const kind of [Writable, Duplex] as unknown as Record<string, unknown>[]) {
   kind.toWeb = missing(`${(kind as { name: string }).name}.toWeb`);
   kind.fromWeb = missing(`${(kind as { name: string }).name}.fromWeb`);
 }
+
+// On the default export too, as in Node.js: `stream.duplexPair()`.
+(Stream as unknown as Record<string, unknown>).duplexPair = duplexPair;
 
 export default Stream;
 export {
