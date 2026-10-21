@@ -333,18 +333,15 @@ Of the 474 tests that apply, 402 pass: **85%**.
 
 ## What The Results Say
 
-Where the plugin runs something, it mostly runs it as Next does: 400 of the 404 tests that are neither a missing feature nor out of reach pass. What does not pass is, for nine tests out of ten, something the plugin does not do at all, or something a test in a browser cannot see.
+Where the plugin runs something, it mostly runs it as Next does: 414 of the 418 tests that are neither a missing feature nor out of reach pass. What does not pass is, for nine tests out of ten, something the plugin does not do at all, or something a test in a browser cannot see.
 
 **Bugs: 4 tests, 3 causes.** All are in the list above. One is about what a page leaves in the browser that a browser drops with the page: the history, which a page load replaces an entry of. One is a form that the browser posts to `/`, which gets the query of the test's page. One is about the server in front of the app: a proxy that answers with a `Location` header, which `@next/routing` reads as a proxy that let the request through.
 
-**Not Yet: 70 tests.** The two largest causes are half of them:
+**Not Yet: 53 tests.** The largest cause is **the Pages Router**, 21 tests. Fixtures of the App Router have a `pages/` directory to test the two together: its pages, and its API routes.
 
-- **The Pages Router**, 21 tests. Fixtures of the App Router have a `pages/` directory to test the two together: its pages, and its API routes.
-- **React's development build**, 16 tests. A deployment sends the client a digest for an error of a Server Component, and the message is minified. Here the client gets the message, and Strict Mode runs an effect twice. That is `next dev` without its overlay, for errors, and `next start` for the rest. The run takes the plugin's default, `build: "development"`: see "Development Or Production" in `docs/next-routes.md`.
+Four causes are not in the "Not Yet" list of `docs/next-routes.md`: the Pages Router, the ids of Server Actions (4 tests), a builtin module of Node.js without a stand-in (2), and a prerendered page (3), which that document has under "The Node.js Runtime".
 
-Four causes are not in the "Not Yet" list of `docs/next-routes.md`: the Pages Router, the ids of Server Actions (4 tests), a builtin module of Node.js without a stand-in (2), and a prerendered page (2), which that document has under "The Node.js Runtime".
-
-**Not applicable: 48 tests.** More than half of them are JavaScript off (10), the output of a build (12), and an npm package that the runner does not install (5).
+**Not applicable: 51 tests.** More than half of them are JavaScript off (10), the output of a build (12), and an npm package that the runner does not install (5).
 
 **The server in front of the app.** Five fixtures are there for the proxy, the redirects and rewrites of `next.config`, and `trailingSlash`. 37 of their 48 tests pass. Of the 11 that do not, 6 ask for an API route of the Pages Router, 2 expect a prerendered page, 2 cannot run in a browser, and 1 is the bug above.
 
@@ -357,6 +354,7 @@ What the list above does not have:
 - **A pending refresh outlived its page.** Fixed with the runner: see "What Stands In For A Server" in `docs/next-routes.md`. Next sends a `<meta http-equiv="refresh">` with a `redirect()` in a response that had started. It came due a second later, in the page of the next test, or between two tests, where nothing stopped the tab from leaving and the rest of the test file did not run.
 - **`history.back()` past the entry a page was opened in leaves the test.** The tab goes back to the test runner's own entry, and Vitest loses the tab.
 - **The first run of an app can fail where the second passes.** With a cold cache, Vite finds `next/legacy/image` for the `ssr` layer while a test runs, and pre-bundles again. The page that asked for it gets a 404. Two tests of `next-image` fail that way on a fresh checkout, and pass from then on. The runner runs such a fixture again and says so.
+- **Next's router rendered a page again as it loaded.** Fixed in the plugin: see "What Stands In For A Server" in `docs/next-routes.md`. The entry of the history that the tab's document was loaded in, `navigation.activation`, is the test runner's. Next's router took the page's entry for a back or forward navigation that it missed while it hydrated, once an earlier test had navigated, and restored itself from the history: `useParams()` gave a new object.
 - **`handleRequest()` answers 404 for `/_next/image` and the files of fonts and images.** The dev server serves those, and `handleRequest()` only reaches the routes of the app, where a `fetch` of the page finds both.
 
 ## Running It
@@ -441,7 +439,7 @@ A test gets a minute, as in Next's own runs, and a fixture half an hour. A test 
 
 Next runs every test in two modes, `dev` and `start`, and a test asks which one it is in. The plugin runs Next's runtime the way `next build` and `next start` do: no dev overlay, no HMR. So a run is in `start` mode. `--mode dev` runs the tests as Next's `dev` runs would, to see what differs.
 
-It is not quite `next start`: React is a development build here, the default of the plugin's `build` option. See the results for what that means for a test.
+A run in `start` mode sets the plugin's `build` option to `"production"`: Next's runtime and React run their production code, as `next start` runs what `next build` built. So the client gets a digest and React's minified message for an error of a Server Component, and Strict Mode runs an effect once. A run in `dev` mode sets it to `"development"`, as `next dev` runs. See "Development Or Production" in `docs/next-routes.md`. Each mode has its own cache of pre-bundled dependencies, in `conformance/.work/cache/<mode>`.
 
 ### Expectations
 

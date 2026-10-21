@@ -209,7 +209,9 @@ function runFixture(fixture: Fixture, isSecondRun: boolean): Promise<FixtureRun>
         NEXT_CONFORMANCE_ROOT: root,
         NEXT_CONFORMANCE_TESTS: JSON.stringify(fixture.tests),
         NEXT_CONFORMANCE_TEST_LIB: path.join(checkout, "test/lib"),
-        NEXT_CONFORMANCE_CACHE: path.join(work, "cache", fixture.id),
+        // One for each mode: each runs another build of Next and React,
+        // which Vite pre-bundles anew.
+        NEXT_CONFORMANCE_CACHE: path.join(work, "cache", options.mode, fixture.id),
         NEXT_CONFORMANCE_RESULT: resultFile,
         NEXT_CONFORMANCE_MODE: options.mode,
         NEXT_CONFORMANCE_TEST_TIMEOUT: String(testTimeout),

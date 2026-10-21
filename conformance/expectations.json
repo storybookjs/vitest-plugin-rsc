@@ -28,10 +28,6 @@
       "category": "not-yet",
       "text": "The `<link rel=\"preload\">` and `<link rel=\"preconnect\">` of `next/font`, which Next takes from a manifest of its build."
     },
-    "react-development-build": {
-      "category": "not-yet",
-      "text": "A production build of React. The plugin runs React's development build: an error of the server reaches the client with its message, where production sends a digest and a minified message, and Strict Mode runs an effect twice."
-    },
     "node-builtin": {
       "category": "not-yet",
       "text": "Server code that imports a builtin module of Node.js that has no stand-in here, like `node:timers/promises`."
@@ -65,6 +61,10 @@
     "cli-output": {
       "category": "not-applicable",
       "text": "Reads what the Next.js CLI prints: the table of routes of a build, or a warning when it starts."
+    },
+    "server-error-log": {
+      "category": "not-applicable",
+      "text": "Expects only the log of a Server Component's error as `next start` prints it: after a `⨯`, without the frames of Next. The server logs it to the tab's console, with the stack of the browser, and the client's own log of the error is in the same console."
     },
     "playwright-page": {
       "category": "not-applicable",
@@ -118,9 +118,8 @@
       "failed": {}
     },
     "navigation": {
-      "passed": 41,
+      "passed": 42,
       "failed": {
-        "navigation.test.ts > app dir - navigation > query string > useParams identity between renders > should be stable in app": "react-development-build",
         "navigation.test.ts > app dir - navigation > query string > useParams identity between renders > should be stable in pages": "pages-router",
         "navigation.test.ts > app dir - navigation > redirect > components > should redirect to external url": "another-origin",
         "navigation.test.ts > app dir - navigation > redirect > components > should redirect to external url, initiating only once": "another-origin",
@@ -160,7 +159,7 @@
       }
     },
     "actions": {
-      "passed": 58,
+      "passed": 62,
       "failed": {
         "app-action-form-state.test.ts > app-dir action useActionState > should support submitting form state without JS": "javascript-off",
         "app-action-form-state.test.ts > app-dir action useActionState > should support hydrating the app from progressively enhanced form request": "form-without-javascript",
@@ -170,19 +169,15 @@
         "app-action-progressive-enhancement.test.ts > app-dir action progressive enhancement > should support headers and cookies without JS (runtime: edge)": "javascript-off",
         "app-action-progressive-enhancement.test.ts > app-dir action progressive enhancement > should support headers and cookies without JS (runtime: node)": "javascript-off",
         "app-action.test.ts > app-dir action handling > should output exportName and filename info in manifest": "build-output",
-        "app-action.test.ts > app-dir action handling > should report errors with bad inputs correctly": "react-development-build",
         "app-action.test.ts > app-dir action handling > should propagate errors from a `text/plain` response to an error boundary": "playwright-page",
         "app-action.test.ts > app-dir action handling > should trigger an error boundary for action responses with an invalid content-type": "playwright-page",
-        "app-action.test.ts > app-dir action handling > should error if server action arguments list is too long": "react-development-build",
         "app-action.test.ts > app-dir action handling > should support setting cookies when redirecting (no javascript)": "javascript-off",
         "app-action.test.ts > app-dir action handling > should replace current route when redirecting with type set to replace": "shared-history",
         "app-action.test.ts > app-dir action handling > should not log errors for non-action form POSTs": "form-post-keeps-tab-query",
         "app-action.test.ts > app-dir action handling > should support notFound (javascript disabled)": "javascript-off",
-        "app-action.test.ts > app-dir action handling > should support hoc auth wrappers": "react-development-build",
         "app-action.test.ts > app-dir action handling > should not block navigation events while a server action is in flight": "one-request-at-a-time",
         "app-action.test.ts > app-dir action handling > should be possible to catch network errors": "playwright-page",
         "app-action.test.ts > app-dir action handling > should not expose action content in sourcemaps": "build-output",
-        "app-action.test.ts > app-dir action handling > Edge SSR > should return error response for hoc auth wrappers in edge runtime": "react-development-build",
         "app-action.test.ts > app-dir action handling > Edge SSR > should handle calls to redirect() with external URLs": "another-origin",
         "app-action.test.ts > app-dir action handling > fetch actions > should handle calls to redirect() with external URLs": "another-origin",
         "app-action.test.ts > app-dir action handling > fetch actions > should handle redirects to routes that provide an invalid RSC response": "playwright-page",
@@ -260,28 +255,19 @@
       }
     },
     "global-error__basic": {
-      "passed": 6,
-      "failed": {
-        "index.test.ts > app dir - global-error > should render global error for error in server components": "react-development-build",
-        "index.test.ts > app dir - global-error > should render global error when undefined is thrown in a server component": "react-development-build",
-        "index.test.ts > app dir - global-error > should render global error when null is thrown in a server component": "react-development-build",
-        "index.test.ts > app dir - global-error > should catch metadata error in global-error if no error boundary is presented": "react-development-build"
-      }
+      "passed": 10,
+      "failed": {}
     },
     "errors": {
-      "passed": 9,
+      "passed": 13,
       "failed": {
-        "index.test.ts > app-dir - errors > error component > should trigger error component when an error happens during server components rendering": "react-development-build",
-        "index.test.ts > app-dir - errors > error component > should preserve custom digests": "react-development-build",
-        "index.test.ts > app-dir - errors > error component > should trigger error component when undefined is thrown during server components rendering": "react-development-build",
-        "index.test.ts > app-dir - errors > error component > should trigger error component when null is thrown during server components rendering": "react-development-build",
-        "index.test.ts > app-dir - errors > error component > should trigger error component when a string is thrown during server components rendering": "react-development-build",
-        "index.test.ts > app-dir - errors > error component > should display error digest for error in server component with default error boundary": "react-development-build",
-        "index.test.ts > app-dir - errors > error component > retry > should recover Server Component error after retry": "react-development-build"
+        "index.test.ts > app-dir - errors > error component > should trigger error component when undefined is thrown during server components rendering": "server-error-log",
+        "index.test.ts > app-dir - errors > error component > should trigger error component when null is thrown during server components rendering": "server-error-log",
+        "index.test.ts > app-dir - errors > error component > should trigger error component when a string is thrown during server components rendering": "server-error-log"
       }
     },
     "metadata": {
-      "passed": 35,
+      "passed": 34,
       "failed": {
         "metadata.test.ts > app dir - metadata > opengraph > should pick up opengraph-image and twitter-image as static metadata files": "metadata-files",
         "metadata.test.ts > app dir - metadata > opengraph > should override file based images when opengraph-image and twitter-image specify images property": "metadata-files",
@@ -296,6 +282,7 @@
         "metadata.test.ts > app dir - metadata > static routes > should support static manifest.webmanifest": "metadata-files",
         "metadata.test.ts > app dir - metadata > static routes > should build favicon.ico as a custom route": "build-output",
         "metadata.test.ts > app dir - metadata > static optimization > should build static files into static route": "build-output",
+        "metadata.test.ts > app dir - metadata > react cache > should have same title and page value when navigating": "prerendered-pages",
         "metadata.test.ts > app dir - metadata > should not effect metadata images convention like files under pages directory": "pages-router"
       }
     },
