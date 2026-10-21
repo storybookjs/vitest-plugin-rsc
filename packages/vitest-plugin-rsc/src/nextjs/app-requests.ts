@@ -57,7 +57,9 @@ function sameOriginRequest(
 ): AppRequest | undefined {
   const request = input instanceof Request ? input : undefined;
   const url = new URL(request ? request.url : String(input), window.location.href);
-  if (url.origin !== window.location.origin) return;
+  // A Blob URL has the origin of the document that made it, and is the
+  // document's own, like a `data:` URL: the browser answers it at once.
+  if (url.origin !== window.location.origin || url.protocol === "blob:") return;
   const headers = new Headers(init?.headers ?? request?.headers);
   const method = (init?.method ?? request?.method ?? "GET").toUpperCase();
   return { url, method, headers, marked: headers.has("rsc") || headers.has("next-action") };
@@ -179,8 +181,14 @@ type Sending = {
    * with `credentials: "omit"`. A `cookie` header of its own it sends either way.
    */
   credentials?: boolean;
-  /** A page load, which leaves the app when it is redirected to another origin. */
-  navigation?: boolean;
+  /**
+   * A page load, which leaves the app when it is redirected to another
+   * origin: one that the test opens, or one of the app's own, sent while the
+   * page before it is still open (see `navigate()` in page.ts). That one
+   * opens nothing of what the test opened, also after a redirect, and
+   * starts no files of its route, which leaving that page would take back.
+   */
+  navigation?: "test" | "app";
   /** Who answers a request that the server has nothing for: see `HandleOptions.unrouted`. */
   network?: () => Promise<Response>;
   /** What the request opens, not after a redirect: see `HandleOptions.opened`. */
@@ -193,7 +201,7 @@ type Sending = {
 // For either it follows redirects.
 export async function sendRequest(
   request: Request,
-  { from, credentials = true, navigation = false, network, opened }: Sending,
+  { from, credentials = true, navigation, network, opened }: Sending,
 ): Promise<Response> {
   let url = new URL(request.url);
   let method = request.method;
@@ -219,8 +227,8 @@ export async function sendRequest(
         {
           nested: !from,
           unrouted: network ? "pass" : "not-found",
-          opened: redirected ? undefined : opened,
-          pageLoad: navigation,
+          opened: navigation === "app" ? null : redirected ? undefined : opened,
+          pageLoad: navigation === "test",
         },
       ),
       request.signal,

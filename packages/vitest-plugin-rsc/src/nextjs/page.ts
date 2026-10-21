@@ -6,6 +6,7 @@ import { checkFetchedModules, createEnvironmentRunner, environmentModule } from 
 import { setOpenPage, pageStore, sendRequest, unlessAborted } from "./app-requests.ts";
 import { callServerWithoutPage } from "./client-graph.ts";
 import { loadDocument, unloadDocument } from "./document.ts";
+import { download, downloadName } from "./downloads.ts";
 import { recordListeners, recordMessageChannels } from "./leftovers.ts";
 import type { NodeOnPage } from "./node-on-page.ts";
 import type { PageStore } from "./page-store.ts";
@@ -143,7 +144,15 @@ type Opening = {
   errors: unknown[];
 };
 
-export async function loadPage(url: URL, init: RequestInit, opening?: Opening): Promise<Response> {
+// The document of a page, which a navigation has before it loads the page:
+// see `navigate()`.
+type PageDocument = { response: Response; html: string };
+
+export async function loadPage(
+  url: URL,
+  request: RequestInit | PageDocument,
+  opening?: Opening,
+): Promise<Response> {
   // Where the page reports its errors: to the `renderServer()` that opens
   // it, or for a page the app loads itself, to where the page it replaces
   // reported them: the app loads one only from a page (see the listener of
@@ -174,7 +183,7 @@ export async function loadPage(url: URL, init: RequestInit, opening?: Opening): 
       if (opening.cookie !== null) from.seed(opening.cookie);
     }
     try {
-      return await openPage(page, url, init, from, opening);
+      return await openPage(page, url, request, from, opening);
     } catch (error) {
       // A load that failed has no requests left, unless the test has moved on
       // to a page or a node of its own. Only `leavePage()` stops a load. The
@@ -198,46 +207,32 @@ export async function loadPage(url: URL, init: RequestInit, opening?: Opening): 
 async function openPage(
   page: Page,
   url: URL,
-  init: RequestInit,
+  request: RequestInit | PageDocument,
   from: PageStore,
   opening: Opening | undefined,
 ): Promise<Response> {
   const { signal } = page;
   // The test has moved on: to another page, or to the next test.
   const superseded = () => signal.throwIfAborted();
+  const requestDocument = async (init: RequestInit) => {
+    try {
+      const response = await sendPageLoad(url, init, { from, navigation: "test" }, signal);
+      superseded();
+      return await readDocument(
+        response,
+        (what) =>
+          `${what}, which is not a page to open. ` +
+          `Use handleRequest() to assert on the response itself.`,
+      );
+    } catch (error) {
+      // Leaving the page cuts off the document.
+      superseded();
+      throw error;
+    }
+  };
 
-  // A page load gets the modules of the server and of the browser layer as
-  // the dev server has them now.
-  await checkFetchedModules();
-  superseded();
-  // Not the browser's Request, which drops headers of the test's, like
-  // `referer` and `origin`.
-  const response = await sendRequest(new registry.Request(url, { ...init, signal }), {
-    from,
-    navigation: true,
-  });
-  superseded();
-  // A route handler can answer with anything. A browser would show it or
-  // download it; there is no app in it to start.
-  const contentType = response.headers.get("content-type") ?? "";
-  if (!/^text\/html\b/i.test(contentType)) {
-    await response.body?.cancel();
-    const what = `${response.url} responded with ${contentType || "no content type"}`;
-    throw new Error(
-      opening
-        ? `vitest-plugin-rsc: ${what}, which is not a page to open. ` +
-            `Use handleRequest() to assert on the response itself.`
-        : `vitest-plugin-rsc: the app navigated to a URL that is not a page: ${what}. ` +
-            `A browser would show or download it, which a test cannot do.`,
-    );
-  }
-  // The whole document, then the app: what a browser has once the page has
-  // loaded.
-  const html = await response.text().catch((error: unknown) => {
-    // Leaving the page cuts off the document.
-    superseded();
-    throw error;
-  });
+  // The test's request, or the document that a navigation has: see `navigate()`.
+  const { response, html } = "html" in request ? request : await requestDocument(request);
   superseded();
   // The response is the node's when it comes from the node's route and is not
   // a document. A node that redirects gets the page it redirects to, and one
@@ -314,6 +309,118 @@ async function openPage(
   return response;
 }
 
+// The request of a page load, with the modules of the server and of the
+// browser layer as the dev server has them now.
+async function sendPageLoad(
+  url: URL,
+  init: RequestInit,
+  sending: Pick<Parameters<typeof sendRequest>[1], "from" | "navigation" | "network">,
+  signal: AbortSignal,
+): Promise<Response> {
+  await checkFetchedModules();
+  signal.throwIfAborted();
+  // Not the browser's Request, which drops headers of the test's, like
+  // `referer` and `origin`.
+  return sendRequest(new registry.Request(url, { ...init, signal }), sending);
+}
+
+// The whole document, then the app: what a browser has once the page has
+// loaded. A route handler can answer with anything, and there is no app in
+// that to start: `notAPage` says so, of `what` it answered.
+async function readDocument(
+  response: Response,
+  notAPage: (what: string) => string,
+): Promise<PageDocument> {
+  const contentType = response.headers.get("content-type") ?? "";
+  if (!/^text\/html\b/i.test(contentType)) {
+    await response.body?.cancel();
+    const what = `${response.url} responded with ${contentType || "no content type"}`;
+    throw new Error(`vitest-plugin-rsc: ${notAPage(what)}`);
+  }
+  return { response, html: await response.text() };
+}
+
+// The page load that a navigation of the app would replace: a later one
+// stops it, as in a browser.
+let navigating = new AbortController();
+// What stops a navigation without a page: the test moving on, which leaves
+// the page that is not there too.
+let withoutPage = new AbortController();
+
+/**
+ * A navigation of the app without its router, as a browser makes it: a
+ * `<form>`, an `<a>` that React does not handle, `location.assign()`. The
+ * page that is open stays until the answer is there, and for good when the
+ * answer is a download (downloads.ts). Else the answer is the next page,
+ * which needs a page of the app to navigate in. `downloadRequest` is the
+ * navigation's.
+ */
+export async function navigate(
+  url: URL,
+  init: RequestInit,
+  downloadRequest: string | null,
+): Promise<void> {
+  const page = currentPage();
+  const signals = [page?.signal ?? withoutPage.signal];
+  // An `<a download>` loads no page: it neither stops another navigation
+  // nor is stopped by one.
+  if (downloadRequest === null) {
+    navigating.abort(
+      new DOMException("Another navigation took the place of this one.", "AbortError"),
+    );
+    navigating = new AbortController();
+    signals.push(navigating.signal);
+  }
+  const signal = AbortSignal.any(signals);
+  let loaded: PageDocument;
+  try {
+    const response = await sendPageLoad(
+      url,
+      init,
+      {
+        from: pageStore(),
+        navigation: "app",
+        // A file of `public/`, which the network has: a download needs no page.
+        network:
+          downloadRequest === null ? undefined : () => registry.network(url, { ...init, signal }),
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    const name = downloadName(response, downloadRequest);
+    if (name !== undefined) return await download(response, name, signal);
+    if (!page) {
+      await response.body?.cancel();
+      throw noRouter(url);
+    }
+    loaded = await readDocument(
+      response,
+      (what) =>
+        `the app navigated to a URL that is not a page: ${what}. A browser would show it in ` +
+        `place of the app, which a test cannot do. A route handler that answers with a file ` +
+        `to save says so with Content-Disposition: attachment, or a link with download.`,
+    );
+    signal.throwIfAborted();
+  } catch (error) {
+    // Leaving the page cuts off the answer.
+    signal.throwIfAborted();
+    throw error;
+  }
+  await loadPage(url, loaded);
+}
+
+/**
+ * A navigation without a page of the app, which has the router: a component
+ * that a test file with `"use client"` rendered has none.
+ */
+export function noRouter(url: URL): Error {
+  return new Error(
+    `vitest-plugin-rsc: a link or a form navigated to ${url.href}, and there is no page of the ` +
+      `app to navigate in: no page of renderServer() is open, and a test file with "use client" ` +
+      `has none. Test navigation in a page of renderServer(), in a test file without "use client".`,
+  );
+}
+
 // One at a time: a page that is being left is left before the next one is.
 // Also with no page: what a page load leaves in the document, the server
 // and the globals is the document's between pages, not one page's.
@@ -323,6 +430,8 @@ let leaving: Promise<void> = Promise.resolve();
 export function leavePage(by: string): Promise<void> {
   const left = current;
   current = undefined;
+  withoutPage.abort(new DOMException("The test moved on before it was done.", "AbortError"));
+  withoutPage = new AbortController();
   const pageLeft = left?.leave(by);
   // Also after a page that could not be left: that one fails its own test.
   const gone = leaving

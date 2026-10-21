@@ -257,6 +257,28 @@ test("says that a link cannot navigate without Next's router, and stays", async 
   await expect.element(getByRole("link", { name: "Notes" })).toBeVisible();
 });
 
+test("downloads what a link links to without a page of the app, as a browser does", async () => {
+  const reportError = vi.spyOn(window, "reportError").mockImplementation(() => {});
+  // What a browser would save, in place of a file in the downloads folder.
+  const saved: Promise<{ name: string; text: string }>[] = [];
+  vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(
+    function (this: HTMLAnchorElement) {
+      const body = fetch(this.href).then((response) => response.text());
+      saved.push(body.then((text) => ({ name: this.download, text })));
+    },
+  );
+  // A route handler's file, not a page for Next's router.
+  // oxlint-disable-next-line nextjs/no-html-link-for-pages
+  const { getByRole } = await render(<a href="/api/export">Notes as CSV</a>);
+
+  await getByRole("link", { name: "Notes as CSV" }).click();
+
+  await expect.poll(() => saved).toHaveLength(1);
+  expect(await saved[0]).toEqual({ name: "notes.csv", text: "id,title\n1,Groceries\n" });
+  await expect.element(getByRole("link", { name: "Notes as CSV" })).toBeVisible();
+  expect(reportError).not.toHaveBeenCalled();
+});
+
 test("says that a form cannot navigate without Next's router either", async () => {
   const reportError = vi.spyOn(window, "reportError").mockImplementation(() => {});
   const { getByRole } = await render(
