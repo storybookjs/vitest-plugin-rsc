@@ -191,11 +191,12 @@ function createNodeResponse(request: ServerRequest) {
   // Next's stand-in rejects this for a response that ends with an error.
   // Nobody waits for it here: the body ends with the error.
   (res as unknown as { hasStreamed: Promise<unknown> }).hasStreamed.catch(() => {});
-  // Whoever asked can leave while the server answers, until the response
-  // closes. The signal can outlive the request, like the one of a page.
+  // Whoever asked can leave until the response closes, and no longer: the
+  // signal can outlive the request, like the one of a page.
+  const { signal } = request;
   const leave = () => res.destroy();
-  request.signal?.addEventListener("abort", leave, { once: true });
-  res.on("close", () => request.signal?.removeEventListener("abort", leave));
+  signal?.addEventListener("abort", leave, { once: true });
+  res.once("close", () => signal?.removeEventListener("abort", leave));
 
   const response = (written: Promise<unknown>): Promise<Response> => {
     const sent = head.then(() => {
