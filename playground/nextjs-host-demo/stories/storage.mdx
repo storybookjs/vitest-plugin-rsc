@@ -1,0 +1,12 @@
+import { Canvas, Meta } from "@storybook/addon-docs/blocks";
+import * as Storage from "./storage.stories.tsx";
+
+<Meta of={Storage} />
+
+# Storage
+
+A docs page is one page: its client stories share the page's storage, which is empty as the page starts. What one story writes, the other reads.
+
+<Canvas of={Storage.Reads} />
+
+<Canvas of={Storage.Writes} />
