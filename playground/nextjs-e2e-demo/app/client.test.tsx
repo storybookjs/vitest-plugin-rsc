@@ -4,7 +4,16 @@ import { fireEvent, render as renderWithTestingLibrary, screen } from "@testing-
 import Link from "next/link";
 import { useParams, usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Component, useState, version, type ReactNode } from "react";
-import { afterEach, beforeEach, expect, inject, test, vi, type MockInstance } from "vitest";
+import {
+  afterEach,
+  beforeEach,
+  expect,
+  inject,
+  onTestFinished,
+  test,
+  vi,
+  type MockInstance,
+} from "vitest";
 import { page } from "vitest/browser";
 import { render } from "vitest-browser-react";
 import { cleanup, renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
@@ -257,26 +266,43 @@ test("says that a link cannot navigate without Next's router, and stays", async 
   await expect.element(getByRole("link", { name: "Notes" })).toBeVisible();
 });
 
-test("downloads what a link links to without a page of the app, as a browser does", async () => {
+test("leaves a download that a link declares to the browser, and stays", async () => {
   const reportError = vi.spyOn(window, "reportError").mockImplementation(() => {});
-  // What a browser would save, in place of a file in the downloads folder.
-  const saved: Promise<{ name: string; text: string }>[] = [];
-  vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(
-    function (this: HTMLAnchorElement) {
-      const body = fetch(this.href).then((response) => response.text());
-      saved.push(body.then((text) => ({ name: this.download, text })));
-    },
+  const { getByRole } = await render(
+    <a href="/host.json" download>
+      Host as JSON
+    </a>,
   );
-  // A route handler's file, not a page for Next's router.
-  // oxlint-disable-next-line nextjs/no-html-link-for-pages
-  const { getByRole } = await render(<a href="/api/export">Notes as CSV</a>);
 
-  await getByRole("link", { name: "Notes as CSV" }).click();
+  await getByRole("link", { name: "Host as JSON" }).click();
 
-  await expect.poll(() => saved).toHaveLength(1);
-  expect(await saved[0]).toEqual({ name: "notes.csv", text: "id,title\n1,Groceries\n" });
-  await expect.element(getByRole("link", { name: "Notes as CSV" })).toBeVisible();
+  await expect.element(getByRole("link", { name: "Host as JSON" })).toBeVisible();
   expect(reportError).not.toHaveBeenCalled();
+});
+
+// As in a browser without the app, as with Testing Library: the requests go
+// to the network, and the cookies and the storage are the origin's, which
+// another document of it, like Vitest's UI, shares.
+test("has the browser's own fetch, cookies and storage", async () => {
+  onTestFinished(() => {
+    localStorage.removeItem("client-test");
+    document.cookie = "client-test=; max-age=0";
+  });
+  localStorage.setItem("client-test", "stored");
+  document.cookie = "client-test=set";
+  const frame = document.body.appendChild(document.createElement("iframe"));
+  onTestFinished(() => frame.remove());
+  const other = frame.contentWindow!;
+
+  expect(Object.getPrototypeOf(localStorage)).toBe(Storage.prototype);
+  expect(Object.hasOwn(document, "cookie")).toBe(false);
+  expect("cookieStore" in window).toBe(true);
+  expect(Function.prototype.toString.call(fetch)).toContain("[native code]");
+  expect(other.localStorage.getItem("client-test")).toBe("stored");
+  expect(other.document.cookie).toContain("client-test=set");
+  // A route handler of the app is not there: a request to the origin goes
+  // to the dev server.
+  expect((await fetch("/api/export")).headers.get("content-disposition")).toBeNull();
 });
 
 test("says that a form cannot navigate without Next's router either", async () => {

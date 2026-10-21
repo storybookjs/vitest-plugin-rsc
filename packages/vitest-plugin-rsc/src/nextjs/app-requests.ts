@@ -6,9 +6,9 @@ import { loadedSsrLayer, ssrLayer } from "./server-layers.ts";
 
 // The tab's requests to the app: which ones are the app's, what a browser
 // sends with them, and who answers them. Evaluating this module installs
-// the `fetch` of the browser and the one of the server, and the page's
-// `document.cookie`: both entries of the plugin import it, see index.ts and
-// client-components.ts.
+// the `fetch` of the server. The one of the browser, `pageFetch()`, is the
+// document's while a browser context of the app is open: see
+// browser-context.ts.
 //
 // What a request of the app waits for: the ssr layer, which the first one
 // that the server handles starts to load, if the entry of the host has not,
@@ -36,7 +36,8 @@ async function handledByServer(
   return layer.handleRequest(request, options);
 }
 
-const nativeFetch = globalThis.fetch;
+// The network, for what is not the app's: the browser's own `fetch`.
+const nativeFetch = registry.network;
 
 // The browser's `fetch`, for a request of the server to the network. Next's
 // `fetch` makes a `Request` that it is given again, with its body as a
@@ -77,31 +78,6 @@ function sameOriginRequest(
   const headers = new Headers(init?.headers ?? request?.headers);
   const method = (init?.method ?? request?.method ?? "GET").toUpperCase();
   return { url, method, headers, marked: headers.has("rsc") || headers.has("next-action") };
-}
-
-// The headers and the cookies of the browser's requests to the app: the
-// `headers` of `renderServer()`, until the test opens something else, and the
-// app's cookies, until the test ends. `document.cookie` is a view of the
-// cookies. See page-store.ts.
-//
-// A plain value, not a store of the plugin's AsyncLocalStorage: what sends a
-// request, like a click or a timer of the app, runs outside any scope of it.
-// The document has one page open at a time, so there is one store. The
-// requests of a page that overlap, like a streamed response and a Server
-// Action, share it, as they share the cookies of a browser. A request takes
-// the store once, when it starts, and writes the cookies it gets to that one.
-// `cleanup()` makes a new one: a request that answers after its test does not
-// write to the next test's.
-let store = new PageStore();
-
-/** The store of the requests that start now. */
-export function pageStore(): PageStore {
-  return store;
-}
-
-/** Forgets the headers and the cookies: the requests from here on take a new store. */
-export function newPageStore(): void {
-  store = new PageStore();
 }
 
 // The signal of the page of the app that is open, which Next's requests are
@@ -328,12 +304,14 @@ function withoutSetCookie(response: Response): Response {
 }
 
 // A `fetch` that sends a same-origin request to the app when it is the app's,
-// and everything else to the network.
+// and everything else to `network`. The browser's sends the headers and the
+// cookies of `store()`, the store of the page as the request starts.
 const appFetch =
-  (server: boolean): typeof fetch =>
+  (store: (() => PageStore) | undefined, network: () => typeof fetch): typeof fetch =>
   async (input, init) => {
-    // The store of the page, as the request starts. A server has none.
-    const from = server ? undefined : store;
+    const server = !store;
+    // A server has no store.
+    const from = store?.();
     // A server has no page to resolve a path against: Node's `fetch` rejects it.
     if (server && !(input instanceof Request) && !URL.canParse(String(input))) {
       throw new TypeError(`Failed to parse URL from ${String(input)}`, {
@@ -341,7 +319,7 @@ const appFetch =
       });
     }
     const sent = sameOriginRequest(input, init);
-    if (!sent) return (server ? networkFetch : nativeFetch)(input, init);
+    if (!sent) return network()(input, init);
     // A browser's `fetch` drops a `cookie` header: the cookies are the store's.
     if (from) sent.headers.delete("cookie");
     const credentials =
@@ -350,7 +328,7 @@ const appFetch =
       ? browserHeaders(new Headers(sent.headers), sent.url, sent.method, from, credentials)
       : sent.headers;
     if (!sent.marked && !(await takesRequest({ url: sent.url.href, headers }))) {
-      return (server ? networkFetch : nativeFetch)(input, init);
+      return network()(input, init);
     }
     // After a `redirect()` in a Server Action, Next fetches the page it
     // redirects to from itself, with the headers of its response so far, and
@@ -374,7 +352,7 @@ const appFetch =
     const response = await sendRequest(request, {
       from,
       credentials,
-      network: sent.marked ? undefined : () => (server ? networkFetch : nativeFetch)(spare, init),
+      network: sent.marked ? undefined : () => network()(spare, init),
     });
     return from ? withoutSetCookie(response) : response;
   };
@@ -397,41 +375,37 @@ async function heardBy(sender: AbortSignal, response: Promise<Response>): Promis
   return never();
 }
 
-const browserFetch = appFetch(false);
-
-// The browser's `fetch`: what Next's client router and Client Components call.
-// Next marks the requests it sends for a page, with an `rsc` or a
-// `next-action` header. They belong to the page that is open as they are
-// sent. Its router is there only once its page is, so without a page that
-// page was left, and it sends nothing more. A test asks with
-// `handleRequest()`.
-globalThis.fetch = async (input, init) => {
-  if (!sameOriginRequest(input, init)?.marked) return browserFetch(input, init);
-  const sender = page;
-  return sender && !sender.aborted ? heardBy(sender, browserFetch(input, init)) : never();
-};
-// A script of the page reads and writes the app's cookies with
-// `document.cookie`, as in a browser, where it is a view of the cookie jar.
-// The jar here is the store, and the browser's own is the tab's: the cookies
-// other documents of the origin set, like Vitest's UI, the manager document
-// of another host or another app on `localhost`. The app neither reads nor
-// writes those.
-Object.defineProperty(document, "cookie", {
-  configurable: true,
-  get: () => store.documentCookie(),
-  set: (cookie: unknown) => store.write(String(cookie)),
-});
-// The Cookie Store API is a view of the browser's own jar, so the page has
-// none, as in a browser without it. Code that uses it checks for it first,
-// like Next's own.
-for (const name of ["cookieStore", "CookieStore", "CookieChangeEvent"]) {
-  Reflect.deleteProperty(window, name);
+/**
+ * The browser's `fetch` while a browser context of the app is open: what
+ * Next's client router and Client Components call. `store()` is the store of
+ * the context, and `network()` the `fetch` the document had before it, which
+ * gets every request that is not the app's. Without a context, `network()`
+ * gets every request: code that took this `fetch` in a context has the
+ * document's own after it.
+ *
+ * Next marks the requests it sends for a page, with an `rsc` or a
+ * `next-action` header. They belong to the page that is open as they are
+ * sent. Its router is there only once its page is, so without a page that
+ * page was left, and it sends nothing more. A test asks with
+ * `handleRequest()`.
+ */
+export function pageFetch(
+  store: () => PageStore | undefined,
+  network: () => typeof fetch,
+): typeof fetch {
+  const browserFetch = appFetch(() => store()!, network);
+  return async (input, init) => {
+    if (!store()) return network()(input, init);
+    if (!sameOriginRequest(input, init)?.marked) return browserFetch(input, init);
+    const sender = page;
+    return sender && !sender.aborted ? heardBy(sender, browserFetch(input, init)) : never();
+  };
 }
 // The server's `fetch`. A request to the app itself is one the server makes
 // while it handles another: Next renders the page a Server Action redirects
 // to that way. It is chosen as the browser's is, and goes through the proxy
 // too. Its redirects are followed, as the `fetch` of a server follows them.
-registry.fetch = appFetch(true);
+registry.fetch = appFetch(undefined, () => networkFetch);
 // Where the server reaches itself, which `next start` sets too. Next reads it
 // when it needs it, from the global `process`.
 process.env.__NEXT_PRIVATE_ORIGIN = window.location.origin;

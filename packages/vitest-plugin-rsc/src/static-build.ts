@@ -303,6 +303,8 @@ export function staticBuild(options: StaticBuildOptions): Plugin {
   // Where the build is served from, as the config says: `./` or empty for
   // anywhere. Set once the config is resolved.
   let base = "/";
+  // The project's directory. Set once the config is resolved.
+  let root = "/";
   // What the builds of the layers that run through a module runner made, by
   // environment: their modules by id, and their other files. A module is
   // there once it is rewritten for the runner, which the build of its layer
@@ -464,6 +466,7 @@ export function staticBuild(options: StaticBuildOptions): Plugin {
       if (!api) throw new Error("vitest-plugin-rsc: a static build needs Vite RSC's plugin.");
       manager = api.manager;
       base = resolved.base;
+      root = resolved.root;
       // The layers are read from their bundles, in `generateBundle`, and
       // written as one file each: see `buildApp()`. Vite writes nothing of
       // them. Set here, where no plugin of the host changes it anymore.
@@ -656,6 +659,29 @@ export function staticBuild(options: StaticBuildOptions): Plugin {
           },
         ];
       },
+    },
+    // The bundler names a chunk that is no entry's after a module of it, and
+    // a module `index.*` after its directory. That is the project's own for
+    // the host's `index.html`, in the chunk of its code when another entry
+    // imports a module of it and its entry is a facade: a build of the same
+    // tree in another directory would name the chunk, and every chunk that
+    // imports it, otherwise. Such a chunk is named `index`, as its entry.
+    outputOptions(output) {
+      const chunkFileNames = output.chunkFileNames ?? "[name]-[hash].js";
+      return {
+        ...output,
+        chunkFileNames(chunk) {
+          const fileName =
+            typeof chunkFileNames === "function" ? chunkFileNames(chunk) : chunkFileNames;
+          const namedByRoot =
+            chunk.name === path.posix.basename(root) &&
+            chunk.moduleIds.some((id) => {
+              const file = id.split("?", 1)[0]!;
+              return path.posix.dirname(file) === root && path.posix.parse(file).name === "index";
+            });
+          return namedByRoot ? fileName.replaceAll("[name]", "index") : fileName;
+        },
+      };
     },
     // Where the directory of the build is, from the file that asks.
     renderChunk(code, chunk) {

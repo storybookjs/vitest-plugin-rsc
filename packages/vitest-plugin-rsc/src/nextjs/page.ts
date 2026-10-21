@@ -3,10 +3,11 @@
 // leaving it takes those back, the last part first, one page at a time.
 import { resetAsyncLocalStorage } from "../async-local-storage.ts";
 import { checkFetchedModules, createEnvironmentRunner, environmentModule } from "../utils.ts";
-import { setOpenPage, pageStore, sendRequest, unlessAborted } from "./app-requests.ts";
+import { setOpenPage, sendRequest, unlessAborted } from "./app-requests.ts";
 import { callServerWithoutPage } from "./client-graph.ts";
 import { loadDocument, unloadDocument } from "./document.ts";
 import { download, downloadName } from "./downloads.ts";
+import { noRouter } from "./host-document.ts";
 import { recordListeners, recordMessageChannels } from "./leftovers.ts";
 import type { NodeOnPage } from "./node-on-page.ts";
 import type { PageStore } from "./page-store.ts";
@@ -151,6 +152,7 @@ type PageDocument = { response: Response; html: string };
 export async function loadPage(
   url: URL,
   request: RequestInit | PageDocument,
+  from: PageStore,
   opening?: Opening,
 ): Promise<Response> {
   // Where the page reports its errors: to the `renderServer()` that opens
@@ -174,10 +176,9 @@ export async function loadPage(
       );
     }
     const opened = (registry.opened = opening?.opened);
-    // The store of the test that loads the page, also after the `await`s of
-    // `openPage()`. A page the app loads itself keeps the headers of what the
-    // test opened.
-    const from = pageStore();
+    // `from` is the store of the browser context that loads the page, also
+    // after the `await`s of `openPage()`. A page the app loads itself keeps
+    // the headers of what the test opened.
     if (opening) {
       from.headers = opening.headers;
       if (opening.cookie !== null) from.seed(opening.cookie);
@@ -353,12 +354,13 @@ let withoutPage = new AbortController();
  * page that is open stays until the answer is there, and for good when the
  * answer is a download (downloads.ts). Else the answer is the next page,
  * which needs a page of the app to navigate in. `downloadRequest` is the
- * navigation's.
+ * navigation's, and `from` the store of the browser context it is in.
  */
 export async function navigate(
   url: URL,
   init: RequestInit,
   downloadRequest: string | null,
+  from: PageStore,
 ): Promise<void> {
   const page = currentPage();
   const signals = [page?.signal ?? withoutPage.signal];
@@ -378,7 +380,7 @@ export async function navigate(
       url,
       init,
       {
-        from: pageStore(),
+        from,
         navigation: "app",
         // A file of `public/`, which the network has: a download needs no page.
         network:
@@ -406,19 +408,7 @@ export async function navigate(
     signal.throwIfAborted();
     throw error;
   }
-  await loadPage(url, loaded);
-}
-
-/**
- * A navigation without a page of the app, which has the router: a component
- * that a test file with `"use client"` rendered has none.
- */
-export function noRouter(url: URL): Error {
-  return new Error(
-    `vitest-plugin-rsc: a link or a form navigated to ${url.href}, and there is no page of the ` +
-      `app to navigate in: no page of renderServer() is open, and a test file with "use client" ` +
-      `has none. Test navigation in a page of renderServer(), in a test file without "use client".`,
-  );
+  await loadPage(url, loaded, from);
 }
 
 // One at a time: a page that is being left is left before the next one is.

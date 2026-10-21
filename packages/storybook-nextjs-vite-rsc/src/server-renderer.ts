@@ -9,6 +9,7 @@ import type {
 } from "storybook/internal/types";
 import {
   cleanup,
+  newBrowserContext,
   renderServer,
   type RenderComponentResult,
   type RenderServerResult,
@@ -93,13 +94,16 @@ export const mount = (context: Context) => async (ui?: ReactNode) => {
 
 /**
  * Before the story's own `beforeEach`, as the plugin's setup before a test:
- * `cleanup()`. Once for the page: a render with new args keeps it. What it
- * returns runs when Storybook leaves or remounts the story, however far its
- * render got.
+ * a new browser context of the app, so that what the story's `beforeEach`
+ * stores or sets is its page's. Once for the page: a render with new args
+ * keeps it. What it returns runs when Storybook leaves or remounts the
+ * story, however far its render got: `cleanup()` closes the context, and the
+ * document has the browser's own APIs again. Seed in `beforeEach`, not in a
+ * loader: the first render's loaders run before this, with those.
  */
 export const beforeEach: BeforeEach<NextjsServerRenderer> = async ({ id }) => {
   if (opened.has(id)) return;
-  await cleanup();
+  await newBrowserContext();
   return async () => {
     opened.delete(id);
     // The URL goes back to the one the page found; Storybook writes the URL

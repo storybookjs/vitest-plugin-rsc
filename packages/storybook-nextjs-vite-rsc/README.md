@@ -113,8 +113,10 @@ export default defineServerPreview({
 Storybook reads some of a preview from the project's preview only, which is
 `preview.tsx`. So in the server preview:
 
-- `beforeAll` never runs: use `beforeEach` or loaders, which run before each
-  server story. `defineServerPreview()` stops with a message.
+- `beforeAll` never runs: use `beforeEach`, which runs before each server
+  story, in its page's browser context. `defineServerPreview()` stops with
+  a message. Seed in `beforeEach`, not in a loader: the first render's
+  loaders run before the context opens, with the browser's own APIs.
 - Globals are declared in `preview.tsx`. A key of `globalTypes` or
   `initialGlobals` that only the server preview has fails its story files
   with a message. Server stories read the globals from `context.globals`,
@@ -185,6 +187,18 @@ export const Pressed = meta.story({
 
 What the file imports is client code too, so a client story cannot render a
 Server Component or call `next/headers`.
+
+A client story has the browser's own `fetch`, `document.cookie`,
+`cookieStore`, `localStorage` and `sessionStorage`, whatever story the
+preview showed or loaded before it, as `@storybook/react` has them: a
+`fetch` goes to the network, where MSW sees it, and the cookies and the
+storage are the origin's, which the manager shares. In Storybook's UI a
+link or a form opens in the manager's window, as for any story: the
+preview has `<base target="_parent">`. Where one would load another
+document in place of the preview, like Next's `<Link>` in the preview
+opened alone, which leaves the navigation to the browser without its
+router, the preview stays and the URL goes to the Actions panel as
+`navigation`. A link with `download` is the browser's.
 
 A story has the CSS of its file, with what the file imports, its preview's
 too, whatever story Storybook showed before it: a client story while
@@ -257,12 +271,12 @@ Storybook's own env files. See
 
 ## Before A Story
 
-Before each server story the framework leaves the previous page and clears
-the app's cookies and storage, as before a test, and then runs the
-`beforeEach` of the server preview and of the story. What that sets is
-there for the render: a row of the app's database, a cookie of the app, set
-in `runInServerAction()` of `vitest-plugin-rsc/nextjs/testing-library`, or
-an item of `localStorage`.
+Before each server story the framework leaves the previous page and opens
+a new browser context of the app, with empty cookies and storage, as before
+a test, and then runs the `beforeEach` of the server preview and of the
+story. What that sets is there for the render: a row of the app's
+database, a cookie of the app, set in `runInServerAction()` of
+`vitest-plugin-rsc/nextjs/testing-library`, or an item of `localStorage`.
 
 ```ts
 export const SignedIn = meta.story({
@@ -277,7 +291,10 @@ export const SignedIn = meta.story({
 The page's `localStorage` and `sessionStorage` are its own, as its cookies
 are: Storybook's items in the browser's storage are invisible to the app,
 and what the app stores does not reach them. The browser's DevTools show
-the browser's storage, not the page's.
+the browser's storage, not the page's. When Storybook leaves the story, the
+context closes, and the document has the browser's own APIs again: what the
+page left running, like a timer, writes to the browser's storage after
+that.
 
 ## `parameters.nextjs`
 
@@ -411,9 +428,6 @@ for both kinds.
   iframe, as they reach no story in an iframe in Storybook: open the story
   to change its args.
 - Tags of `preview.server.tsx`: see Two Previews.
-- A client story has the browser's `localStorage` and `sessionStorage`
-  until the preview loads a server story file, and the page's storage of
-  the server stories after it, which nothing clears before a client story.
 - A change of an MDX file that shows a client story with `of={…}` fails
   that block until the preview loads again.
 - Next's router in a client story: `useRouter()` throws there, and

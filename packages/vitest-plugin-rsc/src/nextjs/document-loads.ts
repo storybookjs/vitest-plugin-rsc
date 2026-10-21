@@ -3,13 +3,17 @@
 /// <reference types="vite/types/importMeta.d.ts" />
 import { leftTheApp } from "./app-requests.ts";
 import { documentUrl } from "./document.ts";
-import { currentPage, leavePage, navigate, noRouter } from "./page.ts";
+import { noRouter, type NavigateEvent } from "./host-document.ts";
+import { currentPage, leavePage, navigate } from "./page.ts";
+import type { PageStore } from "./page-store.ts";
 import { openedAt } from "./registry.ts";
 
 // What would load the document again while the test runs in it: a
 // navigation that Next's router leaves to the browser, which loads the app's
 // next page or is stopped, and the reloads Vite's client announces, before
-// which the page is left. Evaluating this module listens for them.
+// which the page is left. Evaluating this module listens for the reloads. A
+// browser context of the app hears the navigations while it is open: see
+// browser-context.ts.
 
 // Vite's client loads the document again after a change that nothing takes
 // in place. With a page open that would be a reload of the page, which the
@@ -38,20 +42,16 @@ function reloadsDocument(path: string | undefined): boolean {
   );
 }
 
-// The app can leave its page without its router: `location.assign()`, a
-// `<form>` or an `<a>` that React does not handle, Next's own fallback when a
-// client-side navigation is not possible. For a browser that is a page load.
-// Here it would replace the test with the app, so `navigate()` loads the
-// page the way `renderServer()` does instead, or downloads what a browser
-// would.
-type NavigateEvent = Event & {
-  navigationType: "push" | "replace" | "reload" | "traverse";
-  destination: { url: string; sameDocument: boolean };
-  hashChange: boolean;
-  formData: FormData | null;
-  downloadRequest: string | null;
-};
-(window as { navigation?: EventTarget }).navigation?.addEventListener("navigate", (event) => {
+/**
+ * What a navigation does in a browser context of the app, whose store is
+ * `from`. The app can leave its page without its router:
+ * `location.assign()`, a `<form>` or an `<a>` that React does not handle,
+ * Next's own fallback when a client-side navigation is not possible. For a
+ * browser that is a page load. Here it would replace the test with the app,
+ * so `navigate()` loads the page the way `renderServer()` does instead, or
+ * downloads what a browser would.
+ */
+export function followNavigation(event: Event, from: PageStore): void {
   const { destination, hashChange, formData, downloadRequest } = event as NavigateEvent;
   // A navigation of Next's router on the client, in the layouts of a route,
   // to another pathname takes the place of the node, also of one that has
@@ -77,8 +77,7 @@ type NavigateEvent = Event & {
       .then(() => window.location.reload());
     return;
   }
-  // Without a page of the app, as for a component that a test file with
-  // `"use client"` rendered, there is no router: a link or a form would
+  // Without a page of the app there is no router: a link or a form would
   // replace the test, and Vitest would lose the tab. `navigate()` says so
   // unless the answer is a download.
   event.preventDefault();
@@ -90,8 +89,9 @@ type NavigateEvent = Event & {
     url,
     { method: formData ? "POST" : "GET", headers: { accept: "text/html" }, body: formData },
     downloadRequest,
+    from,
   ).catch((error: unknown) => {
     // The test, or a navigation after this one, moved on before it was done.
     if (!(error instanceof DOMException && error.name === "AbortError")) reportError(error);
   });
-});
+}

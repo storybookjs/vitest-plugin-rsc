@@ -451,7 +451,7 @@ test("sends the headers until the test opens something else, or ends", async () 
 
   await renderServer(<Counter />, { headers: { "x-client": "test" } });
   await cleanup();
-  expect(await (await fetch("/api/notes/1")).json()).toMatchObject({ client: null });
+  expect(await (await handleRequest("/api/notes/1")).json()).toMatchObject({ client: null });
 });
 
 test("sends the headers of what the test asked to open, also when it did not open", async () => {

@@ -3,20 +3,50 @@
 // gives the document one storage for its origin, which every other document
 // of the origin shares, like the host's own or another page of the app next
 // to this one. So the page's storage is a `Storage` of the plugin's, as its
-// cookie jar is: see page-store.ts. Evaluating this module installs it, as
-// app-requests.ts installs the page's `document.cookie`.
+// cookie jar is: see page-store.ts. A browser context of the app has one of
+// each, which browser-context.ts installs while it is open.
 
 /**
- * The items of the page's `localStorage` and `sessionStorage`. One for the
- * document between two cleanups: `cleanup()` makes a new one.
+ * The items of the page's `localStorage` and `sessionStorage`. One for each
+ * browser context of the app.
  */
-class PageStorage {
+export class PageStorage {
   readonly localStorage = new Map<string, string>();
   readonly sessionStorage = new Map<string, string>();
 }
 
+/** The items of a storage, as a map has them: the page's, or the browser's. */
+export type Items = {
+  get(key: string): string | undefined;
+  set(key: string, value: string): void;
+  delete(key: string): boolean;
+  has(key: string): boolean;
+  clear(): void;
+  keys(): Iterable<string>;
+  readonly size: number;
+};
+
+/** The items of a `Storage` of the browser's, as a map. */
+export function itemsOfStorage(storage: Storage): Items {
+  return {
+    get: (key) => storage.getItem(key) ?? undefined,
+    set: (key, value) => storage.setItem(key, value),
+    delete(key) {
+      const had = storage.getItem(key) !== null;
+      storage.removeItem(key);
+      return had;
+    },
+    has: (key) => storage.getItem(key) !== null,
+    clear: () => storage.clear(),
+    keys: () => Array.from({ length: storage.length }, (_, index) => storage.key(index)!),
+    get size() {
+      return storage.length;
+    },
+  };
+}
+
 // The items of each `Storage` that `storageOf()` made, as they are now.
-const sources = new WeakMap<object, () => Map<string, string>>();
+const sources = new WeakMap<object, () => Items>();
 const itemsOf = (storage: Storage) => sources.get(storage)!();
 
 // The methods and `length` of a storage of the plugin's. The browser's, on
@@ -58,7 +88,7 @@ const storagePrototype = Object.create(Storage.prototype, {
  * or deleting a property sets or removes an item. A name of `Storage`, like
  * `key` or `length`, hides the item of that name.
  */
-function storageOf(items: () => Map<string, string>): Storage {
+export function storageOf(items: () => Items): Storage {
   const target = Object.create(storagePrototype) as Storage;
   const isItem = (name: string | symbol): name is string =>
     typeof name === "string" && !(name in target) && items().has(name);
@@ -97,28 +127,4 @@ function storageOf(items: () => Map<string, string>): Storage {
   });
   sources.set(storage, items);
   return storage;
-}
-
-let storage = new PageStorage();
-
-/** Forgets the items: the page's storage is empty from here on. */
-export function newPageStorage(): void {
-  storage = new PageStorage();
-}
-
-// A script of the page stores in `localStorage` and `sessionStorage`, as in a
-// browser. Those are the page's own, as its cookies are: the browser's own
-// storage is the origin's, with what other documents store in it, like
-// Vitest's UI, the manager document of another host or another page of the
-// app next to this one. The app neither reads nor writes it. Each is one
-// object until the document goes, so code that took it as it loaded has the
-// items of the page that is open. The page hears the browser's `storage`
-// events, which are about the host's storage, never its own.
-for (const name of ["localStorage", "sessionStorage"] as const) {
-  const pageStorage = storageOf(() => storage[name]);
-  Object.defineProperty(window, name, {
-    configurable: true,
-    enumerable: true,
-    get: () => pageStorage,
-  });
 }

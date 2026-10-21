@@ -1,0 +1,12 @@
+import { Canvas, Meta } from "@storybook/addon-docs/blocks";
+import * as BrowserApisStories from "./browser-apis.stories.tsx";
+
+<Meta of={BrowserApisStories} />
+
+# Browser APIs
+
+A client story on a docs page has the browser's own APIs, also next to a server story, which renders in an iframe of its own:
+
+<Canvas of={BrowserApisStories.BrowserApis} />
+
+<Canvas id="greeting--default" />

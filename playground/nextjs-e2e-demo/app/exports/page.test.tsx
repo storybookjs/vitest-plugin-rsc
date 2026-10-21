@@ -1,5 +1,5 @@
 import { renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
-import { beforeEach, expect, test, vi, type MockInstance } from "vitest";
+import { beforeEach, expect, onTestFinished, test, vi, type MockInstance } from "vitest";
 import { page } from "vitest/browser";
 
 // What a browser would save: the name and the body of each `<a download>`
@@ -28,6 +28,20 @@ test("downloads what a route handler answers as an attachment, and stays on the 
   expect(await downloads[0]).toEqual({ name: "notes.csv", text: "id,title\n1,Groceries\n" });
   await expect.element(page.getByRole("heading", { name: "Exports" })).toBeVisible();
   expect(location.pathname).toBe("/exports");
+  expect(reportError).not.toHaveBeenCalled();
+});
+
+test("downloads what a link of the test links to without a page of the app", async () => {
+  // A route handler's file, not a page for Next's router.
+  const link = Object.assign(document.createElement("a"), { href: "/api/export" });
+  link.textContent = "Notes as CSV";
+  document.body.append(link);
+  onTestFinished(() => link.remove());
+
+  await page.getByRole("link", { name: "Notes as CSV" }).click();
+
+  await expect.poll(() => downloads).toHaveLength(1);
+  expect(await downloads[0]).toEqual({ name: "notes.csv", text: "id,title\n1,Groceries\n" });
   expect(reportError).not.toHaveBeenCalled();
 });
 

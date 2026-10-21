@@ -14,21 +14,23 @@ export function renderExample(container: Element): void {
     root.render(
       <>
         <p>An example of the host</p>
-        <AskTheApp />
+        <AskTheOrigin />
       </>,
     ),
   );
 }
 
-// A Client Component that asks a route handler of the app, as one of the
-// app does with `fetch`: the server in front of the app answers it.
-function AskTheApp() {
+// A Client Component that asks the origin for the path of a route handler
+// of the app: outside a browser context of the app, the network answers it.
+function AskTheOrigin() {
   const [answer, setAnswer] = useState<string>();
   const ask = () =>
     void fetch("/api/plain")
       .then((response) => response.text())
-      .then(setAnswer);
+      .then((text) => setAnswer(text.slice(0, 20)));
   return (
-    <button onClick={ask}>{answer === undefined ? "Ask the app" : `The app: ${answer}`}</button>
+    <button onClick={ask}>
+      {answer === undefined ? "Ask the origin" : `The origin: ${answer}`}
+    </button>
   );
 }

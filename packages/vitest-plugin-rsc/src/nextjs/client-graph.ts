@@ -384,6 +384,16 @@ export function forgetClientFiles(): void {
 }
 
 /**
+ * Whether the graph evaluated `file`, a file of the host, as one with
+ * `"use client"` since `forgetClientFiles()`, with a dev server. Under Vitest
+ * that tells a test file with the directive, once Vitest has collected it.
+ */
+export function loadedAsClientFile(file: string): boolean {
+  const modules = graph?.evaluatedModules.getModulesByFile(file) ?? [];
+  return [...modules].some((module) => imported.has(module.url));
+}
+
+/**
  * What a Server Action calls while no page of the app is open. A Server
  * Action that a component of the browser layer calls goes through
  * `callServer()` of Vite RSC, which calls the global `__viteRscCallServer`.

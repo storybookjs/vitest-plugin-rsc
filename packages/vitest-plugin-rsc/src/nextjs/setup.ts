@@ -1,7 +1,8 @@
-import { afterEach, beforeAll, beforeEach } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach } from "vitest";
 import { server } from "vitest/browser";
-import { cleanup } from "./index.ts";
-import { forgetClientFiles, linkStylesheetsOf } from "./client-graph.ts";
+import { cleanup, newBrowserContext } from "./index.ts";
+import { forgetClientFiles, linkStylesheetsOf, loadedAsClientFile } from "./client-graph.ts";
+import { keepHostDocument, noRouter } from "./host-document.ts";
 import { registry } from "./registry.ts";
 import { ssrLayer } from "./server-layers.ts";
 
@@ -26,13 +27,23 @@ forgetClientFiles();
 // in registry.ts.
 let nodeFiles = [...server.config.setupFiles];
 registry.nodeFiles = () => nodeFiles;
+// A test file with `"use client"` renders a component as React does, as
+// with Testing Library: its tests have the browser's own `fetch`, cookies
+// and storage, and the tester stays when a link or a form would leave it.
+// Every test of any other file is in a browser context of the app of its
+// own, which a `beforeEach` of the test file seeds before it renders.
+let clientFile = false;
+let keptDocument: (() => void) | undefined;
 // oxlint-disable-next-line no-empty-pattern
 beforeAll(async ({}, suite) => {
   nodeFiles = [...server.config.setupFiles, suite.file.filepath];
+  clientFile = loadedAsClientFile(suite.file.filepath);
+  if (clientFile) keptDocument = keepHostDocument((url) => reportError(noRouter(url)));
   // Their stylesheets, which every test of the file uses, its `beforeAll`
   // hooks too.
   await linkStylesheetsOf(nodeFiles);
 });
+afterAll(() => keptDocument?.());
 
 // The ssr layer, which the entry does not wait for: with a dev server, the
 // first time it loads compiles Next's server, which takes longer than a test
@@ -47,6 +58,6 @@ afterEach(() => cleanup());
 // the setup files and the test file, so their stylesheets come back, which
 // `cleanup()` unlinked.
 beforeEach(async () => {
-  await cleanup();
+  await (clientFile ? cleanup() : newBrowserContext());
   await linkStylesheetsOf(nodeFiles);
 });
