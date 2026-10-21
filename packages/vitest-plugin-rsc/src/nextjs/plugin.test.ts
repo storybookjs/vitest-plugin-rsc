@@ -13,6 +13,7 @@ import {
 } from "vite";
 import { expect, test, vi } from "vitest";
 import { vitestPluginRSC } from "../index.ts";
+import { createNodePlatform } from "./node-platform.ts";
 import { vitestPluginNext, type VitestPluginNextOptions } from "./plugin.ts";
 
 // The tests load Next projects: longer than Vitest's 5 s on a loaded CI.
@@ -142,12 +143,17 @@ const runtimeFiles = {
 } as const;
 
 // The modules of Next that a file imports to run, not only for their types.
+// Not one the server layers have a stand-in for, which is no dependency to
+// pre-bundle: see node-platform.ts.
+const nodePlatform = createNodePlatform("registry", "");
 function nextImportsOf(file: string): string[] {
   const code = fs.readFileSync(path.join(here, file), "utf8");
   return [
     ...code.matchAll(/^import (?!type\b)[^;]*?from "(next\/[^"]+)";/gms),
     ...code.matchAll(/\bimport\("(next\/[^"]+)"\)/g),
-  ].map((match) => match[1]!);
+  ]
+    .map((match) => match[1]!)
+    .filter((specifier) => nodePlatform.moduleOf(specifier) === undefined);
 }
 
 // The file of Next's ESM build that the plugin pre-bundles for a specifier.

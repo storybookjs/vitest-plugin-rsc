@@ -1,11 +1,11 @@
 import { IncrementalCache } from "next/dist/server/lib/incremental-cache";
 import { tagsManifest } from "next/dist/server/lib/incremental-cache/tags-manifest.external";
+import { nodeFs } from "next/dist/server/lib/node-fs-methods";
 import {
   initializeCacheHandlers,
   registerCustomCacheHandlers,
   setCacheHandler,
 } from "next/dist/server/use-cache/handlers";
-import type { CacheFs } from "next/dist/shared/lib/utils";
 import { cacheHandler, cacheHandlers } from "virtual:vitest-plugin-rsc/next-cache-handlers";
 import { nextConfig, preview } from "virtual:vitest-plugin-rsc/next-manifest";
 import { prerenderManifest } from "./build-output.ts";
@@ -85,9 +85,10 @@ export function restoreIncrementalCache(): void {
 export function shareIncrementalCache(headers = new Headers()): void {
   globalThis.__incrementalCache = current = new IncrementalCache({
     // With these two Next takes its own handler, the one `next start` uses,
-    // which keeps the entries in memory. It only reads or writes files on
-    // Node.js and with `flushToDisk`, so the file system is never asked.
-    fs: {} as CacheFs,
+    // which keeps the entries in memory. Next looks on disk for the response
+    // of a page or a route handler that is not in memory: the file system is
+    // the stand-in of node-platform.ts, which has no file.
+    fs: nodeFs,
     serverDistDir: "/",
     dev: false,
     minimalMode: false,
