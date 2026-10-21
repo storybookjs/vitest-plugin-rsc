@@ -144,8 +144,6 @@ See [The Server's Disk](docs/next-routes.md#the-servers-disk) for more.
 
 The other modules are [unenv](https://github.com/unjs/unenv)'s stand-ins, made of what a browser has: `os`, `url`, `http`, `querystring` and the rest. What unenv has no stand-in for throws when it is called, not when it is imported, so a package that imports it still loads: `net.connect()`, `child_process.spawn()`, `http.request()`, `crypto.createSign()`. Some answer as a machine without them would: `os.hostname()` is `""`.
 
-The server layers resolve a package as a browser does, with the `browser` condition and the `browser` field of its `package.json`. A package with a build for browsers gets that build. That is why PGlite gets no `fs`, and why TypeORM, whose build for browsers has no driver for Postgres or MySQL, doesn't work yet.
-
 What doesn't run in a browser at all:
 
 - Native addons, like `better-sqlite3`, `sharp` or `bcrypt`, don't load. Use a counterpart in JavaScript or WebAssembly, like `bcryptjs`, or mock the module that imports one.
