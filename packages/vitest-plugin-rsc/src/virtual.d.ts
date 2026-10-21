@@ -44,7 +44,7 @@ declare module "virtual:vitest-plugin-rsc/host-modules" {
 
 declare module "readable-stream" {
   /** The streams of Node.js as a package: see src/node/stream.ts. */
-  const Stream: typeof import("node:stream") & Record<string, any>;
+  export const Stream: typeof import("node:stream") & Record<string, any>;
   export default Stream;
 }
 

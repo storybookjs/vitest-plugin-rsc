@@ -21,8 +21,24 @@ export { format, formatWithOptions, inspect, isDeepStrictEqual };
 // Node's own symbol for a function's promise form, `promisify.custom`: the
 // package has one of its own.
 const custom = Symbol.for("nodejs.util.promisify.custom");
+type Promisified = Function & { [custom]?: Function };
+// What `promisify()` returns is its own promise form, as in Node.js.
+const selfPromisifying = (fn: Function): Function =>
+  Object.defineProperty(fn, custom, { value: fn, configurable: true });
 export const promisify = Object.assign(
-  (fn: Function & { [custom]?: Function }): Function => fn[custom] ?? util.promisify(fn),
+  (fn: Promisified): Function => {
+    if (typeof fn !== "function") {
+      throw new TypeError('The "original" argument must be of type function');
+    }
+    const own = fn[custom];
+    if (own !== undefined) {
+      if (typeof own !== "function") {
+        throw new TypeError('The "util.promisify.custom" argument must be of type function');
+      }
+      return selfPromisifying(own);
+    }
+    return selfPromisifying(util.promisify(fn));
+  },
   { custom },
 );
 export const {

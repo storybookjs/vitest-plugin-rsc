@@ -7,7 +7,9 @@
 // streams, `Readable.toWeb()` and `fromWeb()`, is this file's, as the
 // package's is for Node.js alone. `duplexPair` throws when called.
 
-import Stream from "readable-stream";
+// The package's file for a browser exports `Readable`, with the rest on it:
+// `Stream` is the base of Node.js, which has them all, as `node:stream` is.
+import { Stream } from "readable-stream";
 
 const {
   Readable,

@@ -304,6 +304,8 @@ test("`util.types`, `isDeepStrictEqual` and `promisify.custom` are Node's", asyn
   expect(promisify.custom).toBe(Symbol.for("nodejs.util.promisify.custom"));
   const custom = Object.assign(() => {}, { [promisify.custom]: async () => "custom" });
   expect(await (promisify(custom) as () => Promise<string>)()).toBe("custom");
+  expect(await (promisify(promisify(custom)) as () => Promise<string>)()).toBe("custom");
+  expect(util.types.isNativeError(new TypeError("x"))).toBe(true);
 });
 
 test("`util` inspects and formats as Node.js does, and has Node's helpers", () => {
@@ -431,7 +433,12 @@ await new Promise((resolve, reject) =>
 );
 const items = [];
 for await (const item of stream.Readable.from(["from ", "an iterable"])) items.push(item);
-process.stdout.write(JSON.stringify({ read: read.join(""), debug: debug.length, transform: typeof new stream.Transform().pipe, from: items.join("") }));
+// assert through the built util: its types are the package's own.
+const assert = (await import(dist + "assert.js")).default;
+assert.deepStrictEqual({ a: [1] }, { a: [1] });
+let unequalMaps = "";
+try { assert.deepStrictEqual(new Map([["a", 1]]), new Map([["a", 2]])); } catch (error) { unequalMaps = error.message; }
+process.stdout.write(JSON.stringify({ read: read.join(""), debug: debug.length, transform: typeof new stream.Transform().pipe, from: items.join(""), unequalMaps: unequalMaps.split("\\n")[0], base: new stream.Writable() instanceof stream.Stream }));
 `,
       );
       const output = execFileSync(process.execPath, ["--import", "./register.mjs", "run.mjs"], {
@@ -443,6 +450,8 @@ process.stdout.write(JSON.stringify({ read: read.join(""), debug: debug.length, 
         debug: 0,
         transform: "function",
         from: "from an iterable",
+        unequalMaps: "Expected values to be strictly deep-equal:",
+        base: true,
       });
     } finally {
       nodeFs.rmSync(dir, { recursive: true, force: true });

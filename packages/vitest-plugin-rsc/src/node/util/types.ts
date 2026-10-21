@@ -4,7 +4,17 @@
 import unenv from "unenv/node/util/types";
 import own from "util/support/types.js";
 
-const types: Record<string, any> = { ...unenv, ...own };
+// What the package leaves to its `util`, and what a browser can tell.
+const nativeError = (value: unknown): boolean =>
+  value instanceof Error || Object.prototype.toString.call(value) === "[object Error]";
+const cryptoKey = (value: unknown): boolean =>
+  typeof CryptoKey !== "undefined" && value instanceof CryptoKey;
+const types: Record<string, any> = {
+  ...unenv,
+  ...own,
+  isNativeError: nativeError,
+  isCryptoKey: cryptoKey,
+};
 export default types;
 export const isExternal = types.isExternal;
 export const isDate = types.isDate;
