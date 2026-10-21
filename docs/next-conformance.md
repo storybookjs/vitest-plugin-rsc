@@ -746,9 +746,9 @@ Of the 1147 tests that apply, 945 pass: **82%**.
 
 ## What The Results Say
 
-Where the plugin runs something, it mostly runs it as Next does: 945 of the 956 tests that are neither a missing feature nor out of reach pass. What does not pass is, for nine tests out of ten, something the plugin does not do at all, or something a test in a browser cannot see.
+Where the plugin runs something, it mostly runs it as Next does: 947 of the 956 tests that are neither a missing feature nor out of reach pass. What does not pass is, for nine tests out of ten, something the plugin does not do at all, or something a test in a browser cannot see.
 
-**Bugs: 11 tests, 5 causes.** All are in the list above. Two are about the server in front of the app: two `Set-Cookie` headers of one rule of `headers()` in `next.config` arrive as one, because Next's build hands an adapter the headers of a rule as an object, and what the proxy hands to `waitUntil()` runs without its request stores. Two are about a module that the ssr layer has as Next's edge runtime has it: `react-dom/server` for a Client Component that calls `renderToStaticMarkup()`, and `next/router` in a Server Component. One is the plugin's `AsyncLocalStorage`, whose `exit()` stays exited for the rest of a request where Node's returns.
+**Bugs: 9 tests, 4 causes.** All are in the list above. One is about the server in front of the app: what the proxy hands to `waitUntil()` runs without its request stores. Two are about a module that the ssr layer has as Next's edge runtime has it: `react-dom/server` for a Client Component that calls `renderToStaticMarkup()`, and `next/router` in a Server Component. One is the plugin's `AsyncLocalStorage`, whose `exit()` stays exited for the rest of a request where Node's returns.
 
 **Not Yet: 191 tests.** The largest cause is more than half of them: **a page that a build prerenders**, 118 tests, 101 of them in the fixtures of `"use cache"` and Cache Components. `next build` renders such a page once and keeps it, and here every request renders its page: see "The Node.js Runtime" in `docs/next-routes.md`. Then **the Pages Router**, 31 tests: fixtures of the App Router have a `pages/` directory to test the two together, its pages and its API routes. Then `ImageResponse` of `next/og`, 12 tests.
 
