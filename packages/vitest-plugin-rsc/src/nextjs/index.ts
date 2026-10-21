@@ -1,13 +1,13 @@
 import "./globals.ts";
 import { createElement, type JSXElementConstructor, type ReactNode } from "react";
-import { newPageStore, pageStore, sendRequest, unlessAborted } from "./app-requests.ts";
+import { sendRequest, unlessAborted } from "./app-requests.ts";
+import { closeContext, openContext } from "./browser-context.ts";
 import { unlinkStylesheets } from "./client-graph.ts";
 import "./document-loads.ts";
 import { NodeOnPage } from "./node-on-page.ts";
 import { leavePage, loadPage } from "./page.ts";
 import { registry, type Opened } from "./registry.ts";
 import { loadedSsrLayer, rscLayer, ssrLayer } from "./server-layers.ts";
-import { newPageStorage } from "./storage.ts";
 
 // The entry of the server's API. A host that imports it sends requests to
 // the app, so both layers of Next's server start to load as it evaluates,
@@ -39,7 +39,10 @@ await rscLayer();
 export function handleRequest(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
   // Not the browser's Request, which drops a `cookie` header.
   const request = new registry.Request(input, init);
-  return sendRequest(request, { from: pageStore(), credentials: request.credentials !== "omit" });
+  return sendRequest(request, {
+    from: openContext().store,
+    credentials: request.credentials !== "omit",
+  });
 }
 
 export type RunInServerActionOptions = {
@@ -90,7 +93,7 @@ export async function runInServerAction<T>(
   options: RunInServerActionOptions = {},
 ): Promise<Awaited<T>> {
   // The store of the test that runs the action, also after the `await` below.
-  const from = pageStore();
+  const from = openContext().store;
   const url = new URL(options.url ?? "/", window.location.origin);
   if (url.origin !== window.location.origin) {
     throw new Error(
@@ -344,6 +347,8 @@ export async function renderServer(
   const { signal } = options;
   // As `fetch` does: before it leaves the page that is open.
   signal?.throwIfAborted();
+  // The browser context of the page: the one that is open, or a new one.
+  const { store } = openContext();
   const errors: unknown[] = [];
   const url = new URL(options.url ?? "/", window.location.origin);
   const headers = new Headers(options.headers);
@@ -366,11 +371,13 @@ export async function renderServer(
     }
     const opened = { pathname, proxy: first.proxy ?? true };
     return {
-      response: await loadPage(
-        url,
-        { headers },
-        { opened, headers: sticky, cookie, signal, errors },
-      ),
+      response: await loadPage(url, { headers }, store, {
+        opened,
+        headers: sticky,
+        cookie,
+        signal,
+        errors,
+      }),
       errors,
       unmount,
     };
@@ -400,11 +407,14 @@ export async function renderServer(
           "to pass.",
       );
     }
-    const response = await loadPage(
-      url,
-      { headers },
-      { opened, headers: sticky, cookie, nodeOnPage, signal, errors },
-    );
+    const response = await loadPage(url, { headers }, store, {
+      opened,
+      headers: sticky,
+      cookie,
+      nodeOnPage,
+      signal,
+      errors,
+    });
     return {
       response,
       errors,
@@ -448,11 +458,15 @@ export async function renderServer(
   const container =
     options.container ?? (base ?? document.body).appendChild(document.createElement("div"));
   if (!options.container) containers.add(container);
-  const response = await loadPage(
-    url,
-    { headers },
-    { container, opened, headers: sticky, cookie, nodeOnPage, signal, errors },
-  );
+  const response = await loadPage(url, { headers }, store, {
+    container,
+    opened,
+    headers: sticky,
+    cookie,
+    nodeOnPage,
+    signal,
+    errors,
+  });
   return {
     response,
     errors,
@@ -501,8 +515,10 @@ export type CleanupOptions = {
 
 /**
  * Leaves the page that `renderServer()` opened, removes the containers it made
- * and forgets its `headers`, the app's cookies and what the app put in its
- * storage, like a new browser context. The server forgets what it has cached.
+ * and closes the browser context of the app: its `headers`, the app's
+ * cookies and what the app put in its storage go, and the document has the
+ * browser's own APIs again. What still runs of the page, like a timer, uses
+ * those. The server forgets what it has cached.
  * Unlinks the stylesheets of the files of the host: the host links a file's
  * again as it uses it, with `linkStylesheetsOf()`. Runs before and after
  * every test, after which the plugin's setup file links those of the setup
@@ -518,8 +534,22 @@ export async function cleanup({ url }: CleanupOptions = {}): Promise<void> {
   for (const container of containers) container.remove();
   containers.clear();
   unlinkStylesheets();
-  newPageStore();
-  newPageStorage();
+  closeContext();
   loadedSsrLayer()?.resetCaches();
   if (url !== undefined) window.history.replaceState(window.history.state, "", url);
+}
+
+/**
+ * Leaves the page, as `cleanup()` does, and opens a new browser context of
+ * the app: until `cleanup()`, the document has the app's cookies, storage,
+ * requests and navigations, empty, as a page of the app has them. Outside
+ * one it has the browser's own. `renderServer()`, `handleRequest()` and
+ * `runInServerAction()` open one when none is open, so call this before
+ * what seeds the page before it opens, like an item of `localStorage`. The
+ * plugin's setup file calls it before every test of a file without
+ * `"use client"`.
+ */
+export async function newBrowserContext(): Promise<void> {
+  await cleanup();
+  openContext();
 }

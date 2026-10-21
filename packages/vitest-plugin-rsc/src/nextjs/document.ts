@@ -331,14 +331,17 @@ export async function loadDocument(html: string, url: string, container?: Elemen
 // has done that by the time the app starts, long after the HTML arrived. Here
 // the app starts right away, and would render what is not in place yet a
 // second time. So what `$RC` queues is moved at once. Not content that React
-// moves with a view transition, which the browser runs when it can.
+// moves with a view transition, which the browser runs when it can. Every
+// page is in a browser context of the app, which defines `$RC` while it is
+// open: see browser-context.ts.
 type ReactScripts = {
   $RB?: unknown[];
   $RC?: (...args: unknown[]) => void;
   $RV?: (queued: unknown[]) => void;
 };
 let queueStreamedContent: ReactScripts["$RC"];
-Object.defineProperty(self, "$RC", {
+/** `self.$RC` of a page. */
+export const streamedContentQueue: PropertyDescriptor = {
   configurable: true,
   set: (queue: ReactScripts["$RC"]) => (queueStreamedContent = queue),
   get: () =>
@@ -353,7 +356,7 @@ Object.defineProperty(self, "$RC", {
         reportError(error);
       }
     }),
-});
+};
 
 // Leaves the page that is there, if any.
 function leaveDocument(): void {

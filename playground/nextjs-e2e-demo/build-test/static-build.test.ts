@@ -219,48 +219,30 @@ describe.for(builds)("a static build, $build", ({ build, env }) => {
   });
 
   // The page of example.html imports the entry of Client Components alone,
-  // which loads no layer of Next's server, and sends no request of its own.
-  // The server in front of the app is the document's all the same: a Client
-  // Component's `fetch` to a route handler gets the app's answer, and that
-  // request starts the ssr layer's file, in the task that sends it.
-  test("loads the ssr layer on a page of Client Components for its first request to the app", async ({
+  // which loads no layer of Next's server, and opens no browser context of
+  // the app: a Client Component's `fetch` goes to the network, as in a
+  // browser without the app, and loads no layer either.
+  test("sends a fetch of a page of Client Components to the network, and loads no layer", async ({
     page,
+    errors,
   }) => {
-    await keepResources(page);
-    const ssrFiles: string[] = [];
+    const layerFiles: string[] = [];
     page.on("request", (request) => {
       const { pathname } = new URL(request.url());
-      if (pathname.startsWith("/vitest-plugin-rsc/next_ssr/")) ssrFiles.push(pathname);
+      if (/^\/vitest-plugin-rsc\/next_(ssr|rsc)\//.test(pathname)) layerFiles.push(pathname);
     });
     await page.goto(`${site.url}example.html`);
     await page.waitForFunction(() => (window as { __hostState?: string }).__hostState);
-    const ask = page.getByRole("button", { name: "Ask the app" });
-    await ask.waitFor();
-    expect(ssrFiles).toEqual([]);
 
-    // The click, and the task after it: the component sends its request in
-    // the click's.
-    const { clicked, nextTask } = await ask.evaluate((button: HTMLElement) => {
-      const clicked = performance.now();
-      button.click();
-      return new Promise<{ clicked: number; nextTask: number }>((resolve) =>
-        setTimeout(() => resolve({ clicked, nextTask: performance.now() })),
-      );
-    });
-    await page.getByRole("button", { name: "The app: plain" }).waitFor();
-    expect(ssrFiles).toEqual(["/vitest-plugin-rsc/next_ssr/modules.json"]);
-    const ssrLayer = (await resources(page)).find(
-      ({ pathname }) => pathname === "/vitest-plugin-rsc/next_ssr/modules.json",
-    )!;
-    expect(ssrLayer.startTime).toBeGreaterThanOrEqual(clicked);
-    expect(ssrLayer.startTime).toBeLessThanOrEqual(nextTask);
-    // Nor did the rsc layer load before it: the plugin's module of it is a
-    // chunk of its own, which the request imports with the ssr layer.
-    const rscChunks = (await resources(page)).filter(({ pathname }) =>
-      /^\/assets\/rsc-[^/]*\.js$/.test(pathname),
-    );
-    expect(rscChunks.length).toBeGreaterThan(0);
-    for (const chunk of rscChunks) expect(chunk.startTime).toBeGreaterThanOrEqual(clicked);
+    await page.getByRole("button", { name: "Ask the origin" }).click();
+
+    const answered = page.getByRole("button", { name: /^The origin:/ });
+    await answered.waitFor();
+    expect(await answered.textContent()).not.toBe("The origin: plain");
+    expect(layerFiles).toEqual([]);
+    // The server of the build has no route handler there.
+    expect(errors.list).toContainEqual(expect.stringMatching(/^404: .*\/api\/plain$/));
+    errors.list.splice(0);
   });
 
   // The ssr layer lists the Client Components that server code reaches: a

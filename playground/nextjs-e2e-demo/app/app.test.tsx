@@ -1,7 +1,13 @@
-import { cleanup, handleRequest, renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
+import {
+  cleanup,
+  handleRequest,
+  newBrowserContext,
+  renderServer,
+} from "vitest-plugin-rsc/nextjs/testing-library";
 import {
   afterEach,
   beforeEach,
+  describe,
   expect,
   inject,
   onTestFinished,
@@ -13,7 +19,8 @@ import { page } from "vitest/browser";
 import { db, type Note } from "./lib/notes.ts";
 
 let consoleError: MockInstance<typeof console.error>;
-// As a library of the app takes it when it loads.
+// As a module of the test takes it when it loads, outside a browser context
+// of the app.
 const storageAtImport = localStorage;
 
 beforeEach(() => {
@@ -435,19 +442,63 @@ test("keeps the app and the browser's own storage of the origin apart", async ()
 });
 
 test("has one storage of the page, which a library may take as it loads", async () => {
-  expect(storageAtImport).toBe(localStorage);
-  expect(window.localStorage).toBe(localStorage);
+  // Every test is in a browser context of the app. A module that took the
+  // storage as the file loaded, outside one, has the browser's.
+  expect(storageAtImport).not.toBe(localStorage);
+  const taken = localStorage;
   await renderServer({ url: "/" });
-  storageAtImport.setItem("draft", "Hello");
+  taken.setItem("draft", "Hello");
   expect(localStorage.getItem("draft")).toBe("Hello");
+  expect(storageAtImport.getItem("draft")).toBeNull();
 
   await cleanup();
 
+  // The browser's own storage, which the one taken passes on to.
   expect(window.localStorage).toBe(storageAtImport);
-  expect(storageAtImport.getItem("draft")).toBeNull();
+  expect(taken.getItem("draft")).toBeNull();
+  await newBrowserContext();
+  expect(window.localStorage).toBe(taken);
   await renderServer({ url: "/" });
   localStorage.setItem("draft", "Again");
-  expect(storageAtImport.getItem("draft")).toBe("Again");
+  expect(taken.getItem("draft")).toBe("Again");
+});
+
+describe("a test's beforeEach", () => {
+  beforeEach(() => localStorage.setItem("theme", "dark"));
+
+  test("seeds the storage of the page it opens", async () => {
+    await renderServer({ url: "/settings" });
+
+    await expect.element(page.getByRole("button", { name: "Theme: dark" })).toBeVisible();
+  });
+});
+
+test("has the browser's own APIs once cleanup() closed the browser context", async () => {
+  await renderServer({ url: "/settings" });
+  expect(Object.hasOwn(document, "cookie")).toBe(true);
+  expect("cookieStore" in window).toBe(false);
+
+  await cleanup();
+
+  expect(Object.getPrototypeOf(localStorage)).toBe(Storage.prototype);
+  expect(Object.hasOwn(document, "cookie")).toBe(false);
+  expect("cookieStore" in window).toBe(true);
+  expect(Function.prototype.toString.call(fetch)).toContain("[native code]");
+  // The next request to the app opens one again.
+  expect((await handleRequest("/settings")).status).toBe(200);
+  expect(Object.hasOwn(document, "cookie")).toBe(true);
+});
+
+test("keeps a spy on fetch that the test set in a browser context", async () => {
+  const spy = vi.spyOn(globalThis, "fetch");
+
+  await cleanup();
+  expect(globalThis.fetch).toBe(spy);
+  await newBrowserContext();
+
+  expect(globalThis.fetch).toBe(spy);
+  expect(await (await fetch("/settings")).text()).toContain("<h1>Settings</h1>");
+  expect(spy).toHaveBeenCalledOnce();
 });
 
 test("replaces the page when a component redirects in the render after a Server Action", async () => {
