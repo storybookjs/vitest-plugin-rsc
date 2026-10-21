@@ -38,6 +38,20 @@ async function handledByServer(
 
 const nativeFetch = globalThis.fetch;
 
+// The browser's `fetch`, for a request of the server to the network. Next's
+// `fetch` makes a `Request` that it is given again, with its body as a
+// stream, and a browser sends a stream over HTTP/2 only: over HTTP/1.1 it
+// fails with "Failed to fetch", where Node's `fetch` sends it. So the body
+// goes read, the same bytes. A request without a body goes as it is. Not for
+// the page's own requests: a browser's `fetch` is what they have.
+async function networkFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  if (!init?.body && !(input instanceof Request && input.body)) return nativeFetch(input, init);
+  const request = new Request(input, init);
+  // A request with a body, so not a GET.
+  // oxlint-disable-next-line unicorn/no-invalid-fetch-options
+  return nativeFetch(new Request(request, { body: await request.arrayBuffer() }));
+}
+
 // The origin of the app is also the origin of the dev server, which serves the
 // modules of the test and of the app. So a same-origin `fetch` is the app's
 // when Next's router or a Server Action sends it, which mark their requests,
@@ -327,7 +341,7 @@ const appFetch =
       });
     }
     const sent = sameOriginRequest(input, init);
-    if (!sent) return nativeFetch(input, init);
+    if (!sent) return (server ? networkFetch : nativeFetch)(input, init);
     // A browser's `fetch` drops a `cookie` header: the cookies are the store's.
     if (from) sent.headers.delete("cookie");
     const credentials =
@@ -336,7 +350,7 @@ const appFetch =
       ? browserHeaders(new Headers(sent.headers), sent.url, sent.method, from, credentials)
       : sent.headers;
     if (!sent.marked && !(await takesRequest({ url: sent.url.href, headers }))) {
-      return nativeFetch(input, init);
+      return (server ? networkFetch : nativeFetch)(input, init);
     }
     // After a `redirect()` in a Server Action, Next fetches the page it
     // redirects to from itself, with the headers of its response so far, and
@@ -360,7 +374,7 @@ const appFetch =
     const response = await sendRequest(request, {
       from,
       credentials,
-      network: sent.marked ? undefined : () => nativeFetch(spare, init),
+      network: sent.marked ? undefined : () => (server ? networkFetch : nativeFetch)(spare, init),
     });
     return from ? withoutSetCookie(response) : response;
   };

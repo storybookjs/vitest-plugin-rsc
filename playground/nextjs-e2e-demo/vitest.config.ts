@@ -58,6 +58,24 @@ function lateStylesheetService(): Plugin {
   };
 }
 
+// Stands in for a service that the app's server sends a body to: it answers
+// with the body it got.
+function bodyService(): Plugin {
+  return {
+    name: "nextjs-e2e-demo:body-service",
+    configureServer(server) {
+      server.middlewares.use("/service/body", (request, response) => {
+        const chunks: Buffer[] = [];
+        request.on("data", (chunk: Buffer) => chunks.push(chunk));
+        request.on("end", () => {
+          response.setHeader("content-type", "text/plain");
+          response.end(`${request.method} ${Buffer.concat(chunks).toString()}`);
+        });
+      });
+    },
+  };
+}
+
 // Stands in for a service of another origin, which the tests reach at
 // `elsewhere.localhost`: it answers with the headers it got.
 function headersService(): Plugin {
@@ -158,6 +176,7 @@ export default defineProject({
     // Every other module that is not a test file is server code.
     vitestPluginNext({ browserModules: ["test/**"], affectedTests: true, build }),
     hitsService(),
+    bodyService(),
     headersService(),
     lateStylesheetService(),
     fileChangeService(),
