@@ -202,9 +202,12 @@ export function createWebpackRules(
     async loadWithWebpackRule(file, layer) {
       const rule = ruleOf(file, layer);
       if (!rule) return;
-      let code: unknown = await fs.promises.readFile(file, "utf8");
+      let code: unknown = await fs.promises.readFile(file);
       for (const { loader, options } of rule.loaders.toReversed()) {
-        [code] = await runLoader(loaderAt(loader), options, file, code);
+        const run = loaderAt(loader);
+        // A raw loader reads the bytes, the others a string, as webpack gives them.
+        const input = (run as { raw?: boolean }).raw ? Buffer.from(code as never) : String(code);
+        [code] = await runLoader(run, options, file, input);
       }
       return String(code);
     },

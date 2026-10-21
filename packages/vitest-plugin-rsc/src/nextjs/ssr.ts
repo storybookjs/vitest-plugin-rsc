@@ -438,10 +438,12 @@ async function handle(
       return result;
     };
     const proxy = opened?.proxy ?? true;
+    // The handlers of `"use cache"`, which the proxy can call too: Next's
+    // server loads them before its first request.
+    await loadCacheHandlers();
     const resolved = await resolve(request, middlewareBody, invokeMiddleware, proxy);
     // The cache of the server, for the route and for what follows the
     // request. Next makes the middleware one of its own, which stores nothing.
-    await loadCacheHandlers();
     shareIncrementalCache(headers);
     // The headers of `next.config` and of the middleware, for the response.
     const routedHeaders = resolved.resolvedHeaders ?? new Headers();

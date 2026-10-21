@@ -36,7 +36,7 @@ test("gives a module of CommonJS module.exports as its default export, and its n
   );
 
   expect(code).toContain("var module = { exports: {} }, exports = module.exports;");
-  expect(code).toContain(`export { $$cjsExports as default, $$cjsExports as "module.exports" };`);
+  expect(code).toContain(`export { $$cjsExports as default, $$cjsExports as $$cjsModuleExports };`);
   expect(code).toContain("export { $$cjs_get as get };");
   expect(code).toContain("export { $$cjs_set as set };");
 });
@@ -52,7 +52,7 @@ test("takes module.exports as it is once the module has run", async () => {
 test("returns what Node.js returns for a require", async () => {
   const handler = { get() {} };
   // A module compiled here: its module.exports.
-  expect(await requireOf({ "module.exports": handler, default: handler })).toBe(handler);
+  expect(await requireOf({ $$cjsModuleExports: handler, default: handler })).toBe(handler);
   // An ES module: its namespace.
   const namespace = Object.defineProperty({ default: handler }, Symbol.toStringTag, {
     value: "Module",
@@ -78,4 +78,50 @@ test("leaves require.resolve(), a require of what is no string, and an ES module
     await compile(`const a = require.resolve("./a");\nconst b = require(\`./\${a}\`);`),
   ).toBeUndefined();
   expect(await compile(`export const exports = 1;\nconst a = { module: 1 };`)).toBeUndefined();
+});
+
+test("keeps the directives of the module at its top", async () => {
+  const code = await compile(
+    `"use cache";\nconst { x } = require("./x");\nexport async function f() { return x; }`,
+  );
+
+  expect(code).toMatch(/^"use cache";\nimport \* as \$\$cjs0 from "\.\/x";\n/);
+});
+
+test("requires the value of a JSON file and the classes of a stylesheet", async () => {
+  const code = await compile(
+    `const items = require("./items.json");\nconst styles = require("./a.module.css");\nexport { items, styles };`,
+  );
+
+  expect(code).toContain("const items = $$cjs0.default;");
+  expect(code).toContain("const styles = $$cjs1.default;");
+  expect(code).not.toContain("$$cjsRequire");
+});
+
+test("throws in a try for a module that is not there, so that its catch runs", async () => {
+  const code = (
+    await compileCommonJs(
+      `let sharp;\ntry { sharp = require("sharp"); } catch { sharp = null; }\nconst a = require("./a");\nexport { sharp, a };`,
+      { resolves: async (source) => source !== "sharp" },
+    )
+  )?.code;
+
+  expect(code).not.toContain('from "sharp"');
+  expect(code).toContain('sharp = $$cjsMissing("sharp");');
+  expect(code).toContain('import * as $$cjs0 from "./a";');
+  expect(
+    runInNewContext(
+      `${code!.split("\n").find((line) => line.startsWith("const $$cjsMissing"))}; (() => { try { $$cjsMissing("sharp") } catch (e) { return e.message } })()`,
+    ),
+  ).toBe("Cannot find module 'sharp'");
+});
+
+test("parses TypeScript", async () => {
+  const code = (
+    await compileCommonJs(`const a: string = require("./a") as string;\nexport { a };`, {
+      lang: "ts",
+    })
+  )?.code;
+
+  expect(code).toContain("const a: string = $$cjsRequire($$cjs0) as string;");
 });

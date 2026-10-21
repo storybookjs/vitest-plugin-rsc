@@ -12,8 +12,13 @@ import { exportsOf } from "./module-exports.ts";
 // called the way webpack calls it.
 export type LoaderContext = {
   getOptions(): unknown;
+  /** The options as a loader of webpack 4 reads them. */
+  query: unknown;
+  mode: "development" | "production";
   _module: { buildInfo: Record<string, unknown> };
   async(): (error: Error | null, ...result: unknown[]) => void;
+  callback(error: Error | null, ...result: unknown[]): void;
+  cacheable(flag?: boolean): void;
   currentTraceSpan: TraceSpan;
   resourcePath: string;
   resourceQuery: string;
@@ -167,13 +172,23 @@ export function createLoaders(context: NextContext): Pick<
         const resourcePath = queryAt < 0 ? resource : resource.slice(0, queryAt);
         // A loader either calls back, or returns its result, as a promise or not.
         let callsBack = false;
+        const callback: LoaderContext["callback"] = (error, ...result) =>
+          error ? reject(error) : resolve(result);
         const context: LoaderContext = {
-          getOptions: () => options,
+          // `{}` for a loader without options, as webpack gives it.
+          getOptions: () => options ?? {},
+          query: options ?? {},
+          mode: process.env.NODE_ENV === "production" ? "production" : "development",
           _module: { buildInfo: {} },
           async: () => {
             callsBack = true;
-            return (error, ...result) => (error ? reject(error) : resolve(result));
+            return callback;
           },
+          callback: (...args) => {
+            callsBack = true;
+            callback(...args);
+          },
+          cacheable: () => {},
           currentTraceSpan: span,
           resourcePath,
           resourceQuery: queryAt < 0 ? "" : resource.slice(queryAt),

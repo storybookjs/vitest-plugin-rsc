@@ -1163,9 +1163,14 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
             cacheHandler?: string;
             cacheHandlers?: Record<string, string | undefined>;
           };
-          // A path, or a `file:` URL, as Next takes one.
-          const load = (file: string) =>
-            `() => import(${JSON.stringify(normalizePath(file.startsWith("file:") ? fileURLToPath(file) : file))})`;
+          // A path, or a `file:` URL, as Next takes one. A relative path is
+          // of the project, as Next's server resolves it.
+          const load = (file: string) => {
+            const resolved = file.startsWith("file:")
+              ? fileURLToPath(file)
+              : path.resolve(project.root, file);
+            return `() => import(${JSON.stringify(normalizePath(resolved))})`;
+          };
           const kinds = Object.entries(cacheHandlers).flatMap(([kind, file]) =>
             file ? [`  ${JSON.stringify(kind)}: ${load(file)},`] : [],
           );
@@ -1256,10 +1261,6 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
     serverCode.plugin({ [environmentOf.rsc]: "rsc", [environmentOf.ssr]: "ssr" }),
     ...styles.plugins,
     serverCode.asyncFunctionsPlugin(environmentOf.rsc),
-    createCommonJsPlugin(
-      (environment) => layers.find((layer) => environmentOf[layer] === environment),
-      serverCode.isAppCode,
-    ),
     createUseCachePlugin(
       getProject,
       (environment) => layers.find((layer) => environmentOf[layer] === environment),
@@ -1267,6 +1268,11 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
     ),
     createCompilePlugin(
       getProject,
+      (environment) => layers.find((layer) => environmentOf[layer] === environment),
+      serverCode.isAppCode,
+    ),
+    // After Next's compiler, before `rsc:use-client`: both are `pre`.
+    createCommonJsPlugin(
       (environment) => layers.find((layer) => environmentOf[layer] === environment),
       serverCode.isAppCode,
     ),

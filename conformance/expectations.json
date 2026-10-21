@@ -105,16 +105,12 @@
       "text": "A Client Component that renders markup with `renderToStaticMarkup()` of `react-dom/server`. The ssr layer has Next's aliases of its edge runtime, where `react-dom/server` has React's renderer for web streams alone. A route on Node.js gets React's whole entry."
     },
     "proxy-after": {
-      "category": "not-yet",
+      "category": "plugin-bug",
       "text": "An `after()` of the proxy. What the proxy hands to `waitUntil()` runs after the proxy has returned, without its request stores, and Next needs them to run the callbacks."
     },
     "exited-action-store": {
-      "category": "not-yet",
+      "category": "plugin-bug",
       "text": "A promise of a Server Action, passed to `after()`, that calls a request API once the action is done. Next renders the page after the action outside the store of the action, with `AsyncLocalStorage.exit()`. Here the store stays exited for the rest of the request, so Next takes the call for one of the page."
-    },
-    "commonjs-source": {
-      "category": "not-yet",
-      "text": "A Client Component in a file of CommonJS: `exports.Cjs = …` under `\"use client\"`. Its client reference has no export of that name."
     },
     "opens-a-response": {
       "category": "not-yet",
@@ -934,11 +930,10 @@
       "failed": {}
     },
     "rsc-basic": {
-      "passed": 32,
+      "passed": 33,
       "failed": {
         "rsc-basic.test.ts > app dir - rsc basics > next internal shared context > should not error if just load next/navigation module in pages/api": "pages-router",
         "rsc-basic.test.ts > app dir - rsc basics > next internal shared context > should not error if just load next/router module in app page": "next-router-in-server-component",
-        "rsc-basic.test.ts > app dir - rsc basics > should handle various kinds of exports correctly": "commonjs-source",
         "rsc-basic.test.ts > app dir - rsc basics > should not apply rsc syntax checks in pages/api": "pages-router",
         "rsc-basic.test.ts > app dir - rsc basics > should not use bundled react for pages with app": "pages-router",
         "rsc-basic.test.ts > app dir - rsc basics > should use canary react for app": "legacy-react-dom-server",

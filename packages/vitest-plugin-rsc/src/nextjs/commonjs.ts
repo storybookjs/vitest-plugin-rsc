@@ -25,8 +25,12 @@ import type { NextLayer } from "./project.ts";
 // A file that has `require` as a name of its own, or passes it around, is
 // left as it is.
 
-/** The export of a module compiled here that a `require()` of it returns. */
-const moduleExports = "module.exports";
+/**
+ * The export of a module compiled here that a `require()` of it returns: its
+ * `module.exports`. A name, as Vite RSC reads the exports of a `"use client"`
+ * module and takes no string for one.
+ */
+const moduleExports = "$$cjsModuleExports";
 
 // What a `require()` returns for the namespace of what it imports. A
 // dependency of CommonJS that Vite pre-bundled comes as Vite's interop of it:
@@ -35,6 +39,27 @@ const moduleExports = "module.exports";
 const requireHelper =
   `const $$cjsRequire = (ns) => ${JSON.stringify(moduleExports)} in ns ? ns[${JSON.stringify(moduleExports)}]` +
   ` : Object.prototype.toString.call(ns) === "[object Module]" || ns.__esModule ? ns : ns.default;\n`;
+// What a `require()` of a module that is not there throws, as Node.js does.
+const missingHelper =
+  "const $$cjsMissing = (source) => { throw new Error(`Cannot find module '${source}'`); };\n";
+
+// A JSON file or a stylesheet: what `require()` returns is what Vite has as
+// its default export, the value of the JSON or the classes of a CSS module.
+// Its namespace has the keys of an object as named exports, and nothing of an
+// array or of a class with a dash.
+const defaultOnly = /\.(?:json|css|scss|sass|less|styl|stylus|pcss)(?:\?|$)/;
+
+/** What `compileCommonJs()` needs of the file. */
+export type CommonJsOptions = {
+  /** The language of the code: `parseAstAsync` of Vite takes TypeScript as well. */
+  lang?: "js" | "jsx" | "ts" | "tsx";
+  /**
+   * Whether a `require()` in a `try` finds its module. A module that is not
+   * there throws when the call runs, so the `catch` runs, as it does with
+   * webpack. Without this, every `require()` is an import.
+   */
+  resolves?: (source: string) => Promise<boolean>;
+};
 
 type Node = { type: string; start: number; end: number; [key: string]: unknown };
 
@@ -60,13 +85,22 @@ const identifier = /^[A-Za-z_$][\w$]*$/;
 /** Compiles CommonJS in a module into ES module code. Nothing for a module without it. */
 export async function compileCommonJs(
   code: string,
+  { lang, resolves }: CommonJsOptions = {},
 ): Promise<{ code: string; map: ReturnType<MagicString["generateMap"]> } | undefined> {
   if (!/\brequire\s*\(|\bmodule\.exports\b|\bexports\.[\w$]+\s*=/.test(code)) return;
-  const ast = (await parseAstAsync(code)) as unknown as Node & { body: Node[] };
+  const ast = (await parseAstAsync(code, { lang })) as unknown as Node & { body: Node[] };
 
-  const requires: { call: Node; source: string }[] = [];
+  const requires: { call: Node; source: string; tried: boolean }[] = [];
   let ownRequire = false;
   let usesModule = false;
+  // The calls in the block of a `try`.
+  const tried = new Set<Node>();
+  for (const [node] of walk(ast)) {
+    if (node.type !== "TryStatement") continue;
+    for (const [inner] of walk(node.block as Node)) {
+      if (inner.type === "CallExpression") tried.add(inner);
+    }
+  }
   for (const [node, parent] of walk(ast)) {
     if (isIdentifier(node, "module") || isIdentifier(node, "exports")) {
       // Not the key of a property, as in `a.module` or `{ exports: 1 }`.
@@ -80,7 +114,7 @@ export async function compileCommonJs(
     if (parent?.type === "CallExpression" && parent.callee === node) {
       const [source] = args ?? [];
       if (args?.length === 1 && source?.type === "Literal" && typeof source.value === "string") {
-        requires.push({ call: parent, source: source.value });
+        requires.push({ call: parent, source: source.value, tried: tried.has(parent) });
         continue;
       }
     }
@@ -96,21 +130,29 @@ export async function compileCommonJs(
 
   const output = new MagicString(code);
   const imports = new Map<string, string>();
-  for (const { call, source } of requires) {
+  let missing = false;
+  for (const { call, source, tried } of requires) {
+    if (tried && resolves && !(await resolves(source))) {
+      missing = true;
+      output.overwrite(call.start, call.end, `$$cjsMissing(${JSON.stringify(source)})`);
+      continue;
+    }
     let name = imports.get(source);
     if (!name) imports.set(source, (name = `$$cjs${imports.size}`));
-    output.overwrite(call.start, call.end, `$$cjsRequire(${name})`);
+    const value = defaultOnly.test(source) ? `${name}.default` : `$$cjsRequire(${name})`;
+    output.overwrite(call.start, call.end, value);
   }
   let header = [...imports]
     .map(([source, name]) => `import * as ${name} from ${JSON.stringify(source)};\n`)
     .join("");
-  if (imports.size > 0) header += requireHelper;
+  if ([...imports.keys()].some((source) => !defaultOnly.test(source))) header += requireHelper;
+  if (missing) header += missingHelper;
   if (isCommonJs) {
     header += "var module = { exports: {} }, exports = module.exports;\n";
     // What `module.exports` is once the module has run.
     let footer =
       `\nvar $$cjsExports = module.exports;\n` +
-      `export { $$cjsExports as default, $$cjsExports as ${JSON.stringify(moduleExports)} };\n`;
+      `export { $$cjsExports as default, $$cjsExports as ${moduleExports} };\n`;
     await initCjsLexer();
     for (const name of new Set(parseCjs(code).exports)) {
       if (!identifier.test(name) || name === "default") continue;
@@ -118,7 +160,13 @@ export async function compileCommonJs(
     }
     output.append(footer);
   }
-  output.prepend(header);
+  // After the directives, like `"use client"` or `"use cache"`, which are
+  // only directives at the top of the module.
+  const afterDirectives = ast.body.find(
+    (statement) => !(statement.type === "ExpressionStatement" && "directive" in statement),
+  );
+  if (afterDirectives) output.appendLeft(afterDirectives.start, header);
+  else output.append(header);
   return { code: output.toString(), map: output.generateMap({ hires: "boundary" }) };
 }
 
@@ -128,11 +176,19 @@ export function createCommonJsPlugin(
 ): Plugin {
   return {
     name: "vitest-plugin-rsc:next-commonjs",
+    // Before `rsc:use-client` of Vite RSC, which reads the exports of a
+    // `"use client"` module: the ones of a module of CommonJS are made here.
+    // And after Next's compiler, which is `pre` too and comes first.
+    enforce: "pre",
     async transform(code, id) {
       const layer = layerOf(this.environment.name);
       const file = id.split("?")[0]!;
-      if (!layer || !/\.[cm]?[jt]sx?$/.test(file) || !isAppCode(file, layer)) return;
-      return compileCommonJs(code);
+      const extension = /\.[cm]?([jt]sx?)$/.exec(file);
+      if (!layer || !extension || !isAppCode(file, layer)) return;
+      return compileCommonJs(code, {
+        lang: extension[1] as CommonJsOptions["lang"],
+        resolves: async (source) => (await this.resolve(source, id)) !== null,
+      });
     },
   };
 }
