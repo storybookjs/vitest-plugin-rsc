@@ -285,7 +285,13 @@ export const fixtures: Fixture[] = [
 
   // `@next/font` is the old name of `next/font`. The app imports `next/font`.
   appDir("next-font", "font", ["next-font.test.ts"], { assumeInstalled: ["@next/font"] }),
-  appDir("mdx-font-preload", "font", ["mdx-font-preload.test.ts"]),
+  // `@mdx-js/react` is where `@next/mdx` looks for the components of MDX
+  // when the app has no `mdx-components`. This app has one, and installed
+  // for every fixture it would be what `app-css` finds, where Next's run of
+  // it has none.
+  appDir("mdx-font-preload", "font", ["mdx-font-preload.test.ts"], {
+    assumeInstalled: ["@mdx-js/react"],
+  }),
   appDir("next-image", "image", ["next-image.test.ts"]),
 
   // Next's own tests of CSS, with the packages their tests install: Sass,

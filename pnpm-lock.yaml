@@ -78,12 +78,9 @@ importers:
       '@mdx-js/loader':
         specifier: 2.3.0
         version: 2.3.0(webpack@5.112.0(esbuild@0.27.7)(lightningcss@1.33.0)(postcss@8.4.38))
-      '@mdx-js/react':
-        specifier: 2.3.0
-        version: 2.3.0(react@19.2.6)
       '@next/mdx':
         specifier: 16.4.0
-        version: 16.4.0(@mdx-js/loader@2.3.0(webpack@5.112.0(esbuild@0.27.7)(lightningcss@1.33.0)(postcss@8.4.38)))(@mdx-js/react@2.3.0(react@19.2.6))
+        version: 16.4.0(@mdx-js/loader@2.3.0(webpack@5.112.0(esbuild@0.27.7)(lightningcss@1.33.0)(postcss@8.4.38)))(@mdx-js/react@3.1.1(@types/react@19.2.14)(react@19.2.6))
       '@picocss/pico':
         specifier: 1.5.7
         version: 1.5.7
@@ -2088,11 +2085,6 @@ packages:
 
   '@mdx-js/mdx@2.3.0':
     resolution: {integrity: sha512-jLuwRlz8DQfQNiUCJR50Y09CGPq3fLtmtUQfVrj79E0JWu3dvsVcxVIcfhR5h0iXu+/z++zDrYeiJqifRynJkA==}
-
-  '@mdx-js/react@2.3.0':
-    resolution: {integrity: sha512-zQH//gdOmuu7nt2oJR29vFhDv88oGPmVw6BggmrHeMI+xgEkp1B2dX9/bMBSYtK0dyLX/aOmesKS09g222K1/g==}
-    peerDependencies:
-      react: '>=16'
 
   '@mdx-js/react@3.1.1':
     resolution: {integrity: sha512-f++rKLQgUVYDAtECQ6fn/is15GkEH9+nZPM3MS0RcxVqoTfawHvDlSCH7JbMhAM6uJ32v3eXLvLmLvjGu7PTQw==}
@@ -8533,12 +8525,6 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
-  '@mdx-js/react@2.3.0(react@19.2.6)':
-    dependencies:
-      '@types/mdx': 2.0.14
-      '@types/react': 19.2.14
-      react: 19.2.6
-
   '@mdx-js/react@3.1.1(@types/react@19.2.14)(react@19.2.6)':
     dependencies:
       '@types/mdx': 2.0.14
@@ -8594,12 +8580,12 @@ snapshots:
 
   '@next/env@16.4.0': {}
 
-  '@next/mdx@16.4.0(@mdx-js/loader@2.3.0(webpack@5.112.0(esbuild@0.27.7)(lightningcss@1.33.0)(postcss@8.4.38)))(@mdx-js/react@2.3.0(react@19.2.6))':
+  '@next/mdx@16.4.0(@mdx-js/loader@2.3.0(webpack@5.112.0(esbuild@0.27.7)(lightningcss@1.33.0)(postcss@8.4.38)))(@mdx-js/react@3.1.1(@types/react@19.2.14)(react@19.2.6))':
     dependencies:
       source-map: 0.7.6
     optionalDependencies:
       '@mdx-js/loader': 2.3.0(webpack@5.112.0(esbuild@0.27.7)(lightningcss@1.33.0)(postcss@8.4.38))
-      '@mdx-js/react': 2.3.0(react@19.2.6)
+      '@mdx-js/react': 3.1.1(@types/react@19.2.14)(react@19.2.6)
 
   '@next/routing@16.4.0': {}
 
