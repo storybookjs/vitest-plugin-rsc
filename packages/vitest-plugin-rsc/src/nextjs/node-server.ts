@@ -115,7 +115,6 @@ const nativeSetTimeout = globalThis.setTimeout;
 
 const leftBeforeSent = () =>
   new DOMException("The page was left before the server had sent it.", "AbortError");
-const pending = new Promise<never>(() => {});
 
 /** The `http.IncomingMessage` of a request: a stream of its body, with what Next reads of it. */
 function createNodeRequest(request: ServerRequest) {
@@ -195,18 +194,6 @@ function createNodeResponse(request: ServerRequest) {
   request.signal?.addEventListener("abort", () => res.destroy(), { once: true });
 
   const response = (written: Promise<unknown>): Promise<Response> => {
-    const settled = written.then(
-      // Without a head: Next ended the response with an error before its
-      // first byte, or whoever asked has left.
-      () => (headSent ? pending : Promise.reject(failure ?? leftBeforeSent())),
-      (error) => {
-        // What fails before the head is the failure of the request. After
-        // it, the body ends with the error.
-        if (!headSent) throw error;
-        res.destroy(error ?? new Error("The request handler failed."));
-        return pending;
-      },
-    );
     const sent = head.then(() => {
       // A status without a body, and an `end()` without a byte before it.
       const empty = (finished && !wrote) || [101, 204, 205, 304].includes(res.statusCode);
@@ -216,6 +203,20 @@ function createNodeResponse(request: ServerRequest) {
         headers: fromNodeOutgoingHttpHeaders(res.getHeaders()),
       });
     });
+    // Next's handler is done with the request, often long after the head.
+    // With a head, the answer is the response of that head.
+    const settled = written.then(
+      // Without a head: Next ended the response with an error before its
+      // first byte, or whoever asked has left.
+      () => (headSent ? sent : Promise.reject(failure ?? leftBeforeSent())),
+      (error) => {
+        // What fails before the head is the failure of the request. After
+        // it, the body ends with the error.
+        if (!headSent) throw error;
+        res.destroy(error ?? new Error("The request handler failed."));
+        return sent;
+      },
+    );
     return Promise.race([sent, settled]);
   };
   return { res, response };
