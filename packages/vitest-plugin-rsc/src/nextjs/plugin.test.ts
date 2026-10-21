@@ -1,5 +1,5 @@
 import fs from "node:fs";
-import { createRequire } from "node:module";
+import { createRequire, isBuiltin } from "node:module";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -429,6 +429,7 @@ test("gives the server layers the package's module of Node.js, after Next's alia
     // What Vite finds, by the specifier it was asked for and from where.
     const asked: [string, string][] = [];
     const context = {
+      environment: { mode: "dev" },
       resolve: async (source: string, importer: string) => {
         asked.push([source, importer]);
         return { id: source };
@@ -442,26 +443,33 @@ test("gives the server layers the package's module of Node.js, after Next's alia
   const page = path.join(root, "app/page.tsx");
 
   const ssr = resolverOf("ssr");
-  expect(await ssr.resolve("node:os", page)).toEqual({ id: "vitest-plugin-rsc/node/os" });
-  expect(await ssr.resolve("fs/promises", page)).toEqual({
-    id: "vitest-plugin-rsc/node/fs/promises",
-  });
-  // From the project, where the package is, as for a dependency's import.
+  const nodeDir = fileURLToPath(new URL("../../dist/node/", import.meta.url));
+  // The file, which Vite is asked for by its path, from the importer: not a
+  // dependency by name.
+  expect(await ssr.resolve("node:os", page)).toEqual({ id: `${nodeDir}os.js` });
+  expect(await ssr.resolve("fs/promises", page)).toEqual({ id: `${nodeDir}fs/promises.js` });
   expect(ssr.asked).toEqual([
-    ["vitest-plugin-rsc/node/os", path.join(root, "package.json")],
-    ["vitest-plugin-rsc/node/fs/promises", path.join(root, "package.json")],
+    [`${nodeDir}os.js`, page],
+    [`${nodeDir}fs/promises.js`, page],
   ]);
-  // Next's alias, and node-platform.ts's stand-in, come first.
-  expect(await ssr.resolve("node:path", page)).toEqual({
-    id: "next/dist/compiled/path-browserify/index.js",
+  // Also what Next's polyfills and node-platform.ts's stand-ins took before:
+  // every module of Node.js is the package's.
+  expect(await ssr.resolve("node:path", page)).toEqual({ id: `${nodeDir}path.js` });
+  expect(await ssr.resolve("node:stream", page)).toEqual({ id: `${nodeDir}stream.js` });
+  expect(await ssr.resolve("buffer", page)).toEqual({ id: `${nodeDir}buffer.js` });
+  expect(await ssr.resolve("node:timers/promises", page)).toEqual({
+    id: `${nodeDir}timers/promises.js`,
   });
-  expect(await ssr.resolve("node:stream", page)).toBe(
-    "\0vitest-plugin-rsc/next-bridge/node-stream",
-  );
+  // Also `url` by its bare name, which Next aliases for its edge runtime.
+  expect(await ssr.resolve("url", page)).toEqual({ id: `${nodeDir}url.js` });
 
-  // Not for the browser layer, as in Next.
+  // Not for the browser layer, which gets the four modules Next's edge
+  // runtime has, from Next's polyfills, and nothing for the rest.
   const browser = resolverOf("browser");
   expect(await browser.resolve("node:os", page)).toBeUndefined();
+  expect(await browser.resolve("node:buffer", page)).toEqual({
+    id: "next/dist/compiled/buffer/index.js",
+  });
 
   // A dependency whose `browser` field says it uses nothing for the module
   // gets the module of nothing, whose default export is an empty object.
@@ -476,8 +484,84 @@ test("gives the server layers the package's module of Node.js, after Next's alia
     const load = plugins.find(({ name }) => name === "vitest-plugin-rsc:next-resolve:ssr")!
       .load as (this: object, id: string) => string | undefined;
     expect(load.call({}, empty as string)).toContain("export default empty;");
-    expect(await ssr.resolve("node:fs", importer)).toEqual({ id: "vitest-plugin-rsc/node/fs" });
+    expect(await ssr.resolve("node:fs", importer)).toEqual({ id: `${nodeDir}fs.js` });
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test("gives the package's modules of Node.js each other, not a polyfill of Next to pre-bundle", async () => {
+  const plugins = vitestPluginNext();
+  const plugin = plugins.find(({ name }) => name === "vitest-plugin-rsc:next")!;
+  await (plugin.config as ConfigHook<Config>)({ root }, serve);
+  const resolver = plugins.find(({ name }) => name === "vitest-plugin-rsc:next-resolve:ssr")!;
+  const resolveId = resolver.resolveId as (
+    this: object,
+    source: string,
+    importer: string,
+    options: object,
+  ) => Promise<unknown>;
+  const asked: string[] = [];
+  const context = {
+    resolve: async (source: string) => {
+      asked.push(source);
+      return { id: source };
+    },
+  };
+
+  // What a file of dist/node has in it, and imports of Node.js: the package's
+  // own source, and what the build bundles into it, memfs and unenv.
+  const ownRequire = createRequire(import.meta.url);
+  const dirs = [
+    fileURLToPath(new URL("../../dist/node/", import.meta.url)),
+    path.join(path.dirname(ownRequire.resolve("unenv/package.json")), "dist/runtime"),
+    ...["memfs", "@jsonjoy.com/fs-node", "@jsonjoy.com/fs-core", "@jsonjoy.com/fs-node-utils"].map(
+      (name) => path.join(path.dirname(ownRequire.resolve(`${name}/package.json`)), "lib"),
+    ),
+    path.dirname(ownRequire.resolve("stream-browserify/package.json")),
+    path.join(
+      path.dirname(
+        createRequire(ownRequire.resolve("stream-browserify")).resolve(
+          "readable-stream/package.json",
+        ),
+      ),
+      "lib",
+    ),
+  ];
+  const specifiers = new Set<string>();
+  const walk = (dir: string) => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const file = path.join(dir, entry.name);
+      if (entry.isDirectory()) walk(file);
+      else if (/\.(m?js|ts)$/.test(entry.name)) {
+        for (const match of fs
+          .readFileSync(file, "utf8")
+          .matchAll(/(?:\bfrom\s*|\brequire\s*\(\s*)["']((?:node:)?[a-z_]+(?:\/[a-z_]+)?)["']/g)) {
+          if (isBuiltin(match[1]!)) specifiers.add(match[1]!);
+        }
+      }
+    }
+  };
+  for (const dir of dirs) walk(dir);
+  expect(specifiers.size).toBeGreaterThan(10);
+
+  // What each of them gets when one of the package's modules imports it: the
+  // package's file for it. Never Next's polyfill, which is CommonJS that a
+  // layer would have to pre-bundle. Only the package's own `async_hooks`,
+  // which ../index.ts aliases, is left to Vite: the built files import none
+  // (node-modules.test.ts), they have unenv's in them.
+  const nodeDir = fileURLToPath(new URL("../../dist/node/", import.meta.url));
+  const importer = path.join(nodeDir, "fs.js");
+  const leftToVite = new Set<string>();
+  for (const source of specifiers) {
+    asked.length = 0;
+    const resolved = await resolveId.call(context, source, importer, {});
+    expect(
+      asked.filter((target) => target.startsWith("next/")),
+      source,
+    ).toEqual([]);
+    if (typeof resolved === "string") expect(resolved.startsWith(nodeDir), source).toBe(true);
+    else leftToVite.add(source.replace(/^node:/, ""));
+  }
+  expect([...leftToVite]).toEqual(["async_hooks"]);
 });

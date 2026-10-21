@@ -38,7 +38,11 @@ class ServerRequest extends NativeRequest {
         ...init,
         body: new ReadableStream<Uint8Array>({
           start(controller) {
-            body.on("data", (chunk) => controller.enqueue(new Uint8Array(chunk)));
+            body.on("data", (chunk) =>
+              controller.enqueue(
+                typeof chunk === "string" ? new TextEncoder().encode(chunk) : new Uint8Array(chunk),
+              ),
+            );
             body.on("end", () => controller.close());
             body.on("error", (error) => controller.error(error));
           },

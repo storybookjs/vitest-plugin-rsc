@@ -41,3 +41,31 @@ declare module "virtual:vitest-plugin-rsc/host-modules" {
   const hostModules: Record<string, () => Promise<unknown>> | undefined;
   export default hostModules;
 }
+
+declare module "stream-browserify" {
+  /** The streams of Node.js for a browser: see src/node/stream.ts. */
+  const Stream: typeof import("node:stream");
+  export default Stream;
+}
+
+declare module "events/events.js" {
+  /** The EventEmitter of Node.js for a browser: see src/node/events.ts. */
+  const EventEmitter: typeof import("node:events").EventEmitter;
+  export default EventEmitter;
+}
+
+// Node's `path`, for a browser: no types of its own.
+declare module "path-browserify" {
+  const path: typeof import("node:path");
+  export default path;
+}
+
+// The util and assert packages, Node's own for a browser, by their files.
+declare module "util/util.js" {
+  const util: Record<string, any>;
+  export default util;
+}
+declare module "assert/build/assert.js" {
+  const assert: typeof import("node:assert");
+  export default assert;
+}

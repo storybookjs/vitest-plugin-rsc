@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import { isBuiltin } from "node:module";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { init as initCjsLexer, parse as parseCjs } from "cjs-module-lexer";
@@ -92,15 +93,16 @@ export async function layerTables(context: NextContext, build: NextBuild) {
     const aliases: Record<string, string | false> = {
       "@opentelemetry/api$": "next/dist/compiled/@opentelemetry/api",
     };
-    // The Node modules that Next's edge runtime has too. A browser has
-    // none of them, so use the polyfills Next ships for its own client
-    // bundles. The others that Next's server asks for are in plugin.ts.
-    for (const name of SUPPORTED_NATIVE_MODULES) {
-      if (name === "async_hooks") continue;
-      aliases[`${name}$`] = aliases[`node:${name}$`] = `next/dist/compiled/${name}`;
-    }
-    if (layer !== "browser") {
-      aliases.path$ = aliases["node:path$"] = "next/dist/compiled/path-browserify";
+    // The browser layer gets the four modules of Node.js that Next's edge
+    // runtime has, as before, from Next's polyfills, and nothing for the
+    // rest. The server layers get every module of Node.js from the package
+    // (nextjs/node-builtins.ts).
+    if (layer === "browser") {
+      for (const name of SUPPORTED_NATIVE_MODULES) {
+        if (name === "async_hooks") continue;
+        aliases[`${name}$`] = aliases[`node:${name}$`] = `next/dist/compiled/${name}`;
+      }
+    } else {
       // Next's route modules load a bundle of Next's own for Node.js. The
       // module that bundle is made of, as Next's edge build takes it.
       for (const kind of ["app-page", "app-route"]) {
@@ -131,6 +133,9 @@ export async function layerTables(context: NextContext, build: NextBuild) {
       reactProductionProfiling: false,
     });
     for (const [key, target] of Object.entries(base)) {
+      // Not a module of Node.js in the server layers, like Next's `url` for
+      // its edge runtime: those are the package's (nextjs/node-builtins.ts).
+      if (layer !== "browser" && isBuiltin(key.replace(/\$$/, ""))) continue;
       // An array is a list of candidates: the user's file, then a fallback.
       aliases[key] = Array.isArray(target)
         ? (target.find((candidate) =>

@@ -12,15 +12,19 @@ import {
 } from "../../scripts/node-modules.ts";
 import { browserMapping, isNodeModule, nodeModuleOf } from "./node-builtins.ts";
 
-test("names the package's module for a module of Node.js, with or without `node:`", () => {
-  expect(nodeModuleOf("node:fs")).toBe("vitest-plugin-rsc/node/fs");
-  expect(nodeModuleOf("fs")).toBe("vitest-plugin-rsc/node/fs");
-  expect(nodeModuleOf("node:fs/promises")).toBe("vitest-plugin-rsc/node/fs/promises");
-  expect(nodeModuleOf("os")).toBe("vitest-plugin-rsc/node/os");
-  expect(nodeModuleOf("node:sqlite")).toBe("vitest-plugin-rsc/node/sqlite");
-  expect(nodeModuleOf("node:crypto")).toBe("vitest-plugin-rsc/node/crypto");
-  expect(isNodeModule("vitest-plugin-rsc/node/fs")).toBe(true);
-  expect(isNodeModule("vitest-plugin-rsc/nextjs/ssr")).toBe(false);
+// The built files, which a run of the source uses too.
+const nodeDir = path.resolve(outputDir, "../../dist/node");
+
+test("gives the file of the package's module for a module of Node.js, with or without `node:`", () => {
+  expect(nodeModuleOf("node:fs")).toBe(`${nodeDir}/fs.js`);
+  expect(nodeModuleOf("fs")).toBe(`${nodeDir}/fs.js`);
+  expect(nodeModuleOf("node:fs/promises")).toBe(`${nodeDir}/fs/promises.js`);
+  expect(nodeModuleOf("os")).toBe(`${nodeDir}/os.js`);
+  expect(nodeModuleOf("node:sqlite")).toBe(`${nodeDir}/sqlite.js`);
+  expect(nodeModuleOf("node:crypto")).toBe(`${nodeDir}/crypto.js`);
+  expect(isNodeModule(`${nodeDir}/fs.js`)).toBe(true);
+  expect(isNodeModule(path.resolve(nodeDir, "../nextjs/ssr.js"))).toBe(false);
+  expect(isNodeModule("vitest-plugin-rsc/node/fs")).toBe(false);
 });
 
 test("leaves a package alone, and the package's own `async_hooks`", () => {
@@ -45,18 +49,29 @@ test("ships a module for everything unenv stands in for, as the generator writes
   const files = generated();
   expect([...written().keys()].sort()).toEqual([...files.keys()].sort());
   for (const [file, code] of files) expect(written().get(file), file).toBe(code);
-  expect([...handWritten]).toEqual(["crypto"]);
+  expect([...handWritten]).toEqual([
+    "assert",
+    "crypto",
+    "path",
+    "stream",
+    "stream/promises",
+    "timers",
+    "timers/promises",
+    "util",
+  ]);
   expect(fs.existsSync(path.join(outputDir, "crypto.ts"))).toBe(true);
 });
 
-test("gives `fs` the exports of unenv's, from the disk on its global", () => {
+test("gives `fs` the exports of unenv's, from the disk on its global, and `fs/promises` that disk", () => {
   const code = generated().get("fs.ts")!;
   expect(code).toContain("[diskGlobal] ??= createDisk()");
   expect(code).toContain(
     'export const readFileSync = fs.readFileSync ?? missing("fs.readFileSync");',
   );
   expect(code).toContain('export const promises = fs.promises ?? missing("fs.promises");');
-  expect(generated().get("fs/promises.ts")).toContain(
+  const promises = generated().get("fs/promises.ts")!;
+  expect(promises).toContain('import fs from "vitest-plugin-rsc/node/fs";');
+  expect(promises).toContain(
     'export const readFile = promises.readFile ?? missing("fs/promises.readFile");',
   );
 });

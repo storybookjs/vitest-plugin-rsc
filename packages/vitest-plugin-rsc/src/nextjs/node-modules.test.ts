@@ -2,11 +2,25 @@
 // here, with its `crypto` and `Buffer`, which the browser has too.
 
 import nodeCrypto from "node:crypto";
+import { execFileSync } from "node:child_process";
+import nodeFs from "node:fs";
+import { isBuiltin } from "node:module";
+import os from "node:os";
+import path from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { expect, test } from "vitest";
 import * as crypto from "../node/crypto.ts";
 import fs, { existsSync, mkdirSync, readFileSync, writeFileSync } from "../node/fs.ts";
 import promises, { readFile } from "../node/fs/promises.ts";
+import { pipeline, Readable, Writable } from "../node/stream.ts";
+import { pipeline as pipelineAsync } from "../node/stream/promises.ts";
+import { scheduler, setInterval as every, setTimeout as sleep } from "../node/timers/promises.ts";
+import assert, { AssertionError, deepStrictEqual, ok } from "../node/assert.ts";
+import util, { callbackify, format, inherits, inspect, isObject, promisify } from "../node/util.ts";
+import pathModule, { normalize, parse, posix, resolve } from "../node/path.ts";
+import { setImmediate } from "../node/timers.ts";
 import { diskGlobal, resetDisk } from "./disk.ts";
+import { registryGlobal } from "./registry-global.ts";
 
 test("`fs` is a disk in memory, on a global, that starts with `/tmp` and that `resetDisk()` empties", async () => {
   expect((globalThis as Record<string, unknown>)[diskGlobal]).toBeDefined();
@@ -117,3 +131,252 @@ test("`fileURLToPath()` takes a URL of the page's origin, as a module's `import.
     scope.location = location;
   }
 });
+
+test("`stream` reads and writes: not unenv's `Readable`, which reads nothing", async () => {
+  // memfs' `createReadStream()` is a `Readable` of this one in a server
+  // layer. Here, in Node.js, memfs has Node's: see disk.test.tsx of the
+  // e2e demo for memfs in the browser.
+  const chunks = ["from ", "a ", "stream"];
+  const source = new Readable({
+    read() {
+      this.push(chunks.shift() ?? null);
+    },
+  });
+  const read: string[] = [];
+  const sink = new Writable({
+    write(chunk: Uint8Array, _encoding, done) {
+      read.push(new TextDecoder().decode(chunk));
+      done();
+    },
+  });
+  await new Promise<void>((resolve, reject) =>
+    pipeline(source, sink, (error?: Error | null) => (error ? reject(error) : resolve())),
+  );
+  expect(read.join("")).toBe("from a stream");
+});
+
+test("`stream/promises` pipes with the package's stream, and `Readable` bridges to web streams", async () => {
+  // The package's own `Readable.from()`, in Node.js too.
+  const source = Readable.from(["web ", "stream"]);
+  const chunks: unknown[] = [];
+  for await (const chunk of Readable.from(
+    (async function* () {
+      yield "async ";
+      yield Buffer.from("too");
+    })(),
+  )) {
+    chunks.push(chunk);
+  }
+  expect(chunks.map(String).join("")).toBe("async too");
+  expect(
+    await new Promise<string[]>((resolve) => {
+      const one: string[] = [];
+      Readable.from("one string")
+        .on("data", (chunk: unknown) => one.push(String(chunk)))
+        .on("end", () => resolve(one));
+    }),
+  ).toEqual(["one string"]);
+  const read: string[] = [];
+  const sink = new Writable({
+    write(chunk: Uint8Array, _encoding, done) {
+      read.push(new TextDecoder().decode(chunk));
+      done();
+    },
+  });
+  await pipelineAsync(source, sink);
+  expect(read.join("")).toBe("web stream");
+  const toWeb = (Readable as unknown as { toWeb(r: unknown): ReadableStream<Uint8Array> }).toWeb;
+  const text = await new Response(toWeb(Readable.from([Buffer.from("to the web")]))).text();
+  expect(text).toBe("to the web");
+});
+
+// The `setImmediate` of the plugin's registry, which the page has.
+const scope = globalThis as unknown as Record<string, Record<string, unknown>>;
+Object.assign((scope[registryGlobal] ??= {}), {
+  setImmediate: (callback: (...args: unknown[]) => void, ...args: unknown[]) =>
+    setTimeout(callback, 0, ...args),
+  clearImmediate: (id: ReturnType<typeof setTimeout>) => clearTimeout(id),
+});
+
+test("`timers/promises` waits with the page's timers, and takes a signal", async () => {
+  const started = performance.now();
+  expect(await sleep(30, "value")).toBe("value");
+  expect(performance.now() - started).toBeGreaterThanOrEqual(25);
+  await expect(scheduler.wait(1000, { signal: AbortSignal.abort("why") })).rejects.toMatchObject({
+    name: "AbortError",
+    code: "ABORT_ERR",
+    cause: "why",
+  });
+});
+
+test("`timers/promises`' setInterval keeps ticking while the consumer works, and stops when it is done", async () => {
+  const controller = new AbortController();
+  const ticks = every(20, "tick", { signal: controller.signal });
+  expect((await ticks.next()).value).toBe("tick");
+  // The consumer is busy for several intervals: those ticks come at once.
+  await new Promise((resolve) => setTimeout(resolve, 70));
+  const started = performance.now();
+  await ticks.next();
+  await ticks.next();
+  expect(performance.now() - started).toBeLessThan(10);
+  controller.abort();
+  await expect(ticks.next()).rejects.toMatchObject({ name: "AbortError" });
+  const stopped = every(5, "tick");
+  await stopped.next();
+  expect(await stopped.return(undefined)).toEqual({ done: true, value: undefined });
+});
+
+test("`assert` compares as Node.js does, with a message", () => {
+  expect(() => deepStrictEqual(new Map([["a", 1]]), new Map([["a", 2]]))).toThrow(AssertionError);
+  expect(() => ok(false, "required invariant")).toThrow("required invariant");
+  expect(() => assert.ok(0)).toThrow(AssertionError);
+  expect(() => deepStrictEqual({ a: [1, { b: 2 }] }, { a: [1, { b: 2 }] })).not.toThrow();
+  expect(typeof assert.strict.equal).toBe("function");
+});
+
+test("`timers` hands a callback its arguments, as Node.js does", async () => {
+  const got = await new Promise((resolve) => setImmediate(resolve, "payload", 3));
+  expect(got).toBe("payload");
+});
+
+test("`util` inspects and formats as Node.js does, and has Node's helpers", () => {
+  expect(typeof callbackify(async () => 3)).toBe("function");
+  expect(isObject(Object.create(null))).toBe(true);
+  expect(typeof promisify(setTimeout)).toBe("function");
+  expect(typeof inherits).toBe("function");
+  expect(typeof (util as Record<string, unknown>).callbackify).toBe("function");
+  expect(inspect(new Error("boom")).split("\n")[0]).toBe("Error: boom");
+  expect(inspect({ a: [1, { b: new Map([["k", 1]]) }] })).toBe("{ a: [ 1, { b: [Map] } ] }");
+  expect(format("%s has %d items, %j", "list", 3, { x: 1 })).toBe('list has 3 items, {"x":1}');
+});
+
+test("`path` is the POSIX path of Node.js", () => {
+  expect(posix.join("/a", "b")).toBe("/a/b");
+  expect(pathModule.posix).toBe(posix);
+  expect(pathModule.win32.join("/a", "b")).toBe("/a/b");
+  // A backslash is a character of a name, not a separator, as on Linux.
+  expect(normalize("a\\b/../c")).toBe("c");
+  expect(resolve("/notes", "../today.txt")).toBe("/today.txt");
+  expect(parse("/notes/today.txt")).toEqual({
+    root: "/",
+    dir: "/notes",
+    base: "today.txt",
+    ext: ".txt",
+    name: "today",
+  });
+});
+
+// The built files, where there is a build: `pnpm build` of the package.
+const dist = fileURLToPath(new URL("../../dist/node/", import.meta.url));
+test.skipIf(!nodeFs.existsSync(dist))(
+  "builds each module to one file of its own, with only imports of Node.js and the package left",
+  () => {
+    const files: string[] = [];
+    const walk = (dir: string) => {
+      for (const entry of nodeFs.readdirSync(dir, { withFileTypes: true })) {
+        const file = path.join(dir, entry.name);
+        if (entry.isDirectory()) walk(file);
+        else if (entry.name.endsWith(".js")) files.push(file);
+      }
+    };
+    walk(dist);
+    expect(files.length).toBeGreaterThan(50);
+    for (const file of files) {
+      const code = nodeFs.readFileSync(file, "utf8");
+      expect(code, file).not.toContain("__require(");
+      expect(code, file).not.toContain("createRequire(");
+      for (const match of code.matchAll(/^(?:import|export)[^;]*?from\s*"([^"]+)"/gm)) {
+        const specifier = match[1]!;
+        expect(
+          isBuiltin(specifier) || specifier.startsWith("vitest-plugin-rsc/node/"),
+          `${file} imports ${specifier}`,
+        ).toBe(true);
+        // unenv's is in the file: the package's own, which the app's
+        // `node:async_hooks` is too, would share a chunk with the app.
+        expect(specifier.replace(/^node:/, ""), file).not.toBe("async_hooks");
+      }
+    }
+    const licenses = nodeFs.readFileSync(path.join(dist, "LICENSES.md"), "utf8");
+    for (const name of [
+      "memfs",
+      "unenv",
+      "pathe",
+      "@jsonjoy.com/fs-node",
+      "stream-browserify",
+      "readable-stream",
+    ]) {
+      expect(licenses).toContain(`## ${name} `);
+    }
+  },
+);
+
+// The built files as a server layer has them: in Node.js, with a hook that
+// gives a module of Node.js that one of them imports its file next to it, as
+// the layer resolver does (nextjs/plugin.ts), and the package's own by name.
+test.skipIf(!nodeFs.existsSync(dist))(
+  "the built files work together: streams of the disk, and a console, without a debug log",
+  () => {
+    const dir = nodeFs.mkdtempSync(path.join(os.tmpdir(), "node-modules-"));
+    try {
+      const distUrl = pathToFileURL(dist).href;
+      nodeFs.writeFileSync(
+        path.join(dir, "hooks.mjs"),
+        `import fs from "node:fs";
+import { isBuiltin } from "node:module";
+const dist = ${JSON.stringify(distUrl)};
+export async function resolve(specifier, context, next) {
+  const name = specifier.replace(/^node:/, "");
+  if (context.parentURL?.startsWith(dist) && isBuiltin(specifier) && name !== "async_hooks") {
+    const url = dist + name + ".js";
+    if (fs.existsSync(new URL(url))) return { url, shortCircuit: true };
+  }
+  if (specifier.startsWith("vitest-plugin-rsc/node/")) {
+    return { url: dist + specifier.slice("vitest-plugin-rsc/node/".length) + ".js", shortCircuit: true };
+  }
+  return next(specifier, context);
+}
+`,
+      );
+      nodeFs.writeFileSync(
+        path.join(dir, "register.mjs"),
+        `import { register } from "node:module";\nregister("./hooks.mjs", import.meta.url);\n`,
+      );
+      nodeFs.writeFileSync(
+        path.join(dir, "run.mjs"),
+        `const dist = ${JSON.stringify(distUrl)};
+const debug = [];
+console.debug = (...args) => debug.push(args.join(" "));
+const stream = await import(dist + "stream.js");
+const fs = (await import(dist + "fs.js")).default;
+await import(dist + "console.js");
+fs.writeFileSync("/tmp/note.txt", "from the disk");
+const read = [];
+const sink = new stream.Writable({
+  write(chunk, _encoding, done) {
+    read.push(new TextDecoder().decode(chunk));
+    done();
+  },
+});
+await new Promise((resolve, reject) =>
+  stream.pipeline(fs.createReadStream("/tmp/note.txt"), sink, (error) => (error ? reject(error) : resolve())),
+);
+const items = [];
+for await (const item of stream.Readable.from(["from ", "an iterable"])) items.push(item);
+process.stdout.write(JSON.stringify({ read: read.join(""), debug: debug.length, transform: typeof new stream.Transform().pipe, from: items.join("") }));
+`,
+      );
+      const output = execFileSync(process.execPath, ["--import", "./register.mjs", "run.mjs"], {
+        cwd: dir,
+        encoding: "utf8",
+      });
+      expect(JSON.parse(output)).toEqual({
+        read: "from the disk",
+        debug: 0,
+        transform: "function",
+        from: "from an iterable",
+      });
+    } finally {
+      nodeFs.rmSync(dir, { recursive: true, force: true });
+    }
+  },
+);

@@ -28,10 +28,6 @@ declare module "virtual:vitest-plugin-rsc/next-middleware" {
   export default loadMiddleware;
 }
 
-declare module "virtual:vitest-plugin-rsc/node-stream" {
-  export { Readable } from "node:stream";
-}
-
 declare module "virtual:vitest-plugin-rsc/next-route-handlers" {
   const routeHandlers: Record<
     string,

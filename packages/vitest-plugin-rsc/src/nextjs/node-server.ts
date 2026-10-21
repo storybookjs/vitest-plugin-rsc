@@ -7,7 +7,7 @@ import {
   routesManifest,
   routing,
 } from "virtual:vitest-plugin-rsc/next-manifest";
-import { Readable } from "virtual:vitest-plugin-rsc/node-stream";
+import { Readable } from "vitest-plugin-rsc/node/stream";
 import { restoreIncrementalCache } from "./cache.ts";
 import { registry, type RequestHandler, type ServerRequest } from "./registry.ts";
 import type { Stylesheets } from "./styles-shared.ts";
@@ -23,8 +23,9 @@ import type { Stylesheets } from "./styles-shared.ts";
 //     bundle for it.
 // The request handlers are Next's own, the ones its build makes for a page
 // and for a route handler and `next start` calls: `handler(req, res, ctx)`.
-// The Node modules that Next's server imports are in node-platform.ts, and
-// its globals in globals.ts.
+// The modules of Node.js that Next's server imports are the package's
+// (node-builtins.ts), Next's own modules of its process are in
+// node-platform.ts, and its globals in globals.ts.
 
 export const anyKey = <T>(create: (key: string) => T) =>
   new Proxy({} as Record<string, T>, {

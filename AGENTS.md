@@ -24,7 +24,7 @@ Preview packages for PR commits are handled by `pkg.pr.new`, which publishes ins
 
 ## Testing
 
-Vitest projects that import `vitest-plugin-rsc` use the package exports. From the root, prefer `pnpm test`, which runs the root Vitest project suite against the source of the package. `pnpm test:dist` and Vitest run directly use the built package, so run `pnpm build` first.
+Vitest projects that import `vitest-plugin-rsc` use the package exports. From the root, prefer `pnpm test`, which runs the root Vitest project suite against the source of the package, but for its modules of Node.js (`packages/vitest-plugin-rsc/src/node/`), which are always the built files of `dist/node/`: `pnpm test` builds the package first. `pnpm test:dist` and Vitest run directly use the built package, so run `pnpm build` first.
 
 Keep Vitest project definitions and coverage settings in the root `vitest.config.ts`. Vitest coverage is process-level config, so do not add `coverage` blocks to individual project configs.
 

@@ -21,9 +21,9 @@ import { flightBridge, type FlightEntry } from "./flight.ts";
 import { nextBuilds, nextProductionPlugin, type NextBuild } from "./build.ts";
 import { clientFiles, clientReferenceOfModule } from "./client-files.ts";
 import { createCompilePlugin, createDependencyCompilePlugin } from "./compile.ts";
-import { ownModulesToExclude } from "../own-package.ts";
 import { browserMapping, isNodeModule, nodeModuleOf } from "./node-builtins.ts";
 import { createNodePlatform } from "./node-platform.ts";
+import { registryGlobal } from "./registry-global.ts";
 import {
   loadNextProject,
   type ComponentRoute,
@@ -51,7 +51,7 @@ const environmentOf: Record<NextLayer, string> = {
 };
 const layers = Object.keys(environmentOf) as NextLayer[];
 
-const registry = "globalThis.__vitest_plugin_rsc_next__";
+const registry = `globalThis.${registryGlobal}`;
 
 // What a dependency scan of the app starts from: every module of `app/`.
 const appEntriesOf = (project: NextProject) =>
@@ -266,8 +266,7 @@ function createLayerResolver(getProject: () => NextProject, layer: NextLayer) {
     ) {
       return `${bridgePrefix}ssr-app-page-module`;
     }
-    // The Readable that node-server.ts makes a request of.
-    if (source === "virtual:vitest-plugin-rsc/node-stream") return `${bridgePrefix}node-stream`;
+    // Next's own modules of its process, in the server layers.
     if (layer !== "browser") return nodePlatform.moduleOf(source);
   }
 
@@ -319,7 +318,7 @@ function createLayerResolver(getProject: () => NextProject, layer: NextLayer) {
     // from any parent, and a specifier of Next from the project.
     const source = entry.slice(entry.lastIndexOf(">") + 1).trim();
     const target = normalize(source);
-    if (target === false || target.startsWith("\0")) return;
+    if (target === false || target.startsWith("\0") || isNodeModule(target)) return;
     // A package that Next depends on, like `styled-jsx`, found by its name
     // from Next. Not a file of Next, like its polyfill of `object-assign`.
     if (isDependencyOfNext(target)) return entry;
@@ -372,6 +371,15 @@ function createLayerResolver(getProject: () => NextProject, layer: NextLayer) {
           const mapping = browserMapping(source, importer);
           if (mapping === false) return emptyModuleId;
           if (mapping !== undefined) return;
+          // The file, which Vite serves as it is: not a dependency to find.
+          // Under Rolldown itself, the dependency scan and the optimizer, which
+          // run this plugin without an environment, the file as it is: the
+          // scan reads it, for what the source imports in this repository,
+          // and the optimizer bundles it. On the dev server through Vite,
+          // for the `?v=` it gives a file of `node_modules`, so that
+          // `fs/promises`' import of `fs` by name is the same module.
+          if (!this.environment) return target;
+          return this.resolve(target, importer, { ...options, skipSelf: true });
         }
         if (target.startsWith("\0")) return target;
         if (target === source) return;
@@ -411,12 +419,10 @@ function createLayerResolver(getProject: () => NextProject, layer: NextLayer) {
         }
         // Keep it a bare specifier, so Vite maps it to the pre-bundled dependency.
         // Next is the project's: a package of the app that imports `react`
-        // can have another `next` closer by, as in a pnpm workspace. So is
-        // this package, for a module of Node.js that a dependency imports.
-        const from =
-          target.startsWith("next/") || isNodeModule(target)
-            ? path.join(getProject().root, "package.json")
-            : importer;
+        // can have another `next` closer by, as in a pnpm workspace.
+        const from = target.startsWith("next/")
+          ? path.join(getProject().root, "package.json")
+          : importer;
         return this.resolve(target, from, { ...options, skipSelf: true });
       },
       load(id) {
@@ -565,7 +571,6 @@ const runtimeImports: Record<NextLayer, string[]> = {
   rsc: [
     ...react,
     "react-dom",
-    "next/dist/compiled/buffer",
     "next/dist/server/route-kind",
     vendoredFlight("server.edge"),
     vendoredFlight("static.edge"),
@@ -591,7 +596,6 @@ const runtimeImports: Record<NextLayer, string[]> = {
     "next/dist/server/lib/mock-request",
     // node-server.ts, ssr.ts and server-in-front.ts
     "next/dist/server/web/utils",
-    "next/dist/compiled/stream-browserify",
     vendoredFlight("client.edge"),
     // node-rendered.tsx, around every node
     "next/navigation",
@@ -973,7 +977,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
                 ...optimizeDeps("ssr"),
                 // The Client Components it renders are the app's.
                 entries: [appEntriesOf(project)],
-                exclude: [...ownModulesToExclude, "@vitejs/plugin-rsc"],
+                exclude: ["vitest-plugin-rsc", "@vitejs/plugin-rsc"],
               },
             },
             [environmentOf.browser]: {
