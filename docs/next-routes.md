@@ -582,7 +582,7 @@ This is the server of a deployment through an adapter, which is not `next start`
 
 Its request handler is Next's: the template that Next's build expands for it, around `adapter()`. `adapter()` makes the `NextRequest`, enters the request stores, and turns `NextResponse.next()`, `rewrite()` and `redirect()` into the headers the resolution reads. The handler takes a `Request` and answers with a `Response`, on Node.js too. For Node.js the template loads two modules with the `require` of Next's bundler, which is `import()` here.
 
-The proxy finishes before the route starts, so it has its own scope for Next's request stores. See [What Stands In For A Server](#what-stands-in-for-a-server). A proxy that throws is answered with `500`, and the error is logged with `console.error`. `next start` answers with its error page.
+The proxy finishes before the route starts, so it has its own scope for Next's request stores. Its `after()` callbacks run once it has returned, as in Next, and read its stores: the route waits for what the proxy hands to `waitUntil()`, for one second at most. See [What Stands In For A Server](#what-stands-in-for-a-server). A proxy that throws is answered with `500`, and the error is logged with `console.error`. `next start` answers with its error page.
 
 ### Which Requests Are The App's
 
@@ -823,7 +823,7 @@ Next has two server runtimes. A route picks one with `export const runtime`, and
 `process.env.NEXT_RUNTIME` is a compile-time constant, and with `nodejs` Next's code takes its Node.js server's branches. Three things differ from `next start`, because a browser has web APIs and no Node.js ones:
 
 - Web streams. `process.env.__NEXT_USE_NODE_STREAMS` is Next's own compile-time switch between `renderToPipeableStream` and `renderToReadableStream`. `getDefineEnv()` turns it on for Node.js, and the plugin turns it off.
-- React's builds for web streams: `react-dom/server.edge`, and Vite RSC's Flight codec.
+- React's builds for web streams: `react-dom/server.edge`, and Vite RSC's Flight codec. A Client Component that imports `react-dom/server` gets what a route on Node.js gets, React's entry for Node.js: `renderToString()` and `renderToStaticMarkup()`, and the stream renderers, on the stand-ins for `stream` and `util` below.
 - Next's ESM files, and its route modules as modules. For Node.js Next loads one bundle of its own, `next/dist/compiled/next-server/app-page.runtime`, which includes React for both server layers.
 
 This is what a Node.js server has and a browser does not. The modules of Node.js are the package's, in `src/node/` (see below), Next's own modules of its process in `node-platform.ts`, the request and the response in `node-server.ts`, and the globals in `globals.ts`:
@@ -924,7 +924,7 @@ The site has the env of `.env.test` and `.env`, and of no `.local` file, as one 
 - `i18n` in `next.config`, which belongs to the Pages Router. The app runs as it would without it. An app with `output: "export"` is served like any other, with its proxy and the `next.config` redirects.
 - A dynamic segment with a `&` in it, written unencoded. `@next/routing` reads what follows the `&` as a query of the request.
 - A request the server makes to itself keeps its request stores until all of its work is done, which can be after its response has arrived: an `after()` callback, or a body that streams on. Code that awaits such a `fetch` reads that request's stores until then. For a proxy that is the rest of the request it runs for.
-- What the proxy hands to `waitUntil()` continues after the proxy has returned, without its request stores. Next's `instrumentation.ts` is not run, for the proxy or for a route.
+- Next's `instrumentation.ts` is not run, for the proxy or for a route.
 - A route handler does not see the query that a rewrite adds, as with `next start`. Its `request.url` is the URL the browser asked for.
 - `basePath`, and `trailingSlash: true`. Both are passed to Next's route resolution, and neither is tested with a page.
 - A route with `export const runtime = "edge"` runs on Node.js like the others: see [The Node.js Runtime](#the-nodejs-runtime). Static generation of a `GET` route handler and `revalidate` do not apply, so every request runs the handler. `process.env.NEXT_RUNTIME` is a constant in Next's own code and is not set for the app's code.

@@ -96,14 +96,6 @@
       "category": "not-yet",
       "text": "A navigation of Next's router to a route handler that answers with JSON, which a browser shows in place of the app. The tab cannot leave the test, so the page stays, with an uncaught error."
     },
-    "legacy-react-dom-server": {
-      "category": "plugin-bug",
-      "text": "A Client Component that renders markup with `renderToStaticMarkup()` of `react-dom/server`. The ssr layer has Next's aliases of its edge runtime, where `react-dom/server` has React's renderer for web streams alone. A route on Node.js gets React's whole entry."
-    },
-    "proxy-after": {
-      "category": "plugin-bug",
-      "text": "An `after()` of the proxy. What the proxy hands to `waitUntil()` runs after the proxy has returned, without its request stores, and Next needs them to run the callbacks."
-    },
     "exited-action-store": {
       "category": "plugin-bug",
       "text": "A promise of a Server Action, passed to `after()`, that calls a request API once the action is done. Next renders the page after the action outside the store of the action, with `AsyncLocalStorage.exit()`. Here the store stays exited for the rest of the request, so Next takes the call for one of the page."
@@ -920,13 +912,11 @@
       "failed": {}
     },
     "rsc-basic": {
-      "passed": 34,
+      "passed": 36,
       "failed": {
         "rsc-basic.test.ts > app dir - rsc basics > next internal shared context > should not error if just load next/navigation module in pages/api": "pages-router",
         "rsc-basic.test.ts > app dir - rsc basics > should not apply rsc syntax checks in pages/api": "pages-router",
         "rsc-basic.test.ts > app dir - rsc basics > should not use bundled react for pages with app": "pages-router",
-        "rsc-basic.test.ts > app dir - rsc basics > should use canary react for app": "legacy-react-dom-server",
-        "rsc-basic.test.ts > app dir - rsc basics > should be able to call legacy react-dom/server APIs in client components": "legacy-react-dom-server",
         "rsc-basic.test.ts > app dir - rsc basics > should generate edge SSR manifests for Node.js": "node-in-test"
       }
     },
@@ -935,14 +925,12 @@
       "failed": {}
     },
     "next-after-app": {
-      "passed": 24,
+      "passed": 26,
       "failed": {
-        "index.test.ts > after() in nodejs runtime > runs in middleware": "proxy-after",
         "index.test.ts > after() in nodejs runtime > only runs callbacks after the response is fully sent": "node-in-test",
         "index.test.ts > after() in nodejs runtime > uses waitUntil from request context if available > in a page": "changes-the-app",
         "index.test.ts > after() in nodejs runtime > uses waitUntil from request context if available > in a route handler": "changes-the-app",
         "index.test.ts > after() in nodejs runtime > uses waitUntil from request context if available > in middleware": "changes-the-app",
-        "index.test.ts > after() in edge runtime > runs in middleware": "proxy-after",
         "index.test.ts > after() in edge runtime > only runs callbacks after the response is fully sent": "node-in-test",
         "index.test.ts > after() in edge runtime > uses waitUntil from request context if available > in a page": "changes-the-app",
         "index.test.ts > after() in edge runtime > uses waitUntil from request context if available > in a route handler": "changes-the-app",

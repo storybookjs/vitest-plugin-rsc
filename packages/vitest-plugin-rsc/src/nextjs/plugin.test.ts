@@ -326,6 +326,49 @@ test("resolves a bare import of Next to its file in a build", async () => {
   expect(await resolve(source, page, null)).toEqual({ id: commonJs });
 });
 
+// A Client Component that calls `renderToStaticMarkup()` of `react-dom/server`
+// renders on the server too. The ssr layer takes Next's table for its edge
+// runtime, where that is Next's own module, which throws on the legacy APIs:
+// there it gets React's entry for Node.js, as a route on Node does. Next's
+// own renderer imports `react-dom/server.edge`, which stays the build for
+// web streams.
+test("gives a Client Component React's server entry for Node.js in the ssr layer", async () => {
+  const plugins = vitestPluginNext();
+  const plugin = plugins.find(({ name }) => name === "vitest-plugin-rsc:next")!;
+  await (plugin.config as ConfigHook<Config>)({ root }, { command: "build" });
+  const resolveIn = async (layer: string, source: string) => {
+    const resolver = plugins.find(
+      ({ name }) => name === `vitest-plugin-rsc:next-resolve:${layer}`,
+    )!;
+    const resolveId = resolver.resolveId as (
+      this: object,
+      source: string,
+      importer: string,
+      options: object,
+    ) => Promise<unknown>;
+    const context = {
+      environment: { mode: "build" },
+      resolve: async (id: string) => ({ id }),
+    };
+    return resolveId.call(context, source, path.join(root, "app/page.tsx"), {});
+  };
+  const reactDom = "next/dist/compiled/react-dom";
+  // The build of the `build` option, a production one for a build.
+  const edgeRenderer = {
+    id: expect.stringMatching(
+      new RegExp(`^${reactDom}/cjs/react-dom-server\\.edge\\.(development|production)\\.js$`),
+    ),
+  };
+
+  expect(await resolveIn("ssr", "react-dom/server")).toEqual({ id: `${reactDom}/server.node.js` });
+  expect(await resolveIn("ssr", "react-dom/server.edge")).toEqual(edgeRenderer);
+  expect(await resolveIn("browser", "react-dom/server")).toEqual({
+    id: `${reactDom}/server.browser.js`,
+  });
+  // A Server Component is not to render: Next's module, as in Next.
+  expect(await resolveIn("rsc", "react-dom/server")).toEqual(edgeRenderer);
+});
+
 // What the plugin makes of a Vitest config, and says of it when a run starts.
 async function configure(config: Record<string, unknown>) {
   const plugin = vitestPluginNext().find(({ name }) => name === "vitest-plugin-rsc:next")!;
