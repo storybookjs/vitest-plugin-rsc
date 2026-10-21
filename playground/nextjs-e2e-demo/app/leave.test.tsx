@@ -5,6 +5,7 @@ import { page } from "vitest/browser";
 import { Counter } from "./components/counter.tsx";
 import { FavoriteButton } from "./components/favorite-button.tsx";
 import { LateImport } from "./components/late-import.tsx";
+import { LateTimers } from "./components/late-timers.tsx";
 import { RefreshButton } from "./components/refresh-button.tsx";
 import { db } from "./lib/notes.ts";
 import { seenByProxy } from "./lib/proxy-log.ts";
@@ -215,6 +216,22 @@ test("loads nothing more for a page once it is left, also a module that its code
 
   // As a browser drops it: the import neither loads, nor fails.
   expect(globalThis.lateImport).toBe("listening");
+});
+
+test("runs no timer of a page once it is left, as a browser drops them with the page", async () => {
+  onTestFinished(() => {
+    delete globalThis.lateTimers;
+  });
+  await renderServer(<LateTimers />);
+  // The interval runs while the page is open.
+  await expect.poll(() => globalThis.lateTimers).toContain("interval");
+  await cleanup();
+  const fired = globalThis.lateTimers!.length;
+
+  window.dispatchEvent(new Event("late-timers"));
+  // Many ticks of the interval, a timeout of 0 and frames.
+  await new Promise((resolve) => setTimeout(resolve, 200));
+  expect(globalThis.lateTimers).toHaveLength(fired);
 });
 
 test("stops a page load when its signal aborts: it rejects at once, as fetch does, and leaves the page", async () => {

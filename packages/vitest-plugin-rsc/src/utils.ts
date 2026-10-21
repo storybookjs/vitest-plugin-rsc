@@ -20,6 +20,7 @@ import {
   type InvokeResult,
 } from "./built-layers.ts";
 import { isHostModule } from "./host-module.ts";
+import { runnerTimers, timersKey } from "./timers.ts";
 import {
   answerEvent,
   changedEvent,
@@ -117,7 +118,7 @@ function getRunner(environment: string): ModuleRunner {
   let runner = runners.get(environment);
   if (!runner) {
     const invoke = (payload: InvokePayload) => invokeEnvironment(environment, payload);
-    runners.set(environment, (runner = createRunner(environment, invoke, pageLoadEvaluator)));
+    runners.set(environment, (runner = createRunner(environment, invoke)));
   }
   return runner;
 }
@@ -127,11 +128,14 @@ function getRunner(environment: string): ModuleRunner {
 function createRunner(
   environment: string,
   invoke: NonNullable<ModuleRunnerTransport["invoke"]>,
-  evaluator: ModuleEvaluator,
   { sourcemaps = false } = {},
 ): ModuleRunner {
   const layer = builtLayers?.[environment];
-  return new ModuleRunner(
+  // A runner that is closed, like a page's that was left, settles none of
+  // the `import()`s of its modules, and fires none of their timers.
+  const isClosed = () => runner.isClosed();
+  const timers = runnerTimers(isClosed);
+  const runner = new ModuleRunner(
     {
       // With `sourcemaps`, the stack of an error has the lines of the source
       // for a module of this runner, where it has the lines of what the
@@ -143,17 +147,18 @@ function createRunner(
           hostModule(payload) ?? (layer ? built.invoke(layer, payload) : invoke(payload)),
       },
       hmr: false,
-      // A module of a build has the URL of the file it would be, from which
-      // it names the files of the build, like its CSS.
-      ...(layer && {
-        createImportMeta: (file) => ({
-          ...createDefaultImportMeta(file),
-          url: builtUrl(layer, file),
+      createImportMeta: (file) =>
+        Object.assign(createDefaultImportMeta(file), {
+          // A module of a build has the URL of the file it would be, from
+          // which it names the files of the build, like its CSS.
+          ...(layer && { url: builtUrl(layer, file) }),
+          // The timers its code calls: see timers.ts.
+          [timersKey]: timers,
         }),
-      }),
     },
-    evaluator,
+    droppingImportsOnceClosed(isClosed),
   );
+  return runner;
 }
 
 /**
@@ -176,12 +181,7 @@ export function createEnvironmentRunner(
       ? invokeForPageLoad(environment, payload, modules)
       : invokeEnvironment(environment, payload);
   };
-  const runner = createRunner(
-    environment,
-    invoke,
-    droppingImportsOnceClosed(() => runner),
-    { sourcemaps },
-  );
+  const runner = createRunner(environment, invoke, { sourcemaps });
   // The modules of a build do not change.
   if (builtLayers?.[environment]) return runner;
   takes.set(runner, async () => {
@@ -440,7 +440,7 @@ const pageLoadEvaluator: ModuleEvaluator = {
 // no more `import()` of its modules, as a browser drops what a page loads once
 // the page has gone: also one that it started before, and one that fails
 // because the runner is closed.
-function droppingImportsOnceClosed(runner: () => ModuleRunner): ModuleEvaluator {
+function droppingImportsOnceClosed(isClosed: () => boolean): ModuleEvaluator {
   const dropped = () => new Promise<never>(() => {});
   return {
     ...pageLoadEvaluator,
@@ -451,9 +451,9 @@ function droppingImportsOnceClosed(runner: () => ModuleRunner): ModuleEvaluator 
           ...context,
           [ssrDynamicImportKey]: (...args) =>
             load(...args).then(
-              (loaded) => (runner().isClosed() ? dropped() : loaded),
+              (loaded) => (isClosed() ? dropped() : loaded),
               (error: unknown) => {
-                if (runner().isClosed()) return dropped();
+                if (isClosed()) return dropped();
                 throw error;
               },
             ),

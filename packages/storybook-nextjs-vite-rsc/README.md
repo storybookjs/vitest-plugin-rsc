@@ -293,8 +293,9 @@ are: Storybook's items in the browser's storage are invisible to the app,
 and what the app stores does not reach them. The browser's DevTools show
 the browser's storage, not the page's. When Storybook leaves the story, the
 context closes, and the document has the browser's own APIs again: what the
-page left running, like a timer, writes to the browser's storage after
-that.
+page left running, like a listener of an event, writes to the browser's
+storage after that. A timer of the page does not run after it is left, as a
+browser drops it with the page.
 
 ## `parameters.nextjs`
 
