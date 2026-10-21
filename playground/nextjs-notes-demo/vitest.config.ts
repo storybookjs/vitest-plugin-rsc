@@ -1,10 +1,12 @@
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
+import { storybookTest } from "@storybook/addon-vitest/vitest-plugin";
 import { playwright } from "@vitest/browser-playwright";
 import { defineConfig, defineProject } from "vitest/config";
 import { vitestPluginRSC } from "vitest-plugin-rsc";
 import { vitestPluginNext, type NextBuild } from "vitest-plugin-rsc/nextjs/plugin";
 import { vitestPluginRscSourceConditions } from "../../vitest.conditions.ts";
+import { setup as buildStorybookFramework } from "../test-helpers/storybook-framework.ts";
 import { writePgliteFiles } from "./test/pglite-files.ts";
 
 // Make Vitest UI trace/source clicks a no-op instead of opening Cursor.
@@ -29,6 +31,20 @@ const { loadEnvConfig } = nextNotesRequire("@next/env") as {
 // oxlint-disable-next-line no-process-env
 const nextNotesDev = process.env.NODE_ENV !== "production" && process.env.NODE_ENV !== "test";
 loadEnvConfig(root, nextNotesDev);
+
+// Storybook's Vitest addon reads the presets of .storybook/main.ts as the
+// config loads, the framework's by its build: see the file.
+buildStorybookFramework();
+// oxlint-disable-next-line no-process-env
+process.env.STORYBOOK_DISABLE_TELEMETRY ??= "1";
+
+// A provider of its own for each project.
+const browserMode = () => ({
+  enabled: true,
+  headless: true,
+  provider: playwright(),
+  instances: [{ browser: "chromium" as const }],
+});
 
 export const nextjsNotesProjects = [
   defineProject({
@@ -59,13 +75,7 @@ export const nextjsNotesProjects = [
       include: ["**/*.test.{ts,tsx}"],
       // e2e/ runs Storybook: see vitest.storybook.config.ts.
       exclude: ["e2e/**", "node_modules"],
-      browser: {
-        enabled: true,
-        headless: true,
-        viewport: { width: 390, height: 844 },
-        provider: playwright(),
-        instances: [{ browser: "chromium" }],
-      },
+      browser: { ...browserMode(), viewport: { width: 390, height: 844 } },
       // Browser workers each own their browser state and run in parallel.
       // Inside one worker, test files run sequentially with `isolate: false`,
       // so cleanup belongs in beforeEach. Do not disable file parallelism
@@ -78,6 +88,23 @@ export const nextjsNotesProjects = [
       // `expect.element()` waits until the test's own timeout.
       expect: { poll: { timeout: 10_000 } },
       setupFiles: ["./vitest.setup.ts"],
+    },
+  }),
+  // Every story of the app, as a test of Storybook's Vitest addon, which
+  // makes a story file a test file: a server story renders in a page of the
+  // app, a client story in the browser layer, each with the preview its file
+  // imports. The framework brings the plugin, from .storybook/main.ts, and
+  // the preview mocks the database, as in Storybook. This project is also
+  // what the addon runs from Storybook's own UI.
+  defineProject({
+    root,
+    resolve: { conditions: vitestPluginRscSourceConditions },
+    optimizeDeps: { include: ["@electric-sql/pglite", "drizzle-orm/pglite"] },
+    plugins: [storybookTest({ configDir: fileURLToPath(new URL(".storybook", import.meta.url)) })],
+    test: {
+      name: "nextjs-notes-demo-stories",
+      browser: browserMode(),
+      isolate: false,
     },
   }),
 ];
