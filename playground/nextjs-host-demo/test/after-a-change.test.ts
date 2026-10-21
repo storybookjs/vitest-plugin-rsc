@@ -17,9 +17,10 @@ import { style } from "./host-page.ts";
 const root = fileURLToPath(new URL("../", import.meta.url));
 
 // A dev server of a copy of the project, which `edit` changes before the
-// server starts. Both go when the test ends, after its page closed: a dev
-// server holds a gigabyte or more, and the servers of every test at once do
-// not fit in the memory of a CI runner.
+// server starts. Both go when the test ends: a dev server holds more than a
+// gigabyte, and one for every test at once does not fit in a CI runner.
+// Vitest runs `onTestFinished` once `page` is closed, which would report a
+// server that stops as an error.
 async function serveCopy(edit: (copy: string) => void = () => {}) {
   const copy = fs.mkdtempSync(path.join(root, "..", ".nextjs-host-demo-"));
   onTestFinished(() => fs.rmSync(copy, { recursive: true, force: true }));
