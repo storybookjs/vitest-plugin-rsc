@@ -38,6 +38,9 @@ const preparedConfig = JSON.parse(process.env.NEXT_CONFORMANCE_PREPARED_CONFIG |
   string,
   unknown
 >;
+// The directory of the app in the fixture, for a test file with an app of
+// its own in each `describe`: see `app` in src/fixtures.ts.
+const app = process.env.NEXT_CONFORMANCE_APP || undefined;
 const mode = process.env.NEXT_CONFORMANCE_MODE === "dev" ? "dev" : "start";
 const testTimeout = Number(process.env.NEXT_CONFORMANCE_TEST_TIMEOUT || 60) * 1000;
 // Another checkout of this repository, to measure its plugin with this runner.
@@ -67,6 +70,7 @@ export default defineConfig({
       assumeInstalled,
       prepared,
       preparedConfig,
+      app,
     }),
     vitestPluginRSC(),
     // The shim works on the page, so it has to see the browser.

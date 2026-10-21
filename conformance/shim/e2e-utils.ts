@@ -1,7 +1,14 @@
 // Stands in for `test/lib/e2e-utils`, which the tests of Next import as
 // `e2e-utils`: `nextTestSetup()` and the mode a run is in.
-import { afterAll, beforeAll } from "vitest";
-import { mode, packages, prepared, preparedConfig, root } from "virtual:next-conformance/config";
+import { afterAll, beforeAll, beforeEach } from "vitest";
+import {
+  app,
+  mode,
+  packages,
+  prepared,
+  preparedConfig,
+  root,
+} from "virtual:next-conformance/config";
 import { NextInstance, setCurrentNext } from "./next-instance.ts";
 
 export type { NextInstance };
@@ -60,11 +67,32 @@ type Options = {
 
 const sameDirectory = (a: string, b: string) => a.replace(/\/+$/, "") === b.replace(/\/+$/, "");
 
+// Where the test file has the app that runs. The runner copies a fixture with
+// an app in a directory of its own, like `fixtures/main`, without that
+// directory, and the test files next to it: `__dirname` is the copy.
+const appDirectory = app ? `${root}/${app}` : root;
+
+// A directory of the fixture with another of its apps, which a `describe` of
+// the test file opens: a fixture of its own, in src/fixtures.ts.
+function anotherAppOfTheFixture(files: unknown): boolean {
+  const directory =
+    files instanceof FileRef ? files.fsPath : typeof files === "string" ? files : undefined;
+  return (
+    Boolean(app) &&
+    directory !== undefined &&
+    directory.startsWith(`${root}/`) &&
+    !sameDirectory(directory, appDirectory)
+  );
+}
+
+/** The note of a test that is another app's, which the reporter leaves out. */
+const ofAnotherApp = "a test of another app of the fixture";
+
 // What Next does with these options that the runner did not do when it copied
 // the fixture: the app the test asks for is not the app that runs.
 function unavailable(options: Options): string | undefined {
   if (options.files instanceof FileRef) {
-    if (!sameDirectory(options.files.fsPath, root)) {
+    if (!sameDirectory(options.files.fsPath, appDirectory)) {
       return `nextTestSetup({ files }) names another directory than the one of the fixture: ${options.files.fsPath}`;
     }
   } else if (typeof options.files !== "string") {
@@ -72,12 +100,13 @@ function unavailable(options: Options): string | undefined {
     // file out of the app.
     const entries = Object.entries(options.files ?? {});
     const isFixture = entries.every(
-      ([name, file]) => file instanceof FileRef && sameDirectory(file.fsPath, `${root}/${name}`),
+      ([name, file]) =>
+        file instanceof FileRef && sameDirectory(file.fsPath, `${appDirectory}/${name}`),
     );
     if (entries.length === 0 || !isFixture) {
       return "nextTestSetup({ files }) builds the app out of files the test names, not the directory of the fixture";
     }
-  } else if (!sameDirectory(options.files, root)) {
+  } else if (!sameDirectory(options.files, appDirectory)) {
     return `nextTestSetup({ files }) names another directory than the one of the fixture: ${options.files}`;
   }
   const missing = Object.keys({ ...options.dependencies, ...options.resolutions }).filter(
@@ -126,6 +155,10 @@ function fitsConfig(config: unknown, copy: unknown): boolean {
 
 export function nextTestSetup(options: Options) {
   const next = new NextInstance(unavailable(options));
+  if (anotherAppOfTheFixture(options.files)) {
+    beforeEach((context) => context.skip(ofAnotherApp));
+    return { next, isNextDev, isNextDeploy, isNextStart, isTurbopack, isRspack, skipped: true };
+  }
   // The variables of the server's process. The server is in the tab.
   const previous = new Map<string, string | undefined>();
   beforeAll(() => {

@@ -132,6 +132,10 @@
     "server-error-log": {
       "category": "not-applicable",
       "text": "Expects only the log of a Server Component's error as `next start` prints it: after a `⨯`, without the frames of Next. The server logs it to the tab's console, with the stack of the browser, and the client's own log of the error is in the same console."
+    },
+    "untriaged": {
+      "category": "untriaged",
+      "text": "Not looked at yet."
     }
   },
   "fixtures": {
@@ -984,6 +988,32 @@
     },
     "segment-cache__stale-search-params-on-replace-regression": {
       "passed": 1,
+      "failed": {}
+    },
+    "dynamic-data__main": {
+      "passed": 0,
+      "failed": {
+        "dynamic-data.test.ts > dynamic-data > should render the dynamic apis dynamically when used in a top-level scope": "commonjs-source",
+        "dynamic-data.test.ts > dynamic-data > should render the dynamic apis dynamically when used in a top-level scope with force dynamic": "commonjs-source",
+        "dynamic-data.test.ts > dynamic-data > should render empty objects for dynamic APIs when rendering with force-static": "commonjs-source",
+        "dynamic-data.test.ts > dynamic-data > should track searchParams access as dynamic when the Page is a client component": "commonjs-source",
+        "dynamic-data.test.ts > dynamic-data > should track dynamic apis when rendering app routes": "commonjs-source"
+      }
+    },
+    "dynamic-data__require-static": {
+      "passed": 0,
+      "failed": {
+        "dynamic-data.test.ts > dynamic-data with dynamic = \"error\" > error when the build when `dynamic = \"error\"` and dynamic data is read": "cli-output"
+      }
+    },
+    "dynamic-data__cache-scoped": {
+      "passed": 0,
+      "failed": {
+        "dynamic-data.test.ts > dynamic-data inside cache scope > error when the build when accessing dynamic data inside a cache scope": "cli-output"
+      }
+    },
+    "app-client-cache__regular": {
+      "passed": 10,
       "failed": {}
     }
   }

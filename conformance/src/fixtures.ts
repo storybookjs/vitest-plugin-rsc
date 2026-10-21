@@ -8,6 +8,13 @@ export type Fixture = {
   dir: string;
   /** The test files to run, relative to `dir`. */
   tests: string[];
+  /**
+   * The directory of the app in `dir`, for a fixture whose test file keeps
+   * its apps in directories of their own, like `fixtures/main`, and opens
+   * each in a `describe` of its own. The runner runs the test files in a
+   * copy of that app, and leaves the tests of the other apps out.
+   */
+  app?: string;
   /** What the fixture is here for. */
   area: Area;
   /** Packages its test lists as dependencies that its app does not import. */
@@ -387,7 +394,20 @@ export const fixtures: Fixture[] = [
     assumeInstalled: ["@babel/core", "@babel/parser", "@babel/types", "@babel/traverse"],
   }),
   appDir("use-server-inserted-html", "basics", ["use-server-inserted-html.test.ts"]),
-  // Not `app-client-cache` and `dynamic-data`: their apps are in directories
-  // of the fixture, like `fixtures/regular`, next to the test files, and the
-  // runner runs a test file in the directory of its app.
+  // `dynamic-data` has three apps in `fixtures/`, one for each `describe` of
+  // its test file. Each is a fixture here.
+  ...["main", "require-static", "cache-scoped"].map((app) =>
+    appDir("dynamic-data", "request-apis", ["dynamic-data.test.ts"], {
+      id: `dynamic-data__${app}`,
+      app: `fixtures/${app}`,
+    }),
+  ),
+  // The tests of the client cache with the defaults of `staleTimes`. Not
+  // `client-cache.original.test.ts` and `client-cache.experimental.test.ts`,
+  // which give each `describe` a `staleTimes` of its own, and not
+  // `client-cache.parallel-routes.test.ts`, which Next skips itself.
+  appDir("app-client-cache", "navigation", ["client-cache.defaults.test.ts"], {
+    id: "app-client-cache__regular",
+    app: "fixtures/regular",
+  }),
 ];

@@ -142,7 +142,17 @@ for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"] as const) {
 function copyFixture(fixture: Fixture): string {
   const root = path.join(work, "apps", fixture.id);
   fs.rmSync(root, { recursive: true, force: true });
-  fs.cpSync(path.join(checkout, fixture.dir), root, { recursive: true });
+  if (fixture.app) {
+    // The app, and the files next to the directories of the apps: the test
+    // files, and what they import.
+    fs.cpSync(path.join(checkout, fixture.dir, fixture.app), root, { recursive: true });
+    for (const entry of fs.readdirSync(path.join(checkout, fixture.dir), { withFileTypes: true })) {
+      if (entry.isFile())
+        fs.cpSync(path.join(entry.parentPath, entry.name), path.join(root, entry.name));
+    }
+  } else {
+    fs.cpSync(path.join(checkout, fixture.dir), root, { recursive: true });
+  }
   for (const file of fixture.prepared?.remove ?? []) {
     fs.rmSync(path.join(root, file), { recursive: true });
   }
@@ -217,6 +227,7 @@ function runFixture(fixture: Fixture, isSecondRun: boolean): Promise<FixtureRun>
           `${process.env.NODE_OPTIONS ?? ""} --conditions=vitest-plugin-rsc-source`.trim(),
         NEXT_CONFORMANCE_ROOT: root,
         NEXT_CONFORMANCE_TESTS: JSON.stringify(fixture.tests),
+        NEXT_CONFORMANCE_APP: fixture.app ?? "",
         NEXT_CONFORMANCE_TEST_LIB: path.join(checkout, "test/lib"),
         // One for each mode: each runs another build of Next and React,
         // which Vite pre-bundles anew.

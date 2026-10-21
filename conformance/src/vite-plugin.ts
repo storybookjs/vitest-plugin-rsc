@@ -122,6 +122,8 @@ export type ConformanceOptions = {
   preparedConfig?: Record<string, unknown>;
   /** Another checkout of this repository, to run its plugin instead. */
   pluginCheckout?: string;
+  /** The directory of the app in the fixture: see `app` in src/fixtures.ts. */
+  app?: string;
 };
 
 export function conformance(options: ConformanceOptions): Plugin {
@@ -245,6 +247,7 @@ export function conformance(options: ConformanceOptions): Plugin {
         };
         return [
           `export const root = ${JSON.stringify(root)};`,
+          `export const app = ${JSON.stringify(options.app ?? "")};`,
           `export const mode = ${JSON.stringify(options.mode)};`,
           `export const packages = ${JSON.stringify(Array.from(packages).sort())};`,
           `export const prepared = ${JSON.stringify(options.prepared ?? [])};`,
