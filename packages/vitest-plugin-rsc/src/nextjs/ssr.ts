@@ -366,9 +366,18 @@ async function handle(
       void work.then(() => backgroundWork.delete(work));
     },
   };
+  // Also what that work hands to `waitUntil()` while it runs: an `after()`
+  // callback that a promise passed to `after()` schedules, once it settles.
+  const backgroundSettled = async () => {
+    for (let settled = 0; settled < background.length; ) {
+      const waiting = background.slice(settled);
+      settled = background.length;
+      await Promise.allSettled(waiting);
+    }
+  };
   const endRequest = async () => {
     await Promise.race([
-      Promise.allSettled(background),
+      backgroundSettled(),
       (nested ? Promise.resolve() : nextRequest()).then(
         () => new Promise((resolve) => setTimeout(resolve, backgroundWorkTimeout)),
       ),
