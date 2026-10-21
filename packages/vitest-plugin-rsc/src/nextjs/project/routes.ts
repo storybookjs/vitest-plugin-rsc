@@ -14,7 +14,6 @@ export async function discoverAppRoutes(context: NextContext) {
   const { root, fail, config, appDir, pageExtensions, next } = context;
   const {
     APP_DIR_ALIAS,
-    DEFAULT_METADATA_ROUTE_EXTENSIONS,
     IncompatibleParallelRouteSlotsError,
     MissingCanonicalInterceptionRoutesError,
     UnmatchedAppPagesError,
@@ -24,7 +23,6 @@ export async function discoverAppRoutes(context: NextContext) {
     getAppPageStaticInfo,
     isAppPageRoute,
     isAppRouteRoute,
-    isMetadataRouteFile,
     normalizeAppPath,
     normalizeCatchAllRoutes,
     selectAppPageEntry,
@@ -89,17 +87,10 @@ export async function discoverAppRoutes(context: NextContext) {
   }
   // A file by its path from the root of the project, for a message.
   const fromRoot = (file: string) => path.relative(root, file).split(path.sep).join("/");
-  // Next also lists metadata files like `sitemap.ts` and `icon.png` as app
-  // routes. Those need its metadata loaders and are not served yet.
-  const fileOf = (appPath: string) => mappedAppPages[appPath]!.slice(APP_DIR_ALIAS.length);
-  const isMetadataFile = (appPath: string) =>
-    isAppRouteRoute(appPath) &&
-    isMetadataRouteFile(fileOf(appPath), DEFAULT_METADATA_ROUTE_EXTENSIONS, true);
-  const isRouteHandler = (appPath: string) => isAppRouteRoute(appPath) && !isMetadataFile(appPath);
-  const metadataFiles = Object.keys(mappedAppPages)
-    .filter(isMetadataFile)
-    .map((appPath) => fromRoot(path.join(appDir, fileOf(appPath))))
-    .sort();
+  // A route handler, and a metadata file like `sitemap.ts` or `icon.png`,
+  // which Next lists as one: `/sitemap.xml/route`. Next's app loader makes
+  // its route module with next-metadata-route-loader, see project/metadata.ts.
+  const isRouteHandler = isAppRouteRoute;
   const routes: NextRoute[] = [];
   for (const [pathname, appPaths] of Object.entries(appPathsPerRoute)) {
     appPaths.sort(compareAppPaths);
@@ -171,7 +162,6 @@ export async function discoverAppRoutes(context: NextContext) {
     /** The pages of each route, by its pathname: a route can have a page in each of its slots. */
     appPathsPerRoute,
     strictRouteMatching,
-    metadataFiles,
     edgeRouteFiles,
     routeFile,
   };

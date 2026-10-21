@@ -20,21 +20,9 @@
       "category": "not-yet",
       "text": "A page that a build prerenders, like one with `generateStaticParams`. Next keeps it between two requests, and here every request renders its page."
     },
-    "metadata-files": {
-      "category": "not-yet",
-      "text": "Metadata files: `favicon.ico`, `icon.png`, `opengraph-image`, `sitemap.ts`, `robots.txt`, `manifest.webmanifest`."
-    },
-    "font-preload": {
-      "category": "not-yet",
-      "text": "The `<link rel=\"preload\">` and `<link rel=\"preconnect\">` of `next/font`, which Next takes from a manifest of its build."
-    },
     "react-development-build": {
       "category": "not-yet",
       "text": "A production build of React. The plugin runs React's development build: an error of the server reaches the client with its message, where production sends a digest and a minified message, and Strict Mode runs an effect twice."
-    },
-    "node-builtin": {
-      "category": "not-yet",
-      "text": "Server code that imports a builtin module of Node.js that has no stand-in here, like `node:timers/promises`."
     },
     "server-action-ids": {
       "category": "not-yet",
@@ -78,7 +66,7 @@
     "node-in-test": {
       "category": "not-applicable",
       "text": "The test itself needs Node.js: it starts a server, or removes a directory.",
-      "match": "the test runs in a tab, not in Node\\.js|it starts a process, opens a socket or reads a build"
+      "match": "the test runs in a tab, not in Node\\.js|it starts a process, opens a socket or reads a build|__dirname is not defined"
     },
     "shared-history": {
       "category": "not-applicable",
@@ -93,11 +81,6 @@
       "text": "Changes a file of the app, or builds or starts the app itself.",
       "match": "needs a new build, or a dev server|runs the Next\\.js CLI itself|changes the app before it is built"
     },
-    "dev-overlay": {
-      "category": "not-applicable",
-      "text": "Reads Next's dev overlay, which only `next dev` has.",
-      "match": "Next's dev overlay"
-    },
     "dynamic-css-manifest": {
       "category": "not-yet",
       "text": "The CSS of a component of `next/dynamic`, which Next links from its manifest of dynamic imports, with `precedence=\"dynamic\"`, next to a preload of its JavaScript. Here it is a stylesheet of the segment that imports the component."
@@ -109,6 +92,15 @@
     "css-chunks": {
       "category": "not-applicable",
       "text": "Counts the stylesheets of a page. Next's build puts the CSS files that a segment imports in one chunk. Here each file is a stylesheet of its own."
+    },
+    "og-image-response": {
+      "category": "not-yet",
+      "text": "An image that `ImageResponse` of `next/og` renders. Next renders it with WebAssembly and a font of its own, which it reads from its own files with `node:fs`, and the server's disk here has no file of the project.",
+      "match": "Geist-Regular\\.ttf"
+    },
+    "streamed-to-prerendered": {
+      "category": "not-yet",
+      "text": "Expects the HTML of a page that Next's build prerenders. Here the page renders for the request, as `next start` renders a dynamic page: React sends the `<link rel=\"preconnect\">` of a font in the `Link` header, and a client navigation commits before the metadata that Next streams after the page."
     }
   },
   "fixtures": {
@@ -280,19 +272,9 @@
       }
     },
     "metadata": {
-      "passed": 35,
+      "passed": 45,
       "failed": {
-        "metadata.test.ts > app dir - metadata > opengraph > should pick up opengraph-image and twitter-image as static metadata files": "metadata-files",
-        "metadata.test.ts > app dir - metadata > opengraph > should override file based images when opengraph-image and twitter-image specify images property": "metadata-files",
-        "metadata.test.ts > app dir - metadata > icons > should support basic complex descriptor icons field": "metadata-files",
-        "metadata.test.ts > app dir - metadata > icons > should support root level of favicon.ico": "metadata-files",
-        "metadata.test.ts > app dir - metadata > file based icons > should render icon and apple touch icon meta if their images are specified": "metadata-files",
-        "metadata.test.ts > app dir - metadata > file based icons > should not render if image file is not specified": "metadata-files",
-        "metadata.test.ts > app dir - metadata > static routes > should have /favicon.ico as route": "metadata-files",
-        "metadata.test.ts > app dir - metadata > static routes > should have icons as route": "metadata-files",
-        "metadata.test.ts > app dir - metadata > static routes > should support root dir robots.txt": "metadata-files",
-        "metadata.test.ts > app dir - metadata > static routes > should support sitemap.xml under every routes": "metadata-files",
-        "metadata.test.ts > app dir - metadata > static routes > should support static manifest.webmanifest": "metadata-files",
+        "metadata.test.ts > app dir - metadata > icons > should support root level of favicon.ico": "node-in-test",
         "metadata.test.ts > app dir - metadata > static routes > should build favicon.ico as a custom route": "build-output",
         "metadata.test.ts > app dir - metadata > static optimization > should build static files into static route": "build-output",
         "metadata.test.ts > app dir - metadata > should not effect metadata images convention like files under pages directory": "pages-router"
@@ -303,14 +285,12 @@
       "failed": {}
     },
     "next-font": {
-      "passed": 10,
+      "passed": 12,
       "failed": {
-        "next-font.test.ts > app dir - next/font > app dir - next-font > preload > should preload correctly with server components": "font-preload",
-        "next-font.test.ts > app dir - next/font > app dir - next-font > preconnect > should add preconnect when preloading is disabled in page": "font-preload",
-        "next-font.test.ts > app dir - next/font > app dir - next-font > preconnect > should add preconnect when preloading is disabled in layout": "font-preload",
-        "next-font.test.ts > app dir - next/font > app dir - next-font > preconnect > should add preconnect when preloading is disabled in component": "font-preload",
-        "next-font.test.ts > app dir - next/font > app dir - next-font > preconnect > should add preconnect when preloading is disabled in template": "font-preload",
-        "next-font.test.ts > app dir - next/font > app dir - next-font > navigation > should not have duplicate preload tags on navigation": "font-preload"
+        "next-font.test.ts > app dir - next/font > app dir - next-font > preconnect > should add preconnect when preloading is disabled in page": "streamed-to-prerendered",
+        "next-font.test.ts > app dir - next/font > app dir - next-font > preconnect > should add preconnect when preloading is disabled in layout": "streamed-to-prerendered",
+        "next-font.test.ts > app dir - next/font > app dir - next-font > preconnect > should add preconnect when preloading is disabled in component": "streamed-to-prerendered",
+        "next-font.test.ts > app dir - next/font > app dir - next-font > preconnect > should add preconnect when preloading is disabled in template": "streamed-to-prerendered"
       }
     },
     "next-image": {
@@ -477,6 +457,76 @@
     },
     "tailwind-css": {
       "passed": 1,
+      "failed": {}
+    },
+    "metadata-dynamic-routes": {
+      "passed": 15,
+      "failed": {
+        "index.test.ts > app dir - metadata dynamic routes > sitemap > should optimize routes without multiple generation API as static routes": "build-output",
+        "index.test.ts > app dir - metadata dynamic routes > sitemap > should generate static paths of dynamic sitemap in production": "build-output",
+        "index.test.ts > app dir - metadata dynamic routes > social image routes > should render og image with opengraph-image dynamic routes": "og-image-response",
+        "index.test.ts > app dir - metadata dynamic routes > social image routes > should render og image with twitter-image dynamic routes": "og-image-response",
+        "index.test.ts > app dir - metadata dynamic routes > social image routes > should support params as argument in dynamic routes": "og-image-response",
+        "index.test.ts > app dir - metadata dynamic routes > icon image routes > should render icon with dynamic routes": "og-image-response",
+        "index.test.ts > app dir - metadata dynamic routes > icon image routes > should render apple icon with dynamic routes": "og-image-response",
+        "index.test.ts > app dir - metadata dynamic routes > route segment config > should generate dynamic route if dynamic config is force-dynamic": "build-output",
+        "index.test.ts > app dir - metadata dynamic routes > should generate unique path for image routes under group routes": "og-image-response",
+        "index.test.ts > app dir - metadata dynamic routes > should support edge runtime of image routes": "build-output",
+        "index.test.ts > app dir - metadata dynamic routes > should include default og font files in file trace": "build-output",
+        "index.test.ts > app dir - metadata dynamic routes > should contain generated routes in prerender manifest": "build-output"
+      }
+    },
+    "metadata-dynamic-routes-async-deps": {
+      "passed": 1,
+      "failed": {
+        "index.test.ts > app dir - metadata dynamic routes with async deps > should serve the opengraph-image route as a valid image": "og-image-response"
+      }
+    },
+    "metadata-font": {
+      "passed": 0,
+      "failed": {
+        "metadata-font.test.ts > app dir - metadata font > should handle custom fonts in both edge and nodejs runtime": "og-image-response"
+      }
+    },
+    "metadata-icons-parallel-routes": {
+      "passed": 5,
+      "failed": {}
+    },
+    "metadata-image-files": {
+      "passed": 1,
+      "failed": {}
+    },
+    "metadata-json-manifest": {
+      "passed": 1,
+      "failed": {}
+    },
+    "metadata-non-standard-custom-routes": {
+      "passed": 1,
+      "failed": {}
+    },
+    "metadata-route-like-pages": {
+      "passed": 2,
+      "failed": {}
+    },
+    "metadata-static-file": {
+      "passed": 5,
+      "failed": {
+        "metadata-static-file-dynamic-route.test.ts > metadata-files-static-output-dynamic-route > should serve static files when requested with placeholder for dynamic page": "node-in-test",
+        "metadata-static-file-dynamic-route.test.ts > metadata-files-static-output-dynamic-route > should display static metadata files with \"-\" placeholder in build output": "cli-output",
+        "metadata-static-file-group-route.test.ts > metadata-files-static-output-group-route > should serve static files when requested to its route for group page": "node-in-test",
+        "metadata-static-file-intercepting-route.test.ts > metadata-files-static-output-intercepting-route > should have correct link tags for intercepting page": "streamed-to-prerendered",
+        "metadata-static-file-intercepting-route.test.ts > metadata-files-static-output-intercepting-route > should serve static files when requested to its route for intercepting page": "node-in-test",
+        "metadata-static-file-parallel-route.test.ts > metadata-files-static-output-parallel-route > should serve static files when requested to its route for parallel slot page": "node-in-test",
+        "metadata-static-file-root-route.test.ts > metadata-files-static-output-root-route > should serve static files when requested to its route": "node-in-test",
+        "metadata-static-file-static-route.test.ts > metadata-files-static-output-static-route > should serve static files when requested to its route for static page": "node-in-test"
+      }
+    },
+    "metadata-svg-icon": {
+      "passed": 1,
+      "failed": {}
+    },
+    "sitemap-group": {
+      "passed": 2,
       "failed": {}
     }
   }

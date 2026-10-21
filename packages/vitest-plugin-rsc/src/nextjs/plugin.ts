@@ -73,6 +73,9 @@ const routeKinds = Object.keys(routeLists) as RouteKind[];
 // it, if the app has one, and its request handler.
 const middlewareId = virtual("middleware");
 const middlewareEntryId = virtual("middleware-entry");
+// A module of Next's metadata loaders, by the inline request for it of Next's
+// app loader: see project/metadata.ts.
+const metadataPrefix = virtual("metadata/");
 // The env of the run, which globals.ts puts in the page's `process.env`: see
 // project/env.ts.
 const envId = virtual("env");
@@ -526,6 +529,13 @@ function definesOf(project: NextProject, layer: NextLayer): Record<string, strin
   };
 }
 
+// Next's inline requests for its metadata loaders in the code of an entry.
+function findMetadataRequests(code: string): string[] {
+  return [...code.matchAll(/["'](next-metadata-(?:image|route)-loader\?[^"']+)["']/g)].map(
+    (match) => match[1]!,
+  );
+}
+
 function findImports(code: string): string[] {
   return [
     ...code.matchAll(
@@ -767,8 +777,16 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
             project.loadRouteEntry(candidate),
           ),
         );
+        // And what the modules of the metadata loaders import, which only
+        // the entries import, by a request that is no file.
+        const metadataModules = await Promise.all(
+          [...new Set(appPageEntries.flatMap(({ code }) => findMetadataRequests(code)))].map(
+            (request) => project.loadMetadata(request),
+          ),
+        );
         const entryImports = [
           ...appPageEntries.flatMap(({ code }) => findImports(code)),
+          ...metadataModules.flatMap(({ code }) => findImports(code)),
           ...findImports((await project.loadMiddlewareEntry()) ?? ""),
         ];
         // `next/og` renders images with wasm: not something to pre-bundle for
@@ -1044,16 +1062,6 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
               project.unmatchedRoutes.join(", "),
           );
         }
-        // An app with metadata files still runs, as it would without them.
-        // Not `favicon.ico`, which only adds a `<link rel="icon">`, and which
-        // every new app has.
-        const files = project.metadataFiles.filter((file) => path.basename(file) !== "favicon.ico");
-        if (files.length === 0) return;
-        const app = path.relative(process.cwd(), project.root) || path.basename(project.root);
-        config.logger.warnOnce(
-          `vitest-plugin-rsc: Next.js metadata files are not supported yet. The pages of ` +
-            `${app} leave them out, and their routes are not served: ${files.join(", ")}`,
-        );
       },
       // Vitest's hook for a plugin of a project, which another host has not:
       // what its config says is a test file or a setup file is not server
@@ -1123,13 +1131,21 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
         }
         if (source === middlewareId || source === middlewareEntryId) return `\0${source}`;
         if (source === useCacheId) return `\0${source}`;
-        // TODO: run Next's metadata loaders for these inline loader requests.
-        // Until then a page has no metadata from files: see configResolved.
-        if (/^next-metadata-(image|route)-loader\?/.test(source)) return `${bridgePrefix}metadata`;
+        if (project.isMetadataRequest(source)) return `\0${metadataPrefix}${source}`;
+        // The module of a generated image, for what it says of the image. Next
+        // imports it again for that, to keep the module of a page small. Here
+        // it is the module itself.
+        if (source.endsWith(project.metadataImageMeta)) {
+          return source.slice(0, -project.metadataImageMeta.length);
+        }
       },
       async load(id) {
-        if (id === `${bridgePrefix}metadata`) {
-          return `export default async function metadata() { return []; }`;
+        if (id.startsWith(`\0${metadataPrefix}`)) {
+          const { code, watchFiles } = await project.loadMetadata(
+            id.slice(metadataPrefix.length + 1),
+          );
+          for (const file of watchFiles) this.addWatchFile(file);
+          return serverCode.compile(code, "next-metadata.js", generatedDefines());
         }
         if (id === `\0${useCacheId}`) return useCacheModule(registry);
 

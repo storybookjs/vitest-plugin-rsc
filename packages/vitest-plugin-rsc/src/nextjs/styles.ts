@@ -17,6 +17,7 @@ import {
   type ViteDevServer,
 } from "vite";
 import { clientReferenceOfModule } from "./client-files.ts";
+import { fontRequestOf } from "./compile.ts";
 import { routeChunksOf } from "./route-chunks.ts";
 import type { ComponentRoute, NextLayer, NextProject, NextRoute, RouteSegment } from "./project.ts";
 import { clientReferencesId } from "../built-layers.ts";
@@ -501,6 +502,12 @@ export function createStyles(options: StylesOptions): Styles {
     // does for a page load, which `inline` says this is.
     const contentOf = async (path: string) =>
       inline && inlinesCss() ? (await cssOf(vite, path))?.code : undefined;
+    // The font files of the CSS of a `next/font` call, which Next preloads
+    // with the segment.
+    const fontsOf = async (path: string) => {
+      const request = fontRequestOf(stylesheetIds.get(path) ?? "");
+      return request === undefined ? undefined : (await getProject().loadFont(request)).files;
+    };
     // Also a file without any: it may have had some before an edit.
     return Object.fromEntries(
       await Promise.all(
@@ -510,6 +517,7 @@ export function createStyles(options: StylesOptions): Styles {
             collect(start).map(async (path) => ({
               path: await versioned(vite, path),
               content: await contentOf(path),
+              fonts: await fontsOf(path),
             })),
           ),
         ]),
@@ -873,6 +881,9 @@ function createBuiltFiles(
   // in the build, by layer and id.
   const compiled = new Map<string, string>();
   const files = new Map<string, string>();
+  // The font files of the stylesheet of a `next/font` call, by the file of
+  // the stylesheet, from the directory of the build.
+  const fonts = new Map<string, string[]>();
   // What each segment of a page route reaches in the rsc layer: a stylesheet,
   // or a Client Component, by the id the layer of the browser imports it by.
   type Reached = { stylesheet: string } | { client: string };
@@ -1018,7 +1029,7 @@ function createBuiltFiles(
         clients.set(item.client, resolved ? stylesheetsOf(reachIn(imports, [resolved.id])) : []);
       }
     },
-    generateBundle(_options, bundle) {
+    async generateBundle(_options, bundle) {
       const layer = layerOf(this.environment.name);
       if (!layer || manager?.isScanBuild) return;
       if (layer === "rsc") {
@@ -1051,6 +1062,15 @@ function createBuiltFiles(
         const fileName = `${directory}${name.replace(/[^\w.-]+/g, "_")}-${hash}.css`;
         this.emitFile({ type: "asset", fileName, source });
         files.set(id, fileName);
+        const request = fontRequestOf(file);
+        if (request !== undefined) {
+          const { files: fontFiles } = await getProject().loadFont(request);
+          const assetDirectory = getProject().assetPath.slice(1);
+          fonts.set(
+            fileName,
+            fontFiles.map((font) => assetDirectory + font),
+          );
+        }
       }
     },
   };
@@ -1093,6 +1113,7 @@ function createBuiltFiles(
       hostFiles: {},
       chunks: [],
       modules: {},
+      fonts: Object.fromEntries(fonts),
     };
     // Each chunk once, as many routes load the same ones.
     const indexes = new Map<string, number>();

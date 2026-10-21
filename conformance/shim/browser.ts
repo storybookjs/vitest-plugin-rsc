@@ -310,6 +310,9 @@ export class Locator {
   async evaluate<T>(fn: (element: Element, arg?: unknown) => T, arg?: unknown): Promise<T> {
     return (await this.one()).evaluate(fn, arg);
   }
+  async evaluateAll<T>(fn: (elements: Element[], arg?: unknown) => T, arg?: unknown): Promise<T> {
+    return fn(this.resolve(), arg);
+  }
   async elementHandle(): Promise<ElementHandle> {
     return this.one();
   }
