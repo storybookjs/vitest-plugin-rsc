@@ -14,6 +14,7 @@ import type { NextContext } from "./context.ts";
 export async function layerTables(context: NextContext, build: NextBuild) {
   const {
     root,
+    nextDir,
     projectRequire,
     fail,
     config,
@@ -162,6 +163,27 @@ export async function layerTables(context: NextContext, build: NextBuild) {
     // The plugin finds Next's Flight codec next to this one.
     if (typeof aliases["react-server-dom-webpack/server$"] !== "string") {
       fail("the alias tables have no `react-server-dom-webpack/server$`");
+    }
+    // Next's build for Node.js has a module rule, not an alias, for the
+    // contexts of `shared/lib/*.shared-runtime` in the server layers: an
+    // import of one goes to `app-page/vendored/contexts/<name>`, which takes
+    // the context from the one bundle of Next's server, `module.compiled`,
+    // where the SSR React made it. So does `next/router` in a Server
+    // Component, whose React, the server build, has no `createContext()`.
+    // The ssr layer loads that module itself, and its `contexts/entrypoints`
+    // imports the files: an alias there would be a cycle. The rsc layer's
+    // `module.compiled` is the ssr layer's (plugin.ts), so the alias gives
+    // it what Next's rule does.
+    if (layer === "rsc") {
+      const contexts = "server/route-modules/app-page/vendored/contexts";
+      const names = fs
+        .readdirSync(path.join(nextDir, "dist", contexts))
+        .filter((file) => file.endsWith(".js") && file !== "entrypoints.js")
+        .map((file) => file.slice(0, -".js".length));
+      if (names.length === 0) fail(`next/dist/${contexts} has no contexts`);
+      for (const name of names) {
+        aliases[`next/dist/shared/lib/${name}.shared-runtime$`] = `next/dist/${contexts}/${name}`;
+      }
     }
     return aliases;
   };

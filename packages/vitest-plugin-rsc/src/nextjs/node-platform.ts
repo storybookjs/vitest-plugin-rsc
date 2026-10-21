@@ -58,10 +58,18 @@ export function createNodePlatform(registry: string, prefix: string) {
   }
   export function expectNoPendingImmediates() {}
   `,
+    // And the contexts of Next's \`*.shared-runtime\` modules, which the rsc
+    // layer's imports of them read off this module (project/layers.ts): the
+    // ssr layer's, as the one bundle of Next's Node.js server has them.
     "ssr-app-page-module": `
   export const AppPageRouteModule = new Proxy(class {}, {
     construct: (_, args) => new ${registry}.ssr.AppPageRouteModule(...args),
   });
+  export const vendored = {
+    get contexts() {
+      return ${registry}.ssr.vendored.contexts;
+    },
+  };
   `,
     // Next's cache keeps its entries in memory. With this it finds no file.
     "node-fs": `

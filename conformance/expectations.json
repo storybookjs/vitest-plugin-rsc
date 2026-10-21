@@ -136,10 +136,6 @@
     "files-of-the-project": {
       "category": "not-yet",
       "text": "Server code that reads a file of the project with `node:fs`, like `./posts/first-post.txt`. The server's disk is in memory, and has no file of the project."
-    },
-    "next-router-in-server-component": {
-      "category": "plugin-bug",
-      "text": "A Server Component that imports `next/router`. Next runs it. Here its module calls `createContext()` with React's server build, which has none, and the page fails."
     }
   },
   "fixtures": {
@@ -930,10 +926,9 @@
       "failed": {}
     },
     "rsc-basic": {
-      "passed": 33,
+      "passed": 34,
       "failed": {
         "rsc-basic.test.ts > app dir - rsc basics > next internal shared context > should not error if just load next/navigation module in pages/api": "pages-router",
-        "rsc-basic.test.ts > app dir - rsc basics > next internal shared context > should not error if just load next/router module in app page": "next-router-in-server-component",
         "rsc-basic.test.ts > app dir - rsc basics > should not apply rsc syntax checks in pages/api": "pages-router",
         "rsc-basic.test.ts > app dir - rsc basics > should not use bundled react for pages with app": "pages-router",
         "rsc-basic.test.ts > app dir - rsc basics > should use canary react for app": "legacy-react-dom-server",

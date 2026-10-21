@@ -490,6 +490,57 @@ test("gives the server layers the package's module of Node.js, after Next's alia
   }
 });
 
+test("gives the rsc layer the ssr layer's contexts for Next's shared-runtime modules, as Next's build for Node.js does", async () => {
+  const plugins = vitestPluginNext();
+  const plugin = plugins.find(({ name }) => name === "vitest-plugin-rsc:next")!;
+  await (plugin.config as ConfigHook<Config>)({ root }, serve);
+  const resolverOf = (layer: string) => {
+    const resolver = plugins.find(
+      ({ name }) => name === `vitest-plugin-rsc:next-resolve:${layer}`,
+    )!;
+    const context = {
+      environment: { mode: "dev" },
+      resolve: async (source: string) => ({ id: source }),
+    };
+    return {
+      resolve: (source: string, importer: string) =>
+        (resolver.resolveId as (...args: unknown[]) => Promise<unknown>).call(
+          context,
+          source,
+          importer,
+          {},
+        ),
+      load: (id: string) => (resolver.load as (id: string) => string | undefined).call({}, id),
+    };
+  };
+  // `next/router` imports the context of the Pages Router, which React's
+  // server build cannot make: Next's module rule sends the import to the
+  // context of the one bundle of its server, `module.compiled`.
+  const router = path.join(nextDir, "dist/esm/client/router.js");
+  const contexts = "next/dist/esm/server/route-modules/app-page/vendored/contexts";
+  const rsc = resolverOf("rsc");
+  expect(await rsc.resolve("../shared/lib/router-context.shared-runtime", router)).toEqual({
+    id: `${contexts}/router-context.js`,
+  });
+  expect(await rsc.resolve("../shared/lib/app-router-context.shared-runtime", router)).toEqual({
+    id: `${contexts}/app-router-context.js`,
+  });
+  // That file reads the context off `module.compiled`: in the rsc layer the
+  // bridge to the ssr layer's route module, which has the contexts too.
+  const bridge = await rsc.resolve(
+    "../../module.compiled",
+    path.join(nextDir, contexts.slice("next/".length), "router-context.js"),
+  );
+  expect(bridge).toBe("\0vitest-plugin-rsc/next-bridge/ssr-app-page-module");
+  expect(rsc.load(bridge as string)).toContain("ssr.vendored.contexts");
+  // The ssr layer loads the route module, whose `contexts/entrypoints`
+  // imports the files: it keeps them.
+  const ssr = resolverOf("ssr");
+  expect(await ssr.resolve("../shared/lib/router-context.shared-runtime", router)).toEqual({
+    id: "next/dist/esm/shared/lib/router-context.shared-runtime.js",
+  });
+});
+
 test("gives the package's modules of Node.js each other, not a polyfill of Next to pre-bundle", async () => {
   const plugins = vitestPluginNext();
   const plugin = plugins.find(({ name }) => name === "vitest-plugin-rsc:next")!;
