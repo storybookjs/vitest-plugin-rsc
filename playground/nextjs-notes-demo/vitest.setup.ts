@@ -3,14 +3,13 @@ import { page } from "vitest/browser";
 import { setupWorker } from "msw/browser";
 import * as dbModule from "#lib/db.ts";
 import { nextCacheProbeFetchHandler } from "#components/next-cache-msw.ts";
+import { TEST_NOW } from "#test/now.ts";
 
-// The two modules the tests mock: the database, the app's Postgres, a PGlite
-// in memory here; and the clock, a fixed instant here.
-// Everything else of the app is real: Better Auth on that database, its
-// cookies, the flash cookies. The plugin starts each test without the app's
-// cookies.
+// The one module the tests mock: the database, which is the app's Postgres,
+// and a PGlite in memory here. Everything else of the app is real: Better
+// Auth on that database, its cookies, the flash cookies. The plugin starts
+// each test without the app's cookies.
 vi.mock("#lib/db.ts");
-vi.mock("#lib/clock.ts");
 
 const { resetDb } = dbModule as typeof import("#lib/__mocks__/db.ts");
 
@@ -27,7 +26,6 @@ disableMotionStyle.textContent = `
 document.head.appendChild(disableMotionStyle);
 
 const MOBILE_VIEWPORT = { width: 390, height: 844 } as const;
-const TEST_NOW = "2026-05-06T00:00:00.000Z";
 
 let pointerResetTarget: HTMLElement | undefined;
 const worker = setupWorker(...nextCacheProbeFetchHandler);
@@ -73,6 +71,8 @@ beforeEach(async () => {
   worker.resetHandlers();
   await resetDb();
 
+  // The page's clock stopped at TEST_NOW, as in the stories: the date of a
+  // note that a test writes is the same on every run.
   vi.setSystemTime(new Date(TEST_NOW));
 
   return () => {
