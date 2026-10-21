@@ -38,6 +38,6 @@ test("lists the fonts of each file as Next's manifest of fonts, from its stylesh
 });
 
 // The server's cache reads the same manifest: see cache.ts.
-test("answers for the prerender manifest with the one object of the module", () => {
+test("answers for the prerender manifest with the object the server's cache gets", () => {
   expect(loadManifest("/.next/prerender-manifest.json")).toBe(prerenderManifest);
 });

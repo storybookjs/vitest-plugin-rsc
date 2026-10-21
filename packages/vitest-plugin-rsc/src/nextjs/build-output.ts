@@ -5,7 +5,7 @@ import {
   routesManifest,
   routing,
 } from "virtual:vitest-plugin-rsc/next-manifest";
-import { registry } from "./registry.ts";
+import { actionModulePrefix, registry } from "./registry.ts";
 import type { Stylesheets } from "./styles-shared.ts";
 
 // What `next build` writes to `.next/`, filled per route as the plugin learns
@@ -14,7 +14,7 @@ import type { Stylesheets } from "./styles-shared.ts";
 // for every request, so what is set here before a request is what that
 // request finds.
 
-export const anyKey = <T>(create: (key: string) => T) =>
+const anyKey = <T>(create: (key: string) => T) =>
   new Proxy({} as Record<string, T>, {
     get: (_, key) => (typeof key === "string" ? create(key) : undefined),
     has: () => true,
@@ -88,10 +88,18 @@ const buildManifest = {
 };
 
 // Next's build lists the Server Actions of the app in a manifest. Here the
-// server lists the one a request calls, for that request: see ssr.ts.
+// server lists the ones a request calls, for that request: see ssr.ts.
 let serverActions: object = {};
-export function setServerActions(actions: object): void {
-  serverActions = actions;
+export function setServerActions(ids: Iterable<string>): void {
+  serverActions = Object.fromEntries(
+    Array.from(ids, (id) => [
+      id,
+      {
+        workers: anyKey(() => ({ moduleId: actionModulePrefix + id, async: true })),
+        layer: {},
+      },
+    ]),
+  );
 }
 
 // No route is prerendered: nothing is built. The one object that both Next's
@@ -104,8 +112,8 @@ export const prerenderManifest: PrerenderManifest = {
   preview,
 };
 
-// The files of `.next/` that the route module of a page reads, by the end of
-// their path. What is not here is a file a build does not always write.
+// The files of `.next/` that the route module of a page or a route handler
+// reads, by the end of their path. What is not here is a file a build does not always write.
 const manifests: [suffix: string, manifest: () => unknown][] = [
   // The one Next's build makes: see `routesManifest` in project.ts.
   ["routes-manifest.json", () => routesManifest],

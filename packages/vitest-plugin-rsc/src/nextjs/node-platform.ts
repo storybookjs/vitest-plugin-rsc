@@ -2,8 +2,8 @@
 // the modules of Next that set a Node.js process up or read the files of a
 // build, each one module that Next itself keeps apart. This is the build side
 // of it: the modules, as code for Vite. The browser's side is node-server.ts,
-// build-output.ts for the files of a build, and globals.ts for the globals. The modules of Node.js themselves are the
-// package's, see node-builtins.ts.
+// build-output.ts for the files of a build, and globals.ts for the globals.
+// The modules of Node.js themselves are the package's, see node-builtins.ts.
 
 /**
  * The stand-ins, for a `registry` in the browser that some of them call and a

@@ -11,12 +11,11 @@ import { getRouteMatcher } from "next/dist/shared/lib/router/utils/route-matcher
 import { getRouteRegex } from "next/dist/shared/lib/router/utils/route-regex";
 import { routes as allRoutes, routing } from "virtual:vitest-plugin-rsc/next-manifest";
 import { actionIdsOf } from "./action-ids.ts";
-import { anyKey, setServerActions, setStylesheets } from "./build-output.ts";
+import { setServerActions, setStylesheets } from "./build-output.ts";
 import { loadCacheHandlers, shareIncrementalCache } from "./cache.ts";
 import { registerModuleLoader } from "./client-modules.ts";
 import { handleRequest as handleWith } from "./node-server.ts";
 import {
-  actionModulePrefix,
   openedAt,
   registry,
   type Opened,
@@ -332,21 +331,13 @@ function nodeRouteFor(opened: Opened | undefined, matched: Route | undefined): R
 // be one, and 409 for one that is not in the list. For an app without a
 // Server Action it answers before it looks at the id, but the app here always
 // has one: the plugin's own, which is in the list too.
-async function serverActionsOf(request: ServerRequest): Promise<object> {
+async function serverActionsOf(request: ServerRequest): Promise<Set<string>> {
   const own = await registry.ownServerAction;
   const ids = new Set(own ? [own] : []);
   for (const id of await actionIdsOf(request)) {
     if (await registry.hasServerAction(id)) ids.add(id);
   }
-  return Object.fromEntries(
-    Array.from(ids, (id) => [
-      id,
-      {
-        workers: anyKey(() => ({ moduleId: actionModulePrefix + id, async: true })),
-        layer: {},
-      },
-    ]),
-  );
+  return ids;
 }
 
 // The scope of Next's request stores for what handles a request, with the
