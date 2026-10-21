@@ -7,5 +7,7 @@ export default defineProject({
     name: "vitest-plugin-rsc",
     include: ["src/**/*.test.ts"],
     environment: "node",
+    // `gc()`, for the tests of what is collected.
+    execArgv: ["--expose-gc"],
   },
 });
