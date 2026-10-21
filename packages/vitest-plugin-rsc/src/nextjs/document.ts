@@ -35,6 +35,9 @@ import { graphStylesheetAttribute } from "./styles-shared.ts";
 // it, with a preload of each (`preloadPage()`). Those links are the page's
 // too, and go with it, and with a load that is left before its page is there.
 
+/** An entry of the history: its URL and its state. */
+export type HistoryEntry = { url: string; state: unknown };
+
 const elements = (of: Document) => [of.documentElement, of.head, of.body];
 const attributesOf = (element: Element) =>
   Array.from(element.attributes, ({ name, value }) => [name, value] as const);
@@ -162,8 +165,16 @@ export function preloadPage({
  * `<html>` or `<body>`, and what is in the document stays the test's. What
  * the HTML parser puts in `<body>` goes in the container: the node, with the
  * scripts it renders, and after it the scripts of Next and React.
+ *
+ * The page takes the entry of the history that the document is at, or with
+ * `after` gets one of its own, after that entry.
  */
-export async function loadDocument(html: string, url: string, container?: Element): Promise<void> {
+export async function loadDocument(
+  html: string,
+  url: string,
+  container?: Element,
+  after?: HistoryEntry,
+): Promise<void> {
   leaveDocument();
   // The preloads of its route are this page's.
   const ownPreloads = new Set(preloads);
@@ -275,7 +286,18 @@ export async function loadDocument(html: string, url: string, container?: Elemen
   // Where the browser ended up, after any redirects. Before the page is in
   // the document, which requests what its relative URLs resolve to against
   // it, and before its scripts run: one of them may read `location`.
-  window.history.replaceState(null, "", url);
+  //
+  // A page load that adds an entry to the history adds it `after` the one
+  // of the page it left, which gets back the URL and the state that leaving
+  // that page took from it. So `history.back()` returns to that page, as in
+  // a browser. A browser loads the page again, where Next's router of this
+  // page restores it from the state of its entry, as one of its own.
+  if (after) {
+    window.history.replaceState(after.state, "", after.url);
+    window.history.pushState(null, "", url);
+  } else {
+    window.history.replaceState(null, "", url);
+  }
 
   document.head.append(...page.head.childNodes);
   await loaded(stylesheetsOfHead);

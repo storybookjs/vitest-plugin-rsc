@@ -14,6 +14,7 @@ export type NavigateEvent = Event & {
   hashChange: boolean;
   formData: FormData | null;
   downloadRequest: string | null;
+  sourceElement: Element | null;
 };
 
 // Whether a browser context of the app is open, which has the navigations:

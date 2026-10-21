@@ -982,7 +982,7 @@ async function traverse(delta: number, firstEntry: string | undefined): Promise<
     if (target < first || target >= entries.length) {
       throw new Error(
         `browser.${delta < 0 ? "back" : "forward"}(): the history of this page has no entry to go to. ` +
-          "A page that the app loads itself replaces the entry it was loaded from, where a browser adds one.",
+          "Its first entry is the one the test opened the page in.",
       );
     }
   }
