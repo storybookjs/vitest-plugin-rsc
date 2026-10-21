@@ -19,7 +19,7 @@ test("renders the new note form with empty fields", async () => {
   await expect.element(page.getByRole("button", { name: "Create note" })).toBeInTheDocument();
 });
 
-test("creates a note dated by the app's clock", async () => {
+test("creates a note dated by the page's clock", async () => {
   await signedInAs();
   await renderServer({ url: "/notes/new" });
 
@@ -29,9 +29,9 @@ test("creates a note dated by the app's clock", async () => {
   await expect
     .element(page.getByRole("heading", { level: 1, name: "Groceries" }))
     .toBeInTheDocument();
-  // lib/__mocks__/clock.ts, not the tab's Date, which vitest.setup.ts fixes
-  // at another day.
-  await expect.element(page.getByText("Updated Jan 15, 2026")).toBeInTheDocument();
+  // TEST_NOW, at which vitest.setup.ts stops the clock: PGlite dates the
+  // note by the page's clock, as Postgres does by the server's.
+  await expect.element(page.getByText("Updated May 6, 2026")).toBeInTheDocument();
 });
 
 test("renders server validation errors and keeps old input", async () => {

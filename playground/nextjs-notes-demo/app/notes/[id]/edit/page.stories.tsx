@@ -49,7 +49,7 @@ export const Save = meta.story({
       await canvas.findByRole("heading", { level: 1, name: "Reading list 2026" }, roundTrip),
     ).toBeVisible();
     await expect(location.pathname).toBe(`/notes/${id}`);
-    // The date of lib/__mocks__/clock.ts, the same in every build.
-    await expect(canvas.getByText("Updated Jan 15, 2026")).toBeVisible();
+    // TEST_NOW, at which the preview stops the clock: the same in every build.
+    await expect(canvas.getByText("Updated May 6, 2026")).toBeVisible();
   },
 });
