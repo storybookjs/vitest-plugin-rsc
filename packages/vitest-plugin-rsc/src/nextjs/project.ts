@@ -235,6 +235,8 @@ export type NextProject = {
     response: ServerResponse,
     serveFile: ServeFile,
   ): Promise<boolean>;
+  /** The module that Next's build makes of `next/root-params`, for the app. */
+  loadRootParams(): Promise<string>;
 };
 
 /** A file of a segment of a page route: see `loadRouteEntry()`. */

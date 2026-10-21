@@ -107,10 +107,21 @@ registry.flightClient = {
   createTemporaryReferenceSet: ReactServer.createClientTemporaryReferenceSet,
 } satisfies FlightAdapters<"client">;
 
+// Next's route module makes a cache of its own for its response cache, with
+// the cache handlers of `next.config`, which it imports by their file. The
+// server here has one cache, which it hands Next for every request, and which
+// has loaded those handlers: see cache.ts.
+type RouteEntry = { routeModule?: { getIncrementalCache?: () => Promise<unknown> } };
+function withServerCache<T>(entry: T): T {
+  const { routeModule } = entry as RouteEntry;
+  if (routeModule) routeModule.getIncrementalCache = async () => globalThis.__incrementalCache;
+  return entry;
+}
+
 registry.loadAppPage = async (page) => {
   const load = (appPages as Record<string, () => Promise<unknown>>)[page];
   if (!load) throw new Error(`vitest-plugin-rsc: unknown Next.js app page ${page}`);
-  return (registry.appPages[page] ??= await load());
+  return (registry.appPages[page] ??= withServerCache(await load()));
 };
 
 // The stylesheets of a route are the plugin's to say, as they are a build's:
@@ -199,7 +210,7 @@ export async function loadComponent(): Promise<{ default: () => unknown }> {
 registry.loadRouteHandler = async (page) => {
   const load = routeHandlers[page];
   if (!load) throw new Error(`vitest-plugin-rsc: unknown Next.js route handler ${page}`);
-  return (await load()).handler;
+  return withServerCache(await load()).handler;
 };
 
 registry.loadMiddleware = async () => {

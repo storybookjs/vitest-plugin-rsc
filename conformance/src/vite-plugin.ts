@@ -56,9 +56,15 @@ export function importedNames(code: string, source: string): string[] {
   return Array.from(names);
 }
 
+// What a builtin module of Node.js has that a tab has too, by its name.
+const inTab: Record<string, Record<string, string>> = {
+  "node:crypto": { randomUUID: "() => globalThis.crypto.randomUUID()" },
+};
+
 // A module that has nothing to offer a tab. Importing it is fine: a test file
 // imports what all of its tests need. Calling it is what cannot be done.
 function stubModule(source: string, names: string[]): string {
+  const own = inTab[source] ?? {};
   return [
     `import { unsupported } from ${JSON.stringify(shim("unsupported.ts"))};`,
     `const stub = (name) => new Proxy(function () {}, {`,
@@ -66,8 +72,13 @@ function stubModule(source: string, names: string[]): string {
     `  construct: () => unsupported(\`\${name} of ${source}: the test runs in a tab, not in Node.js\`),`,
     `  get: (target, property) => typeof property === "symbol" || property in target ? target[property] : stub(\`\${name}.\${property}\`),`,
     `});`,
-    ...names.map((name) => `export const ${name} = stub(${JSON.stringify(name)});`),
-    `export default stub("the default export");`,
+    ...names.map(
+      (name) => `export const ${name} = ${own[name] ?? `stub(${JSON.stringify(name)})`};`,
+    ),
+    // With them on the default export too: `crypto.randomUUID()`.
+    `export default Object.assign(stub("the default export"), { ${Object.entries(own)
+      .map(([name, value]) => `${name}: ${value}`)
+      .join(", ")} });`,
   ].join("\n");
 }
 
@@ -143,6 +154,8 @@ export function conformance(options: ConformanceOptions): Plugin {
     "node:path": "pathe",
     stream: shim("stream.ts"),
     "node:stream": shim("stream.ts"),
+    expect: shim("expect.ts"),
+    "escape-string-regexp": shim("escape-string-regexp.ts"),
   };
 
   return {

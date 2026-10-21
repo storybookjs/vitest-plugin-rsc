@@ -23,6 +23,7 @@ export type LoaderContext = {
   emitWarning(warning: Error): void;
   emitError(error: Error): void;
   addDependency(file: string): void;
+  addContextDependency(directory: string): void;
   resolve(
     directory: string,
     request: string,
@@ -128,6 +129,7 @@ export function createLoaders(context: NextContext): Pick<
   | "readEmittedFile"
   | "emittedFiles"
   | "optimizeImage"
+  | "loadRootParams"
 > & {
   runLoader: RunLoader;
 } {
@@ -144,6 +146,7 @@ export function createLoaders(context: NextContext): Pick<
     findConfig,
     imageOptimizer,
     nextFontLoader,
+    nextRootParamsLoader,
     nextImageLoader,
     nextImageLoaderRegex,
   } = next;
@@ -185,6 +188,7 @@ export function createLoaders(context: NextContext): Pick<
           emitWarning: (warning) => console.warn(warning),
           emitError: reject,
           addDependency: () => {},
+          addContextDependency: () => {},
           resolve: (directory, request, callback) => {
             const file = path.resolve(directory, request);
             if (fs.existsSync(file)) callback(null, file);
@@ -419,6 +423,13 @@ export function createLoaders(context: NextContext): Pick<
       return font;
     },
     assetPath: emittedPath,
+    // `next/root-params`: a function for each param of the root layouts of
+    // the app, which next-root-params-loader writes from the files of `app/`.
+    async loadRootParams() {
+      const options = { appDir: context.appDir, pageExtensions: config.pageExtensions };
+      const [code] = await runLoader(nextRootParamsLoader, options, context.appDir);
+      return String(code);
+    },
     emittedFiles: () =>
       [...emitted].map(([name, body]) => ({ pathname: `${emittedPath}${name}`, body })),
     readEmittedFile(pathname) {

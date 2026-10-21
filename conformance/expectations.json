@@ -133,9 +133,25 @@
       "category": "not-applicable",
       "text": "Expects only the log of a Server Component's error as `next start` prints it: after a `⨯`, without the frames of Next. The server logs it to the tab's console, with the stack of the browser, and the client's own log of the error is in the same console."
     },
-    "untriaged": {
-      "category": "untriaged",
-      "text": "Not looked at yet."
+    "cached-function-as-action": {
+      "category": "not-yet",
+      "text": "A `\"use cache\"` function that a Client Component gets, as a prop or by an import. Next's compiler makes such a function a Server Action as well, which the client calls. Here it is not one: React does not pass it to the client, and a Client Component that imports it runs its module in the browser."
+    },
+    "requests-in-turn": {
+      "category": "not-yet",
+      "text": "Two requests at once, which Next lets share the work of a cached function, or a request while an earlier one regenerates a stale entry in the background. The server handles one request at a time, and a request waits up to a second for the background work of the one before it."
+    },
+    "files-of-the-project": {
+      "category": "not-yet",
+      "text": "Server code that reads a file of the project with `node:fs`, like `./posts/first-post.txt`. The server's disk is in memory, and has no file of the project."
+    },
+    "react-development-build": {
+      "category": "not-yet",
+      "text": "A production build of React. The plugin runs React's development build: an error of the server reaches the client with its message, where production sends a digest and a minified message, and Strict Mode runs an effect twice."
+    },
+    "metadata-files": {
+      "category": "not-yet",
+      "text": "Metadata files: `favicon.ico`, `icon.png`, `opengraph-image`, `sitemap.ts`, `robots.txt`, `manifest.webmanifest`."
     }
   },
   "fixtures": {
@@ -1015,6 +1031,220 @@
     "app-client-cache__regular": {
       "passed": 10,
       "failed": {}
+    },
+    "cache-components": {
+      "passed": 16,
+      "failed": {
+        "cache-components.connection.test.ts > cache-components > should partially prerender pages that use connection": "prerendered-pages",
+        "cache-components.connection.test.ts > cache-components > should be able to pass connection as a promise to another component and trigger an intermediate Suspense boundary": "prerendered-pages",
+        "cache-components.cookies.test.ts > cache-components > should partially prerender pages that use cookies": "prerendered-pages",
+        "cache-components.cookies.test.ts > cache-components > should be able to pass cookies as a promise to another component and trigger an intermediate Suspense boundary": "prerendered-pages",
+        "cache-components.date.test.ts > cache-components > should prerender pages with cached `Date.now()` calls": "prerendered-pages",
+        "cache-components.date.test.ts > cache-components > should prerender pages with cached `Date()` calls": "prerendered-pages",
+        "cache-components.date.test.ts > cache-components > should prerender pages with cached `new Date()` calls": "prerendered-pages",
+        "cache-components.date.test.ts > cache-components > should prerender pages with cached static Date instances like `new Date(0)`": "prerendered-pages",
+        "cache-components.date.test.ts > cache-components > should not prerender pages with uncached static Date instances like `new Date(0)`": "prerendered-pages",
+        "cache-components.draft-mode.test.ts > cache-components > should fully prerender pages that use draftMode": "prerendered-pages",
+        "cache-components.headers.test.ts > cache-components > should partially prerender pages that use headers": "prerendered-pages",
+        "cache-components.headers.test.ts > cache-components > should be able to pass headers as a promise to another component and trigger an intermediate Suspense boundary": "prerendered-pages",
+        "cache-components.node-crypto.test.ts > cache-components > should prerender pages with cached `require('node:crypto').getRandomValues(...)` calls": "prerendered-pages",
+        "cache-components.node-crypto.test.ts > cache-components > should prerender pages with cached `require('node:crypto').randomUUID()` calls": "prerendered-pages",
+        "cache-components.node-crypto.test.ts > cache-components > should prerender pages with cached `require('node:crypto').randomBytes(size)` calls": "prerendered-pages",
+        "cache-components.node-crypto.test.ts > cache-components > should prerender pages with cached `require('node:crypto').randomFillSync(buffer)` calls": "prerendered-pages",
+        "cache-components.node-crypto.test.ts > cache-components > should prerender pages with cached `require('node:crypto').randomInt(max)` calls": "prerendered-pages",
+        "cache-components.node-crypto.test.ts > cache-components > should prerender pages with cached `require('node:crypto').randomInt(min, max)` calls": "prerendered-pages",
+        "cache-components.node-crypto.test.ts > cache-components > should prerender pages with cached `require('node:crypto').generatePrimeSync(size, options)` calls": "prerendered-pages",
+        "cache-components.node-crypto.test.ts > cache-components > should prerender pages with cached `require('node:crypto').generateKeyPairSync(type, options)` calls": "prerendered-pages",
+        "cache-components.node-crypto.test.ts > cache-components > should prerender pages with cached `require('node:crypto').generateKeySync(type, options)` calls": "prerendered-pages",
+        "cache-components.params.test.ts > cache-components > Params > should partially prerender pages that await params in a server components": "prerendered-pages",
+        "cache-components.params.test.ts > cache-components > Params > should fully prerender pages that check individual param keys after awaiting params in a server component": "prerendered-pages",
+        "cache-components.params.test.ts > cache-components > Params > should partially prerender pages that spread awaited params in a server component": "prerendered-pages",
+        "cache-components.params.test.ts > cache-components > Param Shadowing > should correctly allow param names like then, value, and status when awaiting params in a server component": "prerendered-pages",
+        "cache-components.random.test.ts > cache-components > should prerender pages with cached Math.random() calls": "prerendered-pages",
+        "cache-components.routes.test.ts > cache-components > should prerender GET route handlers that have entirely cached io (fetches)": "prerendered-pages",
+        "cache-components.routes.test.ts > cache-components > should prerender GET route handlers that have entirely cached io (unstable_cache)": "prerendered-pages",
+        "cache-components.routes.test.ts > cache-components > should prerender GET route handlers that have entirely cached io (\"use cache\")": "prerendered-pages",
+        "cache-components.routes.test.ts > cache-components > should prerender GET route handlers that complete synchronously or in a microtask": "prerendered-pages",
+        "cache-components.routes.test.ts > cache-components > should prerender GET route handlers when accessing params": "prerendered-pages",
+        "cache-components.search.test.ts > cache-components > should partially prerender pages that await searchParams in a server component": "prerendered-pages",
+        "cache-components.search.test.ts > cache-components > should partially prerender pages that `use` searchParams in a server component": "prerendered-pages",
+        "cache-components.search.test.ts > cache-components > should partially prerender pages that `use` searchParams in a client component": "prerendered-pages",
+        "cache-components.server-action.test.ts > cache-components > should prerender pages with inline server actions": "prerendered-pages",
+        "cache-components.test.ts > cache-components > should prerender fully static pages": "prerendered-pages",
+        "cache-components.test.ts > cache-components > should prerender static not-found pages": "prerendered-pages",
+        "cache-components.test.ts > cache-components > should prerender pages that render in a microtask": "prerendered-pages",
+        "cache-components.test.ts > cache-components > should partially prerender pages that take longer than a task to render": "prerendered-pages",
+        "cache-components.test.ts > cache-components > should prerender pages that only use cached fetches": "prerendered-pages",
+        "cache-components.test.ts > cache-components > should partially prerender pages that use at least one fetch without cache": "prerendered-pages",
+        "cache-components.test.ts > cache-components > should prerender pages that only use cached (unstable_cache) IO": "prerendered-pages",
+        "cache-components.test.ts > cache-components > should prerender pages that only use cached (\"use cache\") IO": "prerendered-pages",
+        "cache-components.test.ts > cache-components > should prerender pages that cached the whole page": "prerendered-pages",
+        "cache-components.test.ts > cache-components > should partially prerender pages that do any uncached IO": "prerendered-pages",
+        "cache-components.test.ts > cache-components > should partially prerender pages that do any uncached IO (use cache)": "prerendered-pages",
+        "cache-components.test.ts > cache-components > should partially prerender pages that use `cookies()`": "prerendered-pages",
+        "cache-components.test.ts > cache-components > should partially prerender pages that use `headers()`": "prerendered-pages",
+        "cache-components.test.ts > cache-components > should fully prerender pages that use `unstable_noStore()`": "prerendered-pages",
+        "cache-components.test.ts > cache-components > should partially prerender pages that use `searchParams` in Server Components": "prerendered-pages",
+        "cache-components.test.ts > cache-components > should partially prerender pages that use `searchParams` in Client Components": "prerendered-pages",
+        "cache-components.test.ts > cache-components > can prerender pages with parallel routes that are static": "prerendered-pages",
+        "cache-components.test.ts > cache-components > can prerender pages with parallel routes that resolve in a microtask": "prerendered-pages",
+        "cache-components.test.ts > cache-components > does not prerender pages with parallel routes that resolve in a task": "prerendered-pages",
+        "cache-components.test.ts > cache-components > does not prerender pages with parallel routes that uses a dynamic API": "prerendered-pages",
+        "cache-components.test.ts > cache-components > should ignore late setHeader calls for direct RSC handlers after headers are sent": "node-in-test",
+        "cache-components.test.ts > cache-components > should not resume when client components are dynamic but the RSC render was static": "prerendered-pages",
+        "cache-components.web-crypto.test.ts > cache-components > should prerender pages with cached `crypto.getRandomValues(...)` calls": "prerendered-pages",
+        "cache-components.web-crypto.test.ts > cache-components > should prerender pages with cached `crypto.randomUUID()` calls": "prerendered-pages"
+      }
+    },
+    "cache-components-bot-ua": {
+      "passed": 1,
+      "failed": {}
+    },
+    "cache-components-prerender-matrix": {
+      "passed": 23,
+      "failed": {
+        "cache-components-prerender-matrix.test.ts > cache-components-prerender-matrix > partial-static-param/without-root-param/non-empty-shell > serves everything except the [id] region from the cache at lang=fresh category=fresh id=fresh": "prerendered-pages",
+        "cache-components-prerender-matrix.test.ts > cache-components-prerender-matrix > partial-static-param/without-root-param/non-empty-shell > serves everything except the [id] region from the cache at lang=en category=fresh id=fresh": "prerendered-pages",
+        "cache-components-prerender-matrix.test.ts > cache-components-prerender-matrix > partial-static-param/without-root-param/non-empty-shell > serves everything except the [id] region from the cache at lang=en category=shoes id=fresh": "prerendered-pages",
+        "cache-components-prerender-matrix.test.ts > cache-components-prerender-matrix > partial-static-param/without-root-param/non-empty-shell > shares the entry at lang=fresh category=fresh id=fresh with a fresh id value (id excluded from the cache key)": "prerendered-pages",
+        "cache-components-prerender-matrix.test.ts > cache-components-prerender-matrix > partial-static-param/without-root-param/non-empty-shell > shares the entry at lang=en category=fresh id=fresh with a fresh id value (id excluded from the cache key)": "prerendered-pages",
+        "cache-components-prerender-matrix.test.ts > cache-components-prerender-matrix > partial-static-param/without-root-param/non-empty-shell > shares the entry at lang=en category=shoes id=fresh with a fresh id value (id excluded from the cache key)": "prerendered-pages",
+        "cache-components-prerender-matrix.test.ts > cache-components-prerender-matrix > partial-static-param/without-root-param/non-empty-shell > does not share the entry at lang=fresh category=fresh id=fresh across lang values (lang included in the cache key)": "prerendered-pages",
+        "cache-components-prerender-matrix.test.ts > cache-components-prerender-matrix > partial-static-param/without-root-param/non-empty-shell > does not share the entry at lang=fresh category=fresh id=fresh across category values (category included in the cache key)": "prerendered-pages",
+        "cache-components-prerender-matrix.test.ts > cache-components-prerender-matrix > partial-static-param/without-root-param/non-empty-shell > does not share the entry at lang=en category=fresh id=fresh across category values (category included in the cache key)": "prerendered-pages",
+        "cache-components-prerender-matrix.test.ts > cache-components-prerender-matrix > partial-static-param/with-root-param/non-empty-shell > serves everything except the [id] region from the cache at lang=fresh category=fresh id=fresh": "prerendered-pages",
+        "cache-components-prerender-matrix.test.ts > cache-components-prerender-matrix > partial-static-param/with-root-param/non-empty-shell > serves everything except the [id] region from the cache at lang=en category=fresh id=fresh": "prerendered-pages",
+        "cache-components-prerender-matrix.test.ts > cache-components-prerender-matrix > partial-static-param/with-root-param/non-empty-shell > serves everything except the [id] region from the cache at lang=en category=shoes id=fresh": "prerendered-pages",
+        "cache-components-prerender-matrix.test.ts > cache-components-prerender-matrix > partial-static-param/with-root-param/non-empty-shell > shares the entry at lang=fresh category=fresh id=fresh with a fresh id value (id excluded from the cache key)": "prerendered-pages",
+        "cache-components-prerender-matrix.test.ts > cache-components-prerender-matrix > partial-static-param/with-root-param/non-empty-shell > shares the entry at lang=en category=fresh id=fresh with a fresh id value (id excluded from the cache key)": "prerendered-pages",
+        "cache-components-prerender-matrix.test.ts > cache-components-prerender-matrix > partial-static-param/with-root-param/non-empty-shell > shares the entry at lang=en category=shoes id=fresh with a fresh id value (id excluded from the cache key)": "prerendered-pages",
+        "cache-components-prerender-matrix.test.ts > cache-components-prerender-matrix > partial-static-param/with-root-param/non-empty-shell > does not share the entry at lang=fresh category=fresh id=fresh across lang values (lang included in the cache key)": "prerendered-pages",
+        "cache-components-prerender-matrix.test.ts > cache-components-prerender-matrix > partial-static-param/with-root-param/non-empty-shell > does not share the entry at lang=fresh category=fresh id=fresh across category values (category included in the cache key)": "prerendered-pages",
+        "cache-components-prerender-matrix.test.ts > cache-components-prerender-matrix > partial-static-param/with-root-param/non-empty-shell > does not share the entry at lang=en category=fresh id=fresh across category values (category included in the cache key)": "prerendered-pages",
+        "cache-components-prerender-matrix.test.ts > cache-components-prerender-matrix > fully-static-param/without-root-param/empty-shell > serves the whole document from the cache at lang=fresh category=fresh id=fresh": "prerendered-pages",
+        "cache-components-prerender-matrix.test.ts > cache-components-prerender-matrix > fully-static-param/without-root-param/empty-shell > serves the whole document from the cache at lang=en category=fresh id=fresh": "prerendered-pages",
+        "cache-components-prerender-matrix.test.ts > cache-components-prerender-matrix > fully-static-param/without-root-param/empty-shell > serves the whole document from the cache at lang=en category=shoes id=fresh": "prerendered-pages",
+        "cache-components-prerender-matrix.test.ts > cache-components-prerender-matrix > fully-static-param/without-root-param/empty-shell > serves the whole document from the cache at lang=en category=shoes id=1": "prerendered-pages",
+        "cache-components-prerender-matrix.test.ts > cache-components-prerender-matrix > fully-static-param/without-root-param/non-empty-shell > serves the whole document from the cache at lang=fresh category=fresh id=fresh": "prerendered-pages",
+        "cache-components-prerender-matrix.test.ts > cache-components-prerender-matrix > fully-static-param/without-root-param/non-empty-shell > serves the whole document from the cache at lang=en category=fresh id=fresh": "prerendered-pages",
+        "cache-components-prerender-matrix.test.ts > cache-components-prerender-matrix > fully-static-param/without-root-param/non-empty-shell > serves the whole document from the cache at lang=en category=shoes id=fresh": "prerendered-pages",
+        "cache-components-prerender-matrix.test.ts > cache-components-prerender-matrix > fully-static-param/without-root-param/non-empty-shell > serves the whole document from the cache at lang=en category=shoes id=1": "prerendered-pages",
+        "cache-components-prerender-matrix.test.ts > cache-components-prerender-matrix > fully-static-param/with-root-param/empty-shell > serves the whole document from the cache at lang=fresh category=fresh id=fresh": "prerendered-pages",
+        "cache-components-prerender-matrix.test.ts > cache-components-prerender-matrix > fully-static-param/with-root-param/empty-shell > serves the whole document from the cache at lang=en category=fresh id=fresh": "prerendered-pages",
+        "cache-components-prerender-matrix.test.ts > cache-components-prerender-matrix > fully-static-param/with-root-param/empty-shell > serves the whole document from the cache at lang=en category=shoes id=fresh": "prerendered-pages",
+        "cache-components-prerender-matrix.test.ts > cache-components-prerender-matrix > fully-static-param/with-root-param/empty-shell > serves the whole document from the cache at lang=en category=shoes id=1": "prerendered-pages",
+        "cache-components-prerender-matrix.test.ts > cache-components-prerender-matrix > fully-static-param/with-root-param/non-empty-shell > serves the whole document from the cache at lang=fresh category=fresh id=fresh": "prerendered-pages",
+        "cache-components-prerender-matrix.test.ts > cache-components-prerender-matrix > fully-static-param/with-root-param/non-empty-shell > serves the whole document from the cache at lang=en category=fresh id=fresh": "prerendered-pages",
+        "cache-components-prerender-matrix.test.ts > cache-components-prerender-matrix > fully-static-param/with-root-param/non-empty-shell > serves the whole document from the cache at lang=en category=shoes id=fresh": "prerendered-pages",
+        "cache-components-prerender-matrix.test.ts > cache-components-prerender-matrix > fully-static-param/with-root-param/non-empty-shell > serves the whole document from the cache at lang=en category=shoes id=1": "prerendered-pages",
+        "cache-components-prerender-matrix.test.ts > cache-components-prerender-matrix > dynamic-param/without-root-param/non-empty-shell > shares the entry at lang=fresh category=fresh id=fresh with a fresh lang value (lang excluded from the cache key)": "prerendered-pages",
+        "cache-components-prerender-matrix.test.ts > cache-components-prerender-matrix > dynamic-param/without-root-param/non-empty-shell > shares the entry at lang=fresh category=fresh id=fresh with a fresh category value (category excluded from the cache key)": "prerendered-pages",
+        "cache-components-prerender-matrix.test.ts > cache-components-prerender-matrix > dynamic-param/without-root-param/non-empty-shell > shares the entry at lang=fresh category=fresh id=fresh with a fresh id value (id excluded from the cache key)": "prerendered-pages"
+      }
+    },
+    "use-cache": {
+      "passed": 41,
+      "failed": {
+        "use-cache.test.ts > use-cache > should warn that the `experimental.useCache` config option is deprecated": "cli-output",
+        "use-cache.test.ts > use-cache > should cache results for cached functions imported from client components": "cached-function-as-action",
+        "use-cache.test.ts > use-cache > should cache results for cached functions passed to client components": "cached-function-as-action",
+        "use-cache.test.ts > use-cache > should revalidate caches during on-demand revalidation": "pages-router",
+        "use-cache.test.ts > use-cache > should prerender fully cacheable pages as static HTML": "build-output",
+        "use-cache.test.ts > use-cache > should match the expected revalidate and expire configs on the prerender manifest": "build-output",
+        "use-cache.test.ts > use-cache > should match the expected stale config in the page header": "build-output",
+        "use-cache.test.ts > use-cache > should send an SWR cache-control header based on the revalidate and expire values": "prerendered-pages",
+        "use-cache.test.ts > use-cache > should propagate unstable_cache tags correctly": "build-output",
+        "use-cache.test.ts > use-cache > works with useActionState if previousState parameter is not used in \"use cache\" function": "cached-function-as-action",
+        "use-cache.test.ts > use-cache > works with useActionState if previousState parameter is not used in \"use cache\" function (separate export)": "cached-function-as-action",
+        "use-cache.test.ts > use-cache > works with \"use cache\" in method props": "cached-function-as-action",
+        "use-cache.test.ts > use-cache > works with \"use cache\" in static class methods": "cached-function-as-action",
+        "use-cache.test.ts > use-cache > should not read nor write cached data when draft mode is enabled > js enabled, with cookies": "react-development-build",
+        "use-cache.test.ts > use-cache > should not read nor write cached data when draft mode is enabled > js disabled, with cookies": "javascript-off",
+        "use-cache.test.ts > use-cache > should not read nor write cached data when draft mode is enabled > js disabled, without cookies": "javascript-off",
+        "use-cache.test.ts > use-cache > should allow nested short-lived caches after connection()": "javascript-off",
+        "use-cache.test.ts > use-cache > should dedupe a streaming cache across concurrent requests": "requests-in-turn"
+      }
+    },
+    "use-cache-custom-handler": {
+      "passed": 9,
+      "failed": {
+        "use-cache-custom-handler.test.ts > use-cache-custom-handler > should save a short-lived cache during prerendering at buildtime": "prerendered-pages",
+        "use-cache-custom-handler.test.ts > use-cache-custom-handler > handles a failed handler preload without an unhandled rejection": "changes-the-app"
+      }
+    },
+    "use-cache-default-handler-expire-zero": {
+      "passed": 1,
+      "failed": {}
+    },
+    "use-cache-default-profile-expire-zero": {
+      "passed": 2,
+      "failed": {}
+    },
+    "use-cache-draft-mode-isolation": {
+      "passed": 5,
+      "failed": {}
+    },
+    "use-cache-fallback-root-params": {
+      "passed": 1,
+      "failed": {
+        "use-cache-fallback-root-params.test.ts > use-cache-fallback-root-params > omits root-dependent entries from the RDC used to build generic shells": "build-output",
+        "use-cache-fallback-root-params.test.ts > use-cache-fallback-root-params > keeps cached root content in shells whose root is known": "build-output",
+        "use-cache-fallback-root-params.test.ts > use-cache-fallback-root-params > preserves static-prefetch hints when only fallback roots are missing": "build-output",
+        "use-cache-fallback-root-params.test.ts > use-cache-fallback-root-params > does not mistake searchParams in a cached page for a fallback root read": "build-output"
+      }
+    },
+    "use-cache-infinity-profile": {
+      "passed": 1,
+      "failed": {
+        "use-cache-infinity-profile.test.ts > use-cache-infinity-profile > caches forever with a configured profile using Infinity revalidate and expire": "build-output"
+      }
+    },
+    "use-cache-metadata-route-handler": {
+      "passed": 0,
+      "failed": {
+        "use-cache-metadata-route-handler.test.ts > use-cache-metadata-route-handler > should generate an opengraph image with a metadata route handler that uses \"use cache\"": "metadata-files",
+        "use-cache-metadata-route-handler.test.ts > use-cache-metadata-route-handler > should generate an opengraph image with a custom (local) font": "metadata-files",
+        "use-cache-metadata-route-handler.test.ts > use-cache-metadata-route-handler > should prerender a page that shares a segment with an opengraph image that uses a custom font": "files-of-the-project",
+        "use-cache-metadata-route-handler.test.ts > use-cache-metadata-route-handler > should generate an icon image with a metadata route handler that uses \"use cache\"": "metadata-files",
+        "use-cache-metadata-route-handler.test.ts > use-cache-metadata-route-handler > should statically prerender an image whose component uses \"use cache\" directly": "metadata-files",
+        "use-cache-metadata-route-handler.test.ts > use-cache-metadata-route-handler > should treat a twitter image that reads request data as dynamic": "metadata-files",
+        "use-cache-metadata-route-handler.test.ts > use-cache-metadata-route-handler > should generate sitemaps with a metadata route handler that uses \"use cache\"": "metadata-files",
+        "use-cache-metadata-route-handler.test.ts > use-cache-metadata-route-handler > should generate multiple sitemaps with a metadata route handler that uses \"use cache\"": "metadata-files",
+        "use-cache-metadata-route-handler.test.ts > use-cache-metadata-route-handler > should generate robots.txt with a metadata route handler that uses \"use cache\"": "metadata-files",
+        "use-cache-metadata-route-handler.test.ts > use-cache-metadata-route-handler > should generate manifest.json with a metadata route handler that uses \"use cache\"": "metadata-files",
+        "use-cache-metadata-route-handler.test.ts > use-cache-metadata-route-handler > should include the client reference manifest in the route.js.nft.json files of dynamic metadata routes": "build-output",
+        "use-cache-metadata-route-handler.test.ts > use-cache-metadata-route-handler > should not include the client reference manifest in the route.js.nft.json files of static metadata routes": "build-output"
+      }
+    },
+    "use-cache-private": {
+      "passed": 9,
+      "failed": {}
+    },
+    "use-cache-root-param-metadata": {
+      "passed": 1,
+      "failed": {
+        "use-cache-root-param-metadata.test.ts > use-cache-root-param-metadata > emits root param dependencies only in Turbopack production": "build-output"
+      }
+    },
+    "use-cache-route-handler-only": {
+      "passed": 3,
+      "failed": {
+        "use-cache-route-handler-only.test.ts > use-cache-route-handler-only > should dedupe concurrent cache invocations in route handlers": "changes-the-app",
+        "use-cache-route-handler-only.test.ts > use-cache-route-handler-only > dedupes tag revalidation across requests while generation is pending": "requests-in-turn"
+      }
+    },
+    "use-cache-swr": {
+      "passed": 5,
+      "failed": {
+        "use-cache-swr.test.ts > use-cache-swr > should dedupe SWR regens across concurrent requests": "requests-in-turn",
+        "use-cache-swr.test.ts > use-cache-swr > should dedupe SWR regens across slow-read requests": "requests-in-turn"
+      }
+    },
+    "use-cache-with-server-function-props": {
+      "passed": 1,
+      "failed": {
+        "use-cache-with-server-function-props.test.ts > use-cache-with-server-function-props > should be able to use nested cache functions as props": "cached-function-as-action"
+      }
     }
   }
 }

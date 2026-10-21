@@ -14,6 +14,12 @@ declare module "virtual:vitest-plugin-rsc/next-manifest" {
   export const preview: import("./project.ts").NextProject["preview"];
 }
 
+declare module "virtual:vitest-plugin-rsc/next-cache-handlers" {
+  /** The modules of the cache handlers that `next.config` names. */
+  export const cacheHandler: (() => Promise<{ default?: unknown }>) | undefined;
+  export const cacheHandlers: Record<string, () => Promise<{ default?: unknown }>>;
+}
+
 declare module "virtual:vitest-plugin-rsc/next-env" {
   /** What the page's `process.env` gets: see project/env.ts. */
   const env: Record<string, string>;
