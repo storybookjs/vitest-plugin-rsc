@@ -171,6 +171,25 @@ const promises: Record<string, any> = fs.promises;
 export default promises;
 ${ofNames(exportsOf("fs/promises"), (name) => `promises.${name} ?? missing("fs/promises.${name}")`)}
 `,
+  url: () => `${header}
+// \`node:url\` of Node.js, as unenv has it in a browser, but for a URL of the
+// page's own origin, which a module's \`import.meta.url\` is here where Node.js
+// has a \`file:\` one: a package of ESM makes a \`__dirname\` of it, as
+// Prisma's client does. Its path is the path Vite serves the file at: the
+// file's own for one under \`/@fs/\`, from the root of the app for the rest.
+import unenv, * as node from "unenv/node/url";
+
+export * from "unenv/node/url";
+export const fileURLToPath: typeof node.fileURLToPath = (url, options) => {
+  const parsed = typeof url === "string" ? new URL(url) : url;
+  const page = (globalThis as { location?: { origin: string } }).location;
+  if (!/^https?:$/.test(parsed.protocol) || parsed.origin !== page?.origin) {
+    return node.fileURLToPath(url, options);
+  }
+  return decodeURIComponent(parsed.pathname.replace(/^\\/@fs\\//, "/"));
+};
+export default { ...unenv, fileURLToPath };
+`,
   process: () => `${header}
 // \`node:process\`: the page's \`process\`, which the plugin makes Next's
 // server's too (nextjs/globals.ts), so the test and the server share its

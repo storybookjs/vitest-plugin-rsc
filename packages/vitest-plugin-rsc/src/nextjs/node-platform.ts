@@ -187,10 +187,22 @@ export function createNodePlatform(registry: string, prefix: string) {
   export default { ${Object.keys(zlib).join(", ")} };
   `,
     // Next asks Node.js for the source map of a file in a stack. Vite has them.
+    // A package of ESM makes itself a \`require\` as it loads, as Prisma's
+    // client does, and calls it for what it needs on Node.js only: it loads,
+    // and the call throws.
     "node-module": `
+  const missing = (name) =>
+    function () {
+      throw new Error("vitest-plugin-rsc: " + name + " of Node.js is not there in the browser");
+    };
   export const findSourceMap = () => undefined;
   export const builtinModules = [];
-  export default { findSourceMap, builtinModules };
+  export const createRequire = () =>
+    Object.assign(missing("module.createRequire()'s require"), {
+      resolve: missing("module.createRequire()'s require.resolve"),
+      cache: {},
+    });
+  export default { findSourceMap, builtinModules, createRequire };
   `,
     "ssr-app-page-module": `
   export const AppPageRouteModule = new Proxy(class {}, {

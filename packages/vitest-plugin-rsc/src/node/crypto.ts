@@ -1,9 +1,11 @@
 // `node:crypto` for a browser: Web Crypto for random values and `subtle`,
 // which is what Next's server uses where it has no Web Crypto branch, like
 // `randomFillSync` for the ids of nanoid, and a SHA-256 in JavaScript for
-// `createHash`, which Next's cache keys need synchronously. The rest is
-// unenv's: its constants, and functions that throw when called, like
-// `createHmac`, so that code which imports one loads.
+// `createHash`, which Next's cache keys need synchronously. On it the HMAC
+// of `createHmac`, and `timingSafeEqual`: what checks the signature of a
+// webhook or of a JWT with HS256, synchronously too. The rest is unenv's:
+// its constants, and functions that throw when called, like `createSign`,
+// so that code which imports one loads.
 
 import unenv from "unenv/node/crypto";
 
@@ -98,30 +100,68 @@ type Hash = {
   digest(encoding?: BufferEncoding): Buffer | string;
 };
 
-export const createHash = (algorithm: string): Hash => {
+const bytesOf = (data: Data, encoding?: BufferEncoding): Uint8Array =>
+  typeof data === "string"
+    ? Buffer.from(data, encoding ?? "utf8")
+    : data instanceof ArrayBuffer
+      ? new Uint8Array(data)
+      : new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+
+function sha256Only(name: string, algorithm: string): void {
   if (!/^sha-?256$/i.test(algorithm)) {
     throw new Error(
-      `vitest-plugin-rsc: node:crypto's createHash(${JSON.stringify(algorithm)}) is not there in a browser`,
+      `vitest-plugin-rsc: node:crypto's ${name}(${JSON.stringify(algorithm)}) is not there in a browser`,
     );
   }
+}
+
+// A hash of what `update()` was given, at `digest()`.
+function hashOf(digestOf: (bytes: Uint8Array) => Uint8Array): Hash {
   const chunks: Uint8Array[] = [];
   const hash: Hash = {
     update(data, encoding) {
-      chunks.push(
-        typeof data === "string"
-          ? Buffer.from(data, encoding ?? "utf8")
-          : data instanceof ArrayBuffer
-            ? new Uint8Array(data)
-            : new Uint8Array(data.buffer, data.byteOffset, data.byteLength),
-      );
+      chunks.push(bytesOf(data, encoding));
       return hash;
     },
     digest(encoding) {
-      const digest = Buffer.from(sha256(Buffer.concat(chunks)));
+      const digest = Buffer.from(digestOf(Buffer.concat(chunks)));
       return encoding ? digest.toString(encoding) : digest;
     },
   };
   return hash;
+}
+
+export const createHash = (algorithm: string): Hash => {
+  sha256Only("createHash", algorithm);
+  return hashOf(sha256);
+};
+
+// The HMAC of RFC 2104: the hash of the key with one pad and of the hash of
+// the key with another pad and the data. A key longer than a block of
+// SHA-256, 64 bytes, is its hash.
+export const createHmac = (algorithm: string, key: Data): Hash => {
+  sha256Only("createHmac", algorithm);
+  const raw = bytesOf(key);
+  const block = new Uint8Array(64);
+  block.set(raw.length > 64 ? sha256(raw) : raw);
+  const inner = block.map((byte) => byte ^ 0x36);
+  const outer = block.map((byte) => byte ^ 0x5c);
+  return hashOf((data) => sha256(Buffer.concat([outer, sha256(Buffer.concat([inner, data]))])));
+};
+
+// Whether two buffers have the same bytes, in a time that does not depend
+// on where they differ. Two of another length throw, as in Node.js.
+export const timingSafeEqual = (a: ArrayBufferView, b: ArrayBufferView): boolean => {
+  if (a.byteLength !== b.byteLength) {
+    throw Object.assign(new RangeError("Input buffers must have the same byte length"), {
+      code: "ERR_CRYPTO_TIMING_SAFE_EQUAL_LENGTH",
+    });
+  }
+  const left = bytesOf(a);
+  const right = bytesOf(b);
+  let difference = 0;
+  for (let i = 0; i < left.length; i++) difference |= left[i]! ^ right[i]!;
+  return difference === 0;
 };
 
 export default {
@@ -133,4 +173,6 @@ export default {
   randomBytes,
   getRandomValues,
   createHash,
+  createHmac,
+  timingSafeEqual,
 };

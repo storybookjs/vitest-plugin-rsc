@@ -156,6 +156,48 @@ for (const method of ["indexOf", "lastIndexOf"] as const) {
     return original.call(this, value, ...rest);
   } as never;
 }
+// base64url, which Node.js has since 15 and the polyfill does not: Prisma's
+// client reads its query plans with it. It is base64 with `-` and `_`, and
+// without padding. An encoding's name is any case, as in Node.js.
+{
+  const isBase64url = (encoding: unknown) =>
+    typeof encoding === "string" && encoding.toLowerCase() === "base64url";
+  const base64 = (text: string) => text.replaceAll("-", "+").replaceAll("_", "/");
+  const base64url = (text: string) =>
+    text.replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "");
+  const statics = Buffer as unknown as Record<string, (...args: any[]) => any>;
+  const { from, byteLength, isEncoding } = statics;
+  statics.from = function (value: unknown, encoding?: unknown, ...rest: unknown[]) {
+    return isBase64url(encoding) && typeof value === "string"
+      ? from!.call(this, base64(value), "base64")
+      : from!.call(this, value, encoding, ...rest);
+  };
+  statics.byteLength = function (value: unknown, encoding?: unknown) {
+    return isBase64url(encoding) && typeof value === "string"
+      ? byteLength!.call(this, base64(value), "base64")
+      : byteLength!.call(this, value, encoding);
+  };
+  statics.isEncoding = (encoding: unknown) =>
+    isBase64url(encoding) || isEncoding!.call(Buffer, encoding);
+  const prototype = Buffer.prototype as unknown as Record<string, (...args: any[]) => any>;
+  // As functions of any arguments: `toString` of a Record is Object's.
+  const toString = prototype.toString as (...args: unknown[]) => string;
+  const write = prototype.write as (...args: unknown[]) => number;
+  prototype.toString = function (this: Buffer, encoding?: unknown, ...rest: unknown[]) {
+    return isBase64url(encoding)
+      ? base64url(toString.apply(this, ["base64", ...rest]))
+      : toString.apply(this, [encoding, ...rest]);
+  };
+  // `write(string, offset?, length?, encoding?)`: the encoding is the last
+  // argument that is a string.
+  prototype.write = function (this: Buffer, text: string, ...rest: unknown[]) {
+    const at = rest.findLastIndex((value) => typeof value === "string");
+    if (at === -1 || !isBase64url(rest[at])) return write.apply(this, [text, ...rest]);
+    const args = [...rest];
+    args[at] = "base64";
+    return write.apply(this, [base64(text), ...args]);
+  };
+}
 scope.AsyncLocalStorage ??= SequentialAsyncLocalStorage;
 
 // What Next's Node.js server asks of its process. The `process` is the page's

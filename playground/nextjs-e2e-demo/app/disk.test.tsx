@@ -62,7 +62,10 @@ test("gives the server code the other modules of Node.js, as a browser can have 
     "A time: bigint",
     "A UUID: 36 characters",
     "A temporary directory: made",
-    "HMAC: [unenv] crypto.createHmac is not implemented yet!",
+    "HMAC: 5d5d139563c95b5967b9bd9a8c9b233a9dedb45072794cd232dc1b74832607d0",
+    "Its own path: the file's",
+    "Require: vitest-plugin-rsc: module.createRequire()'s require of Node.js is not there in the browser",
+    "base64url: aGk_ aA hi? hi",
   ]) {
     await expect.element(page.getByText(text)).toBeVisible();
   }

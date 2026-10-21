@@ -70,7 +70,50 @@ test("`crypto` hashes with SHA-256 as Node.js does, and has Web Crypto", () => {
   expect(crypto.subtle).toBe(globalThis.crypto.subtle);
   // The rest is unenv's, which throws when called.
   const rest = crypto as Record<string, any>;
-  expect(() => rest.createHmac("sha256", "key")).toThrow("createHmac is not implemented");
+  expect(() => rest.createSign("sha256")).toThrow("createSign is not implemented");
   expect(crypto.default.createHash).toBe(crypto.createHash);
   expect(typeof rest.constants.RSA_PKCS1_PADDING).toBe("number");
+});
+
+test("`crypto` signs with HMAC-SHA256 as Node.js does, and compares in constant time", () => {
+  const long = "k".repeat(100);
+  for (const key of ["key", "", long, Buffer.from([0, 1, 2, 255])]) {
+    expect(crypto.createHmac("sha256", key).update("a").update("bc").digest("hex")).toBe(
+      nodeCrypto.createHmac("sha256", key).update("abc").digest("hex"),
+    );
+  }
+  // A webhook's: the signature of the body, as base64.
+  const body = JSON.stringify({ id: "evt_1", type: "invoice.paid" });
+  expect(crypto.createHmac("SHA256", "whsec").update(body, "utf8").digest("base64")).toBe(
+    nodeCrypto.createHmac("sha256", "whsec").update(body, "utf8").digest("base64"),
+  );
+  expect(Buffer.isBuffer(crypto.createHmac("sha256", "key").digest())).toBe(true);
+  expect(() => crypto.createHmac("sha1", "key")).toThrow(
+    'createHmac("sha1") is not there in a browser',
+  );
+
+  expect(crypto.timingSafeEqual(Buffer.from("same"), Buffer.from("same"))).toBe(true);
+  expect(crypto.timingSafeEqual(Buffer.from("same"), Buffer.from("sane"))).toBe(false);
+  expect(() => crypto.timingSafeEqual(Buffer.from("a"), Buffer.from("ab"))).toThrow(
+    expect.objectContaining({ code: "ERR_CRYPTO_TIMING_SAFE_EQUAL_LENGTH" }),
+  );
+});
+
+test("`fileURLToPath()` takes a URL of the page's origin, as a module's `import.meta.url` is", async () => {
+  const { fileURLToPath } = await import("../node/url.ts");
+  const scope = globalThis as { location?: { origin: string } };
+  const location = scope.location;
+  scope.location = { origin: "http://localhost:5173" };
+  try {
+    expect(fileURLToPath("http://localhost:5173/app/page.tsx?v=1")).toBe("/app/page.tsx");
+    expect(fileURLToPath(new URL("http://localhost:5173/@fs/Users/me/a%20b.ts"))).toBe(
+      "/Users/me/a b.ts",
+    );
+    expect(fileURLToPath("file:///notes/today.txt")).toBe("/notes/today.txt");
+    // Another origin's is no file, as in Node.js, nor is a blob of the page's.
+    expect(() => fileURLToPath("https://example.com/a.ts")).toThrow();
+    expect(() => fileURLToPath("blob:http://localhost:5173/a-b-c")).toThrow();
+  } finally {
+    scope.location = location;
+  }
 });
