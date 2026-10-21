@@ -4,7 +4,8 @@
 // of the origin shares, like the host's own or another page of the app next
 // to this one. So the page's storage is a `Storage` of the plugin's, as its
 // cookie jar is: see page-store.ts. Evaluating this module installs it, as
-// app-requests.ts installs the page's `document.cookie`.
+// app-requests.ts installs the page's `document.cookie`: both entries of the
+// plugin import both, see index.ts and client-components.ts.
 
 /**
  * The items of the page's `localStorage` and `sessionStorage`. One for the
