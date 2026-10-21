@@ -479,21 +479,19 @@ async function watchedFetch(
 // A page that the app loads itself: a link or a redirect that Next's router
 // does with a page load, which the plugin turns into one of its own. Playwright
 // waits for such a load after a click and an `eval`. Here it is over when
-// Next's root component says it has hydrated, through the hook Next has for
-// its own e2e tests, which the plugin uses for `renderServer()` too.
+// Next's root component says it has hydrated, through what it sets for its
+// own e2e tests. Not its callback `__NEXT_HYDRATED_CB`, which the plugin sets
+// for `renderServer()` and deletes once the page has hydrated, and with it
+// what is defined here.
 let loading: Promise<void> | undefined;
 let loaded: (() => void) | undefined;
-let hydrated: (() => void) | undefined;
-Object.defineProperty(globalThis, "__NEXT_HYDRATED_CB", {
+let hydratedAt: number | undefined;
+Object.defineProperty(globalThis, "__NEXT_HYDRATED_AT", {
   configurable: true,
-  get: () => hydrated,
-  set(callback: (() => void) | undefined) {
-    hydrated =
-      callback &&
-      (() => {
-        callback();
-        loaded?.();
-      });
+  get: () => hydratedAt,
+  set(at: number | undefined) {
+    hydratedAt = at;
+    loaded?.();
   },
 });
 

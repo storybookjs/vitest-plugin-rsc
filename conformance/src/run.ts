@@ -146,6 +146,9 @@ function copyFixture(fixture: Fixture): string {
   for (const file of fixture.prepared?.remove ?? []) {
     fs.rmSync(path.join(root, file), { recursive: true });
   }
+  for (const [file, content] of Object.entries(fixture.prepared?.write ?? {})) {
+    fs.writeFileSync(path.join(root, file), content);
+  }
   for (const test of fixture.tests) {
     if (!fs.existsSync(path.join(root, test))) throw new Error(`${fixture.dir} has no ${test}`);
   }
@@ -215,6 +218,7 @@ function runFixture(fixture: Fixture, isSecondRun: boolean): Promise<FixtureRun>
         NEXT_CONFORMANCE_TEST_TIMEOUT: String(testTimeout),
         NEXT_CONFORMANCE_ASSUME_INSTALLED: JSON.stringify(fixture.assumeInstalled ?? []),
         NEXT_CONFORMANCE_PREPARED: JSON.stringify(fixture.prepared?.options ?? []),
+        NEXT_CONFORMANCE_PREPARED_CONFIG: JSON.stringify(fixture.prepared?.nextConfig ?? {}),
         NEXT_CONFORMANCE_PLUGIN: pluginCheckout ?? "",
         NEXT_CONFORMANCE_PRINT: options.print ? "1" : "",
         CI: "1",

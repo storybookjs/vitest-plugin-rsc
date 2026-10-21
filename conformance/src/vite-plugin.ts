@@ -117,6 +117,8 @@ export type ConformanceOptions = {
   assumeInstalled?: string[];
   /** Options of `nextTestSetup()` that the runner has applied to the copy of the fixture. */
   prepared?: string[];
+  /** The values of the `next.config` of the copy, for a test's `nextConfig`. */
+  preparedConfig?: Record<string, unknown>;
   /** Another checkout of this repository, to run its plugin instead. */
   pluginCheckout?: string;
 };
@@ -146,7 +148,10 @@ export function conformance(options: ConformanceOptions): Plugin {
     async resolveId(source, importer, resolveOptions) {
       if (source === configId) return `\0${configId}`;
       if (Object.hasOwn(aliases, source)) return aliases[source];
-      if (/^(\.\.\/)+lib\/next-test-utils$/.test(source)) return testUtilsId;
+      // The same modules by their path in Next's repository, from a test file
+      // in `test/e2e/app-dir/<fixture>`.
+      const fromLib = /^(?:\.\.\/)+lib\/([\w-]+)$/.exec(source)?.[1];
+      if (fromLib && Object.hasOwn(aliases, fromLib)) return aliases[fromLib];
 
       // The plugin of another checkout: its modules for the tab are the ones
       // that checkout resolves.
@@ -228,6 +233,7 @@ export function conformance(options: ConformanceOptions): Plugin {
           `export const mode = ${JSON.stringify(options.mode)};`,
           `export const packages = ${JSON.stringify(Array.from(packages).sort())};`,
           `export const prepared = ${JSON.stringify(options.prepared ?? [])};`,
+          `export const preparedConfig = ${JSON.stringify(options.preparedConfig ?? {})};`,
           `export const gateConfig = ${JSON.stringify(gateConfig, (_, value: unknown) => value ?? false)};`,
         ].join("\n");
       }

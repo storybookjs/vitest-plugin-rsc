@@ -7,6 +7,7 @@ declare module "virtual:next-conformance/config" {
   export const packages: string[];
   /** Options of `nextTestSetup()` that the runner has applied to the copy of the fixture. */
   export const prepared: string[];
+  export const preparedConfig: Record<string, unknown>;
   /** What a `@gate` pragma can ask of the resolved `next.config` of the fixture. */
   export const gateConfig: Record<string, unknown>;
 }
