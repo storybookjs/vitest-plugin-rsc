@@ -1,9 +1,0 @@
-/**
- * The browser command that reports what a test file loads without an
- * import of its own: see browser.ts. Not a name with `__vitest` in front:
- * Vitest keeps those from the browser.
- */
-export const loadedCommand = "vitestPluginRscLoaded";
-
-/** A page or a route handler, by its entry, or the module of a Server Action. */
-export type LoadedKind = "page" | "route" | "action";

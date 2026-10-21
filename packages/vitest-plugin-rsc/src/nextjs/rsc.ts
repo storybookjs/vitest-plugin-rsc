@@ -109,7 +109,6 @@ registry.flightClient = {
 registry.loadAppPage = async (page) => {
   const load = (appPages as Record<string, () => Promise<unknown>>)[page];
   if (!load) throw new Error(`vitest-plugin-rsc: unknown Next.js app page ${page}`);
-  registry.reportLoaded?.("page", page);
   return (registry.appPages[page] ??= await load());
 };
 
@@ -199,7 +198,6 @@ export async function loadComponent(): Promise<{ default: () => unknown }> {
 registry.loadRouteHandler = async (page) => {
   const load = routeHandlers[page];
   if (!load) throw new Error(`vitest-plugin-rsc: unknown Next.js route handler ${page}`);
-  registry.reportLoaded?.("route", page);
   return (await load()).handler;
 };
 
@@ -223,10 +221,6 @@ const modules = new Map<string, Promise<unknown>>();
  * state of a module on that promise.
  */
 export function requireModule(id: string): Promise<unknown> {
-  if (id.startsWith(actionModulePrefix)) {
-    const [module] = id.slice(actionModulePrefix.length).split("#");
-    registry.reportLoaded?.("action", module!);
-  }
   let loading = modules.get(id);
   if (!loading) modules.set(id, (loading = loadModule(id)));
   return loading;

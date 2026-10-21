@@ -1,4 +1,3 @@
-import type { LoadedKind } from "./affected/command.ts";
 import { registryGlobal } from "./registry-global.ts";
 import type { Stylesheets } from "./styles-shared.ts";
 
@@ -115,12 +114,6 @@ export type NextRegistry = {
    * `hostFiles`; without it a node has no stylesheets of the host's files.
    */
   nodeFiles?(): string[];
-  /**
-   * Tells the host what the page loaded without an import of its own: a route,
-   * or the module of a Server Action. Under Vitest with `affectedTests`, see
-   * affected/browser.ts. Another host, and a static build, have none.
-   */
-  reportLoaded?(kind: LoadedKind, id: string): void;
   /** Loads the request handler of a route handler, which is in the rsc layer. */
   loadRouteHandler(page: string): Promise<RequestHandler>;
   /** Loads the request handler of the middleware of the app, which is in the rsc layer. */
