@@ -4,8 +4,29 @@
 // `EventEmitter.call(this)`, which unenv's, a class, throws for. What it
 // lacks, like `on()` and `EventEmitterAsyncResource`, is unenv's.
 import EventEmitter from "events/events.js";
+import * as unenv from "unenv/node/events";
 
 export * from "unenv/node/events";
 export default EventEmitter;
 export { EventEmitter };
-export const { once } = EventEmitter;
+// The class with what is on it, which its types leave out, like `init`.
+const statics = EventEmitter as unknown as Record<string, unknown>;
+export const { once, listenerCount } = EventEmitter;
+export const init = statics.init;
+// The most listeners of an emitter or an EventTarget before a warning, or of
+// every emitter with none given. An EventTarget of the browser has no
+// such limit: nothing for one.
+export const setMaxListeners = (
+  n = EventEmitter.defaultMaxListeners,
+  ...targets: (EventTarget | { setMaxListeners?: (n: number) => unknown })[]
+): void => {
+  if (targets.length === 0) EventEmitter.defaultMaxListeners = n;
+  for (const target of targets) {
+    (target as { setMaxListeners?: (n: number) => unknown }).setMaxListeners?.(n);
+  }
+};
+// Node's default export, the class, has its functions on it too, like
+// `events.on()`.
+for (const [name, value] of Object.entries({ ...unenv, setMaxListeners })) {
+  if (name !== "default" && !(name in statics)) statics[name] = value;
+}

@@ -15,4 +15,6 @@ export const fileURLToPath: typeof node.fileURLToPath = (url, options) => {
   }
   return decodeURIComponent(parsed.pathname.replace(/^\/@fs\//, "/"));
 };
-export default { ...unenv, fileURLToPath };
+// The browser's own, which Node.js has since 23.8.
+export const URLPattern = (globalThis as { URLPattern?: unknown }).URLPattern;
+export default { ...unenv, fileURLToPath, URLPattern };

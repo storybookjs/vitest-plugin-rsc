@@ -68,6 +68,13 @@ test("gives the server code the other modules of Node.js, as a browser can have 
     "Its own path: the file's",
     "Require: vitest-plugin-rsc: module.createRequire()'s require of Node.js is not there in the browser",
     "base64url: aGk_ aA hi? hi",
+    "Gzip: both ways",
+    "MD5: 4358b5009c67d0e31d7fbf1663fcd3bf",
+    "SHA3: a60e3aeebf21a57b",
+    "PBKDF2: 632c2812e46d4604102ba7618e9d6d7d",
+    "AES-GCM: a secret",
+    "Consumed: from a stream",
+    "UTF-8: true",
   ]) {
     await expect.element(page.getByText(text)).toBeVisible();
   }

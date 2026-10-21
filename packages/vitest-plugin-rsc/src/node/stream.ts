@@ -5,7 +5,8 @@
 // cycle. The package has `Readable.from()`, `addAbortSignal()`,
 // `compose()`, `promises` and the rest of Node's exports; the bridge to web
 // streams, `Readable.toWeb()` and `fromWeb()`, is this file's, as the
-// package's is for Node.js alone. `duplexPair` throws when called.
+// package's is for Node.js alone. `duplexPair()`, of Node.js 22.6, is
+// this file's too.
 
 // The package's file for a browser exports `Readable`, with the rest on it:
 // `Stream` is the base of Node.js, which has them all, as `node:stream` is.
@@ -58,14 +59,37 @@ readable.toWeb = (source) =>
     },
     cancel: (reason) => void source.destroy(reason),
   });
+// Destroyed before its end, it cancels the web stream, as Node's does.
 readable.fromWeb = (web) => {
   const reader = web.getReader();
+  let ended = false;
   return new Readable({
     read() {
       reader.read().then(
-        ({ done, value }) => void this.push(done ? null : Buffer.from(value)),
-        (error: unknown) => this.destroy(error as Error),
+        ({ done, value }) => {
+          ended ||= done;
+          this.push(done ? null : Buffer.from(value));
+        },
+        (error: unknown) => {
+          ended = true;
+          this.destroy(error as Error);
+        },
       );
+    },
+    destroy(error, callback) {
+      if (ended) {
+        callback(error);
+        return;
+      }
+      void (async () => {
+        try {
+          await reader.cancel(error ?? undefined);
+        } catch (cancelError) {
+          callback(cancelError as Error);
+          return;
+        }
+        callback(error);
+      })();
     },
   }) as unknown as NodeReadable;
 };
@@ -75,7 +99,33 @@ const missing = (name: string) =>
   function () {
     throw new Error(`vitest-plugin-rsc: stream.${name} of Node.js is not there in the browser`);
   };
-export const duplexPair = missing("duplexPair");
+// Two Duplexes, each of which reads what the other is written, as the two
+// ends of a socket. A write calls back once the other end reads it.
+type Pushing = { push(chunk: unknown): boolean };
+export function duplexPair(options?: object): [unknown, unknown] {
+  const sides: Pushing[] = [];
+  const waiting = new Map<Pushing, () => void>();
+  const sideOf = (index: number) =>
+    new Duplex({
+      ...options,
+      read(this: Pushing) {
+        const next = waiting.get(this);
+        waiting.delete(this);
+        next?.();
+      },
+      write(chunk: unknown, _encoding: string, callback: () => void) {
+        const other = sides[1 - index]!;
+        if (other.push(chunk)) callback();
+        else waiting.set(other, callback);
+      },
+      final(callback: () => void) {
+        sides[1 - index]!.push(null);
+        callback();
+      },
+    }) as unknown as Pushing;
+  sides.push(sideOf(0), sideOf(1));
+  return sides as [unknown, unknown];
+}
 export const _isArrayBufferView = (value: unknown): boolean => ArrayBuffer.isView(value);
 // The package's bridges of a Writable and a Duplex are made of the web
 // streams of Node.js too: they throw with the package's message, not that.

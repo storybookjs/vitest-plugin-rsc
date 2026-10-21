@@ -94,7 +94,8 @@
     "dev": "tsdown --sourcemap --watch src",
     "build": "tsdown",
     "prepack": "tsdown",
-    "generate": "node scripts/node-modules.ts"
+    "generate": "node scripts/node-modules.ts",
+    "node-coverage": "node scripts/node-coverage.ts"
   },
   "dependencies": {
     "@jridgewell/gen-mapping": "^0.3.13",
@@ -104,12 +105,15 @@
   },
   "devDependencies": {
     "@next/routing": "16.4.0",
+    "@noble/ciphers": "2.4.0",
+    "@noble/hashes": "2.4.0",
     "@types/convert-source-map": "^2.0.3",
     "@types/node": "^24.12.4",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "assert": "2.1.0",
     "events": "3.3.0",
+    "fflate": "0.8.3",
     "memfs": "4.80.0",
     "next": "16.4.0",
     "node-inspect-extracted": "3.3.4",

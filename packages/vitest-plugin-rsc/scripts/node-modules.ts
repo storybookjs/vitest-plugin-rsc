@@ -10,7 +10,6 @@
 
 import fs from "node:fs";
 import { createRequire } from "node:module";
-import nodeZlib from "node:zlib";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { type ESTree, parseAst } from "vite";
@@ -192,7 +191,9 @@ export const fileURLToPath: typeof node.fileURLToPath = (url, options) => {
   }
   return decodeURIComponent(parsed.pathname.replace(/^\\/@fs\\//, "/"));
 };
-export default { ...unenv, fileURLToPath };
+// The browser's own, which Node.js has since 23.8.
+export const URLPattern = (globalThis as { URLPattern?: unknown }).URLPattern;
+export default { ...unenv, fileURLToPath, URLPattern };
 `,
   // Next asks Node.js for the source map of a file in a stack: Vite has
   // them. A package of ESM makes itself a \`require\` as it loads, as
@@ -234,29 +235,6 @@ export default new Proxy(process, {
 });
 ${ofNames(exportsOf("process"), (name) => `process.${name} ?? unenv.${name}`)}
 `,
-  // Next compresses what a prerender leaves for the request that resumes
-  // it, and no page is prerendered here. Every export of Node's \`zlib\` is
-  // there, so that code which imports one loads: what unenv lacks throws.
-  zlib: () => {
-    const rest = Object.keys(nodeZlib).filter((name) => !exportsOf("zlib").includes(name));
-    return `${header}
-// \`node:zlib\` of Node.js, as unenv has it in a browser, with the rest of
-// Node's exports: the constants, and functions that throw when called.
-import unenv from "unenv/node/zlib";
-
-export * from "unenv/node/zlib";
-${missing}
-${ofNames(rest, (name) =>
-  typeof (nodeZlib as Record<string, unknown>)[name] === "function"
-    ? `missing("zlib.${name}")`
-    : JSON.stringify((nodeZlib as Record<string, unknown>)[name]),
-)}
-export default {
-  ...unenv,
-${rest.map((name) => `  ${name},`).join("\n")}
-};
-`;
-  },
   // The strict assert of the package's own assert, with the same exports.
   "assert/strict": () => `${header}
 // \`node:assert/strict\`: the \`strict\` of the package's \`assert\`, as in Node.js.
@@ -288,19 +266,36 @@ ${ofNames(exportsOf(name), (key) => `own.${key} ?? missing("${name}.${key}")`)}
 import unenv from "unenv/node/util/types";
 import own from "util/support/types.js";
 
-// What the package leaves to its \`util\`, and what a browser can tell.
+// What the package leaves to its \`util\`, and what a browser can tell. A
+// namespace of a module has no prototype, takes no properties, and says it
+// is a "Module". A key is one of the package's \`crypto\`, by its symbol. A
+// proxy cannot be told from its target in JavaScript: none is one here.
 const nativeError = (value: unknown): boolean =>
   value instanceof Error || Object.prototype.toString.call(value) === "[object Error]";
 const cryptoKey = (value: unknown): boolean =>
   typeof CryptoKey !== "undefined" && value instanceof CryptoKey;
+const keyObject = (value: unknown): boolean =>
+  (value as Record<symbol, unknown> | null)?.[Symbol.for("vitest-plugin-rsc.KeyObject")] === true;
+const moduleNamespaceObject = (value: unknown): boolean =>
+  typeof value === "object" &&
+  value !== null &&
+  Object.getPrototypeOf(value) === null &&
+  !Object.isExtensible(value) &&
+  (value as Record<symbol, unknown>)[Symbol.toStringTag] === "Module";
+const float16Array = (value: unknown): boolean =>
+  typeof Float16Array !== "undefined" && value instanceof Float16Array;
 const types: Record<string, any> = {
   ...unenv,
   ...own,
   isNativeError: nativeError,
   isCryptoKey: cryptoKey,
+  isKeyObject: keyObject,
+  isModuleNamespaceObject: moduleNamespaceObject,
+  isProxy: (_value: unknown): boolean => false,
+  isFloat16Array: float16Array,
 };
 export default types;
-${ofNames(exportsOf("util/types"), (name) => `types.${name}`)}
+${ofNames([...new Set([...exportsOf("util/types"), "isFloat16Array"])], (name) => `types.${name}`)}
 `,
   // Node's old name of util.
   sys: () => `${header}
@@ -316,25 +311,49 @@ export default util;
 // \`EventEmitter.call(this)\`, which unenv's, a class, throws for. What it
 // lacks, like \`on()\` and \`EventEmitterAsyncResource\`, is unenv's.
 import EventEmitter from "events/events.js";
+import * as unenv from "unenv/node/events";
 
 export * from "unenv/node/events";
 export default EventEmitter;
 export { EventEmitter };
-export const { once } = EventEmitter;
+// The class with what is on it, which its types leave out, like \`init\`.
+const statics = EventEmitter as unknown as Record<string, unknown>;
+export const { once, listenerCount } = EventEmitter;
+export const init = statics.init;
+// The most listeners of an emitter or an EventTarget before a warning, or of
+// every emitter with none given. An EventTarget of the browser has no
+// such limit: nothing for one.
+export const setMaxListeners = (
+  n = EventEmitter.defaultMaxListeners,
+  ...targets: (EventTarget | { setMaxListeners?: (n: number) => unknown })[]
+): void => {
+  if (targets.length === 0) EventEmitter.defaultMaxListeners = n;
+  for (const target of targets) {
+    (target as { setMaxListeners?: (n: number) => unknown }).setMaxListeners?.(n);
+  }
+};
+// Node's default export, the class, has its functions on it too, like
+// \`events.on()\`.
+for (const [name, value] of Object.entries({ ...unenv, setMaxListeners })) {
+  if (name !== "default" && !(name in statics)) statics[name] = value;
+}
 `,
 };
 
 /** The modules with a file of their own in src/node/, not written here. */
 export const handWritten = new Set([
   "assert",
+  "buffer",
   "crypto",
   "path",
   "stream",
+  "stream/consumers",
   "stream/promises",
   "string_decoder",
   "timers",
   "timers/promises",
   "util",
+  "zlib",
 ]);
 
 /** The files to write, by their path in src/node/. */

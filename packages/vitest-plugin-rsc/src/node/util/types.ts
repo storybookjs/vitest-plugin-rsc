@@ -4,16 +4,33 @@
 import unenv from "unenv/node/util/types";
 import own from "util/support/types.js";
 
-// What the package leaves to its `util`, and what a browser can tell.
+// What the package leaves to its `util`, and what a browser can tell. A
+// namespace of a module has no prototype, takes no properties, and says it
+// is a "Module". A key is one of the package's `crypto`, by its symbol. A
+// proxy cannot be told from its target in JavaScript: none is one here.
 const nativeError = (value: unknown): boolean =>
   value instanceof Error || Object.prototype.toString.call(value) === "[object Error]";
 const cryptoKey = (value: unknown): boolean =>
   typeof CryptoKey !== "undefined" && value instanceof CryptoKey;
+const keyObject = (value: unknown): boolean =>
+  (value as Record<symbol, unknown> | null)?.[Symbol.for("vitest-plugin-rsc.KeyObject")] === true;
+const moduleNamespaceObject = (value: unknown): boolean =>
+  typeof value === "object" &&
+  value !== null &&
+  Object.getPrototypeOf(value) === null &&
+  !Object.isExtensible(value) &&
+  (value as Record<symbol, unknown>)[Symbol.toStringTag] === "Module";
+const float16Array = (value: unknown): boolean =>
+  typeof Float16Array !== "undefined" && value instanceof Float16Array;
 const types: Record<string, any> = {
   ...unenv,
   ...own,
   isNativeError: nativeError,
   isCryptoKey: cryptoKey,
+  isKeyObject: keyObject,
+  isModuleNamespaceObject: moduleNamespaceObject,
+  isProxy: (_value: unknown): boolean => false,
+  isFloat16Array: float16Array,
 };
 export default types;
 export const isExternal = types.isExternal;
@@ -58,3 +75,4 @@ export const isBigInt64Array = types.isBigInt64Array;
 export const isBigUint64Array = types.isBigUint64Array;
 export const isKeyObject = types.isKeyObject;
 export const isCryptoKey = types.isCryptoKey;
+export const isFloat16Array = types.isFloat16Array;

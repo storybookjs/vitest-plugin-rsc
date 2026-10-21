@@ -5,6 +5,7 @@ import nodeCrypto from "node:crypto";
 import { execFileSync } from "node:child_process";
 import nodeFs from "node:fs";
 import { isBuiltin } from "node:module";
+import type { Duplex } from "node:stream";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -92,7 +93,7 @@ test("`crypto` hashes with SHA-256 as Node.js does, and has Web Crypto", () => {
   expect(crypto.createHash("sha256").update("x").digest("base64")).toBe(
     nodeCrypto.createHash("sha256").update("x").digest("base64"),
   );
-  expect(() => crypto.createHash("md5")).toThrow('createHash("md5") is not there in a browser');
+  expect(() => crypto.createHash("whirlpool")).toThrow("Digest method not supported");
   expect(crypto.randomUUID()).toHaveLength(36);
   expect(crypto.randomBytes(4)).toHaveLength(4);
   expect(crypto.subtle).toBe(globalThis.crypto.subtle);
@@ -103,7 +104,7 @@ test("`crypto` hashes with SHA-256 as Node.js does, and has Web Crypto", () => {
   expect(typeof rest.constants.RSA_PKCS1_PADDING).toBe("number");
 });
 
-test("`crypto` signs with HMAC-SHA256 as Node.js does, and compares in constant time", () => {
+test("`crypto` signs with HMAC as Node.js does, and compares in constant time", () => {
   const long = "k".repeat(100);
   for (const key of ["key", "", long, Buffer.from([0, 1, 2, 255])]) {
     expect(crypto.createHmac("sha256", key).update("a").update("bc").digest("hex")).toBe(
@@ -116,8 +117,8 @@ test("`crypto` signs with HMAC-SHA256 as Node.js does, and compares in constant 
     nodeCrypto.createHmac("sha256", "whsec").update(body, "utf8").digest("base64"),
   );
   expect(Buffer.isBuffer(crypto.createHmac("sha256", "key").digest())).toBe(true);
-  expect(() => crypto.createHmac("sha1", "key")).toThrow(
-    'createHmac("sha1") is not there in a browser',
+  expect(crypto.createHmac("sha1", "key").update("abc").digest("hex")).toBe(
+    nodeCrypto.createHmac("sha1", "key").update("abc").digest("hex"),
   );
 
   expect(crypto.timingSafeEqual(Buffer.from("same"), Buffer.from("same"))).toBe(true);
@@ -268,7 +269,16 @@ test("`stream` is readable-stream 4: `from()` awaits, rejects null and errors, a
   expect(new Readable({ read() {} }).readableHighWaterMark).toBe(1234);
   setDefaultHighWaterMark(false, defaultHighWaterMark);
   expect(typeof streamPromises.pipeline).toBe("function");
-  expect(() => duplexPair()).toThrow("not there in the browser");
+  // The two ends of a socket: what one is written, the other reads.
+  const [client, server] = duplexPair() as [Duplex, Duplex];
+  server.setEncoding("utf8");
+  const heard = new Promise((resolve) => server.once("data", resolve));
+  client.write("ping");
+  expect(await heard).toBe("ping");
+  client.end();
+  const ended = new Promise((resolve) => server.once("end", resolve));
+  server.resume();
+  await ended;
 });
 
 test("`assert/strict`, `path/posix`, `path/win32` and `string_decoder` are the package's own", () => {
@@ -406,7 +416,7 @@ test.skipIf(!nodeFs.existsSync(dist))(
 // gives a module of Node.js that one of them imports its file next to it, as
 // the layer resolver does (nextjs/plugin.ts), and the package's own by name.
 test.skipIf(!nodeFs.existsSync(dist))(
-  "the built files work together: streams of the disk, and a console, without a debug log",
+  "the built files work together: streams of the disk, of zlib and of a hash, and a console, without a debug log",
   () => {
     const dir = nodeFs.mkdtempSync(path.join(os.tmpdir(), "node-modules-"));
     try {
@@ -459,7 +469,13 @@ const assert = (await import(dist + "assert.js")).default;
 assert.deepStrictEqual({ a: [1] }, { a: [1] });
 let unequalMaps = "";
 try { assert.deepStrictEqual(new Map([["a", 1]]), new Map([["a", 2]])); } catch (error) { unequalMaps = error.message; }
-process.stdout.write(JSON.stringify({ read: read.join(""), debug: debug.length, transform: typeof new stream.Transform().pipe, from: items.join(""), unequalMaps: unequalMaps.split("\\n")[0], base: new stream.Writable() instanceof stream.Stream }));
+// zlib's and crypto's streams are the built stream's: through them and back.
+const zlib = await import(dist + "zlib.js");
+const crypto = await import(dist + "crypto.js");
+const consumers = await import(dist + "stream/consumers.js");
+const gzipped = await consumers.buffer(stream.Readable.from(["gzipped"]).pipe(zlib.createGzip()));
+const md5 = await consumers.buffer(stream.Readable.from([zlib.gunzipSync(gzipped)]).pipe(crypto.createHash("md5")));
+process.stdout.write(JSON.stringify({ read: read.join(""), debug: debug.length, transform: typeof new stream.Transform().pipe, from: items.join(""), unequalMaps: unequalMaps.split("\\n")[0], base: new stream.Writable() instanceof stream.Stream, md5: md5.toString("hex") }));
 `,
       );
       const output = execFileSync(process.execPath, ["--import", "./register.mjs", "run.mjs"], {
@@ -473,6 +489,7 @@ process.stdout.write(JSON.stringify({ read: read.join(""), debug: debug.length, 
         from: "from an iterable",
         unequalMaps: "Expected values to be strictly deep-equal:",
         base: true,
+        md5: "ea3eded0ee50e0dd4aa53c0ff59988dc",
       });
     } finally {
       nodeFs.rmSync(dir, { recursive: true, force: true });
