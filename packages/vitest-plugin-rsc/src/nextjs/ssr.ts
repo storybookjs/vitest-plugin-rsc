@@ -148,9 +148,10 @@ export type HandleOptions = {
   unrouted?: "not-found" | "pass";
   /**
    * What the request opens, in place of what `renderServer()` opened: the
-   * route of a node of its own, for this request only.
+   * route of a node of its own, for this request only, or with `null`
+   * nothing.
    */
-  opened?: Opened;
+  opened?: Opened | null;
   /**
    * Whether the request loads a page into the document, which starts the
    * files of its route as the server renders it: see `preloadRoute()` of the
@@ -282,7 +283,7 @@ export async function settleRequests(): Promise<void> {
       backgroundWork.clear();
       console.warn(
         "vitest-plugin-rsc: `after()` or `waitUntil()` work of a request was still running " +
-          `${settleTimeout / 1000}s after its page was left. What comes next runs anyway, and ` +
+          `${settleTimeout / 1000}s after a page was left. What comes next runs anyway, and ` +
           "that work may read the stores of the requests that come next.",
       );
     }
@@ -337,12 +338,12 @@ async function handle(
   received: ServerRequest,
   unrouted: "not-found" | "pass",
   nested: boolean,
-  openedByRequest: Opened | undefined,
+  openedByRequest: Opened | null | undefined,
   pageLoad: boolean,
 ): Promise<Handled> {
   const request = incoming(received);
   const url = new URL(request.url);
-  const opened = openedByRequest ?? openedAt(url);
+  const opened = openedByRequest === null ? undefined : (openedByRequest ?? openedAt(url));
   const endRequestScope = registry.enterRequestScope();
   // A route of its own, for the page of the route of a node that renders in
   // this request. Not for the requests the server makes to itself meanwhile:
