@@ -8,18 +8,38 @@
 [![Node](https://img.shields.io/badge/node-%3E%3D24-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
 [![pnpm](https://img.shields.io/badge/pnpm-11-F69220?logo=pnpm&logoColor=white)](https://pnpm.io/)
 
-`vitest-plugin-rsc` runs your server code in Vitest Browser Mode, in the same browser test runtime as your assertions. For a Next.js app, that's the whole app: Next's own request handler renders a route, the browser shows the HTML, and Next's own client code hydrates it.
+`vitest-plugin-rsc` runs your server code in the browser page that runs your test. For a Next.js app, that is the whole app: Next's own request handler renders a route, the browser shows the HTML, Next's own client code hydrates it, and a Server Action runs as it does in production.
 
-That unlocks a kind of test unit tests and E2E tests can't easily reach:
+That makes a kind of test possible that unit tests and E2E tests can't easily reach:
 
 **DB → RSC → pixels → actions → DB → pixels. One slice at a time.**
 
-Pick one piece of the app — a wishlist carousel, a notes form, a settings panel, or a whole route. Seed exactly the state that piece needs, render it, interact with the hydrated UI in a real browser, run Server Actions, and assert what the user sees and what the server stored.
+Pick one piece of the app, like a notes form, a settings panel or a whole route. Seed exactly the state it needs, render it, use the hydrated UI in a real browser, run its Server Actions, and assert on what the user sees and what the server stored.
+
+```tsx
+test("archive a note", async () => {
+  // seed DB
+  await signedInAs(testUser);
+  await db.insert(notes).values({ ownerId: testUser.id, title: "Inbox triage" });
+
+  // RSC -> pixels
+  await renderServer({ url: "/notes" });
+  await expect.element(page.getByText("Inbox triage")).toBeVisible();
+
+  // action -> DB -> pixels
+  await page.getByRole("button", { name: "Archive Inbox triage" }).click();
+  await expect.element(page.getByText("Inbox triage")).not.toBeInTheDocument();
+});
+```
+
+The `db` the test seeds is the module instance the Server Component reads, and the database behind it is Postgres, compiled to WebAssembly, in the page.
 
 ## Table Of Contents
 
-- [Why This Exists](#why-this-exists)
+- [Why](#why)
 - [What You Get](#what-you-get)
+- [Node.js In The Browser](#nodejs-in-the-browser)
+- [Databases](#databases)
 - [Requirements](#requirements)
 - [Next.js](#nextjs)
   - [Set Up](#set-up)
@@ -37,57 +57,117 @@ Pick one piece of the app — a wishlist carousel, a notes form, a settings pane
   - [Fonts, Images And Styles](#fonts-images-and-styles)
   - [Server Code In The Browser](#server-code-in-the-browser)
   - [Environment Variables](#environment-variables)
-  - [Example: Drizzle + PGlite](#example-drizzle--pglite)
   - [A Static Build](#a-static-build)
   - [API](#api)
 - [React Server Components Without Next.js](#react-server-components-without-nextjs)
-- [Server Code That Runs In A Browser](#server-code-that-runs-in-a-browser)
 - [Test Concurrency](#test-concurrency)
 - [How It Works](#how-it-works)
 - [Playgrounds](#playgrounds)
 
-## Why This Exists
+## Why
 
-Covering every state with only E2E is usually impractical. E2E runs are slow because each test has to drive the UI into the state you want to assert against, hard to parallelize because tests share infrastructure, and flaky because they aren't isolated. Validation errors, user roles, locales, feature flags, loading/empty/error states, time-dependent UI — most of those variants just get skipped. That coverage belongs at the base of the test pyramid.
+Covering every state with E2E tests alone isn't practical. They are slow, because each test drives the UI into the state it checks. They are hard to run in parallel, because they share a server and a database. And they are flaky, because they aren't isolated from each other. So validation errors, roles, locales, feature flags, empty and error states, and anything that depends on the time mostly go untested. That coverage belongs at the base of the test pyramid.
 
 <p align="center">
   <img src="docs/assets/test-pyramid.svg" alt="Test pyramid: a small Playwright E2E layer above a wider Vitest unit, component, and integration layer" width="760" />
 </p>
 
-For React Server Components, that base has been missing. Rendering Server Components inside a unit-style test process has been [an open problem since 2023](https://github.com/testing-library/react-testing-library/issues/1209), so the whole RSC pipeline got pushed up to E2E — exactly where broad variant coverage doesn't fit.
+For Server Components that base has been missing. Rendering them in a unit-style test has been [an open problem since 2023](https://github.com/testing-library/react-testing-library/issues/1209), so the whole RSC pipeline was left to E2E tests, which is exactly where broad coverage doesn't fit.
 
-`vitest-plugin-rsc` fills the missing base. A single component, form, or whole route runs through the full RSC pipeline — server render, Flight, HTML, hydration, Server Action, rerender — with white-box control over the inputs and assertions on the rendered DOM.
+`vitest-plugin-rsc` fills that base. A component, a form or a whole route runs through the full pipeline: server render, Flight, HTML, hydration, Server Action and rerender. The test sets up its inputs directly, like rows, cookies, headers and the clock, and asserts on the rendered DOM with Playwright's locators and `expect.element`. Nothing of Next.js is mocked.
 
-Your assertions stay user-facing and your setup stays direct:
+What the server talks to lives in the page too, in memory: the database is a real engine in WebAssembly, the disk is a disk in memory, and the network is whatever the test answers with [MSW](https://mswjs.io/docs/recipes/vitest-browser-mode). There is no infrastructure to deploy, and that has three consequences.
 
-```tsx
-test("archive a note", async () => {
-  // seed DB
-  await signedInAs(testUser);
-  await db.insert(notes).values({ ownerId: testUser.id, title: "Inbox triage" });
+**Workers don't share anything.** Vitest runs test files in parallel, in browser pages of their own. Each page has its own server, database, disk, cookies and storage, so parallel runs need no shared test database, no locks and no cleanup between workers. Within one worker, files run one after another, and so do the tests in a file: `test.concurrent` doesn't work with Next's request context, see [Test Concurrency](#test-concurrency).
 
-  // RSC -> pixels
-  await renderServer(<NotesPage />, { url: "/notes" });
-  await expect.element(page.getByText("Inbox triage")).toBeVisible();
+**Every test starts from the same state.** Before each test, the disk is empty, the app's cookies, `localStorage` and `sessionStorage` are gone, the Data Cache is empty, and the database is back to what its migrations made. The clock is whatever the test sets with `vi.setSystemTime()`, including the database's `now()`. A test that passes once passes every time, in any order.
 
-  // action -> DB -> pixels
-  await page.getByRole("button", { name: "Archive Inbox triage" }).click();
-  await expect.element(page.getByText("Inbox triage")).not.toBeInTheDocument();
-});
-```
+**Storybook needs no server.** Storybook renders the same pages with the same mocks, and a static build of it carries the database in the page. A deployed Storybook has a working backend: forms submit, Server Actions write, and the list updates. The notes demo, `playground/nextjs-notes-demo`, is built that way.
 
-Agents do dramatically better when wrapped in a self-healing loop with fast unit tests — edit, run tests, repair, repeat — and RSC has been the hardest React surface to put in that loop.
+A fast, deterministic test file is also what an agent needs: edit, run the tests, repair, repeat. Server Components have been the hardest part of React to put in that loop.
 
 ## What You Get
 
-- **Real Next.js behavior**: The request goes through Next's own route resolution, request handler, renderer, and router. Layouts, `loading.tsx`, error boundaries, redirects, cookies, Server Actions, route handlers, and the Data Cache do what they do in your app, and so do `proxy.ts` and the redirects, rewrites, and headers in `next.config`.
-- **Next's own compiler**: Your source files go through Next's SWC transform and its font and image loaders, so `next/font`, `next/image`, `next/dynamic`, and styled-jsx work, and a mistake that would stop `next build` fails the test with Next's error.
-- **Focused scope**: Test a whole route, a single component, a form, or a flow without booting the whole deployed app.
-- **White-box inputs**: The server runs in the test runtime, so the `db` your test seeds is the module instance your Server Components read. Set auth/session state, mock IO, fake clocks, and set cookies/headers.
-- **Black-box output**: Assert what the user sees and does via `vitest/browser` — Playwright locators (`getByRole`, `getByText`, etc.) and `expect.element` matchers.
-- **Watch mode**: With `vitestPluginNext({ affectedTests: true })`, an edit reruns just the tests that use that file. See [Watch Mode](docs/next-routes.md#watch-mode).
-- **No deployed infra**: Use in-memory infrastructure like PGlite instead of spinning up a preview server and database.
-- **Per-test isolation**: Each test starts with an empty Data Cache, none of your app's cookies, and an empty `localStorage` and `sessionStorage` of its own.
+- **Next.js as it runs**: routes, layouts, `loading.tsx`, error boundaries, redirects, cookies, Server Actions, route handlers, the Data Cache, `proxy.ts`, and the redirects, rewrites and headers of `next.config`.
+- **Next's own compiler**: SWC, `next/font`, `next/image`, `next/dynamic` and styled-jsx. A mistake that would break `next build` fails the test with Next's error.
+- **One slice at a time**: a component, a form or a whole route, without booting the deployed app: `renderServer(<Node />)` or `renderServer({ url })`.
+- **Node.js in the page**: the modules of Node.js that a browser can provide, and a disk in memory. See [Node.js In The Browser](#nodejs-in-the-browser).
+- **Databases in the page**: recipes for Postgres, SQLite and MySQL. See [Databases](#databases).
+- **Watch mode**: with `vitestPluginNext({ affectedTests: true })`, saving a file reruns the tests that use it. See [Watch Mode](docs/next-routes.md#watch-mode).
+
+## Node.js In The Browser
+
+With `vitestPluginNext()`, server code runs in the browser, but it is told it is on a server, as Next's build tells it: `typeof window` is `"undefined"`. See [Server Code In The Browser](#server-code-in-the-browser) for code that needs to know otherwise. What it imports from Node.js falls into four groups.
+
+What Node.js and browsers share works as it is: `fetch`, `Request`, `Response`, `Headers`, `URL`, `FormData`, Web Streams, `TextEncoder`, `Blob`, `crypto.subtle`, `crypto.randomUUID()`, `structuredClone` and the timers.
+
+What Next's server needs has a stand-in of the plugin:
+
+| Module                 | Stand-in                                                            |
+| ---------------------- | ------------------------------------------------------------------- |
+| `AsyncLocalStorage`    | Runs one request at a time                                          |
+| `Buffer`               | Next's polyfill, with `base64url`                                   |
+| `process`              | The page's own, with `env`, `cwd()`, `nextTick()` and `hrtime`      |
+| `node:stream`          | Next's `stream-browserify`, with `Readable.toWeb()` and `fromWeb()` |
+| `node:path`            | `path-browserify`                                                   |
+| `node:crypto`          | Web Crypto, and a SHA-256 for `createHash()`                        |
+| `node:timers/promises` | The page's timers, with `signal`                                    |
+
+`node:fs` and `node:fs/promises` are a disk in memory, [memfs](https://github.com/streamich/memfs). The test and the server share it: a test writes a file the server reads, and reads back what a Server Action wrote. It starts empty for every test, with only `/tmp`, without any setup. See [The Server's Disk](docs/next-routes.md#the-servers-disk).
+
+```ts
+test("shows the note on disk", async () => {
+  fs.mkdirSync("/notes");
+  fs.writeFileSync("/notes/today.txt", "Buy milk");
+
+  await renderServer({ url: "/disk" });
+  await expect.element(page.getByText("Buy milk")).toBeVisible();
+});
+```
+
+The other modules are [unenv](https://github.com/unjs/unenv)'s stand-ins, built on browser APIs: `os`, `url`, `util`, `events`, `http`, `querystring` and the rest. Whatever can be built on web APIs works. Whatever can't throws when it is called, not when it is imported, so a package that imports it still loads. Examples are `net.connect()`, `child_process.spawn()` and `crypto.createHmac()`.
+
+Two things don't run in a browser at all. Native addons, such as `better-sqlite3`, `sharp` or `bcrypt`, need their JavaScript or WebAssembly counterparts, such as `@libsql/client` or `bcryptjs`. TCP sockets aren't available either: a database driver that opens one gets a stand-in for its server, see [Databases](#databases), and a client that speaks HTTP, like Stripe's, OpenAI's or the AWS SDK, works with MSW in front of it.
+
+When you have a choice, prefer the APIs that Node.js and browsers share: Web Streams, `Uint8Array`, Web Crypto, `Blob`, `fetch` and `FormData`. They work the same in both places.
+
+## Databases
+
+[playground/nextjs-db-recipes](playground/nextjs-db-recipes) has a recipe for each database and ORM, each with a real database engine in WebAssembly, in the page:
+
+|                                 | Drizzle | Prisma | Kysely | SQL              |
+| ------------------------------- | ------- | ------ | ------ | ---------------- |
+| Postgres, on PGlite             | ✅      | ✅     | ✅     | `pg`             |
+| SQLite, on libsql's WebAssembly | ✅      | ✅     | ✅     | `@libsql/client` |
+| MySQL, on lite4mariadb          | ✅      | ✅     | ✅     | `mysql2`         |
+
+The app keeps its ORM and its driver. The tests mock one module, `db.ts`, with a file next to it in `__mocks__/`: the same ORM, given a pool of the database in the page instead of one of the server.
+
+```ts
+// recipes/postgres-drizzle/__mocks__/db.ts
+const database = await pgliteTestDatabase("postgres_drizzle", migrations);
+
+export const resetDb = database.reset;
+export const db = drizzle({ client: database.pool });
+```
+
+The setup file mocks the module, and resets the database before each test:
+
+```ts
+// vitest.setup.ts
+import { beforeEach, vi } from "vitest";
+import * as dbModule from "#recipes/postgres-drizzle/db.ts";
+
+vi.mock("#recipes/postgres-drizzle/db.ts");
+
+beforeEach(async () => {
+  await (dbModule as unknown as { resetDb(): Promise<void> }).resetDb();
+});
+```
+
+Each test gets the database as the app's migrations left it, so its first row is #1, and the database's clock is the test's. To use one in your app, copy the recipe's `__mocks__/db.ts` and the helper for its database from `test/`. The [recipes' README](playground/nextjs-db-recipes/README.md) explains each one and its limits. The notes demo, `playground/nextjs-notes-demo`, does the same with Drizzle and PGlite for a whole app, with Better Auth on that database.
+
+Planned: Redis with ioredis, MongoDB with Mongoose, and TypeORM on Postgres and MySQL.
 
 ## Requirements
 
@@ -352,7 +432,7 @@ That single test sets up:
 
 Setting server and browser state in the same setup is something a pure unit test cannot reach and a full E2E test can only do through the real UI.
 
-`vi.mock("#lib/db.ts")` in the setup file replaces the production database adapter with the Vitest `__mocks__` version next to it (`lib/__mocks__/db.ts`). The mock exports `db`, on a PGlite database in memory, and `resetDb()`, which empties every table: the setup file calls it before each test. See [Drizzle + PGlite](#example-drizzle--pglite) below for the wiring.
+`vi.mock("#lib/db.ts")` in the setup file replaces the production database adapter with the Vitest `__mocks__` version next to it (`lib/__mocks__/db.ts`). The mock exports `db`, on a PGlite database in memory, and `resetDb()`, which empties every table: the setup file calls it before each test. See [Databases](#databases) for the wiring.
 
 ### Router Hooks And Links
 
@@ -839,7 +919,7 @@ test("sets text in a font of next/font/local, a file of the app", async () => {
 
 ### Server Code In The Browser
 
-The server runs in the browser, but your server code is told it's on a server, the way Next's build tells it: `typeof window` is `"undefined"`, and `fetch` is the one Next patches. Test files keep the browser's `window` and `fetch`.
+The server runs in the browser, but your server code is told it's on a server, the way Next's build tells it: `typeof window` is `"undefined"`, and `fetch` is the one Next patches. Test files keep the browser's `window` and `fetch`. What server code gets of Node.js is in [Node.js In The Browser](#nodejs-in-the-browser).
 
 If a module needs to know it's in a browser, list it in `browserModules`:
 
@@ -871,33 +951,6 @@ afterEach(() => {
 ### Environment Variables
 
 The app's server code reads `process.env` from the project's test env, as Next's test mode reads it: `.env.test.local`, `.env.test` and `.env` in a run, `.env.test` and `.env` in a build. Never `.env.local`, another mode's file, or a value of the shell, unless `env` of `next.config` puts it in. `NEXT_PUBLIC_` variables and `env` of `next.config` are in `process.env` too. A build puts the values into the site, so keep secrets out of `.env.test` and `.env`: see [Environment Variables](docs/next-routes.md#environment-variables).
-
-### Example: Drizzle + PGlite
-
-PGlite runs Postgres in-process, so it works inside the browser test runtime. This is how `playground/nextjs-notes-demo` does it: one PGlite database for each browser page that runs tests (with `isolate: false`, the test files of a worker share one), which every test empties first.
-
-Two files sit next to each other:
-
-- `lib/db.ts` — the database adapter your app code imports.
-- `lib/__mocks__/db.ts` — the test stand-in that `vi.mock("#lib/db.ts")` swaps in. It makes the PGlite database as the module loads, with the tables of the Drizzle schema, and exports `db`, Drizzle on that database, and `resetDb()`, which empties every table. Drizzle Kit, which turns the schema into SQL, runs in Node, so the Vitest config prepares the tables and hands them to the mock.
-
-`resetDb()` empties the tables with `DELETE`, under `SET session_replication_role = replica`, so that the foreign keys do not fix the order of the tables. The setup file mocks the module and empties the database before each test:
-
-```ts
-// vitest.setup.ts
-import { beforeEach, vi } from "vitest";
-import * as dbModule from "#lib/db.ts";
-
-vi.mock("#lib/db.ts");
-
-const { resetDb } = dbModule as typeof import("#lib/__mocks__/db.ts");
-
-beforeEach(async () => {
-  await resetDb();
-});
-```
-
-App code keeps importing `db` from `#lib/db.ts`. Tests then seed rows with the same `db.insert(...)` calls the app uses, like the test under [Why This Exists](#why-this-exists).
 
 ### A Static Build
 
@@ -1038,32 +1091,6 @@ This `renderServer` takes `{ container, baseElement, wrapper }` and resolves wit
 
 `vite build` builds a page of the project that calls `renderServer()` into a static site, as for Next.js: see [A Static Build](docs/architecture.md#a-static-build).
 
-## Server Code That Runs In A Browser
-
-The plugin runs server code inside the browser test runtime. That sounds wrong, but the surface is closer than it looks: Node.js has most of the web APIs a browser has, and server code that sticks to those runs in a browser too.
-
-The plugin shims what Next's server needs from Node.js, like `AsyncLocalStorage`, `Buffer`, and `process.env`. With `vitestPluginNext()` the server code has the other modules of Node.js too, in the `rsc` and `ssr` layers: `fs` is a disk in memory that every test starts empty, see [The Server's Disk](docs/next-routes.md#the-servers-disk), `crypto` is Web Crypto with a `createHash` for SHA-256, and the rest are [unenv](https://github.com/unjs/unenv)'s stand-ins, made of what a browser has.
-
-A fast unit test shouldn't touch the real database, filesystem, or network — those make tests slow and flaky. Standard practice is to keep IO inside the test runtime, which here is the browser:
-
-- **Database**: an in-memory implementation like [PGlite](https://pglite.dev/) for Postgres or [`@libsql/client-wasm`](https://www.npmjs.com/package/@libsql/client-wasm) for SQLite. [playground/nextjs-db-recipes](playground/nextjs-db-recipes) has recipes for Postgres, SQLite and MySQL, with Drizzle, Prisma, Kysely or SQL of their own: the app keeps its ORM and driver, and every test has a database of its own.
-- **File system**: an in-memory implementation like [`memfs` via Vitest](https://vitest.dev/guide/mocking/file-system). With `vitestPluginNext()` the server code's `fs` is one already.
-- **HTTP**: a request interceptor like [MSW in Vitest browser mode](https://mswjs.io/docs/recipes/vitest-browser-mode), or a mocked module.
-
-When you have a choice, prefer the APIs that Node and browsers share: Web Streams, `Uint8Array`, Web Crypto, `Blob` and `File`, and `fetch`, `Request`, `Response`, `Headers`, `URL`, and `FormData`.
-
-Without `vitestPluginNext()`, if a dependency still imports a Node module that isn't shimmed, drop in [`vite-plugin-node-polyfills`](https://github.com/davidmyersdev/vite-plugin-node-polyfills) for the rest:
-
-```ts
-import { nodePolyfills } from "vite-plugin-node-polyfills";
-import { defineConfig } from "vitest/config";
-import { vitestPluginRSC } from "vitest-plugin-rsc";
-
-export default defineConfig({
-  plugins: [nodePolyfills(), vitestPluginRSC()],
-});
-```
-
 ## Test Concurrency
 
 [`test.concurrent`](https://vitest.dev/api/#test-concurrent) doesn't work for tests that read `AsyncLocalStorage`, which includes anything that touches Next.js App Router internals (`headers()`, `cookies()`, `next/cache`, Server Actions). The plugin's `AsyncLocalStorage` shim is sequential, so concurrent tests would leak context between each other. Sequential tests within a file are fine; test files still run in parallel.
@@ -1088,6 +1115,7 @@ For the full walkthrough, see [docs/next-routes.md](docs/next-routes.md). [docs/
 
 - `playground/nextjs-e2e-demo` — a small Next.js app with a test for every feature of the Next.js support. Most samples above come from its tests. Its `build-test/` builds the app with `vite build` and opens the build in a browser: see [A Static Build](#a-static-build).
 - `playground/nextjs-notes-demo` — a fuller Next.js notes app with Better Auth, Drizzle, PGlite test databases, and shadcn/ui. Its tests open whole routes with the database mocked in the test runtime, and the rest of the app real: a test signs in with a Better Auth session on that database. This is the repository's acceptance app.
+- `playground/nextjs-db-recipes` — a recipe for each database and ORM: Postgres, SQLite and MySQL with Drizzle, Prisma, Kysely or SQL of their own. See [Databases](#databases).
 - `playground/rsc-vitest-demo` — a minimal non-Next RSC app. Use this as the smallest end-to-end example of `vitest-plugin-rsc` on its own. Its `build-test/` builds the page of `host/main.tsx` with `vite build` and opens the build in a browser.
 - `playground/nextjs-host-demo` — the Next.js plugin in a Vite dev server without Vitest, as another host runs it. Its tests start that server and drive it with Playwright.
 
