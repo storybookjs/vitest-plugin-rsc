@@ -169,7 +169,13 @@ export default defineConfig([
     outDir: nodeOutput,
     format: ["esm" as const],
     fixedExtension: false,
-    outputOptions: { codeSplitting: false as const },
+    // No comments of what is bundled: a JSDoc `@import` of a package reads
+    // as an import to TypeScript, which types the file for src/node/. The
+    // licenses are in LICENSES.md.
+    outputOptions: {
+      codeSplitting: false as const,
+      comments: { legal: false, annotation: true, jsdoc: false },
+    },
     // What is in a file, and nothing else on an upgrade: memfs, unenv and
     // readable-stream with what they depend on. The package's own by name
     // stays an import. The assert and util packages depend on a tree of

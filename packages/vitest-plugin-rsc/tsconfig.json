@@ -19,9 +19,6 @@
     "module": "preserve",
     "noEmit": true,
     "allowImportingTsExtensions": true,
-    // The package's own modules of Node.js by name, as src/node/ imports
-    // them: their source, not the built files the exports map names.
-    "paths": { "vitest-plugin-rsc/node/*": ["./src/node/*.ts"] },
 
     /* If your code runs in the DOM: */
     "lib": ["es2024", "dom", "dom.iterable"],
