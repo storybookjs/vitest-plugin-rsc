@@ -175,15 +175,12 @@ export async function layerTables(context: NextContext, build: NextBuild) {
     // the edge table's, and the app's code, its files and its packages, gets
     // the Node.js one, as a route on Node.js does. The plugin's resolver
     // picks by the importer (plugin.ts). Next's renderer runs on web streams
-    // here, `stream-ops.web`, written against the edge table: React's build
-    // for Node.js keeps the request of a render in an `AsyncLocalStorage` of
-    // `async_hooks`, in a pre-bundle a copy of the package's own, where a
-    // hint of the Flight client, like the `preload()` of a font, finds no
-    // request, and the response has no `Link` header. In the ssr layer, where
-    // a Client Component imports them: the rsc layer's are Next's modules for
-    // a Server Component, which is not to render, in Next's table for
-    // Node.js too. React's entries for Node.js need `stream`, `util`,
-    // `crypto` and `async_hooks`, the package's stand-ins.
+    // here, `stream-ops.web`, which Next pairs with the edge table's builds.
+    // In the ssr layer, where a Client Component imports them: the rsc
+    // layer's are Next's modules for a Server Component, which is not to
+    // render, in Next's table for Node.js too. React's entries for Node.js
+    // need `stream`, `util`, `crypto` and `async_hooks`, the package's
+    // stand-ins.
     if (layer === "ssr") {
       const nodeTable = vendoredReactAliases(false);
       for (const key of [

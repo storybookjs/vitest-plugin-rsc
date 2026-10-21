@@ -455,3 +455,27 @@ test("takes the stores of the scopes that have not ended, the inner one first, i
   expect(outside()).toEqual([undefined, undefined]);
   expect(read()).toEqual([undefined, undefined]);
 });
+
+// A layer, the optimizer and a build each evaluate the module again, as this
+// copy of it is: see the end of async-local-storage.ts.
+test("hands out the page's storage from every copy of the module", async () => {
+  // Another id for the same file, which Vitest evaluates again.
+  const copyOfModule = "./async-local-storage.ts?copy";
+  const copy: typeof import("./async-local-storage.ts") = await import(
+    /* @vite-ignore */ copyOfModule
+  );
+  expect(copy.SequentialAsyncLocalStorage).toBe(AsyncLocalStorage);
+  expect(copy.enterAmbientScope).toBe(enterAmbientScope);
+  expect(copy.asyncFunctionHooks).toBe(asyncFunctionHooks);
+  expect(copy.resetAsyncLocalStorage).toBe(resetAsyncLocalStorage);
+  const storage = new copy.SequentialAsyncLocalStorage<string>();
+
+  const leaveRequest = enterAmbientScope();
+  storage.run("request", () => {});
+  expect(storage.getStore()).toBe("request");
+  leaveRequest();
+
+  storage.enterWith("left");
+  resetAsyncLocalStorage();
+  expect(storage.getStore()).toBeUndefined();
+});

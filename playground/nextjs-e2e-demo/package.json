@@ -15,6 +15,7 @@
     "next-themes": "^0.4.6",
     "react": "19.2.6",
     "react-dom": "19.2.6",
+    "request-context": "file:fixtures/request-context",
     "styled-package": "file:fixtures/styled-package"
   },
   "devDependencies": {
