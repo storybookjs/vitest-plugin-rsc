@@ -190,6 +190,9 @@ export async function loadDocument(
   const reactTargets: object[] = [document, document.documentElement, document.head];
   if (container) reactTargets.push(container);
   const runnerProperties = reactTargets.map((target) => new Set(Reflect.ownKeys(target)));
+  // The constructed stylesheets of the document, which a browser drops with
+  // the page, like an `html { scroll-padding-top }` that the page adopts.
+  const runnerAdopted = Array.from(document.adoptedStyleSheets);
   const runnerScripts = new Set(document.querySelectorAll("script"));
   const before = new Set<Node>(
     [...document.head.childNodes, ...runnerBody.childNodes].filter(
@@ -241,6 +244,7 @@ export async function loadDocument(
     elements(document).forEach((element, index) =>
       setAttributes(element, runnerAttributes[index]!),
     );
+    document.adoptedStyleSheets = runnerAdopted;
     // One that is not configurable cannot be deleted, and stays.
     reactTargets.forEach((target, index) => {
       for (const key of Reflect.ownKeys(target)) {

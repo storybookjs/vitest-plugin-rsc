@@ -23,7 +23,18 @@ export type Fixture = {
    * and what the runner does to the copy of the fixture instead. Without it,
    * a test that passes such an option is reported as not applicable.
    */
-  prepared?: { options: string[]; remove?: string[] };
+  prepared?: {
+    options: string[];
+    remove?: string[];
+    /** Files the runner writes to the copy, like a `next.config.js`. */
+    write?: Record<string, string>;
+    /**
+     * For `nextConfig`: the values of the config the copy has. A test's
+     * `nextConfig` that has another value is not the app that runs. A function
+     * of it, like `rewrites`, is taken to be the one the copy has.
+     */
+    nextConfig?: Record<string, unknown>;
+  };
 };
 
 export const areas = {
@@ -32,6 +43,7 @@ export const areas = {
   actions: "Server Actions",
   "route-handlers": "Route handlers",
   "parallel-routes": "Parallel routes",
+  interception: "Interception routes",
   boundaries: "not-found and error boundaries",
   metadata: "Metadata",
   font: "next/font",
@@ -62,6 +74,33 @@ export const fixtures: Fixture[] = [
   appDir("shallow-routing", "navigation", ["shallow-routing.test.ts"]),
   appDir("hooks", "navigation", ["hooks.test.ts"]),
   appDir("use-params", "navigation", ["use-params.test.ts"]),
+  // Not `create-root-layout`, whose tests are for `next dev`, which writes the
+  // root layout that the app lacks. The plugin rejects the app, as `next build`
+  // does.
+  appDir("navigation-focus", "navigation", ["navigation-focus.test.ts"]),
+  appDir("navigation-layout-suspense", "navigation", ["navigation-layout-suspense.test.ts"]),
+  appDir("navigation-redirect-import", "navigation", ["navigation-redirect-import.test.ts"]),
+  appDir("navigation-with-queued-actions", "navigation", ["index.test.ts"]),
+  appDir("router-autoscroll", "navigation", ["router-autoscroll.test.ts"]),
+  appDir("root-layout", "navigation", ["root-layout.test.ts"]),
+  appDir("root-layout-redirect", "navigation", ["root-layout-redirect.test.ts"]),
+  appDir("root-layout-render-once", "navigation", ["index.test.ts"]),
+  appDir("app-edge-root-layout", "navigation", ["index.test.ts"]),
+  appDir("concurrent-navigations", "navigation", [
+    "mismatching-prefetch.test.ts",
+    "server-patch-history.test.ts",
+  ]),
+  appDir("layout-params", "navigation", ["layout-params.test.ts"]),
+  appDir("use-selected-layout-segment-s", "navigation", ["use-selected-layout-segment-s.test.ts"]),
+  appDir("dynamic-href", "navigation", ["dynamic-href.test.ts"]),
+  appDir("rsc-redirect", "navigation", ["rsc-redirect.test.ts"]),
+  appDir("search-params-react-key", "navigation", ["layout-params.test.ts"]),
+  appDir("searchparams-reuse-loading", "navigation", ["searchparams-reuse-loading.test.ts"]),
+  appDir("searchparams-static-bailout", "navigation", ["searchparams-static-bailout.test.ts"]),
+  appDir("multi-value-search-params-stale", "navigation", [
+    "multi-value-search-params-stale.test.ts",
+  ]),
+  appDir("rewrite-with-search-params", "navigation", ["rewrite-with-search-params.test.ts"]),
 
   // Not the `*-node-middleware` files, which run the same tests again with
   // a middleware on the Node.js runtime.
@@ -87,7 +126,114 @@ export const fixtures: Fixture[] = [
   appDir("parallel-routes-breadcrumbs", "parallel-routes", ["parallel-routes-breadcrumbs.test.ts"]),
   appDir("parallel-routes-not-found", "parallel-routes", ["parallel-routes-not-found.test.ts"]),
 
+  // Not these two, whose app `next build` rejects. Their tests start the app
+  // themselves and read what the CLI prints:
+  // - `canonical-interception-routes`, an interception route without the
+  //   route it intercepts. The plugin rejects the app too.
+  // - `interception-routes-output-export`, interception routes with
+  //   `output: "export"`.
+  appDir("interception-dynamic-segment", "interception", ["interception-dynamic-segment.test.ts"]),
+  appDir("interception-dynamic-segment-middleware", "interception", [
+    "interception-dynamic-segment-middleware.test.ts",
+  ]),
+  appDir("interception-dynamic-single-segment", "interception", [
+    "interception-dynamic-single-segment.test.ts",
+  ]),
+  appDir("interception-middleware-rewrite", "interception", [
+    "interception-middleware-rewrite.test.ts",
+  ]),
+  appDir("interception-route-prefetch-cache", "interception", [
+    "interception-route-prefetch-cache.test.ts",
+  ]),
+  appDir("interception-routes-multiple-catchall", "interception", [
+    "interception-routes-multiple-catchall.test.ts",
+  ]),
+  appDir("interception-routes-root-catchall", "interception", [
+    "interception-routes-root-catchall.test.ts",
+  ]),
+  appDir("interception-segments-two-levels-above", "interception", [
+    "interception-segments-two-levels-above.test.ts",
+  ]),
+  appDir("dynamic-interception-route-revalidate", "interception", [
+    "dynamic-interception-route-revalidate.test.ts",
+  ]),
+  // The test runs the app with `trailingSlash` on and off, and the rewrites of
+  // its `nextConfig`. The copy has them, with `trailingSlash` off.
+  appDir(
+    "parallel-routes-and-interception",
+    "interception",
+    ["parallel-routes-and-interception.test.ts"],
+    {
+      prepared: {
+        options: ["nextConfig"],
+        write: {
+          "next.config.js": [
+            "module.exports = {",
+            "  trailingSlash: false,",
+            "  async rewrites() {",
+            "    return {",
+            "      beforeFiles: [",
+            "        { source: '/foo', destination: '/en/foo' },",
+            "        { source: '/photos', destination: '/en/photos' },",
+            "      ],",
+            "    }",
+            "  },",
+            "}",
+            "",
+          ].join("\n"),
+        },
+        nextConfig: { trailingSlash: false },
+      },
+    },
+  ),
+  appDir("parallel-routes-and-interception-basepath", "interception", [
+    "parallel-routes-and-interception-basepath.test.ts",
+  ]),
+  appDir("parallel-routes-and-interception-catchall", "interception", [
+    "parallel-routes-and-interception-catchall.test.ts",
+  ]),
+  // The test runs the app with `collapseAdapterRoutes` on and off. The copy
+  // has Next's default, on.
+  appDir(
+    "parallel-routes-and-interception-from-root",
+    "interception",
+    ["parallel-routes-and-interception-from-root.test.ts"],
+    {
+      prepared: {
+        options: ["nextConfig"],
+        nextConfig: { experimental: { collapseAdapterRoutes: true } },
+      },
+    },
+  ),
+  appDir("parallel-routes-and-interception-nested-dynamic-routes", "interception", [
+    "parallel-routes-and-interception-nested-dynamic-routes.test.ts",
+  ]),
+
   appDir("not-found-default", "boundaries", ["index.test.ts"]),
+  // Not `not-found-with-pages-i18n`, which is for the Pages Router.
+  appDir("not-found/basic", "boundaries", ["index.test.ts"]),
+  appDir("not-found/conflict-route", "boundaries", ["index.test.ts"]),
+  // The test lists `sass`, and the app has no Sass.
+  appDir("not-found/css-precedence", "boundaries", ["index.test.ts"], {
+    assumeInstalled: ["sass"],
+  }),
+  appDir("not-found/default", "boundaries", ["default.test.ts"]),
+  appDir("not-found/group-route", "boundaries", ["index.test.ts"]),
+  appDir("not-found/group-route-root-not-found", "boundaries", ["index.test.ts"]),
+  appDir("not-found-non-document", "boundaries", ["not-found-non-document.test.ts"]),
+  appDir("not-found-non-document-dynamic", "boundaries", [
+    "not-found-non-document-dynamic.test.ts",
+  ]),
+  appDir("not-found-with-layout-and-group-not-found", "boundaries", ["index.test.ts"]),
+  appDir("not-found-with-nested-layouts", "boundaries", ["index.test.ts"]),
+  appDir("prefetching-not-found", "boundaries", ["prefetching-not-found.test.ts"]),
+  appDir("global-not-found/basic", "boundaries", ["global-not-found-basic.test.ts"]),
+  appDir("global-not-found/both-present", "boundaries", ["both-present.test.ts"]),
+  appDir("global-not-found/cache-components", "boundaries", ["cache-components.test.ts"]),
+  appDir("global-not-found/css", "boundaries", ["global-not-found-css.test.ts"]),
+  appDir("global-not-found/metadata", "boundaries", ["metadata.test.ts"]),
+  appDir("global-not-found/no-root-layout", "boundaries", ["no-root-layout.test.ts"]),
+  appDir("global-not-found/not-present", "boundaries", ["not-present.test.ts"]),
   appDir("error-boundary-navigation", "boundaries", ["index.test.ts"]),
   appDir("global-error/basic", "boundaries", ["index.test.ts"]),
   appDir("errors", "boundaries", ["index.test.ts"]),

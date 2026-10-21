@@ -145,6 +145,33 @@ test("takes back every property that was set on the document while the page was 
   }
 });
 
+test("takes back the stylesheets that the page adopted, and keeps the ones from before", async () => {
+  // A constructed stylesheet styles the document until it is taken off, as
+  // one that a page adopts for `scroll-padding-top` would, in every later page.
+  const sheet = (rule: string) => {
+    const of = new CSSStyleSheet();
+    of.replaceSync(rule);
+    return of;
+  };
+  const host = sheet("html { scroll-padding-bottom: 10px; }");
+  const before = Array.from(document.adoptedStyleSheets);
+  document.adoptedStyleSheets = [...before, host];
+  onTestFinished(() => {
+    document.adoptedStyleSheets = before;
+  });
+
+  const { unmount } = await renderServer({ url: "/" });
+  document.adoptedStyleSheets = [
+    ...document.adoptedStyleSheets,
+    sheet("html { scroll-padding-top: 100px; }"),
+  ];
+  expect(getComputedStyle(document.documentElement).scrollPaddingTop).toBe("100px");
+  await unmount();
+
+  expect(document.adoptedStyleSheets).toEqual([...before, host]);
+  expect(getComputedStyle(document.documentElement).scrollPaddingTop).toBe("auto");
+});
+
 test("keeps the mark that a host set on the document before its first page, for every page", async () => {
   // A library that marks the document on its first use, as `prepareDocument()`
   // of `@testing-library/user-event` does: a symbol on `document`, and a

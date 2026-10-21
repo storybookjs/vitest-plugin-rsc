@@ -81,6 +81,32 @@
     "streamed-to-prerendered": {
       "category": "not-yet",
       "text": "Expects the HTML of a page that Next's build prerenders. Here the page renders for the request, as `next start` renders a dynamic page: React sends the `<link rel=\"preconnect\">` of a font in the `Link` header, and a client navigation commits before the metadata that Next streams after the page."
+    },
+    "router-act": {
+      "category": "not-applicable",
+      "text": "Uses `createRouterAct()` of Next's test library, which holds back the requests of the router and answers them with Playwright's `page.route()`.",
+      "match": "createRouterAct of router-act"
+    },
+    "another-app": {
+      "category": "not-applicable",
+      "text": "Asks for another app than the fixture: files of its own, or another `next.config`. The runner runs one app for a fixture, the fixture as it is or as `fixtures.ts` prepares it.",
+      "match": "builds the app out of files the test names|changes the app before it is built"
+    },
+    "next-development-checks": {
+      "category": "not-yet",
+      "text": "Expects the production code of Next, which leaves out the checks of its development code, like the error for a `<Link>` with a dynamic `href`. The plugin runs Next's development code by default, as its `build` option says."
+    },
+    "dynamic-params": {
+      "category": "not-yet",
+      "text": "A path that `generateStaticParams` does not list, of a route with `dynamicParams = false`. Next answers 404 for it from the paths its build prerendered. Here no build lists them, and the page renders."
+    },
+    "not-a-page": {
+      "category": "not-yet",
+      "text": "A navigation of Next's router to a route handler that answers with JSON, which a browser shows in place of the app. The tab cannot leave the test, so the page stays, with an uncaught error."
+    },
+    "metadata-files": {
+      "category": "not-yet",
+      "text": "Metadata files: `favicon.ico`, `icon.png`, `opengraph-image`, `sitemap.ts`, `robots.txt`, `manifest.webmanifest`."
     }
   },
   "fixtures": {
@@ -495,6 +521,299 @@
       "failed": {}
     },
     "sitemap-group": {
+      "passed": 2,
+      "failed": {}
+    },
+    "navigation-focus": {
+      "passed": 5,
+      "failed": {}
+    },
+    "navigation-layout-suspense": {
+      "passed": 1,
+      "failed": {}
+    },
+    "navigation-redirect-import": {
+      "passed": 1,
+      "failed": {}
+    },
+    "navigation-with-queued-actions": {
+      "passed": 1,
+      "failed": {}
+    },
+    "router-autoscroll": {
+      "passed": 20,
+      "failed": {}
+    },
+    "root-layout": {
+      "passed": 7,
+      "failed": {
+        "root-layout.test.ts > app-dir root layout > Should do a mpa navigation when switching root layout > should work with static routes": "dynamic-params"
+      }
+    },
+    "root-layout-redirect": {
+      "passed": 1,
+      "failed": {}
+    },
+    "root-layout-render-once": {
+      "passed": 1,
+      "failed": {}
+    },
+    "app-edge-root-layout": {
+      "passed": 1,
+      "failed": {
+        "index.test.ts > app-dir edge runtime root layout > should mark static contain metadata routes as edge functions": "build-output"
+      }
+    },
+    "concurrent-navigations": {
+      "passed": 1,
+      "failed": {
+        "mismatching-prefetch.test.ts > mismatching prefetch > recovers when a navigation rewrites to a different route than the one that was prefetched": "router-act"
+      }
+    },
+    "layout-params": {
+      "passed": 6,
+      "failed": {}
+    },
+    "use-selected-layout-segment-s": {
+      "passed": 8,
+      "failed": {}
+    },
+    "dynamic-href": {
+      "passed": 0,
+      "failed": {
+        "dynamic-href.test.ts > dynamic-href > should not error on /object in prod": "next-development-checks",
+        "dynamic-href.test.ts > dynamic-href > should not error on /string in prod": "next-development-checks"
+      }
+    },
+    "rsc-redirect": {
+      "passed": 2,
+      "failed": {}
+    },
+    "search-params-react-key": {
+      "passed": 1,
+      "failed": {}
+    },
+    "searchparams-reuse-loading": {
+      "passed": 5,
+      "failed": {
+        "searchparams-reuse-loading.test.ts > searchparams-reuse-loading > when aliasing is skipped > should work for route handlers": "not-a-page",
+        "searchparams-reuse-loading.test.ts > searchparams-reuse-loading > when aliasing is skipped > should work for navigating to pages dir": "pages-router",
+        "searchparams-reuse-loading.test.ts > searchparams-reuse-loading > Without Middleware > should correctly return different RSC data for full prefetches with different searchParam values": "playwright-page",
+        "searchparams-reuse-loading.test.ts > searchparams-reuse-loading > With Middleware > should correctly return different RSC data for full prefetches with different searchParam values": "playwright-page",
+        "searchparams-reuse-loading.test.ts > searchparams-reuse-loading > should re-use loading from \"full\" prefetch for param-full URL when navigating to param-less route": "playwright-page",
+        "searchparams-reuse-loading.test.ts > searchparams-reuse-loading > should re-use loading from \"full\" prefetch for param-less URL when navigating to param-full route": "playwright-page",
+        "searchparams-reuse-loading.test.ts > searchparams-reuse-loading > should re-use loading from \"full\" prefetch for param-full URL when navigating to param-full route": "playwright-page"
+      }
+    },
+    "searchparams-static-bailout": {
+      "passed": 3,
+      "failed": {
+        "searchparams-static-bailout.test.ts > searchparams-static-bailout > server component > should not bailout when not using searchParams": "prerendered-pages",
+        "searchparams-static-bailout.test.ts > searchparams-static-bailout > client component > should not bailout when not using searchParams": "prerendered-pages"
+      }
+    },
+    "multi-value-search-params-stale": {
+      "passed": 1,
+      "failed": {}
+    },
+    "rewrite-with-search-params": {
+      "passed": 0,
+      "failed": {
+        "rewrite-with-search-params.test.ts > rewrite-with-search-params > should not contain params in search params after rewrite": "node-in-test"
+      }
+    },
+    "interception-dynamic-segment": {
+      "passed": 4,
+      "failed": {
+        "interception-dynamic-segment.test.ts > interception-dynamic-segment > should correctly prerender segments with generateStaticParams": "cli-output",
+        "interception-dynamic-segment.test.ts > interception-dynamic-segment > should prerender a dynamic intercepted route": "cli-output",
+        "interception-dynamic-segment.test.ts > interception-dynamic-segment > Default.tsx injection validation (no 404s allowed) > should not render a 404 for the intercepted route with dynamic segments": "router-act",
+        "interception-dynamic-segment.test.ts > interception-dynamic-segment > Default.tsx injection validation (no 404s allowed) > should navigate to /simple-page without 404 (no parallel routes)": "router-act",
+        "interception-dynamic-segment.test.ts > interception-dynamic-segment > Default.tsx injection validation (no 404s allowed) > should navigate to /has-page without 404 (page fills children)": "router-act",
+        "interception-dynamic-segment.test.ts > interception-dynamic-segment > Default.tsx injection validation (no 404s allowed) > should navigate to /no-parallel-routes/deeper without 404": "router-act",
+        "interception-dynamic-segment.test.ts > interception-dynamic-segment > Default.tsx injection validation (no 404s allowed) > should navigate to /has-both without 404 (has both @sidebar and page)": "router-act",
+        "interception-dynamic-segment.test.ts > interception-dynamic-segment > Default.tsx injection validation (no 404s allowed) > should retain named host slots instead of rendering their defaults": "router-act",
+        "interception-dynamic-segment.test.ts > interception-dynamic-segment > Default.tsx injection validation (no 404s allowed) > should retain named host slots for an interception catch-all": "router-act",
+        "interception-dynamic-segment.test.ts > interception-dynamic-segment > Default.tsx injection validation (no 404s allowed) > should send and render a real default for a newly entered slot owner": "router-act",
+        "interception-dynamic-segment.test.ts > interception-dynamic-segment > Default.tsx injection validation (no 404s allowed) > should omit undeclared children and preserve parent state": "router-act",
+        "interception-dynamic-segment.test.ts > interception-dynamic-segment > Default.tsx injection validation (no 404s allowed) > should navigate to /test-nested/deeper without 404": "router-act",
+        "interception-dynamic-segment.test.ts > interception-dynamic-segment > Default.tsx injection validation (no 404s allowed) > should navigate to /explicit-layout/deeper without 404": "router-act",
+        "interception-dynamic-segment.test.ts > interception-dynamic-segment > Default.tsx injection validation (no 404s allowed) > should handle repeated interceptions without 404": "router-act",
+        "interception-dynamic-segment.test.ts > interception-dynamic-segment > Default.tsx injection validation (no 404s allowed) > should navigate between different interception routes without 404": "router-act"
+      }
+    },
+    "interception-dynamic-segment-middleware": {
+      "passed": 4,
+      "failed": {}
+    },
+    "interception-dynamic-single-segment": {
+      "passed": 9,
+      "failed": {}
+    },
+    "interception-middleware-rewrite": {
+      "passed": 3,
+      "failed": {}
+    },
+    "interception-route-prefetch-cache": {
+      "passed": 1,
+      "failed": {
+        "interception-route-prefetch-cache.test.ts > interception-route-prefetch-cache > runtime = edge > should render the correct interception when two distinct layouts share the same path structure": "another-app"
+      }
+    },
+    "interception-routes-multiple-catchall": {
+      "passed": 5,
+      "failed": {}
+    },
+    "interception-routes-root-catchall": {
+      "passed": 2,
+      "failed": {}
+    },
+    "interception-segments-two-levels-above": {
+      "passed": 3,
+      "failed": {}
+    },
+    "dynamic-interception-route-revalidate": {
+      "passed": 1,
+      "failed": {}
+    },
+    "parallel-routes-and-interception": {
+      "passed": 26,
+      "failed": {
+        "parallel-routes-and-interception.test.ts > parallel-routes-and-interception (trailingSlash: true) > parallel routes > should support parallel route tab bars": "another-app",
+        "parallel-routes-and-interception.test.ts > parallel-routes-and-interception (trailingSlash: true) > parallel routes > should match parallel routes": "another-app",
+        "parallel-routes-and-interception.test.ts > parallel-routes-and-interception (trailingSlash: true) > parallel routes > should match parallel routes in route groups": "another-app",
+        "parallel-routes-and-interception.test.ts > parallel-routes-and-interception (trailingSlash: true) > parallel routes > should throw a 404 when no matching parallel route is found": "another-app",
+        "parallel-routes-and-interception.test.ts > parallel-routes-and-interception (trailingSlash: true) > parallel routes > should render nested parallel routes": "another-app",
+        "parallel-routes-and-interception.test.ts > parallel-routes-and-interception (trailingSlash: true) > parallel routes > should support layout files in parallel routes": "another-app",
+        "parallel-routes-and-interception.test.ts > parallel-routes-and-interception (trailingSlash: true) > parallel routes > should only scroll to the parallel route that was navigated to": "another-app",
+        "parallel-routes-and-interception.test.ts > parallel-routes-and-interception (trailingSlash: true) > parallel routes > should apply the catch-all route to the parallel route if no matching route is found": "another-app",
+        "parallel-routes-and-interception.test.ts > parallel-routes-and-interception (trailingSlash: true) > parallel routes > should match the catch-all routes of the more specific path, if there is more than one catch-all route": "another-app",
+        "parallel-routes-and-interception.test.ts > parallel-routes-and-interception (trailingSlash: true) > parallel routes > should navigate with a link with prefetch=false": "another-app",
+        "parallel-routes-and-interception.test.ts > parallel-routes-and-interception (trailingSlash: true) > parallel routes > should display all parallel route params with useParams": "another-app",
+        "parallel-routes-and-interception.test.ts > parallel-routes-and-interception (trailingSlash: true) > parallel routes > should load CSS for a default page that exports another page": "another-app",
+        "parallel-routes-and-interception.test.ts > parallel-routes-and-interception (trailingSlash: true) > parallel routes > should handle a loading state": "another-app",
+        "parallel-routes-and-interception.test.ts > parallel-routes-and-interception (trailingSlash: true) > route intercepting with dynamic routes > should render intercepted route": "another-app",
+        "parallel-routes-and-interception.test.ts > parallel-routes-and-interception (trailingSlash: true) > route intercepting with prerendered dynamic routes  > should render intercepted route": "another-app",
+        "parallel-routes-and-interception.test.ts > parallel-routes-and-interception (trailingSlash: true) > route intercepting with dynamic optional catch-all routes > should render intercepted route": "another-app",
+        "parallel-routes-and-interception.test.ts > parallel-routes-and-interception (trailingSlash: true) > route intercepting with dynamic catch-all routes > should render intercepted route": "another-app",
+        "parallel-routes-and-interception.test.ts > parallel-routes-and-interception (trailingSlash: true) > route intercepting > should render intercepted route": "another-app",
+        "parallel-routes-and-interception.test.ts > parallel-routes-and-interception (trailingSlash: true) > route intercepting > should render an intercepted route from a slot": "another-app",
+        "parallel-routes-and-interception.test.ts > parallel-routes-and-interception (trailingSlash: true) > route intercepting > should render an intercepted route at the top level from a nested path": "another-app",
+        "parallel-routes-and-interception.test.ts > parallel-routes-and-interception (trailingSlash: true) > route intercepting > should render intercepted route from a nested route": "another-app",
+        "parallel-routes-and-interception.test.ts > parallel-routes-and-interception (trailingSlash: true) > route intercepting > should re-render the layout on the server when it had a default child route": "another-app",
+        "parallel-routes-and-interception.test.ts > parallel-routes-and-interception (trailingSlash: true) > route intercepting > should render modal when paired with parallel routes": "another-app",
+        "parallel-routes-and-interception.test.ts > parallel-routes-and-interception (trailingSlash: true) > route intercepting > should support intercepting with beforeFiles rewrites": "another-app",
+        "parallel-routes-and-interception.test.ts > parallel-routes-and-interception (trailingSlash: true) > route intercepting > should support intercepting local dynamic sibling routes": "another-app",
+        "parallel-routes-and-interception.test.ts > parallel-routes-and-interception (trailingSlash: true) > route intercepting > should intercept on routes that contain hyphenated/special dynamic params": "another-app",
+        "parallel-routes-and-interception.test.ts > parallel-routes-and-interception (trailingSlash: true) > route intercepting > should not have /default paths in the prerender manifest": "build-output",
+        "parallel-routes-and-interception.test.ts > parallel-routes-and-interception (trailingSlash: false) > route intercepting > should not have /default paths in the prerender manifest": "build-output",
+        "parallel-routes-and-interception.test.ts > parallel-routes-and-interception-conflicting-pages > should gracefully handle when two page segments match the `children` parallel slot": "another-app"
+      }
+    },
+    "parallel-routes-and-interception-basepath": {
+      "passed": 2,
+      "failed": {}
+    },
+    "parallel-routes-and-interception-catchall": {
+      "passed": 1,
+      "failed": {}
+    },
+    "parallel-routes-and-interception-from-root": {
+      "passed": 1,
+      "failed": {
+        "parallel-routes-and-interception-from-root.test.ts > parallel-routes-and-interception-from-root, collapseAdapterRoutes: false > should interpolate [locale] in \"/[locale]/example/(...)[locale]/intercepted\"": "another-app"
+      }
+    },
+    "parallel-routes-and-interception-nested-dynamic-routes": {
+      "passed": 1,
+      "failed": {}
+    },
+    "not-found__basic": {
+      "passed": 7,
+      "failed": {
+        "index.test.ts > app dir - not-found - basic > should include not found client reference manifest in the file trace": "build-output",
+        "index.test.ts > app dir - not-found - basic > should use root not-found content for 404 html": "build-output",
+        "index.test.ts > app dir - not-found - basic > with default runtime > should create the 404 mapping and copy the file to pages": "build-output",
+        "index.test.ts > app dir - not-found - basic > with runtime = edge > should return 404 status if notFound() is called in shell": "changes-the-app",
+        "index.test.ts > app dir - not-found - basic > with runtime = edge > should use the not-found page for non-matching routes": "changes-the-app",
+        "index.test.ts > app dir - not-found - basic > with runtime = edge > should match dynamic route not-found boundary correctly": "changes-the-app",
+        "index.test.ts > app dir - not-found - basic > with runtime = edge > should escalate notFound to parent layout if no not-found boundary present in current layer": "changes-the-app"
+      }
+    },
+    "not-found__conflict-route": {
+      "passed": 2,
+      "failed": {
+        "index.test.ts > app dir - not-found - conflict route > with edge runtime > should use the not-found page for non-matching routes": "another-app",
+        "index.test.ts > app dir - not-found - conflict route > with edge runtime > should allow to have a valid /not-found route": "another-app"
+      }
+    },
+    "not-found__css-precedence": {
+      "passed": 1,
+      "failed": {}
+    },
+    "not-found__default": {
+      "passed": 1,
+      "failed": {
+        "default.test.ts > app dir - not-found - default > should contain noindex contain in the page": "build-output"
+      }
+    },
+    "not-found__group-route": {
+      "passed": 1,
+      "failed": {
+        "index.test.ts > app dir - not-found - group route > with edge runtime > should use the not-found page under group routes": "another-app"
+      }
+    },
+    "not-found__group-route-root-not-found": {
+      "passed": 2,
+      "failed": {}
+    },
+    "not-found-non-document": {
+      "passed": 6,
+      "failed": {}
+    },
+    "not-found-non-document-dynamic": {
+      "passed": 4,
+      "failed": {}
+    },
+    "not-found-with-layout-and-group-not-found": {
+      "passed": 1,
+      "failed": {}
+    },
+    "not-found-with-nested-layouts": {
+      "passed": 1,
+      "failed": {}
+    },
+    "prefetching-not-found": {
+      "passed": 1,
+      "failed": {}
+    },
+    "global-not-found__basic": {
+      "passed": 3,
+      "failed": {}
+    },
+    "global-not-found__both-present": {
+      "passed": 2,
+      "failed": {}
+    },
+    "global-not-found__cache-components": {
+      "passed": 2,
+      "failed": {}
+    },
+    "global-not-found__css": {
+      "passed": 1,
+      "failed": {}
+    },
+    "global-not-found__metadata": {
+      "passed": 0,
+      "failed": {
+        "metadata.test.ts > global-not-found - metadata > should render metadata of global-not-found for 404": "metadata-files"
+      }
+    },
+    "global-not-found__no-root-layout": {
+      "passed": 2,
+      "failed": {}
+    },
+    "global-not-found__not-present": {
       "passed": 2,
       "failed": {}
     }

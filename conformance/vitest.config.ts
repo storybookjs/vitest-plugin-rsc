@@ -34,6 +34,10 @@ const assumeInstalled = JSON.parse(
   process.env.NEXT_CONFORMANCE_ASSUME_INSTALLED || "[]",
 ) as string[];
 const prepared = JSON.parse(process.env.NEXT_CONFORMANCE_PREPARED || "[]") as string[];
+const preparedConfig = JSON.parse(process.env.NEXT_CONFORMANCE_PREPARED_CONFIG || "{}") as Record<
+  string,
+  unknown
+>;
 const mode = process.env.NEXT_CONFORMANCE_MODE === "dev" ? "dev" : "start";
 const testTimeout = Number(process.env.NEXT_CONFORMANCE_TEST_TIMEOUT || 60) * 1000;
 // Another checkout of this repository, to measure its plugin with this runner.
@@ -55,7 +59,15 @@ export default defineConfig({
   // each fixture: the dependencies of an app are part of what Vite keeps.
   cacheDir,
   plugins: [
-    conformance({ root, mode, nextTestLib, pluginCheckout, assumeInstalled, prepared }),
+    conformance({
+      root,
+      mode,
+      nextTestLib,
+      pluginCheckout,
+      assumeInstalled,
+      prepared,
+      preparedConfig,
+    }),
     vitestPluginRSC(),
     // The shim works on the page, so it has to see the browser.
     vitestPluginNext({

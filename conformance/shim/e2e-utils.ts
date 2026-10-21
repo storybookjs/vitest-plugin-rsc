@@ -1,7 +1,7 @@
 // Stands in for `test/lib/e2e-utils`, which the tests of Next import as
 // `e2e-utils`: `nextTestSetup()` and the mode a run is in.
 import { afterAll, beforeAll } from "vitest";
-import { mode, packages, prepared, root } from "virtual:next-conformance/config";
+import { mode, packages, prepared, preparedConfig, root } from "virtual:next-conformance/config";
 import { NextInstance, setCurrentNext } from "./next-instance.ts";
 
 export type { NextInstance };
@@ -63,7 +63,11 @@ const sameDirectory = (a: string, b: string) => a.replace(/\/+$/, "") === b.repl
 // What Next does with these options that the runner did not do when it copied
 // the fixture: the app the test asks for is not the app that runs.
 function unavailable(options: Options): string | undefined {
-  if (typeof options.files !== "string") {
+  if (options.files instanceof FileRef) {
+    if (!sameDirectory(options.files.fsPath, root)) {
+      return `nextTestSetup({ files }) names another directory than the one of the fixture: ${options.files.fsPath}`;
+    }
+  } else if (typeof options.files !== "string") {
     // A fixture can list its own directories one by one, to leave the test
     // file out of the app.
     const entries = Object.entries(options.files ?? {});
@@ -81,6 +85,13 @@ function unavailable(options: Options): string | undefined {
   );
   if (missing.length > 0)
     return `the fixture needs npm packages that are not installed: ${missing.join(", ")}`;
+  if (
+    prepared.includes("nextConfig") &&
+    options.nextConfig !== undefined &&
+    !fitsConfig(options.nextConfig, preparedConfig)
+  ) {
+    return "nextTestSetup({ nextConfig }) changes the app before it is built";
+  }
   // Not what the runner did before the run: see `prepared` in src/fixtures.ts.
   const isSet = (value: unknown) =>
     typeof value === "object" && value !== null ? Object.keys(value).length > 0 : Boolean(value);
@@ -100,6 +111,17 @@ function unavailable(options: Options): string | undefined {
   ]) {
     if (options[option]) return `nextTestSetup({ ${option} }) runs the Next.js CLI its own way`;
   }
+}
+
+// Whether the `nextConfig` of a test is the config of the copy: every value
+// the same, a function excepted, which the copy has as the fixture says.
+function fitsConfig(config: unknown, copy: unknown): boolean {
+  if (typeof config === "function") return true;
+  if (typeof config !== "object" || config === null) return Object.is(config, copy);
+  if (typeof copy !== "object" || copy === null) return false;
+  return Object.entries(config).every(([key, value]) =>
+    fitsConfig(value, (copy as Record<string, unknown>)[key]),
+  );
 }
 
 export function nextTestSetup(options: Options) {
