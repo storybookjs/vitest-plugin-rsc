@@ -12,106 +12,347 @@ Measured against `next@16.4.0`, with `pnpm conformance --docs`.
 
 |                                                     |         Tests |
 | --------------------------------------------------- | ------------: |
-| Run                                                 |           522 |
-| **Pass**                                            | **402** (77%) |
-| Fail: a bug in the plugin                           |             4 |
-| Fail: Not Yet                                       |            68 |
-| Fail: not applicable                                |            48 |
-| Skipped by the test itself, for a run like this one |             4 |
+| Run                                                 |          1311 |
+| **Pass**                                            | **944** (72%) |
+| Fail: a bug in the plugin                           |             5 |
+| Fail: Not Yet                                       |           198 |
+| Fail: not applicable                                |           164 |
+| Skipped by the test itself, for a run like this one |            16 |
 
-Of the 474 tests that apply, 402 pass: **85%**.
+Of the 1147 tests that apply, 944 pass: **82%**.
 
 ### Per Fixture
 
-| Fixture                                           |     Pass | Bug | Not Yet | N/A | Skipped |
-| ------------------------------------------------- | -------: | --: | ------: | --: | ------: |
-| **Pages and rendering**                           |          |     |         |     |         |
-| `hello-world`                                     |   4 of 4 |     |         |     |         |
-| **Navigation**                                    |          |     |         |     |         |
-| `navigation`                                      | 41 of 53 |     |       8 |   4 |         |
-| `shallow-routing`                                 | 16 of 17 |   1 |         |     |         |
-| `hooks`                                           | 19 of 27 |     |       8 |     |         |
-| `use-params`                                      |   6 of 7 |     |       1 |     |         |
-| **Server Actions**                                |          |     |         |     |         |
-| `actions`                                         | 58 of 87 |   1 |       8 |  20 |       3 |
-| `actions-navigation`                              |   2 of 2 |     |         |     |         |
-| `actions-revalidate-remount`                      |   1 of 1 |     |         |     |         |
-| `actions-unrecognized`                            | 14 of 20 |     |       4 |   2 |         |
-| `server-actions-relative-redirect`                |   5 of 5 |     |         |     |         |
-| **Route handlers**                                |          |     |         |     |         |
-| `app-simple-routes`                               |   2 of 2 |     |         |     |         |
-| `app-routes`                                      | 59 of 67 |     |         |   8 |       1 |
-| **Parallel routes**                               |          |     |         |     |         |
-| `parallel-routes-layouts`                         |   1 of 1 |     |         |     |         |
-| `parallel-routes-catchall`                        |   4 of 4 |     |         |     |         |
-| `parallel-routes-breadcrumbs`                     |   4 of 4 |     |         |     |         |
-| `parallel-routes-not-found`                       |   2 of 2 |     |         |     |         |
-| **not-found and error boundaries**                |          |     |         |     |         |
-| `not-found-default`                               |   7 of 7 |     |         |     |         |
-| `error-boundary-navigation`                       |   6 of 7 |   1 |         |     |         |
-| `global-error/basic`                              |  6 of 10 |     |       4 |     |         |
-| `errors`                                          |  9 of 16 |     |       7 |     |         |
-| **Metadata**                                      |          |     |         |     |         |
-| `metadata`                                        | 35 of 49 |     |      12 |   2 |         |
-| `metadata-navigation`                             |   7 of 7 |     |         |     |         |
-| **next/font**                                     |          |     |         |     |         |
-| `next-font`                                       | 10 of 16 |     |       6 |     |         |
-| **next/image**                                    |          |     |         |     |         |
-| `next-image`                                      | 10 of 11 |     |         |   1 |         |
-| **CSS**                                           |          |     |         |     |         |
-| `app-css-pageextensions`                          |   0 of 1 |     |         |   1 |         |
-| `app-inline-css`                                  |   6 of 6 |     |         |     |         |
-| `autoscroll-with-css-modules`                     |   2 of 2 |     |         |     |         |
-| `css-bom`                                         |   1 of 2 |     |         |   1 |         |
-| `css-chunking`                                    |   1 of 1 |     |         |     |         |
-| `css-client-side-nav-parallel-routes`             |   1 of 1 |     |         |     |         |
-| `css-media-query`                                 |   2 of 2 |     |         |     |         |
-| `css-modules-pure-no-check`                       |   1 of 2 |     |         |   1 |         |
-| `css-modules-scoping`                             |   2 of 2 |     |         |     |         |
-| `css-server-chunks`                               |   0 of 1 |     |       1 |     |         |
-| `cssnano-colormin`                                |   1 of 1 |     |         |     |         |
-| `dynamic-css`                                     |   4 of 5 |     |       1 |     |         |
-| `experimental-lightningcss-features`              |   0 of 3 |     |         |   3 |         |
-| `initial-css-not-found`                           |   1 of 1 |     |         |     |         |
-| `initial-css-order`                               |   2 of 2 |     |         |     |         |
-| `next-dynamic-css`                                |   4 of 4 |     |         |     |         |
-| `parallel-routes-css`                             |   1 of 1 |     |         |     |         |
-| `random-in-sass`                                  |   0 of 1 |     |         |   1 |         |
-| **The Data Cache**                                |          |     |         |     |         |
-| `revalidate-dynamic`                              |   2 of 3 |     |         |   1 |         |
-| `revalidatetag-rsc`                               |   3 of 3 |     |         |     |         |
-| `unstable-rethrow`                                |   3 of 4 |     |         |   1 |         |
-| **The proxy, rewrites, redirects, trailingSlash** |          |     |         |     |         |
-| `app-middleware`                                  | 14 of 22 |   1 |       6 |   1 |         |
-| `rewrites-redirects`                              | 14 of 14 |     |         |     |         |
-| `trailingslash`                                   |   6 of 8 |     |       2 |     |         |
-| `app-routes-trailing-slash`                       |   2 of 2 |     |         |     |         |
-| `redirect-rewrite-dynamic`                        |   1 of 2 |     |         |   1 |         |
+| Fixture                                                   |     Pass | Bug | Not Yet | N/A | Skipped |
+| --------------------------------------------------------- | -------: | --: | ------: | --: | ------: |
+| **Pages and rendering**                                   |          |     |         |     |         |
+| `hello-world`                                             |   4 of 4 |     |         |     |         |
+| `rsc-basic`                                               | 32 of 40 |   3 |       4 |   1 |       1 |
+| `use-server-inserted-html`                                |   3 of 3 |     |         |     |         |
+| **Navigation**                                            |          |     |         |     |         |
+| `navigation`                                              | 42 of 53 |     |       7 |   4 |         |
+| `shallow-routing`                                         | 17 of 17 |     |         |     |         |
+| `hooks`                                                   | 19 of 27 |     |       8 |     |         |
+| `use-params`                                              |   6 of 7 |     |       1 |     |         |
+| `navigation-focus`                                        |   5 of 5 |     |         |     |         |
+| `navigation-layout-suspense`                              |   1 of 1 |     |         |     |         |
+| `navigation-redirect-import`                              |   1 of 1 |     |         |     |         |
+| `navigation-with-queued-actions`                          |   1 of 1 |     |         |     |         |
+| `router-autoscroll`                                       | 20 of 20 |     |         |     |       1 |
+| `root-layout`                                             |   7 of 8 |     |       1 |     |         |
+| `root-layout-redirect`                                    |   1 of 1 |     |         |     |         |
+| `root-layout-render-once`                                 |   1 of 1 |     |         |     |         |
+| `app-edge-root-layout`                                    |   1 of 2 |     |         |   1 |         |
+| `concurrent-navigations`                                  |   1 of 2 |     |         |   1 |         |
+| `layout-params`                                           |   6 of 6 |     |         |     |         |
+| `use-selected-layout-segment-s`                           |   8 of 8 |     |         |     |         |
+| `dynamic-href`                                            |   2 of 2 |     |         |     |         |
+| `rsc-redirect`                                            |   2 of 2 |     |         |     |         |
+| `search-params-react-key`                                 |   1 of 1 |     |         |     |         |
+| `searchparams-reuse-loading`                              |  5 of 12 |     |       2 |   5 |         |
+| `searchparams-static-bailout`                             |   3 of 5 |     |       2 |     |         |
+| `multi-value-search-params-stale`                         |   1 of 1 |     |         |     |         |
+| `rewrite-with-search-params`                              |   0 of 1 |     |         |   1 |         |
+| `app-client-cache`                                        | 10 of 10 |     |         |     |         |
+| **Server Actions**                                        |          |     |         |     |         |
+| `actions`                                                 | 64 of 87 |     |       3 |  20 |       3 |
+| `actions-navigation`                                      |   2 of 2 |     |         |     |         |
+| `actions-revalidate-remount`                              |   1 of 1 |     |         |     |         |
+| `actions-unrecognized`                                    | 18 of 20 |     |         |   2 |         |
+| `server-actions-relative-redirect`                        |   5 of 5 |     |         |     |         |
+| **Route handlers**                                        |          |     |         |     |         |
+| `app-simple-routes`                                       |   2 of 2 |     |         |     |         |
+| `app-routes`                                              | 59 of 67 |     |         |   8 |       1 |
+| **Parallel routes**                                       |          |     |         |     |         |
+| `parallel-routes-layouts`                                 |   1 of 1 |     |         |     |         |
+| `parallel-routes-catchall`                                |   4 of 4 |     |         |     |         |
+| `parallel-routes-breadcrumbs`                             |   4 of 4 |     |         |     |         |
+| `parallel-routes-not-found`                               |   2 of 2 |     |         |     |         |
+| **Interception routes**                                   |          |     |         |     |         |
+| `interception-dynamic-segment`                            |  4 of 19 |     |         |  15 |         |
+| `interception-dynamic-segment-middleware`                 |   4 of 4 |     |         |     |         |
+| `interception-dynamic-single-segment`                     |   9 of 9 |     |         |     |         |
+| `interception-middleware-rewrite`                         |   3 of 3 |     |         |     |         |
+| `interception-route-prefetch-cache`                       |   1 of 2 |     |         |   1 |         |
+| `interception-routes-multiple-catchall`                   |   5 of 5 |     |         |     |         |
+| `interception-routes-root-catchall`                       |   2 of 2 |     |         |     |         |
+| `interception-segments-two-levels-above`                  |   3 of 3 |     |         |     |         |
+| `dynamic-interception-route-revalidate`                   |   1 of 1 |     |         |     |         |
+| `parallel-routes-and-interception`                        | 26 of 55 |     |         |  29 |         |
+| `parallel-routes-and-interception-basepath`               |   2 of 2 |     |         |     |         |
+| `parallel-routes-and-interception-catchall`               |   1 of 1 |     |         |     |         |
+| `parallel-routes-and-interception-from-root`              |   1 of 2 |     |         |   1 |         |
+| `parallel-routes-and-interception-nested-dynamic-routes`  |   1 of 1 |     |         |     |         |
+| **not-found and error boundaries**                        |          |     |         |     |         |
+| `not-found-default`                                       |   7 of 7 |     |         |     |         |
+| `not-found/basic`                                         |  7 of 14 |     |         |   7 |         |
+| `not-found/conflict-route`                                |   2 of 4 |     |         |   2 |         |
+| `not-found/css-precedence`                                |   1 of 1 |     |         |     |         |
+| `not-found/default`                                       |   1 of 2 |     |         |   1 |         |
+| `not-found/group-route`                                   |   1 of 2 |     |         |   1 |         |
+| `not-found/group-route-root-not-found`                    |   2 of 2 |     |         |     |         |
+| `not-found-non-document`                                  |   6 of 6 |     |         |     |         |
+| `not-found-non-document-dynamic`                          |   4 of 4 |     |         |     |         |
+| `not-found-with-layout-and-group-not-found`               |   1 of 1 |     |         |     |         |
+| `not-found-with-nested-layouts`                           |   1 of 1 |     |         |     |         |
+| `prefetching-not-found`                                   |   1 of 1 |     |         |     |         |
+| `global-not-found/basic`                                  |   3 of 3 |     |         |     |         |
+| `global-not-found/both-present`                           |   2 of 2 |     |         |     |         |
+| `global-not-found/cache-components`                       |   2 of 2 |     |         |     |         |
+| `global-not-found/css`                                    |   1 of 1 |     |         |     |         |
+| `global-not-found/metadata`                               |   1 of 1 |     |         |     |         |
+| `global-not-found/no-root-layout`                         |   2 of 2 |     |         |     |         |
+| `global-not-found/not-present`                            |   2 of 2 |     |         |     |         |
+| `error-boundary-navigation`                               |   7 of 7 |     |         |     |         |
+| `global-error/basic`                                      | 10 of 10 |     |         |     |         |
+| `errors`                                                  | 13 of 16 |     |         |   3 |         |
+| `forbidden/basic`                                         |   2 of 2 |     |         |     |         |
+| `forbidden/default`                                       |   3 of 3 |     |         |     |       2 |
+| `unauthorized/basic`                                      |   2 of 2 |     |         |     |         |
+| `unauthorized/default`                                    |   3 of 3 |     |         |     |       2 |
+| **Metadata**                                              |          |     |         |     |         |
+| `metadata`                                                | 44 of 49 |     |       2 |   3 |         |
+| `metadata-navigation`                                     |   7 of 7 |     |         |     |         |
+| `metadata-dynamic-routes`                                 | 15 of 27 |     |       6 |   6 |         |
+| `metadata-dynamic-routes-async-deps`                      |   1 of 2 |     |       1 |     |         |
+| `metadata-font`                                           |   0 of 1 |     |       1 |     |         |
+| `metadata-icons-parallel-routes`                          |   5 of 5 |     |         |     |         |
+| `metadata-image-files`                                    |   1 of 1 |     |         |     |         |
+| `metadata-json-manifest`                                  |   1 of 1 |     |         |     |         |
+| `metadata-non-standard-custom-routes`                     |   1 of 1 |     |         |     |         |
+| `metadata-route-like-pages`                               |   2 of 2 |     |         |     |         |
+| `metadata-static-file`                                    |  6 of 13 |     |         |   7 |         |
+| `metadata-svg-icon`                                       |   1 of 1 |     |         |     |         |
+| `sitemap-group`                                           |   2 of 2 |     |         |     |         |
+| **next/font**                                             |          |     |         |     |         |
+| `next-font`                                               | 12 of 16 |     |       4 |     |         |
+| `mdx-font-preload`                                        |   3 of 3 |     |         |     |         |
+| **next/image**                                            |          |     |         |     |         |
+| `next-image`                                              | 10 of 11 |     |         |   1 |         |
+| **CSS**                                                   |          |     |         |     |         |
+| `app-css`                                                 | 32 of 35 |     |       3 |     |       1 |
+| `app-css-pageextensions`                                  |   1 of 1 |     |         |     |         |
+| `app-inline-css`                                          |   6 of 6 |     |         |     |         |
+| `autoscroll-with-css-modules`                             |   2 of 2 |     |         |     |         |
+| `css-bom`                                                 |   1 of 2 |     |         |   1 |         |
+| `css-chunking`                                            |   1 of 1 |     |         |     |         |
+| `css-client-side-nav-parallel-routes`                     |   1 of 1 |     |         |     |         |
+| `css-media-query`                                         |   2 of 2 |     |         |     |         |
+| `css-modules-pure-no-check`                               |   1 of 2 |     |       1 |     |         |
+| `css-modules-rsc-postcss`                                 |   1 of 1 |     |         |     |         |
+| `css-modules-scoping`                                     |   2 of 2 |     |         |     |         |
+| `css-server-chunks`                                       |   0 of 1 |     |       1 |     |         |
+| `cssnano-colormin`                                        |   1 of 1 |     |         |     |         |
+| `dynamic-css`                                             |   4 of 5 |     |       1 |     |         |
+| `experimental-lightningcss-features`                      |   0 of 3 |     |         |   3 |         |
+| `initial-css-not-found`                                   |   1 of 1 |     |         |     |         |
+| `initial-css-order`                                       |   2 of 2 |     |         |     |         |
+| `next-dynamic-css`                                        |   4 of 4 |     |         |     |         |
+| `no-double-tailwind-execution`                            |   0 of 1 |     |         |   1 |         |
+| `parallel-routes-css`                                     |   1 of 1 |     |         |     |         |
+| `random-in-sass`                                          |   1 of 1 |     |         |     |         |
+| `scss/scss-mixins`                                        |   1 of 1 |     |         |     |         |
+| `tailwind-css`                                            |   1 of 1 |     |         |     |         |
+| **The Data Cache**                                        |          |     |         |     |         |
+| `revalidate-dynamic`                                      |   2 of 3 |     |         |   1 |         |
+| `revalidatetag-rsc`                                       |   3 of 3 |     |         |     |         |
+| `unstable-rethrow`                                        |   3 of 4 |     |         |   1 |         |
+| **`"use cache"` and Cache Components**                    |          |     |         |     |         |
+| `cache-components`                                        | 16 of 75 |     |      58 |   1 |       5 |
+| `cache-components-bot-ua`                                 |   1 of 1 |     |         |     |         |
+| `cache-components-prerender-matrix`                       | 23 of 60 |     |      37 |     |         |
+| `use-cache`                                               | 42 of 59 |     |       9 |   8 |         |
+| `use-cache-custom-handler`                                |  9 of 11 |     |       1 |   1 |         |
+| `use-cache-default-handler-expire-zero`                   |   1 of 1 |     |         |     |         |
+| `use-cache-default-profile-expire-zero`                   |   2 of 2 |     |         |     |         |
+| `use-cache-draft-mode-isolation`                          |   5 of 5 |     |         |     |         |
+| `use-cache-fallback-root-params`                          |   1 of 5 |     |         |   4 |         |
+| `use-cache-infinity-profile`                              |   1 of 2 |     |         |   1 |         |
+| `use-cache-metadata-route-handler`                        |  0 of 12 |     |      10 |   2 |         |
+| `use-cache-private`                                       |   9 of 9 |     |         |     |         |
+| `use-cache-root-param-metadata`                           |   1 of 2 |     |         |   1 |         |
+| `use-cache-route-handler-only`                            |   3 of 5 |     |       1 |   1 |         |
+| `use-cache-swr`                                           |   5 of 7 |     |       2 |     |         |
+| `use-cache-with-server-function-props`                    |   1 of 2 |     |       1 |     |         |
+| **The proxy, rewrites, redirects, trailingSlash**         |          |     |         |     |         |
+| `app-middleware`                                          | 15 of 22 |     |       6 |   1 |         |
+| `rewrites-redirects`                                      | 14 of 14 |     |         |     |         |
+| `trailingslash`                                           |   6 of 8 |     |       2 |     |         |
+| `app-routes-trailing-slash`                               |   2 of 2 |     |         |     |         |
+| `redirect-rewrite-dynamic`                                |   1 of 2 |     |         |   1 |         |
+| **Cookies, headers, draft mode and after()**              |          |     |         |     |         |
+| `draft-mode`                                              | 20 of 21 |     |       1 |     |         |
+| `draft-mode-middleware`                                   |   1 of 2 |     |       1 |     |         |
+| `set-cookies`                                             |   0 of 5 |   2 |       3 |     |         |
+| `dynamic-requests`                                        |   2 of 2 |     |         |     |         |
+| `headers-static-bailout`                                  |   1 of 3 |     |       1 |   1 |         |
+| `x-forwarded-headers`                                     |   2 of 4 |     |         |   2 |         |
+| `server-action-headers-redirect`                          |   1 of 1 |     |         |     |         |
+| `custom-cache-control`                                    |   7 of 9 |     |       2 |     |         |
+| `react-max-headers-length`                                |   1 of 4 |     |         |   3 |         |
+| `next-after-app`                                          | 24 of 34 |     |       2 |   8 |         |
+| `next-after-app-api-usage`                                | 18 of 28 |     |      10 |     |         |
+| `revalidate-tag-in-after`                                 |   1 of 1 |     |         |     |         |
+| `dynamic-data`                                            |   3 of 5 |     |       2 |     |         |
+| `dynamic-data`                                            |   0 of 1 |     |         |   1 |         |
+| `dynamic-data`                                            |   0 of 1 |     |         |   1 |         |
+| **Partial Prerendering and the segment cache**            |          |     |         |     |         |
+| `ppr-root-param-fallback`                                 |   0 of 1 |     |       1 |     |         |
+| `ppr-root-param-rsc-fallback`                             |   2 of 2 |     |         |     |         |
+| `ppr-history-replace-state`                               |   1 of 1 |     |         |     |         |
+| `segment-cache/no-prefetch`                               |   1 of 1 |     |         |     |         |
+| `segment-cache/mpa-navigations`                           |   2 of 2 |     |         |     |         |
+| `segment-cache/prefetch-partial-rsc`                      |   1 of 1 |     |         |     |         |
+| `segment-cache/stale-search-params-on-replace-regression` |   1 of 1 |     |         |     |         |
 
-### A Bug In The Plugin: 4 Tests
+### A Bug In The Plugin: 5 Tests
 
-<details><summary>2 × A page that the app loads itself, like a link to a path that is no route, replaces the entry of the history where a browser adds one. `back()` does not return to the page before it.</summary>
+<details><summary>2 × Two `Set-Cookie` headers of one rule of `headers()` in `next.config` arrive as one. Next's build hands an adapter the headers of a rule as an object, which keeps one value per name, and `@next/routing` sets them from that.</summary>
 
-- `shallow-routing`: shallow-routing › back and forward › mpa navigation › should support setting data and then still support navigating back and forward
-- `error-boundary-navigation`: app dir - not found navigation › should allow navigating to a non-existent page
+- `set-cookies`: set-cookies › for /app › for edge runtime › should set two set-cookie headers
+- `set-cookies`: set-cookies › for /app › for node runtime › should set two set-cookie headers
 
 </details>
 
-<details><summary>1 × A form without a Server Action that the browser posts to `/` ends at `/?sessionId=…`: the page gets the query of the test's tab.</summary>
+<details><summary>2 × A Client Component that renders markup with `renderToStaticMarkup()` of `react-dom/server`. The ssr layer has Next's aliases of its edge runtime, where `react-dom/server` has React's renderer for web streams alone. A route on Node.js gets React's whole entry.</summary>
 
-- `actions`: app-dir action handling › should not log errors for non-action form POSTs
-
-</details>
-
-<details><summary>1 × A proxy that answers itself with a `Location` header and a status that is no redirect gets the not-found page. `responseToMiddlewareResult()` of `@next/routing` does not say that the proxy answered, so the request goes on to a route.</summary>
-
-- `app-middleware`: app-dir with middleware › should not incorrectly treat a Location header as a rewrite
+- `rsc-basic`: app dir - rsc basics › should use canary react for app
+- `rsc-basic`: app dir - rsc basics › should be able to call legacy react-dom/server APIs in client components
 
 </details>
 
-### Not Yet: 68 Tests
+<details><summary>1 × A Server Component that imports `next/router`. Next runs it. Here its module calls `createContext()` with React's server build, which has none, and the page fails.</summary>
 
-<details><summary>21 × A page or an API route of the Pages Router. The plugin runs the routes of `app/`.</summary>
+- `rsc-basic`: app dir - rsc basics › next internal shared context › should not error if just load next/router module in app page
+
+</details>
+
+### Not Yet: 198 Tests
+
+<details><summary>118 × A page that a build prerenders, like one with `generateStaticParams`. Next keeps it between two requests, and here every request renders its page.</summary>
+
+- `searchparams-static-bailout`: searchparams-static-bailout › server component › should not bailout when not using searchParams
+- `searchparams-static-bailout`: searchparams-static-bailout › client component › should not bailout when not using searchParams
+- `metadata`: app dir - metadata › react cache › should have same title and page value when navigating
+- `cache-components`: cache-components › should partially prerender pages that use connection
+- `cache-components`: cache-components › should be able to pass connection as a promise to another component and trigger an intermediate Suspense boundary
+- `cache-components`: cache-components › should partially prerender pages that use cookies
+- `cache-components`: cache-components › should be able to pass cookies as a promise to another component and trigger an intermediate Suspense boundary
+- `cache-components`: cache-components › should prerender pages with cached `Date.now()` calls
+- `cache-components`: cache-components › should prerender pages with cached `Date()` calls
+- `cache-components`: cache-components › should prerender pages with cached `new Date()` calls
+- `cache-components`: cache-components › should prerender pages with cached static Date instances like `new Date(0)`
+- `cache-components`: cache-components › should not prerender pages with uncached static Date instances like `new Date(0)`
+- `cache-components`: cache-components › should fully prerender pages that use draftMode
+- `cache-components`: cache-components › should partially prerender pages that use headers
+- `cache-components`: cache-components › should be able to pass headers as a promise to another component and trigger an intermediate Suspense boundary
+- `cache-components`: cache-components › should prerender pages with cached `require('node:crypto').getRandomValues(...)` calls
+- `cache-components`: cache-components › should prerender pages with cached `require('node:crypto').randomUUID()` calls
+- `cache-components`: cache-components › should prerender pages with cached `require('node:crypto').randomBytes(size)` calls
+- `cache-components`: cache-components › should prerender pages with cached `require('node:crypto').randomFillSync(buffer)` calls
+- `cache-components`: cache-components › should prerender pages with cached `require('node:crypto').randomInt(max)` calls
+- `cache-components`: cache-components › should prerender pages with cached `require('node:crypto').randomInt(min, max)` calls
+- `cache-components`: cache-components › should prerender pages with cached `require('node:crypto').generatePrimeSync(size, options)` calls
+- `cache-components`: cache-components › should prerender pages with cached `require('node:crypto').generateKeyPairSync(type, options)` calls
+- `cache-components`: cache-components › should prerender pages with cached `require('node:crypto').generateKeySync(type, options)` calls
+- `cache-components`: cache-components › Params › should partially prerender pages that await params in a server components
+- `cache-components`: cache-components › Params › should fully prerender pages that check individual param keys after awaiting params in a server component
+- `cache-components`: cache-components › Params › should partially prerender pages that spread awaited params in a server component
+- `cache-components`: cache-components › Param Shadowing › should correctly allow param names like then, value, and status when awaiting params in a server component
+- `cache-components`: cache-components › should prerender pages with cached Math.random() calls
+- `cache-components`: cache-components › should prerender GET route handlers that have entirely cached io (fetches)
+- `cache-components`: cache-components › should prerender GET route handlers that have entirely cached io (unstable_cache)
+- `cache-components`: cache-components › should prerender GET route handlers that have entirely cached io ("use cache")
+- `cache-components`: cache-components › should prerender GET route handlers that complete synchronously or in a microtask
+- `cache-components`: cache-components › should prerender GET route handlers when accessing params
+- `cache-components`: cache-components › should partially prerender pages that await searchParams in a server component
+- `cache-components`: cache-components › should partially prerender pages that `use` searchParams in a server component
+- `cache-components`: cache-components › should partially prerender pages that `use` searchParams in a client component
+- `cache-components`: cache-components › should prerender pages with inline server actions
+- `cache-components`: cache-components › should prerender fully static pages
+- `cache-components`: cache-components › should prerender static not-found pages
+- `cache-components`: cache-components › should prerender pages that render in a microtask
+- `cache-components`: cache-components › should partially prerender pages that take longer than a task to render
+- `cache-components`: cache-components › should prerender pages that only use cached fetches
+- `cache-components`: cache-components › should partially prerender pages that use at least one fetch without cache
+- `cache-components`: cache-components › should prerender pages that only use cached (unstable_cache) IO
+- `cache-components`: cache-components › should prerender pages that only use cached ("use cache") IO
+- `cache-components`: cache-components › should prerender pages that cached the whole page
+- `cache-components`: cache-components › should partially prerender pages that do any uncached IO
+- `cache-components`: cache-components › should partially prerender pages that do any uncached IO (use cache)
+- `cache-components`: cache-components › should partially prerender pages that use `cookies()`
+- `cache-components`: cache-components › should partially prerender pages that use `headers()`
+- `cache-components`: cache-components › should fully prerender pages that use `unstable_noStore()`
+- `cache-components`: cache-components › should partially prerender pages that use `searchParams` in Server Components
+- `cache-components`: cache-components › should partially prerender pages that use `searchParams` in Client Components
+- `cache-components`: cache-components › can prerender pages with parallel routes that are static
+- `cache-components`: cache-components › can prerender pages with parallel routes that resolve in a microtask
+- `cache-components`: cache-components › does not prerender pages with parallel routes that resolve in a task
+- `cache-components`: cache-components › does not prerender pages with parallel routes that uses a dynamic API
+- `cache-components`: cache-components › should not resume when client components are dynamic but the RSC render was static
+- `cache-components`: cache-components › should prerender pages with cached `crypto.getRandomValues(...)` calls
+- `cache-components`: cache-components › should prerender pages with cached `crypto.randomUUID()` calls
+- `cache-components-prerender-matrix`: cache-components-prerender-matrix › partial-static-param/without-root-param/non-empty-shell › serves everything except the [id] region from the cache at lang=fresh category=fresh id=fresh
+- `cache-components-prerender-matrix`: cache-components-prerender-matrix › partial-static-param/without-root-param/non-empty-shell › serves everything except the [id] region from the cache at lang=en category=fresh id=fresh
+- `cache-components-prerender-matrix`: cache-components-prerender-matrix › partial-static-param/without-root-param/non-empty-shell › serves everything except the [id] region from the cache at lang=en category=shoes id=fresh
+- `cache-components-prerender-matrix`: cache-components-prerender-matrix › partial-static-param/without-root-param/non-empty-shell › shares the entry at lang=fresh category=fresh id=fresh with a fresh id value (id excluded from the cache key)
+- `cache-components-prerender-matrix`: cache-components-prerender-matrix › partial-static-param/without-root-param/non-empty-shell › shares the entry at lang=en category=fresh id=fresh with a fresh id value (id excluded from the cache key)
+- `cache-components-prerender-matrix`: cache-components-prerender-matrix › partial-static-param/without-root-param/non-empty-shell › shares the entry at lang=en category=shoes id=fresh with a fresh id value (id excluded from the cache key)
+- `cache-components-prerender-matrix`: cache-components-prerender-matrix › partial-static-param/without-root-param/non-empty-shell › does not share the entry at lang=fresh category=fresh id=fresh across lang values (lang included in the cache key)
+- `cache-components-prerender-matrix`: cache-components-prerender-matrix › partial-static-param/without-root-param/non-empty-shell › does not share the entry at lang=fresh category=fresh id=fresh across category values (category included in the cache key)
+- `cache-components-prerender-matrix`: cache-components-prerender-matrix › partial-static-param/without-root-param/non-empty-shell › does not share the entry at lang=en category=fresh id=fresh across category values (category included in the cache key)
+- `cache-components-prerender-matrix`: cache-components-prerender-matrix › partial-static-param/with-root-param/non-empty-shell › serves everything except the [id] region from the cache at lang=fresh category=fresh id=fresh
+- `cache-components-prerender-matrix`: cache-components-prerender-matrix › partial-static-param/with-root-param/non-empty-shell › serves everything except the [id] region from the cache at lang=en category=fresh id=fresh
+- `cache-components-prerender-matrix`: cache-components-prerender-matrix › partial-static-param/with-root-param/non-empty-shell › serves everything except the [id] region from the cache at lang=en category=shoes id=fresh
+- `cache-components-prerender-matrix`: cache-components-prerender-matrix › partial-static-param/with-root-param/non-empty-shell › shares the entry at lang=fresh category=fresh id=fresh with a fresh id value (id excluded from the cache key)
+- `cache-components-prerender-matrix`: cache-components-prerender-matrix › partial-static-param/with-root-param/non-empty-shell › shares the entry at lang=en category=fresh id=fresh with a fresh id value (id excluded from the cache key)
+- `cache-components-prerender-matrix`: cache-components-prerender-matrix › partial-static-param/with-root-param/non-empty-shell › shares the entry at lang=en category=shoes id=fresh with a fresh id value (id excluded from the cache key)
+- `cache-components-prerender-matrix`: cache-components-prerender-matrix › partial-static-param/with-root-param/non-empty-shell › does not share the entry at lang=fresh category=fresh id=fresh across lang values (lang included in the cache key)
+- `cache-components-prerender-matrix`: cache-components-prerender-matrix › partial-static-param/with-root-param/non-empty-shell › does not share the entry at lang=fresh category=fresh id=fresh across category values (category included in the cache key)
+- `cache-components-prerender-matrix`: cache-components-prerender-matrix › partial-static-param/with-root-param/non-empty-shell › does not share the entry at lang=en category=fresh id=fresh across category values (category included in the cache key)
+- `cache-components-prerender-matrix`: cache-components-prerender-matrix › fully-static-param/without-root-param/empty-shell › serves the whole document from the cache at lang=fresh category=fresh id=fresh
+- `cache-components-prerender-matrix`: cache-components-prerender-matrix › fully-static-param/without-root-param/empty-shell › serves the whole document from the cache at lang=en category=fresh id=fresh
+- `cache-components-prerender-matrix`: cache-components-prerender-matrix › fully-static-param/without-root-param/empty-shell › serves the whole document from the cache at lang=en category=shoes id=fresh
+- `cache-components-prerender-matrix`: cache-components-prerender-matrix › fully-static-param/without-root-param/empty-shell › serves the whole document from the cache at lang=en category=shoes id=1
+- `cache-components-prerender-matrix`: cache-components-prerender-matrix › fully-static-param/without-root-param/non-empty-shell › serves the whole document from the cache at lang=fresh category=fresh id=fresh
+- `cache-components-prerender-matrix`: cache-components-prerender-matrix › fully-static-param/without-root-param/non-empty-shell › serves the whole document from the cache at lang=en category=fresh id=fresh
+- `cache-components-prerender-matrix`: cache-components-prerender-matrix › fully-static-param/without-root-param/non-empty-shell › serves the whole document from the cache at lang=en category=shoes id=fresh
+- `cache-components-prerender-matrix`: cache-components-prerender-matrix › fully-static-param/without-root-param/non-empty-shell › serves the whole document from the cache at lang=en category=shoes id=1
+- `cache-components-prerender-matrix`: cache-components-prerender-matrix › fully-static-param/with-root-param/empty-shell › serves the whole document from the cache at lang=fresh category=fresh id=fresh
+- `cache-components-prerender-matrix`: cache-components-prerender-matrix › fully-static-param/with-root-param/empty-shell › serves the whole document from the cache at lang=en category=fresh id=fresh
+- `cache-components-prerender-matrix`: cache-components-prerender-matrix › fully-static-param/with-root-param/empty-shell › serves the whole document from the cache at lang=en category=shoes id=fresh
+- `cache-components-prerender-matrix`: cache-components-prerender-matrix › fully-static-param/with-root-param/empty-shell › serves the whole document from the cache at lang=en category=shoes id=1
+- `cache-components-prerender-matrix`: cache-components-prerender-matrix › fully-static-param/with-root-param/non-empty-shell › serves the whole document from the cache at lang=fresh category=fresh id=fresh
+- `cache-components-prerender-matrix`: cache-components-prerender-matrix › fully-static-param/with-root-param/non-empty-shell › serves the whole document from the cache at lang=en category=fresh id=fresh
+- `cache-components-prerender-matrix`: cache-components-prerender-matrix › fully-static-param/with-root-param/non-empty-shell › serves the whole document from the cache at lang=en category=shoes id=fresh
+- `cache-components-prerender-matrix`: cache-components-prerender-matrix › fully-static-param/with-root-param/non-empty-shell › serves the whole document from the cache at lang=en category=shoes id=1
+- `cache-components-prerender-matrix`: cache-components-prerender-matrix › dynamic-param/without-root-param/non-empty-shell › shares the entry at lang=fresh category=fresh id=fresh with a fresh lang value (lang excluded from the cache key)
+- `cache-components-prerender-matrix`: cache-components-prerender-matrix › dynamic-param/without-root-param/non-empty-shell › shares the entry at lang=fresh category=fresh id=fresh with a fresh category value (category excluded from the cache key)
+- `cache-components-prerender-matrix`: cache-components-prerender-matrix › dynamic-param/without-root-param/non-empty-shell › shares the entry at lang=fresh category=fresh id=fresh with a fresh id value (id excluded from the cache key)
+- `use-cache`: use-cache › should send an SWR cache-control header based on the revalidate and expire values
+- `use-cache-custom-handler`: use-cache-custom-handler › should save a short-lived cache during prerendering at buildtime
+- `use-cache-metadata-route-handler`: use-cache-metadata-route-handler › should generate sitemaps with a metadata route handler that uses "use cache"
+- `use-cache-metadata-route-handler`: use-cache-metadata-route-handler › should generate multiple sitemaps with a metadata route handler that uses "use cache"
+- `use-cache-metadata-route-handler`: use-cache-metadata-route-handler › should generate robots.txt with a metadata route handler that uses "use cache"
+- `use-cache-metadata-route-handler`: use-cache-metadata-route-handler › should generate manifest.json with a metadata route handler that uses "use cache"
+- `trailingslash`: app-dir trailingSlash handling › should revalidate a page with generated static params (withSlash=true)
+- `trailingslash`: app-dir trailingSlash handling › should revalidate a page with generated static params (withSlash=false)
+- `draft-mode`: app dir - draft mode › in nodejs runtime › should not generate rand when draft mode disabled during next start
+- `headers-static-bailout`: headers-static-bailout › should not bailout when not using headers
+- `custom-cache-control`: custom-cache-control › should have default cache-control for app-ssg another
+- `next-after-app-api-usage`: nextjs APIs in after() › request APIs inside after() › cannot be called in a prerendered page › with `dynamic = "error"`
+- `next-after-app-api-usage`: nextjs APIs in after() › request APIs inside after() › cannot be called in a prerendered page › with `dynamic = "force-static"`
+- `next-after-app-api-usage`: nextjs APIs in after() › request APIs inside after() › can be called in a prerendered route handler with `dynamic = "force-static"`
+- `next-after-app-api-usage`: nextjs APIs in after() › request APIs inside after() › can be called in a prerendered route handler with `dynamic = "error" (but throw, because dynamic should error)`
+- `next-after-app-api-usage`: nextjs APIs in after() › draftMode status is readable, but cannot be changed › static page
+- `next-after-app-api-usage`: nextjs APIs in after() › draftMode status is readable, but cannot be changed › static route handler
+- `ppr-root-param-fallback`: ppr-root-param-fallback › should have use-cache content in fallback shells for all pregenerated locales
+- `dynamic-data__main`: dynamic-data › should render empty objects for dynamic APIs when rendering with force-static
+- `dynamic-data__main`: dynamic-data › should track dynamic apis when rendering app routes
+
+</details>
+
+<details><summary>31 × A page or an API route of the Pages Router. The plugin runs the routes of `app/`.</summary>
 
 - `navigation`: app dir - navigation › query string › useParams identity between renders › should be stable in pages
 - `navigation`: app dir - navigation › navigation between pages and app › should not contain \_rsc query while navigating from app to pages
@@ -126,62 +367,53 @@ Of the 474 tests that apply, 402 pass: **85%**.
 - `hooks`: app dir - hooks › from pages › should have the correct hooks at /adapter-hooks/2 #2
 - `hooks`: app dir - hooks › from pages › should have the correct hooks at /adapter-hooks/1/account #2
 - `use-params`: use-params › should work on pages router
+- `searchparams-reuse-loading`: searchparams-reuse-loading › when aliasing is skipped › should work for navigating to pages dir
 - `metadata`: app dir - metadata › should not effect metadata images convention like files under pages directory
+- `app-css`: app dir - css › pages dir › should include css modules and global css after page transition
 - `css-server-chunks`: css-server-chunks › should not write CSS chunks for the server
+- `use-cache`: use-cache › should revalidate caches during on-demand revalidation
 - `app-middleware`: app-dir with middleware › Mutate request headers for Serverless Functions › Adds new headers
 - `app-middleware`: app-dir with middleware › Mutate request headers for Serverless Functions › Deletes headers
 - `app-middleware`: app-dir with middleware › Mutate request headers for Serverless Functions › Updates headers
 - `app-middleware`: app-dir with middleware › Mutate request headers for Edge Functions › Adds new headers
 - `app-middleware`: app-dir with middleware › Mutate request headers for Edge Functions › Deletes headers
 - `app-middleware`: app-dir with middleware › Mutate request headers for Edge Functions › Updates headers
+- `set-cookies`: set-cookies › for /pages › for edge runtime › should set two set-cookie headers
+- `set-cookies`: set-cookies › for /pages › for experimental-edge runtime › should set two set-cookie headers
+- `set-cookies`: set-cookies › for /pages › for node runtime › should set two set-cookie headers
+- `custom-cache-control`: custom-cache-control › should have default cache-control for pages-ssg another
+- `rsc-basic`: app dir - rsc basics › next internal shared context › should not error if just load next/navigation module in pages/api
+- `rsc-basic`: app dir - rsc basics › should not apply rsc syntax checks in pages/api
+- `rsc-basic`: app dir - rsc basics › should not use bundled react for pages with app
 
 </details>
 
-<details><summary>16 × A production build of React. The plugin runs React's development build: an error of the server reaches the client with its message, where production sends a digest and a minified message, and Strict Mode runs an effect twice.</summary>
+<details><summary>12 × An image that `ImageResponse` of `next/og` renders. Next renders it with WebAssembly and a font of its own, which it reads from its own files with `node:fs`, and the server's disk here has no file of the project.</summary>
 
-- `navigation`: app dir - navigation › query string › useParams identity between renders › should be stable in app
-- `actions`: app-dir action handling › should report errors with bad inputs correctly
-- `actions`: app-dir action handling › should error if server action arguments list is too long
-- `actions`: app-dir action handling › should support hoc auth wrappers
-- `actions`: app-dir action handling › Edge SSR › should return error response for hoc auth wrappers in edge runtime
-- `global-error__basic`: app dir - global-error › should render global error for error in server components
-- `global-error__basic`: app dir - global-error › should render global error when undefined is thrown in a server component
-- `global-error__basic`: app dir - global-error › should render global error when null is thrown in a server component
-- `global-error__basic`: app dir - global-error › should catch metadata error in global-error if no error boundary is presented
-- `errors`: app-dir - errors › error component › should trigger error component when an error happens during server components rendering
-- `errors`: app-dir - errors › error component › should preserve custom digests
-- `errors`: app-dir - errors › error component › should trigger error component when undefined is thrown during server components rendering
-- `errors`: app-dir - errors › error component › should trigger error component when null is thrown during server components rendering
-- `errors`: app-dir - errors › error component › should trigger error component when a string is thrown during server components rendering
-- `errors`: app-dir - errors › error component › should display error digest for error in server component with default error boundary
-- `errors`: app-dir - errors › error component › retry › should recover Server Component error after retry
+- `metadata-dynamic-routes`: app dir - metadata dynamic routes › social image routes › should render og image with opengraph-image dynamic routes
+- `metadata-dynamic-routes`: app dir - metadata dynamic routes › social image routes › should render og image with twitter-image dynamic routes
+- `metadata-dynamic-routes`: app dir - metadata dynamic routes › social image routes › should support params as argument in dynamic routes
+- `metadata-dynamic-routes`: app dir - metadata dynamic routes › icon image routes › should render icon with dynamic routes
+- `metadata-dynamic-routes`: app dir - metadata dynamic routes › icon image routes › should render apple icon with dynamic routes
+- `metadata-dynamic-routes`: app dir - metadata dynamic routes › should generate unique path for image routes under group routes
+- `metadata-dynamic-routes-async-deps`: app dir - metadata dynamic routes with async deps › should serve the opengraph-image route as a valid image
+- `metadata-font`: app dir - metadata font › should handle custom fonts in both edge and nodejs runtime
+- `use-cache-metadata-route-handler`: use-cache-metadata-route-handler › should generate an opengraph image with a metadata route handler that uses "use cache"
+- `use-cache-metadata-route-handler`: use-cache-metadata-route-handler › should generate an icon image with a metadata route handler that uses "use cache"
+- `use-cache-metadata-route-handler`: use-cache-metadata-route-handler › should statically prerender an image whose component uses "use cache" directly
+- `use-cache-metadata-route-handler`: use-cache-metadata-route-handler › should treat a twitter image that reads request data as dynamic
 
 </details>
 
-<details><summary>11 × Metadata files: `favicon.ico`, `icon.png`, `opengraph-image`, `sitemap.ts`, `robots.txt`, `manifest.webmanifest`.</summary>
+<details><summary>7 × A `"use cache"` function that a Client Component gets, as a prop or by an import. Next's compiler makes such a function a Server Action as well, which the client calls. Here it is not one: React does not pass it to the client, and a Client Component that imports it runs its module in the browser.</summary>
 
-- `metadata`: app dir - metadata › opengraph › should pick up opengraph-image and twitter-image as static metadata files
-- `metadata`: app dir - metadata › opengraph › should override file based images when opengraph-image and twitter-image specify images property
-- `metadata`: app dir - metadata › icons › should support basic complex descriptor icons field
-- `metadata`: app dir - metadata › icons › should support root level of favicon.ico
-- `metadata`: app dir - metadata › file based icons › should render icon and apple touch icon meta if their images are specified
-- `metadata`: app dir - metadata › file based icons › should not render if image file is not specified
-- `metadata`: app dir - metadata › static routes › should have /favicon.ico as route
-- `metadata`: app dir - metadata › static routes › should have icons as route
-- `metadata`: app dir - metadata › static routes › should support root dir robots.txt
-- `metadata`: app dir - metadata › static routes › should support sitemap.xml under every routes
-- `metadata`: app dir - metadata › static routes › should support static manifest.webmanifest
-
-</details>
-
-<details><summary>6 × The `<link rel="preload">` and `<link rel="preconnect">` of `next/font`, which Next takes from a manifest of its build.</summary>
-
-- `next-font`: app dir - next/font › app dir - next-font › preload › should preload correctly with server components
-- `next-font`: app dir - next/font › app dir - next-font › preconnect › should add preconnect when preloading is disabled in page
-- `next-font`: app dir - next/font › app dir - next-font › preconnect › should add preconnect when preloading is disabled in layout
-- `next-font`: app dir - next/font › app dir - next-font › preconnect › should add preconnect when preloading is disabled in component
-- `next-font`: app dir - next/font › app dir - next-font › preconnect › should add preconnect when preloading is disabled in template
-- `next-font`: app dir - next/font › app dir - next-font › navigation › should not have duplicate preload tags on navigation
+- `use-cache`: use-cache › should cache results for cached functions imported from client components
+- `use-cache`: use-cache › should cache results for cached functions passed to client components
+- `use-cache`: use-cache › works with useActionState if previousState parameter is not used in "use cache" function
+- `use-cache`: use-cache › works with useActionState if previousState parameter is not used in "use cache" function (separate export)
+- `use-cache`: use-cache › works with "use cache" in method props
+- `use-cache`: use-cache › works with "use cache" in static class methods
+- `use-cache-with-server-function-props`: use-cache-with-server-function-props › should be able to use nested cache functions as props
 
 </details>
 
@@ -195,25 +427,51 @@ Of the 474 tests that apply, 402 pass: **85%**.
 
 </details>
 
-<details><summary>4 × A form without JavaScript for a Server Action that is not there, which names it in a `$ACTION_ID_` field. The server answers 409 for an id that cannot be one, where Next answers 400, and logs Next's error without the id.</summary>
+<details><summary>4 × Expects the HTML of a page that Next's build prerenders. Here the page renders for the request, as `next start` renders a dynamic page: React sends the `<link rel="preconnect">` of a font in the `Link` header, and a client navigation commits before the metadata that Next streams after the page.</summary>
 
-- `actions-unrecognized`: unrecognized server actions › should error and log a warning when submitting a server action with an unrecognized ID - nodejs › should reject an MPA action with a malformed ID
-- `actions-unrecognized`: unrecognized server actions › should error and log a warning when submitting a server action with an unrecognized ID - nodejs › should reject an MPA action with a plausible but missing ID
-- `actions-unrecognized`: unrecognized server actions › should error and log a warning when submitting a server action with an unrecognized ID - edge › should reject an MPA action with a malformed ID
-- `actions-unrecognized`: unrecognized server actions › should error and log a warning when submitting a server action with an unrecognized ID - edge › should reject an MPA action with a plausible but missing ID
-
-</details>
-
-<details><summary>2 × A page that a build prerenders, like one with `generateStaticParams`. Next keeps it between two requests, and here every request renders its page.</summary>
-
-- `trailingslash`: app-dir trailingSlash handling › should revalidate a page with generated static params (withSlash=true)
-- `trailingslash`: app-dir trailingSlash handling › should revalidate a page with generated static params (withSlash=false)
+- `next-font`: app dir - next/font › app dir - next-font › preconnect › should add preconnect when preloading is disabled in page
+- `next-font`: app dir - next/font › app dir - next-font › preconnect › should add preconnect when preloading is disabled in layout
+- `next-font`: app dir - next/font › app dir - next-font › preconnect › should add preconnect when preloading is disabled in component
+- `next-font`: app dir - next/font › app dir - next-font › preconnect › should add preconnect when preloading is disabled in template
 
 </details>
 
-<details><summary>1 × A form that the browser posts itself, not Next's router. The server does not look for the action in the form data.</summary>
+<details><summary>4 × A promise of a Server Action, passed to `after()`, that calls a request API once the action is done. Next renders the page after the action outside the store of the action, with `AsyncLocalStorage.exit()`. Here the store stays exited for the rest of the request, so Next takes the call for one of the page.</summary>
 
-- `actions`: app-dir action useActionState › should support hydrating the app from progressively enhanced form request
+- `next-after-app-api-usage`: nextjs APIs in after() › async APIs in promises passed to after › in server actions › does not error - headers
+- `next-after-app-api-usage`: nextjs APIs in after() › async APIs in promises passed to after › in server actions › does not error - cookies
+- `next-after-app-api-usage`: nextjs APIs in after() › async APIs in promises passed to after › in server actions › does not error - connection
+- `next-after-app-api-usage`: nextjs APIs in after() › async APIs in promises passed to after › in server actions › does not error - io
+
+</details>
+
+<details><summary>4 × Two requests at once, which Next lets share the work of a cached function, or a request while an earlier one regenerates a stale entry in the background. The server handles one request at a time, and a request waits up to a second for the background work of the one before it.</summary>
+
+- `use-cache`: use-cache › should dedupe a streaming cache across concurrent requests
+- `use-cache-route-handler-only`: use-cache-route-handler-only › dedupes tag revalidation across requests while generation is pending
+- `use-cache-swr`: use-cache-swr › should dedupe SWR regens across concurrent requests
+- `use-cache-swr`: use-cache-swr › should dedupe SWR regens across slow-read requests
+
+</details>
+
+<details><summary>2 × Counts the stylesheets of a page. Next's build puts the CSS files that a segment imports in one chunk. The run serves the CSS of the dev server, where each file is a stylesheet of its own.</summary>
+
+- `app-css`: app dir - css › css support › special entries › should include css imported in loading.js
+- `app-css`: app dir - css › css support › chunks › should bundle css resources into chunks
+
+</details>
+
+<details><summary>2 × An `after()` of the proxy. What the proxy hands to `waitUntil()` runs after the proxy has returned, without its request stores, and Next needs them to run the callbacks.</summary>
+
+- `next-after-app`: after() in nodejs runtime › runs in middleware
+- `next-after-app`: after() in edge runtime › runs in middleware
+
+</details>
+
+<details><summary>2 × Server code that reads a file of the project with `node:fs`, like `./posts/first-post.txt`. The server's disk is in memory, and has no file of the project.</summary>
+
+- `use-cache-metadata-route-handler`: use-cache-metadata-route-handler › should generate an opengraph image with a custom (local) font
+- `use-cache-metadata-route-handler`: use-cache-metadata-route-handler › should prerender a page that shares a segment with an opengraph image that uses a custom font
 
 </details>
 
@@ -229,10 +487,41 @@ Of the 474 tests that apply, 402 pass: **85%**.
 
 </details>
 
-### Not Applicable: 48 Tests
+<details><summary>1 × Expects the CSS that Next's build minified. The run serves the CSS that Vite compiles, as it is.</summary>
 
-<details><summary>12 × Reads the output of `next build`: a manifest, a chunk or a prerendered file in `.next`.</summary>
+- `css-modules-pure-no-check`: css-modules-pure-no-check › should have emitted a CSS file
 
+</details>
+
+<details><summary>1 × A path that `generateStaticParams` does not list, of a route with `dynamicParams = false`. Next answers 404 for it from the paths its build prerendered. Here no build lists them, and the page renders.</summary>
+
+- `root-layout`: app-dir root layout › Should do a mpa navigation when switching root layout › should work with static routes
+
+</details>
+
+<details><summary>1 × A navigation of Next's router to a route handler that answers with JSON, which a browser shows in place of the app. The tab cannot leave the test, so the page stays, with an uncaught error.</summary>
+
+- `searchparams-reuse-loading`: searchparams-reuse-loading › when aliasing is skipped › should work for route handlers
+
+</details>
+
+<details><summary>1 × A Client Component in a file of CommonJS: `exports.Cjs = …` under `"use client"`. Its client reference has no export of that name.</summary>
+
+- `rsc-basic`: app dir - rsc basics › should handle various kinds of exports correctly
+
+</details>
+
+<details><summary>1 × Opens the response of a route handler that a browser shows as it is, like plain text or JSON. The plugin opens the pages of the app, and the test stays where it is.</summary>
+
+- `draft-mode-middleware`: app-dir - draft-mode-middleware › should be able to disable draft mode with middleware present
+
+</details>
+
+### Not Applicable: 164 Tests
+
+<details><summary>37 × Reads the output of `next build`: a manifest, a chunk or a prerendered file in `.next`.</summary>
+
+- `app-edge-root-layout`: app-dir edge runtime root layout › should mark static contain metadata routes as edge functions
 - `actions`: app-dir action handling › should output exportName and filename info in manifest
 - `actions`: app-dir action handling › should not expose action content in sourcemaps
 - `app-routes`: app-custom-routes › works with api prefix correctly › statically generates correctly with no dynamic usage
@@ -243,12 +532,134 @@ Of the 474 tests that apply, 402 pass: **85%**.
 - `app-routes`: app-custom-routes › works with generateStaticParams correctly › revalidates correctly on /revalidate-1/first/data.json
 - `app-routes`: app-custom-routes › works with generateStaticParams correctly › revalidates correctly on /revalidate-1/second/data.json
 - `app-routes`: app-custom-routes › works with generateStaticParams correctly › revalidates correctly on /revalidate-1/three/data.json
+- `parallel-routes-and-interception`: parallel-routes-and-interception (trailingSlash: true) › route intercepting › should not have /default paths in the prerender manifest
+- `parallel-routes-and-interception`: parallel-routes-and-interception (trailingSlash: false) › route intercepting › should not have /default paths in the prerender manifest
+- `not-found__basic`: app dir - not-found - basic › should include not found client reference manifest in the file trace
+- `not-found__basic`: app dir - not-found - basic › should use root not-found content for 404 html
+- `not-found__basic`: app dir - not-found - basic › with default runtime › should create the 404 mapping and copy the file to pages
+- `not-found__default`: app dir - not-found - default › should contain noindex contain in the page
 - `metadata`: app dir - metadata › static routes › should build favicon.ico as a custom route
 - `metadata`: app dir - metadata › static optimization › should build static files into static route
+- `metadata-dynamic-routes`: app dir - metadata dynamic routes › sitemap › should optimize routes without multiple generation API as static routes
+- `metadata-dynamic-routes`: app dir - metadata dynamic routes › sitemap › should generate static paths of dynamic sitemap in production
+- `metadata-dynamic-routes`: app dir - metadata dynamic routes › route segment config › should generate dynamic route if dynamic config is force-dynamic
+- `metadata-dynamic-routes`: app dir - metadata dynamic routes › should support edge runtime of image routes
+- `metadata-dynamic-routes`: app dir - metadata dynamic routes › should include default og font files in file trace
+- `metadata-dynamic-routes`: app dir - metadata dynamic routes › should contain generated routes in prerender manifest
+- `use-cache`: use-cache › should prerender fully cacheable pages as static HTML
+- `use-cache`: use-cache › should match the expected revalidate and expire configs on the prerender manifest
+- `use-cache`: use-cache › should match the expected stale config in the page header
+- `use-cache`: use-cache › should propagate unstable_cache tags correctly
+- `use-cache-fallback-root-params`: use-cache-fallback-root-params › omits root-dependent entries from the RDC used to build generic shells
+- `use-cache-fallback-root-params`: use-cache-fallback-root-params › keeps cached root content in shells whose root is known
+- `use-cache-fallback-root-params`: use-cache-fallback-root-params › preserves static-prefetch hints when only fallback roots are missing
+- `use-cache-fallback-root-params`: use-cache-fallback-root-params › does not mistake searchParams in a cached page for a fallback root read
+- `use-cache-infinity-profile`: use-cache-infinity-profile › caches forever with a configured profile using Infinity revalidate and expire
+- `use-cache-metadata-route-handler`: use-cache-metadata-route-handler › should include the client reference manifest in the route.js.nft.json files of dynamic metadata routes
+- `use-cache-metadata-route-handler`: use-cache-metadata-route-handler › should not include the client reference manifest in the route.js.nft.json files of static metadata routes
+- `use-cache-root-param-metadata`: use-cache-root-param-metadata › emits root param dependencies only in Turbopack production
 
 </details>
 
-<details><summary>10 × Opens the page with JavaScript off. The test runs in the tab of the page.</summary>
+<details><summary>32 × Asks for another app than the fixture: files of its own, or another `next.config`. The runner runs one app for a fixture, the fixture as it is or as `fixtures.ts` prepares it.</summary>
+
+- `interception-route-prefetch-cache`: interception-route-prefetch-cache › runtime = edge › should render the correct interception when two distinct layouts share the same path structure
+- `parallel-routes-and-interception`: parallel-routes-and-interception (trailingSlash: true) › parallel routes › should support parallel route tab bars
+- `parallel-routes-and-interception`: parallel-routes-and-interception (trailingSlash: true) › parallel routes › should match parallel routes
+- `parallel-routes-and-interception`: parallel-routes-and-interception (trailingSlash: true) › parallel routes › should match parallel routes in route groups
+- `parallel-routes-and-interception`: parallel-routes-and-interception (trailingSlash: true) › parallel routes › should throw a 404 when no matching parallel route is found
+- `parallel-routes-and-interception`: parallel-routes-and-interception (trailingSlash: true) › parallel routes › should render nested parallel routes
+- `parallel-routes-and-interception`: parallel-routes-and-interception (trailingSlash: true) › parallel routes › should support layout files in parallel routes
+- `parallel-routes-and-interception`: parallel-routes-and-interception (trailingSlash: true) › parallel routes › should only scroll to the parallel route that was navigated to
+- `parallel-routes-and-interception`: parallel-routes-and-interception (trailingSlash: true) › parallel routes › should apply the catch-all route to the parallel route if no matching route is found
+- `parallel-routes-and-interception`: parallel-routes-and-interception (trailingSlash: true) › parallel routes › should match the catch-all routes of the more specific path, if there is more than one catch-all route
+- `parallel-routes-and-interception`: parallel-routes-and-interception (trailingSlash: true) › parallel routes › should navigate with a link with prefetch=false
+- `parallel-routes-and-interception`: parallel-routes-and-interception (trailingSlash: true) › parallel routes › should display all parallel route params with useParams
+- `parallel-routes-and-interception`: parallel-routes-and-interception (trailingSlash: true) › parallel routes › should load CSS for a default page that exports another page
+- `parallel-routes-and-interception`: parallel-routes-and-interception (trailingSlash: true) › parallel routes › should handle a loading state
+- `parallel-routes-and-interception`: parallel-routes-and-interception (trailingSlash: true) › route intercepting with dynamic routes › should render intercepted route
+- `parallel-routes-and-interception`: parallel-routes-and-interception (trailingSlash: true) › route intercepting with prerendered dynamic routes › should render intercepted route
+- `parallel-routes-and-interception`: parallel-routes-and-interception (trailingSlash: true) › route intercepting with dynamic optional catch-all routes › should render intercepted route
+- `parallel-routes-and-interception`: parallel-routes-and-interception (trailingSlash: true) › route intercepting with dynamic catch-all routes › should render intercepted route
+- `parallel-routes-and-interception`: parallel-routes-and-interception (trailingSlash: true) › route intercepting › should render intercepted route
+- `parallel-routes-and-interception`: parallel-routes-and-interception (trailingSlash: true) › route intercepting › should render an intercepted route from a slot
+- `parallel-routes-and-interception`: parallel-routes-and-interception (trailingSlash: true) › route intercepting › should render an intercepted route at the top level from a nested path
+- `parallel-routes-and-interception`: parallel-routes-and-interception (trailingSlash: true) › route intercepting › should render intercepted route from a nested route
+- `parallel-routes-and-interception`: parallel-routes-and-interception (trailingSlash: true) › route intercepting › should re-render the layout on the server when it had a default child route
+- `parallel-routes-and-interception`: parallel-routes-and-interception (trailingSlash: true) › route intercepting › should render modal when paired with parallel routes
+- `parallel-routes-and-interception`: parallel-routes-and-interception (trailingSlash: true) › route intercepting › should support intercepting with beforeFiles rewrites
+- `parallel-routes-and-interception`: parallel-routes-and-interception (trailingSlash: true) › route intercepting › should support intercepting local dynamic sibling routes
+- `parallel-routes-and-interception`: parallel-routes-and-interception (trailingSlash: true) › route intercepting › should intercept on routes that contain hyphenated/special dynamic params
+- `parallel-routes-and-interception`: parallel-routes-and-interception-conflicting-pages › should gracefully handle when two page segments match the `children` parallel slot
+- `parallel-routes-and-interception-from-root`: parallel-routes-and-interception-from-root, collapseAdapterRoutes: false › should interpolate [locale] in "/[locale]/example/(...)[locale]/intercepted"
+- `not-found__conflict-route`: app dir - not-found - conflict route › with edge runtime › should use the not-found page for non-matching routes
+- `not-found__conflict-route`: app dir - not-found - conflict route › with edge runtime › should allow to have a valid /not-found route
+- `not-found__group-route`: app dir - not-found - group route › with edge runtime › should use the not-found page under group routes
+
+</details>
+
+<details><summary>16 × The test itself needs Node.js: it starts a server, or removes a directory.</summary>
+
+- `rewrite-with-search-params`: rewrite-with-search-params › should not contain params in search params after rewrite
+- `metadata`: app dir - metadata › icons › should support root level of favicon.ico
+- `metadata-static-file`: metadata-files-static-output-dynamic-route › should serve static files when requested with placeholder for dynamic page
+- `metadata-static-file`: metadata-files-static-output-group-route › should serve static files when requested to its route for group page
+- `metadata-static-file`: metadata-files-static-output-intercepting-route › should serve static files when requested to its route for intercepting page
+- `metadata-static-file`: metadata-files-static-output-parallel-route › should serve static files when requested to its route for parallel slot page
+- `metadata-static-file`: metadata-files-static-output-root-route › should serve static files when requested to its route
+- `metadata-static-file`: metadata-files-static-output-static-route › should serve static files when requested to its route for static page
+- `next-image`: app dir - next-image › ssr content › should handle HEAD requests for uncached images
+- `css-bom`: app dir - css with a UTF-8 BOM › keeps the BOM in the fixture
+- `cache-components`: cache-components › should ignore late setHeader calls for direct RSC handlers after headers are sent
+- `x-forwarded-headers`: x-forwarded-headers › host header exists › should include x-forwarded-\* headers relative to host
+- `x-forwarded-headers`: x-forwarded-headers › already assigned › should not override existing x-forwarded-\* headers
+- `next-after-app`: after() in nodejs runtime › only runs callbacks after the response is fully sent
+- `next-after-app`: after() in edge runtime › only runs callbacks after the response is fully sent
+- `rsc-basic`: app dir - rsc basics › should generate edge SSR manifests for Node.js
+
+</details>
+
+<details><summary>16 × Changes a file of the app, or builds or starts the app itself.</summary>
+
+- `not-found__basic`: app dir - not-found - basic › with runtime = edge › should return 404 status if notFound() is called in shell
+- `not-found__basic`: app dir - not-found - basic › with runtime = edge › should use the not-found page for non-matching routes
+- `not-found__basic`: app dir - not-found - basic › with runtime = edge › should match dynamic route not-found boundary correctly
+- `not-found__basic`: app dir - not-found - basic › with runtime = edge › should escalate notFound to parent layout if no not-found boundary present in current layer
+- `experimental-lightningcss-features`: experimental-lightningcss-features › include › should transpile light-dark() when included in lightningCssFeatures
+- `experimental-lightningcss-features`: experimental-lightningcss-features › custom-media-queries › should substitute @custom-media when custom-media-queries is included
+- `experimental-lightningcss-features`: experimental-lightningcss-features › exclude › should preserve light-dark() when excluded from lightningCssFeatures
+- `use-cache-custom-handler`: use-cache-custom-handler › handles a failed handler preload without an unhandled rejection
+- `use-cache-route-handler-only`: use-cache-route-handler-only › should dedupe concurrent cache invocations in route handlers
+- `headers-static-bailout`: headers-static-bailout › it provides a helpful link in case static generation bailout is uncaught
+- `next-after-app`: after() in nodejs runtime › uses waitUntil from request context if available › in a page
+- `next-after-app`: after() in nodejs runtime › uses waitUntil from request context if available › in a route handler
+- `next-after-app`: after() in nodejs runtime › uses waitUntil from request context if available › in middleware
+- `next-after-app`: after() in edge runtime › uses waitUntil from request context if available › in a page
+- `next-after-app`: after() in edge runtime › uses waitUntil from request context if available › in a route handler
+- `next-after-app`: after() in edge runtime › uses waitUntil from request context if available › in middleware
+
+</details>
+
+<details><summary>14 × Uses `createRouterAct()` of Next's test library, which holds back the requests of the router and answers them with Playwright's `page.route()`.</summary>
+
+- `concurrent-navigations`: mismatching prefetch › recovers when a navigation rewrites to a different route than the one that was prefetched
+- `interception-dynamic-segment`: interception-dynamic-segment › Default.tsx injection validation (no 404s allowed) › should not render a 404 for the intercepted route with dynamic segments
+- `interception-dynamic-segment`: interception-dynamic-segment › Default.tsx injection validation (no 404s allowed) › should navigate to /simple-page without 404 (no parallel routes)
+- `interception-dynamic-segment`: interception-dynamic-segment › Default.tsx injection validation (no 404s allowed) › should navigate to /has-page without 404 (page fills children)
+- `interception-dynamic-segment`: interception-dynamic-segment › Default.tsx injection validation (no 404s allowed) › should navigate to /no-parallel-routes/deeper without 404
+- `interception-dynamic-segment`: interception-dynamic-segment › Default.tsx injection validation (no 404s allowed) › should navigate to /has-both without 404 (has both @sidebar and page)
+- `interception-dynamic-segment`: interception-dynamic-segment › Default.tsx injection validation (no 404s allowed) › should retain named host slots instead of rendering their defaults
+- `interception-dynamic-segment`: interception-dynamic-segment › Default.tsx injection validation (no 404s allowed) › should retain named host slots for an interception catch-all
+- `interception-dynamic-segment`: interception-dynamic-segment › Default.tsx injection validation (no 404s allowed) › should send and render a real default for a newly entered slot owner
+- `interception-dynamic-segment`: interception-dynamic-segment › Default.tsx injection validation (no 404s allowed) › should omit undeclared children and preserve parent state
+- `interception-dynamic-segment`: interception-dynamic-segment › Default.tsx injection validation (no 404s allowed) › should navigate to /test-nested/deeper without 404
+- `interception-dynamic-segment`: interception-dynamic-segment › Default.tsx injection validation (no 404s allowed) › should navigate to /explicit-layout/deeper without 404
+- `interception-dynamic-segment`: interception-dynamic-segment › Default.tsx injection validation (no 404s allowed) › should handle repeated interceptions without 404
+- `interception-dynamic-segment`: interception-dynamic-segment › Default.tsx injection validation (no 404s allowed) › should navigate between different interception routes without 404
+
+</details>
+
+<details><summary>13 × Opens the page with JavaScript off. The test runs in the tab of the page.</summary>
 
 - `actions`: app-dir action useActionState › should support submitting form state without JS
 - `actions`: app-dir action useActionState › should send the action to the provided permalink with form state when JS disabled
@@ -260,6 +671,39 @@ Of the 474 tests that apply, 402 pass: **85%**.
 - `actions`: app-dir action handling › should support notFound (javascript disabled)
 - `actions-unrecognized`: unrecognized server actions › should error and log a warning when submitting a server action with an unrecognized ID - nodejs › server action invoked via form - js disabled
 - `actions-unrecognized`: unrecognized server actions › should error and log a warning when submitting a server action with an unrecognized ID - edge › server action invoked via form - js disabled
+- `use-cache`: use-cache › should not read nor write cached data when draft mode is enabled › js disabled, with cookies
+- `use-cache`: use-cache › should not read nor write cached data when draft mode is enabled › js disabled, without cookies
+- `use-cache`: use-cache › should allow nested short-lived caches after connection()
+
+</details>
+
+<details><summary>10 × Reads what the Next.js CLI prints: the table of routes of a build, a warning when it starts, or what Tailwind logs as the build compiles the CSS.</summary>
+
+- `interception-dynamic-segment`: interception-dynamic-segment › should correctly prerender segments with generateStaticParams
+- `interception-dynamic-segment`: interception-dynamic-segment › should prerender a dynamic intercepted route
+- `metadata-static-file`: metadata-files-static-output-dynamic-route › should display static metadata files with "-" placeholder in build output
+- `no-double-tailwind-execution`: no-double-tailwind-execution › should run tailwind only once initially and per change
+- `revalidate-dynamic`: app-dir revalidate-dynamic › should correctly mark a route handler that uses revalidateTag as dynamic
+- `unstable-rethrow`: unstable-rethrow › should correctly mark the dynamic page as dynamic
+- `use-cache`: use-cache › should warn that the `experimental.useCache` config option is deprecated
+- `app-middleware`: app-dir with middleware › should warn when deprecated middleware file is used
+- `dynamic-data__require-static`: dynamic-data with dynamic = "error" › error when the build when `dynamic = "error"` and dynamic data is read
+- `dynamic-data__cache-scoped`: dynamic-data inside cache scope › error when the build when accessing dynamic data inside a cache scope
+
+</details>
+
+<details><summary>10 × Uses Playwright's `Page` itself: `page.route()` to stand in for a response, or an event of a frame.</summary>
+
+- `searchparams-reuse-loading`: searchparams-reuse-loading › Without Middleware › should correctly return different RSC data for full prefetches with different searchParam values
+- `searchparams-reuse-loading`: searchparams-reuse-loading › With Middleware › should correctly return different RSC data for full prefetches with different searchParam values
+- `searchparams-reuse-loading`: searchparams-reuse-loading › should re-use loading from "full" prefetch for param-full URL when navigating to param-less route
+- `searchparams-reuse-loading`: searchparams-reuse-loading › should re-use loading from "full" prefetch for param-less URL when navigating to param-full route
+- `searchparams-reuse-loading`: searchparams-reuse-loading › should re-use loading from "full" prefetch for param-full URL when navigating to param-full route
+- `actions`: app-dir action handling › should propagate errors from a `text/plain` response to an error boundary
+- `actions`: app-dir action handling › should trigger an error boundary for action responses with an invalid content-type
+- `actions`: app-dir action handling › should be possible to catch network errors
+- `actions`: app-dir action handling › fetch actions › should handle redirects to routes that provide an invalid RSC response
+- `redirect-rewrite-dynamic`: redirect to a rewritten dynamic route (#95195) › client-side navigation to /a should update the URL to /
 
 </details>
 
@@ -275,38 +719,19 @@ Of the 474 tests that apply, 402 pass: **85%**.
 
 </details>
 
-<details><summary>5 × Uses Playwright's `Page` itself: `page.route()` to stand in for a response, or an event of a frame.</summary>
+<details><summary>3 × Passes `env` to `nextTestSetup()` for `next.config` to read. The runner loads the config once, before the first test, so every `describe` gets the same app.</summary>
 
-- `actions`: app-dir action handling › should propagate errors from a `text/plain` response to an error boundary
-- `actions`: app-dir action handling › should trigger an error boundary for action responses with an invalid content-type
-- `actions`: app-dir action handling › should be possible to catch network errors
-- `actions`: app-dir action handling › fetch actions › should handle redirects to routes that provide an invalid RSC response
-- `redirect-rewrite-dynamic`: redirect to a rewritten dynamic route (#95195) › client-side navigation to /a should update the URL to /
+- `react-max-headers-length`: react-max-headers-length › reactMaxHeadersLength = 0 › should respect reactMaxHeadersLength
+- `react-max-headers-length`: react-max-headers-length › reactMaxHeadersLength = 400 › should respect reactMaxHeadersLength
+- `react-max-headers-length`: react-max-headers-length › reactMaxHeadersLength = 10000 › should respect reactMaxHeadersLength
 
 </details>
 
-<details><summary>5 × The app needs an npm package that its test installs, and the runner does not: Sass, Lightning CSS, a CSS framework.</summary>
+<details><summary>3 × Expects only the log of a Server Component's error as `next start` prints it: after a `⨯`, without the frames of Next. The server logs it to the tab's console, with the stack of the browser, and the client's own log of the error is in the same console.</summary>
 
-- `app-css-pageextensions`: app dir - css with pageextensions › css support with pageextensions › page in app directory with pageextention, css should work › should support global css inside layout
-- `experimental-lightningcss-features`: experimental-lightningcss-features › include › should transpile light-dark() when included in lightningCssFeatures
-- `experimental-lightningcss-features`: experimental-lightningcss-features › custom-media-queries › should substitute @custom-media when custom-media-queries is included
-- `experimental-lightningcss-features`: experimental-lightningcss-features › exclude › should preserve light-dark() when excluded from lightningCssFeatures
-- `random-in-sass`: random-in-sass › should work using browser
-
-</details>
-
-<details><summary>3 × Reads what the Next.js CLI prints: the table of routes of a build, or a warning when it starts.</summary>
-
-- `revalidate-dynamic`: app-dir revalidate-dynamic › should correctly mark a route handler that uses revalidateTag as dynamic
-- `unstable-rethrow`: unstable-rethrow › should correctly mark the dynamic page as dynamic
-- `app-middleware`: app-dir with middleware › should warn when deprecated middleware file is used
-
-</details>
-
-<details><summary>2 × The test itself needs Node.js: it starts a server, or removes a directory.</summary>
-
-- `next-image`: app dir - next-image › ssr content › should handle HEAD requests for uncached images
-- `css-bom`: app dir - css with a UTF-8 BOM › keeps the BOM in the fixture
+- `errors`: app-dir - errors › error component › should trigger error component when undefined is thrown during server components rendering
+- `errors`: app-dir - errors › error component › should trigger error component when null is thrown during server components rendering
+- `errors`: app-dir - errors › error component › should trigger error component when a string is thrown during server components rendering
 
 </details>
 
@@ -323,27 +748,21 @@ Of the 474 tests that apply, 402 pass: **85%**.
 
 </details>
 
-<details><summary>1 × Expects the CSS that Next's build minified. Here it is the CSS that Vite compiles, as it is.</summary>
-
-- `css-modules-pure-no-check`: css-modules-pure-no-check › should have emitted a CSS file
-
-</details>
-
 <!-- conformance:results:end -->
 
 ## What The Results Say
 
-Where the plugin runs something, it mostly runs it as Next does: 414 of the 418 tests that are neither a missing feature nor out of reach pass. What does not pass is, for nine tests out of ten, something the plugin does not do at all, or something a test in a browser cannot see.
+Where the plugin runs something, it mostly runs it as Next does: 944 of the 949 tests that are neither a missing feature nor out of reach pass. What does not pass is, for nine tests out of ten, something the plugin does not do at all, or something a test in a browser cannot see.
 
-**Bugs: 4 tests, 3 causes.** All are in the list above. One is about what a page leaves in the browser that a browser drops with the page: the history, which a page load replaces an entry of. One is a form that the browser posts to `/`, which gets the query of the test's page. One is about the server in front of the app: a proxy that answers with a `Location` header, which `@next/routing` reads as a proxy that let the request through.
+**Bugs: 5 tests, 3 causes.** All are in the list above. One is about the server in front of the app: two `Set-Cookie` headers of one rule of `headers()` in `next.config` arrive as one, because Next's build hands an adapter the headers of a rule as an object. Two are about a module that the ssr layer has as Next's edge runtime has it: `react-dom/server` for a Client Component that calls `renderToStaticMarkup()`, and `next/router` in a Server Component.
 
-**Not Yet: 53 tests.** The largest cause is **the Pages Router**, 21 tests. Fixtures of the App Router have a `pages/` directory to test the two together: its pages, and its API routes.
+**Not Yet: 198 tests.** The largest cause is more than half of them: **a page that a build prerenders**, 118 tests, 97 of them in the fixtures of `"use cache"` and Cache Components. `next build` renders such a page once and keeps it, and here every request renders its page: see "The Node.js Runtime" in `docs/next-routes.md`. Then **the Pages Router**, 31 tests: fixtures of the App Router have a `pages/` directory to test the two together, its pages and its API routes. Then `ImageResponse` of `next/og`, 12 tests.
 
-Four causes are not in the "Not Yet" list of `docs/next-routes.md`: the Pages Router, the ids of Server Actions (4 tests), a builtin module of Node.js without a stand-in (2), and a prerendered page (3), which that document has under "The Node.js Runtime".
+Three causes are not in the "Not Yet" list of `docs/next-routes.md`: the Pages Router, the chunks and the minified CSS of a build (3 tests), and a path that `dynamicParams = false` leaves out, which Next answers 404 for from the paths its build prerendered (1).
 
-**Not applicable: 48 tests.** Almost half of them are JavaScript off (10) and the output of a build (12).
+**Not applicable: 164 tests.** The largest causes are the output of a build (37), another app than the fixture's, with files or a `next.config` of its own (32), a test that itself needs Node.js (16) or changes a file of the app (16), `createRouterAct()` of Next's test library (14), and JavaScript off (13).
 
-**The server in front of the app.** Five fixtures are there for the proxy, the redirects and rewrites of `next.config`, and `trailingSlash`. 37 of their 48 tests pass. Of the 11 that do not, 6 ask for an API route of the Pages Router, 2 expect a prerendered page, 2 cannot run in a browser, and 1 is the bug above.
+**The server in front of the app.** Five fixtures are there for the proxy, the redirects and rewrites of `next.config`, and `trailingSlash`. 38 of their 48 tests pass. Of the 10 that do not, 6 ask for an API route of the Pages Router, 2 expect a prerendered page, and 2 cannot run in a browser.
 
 **CSS.** 23 fixtures are Next's own tests of CSS: global CSS and CSS modules, their order, client navigation, parallel routes, `next/dynamic`, inline CSS, the pure mode of a CSS module, Sass, Tailwind 3 and 4, a PostCSS config with plugins of its own, and an MDX page with `@next/mdx`. The runner installs the packages their tests install, and links Tailwind 4 into the copy of the one fixture that asks for it, as it has Tailwind 3 under the name. 66 of their 77 tests pass, and none fails for a bug of the plugin. Of the 11 that do not, 3 give each test a `next.config` of its own, for `experimental.lightningCssFeatures`, 2 count the stylesheets of a page, which Next's build puts in chunks and the run does not yet, 2 ask for the Pages Router, 1 reads a file with Node.js, 1 expects CSS that Next's build minified, which the run does not yet, 1 counts what Tailwind logs as the build compiles, and 1 expects the CSS of a component of `next/dynamic` from Next's manifest of dynamic imports. Of `scss`, a directory of 40 apps, only `scss-mixins` has an `app/`; the others are apps of the Pages Router and do not run here. Nor do three more of Next's fixtures for CSS: one builds its app out of files its test names, two only Turbopack runs. `conformance/src/fixtures.ts` says which.
 
