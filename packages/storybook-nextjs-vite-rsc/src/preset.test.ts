@@ -56,6 +56,16 @@ test("the store loads each file through load.ts, next to the preset", () => {
   );
 });
 
+test("the first preview annotation is preview.ts, which loads the platform of the app's server", async () => {
+  const previewAnnotations = preset.previewAnnotations as (entries: string[]) => Promise<string[]>;
+  const [first, ...rest] = await previewAnnotations(["/addon/preview.js"]);
+  expect(first).toMatch(/storybook-nextjs-vite-rsc\/(src\/preview\.ts|dist\/preview\.js)$/);
+  expect(rest).toEqual(["/addon/preview.js"]);
+  expect(fs.readFileSync(first!, "utf8")).toContain(
+    'import "vitest-plugin-rsc/nextjs/client-components";',
+  );
+});
+
 test("React by its name, which each layer resolves with its own conditions", async () => {
   expect(await preset.resolvedReact({ mdx: "/mdx" })).toEqual({
     mdx: "/mdx",

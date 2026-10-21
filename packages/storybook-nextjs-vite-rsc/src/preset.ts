@@ -31,6 +31,14 @@ export const experimental_moduleLoader = normalizePath(
   fileURLToPath(new URL(`./load${path.extname(import.meta.url)}`, import.meta.url)),
 );
 
+// preview.ts, next to this file, first.
+export const previewAnnotations: PresetProperty<"previewAnnotations"> = async (entries = []) => [
+  normalizePath(
+    fileURLToPath(new URL(`./preview${path.extname(import.meta.url)}`, import.meta.url)),
+  ),
+  ...entries,
+];
+
 // Each layer's React by its name, which each environment resolves with its
 // own conditions: `react-server` in the rsc layer.
 export const resolvedReact = async (existing: object) => ({
