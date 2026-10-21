@@ -9,6 +9,9 @@ import { isServerPreview } from "./server-mark.ts";
 // the rsc layer, where the module of a file with "use client" is a client
 // reference module: the plugin evaluated the file in the browser layer, and
 // `loadClientModule()` gives those exports. Any other module as it is.
+// Storybook imports it before the project's preview, so its import of the
+// plugin's entry gives the page the server's platform, and the env of the
+// run in `process.env`, before any module of the preview evaluates.
 
 type Annotations = { globalTypes?: object; initialGlobals?: object };
 

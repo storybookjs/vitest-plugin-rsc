@@ -1,4 +1,3 @@
-import { once } from "node:events";
 import fs from "node:fs";
 import path from "node:path";
 import { Worker } from "node:worker_threads";
@@ -40,18 +39,23 @@ export async function readTestEnv(
   root: string,
   { nextEnv, envWorker, build }: { nextEnv: string; envWorker: string; build: boolean },
 ): Promise<TestEnv> {
-  // As Next reads them: a file that is there, in its order.
-  const files = envFilesOf(build).flatMap((file) =>
-    fs.statSync(path.join(root, file), { throwIfNoEntry: false })?.isFile()
+  // As Next reads them: a file that is there, also a named pipe, in its order.
+  const files = envFilesOf(build).flatMap((file) => {
+    const stats = fs.statSync(path.join(root, file), { throwIfNoEntry: false });
+    return stats?.isFile() || stats?.isFIFO()
       ? [{ path: file, contents: fs.readFileSync(path.join(root, file), "utf8"), env: {} }]
-      : [],
-  );
+      : [];
+  });
   if (files.length === 0) return { values: {}, files: [] };
   const worker = new Worker(envWorker, {
     env: { NODE_ENV: "test" },
     workerData: { nextEnv, root, files },
   });
-  const [parsed] = (await once(worker, "message")) as [Record<string, string>];
+  const parsed = await new Promise<Record<string, string>>((resolve, reject) => {
+    worker.once("message", resolve);
+    worker.once("error", reject);
+    worker.once("exit", (code) => reject(new Error(`the thread exited with ${code}`)));
+  });
   return {
     values: Object.fromEntries(Object.entries(parsed).filter(([name]) => !isNextsOwn(name))),
     files: files.map((file) => file.path),

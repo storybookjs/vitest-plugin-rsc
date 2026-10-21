@@ -870,7 +870,7 @@ afterEach(() => {
 
 ### Environment Variables
 
-The app's server code reads `process.env` from the project's test env, as Next's test mode reads it: `.env.test.local`, `.env.test` and `.env` in a run, `.env.test` and `.env` in a build. Never `.env.local`, another mode's file, or a value of the shell. `NEXT_PUBLIC_` variables and `env` of `next.config` are in `process.env` too. A build puts the values into the site, so keep secrets out of `.env.test` and `.env`: see [Environment Variables](docs/next-routes.md#environment-variables).
+The app's server code reads `process.env` from the project's test env, as Next's test mode reads it: `.env.test.local`, `.env.test` and `.env` in a run, `.env.test` and `.env` in a build. Never `.env.local`, another mode's file, or a value of the shell, unless `env` of `next.config` puts it in. `NEXT_PUBLIC_` variables and `env` of `next.config` are in `process.env` too. A build puts the values into the site, so keep secrets out of `.env.test` and `.env`: see [Environment Variables](docs/next-routes.md#environment-variables).
 
 ### Example: Drizzle + PGlite
 

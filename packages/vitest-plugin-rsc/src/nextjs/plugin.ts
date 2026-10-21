@@ -631,8 +631,10 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
   // it: development for a test run and a dev server, production for a static
   // build, which is a site to look at, not a test that reads React's warnings.
   let build: NextBuild = options.build ?? "development";
-  // What `envId` has: the project's, until an env file changes.
+  // What `envId` has: the project's, until an env file changes. One load
+  // after the other, so that the last change has the last word.
   let env: PageEnv;
+  let envLoad: Promise<unknown> = Promise.resolve();
   let server: ViteDevServer | undefined;
   // Whether Vitest runs the plugin, which takes a change of a file itself.
   // Vitest turns Vite's HMR off, so `hotUpdate` never runs under it: this
@@ -1079,7 +1081,9 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
           envFilesOf(false).some((name) => normalizePath(path.join(project.root, name)) === file)
         ) {
           if (this.environment.name !== environmentOf.rsc) return [];
-          env = await project.loadEnv();
+          const loaded = envLoad.then(() => project.loadEnv());
+          envLoad = loaded.catch(() => {});
+          env = await loaded;
           for (const environment of Object.values(server?.environments ?? {})) {
             const envModule = environment.moduleGraph.getModuleById(`\0${envId}`);
             if (envModule) environment.moduleGraph.invalidateModule(envModule);

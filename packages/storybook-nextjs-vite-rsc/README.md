@@ -240,8 +240,9 @@ project's test env, Next's env files of its test mode. `storybook dev`
 reads `.env.test.local`, `.env.test` and `.env`, `storybook build` reads
 `.env.test` and `.env`, and no `.local` file. Never `.env.local` or
 `.env.development`, which Storybook loads into its own Node process, and
-no value of the shell. `NEXT_PUBLIC_` variables and `env` of `next.config`
-are in `process.env` too, before the first module of `preview.tsx` runs.
+no value of the shell, unless `env` of `next.config` puts it in.
+`NEXT_PUBLIC_` variables and `env` of `next.config` are in `process.env`
+too, before the first module of `preview.tsx` runs.
 
 `storybook build` puts the values into the static site, which Chromatic
 publishes: keep secrets out of `.env.test` and `.env`. A secret that the

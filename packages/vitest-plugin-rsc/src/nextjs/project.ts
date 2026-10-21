@@ -283,7 +283,16 @@ export async function loadNextProject(
     preview: context.previewProps,
     env: context.env,
     loadEnv: context.loadEnv,
-    config: JSON.parse(JSON.stringify(context.config)),
+    // With the page's values of `env`: the config is evaluated in the host,
+    // whose value of a name of the env files is not the page's.
+    config: JSON.parse(
+      JSON.stringify({
+        ...context.config,
+        env: Object.fromEntries(
+          Object.keys(context.config.env).map((name) => [name, context.env.values[name]]),
+        ),
+      }),
+    ),
     ...layers,
     ...routeEntries(context, app, middleware, builtinBoundaries, runLoader),
     ...compiler,

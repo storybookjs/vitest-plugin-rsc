@@ -110,7 +110,7 @@ test("the page has the env of .env.test.local and .env.test, and nothing of .env
 });
 
 // Not an env file of Vite's mode, which would restart the server: the page
-// loads again, with the dependencies as they were bundled.
+// loads again.
 test("a page story has the new env after a change of .env.test", async ({ page }) => {
   const canvas = await openStory(page, site!.url, "app-page--support-address");
   await mark(canvas);
@@ -125,14 +125,44 @@ test("a page story has the new env after a change of .env.test", async ({ page }
     expect(await marked(canvas)).toBe(false);
     const since = site!.output().slice(logged);
     expect(since).toContain("page reload .env.test (vitest-plugin-rsc: an env file changed)");
-    expect(since).not.toMatch(
-      /optimized dependencies changed|new dependencies optimized|server restarted/,
-    );
+    expect(since).not.toContain("server restarted");
   } finally {
     change(
       ".env.test",
       'SUPPORT_EMAIL="help@notes.example"',
       'SUPPORT_EMAIL="support@notes.example"',
     );
+  }
+});
+
+// An env file of every mode of Vite, which restarts the server for it: the
+// page gets the new env, and the dependencies stay as they were bundled, as
+// no constant of theirs has a value of the env.
+test("a story has the new env after a change of .env, without bundling the dependencies again", async ({
+  page,
+  errors,
+}) => {
+  // The requests of the page that the restart cuts off as it loads the page
+  // again.
+  (errors.ignore ??= []).push(/^requestfailed: .* net::ERR_ABORTED$/);
+  const canvas = await openStory(page, site!.url, "app-page--support-address");
+  const logged = site!.output().length;
+  const file = path.join(copy, ".env");
+  fs.writeFileSync(file, 'SENTINEL_OF_DOT_ENV="of-dot-env"\n');
+  const read = () =>
+    canvas
+      .evaluate(
+        () =>
+          (globalThis as { process?: { env: Record<string, string> } }).process?.env
+            .SENTINEL_OF_DOT_ENV,
+      )
+      .catch(() => undefined);
+  try {
+    await expect.poll(read).toBe("of-dot-env");
+    const since = site!.output().slice(logged);
+    expect(since).toContain("server restarted");
+    expect(since).not.toMatch(/optimized dependencies changed|new dependencies optimized/);
+  } finally {
+    fs.rmSync(file);
   }
 });

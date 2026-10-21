@@ -223,7 +223,14 @@ export async function openNextProject(
   }
   const readEnv = () =>
     readTestEnv(root, { nextEnv, envWorker: options.envWorker, build: !!options.static }).catch(
-      (error: Error) => fail(`@next/env does not parse the env files (${error.message})`, error),
+      (error: Error) => {
+        throw new Error(
+          `vitest-plugin-rsc: the env files of ${root} do not load: ${error.message}`,
+          {
+            cause: error,
+          },
+        );
+      },
     );
   const testEnv = await readEnv();
   // Before the config is loaded, for the names the host's process does not
@@ -232,7 +239,9 @@ export async function openNextProject(
   // them, as it keeps any name of the process. A host that loaded env files
   // of its own before, like `.env.local`, keeps its value of a name that the
   // test env has too: the config is validated with that value, and a config
-  // that reads it gets that one, while the page gets the test env's.
+  // that reads it gets that one, while the page gets the test env's. Where
+  // the host called Next's loader first, the names are not in the snapshot
+  // of the process that it took, and a forced reload of it would drop them.
   for (const [name, value] of Object.entries(testEnv.values)) process.env[name] ??= value;
 
   // The app is served the way a deployment serves it: production Next on its

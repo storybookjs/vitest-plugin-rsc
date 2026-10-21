@@ -83,17 +83,21 @@ function appWith(files: string[], config: object = {}): string {
 
 test("has the test env and env of next.config for the page, and none of it in Next's constants", async () => {
   const app = appWith(["layout.js", "page.js"], {
-    env: { FROM_CONFIG: "config", DATABASE_URL: "of-the-host" },
+    env: { PAGE_ENV_OF_CONFIG: "config", PAGE_ENV_URL: "of-the-host" },
   });
   fs.writeFileSync(
     path.join(app, ".env.test"),
-    "DATABASE_URL=postgres://test\nNEXT_PUBLIC_GREETING=hello\n",
+    "PAGE_ENV_URL=postgres://test\nNEXT_PUBLIC_PAGE_ENV=hello\n",
   );
-  fs.writeFileSync(path.join(app, ".env.local"), "LOCAL_SECRET=local\n");
-  process.env.NEXT_PUBLIC_OF_THE_HOST = "host";
+  fs.writeFileSync(path.join(app, ".env.local"), "PAGE_ENV_SECRET=local\n");
+  process.env.NEXT_PUBLIC_PAGE_ENV_OF_THE_HOST = "host";
   onTestFinished(() => {
     // What the project gave the host's process before its config loaded.
-    for (const name of ["NEXT_PUBLIC_OF_THE_HOST", "DATABASE_URL", "NEXT_PUBLIC_GREETING"]) {
+    for (const name of [
+      "NEXT_PUBLIC_PAGE_ENV_OF_THE_HOST",
+      "PAGE_ENV_URL",
+      "NEXT_PUBLIC_PAGE_ENV",
+    ]) {
       delete process.env[name];
     }
   });
@@ -102,20 +106,25 @@ test("has the test env and env of next.config for the page, and none of it in Ne
 
   expect(project.env).toEqual({
     values: {
-      FROM_CONFIG: "config",
-      DATABASE_URL: "postgres://test",
-      NEXT_PUBLIC_GREETING: "hello",
+      PAGE_ENV_OF_CONFIG: "config",
+      PAGE_ENV_URL: "postgres://test",
+      NEXT_PUBLIC_PAGE_ENV: "hello",
     },
     files: [".env.test"],
-    configNames: ["FROM_CONFIG"],
+    configNames: ["PAGE_ENV_OF_CONFIG"],
   });
   for (const layer of ["rsc", "ssr", "browser"] as const) {
     const names = Object.keys(project.defines[layer]);
-    expect(names.filter((name) => /NEXT_PUBLIC_|FROM_CONFIG|DATABASE_URL/.test(name))).toEqual([]);
+    expect(names.filter((name) => /PAGE_ENV/.test(name))).toEqual([]);
   }
+  // The config that the layers get has the page's values of its `env`.
+  expect(project.config.env).toEqual({
+    PAGE_ENV_OF_CONFIG: "config",
+    PAGE_ENV_URL: "postgres://test",
+  });
   // Before the config, for the names the host's process did not have.
-  expect(process.env.DATABASE_URL).toBe("postgres://test");
-  expect(process.env.LOCAL_SECRET).toBeUndefined();
+  expect(process.env.PAGE_ENV_URL).toBe("postgres://test");
+  expect(process.env.PAGE_ENV_SECRET).toBeUndefined();
 });
 
 test("lists a route handler and a metadata file next to a catch-all page of a slot", async () => {

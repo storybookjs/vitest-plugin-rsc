@@ -5,7 +5,8 @@ import type { Frame } from "playwright";
 // A value in each env file of a copy of the project, and one in the shell of
 // its Storybook: which of them the page has says which files were read
 // (docs/next-routes.md, "Environment Variables"). `.env.local` has a name of
-// `.env.test` too, as a machine has its real database next to the test one.
+// `.env.test` too, as a machine has its real database next to the test one,
+// and so does the shell, which Next would prefer to the files.
 // And a module that the preview imports first, which reads `process.env` as
 // it evaluates.
 
@@ -18,8 +19,8 @@ export const sentinels = {
   shell: "sentinel-of-the-shell",
 };
 
-/** The env of the shell that runs the Storybook. */
-export const shellEnv = { SECRET_TOKEN: sentinels.shell };
+/** The env of the shell that runs the Storybook: a name that no file has, and one that `.env.test` has. */
+export const shellEnv = { SECRET_TOKEN: sentinels.shell, SENTINEL: sentinels.shell };
 
 export function writeEnvFiles(copy: string): void {
   const write = (file: string, lines: string[]) =>
