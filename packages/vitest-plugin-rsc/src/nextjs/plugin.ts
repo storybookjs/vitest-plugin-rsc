@@ -278,6 +278,14 @@ function createLayerResolver(getProject: () => NextProject, layer: NextLayer) {
     const cached = normalized.get(source);
     if (cached !== undefined) return cached;
 
+    // A module of Node.js in the server layers: the package's own, before
+    // any alias of Next's for it, see node-builtins.ts. The browser layer
+    // gets Next's, as in Next.
+    const own = layer !== "browser" ? nodeModuleOf(source) : undefined;
+    if (own) {
+      normalized.set(source, own);
+      return own;
+    }
     let current: string | false = source;
     for (let i = 0; i < 10 && current; i++) {
       const bridge = bridgeOf(current);
@@ -300,10 +308,6 @@ function createLayerResolver(getProject: () => NextProject, layer: NextLayer) {
       if (next === undefined || next === current) break;
       current = next;
     }
-    // A module of Node.js that the server layers still import: the
-    // package's own, see node-builtins.ts. The browser layer gets none, as
-    // in Next.
-    if (layer !== "browser" && current) current = nodeModuleOf(current) ?? current;
     normalized.set(source, current);
     return current;
   }

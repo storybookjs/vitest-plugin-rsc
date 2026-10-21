@@ -1,5 +1,4 @@
 import fs from "node:fs";
-import { isBuiltin } from "node:module";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { init as initCjsLexer, parse as parseCjs } from "cjs-module-lexer";
@@ -133,9 +132,6 @@ export async function layerTables(context: NextContext, build: NextBuild) {
       reactProductionProfiling: false,
     });
     for (const [key, target] of Object.entries(base)) {
-      // Not a module of Node.js in the server layers, like Next's `url` for
-      // its edge runtime: those are the package's (nextjs/node-builtins.ts).
-      if (layer !== "browser" && isBuiltin(key.replace(/\$$/, ""))) continue;
       // An array is a list of candidates: the user's file, then a fallback.
       aliases[key] = Array.isArray(target)
         ? (target.find((candidate) =>

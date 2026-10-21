@@ -280,6 +280,26 @@ ${ofNames(exportsOf(name), (key) => `own.${key} ?? missing("${name}.${key}")`)}
 `,
     ]),
   ),
+  // The util package's predicates, which unenv's throw for, with unenv's
+  // for what the package lacks: \`node:util\`'s \`types\` too, through unenv.
+  "util/types": () => `${header}
+// \`node:util/types\`: the util package's, Node's own for a browser, where
+// unenv's throw, like \`isUint8Array()\`; unenv's for the rest.
+import unenv from "unenv/node/util/types";
+import own from "util/support/types.js";
+
+const types: Record<string, any> = { ...unenv, ...own };
+export default types;
+${ofNames(exportsOf("util/types"), (name) => `types.${name}`)}
+`,
+  // Node's old name of util.
+  sys: () => `${header}
+// \`node:sys\`: \`util\` by its old name, the package's own.
+import util from "vitest-plugin-rsc/node/util";
+
+export * from "vitest-plugin-rsc/node/util";
+export default util;
+`,
   events: () => `${header}
 // \`node:events\` for a browser: the events package, the EventEmitter of
 // Node.js for a browser. readable-stream calls it as a function,

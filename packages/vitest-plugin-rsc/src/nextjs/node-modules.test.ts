@@ -296,6 +296,16 @@ test("`timers` hands a callback its arguments, as Node.js does", async () => {
   expect(got).toBe("payload");
 });
 
+test("`util.types`, `isDeepStrictEqual` and `promisify.custom` are Node's", async () => {
+  expect(util.types.isUint8Array(new Uint8Array())).toBe(true);
+  expect(util.types.isPromise(Promise.resolve())).toBe(true);
+  expect(util.isDeepStrictEqual(new Map([["a", 1]]), new Map([["a", 2]]))).toBe(false);
+  expect(util.isDeepStrictEqual({ a: [1] }, { a: [1] })).toBe(true);
+  expect(promisify.custom).toBe(Symbol.for("nodejs.util.promisify.custom"));
+  const custom = Object.assign(() => {}, { [promisify.custom]: async () => "custom" });
+  expect(await (promisify(custom) as () => Promise<string>)()).toBe("custom");
+});
+
 test("`util` inspects and formats as Node.js does, and has Node's helpers", () => {
   expect(typeof callbackify(async () => 3)).toBe("function");
   expect(isObject(Object.create(null))).toBe(true);

@@ -1,16 +1,17 @@
-// The modules of Node.js that the server layers import and that neither
-// Next's aliases (project/layers.ts) nor node-platform.ts stand in for. A
-// browser has none of them, and Vite gives each a module without its exports.
+// The modules of Node.js that the server layers import. A browser has none
+// of them, and Vite gives each a module without its exports.
 //
 // The package ships a module of its own for each, `vitest-plugin-rsc/node/<name>`
 // in src/node/, which scripts/node-modules.ts writes, built to one file of
-// its own in dist/node/ with memfs or unenv in it:
+// its own in dist/node/ with memfs, unenv or another package in it:
 //
 // - `fs` and `fs/promises`: a disk in memory, memfs, that `cleanup()`
 //   empties. See disk.ts.
 // - `process`: the page's, which globals.ts makes Next's server's, and
 //   unenv's for what it lacks.
-// - `crypto`: Web Crypto, a SHA-256 of its own, and the rest unenv's.
+// - Written by hand where unenv's is not enough, with Node's own code as
+//   a package: `assert`, `crypto`, `path`, `stream`, `stream/promises`,
+//   `string_decoder`, `timers`, `timers/promises` and `util`.
 // - The others: unenv's, made of what a browser has, like Web Crypto,
 //   `Uint8Array` and `URL`. What it has no stand-in for throws once called,
 //   or answers like a machine without it would: `os.hostname()` is "".
@@ -63,6 +64,13 @@ export function nodeModuleOf(source: string): string | undefined {
   const name = source.replace(/^node:/, "");
   if (notHere.has(name)) return;
   if (!files.has(name)) {
+    // Without a build the layer would get Vite's empty module, and nothing
+    // would say why.
+    if (!fs.existsSync(nodeDir)) {
+      throw new Error(
+        `vitest-plugin-rsc: no ${nodeDir}, the package is not built: run \`pnpm build\``,
+      );
+    }
     const file = `${nodeDir}${name}${extension}`;
     files.set(name, fs.existsSync(file) ? file : undefined);
   }

@@ -48,6 +48,15 @@ declare module "readable-stream" {
   export default Stream;
 }
 
+declare module "assert/build/internal/util/comparisons.js" {
+  export const isDeepStrictEqual: typeof import("node:util").isDeepStrictEqual;
+}
+
+declare module "util/support/types.js" {
+  const types: typeof import("node:util").types;
+  export default types;
+}
+
 declare module "string_decoder/lib/string_decoder.js" {
   export const StringDecoder: typeof import("node:string_decoder").StringDecoder;
 }

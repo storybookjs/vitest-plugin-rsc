@@ -173,12 +173,13 @@ export default defineConfig([
     // What is in a file, and nothing else on an upgrade: memfs, unenv and
     // readable-stream with what they depend on. The package's own by name
     // stays an import. The assert and util packages depend on a tree of
-    // small packages that changes with their versions: those two files take
+    // small packages that changes with their versions: those files take
     // all of theirs, which the licenses file lists.
     deps: {
       neverBundle: [/^vitest-plugin-rsc\//],
       ...(name !== "assert" &&
-        name !== "util" && {
+        name !== "util" &&
+        name !== "util/types" && {
           onlyBundle: [
             "memfs",
             /^@jsonjoy\.com\//,
