@@ -36,7 +36,7 @@ export const beforeEach: BeforeEach<ReactRenderer> = async ({ parameters, abortS
   if (renders.has(abortSignal)) return;
   renders.add(abortSignal);
   abortSignal.addEventListener("abort", keepHostDocument(navigated), { once: true });
-  const files = hostFilesOf(parameters.fileName as string);
+  const files = hostFilesOf(parameters.fileName as string | undefined);
   if (files) await linkStylesheetsOf(files, { signal: abortSignal });
 };
 

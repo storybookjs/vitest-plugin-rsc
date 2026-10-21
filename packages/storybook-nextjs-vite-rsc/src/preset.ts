@@ -89,6 +89,14 @@ const runtimePackages = [
 // this list with those of the other presets.
 export const optimizeViteDeps = runtimePackages;
 
+// Storybook's builder puts its own runtime in place of the packages of its
+// globals, with this plugin. Where it does not, under Storybook's Vitest
+// addon, which applies the presets without it, the packages are pre-bundled
+// too: the browser layer imports them through the page (`hostOf()`), which
+// no scan reads either. Not by the environment of the process: `storybook
+// dev`, which the addon can start, has Vitest's.
+const externalGlobalsPlugin = "storybook:external-globals-plugin";
+
 export const viteFinal: ViteFinal = async (config, options) => {
   const plugins = config.plugins ?? [];
   if (
@@ -102,8 +110,15 @@ export const viteFinal: ViteFinal = async (config, options) => {
   const { build, browserModules } =
     (await options.presets.apply<FrameworkOptions | undefined>("frameworkOptions")) ?? {};
   const host = await hostOf(options);
+  const globals = (await hasVitePlugins(plugins, [externalGlobalsPlugin]))
+    ? []
+    : Object.keys(globalsNameReferenceMap);
   return {
     ...config,
+    optimizeDeps: {
+      ...config.optimizeDeps,
+      include: [...(config.optimizeDeps?.include ?? []), ...globals],
+    },
     plugins: [...plugins, vitestPluginRSC(), vitestPluginNext({ build, browserModules, host })],
   };
 };
@@ -136,6 +151,10 @@ async function hostOf(options: Options) {
       ...Object.keys(globalsNameReferenceMap),
       ...runtimePackages,
       ...new Set(annotations.flatMap(addonOf)),
+      // Under Storybook's Vitest addon, which makes a story file a test file
+      // that imports the addon's runner of a story, in both layers. Nothing
+      // where the project does not have it.
+      "@storybook/addon-vitest",
     ],
   };
 }

@@ -622,6 +622,9 @@ importers:
       '@storybook/addon-docs':
         specifier: https://pkg.pr.new/storybookjs/storybook/@storybook/addon-docs@e1d3d410e8e721213d687df093ffda5464ccc086
         version: https://pkg.pr.new/storybookjs/storybook/@storybook/addon-docs@e1d3d410e8e721213d687df093ffda5464ccc086(@types/react@19.2.14)(storybook@https://pkg.pr.new/storybookjs/storybook/storybook@e1d3d410e8e721213d687df093ffda5464ccc086(@types/react@19.2.14)(react@19.2.6))
+      '@storybook/addon-vitest':
+        specifier: https://pkg.pr.new/storybookjs/storybook/@storybook/addon-vitest@e1d3d410e8e721213d687df093ffda5464ccc086
+        version: https://pkg.pr.new/storybookjs/storybook/@storybook/addon-vitest@e1d3d410e8e721213d687df093ffda5464ccc086(@vitest/browser-playwright@5.0.5)(@vitest/browser@5.0.5)(react@19.2.6)(storybook@https://pkg.pr.new/storybookjs/storybook/storybook@e1d3d410e8e721213d687df093ffda5464ccc086(@types/react@19.2.14)(react@19.2.6))(vitest@5.0.5)
       '@storybook/nextjs-vite-rsc':
         specifier: workspace:*
         version: link:../../packages/storybook-nextjs-vite-rsc
@@ -3015,6 +3018,22 @@ packages:
       storybook: ^11.0.0-alpha.6
     peerDependenciesMeta:
       '@types/react':
+        optional: true
+
+  '@storybook/addon-vitest@https://pkg.pr.new/storybookjs/storybook/@storybook/addon-vitest@e1d3d410e8e721213d687df093ffda5464ccc086':
+    resolution: {integrity: sha512-59OsQIbUEO0idykR/YW4y60Mbrn6GU2PPSelDlrjL1CBYWYVzZ0RagfZdcmOQvWoJS8236roDCjod2ON+p5cCQ==, tarball: https://pkg.pr.new/storybookjs/storybook/@storybook/addon-vitest@e1d3d410e8e721213d687df093ffda5464ccc086}
+    version: 11.0.0-alpha.6
+    peerDependencies:
+      '@vitest/browser': ^4.0.0 || ^5.0.0
+      '@vitest/browser-playwright': ^4.0.0 || ^5.0.0
+      storybook: ^11.0.0-alpha.6
+      vitest: ^4.0.0 || ^5.0.0
+    peerDependenciesMeta:
+      '@vitest/browser':
+        optional: true
+      '@vitest/browser-playwright':
+        optional: true
+      vitest:
         optional: true
 
   '@storybook/builder-vite@https://pkg.pr.new/storybookjs/storybook/@storybook/builder-vite@e1d3d410e8e721213d687df093ffda5464ccc086':
@@ -8311,6 +8330,18 @@ snapshots:
       unplugin: 2.3.11
     optionalDependencies:
       '@types/react': 19.2.14
+
+  '@storybook/addon-vitest@https://pkg.pr.new/storybookjs/storybook/@storybook/addon-vitest@e1d3d410e8e721213d687df093ffda5464ccc086(@vitest/browser-playwright@5.0.5)(@vitest/browser@5.0.5)(react@19.2.6)(storybook@https://pkg.pr.new/storybookjs/storybook/storybook@e1d3d410e8e721213d687df093ffda5464ccc086(@types/react@19.2.14)(react@19.2.6))(vitest@5.0.5)':
+    dependencies:
+      '@storybook/global': 5.0.0
+      '@storybook/icons': 2.2.0(react@19.2.6)
+      storybook: https://pkg.pr.new/storybookjs/storybook/storybook@e1d3d410e8e721213d687df093ffda5464ccc086(@types/react@19.2.14)(react@19.2.6)
+    optionalDependencies:
+      '@vitest/browser': 5.0.5(msw@2.14.6(@types/node@24.12.4)(typescript@6.0.3))(vite@8.3.1(@types/node@24.12.4)(esbuild@0.27.7)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))(vitest@5.0.5)
+      '@vitest/browser-playwright': 5.0.5(msw@2.14.6(@types/node@24.12.4)(typescript@6.0.3))(playwright@1.64.1)(vite@8.3.1(@types/node@24.12.4)(esbuild@0.27.7)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))(vitest@5.0.5)
+      vitest: 5.0.5(@opentelemetry/api@1.9.1)(@types/node@24.12.4)(@vitest/browser-playwright@5.0.5)(@vitest/coverage-v8@5.0.5)(@vitest/ui@5.0.5)(msw@2.14.6(@types/node@24.12.4)(typescript@6.0.3))(vite@8.3.1(@types/node@24.12.4)(esbuild@0.27.7)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))
+    transitivePeerDependencies:
+      - react
 
   '@storybook/builder-vite@https://pkg.pr.new/storybookjs/storybook/@storybook/builder-vite@e1d3d410e8e721213d687df093ffda5464ccc086(storybook@https://pkg.pr.new/storybookjs/storybook/storybook@e1d3d410e8e721213d687df093ffda5464ccc086(@types/react@19.2.14)(react@19.2.6))(vite@8.3.1(@types/node@24.12.4)(esbuild@0.27.7)(jiti@2.7.0)(tsx@4.21.0)(yaml@2.9.0))':
     dependencies:

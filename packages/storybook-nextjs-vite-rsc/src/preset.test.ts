@@ -148,8 +148,13 @@ test("the plugin, with Storybook as its host", async () => {
       "storybook/open-service",
     ]),
   );
+  // And Storybook's Vitest addon, whose runner of a story a story file
+  // imports in both layers under it.
   const addons = host.packages.filter((name) => name.startsWith("@storybook/"));
-  expect(addons.filter((name) => name !== "@storybook/global")).toEqual(["@storybook/addon-a11y"]);
+  expect(addons.filter((name) => name !== "@storybook/global")).toEqual([
+    "@storybook/addon-a11y",
+    "@storybook/addon-vitest",
+  ]);
 });
 
 test("Storybook's packages that the layers share and its builder has no global for are pre-bundled first", async () => {
@@ -158,6 +163,23 @@ test("Storybook's packages that the layers share and its builder has no global f
   const globals = Object.keys(globalsNameReferenceMap);
   const runtime = host.packages.filter((name) => name.startsWith("storybook/"));
   expect(preset.optimizeViteDeps).toEqual(runtime.filter((name) => !globals.includes(name)));
+});
+
+test("the packages of the globals are pre-bundled too where Storybook's builder does not put its runtime in their place", async () => {
+  const globals = Object.keys(globalsNameReferenceMap);
+  type Config = { optimizeDeps: { include: string[] } };
+  // Storybook's builder, under `storybook dev` also when Vitest started it.
+  const builder = { name: "storybook:external-globals-plugin" };
+  const inStorybook = (await viteFinal({
+    plugins: [[Promise.resolve(builder)]],
+    optimizeDeps: { include: ["a"] },
+  })) as unknown as Config;
+  expect(inStorybook.optimizeDeps.include).toEqual(["a"]);
+  // Storybook's Vitest addon, which applies the presets without it.
+  const underTheAddon = (await viteFinal({
+    optimizeDeps: { include: ["a"] },
+  })) as unknown as Config;
+  expect(underTheAddon.optimizeDeps.include).toEqual(["a", ...globals]);
 });
 
 test("a stories glob at the root of the project matches its files only", async () => {

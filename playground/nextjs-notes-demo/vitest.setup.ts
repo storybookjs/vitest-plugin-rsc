@@ -4,6 +4,14 @@ import { setupWorker } from "msw/browser";
 import * as dbModule from "#lib/db.ts";
 import { nextCacheProbeFetchHandler } from "#components/next-cache-msw.ts";
 import { TEST_NOW } from "#test/now.ts";
+import type { NextBuild } from "vitest-plugin-rsc/nextjs/plugin";
+
+declare module "vitest" {
+  interface ProvidedContext {
+    // The `build` option of the plugin: see vitest.config.ts.
+    build: NextBuild;
+  }
+}
 
 // The one module the tests mock: the database, which is the app's Postgres,
 // and a PGlite in memory here. Everything else of the app is real: Better

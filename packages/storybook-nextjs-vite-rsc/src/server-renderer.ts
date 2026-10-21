@@ -69,12 +69,16 @@ export const renderToCanvas: RenderToCanvas<NextjsServerRenderer> = async (
           headers,
           proxy,
           signal,
-          hostFiles: hostFilesOf(context.parameters.fileName as string),
+          hostFiles: hostFilesOf(context.parameters.fileName as string | undefined),
           ...(layouts ? { layouts } : { container: canvasElement }),
         })
       : await renderServer({ url, headers, proxy, signal });
     opened.set(id, open);
   }
+  // A story that owns the document has its `<body>` as its canvas, which
+  // Storybook's preview gives it. A portable story, as under Vitest, renders
+  // in a container of its own, which the page took the place of.
+  if (context.parameters.layout === "document") context.canvasElement = document.body;
   // The page reports to one list of errors while it is open.
   if (open.errors.length > 0) throw open.errors[0];
   // Storybook's preparing block stays over the document until the story
