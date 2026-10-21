@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { createServer, type EnvironmentModuleNode, type Plugin } from "vite";
 import { expect, onTestFinished, test, vi } from "vitest";
+import type { TestFilesApi } from "../test-file-references.ts";
 import { hostModulePrefix, isHostModule } from "../host-module.ts";
 import {
   clientFiles,
@@ -20,9 +21,9 @@ const testingLibrary = {
 // file, the files of a framework in `node_modules` and the `.mdx` files of
 // `docs/`, and whose host has the packages of Vitest.
 const framework = "/node_modules/framework/dist";
+const isTestFile = (file: string) => /\.test\.tsx$|\/vitest\.setup\.tsx?$/.test(file);
 const isHostFile = (file: string) =>
-  /\.test\.tsx$|\/vitest\.setup\.tsx?$|^\/docs\/.*\.mdx$/.test(file) ||
-  file.startsWith(`${framework}/`);
+  isTestFile(file) || /^\/docs\/.*\.mdx$/.test(file) || file.startsWith(`${framework}/`);
 // Vite RSC made the modules of these files client references: they have
 // `"use client"`. `/app/counter.tsx` is a file of the app, not the host's.
 // The URL of a file of the project in the browser layer is its path. One of
@@ -54,6 +55,7 @@ const [plugin, loaders] = clientFiles({
   clientComponents: "vitest-plugin-rsc/nextjs/client-components",
   internal: "/plugin/nextjs/internal.js",
   isHostFile,
+  isTestFile,
   isHostPackage: (specifier) => /^vitest(\/|$)|^@vitest\//.test(specifier),
   clientReferenceOf,
 }) as [Plugin, Plugin];
@@ -230,6 +232,29 @@ test("loads a file of the host in `node_modules` that has Vite's version query",
   ).rejects.toThrow(`${framework}/client-story.js calls vi.mock()`);
 });
 
+test("says which modules are Vitest's files, whose reference Vite RSC makes last", () => {
+  const { isModuleOfTestFile } = plugin.api as TestFilesApi;
+  expect(isModuleOfTestFile("/app/frame.test.tsx")).toBe(true);
+  expect(isModuleOfTestFile("/vitest.setup.tsx")).toBe(true);
+  // A file of the app, another module of a test file, and a file of another
+  // host, whose reference module the host compiles.
+  expect(isModuleOfTestFile("/app/counter.tsx")).toBe(false);
+  expect(isModuleOfTestFile("/app/frame.test.tsx?import")).toBe(false);
+  expect(isModuleOfTestFile(`${framework}/client-story.js?v=1a2b3c4d`)).toBe(false);
+});
+
+test("says so when vitestPluginRSC() comes after it, whose reference of a test file would then get no line", () => {
+  const configResolved = loaders.configResolved as unknown as (config: {
+    plugins: { name: string }[];
+  }) => void;
+  const plugins = (...names: string[]) => ({ plugins: names.map((name) => ({ name })) });
+  const reference = "rsc:use-client:test-files";
+  expect(() => configResolved(plugins(reference, loaders.name))).not.toThrow();
+  expect(() => configResolved(plugins(loaders.name, reference))).toThrow(
+    "vitestPluginNext() needs vitestPluginRSC() before it",
+  );
+});
+
 test("leaves the code of a file with the directive to Vite RSC, which makes it a reference", async () => {
   const code = `"use client";
 import { test } from "vitest";
@@ -376,6 +401,7 @@ async function serveHostFile() {
     clientComponents: "vitest-plugin-rsc/nextjs/client-components",
     internal: at("internal.ts"),
     isHostFile: (file) => file === at("host.tsx"),
+    isTestFile: () => false,
     isHostPackage: () => false,
     clientReferenceOf: (id) => (id === at("host.tsx") ? { referenceKey: "/host.tsx" } : undefined),
   });

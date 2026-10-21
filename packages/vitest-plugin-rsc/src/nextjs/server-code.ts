@@ -263,6 +263,11 @@ export function createServerCode(registry: string, options: ServerCodeOptions = 
     file = normalizePath(file);
     return isOwnFileOfHost(file) || testFileMatchers.some((matches) => matches(file));
   }
+  /** Whether a file is a test file or a setup file of Vitest. */
+  function isTestFile(file: string): boolean {
+    file = normalizePath(file);
+    return testFileMatchers.some((matches) => matches(file));
+  }
   // Whether anything says which files are the host's.
   const knowsHostFiles = () => hostFiles.length > 0 || testFileMatchers.length > 0;
 
@@ -335,6 +340,7 @@ export function createServerCode(registry: string, options: ServerCodeOptions = 
   return {
     isServerCode,
     isHostFile,
+    isTestFile,
     /**
      * Whether an import is of a package of the host, by its name: `vitest`,
      * `vitest/browser`, `@vitest/spy`. Not what such a package depends on.

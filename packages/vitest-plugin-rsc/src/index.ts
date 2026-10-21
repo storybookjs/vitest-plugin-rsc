@@ -5,6 +5,7 @@ import { dependencyTransformPlugin } from "./dependency-transforms.ts";
 import { changedAfter, versionOf } from "./module-versions.ts";
 import { createRunnerEnvironmentPlugins } from "./runner-environment.ts";
 import { staticBuild } from "./static-build.ts";
+import { referencingTestFilesLast } from "./test-file-references.ts";
 import { pageViteClientPlugin } from "./vite-client.ts";
 import {
   answerEvent,
@@ -54,13 +55,15 @@ const encryptionKey = JSON.stringify("dml0ZXN0LXBsdWdpbi1yc2MtZW5jcnlwdGlvbi1rZX
 export function vitestPluginRSC(): Plugin[] {
   return [
     pageViteClientPlugin(),
-    ...vitePluginRscMinimal({
-      environment: {
-        browser: "react_client",
-        rsc: "client",
-      },
-      defineEncryptionKey: encryptionKey,
-    }),
+    ...referencingTestFilesLast(
+      vitePluginRscMinimal({
+        environment: {
+          browser: "react_client",
+          rsc: "client",
+        },
+        defineEncryptionKey: encryptionKey,
+      }),
+    ),
     // `vite build`, and what a dev server has instead: see static-build.ts.
     staticBuild({
       rsc: "client",
