@@ -1,5 +1,6 @@
 import {
   resolveRoutes,
+  responseToMiddlewareResult,
   type MiddlewareContext,
   type MiddlewareResult,
   type ResolveRoutesResult,
@@ -52,6 +53,30 @@ export function resolve(
     routes: proxy ? routing.routes : routing.appRoutes,
     invokeMiddleware,
   });
+}
+
+/**
+ * What the middleware did with a request, read off its `response`, with the
+ * `headers` and the `url` it got the request with: as `next start` reads it.
+ *
+ * That is `responseToMiddlewareResult()` of `@next/routing`, but for a
+ * response with a `Location` header and a status that is no redirect. Next's
+ * own server in front of the app, `resolveRoutes()` of
+ * `next/dist/server/lib/router-utils/resolve-routes`, answers with that
+ * response, its status and its body: the middleware answered itself. The
+ * function of `@next/routing` keeps the header for the response, and says
+ * neither a redirect nor `bodySent`, so its `resolveRoutes()` takes the
+ * request on to a route. It leaves out such a response where it marks one
+ * that answers itself, with `x-middleware-refresh`, as Next does, and only
+ * Next's server has the branch that ends the request for it.
+ */
+export function middlewareResult(response: Response, headers: Headers, url: URL): MiddlewareResult {
+  const result = responseToMiddlewareResult(response, headers, url);
+  // With a redirect status, the header is a redirect.
+  if (result.bodySent || result.redirect || !response.headers.has("location")) return result;
+  // A rewrite to another server goes there, in Next's server too.
+  if (result.rewrite && result.rewrite.origin !== url.origin) return result;
+  return { ...result, bodySent: true };
 }
 
 // What the resolution answers with a redirect: one of `next.config`, of the

@@ -3,6 +3,7 @@
 /// <reference types="vite/types/importMeta.d.ts" />
 import { leftTheApp } from "./app-requests.ts";
 import { documentUrl } from "./document.ts";
+import { enctypeOf, formBody } from "./form-submission.ts";
 import { noRouter, type NavigateEvent } from "./host-document.ts";
 import { currentPage, leavePage, navigate } from "./page.ts";
 import type { PageStore } from "./page-store.ts";
@@ -52,7 +53,8 @@ function reloadsDocument(path: string | undefined): boolean {
  * downloads what a browser would.
  */
 export function followNavigation(event: Event, from: PageStore): void {
-  const { destination, hashChange, formData, downloadRequest } = event as NavigateEvent;
+  const { destination, hashChange, formData, downloadRequest, navigationType, sourceElement } =
+    event as NavigateEvent;
   // A navigation of Next's router on the client, in the layouts of a route,
   // to another pathname takes the place of the node, also of one that has
   // not hydrated yet, which no effect of it would say.
@@ -87,9 +89,14 @@ export function followNavigation(event: Event, from: PageStore): void {
   }
   navigate(
     url,
-    { method: formData ? "POST" : "GET", headers: { accept: "text/html" }, body: formData },
+    {
+      method: formData ? "POST" : "GET",
+      headers: { accept: "text/html" },
+      body: formData && formBody(formData, enctypeOf(sourceElement)),
+    },
     downloadRequest,
     from,
+    navigationType === "push",
   ).catch((error: unknown) => {
     // The test, or a navigation after this one, moved on before it was done.
     if (!(error instanceof DOMException && error.name === "AbortError")) reportError(error);

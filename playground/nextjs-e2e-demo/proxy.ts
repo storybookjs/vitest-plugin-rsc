@@ -20,6 +20,10 @@ export async function proxy(request: NextRequest) {
 
   // Answers the request itself.
   if (pathname === "/proxy/ping") return NextResponse.json({ pong: true });
+  // With a `Location` header that is no redirect: the status is not one.
+  if (pathname === "/proxy/located") {
+    return NextResponse.json({ pong: true }, { headers: { location: "https://example.com/ping" } });
+  }
   if (pathname === "/proxy/broken") throw new Error("The proxy is down");
 
   // Serves another route at this URL.

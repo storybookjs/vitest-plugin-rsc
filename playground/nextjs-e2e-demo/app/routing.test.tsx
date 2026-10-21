@@ -277,6 +277,14 @@ test("answers with what the proxy responds itself", async () => {
   expect(await response.json()).toEqual({ pong: true });
 });
 
+test("answers with what the proxy responds itself with a Location header, as next start does", async () => {
+  const response = await handleRequest("/proxy/located");
+
+  expect(response.status).toBe(200);
+  expect(response.headers.get("location")).toBe("https://example.com/ping");
+  expect(await response.json()).toEqual({ pong: true });
+});
+
 test("gives the app the headers and the cookies the proxy sets", async () => {
   await signInAs("ada");
 

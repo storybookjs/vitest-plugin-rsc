@@ -120,6 +120,11 @@ export type NextRegistry = {
   loadMiddleware(): Promise<MiddlewareHandler>;
   /** Whether an id names a Server Action of the app, in the rsc layer. */
   hasServerAction(id: string): Promise<boolean>;
+  /**
+   * The id of the plugin's own Server Action, which every app here has: the
+   * one of `runInServerAction()`, in the rsc layer.
+   */
+  ownServerAction?: string;
   /** What the Server Action of `runInServerAction()` runs, by the number it is called with. */
   serverActions: Map<number, () => Promise<void>>;
   /**

@@ -1,4 +1,3 @@
-import { responseToMiddlewareResult } from "@next/routing";
 import {
   NEXT_REWRITTEN_PATH_HEADER,
   NEXT_REWRITTEN_QUERY_HEADER,
@@ -11,6 +10,7 @@ import { normalizeNextQueryParam } from "next/dist/server/web/utils";
 import { getRouteMatcher } from "next/dist/shared/lib/router/utils/route-matcher";
 import { getRouteRegex } from "next/dist/shared/lib/router/utils/route-regex";
 import { routes as allRoutes, routing } from "virtual:vitest-plugin-rsc/next-manifest";
+import { actionIdsOf } from "./action-ids.ts";
 import { shareIncrementalCache } from "./cache.ts";
 import { registerModuleLoader } from "./client-modules.ts";
 import {
@@ -27,7 +27,13 @@ import {
   type RequestHandler,
   type ServerRequest,
 } from "./registry.ts";
-import { incoming, redirectStatus, resolve, type InvokeMiddleware } from "./server-in-front.ts";
+import {
+  incoming,
+  middlewareResult,
+  redirectStatus,
+  resolve,
+  type InvokeMiddleware,
+} from "./server-in-front.ts";
 
 export { resetCaches } from "./cache.ts";
 
@@ -320,18 +326,26 @@ function nodeRouteFor(opened: Opened | undefined, matched: Route | undefined): R
   return withLayouts;
 }
 
-// Next's build lists every Server Action. Here the only one to list is the
-// one a request calls, if the app has it. Next copies the list, so it cannot
-// answer for any id, and answers 409 for one that is not in it.
-async function serverActionsOf(method: string, headers: Headers): Promise<object> {
-  const actionId = method === "POST" ? headers.get("next-action") : null;
-  if (!actionId || !(await registry.hasServerAction(actionId))) return {};
-  return {
-    [actionId]: {
-      workers: anyKey(() => ({ moduleId: actionModulePrefix + actionId, async: true })),
-      layer: {},
-    },
-  };
+// Next's build lists every Server Action. Here the ones to list are the ones
+// a request calls, if the app has them: see action-ids.ts. Next copies the
+// list, so it cannot answer for any id. It answers 400 for an id that cannot
+// be one, and 409 for one that is not in the list. For an app without a
+// Server Action it answers before it looks at the id, but the app here always
+// has one: the plugin's own, which is in the list too.
+async function serverActionsOf(request: ServerRequest): Promise<object> {
+  const ids = new Set(registry.ownServerAction ? [registry.ownServerAction] : []);
+  for (const id of await actionIdsOf(request)) {
+    if (await registry.hasServerAction(id)) ids.add(id);
+  }
+  return Object.fromEntries(
+    Array.from(ids, (id) => [
+      id,
+      {
+        workers: anyKey(() => ({ moduleId: actionModulePrefix + id, async: true })),
+        layer: {},
+      },
+    ]),
+  );
 }
 
 async function handle(
@@ -409,7 +423,7 @@ async function handle(
       } finally {
         endMiddlewareScope();
       }
-      const result = responseToMiddlewareResult(response, target.headers, target.url);
+      const result = middlewareResult(response, target.headers, target.url);
       if (result.bodySent) responded = response;
       else headers = result.requestHeaders ?? headers;
       return result;
@@ -499,7 +513,7 @@ async function handle(
       return finishWithBody(request, response, endRequest, cookiesOf(routedHeaders));
     }
 
-    setServerActions(await serverActionsOf(request.method, headers));
+    setServerActions(await serverActionsOf(routed));
     // Next's build also lists the CSS files of every segment, and Next reads
     // that list before it loads the module of a segment, which it does as it
     // renders. So they are asked for before it renders, as the entry of the
