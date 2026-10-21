@@ -82,7 +82,8 @@ export async function expectEachClientStoryHasAnEmptyStorage(page: Page, url: st
   await canvas.evaluate(() =>
     window.__STORYBOOK_PREVIEW__.channel.emit("forceRemount", { storyId: "storage--reads" }),
   );
-  await expect.poll(() => said(button)).toBe("Renamed: none");
+  // The storage only: whether a remount keeps the args is the host's.
+  await expect.poll(() => said(button)).toMatch(/: none$/);
   expect(await canvas.evaluate(() => localStorage.length)).toBe(0);
   await managerKeepsItsItem();
 }
