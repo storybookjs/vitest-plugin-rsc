@@ -650,7 +650,7 @@ Everything else in that environment is server code, including a module that only
 Code checks `typeof window` for one of two reasons, and they need opposite answers here.
 
 - **Role.** The code wants to know whether it is the server side of this app. `@t3-oss/env-core` asks, and only hands out a server variable if the answer is yes. `next-themes` asks, and reads no theme from storage on the server. The answer has to be: you are the server.
-- **Capability.** The code wants to know whether there is a DOM it can work on. Testing Library asks before it binds `screen` to `document.body`. The answer has to be the truth: you are in a browser. The exception is a module that also gets by without a DOM. PGlite asks in order to pick how it loads, is told it is not in a browser, and works all the same.
+- **Capability.** The code wants to know whether there is a DOM it can work on. Testing Library asks before it binds `screen` to `document.body`. The answer has to be the truth: you are in a browser. The exception is a module that also gets by without a DOM: told it is on a server, it works all the same.
 
 Nothing in the code says which of the two a module means. So every other module in the `rsc` environment gets the first answer, and `browserModules` lists the ones that need the second:
 
@@ -673,7 +673,7 @@ When you do not:
 - A helper or a package that touches `document` without checking first. Only `typeof` is replaced.
 - The locators, `userEvent` and `expect.element` from `vitest/browser`, and the rest of Vitest.
 - MSW. Vitest leaves it out of pre-bundling, so it is served as it is.
-- PGlite, in memory and on IndexedDB. It is told that it is not in a browser, and works all the same.
+- PGlite, in memory and on IndexedDB. It looks for a browser by `globalThis.window`, which is not replaced, and finds one.
 
 A package that both the tests and the app use can only get one of the two answers. If it needs both, it cannot be used on both sides. And an entry does not help one of the app's packages that, when told it is on a server, takes a code path only Node.js has.
 
