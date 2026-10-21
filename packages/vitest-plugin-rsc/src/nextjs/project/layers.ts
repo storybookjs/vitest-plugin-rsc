@@ -145,21 +145,52 @@ export async function layerTables(context: NextContext, build: NextBuild) {
     // The App Router does not run on the `react` of the project. Next brings
     // its own React, a different build of it per layer. The last two tables
     // are keyed by the public entry file, e.g. `<next>/link.js`.
+    const channel = needsExperimentalReact(config) ? "-experimental" : "";
+    const vendoredReactAliases = (isEdgeServer: boolean) =>
+      compilerAliases.createVendoredReactAliases(channel, {
+        layer: layer === "browser" ? "app-pages-browser" : layer,
+        isBrowser: layer === "browser",
+        isEdgeServer,
+        reactProductionProfiling: false,
+      });
     Object.assign(
       aliases,
       compilerAliases.createServerOnlyClientOnlyAliases(layer === "rsc"),
-      compilerAliases.createVendoredReactAliases(
-        needsExperimentalReact(config) ? "-experimental" : "",
-        {
-          layer: layer === "browser" ? "app-pages-browser" : layer,
-          isBrowser: layer === "browser",
-          isEdgeServer: layer !== "browser",
-          reactProductionProfiling: false,
-        },
-      ),
+      // The server layers run Next's Node.js runtime, loaded from Next's
+      // ESM files, so their tables are Next's for its edge runtime: the
+      // table for Node.js loads React from Next's one bundle of it for both
+      // server layers, `vendored/(rsc|ssr)/entrypoints`, which
+      // node-platform.ts stands in for, as each layer has a React of its
+      // own.
+      vendoredReactAliases(layer !== "browser"),
       compilerAliases.createNextApiEsmAliases(),
       compilerAliases.createAppRouterApiAliases(layer === "rsc"),
     );
+    // The rule for an entry that resolves what the app's own code imports,
+    // and that differs by runtime: the Node.js entry wins, as a route on
+    // Node.js gets it. These are React's entries for Node.js, which need
+    // `stream`, `util`, `crypto` and `async_hooks`, the package's stand-ins.
+    // In the ssr layer, where a Client Component imports them: the rsc
+    // layer's entries are Next's modules for a Server Component, which is
+    // not to render, as in Next's table for Node.js.
+    if (layer === "ssr") {
+      const nodeTable = vendoredReactAliases(false);
+      for (const key of [
+        // The edge table has Next's own module, which throws on
+        // `renderToString()` and `renderToStaticMarkup()`. React's entry
+        // for Node.js has them, with the stream renderers.
+        "react-dom/server$",
+        // The edge table has React's entry for web streams, `prerender()`.
+        // The entry for Node.js has `prerenderToNodeStream()` too.
+        "react-dom/static$",
+      ]) {
+        const entry = nodeTable[key];
+        if (typeof entry !== "string") {
+          return fail(`Next's alias table for Node.js has no \`${key}\``);
+        }
+        aliases[key] = entry;
+      }
+    }
     // The plugin finds Next's Flight codec next to this one.
     if (typeof aliases["react-server-dom-webpack/server$"] !== "string") {
       fail("the alias tables have no `react-server-dom-webpack/server$`");
