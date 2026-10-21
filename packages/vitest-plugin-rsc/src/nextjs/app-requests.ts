@@ -7,8 +7,8 @@ import { loadedSsrLayer, ssrLayer } from "./server-layers.ts";
 // The tab's requests to the app: which ones are the app's, what a browser
 // sends with them, and who answers them. Evaluating this module installs
 // the `fetch` of the browser and the one of the server, and the page's
-// `document.cookie`, as storage.ts installs the page's storage: both entries
-// of the plugin import both, see index.ts and client-components.ts.
+// `document.cookie`: both entries of the plugin import it, see index.ts and
+// client-components.ts.
 //
 // What a request of the app waits for: the ssr layer, which the first one
 // that the server handles starts to load, if the entry of the host has not,
