@@ -15,6 +15,15 @@ export const SignedOut = meta.story({
   },
 });
 
+// The support address, which the page's server code reads from .env.test.
+export const SupportAddress = meta.story({
+  play: async ({ canvas }) => {
+    await expect(
+      await canvas.findByRole("link", { name: "support@notes.example" }),
+    ).toHaveAttribute("href", "mailto:support@notes.example");
+  },
+});
+
 export const SignedIn = meta.story({
   beforeEach: () => signedInAs(),
   play: async ({ canvas }) => {
