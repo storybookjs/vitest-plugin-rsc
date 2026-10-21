@@ -170,6 +170,10 @@ function createNodeResponse(request: ServerRequest) {
       return true;
     },
   });
+  // A `Writable` of Node.js 14+ destroys itself as it finishes, and so does
+  // the package's stream: not this one, which closes on the timer below.
+  (res as unknown as { _writableState: { autoDestroy: boolean } })._writableState.autoDestroy =
+    false;
   res.on("finish", () => {
     finished = headSent = true;
     // Node's stream says so itself; the older one of the polyfill does not.
