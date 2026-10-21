@@ -692,3 +692,99 @@ test("a server story inline on a docs page says what to do instead", async ({ pa
   expect(await inDocs(canvas).getByRole("heading", { name: "Misuse" }).count()).toBe(1);
   errors.list.splice(0);
 });
+
+// What a document of the preview has of the browser's APIs, as the play of
+// ../stories/browser-apis.stories.tsx asks it: a write that a frame of the
+// origin reads is the browser's.
+const browserApisIn = (frame: Frame) =>
+  frame.evaluate(() => {
+    localStorage.setItem("browser-apis", "docs");
+    document.cookie = "browser-apis=docs; path=/";
+    const iframe = document.body.appendChild(document.createElement("iframe"));
+    try {
+      const other = iframe.contentWindow!;
+      return {
+        localStorage: Object.getPrototypeOf(localStorage) === Storage.prototype,
+        sessionStorage: Object.getPrototypeOf(sessionStorage) === Storage.prototype,
+        cookie: !Object.hasOwn(document, "cookie"),
+        cookieStore: "cookieStore" in window,
+        fetch: Function.prototype.toString.call(fetch).includes("[native code]"),
+        stored: other.localStorage.getItem("browser-apis"),
+        cookieRead: other.document.cookie.includes("browser-apis=docs"),
+      };
+    } finally {
+      iframe.remove();
+      localStorage.removeItem("browser-apis");
+      document.cookie = "browser-apis=; path=/; max-age=0";
+    }
+  });
+
+const theBrowsers = {
+  localStorage: true,
+  sessionStorage: true,
+  cookie: true,
+  cookieStore: true,
+  fetch: true,
+  stored: "docs",
+  cookieRead: true,
+};
+
+// The preview loads a story file it does not show: the manager has it
+// preload the stories next to the one selected, and a docs page the file of
+// a story it shows in an iframe.
+const loadStoryFile = (canvas: Frame, story: string) =>
+  canvas.evaluate(async (id) => {
+    const { storyStore } = window.__STORYBOOK_PREVIEW__ as unknown as {
+      storyStore: { loadCSFFileByStoryId(id: string): Promise<unknown> };
+    };
+    await storyStore.loadCSFFileByStoryId(id);
+  }, story);
+
+test("a client story has the browser's own APIs, whatever the preview showed or loaded", async ({
+  page,
+}) => {
+  const story = "browser-apis--browser-apis";
+  // The first story of the preview.
+  let canvas = await openStory(page, site!.url, story);
+  expect(await storyRun(page, canvas, story)).toEqual(passed);
+  // After a server story, and after a page.
+  for (const before of ["greeting--default", "home--home"]) {
+    canvas = await openStory(page, site!.url, before);
+    expect(await runStory(page, canvas, story)).toEqual(passed);
+  }
+  // Once the preview has loaded a server story file.
+  canvas = await openStory(page, site!.url, story);
+  await loadStoryFile(canvas, "greeting--default");
+  expect(await browserApisIn(canvas)).toEqual(theBrowsers);
+  // A docs page, with a server story in its iframe.
+  canvas = await openDocs(page, site!.url, "browser-apis--docs");
+  await storyInDocs(canvas, "greeting--default");
+  await loadStoryFile(canvas, "greeting--default");
+  expect(await browserApisIn(canvas)).toEqual(theBrowsers);
+});
+
+// The preview on its own, as a runner of the stories opens it: in the
+// manager, the preview's `<base target="_parent">` opens a link there.
+test("a link of a client story keeps the preview, and it reports where it went", async ({
+  page,
+}) => {
+  await page.goto(new URL("iframe.html?id=browser-apis--link&viewMode=story", site!.url).href);
+  const preview = page.mainFrame();
+  await rendered(preview, "browser-apis--link");
+  const actions = await preview.evaluateHandle(() => {
+    const seen: unknown[] = [];
+    window.__STORYBOOK_PREVIEW__.channel.on(
+      "storybook/actions/action-event",
+      (event: { data: unknown }) => seen.push(event.data),
+    );
+    return seen;
+  });
+
+  await page.getByRole("link", { name: "Elsewhere" }).click();
+
+  await expect
+    .poll(() => actions.evaluate((seen) => seen))
+    .toEqual([{ name: "navigation", args: [new URL("/elsewhere", site!.url).href] }]);
+  expect(new URL(page.url()).pathname).toBe("/iframe.html");
+  expect(await page.getByRole("link", { name: "Elsewhere" }).isVisible()).toBe(true);
+});
