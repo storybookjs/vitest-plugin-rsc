@@ -516,12 +516,11 @@
       "failed": {}
     },
     "metadata-static-file": {
-      "passed": 5,
+      "passed": 6,
       "failed": {
         "metadata-static-file-dynamic-route.test.ts > metadata-files-static-output-dynamic-route > should serve static files when requested with placeholder for dynamic page": "node-in-test",
         "metadata-static-file-dynamic-route.test.ts > metadata-files-static-output-dynamic-route > should display static metadata files with \"-\" placeholder in build output": "cli-output",
         "metadata-static-file-group-route.test.ts > metadata-files-static-output-group-route > should serve static files when requested to its route for group page": "node-in-test",
-        "metadata-static-file-intercepting-route.test.ts > metadata-files-static-output-intercepting-route > should have correct link tags for intercepting page": "streamed-to-prerendered",
         "metadata-static-file-intercepting-route.test.ts > metadata-files-static-output-intercepting-route > should serve static files when requested to its route for intercepting page": "node-in-test",
         "metadata-static-file-parallel-route.test.ts > metadata-files-static-output-parallel-route > should serve static files when requested to its route for parallel slot page": "node-in-test",
         "metadata-static-file-root-route.test.ts > metadata-files-static-output-root-route > should serve static files when requested to its route": "node-in-test",
