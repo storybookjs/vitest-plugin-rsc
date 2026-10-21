@@ -34,7 +34,7 @@ import {
 import { moduleFileAt } from "./project/context.ts";
 import { describeEnv, envFilesOf, type PageEnv } from "./project/env.ts";
 import { compileServerCode, createServerCode, type ServerCodeOptions } from "./server-code.ts";
-import { createUseCachePlugin, useCacheId, useCacheModule } from "./use-cache.ts";
+import { createUseCachePlugin, useCacheId, useCacheModule, usesCache } from "./use-cache.ts";
 import { affectedTests } from "./affected/index.ts";
 import { createPathsPlugin } from "./paths.ts";
 import { nextStaticBuild, withPathsFromRoot } from "./static-build.ts";
@@ -652,6 +652,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
   // What the CSS of the app gets otherwise than from Next: see `loadCssOptions()`.
   let cssDifferences: string[] = [];
   const serverCode = createServerCode(registry, options);
+  serverCode.cachedFunctions(() => usesCache(getProject()));
   const getProject = () => project;
   if (options.build !== undefined && !nextBuilds.includes(options.build)) {
     throw new Error(

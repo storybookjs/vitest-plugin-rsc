@@ -38,6 +38,18 @@ export function useCache(kind, id, fn, undeclared) {
 }
 `;
 
+/**
+ * Whether the app has `"use cache"`: what Next's compiler takes the directive
+ * with. Only then is anything compiled for the scope of a cached function.
+ */
+export function usesCache(project: NextProject): boolean {
+  const config = project.config as {
+    cacheComponents?: boolean;
+    experimental?: { useCache?: boolean };
+  };
+  return Boolean(config.cacheComponents || config.experimental?.useCache);
+}
+
 // `"use cache"`, or with the name of a cache handler: `"use cache: remote"`.
 const directive = /^use cache(?:: (.+))?$/;
 
@@ -62,12 +74,7 @@ export function createUseCachePlugin(
     name: "vitest-plugin-rsc:next-use-cache",
     async transform(code, id) {
       if (!code.includes("use cache")) return;
-      const config = getProject().config as {
-        cacheComponents?: boolean;
-        experimental?: { useCache?: boolean };
-      };
-      // What Next's compiler takes the directive with.
-      if (!config.cacheComponents && !config.experimental?.useCache) return;
+      if (!usesCache(getProject())) return;
       const file = id.split("?")[0]!;
       if (layerOf(this.environment.name) !== "rsc" || !isAppCode(file, "rsc")) return;
       if (!fs.existsSync(file)) return;

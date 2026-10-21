@@ -246,6 +246,8 @@ export function createServerCode(registry: string, options: ServerCodeOptions = 
   let isBrowserModule: (file: string) => boolean = () => false;
   // One for every Vitest project this plugin is in.
   const testFileMatchers: ((file: string) => boolean)[] = [];
+  // Whether the app has `"use cache"`: see `cachedFunctions()`.
+  let usesCache = () => false;
   // The files of another host, `host.files`.
   let isOwnFileOfHost: (file: string) => boolean = () => false;
   // The names of the packages of the host, and once configured, the
@@ -316,7 +318,7 @@ export function createServerCode(registry: string, options: ServerCodeOptions = 
   // that waited, so what a cached component returns renders in its scope.
   // Here each step gets the stores of the first: see globals.ts.
   function flightServerOf(code: string, id: string) {
-    if (!flightServer.test(normalizePath(id))) return;
+    if (!usesCache() || !flightServer.test(normalizePath(id))) return;
     if (!code.includes(performWork)) {
       throw new Error(`vitest-plugin-rsc: ${id} has no \`${performWork}\` to compile.`);
     }
@@ -381,6 +383,14 @@ export function createServerCode(registry: string, options: ServerCodeOptions = 
       // Vitest pre-bundles its own runtime in the environment of the rsc layer.
       hostPackageDirs = findPackagesWithDependencies(hostPackageNames(root, packages), root);
     },
+    /**
+     * Call with whether the app has `"use cache"`. Only then is anything
+     * compiled for the scope of a cached function: an app without it keeps
+     * its async functions, and React's Flight server, as they are.
+     */
+    cachedFunctions(enabled: () => boolean): void {
+      usesCache = enabled;
+    },
     /** Call with what a Vitest config says is a test file or a setup file. */
     addTestFiles(matches: (file: string) => boolean): void {
       testFileMatchers.push(matches);
@@ -392,7 +402,7 @@ export function createServerCode(registry: string, options: ServerCodeOptions = 
      */
     forCachedFunctions(context: Warns, code: string, id: string, layer: NextLayer) {
       if (layer !== "rsc") return { code, define: {} };
-      if (useCacheWrapper.test(normalizePath(id))) {
+      if (usesCache() && useCacheWrapper.test(normalizePath(id))) {
         return { code: compileAsyncFunctions(context, code, id)?.code ?? code, define: {} };
       }
       return flightServerOf(code, id) ?? { code, define: {} };
@@ -433,7 +443,9 @@ export function createServerCode(registry: string, options: ServerCodeOptions = 
       return {
         name: asyncFunctionsName,
         transform(this: Warns, code: string, id: string) {
-          if (useCacheWrapper.test(normalizePath(id))) return compileAsyncFunctions(this, code, id);
+          if (usesCache() && useCacheWrapper.test(normalizePath(id))) {
+            return compileAsyncFunctions(this, code, id);
+          }
         },
       };
     },
@@ -443,6 +455,7 @@ export function createServerCode(registry: string, options: ServerCodeOptions = 
         name: asyncFunctionsName,
         applyToEnvironment: ({ name }) => name === environment,
         transform(code, id) {
+          if (!usesCache()) return;
           const file = sourceFileOf(id, normalizePath(this.environment.config.cacheDir), "rsc");
           // A test file keeps the browser: see plugin() for a host that does
           // not say which files are its own.
