@@ -178,10 +178,11 @@ export default defineConfig([
     outputOptions: {
       codeSplitting: false as const,
       comments: { legal: false, annotation: true, jsdoc: false },
-      // What is bundled reads the global `process` as it loads, like the util
-      // package's `NODE_DEBUG`: the package's own, as an import, so that a
-      // file loads before anything made the global. Not in `process` itself.
-      ...(name !== "process" && {
+      // The util package reads the global `process` as it loads, for
+      // `NODE_DEBUG`: in the files with it, the package's own, as an import,
+      // so that the file loads before anything made the global. Not in every
+      // file: `process` imports `events`, which would import it back.
+      ...((name === "util" || name === "assert") && {
         intro: 'import __process from "process";\nconst process = __process;\n',
       }),
     },
