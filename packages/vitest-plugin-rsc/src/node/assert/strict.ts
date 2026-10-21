@@ -2,26 +2,33 @@
 // `node:assert/strict`: the `strict` of the package's `assert`, as in Node.js.
 import assert from "vitest-plugin-rsc/node/assert";
 
+const missing = (name: string) =>
+  function () {
+    throw new Error(`vitest-plugin-rsc: ${name} of Node.js is not there in the browser`);
+  };
+
 const own: Record<string, any> = assert.strict;
 export default own;
-export const AssertionError = own.AssertionError;
-export const CallTracker = own.CallTracker;
-export const strict = own.strict;
-export const fail = own.fail;
-export const ok = own.ok;
-export const throws = own.throws;
-export const rejects = own.rejects;
-export const doesNotThrow = own.doesNotThrow;
-export const doesNotReject = own.doesNotReject;
-export const ifError = own.ifError;
-export const match = own.match;
-export const doesNotMatch = own.doesNotMatch;
-export const notDeepStrictEqual = own.notDeepStrictEqual;
-export const notDeepEqual = own.notDeepEqual;
-export const strictEqual = own.strictEqual;
-export const equal = own.equal;
-export const notStrictEqual = own.notStrictEqual;
-export const notEqual = own.notEqual;
-export const deepStrictEqual = own.deepStrictEqual;
-export const deepEqual = own.deepEqual;
-export const partialDeepStrictEqual = own.partialDeepStrictEqual;
+export const AssertionError = own.AssertionError ?? missing("assert/strict.AssertionError");
+export const CallTracker = own.CallTracker ?? missing("assert/strict.CallTracker");
+export const strict = own.strict ?? missing("assert/strict.strict");
+export const fail = own.fail ?? missing("assert/strict.fail");
+export const ok = own.ok ?? missing("assert/strict.ok");
+export const throws = own.throws ?? missing("assert/strict.throws");
+export const rejects = own.rejects ?? missing("assert/strict.rejects");
+export const doesNotThrow = own.doesNotThrow ?? missing("assert/strict.doesNotThrow");
+export const doesNotReject = own.doesNotReject ?? missing("assert/strict.doesNotReject");
+export const ifError = own.ifError ?? missing("assert/strict.ifError");
+export const match = own.match ?? missing("assert/strict.match");
+export const doesNotMatch = own.doesNotMatch ?? missing("assert/strict.doesNotMatch");
+export const notDeepStrictEqual =
+  own.notDeepStrictEqual ?? missing("assert/strict.notDeepStrictEqual");
+export const notDeepEqual = own.notDeepEqual ?? missing("assert/strict.notDeepEqual");
+export const strictEqual = own.strictEqual ?? missing("assert/strict.strictEqual");
+export const equal = own.equal ?? missing("assert/strict.equal");
+export const notStrictEqual = own.notStrictEqual ?? missing("assert/strict.notStrictEqual");
+export const notEqual = own.notEqual ?? missing("assert/strict.notEqual");
+export const deepStrictEqual = own.deepStrictEqual ?? missing("assert/strict.deepStrictEqual");
+export const deepEqual = own.deepEqual ?? missing("assert/strict.deepEqual");
+export const partialDeepStrictEqual =
+  own.partialDeepStrictEqual ?? missing("assert/strict.partialDeepStrictEqual");

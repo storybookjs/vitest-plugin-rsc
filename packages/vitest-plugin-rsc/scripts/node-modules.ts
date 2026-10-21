@@ -261,10 +261,10 @@ ${rest.map((name) => `  ${name},`).join("\n")}
   "assert/strict": () => `${header}
 // \`node:assert/strict\`: the \`strict\` of the package's \`assert\`, as in Node.js.
 import assert from "vitest-plugin-rsc/node/assert";
-
+${missing}
 const own: Record<string, any> = assert.strict;
 export default own;
-${ofNames(exportsOf("assert/strict"), (name) => `own.${name}`)}
+${ofNames(exportsOf("assert/strict"), (name) => `own.${name} ?? missing("assert/strict.${name}")`)}
 `,
   // The POSIX path of the package's own path, which \`win32\` is too here.
   ...Object.fromEntries(

@@ -131,6 +131,9 @@ export default defineConfig([
     copy: [{ from: "src/nextjs/tester.html", to: "dist/nextjs" }],
     format: ["esm"],
     fixedExtension: false,
+    // The package's own modules of Node.js stay imports by name, as in
+    // node-server.ts: see `ownModules`.
+    plugins: [ownModules],
     deps: {
       neverBundle: [
         /^virtual:/,
@@ -175,6 +178,12 @@ export default defineConfig([
     outputOptions: {
       codeSplitting: false as const,
       comments: { legal: false, annotation: true, jsdoc: false },
+      // What is bundled reads the global `process` as it loads, like the util
+      // package's `NODE_DEBUG`: the package's own, as an import, so that a
+      // file loads before anything made the global. Not in `process` itself.
+      ...(name !== "process" && {
+        intro: 'import __process from "process";\nconst process = __process;\n',
+      }),
     },
     // What is in a file, and nothing else on an upgrade: memfs, unenv and
     // readable-stream with what they depend on. The package's own by name

@@ -26,6 +26,8 @@ const {
   isDisturbed,
   isErrored,
   isReadable,
+  isWritable,
+  isDestroyed,
   getDefaultHighWaterMark,
   setDefaultHighWaterMark,
   _isUint8Array,
@@ -69,11 +71,18 @@ readable.fromWeb = (web) => {
 };
 
 // A function, not an arrow: code that extends or constructs one loads.
-export const duplexPair = function () {
-  throw new Error("vitest-plugin-rsc: stream.duplexPair of Node.js is not there in the browser");
-};
-export const isWritable = (stream: { writable?: boolean; destroyed?: boolean }): boolean =>
-  stream.writable === true && !stream.destroyed;
+const missing = (name: string) =>
+  function () {
+    throw new Error(`vitest-plugin-rsc: stream.${name} of Node.js is not there in the browser`);
+  };
+export const duplexPair = missing("duplexPair");
+export const _isArrayBufferView = (value: unknown): boolean => ArrayBuffer.isView(value);
+// The package's bridges of a Writable and a Duplex are made of the web
+// streams of Node.js too: they throw with the package's message, not that.
+for (const kind of [Writable, Duplex] as unknown as Record<string, unknown>[]) {
+  kind.toWeb = missing(`${(kind as { name: string }).name}.toWeb`);
+  kind.fromWeb = missing(`${(kind as { name: string }).name}.fromWeb`);
+}
 
 export default Stream;
 export {
@@ -92,6 +101,8 @@ export {
   isDisturbed,
   isErrored,
   isReadable,
+  isWritable,
+  isDestroyed,
   getDefaultHighWaterMark,
   setDefaultHighWaterMark,
   _isUint8Array,

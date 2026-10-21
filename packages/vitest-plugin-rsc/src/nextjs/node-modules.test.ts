@@ -14,6 +14,7 @@ import fs, { existsSync, mkdirSync, readFileSync, writeFileSync } from "../node/
 import promises, { readFile } from "../node/fs/promises.ts";
 import {
   duplexPair,
+  getDefaultHighWaterMark,
   isDisturbed,
   isErrored,
   pipeline,
@@ -262,9 +263,10 @@ test("`stream` is readable-stream 4: `from()` awaits, rejects null and errors, a
   failed.destroy(new Error("failed"));
   await new Promise((resolve) => failed.on("close", resolve));
   expect(isErrored(failed)).toBe(true);
+  const defaultHighWaterMark = getDefaultHighWaterMark(false);
   setDefaultHighWaterMark(false, 1234);
   expect(new Readable({ read() {} }).readableHighWaterMark).toBe(1234);
-  setDefaultHighWaterMark(false, 65536);
+  setDefaultHighWaterMark(false, defaultHighWaterMark);
   expect(typeof streamPromises.pipeline).toBe("function");
   expect(() => duplexPair()).toThrow("not there in the browser");
 });
@@ -367,6 +369,25 @@ test.skipIf(!nodeFs.existsSync(dist))(
         expect(specifier.replace(/^node:/, ""), file).not.toBe("async_hooks");
       }
     }
+    // The package's own files import the modules by name too: not their
+    // source, with readable-stream's file for Node.js in it.
+    const nextjs = fileURLToPath(new URL("../../dist/nextjs/", import.meta.url));
+    for (const entry of nodeFs.readdirSync(nextjs)) {
+      if (!entry.endsWith(".js")) continue;
+      const code = nodeFs.readFileSync(path.join(nextjs, entry), "utf8");
+      expect(code, entry).not.toContain("__require(");
+      expect(code, entry).not.toContain("READABLE_STREAM");
+    }
+    expect(
+      nodeFs.readdirSync(nextjs).some((entry) => {
+        return (
+          entry.endsWith(".js") &&
+          nodeFs
+            .readFileSync(path.join(nextjs, entry), "utf8")
+            .includes('"vitest-plugin-rsc/node/stream"')
+        );
+      }),
+    ).toBe(true);
     const licenses = nodeFs.readFileSync(path.join(dist, "LICENSES.md"), "utf8");
     for (const name of [
       "memfs",

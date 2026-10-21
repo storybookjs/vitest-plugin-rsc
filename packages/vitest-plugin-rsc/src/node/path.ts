@@ -36,7 +36,7 @@ const posix = {
   toNamespacedPath,
 } as typeof path & { toNamespacedPath: typeof toNamespacedPath };
 // As in Node.js: `path.posix.posix` is `path.posix`, and `_makeLong()` is
-// the old name of `toNamespacedPath()`, which Next's compiled server calls.
+// the old name of `toNamespacedPath()`, which unenv's path still has.
 Object.assign(posix, { posix, win32: posix, _makeLong: toNamespacedPath });
 const win32 = posix;
 export {

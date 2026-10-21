@@ -112,15 +112,15 @@ What Node.js and browsers share works as it is: `fetch`, `Request`, `Response`, 
 
 Every module of Node.js that the server layers import is the plugin's own, `vitest-plugin-rsc/node/<name>`, one file each, from one place: no polyfill of Next's stands in for one. The plugin stands in for what Next's server needs:
 
-| What                                 | Here                                                                                                                                                      |
-| ------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `AsyncLocalStorage`                  | Runs one request at a time                                                                                                                                |
-| `process`                            | One for the tab, shared by the test and the server: `env`, `cwd()` (`/`), `nextTick()`, `hrtime.bigint()`, and unenv's for the rest, like `platform`      |
-| `buffer`, `events`, `util`, `assert` | The packages of Node's own code for a browser: buffer, events, util with Node's `inspect()`, and assert. `Buffer` also reads and writes `base64url`       |
-| `node:stream`                        | readable-stream 4, the streams of Node.js 18 as a package, with `Readable.toWeb()` and `fromWeb()`                                                        |
-| `node:path`                          | path-browserify, the POSIX path of Node.js                                                                                                                |
-| `node:crypto`                        | Web Crypto for random values and `subtle`. SHA-256 in JavaScript for `createHash()` and `createHmac()`, and `timingSafeEqual()`. Another algorithm throws |
-| `node:timers/promises`               | The page's timers, with `signal`                                                                                                                          |
+| What                                 | Here                                                                                                                                                                            |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `AsyncLocalStorage`                  | Runs one request at a time                                                                                                                                                      |
+| `process`                            | One for the tab, shared by the test and the server: `env`, `cwd()` (`/`), `nextTick()`, `hrtime.bigint()`, and unenv's for the rest, like `platform`                            |
+| `buffer`, `events`, `util`, `assert` | Node's own code for a browser: the buffer package through unenv, and the events, util (with Node's `inspect()`) and assert packages. `Buffer` also reads and writes `base64url` |
+| `node:stream`                        | readable-stream 4, the streams of Node.js 18 as a package, with `Readable.toWeb()` and `fromWeb()`                                                                              |
+| `node:path`                          | path-browserify, the POSIX path of Node.js                                                                                                                                      |
+| `node:crypto`                        | Web Crypto for random values and `subtle`. SHA-256 in JavaScript for `createHash()` and `createHmac()`, and `timingSafeEqual()`. Another algorithm throws                       |
+| `node:timers/promises`               | The page's timers, with `signal`                                                                                                                                                |
 
 `node:fs` and `node:fs/promises` are an in-memory disk, [memfs](https://github.com/streamich/memfs). The test's own `node:fs` is the same disk, so a test can write a file that the server reads, and read back what a Server Action wrote:
 
