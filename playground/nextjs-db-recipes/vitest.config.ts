@@ -4,6 +4,7 @@ import { defineProject } from "vitest/config";
 import { vitestPluginRSC } from "vitest-plugin-rsc";
 import { vitestPluginNext, type NextBuild } from "vitest-plugin-rsc/nextjs/plugin";
 import { vitestPluginRscSourceConditions } from "../../vitest.conditions.ts";
+import { ioredisMockBrowser } from "./test/ioredis-mock.ts";
 import { writePgliteFiles } from "./test/pglite-files.ts";
 
 // The data dir and files of PGlite: see test/pglite-files.ts.
@@ -50,12 +51,16 @@ export default defineProject({
       "@libsql/kysely-libsql",
       "drizzle-orm/libsql/wasm",
       "drizzle-orm/mysql2",
+      "ioredis-mock",
     ],
     // They load their WebAssembly and workers from their own URLs, which
     // pre-bundled files do not have.
     exclude: ["lite4mariadb", "@libsql/client-wasm", "@libsql/libsql-wasm-experimental"],
+    // ioredis-mock's build for browsers, as it loads: see test/ioredis-mock.ts.
+    rolldownOptions: { plugins: [ioredisMockBrowser()] },
   },
   plugins: [
+    ioredisMockBrowser(),
     vitestPluginRSC(),
     vitestPluginNext({
       // oxlint-disable-next-line no-process-env
