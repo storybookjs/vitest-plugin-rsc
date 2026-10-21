@@ -972,7 +972,7 @@ import { vi } from "vitest";
 vi.mock("./app/lib/weather.ts");
 ```
 
-Until [vitest-dev/vitest#11520](https://github.com/vitest-dev/vitest/pull/11520) is released, also add `await import("./app/lib/weather.ts");` after the `vi.mock()` call.
+A mock in a setup file needs Vitest 5.0.4 or later: 5.0.3 imports a test file before the mocks of the setup files are ready ([vitest-dev/vitest#11450](https://github.com/vitest-dev/vitest/issues/11450)).
 
 ```ts
 // vitest.config.ts

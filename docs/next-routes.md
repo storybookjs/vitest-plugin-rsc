@@ -802,7 +802,7 @@ An app with its values only in `.env.development`, for `next dev`, has none of t
 
 Mocks of app modules go in a setup file. With `isolate: false` the test files of a worker share their modules, so a module is mocked for all of them or for none, and the file that loads it first decides. A setup file runs before every test file. A bare `vi.mock("./app/lib/weather.ts")` there is enough, and a test says what the mock does with `vi.mocked(getForecast).mockResolvedValue("sunny")`.
 
-In browser mode, Vitest 5.0 has a bug here. It does not wait for a setup file's mocks before it imports a test file, so a test file with no `vi.mock()` of its own gets the real module ([vitest-dev/vitest#11450](https://github.com/vitest-dev/vitest/issues/11450), fixed by [#11520](https://github.com/vitest-dev/vitest/pull/11520) but not released yet). Until a release has the fix, import the mocked module in the setup file after the `vi.mock()` call. This repository patches Vitest instead, see `patches/`.
+This needs Vitest 5.0.4 or later. In browser mode, Vitest 5.0.3 does not wait for a setup file's mocks before it imports a test file, so a test file with no `vi.mock()` of its own gets the real module ([vitest-dev/vitest#11450](https://github.com/vitest-dev/vitest/issues/11450)).
 
 ## The Node.js Runtime
 
