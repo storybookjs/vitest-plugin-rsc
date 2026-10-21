@@ -611,6 +611,8 @@ A navigation that the app makes without its router, a `<form>`, a plain `<a href
 
 For a `redirect()` in a response that had started, Next sends a `<meta http-equiv="refresh">` for a browser without JavaScript, and its router loads the page it redirects to when it finds that tag. A browser drops a refresh that is still pending with the page. This document stays, so the plugin takes the `http-equiv` off the tag before it moves it in: the router still finds the tag, and nothing comes due a second later, in the page that is there by then.
 
+The entry of the history that a document was loaded in is `navigation.activation` of the Navigation API. Here that is the test's entry, from before the tests navigated. Next's router takes a current entry other than that one, with its own state on it, for a back or forward navigation that it missed while it hydrated, and restores itself from that state: the page renders again as it loads, with a new object of `useParams()`. So while a page is open, its `activation` is the entry it was loaded in, and leaving the page puts back the document's.
+
 A build knows two things that a request has to find out here:
 
 - **Server Actions.** Next's build lists every action in the app. Here an action is the module and the export that its id names (`<module>#<export>`). So for a `POST` with a `next-action` header, the server checks whether that id names a Server Action, and lists only that one. An id that names none gets the response Next gives when it has no such action: `409`, with `x-nextjs-action-not-found`. Next answers an id that cannot be one with `400`. Here an id can be one when it is shaped like Next's own, 42 characters, or like Vite RSC's. When the action's module fails to load, that error is the response, a `500`.

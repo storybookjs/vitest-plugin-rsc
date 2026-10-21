@@ -53,6 +53,28 @@ export function documentUrl(): string {
   return runnerHref ?? window.location.href;
 }
 
+// The entry of the history that the document was loaded in: `activation` of
+// the Navigation API. The document is the runner's, so it is the runner's
+// entry, from before the tests navigated, and not the page's. Next's router
+// takes a current entry other than that one, with the router's state on it,
+// for a back or forward navigation that it missed while it hydrated, and
+// restores itself from that state: the page renders again as it loads, with
+// a new object of `useParams()`. While a page is open, its `activation` is
+// the entry it was loaded in, as a navigation to it pushed it.
+// Not every browser has the API, or `activation` of it.
+const navigation = (window as { navigation?: Navigation }).navigation;
+
+function activate(): () => void {
+  if (!navigation || !("activation" in navigation)) return () => {};
+  const activation = { entry: navigation.currentEntry, from: null, navigationType: "push" };
+  Object.defineProperty(navigation, "activation", {
+    configurable: true,
+    enumerable: true,
+    get: () => activation,
+  });
+  return () => Reflect.deleteProperty(navigation, "activation");
+}
+
 function staysDuringPage(node: Node): boolean {
   return node instanceof HTMLScriptElement || node instanceof HTMLStyleElement || isPreload(node);
 }
@@ -198,6 +220,8 @@ export async function loadDocument(html: string, url: string, container?: Elemen
   // A stylesheet of a page that is gone does not load.
   let leaveNow!: () => void;
   const left = new Promise<void>((resolve) => (leaveNow = resolve));
+  // Puts back the runner's `activation`, once the page has its own.
+  let deactivate = () => {};
   const leave = () => {
     try {
       leaveNow();
@@ -214,6 +238,7 @@ export async function loadDocument(html: string, url: string, container?: Elemen
       // does: a page that is left holds the URL no longer, and
       // `documentUrl()` is the document's own.
       runnerHref = undefined;
+      deactivate();
       if (window.location.href !== runnerUrl) window.history.replaceState(null, "", runnerUrl);
     }
     document.head.append(
@@ -276,6 +301,7 @@ export async function loadDocument(html: string, url: string, container?: Elemen
   // the document, which requests what its relative URLs resolve to against
   // it, and before its scripts run: one of them may read `location`.
   window.history.replaceState(null, "", url);
+  deactivate = activate();
 
   document.head.append(...page.head.childNodes);
   await loaded(stylesheetsOfHead);
