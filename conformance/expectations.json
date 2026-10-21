@@ -103,10 +103,6 @@
     "not-a-page": {
       "category": "not-yet",
       "text": "A navigation of Next's router to a route handler that answers with JSON, which a browser shows in place of the app. The tab cannot leave the test, so the page stays, with an uncaught error."
-    },
-    "metadata-files": {
-      "category": "not-yet",
-      "text": "Metadata files: `favicon.ico`, `icon.png`, `opengraph-image`, `sitemap.ts`, `robots.txt`, `manifest.webmanifest`."
     }
   },
   "fixtures": {
@@ -804,10 +800,8 @@
       "failed": {}
     },
     "global-not-found__metadata": {
-      "passed": 0,
-      "failed": {
-        "metadata.test.ts > global-not-found - metadata > should render metadata of global-not-found for 404": "metadata-files"
-      }
+      "passed": 1,
+      "failed": {}
     },
     "global-not-found__no-root-layout": {
       "passed": 2,
@@ -815,6 +809,10 @@
     },
     "global-not-found__not-present": {
       "passed": 2,
+      "failed": {}
+    },
+    "mdx-font-preload": {
+      "passed": 3,
       "failed": {}
     }
   }

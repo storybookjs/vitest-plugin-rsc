@@ -271,8 +271,8 @@ export const fixtures: Fixture[] = [
   appDir("sitemap-group", "metadata", ["sitemap-group.test.ts"]),
 
   // `@next/font` is the old name of `next/font`. The app imports `next/font`.
-  // Not `mdx-font-preload`, its config needs `@next/mdx`.
   appDir("next-font", "font", ["next-font.test.ts"], { assumeInstalled: ["@next/font"] }),
+  appDir("mdx-font-preload", "font", ["mdx-font-preload.test.ts"]),
   appDir("next-image", "image", ["next-image.test.ts"]),
 
   // Next's own tests of CSS, with the packages their tests install: Sass,
