@@ -40,8 +40,9 @@ export function withQuery(pathname: string, query: Query): string {
     : `${pathname}?${search}`;
 }
 
-// What only a build or a deployment has.
-const buildOutput = /^\.next(\/|$)/;
+// What only a build or a deployment has. A path of a file is from the
+// directory of the app, also one that starts with `/`, as Next joins them.
+const buildOutput = /^\/?\.next(\/|$)/;
 
 export class NextInstance {
   private outputStart = consoleCapture.output.length;
@@ -116,6 +117,9 @@ export class NextInstance {
     const body = init?.body as unknown;
     if (body instanceof Readable)
       init = { ...init, body: body.toWeb(), duplex: "half" } as RequestInit;
+    // The `fetch` of Node.js, which has no cookies of its own: it neither
+    // sends the cookies of the browser nor keeps the ones it gets.
+    init = { credentials: "omit", ...init };
     const url = new URL(pathname, this.url);
     // What a deployment serves next to its routes, the dev server serves
     // here: the files of fonts and images, and Next's image optimizer.
