@@ -36,6 +36,7 @@ Pick one piece of the app — a wishlist carousel, a notes form, a settings pane
   - [Mocks](#mocks)
   - [Fonts, Images And Styles](#fonts-images-and-styles)
   - [Server Code In The Browser](#server-code-in-the-browser)
+  - [Environment Variables](#environment-variables)
   - [Example: Drizzle + PGlite](#example-drizzle--pglite)
   - [A Static Build](#a-static-build)
   - [API](#api)
@@ -867,6 +868,10 @@ afterEach(() => {
 });
 ```
 
+### Environment Variables
+
+The app's server code reads `process.env` from the project's test env, as Next's test mode reads it: `.env.test.local`, `.env.test` and `.env` in a run, `.env.test` and `.env` in a build. Never `.env.local`, another mode's file, or a value of the shell. `NEXT_PUBLIC_` variables and `env` of `next.config` are in `process.env` too. A build puts the values into the site, so keep secrets out of `.env.test` and `.env`: see [Environment Variables](docs/next-routes.md#environment-variables).
+
 ### Example: Drizzle + PGlite
 
 PGlite runs Postgres in-process, so it works inside the browser test runtime. This is how `playground/nextjs-notes-demo` does it: one PGlite database for each browser page that runs tests (with `isolate: false`, the test files of a worker share one), which every test empties first.
@@ -902,6 +907,7 @@ Everything that runs with the dev server runs from the build: pages and nodes, C
 
 - Next's runtime and React are their production builds, as after `next build`. A page of the e2e demo's build loads in about 60% of the time of the development build, with about 60% of the bytes, as `pnpm perf:static` measures it. A page has no React warnings, no owner stacks, no second render of `<StrictMode>` and none of Next's development checks. React's error messages are a number and a link, and the browser gets the error of a Server Component as a digest, without its message. `build: "development"` builds the development code, for a build to debug in: see the table in [Development Or Production](docs/next-routes.md#development-or-production). Next's dev overlay is in neither: the plugin does not render it. The app's own `process.env.NODE_ENV` is the build too, not `"test"`.
 - `images.unoptimized` is on, unless the app has an image loader of its own: there is no image optimizer to ask.
+- The app's `process.env` has the variables of `.env.test` and `.env`, which are in the files of the build, and of no `.local` file. The build says the names it puts in: see [Environment Variables](docs/next-routes.md#environment-variables).
 - The code of the ssr and the browser layer is one file each, `vitest-plugin-rsc/*/modules.json`, which a tab fetches once: the browser layer's at once, which the HTML of a page of the host starts with a preload, and the ssr layer's when the page imports `vitest-plugin-rsc/nextjs/testing-library`, or at its first request that Next's server handles. A page that imports only `vitest-plugin-rsc/nextjs/client-components` and sends the app no request does not fetch it. A request of the host's own that the app's proxy matcher takes, like one for a file of the host, is a request to the app too: the proxy runs on it. The preload asks in the browser's default cache mode, so the `no-cache` below is what has the browser ask whether its copy is current. Its name does not change with its content, nor does `vitest-plugin-rsc/next-files.json`: the browser asks the server whether its copy is current, so serve them like `index.html`, and compressed, as the two layers are 1.5 MB of JavaScript in production, and 3 MB in development: see the headers below.
 - The CSS of a route is linked by Next, as with a dev server: a file per stylesheet under `/_next/static/css/`, with the stylesheets of every route and of every file of the host in `vitest-plugin-rsc/next-files.json`, and the modules of every route, which a page load starts at once with its stylesheets. A node has the CSS of the files of the host that the host names as rendering it, `hostFiles` of `renderServer()`, as with a dev server. In a build the files of the host are what `host.files` matches: there is no Vitest config to say so.
 - The files of the build name each other by relative paths. To serve the build from a path, build it with that `base`, or with `base: "./"`.

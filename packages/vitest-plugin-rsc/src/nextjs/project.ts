@@ -7,6 +7,7 @@ import type { RoutesManifest } from "next/dist/build/index.js";
 import type { NextBuild } from "./build.ts";
 import type { FlightEntry } from "./flight.ts";
 import { openNextProject } from "./project/context.ts";
+import type { PageEnv } from "./project/env.ts";
 import { routeEntries } from "./project/entries.ts";
 import { layerTables } from "./project/layers.ts";
 import { createLoaders } from "./project/loaders.ts";
@@ -121,6 +122,10 @@ export type NextProject = {
   paths:
     | { baseUrl: string; explicitBaseUrl: boolean; patterns: Record<string, string[]> }
     | undefined;
+  /** What the page's `process.env` gets: see project/env.ts. */
+  env: PageEnv;
+  /** The env again, after a change of an env file. */
+  loadEnv: () => Promise<PageEnv>;
   /** The resolved `next.config`, as far as it serializes. */
   config: Record<string, unknown>;
   /** Next's compile-time constants per layer, as code strings. */
@@ -222,6 +227,11 @@ export type ServeFile = (request: IncomingMessage, response: ServerResponse) => 
 const adapterPath = fileURLToPath(
   new URL(`./adapter${path.extname(import.meta.url)}`, import.meta.url),
 );
+// The thread that parses the env files: see project/env.ts. Found from this
+// file, like the adapter.
+const envWorker = fileURLToPath(
+  new URL(`./project/env-worker${path.extname(import.meta.url)}`, import.meta.url),
+);
 
 export type NextProjectOptions = {
   /** The code that Next's runtime and React run: see build.ts. */
@@ -240,7 +250,7 @@ export async function loadNextProject(
   { build = "development", static: isStatic = false }: NextProjectOptions = {},
 ): Promise<NextProject> {
   // The project, its `next.config`, and the build code of its `next`.
-  const context = await openNextProject(root, projectRequire, { static: isStatic });
+  const context = await openNextProject(root, projectRequire, { static: isStatic, envWorker });
   // The app: its routes, its middleware, and the server in front of them.
   const app = await discoverAppRoutes(context);
   const middleware = await findMiddleware(context);
@@ -271,6 +281,8 @@ export async function loadNextProject(
     routing,
     routesManifest,
     preview: context.previewProps,
+    env: context.env,
+    loadEnv: context.loadEnv,
     config: JSON.parse(JSON.stringify(context.config)),
     ...layers,
     ...routeEntries(context, app, middleware, builtinBoundaries, runLoader),

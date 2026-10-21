@@ -81,6 +81,43 @@ function appWith(files: string[], config: object = {}): string {
   return dir;
 }
 
+test("has the test env and env of next.config for the page, and none of it in Next's constants", async () => {
+  const app = appWith(["layout.js", "page.js"], {
+    env: { FROM_CONFIG: "config", DATABASE_URL: "of-the-host" },
+  });
+  fs.writeFileSync(
+    path.join(app, ".env.test"),
+    "DATABASE_URL=postgres://test\nNEXT_PUBLIC_GREETING=hello\n",
+  );
+  fs.writeFileSync(path.join(app, ".env.local"), "LOCAL_SECRET=local\n");
+  process.env.NEXT_PUBLIC_OF_THE_HOST = "host";
+  onTestFinished(() => {
+    // What the project gave the host's process before its config loaded.
+    for (const name of ["NEXT_PUBLIC_OF_THE_HOST", "DATABASE_URL", "NEXT_PUBLIC_GREETING"]) {
+      delete process.env[name];
+    }
+  });
+
+  const project = await loadNextProject(app, installed);
+
+  expect(project.env).toEqual({
+    values: {
+      FROM_CONFIG: "config",
+      DATABASE_URL: "postgres://test",
+      NEXT_PUBLIC_GREETING: "hello",
+    },
+    files: [".env.test"],
+    configNames: ["FROM_CONFIG"],
+  });
+  for (const layer of ["rsc", "ssr", "browser"] as const) {
+    const names = Object.keys(project.defines[layer]);
+    expect(names.filter((name) => /NEXT_PUBLIC_|FROM_CONFIG|DATABASE_URL/.test(name))).toEqual([]);
+  }
+  // Before the config, for the names the host's process did not have.
+  expect(process.env.DATABASE_URL).toBe("postgres://test");
+  expect(process.env.LOCAL_SECRET).toBeUndefined();
+});
+
 test("lists a route handler and a metadata file next to a catch-all page of a slot", async () => {
   // Next's modal pattern: the catch-all page of `@auth` matches every path.
   const app = appWith([
@@ -126,7 +163,7 @@ test("lists the metadata files of the app, and warns once that they are left out
   const plugin = vitestPluginNext().find(({ name }) => name === "vitest-plugin-rsc:next")!;
   await (plugin.config as ConfigHook<unknown>)({ root: app }, serve);
   const warnOnce = vi.fn();
-  (plugin.configResolved as (config: object) => void)({ logger: { warnOnce } });
+  (plugin.configResolved as (config: object) => void)({ logger: { warnOnce, info: () => {} } });
   expect(warnOnce.mock.calls).toEqual([
     [
       "vitest-plugin-rsc: Next.js metadata files are not supported yet. The pages of " +
@@ -142,7 +179,7 @@ test("does not warn about the favicon alone", async () => {
   const plugin = vitestPluginNext().find(({ name }) => name === "vitest-plugin-rsc:next")!;
   await (plugin.config as ConfigHook<unknown>)({ root: app }, serve);
   const warnOnce = vi.fn();
-  (plugin.configResolved as (config: object) => void)({ logger: { warnOnce } });
+  (plugin.configResolved as (config: object) => void)({ logger: { warnOnce, info: () => {} } });
   expect(warnOnce).not.toHaveBeenCalled();
 });
 
@@ -973,7 +1010,7 @@ test("warns about the dynamic routes that @next/routing does not find", async ()
   const plugin = vitestPluginNext().find(({ name }) => name === "vitest-plugin-rsc:next")!;
   const warnOnce = vi.fn();
   await (plugin.config as ConfigHook<unknown>)({ root: app }, serve);
-  (plugin.configResolved as (config: object) => void)({ logger: { warnOnce } });
+  (plugin.configResolved as (config: object) => void)({ logger: { warnOnce, info: () => {} } });
 
   expect(warnOnce).toHaveBeenCalledWith(
     "vitest-plugin-rsc: @next/routing does not find a dynamic route under a folder with a name " +

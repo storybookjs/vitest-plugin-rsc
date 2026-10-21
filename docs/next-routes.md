@@ -645,6 +645,8 @@ The `rsc` layer shares its Vite environment with the test, and a test needs the 
 
 Everything else in that environment is server code, including a module that only a test imports and a file with in-source tests. A component defined in a test file is part of that test file's code, and sees the browser. A test file with `"use client"` is code of the `browser` layer, and so is what it imports.
 
+Server code reads `process.env` as on a server. Here it has the project's test env: see [Environment Variables](#environment-variables).
+
 ### `browserModules`
 
 Code checks `typeof window` for one of two reasons, and they need opposite answers here.
@@ -685,6 +687,28 @@ What this does not cover:
 - Files that are not JavaScript or TypeScript when Vite loads them, like `.vue` or `.mdx`, and modules that another plugin generates.
 - Dependencies in files other than `.js`, `.mjs` and `.cjs`, and a dependency that `optimizeDeps.exclude` leaves out of pre-bundling. Those are served as they are. Vitest leaves out `msw`.
 - With `resolve.preserveSymlinks`, Vitest's packages are not recognized.
+
+## Environment Variables
+
+A page sees the project's test env, and a site never a `.local` file. The page's `process.env` has the variables of Next's env files for its test mode: a run reads `.env.test.local`, `.env.test` and `.env`, a build reads `.env.test` and `.env`. A name has the value of the first file that has it, as with Next. The same server code runs in a test, where Next's test mode reads these files, and in a run of another host: the page has one env in both. A build is a site that others download, so it reads no `.local` file, also not `.env.test.local`: a `.local` file holds the secrets of one machine.
+
+What the page's `process.env` has:
+
+- The variables of those files, parsed and expanded by the project's own `@next/env`, as Next does it. A `$VAR` is expanded against the files alone: a name that only the shell has is empty here, where `next` would read it from the shell.
+- `NEXT_PUBLIC_` variables of those files, in every layer: not as constants in the code, as Next inlines them, but in `process.env`, which a module reads as it runs. Next's constants for the dependencies leave them out, so a new value does not make Vite pre-bundle the dependencies again. A dependency that reads one as it evaluates is not trimmed to one branch either.
+- `env` of `next.config`. The config is evaluated in the host's process, so a name that the env files have too has the value of the files.
+
+And what it does not have: `.env.local`, `.env.development*` and `.env.production*`, and no value that the host's process has from elsewhere, like the shell, CI, or env files that the host loaded itself. `NODE_ENV`, `NEXT_RUNTIME` and the names that start with `__NEXT_` are Next's own: the app's `NODE_ENV` stays as it is (see [Development Or Production](#development-or-production)).
+
+The plugin fills `process.env` before any module of the app evaluates, in every layer, with a dev server and in a build, for each name that the page does not have yet: a library that validates the env as it loads, like t3-env, has it. A test or a setup file that assigns a name changes it for the code that reads it after that. The layers share the page's one `process.env`, so the `browser` layer has the server's variables too: a Client Component that reads one is a bug of the app, which Next leaves undefined in the browser, and here it passes.
+
+A run says which env files it read, as an info line of Vite's logger, which Vitest shows with `logLevel: "info"`. A build says the files, and the names that it puts into the site, never their values. Every value of `.env.test` and `.env` is in the files of a build: keep secrets out of them. A secret that the tests need on one machine goes in `.env.test.local`.
+
+Before Next's config is loaded, the host's process gets the variables of the test env that it does not have, so that a `next.config` that validates the env sees them. A host that loaded env files of its own before, like `.env.development` and `.env.local` for a dev server, keeps its value of a name that both have: the config is validated with that value, while the page gets the one of the test env.
+
+With a dev server, a change of an env file loads the page again with the new env. A change of one that Vite reads for its own mode, like `.env`, restarts the server instead. The dependencies are not pre-bundled again. A new env file needs a restart only where Vite does not watch the root of the project.
+
+An app with its values only in `.env.development`, for `next dev`, has none of them here. Move them to `.env`, which every mode reads, to `.env.test`, or for one machine to `.env.test.local`. What a host puts in `import.meta.env`, like the variables of its own prefix, still comes from the env files that the host reads for its mode: `process.env` comes from the test env.
 
 ## Mocks
 
@@ -812,6 +836,8 @@ A layer builds its own entries, not the input of the host: a host with pages of 
 
 What a build has no equivalent of: the optimizer, so the plugin compiles the dependencies that the optimizer would have compiled with a plugin of the build, and `images.unoptimized` is on in the Next config it loads, unless the app has an image loader of its own.
 
+The site has the env of `.env.test` and `.env`, and of no `.local` file, as one module of each layer, which the page puts in `process.env`: see [Environment Variables](#environment-variables). The build says which names it puts into the site.
+
 ## Not Yet
 
 - Metadata files like `icon.png` and `sitemap.ts`. The plugin does not run Next's metadata loaders yet. When a run starts, it warns once about the app's metadata files, apart from `favicon.ico`. A page renders without them, and their routes are not served.
@@ -822,7 +848,6 @@ What a build has no equivalent of: the optimizer, so the plugin compiles the dep
 - The React Compiler, `reactCompiler` in `next.config`. Components run as they are written.
 - Bundle optimizations: `optimizePackageImports`, `modularizeImports`, `experimental.optimizeServerReact`, the browser targets. They do not change what the app does.
 - A CommonJS source file in the app, with `require` or `module.exports`. Vite serves source files as ES modules.
-- `.env` files, `NEXT_PUBLIC_` variables and `env` in `next.config`. `process.env` in the browser is empty unless a test or a setup file fills it.
 - Font preloads. Next puts a `<link rel="preload">` in the HTML for a route's fonts, from a manifest of its build. The fonts load when the CSS asks for them.
 - The CSS of a component of `next/dynamic` from Next's manifest of dynamic imports, with `precedence="dynamic"`, next to a preload of its JavaScript. Here it is a stylesheet of the segment that imports the component.
 - `experimental.useLightningcss` in `next.config`. Next then compiles CSS with Lightning CSS. Here it is PostCSS, Next's default, so a class of a CSS module has the name of that. A run says so.

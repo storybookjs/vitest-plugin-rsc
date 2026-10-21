@@ -23,8 +23,23 @@ export async function layerTables(context: NextContext, build: NextBuild) {
     buildEnvironment,
     next,
   } = context;
-  const { SUPPORTED_NATIVE_MODULES, compilerAliases, getDefineEnv, needsExperimentalReact } = next;
+  const {
+    SUPPORTED_NATIVE_MODULES,
+    compilerAliases,
+    getDefineEnv,
+    getNextPublicEnvironmentVariables,
+    getNextConfigEnv,
+    needsExperimentalReact,
+  } = next;
   const definesFor = (layer: NextLayer) => {
+    // The `NEXT_PUBLIC_*` names of the host's process and `env` of
+    // `next.config`, which Next inlines: here they are in the page's
+    // `process.env`, from the env of the run (env.ts). The host's values are
+    // not the page's, and a change of a value would bundle the dependencies
+    // again, as their constants are in the key of the optimizer's cache.
+    const envKeys = new Set(
+      Object.keys({ ...getNextPublicEnvironmentVariables(), ...getNextConfigEnv(config) }),
+    );
     const defines = getDefineEnv({
       isTurbopack: false,
       config,
@@ -64,7 +79,9 @@ export async function layerTables(context: NextContext, build: NextBuild) {
         )),
       // Code strings; an option that is not set is undefined.
       ...Object.fromEntries(
-        Object.entries(defines).filter((entry) => typeof entry[1] === "string"),
+        Object.entries(defines).filter(
+          ([key, value]) => typeof value === "string" && !envKeys.has(key),
+        ),
       ),
     };
   };
