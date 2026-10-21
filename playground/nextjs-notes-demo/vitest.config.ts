@@ -6,7 +6,6 @@ import { vitestPluginRSC } from "vitest-plugin-rsc";
 import { vitestPluginNext, type NextBuild } from "vitest-plugin-rsc/nextjs/plugin";
 import { vitestPluginRscSourceConditions } from "../../vitest.conditions.ts";
 import { writePgliteFiles } from "./test/pglite-files.ts";
-import { ignoreWatchedOnlyModules } from "./test/ignore-watched-only-modules.ts";
 
 // Make Vitest UI trace/source clicks a no-op instead of opening Cursor.
 // oxlint-disable-next-line no-process-env
@@ -52,10 +51,8 @@ export const nextjsNotesProjects = [
       // which CI runs the suite with too.
       // oxlint-disable-next-line no-process-env
       vitestPluginNext({
-        affectedTests: true,
         build: (process.env.VITEST_PLUGIN_RSC_BUILD || "development") as NextBuild,
       }),
-      ignoreWatchedOnlyModules(),
     ],
     test: {
       name: "nextjs-notes-demo-browser",

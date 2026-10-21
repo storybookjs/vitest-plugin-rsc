@@ -35,7 +35,6 @@ import { moduleFileAt } from "./project/context.ts";
 import { describeEnv, envFilesOf, type PageEnv } from "./project/env.ts";
 import { compileServerCode, createServerCode, type ServerCodeOptions } from "./server-code.ts";
 import { createUseCachePlugin, useCacheId, useCacheModule, usesCache } from "./use-cache.ts";
-import { affectedTests } from "./affected/index.ts";
 import { createPathsPlugin } from "./paths.ts";
 import { nextStaticBuild, withPathsFromRoot } from "./static-build.ts";
 import { builtHostFileOf, createStyles, changesInPlace } from "./styles.ts";
@@ -133,11 +132,10 @@ const ownFile = (name: string) =>
   normalizePath(
     fileURLToPath(new URL(`./${name}${path.extname(import.meta.url)}`, import.meta.url)),
   );
-// Vitest wants a file path for a setup file, not a package specifier. These
-// two are the only files of the layers that import Vitest: a host without
-// Vitest never loads them.
+// Vitest wants a file path for a setup file, not a package specifier. It is
+// the only file of the layers that imports Vitest: a host without Vitest
+// never loads it.
 const setupFile = ownFile("setup");
-const affectedSetupFile = ownFile("affected/browser");
 // What a test imports `renderServer()` from, and the file that is.
 const testingLibrary = {
   specifier: "vitest-plugin-rsc/nextjs/testing-library",
@@ -624,16 +622,6 @@ export type { NextBuild };
 
 export type VitestPluginNextOptions = ServerCodeOptions & {
   /**
-   * Lets watch mode, `vitest --changed` and `vitest related` find the test
-   * files of a route: a test that opens a route does not import its files.
-   * Off unless set. It leans on how Vitest works inside, so an update of
-   * Vitest can break it: see docs/next-routes.md, "Watch Mode".
-   *
-   * Without it an edit in watch mode runs every test file that opens a route,
-   * and `--changed` does not find the test files of a route.
-   */
-  affectedTests?: boolean;
-  /**
    * Experimental. The code that Next's runtime and React run, in all three
    * layers: `"development"` as `next dev` runs it, `"production"` as
    * `next start` runs it after `next build`. Production renders faster,
@@ -751,24 +739,6 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
     },
     ...createRunnerEnvironmentPlugins(environmentOf.ssr),
     createPathsPlugin(getProject),
-    // Watch mode and `vitest --changed` find the test files of a route. On
-    // its own: nothing else here knows of it.
-    ...(options.affectedTests
-      ? [
-          affectedTests({
-            environments: layers.map((layer) => environmentOf[layer]),
-            lists: routeKinds.map((kind) => `\0${routeLists[kind]}`),
-            modulesOf: (kind, entry) =>
-              [...project.routes, ...project.componentRoutes].flatMap((route, index) =>
-                route.kind === kind && entryOf(route) === entry
-                  ? [`\0${routeEntryPrefix}${index}`]
-                  : [],
-              ),
-            next: getProject,
-            setupFile: affectedSetupFile,
-          }),
-        ]
-      : []),
     {
       name: "vitest-plugin-rsc:next",
       enforce: "pre",

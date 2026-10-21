@@ -17,8 +17,8 @@
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-rsc": "0.5.36",
-    "@vitest/browser": "5.0.3",
-    "@vitest/browser-playwright": "5.0.3",
+    "@vitest/browser": "5.0.5",
+    "@vitest/browser-playwright": "5.0.5",
     "cheerio": "^1.1.2",
     "jest-extended": "4.0.2",
     "nanoid": "4.0.1",
@@ -29,7 +29,7 @@
     "strip-ansi": "^7.1.2",
     "typescript": "^6.0.3",
     "vite": "^8.3.1",
-    "vitest": "5.0.3",
+    "vitest": "5.0.5",
     "vitest-plugin-rsc": "workspace:*"
   },
   "engines": {

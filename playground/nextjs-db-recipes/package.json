@@ -37,8 +37,8 @@
     "@types/pg": "^8.20.0",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
-    "@vitest/browser": "5.0.3",
-    "@vitest/browser-playwright": "5.0.3",
+    "@vitest/browser": "5.0.5",
+    "@vitest/browser-playwright": "5.0.5",
     "drizzle-kit": "^0.31.10",
     "ioredis-mock": "8.13.1",
     "lite4mariadb": "0.1.2",
@@ -46,7 +46,7 @@
     "prisma": "7.10.1",
     "typescript": "^6.0.3",
     "vite": "^8.3.1",
-    "vitest": "5.0.3",
+    "vitest": "5.0.5",
     "vitest-plugin-rsc": "workspace:*"
   },
   "engines": {

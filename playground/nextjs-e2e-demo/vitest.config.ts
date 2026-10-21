@@ -174,7 +174,7 @@ export default defineProject({
     vitestPluginRSC(),
     // The helpers in `test/` work on the page, so they have to see the browser.
     // Every other module that is not a test file is server code.
-    vitestPluginNext({ browserModules: ["test/**"], affectedTests: true, build }),
+    vitestPluginNext({ browserModules: ["test/**"], build }),
     hitsService(),
     bodyService(),
     headersService(),

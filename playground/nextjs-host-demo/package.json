@@ -26,7 +26,7 @@
     "storybook": "https://pkg.pr.new/storybookjs/storybook/storybook@e1d3d410e8e721213d687df093ffda5464ccc086",
     "typescript": "^6.0.3",
     "vite": "^8.3.1",
-    "vitest": "5.0.3",
+    "vitest": "5.0.5",
     "vitest-plugin-rsc": "workspace:*"
   },
   "engines": {
