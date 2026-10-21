@@ -34,6 +34,13 @@ export const getRandomValues = <T extends ArrayBufferView>(view: T): T =>
   web.getRandomValues(view as never);
 
 const codeError = <E extends Error>(error: E, code: string): E => Object.assign(error, { code });
+const invalidType = (message: string) => codeError(new TypeError(message), "ERR_INVALID_ARG_TYPE");
+function callbackOf<T>(callback: unknown): Callback<T> {
+  if (typeof callback !== "function") {
+    throw invalidType('The "callback" argument must be of type function');
+  }
+  return callback as Callback<T>;
+}
 // Node's error of a number out of its range, with a large one as Node
 // writes it: 281_474_976_710_656.
 const outOfRange = (name: string, range: string, received: number) =>
@@ -49,6 +56,9 @@ const outOfRange = (name: string, range: string, received: number) =>
 // The offset and the size are in elements of the view, as in Node.js, and
 // its errors in bytes. `getRandomValues()` fills 64 KiB at most a call.
 function fill<T extends ArrayBufferView | ArrayBuffer>(view: T, offset = 0, size?: number): T {
+  if (!(view instanceof ArrayBuffer) && !ArrayBuffer.isView(view)) {
+    throw invalidType('The "buf" argument must be an instance of ArrayBuffer or ArrayBufferView');
+  }
   const element = (view as { BYTES_PER_ELEMENT?: number }).BYTES_PER_ELEMENT ?? 1;
   const whole =
     view instanceof ArrayBuffer
@@ -78,16 +88,17 @@ export function randomFill<T extends ArrayBufferView | ArrayBuffer>(
   view: T,
   ...rest: unknown[]
 ): void {
-  const callback = rest.pop() as Callback<T>;
+  const callback = callbackOf<T>(rest.pop());
   const filled = fill(view, ...(rest as [number?, number?]));
   setTimeout(() => callback(null, filled));
 }
 export function randomBytes(size: number): Buffer;
 export function randomBytes(size: number, callback: Callback<Buffer>): void;
 export function randomBytes(size: number, callback?: Callback<Buffer>): Buffer | undefined {
+  const done = callback === undefined ? undefined : callbackOf<Buffer>(callback);
   const bytes = fill(Buffer.alloc(size));
-  if (!callback) return bytes;
-  setTimeout(() => callback(null, bytes));
+  if (!done) return bytes;
+  setTimeout(() => done(null, bytes));
   return undefined;
 }
 
@@ -100,9 +111,18 @@ export function randomInt(
   callback?: Callback<number>,
 ): number | undefined;
 export function randomInt(...args: unknown[]): number | undefined {
+  // A last argument that is no function is `max`, as in Node.js.
   const callback = typeof args.at(-1) === "function" ? (args.pop() as Callback<number>) : undefined;
   const [min, max] = (args.length === 1 ? [0, args[0]] : args) as [number, number];
-  if (!Number.isSafeInteger(min) || !Number.isSafeInteger(max) || max <= min) {
+  for (const [name, value] of [
+    ["min", min],
+    ["max", max],
+  ] as const) {
+    if (!Number.isSafeInteger(value)) {
+      throw invalidType(`The "${name}" argument must be a safe integer`);
+    }
+  }
+  if (max <= min) {
     throw codeError(
       new RangeError(
         `The value of "max" is out of range. It must be greater than the value of "min" (${min}). Received ${max}`,
@@ -111,7 +131,9 @@ export function randomInt(...args: unknown[]): number | undefined {
     );
   }
   const range = max - min;
-  if (range > 2 ** 48 - 1) throw outOfRange("max - min", `<= ${2 ** 48 - 1}`, range);
+  if (range > 2 ** 48 - 1) {
+    throw outOfRange(args.length === 1 ? "max" : "max - min", `<= ${2 ** 48 - 1}`, range);
+  }
   const limit = 2 ** 48 - (2 ** 48 % range);
   let value: number;
   do {
@@ -124,16 +146,21 @@ export function randomInt(...args: unknown[]): number | undefined {
 }
 
 function bytesOf(data: Data, encoding?: BufferEncoding): Uint8Array {
+  if (typeof data === "string" && encoding === "hex" && data.length % 2 === 1) {
+    throw codeError(
+      new TypeError(
+        `The argument 'encoding' is invalid for data of length ${data.length}. Received 'hex'`,
+      ),
+      "ERR_INVALID_ARG_VALUE",
+    );
+  }
   if (typeof data === "string") return Buffer.from(data, encoding ?? "utf8");
   if (data instanceof ArrayBuffer) return new Uint8Array(data);
   if (ArrayBuffer.isView(data)) {
     return new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
   }
-  throw codeError(
-    new TypeError(
-      'The "data" argument must be of type string or an instance of Buffer, TypedArray, or DataView',
-    ),
-    "ERR_INVALID_ARG_TYPE",
+  throw invalidType(
+    'The "data" argument must be of type string or an instance of Buffer, TypedArray, or DataView',
   );
 }
 
@@ -213,10 +240,21 @@ class Digest extends Transform {
   }
 }
 
-// A second `digest()` of a hash throws, as in Node.js.
+// A second `digest()` of a hash throws, as in Node.js. `outputLength` is
+// the digest's own, as Node's takes it of a hash that is not an XOF.
 export class Hash extends Digest {
-  constructor(algorithm: string | State, options?: object) {
+  constructor(algorithm: string | State, options?: { outputLength?: number }) {
+    if (typeof algorithm !== "string" && typeof algorithm?.clone !== "function") {
+      throw invalidType('The "algorithm" argument must be of type string');
+    }
     const state = typeof algorithm === "string" ? hasherOf(algorithm, "hash").create() : algorithm;
+    const length = options?.outputLength;
+    if (length !== undefined && length !== state.clone().digest().length) {
+      throw codeError(
+        new Error("error:030000B2:digital envelope routines::not XOF or invalid length"),
+        "ERR_OSSL_EVP_NOT_XOF_OR_INVALID_LENGTH",
+      );
+    }
     super(
       state,
       () => {
@@ -229,15 +267,20 @@ export class Hash extends Digest {
     return new Hash(this.state.clone(), options);
   }
 }
-export const createHash = (algorithm: string, options?: object): Hash =>
+export const createHash = (algorithm: string, options?: { outputLength?: number }): Hash =>
   new Hash(algorithm, options);
 
-// Node's one-shot hash, of 21.7: hex by default.
+// Node's one-shot hash, of 21.7: hex by default, and the encoding in
+// `options.outputEncoding`, as of 24.
 export const hash = (
   algorithm: string,
   data: Data,
-  encoding: BufferEncoding | "buffer" = "hex",
-): Buffer | string => output(hasherOf(algorithm, "one-shot")(bytesOf(data)), encoding);
+  options: BufferEncoding | "buffer" | { outputEncoding?: BufferEncoding | "buffer" } = "hex",
+): Buffer | string =>
+  output(
+    hasherOf(algorithm, "one-shot")(bytesOf(data)),
+    typeof options === "string" ? options : (options.outputEncoding ?? "hex"),
+  );
 
 // The HMAC of RFC 2104. A key that is a string is in `options.encoding`, as
 // in Node.js. A second `digest()` is empty, as in Node.js.

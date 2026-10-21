@@ -393,3 +393,86 @@ test("`buffer` tells UTF-8 and ASCII as Node.js does, and has the browser's File
   const transcode = buffer.transcode as typeof nodeBuffer.transcode;
   expect(() => transcode(Buffer.from("a"), "utf8", "latin1")).toThrow();
 });
+
+test("throws Node's error for what is no data or an option out of its range, never an answer", async () => {
+  // The code of what a call throws, as `outcome()` has it.
+  const code = (call: () => unknown) => outcome(call as () => undefined).split(":")[0];
+  const calls: [string, (z: any, c: any, b: any) => unknown][] = [
+    ["gzipSync({})", (z) => z.gzipSync({})],
+    ["gzipSync([1, 2, 3])", (z) => z.gzipSync([1, 2, 3])],
+    ["crc32(123)", (z) => z.crc32(123)],
+    ["level 10", (z) => z.deflateSync("a", { level: 10 })],
+    ["memLevel 0", (z) => z.deflateSync("a", { memLevel: 0 })],
+    ["chunkSize 10", (z) => z.deflateSync("a", { chunkSize: 10 })],
+    ["maxOutputLength 0", (z) => z.deflateSync("a", { maxOutputLength: 0 })],
+    ["windowBits 7", (z) => z.inflateSync(z.deflateSync("a"), { windowBits: 7 })],
+    ["isUtf8(string)", (_z, _c, b) => b.isUtf8("abc")],
+    ["isAscii(array)", (_z, _c, b) => b.isAscii([200])],
+    ["randomFillSync(array)", (_z, c) => c.randomFillSync([1, 2, 3])],
+    ["randomFill without a callback", (_z, c) => c.randomFill(new Uint8Array(2), 1)],
+    ["randomBytes with a number", (_z, c) => c.randomBytes(2, 5)],
+    ["randomInt(1.5)", (_z, c) => c.randomInt(1.5)],
+    ["randomInt(0, 2 ** 53)", (_z, c) => c.randomInt(0, 2 ** 53)],
+    ["odd hex", (_z, c) => c.createHash("sha256").update("deadbee", "hex")],
+    ["createHash(undefined)", (_z, c) => c.createHash(undefined)],
+    ["outputLength 16", (_z, c) => c.createHash("sha256", { outputLength: 16 })],
+  ];
+  for (const [name, call] of calls) {
+    const node = code(() => call(nodeZlib, nodeCrypto, nodeBuffer));
+    expect(node, name).toMatch(/^ERR_|^Z_/);
+    expect(
+      code(() => call(zlib, crypto, buffer)),
+      name,
+    ).toBe(node);
+  }
+  expect(outcome(() => crypto.randomInt(2 ** 48))).toContain('"max" is out of range');
+  // `null` is no options, and Node's options form of `hash()`.
+  expect(zlib.inflateSync(zlib.deflateSync(text, null), null).toString()).toBe(text);
+  expect(await promised<Buffer>((done) => zlib.gzip(text, null, done))).toHaveLength(
+    zlib.gzipSync(text).length,
+  );
+  expect(crypto.hash("sha256", text, { outputEncoding: "base64" })).toBe(
+    nodeCrypto.hash("sha256", text, { outputEncoding: "base64" }),
+  );
+  // Gzip has no dictionary, as Node's ignores one: what it writes, Node reads.
+  const gzipped = zlib.gzipSync(text, { dictionary: Buffer.from("the notes") });
+  expect(nodeZlib.gunzipSync(gzipped).toString()).toBe(text);
+  // What zlib's header has that Node rejects.
+  const flagged = Uint8Array.from(zlib.gzipSync(text));
+  flagged[3]! |= 0x20;
+  expect(outcome(() => zlib.gunzipSync(flagged))).toBe(outcome(() => nodeZlib.gunzipSync(flagged)));
+  const wide = Uint8Array.from(zlib.deflateSync(text));
+  wide[0] = 0x88;
+  wide[1] = (31 - ((0x88 * 256) % 31)) % 31;
+  expect(outcome(() => zlib.inflateSync(wide))).toBe(outcome(() => nodeZlib.inflateSync(wide)));
+});
+
+test("throws for an option of zlib that would change the answer and is not here", () => {
+  for (const options of [
+    { info: true },
+    { finishFlush: nodeZlib.constants.Z_SYNC_FLUSH },
+    { flush: nodeZlib.constants.Z_SYNC_FLUSH },
+    { windowBits: 9 },
+  ]) {
+    expect(() => zlib.deflateSync(text, options as never), JSON.stringify(options)).toThrow(
+      /^vitest-plugin-rsc: zlib's .* is not there in the browser$/,
+    );
+  }
+  expect(zlib.inflateSync(zlib.deflateSync(text), { windowBits: 0 }).toString()).toBe(text);
+});
+
+test("`stream/consumers` reads what `for await` reads, like an array or a string", async () => {
+  expect(await consumers.text(["a", "b"] as never)).toBe(
+    await nodeConsumers.text(["a", "b"] as never),
+  );
+  expect(await consumers.text("ab" as never)).toBe(await nodeConsumers.text("ab" as never));
+  // A web stream without `Symbol.asyncIterator`, as in Safari before 18.
+  const stream = new ReadableStream({
+    start(controller) {
+      controller.enqueue(new TextEncoder().encode("ab"));
+      controller.close();
+    },
+  });
+  const old = { getReader: () => stream.getReader() };
+  expect(await consumers.text(old as never)).toBe("ab");
+});

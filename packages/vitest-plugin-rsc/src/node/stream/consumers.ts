@@ -11,12 +11,19 @@ const Buffer = OwnBuffer as unknown as typeof globalThis.Buffer;
 type Source = AsyncIterable<unknown> | ReadableStream<unknown>;
 
 async function* chunksOf(source: Source): AsyncGenerator<unknown> {
-  // A web stream without `Symbol.asyncIterator`, as in Safari before 18.
-  if (Symbol.asyncIterator in source) {
+  // Anything `for await` reads, as in Node.js, like an array or a string,
+  // but a web stream without `Symbol.asyncIterator`, as in Safari before 18.
+  const stream = source as Partial<ReadableStream<unknown>> & object;
+  if (
+    typeof source !== "object" ||
+    source === null ||
+    Symbol.asyncIterator in source ||
+    typeof stream.getReader !== "function"
+  ) {
     yield* source as AsyncIterable<unknown>;
     return;
   }
-  const reader = (source as ReadableStream<unknown>).getReader();
+  const reader = stream.getReader();
   let next = await reader.read();
   while (!next.done) {
     yield next.value;

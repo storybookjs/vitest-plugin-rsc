@@ -9,15 +9,22 @@ import unenv from "unenv/node/buffer";
 export * from "unenv/node/buffer";
 
 type Input = ArrayBuffer | ArrayBufferView;
-const bytesOf = (input: Input): Uint8Array =>
-  input instanceof ArrayBuffer
-    ? new Uint8Array(input)
-    : new Uint8Array(input.buffer, input.byteOffset, input.byteLength);
+function bytesOf(input: Input): Uint8Array {
+  if (input instanceof ArrayBuffer) return new Uint8Array(input);
+  if (ArrayBuffer.isView(input)) {
+    return new Uint8Array(input.buffer, input.byteOffset, input.byteLength);
+  }
+  throw Object.assign(
+    new TypeError('The "input" argument must be an instance of ArrayBuffer, Buffer, or TypedArray'),
+    { code: "ERR_INVALID_ARG_TYPE" },
+  );
+}
 
 const utf8 = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true });
 export function isUtf8(input: Input): boolean {
+  const bytes = bytesOf(input);
   try {
-    utf8.decode(bytesOf(input));
+    utf8.decode(bytes);
     return true;
   } catch {
     return false;

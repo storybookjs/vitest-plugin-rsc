@@ -5,7 +5,9 @@
 // read here, as zlib reads it, with the checksums of what it decompresses,
 // gzip's CRC-32 and zlib's Adler-32, which fflate checks neither of. A gzip
 // of one member, as `gzipSync()` writes one: one of more throws, and one
-// with bytes after it fails its check, where Node's reads both. Gzip has no
+// with bytes after it fails its check, where Node's reads both, as does a
+// zlib with bytes after it. An option that would change the answer and is
+// not here throws: `info`, a flush of its own and a window of its own. Gzip has no
 // time in its header, as Node's has none, so that the same data compresses
 // to the same bytes. The rest is unenv's: its constants, and streams and
 // functions that throw when called, like `createGzip()` and Brotli's. See
@@ -18,7 +20,13 @@ import {
   inflateSync as fflateInflateSync,
   zlibSync,
 } from "fflate/browser";
-import unenv, { Z_BUF_ERROR, Z_DATA_ERROR, Z_NEED_DICT } from "unenv/node/zlib";
+import unenv, {
+  Z_BUF_ERROR,
+  Z_DATA_ERROR,
+  Z_FINISH,
+  Z_NEED_DICT,
+  Z_NO_FLUSH,
+} from "unenv/node/zlib";
 import { Buffer as OwnBuffer } from "vitest-plugin-rsc/node/buffer";
 
 export * from "unenv/node/zlib";
@@ -27,16 +35,35 @@ export * from "unenv/node/zlib";
 const Buffer = OwnBuffer as unknown as typeof globalThis.Buffer;
 
 type Data = string | ArrayBuffer | ArrayBufferView;
-type Options = { level?: number; memLevel?: number; dictionary?: Data; maxOutputLength?: number };
+type Options = {
+  level?: number;
+  memLevel?: number;
+  windowBits?: number;
+  chunkSize?: number;
+  flush?: number;
+  finishFlush?: number;
+  info?: boolean;
+  dictionary?: Data;
+  maxOutputLength?: number;
+};
 type Callback = (error: Error | null, result?: Buffer) => void;
 type Format = "gzip" | "deflate" | "deflate-raw" | "unzip";
 
-const bytesOf = (data: Data): Uint8Array =>
-  typeof data === "string"
-    ? Buffer.from(data)
-    : data instanceof ArrayBuffer
-      ? new Uint8Array(data)
-      : new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+// Node's error of anything else, of an argument by its name.
+function bytesOf(data: Data, name = "buffer"): Uint8Array {
+  if (typeof data === "string") return Buffer.from(data);
+  if (data instanceof ArrayBuffer && name !== "data") return new Uint8Array(data);
+  if (ArrayBuffer.isView(data))
+    return new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+  const types =
+    name === "data"
+      ? "Buffer, TypedArray, or DataView"
+      : "Buffer, TypedArray, DataView, or ArrayBuffer";
+  throw Object.assign(
+    new TypeError(`The "${name}" argument must be of type string or an instance of ${types}`),
+    { code: "ERR_INVALID_ARG_TYPE" },
+  );
+}
 
 // Node's errors of zlib.
 const zlibError = (message: string, errno: number, code: string): Error =>
@@ -47,6 +74,44 @@ const tooLarge = (limit: number) =>
   Object.assign(new RangeError(`Cannot create a Buffer larger than ${limit} bytes`), {
     code: "ERR_BUFFER_TOO_LARGE",
   });
+
+// Node's checks of the options, and an error for one that is not here.
+const notHere = (name: string) =>
+  new Error(`vitest-plugin-rsc: zlib's ${name} is not there in the browser`);
+function optionsOf(options: Options | null | undefined, inflate: boolean): Options {
+  const own = options ?? {};
+  const ranges: [keyof Options, number, number][] = [
+    ["level", -1, 9],
+    ["memLevel", 1, 9],
+    ["windowBits", 8, 15],
+    ["chunkSize", 64, Infinity],
+    ["maxOutputLength", 1, 2 ** 53 - 1],
+  ];
+  for (const [name, min, max] of ranges) {
+    const value = own[name] as number | undefined;
+    // A window of 0 is the one of the header, to inflate.
+    if (value === undefined || (name === "windowBits" && inflate && value === 0)) continue;
+    if (typeof value !== "number" || Number.isNaN(value) || value < min || value > max) {
+      throw Object.assign(
+        new RangeError(
+          `The value of "options.${name}" is out of range. It must be >= ${min}${
+            max === Infinity ? "" : ` and <= ${max}`
+          }. Received ${value}`,
+        ),
+        { code: "ERR_OUT_OF_RANGE" },
+      );
+    }
+  }
+  if (own.info) throw notHere("`info` option");
+  if (own.flush !== undefined && own.flush !== Z_NO_FLUSH) throw notHere("`flush` option");
+  if (own.finishFlush !== undefined && own.finishFlush !== Z_FINISH) {
+    throw notHere("`finishFlush` option");
+  }
+  if (own.windowBits !== undefined && own.windowBits !== 15 && own.windowBits !== 0) {
+    throw notHere("window of less than 32 KiB");
+  }
+  return own;
+}
 
 // fflate's error by its code: 0 is data that ends too soon.
 function fflateCall<T>(call: () => T): T {
@@ -65,7 +130,7 @@ const crcTable = Int32Array.from({ length: 256 }, (_, n) => {
   return c;
 });
 export function crc32(data: string | ArrayBufferView, value = 0): number {
-  const bytes = bytesOf(data);
+  const bytes = bytesOf(data, "data");
   let crc = ~value;
   for (let i = 0; i < bytes.length; i++) crc = crcTable[(crc ^ bytes[i]!) & 0xff]! ^ (crc >>> 8);
   return ~crc >>> 0;
@@ -87,6 +152,7 @@ function gzipHeaderLength(bytes: Uint8Array): number {
   if (bytes[0] !== 0x1f || bytes[1] !== 0x8b) throw badData("incorrect header check");
   if (bytes[2] !== 8) throw badData("unknown compression method");
   const flags = bytes[3]!;
+  if (flags & 0xe0) throw badData("unknown header flags set");
   let at = 10;
   if (flags & 4) at += 2 + (bytes[10]! | (bytes[11]! << 8));
   for (const flag of [8, 16]) {
@@ -107,8 +173,10 @@ function gzipHeaderLength(bytes: Uint8Array): number {
 // The deflate data of a gzip or zlib, by fflate's inflate, with the
 // header, the dictionary it may ask for and the checksum after it read
 // here. `unzip` is gzip or zlib, by the first two bytes. What follows the
-// data of a zlib or of raw deflate is ignored, as by Node's.
-function decompress(format: Format, data: Data, options: Options = {}): Buffer {
+// data of raw deflate is ignored, as by Node's; what follows a zlib fails
+// its check.
+function decompress(format: Format, data: Data, given?: Options | null): Buffer {
+  const options = optionsOf(given, true);
   const bytes = bytesOf(data);
   const kind =
     format === "unzip" ? (bytes[0] === 0x1f && bytes[1] === 0x8b ? "gzip" : "deflate") : format;
@@ -120,20 +188,21 @@ function decompress(format: Format, data: Data, options: Options = {}): Buffer {
     const [method, flags] = [bytes[0]!, bytes[1]!];
     if ((method * 256 + flags) % 31 !== 0) throw badData("incorrect header check");
     if ((method & 0x0f) !== 8) throw badData("unknown compression method");
+    if (method >> 4 > 7) throw badData("invalid window size");
     start = 2;
     if (flags & 0x20) {
       if (bytes.length < 6) throw endedTooSoon();
       if (options.dictionary === undefined) {
         throw zlibError("Missing dictionary", Z_NEED_DICT, "Z_NEED_DICT");
       }
-      dictionary = bytesOf(options.dictionary);
+      dictionary = bytesOf(options.dictionary, "dictionary");
       const id = new DataView(bytes.buffer, bytes.byteOffset).getUint32(2);
       if (adler32(dictionary) !== id) throw zlibError("Bad dictionary", Z_NEED_DICT, "Z_NEED_DICT");
       start = 6;
     }
   }
   if (kind === "deflate-raw" && options.dictionary !== undefined) {
-    dictionary = bytesOf(options.dictionary);
+    dictionary = bytesOf(options.dictionary, "dictionary");
   }
   const trailer = kind === "gzip" ? 8 : kind === "deflate" ? 4 : 0;
   // Deflate data has a byte at least, the end of its block.
@@ -182,14 +251,16 @@ function decompress(format: Format, data: Data, options: Options = {}): Buffer {
   return Buffer.from(result.buffer, result.byteOffset, result.length);
 }
 
-// fflate's, at zlib's level, 0 to 9, and with its `mem` zlib's `memLevel`;
-// zlib's default level, -1, is fflate's.
-function compress(format: Format, data: Data, options: Options = {}): Buffer {
+// fflate's, at zlib's level, 0 to 9; zlib's default level, -1, is
+// fflate's. `memLevel` only tunes zlib's compression, and fflate has its
+// own. Gzip has no dictionary, as Node's ignores one for it.
+function compress(format: Format, data: Data, given?: Options | null): Buffer {
+  const options = optionsOf(given, false);
   const bytes = bytesOf(data);
   const fflate = {
     ...(options.level !== undefined && options.level >= 0 && { level: options.level as 0 }),
-    ...(options.memLevel !== undefined && { mem: options.memLevel as 0 }),
-    ...(options.dictionary !== undefined && { dictionary: bytesOf(options.dictionary) }),
+    ...(options.dictionary !== undefined &&
+      format !== "gzip" && { dictionary: bytesOf(options.dictionary, "dictionary") }),
   };
   const result =
     format === "gzip"
@@ -203,21 +274,25 @@ function compress(format: Format, data: Data, options: Options = {}): Buffer {
   return Buffer.from(result.buffer, result.byteOffset, result.length);
 }
 
-export const gzipSync = (data: Data, options?: Options) => compress("gzip", data, options);
-export const gunzipSync = (data: Data, options?: Options) => decompress("gzip", data, options);
-export const deflateSync = (data: Data, options?: Options) => compress("deflate", data, options);
-export const inflateSync = (data: Data, options?: Options) => decompress("deflate", data, options);
-export const deflateRawSync = (data: Data, options?: Options) =>
+export const gzipSync = (data: Data, options?: Options | null) => compress("gzip", data, options);
+export const gunzipSync = (data: Data, options?: Options | null) =>
+  decompress("gzip", data, options);
+export const deflateSync = (data: Data, options?: Options | null) =>
+  compress("deflate", data, options);
+export const inflateSync = (data: Data, options?: Options | null) =>
+  decompress("deflate", data, options);
+export const deflateRawSync = (data: Data, options?: Options | null) =>
   compress("deflate-raw", data, options);
-export const inflateRawSync = (data: Data, options?: Options) =>
+export const inflateRawSync = (data: Data, options?: Options | null) =>
   decompress("deflate-raw", data, options);
-export const unzipSync = (data: Data, options?: Options) => decompress("unzip", data, options);
+export const unzipSync = (data: Data, options?: Options | null) =>
+  decompress("unzip", data, options);
 
 // `gzip(buffer, [options], callback)` and the others: the synchronous one,
 // after the code that called it, as zlib's threads are, on a copy of the
 // data, which the caller may change in the meantime.
-const asyncOf = (run: (data: Data, options?: Options) => Buffer) =>
-  function (data: Data, options: Options | Callback, callback?: Callback): void {
+const asyncOf = (run: (data: Data, options?: Options | null) => Buffer) =>
+  function (data: Data, options: Options | null | Callback, callback?: Callback): void {
     const done = typeof options === "function" ? options : callback;
     if (typeof done !== "function") {
       throw Object.assign(new TypeError('The "callback" argument must be of type function'), {
