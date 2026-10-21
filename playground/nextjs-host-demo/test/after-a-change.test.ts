@@ -3,9 +3,9 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { stripVTControlCharacters } from "node:util";
 import type { Page } from "playwright";
-import { afterAll, expect } from "vitest";
+import { expect, onTestFinished } from "vitest";
 import { copyProject } from "../../test-helpers/build.ts";
-import { createProject, test, type DevServer } from "../../test-helpers/host.ts";
+import { createProject, test } from "../../test-helpers/host.ts";
 import type { HostWindow } from "../host/state.ts";
 import { style } from "./host-page.ts";
 
@@ -15,19 +15,14 @@ import { style } from "./host-page.ts";
 // the change, and the module graph has only what this test's host loaded.
 
 const root = fileURLToPath(new URL("../", import.meta.url));
-const copies: string[] = [];
-const sites: DevServer[] = [];
-
-afterAll(async () => {
-  await Promise.all(sites.map((site) => site.close()));
-  for (const copy of copies) fs.rmSync(copy, { recursive: true, force: true });
-});
 
 // A dev server of a copy of the project, which `edit` changes before the
-// server starts.
+// server starts. Both go when the test ends, after its page closed: a dev
+// server holds a gigabyte or more, and the servers of every test at once do
+// not fit in the memory of a CI runner.
 async function serveCopy(edit: (copy: string) => void = () => {}) {
   const copy = fs.mkdtempSync(path.join(root, "..", ".nextjs-host-demo-"));
-  copies.push(copy);
+  onTestFinished(() => fs.rmSync(copy, { recursive: true, force: true }));
   copyProject(root, copy);
   edit(copy);
   const site = await createProject(copy).serve((port) => [
@@ -38,7 +33,7 @@ async function serveCopy(edit: (copy: string) => void = () => {}) {
     String(port),
     "--strictPort",
   ]);
-  sites.push(site);
+  onTestFinished(() => site.close());
   return {
     copy,
     url: `${site.url}?view=page`,
