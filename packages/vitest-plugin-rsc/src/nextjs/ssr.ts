@@ -11,7 +11,7 @@ import { normalizeNextQueryParam } from "next/dist/server/web/utils";
 import { getRouteMatcher } from "next/dist/shared/lib/router/utils/route-matcher";
 import { getRouteRegex } from "next/dist/shared/lib/router/utils/route-regex";
 import { routes as allRoutes, routing } from "virtual:vitest-plugin-rsc/next-manifest";
-import { shareIncrementalCache } from "./cache.ts";
+import { loadCacheHandlers, shareIncrementalCache } from "./cache.ts";
 import { registerModuleLoader } from "./client-modules.ts";
 import {
   anyKey,
@@ -418,6 +418,7 @@ async function handle(
     const resolved = await resolve(request, middlewareBody, invokeMiddleware, proxy);
     // The cache of the server, for the route and for what follows the
     // request. Next makes the middleware one of its own, which stores nothing.
+    await loadCacheHandlers();
     shareIncrementalCache(headers);
     // The headers of `next.config` and of the middleware, for the response.
     const routedHeaders = resolved.resolvedHeaders ?? new Headers();

@@ -34,6 +34,7 @@ import {
 import { moduleFileAt } from "./project/context.ts";
 import { describeEnv, envFilesOf, type PageEnv } from "./project/env.ts";
 import { compileServerCode, createServerCode, type ServerCodeOptions } from "./server-code.ts";
+import { createCommonJsPlugin } from "./commonjs.ts";
 import { createUseCachePlugin, useCacheId, useCacheModule, usesCache } from "./use-cache.ts";
 import { createPathsPlugin } from "./paths.ts";
 import { nextStaticBuild, withPathsFromRoot } from "./static-build.ts";
@@ -76,6 +77,10 @@ const middlewareEntryId = virtual("middleware-entry");
 // The env of the run, which globals.ts puts in the page's `process.env`: see
 // project/env.ts.
 const envId = virtual("env");
+// The cache handlers that `next.config` names, for the ssr layer: cache.ts.
+const cacheHandlersId = virtual("cache-handlers");
+// `next/root-params`, which Next's build makes for the app.
+const rootParamsId = virtual("root-params");
 // Next's route resolution: the rsc layer, the document's, says with it which
 // requests are the app's, and the ssr layer routes with it each request that
 // it handles. Not a part of `next`: it is the project's, next to its `next`.
@@ -590,6 +595,7 @@ const runtimeImports: Record<NextLayer, string[]> = {
     "next/dist/server/route-modules/app-page/module",
     "next/dist/server/lib/incremental-cache",
     "next/dist/server/lib/incremental-cache/tags-manifest.external",
+    "next/dist/server/use-cache/handlers",
     // ssr.ts, for what the server in front of the app routes to it
     "next/dist/client/components/app-router-headers",
     "next/dist/server/lib/is-rsc-request",
@@ -1112,7 +1118,8 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
           return `\0${source}`;
         }
         if (source === middlewareId || source === middlewareEntryId) return `\0${source}`;
-        if (source === useCacheId) return `\0${source}`;
+        if (source === useCacheId || source === cacheHandlersId) return `\0${source}`;
+        if (source === "next/root-params") return `\0${rootParamsId}`;
         // TODO: run Next's metadata loaders for these inline loader requests.
         // Until then a page has no metadata from files: see configResolved.
         if (/^next-metadata-(image|route)-loader\?/.test(source)) return `${bridgePrefix}metadata`;
@@ -1122,6 +1129,25 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
           return `export default async function metadata() { return []; }`;
         }
         if (id === `\0${useCacheId}`) return useCacheModule(registry);
+        if (id === `\0${rootParamsId}`) return project.loadRootParams();
+        // The files of the cache handlers that `next.config` names, which
+        // Next's server imports: cache.ts.
+        if (id === `\0${cacheHandlersId}`) {
+          const { cacheHandler, cacheHandlers = {} } = project.config as {
+            cacheHandler?: string;
+            cacheHandlers?: Record<string, string | undefined>;
+          };
+          // A path, or a `file:` URL, as Next takes one.
+          const load = (file: string) =>
+            `() => import(${JSON.stringify(normalizePath(file.startsWith("file:") ? fileURLToPath(file) : file))})`;
+          const kinds = Object.entries(cacheHandlers).flatMap(([kind, file]) =>
+            file ? [`  ${JSON.stringify(kind)}: ${load(file)},`] : [],
+          );
+          return (
+            `export const cacheHandler = ${cacheHandler ? load(cacheHandler) : "undefined"};\n` +
+            `export const cacheHandlers = {\n${kinds.join("\n")}\n};\n`
+          );
+        }
 
         // Of every layer: the page's `process.env` is one.
         if (id === `\0${envId}`) {
@@ -1204,6 +1230,10 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
     serverCode.plugin({ [environmentOf.rsc]: "rsc", [environmentOf.ssr]: "ssr" }),
     ...styles.plugins,
     serverCode.asyncFunctionsPlugin(environmentOf.rsc),
+    createCommonJsPlugin(
+      (environment) => layers.find((layer) => environmentOf[layer] === environment),
+      serverCode.isAppCode,
+    ),
     createUseCachePlugin(
       getProject,
       (environment) => layers.find((layer) => environmentOf[layer] === environment),

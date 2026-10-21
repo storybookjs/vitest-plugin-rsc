@@ -29,8 +29,9 @@ const configPaths = [
  * each option that is a path of the machine as a path from the root of the
  * project, like `next.config.ts` and `../..`. Next's build reads them, and its
  * server reads none for a request but the cache handlers, which the plugin
- * does not load. A build would otherwise have the directory it was built in,
- * and differ from machine to machine.
+ * imports by a module of its own, which the build bundles. A build would
+ * otherwise have the directory it was built in, and differ from machine to
+ * machine.
  *
  * By the options, not by what a value looks like: `basePath: "/app"` of a
  * project in `/app` is no path of the machine.

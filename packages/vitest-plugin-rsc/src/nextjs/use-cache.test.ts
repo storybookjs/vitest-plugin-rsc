@@ -26,12 +26,12 @@ async function compile(
   return (await transform.call({ environment: { name: "client" } }, code, file))?.code;
 }
 
-// The call a function is wrapped in: its kind, its name, and how many of its
-// parameters its `length` does not count.
+// The call a function is wrapped in: its kind, the function, and how many of
+// its parameters its `length` does not count.
 const calls = (code: string | undefined) =>
-  [
-    ...(code ?? "").matchAll(/\$\$useCache\("([^"]+)", "[0-9a-f]{16}:([^"]+)", [^,]+, (\w+)\)/g),
-  ].map(([, kind, name, undeclared]) => [kind, name, undeclared]);
+  [...(code ?? "").matchAll(/\$\$useCache\("([^"]+)", "[0-9a-f]{40}", ([^,]+), (\w+)\)/g)].map(
+    ([, kind, name, undeclared]) => [kind, name, undeclared],
+  );
 
 test("wraps a function with the directive in a call of the cache wrapper", async () => {
   const code = await compile(
@@ -101,12 +101,19 @@ test("hands Next's wrapper the arguments that the function declares", () => {
   // `map()` also passes an index and the array.
   expect(useCache("default", "id", quote, 1)("a", "nl", 0, ["a"])).toEqual([
     "default",
-    "id:0",
+    "id00000000",
     0,
     quote,
     ["a", "nl"],
   ]);
   expect(useCache("remote", "id", all, null)("a", "b", "c").at(-1)).toEqual(["a", "b", "c"]);
+});
+
+test("wraps a function once, also where it closes over a value", () => {
+  const useCache = loadUseCache(0);
+  const quote = function quote() {};
+
+  expect(useCache("default", "id", quote, 0)).toBe(useCache("default", "id", quote, 0));
 });
 
 test("gives the cached function the name of the function", () => {
@@ -116,8 +123,8 @@ test("gives the cached function the name of the function", () => {
 test("keys a cached function by the reset of the caches it was called after", () => {
   const key = (generation: number) => loadUseCache(generation)("default", "id", () => {}, 0)()[1];
 
-  expect(key(1)).toBe("id:1");
-  expect(key(2)).toBe("id:2");
+  expect(key(1)).toBe("id00000001");
+  expect(key(26)).toBe("id0000001a");
 });
 
 test("leaves the directive where Next's compiler does not take it", async () => {

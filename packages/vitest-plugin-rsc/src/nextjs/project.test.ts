@@ -220,6 +220,16 @@ test("rejects an interception route without the route it intercepts, as `next bu
   );
 });
 
+test("makes next/root-params of the params of the root layouts, as Next's build does", async () => {
+  const app = appWith(["[lang]/[region]/layout.js", "[lang]/[region]/page.js"]);
+  const project = await loadNextProject(app, installed);
+
+  const code = await project.loadRootParams();
+
+  expect(code).toContain("export function lang() { return getRootParam('lang'); }");
+  expect(code).toContain("export function region() { return getRootParam('region'); }");
+});
+
 test("compiles CSS with the PostCSS plugins of Next, its own for an app without a config", async () => {
   const project = await loadNextProject(appWith(["layout.js", "page.js"]), installed);
 

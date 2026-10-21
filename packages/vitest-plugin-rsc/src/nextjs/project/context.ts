@@ -176,6 +176,9 @@ export async function openNextProject(
   const nextFontLoader = load<
     typeof import("next/dist/build/webpack/loaders/next-font-loader/index.js")
   >("build/webpack/loaders/next-font-loader/index").default as unknown as Loader;
+  const nextRootParamsLoader = load<
+    typeof import("next/dist/build/webpack/loaders/next-root-params-loader.js")
+  >("build/webpack/loaders/next-root-params-loader").default as unknown as Loader;
   const imageOptimizer =
     load<typeof import("next/dist/server/image-optimizer.js")>("server/image-optimizer");
   const loadCustomRoutes =
@@ -359,6 +362,7 @@ export async function openNextProject(
       localByDefault,
       findConfig,
       nextFontLoader,
+      nextRootParamsLoader,
       imageOptimizer,
       loadCustomRoutes,
       generateInterceptionRoutesRewrites,
