@@ -16,6 +16,9 @@ const built: BuiltFiles = {
       "app/layout": ["_next/static/css/global-abc.css"],
       "app/styles/page": ["_next/static/css/page-def.css", "_next/static/css/card-123.css"],
     },
+    "/app/fonts/page": {
+      "app/fonts/page": ["_next/static/css/font-456.css", "_next/static/css/page-def.css"],
+    },
     // The route of a node.
     "/app/notes/[id]/page": {
       "app/layout": ["_next/static/css/global-abc.css"],
@@ -31,6 +34,13 @@ const built: BuiltFiles = {
   },
   chunks: [],
   modules: {},
+  // The stylesheet of a `next/font` call, with its font files.
+  fonts: {
+    "_next/static/css/font-456.css": [
+      "_next/static/media/inter-s.p.woff2",
+      "_next/static/media/mono-s.woff2",
+    ],
+  },
 };
 
 const paths = (stylesheets: ReturnType<typeof builtStylesheetsOf>) =>
@@ -58,6 +68,21 @@ test("decodes the directory, which Next encodes again when it links", () => {
   expect(paths(stylesheets)["app/layout"]).toEqual(["../My Docs/_next/static/css/global-abc.css"]);
 });
 
+test("gives the stylesheet of a font its font files, from the asset path as well", () => {
+  expect(builtStylesheetsOf(built, "/app/fonts/page", "http://localhost/docs/")).toEqual({
+    "app/fonts/page": [
+      {
+        path: "../docs/_next/static/css/font-456.css",
+        fonts: [
+          "../docs/_next/static/media/inter-s.p.woff2",
+          "../docs/_next/static/media/mono-s.woff2",
+        ],
+      },
+      { path: "../docs/_next/static/css/page-def.css" },
+    ],
+  });
+});
+
 test("has nothing for a route the build does not know", () => {
   expect(builtStylesheetsOf(built, "/app/nope/page", "http://localhost/")).toEqual({});
 });
@@ -69,6 +94,7 @@ test("names the files under the asset prefix of the app", () => {
     hostFiles: {},
     chunks: [],
     modules: {},
+    fonts: {},
   };
   expect(paths(builtStylesheetsOf(prefixed, "/app/page", "http://localhost/"))).toEqual({
     "app/page": ["static/css/page-def.css"],

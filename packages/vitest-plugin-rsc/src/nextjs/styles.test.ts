@@ -151,6 +151,13 @@ type Graph = {
 };
 const list = "\0virtual:vitest-plugin-rsc/next-routes-page";
 const builtCss = (dir: string, file: string) => linked(`${dir}/${file}`, true);
+// The stylesheet of a `next/font` call, which is no file, and the font files
+// that the call has.
+const fontCss = linked(
+  `\0vitest-plugin-rsc/next-font/${Buffer.from("next/font/local/target.css?{}").toString("base64url")}.css`,
+  true,
+);
+const fontFiles = ["static/media/font-s.p.woff2"];
 
 async function buildStylesheets(root: string, real: string, graph: Graph) {
   const route = { kind: "page", page: "/notes/page", pathname: "/notes", component: "node" };
@@ -163,6 +170,7 @@ async function buildStylesheets(root: string, real: string, graph: Graph) {
         loadRouteEntry: async () => ({
           segments: [{ file: `${real}/app/layout.tsx`, stylesheetsKey: "app/layout" }],
         }),
+        loadFont: async () => ({ files: fontFiles }),
       }) as unknown as NextProject,
     environments: { rsc: "client", ssr: "ssr", browser: "react_client" },
     isServerCode: (file) => !file.startsWith(`${root}/host/`),
@@ -197,11 +205,12 @@ async function buildStylesheets(root: string, real: string, graph: Graph) {
     };
     hook("buildStart").call(context);
     for (const source of sources) {
-      hook("transform").call(context, `.${source} {}`, builtCss(real, source));
+      const id = source === fontCss ? source : builtCss(real, source);
+      hook("transform").call(context, `.${source} {}`, id);
     }
     await hook("buildEnd").call(context);
     // No chunks: the modules of a route are a test of their own, below.
-    hook("generateBundle").call(context, {}, {});
+    await hook("generateBundle").call(context, {}, {});
   }
   await build("client", graph.rsc, graph.sources.rsc);
   await build("react_client", graph.browser, graph.sources.browser);
@@ -219,7 +228,7 @@ test("lists the stylesheets of every route and of every file of the host in a bu
   const css = (file: string) => builtCss(root, file);
   const { built, named } = await buildStylesheets(root, root, {
     rsc: {
-      [`${root}/app/layout.tsx`]: [css("app/global.css")],
+      [`${root}/app/layout.tsx`]: [css("app/global.css"), fontCss],
       // A host file that renders a node, with a Server Component of the
       // app, a Client Component of the app, and a stylesheet of its own,
       // which is linked as the app's is.
@@ -250,14 +259,17 @@ test("lists the stylesheets of every route and of every file of the host in a bu
     },
     references: [`${root}/app/client.tsx`, `${root}/host/story.tsx`],
     sources: {
-      rsc: ["app/global.css", "app/card.module.css", "app/page.css", "host/own.css"],
+      rsc: ["app/global.css", fontCss, "app/card.module.css", "app/page.css", "host/own.css"],
       browser: ["app/client.css"],
     },
   });
   expect(built).toEqual({
     assetPath: "/_next/",
     routes: {
-      "/app/notes/page": { "app/layout": [named("global")], [componentPagePath]: [] },
+      "/app/notes/page": {
+        "app/layout": [named("global"), named("font")],
+        [componentPagePath]: [],
+      },
     },
     // By their paths from the root, in their order, with the directive or
     // without: no file of the app, and no stylesheet. What a file reaches
@@ -271,6 +283,8 @@ test("lists the stylesheets of every route and of every file of the host in a bu
     },
     chunks: [],
     modules: { "/app/notes/page": [] },
+    // The font files of the stylesheet of a font, from the directory of the build.
+    fonts: { [named("font")]: ["_next/static/media/font-s.p.woff2"] },
   });
   expect(Object.keys(built.hostFiles)).toEqual(Object.keys(built.hostFiles).sort());
 });

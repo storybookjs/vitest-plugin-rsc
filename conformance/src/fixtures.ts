@@ -88,8 +88,38 @@ export const fixtures: Fixture[] = [
 
   appDir("metadata", "metadata", ["metadata.test.ts"]),
   appDir("metadata-navigation", "metadata", ["metadata-navigation.test.ts"]),
+  // The metadata files: images, generated or not, `sitemap`, `robots` and
+  // `manifest`, their routes and what a page links of them. Not
+  // `metadata-invalid-image-file`, whose test expects `next build` to fail:
+  // the run stops when it starts, with Next's error. `@vercel/og` is what
+  // Next's compiler aliases to `next/og`.
+  appDir("metadata-dynamic-routes", "metadata", ["index.test.ts"], {
+    assumeInstalled: ["@vercel/og"],
+  }),
+  appDir("metadata-dynamic-routes-async-deps", "metadata", ["index.test.ts"], {
+    assumeInstalled: ["@vercel/og"],
+  }),
+  appDir("metadata-font", "metadata", ["metadata-font.test.ts"]),
+  appDir("metadata-icons-parallel-routes", "metadata", ["metadata-icons-parallel-routes.test.ts"]),
+  appDir("metadata-image-files", "metadata", ["metadata-image-files.test.ts"]),
+  appDir("metadata-json-manifest", "metadata", ["index.test.ts"]),
+  appDir("metadata-non-standard-custom-routes", "metadata", [
+    "metadata-non-standard-custom-routes.test.ts",
+  ]),
+  appDir("metadata-route-like-pages", "metadata", ["metadata-route-like-pages.test.ts"]),
+  appDir("metadata-static-file", "metadata", [
+    "metadata-static-file-dynamic-route.test.ts",
+    "metadata-static-file-group-route.test.ts",
+    "metadata-static-file-intercepting-route.test.ts",
+    "metadata-static-file-parallel-route.test.ts",
+    "metadata-static-file-root-route.test.ts",
+    "metadata-static-file-static-route.test.ts",
+  ]),
+  appDir("metadata-svg-icon", "metadata", ["metadata-svg-icon.test.ts"]),
+  appDir("sitemap-group", "metadata", ["sitemap-group.test.ts"]),
 
   // `@next/font` is the old name of `next/font`. The app imports `next/font`.
+  // Not `mdx-font-preload`, its config needs `@next/mdx`.
   appDir("next-font", "font", ["next-font.test.ts"], { assumeInstalled: ["@next/font"] }),
   appDir("next-image", "image", ["next-image.test.ts"]),
 

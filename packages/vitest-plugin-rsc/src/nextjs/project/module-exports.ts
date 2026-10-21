@@ -41,8 +41,14 @@ export function hasExport(file: string, name: string, seen = new Set<string>()):
   });
 }
 
-// The exports of a module of the app, without what they are: `undefined`.
-export async function exportStubs(code: string, file: string): Promise<string> {
+/**
+ * What a module of the app exports, read off its code: the names, `default`
+ * among them, and the modules of its `export *`, whose names are theirs.
+ */
+export async function exportsOf(
+  code: string,
+  file: string,
+): Promise<{ names: Set<string>; stars: string[] }> {
   const compiled = await transformWithOxc(code, file, { sourcemap: false });
   const names = new Set<string>();
   const stars: string[] = [];
@@ -59,8 +65,7 @@ export async function exportStubs(code: string, file: string): Promise<string> {
     if (node.type === "ExportDefaultDeclaration") names.add("default");
     else if (node.type === "ExportAllDeclaration") {
       if (node.exported) names.add(nameOf(node.exported));
-      // Its names are in the other module, which this one has to load for them.
-      else stars.push(`export * from ${JSON.stringify(node.source.value)};\n`);
+      else stars.push(node.source.value);
     } else if (node.type === "ExportNamedDeclaration") {
       for (const specifier of node.specifiers) names.add(nameOf(specifier.exported));
       const { declaration } = node;
@@ -71,12 +76,19 @@ export async function exportStubs(code: string, file: string): Promise<string> {
       }
     }
   }
+  return { names, stars };
+}
+
+// The exports of a module of the app, without what they are: `undefined`.
+export async function exportStubs(code: string, file: string): Promise<string> {
+  const { names, stars } = await exportsOf(code, file);
   const named = [...names].filter((name) => /^[\w$]+$/.test(name) && name !== "default");
   return (
     (named.length > 0
       ? `const _ = undefined;\nexport { ${named.map((name) => `_ as ${name}`).join(", ")} };\n`
       : "") +
     (names.has("default") ? "export default undefined;\n" : "") +
-    stars.join("")
+    // Its names are in the other module, which this one has to load for them.
+    stars.map((star) => `export * from ${JSON.stringify(star)};\n`).join("")
   );
 }

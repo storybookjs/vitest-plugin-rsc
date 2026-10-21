@@ -16,6 +16,19 @@ import { linked } from "./styles.ts";
 // its CSS, which is a stylesheet of the segment that calls it (styles.ts).
 const fontPrefix = "\0vitest-plugin-rsc/next-font/";
 const fontRequest = /^next\/font\/(?:google|local)\/target\.css\?/;
+
+/**
+ * The call of a `next/font` function whose CSS a module is, by the module's
+ * id: the import the SWC transform turns the call into. Nothing for any other
+ * module.
+ */
+export function fontRequestOf(id: string): string | undefined {
+  if (!id.startsWith(fontPrefix)) return undefined;
+  const name = id.slice(fontPrefix.length).split("?")[0]!;
+  if (!name.endsWith(".css")) return undefined;
+  return Buffer.from(name.slice(0, -".css".length), "base64url").toString();
+}
+
 // The files next-swc-loader compiles, as far as Vite serves them as modules.
 const sourceFile = /\.(?:tsx|ts|jsx|js|mjs)$/;
 

@@ -11,6 +11,7 @@ import type { PageEnv } from "./project/env.ts";
 import { routeEntries } from "./project/entries.ts";
 import { layerTables } from "./project/layers.ts";
 import { createLoaders } from "./project/loaders.ts";
+import { createMetadataLoaders } from "./project/metadata.ts";
 import { discoverAppRoutes } from "./project/routes.ts";
 import { buildRouting, findMiddleware } from "./project/routing.ts";
 import { checkRuntime } from "./project/runtime.ts";
@@ -94,8 +95,6 @@ export type NextProject = {
    * and one for `/`, for a node without a url or with a URL of no route.
    */
   componentRoutes: ComponentRoute[];
-  /** The metadata files of the app, like `app/icon.png`, which are not served yet. */
-  metadataFiles: string[];
   /** The route files of the app that ask for Next's edge runtime, which they do not get. */
   edgeRouteFiles: string[];
   /**
@@ -165,15 +164,35 @@ export type NextProject = {
    * client module in the rsc layer: Vite RSC turns it into references.
    */
   compile(code: string, file: string, layer: NextLayer): Promise<Compiled | undefined>;
+  /**
+   * Whether an import is Next's inline request for one of its metadata
+   * loaders, which its app loader asks for a metadata file of the app with.
+   */
+  isMetadataRequest(source: string): boolean;
+  /**
+   * What a metadata loader makes of a file: for a page, the data of an image
+   * it links in its head, like `icon.png`; for a route, its route module.
+   */
+  loadMetadata(request: string): Promise<{ code: string; watchFiles: string[] }>;
+  /**
+   * The query with which the module of a generated image, like `icon.tsx`,
+   * is imported for what it says of the image: its `size`, `alt`,
+   * `contentType` and `generateImageMetadata`.
+   */
+  metadataImageMeta: string;
   /** Whether Next's build imports a file as an image: `next-image-loader`. */
   isImage(file: string): boolean;
   /** The module of an image: what `next-image-loader` makes of the file. */
   loadImage(file: string): Promise<string>;
   /**
    * A call of a `next/font` function, by the import the SWC transform turns it
-   * into: the CSS of the font, and what the call returns.
+   * into: the CSS of the font, what the call returns, and its font files,
+   * under `/_next/` (`static/media/…`). Next preloads a file whose name has
+   * `.p.`, which the loader gives it for a font with `preload` on.
    */
-  loadFont(request: string): Promise<{ css: string; exports: Record<string, unknown> }>;
+  loadFont(
+    request: string,
+  ): Promise<{ css: string; exports: Record<string, unknown>; files: string[] }>;
   /**
    * What Next's rules for CSS decide that is not bundling: its PostCSS
    * plugins and the class names of a CSS module, as Vite's options.
@@ -274,7 +293,6 @@ export async function loadNextProject(
     nextDir: context.nextDir,
     version: context.version,
     routes: app.routes,
-    metadataFiles: app.metadataFiles,
     edgeRouteFiles: app.edgeRouteFiles,
     unmatchedRoutes,
     middlewareFile: middleware.middlewareFile,
@@ -297,5 +315,6 @@ export async function loadNextProject(
     ...routeEntries(context, app, middleware, builtinBoundaries, runLoader),
     ...compiler,
     ...loaders,
+    ...createMetadataLoaders(context, runLoader),
   };
 }

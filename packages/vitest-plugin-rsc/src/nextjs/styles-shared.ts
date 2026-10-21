@@ -83,8 +83,10 @@ export const componentPagePath = "vitest-plugin-rsc/component";
  * looks them up: their paths under `/_next/`, and their CSS where the app has
  * Next inline it (`experimental.inlineCss`). The name is the path of the file
  * from the root of the project, `app/layout`: see `RouteSegment` in project.ts.
+ * The stylesheet of a `next/font` call has its font files too, under
+ * `/_next/`, which Next preloads with the segment.
  */
-export type Stylesheets = Record<string, { path: string; content?: string }[]>;
+export type Stylesheets = Record<string, { path: string; content?: string; fonts?: string[] }[]>;
 
 /** What `builtFilesPath` has: the stylesheets and the modules of a build, as files of it. */
 export type BuiltFiles = {
@@ -117,6 +119,11 @@ export type BuiltFiles = {
    * page has before it loads a route: see route-chunks.ts.
    */
   modules: Record<string, number[]>;
+  /**
+   * For the stylesheet of each `next/font` call, by its file: the font files
+   * of the call, from the directory of the build. See `Stylesheets`.
+   */
+  fonts: Record<string, string[]>;
 };
 
 /**
@@ -188,7 +195,10 @@ export function builtStylesheetsOf(
   return Object.fromEntries(
     Object.entries(segments).map(([segment, stylesheets]) => [
       segment,
-      stylesheets.map((file) => ({ path: pathOf(file) })),
+      stylesheets.map((file) => {
+        const fonts = built.fonts[file];
+        return fonts ? { path: pathOf(file), fonts: fonts.map(pathOf) } : { path: pathOf(file) };
+      }),
     ]),
   );
 }

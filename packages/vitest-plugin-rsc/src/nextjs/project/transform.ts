@@ -16,7 +16,6 @@ export async function createCompiler(
   const { WEBPACK_LAYERS, getLoaderSWCOptions, getRSCModuleInformation, loadJsConfig, swc } = next;
   // Next's SWC transform, with the options next-swc-loader gives it for a
   // module of the app in a layer.
-  await swc.loadBindings(config.experimental.useWasmBinary);
   const { jsConfig, resolvedBaseUrl } = await loadJsConfig(root, config);
   const paths = resolvedBaseUrl && {
     baseUrl: resolvedBaseUrl.baseUrl,
