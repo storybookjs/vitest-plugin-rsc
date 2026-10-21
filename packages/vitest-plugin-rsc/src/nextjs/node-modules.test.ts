@@ -351,7 +351,9 @@ test.skipIf(!nodeFs.existsSync(dist))(
     for (const file of files) {
       const code = nodeFs.readFileSync(file, "utf8");
       expect(code, file).not.toContain("__require(");
-      expect(code, file).not.toContain("createRequire(");
+      // No `require` of Node.js: the package's `module` has a `createRequire()`
+      // of its own, whose `require` throws.
+      expect(code, file).not.toContain("createRequire(import.meta");
       for (const match of code.matchAll(/^(?:import|export)[^;]*?from\s*"([^"]+)"/gm)) {
         const specifier = match[1]!;
         expect(
