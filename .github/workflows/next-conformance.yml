@@ -3,8 +3,9 @@ name: Next.js conformance
 # Runs fixtures of Next's own e2e tests against the plugin, see
 # docs/next-conformance.md. Not a part of CI, and no check that a pull request
 # needs: it takes its time, and it fetches from vercel/next.js. It runs when
-# the runner changes, by hand, and once a week against the canary of Next.js,
-# to tell early when Next changes what the plugin relies on.
+# the runner, the plugin or the lockfile changes, by hand, and once a week
+# against the canary of Next.js, to tell early when Next changes what the
+# plugin relies on.
 on:
   workflow_dispatch:
     inputs:
@@ -17,6 +18,12 @@ on:
     paths:
       - "conformance/**"
       - ".github/workflows/next-conformance.yml"
+      # What the fixtures run: the plugin, and the Next, Vite and Vitest of
+      # the lockfile.
+      - "packages/vitest-plugin-rsc/src/**"
+      - "!packages/vitest-plugin-rsc/src/**/*.test.ts"
+      - "packages/vitest-plugin-rsc/package.json"
+      - "pnpm-lock.yaml"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -25,6 +32,8 @@ concurrency:
 jobs:
   conformance:
     name: Next.js ${{ inputs.next || (github.event_name == 'schedule' && 'canary') || 'pinned' }}
+    # A pull request of Release Please changes the plugin's package.json.
+    if: ${{ !startsWith(github.head_ref, 'release-please--') }}
     runs-on: ubuntu-latest
     timeout-minutes: 90
     env:

@@ -18,8 +18,11 @@ jobs:
   # Test job tests them.
   notes-demo:
     name: Notes demo Storybook
-    # A pull request from a fork has no secrets, so no project token.
-    if: github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request'
+    # A pull request from a fork has no secrets, so no project token. A pull
+    # request of Release Please changes only versions and changelogs.
+    if: >-
+      (github.event.pull_request.head.repo.full_name == github.repository || github.event_name != 'pull_request')
+      && !startsWith(github.head_ref, 'release-please--')
     runs-on: ubuntu-latest
     steps:
       # Chromatic finds the baseline of a build in the history of its commit,

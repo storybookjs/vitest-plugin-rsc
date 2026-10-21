@@ -8,7 +8,7 @@ import nextjsDbRecipesProject from "./playground/nextjs-db-recipes/vitest.config
 import nextjsE2eDemoBuildProject from "./playground/nextjs-e2e-demo/vitest.build.config.ts";
 import nextjsE2eDemoProject from "./playground/nextjs-e2e-demo/vitest.config.ts";
 import nextjsHostDemoBuildProject from "./playground/nextjs-host-demo/vitest.build.config.ts";
-import nextjsHostDemoProject from "./playground/nextjs-host-demo/vitest.config.ts";
+import { nextjsHostDemoProjects } from "./playground/nextjs-host-demo/vitest.config.ts";
 import { nextjsNotesProjects } from "./playground/nextjs-notes-demo/vitest.config.ts";
 import { nextjsNotesStorybookProjects } from "./playground/nextjs-notes-demo/vitest.storybook.config.ts";
 import rscVitestDemoBuildProject from "./playground/rsc-vitest-demo/vitest.build.config.ts";
@@ -52,7 +52,7 @@ export default defineConfig({
       nextjsCacheComponentsDemoBuildProject,
       nextjsDbRecipesProject,
       nextjsE2eDemoBuildProject,
-      nextjsHostDemoProject,
+      ...nextjsHostDemoProjects,
       nextjsHostDemoBuildProject,
       ...nextjsNotesProjects,
       ...nextjsNotesStorybookProjects,
