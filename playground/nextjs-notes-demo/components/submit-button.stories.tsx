@@ -28,5 +28,9 @@ export const Pending = meta.story({
     await expect(await canvas.findByRole("button", { busy: true })).toBeDisabled();
     done();
     await expect(await canvas.findByRole("button", { busy: false })).toBeEnabled();
+    // The click focused the button, which went disabled and enabled again:
+    // whether Chromium still shows its focus ring depends on a frame in
+    // between. Without the focus, the snapshot is the same on every run.
+    button.blur();
   },
 });

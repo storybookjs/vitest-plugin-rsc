@@ -19,6 +19,21 @@ test("renders the new note form with empty fields", async () => {
   await expect.element(page.getByRole("button", { name: "Create note" })).toBeInTheDocument();
 });
 
+test("creates a note dated by the app's clock", async () => {
+  await signedInAs();
+  await renderServer({ url: "/notes/new" });
+
+  await page.getByLabelText("Title").fill("Groceries");
+  await page.getByRole("button", { name: "Create note" }).click();
+
+  await expect
+    .element(page.getByRole("heading", { level: 1, name: "Groceries" }))
+    .toBeInTheDocument();
+  // lib/__mocks__/clock.ts, not the tab's Date, which vitest.setup.ts fixes
+  // at another day.
+  await expect.element(page.getByText("Updated Jan 15, 2026")).toBeInTheDocument();
+});
+
 test("renders server validation errors and keeps old input", async () => {
   await signedInAs();
   await renderServer({ url: "/notes/new" });

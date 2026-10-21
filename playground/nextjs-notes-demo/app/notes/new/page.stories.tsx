@@ -39,5 +39,7 @@ export const Create = meta.story({
     ).toBeVisible();
     const [note] = await db.select().from(notes);
     await expect(location.pathname).toBe(`/notes/${note!.id}`);
+    // The date of lib/__mocks__/clock.ts, the same in every build.
+    await expect(canvas.getByText("Updated Jan 15, 2026")).toBeVisible();
   },
 });

@@ -12,11 +12,13 @@ import "./preview.css";
 // The preview of the stories of files with "use client", which render in
 // the browser, and of the docs pages: the project's preview of Storybook.
 
-// The module that vitest.setup.ts mocks, mocked the same way: the database,
-// with lib/__mocks__/db.ts, in every layer. Storybook reads the mocks of
-// this file only. By a relative path: `sb.mock()` resolves it from
-// Storybook's package, which does not know the `imports` of this one.
+// The modules that vitest.setup.ts mocks, mocked the same way, in every
+// layer: the database, with lib/__mocks__/db.ts, and the clock, with
+// lib/__mocks__/clock.ts. Storybook reads the mocks of this file only. By a
+// relative path: `sb.mock()` resolves them from Storybook's package, which
+// does not know the `imports` of this one.
 sb.mock(import("../lib/db.ts"));
+sb.mock(import("../lib/clock.ts"));
 
 export default definePreview({
   addons: [docs()],

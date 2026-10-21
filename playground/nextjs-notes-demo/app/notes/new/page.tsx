@@ -23,6 +23,7 @@ import {
 import { Input } from "#components/ui/input.tsx";
 import { Textarea } from "#components/ui/textarea.tsx";
 import { requireUser } from "#lib/auth-session.ts";
+import { now } from "#lib/clock.ts";
 import { db } from "#lib/db.ts";
 import { getForm, setForm } from "#lib/form-flash.ts";
 import { notes } from "#db/schema.ts";
@@ -67,9 +68,11 @@ export default async function NewNotePage() {
 
           const { title, content } = result.data;
           const user = await requireUser();
+          // The clock's date, not the database's default: see lib/clock.ts.
+          const createdAt = now();
           const [note] = await db
             .insert(notes)
-            .values({ ownerId: user.id, title, content })
+            .values({ ownerId: user.id, title, content, createdAt, updatedAt: createdAt })
             .returning({ id: notes.id });
           if (!note) throw new Error("Failed to create note");
           redirect(`/notes/${note.id}`);
