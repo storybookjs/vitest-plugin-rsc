@@ -301,7 +301,7 @@ export async function loadNextProject(
   // files of the app.
   const layers = await layerTables(context, build);
   const compiler = await createCompiler(context);
-  const { runLoader, ...loaders } = createLoaders(context);
+  const { runLoader, ...loaders } = createLoaders(context, build);
 
   return {
     root,

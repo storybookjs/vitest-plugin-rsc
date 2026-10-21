@@ -4,6 +4,7 @@ import path from "node:path";
 import querystring from "node:querystring";
 import { compileFunction } from "node:vm";
 import type { CSSOptions } from "vite";
+import type { NextBuild } from "../build.ts";
 import type { NextProject } from "../project.ts";
 import type { NextContext } from "./context.ts";
 import { exportsOf } from "./module-exports.ts";
@@ -122,9 +123,13 @@ export function sassPreprocessorOptions(
 
 /**
  * Next's webpack loaders for fonts and images, what they emit for the
- * browser, and Next's image optimizer.
+ * browser, and Next's image optimizer. `build` is the code that Next's
+ * runtime and React run, see build.ts.
  */
-export function createLoaders(context: NextContext): Pick<
+export function createLoaders(
+  context: NextContext,
+  build: NextBuild,
+): Pick<
   NextProject,
   | "isImage"
   | "loadImage"
@@ -178,7 +183,11 @@ export function createLoaders(context: NextContext): Pick<
           // `{}` for a loader without options, as webpack gives it.
           getOptions: () => options ?? {},
           query: options ?? {},
-          mode: process.env.NODE_ENV === "production" ? "production" : "development",
+          // Webpack's `mode` is the build, not the NODE_ENV of this process,
+          // which is Vitest's `test`. A loader picks code for the build by
+          // it: `@mdx-js/loader` compiles MDX to `jsxDEV()` for development,
+          // which React's production build does not have.
+          mode: build,
           _module: { buildInfo: {} },
           async: () => {
             callsBack = true;
