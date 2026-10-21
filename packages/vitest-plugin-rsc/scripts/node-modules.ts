@@ -10,7 +10,6 @@
 
 import fs from "node:fs";
 import { createRequire } from "node:module";
-import nodeZlib from "node:zlib";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { type ESTree, parseAst } from "vite";
@@ -234,29 +233,6 @@ export default new Proxy(process, {
 });
 ${ofNames(exportsOf("process"), (name) => `process.${name} ?? unenv.${name}`)}
 `,
-  // Next compresses what a prerender leaves for the request that resumes
-  // it, and no page is prerendered here. Every export of Node's \`zlib\` is
-  // there, so that code which imports one loads: what unenv lacks throws.
-  zlib: () => {
-    const rest = Object.keys(nodeZlib).filter((name) => !exportsOf("zlib").includes(name));
-    return `${header}
-// \`node:zlib\` of Node.js, as unenv has it in a browser, with the rest of
-// Node's exports: the constants, and functions that throw when called.
-import unenv from "unenv/node/zlib";
-
-export * from "unenv/node/zlib";
-${missing}
-${ofNames(rest, (name) =>
-  typeof (nodeZlib as Record<string, unknown>)[name] === "function"
-    ? `missing("zlib.${name}")`
-    : JSON.stringify((nodeZlib as Record<string, unknown>)[name]),
-)}
-export default {
-  ...unenv,
-${rest.map((name) => `  ${name},`).join("\n")}
-};
-`;
-  },
   // The strict assert of the package's own assert, with the same exports.
   "assert/strict": () => `${header}
 // \`node:assert/strict\`: the \`strict\` of the package's \`assert\`, as in Node.js.
@@ -327,14 +303,17 @@ export const { once } = EventEmitter;
 /** The modules with a file of their own in src/node/, not written here. */
 export const handWritten = new Set([
   "assert",
+  "buffer",
   "crypto",
   "path",
   "stream",
+  "stream/consumers",
   "stream/promises",
   "string_decoder",
   "timers",
   "timers/promises",
   "util",
+  "zlib",
 ]);
 
 /** The files to write, by their path in src/node/. */

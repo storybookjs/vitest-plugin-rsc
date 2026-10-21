@@ -186,11 +186,12 @@ export default defineConfig([
         intro: 'import __process from "process";\nconst process = __process;\n',
       }),
     },
-    // What is in a file, and nothing else on an upgrade: memfs, unenv and
-    // readable-stream with what they depend on. The package's own by name
-    // stays an import. The assert and util packages depend on a tree of
-    // small packages that changes with their versions: those files take
-    // all of theirs, which the licenses file lists.
+    // What is in a file, and nothing else on an upgrade: memfs, unenv,
+    // readable-stream, fflate and @noble/hashes with what they depend on.
+    // The package's own by name stays an import. The assert and util
+    // packages depend on a tree of small packages that changes with their
+    // versions: those files take all of theirs, which the licenses file
+    // lists.
     deps: {
       neverBundle: [/^vitest-plugin-rsc\//],
       ...(name !== "assert" &&
@@ -213,6 +214,8 @@ export default defineConfig([
             "safe-buffer",
             "util-deprecate",
             "path-browserify",
+            "fflate",
+            "@noble/hashes",
           ],
         }),
     },

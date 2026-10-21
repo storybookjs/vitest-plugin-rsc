@@ -68,6 +68,12 @@ test("gives the server code the other modules of Node.js, as a browser can have 
     "Its own path: the file's",
     "Require: vitest-plugin-rsc: module.createRequire()'s require of Node.js is not there in the browser",
     "base64url: aGk_ aA hi? hi",
+    "Compressed: both ways",
+    "MD5: 4358b5009c67d0e31d7fbf1663fcd3bf",
+    "Consumed: from a stream",
+    "UTF-8: true",
+    // node:child_process is the app's own, which vitest.config.ts aliases.
+    "Commit: abc1234",
   ]) {
     await expect.element(page.getByText(text)).toBeVisible();
   }

@@ -1,178 +1,294 @@
 // `node:crypto` for a browser: Web Crypto for random values and `subtle`,
 // which is what Next's server uses where it has no Web Crypto branch, like
-// `randomFillSync` for the ids of nanoid, and a SHA-256 in JavaScript for
-// `createHash`, which Next's cache keys need synchronously. On it the HMAC
-// of `createHmac`, and `timingSafeEqual`: what checks the signature of a
-// webhook or of a JWT with HS256, synchronously too. The rest is unenv's:
-// its constants, and functions that throw when called, like `createSign`,
-// so that code which imports one loads.
+// `randomFillSync` for the ids of nanoid. The hashes of @noble/hashes,
+// audited JavaScript, for `createHash()` and `hash()`, which Next's cache
+// keys need synchronously, and on them the HMAC of `createHmac()`: what
+// checks the signature of a webhook or of a JWT with HS256, synchronously
+// too. MD5, SHA-1 and SHA-2, which a server's code hashes with; another
+// algorithm throws, as in Node.js. The rest is unenv's: its constants, and
+// functions that throw when called, like `createCipheriv` and `pbkdf2`, so
+// that code which imports one loads. See "Node.js In The Browser" in the
+// README for what is here and what is not.
 
+import { hmac } from "@noble/hashes/hmac.js";
+import { md5, sha1 } from "@noble/hashes/legacy.js";
+import { sha224, sha256, sha384, sha512 } from "@noble/hashes/sha2.js";
 import unenv from "unenv/node/crypto";
+import { Buffer as OwnBuffer } from "vitest-plugin-rsc/node/buffer";
+import { Transform as OwnTransform } from "vitest-plugin-rsc/node/stream";
 
 export * from "unenv/node/crypto";
+
+// The package's own, typed as Node's: the built files have no types.
+const Buffer = OwnBuffer as unknown as typeof globalThis.Buffer;
+const Transform = OwnTransform as unknown as typeof import("node:stream").Transform;
+
+type Data = string | ArrayBufferView | ArrayBuffer;
+type Callback<T> = (error: Error | null, result?: T) => void;
 
 const web = globalThis.crypto;
 export const webcrypto = web;
 export const subtle = web.subtle;
 export const randomUUID = () => web.randomUUID();
-export const randomFillSync = <T extends ArrayBufferView>(buffer: T): T => (
-  web.getRandomValues(buffer as never),
-  buffer
-);
-export const randomBytes = (size: number) => web.getRandomValues(Buffer.alloc(size));
-export const getRandomValues = <T extends ArrayBufferView>(buffer: T): T =>
-  web.getRandomValues(buffer as never);
+export const getRandomValues = <T extends ArrayBufferView>(view: T): T =>
+  web.getRandomValues(view as never);
 
-// The round constants: the fractional bits of the cube roots of the primes.
-const K = new Uint32Array(64);
-for (let n = 2, i = 0; i < 64; n++) {
-  let prime = true;
-  for (let d = 2; d * d <= n; d++) {
-    if (n % d === 0) {
-      prime = false;
-      break;
-    }
+const codeError = <E extends Error>(error: E, code: string): E => Object.assign(error, { code });
+// Node's error of a number out of its range, with a large one as Node
+// writes it: 281_474_976_710_656.
+const outOfRange = (name: string, range: string, received: number) =>
+  codeError(
+    new RangeError(
+      `The value of "${name}" is out of range. It must be ${range}. Received ${
+        Math.abs(received) > 2 ** 32 ? String(received).replace(/\B(?=(\d{3})+$)/g, "_") : received
+      }`,
+    ),
+    "ERR_OUT_OF_RANGE",
+  );
+
+// The offset and the size are in elements of the view, as in Node.js, and
+// its errors in bytes. `getRandomValues()` fills 64 KiB at most a call.
+function fill<T extends ArrayBufferView | ArrayBuffer>(view: T, offset = 0, size?: number): T {
+  const element = (view as { BYTES_PER_ELEMENT?: number }).BYTES_PER_ELEMENT ?? 1;
+  const whole =
+    view instanceof ArrayBuffer
+      ? new Uint8Array(view)
+      : new Uint8Array(view.buffer, view.byteOffset, view.byteLength);
+  const start = offset * element;
+  if (!Number.isInteger(offset) || start < 0 || start > whole.length) {
+    throw outOfRange("offset", `>= 0 && <= ${whole.length}`, start);
   }
-  if (prime) K[i++] = (Math.cbrt(n) % 1) * 2 ** 32;
+  const end = size === undefined ? whole.length : start + size * element;
+  if (!Number.isInteger(size ?? 0) || end < start || end > whole.length) {
+    throw outOfRange("size + offset", `<= ${whole.length}`, end);
+  }
+  for (let at = start; at < end; at += 65536) {
+    web.getRandomValues(whole.subarray(at, Math.min(at + 65536, end)));
+  }
+  return view;
+}
+export const randomFillSync = <T extends ArrayBufferView | ArrayBuffer>(
+  view: T,
+  offset?: number,
+  size?: number,
+): T => fill(view, offset, size);
+// `randomFill(view, [offset, [size]], callback)`, which calls back after
+// the code that called it, as Node's does.
+export function randomFill<T extends ArrayBufferView | ArrayBuffer>(
+  view: T,
+  ...rest: unknown[]
+): void {
+  const callback = rest.pop() as Callback<T>;
+  const filled = fill(view, ...(rest as [number?, number?]));
+  setTimeout(() => callback(null, filled));
+}
+export function randomBytes(size: number): Buffer;
+export function randomBytes(size: number, callback: Callback<Buffer>): void;
+export function randomBytes(size: number, callback?: Callback<Buffer>): Buffer | undefined {
+  const bytes = fill(Buffer.alloc(size));
+  if (!callback) return bytes;
+  setTimeout(() => callback(null, bytes));
+  return undefined;
 }
 
-function sha256(bytes: Uint8Array): Uint8Array {
-  const h = new Uint32Array([
-    0x6a09e667, 0xbb67ae85, 0x3c6ef372, 0xa54ff53a, 0x510e527f, 0x9b05688c, 0x1f83d9ab, 0x5be0cd19,
-  ]);
-  const length = bytes.length;
-  const padded = new Uint8Array(((length + 9 + 63) >> 6) << 6);
-  padded.set(bytes);
-  padded[length] = 0x80;
-  const view = new DataView(padded.buffer);
-  view.setUint32(padded.length - 8, Math.floor((length * 8) / 2 ** 32));
-  view.setUint32(padded.length - 4, (length * 8) >>> 0);
-  const w = new Uint32Array(64);
-  const rotr = (x: number, n: number) => (x >>> n) | (x << (32 - n));
-  for (let offset = 0; offset < padded.length; offset += 64) {
-    for (let i = 0; i < 16; i++) w[i] = view.getUint32(offset + i * 4);
-    for (let i = 16; i < 64; i++) {
-      const s0 = rotr(w[i - 15]!, 7) ^ rotr(w[i - 15]!, 18) ^ (w[i - 15]! >>> 3);
-      const s1 = rotr(w[i - 2]!, 17) ^ rotr(w[i - 2]!, 19) ^ (w[i - 2]! >>> 10);
-      w[i] = (w[i - 16]! + s0 + w[i - 7]! + s1) | 0;
-    }
-    let [a, b, c, d, e, f, g, hh] = h as unknown as [
-      number,
-      number,
-      number,
-      number,
-      number,
-      number,
-      number,
-      number,
-    ];
-    for (let i = 0; i < 64; i++) {
-      const t1 =
-        (hh + (rotr(e, 6) ^ rotr(e, 11) ^ rotr(e, 25)) + ((e & f) ^ (~e & g)) + K[i]! + w[i]!) | 0;
-      const t2 = ((rotr(a, 2) ^ rotr(a, 13) ^ rotr(a, 22)) + ((a & b) ^ (a & c) ^ (b & c))) | 0;
-      hh = g;
-      g = f;
-      f = e;
-      e = (d + t1) | 0;
-      d = c;
-      c = b;
-      b = a;
-      a = (t1 + t2) | 0;
-    }
-    h[0]! += a;
-    h[1]! += b;
-    h[2]! += c;
-    h[3]! += d;
-    h[4]! += e;
-    h[5]! += f;
-    h[6]! += g;
-    h[7]! += hh;
+// An integer in [min, max), of 48 random bits, as Node's: by rejection, so
+// that a range which does not divide 2 ** 48 has no bias.
+export function randomInt(max: number, callback?: Callback<number>): number | undefined;
+export function randomInt(
+  min: number,
+  max: number,
+  callback?: Callback<number>,
+): number | undefined;
+export function randomInt(...args: unknown[]): number | undefined {
+  const callback = typeof args.at(-1) === "function" ? (args.pop() as Callback<number>) : undefined;
+  const [min, max] = (args.length === 1 ? [0, args[0]] : args) as [number, number];
+  if (!Number.isSafeInteger(min) || !Number.isSafeInteger(max) || max <= min) {
+    throw codeError(
+      new RangeError(
+        `The value of "max" is out of range. It must be greater than the value of "min" (${min}). Received ${max}`,
+      ),
+      "ERR_OUT_OF_RANGE",
+    );
   }
-  const out = new Uint8Array(32);
-  const outView = new DataView(out.buffer);
-  h.forEach((word, i) => outView.setUint32(i * 4, word));
-  return out;
+  const range = max - min;
+  if (range > 2 ** 48 - 1) throw outOfRange("max - min", `<= ${2 ** 48 - 1}`, range);
+  const limit = 2 ** 48 - (2 ** 48 % range);
+  let value: number;
+  do {
+    value = web.getRandomValues(new Uint8Array(6)).reduce((total, byte) => total * 256 + byte, 0);
+  } while (value >= limit);
+  const result = min + (value % range);
+  if (!callback) return result;
+  setTimeout(() => callback(null, result));
+  return undefined;
 }
 
-type Data = string | ArrayBufferView | ArrayBuffer;
-type Hash = {
-  update(data: Data, encoding?: BufferEncoding): Hash;
-  digest(encoding?: BufferEncoding): Buffer | string;
+function bytesOf(data: Data, encoding?: BufferEncoding): Uint8Array {
+  if (typeof data === "string") return Buffer.from(data, encoding ?? "utf8");
+  if (data instanceof ArrayBuffer) return new Uint8Array(data);
+  if (ArrayBuffer.isView(data)) {
+    return new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+  }
+  throw codeError(
+    new TypeError(
+      'The "data" argument must be of type string or an instance of Buffer, TypedArray, or DataView',
+    ),
+    "ERR_INVALID_ARG_TYPE",
+  );
+}
+
+const output = (bytes: Uint8Array, encoding?: BufferEncoding | "buffer"): Buffer | string => {
+  const buffer = Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  return encoding && encoding !== "buffer" ? buffer.toString(encoding) : buffer;
 };
 
-const bytesOf = (data: Data, encoding?: BufferEncoding): Uint8Array =>
-  typeof data === "string"
-    ? Buffer.from(data, encoding ?? "utf8")
-    : data instanceof ArrayBuffer
-      ? new Uint8Array(data)
-      : new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+type State = { update(bytes: Uint8Array): unknown; digest(): Uint8Array; clone(): State };
+type Hasher = ((bytes: Uint8Array) => Uint8Array) & { create(): State };
 
-function sha256Only(name: string, algorithm: string): void {
-  if (!/^sha-?256$/i.test(algorithm)) {
-    throw new Error(
-      `vitest-plugin-rsc: node:crypto's ${name}(${JSON.stringify(algorithm)}) is not there in a browser`,
+// By the names OpenSSL has, as Node's `getHashes()` lists them.
+const hashers = { md5, sha1, sha224, sha256, sha384, sha512 } as Record<string, Hasher>;
+export const getHashes = (): string[] => Object.keys(hashers);
+
+// "SHA256", "sha-256" and "RSA-SHA256" are SHA-256 too. An algorithm that
+// is not here throws Node's error: `createHash()`'s, `hash()`'s, or that of
+// a function that takes a digest, `createHmac()`.
+function hasherOf(algorithm: string, use: "hash" | "one-shot" | "digest"): Hasher {
+  const name = String(algorithm)
+    .toLowerCase()
+    .replace(/^rsa-/, "")
+    .replace(/^sha-(1|224|256|384|512)$/, "sha$1");
+  const hasher = Object.hasOwn(hashers, name) ? hashers[name] : undefined;
+  if (hasher) return hasher;
+  if (use === "hash") throw new Error("Digest method not supported");
+  if (use === "one-shot") throw new Error(`Digest method ${algorithm} is not supported`);
+  throw codeError(new TypeError(`Invalid digest: ${algorithm}`), "ERR_CRYPTO_INVALID_DIGEST");
+}
+
+const finalized = () => codeError(new Error("Digest already called"), "ERR_CRYPTO_HASH_FINALIZED");
+
+// What `createHash()` and `createHmac()` return: a digest of what
+// `update()` is given, and a stream too, which writes its digest when it
+// ends, as Node's do for `stream.pipe(createHash("sha256"))`. `digest()`
+// after the stream's end gives that digest.
+class Digest extends Transform {
+  #state: State;
+  #result: Uint8Array | undefined;
+  #digested = false;
+  #again: () => Uint8Array;
+  constructor(state: State, again: () => Uint8Array, options?: object) {
+    super(options as never);
+    this.#state = state;
+    this.#again = again;
+  }
+  #compute(): Uint8Array {
+    return (this.#result ??= this.#state.digest());
+  }
+  protected get state(): State {
+    if (this.#digested || this.#result) throw finalized();
+    return this.#state;
+  }
+  update(data: Data, encoding?: BufferEncoding): this {
+    this.state.update(bytesOf(data, encoding));
+    return this;
+  }
+  digest(): Buffer;
+  digest(encoding: BufferEncoding): string;
+  digest(encoding?: BufferEncoding | "buffer"): Buffer | string {
+    if (this.#digested) return output(this.#again(), encoding);
+    this.#digested = true;
+    return output(Uint8Array.from(this.#compute()), encoding);
+  }
+  override _transform(chunk: Uint8Array, _encoding: string, callback: (error?: Error) => void) {
+    try {
+      this.update(chunk);
+    } catch (error) {
+      callback(error as Error);
+      return;
+    }
+    callback();
+  }
+  override _flush(callback: () => void): void {
+    this.push(Buffer.from(this.#compute()));
+    callback();
+  }
+}
+
+// A second `digest()` of a hash throws, as in Node.js.
+export class Hash extends Digest {
+  constructor(algorithm: string | State, options?: object) {
+    const state = typeof algorithm === "string" ? hasherOf(algorithm, "hash").create() : algorithm;
+    super(
+      state,
+      () => {
+        throw finalized();
+      },
+      options,
+    );
+  }
+  copy(options?: object): Hash {
+    return new Hash(this.state.clone(), options);
+  }
+}
+export const createHash = (algorithm: string, options?: object): Hash =>
+  new Hash(algorithm, options);
+
+// Node's one-shot hash, of 21.7: hex by default.
+export const hash = (
+  algorithm: string,
+  data: Data,
+  encoding: BufferEncoding | "buffer" = "hex",
+): Buffer | string => output(hasherOf(algorithm, "one-shot")(bytesOf(data)), encoding);
+
+// The HMAC of RFC 2104. A key that is a string is in `options.encoding`, as
+// in Node.js. A second `digest()` is empty, as in Node.js.
+export class Hmac extends Digest {
+  constructor(algorithm: string, key: Data, options?: { encoding?: BufferEncoding }) {
+    const hasher = hasherOf(algorithm, "digest");
+    const secret = bytesOf(key, typeof key === "string" ? options?.encoding : undefined);
+    super(
+      hmac.create(hasher as never, secret) as unknown as State,
+      () => new Uint8Array(0),
+      options,
     );
   }
 }
-
-// A hash of what `update()` was given, at `digest()`.
-function hashOf(digestOf: (bytes: Uint8Array) => Uint8Array): Hash {
-  const chunks: Uint8Array[] = [];
-  const hash: Hash = {
-    update(data, encoding) {
-      chunks.push(bytesOf(data, encoding));
-      return hash;
-    },
-    digest(encoding) {
-      const digest = Buffer.from(digestOf(Buffer.concat(chunks)));
-      return encoding ? digest.toString(encoding) : digest;
-    },
-  };
-  return hash;
-}
-
-export const createHash = (algorithm: string): Hash => {
-  sha256Only("createHash", algorithm);
-  return hashOf(sha256);
-};
-
-// The HMAC of RFC 2104: the hash of the key with one pad and of the hash of
-// the key with another pad and the data. A key longer than a block of
-// SHA-256, 64 bytes, is its hash.
-export const createHmac = (algorithm: string, key: Data): Hash => {
-  sha256Only("createHmac", algorithm);
-  const raw = bytesOf(key);
-  const block = new Uint8Array(64);
-  block.set(raw.length > 64 ? sha256(raw) : raw);
-  const inner = block.map((byte) => byte ^ 0x36);
-  const outer = block.map((byte) => byte ^ 0x5c);
-  return hashOf((data) => sha256(Buffer.concat([outer, sha256(Buffer.concat([inner, data]))])));
-};
+export const createHmac = (
+  algorithm: string,
+  key: Data,
+  options?: { encoding?: BufferEncoding },
+): Hmac => new Hmac(algorithm, key, options);
 
 // Whether two buffers have the same bytes, in a time that does not depend
 // on where they differ. Two of another length throw, as in Node.js.
-export const timingSafeEqual = (a: ArrayBufferView, b: ArrayBufferView): boolean => {
+export function timingSafeEqual(a: ArrayBufferView, b: ArrayBufferView): boolean {
   if (a.byteLength !== b.byteLength) {
-    throw Object.assign(new RangeError("Input buffers must have the same byte length"), {
-      code: "ERR_CRYPTO_TIMING_SAFE_EQUAL_LENGTH",
-    });
+    throw codeError(
+      new RangeError("Input buffers must have the same byte length"),
+      "ERR_CRYPTO_TIMING_SAFE_EQUAL_LENGTH",
+    );
   }
   const left = bytesOf(a);
   const right = bytesOf(b);
   let difference = 0;
   for (let i = 0; i < left.length; i++) difference |= left[i]! ^ right[i]!;
   return difference === 0;
-};
+}
 
 export default {
   ...unenv,
   webcrypto,
   subtle,
   randomUUID,
-  randomFillSync,
-  randomBytes,
   getRandomValues,
+  randomFillSync,
+  randomFill,
+  randomBytes,
+  randomInt,
+  getHashes,
+  Hash,
   createHash,
+  hash,
+  Hmac,
   createHmac,
   timingSafeEqual,
 };
