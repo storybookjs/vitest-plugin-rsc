@@ -833,11 +833,11 @@ The plugin runs the app in the tab of the test. So the test file runs there too,
 
 What a test asks for that a tab cannot give, the shim throws as `Unsupported`, with what it was. The runner reports such a test as not applicable, with that reason.
 
-The 32 fixtures have 34 test files, 9100 lines. They use 17 members of `next`, 29 methods of the browser and 15 helpers of `next-test-utils`. Of `next`, 13 work and 4 are refused with a reason: `patchFile`, `renameFile` and `deleteFile`, which change a file of the app, and `getPrerenderFilePath`. All 29 of those methods of the browser work. Of the helpers, 12 work; refused are the two that read the dev overlay, and `listClientChunks`, which reads a build.
+The 163 fixtures have 181 test files, 28,000 lines. When the suite had 32 fixtures, their 34 test files used 17 members of `next`, 29 methods of the browser and 15 helpers of `next-test-utils`. Of `next`, 13 work and 4 are refused with a reason: `patchFile`, `renameFile` and `deleteFile`, which change a file of the app, and `getPrerenderFilePath`. All 29 of those methods of the browser work. Of the helpers, 12 work; refused are the two that read the dev overlay, and `listClientChunks`, which reads a build.
 
 ### The Fixtures Come From Next's Repository
 
-The tests are not in the `next` package. The runner fetches them from `vercel/next.js` at the tag of the installed `next`, into `conformance/.next-repo`, which git ignores: a shallow, blobless, sparse clone of `test/lib` and of the directories in `conformance/src/fixtures.ts`. That is 12 MB for the 32 fixtures. The whole repository is gigabytes.
+The tests are not in the `next` package. The runner fetches them from `vercel/next.js` at the tag of the installed `next`, into `conformance/.next-repo`, which git ignores: a shallow, blobless, sparse clone of `test/lib` and of the directories in `conformance/src/fixtures.ts`. That is 24 MB for the 163 fixtures, 14 MB of it the tests. The whole repository is gigabytes.
 
 So the tests are always the ones of the Next.js that runs. A fixture is a directory and the test files in it to run:
 
