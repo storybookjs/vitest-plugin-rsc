@@ -72,6 +72,11 @@ export default defineConfig({
     // The shim works on the page, so it has to see the browser.
     vitestPluginNext({
       browserModules: [path.join(here, "shim/**"), path.join(nextTestLib, "**")],
+      // `next start` runs the production code of Next and React that
+      // `next build` built, and `next dev` their development code. A test
+      // of Next expects what its mode runs: a digest and React's minified
+      // message for an error of the server, or one run of an effect.
+      build: mode === "start" ? "production" : "development",
     }),
   ],
   resolve: {
