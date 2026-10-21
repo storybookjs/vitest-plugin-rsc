@@ -12,12 +12,25 @@ import { expect, test } from "vitest";
 import * as crypto from "../node/crypto.ts";
 import fs, { existsSync, mkdirSync, readFileSync, writeFileSync } from "../node/fs.ts";
 import promises, { readFile } from "../node/fs/promises.ts";
-import { pipeline, Readable, Writable } from "../node/stream.ts";
+import {
+  duplexPair,
+  isDisturbed,
+  isErrored,
+  pipeline,
+  promises as streamPromises,
+  Readable,
+  setDefaultHighWaterMark,
+  Writable,
+} from "../node/stream.ts";
 import { pipeline as pipelineAsync } from "../node/stream/promises.ts";
 import { scheduler, setInterval as every, setTimeout as sleep } from "../node/timers/promises.ts";
 import assert, { AssertionError, deepStrictEqual, ok } from "../node/assert.ts";
 import util, { callbackify, format, inherits, inspect, isObject, promisify } from "../node/util.ts";
 import pathModule, { normalize, parse, posix, resolve } from "../node/path.ts";
+import strictAssert, { deepStrictEqual as strictDeepStrictEqual } from "../node/assert/strict.ts";
+import { normalize as posixNormalize } from "../node/path/posix.ts";
+import win32Path from "../node/path/win32.ts";
+import { StringDecoder } from "../node/string_decoder.ts";
 import { setImmediate } from "../node/timers.ts";
 import { diskGlobal, resetDisk } from "./disk.ts";
 import { registryGlobal } from "./registry-global.ts";
@@ -226,6 +239,50 @@ test("`timers/promises`' setInterval keeps ticking while the consumer works, and
   expect(await stopped.return(undefined)).toEqual({ done: true, value: undefined });
 });
 
+test("`stream` is readable-stream 4: `from()` awaits, rejects null and errors, and the predicates tell", async () => {
+  const chunks: unknown[] = [];
+  for await (const chunk of Readable.from([Promise.resolve("awaited")])) chunks.push(chunk);
+  expect(chunks).toEqual(["awaited"]);
+  await expect(async () => {
+    for await (const _ of Readable.from(["a", null])) void _;
+  }).rejects.toMatchObject({ code: "ERR_STREAM_NULL_VALUES" });
+  function* failing() {
+    yield "x";
+    throw new Error("the iterable failed");
+  }
+  await expect(async () => {
+    for await (const _ of Readable.from(failing())) void _;
+  }).rejects.toThrow("the iterable failed");
+  const read = Readable.from(["a"]);
+  expect(isDisturbed(read)).toBe(false);
+  for await (const _ of read) void _;
+  expect(isDisturbed(read)).toBe(true);
+  const failed = new Readable({ read() {} });
+  failed.on("error", () => {});
+  failed.destroy(new Error("failed"));
+  await new Promise((resolve) => failed.on("close", resolve));
+  expect(isErrored(failed)).toBe(true);
+  setDefaultHighWaterMark(false, 1234);
+  expect(new Readable({ read() {} }).readableHighWaterMark).toBe(1234);
+  setDefaultHighWaterMark(false, 65536);
+  expect(typeof streamPromises.pipeline).toBe("function");
+  expect(() => duplexPair()).toThrow("not there in the browser");
+});
+
+test("`assert/strict`, `path/posix`, `path/win32` and `string_decoder` are the package's own", () => {
+  // By the package's name, so the built `assert` and `path`: not this
+  // source's instances, but the same code.
+  expect(() => strictAssert.deepStrictEqual(new Map([["a", 1]]), new Map([["a", 2]]))).toThrow(
+    "Expected values to be strictly deep-equal",
+  );
+  expect(() => strictDeepStrictEqual([1], [1])).not.toThrow();
+  expect(posixNormalize("a\\b/../c")).toBe("c");
+  expect(win32Path.sep).toBe("/");
+  expect(win32Path.posix).toBe(win32Path);
+  const decoder = new StringDecoder("utf8");
+  expect(decoder.write(Buffer.from([0xe2, 0x82])) + decoder.end(Buffer.from([0xac]))).toBe("€");
+});
+
 test("`assert` compares as Node.js does, with a message", () => {
   expect(() => deepStrictEqual(new Map([["a", 1]]), new Map([["a", 2]]))).toThrow(AssertionError);
   expect(() => ok(false, "required invariant")).toThrow("required invariant");
@@ -300,10 +357,10 @@ test.skipIf(!nodeFs.existsSync(dist))(
     for (const name of [
       "memfs",
       "unenv",
-      "pathe",
+      "path-browserify",
       "@jsonjoy.com/fs-node",
-      "stream-browserify",
       "readable-stream",
+      "string_decoder",
     ]) {
       expect(licenses).toContain(`## ${name} `);
     }

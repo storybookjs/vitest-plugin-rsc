@@ -15,7 +15,9 @@ const facade = "\0require-as-import:";
 const requireAsImport: Plugin = {
   name: "require-as-import",
   resolveId(id, _importer, options) {
-    if (options.kind === "require-call" && isBuiltin(id)) return { id: facade + id };
+    // readable-stream requires `process/`, the package: the module here.
+    const name = id.replace(/\/$/, "");
+    if (options.kind === "require-call" && isBuiltin(name)) return { id: facade + name };
   },
   load(id) {
     if (!id.startsWith(facade)) return;
@@ -37,27 +39,21 @@ const unenvAsyncHooks: Plugin = {
   },
 };
 
-// What a package's `browser` field maps to `false` is nothing, for the
-// stream build, where readable-stream's says so for `util`: before
-// `requireAsImport`, which would make the `require` an import of the
-// package's `util`, whose `debuglog()` logs every step of a stream.
-const emptyModule = "\0browser-false";
-const browserFalse: Plugin = {
-  name: "browser-false",
-  resolveId(id, importer) {
-    if (!importer || !isBuiltin(id)) return;
-    for (let dir = path.dirname(importer); dir !== path.dirname(dir); dir = path.dirname(dir)) {
-      const file = path.join(dir, "package.json");
-      if (!fs.existsSync(file)) continue;
-      const { browser } = JSON.parse(fs.readFileSync(file, "utf8")) as { browser?: unknown };
-      const mapped =
-        typeof browser === "object" && browser
-          ? (browser as Record<string, unknown>)[id]
-          : undefined;
-      return mapped === false ? { id: emptyModule } : undefined;
-    }
-  },
+// readable-stream requires abort-controller where a browser has none; every
+// browser has one now, so the module is nothing, and stays out of the file.
+const emptyModule = "\0empty-module";
+const noAbortController: Plugin = {
+  name: "no-abort-controller",
+  resolveId: (id) => (id === "abort-controller" ? { id: emptyModule } : undefined),
   load: (id) => (id === emptyModule ? "module.exports = {};\n" : undefined),
+};
+
+// The package's own modules of Node.js stay imports by name, resolved by the
+// layer: not through the package's exports, into dist/node/, which the
+// builds are writing as they run.
+const ownModules: Plugin = {
+  name: "own-modules",
+  resolveId: (id) => (id.startsWith("vitest-plugin-rsc/") ? { id, external: true } : undefined),
 };
 
 const nodeSource = path.join(import.meta.dirname, "src/node");
@@ -175,7 +171,7 @@ export default defineConfig([
     fixedExtension: false,
     outputOptions: { codeSplitting: false as const },
     // What is in a file, and nothing else on an upgrade: memfs, unenv and
-    // stream-browserify with what they depend on. The package's own by name
+    // readable-stream with what they depend on. The package's own by name
     // stays an import. The assert and util packages depend on a tree of
     // small packages that changes with their versions: those two files take
     // all of theirs, which the licenses file lists.
@@ -192,7 +188,6 @@ export default defineConfig([
             "tslib",
             "unenv",
             "pathe",
-            "stream-browserify",
             "readable-stream",
             "node-inspect-extracted",
             "events",
@@ -205,7 +200,7 @@ export default defineConfig([
         }),
     },
     // readable-stream's files for a browser, by its `browser` field: the one
-    // for Node.js requires `stream`, which is this file.
+    // for Node.js is made of the streams of Node.js itself.
     ...(name === "stream" && { inputOptions: { resolve: { aliasFields: [["browser"]] } } }),
     // The util package's `inherits` requires `util`, which is this file: the
     // package's own, in the file.
@@ -213,8 +208,9 @@ export default defineConfig([
       alias: { util: path.join(import.meta.dirname, "node_modules/util/util.js") },
     }),
     plugins: [
+      ownModules,
       unenvAsyncHooks,
-      ...(name === "stream" ? [browserFalse] : []),
+      ...(name === "stream" ? [noAbortController] : []),
       requireAsImport,
       licenses,
     ],

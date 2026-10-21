@@ -257,6 +257,29 @@ ${rest.map((name) => `  ${name},`).join("\n")}
 };
 `;
   },
+  // The strict assert of the package's own assert, with the same exports.
+  "assert/strict": () => `${header}
+// \`node:assert/strict\`: the \`strict\` of the package's \`assert\`, as in Node.js.
+import assert from "vitest-plugin-rsc/node/assert";
+
+const own: Record<string, any> = assert.strict;
+export default own;
+${ofNames(exportsOf("assert/strict"), (name) => `own.${name}`)}
+`,
+  // The POSIX path of the package's own path, which \`win32\` is too here.
+  ...Object.fromEntries(
+    ["path/posix", "path/win32"].map((name) => [
+      name,
+      () => `${header}
+// \`node:${name}\`: the \`${name.slice("path/".length)}\` of the package's \`path\`, which is its POSIX path.
+import path from "vitest-plugin-rsc/node/path";
+${missing}
+const own: Record<string, any> = path.${name.slice("path/".length)};
+export default own;
+${ofNames(exportsOf(name), (key) => `own.${key} ?? missing("${name}.${key}")`)}
+`,
+    ]),
+  ),
   events: () => `${header}
 // \`node:events\` for a browser: the events package, the EventEmitter of
 // Node.js for a browser. readable-stream calls it as a function,
@@ -278,6 +301,7 @@ export const handWritten = new Set([
   "path",
   "stream",
   "stream/promises",
+  "string_decoder",
   "timers",
   "timers/promises",
   "util",

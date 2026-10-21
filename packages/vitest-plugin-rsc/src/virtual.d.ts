@@ -42,10 +42,14 @@ declare module "virtual:vitest-plugin-rsc/host-modules" {
   export default hostModules;
 }
 
-declare module "stream-browserify" {
-  /** The streams of Node.js for a browser: see src/node/stream.ts. */
-  const Stream: typeof import("node:stream");
+declare module "readable-stream" {
+  /** The streams of Node.js as a package: see src/node/stream.ts. */
+  const Stream: typeof import("node:stream") & Record<string, any>;
   export default Stream;
+}
+
+declare module "string_decoder/lib/string_decoder.js" {
+  export const StringDecoder: typeof import("node:string_decoder").StringDecoder;
 }
 
 declare module "events/events.js" {

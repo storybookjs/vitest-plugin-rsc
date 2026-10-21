@@ -510,7 +510,8 @@ test("gives the package's modules of Node.js each other, not a polyfill of Next 
   };
 
   // What a file of dist/node has in it, and imports of Node.js: the package's
-  // own source, and what the build bundles into it, memfs and unenv.
+  // own source, and what the build bundles into it: memfs, unenv and
+  // readable-stream.
   const ownRequire = createRequire(import.meta.url);
   const dirs = [
     fileURLToPath(new URL("../../dist/node/", import.meta.url)),
@@ -518,15 +519,7 @@ test("gives the package's modules of Node.js each other, not a polyfill of Next 
     ...["memfs", "@jsonjoy.com/fs-node", "@jsonjoy.com/fs-core", "@jsonjoy.com/fs-node-utils"].map(
       (name) => path.join(path.dirname(ownRequire.resolve(`${name}/package.json`)), "lib"),
     ),
-    path.dirname(ownRequire.resolve("stream-browserify/package.json")),
-    path.join(
-      path.dirname(
-        createRequire(ownRequire.resolve("stream-browserify")).resolve(
-          "readable-stream/package.json",
-        ),
-      ),
-      "lib",
-    ),
+    path.join(path.dirname(ownRequire.resolve("readable-stream/package.json")), "lib"),
   ];
   const specifiers = new Set<string>();
   const walk = (dir: string) => {

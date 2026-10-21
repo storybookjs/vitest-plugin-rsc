@@ -35,6 +35,9 @@ const posix = {
   sep,
   toNamespacedPath,
 } as typeof path & { toNamespacedPath: typeof toNamespacedPath };
+// As in Node.js: `path.posix.posix` is `path.posix`, and `_makeLong()` is
+// the old name of `toNamespacedPath()`, which Next's compiled server calls.
+Object.assign(posix, { posix, win32: posix, _makeLong: toNamespacedPath });
 const win32 = posix;
 export {
   basename,
