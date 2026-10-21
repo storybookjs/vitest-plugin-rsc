@@ -1,8 +1,9 @@
 // The globals a test of Next finds in Jest, as Next's own
 // `test/jest-setup-after-env.ts` sets them up.
 import * as matchers from "jest-extended";
-import { expect, vi } from "vitest";
+import { beforeEach, expect, vi } from "vitest";
 import { commands } from "vitest/browser";
+import { watchFetch } from "./browser.ts";
 import "./console.ts";
 import { isNextDeploy, isNextDev, isNextStart } from "./e2e-utils.ts";
 import { installGate } from "./gate.ts";
@@ -18,6 +19,10 @@ expect.extend({
   toDisplayCollapsedRedbox: redbox("toDisplayCollapsedRedbox"),
 });
 installGate();
+// The requests of the page, for `page.on("request")`: over the `fetch` of the
+// test's browser context, which the plugin's setup file opens in a
+// `beforeEach` that runs before this one. Its setup file comes first.
+beforeEach(watchFetch);
 // What the server of an app can fetch from that a tab cannot: see
 // `serverNetworkCommand()` in src/vite-plugin.ts.
 await commands.conformanceServerNetwork();

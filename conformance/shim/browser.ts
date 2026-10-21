@@ -426,10 +426,24 @@ async function inFlightUntilRead(response: Response, settle: () => void): Promis
   }
 }
 
-// After the plugin's own `fetch`, which sends the app's requests to the
-// server in the tab: this one only watches.
-const pluginFetch = globalThis.fetch;
-globalThis.fetch = async (input, init) => {
+// Over the `fetch` of the app's browser context, which sends the app's
+// requests to the server in the tab: this one only watches. The context puts
+// its own in place as it opens, before every test, so a `fetch` that the
+// shim set as it loaded would be under it, and see only what is not the
+// app's. Set in a context, the plugin keeps it over the context's, also in
+// the next one. See `watchFetch()` in setup.ts.
+let watching: typeof fetch | undefined;
+export function watchFetch(): void {
+  if (globalThis.fetch === watching) return;
+  const contextFetch = globalThis.fetch;
+  globalThis.fetch = watching = (input, init) => watchedFetch(contextFetch, input, init);
+}
+
+async function watchedFetch(
+  contextFetch: typeof fetch,
+  input: RequestInfo | URL,
+  init?: RequestInit,
+): Promise<Response> {
   let request: NetworkRequest | undefined;
   if (listening()) {
     // Not a body that is a stream: reading it here would take it from the server.
@@ -449,7 +463,7 @@ globalThis.fetch = async (input, init) => {
   const settle = countFetch();
   let response: Response;
   try {
-    response = await pluginFetch(input, init);
+    response = await contextFetch(input, init);
   } catch (error) {
     settle();
     throw error;
@@ -460,7 +474,7 @@ globalThis.fetch = async (input, init) => {
   }
   void inFlightUntilRead(response, settle);
   return response;
-};
+}
 
 // A page that the app loads itself: a link or a redirect that Next's router
 // does with a page load, which the plugin turns into one of its own. Playwright
