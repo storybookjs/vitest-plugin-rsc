@@ -31,7 +31,7 @@ async function fetchFile(url: string): Promise<Response> {
 //   second PGlite, which it throws away;
 // - its wasm, its initdb wasm and its file bundle, as PGlite's docs on
 //   bundlers hand them. Fetched by PGlite, the wasm and the bundle stay in
-//   the document's memory a second time, about 14 MB, as PGlite keeps the
+//   the document's memory a second time, about 17 MB, as PGlite keeps the
 //   response it reads a clone of. And PGlite starts a fetch of initdb's
 //   wasm, which it never runs with a data dir and never reads.
 const [loadDataDir, pgliteWasmModule, initdbWasmModule, fsBundle] = await Promise.all([
@@ -44,7 +44,7 @@ const [loadDataDir, pgliteWasmModule, initdbWasmModule, fsBundle] = await Promis
 // Made as the module loads: what imports the database waits for its files.
 // A query waits until PGlite has started. Shared buffers of 16 MB, where
 // initdb writes 128 MB, which Postgres takes as it starts: the database is
-// about 7 MB.
+// about 8 MB.
 const client = new PGlite({
   loadDataDir,
   pgliteWasmModule,
