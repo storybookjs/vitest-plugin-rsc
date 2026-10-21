@@ -51,6 +51,8 @@ export const areas = {
   css: "CSS",
   cache: "The Data Cache",
   routing: "The proxy, rewrites, redirects, trailingSlash",
+  "request-apis": "Cookies, headers, draft mode and after()",
+  ppr: "Partial Prerendering and the segment cache",
 } as const;
 export type Area = keyof typeof areas;
 
@@ -237,6 +239,10 @@ export const fixtures: Fixture[] = [
   appDir("error-boundary-navigation", "boundaries", ["index.test.ts"]),
   appDir("global-error/basic", "boundaries", ["index.test.ts"]),
   appDir("errors", "boundaries", ["index.test.ts"]),
+  appDir("forbidden/basic", "boundaries", ["forbidden-basic.test.ts"]),
+  appDir("forbidden/default", "boundaries", ["forbidden-default.test.ts"]),
+  appDir("unauthorized/basic", "boundaries", ["unauthorized-basic.test.ts"]),
+  appDir("unauthorized/default", "boundaries", ["unauthorized-default.test.ts"]),
 
   appDir("metadata", "metadata", ["metadata.test.ts"]),
   appDir("metadata-navigation", "metadata", ["metadata-navigation.test.ts"]),
@@ -327,4 +333,61 @@ export const fixtures: Fixture[] = [
   }),
   appDir("app-routes-trailing-slash", "routing", ["app-routes-trailing-slash.test.ts"]),
   appDir("redirect-rewrite-dynamic", "routing", ["redirect-rewrite-dynamic.test.ts"]),
+
+  // Cookies, headers, draft mode and `after()`. Not here:
+  // - `next-after-app-deploy`, which revalidates a page that the build
+  //   prerendered, and waits for it to settle: every request renders here.
+  // - `next-after-app-static`, `after()` while `next build` prerenders.
+  // - `graceful-shutdown-next-after`, which starts and stops `next start`.
+  appDir("draft-mode", "request-apis", ["draft-mode.test.ts"]),
+  appDir("draft-mode-middleware", "request-apis", ["draft-mode-middleware.test.ts"]),
+  appDir("set-cookies", "request-apis", ["set-cookies.test.ts"]),
+  appDir("dynamic-requests", "request-apis", ["dynamic-requests.test.ts"]),
+  appDir("headers-static-bailout", "request-apis", ["headers-static-bailout.test.ts"]),
+  appDir("x-forwarded-headers", "request-apis", ["x-forwarded-headers.test.ts"]),
+  appDir("server-action-headers-redirect", "request-apis", [
+    "server-action-headers-redirect.test.ts",
+  ]),
+  appDir("custom-cache-control", "request-apis", ["custom-cache-control.test.ts"]),
+  appDir("react-max-headers-length", "request-apis", ["react-max-headers-length.test.ts"]),
+  appDir("next-after-app", "request-apis", ["index.test.ts"]),
+  // The test builds and starts the app itself, with `next.build()` and
+  // `next.start()`.
+  appDir("next-after-app-api-usage", "request-apis", ["index.test.ts"], {
+    prepared: { options: ["skipStart"] },
+  }),
+  appDir("revalidate-tag-in-after", "request-apis", ["revalidate-tag-in-after.test.ts"]),
+
+  // Most of Next's tests of Partial Prerendering and the segment cache are of
+  // what `next build` prerendered, or of the prefetches of Next's router,
+  // which they intercept with Playwright. These are the ones that are not.
+  // Not here:
+  // - `ppr`, `ppr-full`, `ppr-metadata-blocking`, `ppr-navigations/prefetch-navigation`,
+  //   `ppr-navigations/search-params` and `ppr-middleware-rewrite-force-dynamic-ssg-dynamic-params`,
+  //   which skip all of their tests in a run like this one.
+  // - `ppr-partial-hydration`, which changes the app, or reads the page before it hydrated.
+  // - `ppr-missing-root-params`, which expects `next build` to fail.
+  // - `ppr-unstable-cache`, `ppr-navigations/avoid-popstate-flash` and
+  //   `ppr-navigations/stale-prefetch-entry`, which start a server of their own in Node.js.
+  // - The other fixtures of `segment-cache`, and `segment-cache-closed-params` and
+  //   `segment-cache-dynamic-params`, which intercept the requests of the router with
+  //   `createRouterAct()`: that needs Playwright's `page.route()`.
+  appDir("ppr-root-param-fallback", "ppr", ["ppr-root-param-fallback.test.ts"]),
+  appDir("ppr-root-param-rsc-fallback", "ppr", ["ppr-root-param-rsc-fallback.test.ts"]),
+  appDir("ppr-history-replace-state", "ppr", ["ppr-history-replace-state.test.ts"]),
+  appDir("segment-cache/no-prefetch", "ppr", ["no-prefetch.test.ts"]),
+  appDir("segment-cache/mpa-navigations", "ppr", ["mpa-navigations.test.ts"]),
+  appDir("segment-cache/prefetch-partial-rsc", "ppr", ["prefetch-partial-rsc.test.ts"]),
+  appDir("segment-cache/stale-search-params-on-replace-regression", "ppr", [
+    "stale-search-params-on-replace-regression.test.ts",
+  ]),
+
+  // The test pins the version of Babel, which Next's compiler uses, not the app.
+  appDir("rsc-basic", "basics", ["rsc-basic.test.ts"], {
+    assumeInstalled: ["@babel/core", "@babel/parser", "@babel/types", "@babel/traverse"],
+  }),
+  appDir("use-server-inserted-html", "basics", ["use-server-inserted-html.test.ts"]),
+  // Not `app-client-cache` and `dynamic-data`: their apps are in directories
+  // of the fixture, like `fixtures/regular`, next to the test files, and the
+  // runner runs a test file in the directory of its app.
 ];

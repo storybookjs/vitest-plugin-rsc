@@ -103,6 +103,35 @@
     "not-a-page": {
       "category": "not-yet",
       "text": "A navigation of Next's router to a route handler that answers with JSON, which a browser shows in place of the app. The tab cannot leave the test, so the page stays, with an uncaught error."
+    },
+    "config-set-cookies": {
+      "category": "plugin-bug",
+      "text": "Two `Set-Cookie` headers of one rule of `headers()` in `next.config` arrive as one. Next's build hands an adapter the headers of a rule as an object, which keeps one value per name, and `@next/routing` sets them from that."
+    },
+    "legacy-react-dom-server": {
+      "category": "plugin-bug",
+      "text": "A Client Component that renders markup with `renderToStaticMarkup()` of `react-dom/server`. The ssr layer has Next's aliases of its edge runtime, where `react-dom/server` has React's renderer for web streams alone. A route on Node.js gets React's whole entry."
+    },
+    "proxy-after": {
+      "category": "not-yet",
+      "text": "An `after()` of the proxy. What the proxy hands to `waitUntil()` runs after the proxy has returned, without its request stores, and Next needs them to run the callbacks."
+    },
+    "exited-action-store": {
+      "category": "not-yet",
+      "text": "A promise of a Server Action, passed to `after()`, that calls a request API once the action is done. Next renders the page after the action outside the store of the action, with `AsyncLocalStorage.exit()`. Here the store stays exited for the rest of the request, so Next takes the call for one of the page."
+    },
+    "commonjs-source": {
+      "category": "not-yet",
+      "text": "A source file of the app with `require` or `module.exports`. Vite serves the source files of the app as ES modules."
+    },
+    "opens-a-response": {
+      "category": "not-yet",
+      "text": "Opens the response of a route handler that a browser shows as it is, like plain text or JSON. The plugin opens the pages of the app, and the test stays where it is.",
+      "match": "which is not a page to open"
+    },
+    "env-of-the-config": {
+      "category": "not-applicable",
+      "text": "Passes `env` to `nextTestSetup()` for `next.config` to read. The runner loads the config once, before the first test, so every `describe` gets the same app."
     }
   },
   "fixtures": {
@@ -813,6 +842,162 @@
     },
     "mdx-font-preload": {
       "passed": 3,
+      "failed": {}
+    },
+    "forbidden__basic": {
+      "passed": 2,
+      "failed": {}
+    },
+    "forbidden__default": {
+      "passed": 3,
+      "failed": {}
+    },
+    "unauthorized__basic": {
+      "passed": 2,
+      "failed": {}
+    },
+    "unauthorized__default": {
+      "passed": 3,
+      "failed": {}
+    },
+    "draft-mode": {
+      "passed": 20,
+      "failed": {
+        "draft-mode.test.ts > app dir - draft mode > in nodejs runtime > should not generate rand when draft mode disabled during next start": "prerendered-pages"
+      }
+    },
+    "draft-mode-middleware": {
+      "passed": 1,
+      "failed": {
+        "draft-mode-middleware.test.ts > app-dir - draft-mode-middleware > should be able to disable draft mode with middleware present": "opens-a-response"
+      }
+    },
+    "set-cookies": {
+      "passed": 0,
+      "failed": {
+        "set-cookies.test.ts > set-cookies > for /pages > for edge runtime > should set two set-cookie headers": "pages-router",
+        "set-cookies.test.ts > set-cookies > for /pages > for experimental-edge runtime > should set two set-cookie headers": "pages-router",
+        "set-cookies.test.ts > set-cookies > for /pages > for node runtime > should set two set-cookie headers": "pages-router",
+        "set-cookies.test.ts > set-cookies > for /app > for edge runtime > should set two set-cookie headers": "config-set-cookies",
+        "set-cookies.test.ts > set-cookies > for /app > for node runtime > should set two set-cookie headers": "config-set-cookies"
+      }
+    },
+    "dynamic-requests": {
+      "passed": 2,
+      "failed": {}
+    },
+    "headers-static-bailout": {
+      "passed": 1,
+      "failed": {
+        "headers-static-bailout.test.ts > headers-static-bailout > should not bailout when not using headers": "prerendered-pages",
+        "headers-static-bailout.test.ts > headers-static-bailout > it provides a helpful link in case static generation bailout is uncaught": "changes-the-app"
+      }
+    },
+    "x-forwarded-headers": {
+      "passed": 2,
+      "failed": {
+        "x-forwarded-headers.test.ts > x-forwarded-headers > host header exists > should include x-forwarded-* headers relative to host": "node-in-test",
+        "x-forwarded-headers.test.ts > x-forwarded-headers > already assigned > should not override existing x-forwarded-* headers": "node-in-test"
+      }
+    },
+    "server-action-headers-redirect": {
+      "passed": 1,
+      "failed": {}
+    },
+    "custom-cache-control": {
+      "passed": 7,
+      "failed": {
+        "custom-cache-control.test.ts > custom-cache-control > should have default cache-control for app-ssg another": "prerendered-pages",
+        "custom-cache-control.test.ts > custom-cache-control > should have default cache-control for pages-ssg another": "pages-router"
+      }
+    },
+    "react-max-headers-length": {
+      "passed": 1,
+      "failed": {
+        "react-max-headers-length.test.ts > react-max-headers-length > reactMaxHeadersLength = 0 > should respect reactMaxHeadersLength": "env-of-the-config",
+        "react-max-headers-length.test.ts > react-max-headers-length > reactMaxHeadersLength = 400 > should respect reactMaxHeadersLength": "env-of-the-config",
+        "react-max-headers-length.test.ts > react-max-headers-length > reactMaxHeadersLength = 10000 > should respect reactMaxHeadersLength": "env-of-the-config"
+      }
+    },
+    "next-after-app-api-usage": {
+      "passed": 18,
+      "failed": {
+        "index.test.ts > nextjs APIs in after() > request APIs inside after() > cannot be called in a prerendered page > with `dynamic = \"error\"`": "prerendered-pages",
+        "index.test.ts > nextjs APIs in after() > request APIs inside after() > cannot be called in a prerendered page > with `dynamic = \"force-static\"`": "prerendered-pages",
+        "index.test.ts > nextjs APIs in after() > request APIs inside after() > can be called in a prerendered route handler with `dynamic = \"force-static\"`": "prerendered-pages",
+        "index.test.ts > nextjs APIs in after() > request APIs inside after() > can be called in a prerendered route handler with `dynamic = \"error\" (but throw, because dynamic should error)`": "prerendered-pages",
+        "index.test.ts > nextjs APIs in after() > draftMode status is readable, but cannot be changed > static page": "prerendered-pages",
+        "index.test.ts > nextjs APIs in after() > draftMode status is readable, but cannot be changed > static route handler": "prerendered-pages",
+        "index.test.ts > nextjs APIs in after() > async APIs in promises passed to after > in server actions > does not error - headers": "exited-action-store",
+        "index.test.ts > nextjs APIs in after() > async APIs in promises passed to after > in server actions > does not error - cookies": "exited-action-store",
+        "index.test.ts > nextjs APIs in after() > async APIs in promises passed to after > in server actions > does not error - connection": "exited-action-store",
+        "index.test.ts > nextjs APIs in after() > async APIs in promises passed to after > in server actions > does not error - io": "exited-action-store"
+      }
+    },
+    "revalidate-tag-in-after": {
+      "passed": 1,
+      "failed": {}
+    },
+    "rsc-basic": {
+      "passed": 32,
+      "failed": {
+        "rsc-basic.test.ts > app dir - rsc basics > next internal shared context > should not error if just load next/navigation module in pages/api": "pages-router",
+        "rsc-basic.test.ts > app dir - rsc basics > next internal shared context > should not error if just load next/router module in app page": "commonjs-source",
+        "rsc-basic.test.ts > app dir - rsc basics > should handle various kinds of exports correctly": "commonjs-source",
+        "rsc-basic.test.ts > app dir - rsc basics > should not apply rsc syntax checks in pages/api": "pages-router",
+        "rsc-basic.test.ts > app dir - rsc basics > should not use bundled react for pages with app": "pages-router",
+        "rsc-basic.test.ts > app dir - rsc basics > should use canary react for app": "legacy-react-dom-server",
+        "rsc-basic.test.ts > app dir - rsc basics > should be able to call legacy react-dom/server APIs in client components": "legacy-react-dom-server",
+        "rsc-basic.test.ts > app dir - rsc basics > should generate edge SSR manifests for Node.js": "node-in-test"
+      }
+    },
+    "use-server-inserted-html": {
+      "passed": 3,
+      "failed": {}
+    },
+    "next-after-app": {
+      "passed": 24,
+      "failed": {
+        "index.test.ts > after() in nodejs runtime > runs in middleware": "proxy-after",
+        "index.test.ts > after() in nodejs runtime > only runs callbacks after the response is fully sent": "node-in-test",
+        "index.test.ts > after() in nodejs runtime > uses waitUntil from request context if available > in a page": "changes-the-app",
+        "index.test.ts > after() in nodejs runtime > uses waitUntil from request context if available > in a route handler": "changes-the-app",
+        "index.test.ts > after() in nodejs runtime > uses waitUntil from request context if available > in middleware": "changes-the-app",
+        "index.test.ts > after() in edge runtime > runs in middleware": "proxy-after",
+        "index.test.ts > after() in edge runtime > only runs callbacks after the response is fully sent": "node-in-test",
+        "index.test.ts > after() in edge runtime > uses waitUntil from request context if available > in a page": "changes-the-app",
+        "index.test.ts > after() in edge runtime > uses waitUntil from request context if available > in a route handler": "changes-the-app",
+        "index.test.ts > after() in edge runtime > uses waitUntil from request context if available > in middleware": "changes-the-app"
+      }
+    },
+    "ppr-root-param-fallback": {
+      "passed": 0,
+      "failed": {
+        "ppr-root-param-fallback.test.ts > ppr-root-param-fallback > should have use-cache content in fallback shells for all pregenerated locales": "prerendered-pages"
+      }
+    },
+    "ppr-root-param-rsc-fallback": {
+      "passed": 2,
+      "failed": {}
+    },
+    "ppr-history-replace-state": {
+      "passed": 1,
+      "failed": {}
+    },
+    "segment-cache__no-prefetch": {
+      "passed": 1,
+      "failed": {}
+    },
+    "segment-cache__mpa-navigations": {
+      "passed": 2,
+      "failed": {}
+    },
+    "segment-cache__prefetch-partial-rsc": {
+      "passed": 1,
+      "failed": {}
+    },
+    "segment-cache__stale-search-params-on-replace-regression": {
+      "passed": 1,
       "failed": {}
     }
   }

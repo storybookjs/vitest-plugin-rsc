@@ -30,10 +30,18 @@ export type InvokeMiddleware = (context: MiddlewareContext) => Promise<Middlewar
 // A request as it comes in: without the headers that only Next's own server
 // sets on one, like `x-middleware-set-cookie` for the cookies of the
 // middleware. `next start` takes them off with the same function, before
-// anything reads the request.
-export function incoming<T extends Pick<ServerRequest, "headers">>(request: T): T {
+// anything reads the request. And with the `x-forwarded-*` headers that
+// `next start` gives a request that comes without them, for the URL it came
+// in at: the middleware and the app read where the browser sent it from them.
+// Not `x-forwarded-for`, the address of the client: there is no socket.
+export function incoming<T extends Pick<ServerRequest, "url" | "headers">>(request: T): T {
   const headers = toNodeOutgoingHttpHeaders(request.headers) as Record<string, string | string[]>;
   filterInternalHeaders(headers);
+  const url = new URL(request.url);
+  const isHttps = url.protocol === "https:";
+  headers["x-forwarded-host"] ??= headers.host ?? url.host;
+  headers["x-forwarded-port"] ??= url.port || (isHttps ? "443" : "80");
+  headers["x-forwarded-proto"] ??= isHttps ? "https" : "http";
   return { ...request, headers: fromNodeOutgoingHttpHeaders(headers) };
 }
 
