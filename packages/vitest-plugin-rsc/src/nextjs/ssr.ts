@@ -352,37 +352,23 @@ async function serverActionsOf(request: ServerRequest): Promise<object> {
   );
 }
 
-async function handle(
-  received: ServerRequest,
-  unrouted: "not-found" | "pass",
-  nested: boolean,
-  openedByRequest: Opened | null | undefined,
-  pageLoad: boolean,
-): Promise<Handled> {
-  const request = incoming(received);
-  const url = new URL(request.url);
-  const opened = openedByRequest === null ? undefined : (openedByRequest ?? openedAt(url));
-  const endRequestScope = registry.enterRequestScope();
-  // A route of its own, for the page of the route of a node that renders in
-  // this request. Not for the requests the server makes to itself meanwhile:
-  // see `loadComponent()` in rsc.ts.
-  if (openedByRequest) registry.openedByRequest.run(openedByRequest, () => {});
-  // What Next does after it has responded, like `after()`, still reads the
-  // stores of the request, so the request lasts until that is done. Not
-  // forever once another one waits for it: then for one second at most, and
-  // so for a nested one, inside the request that waits for it. Leaving the
-  // page waits for all of it: see `settleRequests()`.
+// The scope of Next's request stores for what handles a request, with the
+// `waitUntil` to hand it. What Next does after it has responded, like
+// `after()`, still reads the stores, so the scope lasts until that work is
+// done. Not forever once something waits for it: then for one second at
+// most after `waited` resolves. Leaving the page waits for all of it: see
+// `settleRequests()`.
+function enterScope(waited: () => Promise<void>) {
+  const endScope = registry.enterRequestScope();
   const background: Promise<unknown>[] = [];
-  const context = {
-    waitUntil: (promise: Promise<unknown>) => {
-      background.push(promise);
-      const work = promise.then(
-        () => {},
-        () => {},
-      );
-      backgroundWork.add(work);
-      void work.then(() => backgroundWork.delete(work));
-    },
+  const waitUntil = (promise: Promise<unknown>) => {
+    background.push(promise);
+    const work = promise.then(
+      () => {},
+      () => {},
+    );
+    backgroundWork.add(work);
+    void work.then(() => backgroundWork.delete(work));
   };
   // Also what that work hands to `waitUntil()` while it runs: an `after()`
   // callback that a promise passed to `after()` schedules, once it settles.
@@ -393,15 +379,37 @@ async function handle(
       await Promise.allSettled(waiting);
     }
   };
-  const endRequest = async () => {
+  const end = async () => {
     await Promise.race([
       backgroundSettled(),
-      (nested ? Promise.resolve() : nextRequest()).then(
-        () => new Promise((resolve) => setTimeout(resolve, backgroundWorkTimeout)),
-      ),
+      waited().then(() => new Promise((resolve) => setTimeout(resolve, backgroundWorkTimeout))),
     ]);
-    endRequestScope();
+    endScope();
   };
+  // `endScope` ends it at once, for a request that fails before its response.
+  return { waitUntil, end, endScope };
+}
+
+async function handle(
+  received: ServerRequest,
+  unrouted: "not-found" | "pass",
+  nested: boolean,
+  openedByRequest: Opened | null | undefined,
+  pageLoad: boolean,
+): Promise<Handled> {
+  const request = incoming(received);
+  const url = new URL(request.url);
+  const opened = openedByRequest === null ? undefined : (openedByRequest ?? openedAt(url));
+  // The request lasts until its work after the response is done. Not forever
+  // once another request waits for it: then for one second at most, and so
+  // for a nested one, inside the request that waits for it.
+  const scope = enterScope(nested ? () => Promise.resolve() : nextRequest);
+  // A route of its own, for the page of the route of a node that renders in
+  // this request. Not for the requests the server makes to itself meanwhile:
+  // see `loadComponent()` in rsc.ts.
+  if (openedByRequest) registry.openedByRequest.run(openedByRequest, () => {});
+  const context = { waitUntil: scope.waitUntil };
+  const endRequest = scope.end;
 
   try {
     // A body can be read once, and the middleware gets it before the route.
@@ -417,14 +425,16 @@ async function handle(
     const invokeMiddleware: InvokeMiddleware = async (target) => {
       // In a deployment the middleware is done before the route starts. So
       // it has a scope of its own here: the route is not to read the stores
-      // Next enters for the middleware.
-      const endMiddlewareScope = registry.enterRequestScope();
+      // Next enters for the middleware. Its `after()` callbacks do, and Next
+      // runs them once the middleware has returned, so the route waits for
+      // what the middleware hands to `waitUntil()`: one second at most.
+      const middlewareScope = enterScope(() => Promise.resolve());
       let response: Response;
       try {
         const middleware = await registry.loadMiddleware();
         response = await middleware(
           { ...request, url: target.url.href, headers: target.headers, body: target.requestBody },
-          { ...context, signal: request.signal },
+          { waitUntil: middlewareScope.waitUntil, signal: request.signal },
         );
       } catch (error) {
         if (request.signal?.aborted) throw error;
@@ -434,7 +444,7 @@ async function handle(
         responded = new registry.Response("Internal Server Error", { status: 500 });
         return { bodySent: true };
       } finally {
-        endMiddlewareScope();
+        await middlewareScope.end();
       }
       const result = middlewareResult(response, target.headers, target.url);
       if (result.bodySent) responded = response;
@@ -558,7 +568,7 @@ async function handle(
     });
     return finishWithBody(request, response, endRequest, cookiesOf(routedHeaders));
   } catch (error) {
-    endRequestScope();
+    scope.endScope();
     throw error;
   }
 }

@@ -228,6 +228,15 @@ test("runs after() of a page, with the request it belongs to", async () => {
   await expect.poll(() => auditLog).toEqual(["opened settings in nl"]);
 });
 
+test("runs after() of the proxy, with the request it belongs to", async () => {
+  auditLog.length = 0;
+
+  const response = await handleRequest("/proxy/after", { headers: { cookie: "who=ada" } });
+
+  expect(await response.json()).toEqual({ pong: true });
+  await expect.poll(() => auditLog).toEqual(["proxy after() read ada"]);
+});
+
 test("runs an after() that a promise passed to after() schedules, with its request", async () => {
   auditLog.length = 0;
 
