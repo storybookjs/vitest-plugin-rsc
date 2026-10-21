@@ -11,6 +11,9 @@
       "path": "./conformance"
     },
     {
+      "path": "./playground/nextjs-db-recipes"
+    },
+    {
       "path": "./playground/nextjs-e2e-demo"
     },
     {

@@ -1,0 +1,6 @@
+# The Prisma clients, which `prisma generate` makes on install.
+recipes/*/generated/
+.next/
+next-env.d.ts
+# test/pglite-files.ts
+/test/pglite/

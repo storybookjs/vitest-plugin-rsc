@@ -22,6 +22,8 @@ export default defineConfig({
     // a "use client" directive.
     "src/nextjs/server-action.ts",
     "src/nextjs/node-rendered.tsx",
+    // The modules of Node.js for the server layers, `vitest-plugin-rsc/node/*`.
+    "src/node/**/*.ts",
   ],
   // The page the tests run in, next to the plugin that names it.
   copy: [{ from: "src/nextjs/tester.html", to: "dist/nextjs" }],

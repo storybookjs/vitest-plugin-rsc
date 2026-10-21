@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import { createRequire } from "node:module";
+import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -408,4 +409,75 @@ test("takes no other build", () => {
   expect(() => vitestPluginNext({ build: "test" as never })).toThrow(
     '`build` is "development" or "production", not "test".',
   );
+});
+
+test("gives the server layers the package's module of Node.js, after Next's aliases and the bridges", async () => {
+  const plugins = vitestPluginNext();
+  const plugin = plugins.find(({ name }) => name === "vitest-plugin-rsc:next")!;
+  await (plugin.config as ConfigHook<Config>)({ root }, serve);
+  type Resolved = string | { id: string } | undefined;
+  const resolverOf = (layer: string) => {
+    const resolver = plugins.find(
+      ({ name }) => name === `vitest-plugin-rsc:next-resolve:${layer}`,
+    )!;
+    const resolveId = resolver.resolveId as (
+      this: object,
+      source: string,
+      importer: string | undefined,
+      options: object,
+    ) => Promise<Resolved>;
+    // What Vite finds, by the specifier it was asked for and from where.
+    const asked: [string, string][] = [];
+    const context = {
+      resolve: async (source: string, importer: string) => {
+        asked.push([source, importer]);
+        return { id: source };
+      },
+    };
+    return {
+      asked,
+      resolve: (source: string, importer?: string) => resolveId.call(context, source, importer, {}),
+    };
+  };
+  const page = path.join(root, "app/page.tsx");
+
+  const ssr = resolverOf("ssr");
+  expect(await ssr.resolve("node:os", page)).toEqual({ id: "vitest-plugin-rsc/node/os" });
+  expect(await ssr.resolve("fs/promises", page)).toEqual({
+    id: "vitest-plugin-rsc/node/fs/promises",
+  });
+  // From the project, where the package is, as for a dependency's import.
+  expect(ssr.asked).toEqual([
+    ["vitest-plugin-rsc/node/os", path.join(root, "package.json")],
+    ["vitest-plugin-rsc/node/fs/promises", path.join(root, "package.json")],
+  ]);
+  // Next's alias, and node-platform.ts's stand-in, come first.
+  expect(await ssr.resolve("node:path", page)).toEqual({
+    id: "next/dist/compiled/path-browserify/index.js",
+  });
+  expect(await ssr.resolve("node:stream", page)).toBe(
+    "\0vitest-plugin-rsc/next-bridge/node-stream",
+  );
+
+  // Not for the browser layer, as in Next.
+  const browser = resolverOf("browser");
+  expect(await browser.resolve("node:os", page)).toBeUndefined();
+
+  // A dependency whose `browser` field says it uses nothing for the module
+  // gets the module of nothing, whose default export is an empty object.
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "browser-field-"));
+  try {
+    const pkg = path.join(dir, "node_modules", "some-db");
+    fs.mkdirSync(pkg, { recursive: true });
+    fs.writeFileSync(path.join(pkg, "package.json"), JSON.stringify({ browser: { fs: false } }));
+    const importer = path.join(pkg, "index.js");
+    const empty = await ssr.resolve("fs", importer);
+    expect(empty).toBe("\0vitest-plugin-rsc/next-empty");
+    const load = plugins.find(({ name }) => name === "vitest-plugin-rsc:next-resolve:ssr")!
+      .load as (this: object, id: string) => string | undefined;
+    expect(load.call({}, empty as string)).toContain("export default empty;");
+    expect(await ssr.resolve("node:fs", importer)).toEqual({ id: "vitest-plugin-rsc/node/fs" });
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 });

@@ -39,6 +39,20 @@ async function handledByServer(
 // The network, for what is not the app's: the browser's own `fetch`.
 const nativeFetch = registry.network;
 
+// The browser's `fetch`, for a request of the server to the network. Next's
+// `fetch` makes a `Request` that it is given again, with its body as a
+// stream, and a browser sends a stream over HTTP/2 only: over HTTP/1.1 it
+// fails with "Failed to fetch", where Node's `fetch` sends it. So the body
+// goes read, the same bytes. A request without a body goes as it is. Not for
+// the page's own requests: a browser's `fetch` is what they have.
+async function networkFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  if (!init?.body && !(input instanceof Request && input.body)) return nativeFetch(input, init);
+  const request = new Request(input, init);
+  // A request with a body, so not a GET.
+  // oxlint-disable-next-line unicorn/no-invalid-fetch-options
+  return nativeFetch(new Request(request, { body: await request.arrayBuffer() }));
+}
+
 // The origin of the app is also the origin of the dev server, which serves the
 // modules of the test and of the app. So a same-origin `fetch` is the app's
 // when Next's router or a Server Action sends it, which mark their requests,
@@ -391,7 +405,7 @@ export function pageFetch(
 // while it handles another: Next renders the page a Server Action redirects
 // to that way. It is chosen as the browser's is, and goes through the proxy
 // too. Its redirects are followed, as the `fetch` of a server follows them.
-registry.fetch = appFetch(undefined, () => nativeFetch);
+registry.fetch = appFetch(undefined, () => networkFetch);
 // Where the server reaches itself, which `next start` sets too. Next reads it
 // when it needs it, from the global `process`.
 process.env.__NEXT_PRIVATE_ORIGIN = window.location.origin;

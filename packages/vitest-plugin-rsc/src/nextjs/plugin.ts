@@ -21,6 +21,8 @@ import { flightBridge, type FlightEntry } from "./flight.ts";
 import { nextBuilds, nextProductionPlugin, type NextBuild } from "./build.ts";
 import { clientFiles, clientReferenceOfModule } from "./client-files.ts";
 import { createCompilePlugin, createDependencyCompilePlugin } from "./compile.ts";
+import { ownModulesToExclude } from "../own-package.ts";
+import { browserMapping, isNodeModule, nodeModuleOf } from "./node-builtins.ts";
 import { createNodePlatform } from "./node-platform.ts";
 import {
   loadNextProject,
@@ -115,7 +117,12 @@ function importedByRoute(module: EnvironmentModuleNode): boolean {
 // loads the page again for a change of what a route imports, see `hotUpdate`.
 const hmrBoundary = (entries: string[]) => `import.meta.hot?.accept([${entries.join(", ")}]);\n`;
 const bridgePrefix = "\0vitest-plugin-rsc/next-bridge/";
+// What an alias of Next's to `false` gets, and an import a dependency's
+// `browser` field maps to `false`: a module of nothing, as webpack's is for
+// Next, with an empty object as its default export. A named import of it is
+// `undefined`, by `shimMissingExports` of the pre-bundling.
 const emptyModuleId = "\0vitest-plugin-rsc/next-empty";
+const emptyModule = "const empty = {};\nexport default empty;\n";
 const serverReferenceInfo = "next/dist/esm/shared/lib/server-reference-info.js";
 const vendoredFlight = (entry: string) => `@vitejs/plugin-rsc/vendor/react-server-dom/${entry}`;
 // The directory of the files of this package: `src` or `dist`.
@@ -294,6 +301,10 @@ function createLayerResolver(getProject: () => NextProject, layer: NextLayer) {
       if (next === undefined || next === current) break;
       current = next;
     }
+    // A module of Node.js that the server layers still import: the
+    // package's own, see node-builtins.ts. The browser layer gets none, as
+    // in Next.
+    if (layer !== "browser" && current) current = nodeModuleOf(current) ?? current;
     normalized.set(source, current);
     return current;
   }
@@ -355,6 +366,13 @@ function createLayerResolver(getProject: () => NextProject, layer: NextLayer) {
 
         const target = normalize(specifier);
         if (target === false) return emptyModuleId;
+        if (isNodeModule(target)) {
+          // A dependency that says what it uses for the module in a browser
+          // gets that: nothing, or Vite's resolution of a file of its own.
+          const mapping = browserMapping(source, importer);
+          if (mapping === false) return emptyModuleId;
+          if (mapping !== undefined) return;
+        }
         if (target.startsWith("\0")) return target;
         if (target === source) return;
         // Not found as a file of the `next` package: leave the import alone.
@@ -393,14 +411,16 @@ function createLayerResolver(getProject: () => NextProject, layer: NextLayer) {
         }
         // Keep it a bare specifier, so Vite maps it to the pre-bundled dependency.
         // Next is the project's: a package of the app that imports `react`
-        // can have another `next` closer by, as in a pnpm workspace.
-        const from = target.startsWith("next/")
-          ? path.join(getProject().root, "package.json")
-          : importer;
+        // can have another `next` closer by, as in a pnpm workspace. So is
+        // this package, for a module of Node.js that a dependency imports.
+        const from =
+          target.startsWith("next/") || isNodeModule(target)
+            ? path.join(getProject().root, "package.json")
+            : importer;
         return this.resolve(target, from, { ...options, skipSelf: true });
       },
       load(id) {
-        if (id === emptyModuleId) return "export {};";
+        if (id === emptyModuleId) return emptyModule;
         if (!id.startsWith(bridgePrefix)) return;
         const name = id.slice(bridgePrefix.length);
         if (name === "server-reference-info") return serverReferenceInfoShim;
@@ -953,7 +973,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
                 ...optimizeDeps("ssr"),
                 // The Client Components it renders are the app's.
                 entries: [appEntriesOf(project)],
-                exclude: ["vitest-plugin-rsc", "@vitejs/plugin-rsc"],
+                exclude: [...ownModulesToExclude, "@vitejs/plugin-rsc"],
               },
             },
             [environmentOf.browser]: {

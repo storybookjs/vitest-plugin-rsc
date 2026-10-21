@@ -3,6 +3,7 @@ import { createElement, type JSXElementConstructor, type ReactNode } from "react
 import { sendRequest, unlessAborted } from "./app-requests.ts";
 import { closeContext, openContext } from "./browser-context.ts";
 import { unlinkStylesheets } from "./client-graph.ts";
+import { resetDisk } from "./disk.ts";
 import "./document-loads.ts";
 import { NodeOnPage } from "./node-on-page.ts";
 import { leavePage, loadPage } from "./page.ts";
@@ -518,7 +519,8 @@ export type CleanupOptions = {
  * and closes the browser context of the app: its `headers`, the app's
  * cookies and what the app put in its storage go, and the document has the
  * browser's own APIs again. What still runs of the page, like a timer, uses
- * those. The server forgets what it has cached.
+ * those. The server forgets what it has cached, and what was written to its
+ * disk, the `fs` of the server code and the tests.
  * Unlinks the stylesheets of the files of the host: the host links a file's
  * again as it uses it, with `linkStylesheetsOf()`. Runs before and after
  * every test, after which the plugin's setup file links those of the setup
@@ -536,6 +538,7 @@ export async function cleanup({ url }: CleanupOptions = {}): Promise<void> {
   unlinkStylesheets();
   closeContext();
   loadedSsrLayer()?.resetCaches();
+  resetDisk();
   if (url !== undefined) window.history.replaceState(window.history.state, "", url);
 }
 
