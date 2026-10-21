@@ -68,29 +68,57 @@ test.each<[string, RequestHandler, (response: Response) => Promise<unknown>]>([
   },
 );
 
-test("lets go of a response that has ended while the signal of its request stays", async () => {
-  // A signal that outlives its requests, like the one of a page.
-  const page = new AbortController();
-  async function readResponse(): Promise<WeakRef<object>[]> {
-    let res!: NodeResponse;
-    const response = await handleRequest(request(page.signal), {}, async (_, of) => {
-      res = of as NodeResponse;
-      res.end("<html></html>");
-    });
-    await response.text();
-    return [new WeakRef(res), new WeakRef(response)];
-  }
-  const responses: WeakRef<object>[] = [];
-  for (let pages = 0; pages < 20; pages++) responses.push(...(await readResponse()));
+type Answer = (response: Promise<Response>) => Promise<Response | void>;
 
-  await expect
-    .poll(() => {
-      gc();
-      return responses.filter((of) => of.deref() !== undefined).length;
-    })
-    .toBe(0);
-  expect(page.signal.aborted).toBe(false);
-});
+test.each<[string, (res: NodeResponse) => void, Answer]>([
+  [
+    "ends the page",
+    (res) => res.end("<html></html>"),
+    async (answer) => {
+      const response = await answer;
+      expect(await response.text()).toBe("<html></html>");
+      return response;
+    },
+  ],
+  [
+    "fails before the head",
+    () => {
+      throw new Error("failed before the head");
+    },
+    // Not `rejects`, which keeps the error, and through its stack the
+    // handler that threw it.
+    async (answer) => {
+      const failure = await answer.then(String, (error: Error) => error.message);
+      expect(failure).toBe("failed before the head");
+    },
+  ],
+])(
+  "lets go of a response once Next's handler, which %s, is done with it, while the signal of its request stays",
+  async (_, handle, read) => {
+    // A signal that outlives its requests, like the one of a page.
+    const page = new AbortController();
+    async function readResponse(): Promise<WeakRef<object>[]> {
+      let res!: NodeResponse;
+      const response = await read(
+        handleRequest(request(page.signal), {}, async (_, of) => {
+          res = of as NodeResponse;
+          handle(res);
+        }),
+      );
+      return [new WeakRef(res), ...(response ? [new WeakRef(response)] : [])];
+    }
+    const responses: WeakRef<object>[] = [];
+    for (let pages = 0; pages < 20; pages++) responses.push(...(await readResponse()));
+
+    await expect
+      .poll(() => {
+        gc();
+        return responses.filter((of) => of.deref() !== undefined).length;
+      })
+      .toBe(0);
+    expect(page.signal.aborted).toBe(false);
+  },
+);
 
 test("ends a response whose request is aborted while the server answers it", async () => {
   const page = new AbortController();
