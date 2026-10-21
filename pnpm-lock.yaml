@@ -2400,13 +2400,13 @@ packages:
     resolution: {integrity: sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w==}
 
   '@storybook/addon-a11y@https://pkg.pr.new/storybookjs/storybook/@storybook/addon-a11y@e1d3d410e8e721213d687df093ffda5464ccc086':
-    resolution: {tarball: https://pkg.pr.new/storybookjs/storybook/@storybook/addon-a11y@e1d3d410e8e721213d687df093ffda5464ccc086}
+    resolution: {integrity: sha512-xgC7o2pZM/Cf6qQbp6EzXHWmft0SmjDPtL06P+GFZ2I0DOBUC5dr+UUllKEHJ3YDDtGE0a0yS8aIbdHpKyeNrQ==, tarball: https://pkg.pr.new/storybookjs/storybook/@storybook/addon-a11y@e1d3d410e8e721213d687df093ffda5464ccc086}
     version: 11.0.0-alpha.6
     peerDependencies:
       storybook: ^11.0.0-alpha.6
 
   '@storybook/addon-docs@https://pkg.pr.new/storybookjs/storybook/@storybook/addon-docs@e1d3d410e8e721213d687df093ffda5464ccc086':
-    resolution: {tarball: https://pkg.pr.new/storybookjs/storybook/@storybook/addon-docs@e1d3d410e8e721213d687df093ffda5464ccc086}
+    resolution: {integrity: sha512-lHVlBDftxIsLF7XMEvqSmVOaoSEQmZw8xGVij8XwfOvROzJmrEVdX3S39aPagLpSxY/bAL8Aw5qCvKBzLXDIvw==, tarball: https://pkg.pr.new/storybookjs/storybook/@storybook/addon-docs@e1d3d410e8e721213d687df093ffda5464ccc086}
     version: 11.0.0-alpha.6
     peerDependencies:
       '@types/react': ^18.0.0 || ^19.0.0
@@ -2416,7 +2416,7 @@ packages:
         optional: true
 
   '@storybook/builder-vite@https://pkg.pr.new/storybookjs/storybook/@storybook/builder-vite@e1d3d410e8e721213d687df093ffda5464ccc086':
-    resolution: {tarball: https://pkg.pr.new/storybookjs/storybook/@storybook/builder-vite@e1d3d410e8e721213d687df093ffda5464ccc086}
+    resolution: {integrity: sha512-3NzPlRGEyUNDAogGRhEQz4nBr8OYx4yQuNxNxQ9mRty0A3F0l0etAMRSV312kOhmZ5jZ/Ahmo0YucykLj0eZGQ==, tarball: https://pkg.pr.new/storybookjs/storybook/@storybook/builder-vite@e1d3d410e8e721213d687df093ffda5464ccc086}
     version: 11.0.0-alpha.6
     peerDependencies:
       storybook: ^11.0.0-alpha.6
@@ -2431,7 +2431,7 @@ packages:
       react: ^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
 
   '@storybook/react@https://pkg.pr.new/storybookjs/storybook/@storybook/react@e1d3d410e8e721213d687df093ffda5464ccc086':
-    resolution: {tarball: https://pkg.pr.new/storybookjs/storybook/@storybook/react@e1d3d410e8e721213d687df093ffda5464ccc086}
+    resolution: {integrity: sha512-JbQbWsNldcbJlYhh/EI8fe/NFOZ69ZkIBXAISTYWNOQ5iGqiN3C1emWuX7fOOPbvileBJVK6iCbswgsFVjOevQ==, tarball: https://pkg.pr.new/storybookjs/storybook/@storybook/react@e1d3d410e8e721213d687df093ffda5464ccc086}
     version: 11.0.0-alpha.6
     peerDependencies:
       '@types/react': ^18.0.0 || ^19.0.0
@@ -4790,7 +4790,7 @@ packages:
     engines: {node: '>=18'}
 
   storybook@https://pkg.pr.new/storybookjs/storybook/storybook@e1d3d410e8e721213d687df093ffda5464ccc086:
-    resolution: {tarball: https://pkg.pr.new/storybookjs/storybook/storybook@e1d3d410e8e721213d687df093ffda5464ccc086}
+    resolution: {integrity: sha512-rr1qnytQzUHvL40XMINVYIgZSw6Px9wkk8aEpik+DOh5yNkXr+s3go3IG5Rs9mzbW7FggLaBhK1UlHfB9FG3zQ==, tarball: https://pkg.pr.new/storybookjs/storybook/storybook@e1d3d410e8e721213d687df093ffda5464ccc086}
     version: 11.0.0-alpha.6
     hasBin: true
     peerDependencies:
