@@ -1106,13 +1106,17 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
         underVitest = true;
         assertVitestVersion(vitest.version);
         const test = testProject.config;
-        const setupFiles = new Set(test.setupFiles.map((file) => normalizePath(file)));
+        // Read as a file is asked about: a plugin of the host adds a setup
+        // file in its own `configureVitest`, which may run after this one,
+        // like Storybook's Vitest addon in Browser Mode.
+        const isSetupFile = (file: string) =>
+          test.setupFiles.some((setupFile) => normalizePath(setupFile) === file);
         // `test.include`, matched the way Vitest does. Not `includeSource`:
         // a file with tests in its source is a file of the app.
         const isIncluded = createFilter(test.include, test.exclude, {
           resolve: test.dir || test.root,
         });
-        serverCode.addTestFiles((file) => setupFiles.has(file) || isIncluded(file));
+        serverCode.addTestFiles((file) => isSetupFile(file) || isIncluded(file));
       },
       // Without Vitest, a page of the host has the rsc layer's modules as the
       // browser loaded them, with the plugin's runtime, whose modules of the
@@ -1286,6 +1290,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
       clientComponents: "vitest-plugin-rsc/nextjs/client-components",
       internal: ownFile("internal"),
       isHostFile: serverCode.isHostFile,
+      isTestFile: serverCode.isTestFile,
       isHostPackage: serverCode.isHostPackage,
       clientReferenceOf,
     }),
