@@ -156,29 +156,40 @@ export async function layerTables(context: NextContext, build: NextBuild) {
     Object.assign(
       aliases,
       compilerAliases.createServerOnlyClientOnlyAliases(layer === "rsc"),
-      // The server layers take Next's table for its edge runtime, which
-      // loads React from its files, as the plugin does: the table for
-      // Node.js takes it from Next's one bundle of React for both server
-      // layers, `vendored/(rsc|ssr)/entrypoints`, which node-platform.ts
-      // stands in for.
+      // The server layers run Next's Node.js runtime, loaded from Next's
+      // ESM files, so their tables are Next's for its edge runtime: the
+      // table for Node.js loads React from Next's one bundle of it for both
+      // server layers, `vendored/(rsc|ssr)/entrypoints`, which
+      // node-platform.ts stands in for, as each layer has a React of its
+      // own.
       vendoredReactAliases(layer !== "browser"),
       compilerAliases.createNextApiEsmAliases(),
       compilerAliases.createAppRouterApiAliases(layer === "rsc"),
     );
-    // Except `react-dom/server` in the ssr layer, where a Client Component
-    // imports it: Next's edge table has its own module there, which throws
-    // on `renderToString()` and `renderToStaticMarkup()`. On Next's Node.js
-    // runtime, which this is, the table gives React's entry for Node.js,
-    // with the legacy renderer and the stream renderers. The entry needs
-    // `stream`, `util`, `crypto` and `async_hooks`, which the server layers
-    // have. Not in the rsc layer, where Next's Node.js table has the same
-    // entry and marks it as wrong: a Server Component is not to render.
+    // The rule for an entry that resolves what the app's own code imports,
+    // and that differs by runtime: the Node.js entry wins, as a route on
+    // Node.js gets it. These are React's entries for Node.js, which need
+    // `stream`, `util`, `crypto` and `async_hooks`, the package's stand-ins.
+    // In the ssr layer, where a Client Component imports them: the rsc
+    // layer's entries are Next's modules for a Server Component, which is
+    // not to render, as in Next's table for Node.js.
     if (layer === "ssr") {
-      const entry = vendoredReactAliases(false)["react-dom/server$"];
-      if (typeof entry !== "string") {
-        return fail("Next's alias table for Node.js has no `react-dom/server$`");
+      const nodeTable = vendoredReactAliases(false);
+      for (const key of [
+        // The edge table has Next's own module, which throws on
+        // `renderToString()` and `renderToStaticMarkup()`. React's entry
+        // for Node.js has them, with the stream renderers.
+        "react-dom/server$",
+        // The edge table has React's entry for web streams, `prerender()`.
+        // The entry for Node.js has `prerenderToNodeStream()` too.
+        "react-dom/static$",
+      ]) {
+        const entry = nodeTable[key];
+        if (typeof entry !== "string") {
+          return fail(`Next's alias table for Node.js has no \`${key}\``);
+        }
+        aliases[key] = entry;
       }
-      aliases["react-dom/server$"] = entry;
     }
     // The plugin finds Next's Flight codec next to this one.
     if (typeof aliases["react-server-dom-webpack/server$"] !== "string") {

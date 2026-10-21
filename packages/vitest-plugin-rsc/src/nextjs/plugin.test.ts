@@ -326,13 +326,14 @@ test("resolves a bare import of Next to its file in a build", async () => {
   expect(await resolve(source, page, null)).toEqual({ id: commonJs });
 });
 
-// A Client Component that calls `renderToStaticMarkup()` of `react-dom/server`
-// renders on the server too. The ssr layer takes Next's table for its edge
-// runtime, where that is Next's own module, which throws on the legacy APIs:
-// there it gets React's entry for Node.js, as a route on Node does. Next's
-// own renderer imports `react-dom/server.edge`, which stays the build for
-// web streams.
-test("gives a Client Component React's server entry for Node.js in the ssr layer", async () => {
+// The server layers take Next's alias tables for its edge runtime, and for
+// an entry that resolves what the app's own code imports and differs by
+// runtime, the Node.js entry: a Client Component that calls
+// `renderToStaticMarkup()` of `react-dom/server` renders on the server too,
+// where the edge table's module throws, and `react-dom/static` is React's
+// entry for Node.js alike (project/layers.ts). Next's own renderer imports
+// `react-dom/server.edge`, which stays the build for web streams.
+test("gives a Client Component React's server entries for Node.js in the ssr layer", async () => {
   const plugins = vitestPluginNext();
   const plugin = plugins.find(({ name }) => name === "vitest-plugin-rsc:next")!;
   await (plugin.config as ConfigHook<Config>)({ root }, { command: "build" });
@@ -361,12 +362,16 @@ test("gives a Client Component React's server entry for Node.js in the ssr layer
   };
 
   expect(await resolveIn("ssr", "react-dom/server")).toEqual({ id: `${reactDom}/server.node.js` });
+  expect(await resolveIn("ssr", "react-dom/static")).toEqual({ id: `${reactDom}/static.node.js` });
   expect(await resolveIn("ssr", "react-dom/server.edge")).toEqual(edgeRenderer);
   expect(await resolveIn("browser", "react-dom/server")).toEqual({
     id: `${reactDom}/server.browser.js`,
   });
-  // A Server Component is not to render: Next's module, as in Next.
+  // Not `react-dom/static`: Next's table sends it to `static.browser`, a
+  // file its React does not have.
+  // A Server Component is not to render: Next's modules, as in Next.
   expect(await resolveIn("rsc", "react-dom/server")).toEqual(edgeRenderer);
+  expect(await resolveIn("rsc", "react-dom/static")).toEqual({ id: `${reactDom}/static.edge.js` });
 });
 
 // What the plugin makes of a Vitest config, and says of it when a run starts.
