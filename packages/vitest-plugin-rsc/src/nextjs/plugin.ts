@@ -279,9 +279,13 @@ function createLayerResolver(getProject: () => NextProject, layer: NextLayer) {
 
   /**
    * Where a specifier leads in this layer: another specifier, a bridge module
-   * (`\0...`), or `false` for a module the layer leaves empty.
+   * (`\0...`), or `false` for a module the layer leaves empty. For the app's
+   * code, `ofApp`, with the entries Next's own files do not get, like React's
+   * `react-dom/server` for Node.js in the ssr layer (project/layers.ts).
    */
-  function normalize(source: string): string | false {
+  function normalize(source: string, ofApp = false): string | false {
+    const appTarget = ofApp ? getProject().appAliases[layer][`${source}$`] : undefined;
+    if (appTarget !== undefined) return normalize(appTarget);
     const cached = normalized.get(source);
     if (cached !== undefined) return cached;
 
@@ -328,7 +332,8 @@ function createLayerResolver(getProject: () => NextProject, layer: NextLayer) {
     // Vite's `parent > dependency`: the layer resolves the dependency alike
     // from any parent, and a specifier of Next from the project.
     const source = entry.slice(entry.lastIndexOf(">") + 1).trim();
-    const target = normalize(source);
+    // An entry of the config is the app's.
+    const target = normalize(source, true);
     if (target === false || target.startsWith("\0") || isNodeModule(target)) return;
     // A package that Next depends on, like `styled-jsx`, found by its name
     // from Next. Not a file of Next, like its polyfill of `object-assign`.
@@ -374,7 +379,11 @@ function createLayerResolver(getProject: () => NextProject, layer: NextLayer) {
           specifier = `next/${relative.split(path.sep).join("/")}`;
         }
 
-        const target = normalize(specifier);
+        // Not a file of Next's own, under `next/dist`: one of the app or of
+        // a package, which gets the app's entries (project/layers.ts). The
+        // dependency optimizer and the dev server alike give the file.
+        const ofApp = !!importer && !normalizePath(importer).includes("/next/dist/");
+        const target = normalize(specifier, ofApp);
         if (target === false) return emptyModuleId;
         if (isNodeModule(target)) {
           // A dependency that says what it uses for the module in a browser
