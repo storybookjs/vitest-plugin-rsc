@@ -1,0 +1,32 @@
+{
+  "name": "nextjs-cache-components-demo",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "next dev",
+    "test": "vitest",
+    "test:run": "vitest run",
+    "build": "NODE_OPTIONS='--conditions=vitest-plugin-rsc-source' vite build --configLoader native"
+  },
+  "dependencies": {
+    "@next/routing": "16.4.0",
+    "next": "16.4.0",
+    "react": "19.2.6",
+    "react-dom": "19.2.6"
+  },
+  "devDependencies": {
+    "@types/node": "^24.12.4",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitest/browser": "5.0.3",
+    "@vitest/browser-playwright": "5.0.3",
+    "playwright": "^1.64.0",
+    "typescript": "^6.0.3",
+    "vite": "^8.3.1",
+    "vitest": "5.0.3",
+    "vitest-plugin-rsc": "workspace:*"
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}

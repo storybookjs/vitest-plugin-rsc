@@ -253,9 +253,17 @@ export async function openNextProject(
   // Without `i18n`, which is the Pages Router's: a URL of the App Router has
   // no locale. With it, Next's route resolution and its proxy look for one in
   // every URL, and find no route of the app.
+  //
+  // And without Cached Navigations, which Cache Components turns on. With it
+  // Next renders a page in stages, so that the browser can keep the static
+  // part of a page it navigated to, and the stages lean on the order of
+  // `setImmediate` in Node's event loop: the stand-in for
+  // `fast-set-immediate.external` throws there. What the server caches is the
+  // same without it.
   const config = {
     ...loadedConfig,
     i18n: null,
+    experimental: { ...loadedConfig.experimental, cachedNavigations: false },
     // A static build has no server to optimize an image. An app with a
     // loader of its own, like a CDN, keeps it.
     ...(options.static &&
