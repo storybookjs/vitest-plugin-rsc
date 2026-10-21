@@ -27,8 +27,10 @@ Preview packages for PR commits are handled by `pkg.pr.new`, which publishes ins
 Run the tests your change is about, by file. CI runs the whole suite on every push, drafts included, so a local run of every project is rarely worth its minutes.
 
 ```sh
-pnpm test packages/vitest-plugin-rsc/src/nextjs/cookies.test.ts
+pnpm test playground/nextjs-e2e-demo/app/cookies.test.tsx
 ```
+
+The projects come in two tiers. `pnpm test` runs the fast tier, in under a minute. `pnpm test:slow` runs the slow tier, the projects that start a dev server, `storybook dev`, `storybook build` or a static build: `nextjs-host-demo*`, `nextjs-notes-demo-storybook*` and `*-build`, minutes. `pnpm test:all`, `pnpm test:dist` and CI run every project. A file or a `--project` on the command line selects from every project, whatever the tier: `pnpm test playground/nextjs-host-demo/test/storybook.test.ts` runs it. The root `vitest.config.ts` names the slow tier.
 
 `pnpm test` runs the root Vitest project suite against the source of the package, but for its modules of Node.js (`packages/vitest-plugin-rsc/src/node/`), which are always the built files of `dist/node/`: `pnpm test` builds the package first. `pnpm test:dist` and Vitest run directly use the built package, so run `pnpm build` first. Before a push, run `pnpm format`, `pnpm lint`, `pnpm tsgo` and `pnpm build`.
 
