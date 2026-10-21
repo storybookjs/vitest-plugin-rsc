@@ -36,8 +36,13 @@ export function beforeWatchLookup(vitest: Vitest, prepare: (file: string) => voi
  * - Vitest transforms each test file in the `ssr` environment to follow its
  *   imports. There the test file is made empty: that environment is none of
  *   the layers, and cannot read a file of the app that needs Next's compiler.
- * - Vitest keeps a test file that is itself in `config.related`, and reads
- *   that list after these transforms. So a test file that belongs is added.
+ * - Since 5.0.4 (vitest-dev/vitest#11432), Vitest copies `config.related`
+ *   before these transforms, and keeps a test file that fails to load: it
+ *   runs, to report the error. So the transform of a test file that
+ *   belongs throws.
+ * - Before 5.0.4, a transform that throws fails the lookup. But Vitest
+ *   keeps a test file that is itself in `config.related`, and reads that
+ *   list after these transforms. So a test file that belongs is added.
  */
 export function answerLookup(
   vitest: Vitest,
@@ -48,6 +53,9 @@ export function answerLookup(
   // The changed files of a lookup, as they were before test files were added.
   const changes = new WeakMap<string[], Set<string>>();
   const emptied = new Set<string>();
+  // Vitest 5.0.4 or later.
+  const [major = 0, minor = 0, patch = 0] = vitest.version.split(/[.-]/).map(Number);
+  const keepsFailed = major * 1e6 + minor * 1e3 + patch >= 5_000_004;
 
   return {
     transform(environment: string, id: string): { code: string; map: null } | undefined {
@@ -56,8 +64,11 @@ export function answerLookup(
       if (environment !== lookupEnvironment || !related || !isTestFile(id)) return;
       let changed = changes.get(related);
       if (!changed) changes.set(related, (changed = new Set(related.map(normalizePath))));
-      if (belongs(id, changed) && !related.includes(id)) related.push(id);
       emptied.add(id);
+      if (belongs(id, changed)) {
+        if (keepsFailed) throw new Error(`vitest-plugin-rsc: ${id} belongs to the change`);
+        if (!related.includes(id)) related.push(id);
+      }
       return { code: "export {};\n", map: null };
     },
 

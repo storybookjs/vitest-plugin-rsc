@@ -93,7 +93,7 @@ test("answerLookup: after forget, a test file is read as it is", async () => {
     {
       configureVitest(context) {
         project = context.project;
-        lookup = answerLookup(context.vitest, project, isTestFile, () => true);
+        lookup = answerLookup(context.vitest, project, isTestFile, () => false);
       },
       transform: (environment, id) => lookup.transform(environment, id),
     },

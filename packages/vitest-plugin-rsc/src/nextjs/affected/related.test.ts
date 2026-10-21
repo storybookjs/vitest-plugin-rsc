@@ -55,7 +55,7 @@ function createGraph(imports: Record<string, string[]>) {
 }
 
 // Vitest with one project, from the start of a process to its lookup.
-function start(related?: string[]) {
+function start(related?: string[], version = "5.0.5") {
   const rsc = createGraph({
     [at("notes.test.tsx")]: ["plugin", at("lib/db.ts")],
     [at("profile.test.tsx")]: ["plugin"],
@@ -71,7 +71,11 @@ function start(related?: string[]) {
   const browser = createGraph({ [at("app/profile/page.tsx")]: [at("app/profile/avatar.tsx")] });
   const config = { reporters: [] as unknown[], related: related && [...related] };
   const tagsFilter: string[] = [];
-  const vitest = { config, getGlobalTestNamePattern: () => undefined as RegExp | undefined };
+  const vitest = {
+    version,
+    config,
+    getGlobalTestNamePattern: () => undefined as RegExp | undefined,
+  };
   const project = {
     name: "app",
     config: { root, setupFiles: [at("vitest.setup.ts")], tagsFilter },
@@ -110,16 +114,28 @@ function start(related?: string[]) {
       } as unknown as TestModule);
       reporter.onTestRunEnd([], [], run.reason ?? "passed");
     },
-    /** Whether Vitest's lookup keeps a test file: it is in the list afterwards. */
+    /** Whether Vitest's lookup keeps a test file: it fails to load. */
     belongs(testFile: string) {
-      expect(routes.transform("ssr", at(testFile))).toEqual({ code: "export {};\n", map: null });
-      return config.related!.includes(at(testFile));
+      try {
+        expect(routes.transform("ssr", at(testFile))).toEqual({ code: "export {};\n", map: null });
+        return false;
+      } catch (error) {
+        expect(String(error)).toContain("belongs to the change");
+        return true;
+      }
     },
     transform: routes.transform,
   };
 }
 
 const changed = (...files: string[]) => files.map(at);
+
+test("before Vitest 5.0.4, a test file that belongs is added to the changed files", () => {
+  const lookup = start(changed("lib/unused.ts"), "5.0.3");
+  const empty = { code: "export {};\n", map: null };
+  expect(lookup.transform("ssr", at("notes.test.tsx"))).toEqual(empty);
+  expect(lookup.vitest.config.related).toEqual(changed("lib/unused.ts", "notes.test.tsx"));
+});
 
 test("a test file that has not run belongs to every change", () => {
   expect(start(changed("lib/unused.ts")).belongs("notes.test.tsx")).toBe(true);
