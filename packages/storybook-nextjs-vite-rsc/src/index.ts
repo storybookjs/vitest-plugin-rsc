@@ -17,7 +17,7 @@ export type { Decorator, Loader, StoryContext } from "@storybook/react";
 /**
  * The project's preview, `preview.tsx`: `definePreview()` of
  * `@storybook/react`, whose first addon gives a client story the
- * page's storage and the stylesheets of its file (client-story.ts).
+ * stylesheets of its file (client-story.ts).
  */
 export const definePreview: typeof __definePreview = (input) =>
   __definePreview({ ...input, addons: [annotations, ...(input.addons ?? [])] as never });

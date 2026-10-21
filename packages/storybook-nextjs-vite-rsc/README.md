@@ -274,21 +274,10 @@ export const SignedIn = meta.story({
 });
 ```
 
-Before each client story, after its loaders, the framework empties the
-page's `localStorage` and `sessionStorage`, and then runs the `beforeEach`
-of the preview and of the story, which is where a story writes the items
-it starts with. Every story sees the page's storage, empty as the story
-starts, as in a new browser context. New args keep it, as they keep a
-server story's page; a remount of the story that is open empties it. A
-docs page is one page: its inline client stories share one storage,
-emptied as the page starts, and its server stories, in iframes, have
-storage of their own.
-
 The page's `localStorage` and `sessionStorage` are its own, as its cookies
 are: Storybook's items in the browser's storage are invisible to the app,
 and what the app stores does not reach them. The browser's DevTools show
-the browser's storage, not the page's. A preview addon that keeps an item
-in `localStorage` keeps it in the page's, so it is gone at the next story.
+the browser's storage, not the page's.
 
 ## `parameters.nextjs`
 
@@ -422,6 +411,9 @@ for both kinds.
   iframe, as they reach no story in an iframe in Storybook: open the story
   to change its args.
 - Tags of `preview.server.tsx`: see Two Previews.
+- A client story has the browser's `localStorage` and `sessionStorage`
+  until the preview loads a server story file, and the page's storage of
+  the server stories after it, which nothing clears before a client story.
 - A change of an MDX file that shows a client story with `of={…}` fails
   that block until the preview loads again.
 - Next's router in a client story: `useRouter()` throws there, and

@@ -14,10 +14,6 @@ import {
   storyRun,
   type StoryRun,
 } from "../../test-helpers/storybook.ts";
-import {
-  expectADocsPageHasOneStorage,
-  expectEachClientStoryHasAnEmptyStorage,
-} from "../test/story-storage.ts";
 import { expectEachEntryHasItsOwnCss } from "../test/story-styles.ts";
 
 // `storybook build` of the project with @storybook/nextjs-vite-rsc, which
@@ -77,18 +73,6 @@ test("a story or docs page has the CSS of its files and its route, in any order"
   page,
 }) => {
   await expectEachEntryHasItsOwnCss(page, site!.url);
-});
-
-// In the build as with the dev server, with one page's storage in the
-// document: see ../test/story-storage.ts.
-test("a client story has the page's storage, empty as it starts", async ({ page }) => {
-  await expectEachClientStoryHasAnEmptyStorage(page, site!.url);
-});
-
-test("the client stories of a docs page share its storage, empty as it starts", async ({
-  page,
-}) => {
-  await expectADocsPageHasOneStorage(page, site!.url);
 });
 
 // The stylesheets of every file of the host, with "use client" or without,
