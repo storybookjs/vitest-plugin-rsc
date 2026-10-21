@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createFilter, normalizePath, transformWithOxc, type Plugin } from "vite";
+import { transformAsyncFunctions } from "../async-local-storage-transform.ts";
 import type { NextLayer } from "./project.ts";
 
 // The server layers run in a browser, which has a `window` and a `fetch`
@@ -223,7 +224,20 @@ function packageDirOf(file: string): string | undefined {
   return /^.*\/node_modules\/(?:@[^/]+\/)?[^/]+(?=\/)/.exec(file)?.[0];
 }
 
+type Warns = { warn(message: string): void };
+
 const name = "vitest-plugin-rsc:next-server-code";
+const asyncFunctionsName = "vitest-plugin-rsc:next-async-functions";
+
+// Next's wrapper of a `"use cache"` function. It enters the scope of the
+// function and awaits before it has React call the function.
+const useCacheWrapper = /\/next\/dist\/(?:esm\/)?server\/use-cache\/use-cache-wrapper\.js$/;
+// React's Flight server, of the React that Next ships: the build for
+// development and the one for production, of React and of its experimental
+// channel.
+const flightServer =
+  /\/next\/dist\/compiled\/react-server-dom-webpack(?:-experimental)?\/cjs\/react-server-dom-webpack-server\.edge\.\w+\.js$/;
+const performWork = "function performWork(request) {";
 
 export function createServerCode(registry: string, options: ServerCodeOptions = {}) {
   const patterns = [options.browserModules ?? []].flat();
@@ -263,6 +277,57 @@ export function createServerCode(registry: string, options: ServerCodeOptions = 
     if (isBrowserModule(file) || isHostFile(file)) return false;
     const packageDir = packageDirOf(file);
     return !packageDir || !hostPackageDirs.has(packageDir);
+  }
+
+  // The async functions of a file, compiled. A file that does not parse stays
+  // as it is: its functions read the store of the request after an `await`.
+  function compileAsyncFunctions(context: Warns, code: string, file: string) {
+    try {
+      return transformAsyncFunctions(code, file, `${registry}.asyncFunctionHooks`);
+    } catch (error) {
+      const reason = String(error instanceof Error ? error.message : error);
+      context.warn(
+        `vitest-plugin-rsc: the async functions of ${file} do not keep their stores across an ` +
+          `await, it does not parse as JavaScript. ${reason.replace(/\s+/g, " ")}`,
+      );
+    }
+  }
+
+  /** The file of a module, if it is a source file that is server code in a layer. */
+  function sourceFileOf(id: string, cacheDir: string, layer: NextLayer): string | undefined {
+    const file = id.split("?")[0]!;
+    // Not a stylesheet, and not what another plugin compiles to JavaScript.
+    // And a file on disk: a module that is no file is a plugin's, like the
+    // `/virtual:/…` entries of the page of a host, which run on the page, and
+    // is never server code.
+    if (!/\.[cm]?[jt]sx?$/.test(file) || !fs.existsSync(file)) return;
+    // A dependency is compiled when it is pre-bundled, or not at all.
+    if (file.includes("/node_modules/") || file.startsWith(`${cacheDir}/`)) return;
+    if (isServerCode(file, layer)) return file;
+  }
+
+  // React's Flight server of the rsc layer, for the stores a cached function
+  // runs with. React starts a render in a microtask. On Node.js that has the
+  // stores of the code that started the render, and here the server's own
+  // `queueMicrotask` passes them on: see globals.ts. That is how Next has
+  // React call a cached function in the scope of that function. And it
+  // renders in steps, each a `performWork()`: the later ones when a promise
+  // it waits for settles. On Node.js such a step has the stores of the step
+  // that waited, so what a cached component returns renders in its scope.
+  // Here each step gets the stores of the first: see globals.ts.
+  function flightServerOf(code: string, id: string) {
+    if (!flightServer.test(normalizePath(id))) return;
+    if (!code.includes(performWork)) {
+      throw new Error(`vitest-plugin-rsc: ${id} has no \`${performWork}\` to compile.`);
+    }
+    return {
+      code: code.replace(
+        performWork,
+        `function performWork(request) { ${registry}.performWork(request, performWorkOfReact); }\n` +
+          `function performWorkOfReact(request) {`,
+      ),
+      define: { queueMicrotask: `${registry}.queueMicrotask` },
+    };
   }
 
   return {
@@ -320,6 +385,18 @@ export function createServerCode(registry: string, options: ServerCodeOptions = 
     addTestFiles(matches: (file: string) => boolean): void {
       testFileMatchers.push(matches);
     },
+    /**
+     * What a dependency of a server layer needs on top of `compileServerCode()`
+     * to keep the stores of a cached function, for a static build, which has
+     * no optimizer: see `optimizerPlugin()` and `asyncFunctionsOptimizerPlugin()`.
+     */
+    forCachedFunctions(context: Warns, code: string, id: string, layer: NextLayer) {
+      if (layer !== "rsc") return { code, define: {} };
+      if (useCacheWrapper.test(normalizePath(id))) {
+        return { code: compileAsyncFunctions(context, code, id)?.code ?? code, define: {} };
+      }
+      return flightServerOf(code, id) ?? { code, define: {} };
+    },
     /** For the dependency optimizer: the pre-bundled dependencies of a layer. */
     optimizerPlugin(layer: NextLayer) {
       return {
@@ -330,8 +407,11 @@ export function createServerCode(registry: string, options: ServerCodeOptions = 
           id: string,
         ): Promise<Compiled | undefined> {
           if (!/\.[cm]?js$/.test(id) || !isServerCode(id, layer)) return;
+          const flight = layer === "rsc" ? flightServerOf(code, id) : undefined;
+          if (flight) code = flight.code;
+          const define = flight?.define;
           try {
-            return await compileServerCode(code, id, registry);
+            return await compileServerCode(code, id, registry, define);
           } catch (error) {
             // JSX in a `.js` file, for one. The bundler may still take it.
             const reason = String(error instanceof Error ? error.message : error);
@@ -343,23 +423,42 @@ export function createServerCode(registry: string, options: ServerCodeOptions = 
         },
       };
     },
+    /**
+     * The async functions that have to read, after an `await`, a store Next
+     * entered for them: see async-local-storage-transform.ts. That is the
+     * scope of a cached function, which the `rsc` layer runs: for the
+     * dependency optimizer, Next's wrapper of a `"use cache"` function.
+     */
+    asyncFunctionsOptimizerPlugin() {
+      return {
+        name: asyncFunctionsName,
+        transform(this: Warns, code: string, id: string) {
+          if (useCacheWrapper.test(normalizePath(id))) return compileAsyncFunctions(this, code, id);
+        },
+      };
+    },
+    /** And the source files of the app in the `rsc` layer, by the name of its environment. */
+    asyncFunctionsPlugin(environment: string): Plugin {
+      return {
+        name: asyncFunctionsName,
+        applyToEnvironment: ({ name }) => name === environment,
+        transform(code, id) {
+          const file = sourceFileOf(id, normalizePath(this.environment.config.cacheDir), "rsc");
+          // A test file keeps the browser: see plugin() for a host that does
+          // not say which files are its own.
+          if (file && knowsHostFiles()) return compileAsyncFunctions(this, code, file);
+        },
+      };
+    },
     /** For the source files of the server layers, by the name of their environment. */
     plugin(environments: Record<string, NextLayer>): Plugin {
       return {
         name,
         applyToEnvironment: (environment) => Object.hasOwn(environments, environment.name),
         async transform(code, id) {
-          const file = id.split("?")[0]!;
-          // Not a stylesheet, and not what another plugin compiles to
-          // JavaScript. And a file on disk: a module that is no file is a
-          // plugin's, like the `/virtual:/…` entries of the page of a
-          // host, which run on the page, and is never server code.
-          if (!/\.[cm]?[jt]sx?$/.test(file) || !fs.existsSync(file)) return;
-          // A dependency is compiled when it is pre-bundled, or not at all.
-          if (file.includes("/node_modules/")) return;
-          if (file.startsWith(`${normalizePath(this.environment.config.cacheDir)}/`)) return;
           const layer = environments[this.environment.name]!;
-          if (!isServerCode(file, layer)) return;
+          const file = sourceFileOf(id, normalizePath(this.environment.config.cacheDir), layer);
+          if (!file) return;
           // Without Vitest's config, or the files of another host, there is
           // no telling a test file from a file of the app, and a test file
           // must keep the browser. Said here, at the first file, rather than

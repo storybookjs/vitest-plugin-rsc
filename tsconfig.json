@@ -11,6 +11,9 @@
       "path": "./conformance"
     },
     {
+      "path": "./playground/nextjs-cache-components-demo"
+    },
+    {
       "path": "./playground/nextjs-db-recipes"
     },
     {

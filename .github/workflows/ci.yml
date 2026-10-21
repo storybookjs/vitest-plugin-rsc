@@ -152,6 +152,7 @@ jobs:
         run: |
           version=$(npm view next@${{ matrix.next }} version)
           pnpm --filter nextjs-e2e-demo add --config.minimum-release-age=0 next@$version @next/routing@$version
+          pnpm --filter nextjs-cache-components-demo add --config.minimum-release-age=0 next@$version @next/routing@$version
           pnpm --filter nextjs-notes-demo add --config.minimum-release-age=0 next@$version @next/env@$version @next/routing@$version
           pnpm --filter nextjs-db-recipes add --config.minimum-release-age=0 next@$version @next/routing@$version
           pnpm --filter nextjs-e2e-demo exec node -p "'next@' + require('next/package.json').version"
@@ -163,5 +164,6 @@ jobs:
         run: |
           pnpm test:dist \
             --project nextjs-e2e-demo \
+            --project nextjs-cache-components-demo \
             --project nextjs-notes-demo-browser \
             --project nextjs-db-recipes

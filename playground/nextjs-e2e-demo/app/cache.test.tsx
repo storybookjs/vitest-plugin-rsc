@@ -195,35 +195,25 @@ test("fetches again after a route handler has expired the tag of a fetch", async
 
 // A cached function has a scope of its own, in which Next does not let it
 // read the request, and does not keep what a cached function inside it
-// computes. The next two tests are that scope before and after the first
-// `await` of the function: see "A Cache Scope Ends At Its First await" in
+// computes. The function has that scope after an `await` too: its code is
+// compiled to put it back. See "The Scope Of A Cached Function" in
 // docs/next-routes.md.
 const cacheScope = async (when: string) => {
   const response = await handleRequest(`/api/cache-scope?when=${when}`);
   return (await response.json()) as { request: string; innerRuns: number };
 };
 
-test("gives a cached function its cache scope until its first await, as a deployment does", async () => {
-  const first = await cacheScope("at-once");
-  expect(first.request).toBe("not readable");
+test.for(["at-once", "after-await"])(
+  "gives a cached function its cache scope, as a deployment does: %s",
+  async (when) => {
+    const first = await cacheScope(when);
+    expect(first.request).toBe("not readable");
 
-  await nextMillisecond();
-  await revalidate("tag=cache-scope");
-  const second = await cacheScope("at-once");
+    await nextMillisecond();
+    await revalidate("tag=cache-scope");
+    const second = await cacheScope(when);
 
-  // The cached function inside it ran again with it.
-  expect(second.innerRuns).toBe(first.innerRuns + 1);
-});
-
-test("known limit: after its first await a cached function reads the request, not its cache scope", async () => {
-  const first = await cacheScope("after-await");
-  // A deployment: "not readable".
-  expect(first.request).toBe("readable");
-
-  await nextMillisecond();
-  await revalidate("tag=cache-scope");
-  const second = await cacheScope("after-await");
-
-  // A deployment: one more. Here the inner function kept its own result.
-  expect(second.innerRuns).toBe(first.innerRuns);
-});
+    // The cached function inside it ran again with it.
+    expect(second.innerRuns).toBe(first.innerRuns + 1);
+  },
+);
