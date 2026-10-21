@@ -24,6 +24,7 @@ import {
 import { Input } from "#components/ui/input.tsx";
 import { Textarea } from "#components/ui/textarea.tsx";
 import { requireUser } from "#lib/auth-session.ts";
+import { now } from "#lib/clock.ts";
 import { db } from "#lib/db.ts";
 import { getForm, setForm } from "#lib/form-flash.ts";
 import { notes } from "#db/schema.ts";
@@ -80,7 +81,7 @@ export default async function EditNotePage({ params }: { params: Promise<{ id: s
 
           await db
             .update(notes)
-            .set({ title, content, updatedAt: new Date() })
+            .set({ title, content, updatedAt: now() })
             .where(and(eq(notes.id, id), eq(notes.ownerId, user.id)));
           redirect(`/notes/${id}`);
         }}
