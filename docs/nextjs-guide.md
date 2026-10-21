@@ -665,8 +665,6 @@ import { vi } from "vitest";
 vi.mock("./app/lib/weather.ts");
 ```
 
-On Vitest 5.0.3, also add `await import("./app/lib/weather.ts");` after the `vi.mock()` call. Vitest 5.0.4 fixed this ([vitest-dev/vitest#11520](https://github.com/vitest-dev/vitest/pull/11520)).
-
 ```ts
 // vitest.config.ts
 test: {
