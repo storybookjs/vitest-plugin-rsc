@@ -24,10 +24,16 @@ Preview packages for PR commits are handled by `pkg.pr.new`, which publishes ins
 
 ## Testing
 
-Vitest projects that import `vitest-plugin-rsc` use the package exports. From the root, prefer `pnpm test`, which runs the root Vitest project suite against the source of the package, but for its modules of Node.js (`packages/vitest-plugin-rsc/src/node/`), which are always the built files of `dist/node/`: `pnpm test` builds the package first. `pnpm test:dist` and Vitest run directly use the built package, so run `pnpm build` first.
+Run the tests your change is about, by file. CI runs the whole suite on every push, drafts included, so a local run of every project is rarely worth its minutes.
+
+```sh
+pnpm test packages/vitest-plugin-rsc/src/nextjs/cookies.test.ts
+```
+
+`pnpm test` runs the root Vitest project suite against the source of the package, but for its modules of Node.js (`packages/vitest-plugin-rsc/src/node/`), which are always the built files of `dist/node/`: `pnpm test` builds the package first. `pnpm test:dist` and Vitest run directly use the built package, so run `pnpm build` first. Before a push, run `pnpm format`, `pnpm lint`, `pnpm tsgo` and `pnpm build`.
 
 Keep Vitest project definitions and coverage settings in the root `vitest.config.ts`. Vitest coverage is process-level config, so do not add `coverage` blocks to individual project configs.
 
-For bigger feature work, run the full Next.js notes demo suite from the root (`pnpm test --project nextjs-notes-demo-browser`) before merging. It is the in-tree acceptance app: its tests open the routes of the app with `renderServer({ url })` and cover the realistic combinations of routing, cookies, forms, Server Actions and third-party client packages. For a change to a page that has stories, or to how the plugin runs in Storybook, run its stories too, in `storybook dev` and `storybook build`: `pnpm test --project 'nextjs-notes-demo-storybook*'`.
+The Next.js notes demo, `playground/nextjs-notes-demo`, is the in-tree acceptance app: its tests open the routes of the app with `renderServer({ url })` and cover the realistic combinations of routing, cookies, forms, Server Actions and third-party client packages, and its stories run in `storybook dev` and `storybook build`.
 
-`pnpm conformance` runs fixtures of Next's own e2e tests against the plugin, see `docs/next-conformance.md`. It is not a part of `pnpm test`: it fetches the fixtures from `vercel/next.js` and takes minutes. Run it after a change to how the plugin runs Next.js. A test that starts or stops passing fails it; `pnpm conformance --update` records the change in `conformance/expectations.json`, where every failing test has a reason.
+`pnpm conformance` runs fixtures of Next's own e2e tests against the plugin, see `docs/next-conformance.md`. It is not a part of `pnpm test`: it fetches the fixtures from `vercel/next.js` and takes minutes. After a change to how the plugin runs Next.js, run it in CI on your branch with `gh workflow run next-conformance.yml --ref <branch>`. A test that starts or stops passing fails it; `pnpm conformance <fixture> --update` records the change in `conformance/expectations.json`, where every failing test has a reason.
