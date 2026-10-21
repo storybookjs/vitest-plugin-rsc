@@ -12,7 +12,6 @@ import type { FlightAdapters } from "./flight.ts";
 import { buildDirectory, builtFiles } from "./built-files.ts";
 import { preloadPage } from "./document.ts";
 import { actionModulePrefix, registry } from "./registry.ts";
-import { runInServerActionOfTest } from "./server-action.ts";
 import { askDevServer } from "../utils.ts";
 // By the package, so that it stays a module of its own with its "use client"
 // in the build of the package, and in the one of the app it is a client
@@ -239,8 +238,14 @@ export function requireModule(id: string): Promise<unknown> {
 }
 
 // The plugin's own Server Action is one of the app's: see `serverActionsOf()`
-// in ssr.ts.
-registry.ownServerAction = Reflect.get(runInServerActionOfTest, "$$id") as string | undefined;
+// in ssr.ts. Imported as `runInServerAction()` imports it: by its own module,
+// the one with `"use server"`, which Vite RSC compiles. The built package has
+// the function in a chunk as well, which a static import here would take, and
+// that one has no id.
+registry.ownServerAction = import("./server-action.ts").then(
+  ({ runInServerActionOfTest }) =>
+    Reflect.get(runInServerActionOfTest, "$$id") as string | undefined,
+);
 
 // An action id is `<module>#<export>`, and it comes from a request: it may not
 // be an id at all, or name an export that is not there or is not an action.

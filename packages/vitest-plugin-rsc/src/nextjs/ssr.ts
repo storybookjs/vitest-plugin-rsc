@@ -333,7 +333,8 @@ function nodeRouteFor(opened: Opened | undefined, matched: Route | undefined): R
 // Server Action it answers before it looks at the id, but the app here always
 // has one: the plugin's own, which is in the list too.
 async function serverActionsOf(request: ServerRequest): Promise<object> {
-  const ids = new Set(registry.ownServerAction ? [registry.ownServerAction] : []);
+  const own = await registry.ownServerAction;
+  const ids = new Set(own ? [own] : []);
   for (const id of await actionIdsOf(request)) {
     if (await registry.hasServerAction(id)) ids.add(id);
   }

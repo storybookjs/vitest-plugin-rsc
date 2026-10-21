@@ -124,7 +124,7 @@ export type NextRegistry = {
    * The id of the plugin's own Server Action, which every app here has: the
    * one of `runInServerAction()`, in the rsc layer.
    */
-  ownServerAction?: string;
+  ownServerAction?: Promise<string | undefined>;
   /** What the Server Action of `runInServerAction()` runs, by the number it is called with. */
   serverActions: Map<number, () => Promise<void>>;
   /**

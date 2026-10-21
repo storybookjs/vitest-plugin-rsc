@@ -1113,7 +1113,9 @@ function createBuiltFiles(
       hostFiles: {},
       chunks: [],
       modules: {},
-      fonts: Object.fromEntries(fonts),
+      // In order: the stylesheets are built in the order they are ready, and
+      // a build is the same in another directory.
+      fonts: Object.fromEntries([...fonts].sort(([a], [b]) => a.localeCompare(b))),
     };
     // Each chunk once, as many routes load the same ones.
     const indexes = new Map<string, number>();
