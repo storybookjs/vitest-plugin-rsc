@@ -10,8 +10,18 @@
 // - `process`: the page's, which globals.ts makes Next's server's, and
 //   unenv's for what it lacks.
 // - Written by hand where unenv's is not enough, with Node's own code as
-//   a package: `assert`, `crypto`, `path`, `stream`, `stream/promises`,
-//   `string_decoder`, `timers`, `timers/promises` and `util`.
+//   a package, or a small library of JavaScript: `assert`, `buffer`,
+//   `crypto`, `path`, `stream`, `stream/consumers`, `stream/promises`,
+//   `string_decoder`, `timers`, `timers/promises`, `util` and `zlib`.
+//   A function of Node.js gets one that works only when Next's server
+//   calls it on a path the plugin supports, a recipe or a playground needs
+//   it, or server code commonly calls it, directly or through a common
+//   library; and when it is glue over a web API or the public API of an
+//   established library, with no cipher or compression of its own, and a
+//   test against Node's own.
+//   Otherwise it throws when called: a stand-in does what Node.js does, or
+//   throws, and never answers wrong. See "Node.js In The Browser" in the
+//   README.
 // - The others: unenv's, made of what a browser has, like Web Crypto,
 //   `Uint8Array` and `URL`. What it has no stand-in for throws once called,
 //   or answers like a machine without it would: `os.hostname()` is "".

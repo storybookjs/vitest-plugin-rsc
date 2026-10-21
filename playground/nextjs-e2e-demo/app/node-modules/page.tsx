@@ -1,13 +1,19 @@
-import { createHmac, randomUUID } from "node:crypto";
+import { isUtf8 } from "node:buffer";
+import { execSync } from "node:child_process";
+import { createHash, createHmac, randomUUID } from "node:crypto";
 import { mkdtemp } from "node:fs/promises";
 import { STATUS_CODES } from "node:http";
 import { createRequire } from "node:module";
 import { EOL, tmpdir } from "node:os";
 import posix from "node:path/posix";
 import { hrtime } from "node:process";
+import { Readable } from "node:stream";
+import { text } from "node:stream/consumers";
 import { setTimeout as sleep } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
 import { isDate } from "node:util/types";
+import { deflateSync, gunzip, gzipSync, inflateSync } from "node:zlib";
 
 // Modules of Node.js that a browser does not have, as the server code of an
 // app imports them: see disk.test.tsx.
@@ -44,6 +50,14 @@ function base64url(): string {
   ].join(" ");
 }
 
+// Compressed one way and decompressed the other, sync and with a callback.
+async function compressed(): Promise<string> {
+  const note = "the notes of today";
+  const there = inflateSync(deflateSync(note)).toString();
+  const back = (await promisify(gunzip)(gzipSync(note))).toString();
+  return there === note && back === note ? "both ways" : `${there} / ${back}`;
+}
+
 export default async function NodeModulesPage() {
   const started = performance.now();
   await sleep(100);
@@ -65,6 +79,11 @@ export default async function NodeModulesPage() {
       <p>Its own path: {ownPath.endsWith("/app/node-modules/page.tsx") ? "the file's" : ownPath}</p>
       <p>Require: {required()}</p>
       <p>base64url: {base64url()}</p>
+      <p>Compressed: {await compressed()}</p>
+      <p>MD5: {createHash("md5").update("notes").digest("hex")}</p>
+      <p>Consumed: {await text(Readable.from(["from ", "a stream"]))}</p>
+      <p>UTF-8: {String(isUtf8(Buffer.from("héllo")))}</p>
+      <p>Commit: {execSync("git rev-parse --short HEAD").toString().trim()}</p>
     </>
   );
 }

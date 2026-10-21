@@ -183,6 +183,14 @@ export default defineProject({
   ],
   resolve: {
     conditions: vitestPluginRscSourceConditions,
+    // A module of Node.js that the app's server calls and a browser has no
+    // stand-in for: the app's own, see stand-ins/.
+    alias: [
+      {
+        find: /^(node:)?child_process$/,
+        replacement: fileURLToPath(new URL("./stand-ins/child_process.ts", import.meta.url)),
+      },
+    ],
   },
   test: {
     name: "nextjs-e2e-demo",

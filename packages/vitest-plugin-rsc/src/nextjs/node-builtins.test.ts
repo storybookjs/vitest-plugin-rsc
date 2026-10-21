@@ -51,14 +51,17 @@ test("ships a module for everything unenv stands in for, as the generator writes
   for (const [file, code] of files) expect(written().get(file), file).toBe(code);
   expect([...handWritten]).toEqual([
     "assert",
+    "buffer",
     "crypto",
     "path",
     "stream",
+    "stream/consumers",
     "stream/promises",
     "string_decoder",
     "timers",
     "timers/promises",
     "util",
+    "zlib",
   ]);
   expect(fs.existsSync(path.join(outputDir, "crypto.ts"))).toBe(true);
 });

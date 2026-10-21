@@ -112,15 +112,17 @@ What Node.js and browsers share works as it is: `fetch`, `Request`, `Response`, 
 
 Every module of Node.js that the server layers import is the plugin's own, `vitest-plugin-rsc/node/<name>`, one file each, from one place: no polyfill of Next's stands in for one. The plugin stands in for what Next's server needs:
 
-| What                                 | Here                                                                                                                                                                            |
-| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `AsyncLocalStorage`                  | Runs one request at a time                                                                                                                                                      |
-| `process`                            | One for the tab, shared by the test and the server: `env`, `cwd()` (`/`), `nextTick()`, `hrtime.bigint()`, and unenv's for the rest, like `platform`                            |
-| `buffer`, `events`, `util`, `assert` | Node's own code for a browser: the buffer package through unenv, and the events, util (with Node's `inspect()`) and assert packages. `Buffer` also reads and writes `base64url` |
-| `node:stream`                        | readable-stream 4, the streams of Node.js 18 as a package, with `Readable.toWeb()` and `fromWeb()`                                                                              |
-| `node:path`                          | path-browserify, the POSIX path of Node.js                                                                                                                                      |
-| `node:crypto`                        | Web Crypto for random values and `subtle`. SHA-256 in JavaScript for `createHash()` and `createHmac()`, and `timingSafeEqual()`. Another algorithm throws                       |
-| `node:timers/promises`               | The page's timers, with `signal`                                                                                                                                                |
+| What                                 | Here                                                                                                                                                                                                                                                                                                                                                         |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `AsyncLocalStorage`                  | Runs one request at a time                                                                                                                                                                                                                                                                                                                                   |
+| `process`                            | One for the tab, shared by the test and the server: `env`, `cwd()` (`/`), `nextTick()`, `hrtime.bigint()`, and unenv's for the rest, like `platform`                                                                                                                                                                                                         |
+| `buffer`, `events`, `util`, `assert` | Node's own code for a browser: the buffer package through unenv, and the events, util (with Node's `inspect()`) and assert packages. `Buffer` also reads and writes `base64url`. `isUtf8()`, `isAscii()` and the browser's `File`                                                                                                                            |
+| `node:stream`                        | readable-stream 4, the streams of Node.js 18 as a package, with `Readable.toWeb()` and `fromWeb()`                                                                                                                                                                                                                                                           |
+| `node:path`                          | path-browserify, the POSIX path of Node.js                                                                                                                                                                                                                                                                                                                   |
+| `node:crypto`                        | Web Crypto for random values and `subtle`, with `randomInt()` and `randomFill()`. MD5, SHA-1 and SHA-2 of [@noble/hashes](https://github.com/paulmillr/noble-hashes) for `createHash()`, `hash()` and `createHmac()`, also as streams, and `timingSafeEqual()`. Another algorithm throws, and so do ciphers, signatures and key derivation                   |
+| `node:zlib`                          | Gzip, deflate and raw deflate of [fflate](https://github.com/101arrowz/fflate), sync and with a callback, with their checksums checked. The streams, Brotli, Zstandard, a gzip of more than one member, and the options `info`, `flush`, `finishFlush` and a `windowBits` below 15 throw; bytes after a gzip or a zlib fail its check, where Node reads them |
+| `node:stream/consumers`              | `text()`, `json()`, `buffer()` and the others, of a stream of Node.js, a web stream or an async iterable                                                                                                                                                                                                                                                     |
+| `node:timers/promises`               | The page's timers, with `signal`                                                                                                                                                                                                                                                                                                                             |
 
 `node:fs` and `node:fs/promises` are an in-memory disk, [memfs](https://github.com/streamich/memfs). The test's own `node:fs` is the same disk, so a test can write a file that the server reads, and read back what a Server Action wrote:
 
@@ -143,6 +145,25 @@ test("shows the note on disk", async () => {
 See [The Server's Disk](docs/next-routes.md#the-servers-disk) for more.
 
 The other modules are [unenv](https://github.com/unjs/unenv)'s stand-ins, made of what a browser has: `os`, `url`, `http`, `querystring` and the rest. What unenv has no stand-in for throws when it is called, not when it is imported, so a package that imports it still loads: `net.connect()`, `child_process.spawn()`, `http.request()`, `crypto.createSign()`. Some answer as a machine without them would: `os.hostname()` is `""`.
+
+A function of Node.js works here when one of these needs it: Next's server, on a path that the plugin supports; a recipe or a playground; or server code, yours or that of a common library, like the HMAC that checks a webhook. It also has to be glue over a web API or the public API of an established library, with no cipher or compression of its own, and a test against Node's own. The rest throws when called, with an error that names it. A stand-in does what Node.js does, or throws: a wrong answer would pass a test that should fail.
+
+When your server code needs a function that throws here, mock the module of your app that calls it, or alias the module of Node.js to one of your own in `vitest.config.ts`:
+
+```ts
+export default defineConfig({
+  resolve: {
+    alias: [
+      {
+        find: /^(node:)?child_process$/,
+        replacement: fileURLToPath(new URL("./stand-ins/child_process.ts", import.meta.url)),
+      },
+    ],
+  },
+});
+```
+
+Your code and its packages then get your module for it. The e2e demo does so: see `playground/nextjs-e2e-demo/stand-ins/`.
 
 What doesn't run in a browser at all:
 
