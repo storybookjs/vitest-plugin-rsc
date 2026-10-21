@@ -4,11 +4,13 @@ import { setupWorker } from "msw/browser";
 import * as dbModule from "#lib/db.ts";
 import { nextCacheProbeFetchHandler } from "#components/next-cache-msw.ts";
 
-// The one module the tests mock: the database, which is the app's Postgres,
-// and a PGlite in memory here. Everything else of the app is real: Better
-// Auth on that database, its cookies, the flash cookies. The plugin starts
-// each test without the app's cookies.
+// The two modules the tests mock: the database, the app's Postgres, a PGlite
+// in memory here; and the clock, a fixed instant here.
+// Everything else of the app is real: Better Auth on that database, its
+// cookies, the flash cookies. The plugin starts each test without the app's
+// cookies.
 vi.mock("#lib/db.ts");
+vi.mock("#lib/clock.ts");
 
 const { resetDb } = dbModule as typeof import("#lib/__mocks__/db.ts");
 
