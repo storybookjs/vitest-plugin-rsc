@@ -759,6 +759,9 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
   let env: PageEnv;
   let envLoad: Promise<unknown> = Promise.resolve();
   let server: ViteDevServer | undefined;
+  // The files of the cache handlers that are no file of Next, for the scan
+  // of the ssr layer: see `cacheHandlerScan()`.
+  let cacheHandlerEntries: string[] = [];
   // Whether Vitest runs the plugin, which takes a change of a file itself.
   // Vitest turns Vite's HMR off, so `hotUpdate` never runs under it: this
   // flag is a defence, should a version of Vitest turn it on.
@@ -841,11 +844,15 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
           // rsc layer names, by their id: a module of the app, of `app/` or
           // not, or of a package, which a test file can import too. So its
           // scan starts where the rsc layer's does, and reads through the
-          // Server Components to them, as the browser layer's does. And at
-          // the cache handlers of `next.config`, which it loads itself.
-          server.config.environments[environmentOf.ssr]!.optimizeDeps.entries = [
-            ...rsc.optimizeDeps.entries,
-            ...cacheHandlerScan(project, resolvers.ssr.toSpecifier).entries,
+          // Server Components to them, as the browser layer's does. Not at a
+          // file of a package, like the runtime of Vitest, which is the
+          // page's and which the layer does not run. And at the cache
+          // handlers of `next.config`, which it loads itself.
+          const ssr = server.config.environments[environmentOf.ssr]!;
+          ssr.optimizeDeps.entries = [
+            ...[ssr.optimizeDeps.entries ?? []].flat(),
+            ...rsc.optimizeDeps.entries.filter((entry) => !entry.includes("/node_modules/")),
+            ...cacheHandlerEntries,
           ];
         },
       },
@@ -896,6 +903,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
           ...findImports(await project.loadRootParams()),
         ];
         const cacheHandlers = cacheHandlerScan(project, resolvers.ssr.toSpecifier);
+        cacheHandlerEntries = cacheHandlers.entries;
         // `next/og` renders images with wasm: not something to pre-bundle for
         // every project.
         const apiImports = (layer: NextLayer) =>

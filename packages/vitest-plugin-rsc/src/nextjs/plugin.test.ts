@@ -238,9 +238,11 @@ test("pre-bundles a dependency only under the name its layer resolves it to", as
 });
 
 // An app of its own, next to the demo so that it finds the same Next, with
-// the files it is given, by their path from its root.
+// the files it is given, by their path from its root. In a folder whose name
+// is a pattern of a glob, as a route group's is: an entry of a scan is a
+// glob.
 function appWith(files: Record<string, string>): string {
-  const dir = fs.mkdtempSync(path.join(root, ".app-"));
+  const dir = fs.mkdtempSync(path.join(root, ".app-(x)-"));
   onTestFinished(() => fs.rmSync(dir, { recursive: true, force: true }));
   for (const [file, code] of Object.entries(files)) {
     fs.mkdirSync(path.dirname(path.join(dir, file)), { recursive: true });
@@ -347,20 +349,19 @@ test("has the ssr layer pre-bundle what the Client Components that a test file r
     "app/layout.js": "export default ({ children }) => children;",
     "app/page.js": "export default () => null;",
     // Which only a test file renders, in the rsc layer: the ssr layer loads
-    // them by their id. One of the app, outside `app/`, in a folder whose
-    // name is a pattern of a glob, as a route group's is, and one of a
+    // them by their id. One of the app, outside `app/`, and one of a
     // package, `next-themes`, through a Server Component.
-    "components/(shared)/widget.tsx": [
+    "components/widget.tsx": [
       '"use client";',
       'import { createEnv } from "@t3-oss/env-core";',
       "export const Widget = () => <p>{String(createEnv)}</p>;",
     ].join("\n"),
-    "components/(shared)/themed.tsx": [
+    "components/themed.tsx": [
       'import { cookies } from "next/headers";',
       'import { ThemeProvider } from "next-themes";',
       "export const Themed = async () => <ThemeProvider>{(await cookies()).size}</ThemeProvider>;",
     ].join("\n"),
-    "components/(shared)/widget.test.tsx": [
+    "components/widget.test.tsx": [
       'import { Widget } from "./widget";',
       'import { Themed } from "./themed";',
       "export { Themed, Widget };",

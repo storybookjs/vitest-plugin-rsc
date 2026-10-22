@@ -403,7 +403,8 @@ export function createServerCode(registry: string, options: ServerCodeOptions = 
      * transforms and the host's config, not with Next's.
      */
     isAppCode(file: string, layer: NextLayer): boolean {
-      if (!path.isAbsolute(file) || file.includes("/node_modules/")) return false;
+      // A path of the scan of the optimizer is the system's.
+      if (!path.isAbsolute(file) || normalizePath(file).includes("/node_modules/")) return false;
       if (layer !== "rsc") return !normalizePath(file).startsWith(ownDir) && !isHostFile(file);
       return knowsHostFiles() && isServerCode(file, layer);
     },
