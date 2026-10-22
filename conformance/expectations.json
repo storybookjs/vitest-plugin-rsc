@@ -12,6 +12,10 @@
       "category": "not-yet",
       "text": "A navigation while a Server Action is in flight, or a navigation to a page that renders for seconds, right after the router prefetched its loading state: the prefetch waits behind the navigation, and the router waits for the prefetch before it shows the loading state. The server handles one request at a time."
     },
+    "prerendered-then-rendered": {
+      "category": "not-yet",
+      "text": "A page whose render reads the request, which `next build` finds dynamic as it prerenders it, before the tests. Here the first request of the route, also a prefetch, prerenders the page and then renders it for the request, so it takes two renders: a navigation behind that prefetch, to a page that waits seconds for its metadata, comes seconds later than the test waits. The server handles one request at a time."
+    },
     "another-origin": {
       "category": "not-yet",
       "text": "A redirect or a navigation to another origin. The tab cannot leave the test."
@@ -123,7 +127,7 @@
       "failed": {}
     },
     "navigation": {
-      "passed": 42,
+      "passed": 41,
       "failed": {
         "navigation.test.ts > app dir - navigation > query string > useParams identity between renders > should be stable in pages": "pages-router",
         "navigation.test.ts > app dir - navigation > redirect > components > should redirect to external url": "another-origin",
@@ -135,6 +139,7 @@
         "navigation.test.ts > app dir - navigation > navigation between pages and app > should not contain _rsc query while navigating from pages to app": "pages-router",
         "navigation.test.ts > app dir - navigation > navigation between pages and app > should not omit the hash while navigating from app to pages": "pages-router",
         "navigation.test.ts > app dir - navigation > navigation between pages and app > should not continously initiate a mpa navigation to the same URL when router state changes": "page-load-requests",
+        "navigation.test.ts > app dir - navigation > navigating to a page with async metadata > shows a fallback when prefetch was pending": "prerendered-then-rendered",
         "navigation.test.ts > app dir - navigation > browser back after a push followed by a refresh > should load the previous page": "shared-history"
       }
     },

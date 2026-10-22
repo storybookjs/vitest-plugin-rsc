@@ -179,6 +179,18 @@ export function checkRuntime(context: NextContext) {
     "ssgPageRoutes = workerResult.prerenderedRoutes.filter((route)=>route.isPrerenderOutput !== false).map((route)=>route.pathname);",
     "} else if (!hasGenerateStaticParams && (appConfig.dynamic === 'error' || appConfig.dynamic === 'force-static')) {",
   );
+  // A route handler with a method other than `GET` and `HEAD` is dynamic,
+  // which prerender-verdict.ts decides with a copy of Next's function.
+  runtimeFile("server/route-modules/app-route/module").contains(
+    "if (prepared.hasNonStaticMethods) {",
+    "handlers.POST || handlers.PUT || handlers.DELETE || handlers.PATCH || handlers.OPTIONS) {",
+  );
+  // The build keeps no status of a page of a slot, and the server keeps
+  // what Next's handler prerenders so too (build-output.ts).
+  runtimeFile("export/routes/app-page").contains(
+    "const isParallelRoute = /\\/@\\w+/.test(page);",
+    "} else if (isNonSuccessfulStatusCode && !isParallelRoute) {",
+  );
   // Whether a route is static at all is Next's handler's verdict, at the
   // render: a `force-dynamic` page throws this as it is prerendered.
   runtimeFile("server/app-render/create-component-tree").contains(

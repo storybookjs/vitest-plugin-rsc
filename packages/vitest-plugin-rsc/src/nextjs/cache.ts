@@ -9,7 +9,7 @@ import {
 } from "next/dist/server/use-cache/handlers";
 import { cacheHandler, cacheHandlers } from "virtual:vitest-plugin-rsc/next-cache-handlers";
 import { nextConfig, preview } from "virtual:vitest-plugin-rsc/next-manifest";
-import { prerenderManifest } from "./build-output.ts";
+import { asTheBuildKeepsIt, prerenderManifest } from "./build-output.ts";
 import { registry } from "./registry.ts";
 
 // Next's Data Cache: what `unstable_cache` and a cached `fetch` keep between
@@ -82,13 +82,21 @@ export function restoreIncrementalCache(): void {
   globalThis.__incrementalCache = current;
 }
 
+// Next's cache, which keeps a prerendered page as the build keeps it.
+class ServerCache extends IncrementalCache {
+  // Of either overload of Next's `set()`, which it passes on as it is.
+  override set(pathname: string, value: never, context: never): Promise<void> {
+    return super.set(pathname, asTheBuildKeepsIt(pathname, value), context);
+  }
+}
+
 /**
  * Gives a request the cache of the server, with the options that
  * `getIncrementalCache()` of Next's server passes. Without headers it is the
  * cache between requests, for a test that calls a cached function itself.
  */
 export function shareIncrementalCache(headers = new Headers()): void {
-  globalThis.__incrementalCache = current = new IncrementalCache({
+  globalThis.__incrementalCache = current = new ServerCache({
     // With these two Next takes its own handler, the one `next start` uses.
     // It keeps the entries on the disk, as `next start` keeps a prerendered
     // page and a cached fetch in `.next/`: the disk is the stand-in of the
