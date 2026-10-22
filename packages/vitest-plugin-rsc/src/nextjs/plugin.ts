@@ -1092,12 +1092,22 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
         // Next's server needs the server's platform to be there.
         const test = ((
           config as {
-            test?: { setupFiles?: string | string[]; browser?: { testerHtmlPath?: string } };
+            test?: {
+              setupFiles?: string | string[];
+              browser?: { testerHtmlPath?: string; dependencySourcemaps?: boolean };
+            };
           }
         ).test ??= {});
         test.setupFiles = [setupFile, ...[test.setupFiles ?? []].flat()];
         // A page of the project's own wins.
         (test.browser ??= {}).testerHtmlPath ??= testerHtml;
+        // Without the source maps of the dependencies in what the page
+        // fetches, unless the config asks for them: Vite inlines each map,
+        // which makes a pre-bundled dependency three times the size, and the
+        // three layers pre-bundle much of Next and React. Vitest still maps
+        // the stack of an error it reports with the maps on disk, and only
+        // a headless run leaves them out.
+        test.browser.dependencySourcemaps ??= false;
 
         // JSX compiled for production, as `next build` compiles it: JSX
         // compiled for development calls `jsxDEV()`, which React's production
