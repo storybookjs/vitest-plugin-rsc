@@ -139,3 +139,27 @@ test("prerenders a route handler only where it opts in", async () => {
   // A metadata route, like a sitemap, also without.
   expect(await verdict("/sitemap.xml", { GET })).toMatchObject({ pathnames: ["/sitemap.xml"] });
 });
+
+test("leaves a route handler without a `GET` to every request, also with Cache Components", async () => {
+  const POST = () => new Response(null, { status: 204 });
+  const verdict = (userland: Module) =>
+    prerenderVerdictOf(
+      routeEntry("/api/revalidate", userland) as never,
+      "/api/revalidate",
+      "route",
+    );
+  const { nextConfig } = await import("virtual:vitest-plugin-rsc/next-manifest");
+
+  // The export prerenders it with a `GET`, which it answers with 405: the
+  // build does not keep it, and `next start` runs its `POST`.
+  expect(await verdict({ POST, dynamic: "force-static" })).toBeUndefined();
+  Object.assign(nextConfig, { cacheComponents: true });
+  try {
+    expect(await verdict({ POST })).toBeUndefined();
+    expect(await verdict({ POST, GET: () => Response.json({}) })).toEqual({
+      pathnames: ["/api/revalidate"],
+    });
+  } finally {
+    Object.assign(nextConfig, { cacheComponents: undefined });
+  }
+});
