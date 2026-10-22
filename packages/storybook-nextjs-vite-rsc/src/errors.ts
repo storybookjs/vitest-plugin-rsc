@@ -37,7 +37,8 @@ export const undeclaredGlobals = (file: string, keys: string[]): Error =>
 export const pageWithoutUrl = (id: string): Error =>
   new Error(
     `The story ${id} has no component and no render, so it is a page of the app, which needs ` +
-      `a URL: add \`parameters: { nextjs: { url: "/notes" } }\`, or give it a component.`,
+      `a URL: add \`parameters: { nextjs: { url: "/notes" } }\`, or give it a component. A ` +
+      `function of \`url\` has to return one for the story's args and globals.`,
   );
 
 export const nothingToMount = (id: string): Error =>

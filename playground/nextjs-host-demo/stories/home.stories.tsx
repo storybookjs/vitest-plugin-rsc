@@ -24,3 +24,11 @@ export const Home = meta.story({
     await expect(await canvas.findByRole("button", { name: "Count: 1" })).toBeVisible();
   },
 });
+
+// A URL of the story's args: a new value loads the page at that URL, here
+// Next's not-found page at `/gone`.
+export const AtPath = meta.type<{ args: { path: string } }>().story({
+  args: { visitor: "Ada", path: "/" },
+  argTypes: { path: { control: "select", options: ["/", "/gone"] } },
+  parameters: { nextjs: { url: ({ args }) => args.path } },
+});

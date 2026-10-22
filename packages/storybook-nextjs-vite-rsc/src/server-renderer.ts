@@ -29,6 +29,12 @@ type Context = StoryContext<NextjsServerRenderer>;
 export const nextjsOf = (annotations: { parameters?: object }) =>
   (annotations.parameters as NextjsParameters | undefined)?.nextjs ?? {};
 
+/** The URL of the story's request, of its args and globals as they are now. */
+const urlOf = (context: Context): string | undefined => {
+  const { url } = nextjsOf(context);
+  return typeof url === "function" ? url(context) : url;
+};
+
 /** The component with its args. */
 export const render: ArgsStoryFn<NextjsServerRenderer> = (args, context) => {
   if (!context.component) throw pageWithoutUrl(context.id);
@@ -39,16 +45,21 @@ export const render: ArgsStoryFn<NextjsServerRenderer> = (args, context) => {
 export const isPage = (component: unknown, storyFn: unknown): boolean =>
   !component && storyFn === render;
 
-// The page that each story has open: new args render the story again on it.
-const opened = new Map<StoryId, RenderServerResult | RenderComponentResult>();
+// The page that each story has open, and the URL it opened: new args render
+// the story again on it. A story whose page is still to open has its URL.
+const opened = new Map<
+  StoryId,
+  { url: string | undefined; open?: RenderServerResult | RenderComponentResult }
+>();
 
 export const renderToCanvas: RenderToCanvas<NextjsServerRenderer> = async (
   { storyContext: context, storyFn, showMain, forceRemount },
   canvasElement,
 ) => {
   const { id, abortSignal: signal } = context;
-  const { url, headers, proxy, layouts } = nextjsOf(context);
+  const { headers, proxy, layouts } = nextjsOf(context);
   if (context.viewMode === "docs") throw serverStoryInline(id);
+  const url = urlOf(context);
   const page = isPage(context.component, context.originalStoryFn);
   if (page && !url) throw pageWithoutUrl(id);
   const node = page
@@ -56,13 +67,25 @@ export const renderToCanvas: RenderToCanvas<NextjsServerRenderer> = async (
     : createElement(function Story() {
         return storyFn() as ReactNode;
       });
-  let open = opened.get(id);
+  const last = opened.get(id);
+  let open = last?.open;
   // New args or globals render in place, without a page load, on a page that
-  // reported no error: one with an error, like Next's error page in the
-  // node's place, opens anew.
-  if (node && open && "rerender" in open && open.errors.length === 0 && !forceRemount) {
+  // reported no error, while the story's URL is the one the page opened. One
+  // with an error, like Next's error page in the node's place, opens anew,
+  // and so does a new URL.
+  if (
+    node &&
+    open &&
+    "rerender" in open &&
+    open.errors.length === 0 &&
+    last?.url === url &&
+    !forceRemount
+  ) {
     await open.rerender(node);
   } else {
+    // `renderServer()` leaves the page that is open first, so if the new one
+    // fails to open, there is no page to render on again.
+    opened.set(id, { url });
     open = node
       ? await renderServer(node, {
           url,
@@ -73,7 +96,7 @@ export const renderToCanvas: RenderToCanvas<NextjsServerRenderer> = async (
           ...(layouts ? { layouts } : { container: canvasElement }),
         })
       : await renderServer({ url, headers, proxy, signal });
-    opened.set(id, open);
+    opened.set(id, { url, open });
   }
   // The page reports to one list of errors while it is open.
   if (open.errors.length > 0) throw open.errors[0];
@@ -95,8 +118,8 @@ export const mount = (context: Context) => async (ui?: ReactNode) => {
 /**
  * Before the story's own `beforeEach`, as the plugin's setup before a test:
  * a new browser context of the app, so that what the story's `beforeEach`
- * stores or sets is its page's. Once for the page: a render with new args
- * keeps it. What it returns runs when Storybook leaves or remounts the
+ * stores or sets is its page's. Once for the story: a render with new args
+ * keeps it, also on a page at a new URL. What it returns runs when Storybook leaves or remounts the
  * story, however far its render got: `cleanup()` closes the context, and the
  * document has the browser's own APIs again. Seed in `beforeEach`, not in a
  * loader: the first render's loaders run before this, with those.

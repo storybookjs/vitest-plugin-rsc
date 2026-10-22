@@ -157,7 +157,8 @@ The args of a server story go to the server and back, through Flight, as
 props from a Server Component to a Client Component do. A function that
 reaches a Client Component fails with React's own error. A new value of an
 arg, from Controls, renders the story again in place: its Client
-Components keep their state.
+Components keep their state. One that changes the story's URL renders it
+on a new page, at that URL: see `parameters.nextjs`.
 
 A story file with `"use client"` is a client boundary. Its stories are
 client stories of `@storybook/react`: they render in the browser, as React
@@ -227,6 +228,18 @@ export const Notes = meta.type<{ args: { count: number } }>().story({
   parameters: { nextjs: { url: "/notes" } },
   args: { count: 3 },
   beforeEach: ({ args }) => seedNotes(args.count),
+});
+```
+
+The URL can be a function of the args, so a control can choose the page:
+
+```ts
+export const Step = meta.type<{ args: { step: string } }>().story({
+  args: { step: "1.0" },
+  argTypes: { step: { control: "select", options: ["1.0", "2.0"] } },
+  parameters: {
+    nextjs: { url: ({ args }) => `/session/${args.step}` },
+  },
 });
 ```
 
@@ -301,7 +314,11 @@ that.
 The request a server story renders in:
 
 - `url`: the URL of the request, which `usePathname()`, `useParams()` and
-  `useSearchParams()` read. Defaults to `/`. A page story needs one.
+  `useSearchParams()` read. Defaults to `/`. A page story needs one. It can
+  be a function of the story's `args` and `globals` that returns the URL,
+  which the framework calls before each render, after `beforeEach`. New
+  args or globals that change the URL open a new page there, in the same
+  browser context, a component's too.
 - `headers`: headers of the requests to the app, next to the browser's,
   like `cookie`.
 - `proxy`: whether `proxy.ts` and the routing of `next.config` take the
