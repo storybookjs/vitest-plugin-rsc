@@ -138,4 +138,8 @@ test("prerenders a route handler only where it opts in", async () => {
   );
   // A metadata route, like a sitemap, also without.
   expect(await verdict("/sitemap.xml", { GET })).toMatchObject({ pathnames: ["/sitemap.xml"] });
+  // Not one with a method that changes something, which the build finds dynamic.
+  const POST = () => new Response(null, { status: 204 });
+  expect(await verdict("/api/time", { GET, POST, dynamic: "force-static" })).toBeUndefined();
+  expect(await verdict("/sitemap.xml", { GET, PUT: POST })).toBeUndefined();
 });

@@ -27,6 +27,12 @@ import { registry, type PrerenderVerdict } from "./registry.ts";
 
 type RouteEntry = Parameters<typeof buildAppStaticPaths>[0]["ComponentMod"];
 
+// `hasNonStaticMethods()` of `app-route/module.js:686-692`. Its module is
+// not one to import here: in development it loads the vendored contexts of
+// a page as it loads.
+const hasNonStaticMethods = (handlers: Record<string, unknown>) =>
+  Boolean(handlers.POST || handlers.PUT || handlers.DELETE || handlers.PATCH || handlers.OPTIONS);
+
 export async function prerenderVerdictOf(
   entry: RouteEntry,
   pathname: string,
@@ -50,6 +56,10 @@ export async function prerenderVerdictOf(
     ) {
       return undefined;
     }
+    // A route handler with a method other than `GET` and `HEAD` is dynamic:
+    // its prerender throws as it starts (`app-route/module.js:619-624`). So
+    // a request of another method reaches its handler.
+    if (hasNonStaticMethods(userland)) return undefined;
   }
 
   // What `isPageStatic()` does with the route module: `build/utils.js:736-805`.
