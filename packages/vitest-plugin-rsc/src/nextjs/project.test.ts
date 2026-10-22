@@ -144,52 +144,111 @@ test("lists a route handler and a metadata file next to a catch-all page of a sl
 
   expect(route(routes, "/api/hello")).toMatchObject({ kind: "route", page: "/api/hello/route" });
   expect(route(routes, "/login")).toMatchObject({ kind: "page" });
-  // Not served yet: Next's metadata loaders build it.
-  expect(route(routes, "/sitemap.xml")).toBeUndefined();
+  expect(route(routes, "/sitemap.xml")).toMatchObject({
+    kind: "route",
+    page: "/sitemap.xml/route",
+  });
 });
 
-test("lists the metadata files of the app, and warns once that they are left out", async () => {
-  const app = appWith([
-    "layout.js",
-    "page.js",
-    "favicon.ico",
-    "icon.png",
-    "sitemap.js",
-    "blog/page.js",
-    "blog/opengraph-image.png",
-  ]);
+// An app with metadata files: the image of the demo, and modules for the rest.
+function appWithMetadata(files: Record<string, string>): string {
+  const app = appWith(["layout.js", "page.js"]);
+  const logo = fs.readFileSync(appFile("images/logo.png"));
+  fs.writeFileSync(path.join(app, "app", "icon.png"), logo);
+  fs.writeFileSync(path.join(app, "app", "favicon.ico"), logo);
+  for (const [file, source] of Object.entries(files)) {
+    fs.mkdirSync(path.dirname(path.join(app, "app", file)), { recursive: true });
+    fs.writeFileSync(path.join(app, "app", file), source);
+  }
+  return app;
+}
 
-  const { metadataFiles } = await loadNextProject(app, installed);
-  expect(metadataFiles).toEqual([
-    "app/blog/opengraph-image.png",
-    "app/favicon.ico",
-    "app/icon.png",
-    "app/sitemap.js",
-  ]);
+// The requests of Next's app loader for its metadata loaders, in an entry.
+const metadataRequests = (code: string) =>
+  [...code.matchAll(/"(next-metadata-(?:image|route)-loader\?[^"]+)"/g)].map(
+    ([, request]) => request!,
+  );
 
-  // What a run of that app logs when it starts. Not the favicon, which every
-  // new app has.
-  const plugin = vitestPluginNext().find(({ name }) => name === "vitest-plugin-rsc:next")!;
-  await (plugin.config as ConfigHook<unknown>)({ root: app }, serve);
-  const warnOnce = vi.fn();
-  (plugin.configResolved as (config: object) => void)({ logger: { warnOnce, info: () => {} } });
-  expect(warnOnce.mock.calls).toEqual([
-    [
-      "vitest-plugin-rsc: Next.js metadata files are not supported yet. The pages of " +
-        `${path.relative(process.cwd(), app)} leave them out, and their routes are not served: ` +
-        "app/blog/opengraph-image.png, app/icon.png, app/sitemap.js",
-    ],
+test("lists the metadata files of the app as routes, by the paths Next serves them at", async () => {
+  const app = appWithMetadata({
+    "robots.txt": "User-Agent: *\n",
+    "blog/page.js": "export default () => null;",
+    "blog/opengraph-image.tsx": "export default () => new Response();",
+    "blog/[slug]/icon.tsx": "export default () => new Response();",
+  });
+
+  const { routes } = await loadNextProject(app, installed);
+
+  expect(
+    routes.filter((candidate) => candidate.kind === "route").map((candidate) => candidate.page),
+  ).toEqual([
+    "/blog/[slug]/icon/route",
+    "/blog/opengraph-image/route",
+    "/favicon.ico/route",
+    "/icon.png/route",
+    "/robots.txt/route",
   ]);
 });
 
-test("does not warn about the favicon alone", async () => {
-  const app = appWith(["layout.js", "page.js", "favicon.ico"]);
+test("links the metadata images of a page with Next's metadata image loader", async () => {
+  const app = appWithMetadata({
+    "opengraph-image.tsx":
+      "export const size = { width: 1200, height: 630 };\n" +
+      "export const alt = 'A card';\n" +
+      "export default () => new Response();\n",
+  });
+  const project = await loadNextProject(app, installed);
+  const entry = await project.loadRouteEntry(route(project.routes, "/"));
+  // The root layout and the page of `/` both have the files of `app/`.
+  const requests = [...new Set(metadataRequests(entry.code))];
+  expect(requests).toHaveLength(3);
+  expect(requests.every(project.isMetadataRequest)).toBe(true);
 
-  const plugin = vitestPluginNext().find(({ name }) => name === "vitest-plugin-rsc:next")!;
-  await (plugin.config as ConfigHook<unknown>)({ root: app }, serve);
-  const warnOnce = vi.fn();
-  (plugin.configResolved as (config: object) => void)({ logger: { warnOnce, info: () => {} } });
-  expect(warnOnce).not.toHaveBeenCalled();
+  // A static image: its data, and its URL with the hash of what is in it.
+  const icon = requests.find((request) => request.includes("type=icon&"))!;
+  const { code, watchFiles } = await project.loadMetadata(icon);
+  expect(watchFiles).toEqual([path.join(app, "app", "icon.png")]);
+  expect(code).toContain('"type":"image/png","sizes":"40x30"');
+  expect(code).toMatch(/url: "\/icon\.png\?[0-9a-f]{16}"/);
+  // The favicon, before the other icons.
+  expect(requests[0]).toContain("type=favicon");
+
+  // A generated image: its module for what it says of the image, and its URL.
+  const openGraph = requests.find((request) => request.includes("type=openGraph"))!;
+  const generated = (await project.loadMetadata(openGraph)).code;
+  expect(generated).toContain("size as _size");
+  expect(generated).toContain("alt as _alt");
+  expect(generated).toContain(
+    JSON.stringify(path.join(app, "app", "opengraph-image.tsx") + project.metadataImageMeta),
+  );
+});
+
+test("serves a metadata file with the route of Next's metadata route loader", async () => {
+  const app = appWithMetadata({
+    "sitemap.ts":
+      "export const revalidate = 60;\n" +
+      "export default () => [{ url: 'https://example.com' }];\n",
+  });
+  const project = await loadNextProject(app, installed);
+  const routeCode = async (pathname: string) => {
+    const entry = await project.loadRouteEntry(route(project.routes, pathname));
+    const [request] = metadataRequests(entry.code);
+    return (await project.loadMetadata(request!)).code;
+  };
+
+  // A static file, with the cache header of `next build`, which is not that
+  // of the NODE_ENV of the host.
+  const favicon = await routeCode("/favicon.ico");
+  expect(favicon).toContain('const contentType = "image/x-icon"');
+  expect(favicon).toContain(`'Cache-Control': "public, max-age=0, must-revalidate"`);
+  expect(favicon).toContain(fs.readFileSync(appFile("images/logo.png")).toString("base64"));
+
+  // A module: Next's route around it, with the config it exports.
+  const sitemap = await routeCode("/sitemap.xml");
+  expect(sitemap).toContain("resolveRouteData(data, fileType)");
+  expect(sitemap).toContain(
+    `export { revalidate } from ${JSON.stringify(path.join(app, "app", "sitemap.ts"))}`,
+  );
 });
 
 test("rejects parallel routes that `next build` rejects", async () => {
@@ -218,6 +277,16 @@ test("rejects an interception route without the route it intercepts, as `next bu
   await expect(loadNextProject(app, installed)).rejects.toThrow(
     "- /(.)photo/[id] (expected /photo/[id])",
   );
+});
+
+test("makes next/root-params of the params of the root layouts, as Next's build does", async () => {
+  const app = appWith(["[lang]/[region]/layout.js", "[lang]/[region]/page.js"]);
+  const project = await loadNextProject(app, installed);
+
+  const code = await project.loadRootParams();
+
+  expect(code).toContain("export function lang() { return getRootParam('lang'); }");
+  expect(code).toContain("export function region() { return getRootParam('region'); }");
 });
 
 test("compiles CSS with the PostCSS plugins of Next, its own for an app without a config", async () => {
@@ -490,6 +559,13 @@ test.for(["global-error", "not-found", "forbidden", "unauthorized"])(
 // A file of Next's runtime, which runs in the browser.
 const runtime = (file: string) => `next/dist/esm/${file}.js`;
 
+test("says which module of Next's server with stores is gone", async () => {
+  const file = "next/dist/esm/server/app-render/action-handler.js";
+  const next = nextWith({ [file]: new Error("Cannot find module") });
+
+  await expect(loadNextProject(root, next)).rejects.toThrow(changed(`${file} is not there`));
+});
+
 test("says which file of Next's runtime is gone", async () => {
   const next = nextWith({ [runtime("client/app-index")]: new Error("Cannot find module") });
 
@@ -730,7 +806,7 @@ test("loads a font with Next's font loaders, and has its file where the CSS says
   );
   const [request] = /next\/font\/local\/target\.css\?[^']+(?=')/.exec(compiled!.code)!;
 
-  const { css, exports } = await project.loadFont(request);
+  const { css, exports, files } = await project.loadFont(request);
 
   expect(exports).toEqual({
     className: expect.stringMatching(/^__className_\w{6}$/),
@@ -740,6 +816,8 @@ test("loads a font with Next's font loaders, and has its file where the CSS says
   expect(css).toContain(`.${String(exports.variable)} {--font-geist: 'geist', 'geist Fallback'`);
   const [, url] = /src: url\(([^)]+)\) format\('woff2'\)/.exec(css)!;
   expect(url).toMatch(/^\/_next\/static\/media\/\w+-s\.p\.woff2$/);
+  // Its font files, as Next's manifest of fonts lists them.
+  expect(files).toEqual([url!.slice("/_next/".length)]);
   expect(project.readEmittedFile(url!)).toEqual({
     body: fs.readFileSync(appFile("fonts/geist-latin.woff2")),
     contentType: "font/woff2",

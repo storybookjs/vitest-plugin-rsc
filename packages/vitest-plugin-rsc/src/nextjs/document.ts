@@ -35,6 +35,9 @@ import { graphStylesheetAttribute } from "./styles-shared.ts";
 // it, with a preload of each (`preloadPage()`). Those links are the page's
 // too, and go with it, and with a load that is left before its page is there.
 
+/** An entry of the history: its URL and its state. */
+export type HistoryEntry = { url: string; state: unknown };
+
 const elements = (of: Document) => [of.documentElement, of.head, of.body];
 const attributesOf = (element: Element) =>
   Array.from(element.attributes, ({ name, value }) => [name, value] as const);
@@ -51,6 +54,28 @@ let runnerHref: string | undefined;
  */
 export function documentUrl(): string {
   return runnerHref ?? window.location.href;
+}
+
+// The entry of the history that the document was loaded in: `activation` of
+// the Navigation API. The document is the runner's, so it is the runner's
+// entry, from before the tests navigated, and not the page's. Next's router
+// takes a current entry other than that one, with the router's state on it,
+// for a back or forward navigation that it missed while it hydrated, and
+// restores itself from that state: the page renders again as it loads, with
+// a new object of `useParams()`. While a page is open, its `activation` is
+// the entry it was loaded in, as a navigation to it pushed it.
+// Not every browser has the API, or `activation` of it.
+const navigation = (window as { navigation?: Navigation }).navigation;
+
+function activate(): () => void {
+  if (!navigation || !("activation" in navigation)) return () => {};
+  const activation = { entry: navigation.currentEntry, from: null, navigationType: "push" };
+  Object.defineProperty(navigation, "activation", {
+    configurable: true,
+    enumerable: true,
+    get: () => activation,
+  });
+  return () => Reflect.deleteProperty(navigation, "activation");
 }
 
 function staysDuringPage(node: Node): boolean {
@@ -162,8 +187,16 @@ export function preloadPage({
  * `<html>` or `<body>`, and what is in the document stays the test's. What
  * the HTML parser puts in `<body>` goes in the container: the node, with the
  * scripts it renders, and after it the scripts of Next and React.
+ *
+ * The page takes the entry of the history that the document is at, or with
+ * `after` gets one of its own, after that entry.
  */
-export async function loadDocument(html: string, url: string, container?: Element): Promise<void> {
+export async function loadDocument(
+  html: string,
+  url: string,
+  container?: Element,
+  after?: HistoryEntry,
+): Promise<void> {
   leaveDocument();
   // The preloads of its route are this page's.
   const ownPreloads = new Set(preloads);
@@ -179,6 +212,9 @@ export async function loadDocument(html: string, url: string, container?: Elemen
   const reactTargets: object[] = [document, document.documentElement, document.head];
   if (container) reactTargets.push(container);
   const runnerProperties = reactTargets.map((target) => new Set(Reflect.ownKeys(target)));
+  // The constructed stylesheets of the document, which a browser drops with
+  // the page, like an `html { scroll-padding-top }` that the page adopts.
+  const runnerAdopted = Array.from(document.adoptedStyleSheets);
   const runnerScripts = new Set(document.querySelectorAll("script"));
   const before = new Set<Node>(
     [...document.head.childNodes, ...runnerBody.childNodes].filter(
@@ -198,6 +234,8 @@ export async function loadDocument(html: string, url: string, container?: Elemen
   // A stylesheet of a page that is gone does not load.
   let leaveNow!: () => void;
   const left = new Promise<void>((resolve) => (leaveNow = resolve));
+  // Puts back the runner's `activation`, once the page has its own.
+  let deactivate = () => {};
   const leave = () => {
     try {
       leaveNow();
@@ -214,6 +252,7 @@ export async function loadDocument(html: string, url: string, container?: Elemen
       // does: a page that is left holds the URL no longer, and
       // `documentUrl()` is the document's own.
       runnerHref = undefined;
+      deactivate();
       if (window.location.href !== runnerUrl) window.history.replaceState(null, "", runnerUrl);
     }
     document.head.append(
@@ -230,6 +269,7 @@ export async function loadDocument(html: string, url: string, container?: Elemen
     elements(document).forEach((element, index) =>
       setAttributes(element, runnerAttributes[index]!),
     );
+    document.adoptedStyleSheets = runnerAdopted;
     // One that is not configurable cannot be deleted, and stays.
     reactTargets.forEach((target, index) => {
       for (const key of Reflect.ownKeys(target)) {
@@ -275,7 +315,19 @@ export async function loadDocument(html: string, url: string, container?: Elemen
   // Where the browser ended up, after any redirects. Before the page is in
   // the document, which requests what its relative URLs resolve to against
   // it, and before its scripts run: one of them may read `location`.
-  window.history.replaceState(null, "", url);
+  //
+  // A page load that adds an entry to the history adds it `after` the one
+  // of the page it left, which gets back the URL and the state that leaving
+  // that page took from it. So `history.back()` returns to that page, as in
+  // a browser. A browser loads the page again, where Next's router of this
+  // page restores it from the state of its entry, as one of its own.
+  if (after) {
+    window.history.replaceState(after.state, "", after.url);
+    window.history.pushState(null, "", url);
+  } else {
+    window.history.replaceState(null, "", url);
+  }
+  deactivate = activate();
 
   document.head.append(...page.head.childNodes);
   await loaded(stylesheetsOfHead);

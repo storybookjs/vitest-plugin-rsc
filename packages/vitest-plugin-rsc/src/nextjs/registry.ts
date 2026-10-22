@@ -120,6 +120,11 @@ export type NextRegistry = {
   loadMiddleware(): Promise<MiddlewareHandler>;
   /** Whether an id names a Server Action of the app, in the rsc layer. */
   hasServerAction(id: string): Promise<boolean>;
+  /**
+   * The id of the plugin's own Server Action, which every app here has: the
+   * one of `runInServerAction()`, in the rsc layer.
+   */
+  ownServerAction?: Promise<string | undefined>;
   /** What the Server Action of `runInServerAction()` runs, by the number it is called with. */
   serverActions: Map<number, () => Promise<void>>;
   /**
@@ -149,7 +154,14 @@ export type NextRegistry = {
    * loader of the page that started last, until it is left.
    */
   loadBrowserModule?(id: string): Promise<unknown>;
-  ssr: { AppPageRouteModule: new (options: unknown) => unknown };
+  /**
+   * Of Next's route module for a page, loaded in the ssr layer: its class,
+   * and the contexts of its `*.shared-runtime` modules, for the rsc layer.
+   */
+  ssr: {
+    AppPageRouteModule: new (options: unknown) => unknown;
+    vendored: { contexts: object };
+  };
   /** For Next's Node.js server: what stands in for the files of a build. */
   node: Record<string, AnyFunction>;
 };

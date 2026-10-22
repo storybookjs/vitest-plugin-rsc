@@ -4,15 +4,22 @@ import path from "node:path";
 import querystring from "node:querystring";
 import { compileFunction } from "node:vm";
 import type { CSSOptions } from "vite";
+import type { NextBuild } from "../build.ts";
 import type { NextProject } from "../project.ts";
 import type { NextContext } from "./context.ts";
+import { exportsOf } from "./module-exports.ts";
 
 // What Next's webpack loaders use of their context. Each loader here is
 // called the way webpack calls it.
 export type LoaderContext = {
   getOptions(): unknown;
+  /** The options as a loader of webpack 4 reads them. */
+  query: unknown;
+  mode: "development" | "production";
   _module: { buildInfo: Record<string, unknown> };
   async(): (error: Error | null, ...result: unknown[]) => void;
+  callback(error: Error | null, ...result: unknown[]): void;
+  cacheable(flag?: boolean): void;
   currentTraceSpan: TraceSpan;
   resourcePath: string;
   resourceQuery: string;
@@ -22,12 +29,17 @@ export type LoaderContext = {
   emitWarning(warning: Error): void;
   emitError(error: Error): void;
   addDependency(file: string): void;
+  addContextDependency(directory: string): void;
   resolve(
     directory: string,
     request: string,
     callback: (error: Error | null, file?: string) => void,
   ): void;
   getResolve(): () => Promise<never>;
+  loadModule(
+    request: string,
+    callback: (error: Error | null, source?: string, map?: null, module?: LoadedModule) => void,
+  ): void;
   fs: typeof fs;
   utils: { contextify(context: string, request: string): string };
   sourceMap: boolean;
@@ -39,6 +51,12 @@ type TraceSpan = {
   setAttribute(): void;
 };
 export type Loader = (this: LoaderContext, ...input: unknown[]) => unknown;
+// What a loader reads of a module that webpack's `loadModule()` built: Next's
+// metadata loaders read its exports off its dependencies, by the name of
+// webpack's class of the dependency of an export.
+type LoadedModule = {
+  dependencies: { constructor: { name: "HarmonyExportSpecifierDependency" }; name: string }[];
+};
 
 /** Calls a webpack loader of Next for one module, the way webpack does. */
 export type RunLoader = (
@@ -70,10 +88,48 @@ function hasOtherPostCssConfig(root: string): boolean {
 }
 
 /**
- * Next's webpack loaders for fonts and images, what they emit for the
- * browser, and Next's image optimizer.
+ * `sassOptions` of `next.config`, as Vite's options of Sass. Next gives
+ * sass-loader the options of Sass, and `additionalData`, or `prependData`,
+ * which goes before the source of each file, as it does for Vite. A path to
+ * load from is one of the project, where Next's build runs. Not
+ * `implementation`: Vite takes `sass-embedded` where it is installed, and
+ * `sass` otherwise.
  */
-export function createLoaders(context: NextContext): Pick<
+export function sassPreprocessorOptions(
+  sassOptions: Record<string, unknown>,
+  root: string,
+): Record<string, unknown> | undefined {
+  const { prependData, additionalData, implementation: _, loadPaths, ...options } = sassOptions;
+  const data = prependData ?? additionalData;
+  const sass: Record<string, unknown> = {
+    ...options,
+    ...(Array.isArray(loadPaths) && {
+      loadPaths: loadPaths.map((entry) => path.resolve(root, String(entry))),
+    }),
+    ...(data !== undefined && {
+      // sass-loader calls a function with its loader context.
+      additionalData:
+        typeof data === "function"
+          ? (source: string, file: string) =>
+              (data as (source: string, context: object) => string)(source, {
+                resourcePath: file,
+                rootContext: root,
+              })
+          : data,
+    }),
+  };
+  return Object.keys(sass).length > 0 ? sass : undefined;
+}
+
+/**
+ * Next's webpack loaders for fonts and images, what they emit for the
+ * browser, and Next's image optimizer. `build` is the code that Next's
+ * runtime and React run, see build.ts.
+ */
+export function createLoaders(
+  context: NextContext,
+  build: NextBuild,
+): Pick<
   NextProject,
   | "isImage"
   | "loadImage"
@@ -83,6 +139,7 @@ export function createLoaders(context: NextContext): Pick<
   | "readEmittedFile"
   | "emittedFiles"
   | "optimizeImage"
+  | "loadRootParams"
 > & {
   runLoader: RunLoader;
 } {
@@ -99,6 +156,7 @@ export function createLoaders(context: NextContext): Pick<
     findConfig,
     imageOptimizer,
     nextFontLoader,
+    nextRootParamsLoader,
     nextImageLoader,
     nextImageLoaderRegex,
   } = next;
@@ -110,49 +168,85 @@ export function createLoaders(context: NextContext): Pick<
     traceAsyncFn: (fn) => fn(),
     setAttribute: () => {},
   };
-  const runLoader = (
-    loader: Loader,
-    options: unknown,
-    resource: string,
-    ...input: unknown[]
-  ): Promise<unknown[]> =>
-    new Promise((resolve, reject) => {
-      const queryAt = resource.indexOf("?");
-      const resourcePath = queryAt < 0 ? resource : resource.slice(0, queryAt);
-      // A loader either calls back, or returns its result, as a promise or not.
-      let callsBack = false;
-      const context: LoaderContext = {
-        getOptions: () => options,
-        _module: { buildInfo: {} },
-        async: () => {
-          callsBack = true;
-          return (error, ...result) => (error ? reject(error) : resolve(result));
-        },
-        currentTraceSpan: span,
-        resourcePath,
-        resourceQuery: queryAt < 0 ? "" : resource.slice(queryAt),
-        context: path.dirname(resourcePath),
-        rootContext: root,
-        // Where the browser finds it: under `/_next/`.
-        emitFile: (name, content) => emitted.set(name.replace(/^\//, ""), content),
-        emitWarning: (warning) => console.warn(warning),
-        emitError: reject,
-        addDependency: () => {},
-        resolve: (directory, request, callback) => {
-          const file = path.resolve(directory, request);
-          if (fs.existsSync(file)) callback(null, file);
-          else callback(new Error(`Can't resolve '${request}' in '${directory}'`));
-        },
-        getResolve: () => () => Promise.reject(new Error("Not resolved by vitest-plugin-rsc")),
-        fs,
-        utils: { contextify: (_context, request) => request },
-        sourceMap: false,
-      };
-      Promise.resolve(loader.call(context, ...input)).then(
-        (result) => callsBack || resolve([result]),
-        reject,
-      );
-    });
+  // `emits` is told the name of each file the loader emits.
+  const runLoaderEmitting =
+    (emits?: (name: string) => void): RunLoader =>
+    (loader, options, resource, ...input) =>
+      new Promise((resolve, reject) => {
+        const queryAt = resource.indexOf("?");
+        const resourcePath = queryAt < 0 ? resource : resource.slice(0, queryAt);
+        // A loader either calls back, or returns its result, as a promise or not.
+        let callsBack = false;
+        const callback: LoaderContext["callback"] = (error, ...result) =>
+          error ? reject(error) : resolve(result);
+        const context: LoaderContext = {
+          // `{}` for a loader without options, as webpack gives it.
+          getOptions: () => options ?? {},
+          query: options ?? {},
+          // Webpack's `mode` is the build, not the NODE_ENV of this process,
+          // which is Vitest's `test`. A loader picks code for the build by
+          // it: `@mdx-js/loader` compiles MDX to `jsxDEV()` for development,
+          // which React's production build does not have.
+          mode: build,
+          _module: { buildInfo: {} },
+          async: () => {
+            callsBack = true;
+            return callback;
+          },
+          callback: (...args) => {
+            callsBack = true;
+            callback(...args);
+          },
+          cacheable: () => {},
+          currentTraceSpan: span,
+          resourcePath,
+          resourceQuery: queryAt < 0 ? "" : resource.slice(queryAt),
+          context: path.dirname(resourcePath),
+          rootContext: root,
+          // Where the browser finds it: under `/_next/`.
+          emitFile: (name, content) => {
+            const file = name.replace(/^\//, "");
+            emitted.set(file, content);
+            emits?.(file);
+          },
+          emitWarning: (warning) => console.warn(warning),
+          emitError: reject,
+          addDependency: () => {},
+          addContextDependency: () => {},
+          resolve: (directory, request, callback) => {
+            const file = path.resolve(directory, request);
+            if (fs.existsSync(file)) callback(null, file);
+            else callback(new Error(`Can't resolve '${request}' in '${directory}'`));
+          },
+          getResolve: () => () => Promise.reject(new Error("Not resolved by vitest-plugin-rsc")),
+          // A module of the app, for its exports: read, not built.
+          loadModule: (request, respond) => {
+            const read = async () => {
+              const source = await fs.promises.readFile(request, "utf8");
+              const { names } = await exportsOf(source, request);
+              const dependencies = [...names]
+                .filter((name) => name !== "default")
+                .map((name) => ({
+                  constructor: { name: "HarmonyExportSpecifierDependency" as const },
+                  name,
+                }));
+              return { source, module: { dependencies } };
+            };
+            read().then(
+              ({ source, module }) => respond(null, source, null, module),
+              (error: Error) => respond(error),
+            );
+          },
+          fs,
+          utils: { contextify: (_context, request) => request },
+          sourceMap: false,
+        };
+        Promise.resolve(loader.call(context, ...input)).then(
+          (result) => callsBack || resolve([result]),
+          reject,
+        );
+      });
+  const runLoader = runLoaderEmitting();
 
   // next/font: next-font-loader runs the font loader of `@next/font`, and
   // css-loader makes a module of its CSS, as Next's rule for the font does.
@@ -200,11 +294,16 @@ export function createLoaders(context: NextContext): Pick<
       fontOptions: fontLoader!.options,
     };
   });
-  const fonts = new Map<string, Promise<{ css: string; exports: Record<string, unknown> }>>();
+  const fonts = new Map<string, ReturnType<NextProject["loadFont"]>>();
   const loadFont = async (request: string) => {
     const font = fontLoaders.find((candidate) => request.startsWith(candidate.prefix))!;
     const resource = font.target + request.slice(font.prefix.length - 1);
-    const [css, map, meta] = await runLoader(nextFontLoader, font.fontOptions, resource);
+    // The font files of the call, as Next's build lists them for its
+    // manifest of fonts (`NextFontManifestPlugin`).
+    const files: string[] = [];
+    const [css, map, meta] = await runLoaderEmitting((file) => {
+      if (/\.(?:woff|woff2|eot|ttf|otf)$/.test(file)) files.push(file);
+    })(nextFontLoader, font.fontOptions, resource);
     const [code] = await runLoader(font.cssLoader, font.cssOptions, resource, css, map, meta);
     // The CommonJS module css-loader makes: a list of the CSS of the module,
     // with what it exports as `locals`.
@@ -218,7 +317,7 @@ export function createLoaders(context: NextContext): Pick<
     if (!Array.isArray(list) || !list.locals) {
       fail("css-loader no longer makes a list of CSS with `locals` of a `next/font` call");
     }
-    return { css: String(list), exports: list.locals! };
+    return { css: String(list), exports: list.locals!, files };
   };
 
   // Next's css-loader holds a CSS module to a mode: `pure` in Next's rule,
@@ -265,8 +364,8 @@ export function createLoaders(context: NextContext): Pick<
 
   // What Next's rules for CSS decide that is not bundling, for Vite, which
   // bundles: the PostCSS plugins, read from the app's config as Next reads
-  // it, or Next's own when there is none; the mode of a CSS module; and the
-  // class name of a CSS module, as Next makes it. `@import` and `url()` are
+  // it, or Next's own when there is none; the options of Sass; the mode of a
+  // CSS module; and the class name of a CSS module, as Next makes it. `@import` and `url()` are
   // the bundler's, so Vite's. The browsers are those of a build. And what is
   // done otherwise than by Next, to say so.
   const loadCssOptions = async () => {
@@ -294,8 +393,10 @@ export function createLoaders(context: NextContext): Pick<
         "the app's PostCSS config is one only Vite reads: a CSS module is not held to Next's mode for it",
       );
     }
+    const sass = sassPreprocessorOptions(config.sassOptions ?? {}, root);
     const options: CSSOptions = {
       postcss,
+      ...(sass && { preprocessorOptions: { scss: sass, sass } }),
       modules: {
         // A stylesheet the plugin links, or one it serves, has a query: the
         // class names are those of the file. As `css-loader` calls it.
@@ -346,6 +447,13 @@ export function createLoaders(context: NextContext): Pick<
       return font;
     },
     assetPath: emittedPath,
+    // `next/root-params`: a function for each param of the root layouts of
+    // the app, which next-root-params-loader writes from the files of `app/`.
+    async loadRootParams() {
+      const options = { appDir: context.appDir, pageExtensions: config.pageExtensions };
+      const [code] = await runLoader(nextRootParamsLoader, options, context.appDir);
+      return String(code);
+    },
     emittedFiles: () =>
       [...emitted].map(([name, body]) => ({ pathname: `${emittedPath}${name}`, body })),
     readEmittedFile(pathname) {

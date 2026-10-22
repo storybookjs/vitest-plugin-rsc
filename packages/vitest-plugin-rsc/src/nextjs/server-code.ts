@@ -229,15 +229,55 @@ type Warns = { warn(message: string): void };
 const name = "vitest-plugin-rsc:next-server-code";
 const asyncFunctionsName = "vitest-plugin-rsc:next-async-functions";
 
-// Next's wrapper of a `"use cache"` function. It enters the scope of the
-// function and awaits before it has React call the function.
-const useCacheWrapper = /\/next\/dist\/(?:esm\/)?server\/use-cache\/use-cache-wrapper\.js$/;
+// The modules of Next's server whose async functions are compiled to keep
+// their stores across an `await` (async-local-storage-transform.ts), as the
+// source files of the app are: the ones that await inside a store, one they
+// entered or left with `exit()`, or the request's own, and read it after the
+// `await`, as on Node.js. One entry per module, with the layer it is a
+// module of and the store it carries. Each server layer's optimizer compiles
+// its own, once, and keeps them in its cache. A static build does the same.
+export const nextModulesWithStores: { layer: "rsc" | "ssr"; module: string }[] = [
+  // The store of a `"use cache"` function: it enters the scope and awaits
+  // before it has React call the function.
+  { layer: "rsc", module: "use-cache/use-cache-wrapper.js" },
+  // The handler of a Server Action, through `app-page/module`: it enters the
+  // action's store, `actionAsyncStorage`, awaits the action, and renders the
+  // page after it in an `exit()` of that store, which it awaits. After each
+  // `await` it has its own request's stores back: not those of a request
+  // that the action made to the app and that is still at work, as one with
+  // `after()` is, and not the store it left.
+  { layer: "ssr", module: "app-render/action-handler.js" },
+  // The render, through `app-page/module`, with the request stores of a
+  // page, `workAsyncStorage` and `workUnitAsyncStorage`: it awaits the
+  // handler of an action, and its own work, before it starts React's.
+  { layer: "ssr", module: "app-render/app-render.js" },
+];
+// The modules of a layer in that list, by their file, of either build of
+// Next's server.
+function nextModulesWithStoresOf(layer: NextLayer): RegExp | undefined {
+  const modules = nextModulesWithStores.filter((entry) => entry.layer === layer);
+  if (modules.length === 0) return;
+  const files = modules.map(({ module }) => module.replaceAll(".", "\\.")).join("|");
+  return new RegExp(`/next/dist/(?:esm/)?server/(?:${files})$`);
+}
 // React's Flight server, of the React that Next ships: the build for
 // development and the one for production, of React and of its experimental
 // channel.
 const flightServer =
   /\/next\/dist\/compiled\/react-server-dom-webpack(?:-experimental)?\/cjs\/react-server-dom-webpack-server\.edge\.\w+\.js$/;
 const performWork = "function performWork(request) {";
+const issues = "https://github.com/storybookjs/vitest-plugin-rsc/issues";
+
+// The version of the Next.js that a module of its `dist` is of.
+function nextVersionOf(id: string): string {
+  const root = normalizePath(id).match(/^(.*\/next)\/dist\//)?.[1];
+  try {
+    return (JSON.parse(fs.readFileSync(`${root}/package.json`, "utf8")) as { version: string })
+      .version;
+  } catch {
+    return "?";
+  }
+}
 
 export function createServerCode(registry: string, options: ServerCodeOptions = {}) {
   const patterns = [options.browserModules ?? []].flat();
@@ -246,8 +286,6 @@ export function createServerCode(registry: string, options: ServerCodeOptions = 
   let isBrowserModule: (file: string) => boolean = () => false;
   // One for every Vitest project this plugin is in.
   const testFileMatchers: ((file: string) => boolean)[] = [];
-  // Whether the app has `"use cache"`: see `cachedFunctions()`.
-  let usesCache = () => false;
   // The files of another host, `host.files`.
   let isOwnFileOfHost: (file: string) => boolean = () => false;
   // The names of the packages of the host, and once configured, the
@@ -308,19 +346,24 @@ export function createServerCode(registry: string, options: ServerCodeOptions = 
     if (isServerCode(file, layer)) return file;
   }
 
-  // React's Flight server of the rsc layer, for the stores a cached function
-  // runs with. React starts a render in a microtask. On Node.js that has the
+  // React's Flight server of the rsc layer, for the stores a render runs
+  // with. React starts a render in a microtask. On Node.js that has the
   // stores of the code that started the render, and here the server's own
   // `queueMicrotask` passes them on: see globals.ts. That is how Next has
-  // React call a cached function in the scope of that function. And it
+  // React call a cached function in the scope of that function, and render
+  // the page after a Server Action outside the store of the action. And it
   // renders in steps, each a `performWork()`: the later ones when a promise
   // it waits for settles. On Node.js such a step has the stores of the step
   // that waited, so what a cached component returns renders in its scope.
   // Here each step gets the stores of the first: see globals.ts.
   function flightServerOf(code: string, id: string) {
-    if (!usesCache() || !flightServer.test(normalizePath(id))) return;
+    if (!flightServer.test(normalizePath(id))) return;
     if (!code.includes(performWork)) {
-      throw new Error(`vitest-plugin-rsc: ${id} has no \`${performWork}\` to compile.`);
+      throw new Error(
+        `vitest-plugin-rsc: ${id}, React's Flight server of next@${nextVersionOf(id)}, has no ` +
+          `\`${performWork}\` to compile, which every render of a server needs to keep its ` +
+          `stores. This Next.js is newer than the plugin knows: report it at ${issues}.`,
+      );
     }
     return {
       code: code.replace(
@@ -366,6 +409,8 @@ export function createServerCode(registry: string, options: ServerCodeOptions = 
         hostFiles.map(String),
         packages,
       ]),
+      // The list above, so that a change to it pre-bundles its modules again.
+      __vitest_plugin_rsc_modules_with_stores__: JSON.stringify(nextModulesWithStores),
     },
     /**
      * The same for the browser layer, which pre-bundles the packages of the
@@ -383,29 +428,21 @@ export function createServerCode(registry: string, options: ServerCodeOptions = 
       // Vitest pre-bundles its own runtime in the environment of the rsc layer.
       hostPackageDirs = findPackagesWithDependencies(hostPackageNames(root, packages), root);
     },
-    /**
-     * Call with whether the app has `"use cache"`. Only then is anything
-     * compiled for the scope of a cached function: an app without it keeps
-     * its async functions, and React's Flight server, as they are.
-     */
-    cachedFunctions(enabled: () => boolean): void {
-      usesCache = enabled;
-    },
     /** Call with what a Vitest config says is a test file or a setup file. */
     addTestFiles(matches: (file: string) => boolean): void {
       testFileMatchers.push(matches);
     },
     /**
      * What a dependency of a server layer needs on top of `compileServerCode()`
-     * to keep the stores of a cached function, for a static build, which has
-     * no optimizer: see `optimizerPlugin()` and `asyncFunctionsOptimizerPlugin()`.
+     * to keep its stores across an `await` and a render, for a static build,
+     * which has no optimizer: see `optimizerPlugin()` and
+     * `asyncFunctionsOptimizerPlugin()`.
      */
-    forCachedFunctions(context: Warns, code: string, id: string, layer: NextLayer) {
-      if (layer !== "rsc") return { code, define: {} };
-      if (usesCache() && useCacheWrapper.test(normalizePath(id))) {
+    forStores(context: Warns, code: string, id: string, layer: NextLayer) {
+      if (nextModulesWithStoresOf(layer)?.test(normalizePath(id))) {
         return { code: compileAsyncFunctions(context, code, id)?.code ?? code, define: {} };
       }
-      return flightServerOf(code, id) ?? { code, define: {} };
+      return (layer === "rsc" ? flightServerOf(code, id) : undefined) ?? { code, define: {} };
     },
     /** For the dependency optimizer: the pre-bundled dependencies of a layer. */
     optimizerPlugin(layer: NextLayer) {
@@ -435,17 +472,19 @@ export function createServerCode(registry: string, options: ServerCodeOptions = 
     },
     /**
      * The async functions that have to read, after an `await`, a store Next
-     * entered for them: see async-local-storage-transform.ts. That is the
-     * scope of a cached function, which the `rsc` layer runs: for the
-     * dependency optimizer, Next's wrapper of a `"use cache"` function.
+     * entered for them, or left for them with `exit()`: see
+     * async-local-storage-transform.ts. For the dependency optimizer of a
+     * server layer, the modules of Next's server in `nextModulesWithStores`
+     * that are that layer's. The bundler hands it each file of a dependency
+     * it pre-bundles, by its path, so a module inside the bundle of
+     * `app-page/module` is one.
      */
-    asyncFunctionsOptimizerPlugin() {
+    asyncFunctionsOptimizerPlugin(layer: NextLayer) {
+      const modules = nextModulesWithStoresOf(layer);
       return {
         name: asyncFunctionsName,
         transform(this: Warns, code: string, id: string) {
-          if (usesCache() && useCacheWrapper.test(normalizePath(id))) {
-            return compileAsyncFunctions(this, code, id);
-          }
+          if (modules?.test(normalizePath(id))) return compileAsyncFunctions(this, code, id);
         },
       };
     },
@@ -455,7 +494,6 @@ export function createServerCode(registry: string, options: ServerCodeOptions = 
         name: asyncFunctionsName,
         applyToEnvironment: ({ name }) => name === environment,
         transform(code, id) {
-          if (!usesCache()) return;
           const file = sourceFileOf(id, normalizePath(this.environment.config.cacheDir), "rsc");
           // A test file keeps the browser: see plugin() for a host that does
           // not say which files are its own.

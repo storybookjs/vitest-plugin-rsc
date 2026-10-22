@@ -88,8 +88,13 @@ export async function openNextProject(
   const loadConfig = load<typeof import("next/dist/server/config.js")>("server/config").default;
   const { PHASE_PRODUCTION_BUILD, COMPILER_NAMES } =
     load<typeof import("next/dist/shared/lib/constants.js")>("shared/lib/constants");
-  const { APP_DIR_ALIAS, MIDDLEWARE_FILENAME, PROXY_FILENAME, WEBPACK_LAYERS } =
-    load<typeof import("next/dist/lib/constants.js")>("lib/constants");
+  const {
+    APP_DIR_ALIAS,
+    MIDDLEWARE_FILENAME,
+    PROXY_FILENAME,
+    WEBPACK_LAYERS,
+    WEBPACK_RESOURCE_QUERIES,
+  } = load<typeof import("next/dist/lib/constants.js")>("lib/constants");
   const { findPagesDir } =
     load<typeof import("next/dist/lib/find-pages-dir.js")>("lib/find-pages-dir");
   const { discoverRoutes, createPagesMapping } =
@@ -116,9 +121,6 @@ export async function openNextProject(
   const { UnmatchedAppPagesError } = load<
     typeof import("next/dist/shared/lib/errors/unmatched-app-pages-error.js")
   >("shared/lib/errors/unmatched-app-pages-error");
-  const { isMetadataRouteFile, DEFAULT_METADATA_ROUTE_EXTENSIONS } = load<
-    typeof import("next/dist/lib/metadata/is-metadata-route.js")
-  >("lib/metadata/is-metadata-route");
   const { generateBuildId } =
     load<typeof import("next/dist/build/generate-build-id.js")>("build/generate-build-id");
   const { getDefineEnv } = load<typeof import("next/dist/build/define-env.js")>("build/define-env");
@@ -176,6 +178,9 @@ export async function openNextProject(
   const nextFontLoader = load<
     typeof import("next/dist/build/webpack/loaders/next-font-loader/index.js")
   >("build/webpack/loaders/next-font-loader/index").default as unknown as Loader;
+  const nextRootParamsLoader = load<
+    typeof import("next/dist/build/webpack/loaders/next-root-params-loader.js")
+  >("build/webpack/loaders/next-root-params-loader").default as unknown as Loader;
   const imageOptimizer =
     load<typeof import("next/dist/server/image-optimizer.js")>("server/image-optimizer");
   const loadCustomRoutes =
@@ -212,6 +217,12 @@ export async function openNextProject(
   >("build/webpack/loaders/next-middleware-loader").default as unknown as Loader;
   const { getContentType, getExtension } =
     load<typeof import("next/dist/server/serve-static.js")>("server/serve-static");
+  const nextMetadataImageLoader = load<
+    typeof import("next/dist/build/webpack/loaders/next-metadata-image-loader.js")
+  >("build/webpack/loaders/next-metadata-image-loader").default as unknown as Loader;
+  const nextMetadataRouteLoader = load<
+    typeof import("next/dist/build/webpack/loaders/next-metadata-route-loader.js")
+  >("build/webpack/loaders/next-metadata-route-loader").default as unknown as Loader;
 
   // The env of the run, see env.ts, with the `@next/env` that Next's config
   // loader uses.
@@ -278,6 +289,11 @@ export async function openNextProject(
   }
   const { pageExtensions } = config;
   const distDir = path.join(root, config.distDir);
+  // Next's SWC, before the routes are discovered: Next parses a metadata file
+  // like `sitemap.ts` with it for `generateSitemaps`, which gives its route an
+  // id, `/sitemap/[__metadata_id__]`. Without the bindings that parse fails
+  // and says nothing.
+  await swc.loadBindings(config.experimental.useWasmBinary);
 
   const buildId = await generateBuildId(config.generateBuildId, () => "vitest");
   // What a build writes to `.next/` for its server: the build id and the keys
@@ -322,6 +338,7 @@ export async function openNextProject(
       MIDDLEWARE_FILENAME,
       PROXY_FILENAME,
       WEBPACK_LAYERS,
+      WEBPACK_RESOURCE_QUERIES,
       discoverRoutes,
       createPagesMapping,
       normalizeCatchAllRoutes,
@@ -334,8 +351,6 @@ export async function openNextProject(
       MissingCanonicalInterceptionRoutesError,
       IncompatibleParallelRouteSlotsError,
       UnmatchedAppPagesError,
-      isMetadataRouteFile,
-      DEFAULT_METADATA_ROUTE_EXTENSIONS,
       getDefineEnv,
       getNextPublicEnvironmentVariables,
       getNextConfigEnv,
@@ -359,6 +374,7 @@ export async function openNextProject(
       localByDefault,
       findConfig,
       nextFontLoader,
+      nextRootParamsLoader,
       imageOptimizer,
       loadCustomRoutes,
       generateInterceptionRoutesRewrites,
@@ -374,6 +390,8 @@ export async function openNextProject(
       nextMiddlewareLoader,
       getContentType,
       getExtension,
+      nextMetadataImageLoader,
+      nextMetadataRouteLoader,
     },
   };
 }

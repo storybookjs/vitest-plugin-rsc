@@ -34,7 +34,8 @@ import {
 import { moduleFileAt } from "./project/context.ts";
 import { describeEnv, envFilesOf, type PageEnv } from "./project/env.ts";
 import { compileServerCode, createServerCode, type ServerCodeOptions } from "./server-code.ts";
-import { createUseCachePlugin, useCacheId, useCacheModule, usesCache } from "./use-cache.ts";
+import { createCommonJsPlugin } from "./commonjs.ts";
+import { createUseCachePlugin, useCacheId, useCacheModule } from "./use-cache.ts";
 import { createPathsPlugin } from "./paths.ts";
 import { nextStaticBuild, withPathsFromRoot } from "./static-build.ts";
 import { builtHostFileOf, createStyles, changesInPlace } from "./styles.ts";
@@ -73,9 +74,16 @@ const routeKinds = Object.keys(routeLists) as RouteKind[];
 // it, if the app has one, and its request handler.
 const middlewareId = virtual("middleware");
 const middlewareEntryId = virtual("middleware-entry");
+// A module of Next's metadata loaders, by the inline request for it of Next's
+// app loader: see project/metadata.ts.
+const metadataPrefix = virtual("metadata/");
 // The env of the run, which globals.ts puts in the page's `process.env`: see
 // project/env.ts.
 const envId = virtual("env");
+// The cache handlers that `next.config` names, for the ssr layer: cache.ts.
+const cacheHandlersId = virtual("cache-handlers");
+// `next/root-params`, which Next's build makes for the app.
+const rootParamsId = virtual("root-params");
 // Next's route resolution: the rsc layer, the document's, says with it which
 // requests are the app's, and the ssr layer routes with it each request that
 // it handles. Not a part of `next`: it is the project's, next to its `next`.
@@ -271,9 +279,13 @@ function createLayerResolver(getProject: () => NextProject, layer: NextLayer) {
 
   /**
    * Where a specifier leads in this layer: another specifier, a bridge module
-   * (`\0...`), or `false` for a module the layer leaves empty.
+   * (`\0...`), or `false` for a module the layer leaves empty. For the app's
+   * code, `ofApp`, with the entries Next's own files do not get, like React's
+   * `react-dom/server` for Node.js in the ssr layer (project/layers.ts).
    */
-  function normalize(source: string): string | false {
+  function normalize(source: string, ofApp = false): string | false {
+    const appTarget = ofApp ? getProject().appAliases[layer][`${source}$`] : undefined;
+    if (appTarget !== undefined) return normalize(appTarget);
     const cached = normalized.get(source);
     if (cached !== undefined) return cached;
 
@@ -320,7 +332,8 @@ function createLayerResolver(getProject: () => NextProject, layer: NextLayer) {
     // Vite's `parent > dependency`: the layer resolves the dependency alike
     // from any parent, and a specifier of Next from the project.
     const source = entry.slice(entry.lastIndexOf(">") + 1).trim();
-    const target = normalize(source);
+    // An entry of the config is the app's.
+    const target = normalize(source, true);
     if (target === false || target.startsWith("\0") || isNodeModule(target)) return;
     // A package that Next depends on, like `styled-jsx`, found by its name
     // from Next. Not a file of Next, like its polyfill of `object-assign`.
@@ -366,7 +379,11 @@ function createLayerResolver(getProject: () => NextProject, layer: NextLayer) {
           specifier = `next/${relative.split(path.sep).join("/")}`;
         }
 
-        const target = normalize(specifier);
+        // Not a file of Next's own, under `next/dist`: one of the app or of
+        // a package, which gets the app's entries (project/layers.ts). The
+        // dependency optimizer and the dev server alike give the file.
+        const ofApp = !!importer && !normalizePath(importer).includes("/next/dist/");
+        const target = normalize(specifier, ofApp);
         if (target === false) return emptyModuleId;
         if (isNodeModule(target)) {
           // A dependency that says what it uses for the module in a browser
@@ -526,6 +543,13 @@ function definesOf(project: NextProject, layer: NextLayer): Record<string, strin
   };
 }
 
+// Next's inline requests for its metadata loaders in the code of an entry.
+function findMetadataRequests(code: string): string[] {
+  return [...code.matchAll(/["'](next-metadata-(?:image|route)-loader\?[^"']+)["']/g)].map(
+    (match) => match[1]!,
+  );
+}
+
 function findImports(code: string): string[] {
   return [
     ...code.matchAll(
@@ -590,6 +614,7 @@ const runtimeImports: Record<NextLayer, string[]> = {
     "next/dist/server/route-modules/app-page/module",
     "next/dist/server/lib/incremental-cache",
     "next/dist/server/lib/incremental-cache/tags-manifest.external",
+    "next/dist/server/use-cache/handlers",
     // ssr.ts, for what the server in front of the app routes to it
     "next/dist/client/components/app-router-headers",
     "next/dist/server/lib/is-rsc-request",
@@ -640,7 +665,6 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
   // What the CSS of the app gets otherwise than from Next: see `loadCssOptions()`.
   let cssDifferences: string[] = [];
   const serverCode = createServerCode(registry, options);
-  serverCode.cachedFunctions(() => usesCache(getProject()));
   const getProject = () => project;
   if (options.build !== undefined && !nextBuilds.includes(options.build)) {
     throw new Error(
@@ -767,8 +791,16 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
             project.loadRouteEntry(candidate),
           ),
         );
+        // And what the modules of the metadata loaders import, which only
+        // the entries import, by a request that is no file.
+        const metadataModules = await Promise.all(
+          [...new Set(appPageEntries.flatMap(({ code }) => findMetadataRequests(code)))].map(
+            (request) => project.loadMetadata(request),
+          ),
+        );
         const entryImports = [
           ...appPageEntries.flatMap(({ code }) => findImports(code)),
+          ...metadataModules.flatMap(({ code }) => findImports(code)),
           ...findImports((await project.loadMiddlewareEntry()) ?? ""),
         ];
         // `next/og` renders images with wasm: not something to pre-bundle for
@@ -817,7 +849,11 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
           );
 
         const optimizeDeps = (layer: NextLayer) => ({
-          include: [...include[layer], ...dependenciesOfNext(layer)],
+          include: [
+            ...include[layer],
+            ...dependenciesOfNext(layer),
+            ...project.webpackPackages[layer],
+          ],
           rolldownOptions: {
             plugins: [
               // First: the other plugins see Next's production code.
@@ -830,8 +866,12 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
               createDependencyCompilePlugin(getProject, layer),
               ...(layer === "rsc" ? [nextClientBoundaryPlugin(getProject, resolvers.rsc)] : []),
               flightConsolePlugin(),
-              ...(layer === "browser" ? [] : [serverCode.optimizerPlugin(layer)]),
-              ...(layer === "rsc" ? [serverCode.asyncFunctionsOptimizerPlugin()] : []),
+              ...(layer === "browser"
+                ? []
+                : [
+                    serverCode.optimizerPlugin(layer),
+                    serverCode.asyncFunctionsOptimizerPlugin(layer),
+                  ]),
             ],
             // A package can import what only another layer's build of a module
             // has, like `useRouter` of `next/navigation` in the rsc layer (the
@@ -858,6 +898,12 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
         const css = await project.loadCssOptions();
         cssDifferences = [...css.differences];
         const cssOptions = { ...css.options };
+        if (config.css?.preprocessorOptions !== undefined && cssOptions.preprocessorOptions) {
+          delete cssOptions.preprocessorOptions;
+          cssDifferences.push(
+            "`css.preprocessorOptions` of the Vitest config is used, not `sassOptions` of next.config",
+          );
+        }
         if (config.css?.transformer === "lightningcss") {
           // Then Vite runs no PostCSS at all.
           delete cssOptions.postcss;
@@ -1017,7 +1063,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
       // What the app has and does not get here: said once, when a run starts.
       configResolved(config) {
         config.logger.info(describeEnv(env, config.command === "build"));
-        for (const difference of cssDifferences) {
+        for (const difference of [...cssDifferences, ...project.webpackDifferences]) {
           config.logger.warnOnce(`vitest-plugin-rsc: ${difference}.`);
         }
         if (project.edgeRouteFiles.length > 0) {
@@ -1034,16 +1080,6 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
               project.unmatchedRoutes.join(", "),
           );
         }
-        // An app with metadata files still runs, as it would without them.
-        // Not `favicon.ico`, which only adds a `<link rel="icon">`, and which
-        // every new app has.
-        const files = project.metadataFiles.filter((file) => path.basename(file) !== "favicon.ico");
-        if (files.length === 0) return;
-        const app = path.relative(process.cwd(), project.root) || path.basename(project.root);
-        config.logger.warnOnce(
-          `vitest-plugin-rsc: Next.js metadata files are not supported yet. The pages of ` +
-            `${app} leave them out, and their routes are not served: ${files.join(", ")}`,
-        );
       },
       // Vitest's hook for a plugin of a project, which another host has not:
       // what its config says is a test file or a setup file is not server
@@ -1112,16 +1148,49 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
           return `\0${source}`;
         }
         if (source === middlewareId || source === middlewareEntryId) return `\0${source}`;
-        if (source === useCacheId) return `\0${source}`;
-        // TODO: run Next's metadata loaders for these inline loader requests.
-        // Until then a page has no metadata from files: see configResolved.
-        if (/^next-metadata-(image|route)-loader\?/.test(source)) return `${bridgePrefix}metadata`;
+        if (source === useCacheId || source === cacheHandlersId) return `\0${source}`;
+        if (source === "next/root-params") return `\0${rootParamsId}`;
+        if (project.isMetadataRequest(source)) return `\0${metadataPrefix}${source}`;
+        // The module of a generated image, for what it says of the image. Next
+        // imports it again for that, to keep the module of a page small. Here
+        // it is the module itself.
+        if (source.endsWith(project.metadataImageMeta)) {
+          return source.slice(0, -project.metadataImageMeta.length);
+        }
       },
       async load(id) {
-        if (id === `${bridgePrefix}metadata`) {
-          return `export default async function metadata() { return []; }`;
+        if (id.startsWith(`\0${metadataPrefix}`)) {
+          const { code, watchFiles } = await project.loadMetadata(
+            id.slice(metadataPrefix.length + 1),
+          );
+          for (const file of watchFiles) this.addWatchFile(file);
+          return serverCode.compile(code, "next-metadata.js", generatedDefines());
         }
         if (id === `\0${useCacheId}`) return useCacheModule(registry);
+        if (id === `\0${rootParamsId}`) return project.loadRootParams();
+        // The files of the cache handlers that `next.config` names, which
+        // Next's server imports: cache.ts.
+        if (id === `\0${cacheHandlersId}`) {
+          const { cacheHandler, cacheHandlers = {} } = project.config as {
+            cacheHandler?: string;
+            cacheHandlers?: Record<string, string | undefined>;
+          };
+          // A path, or a `file:` URL, as Next takes one. A relative path is
+          // of the project, as Next's server resolves it.
+          const load = (file: string) => {
+            const resolved = file.startsWith("file:")
+              ? fileURLToPath(file)
+              : path.resolve(project.root, file);
+            return `() => import(${JSON.stringify(normalizePath(resolved))})`;
+          };
+          const kinds = Object.entries(cacheHandlers).flatMap(([kind, file]) =>
+            file ? [`  ${JSON.stringify(kind)}: ${load(file)},`] : [],
+          );
+          return (
+            `export const cacheHandler = ${cacheHandler ? load(cacheHandler) : "undefined"};\n` +
+            `export const cacheHandlers = {\n${kinds.join("\n")}\n};\n`
+          );
+        }
 
         // Of every layer: the page's `process.env` is one.
         if (id === `\0${envId}`) {
@@ -1214,6 +1283,11 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
       (environment) => layers.find((layer) => environmentOf[layer] === environment),
       serverCode.isAppCode,
     ),
+    // After Next's compiler, before `rsc:use-client`: both are `pre`.
+    createCommonJsPlugin(
+      (environment) => layers.find((layer) => environmentOf[layer] === environment),
+      serverCode.isAppCode,
+    ),
     ...layers.map((layer) => ({
       ...resolvers[layer].plugin(),
       applyToEnvironment: (environment: { name: string }) =>
@@ -1254,11 +1328,12 @@ function dependencyBuildPlugin(
       if (!normalizePath(file).includes("/node_modules/") || !/\.[cm]?js$/.test(file)) return;
       const compiled = await compile.transform(code, file);
       const isServerCode = layer !== "browser" && serverCode.isServerCode(file, layer);
-      // What keeps the stores of a cached function, as the optimizer does it.
-      const forCache = isServerCode
-        ? serverCode.forCachedFunctions(this, compiled?.code ?? code, file, layer)
+      // What keeps the stores of a module of Next across an `await` and a
+      // render, as the optimizer does it.
+      const forStores = isServerCode
+        ? serverCode.forStores(this, compiled?.code ?? code, file, layer)
         : undefined;
-      const source = forCache?.code ?? compiled?.code ?? code;
+      const source = forStores?.code ?? compiled?.code ?? code;
       const kept = source === (compiled?.code ?? code) ? compiled : { code: source };
       // The ones it names: most modules name none.
       const define = Object.fromEntries(
@@ -1269,7 +1344,7 @@ function dependencyBuildPlugin(
       if (!isServerCode && Object.keys(define).length === 0) return kept;
       try {
         const defined = isServerCode
-          ? await compileServerCode(source, file, registry, { ...define, ...forCache?.define })
+          ? await compileServerCode(source, file, registry, { ...define, ...forStores?.define })
           : await transformWithOxc(source, file, { lang: "js", define });
         return defined ?? kept;
       } catch (error) {

@@ -35,6 +35,14 @@ function hookError(test: TestCase): string | undefined {
   }
 }
 
+// The note of shim/e2e-utils.ts for a test that opens another app of the
+// fixture, which is in the report of the fixture of that app.
+const ofAnotherApp = "a test of another app of the fixture";
+const isOfAnotherApp = (test: TestCase) => {
+  const result = test.result();
+  return result.state === "skipped" && result.note === ofAnotherApp;
+};
+
 function reported(test: TestCase): ReportedTest {
   const file = test.module.relativeModuleId;
   const name = test.fullName;
@@ -94,6 +102,7 @@ export class ConformanceReporter implements Reporter {
   // As it goes: a fixture that hangs is stopped by the runner, and what it
   // found until then still counts.
   onTestCaseResult(test: TestCase): void {
+    if (isOfAnotherApp(test)) return;
     this.ended.push(reported(test));
     this.write({ finished: false, tests: this.ended, errors: [] });
   }
@@ -109,7 +118,7 @@ export class ConformanceReporter implements Reporter {
           message: error ? messageOf(error) : "the file has no tests",
         });
       }
-      report.tests.push(...tests.map(reported));
+      report.tests.push(...tests.filter((test) => !isOfAnotherApp(test)).map(reported));
     }
     this.write(report);
   }

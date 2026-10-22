@@ -1,5 +1,9 @@
 import { expect, test } from "vitest";
-import { enterAmbientScope, resetAsyncLocalStorage } from "./async-local-storage.ts";
+import {
+  asyncFunctionHooks,
+  enterAmbientScope,
+  resetAsyncLocalStorage,
+} from "./async-local-storage.ts";
 import {
   AsyncLocalStorage,
   AsyncResource,
@@ -334,5 +338,144 @@ test("has no ambient store outside an ambient scope", () => {
 
   storage.run("request", () => {});
 
+  expect(storage.getStore()).toBeUndefined();
+});
+
+// What async-local-storage-transform.ts makes of an async function that
+// awaits `promise` and then returns `after()`.
+function compiled<T>(promise: Promise<unknown>, after: () => T): Promise<T> {
+  return (async () => {
+    const call = asyncFunctionHooks.e();
+    try {
+      asyncFunctionHooks.r(call, await asyncFunctionHooks.s(call, promise));
+      return after();
+    } finally {
+      asyncFunctionHooks.x(call);
+    }
+  })();
+}
+
+test("gives what is compiled or bound its store back after an exit() that starts async work, as Node does", async () => {
+  const storage = new AsyncLocalStorage<string>();
+  const leaveScope = enterAmbientScope();
+  // Entered by code that is not compiled: only the scope has the store.
+  storage.run("action", () => {});
+  const pending = deferred<void>();
+
+  // What a Server Action starts and passes to `after()`, before the exit: a
+  // compiled function that awaits, and a bound callback.
+  const started = compiled(pending.promise, () => storage.getStore());
+  const bound = AsyncLocalStorage.bind(() => storage.getStore());
+  // What Next does for the page it renders after the action, compiled: an
+  // exit() whose callback awaits, and code after the exit.
+  const handled = (async () => {
+    const call = asyncFunctionHooks.e();
+    try {
+      const rendered = asyncFunctionHooks.r(
+        call,
+        await asyncFunctionHooks.s(
+          call,
+          storage.exit(() =>
+            compiled(
+              pending.promise,
+              () => [storage.getStore(), AsyncLocalStorage.bind(() => storage.getStore())] as const,
+            ),
+          ),
+        ),
+      );
+      return [...rendered, storage.getStore()] as const;
+    } finally {
+      asyncFunctionHooks.x(call);
+    }
+  })();
+  // In the meantime, what is not compiled reads the exited store.
+  expect(storage.getStore()).toBeUndefined();
+
+  pending.resolve();
+  await expect(started).resolves.toBe("action");
+  expect(bound()).toBe("action");
+  const [inExit, boundInExit, afterExit] = await handled;
+  // The exited work stays outside the store, also what it bound.
+  expect(inExit).toBeUndefined();
+  expect(boundInExit()).toBeUndefined();
+  expect(afterExit).toBe("action");
+  // What is not compiled reads the exited store for the rest of the scope.
+  expect(storage.getStore()).toBeUndefined();
+  leaveScope();
+});
+
+test("does not put the stores of a compiled function back after reset", async () => {
+  const storage = new AsyncLocalStorage<string>();
+  const leaveScope = enterAmbientScope();
+  storage.run("request", () => {});
+  const pending = deferred<void>();
+  // A render that outlives its test: the next test does not read its stores.
+  const result = compiled(pending.promise, () => storage.getStore());
+
+  leaveScope();
+  resetAsyncLocalStorage();
+  pending.resolve();
+
+  await expect(result).resolves.toBeUndefined();
+  expect(storage.getStore()).toBeUndefined();
+});
+
+test("takes the stores of the scopes that have not ended, the inner one first, into a compiled or bound call", async () => {
+  const storage = new AsyncLocalStorage<string>();
+  const other = new AsyncLocalStorage<string>();
+  const read = () => [storage.getStore(), other.getStore()];
+  const pending = deferred<void>();
+
+  const leaveRequest = enterAmbientScope();
+  storage.run("request", () => {});
+  other.run("request", () => {});
+  // A request inside it, like the proxy's: its stores come first.
+  const leaveProxy = enterAmbientScope();
+  storage.run("proxy", () => {});
+  const inProxy = AsyncLocalStorage.bind(read);
+  const startedInProxy = compiled(pending.promise, read);
+
+  leaveProxy();
+  const inRequest = AsyncLocalStorage.bind(read);
+  const startedInRequest = compiled(pending.promise, read);
+  // The outer one ends while an inner one is open: only the inner one counts.
+  const leaveLater = enterAmbientScope();
+  other.run("later", () => {});
+  leaveRequest();
+  const inLater = AsyncLocalStorage.bind(read);
+  leaveLater();
+  const outside = AsyncLocalStorage.bind(read);
+
+  pending.resolve();
+  expect(inProxy()).toEqual(["proxy", "request"]);
+  await expect(startedInProxy).resolves.toEqual(["proxy", "request"]);
+  expect(inRequest()).toEqual(["request", "request"]);
+  await expect(startedInRequest).resolves.toEqual(["request", "request"]);
+  expect(inLater()).toEqual([undefined, "later"]);
+  expect(outside()).toEqual([undefined, undefined]);
+  expect(read()).toEqual([undefined, undefined]);
+});
+
+// A layer, the optimizer and a build each evaluate the module again, as this
+// copy of it is: see the end of async-local-storage.ts.
+test("hands out the page's storage from every copy of the module", async () => {
+  // Another id for the same file, which Vitest evaluates again.
+  const copyOfModule = "./async-local-storage.ts?copy";
+  const copy: typeof import("./async-local-storage.ts") = await import(
+    /* @vite-ignore */ copyOfModule
+  );
+  expect(copy.SequentialAsyncLocalStorage).toBe(AsyncLocalStorage);
+  expect(copy.enterAmbientScope).toBe(enterAmbientScope);
+  expect(copy.asyncFunctionHooks).toBe(asyncFunctionHooks);
+  expect(copy.resetAsyncLocalStorage).toBe(resetAsyncLocalStorage);
+  const storage = new copy.SequentialAsyncLocalStorage<string>();
+
+  const leaveRequest = enterAmbientScope();
+  storage.run("request", () => {});
+  expect(storage.getStore()).toBe("request");
+  leaveRequest();
+
+  storage.enterWith("left");
+  resetAsyncLocalStorage();
   expect(storage.getStore()).toBeUndefined();
 });

@@ -5,7 +5,7 @@ import { resetAsyncLocalStorage } from "../async-local-storage.ts";
 import { checkFetchedModules, createEnvironmentRunner, environmentModule } from "../utils.ts";
 import { setOpenPage, sendRequest, unlessAborted } from "./app-requests.ts";
 import { callServerWithoutPage } from "./client-graph.ts";
-import { loadDocument, unloadDocument } from "./document.ts";
+import { loadDocument, unloadDocument, type HistoryEntry } from "./document.ts";
 import { download, downloadName } from "./downloads.ts";
 import { noRouter } from "./host-document.ts";
 import { recordListeners, recordMessageChannels } from "./leftovers.ts";
@@ -146,8 +146,9 @@ type Opening = {
 };
 
 // The document of a page, which a navigation has before it loads the page:
-// see `navigate()`.
-type PageDocument = { response: Response; html: string };
+// see `navigate()`. `after` is the entry of the history that the page load
+// adds its own after, for a navigation that adds one.
+type PageDocument = { response: Response; html: string; after?: HistoryEntry };
 
 export async function loadPage(
   url: URL,
@@ -233,7 +234,7 @@ async function openPage(
   };
 
   // The test's request, or the document that a navigation has: see `navigate()`.
-  const { response, html } = "html" in request ? request : await requestDocument(request);
+  const { response, html, after } = "html" in request ? request : await requestDocument(request);
   superseded();
   // The response is the node's when it comes from the node's route and is not
   // a document. A node that redirects gets the page it redirects to, and one
@@ -252,7 +253,7 @@ async function openPage(
     // reports the error that takes the node's place as the page hydrates.
     if (!opening?.opened.node?.layouts) opening?.nodeOnPage?.replaced();
   }
-  await loadDocument(html, response.url, container);
+  await loadDocument(html, response.url, container, after);
   superseded();
   // A page load runs the app's scripts from scratch, so every page gets a
   // module graph of its own for the browser layer. A page that is left keeps
@@ -354,13 +355,17 @@ let withoutPage = new AbortController();
  * page that is open stays until the answer is there, and for good when the
  * answer is a download (downloads.ts). Else the answer is the next page,
  * which needs a page of the app to navigate in. `downloadRequest` is the
- * navigation's, and `from` the store of the browser context it is in.
+ * navigation's, and `from` the store of the browser context it is in. With
+ * `push` the next page gets an entry of the history of its own, as after a
+ * link or a form in a browser. Else it takes the entry of the page, as
+ * after a reload or `location.replace()`.
  */
 export async function navigate(
   url: URL,
   init: RequestInit,
   downloadRequest: string | null,
   from: PageStore,
+  push: boolean,
 ): Promise<void> {
   const page = currentPage();
   const signals = [page?.signal ?? withoutPage.signal];
@@ -408,7 +413,10 @@ export async function navigate(
     signal.throwIfAborted();
     throw error;
   }
-  await loadPage(url, loaded, from);
+  // The entry of the page that is left, as its app leaves it: leaving the
+  // page puts the URL of the document in it.
+  const after = push ? { url: window.location.href, state: window.history.state } : undefined;
+  await loadPage(url, { ...loaded, after }, from);
 }
 
 // One at a time: a page that is being left is left before the next one is.

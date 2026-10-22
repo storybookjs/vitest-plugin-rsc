@@ -5,7 +5,7 @@
 import * as cheerio from "cheerio";
 import { handleRequest } from "vitest-plugin-rsc/nextjs/testing-library";
 import { commands } from "vitest/browser";
-import { root } from "virtual:next-conformance/config";
+import { prepared, root } from "virtual:next-conformance/config";
 import { openBrowser, type Browser, type BrowserOptions } from "./browser.ts";
 import { consoleCapture } from "./console.ts";
 import { Readable } from "./stream.ts";
@@ -40,8 +40,9 @@ export function withQuery(pathname: string, query: Query): string {
     : `${pathname}?${search}`;
 }
 
-// What only a build or a deployment has.
-const buildOutput = /^\.next(\/|$)/;
+// What only a build or a deployment has. A path of a file is from the
+// directory of the app, also one that starts with `/`, as Next joins them.
+const buildOutput = /^\/?\.next(\/|$)/;
 
 export class NextInstance {
   private outputStart = consoleCapture.output.length;
@@ -116,6 +117,9 @@ export class NextInstance {
     const body = init?.body as unknown;
     if (body instanceof Readable)
       init = { ...init, body: body.toWeb(), duplex: "half" } as RequestInit;
+    // The `fetch` of Node.js, which has no cookies of its own: it neither
+    // sends the cookies of the browser nor keeps the ones it gets.
+    init = { credentials: "omit", ...init };
     const url = new URL(pathname, this.url);
     // What a deployment serves next to its routes, the dev server serves
     // here: the files of fonts and images, and Next's image optimizer.
@@ -182,8 +186,12 @@ export class NextInstance {
   private runsNext(what: string): never {
     return unsupported(`${what}: the test runs the Next.js CLI itself`);
   }
-  build = async () => this.runsNext("next.build()");
-  start = async () => this.runsNext("next.start()");
+  // A test with `skipStart` builds and starts the app itself. For a fixture
+  // that says so, the runner did that before the run: see `prepared` in
+  // src/fixtures.ts. Nothing is printed for a build here.
+  build = async () =>
+    prepared.includes("skipStart") ? { exitCode: 0, cliOutput: "" } : this.runsNext("next.build()");
+  start = async () => (prepared.includes("skipStart") ? undefined : this.runsNext("next.start()"));
   stop = async () => this.runsNext("next.stop()");
   clean = async () => this.runsNext("next.clean()");
   runCommand = async () => this.runsNext("next.runCommand()");

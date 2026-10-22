@@ -34,6 +34,13 @@ const assumeInstalled = JSON.parse(
   process.env.NEXT_CONFORMANCE_ASSUME_INSTALLED || "[]",
 ) as string[];
 const prepared = JSON.parse(process.env.NEXT_CONFORMANCE_PREPARED || "[]") as string[];
+const preparedConfig = JSON.parse(process.env.NEXT_CONFORMANCE_PREPARED_CONFIG || "{}") as Record<
+  string,
+  unknown
+>;
+// The directory of the app in the fixture, for a test file with an app of
+// its own in each `describe`: see `app` in src/fixtures.ts.
+const app = process.env.NEXT_CONFORMANCE_APP || undefined;
 const mode = process.env.NEXT_CONFORMANCE_MODE === "dev" ? "dev" : "start";
 const testTimeout = Number(process.env.NEXT_CONFORMANCE_TEST_TIMEOUT || 60) * 1000;
 // Another checkout of this repository, to measure its plugin with this runner.
@@ -55,11 +62,25 @@ export default defineConfig({
   // each fixture: the dependencies of an app are part of what Vite keeps.
   cacheDir,
   plugins: [
-    conformance({ root, mode, nextTestLib, pluginCheckout, assumeInstalled, prepared }),
+    conformance({
+      root,
+      mode,
+      nextTestLib,
+      pluginCheckout,
+      assumeInstalled,
+      prepared,
+      preparedConfig,
+      app,
+    }),
     vitestPluginRSC(),
     // The shim works on the page, so it has to see the browser.
     vitestPluginNext({
       browserModules: [path.join(here, "shim/**"), path.join(nextTestLib, "**")],
+      // `next start` runs the production code of Next and React that
+      // `next build` built, and `next dev` their development code. A test
+      // of Next expects what its mode runs: a digest and React's minified
+      // message for an error of the server, or one run of an effect.
+      build: mode === "start" ? "production" : "development",
     }),
   ],
   resolve: {
@@ -86,6 +107,10 @@ export default defineConfig({
       headless: true,
       provider: playwright(),
       instances: [{ browser: "chromium" }],
+      // The size of Playwright's page, which Next's tests open theirs in. The
+      // default of Vitest is a phone's, which a media query of the app's CSS
+      // tells apart.
+      viewport: { width: 1280, height: 720 },
       commands: {
         conformanceReadFile: readFileCommand(root),
         conformanceFileExists: fileExistsCommand(root),

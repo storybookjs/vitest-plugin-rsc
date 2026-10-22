@@ -7,6 +7,7 @@ import type {
   EdgeFunctionDefinition,
   MiddlewareManifest,
 } from "next/dist/build/webpack/plugins/middleware-plugin.js";
+import type { Header } from "next/dist/lib/load-custom-routes.js";
 import { receivers } from "../adapter.ts";
 import type { NextRouting } from "../project.ts";
 import { inDirectory, type NextContext } from "./context.ts";
@@ -37,6 +38,23 @@ function outputPagesOf(outputs: AdapterOutputs, trailingSlash: boolean): Record<
     }
   }
   return pages;
+}
+
+/**
+ * A rule of `headers()` in `next.config` with its `Set-Cookie` headers as
+ * one, joined with a comma. Next's build hands an adapter the headers of a
+ * rule as an object, one value per name, and `@next/routing` sets each on
+ * the response: the second cookie would be lost. `next start` sends every
+ * one. Joined, they are the way Next's build writes the `set-cookie` of a
+ * prerendered route, and `resolve()` in server-in-front.ts splits them
+ * again, with the split Next's `toNodeOutgoingHttpHeaders()` has for them.
+ */
+export function joinSetCookies<T extends Pick<Header, "headers">>(rule: T): T {
+  const isCookie = ({ key }: { key: string }) => key.toLowerCase() === "set-cookie";
+  const cookies = rule.headers.filter(isCookie);
+  if (cookies.length < 2) return rule;
+  const joined = { key: "Set-Cookie", value: cookies.map(({ value }) => value).join(", ") };
+  return { ...rule, headers: [...rule.headers.filter((header) => !isCookie(header)), joined] };
 }
 
 /** The middleware of the app, as `findMiddleware()` finds it. */
@@ -207,7 +225,10 @@ export async function buildRouting(
   // `next.config` is the app's, and so is the working directory when its
   // `redirects()` runs. One project at a time, as for the config itself.
   const { built, routesManifest } = await inDirectory(root, async () => {
-    const { redirects, headers, onMatchHeaders, rewrites } = await loadCustomRoutes(routedConfig);
+    const custom = await loadCustomRoutes(routedConfig);
+    const { redirects, rewrites } = custom;
+    const headers = custom.headers.map(joinSetCookies);
+    const onMatchHeaders = custom.onMatchHeaders.map(joinSetCookies);
     const appPaths = Object.keys(appPathsPerRoute);
     // An interception route is a rewrite to Next: for a request that comes
     // from the page it intercepts on.

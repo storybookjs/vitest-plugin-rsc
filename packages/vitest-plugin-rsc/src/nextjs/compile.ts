@@ -16,6 +16,19 @@ import { linked } from "./styles.ts";
 // its CSS, which is a stylesheet of the segment that calls it (styles.ts).
 const fontPrefix = "\0vitest-plugin-rsc/next-font/";
 const fontRequest = /^next\/font\/(?:google|local)\/target\.css\?/;
+
+/**
+ * The call of a `next/font` function whose CSS a module is, by the module's
+ * id: the import the SWC transform turns the call into. Nothing for any other
+ * module.
+ */
+export function fontRequestOf(id: string): string | undefined {
+  if (!id.startsWith(fontPrefix)) return undefined;
+  const name = id.slice(fontPrefix.length).split("?")[0]!;
+  if (!name.endsWith(".css")) return undefined;
+  return Buffer.from(name.slice(0, -".css".length), "base64url").toString();
+}
+
 // The files next-swc-loader compiles, as far as Vite serves them as modules.
 const sourceFile = /\.(?:tsx|ts|jsx|js|mjs)$/;
 
@@ -80,11 +93,20 @@ export function createCompilePlugin(
         if (!served) next();
       });
     },
-    resolveId(source) {
+    async resolveId(source, importer, options) {
       if (source.startsWith(fontPrefix)) return source;
-      if (!fontRequest.test(source)) return;
-      // The call is in the id, the same one in every layer.
-      return `${fontPrefix}${Buffer.from(source).toString("base64url")}.js`;
+      if (fontRequest.test(source)) {
+        // The call is in the id, the same one in every layer.
+        return `${fontPrefix}${Buffer.from(source).toString("base64url")}.js`;
+      }
+      // An alias of the `webpack` function in `next.config`: the first of
+      // its candidates that resolves, as webpack takes an alias to a list.
+      const layer = layerOf(this.environment.name);
+      const candidates = layer && getProject().webpackAliasOf(source, layer);
+      for (const candidate of candidates ?? []) {
+        const resolved = await this.resolve(candidate, importer, { ...options, skipSelf: true });
+        if (resolved) return resolved;
+      }
     },
     async load(id) {
       // The loaders name a file they emit by the path the dev server has it
@@ -109,13 +131,20 @@ export function createCompilePlugin(
         );
       }
       // With a query it is Vite's: `?url`, `?raw`.
-      if (!layerOf(this.environment.name) || id.includes("?")) return;
+      const layer = layerOf(this.environment.name);
+      if (!layer || id.includes("?")) return;
+      // A file of a rule of the `webpack` function in `next.config`, like an
+      // `.mdx` file with `@next/mdx`: JavaScript, once its loaders have run.
+      if (getProject().webpackRuleOf(id, layer) && fs.existsSync(id)) {
+        return { code: (await getProject().loadWithWebpackRule(id, layer))!, moduleType: "js" };
+      }
       if (!getProject().isImage(id) || !fs.existsSync(id)) return;
       return built(await getProject().loadImage(id), "js");
     },
     async transform(code, id) {
       const layer = layerOf(this.environment.name);
-      if (!layer || id.includes("?") || !sourceFile.test(id)) return;
+      if (!layer || id.includes("?")) return;
+      if (!sourceFile.test(id) && !getProject().webpackRuleOf(id, layer)?.compile) return;
       if (!isAppCode(id, layer) || !fs.existsSync(id)) return;
       if (id.startsWith(`${normalizePath(this.environment.config.cacheDir)}/`)) return;
       const compiled = await getProject().compile(code, id, layer);

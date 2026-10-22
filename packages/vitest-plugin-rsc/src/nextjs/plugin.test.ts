@@ -326,6 +326,76 @@ test("resolves a bare import of Next to its file in a build", async () => {
   expect(await resolve(source, page, null)).toEqual({ id: commonJs });
 });
 
+// The server layers take Next's alias tables for its edge runtime. In the ssr
+// layer `react-dom/server` and `react-dom/static` are the Node.js entries for
+// the app's code, its files and its packages, and the edge table's for Next's
+// own files (project/layers.ts): a Client Component that calls
+// `renderToStaticMarkup()` renders on the server too, which the edge table's
+// entry has not, and Next's renderer, on web streams here, keeps the entries
+// it is written against.
+test("gives a Client Component React's server entries for Node.js in the ssr layer", async () => {
+  const plugins = vitestPluginNext();
+  const plugin = plugins.find(({ name }) => name === "vitest-plugin-rsc:next")!;
+  await (plugin.config as ConfigHook<Config>)({ root }, { command: "build" });
+  const page = path.join(root, "app/page.tsx");
+  // `null` for none.
+  const resolveIn = async (layer: string, source: string, importer: string | null = page) => {
+    const resolver = plugins.find(
+      ({ name }) => name === `vitest-plugin-rsc:next-resolve:${layer}`,
+    )!;
+    const resolveId = resolver.resolveId as (
+      this: object,
+      source: string,
+      importer: string | undefined,
+      options: object,
+    ) => Promise<unknown>;
+    const context = {
+      environment: { mode: "build" },
+      resolve: async (id: string) => ({ id }),
+    };
+    return resolveId.call(context, source, importer ?? undefined, {});
+  };
+  const reactDom = "next/dist/compiled/react-dom";
+  // The build of the `build` option, a production one for a build.
+  const edgeRenderer = {
+    id: expect.stringMatching(
+      new RegExp(`^${reactDom}/cjs/react-dom-server\\.edge\\.(development|production)\\.js$`),
+    ),
+  };
+  const nodeEntries = {
+    server: `${reactDom}/server.node.js`,
+    static: `${reactDom}/static.node.js`,
+  };
+
+  // A file of the app, and one of a package, which may re-export it.
+  for (const importer of [page, path.join(root, "node_modules/some-package/index.js")]) {
+    expect(await resolveIn("ssr", "react-dom/server", importer)).toEqual({
+      id: nodeEntries.server,
+    });
+    expect(await resolveIn("ssr", "react-dom/static", importer)).toEqual({
+      id: nodeEntries.static,
+    });
+  }
+  // Next's renderer for web streams, which the plugin runs.
+  const streamOps = path.join(nextDir, "dist/esm/server/app-render/stream-ops.web.js");
+  expect(await resolveIn("ssr", "react-dom/server", streamOps)).toEqual(edgeRenderer);
+  expect(await resolveIn("ssr", "react-dom/static", streamOps)).toEqual({
+    id: `${reactDom}/static.edge.js`,
+  });
+  // Without an importer, as for an entry of the optimizer: Next's.
+  expect(await resolveIn("ssr", "react-dom/server", null)).toEqual(edgeRenderer);
+  // What Next's own files import by name, for any importer.
+  expect(await resolveIn("ssr", "react-dom/server.edge")).toEqual(edgeRenderer);
+  expect(await resolveIn("browser", "react-dom/server")).toEqual({
+    id: `${reactDom}/server.browser.js`,
+  });
+  // Not `react-dom/static`: Next's table sends it to `static.browser`, a
+  // file its React does not have.
+  // A Server Component is not to render: Next's modules, as in Next.
+  expect(await resolveIn("rsc", "react-dom/server")).toEqual(edgeRenderer);
+  expect(await resolveIn("rsc", "react-dom/static")).toEqual({ id: `${reactDom}/static.edge.js` });
+});
+
 // What the plugin makes of a Vitest config, and says of it when a run starts.
 async function configure(config: Record<string, unknown>) {
   const plugin = vitestPluginNext().find(({ name }) => name === "vitest-plugin-rsc:next")!;
@@ -488,6 +558,57 @@ test("gives the server layers the package's module of Node.js, after Next's alia
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test("gives the rsc layer the ssr layer's contexts for Next's shared-runtime modules, as Next's build for Node.js does", async () => {
+  const plugins = vitestPluginNext();
+  const plugin = plugins.find(({ name }) => name === "vitest-plugin-rsc:next")!;
+  await (plugin.config as ConfigHook<Config>)({ root }, serve);
+  const resolverOf = (layer: string) => {
+    const resolver = plugins.find(
+      ({ name }) => name === `vitest-plugin-rsc:next-resolve:${layer}`,
+    )!;
+    const context = {
+      environment: { mode: "dev" },
+      resolve: async (source: string) => ({ id: source }),
+    };
+    return {
+      resolve: (source: string, importer: string) =>
+        (resolver.resolveId as (...args: unknown[]) => Promise<unknown>).call(
+          context,
+          source,
+          importer,
+          {},
+        ),
+      load: (id: string) => (resolver.load as (id: string) => string | undefined).call({}, id),
+    };
+  };
+  // `next/router` imports the context of the Pages Router, which React's
+  // server build cannot make: Next's module rule sends the import to the
+  // context of the one bundle of its server, `module.compiled`.
+  const router = path.join(nextDir, "dist/esm/client/router.js");
+  const contexts = "next/dist/esm/server/route-modules/app-page/vendored/contexts";
+  const rsc = resolverOf("rsc");
+  expect(await rsc.resolve("../shared/lib/router-context.shared-runtime", router)).toEqual({
+    id: `${contexts}/router-context.js`,
+  });
+  expect(await rsc.resolve("../shared/lib/app-router-context.shared-runtime", router)).toEqual({
+    id: `${contexts}/app-router-context.js`,
+  });
+  // That file reads the context off `module.compiled`: in the rsc layer the
+  // bridge to the ssr layer's route module, which has the contexts too.
+  const bridge = await rsc.resolve(
+    "../../module.compiled",
+    path.join(nextDir, contexts.slice("next/".length), "router-context.js"),
+  );
+  expect(bridge).toBe("\0vitest-plugin-rsc/next-bridge/ssr-app-page-module");
+  expect(rsc.load(bridge as string)).toContain("ssr.vendored.contexts");
+  // The ssr layer loads the route module, whose `contexts/entrypoints`
+  // imports the files: it keeps them.
+  const ssr = resolverOf("ssr");
+  expect(await ssr.resolve("../shared/lib/router-context.shared-runtime", router)).toEqual({
+    id: "next/dist/esm/shared/lib/router-context.shared-runtime.js",
+  });
 });
 
 test("gives the package's modules of Node.js each other, not a polyfill of Next to pre-bundle", async () => {

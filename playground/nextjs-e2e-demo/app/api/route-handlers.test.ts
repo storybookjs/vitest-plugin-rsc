@@ -228,6 +228,23 @@ test("runs after() of a page, with the request it belongs to", async () => {
   await expect.poll(() => auditLog).toEqual(["opened settings in nl"]);
 });
 
+test("runs after() of the proxy, with the request it belongs to", async () => {
+  auditLog.length = 0;
+
+  const response = await handleRequest("/proxy/after", { headers: { cookie: "who=ada" } });
+
+  expect(await response.json()).toEqual({ pong: true });
+  await expect.poll(() => auditLog).toEqual(["proxy after() read ada"]);
+});
+
+test("runs an after() that a promise passed to after() schedules, with its request", async () => {
+  auditLog.length = 0;
+
+  await handleRequest("/api/after-in-promise", { headers: { cookie: "who=ada" } });
+
+  await expect.poll(() => auditLog).toEqual(["late after() read ada"]);
+});
+
 test("does not let a request wait for an after() that does not end", async () => {
   // A response without a body ends on a timer, which the test has stopped.
   vi.useFakeTimers();

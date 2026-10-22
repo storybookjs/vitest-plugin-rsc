@@ -55,6 +55,21 @@ function inspect(value: unknown): string {
   if (typeof value === "string") return value;
   if (typeof value === "function") return `[Function: ${value.name || "anonymous"}]`;
   if (typeof value !== "object" || value === null) return String(value);
+  // A short list of strings and numbers on one line, as Node.js prints it:
+  // `[ 'a', 'b' ]`.
+  if (Array.isArray(value) && value.length <= 6) {
+    const items = value.map((item) =>
+      typeof item === "string"
+        ? item.includes("'")
+          ? JSON.stringify(item)
+          : `'${item}'`
+        : typeof item === "number" || typeof item === "boolean"
+          ? String(item)
+          : undefined,
+    );
+    const line = items.length === 0 ? "[]" : `[ ${items.join(", ")} ]`;
+    if (!items.includes(undefined) && line.length <= 72) return line;
+  }
   try {
     return JSON.stringify(value) ?? String(value);
   } catch {

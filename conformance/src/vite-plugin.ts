@@ -15,6 +15,7 @@ const shim = (file: string) => fileURLToPath(new URL(`../shim/${file}`, import.m
 const configId = "virtual:next-conformance/config";
 const testUtilsId = "\0next-conformance/next-test-utils";
 const stubPrefix = "\0next-conformance/stub/";
+const sandboxId = "\0next-conformance/development-sandbox";
 
 // A test file, or a module of `test/lib` that one imports.
 const isTestFile = (id: string) => /\.test\.[cm]?[jt]sx?$/.test(id.replace(/[?#].*$/, ""));
@@ -55,9 +56,15 @@ export function importedNames(code: string, source: string): string[] {
   return Array.from(names);
 }
 
+// What a builtin module of Node.js has that a tab has too, by its name.
+const inTab: Record<string, Record<string, string>> = {
+  "node:crypto": { randomUUID: "() => globalThis.crypto.randomUUID()" },
+};
+
 // A module that has nothing to offer a tab. Importing it is fine: a test file
 // imports what all of its tests need. Calling it is what cannot be done.
 function stubModule(source: string, names: string[]): string {
+  const own = inTab[source] ?? {};
   return [
     `import { unsupported } from ${JSON.stringify(shim("unsupported.ts"))};`,
     `const stub = (name) => new Proxy(function () {}, {`,
@@ -65,8 +72,13 @@ function stubModule(source: string, names: string[]): string {
     `  construct: () => unsupported(\`\${name} of ${source}: the test runs in a tab, not in Node.js\`),`,
     `  get: (target, property) => typeof property === "symbol" || property in target ? target[property] : stub(\`\${name}.\${property}\`),`,
     `});`,
-    ...names.map((name) => `export const ${name} = stub(${JSON.stringify(name)});`),
-    `export default stub("the default export");`,
+    ...names.map(
+      (name) => `export const ${name} = ${own[name] ?? `stub(${JSON.stringify(name)})`};`,
+    ),
+    // With them on the default export too: `crypto.randomUUID()`.
+    `export default Object.assign(stub("the default export"), { ${Object.entries(own)
+      .map(([name, value]) => `${name}: ${value}`)
+      .join(", ")} });`,
   ].join("\n");
 }
 
@@ -117,8 +129,12 @@ export type ConformanceOptions = {
   assumeInstalled?: string[];
   /** Options of `nextTestSetup()` that the runner has applied to the copy of the fixture. */
   prepared?: string[];
+  /** The values of the `next.config` of the copy, for a test's `nextConfig`. */
+  preparedConfig?: Record<string, unknown>;
   /** Another checkout of this repository, to run its plugin instead. */
   pluginCheckout?: string;
+  /** The directory of the app in the fixture: see `app` in src/fixtures.ts. */
+  app?: string;
 };
 
 export function conformance(options: ConformanceOptions): Plugin {
@@ -138,6 +154,8 @@ export function conformance(options: ConformanceOptions): Plugin {
     "node:path": "pathe",
     stream: shim("stream.ts"),
     "node:stream": shim("stream.ts"),
+    expect: shim("expect.ts"),
+    "escape-string-regexp": shim("escape-string-regexp.ts"),
   };
 
   return {
@@ -146,7 +164,10 @@ export function conformance(options: ConformanceOptions): Plugin {
     async resolveId(source, importer, resolveOptions) {
       if (source === configId) return `\0${configId}`;
       if (Object.hasOwn(aliases, source)) return aliases[source];
-      if (/^(\.\.\/)+lib\/next-test-utils$/.test(source)) return testUtilsId;
+      // The same modules by their path in Next's repository, from a test file
+      // in `test/e2e/app-dir/<fixture>`.
+      const fromLib = /^(?:\.\.\/)+lib\/([\w-]+)$/.exec(source)?.[1];
+      if (fromLib && Object.hasOwn(aliases, fromLib)) return aliases[fromLib];
 
       // The plugin of another checkout: its modules for the tab are the ones
       // that checkout resolves.
@@ -160,6 +181,16 @@ export function conformance(options: ConformanceOptions): Plugin {
       const fromTestLib = importer?.startsWith(options.nextTestLib);
       if (!importer || !(isTestFile(importer) || fromTestLib || importer.startsWith(shim(""))))
         return;
+      // A module of `test/lib` that a test file imports by its path in Next's
+      // repository, which is not where the copy of the fixture is.
+      const ofTestLib = /^(?:\.\.\/)+lib\/(.+)$/.exec(source);
+      if (ofTestLib && isTestFile(importer)) {
+        if (ofTestLib[1] === "development-sandbox") return sandboxId;
+        return this.resolve(path.join(options.nextTestLib, ofTestLib[1]!), importer, {
+          ...resolveOptions,
+          skipSelf: true,
+        });
+      }
 
       if (source.startsWith("e2e-utils/")) {
         return this.resolve(path.join(options.nextTestLib, source), importer, {
@@ -179,8 +210,12 @@ export function conformance(options: ConformanceOptions): Plugin {
       if (builtinModules.includes(builtin)) return `${stubPrefix}node:${builtin}`;
       if (source.startsWith(".") || source.startsWith("/") || source.startsWith("\0")) return;
       // A package that is not installed here: what Next's own test setup
-      // uses, like `playwright` or `http-proxy`.
-      const resolved = await this.resolve(source, importer, { ...resolveOptions, skipSelf: true });
+      // uses, like `playwright` or `http-proxy`. And the proxy server of
+      // Next's test mode, which a test starts in Node.js.
+      const isTestMode = source.startsWith("next/experimental/testmode/");
+      const resolved =
+        !isTestMode &&
+        (await this.resolve(source, importer, { ...resolveOptions, skipSelf: true }));
       if (resolved) return resolved;
       const names = importedNames(fs.readFileSync(importer.replace(/[?#].*$/, ""), "utf8"), source);
       return `${stubPrefix}${source}?names=${names.join(",")}`;
@@ -225,10 +260,19 @@ export function conformance(options: ConformanceOptions): Plugin {
         };
         return [
           `export const root = ${JSON.stringify(root)};`,
+          `export const app = ${JSON.stringify(options.app ?? "")};`,
           `export const mode = ${JSON.stringify(options.mode)};`,
           `export const packages = ${JSON.stringify(Array.from(packages).sort())};`,
           `export const prepared = ${JSON.stringify(options.prepared ?? [])};`,
+          `export const preparedConfig = ${JSON.stringify(options.preparedConfig ?? {})};`,
           `export const gateConfig = ${JSON.stringify(gateConfig, (_, value: unknown) => value ?? false)};`,
+        ].join("\n");
+      }
+      if (id === sandboxId) {
+        // A sandbox of `next dev` writes files into the app and starts it again.
+        return [
+          `import { unsupported } from ${JSON.stringify(shim("unsupported.ts"))};`,
+          `export const createSandbox = async () => unsupported("createSandbox() of development-sandbox: a change to the files of the app needs a new build, or a dev server");`,
         ].join("\n");
       }
       if (id === testUtilsId) {

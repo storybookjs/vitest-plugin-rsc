@@ -5,6 +5,8 @@ packages:
   - "!playground/**/fixtures/**"
   - "conformance"
 allowBuilds:
+  # The watcher of Sass's CLI, which the conformance runner does not use.
+  "@parcel/watcher": false
   # Not the download of Prisma's engines on every install: nextjs-db-recipes
   # needs them only for `prisma migrate diff`, as a Prisma schema changes.
   "@prisma/engines": false

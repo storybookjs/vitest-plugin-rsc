@@ -142,12 +142,31 @@ for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"] as const) {
 function copyFixture(fixture: Fixture): string {
   const root = path.join(work, "apps", fixture.id);
   fs.rmSync(root, { recursive: true, force: true });
-  fs.cpSync(path.join(checkout, fixture.dir), root, { recursive: true });
+  if (fixture.app) {
+    // The app, and the files next to the directories of the apps: the test
+    // files, and what they import.
+    fs.cpSync(path.join(checkout, fixture.dir, fixture.app), root, { recursive: true });
+    for (const entry of fs.readdirSync(path.join(checkout, fixture.dir), { withFileTypes: true })) {
+      if (entry.isFile())
+        fs.cpSync(path.join(entry.parentPath, entry.name), path.join(root, entry.name));
+    }
+  } else {
+    fs.cpSync(path.join(checkout, fixture.dir), root, { recursive: true });
+  }
   for (const file of fixture.prepared?.remove ?? []) {
     fs.rmSync(path.join(root, file), { recursive: true });
   }
+  for (const [file, content] of Object.entries(fixture.prepared?.write ?? {})) {
+    fs.writeFileSync(path.join(root, file), content);
+  }
   for (const test of fixture.tests) {
     if (!fs.existsSync(path.join(root, test))) throw new Error(`${fixture.dir} has no ${test}`);
+  }
+  // Before the runner's own `node_modules`, where the app looks for a package.
+  for (const [name, installedAs] of Object.entries(fixture.linked ?? {})) {
+    const link = path.join(root, "node_modules", name);
+    fs.mkdirSync(path.dirname(link), { recursive: true });
+    fs.symlinkSync(fs.realpathSync(path.join(here, "node_modules", installedAs)), link, "dir");
   }
   if (!fs.existsSync(path.join(root, "package.json"))) {
     fs.writeFileSync(
@@ -208,13 +227,17 @@ function runFixture(fixture: Fixture, isSecondRun: boolean): Promise<FixtureRun>
           `${process.env.NODE_OPTIONS ?? ""} --conditions=vitest-plugin-rsc-source`.trim(),
         NEXT_CONFORMANCE_ROOT: root,
         NEXT_CONFORMANCE_TESTS: JSON.stringify(fixture.tests),
+        NEXT_CONFORMANCE_APP: fixture.app ?? "",
         NEXT_CONFORMANCE_TEST_LIB: path.join(checkout, "test/lib"),
-        NEXT_CONFORMANCE_CACHE: path.join(work, "cache", fixture.id),
+        // One for each mode: each runs another build of Next and React,
+        // which Vite pre-bundles anew.
+        NEXT_CONFORMANCE_CACHE: path.join(work, "cache", options.mode, fixture.id),
         NEXT_CONFORMANCE_RESULT: resultFile,
         NEXT_CONFORMANCE_MODE: options.mode,
         NEXT_CONFORMANCE_TEST_TIMEOUT: String(testTimeout),
         NEXT_CONFORMANCE_ASSUME_INSTALLED: JSON.stringify(fixture.assumeInstalled ?? []),
         NEXT_CONFORMANCE_PREPARED: JSON.stringify(fixture.prepared?.options ?? []),
+        NEXT_CONFORMANCE_PREPARED_CONFIG: JSON.stringify(fixture.prepared?.nextConfig ?? {}),
         NEXT_CONFORMANCE_PLUGIN: pluginCheckout ?? "",
         NEXT_CONFORMANCE_PRINT: options.print ? "1" : "",
         CI: "1",

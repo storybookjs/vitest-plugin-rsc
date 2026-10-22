@@ -306,6 +306,65 @@ test("loads the page when the app navigates without its router", async () => {
   expect(window.location.pathname).toBe("/notes");
 });
 
+test("adds an entry to the history for a page that the app loads, which back() returns from", async () => {
+  await renderServer({ url: "/" });
+  await page.getByRole("link", { name: "All notes, the long way" }).click();
+  await expect.element(page.getByRole("heading", { name: "Notes" })).toBeVisible();
+
+  window.history.back();
+
+  await expect.element(page.getByRole("heading", { name: "Home" })).toBeVisible();
+  expect(window.location.pathname).toBe("/");
+});
+
+test("posts a form without a Server Action in the encoding of the form, which Next renders the page for", async () => {
+  await renderServer({ url: "/feedback" });
+
+  await page.getByRole("button", { name: "Send" }).click();
+
+  // As `multipart/form-data` Next would take it for a Server Action that is
+  // not there, and answer 400.
+  await expect.element(page.getByRole("heading", { name: "Home" })).toBeVisible();
+  expect(window.location.pathname + window.location.search).toBe("/");
+});
+
+test("runs the Server Action of a form that the browser posts itself, which names it in its fields", async () => {
+  await renderServer({ url: "/upload" });
+  const files = new DataTransfer();
+  files.items.add(new File(["posted"], "posted.txt", { type: "text/plain" }));
+  (page.getByLabelText("File").element() as HTMLInputElement).files = files.files;
+
+  // Not through React, as before the app has hydrated.
+  document.querySelector("form")!.submit();
+
+  await expect.poll(() => db.notes.get("posted.txt")?.body).toBe("posted");
+});
+
+test("answers a form that names a Server Action by an id that cannot be one with 400, as Next does", async () => {
+  const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+  const body = new FormData();
+  body.append("$ACTION_ID_123", "");
+
+  const response = await handleRequest("/upload", { method: "POST", body });
+
+  expect(response.status).toBe(400);
+  expect(await response.text()).toBe("Invalid Server Action request.");
+  expect(String(warn.mock.calls[0]?.[0])).toContain("Invalid Server Actions request.");
+});
+
+test("answers a form that names a Server Action the app does not have with 409, and logs its id", async () => {
+  const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+  const id = "0".repeat(42);
+  const body = new FormData();
+  body.append(`$ACTION_ID_${id}`, "");
+
+  const response = await handleRequest("/upload", { method: "POST", body });
+
+  expect(response.status).toBe(409);
+  expect(await response.text()).toBe("Server Action unavailable.");
+  expect(String(warn.mock.calls[0]?.[0])).toContain(`Failed to find Server Action "${id}"`);
+});
+
 test("loads the page again at a reload, which owns the document and its URL", async () => {
   await renderServer({ url: "/notes" });
   db.notes.set("7", { id: "7", title: "After the reload", body: "" });
@@ -501,6 +560,13 @@ test("keeps a spy on fetch that the test set in a browser context", async () => 
   expect(spy).toHaveBeenCalledOnce();
 });
 
+// On Node.js Next renders the page after a Server Action outside the
+// action's store, with `exit()`, so a redirect() in a component is one of the
+// render, which replaces the page, not one of the action. Here too: Next's
+// handler awaits the render inside the `exit()`, and the render starts there,
+// outside the store. The handler is compiled, and has the store back after
+// that `await`. See app/action-stores.test.tsx for what the action has after
+// it.
 test("replaces the page when a component redirects in the render after a Server Action", async () => {
   await renderServer({ url: "/members" });
   await expect.element(page.getByRole("heading", { name: "Members" })).toBeVisible();

@@ -1,4 +1,6 @@
-import { NextResponse, type NextRequest } from "next/server";
+import { cookies } from "next/headers";
+import { after, NextResponse, type NextRequest } from "next/server";
+import { audit } from "./app/lib/audit.ts";
 import { readByProxy, seenByProxy } from "./app/lib/proxy-log.ts";
 
 // What runs in front of the app for a request: app/routing.test.tsx.
@@ -20,7 +22,19 @@ export async function proxy(request: NextRequest) {
 
   // Answers the request itself.
   if (pathname === "/proxy/ping") return NextResponse.json({ pong: true });
+  // With a `Location` header that is no redirect: the status is not one.
+  if (pathname === "/proxy/located") {
+    return NextResponse.json({ pong: true }, { headers: { location: "https://example.com/ping" } });
+  }
   if (pathname === "/proxy/broken") throw new Error("The proxy is down");
+  // Does work after its response, which reads the request it belongs to:
+  // app/api/route-handlers.test.ts.
+  if (pathname === "/proxy/after") {
+    after(async () => {
+      audit(`proxy after() read ${(await cookies()).get("who")?.value ?? "no cookie"}`);
+    });
+    return NextResponse.json({ pong: true });
+  }
 
   // Serves another route at this URL.
   if (pathname.startsWith("/go/")) {

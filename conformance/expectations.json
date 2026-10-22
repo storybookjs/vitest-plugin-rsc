@@ -1,17 +1,5 @@
 {
   "reasons": {
-    "history-of-a-page-load": {
-      "category": "plugin-bug",
-      "text": "A page that the app loads itself, like a link to a path that is no route, replaces the entry of the history where a browser adds one. `back()` does not return to the page before it."
-    },
-    "form-post-keeps-tab-query": {
-      "category": "plugin-bug",
-      "text": "A form without a Server Action that the browser posts to `/` ends at `/?sessionId=…`: the page gets the query of the test's tab."
-    },
-    "proxy-location-header": {
-      "category": "plugin-bug",
-      "text": "A proxy that answers itself with a `Location` header and a status that is no redirect gets the not-found page. `responseToMiddlewareResult()` of `@next/routing` does not say that the proxy answered, so the request goes on to a route."
-    },
     "pages-router": {
       "category": "not-yet",
       "text": "A page or an API route of the Pages Router. The plugin runs the routes of `app/`."
@@ -19,30 +7,6 @@
     "prerendered-pages": {
       "category": "not-yet",
       "text": "A page that a build prerenders, like one with `generateStaticParams`. Next keeps it between two requests, and here every request renders its page."
-    },
-    "metadata-files": {
-      "category": "not-yet",
-      "text": "Metadata files: `favicon.ico`, `icon.png`, `opengraph-image`, `sitemap.ts`, `robots.txt`, `manifest.webmanifest`."
-    },
-    "font-preload": {
-      "category": "not-yet",
-      "text": "The `<link rel=\"preload\">` and `<link rel=\"preconnect\">` of `next/font`, which Next takes from a manifest of its build."
-    },
-    "react-development-build": {
-      "category": "not-yet",
-      "text": "A production build of React. The plugin runs React's development build: an error of the server reaches the client with its message, where production sends a digest and a minified message, and Strict Mode runs an effect twice."
-    },
-    "node-builtin": {
-      "category": "not-yet",
-      "text": "Server code that imports a builtin module of Node.js that has no stand-in here, like `node:timers/promises`."
-    },
-    "server-action-ids": {
-      "category": "not-yet",
-      "text": "A form without JavaScript for a Server Action that is not there, which names it in a `$ACTION_ID_` field. The server answers 409 for an id that cannot be one, where Next answers 400, and logs Next's error without the id."
-    },
-    "form-without-javascript": {
-      "category": "not-yet",
-      "text": "A form that the browser posts itself, not Next's router. The server does not look for the action in the form data."
     },
     "one-request-at-a-time": {
       "category": "not-yet",
@@ -64,7 +28,7 @@
     },
     "cli-output": {
       "category": "not-applicable",
-      "text": "Reads what the Next.js CLI prints: the table of routes of a build, or a warning when it starts."
+      "text": "Reads what the Next.js CLI prints: the table of routes of a build, a warning when it starts, or what Tailwind logs as the build compiles the CSS."
     },
     "playwright-page": {
       "category": "not-applicable",
@@ -78,7 +42,7 @@
     "node-in-test": {
       "category": "not-applicable",
       "text": "The test itself needs Node.js: it starts a server, or removes a directory.",
-      "match": "the test runs in a tab, not in Node\\.js|it starts a process, opens a socket or reads a build"
+      "match": "the test runs in a tab, not in Node\\.js|it starts a process, opens a socket or reads a build|__dirname is not defined"
     },
     "shared-history": {
       "category": "not-applicable",
@@ -91,25 +55,71 @@
     "changes-the-app": {
       "category": "not-applicable",
       "text": "Changes a file of the app, or builds or starts the app itself.",
-      "match": "needs a new build, or a dev server|runs the Next\\.js CLI itself"
-    },
-    "dev-overlay": {
-      "category": "not-applicable",
-      "text": "Reads Next's dev overlay, which only `next dev` has.",
-      "match": "Next's dev overlay"
+      "match": "needs a new build, or a dev server|runs the Next\\.js CLI itself|changes the app before it is built"
     },
     "dynamic-css-manifest": {
       "category": "not-yet",
       "text": "The CSS of a component of `next/dynamic`, which Next links from its manifest of dynamic imports, with `precedence=\"dynamic\"`, next to a preload of its JavaScript. Here it is a stylesheet of the segment that imports the component."
     },
-    "npm-packages": {
-      "category": "not-applicable",
-      "text": "The app needs an npm package that its test installs, and the runner does not: Sass, Lightning CSS, a CSS framework.",
-      "match": "the fixture needs npm packages that are not installed"
-    },
     "css-not-minified": {
+      "category": "not-yet",
+      "text": "Expects the CSS that Next's build minified. The run serves the CSS that Vite compiles, as it is."
+    },
+    "css-chunks": {
+      "category": "not-yet",
+      "text": "Counts the stylesheets of a page. Next's build puts the CSS files that a segment imports in one chunk. The run serves the CSS of the dev server, where each file is a stylesheet of its own."
+    },
+    "og-image-response": {
+      "category": "not-yet",
+      "text": "An image that `ImageResponse` of `next/og` renders. Next renders it with WebAssembly and a font of its own, which it reads from its own files with `node:fs`, and the server's disk here has no file of the project.",
+      "match": "Geist-Regular\\.ttf"
+    },
+    "streamed-to-prerendered": {
+      "category": "not-yet",
+      "text": "Expects the HTML of a page that Next's build prerenders. Here the page renders for the request, as `next start` renders a dynamic page: React sends the `<link rel=\"preconnect\">` of a font in the `Link` header, and a client navigation commits before the metadata that Next streams after the page."
+    },
+    "router-act": {
       "category": "not-applicable",
-      "text": "Expects the CSS that Next's build minified. Here it is the CSS that Vite compiles, as it is."
+      "text": "Uses `createRouterAct()` of Next's test library, which holds back the requests of the router and answers them with Playwright's `page.route()`.",
+      "match": "createRouterAct of router-act"
+    },
+    "another-app": {
+      "category": "not-applicable",
+      "text": "Asks for another app than the fixture: files of its own, or another `next.config`. The runner runs one app for a fixture, the fixture as it is or as `fixtures.ts` prepares it.",
+      "match": "builds the app out of files the test names|changes the app before it is built"
+    },
+    "dynamic-params": {
+      "category": "not-yet",
+      "text": "A path that `generateStaticParams` does not list, of a route with `dynamicParams = false`. Next answers 404 for it from the paths its build prerendered. Here no build lists them, and the page renders."
+    },
+    "not-a-page": {
+      "category": "not-yet",
+      "text": "A navigation of Next's router to a route handler that answers with JSON, which a browser shows in place of the app. The tab cannot leave the test, so the page stays, with an uncaught error."
+    },
+    "opens-a-response": {
+      "category": "not-yet",
+      "text": "Opens the response of a route handler that a browser shows as it is, like plain text or JSON. The plugin opens the pages of the app, and the test stays where it is.",
+      "match": "which is not a page to open"
+    },
+    "env-of-the-config": {
+      "category": "not-applicable",
+      "text": "Passes `env` to `nextTestSetup()` for `next.config` to read. The runner loads the config once, before the first test, so every `describe` gets the same app."
+    },
+    "server-error-log": {
+      "category": "not-applicable",
+      "text": "Expects only the log of a Server Component's error as `next start` prints it: after a `⨯`, without the frames of Next. The server logs it to the tab's console, with the stack of the browser, and the client's own log of the error is in the same console."
+    },
+    "cached-function-as-action": {
+      "category": "not-yet",
+      "text": "A `\"use cache\"` function that a Client Component gets, as a prop or by an import. Next's compiler makes such a function a Server Action as well, which the client calls. Here it is not one: React does not pass it to the client, and a Client Component that imports it runs its module in the browser."
+    },
+    "requests-in-turn": {
+      "category": "not-yet",
+      "text": "Two requests at once, which Next lets share the work of a cached function, or a request while an earlier one regenerates a stale entry in the background. The server handles one request at a time, and a request waits up to a second for the background work of the one before it."
+    },
+    "files-of-the-project": {
+      "category": "not-yet",
+      "text": "Server code that reads a file of the project with `node:fs`, like `./posts/first-post.txt`. The server's disk is in memory, and has no file of the project."
     }
   },
   "fixtures": {
@@ -118,9 +128,8 @@
       "failed": {}
     },
     "navigation": {
-      "passed": 41,
+      "passed": 42,
       "failed": {
-        "navigation.test.ts > app dir - navigation > query string > useParams identity between renders > should be stable in app": "react-development-build",
         "navigation.test.ts > app dir - navigation > query string > useParams identity between renders > should be stable in pages": "pages-router",
         "navigation.test.ts > app dir - navigation > redirect > components > should redirect to external url": "another-origin",
         "navigation.test.ts > app dir - navigation > redirect > components > should redirect to external url, initiating only once": "another-origin",
@@ -135,10 +144,8 @@
       }
     },
     "shallow-routing": {
-      "passed": 16,
-      "failed": {
-        "shallow-routing.test.ts > shallow-routing > back and forward > mpa navigation > should support setting data and then still support navigating back and forward": "history-of-a-page-load"
-      }
+      "passed": 17,
+      "failed": {}
     },
     "hooks": {
       "passed": 19,
@@ -160,29 +167,23 @@
       }
     },
     "actions": {
-      "passed": 58,
+      "passed": 64,
       "failed": {
         "app-action-form-state.test.ts > app-dir action useActionState > should support submitting form state without JS": "javascript-off",
-        "app-action-form-state.test.ts > app-dir action useActionState > should support hydrating the app from progressively enhanced form request": "form-without-javascript",
         "app-action-form-state.test.ts > app-dir action useActionState > should send the action to the provided permalink with form state when JS disabled": "javascript-off",
         "app-action-progressive-enhancement.test.ts > app-dir action progressive enhancement > should support formData and redirect without JS": "javascript-off",
         "app-action-progressive-enhancement.test.ts > app-dir action progressive enhancement > should support actions from client without JS": "javascript-off",
         "app-action-progressive-enhancement.test.ts > app-dir action progressive enhancement > should support headers and cookies without JS (runtime: edge)": "javascript-off",
         "app-action-progressive-enhancement.test.ts > app-dir action progressive enhancement > should support headers and cookies without JS (runtime: node)": "javascript-off",
         "app-action.test.ts > app-dir action handling > should output exportName and filename info in manifest": "build-output",
-        "app-action.test.ts > app-dir action handling > should report errors with bad inputs correctly": "react-development-build",
         "app-action.test.ts > app-dir action handling > should propagate errors from a `text/plain` response to an error boundary": "playwright-page",
         "app-action.test.ts > app-dir action handling > should trigger an error boundary for action responses with an invalid content-type": "playwright-page",
-        "app-action.test.ts > app-dir action handling > should error if server action arguments list is too long": "react-development-build",
         "app-action.test.ts > app-dir action handling > should support setting cookies when redirecting (no javascript)": "javascript-off",
         "app-action.test.ts > app-dir action handling > should replace current route when redirecting with type set to replace": "shared-history",
-        "app-action.test.ts > app-dir action handling > should not log errors for non-action form POSTs": "form-post-keeps-tab-query",
         "app-action.test.ts > app-dir action handling > should support notFound (javascript disabled)": "javascript-off",
-        "app-action.test.ts > app-dir action handling > should support hoc auth wrappers": "react-development-build",
         "app-action.test.ts > app-dir action handling > should not block navigation events while a server action is in flight": "one-request-at-a-time",
         "app-action.test.ts > app-dir action handling > should be possible to catch network errors": "playwright-page",
         "app-action.test.ts > app-dir action handling > should not expose action content in sourcemaps": "build-output",
-        "app-action.test.ts > app-dir action handling > Edge SSR > should return error response for hoc auth wrappers in edge runtime": "react-development-build",
         "app-action.test.ts > app-dir action handling > Edge SSR > should handle calls to redirect() with external URLs": "another-origin",
         "app-action.test.ts > app-dir action handling > fetch actions > should handle calls to redirect() with external URLs": "another-origin",
         "app-action.test.ts > app-dir action handling > fetch actions > should handle redirects to routes that provide an invalid RSC response": "playwright-page",
@@ -202,13 +203,9 @@
       "failed": {}
     },
     "actions-unrecognized": {
-      "passed": 14,
+      "passed": 18,
       "failed": {
-        "actions-unrecognized.test.ts > unrecognized server actions > should error and log a warning when submitting a server action with an unrecognized ID - nodejs > should reject an MPA action with a malformed ID": "server-action-ids",
-        "actions-unrecognized.test.ts > unrecognized server actions > should error and log a warning when submitting a server action with an unrecognized ID - nodejs > should reject an MPA action with a plausible but missing ID": "server-action-ids",
         "actions-unrecognized.test.ts > unrecognized server actions > should error and log a warning when submitting a server action with an unrecognized ID - nodejs > server action invoked via form - js disabled": "javascript-off",
-        "actions-unrecognized.test.ts > unrecognized server actions > should error and log a warning when submitting a server action with an unrecognized ID - edge > should reject an MPA action with a malformed ID": "server-action-ids",
-        "actions-unrecognized.test.ts > unrecognized server actions > should error and log a warning when submitting a server action with an unrecognized ID - edge > should reject an MPA action with a plausible but missing ID": "server-action-ids",
         "actions-unrecognized.test.ts > unrecognized server actions > should error and log a warning when submitting a server action with an unrecognized ID - edge > server action invoked via form - js disabled": "javascript-off"
       }
     },
@@ -254,49 +251,29 @@
       "failed": {}
     },
     "error-boundary-navigation": {
-      "passed": 6,
-      "failed": {
-        "index.test.ts > app dir - not found navigation > should allow navigating to a non-existent page": "history-of-a-page-load"
-      }
+      "passed": 7,
+      "failed": {}
     },
     "global-error__basic": {
-      "passed": 6,
-      "failed": {
-        "index.test.ts > app dir - global-error > should render global error for error in server components": "react-development-build",
-        "index.test.ts > app dir - global-error > should render global error when undefined is thrown in a server component": "react-development-build",
-        "index.test.ts > app dir - global-error > should render global error when null is thrown in a server component": "react-development-build",
-        "index.test.ts > app dir - global-error > should catch metadata error in global-error if no error boundary is presented": "react-development-build"
-      }
+      "passed": 10,
+      "failed": {}
     },
     "errors": {
-      "passed": 9,
+      "passed": 13,
       "failed": {
-        "index.test.ts > app-dir - errors > error component > should trigger error component when an error happens during server components rendering": "react-development-build",
-        "index.test.ts > app-dir - errors > error component > should preserve custom digests": "react-development-build",
-        "index.test.ts > app-dir - errors > error component > should trigger error component when undefined is thrown during server components rendering": "react-development-build",
-        "index.test.ts > app-dir - errors > error component > should trigger error component when null is thrown during server components rendering": "react-development-build",
-        "index.test.ts > app-dir - errors > error component > should trigger error component when a string is thrown during server components rendering": "react-development-build",
-        "index.test.ts > app-dir - errors > error component > should display error digest for error in server component with default error boundary": "react-development-build",
-        "index.test.ts > app-dir - errors > error component > retry > should recover Server Component error after retry": "react-development-build"
+        "index.test.ts > app-dir - errors > error component > should trigger error component when undefined is thrown during server components rendering": "server-error-log",
+        "index.test.ts > app-dir - errors > error component > should trigger error component when null is thrown during server components rendering": "server-error-log",
+        "index.test.ts > app-dir - errors > error component > should trigger error component when a string is thrown during server components rendering": "server-error-log"
       }
     },
     "metadata": {
-      "passed": 35,
+      "passed": 44,
       "failed": {
-        "metadata.test.ts > app dir - metadata > opengraph > should pick up opengraph-image and twitter-image as static metadata files": "metadata-files",
-        "metadata.test.ts > app dir - metadata > opengraph > should override file based images when opengraph-image and twitter-image specify images property": "metadata-files",
-        "metadata.test.ts > app dir - metadata > icons > should support basic complex descriptor icons field": "metadata-files",
-        "metadata.test.ts > app dir - metadata > icons > should support root level of favicon.ico": "metadata-files",
-        "metadata.test.ts > app dir - metadata > file based icons > should render icon and apple touch icon meta if their images are specified": "metadata-files",
-        "metadata.test.ts > app dir - metadata > file based icons > should not render if image file is not specified": "metadata-files",
-        "metadata.test.ts > app dir - metadata > static routes > should have /favicon.ico as route": "metadata-files",
-        "metadata.test.ts > app dir - metadata > static routes > should have icons as route": "metadata-files",
-        "metadata.test.ts > app dir - metadata > static routes > should support root dir robots.txt": "metadata-files",
-        "metadata.test.ts > app dir - metadata > static routes > should support sitemap.xml under every routes": "metadata-files",
-        "metadata.test.ts > app dir - metadata > static routes > should support static manifest.webmanifest": "metadata-files",
+        "metadata.test.ts > app dir - metadata > icons > should support root level of favicon.ico": "node-in-test",
         "metadata.test.ts > app dir - metadata > static routes > should build favicon.ico as a custom route": "build-output",
         "metadata.test.ts > app dir - metadata > static optimization > should build static files into static route": "build-output",
-        "metadata.test.ts > app dir - metadata > should not effect metadata images convention like files under pages directory": "pages-router"
+        "metadata.test.ts > app dir - metadata > should not effect metadata images convention like files under pages directory": "pages-router",
+        "metadata.test.ts > app dir - metadata > react cache > should have same title and page value when navigating": "prerendered-pages"
       }
     },
     "metadata-navigation": {
@@ -304,14 +281,12 @@
       "failed": {}
     },
     "next-font": {
-      "passed": 10,
+      "passed": 12,
       "failed": {
-        "next-font.test.ts > app dir - next/font > app dir - next-font > preload > should preload correctly with server components": "font-preload",
-        "next-font.test.ts > app dir - next/font > app dir - next-font > preconnect > should add preconnect when preloading is disabled in page": "font-preload",
-        "next-font.test.ts > app dir - next/font > app dir - next-font > preconnect > should add preconnect when preloading is disabled in layout": "font-preload",
-        "next-font.test.ts > app dir - next/font > app dir - next-font > preconnect > should add preconnect when preloading is disabled in component": "font-preload",
-        "next-font.test.ts > app dir - next/font > app dir - next-font > preconnect > should add preconnect when preloading is disabled in template": "font-preload",
-        "next-font.test.ts > app dir - next/font > app dir - next-font > navigation > should not have duplicate preload tags on navigation": "font-preload"
+        "next-font.test.ts > app dir - next/font > app dir - next-font > preconnect > should add preconnect when preloading is disabled in page": "streamed-to-prerendered",
+        "next-font.test.ts > app dir - next/font > app dir - next-font > preconnect > should add preconnect when preloading is disabled in layout": "streamed-to-prerendered",
+        "next-font.test.ts > app dir - next/font > app dir - next-font > preconnect > should add preconnect when preloading is disabled in component": "streamed-to-prerendered",
+        "next-font.test.ts > app dir - next/font > app dir - next-font > preconnect > should add preconnect when preloading is disabled in template": "streamed-to-prerendered"
       }
     },
     "next-image": {
@@ -337,7 +312,7 @@
       }
     },
     "app-middleware": {
-      "passed": 14,
+      "passed": 15,
       "failed": {
         "app-middleware.test.ts > app-dir with middleware > should warn when deprecated middleware file is used": "cli-output",
         "app-middleware.test.ts > app-dir with middleware > Mutate request headers for Serverless Functions > Adds new headers": "pages-router",
@@ -345,8 +320,7 @@
         "app-middleware.test.ts > app-dir with middleware > Mutate request headers for Serverless Functions > Updates headers": "pages-router",
         "app-middleware.test.ts > app-dir with middleware > Mutate request headers for Edge Functions > Adds new headers": "pages-router",
         "app-middleware.test.ts > app-dir with middleware > Mutate request headers for Edge Functions > Deletes headers": "pages-router",
-        "app-middleware.test.ts > app-dir with middleware > Mutate request headers for Edge Functions > Updates headers": "pages-router",
-        "app-middleware.test.ts > app-dir with middleware > should not incorrectly treat a Location header as a rewrite": "proxy-location-header"
+        "app-middleware.test.ts > app-dir with middleware > Mutate request headers for Edge Functions > Updates headers": "pages-router"
       }
     },
     "rewrites-redirects": {
@@ -371,10 +345,8 @@
       }
     },
     "app-css-pageextensions": {
-      "passed": 0,
-      "failed": {
-        "index.test.ts > app dir - css with pageextensions > css support with pageextensions > page in app directory with pageextention, css should work > should support global css inside layout": "npm-packages"
-      }
+      "passed": 1,
+      "failed": {}
     },
     "app-inline-css": {
       "passed": 6,
@@ -431,9 +403,9 @@
     "experimental-lightningcss-features": {
       "passed": 0,
       "failed": {
-        "experimental-lightningcss-features.test.ts > experimental-lightningcss-features > include > should transpile light-dark() when included in lightningCssFeatures": "npm-packages",
-        "experimental-lightningcss-features.test.ts > experimental-lightningcss-features > custom-media-queries > should substitute @custom-media when custom-media-queries is included": "npm-packages",
-        "experimental-lightningcss-features.test.ts > experimental-lightningcss-features > exclude > should preserve light-dark() when excluded from lightningCssFeatures": "npm-packages"
+        "experimental-lightningcss-features.test.ts > experimental-lightningcss-features > include > should transpile light-dark() when included in lightningCssFeatures": "changes-the-app",
+        "experimental-lightningcss-features.test.ts > experimental-lightningcss-features > custom-media-queries > should substitute @custom-media when custom-media-queries is included": "changes-the-app",
+        "experimental-lightningcss-features.test.ts > experimental-lightningcss-features > exclude > should preserve light-dark() when excluded from lightningCssFeatures": "changes-the-app"
       }
     },
     "initial-css-not-found": {
@@ -453,9 +425,774 @@
       "failed": {}
     },
     "random-in-sass": {
+      "passed": 1,
+      "failed": {}
+    },
+    "app-css": {
+      "passed": 32,
+      "failed": {
+        "index.test.ts > app dir - css > css support > special entries > should include css imported in loading.js": "css-chunks",
+        "index.test.ts > app dir - css > css support > chunks > should bundle css resources into chunks": "css-chunks",
+        "index.test.ts > app dir - css > pages dir > should include css modules and global css after page transition": "pages-router"
+      }
+    },
+    "css-modules-rsc-postcss": {
+      "passed": 1,
+      "failed": {}
+    },
+    "no-double-tailwind-execution": {
       "passed": 0,
       "failed": {
-        "random-in-sass.test.ts > random-in-sass > should work using browser": "npm-packages"
+        "no-double-tailwind-execution.test.ts > no-double-tailwind-execution > should run tailwind only once initially and per change": "cli-output"
+      }
+    },
+    "scss__scss-mixins": {
+      "passed": 1,
+      "failed": {}
+    },
+    "tailwind-css": {
+      "passed": 1,
+      "failed": {}
+    },
+    "metadata-dynamic-routes": {
+      "passed": 15,
+      "failed": {
+        "index.test.ts > app dir - metadata dynamic routes > sitemap > should optimize routes without multiple generation API as static routes": "build-output",
+        "index.test.ts > app dir - metadata dynamic routes > sitemap > should generate static paths of dynamic sitemap in production": "build-output",
+        "index.test.ts > app dir - metadata dynamic routes > social image routes > should render og image with opengraph-image dynamic routes": "og-image-response",
+        "index.test.ts > app dir - metadata dynamic routes > social image routes > should render og image with twitter-image dynamic routes": "og-image-response",
+        "index.test.ts > app dir - metadata dynamic routes > social image routes > should support params as argument in dynamic routes": "og-image-response",
+        "index.test.ts > app dir - metadata dynamic routes > icon image routes > should render icon with dynamic routes": "og-image-response",
+        "index.test.ts > app dir - metadata dynamic routes > icon image routes > should render apple icon with dynamic routes": "og-image-response",
+        "index.test.ts > app dir - metadata dynamic routes > route segment config > should generate dynamic route if dynamic config is force-dynamic": "build-output",
+        "index.test.ts > app dir - metadata dynamic routes > should generate unique path for image routes under group routes": "og-image-response",
+        "index.test.ts > app dir - metadata dynamic routes > should support edge runtime of image routes": "build-output",
+        "index.test.ts > app dir - metadata dynamic routes > should include default og font files in file trace": "build-output",
+        "index.test.ts > app dir - metadata dynamic routes > should contain generated routes in prerender manifest": "build-output"
+      }
+    },
+    "metadata-dynamic-routes-async-deps": {
+      "passed": 1,
+      "failed": {
+        "index.test.ts > app dir - metadata dynamic routes with async deps > should serve the opengraph-image route as a valid image": "og-image-response"
+      }
+    },
+    "metadata-font": {
+      "passed": 0,
+      "failed": {
+        "metadata-font.test.ts > app dir - metadata font > should handle custom fonts in both edge and nodejs runtime": "og-image-response"
+      }
+    },
+    "metadata-icons-parallel-routes": {
+      "passed": 5,
+      "failed": {}
+    },
+    "metadata-image-files": {
+      "passed": 1,
+      "failed": {}
+    },
+    "metadata-json-manifest": {
+      "passed": 1,
+      "failed": {}
+    },
+    "metadata-non-standard-custom-routes": {
+      "passed": 1,
+      "failed": {}
+    },
+    "metadata-route-like-pages": {
+      "passed": 2,
+      "failed": {}
+    },
+    "metadata-static-file": {
+      "passed": 6,
+      "failed": {
+        "metadata-static-file-dynamic-route.test.ts > metadata-files-static-output-dynamic-route > should serve static files when requested with placeholder for dynamic page": "node-in-test",
+        "metadata-static-file-dynamic-route.test.ts > metadata-files-static-output-dynamic-route > should display static metadata files with \"-\" placeholder in build output": "cli-output",
+        "metadata-static-file-group-route.test.ts > metadata-files-static-output-group-route > should serve static files when requested to its route for group page": "node-in-test",
+        "metadata-static-file-intercepting-route.test.ts > metadata-files-static-output-intercepting-route > should serve static files when requested to its route for intercepting page": "node-in-test",
+        "metadata-static-file-parallel-route.test.ts > metadata-files-static-output-parallel-route > should serve static files when requested to its route for parallel slot page": "node-in-test",
+        "metadata-static-file-root-route.test.ts > metadata-files-static-output-root-route > should serve static files when requested to its route": "node-in-test",
+        "metadata-static-file-static-route.test.ts > metadata-files-static-output-static-route > should serve static files when requested to its route for static page": "node-in-test"
+      }
+    },
+    "metadata-svg-icon": {
+      "passed": 1,
+      "failed": {}
+    },
+    "sitemap-group": {
+      "passed": 2,
+      "failed": {}
+    },
+    "navigation-focus": {
+      "passed": 5,
+      "failed": {}
+    },
+    "navigation-layout-suspense": {
+      "passed": 1,
+      "failed": {}
+    },
+    "navigation-redirect-import": {
+      "passed": 1,
+      "failed": {}
+    },
+    "navigation-with-queued-actions": {
+      "passed": 1,
+      "failed": {}
+    },
+    "router-autoscroll": {
+      "passed": 20,
+      "failed": {}
+    },
+    "root-layout": {
+      "passed": 7,
+      "failed": {
+        "root-layout.test.ts > app-dir root layout > Should do a mpa navigation when switching root layout > should work with static routes": "dynamic-params"
+      }
+    },
+    "root-layout-redirect": {
+      "passed": 1,
+      "failed": {}
+    },
+    "root-layout-render-once": {
+      "passed": 1,
+      "failed": {}
+    },
+    "app-edge-root-layout": {
+      "passed": 1,
+      "failed": {
+        "index.test.ts > app-dir edge runtime root layout > should mark static contain metadata routes as edge functions": "build-output"
+      }
+    },
+    "concurrent-navigations": {
+      "passed": 1,
+      "failed": {
+        "mismatching-prefetch.test.ts > mismatching prefetch > recovers when a navigation rewrites to a different route than the one that was prefetched": "router-act"
+      }
+    },
+    "layout-params": {
+      "passed": 6,
+      "failed": {}
+    },
+    "use-selected-layout-segment-s": {
+      "passed": 8,
+      "failed": {}
+    },
+    "dynamic-href": {
+      "passed": 2,
+      "failed": {}
+    },
+    "rsc-redirect": {
+      "passed": 2,
+      "failed": {}
+    },
+    "search-params-react-key": {
+      "passed": 1,
+      "failed": {}
+    },
+    "searchparams-reuse-loading": {
+      "passed": 5,
+      "failed": {
+        "searchparams-reuse-loading.test.ts > searchparams-reuse-loading > when aliasing is skipped > should work for route handlers": "not-a-page",
+        "searchparams-reuse-loading.test.ts > searchparams-reuse-loading > when aliasing is skipped > should work for navigating to pages dir": "pages-router",
+        "searchparams-reuse-loading.test.ts > searchparams-reuse-loading > Without Middleware > should correctly return different RSC data for full prefetches with different searchParam values": "playwright-page",
+        "searchparams-reuse-loading.test.ts > searchparams-reuse-loading > With Middleware > should correctly return different RSC data for full prefetches with different searchParam values": "playwright-page",
+        "searchparams-reuse-loading.test.ts > searchparams-reuse-loading > should re-use loading from \"full\" prefetch for param-full URL when navigating to param-less route": "playwright-page",
+        "searchparams-reuse-loading.test.ts > searchparams-reuse-loading > should re-use loading from \"full\" prefetch for param-less URL when navigating to param-full route": "playwright-page",
+        "searchparams-reuse-loading.test.ts > searchparams-reuse-loading > should re-use loading from \"full\" prefetch for param-full URL when navigating to param-full route": "playwright-page"
+      }
+    },
+    "searchparams-static-bailout": {
+      "passed": 3,
+      "failed": {
+        "searchparams-static-bailout.test.ts > searchparams-static-bailout > server component > should not bailout when not using searchParams": "prerendered-pages",
+        "searchparams-static-bailout.test.ts > searchparams-static-bailout > client component > should not bailout when not using searchParams": "prerendered-pages"
+      }
+    },
+    "multi-value-search-params-stale": {
+      "passed": 1,
+      "failed": {}
+    },
+    "rewrite-with-search-params": {
+      "passed": 0,
+      "failed": {
+        "rewrite-with-search-params.test.ts > rewrite-with-search-params > should not contain params in search params after rewrite": "node-in-test"
+      }
+    },
+    "interception-dynamic-segment": {
+      "passed": 4,
+      "failed": {
+        "interception-dynamic-segment.test.ts > interception-dynamic-segment > should correctly prerender segments with generateStaticParams": "cli-output",
+        "interception-dynamic-segment.test.ts > interception-dynamic-segment > should prerender a dynamic intercepted route": "cli-output",
+        "interception-dynamic-segment.test.ts > interception-dynamic-segment > Default.tsx injection validation (no 404s allowed) > should not render a 404 for the intercepted route with dynamic segments": "router-act",
+        "interception-dynamic-segment.test.ts > interception-dynamic-segment > Default.tsx injection validation (no 404s allowed) > should navigate to /simple-page without 404 (no parallel routes)": "router-act",
+        "interception-dynamic-segment.test.ts > interception-dynamic-segment > Default.tsx injection validation (no 404s allowed) > should navigate to /has-page without 404 (page fills children)": "router-act",
+        "interception-dynamic-segment.test.ts > interception-dynamic-segment > Default.tsx injection validation (no 404s allowed) > should navigate to /no-parallel-routes/deeper without 404": "router-act",
+        "interception-dynamic-segment.test.ts > interception-dynamic-segment > Default.tsx injection validation (no 404s allowed) > should navigate to /has-both without 404 (has both @sidebar and page)": "router-act",
+        "interception-dynamic-segment.test.ts > interception-dynamic-segment > Default.tsx injection validation (no 404s allowed) > should retain named host slots instead of rendering their defaults": "router-act",
+        "interception-dynamic-segment.test.ts > interception-dynamic-segment > Default.tsx injection validation (no 404s allowed) > should retain named host slots for an interception catch-all": "router-act",
+        "interception-dynamic-segment.test.ts > interception-dynamic-segment > Default.tsx injection validation (no 404s allowed) > should send and render a real default for a newly entered slot owner": "router-act",
+        "interception-dynamic-segment.test.ts > interception-dynamic-segment > Default.tsx injection validation (no 404s allowed) > should omit undeclared children and preserve parent state": "router-act",
+        "interception-dynamic-segment.test.ts > interception-dynamic-segment > Default.tsx injection validation (no 404s allowed) > should navigate to /test-nested/deeper without 404": "router-act",
+        "interception-dynamic-segment.test.ts > interception-dynamic-segment > Default.tsx injection validation (no 404s allowed) > should navigate to /explicit-layout/deeper without 404": "router-act",
+        "interception-dynamic-segment.test.ts > interception-dynamic-segment > Default.tsx injection validation (no 404s allowed) > should handle repeated interceptions without 404": "router-act",
+        "interception-dynamic-segment.test.ts > interception-dynamic-segment > Default.tsx injection validation (no 404s allowed) > should navigate between different interception routes without 404": "router-act"
+      }
+    },
+    "interception-dynamic-segment-middleware": {
+      "passed": 4,
+      "failed": {}
+    },
+    "interception-dynamic-single-segment": {
+      "passed": 9,
+      "failed": {}
+    },
+    "interception-middleware-rewrite": {
+      "passed": 3,
+      "failed": {}
+    },
+    "interception-route-prefetch-cache": {
+      "passed": 1,
+      "failed": {
+        "interception-route-prefetch-cache.test.ts > interception-route-prefetch-cache > runtime = edge > should render the correct interception when two distinct layouts share the same path structure": "another-app"
+      }
+    },
+    "interception-routes-multiple-catchall": {
+      "passed": 5,
+      "failed": {}
+    },
+    "interception-routes-root-catchall": {
+      "passed": 2,
+      "failed": {}
+    },
+    "interception-segments-two-levels-above": {
+      "passed": 3,
+      "failed": {}
+    },
+    "dynamic-interception-route-revalidate": {
+      "passed": 1,
+      "failed": {}
+    },
+    "parallel-routes-and-interception": {
+      "passed": 26,
+      "failed": {
+        "parallel-routes-and-interception.test.ts > parallel-routes-and-interception (trailingSlash: true) > parallel routes > should support parallel route tab bars": "another-app",
+        "parallel-routes-and-interception.test.ts > parallel-routes-and-interception (trailingSlash: true) > parallel routes > should match parallel routes": "another-app",
+        "parallel-routes-and-interception.test.ts > parallel-routes-and-interception (trailingSlash: true) > parallel routes > should match parallel routes in route groups": "another-app",
+        "parallel-routes-and-interception.test.ts > parallel-routes-and-interception (trailingSlash: true) > parallel routes > should throw a 404 when no matching parallel route is found": "another-app",
+        "parallel-routes-and-interception.test.ts > parallel-routes-and-interception (trailingSlash: true) > parallel routes > should render nested parallel routes": "another-app",
+        "parallel-routes-and-interception.test.ts > parallel-routes-and-interception (trailingSlash: true) > parallel routes > should support layout files in parallel routes": "another-app",
+        "parallel-routes-and-interception.test.ts > parallel-routes-and-interception (trailingSlash: true) > parallel routes > should only scroll to the parallel route that was navigated to": "another-app",
+        "parallel-routes-and-interception.test.ts > parallel-routes-and-interception (trailingSlash: true) > parallel routes > should apply the catch-all route to the parallel route if no matching route is found": "another-app",
+        "parallel-routes-and-interception.test.ts > parallel-routes-and-interception (trailingSlash: true) > parallel routes > should match the catch-all routes of the more specific path, if there is more than one catch-all route": "another-app",
+        "parallel-routes-and-interception.test.ts > parallel-routes-and-interception (trailingSlash: true) > parallel routes > should navigate with a link with prefetch=false": "another-app",
+        "parallel-routes-and-interception.test.ts > parallel-routes-and-interception (trailingSlash: true) > parallel routes > should display all parallel route params with useParams": "another-app",
+        "parallel-routes-and-interception.test.ts > parallel-routes-and-interception (trailingSlash: true) > parallel routes > should load CSS for a default page that exports another page": "another-app",
+        "parallel-routes-and-interception.test.ts > parallel-routes-and-interception (trailingSlash: true) > parallel routes > should handle a loading state": "another-app",
+        "parallel-routes-and-interception.test.ts > parallel-routes-and-interception (trailingSlash: true) > route intercepting with dynamic routes > should render intercepted route": "another-app",
+        "parallel-routes-and-interception.test.ts > parallel-routes-and-interception (trailingSlash: true) > route intercepting with prerendered dynamic routes  > should render intercepted route": "another-app",
+        "parallel-routes-and-interception.test.ts > parallel-routes-and-interception (trailingSlash: true) > route intercepting with dynamic optional catch-all routes > should render intercepted route": "another-app",
+        "parallel-routes-and-interception.test.ts > parallel-routes-and-interception (trailingSlash: true) > route intercepting with dynamic catch-all routes > should render intercepted route": "another-app",
+        "parallel-routes-and-interception.test.ts > parallel-routes-and-interception (trailingSlash: true) > route intercepting > should render intercepted route": "another-app",
+        "parallel-routes-and-interception.test.ts > parallel-routes-and-interception (trailingSlash: true) > route intercepting > should render an intercepted route from a slot": "another-app",
+        "parallel-routes-and-interception.test.ts > parallel-routes-and-interception (trailingSlash: true) > route intercepting > should render an intercepted route at the top level from a nested path": "another-app",
+        "parallel-routes-and-interception.test.ts > parallel-routes-and-interception (trailingSlash: true) > route intercepting > should render intercepted route from a nested route": "another-app",
+        "parallel-routes-and-interception.test.ts > parallel-routes-and-interception (trailingSlash: true) > route intercepting > should re-render the layout on the server when it had a default child route": "another-app",
+        "parallel-routes-and-interception.test.ts > parallel-routes-and-interception (trailingSlash: true) > route intercepting > should render modal when paired with parallel routes": "another-app",
+        "parallel-routes-and-interception.test.ts > parallel-routes-and-interception (trailingSlash: true) > route intercepting > should support intercepting with beforeFiles rewrites": "another-app",
+        "parallel-routes-and-interception.test.ts > parallel-routes-and-interception (trailingSlash: true) > route intercepting > should support intercepting local dynamic sibling routes": "another-app",
+        "parallel-routes-and-interception.test.ts > parallel-routes-and-interception (trailingSlash: true) > route intercepting > should intercept on routes that contain hyphenated/special dynamic params": "another-app",
+        "parallel-routes-and-interception.test.ts > parallel-routes-and-interception (trailingSlash: true) > route intercepting > should not have /default paths in the prerender manifest": "build-output",
+        "parallel-routes-and-interception.test.ts > parallel-routes-and-interception (trailingSlash: false) > route intercepting > should not have /default paths in the prerender manifest": "build-output",
+        "parallel-routes-and-interception.test.ts > parallel-routes-and-interception-conflicting-pages > should gracefully handle when two page segments match the `children` parallel slot": "another-app"
+      }
+    },
+    "parallel-routes-and-interception-basepath": {
+      "passed": 2,
+      "failed": {}
+    },
+    "parallel-routes-and-interception-catchall": {
+      "passed": 1,
+      "failed": {}
+    },
+    "parallel-routes-and-interception-from-root": {
+      "passed": 1,
+      "failed": {
+        "parallel-routes-and-interception-from-root.test.ts > parallel-routes-and-interception-from-root, collapseAdapterRoutes: false > should interpolate [locale] in \"/[locale]/example/(...)[locale]/intercepted\"": "another-app"
+      }
+    },
+    "parallel-routes-and-interception-nested-dynamic-routes": {
+      "passed": 1,
+      "failed": {}
+    },
+    "not-found__basic": {
+      "passed": 7,
+      "failed": {
+        "index.test.ts > app dir - not-found - basic > should include not found client reference manifest in the file trace": "build-output",
+        "index.test.ts > app dir - not-found - basic > should use root not-found content for 404 html": "build-output",
+        "index.test.ts > app dir - not-found - basic > with default runtime > should create the 404 mapping and copy the file to pages": "build-output",
+        "index.test.ts > app dir - not-found - basic > with runtime = edge > should return 404 status if notFound() is called in shell": "changes-the-app",
+        "index.test.ts > app dir - not-found - basic > with runtime = edge > should use the not-found page for non-matching routes": "changes-the-app",
+        "index.test.ts > app dir - not-found - basic > with runtime = edge > should match dynamic route not-found boundary correctly": "changes-the-app",
+        "index.test.ts > app dir - not-found - basic > with runtime = edge > should escalate notFound to parent layout if no not-found boundary present in current layer": "changes-the-app"
+      }
+    },
+    "not-found__conflict-route": {
+      "passed": 2,
+      "failed": {
+        "index.test.ts > app dir - not-found - conflict route > with edge runtime > should use the not-found page for non-matching routes": "another-app",
+        "index.test.ts > app dir - not-found - conflict route > with edge runtime > should allow to have a valid /not-found route": "another-app"
+      }
+    },
+    "not-found__css-precedence": {
+      "passed": 1,
+      "failed": {}
+    },
+    "not-found__default": {
+      "passed": 1,
+      "failed": {
+        "default.test.ts > app dir - not-found - default > should contain noindex contain in the page": "build-output"
+      }
+    },
+    "not-found__group-route": {
+      "passed": 1,
+      "failed": {
+        "index.test.ts > app dir - not-found - group route > with edge runtime > should use the not-found page under group routes": "another-app"
+      }
+    },
+    "not-found__group-route-root-not-found": {
+      "passed": 2,
+      "failed": {}
+    },
+    "not-found-non-document": {
+      "passed": 6,
+      "failed": {}
+    },
+    "not-found-non-document-dynamic": {
+      "passed": 4,
+      "failed": {}
+    },
+    "not-found-with-layout-and-group-not-found": {
+      "passed": 1,
+      "failed": {}
+    },
+    "not-found-with-nested-layouts": {
+      "passed": 1,
+      "failed": {}
+    },
+    "prefetching-not-found": {
+      "passed": 1,
+      "failed": {}
+    },
+    "global-not-found__basic": {
+      "passed": 3,
+      "failed": {}
+    },
+    "global-not-found__both-present": {
+      "passed": 2,
+      "failed": {}
+    },
+    "global-not-found__cache-components": {
+      "passed": 2,
+      "failed": {}
+    },
+    "global-not-found__css": {
+      "passed": 1,
+      "failed": {}
+    },
+    "global-not-found__metadata": {
+      "passed": 1,
+      "failed": {}
+    },
+    "global-not-found__no-root-layout": {
+      "passed": 2,
+      "failed": {}
+    },
+    "global-not-found__not-present": {
+      "passed": 2,
+      "failed": {}
+    },
+    "mdx-font-preload": {
+      "passed": 3,
+      "failed": {}
+    },
+    "forbidden__basic": {
+      "passed": 2,
+      "failed": {}
+    },
+    "forbidden__default": {
+      "passed": 3,
+      "failed": {}
+    },
+    "unauthorized__basic": {
+      "passed": 2,
+      "failed": {}
+    },
+    "unauthorized__default": {
+      "passed": 3,
+      "failed": {}
+    },
+    "draft-mode": {
+      "passed": 20,
+      "failed": {
+        "draft-mode.test.ts > app dir - draft mode > in nodejs runtime > should not generate rand when draft mode disabled during next start": "prerendered-pages"
+      }
+    },
+    "draft-mode-middleware": {
+      "passed": 1,
+      "failed": {
+        "draft-mode-middleware.test.ts > app-dir - draft-mode-middleware > should be able to disable draft mode with middleware present": "opens-a-response"
+      }
+    },
+    "set-cookies": {
+      "passed": 2,
+      "failed": {
+        "set-cookies.test.ts > set-cookies > for /pages > for edge runtime > should set two set-cookie headers": "pages-router",
+        "set-cookies.test.ts > set-cookies > for /pages > for experimental-edge runtime > should set two set-cookie headers": "pages-router",
+        "set-cookies.test.ts > set-cookies > for /pages > for node runtime > should set two set-cookie headers": "pages-router"
+      }
+    },
+    "dynamic-requests": {
+      "passed": 2,
+      "failed": {}
+    },
+    "headers-static-bailout": {
+      "passed": 1,
+      "failed": {
+        "headers-static-bailout.test.ts > headers-static-bailout > should not bailout when not using headers": "prerendered-pages",
+        "headers-static-bailout.test.ts > headers-static-bailout > it provides a helpful link in case static generation bailout is uncaught": "changes-the-app"
+      }
+    },
+    "x-forwarded-headers": {
+      "passed": 2,
+      "failed": {
+        "x-forwarded-headers.test.ts > x-forwarded-headers > host header exists > should include x-forwarded-* headers relative to host": "node-in-test",
+        "x-forwarded-headers.test.ts > x-forwarded-headers > already assigned > should not override existing x-forwarded-* headers": "node-in-test"
+      }
+    },
+    "server-action-headers-redirect": {
+      "passed": 1,
+      "failed": {}
+    },
+    "custom-cache-control": {
+      "passed": 7,
+      "failed": {
+        "custom-cache-control.test.ts > custom-cache-control > should have default cache-control for app-ssg another": "prerendered-pages",
+        "custom-cache-control.test.ts > custom-cache-control > should have default cache-control for pages-ssg another": "pages-router"
+      }
+    },
+    "react-max-headers-length": {
+      "passed": 1,
+      "failed": {
+        "react-max-headers-length.test.ts > react-max-headers-length > reactMaxHeadersLength = 0 > should respect reactMaxHeadersLength": "env-of-the-config",
+        "react-max-headers-length.test.ts > react-max-headers-length > reactMaxHeadersLength = 400 > should respect reactMaxHeadersLength": "env-of-the-config",
+        "react-max-headers-length.test.ts > react-max-headers-length > reactMaxHeadersLength = 10000 > should respect reactMaxHeadersLength": "env-of-the-config"
+      }
+    },
+    "next-after-app-api-usage": {
+      "passed": 22,
+      "failed": {
+        "index.test.ts > nextjs APIs in after() > request APIs inside after() > cannot be called in a prerendered page > with `dynamic = \"error\"`": "prerendered-pages",
+        "index.test.ts > nextjs APIs in after() > request APIs inside after() > cannot be called in a prerendered page > with `dynamic = \"force-static\"`": "prerendered-pages",
+        "index.test.ts > nextjs APIs in after() > request APIs inside after() > can be called in a prerendered route handler with `dynamic = \"force-static\"`": "prerendered-pages",
+        "index.test.ts > nextjs APIs in after() > request APIs inside after() > can be called in a prerendered route handler with `dynamic = \"error\" (but throw, because dynamic should error)`": "prerendered-pages",
+        "index.test.ts > nextjs APIs in after() > draftMode status is readable, but cannot be changed > static page": "prerendered-pages",
+        "index.test.ts > nextjs APIs in after() > draftMode status is readable, but cannot be changed > static route handler": "prerendered-pages"
+      }
+    },
+    "revalidate-tag-in-after": {
+      "passed": 1,
+      "failed": {}
+    },
+    "rsc-basic": {
+      "passed": 36,
+      "failed": {
+        "rsc-basic.test.ts > app dir - rsc basics > next internal shared context > should not error if just load next/navigation module in pages/api": "pages-router",
+        "rsc-basic.test.ts > app dir - rsc basics > should not apply rsc syntax checks in pages/api": "pages-router",
+        "rsc-basic.test.ts > app dir - rsc basics > should not use bundled react for pages with app": "pages-router",
+        "rsc-basic.test.ts > app dir - rsc basics > should generate edge SSR manifests for Node.js": "node-in-test"
+      }
+    },
+    "use-server-inserted-html": {
+      "passed": 3,
+      "failed": {}
+    },
+    "next-after-app": {
+      "passed": 26,
+      "failed": {
+        "index.test.ts > after() in nodejs runtime > only runs callbacks after the response is fully sent": "node-in-test",
+        "index.test.ts > after() in nodejs runtime > uses waitUntil from request context if available > in a page": "changes-the-app",
+        "index.test.ts > after() in nodejs runtime > uses waitUntil from request context if available > in a route handler": "changes-the-app",
+        "index.test.ts > after() in nodejs runtime > uses waitUntil from request context if available > in middleware": "changes-the-app",
+        "index.test.ts > after() in edge runtime > only runs callbacks after the response is fully sent": "node-in-test",
+        "index.test.ts > after() in edge runtime > uses waitUntil from request context if available > in a page": "changes-the-app",
+        "index.test.ts > after() in edge runtime > uses waitUntil from request context if available > in a route handler": "changes-the-app",
+        "index.test.ts > after() in edge runtime > uses waitUntil from request context if available > in middleware": "changes-the-app"
+      }
+    },
+    "ppr-root-param-fallback": {
+      "passed": 0,
+      "failed": {
+        "ppr-root-param-fallback.test.ts > ppr-root-param-fallback > should have use-cache content in fallback shells for all pregenerated locales": "prerendered-pages"
+      }
+    },
+    "ppr-root-param-rsc-fallback": {
+      "passed": 2,
+      "failed": {}
+    },
+    "ppr-history-replace-state": {
+      "passed": 1,
+      "failed": {}
+    },
+    "segment-cache__no-prefetch": {
+      "passed": 1,
+      "failed": {}
+    },
+    "segment-cache__mpa-navigations": {
+      "passed": 2,
+      "failed": {}
+    },
+    "segment-cache__prefetch-partial-rsc": {
+      "passed": 1,
+      "failed": {}
+    },
+    "segment-cache__stale-search-params-on-replace-regression": {
+      "passed": 1,
+      "failed": {}
+    },
+    "dynamic-data__main": {
+      "passed": 3,
+      "failed": {
+        "dynamic-data.test.ts > dynamic-data > should render empty objects for dynamic APIs when rendering with force-static": "prerendered-pages",
+        "dynamic-data.test.ts > dynamic-data > should track dynamic apis when rendering app routes": "prerendered-pages"
+      }
+    },
+    "dynamic-data__require-static": {
+      "passed": 0,
+      "failed": {
+        "dynamic-data.test.ts > dynamic-data with dynamic = \"error\" > error when the build when `dynamic = \"error\"` and dynamic data is read": "cli-output"
+      }
+    },
+    "dynamic-data__cache-scoped": {
+      "passed": 0,
+      "failed": {
+        "dynamic-data.test.ts > dynamic-data inside cache scope > error when the build when accessing dynamic data inside a cache scope": "cli-output"
+      }
+    },
+    "app-client-cache__regular": {
+      "passed": 10,
+      "failed": {}
+    },
+    "cache-components": {
+      "passed": 16,
+      "failed": {
+        "cache-components.connection.test.ts > cache-components > should partially prerender pages that use connection": "prerendered-pages",
+        "cache-components.connection.test.ts > cache-components > should be able to pass connection as a promise to another component and trigger an intermediate Suspense boundary": "prerendered-pages",
+        "cache-components.cookies.test.ts > cache-components > should partially prerender pages that use cookies": "prerendered-pages",
+        "cache-components.cookies.test.ts > cache-components > should be able to pass cookies as a promise to another component and trigger an intermediate Suspense boundary": "prerendered-pages",
+        "cache-components.date.test.ts > cache-components > should prerender pages with cached `Date.now()` calls": "prerendered-pages",
+        "cache-components.date.test.ts > cache-components > should prerender pages with cached `Date()` calls": "prerendered-pages",
+        "cache-components.date.test.ts > cache-components > should prerender pages with cached `new Date()` calls": "prerendered-pages",
+        "cache-components.date.test.ts > cache-components > should prerender pages with cached static Date instances like `new Date(0)`": "prerendered-pages",
+        "cache-components.date.test.ts > cache-components > should not prerender pages with uncached static Date instances like `new Date(0)`": "prerendered-pages",
+        "cache-components.draft-mode.test.ts > cache-components > should fully prerender pages that use draftMode": "prerendered-pages",
+        "cache-components.headers.test.ts > cache-components > should partially prerender pages that use headers": "prerendered-pages",
+        "cache-components.headers.test.ts > cache-components > should be able to pass headers as a promise to another component and trigger an intermediate Suspense boundary": "prerendered-pages",
+        "cache-components.node-crypto.test.ts > cache-components > should prerender pages with cached `require('node:crypto').getRandomValues(...)` calls": "prerendered-pages",
+        "cache-components.node-crypto.test.ts > cache-components > should prerender pages with cached `require('node:crypto').randomUUID()` calls": "prerendered-pages",
+        "cache-components.node-crypto.test.ts > cache-components > should prerender pages with cached `require('node:crypto').randomBytes(size)` calls": "prerendered-pages",
+        "cache-components.node-crypto.test.ts > cache-components > should prerender pages with cached `require('node:crypto').randomFillSync(buffer)` calls": "prerendered-pages",
+        "cache-components.node-crypto.test.ts > cache-components > should prerender pages with cached `require('node:crypto').randomInt(max)` calls": "prerendered-pages",
+        "cache-components.node-crypto.test.ts > cache-components > should prerender pages with cached `require('node:crypto').randomInt(min, max)` calls": "prerendered-pages",
+        "cache-components.node-crypto.test.ts > cache-components > should prerender pages with cached `require('node:crypto').generatePrimeSync(size, options)` calls": "prerendered-pages",
+        "cache-components.node-crypto.test.ts > cache-components > should prerender pages with cached `require('node:crypto').generateKeyPairSync(type, options)` calls": "prerendered-pages",
+        "cache-components.node-crypto.test.ts > cache-components > should prerender pages with cached `require('node:crypto').generateKeySync(type, options)` calls": "prerendered-pages",
+        "cache-components.params.test.ts > cache-components > Params > should partially prerender pages that await params in a server components": "prerendered-pages",
+        "cache-components.params.test.ts > cache-components > Params > should fully prerender pages that check individual param keys after awaiting params in a server component": "prerendered-pages",
+        "cache-components.params.test.ts > cache-components > Params > should partially prerender pages that spread awaited params in a server component": "prerendered-pages",
+        "cache-components.params.test.ts > cache-components > Param Shadowing > should correctly allow param names like then, value, and status when awaiting params in a server component": "prerendered-pages",
+        "cache-components.random.test.ts > cache-components > should prerender pages with cached Math.random() calls": "prerendered-pages",
+        "cache-components.routes.test.ts > cache-components > should prerender GET route handlers that have entirely cached io (fetches)": "prerendered-pages",
+        "cache-components.routes.test.ts > cache-components > should prerender GET route handlers that have entirely cached io (unstable_cache)": "prerendered-pages",
+        "cache-components.routes.test.ts > cache-components > should prerender GET route handlers that have entirely cached io (\"use cache\")": "prerendered-pages",
+        "cache-components.routes.test.ts > cache-components > should prerender GET route handlers that complete synchronously or in a microtask": "prerendered-pages",
+        "cache-components.routes.test.ts > cache-components > should prerender GET route handlers when accessing params": "prerendered-pages",
+        "cache-components.search.test.ts > cache-components > should partially prerender pages that await searchParams in a server component": "prerendered-pages",
+        "cache-components.search.test.ts > cache-components > should partially prerender pages that `use` searchParams in a server component": "prerendered-pages",
+        "cache-components.search.test.ts > cache-components > should partially prerender pages that `use` searchParams in a client component": "prerendered-pages",
+        "cache-components.server-action.test.ts > cache-components > should prerender pages with inline server actions": "prerendered-pages",
+        "cache-components.test.ts > cache-components > should prerender fully static pages": "prerendered-pages",
+        "cache-components.test.ts > cache-components > should prerender static not-found pages": "prerendered-pages",
+        "cache-components.test.ts > cache-components > should prerender pages that render in a microtask": "prerendered-pages",
+        "cache-components.test.ts > cache-components > should partially prerender pages that take longer than a task to render": "prerendered-pages",
+        "cache-components.test.ts > cache-components > should prerender pages that only use cached fetches": "prerendered-pages",
+        "cache-components.test.ts > cache-components > should partially prerender pages that use at least one fetch without cache": "prerendered-pages",
+        "cache-components.test.ts > cache-components > should prerender pages that only use cached (unstable_cache) IO": "prerendered-pages",
+        "cache-components.test.ts > cache-components > should prerender pages that only use cached (\"use cache\") IO": "prerendered-pages",
+        "cache-components.test.ts > cache-components > should prerender pages that cached the whole page": "prerendered-pages",
+        "cache-components.test.ts > cache-components > should partially prerender pages that do any uncached IO": "prerendered-pages",
+        "cache-components.test.ts > cache-components > should partially prerender pages that do any uncached IO (use cache)": "prerendered-pages",
+        "cache-components.test.ts > cache-components > should partially prerender pages that use `cookies()`": "prerendered-pages",
+        "cache-components.test.ts > cache-components > should partially prerender pages that use `headers()`": "prerendered-pages",
+        "cache-components.test.ts > cache-components > should fully prerender pages that use `unstable_noStore()`": "prerendered-pages",
+        "cache-components.test.ts > cache-components > should partially prerender pages that use `searchParams` in Server Components": "prerendered-pages",
+        "cache-components.test.ts > cache-components > should partially prerender pages that use `searchParams` in Client Components": "prerendered-pages",
+        "cache-components.test.ts > cache-components > can prerender pages with parallel routes that are static": "prerendered-pages",
+        "cache-components.test.ts > cache-components > can prerender pages with parallel routes that resolve in a microtask": "prerendered-pages",
+        "cache-components.test.ts > cache-components > does not prerender pages with parallel routes that resolve in a task": "prerendered-pages",
+        "cache-components.test.ts > cache-components > does not prerender pages with parallel routes that uses a dynamic API": "prerendered-pages",
+        "cache-components.test.ts > cache-components > should ignore late setHeader calls for direct RSC handlers after headers are sent": "node-in-test",
+        "cache-components.test.ts > cache-components > should not resume when client components are dynamic but the RSC render was static": "prerendered-pages",
+        "cache-components.web-crypto.test.ts > cache-components > should prerender pages with cached `crypto.getRandomValues(...)` calls": "prerendered-pages",
+        "cache-components.web-crypto.test.ts > cache-components > should prerender pages with cached `crypto.randomUUID()` calls": "prerendered-pages"
+      }
+    },
+    "cache-components-bot-ua": {
+      "passed": 1,
+      "failed": {}
+    },
+    "cache-components-prerender-matrix": {
+      "passed": 23,
+      "failed": {
+        "cache-components-prerender-matrix.test.ts > cache-components-prerender-matrix > partial-static-param/without-root-param/non-empty-shell > serves everything except the [id] region from the cache at lang=fresh category=fresh id=fresh": "prerendered-pages",
+        "cache-components-prerender-matrix.test.ts > cache-components-prerender-matrix > partial-static-param/without-root-param/non-empty-shell > serves everything except the [id] region from the cache at lang=en category=fresh id=fresh": "prerendered-pages",
+        "cache-components-prerender-matrix.test.ts > cache-components-prerender-matrix > partial-static-param/without-root-param/non-empty-shell > serves everything except the [id] region from the cache at lang=en category=shoes id=fresh": "prerendered-pages",
+        "cache-components-prerender-matrix.test.ts > cache-components-prerender-matrix > partial-static-param/without-root-param/non-empty-shell > shares the entry at lang=fresh category=fresh id=fresh with a fresh id value (id excluded from the cache key)": "prerendered-pages",
+        "cache-components-prerender-matrix.test.ts > cache-components-prerender-matrix > partial-static-param/without-root-param/non-empty-shell > shares the entry at lang=en category=fresh id=fresh with a fresh id value (id excluded from the cache key)": "prerendered-pages",
+        "cache-components-prerender-matrix.test.ts > cache-components-prerender-matrix > partial-static-param/without-root-param/non-empty-shell > shares the entry at lang=en category=shoes id=fresh with a fresh id value (id excluded from the cache key)": "prerendered-pages",
+        "cache-components-prerender-matrix.test.ts > cache-components-prerender-matrix > partial-static-param/without-root-param/non-empty-shell > does not share the entry at lang=fresh category=fresh id=fresh across lang values (lang included in the cache key)": "prerendered-pages",
+        "cache-components-prerender-matrix.test.ts > cache-components-prerender-matrix > partial-static-param/without-root-param/non-empty-shell > does not share the entry at lang=fresh category=fresh id=fresh across category values (category included in the cache key)": "prerendered-pages",
+        "cache-components-prerender-matrix.test.ts > cache-components-prerender-matrix > partial-static-param/without-root-param/non-empty-shell > does not share the entry at lang=en category=fresh id=fresh across category values (category included in the cache key)": "prerendered-pages",
+        "cache-components-prerender-matrix.test.ts > cache-components-prerender-matrix > partial-static-param/with-root-param/non-empty-shell > serves everything except the [id] region from the cache at lang=fresh category=fresh id=fresh": "prerendered-pages",
+        "cache-components-prerender-matrix.test.ts > cache-components-prerender-matrix > partial-static-param/with-root-param/non-empty-shell > serves everything except the [id] region from the cache at lang=en category=fresh id=fresh": "prerendered-pages",
+        "cache-components-prerender-matrix.test.ts > cache-components-prerender-matrix > partial-static-param/with-root-param/non-empty-shell > serves everything except the [id] region from the cache at lang=en category=shoes id=fresh": "prerendered-pages",
+        "cache-components-prerender-matrix.test.ts > cache-components-prerender-matrix > partial-static-param/with-root-param/non-empty-shell > shares the entry at lang=fresh category=fresh id=fresh with a fresh id value (id excluded from the cache key)": "prerendered-pages",
+        "cache-components-prerender-matrix.test.ts > cache-components-prerender-matrix > partial-static-param/with-root-param/non-empty-shell > shares the entry at lang=en category=fresh id=fresh with a fresh id value (id excluded from the cache key)": "prerendered-pages",
+        "cache-components-prerender-matrix.test.ts > cache-components-prerender-matrix > partial-static-param/with-root-param/non-empty-shell > shares the entry at lang=en category=shoes id=fresh with a fresh id value (id excluded from the cache key)": "prerendered-pages",
+        "cache-components-prerender-matrix.test.ts > cache-components-prerender-matrix > partial-static-param/with-root-param/non-empty-shell > does not share the entry at lang=fresh category=fresh id=fresh across lang values (lang included in the cache key)": "prerendered-pages",
+        "cache-components-prerender-matrix.test.ts > cache-components-prerender-matrix > partial-static-param/with-root-param/non-empty-shell > does not share the entry at lang=fresh category=fresh id=fresh across category values (category included in the cache key)": "prerendered-pages",
+        "cache-components-prerender-matrix.test.ts > cache-components-prerender-matrix > partial-static-param/with-root-param/non-empty-shell > does not share the entry at lang=en category=fresh id=fresh across category values (category included in the cache key)": "prerendered-pages",
+        "cache-components-prerender-matrix.test.ts > cache-components-prerender-matrix > fully-static-param/without-root-param/empty-shell > serves the whole document from the cache at lang=fresh category=fresh id=fresh": "prerendered-pages",
+        "cache-components-prerender-matrix.test.ts > cache-components-prerender-matrix > fully-static-param/without-root-param/empty-shell > serves the whole document from the cache at lang=en category=fresh id=fresh": "prerendered-pages",
+        "cache-components-prerender-matrix.test.ts > cache-components-prerender-matrix > fully-static-param/without-root-param/empty-shell > serves the whole document from the cache at lang=en category=shoes id=fresh": "prerendered-pages",
+        "cache-components-prerender-matrix.test.ts > cache-components-prerender-matrix > fully-static-param/without-root-param/empty-shell > serves the whole document from the cache at lang=en category=shoes id=1": "prerendered-pages",
+        "cache-components-prerender-matrix.test.ts > cache-components-prerender-matrix > fully-static-param/without-root-param/non-empty-shell > serves the whole document from the cache at lang=fresh category=fresh id=fresh": "prerendered-pages",
+        "cache-components-prerender-matrix.test.ts > cache-components-prerender-matrix > fully-static-param/without-root-param/non-empty-shell > serves the whole document from the cache at lang=en category=fresh id=fresh": "prerendered-pages",
+        "cache-components-prerender-matrix.test.ts > cache-components-prerender-matrix > fully-static-param/without-root-param/non-empty-shell > serves the whole document from the cache at lang=en category=shoes id=fresh": "prerendered-pages",
+        "cache-components-prerender-matrix.test.ts > cache-components-prerender-matrix > fully-static-param/without-root-param/non-empty-shell > serves the whole document from the cache at lang=en category=shoes id=1": "prerendered-pages",
+        "cache-components-prerender-matrix.test.ts > cache-components-prerender-matrix > fully-static-param/with-root-param/empty-shell > serves the whole document from the cache at lang=fresh category=fresh id=fresh": "prerendered-pages",
+        "cache-components-prerender-matrix.test.ts > cache-components-prerender-matrix > fully-static-param/with-root-param/empty-shell > serves the whole document from the cache at lang=en category=fresh id=fresh": "prerendered-pages",
+        "cache-components-prerender-matrix.test.ts > cache-components-prerender-matrix > fully-static-param/with-root-param/empty-shell > serves the whole document from the cache at lang=en category=shoes id=fresh": "prerendered-pages",
+        "cache-components-prerender-matrix.test.ts > cache-components-prerender-matrix > fully-static-param/with-root-param/empty-shell > serves the whole document from the cache at lang=en category=shoes id=1": "prerendered-pages",
+        "cache-components-prerender-matrix.test.ts > cache-components-prerender-matrix > fully-static-param/with-root-param/non-empty-shell > serves the whole document from the cache at lang=fresh category=fresh id=fresh": "prerendered-pages",
+        "cache-components-prerender-matrix.test.ts > cache-components-prerender-matrix > fully-static-param/with-root-param/non-empty-shell > serves the whole document from the cache at lang=en category=fresh id=fresh": "prerendered-pages",
+        "cache-components-prerender-matrix.test.ts > cache-components-prerender-matrix > fully-static-param/with-root-param/non-empty-shell > serves the whole document from the cache at lang=en category=shoes id=fresh": "prerendered-pages",
+        "cache-components-prerender-matrix.test.ts > cache-components-prerender-matrix > fully-static-param/with-root-param/non-empty-shell > serves the whole document from the cache at lang=en category=shoes id=1": "prerendered-pages",
+        "cache-components-prerender-matrix.test.ts > cache-components-prerender-matrix > dynamic-param/without-root-param/non-empty-shell > shares the entry at lang=fresh category=fresh id=fresh with a fresh lang value (lang excluded from the cache key)": "prerendered-pages",
+        "cache-components-prerender-matrix.test.ts > cache-components-prerender-matrix > dynamic-param/without-root-param/non-empty-shell > shares the entry at lang=fresh category=fresh id=fresh with a fresh category value (category excluded from the cache key)": "prerendered-pages",
+        "cache-components-prerender-matrix.test.ts > cache-components-prerender-matrix > dynamic-param/without-root-param/non-empty-shell > shares the entry at lang=fresh category=fresh id=fresh with a fresh id value (id excluded from the cache key)": "prerendered-pages"
+      }
+    },
+    "use-cache": {
+      "passed": 42,
+      "failed": {
+        "use-cache.test.ts > use-cache > should warn that the `experimental.useCache` config option is deprecated": "cli-output",
+        "use-cache.test.ts > use-cache > should cache results for cached functions imported from client components": "cached-function-as-action",
+        "use-cache.test.ts > use-cache > should cache results for cached functions passed to client components": "cached-function-as-action",
+        "use-cache.test.ts > use-cache > should revalidate caches during on-demand revalidation": "pages-router",
+        "use-cache.test.ts > use-cache > should prerender fully cacheable pages as static HTML": "build-output",
+        "use-cache.test.ts > use-cache > should match the expected revalidate and expire configs on the prerender manifest": "build-output",
+        "use-cache.test.ts > use-cache > should match the expected stale config in the page header": "build-output",
+        "use-cache.test.ts > use-cache > should send an SWR cache-control header based on the revalidate and expire values": "prerendered-pages",
+        "use-cache.test.ts > use-cache > should propagate unstable_cache tags correctly": "build-output",
+        "use-cache.test.ts > use-cache > works with useActionState if previousState parameter is not used in \"use cache\" function": "cached-function-as-action",
+        "use-cache.test.ts > use-cache > works with useActionState if previousState parameter is not used in \"use cache\" function (separate export)": "cached-function-as-action",
+        "use-cache.test.ts > use-cache > works with \"use cache\" in method props": "cached-function-as-action",
+        "use-cache.test.ts > use-cache > works with \"use cache\" in static class methods": "cached-function-as-action",
+        "use-cache.test.ts > use-cache > should not read nor write cached data when draft mode is enabled > js disabled, with cookies": "javascript-off",
+        "use-cache.test.ts > use-cache > should not read nor write cached data when draft mode is enabled > js disabled, without cookies": "javascript-off",
+        "use-cache.test.ts > use-cache > should allow nested short-lived caches after connection()": "javascript-off",
+        "use-cache.test.ts > use-cache > should dedupe a streaming cache across concurrent requests": "requests-in-turn"
+      }
+    },
+    "use-cache-custom-handler": {
+      "passed": 9,
+      "failed": {
+        "use-cache-custom-handler.test.ts > use-cache-custom-handler > should save a short-lived cache during prerendering at buildtime": "prerendered-pages",
+        "use-cache-custom-handler.test.ts > use-cache-custom-handler > handles a failed handler preload without an unhandled rejection": "changes-the-app"
+      }
+    },
+    "use-cache-default-handler-expire-zero": {
+      "passed": 1,
+      "failed": {}
+    },
+    "use-cache-default-profile-expire-zero": {
+      "passed": 2,
+      "failed": {}
+    },
+    "use-cache-draft-mode-isolation": {
+      "passed": 5,
+      "failed": {}
+    },
+    "use-cache-fallback-root-params": {
+      "passed": 1,
+      "failed": {
+        "use-cache-fallback-root-params.test.ts > use-cache-fallback-root-params > omits root-dependent entries from the RDC used to build generic shells": "build-output",
+        "use-cache-fallback-root-params.test.ts > use-cache-fallback-root-params > keeps cached root content in shells whose root is known": "build-output",
+        "use-cache-fallback-root-params.test.ts > use-cache-fallback-root-params > preserves static-prefetch hints when only fallback roots are missing": "build-output",
+        "use-cache-fallback-root-params.test.ts > use-cache-fallback-root-params > does not mistake searchParams in a cached page for a fallback root read": "build-output"
+      }
+    },
+    "use-cache-infinity-profile": {
+      "passed": 1,
+      "failed": {
+        "use-cache-infinity-profile.test.ts > use-cache-infinity-profile > caches forever with a configured profile using Infinity revalidate and expire": "build-output"
+      }
+    },
+    "use-cache-metadata-route-handler": {
+      "passed": 0,
+      "failed": {
+        "use-cache-metadata-route-handler.test.ts > use-cache-metadata-route-handler > should generate an opengraph image with a metadata route handler that uses \"use cache\"": "og-image-response",
+        "use-cache-metadata-route-handler.test.ts > use-cache-metadata-route-handler > should generate an opengraph image with a custom (local) font": "files-of-the-project",
+        "use-cache-metadata-route-handler.test.ts > use-cache-metadata-route-handler > should prerender a page that shares a segment with an opengraph image that uses a custom font": "files-of-the-project",
+        "use-cache-metadata-route-handler.test.ts > use-cache-metadata-route-handler > should generate an icon image with a metadata route handler that uses \"use cache\"": "og-image-response",
+        "use-cache-metadata-route-handler.test.ts > use-cache-metadata-route-handler > should statically prerender an image whose component uses \"use cache\" directly": "og-image-response",
+        "use-cache-metadata-route-handler.test.ts > use-cache-metadata-route-handler > should treat a twitter image that reads request data as dynamic": "og-image-response",
+        "use-cache-metadata-route-handler.test.ts > use-cache-metadata-route-handler > should generate sitemaps with a metadata route handler that uses \"use cache\"": "prerendered-pages",
+        "use-cache-metadata-route-handler.test.ts > use-cache-metadata-route-handler > should generate multiple sitemaps with a metadata route handler that uses \"use cache\"": "prerendered-pages",
+        "use-cache-metadata-route-handler.test.ts > use-cache-metadata-route-handler > should generate robots.txt with a metadata route handler that uses \"use cache\"": "prerendered-pages",
+        "use-cache-metadata-route-handler.test.ts > use-cache-metadata-route-handler > should generate manifest.json with a metadata route handler that uses \"use cache\"": "prerendered-pages",
+        "use-cache-metadata-route-handler.test.ts > use-cache-metadata-route-handler > should include the client reference manifest in the route.js.nft.json files of dynamic metadata routes": "build-output",
+        "use-cache-metadata-route-handler.test.ts > use-cache-metadata-route-handler > should not include the client reference manifest in the route.js.nft.json files of static metadata routes": "build-output"
+      }
+    },
+    "use-cache-private": {
+      "passed": 9,
+      "failed": {}
+    },
+    "use-cache-root-param-metadata": {
+      "passed": 1,
+      "failed": {
+        "use-cache-root-param-metadata.test.ts > use-cache-root-param-metadata > emits root param dependencies only in Turbopack production": "build-output"
+      }
+    },
+    "use-cache-route-handler-only": {
+      "passed": 3,
+      "failed": {
+        "use-cache-route-handler-only.test.ts > use-cache-route-handler-only > should dedupe concurrent cache invocations in route handlers": "changes-the-app",
+        "use-cache-route-handler-only.test.ts > use-cache-route-handler-only > dedupes tag revalidation across requests while generation is pending": "requests-in-turn"
+      }
+    },
+    "use-cache-swr": {
+      "passed": 5,
+      "failed": {
+        "use-cache-swr.test.ts > use-cache-swr > should dedupe SWR regens across concurrent requests": "requests-in-turn",
+        "use-cache-swr.test.ts > use-cache-swr > should dedupe SWR regens across slow-read requests": "requests-in-turn"
+      }
+    },
+    "use-cache-with-server-function-props": {
+      "passed": 1,
+      "failed": {
+        "use-cache-with-server-function-props.test.ts > use-cache-with-server-function-props > should be able to use nested cache functions as props": "cached-function-as-action"
       }
     }
   }

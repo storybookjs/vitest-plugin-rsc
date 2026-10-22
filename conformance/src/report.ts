@@ -349,7 +349,7 @@ export function renderDocument(
       const of = count(comparison, (verdict) => verdict.fixture === fixture);
       const total = score(of).run;
       lines.push(
-        `| \`${fixture.dir.replace("test/e2e/app-dir/", "")}\` | ${of.passed} of ${total} | ${of["plugin-bug"] || ""} | ` +
+        `| \`${fixture.dir.replace("test/e2e/app-dir/", "")}${fixture.app ? `/${fixture.app}` : ""}\` | ${of.passed} of ${total} | ${of["plugin-bug"] || ""} | ` +
           `${of["not-yet"] || ""} | ${of["not-applicable"] || ""} | ${of.skipped || ""} |`,
       );
     }

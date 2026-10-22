@@ -231,3 +231,20 @@ test("a relative URL of a page resolves against the URL of the page", async () =
 
   await expect.poll(requested).toEqual([new URL(`/notes/${src}`, window.location.href).href]);
 });
+
+// A browser loads a page in an entry of the history, which is
+// `navigation.activation` of the page. Next's router takes another current
+// entry for a back or forward navigation that it missed while it hydrated,
+// and renders the page again.
+test("a page is activated in the entry of the history it was loaded in", async () => {
+  const runners = navigation.activation!.entry.key;
+  // An entry after the runner's, as a test before this one leaves.
+  window.history.pushState(null, "", window.location.href);
+  expect(navigation.currentEntry!.key).not.toBe(runners);
+
+  await renderServer({ url: "/notes/1" });
+  expect(navigation.activation!.entry.key).toBe(navigation.currentEntry!.key);
+
+  await cleanup();
+  expect(navigation.activation!.entry.key).toBe(runners);
+});

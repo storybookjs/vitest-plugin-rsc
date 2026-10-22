@@ -1,11 +1,16 @@
 import {
   resolveRoutes,
+  responseToMiddlewareResult,
   type MiddlewareContext,
   type MiddlewareResult,
   type ResolveRoutesResult,
 } from "@next/routing";
 import { filterInternalHeaders } from "next/dist/server/lib/server-ipc/utils";
-import { fromNodeOutgoingHttpHeaders, toNodeOutgoingHttpHeaders } from "next/dist/server/web/utils";
+import {
+  fromNodeOutgoingHttpHeaders,
+  splitCookiesString,
+  toNodeOutgoingHttpHeaders,
+} from "next/dist/server/web/utils";
 import { routing } from "virtual:vitest-plugin-rsc/next-manifest";
 import { openedAt, type ServerRequest } from "./registry.ts";
 
@@ -29,20 +34,28 @@ export type InvokeMiddleware = (context: MiddlewareContext) => Promise<Middlewar
 // A request as it comes in: without the headers that only Next's own server
 // sets on one, like `x-middleware-set-cookie` for the cookies of the
 // middleware. `next start` takes them off with the same function, before
-// anything reads the request.
-export function incoming<T extends Pick<ServerRequest, "headers">>(request: T): T {
+// anything reads the request. And with the `x-forwarded-*` headers that
+// `next start` gives a request that comes without them, for the URL it came
+// in at: the middleware and the app read where the browser sent it from them.
+// Not `x-forwarded-for`, the address of the client: there is no socket.
+export function incoming<T extends Pick<ServerRequest, "url" | "headers">>(request: T): T {
   const headers = toNodeOutgoingHttpHeaders(request.headers) as Record<string, string | string[]>;
   filterInternalHeaders(headers);
+  const url = new URL(request.url);
+  const isHttps = url.protocol === "https:";
+  headers["x-forwarded-host"] ??= headers.host ?? url.host;
+  headers["x-forwarded-port"] ??= url.port || (isHttps ? "443" : "80");
+  headers["x-forwarded-proto"] ??= isHttps ? "https" : "http";
   return { ...request, headers: fromNodeOutgoingHttpHeaders(headers) };
 }
 
-export function resolve(
+export async function resolve(
   request: Pick<ServerRequest, "url" | "headers">,
   requestBody: ReadableStream<Uint8Array>,
   invokeMiddleware: InvokeMiddleware,
   proxy: boolean,
 ): Promise<ResolveRoutesResult> {
-  return resolveRoutes({
+  const resolved = await resolveRoutes({
     url: new URL(request.url),
     headers: request.headers,
     requestBody,
@@ -52,6 +65,41 @@ export function resolve(
     routes: proxy ? routing.routes : routing.appRoutes,
     invokeMiddleware,
   });
+  // The `Set-Cookie` headers of one rule of `headers()` in `next.config` come
+  // as one, joined with a comma: see `joinSetCookies()` in project/routing.ts.
+  // Apart again, as `next start` sends them, with the split Next's own
+  // `toNodeOutgoingHttpHeaders()` has for such a value.
+  const headers = resolved.resolvedHeaders;
+  const cookies = headers?.getSetCookie() ?? [];
+  if (headers && cookies.length > 0) {
+    headers.delete("set-cookie");
+    for (const cookie of cookies.flatMap(splitCookiesString)) headers.append("set-cookie", cookie);
+  }
+  return resolved;
+}
+
+/**
+ * What the middleware did with a request, read off its `response`, with the
+ * `headers` and the `url` it got the request with: as `next start` reads it.
+ *
+ * That is `responseToMiddlewareResult()` of `@next/routing`, but for a
+ * response with a `Location` header and a status that is no redirect. Next's
+ * own server in front of the app, `resolveRoutes()` of
+ * `next/dist/server/lib/router-utils/resolve-routes`, answers with that
+ * response, its status and its body: the middleware answered itself. The
+ * function of `@next/routing` keeps the header for the response, and says
+ * neither a redirect nor `bodySent`, so its `resolveRoutes()` takes the
+ * request on to a route. It leaves out such a response where it marks one
+ * that answers itself, with `x-middleware-refresh`, as Next does, and only
+ * Next's server has the branch that ends the request for it.
+ */
+export function middlewareResult(response: Response, headers: Headers, url: URL): MiddlewareResult {
+  const result = responseToMiddlewareResult(response, headers, url);
+  // With a redirect status, the header is a redirect.
+  if (result.bodySent || result.redirect || !response.headers.has("location")) return result;
+  // A rewrite to another server goes there, in Next's server too.
+  if (result.rewrite && result.rewrite.origin !== url.origin) return result;
+  return { ...result, bodySent: true };
 }
 
 // What the resolution answers with a redirect: one of `next.config`, of the

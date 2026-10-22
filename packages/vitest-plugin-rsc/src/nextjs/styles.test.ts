@@ -5,6 +5,8 @@ import {
   build,
   createServer,
   normalizePath,
+  preprocessCSS,
+  resolveConfig,
   type CSSOptions,
   type Plugin,
   type Rolldown,
@@ -12,7 +14,14 @@ import {
 import { expect, onTestFinished, test } from "vitest";
 import type { NextProject } from "./project.ts";
 import { componentPagePath, type BuiltFiles } from "./styles-shared.ts";
-import { builtHostFileKey, createStyles, exportsOfStylesheet, isCode, linked } from "./styles.ts";
+import {
+  builtHostFileKey,
+  createStyles,
+  declareImportedLayers,
+  exportsOfStylesheet,
+  isCode,
+  linked,
+} from "./styles.ts";
 
 // The module that the installed Vite makes of a stylesheet for a client, of
 // which the plugin keeps the exports, and not the `<style>`. As the plugin
@@ -104,6 +113,53 @@ test("exports nothing for a stylesheet that is no CSS module", async () => {
   expect(exportsOfStylesheet(code, "global.css")).toBe("export {}");
 });
 
+// As in Next's `app-css` fixture: `new` comes first, so `default` wins.
+const relativeLayer = [
+  "@import './import.css' layer(new);",
+  "",
+  "@layer default, new;",
+  "",
+  "@layer default {",
+  "  h2 { color: red; }",
+  "}",
+].join("\n");
+
+test("declares the layers of the imports first, when an @layer statement follows them", () => {
+  expect(declareImportedLayers(relativeLayer)).toBe(`@layer new, default;${relativeLayer}`);
+  expect(
+    declareImportedLayers(
+      '@charset "utf-8";\n/* a */ @import url("a.css") layer(a.b) supports(display: grid);\n@layer c, a.b;',
+    ),
+  ).toBe(
+    '@charset "utf-8";@layer a.b, c;\n/* a */ @import url("a.css") layer(a.b) supports(display: grid);\n@layer c, a.b;',
+  );
+});
+
+test.each([
+  ["no layer", "@import './a.css';\n@layer a;\nh1 { color: red }"],
+  ["a statement before the imports", "@layer a, b;\n@import './a.css' layer(b);"],
+  ["a statement after the first rule", "@import './a.css' layer(a);\nh1 {}\n@layer b, a;"],
+])("leaves a stylesheet as it is with %s", (_, css) => {
+  expect(declareImportedLayers(css)).toBe(css);
+});
+
+test("keeps the order of the layers where Vite inlines an @import with a layer", async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "vitest-plugin-rsc-layers-"));
+  onTestFinished(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(root, "import.css"), "h2 { color: blue; }\n");
+  const file = path.join(root, "relative-layer.css");
+  const config = await resolveConfig({ root, configFile: false, logLevel: "silent" }, "serve");
+
+  const asItIs = await preprocessCSS(relativeLayer, file, config);
+  const declared = await preprocessCSS(declareImportedLayers(relativeLayer), file, config);
+
+  // The statement of the file first, without the order that the import gave.
+  expect(asItIs.code.indexOf("@layer default, new;")).toBeLessThan(
+    asItIs.code.indexOf("@layer new"),
+  );
+  expect(declared.code.trimStart()).toMatch(/^@layer new, default;/);
+});
+
 test("says so when the exports of Vite's module need more than the class names", () => {
   const style = 'import { updateStyle } from "/@vite/client"\n';
   expect(() => exportsOfStylesheet(`${style}export default updateStyle`, "card.css")).toThrow(
@@ -151,6 +207,13 @@ type Graph = {
 };
 const list = "\0virtual:vitest-plugin-rsc/next-routes-page";
 const builtCss = (dir: string, file: string) => linked(`${dir}/${file}`, true);
+// The stylesheet of a `next/font` call, which is no file, and the font files
+// that the call has.
+const fontCss = linked(
+  `\0vitest-plugin-rsc/next-font/${Buffer.from("next/font/local/target.css?{}").toString("base64url")}.css`,
+  true,
+);
+const fontFiles = ["static/media/font-s.p.woff2"];
 
 async function buildStylesheets(root: string, real: string, graph: Graph) {
   const route = { kind: "page", page: "/notes/page", pathname: "/notes", component: "node" };
@@ -163,6 +226,7 @@ async function buildStylesheets(root: string, real: string, graph: Graph) {
         loadRouteEntry: async () => ({
           segments: [{ file: `${real}/app/layout.tsx`, stylesheetsKey: "app/layout" }],
         }),
+        loadFont: async () => ({ files: fontFiles }),
       }) as unknown as NextProject,
     environments: { rsc: "client", ssr: "ssr", browser: "react_client" },
     isServerCode: (file) => !file.startsWith(`${root}/host/`),
@@ -197,11 +261,12 @@ async function buildStylesheets(root: string, real: string, graph: Graph) {
     };
     hook("buildStart").call(context);
     for (const source of sources) {
-      hook("transform").call(context, `.${source} {}`, builtCss(real, source));
+      const id = source === fontCss ? source : builtCss(real, source);
+      hook("transform").call(context, `.${source} {}`, id);
     }
     await hook("buildEnd").call(context);
     // No chunks: the modules of a route are a test of their own, below.
-    hook("generateBundle").call(context, {}, {});
+    await hook("generateBundle").call(context, {}, {});
   }
   await build("client", graph.rsc, graph.sources.rsc);
   await build("react_client", graph.browser, graph.sources.browser);
@@ -219,7 +284,7 @@ test("lists the stylesheets of every route and of every file of the host in a bu
   const css = (file: string) => builtCss(root, file);
   const { built, named } = await buildStylesheets(root, root, {
     rsc: {
-      [`${root}/app/layout.tsx`]: [css("app/global.css")],
+      [`${root}/app/layout.tsx`]: [css("app/global.css"), fontCss],
       // A host file that renders a node, with a Server Component of the
       // app, a Client Component of the app, and a stylesheet of its own,
       // which is linked as the app's is.
@@ -250,14 +315,17 @@ test("lists the stylesheets of every route and of every file of the host in a bu
     },
     references: [`${root}/app/client.tsx`, `${root}/host/story.tsx`],
     sources: {
-      rsc: ["app/global.css", "app/card.module.css", "app/page.css", "host/own.css"],
+      rsc: ["app/global.css", fontCss, "app/card.module.css", "app/page.css", "host/own.css"],
       browser: ["app/client.css"],
     },
   });
   expect(built).toEqual({
     assetPath: "/_next/",
     routes: {
-      "/app/notes/page": { "app/layout": [named("global")], [componentPagePath]: [] },
+      "/app/notes/page": {
+        "app/layout": [named("global"), named("font")],
+        [componentPagePath]: [],
+      },
     },
     // By their paths from the root, in their order, with the directive or
     // without: no file of the app, and no stylesheet. What a file reaches
@@ -271,6 +339,8 @@ test("lists the stylesheets of every route and of every file of the host in a bu
     },
     chunks: [],
     modules: { "/app/notes/page": [] },
+    // The font files of the stylesheet of a font, from the directory of the build.
+    fonts: { [named("font")]: ["_next/static/media/font-s.p.woff2"] },
   });
   expect(Object.keys(built.hostFiles)).toEqual(Object.keys(built.hostFiles).sort());
 });

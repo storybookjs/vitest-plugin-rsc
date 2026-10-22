@@ -20,8 +20,15 @@ export const useCacheId = "virtual:vitest-plugin-rsc/next-use-cache";
 export const useCacheModule = (registry: string): string => `
 import { cache } from "next/dist/build/webpack/loaders/next-flight-loader/cache-wrapper";
 import { cache as reactCache } from "react";
+// One for every function: a function with the directive that closes over a
+// value is wrapped where it is created, for every call of the function around
+// it, and the calls of each are still one per render. Next's compiler wraps
+// it once, at the top of the module.
+const wrapped = new WeakMap();
 export function useCache(kind, id, fn, undeclared) {
-  const cached = reactCache(function () {
+  let cached = wrapped.get(fn);
+  if (cached) return cached;
+  cached = reactCache(function () {
     // The arguments the function declares, as Next's compiler passes them:
     // what a caller passes on top of those, like the index of a \`map()\`, is
     // no part of the key. \`fn.length\` also counts what the function closes
@@ -30,17 +37,20 @@ export function useCache(kind, id, fn, undeclared) {
     const end = undeclared === null ? undefined : fn.length + undeclared;
     const args = Array.prototype.slice.call(arguments, 0, end);
     // The id is a part of the key. It changes when the caches are reset, so
-    // that no test finds what an earlier one cached: see cache.ts.
-    return cache(kind, id + ":" + ${registry}.cacheGeneration(), 0, fn, args);
+    // that no test finds what an earlier one cached: see cache.ts. In hex, as
+    // Next's id, which a cache handler sees in the key.
+    const generation = ${registry}.cacheGeneration().toString(16).padStart(8, "0");
+    return cache(kind, id + generation, 0, fn, args);
   });
   Object.defineProperty(cached, "name", { value: fn.name });
+  wrapped.set(fn, cached);
   return cached;
 }
 `;
 
 /**
  * Whether the app has `"use cache"`: what Next's compiler takes the directive
- * with. Only then is anything compiled for the scope of a cached function.
+ * with. Only then is the directive compiled.
  */
 export function usesCache(project: NextProject): boolean {
   const config = project.config as {
@@ -80,8 +90,9 @@ export function createUseCachePlugin(
       if (!fs.existsSync(file)) return;
 
       const ast = await parseAstAsync(code);
-      // What Next's cache has an entry of the function under, with its arguments.
-      const moduleId = createHash("sha1").update(file).digest("hex").slice(0, 16);
+      // What Next's cache has an entry of the function under, with its
+      // arguments: a hash, as Next's id of the function is.
+      const idOf = (name: string) => createHash("sha1").update(`${file}#${name}`).digest("hex");
       const runtime = (
         kind: string | undefined,
         value: string,
@@ -89,7 +100,7 @@ export function createUseCachePlugin(
         node: FunctionNode | undefined,
       ) =>
         `$$useCache(${JSON.stringify(kind ?? "default")}, ` +
-        `${JSON.stringify(`${moduleId}:${name}`)}, ${value}, ${undeclaredParams(node)})`;
+        `${JSON.stringify(idOf(name))}, ${value}, ${undeclaredParams(node)})`;
 
       // At the top of a module: every function it exports.
       let moduleKind: string | undefined;

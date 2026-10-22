@@ -1,6 +1,12 @@
 import { IncrementalCache } from "next/dist/server/lib/incremental-cache";
 import { tagsManifest } from "next/dist/server/lib/incremental-cache/tags-manifest.external";
+import {
+  initializeCacheHandlers,
+  registerCustomCacheHandlers,
+  setCacheHandler,
+} from "next/dist/server/use-cache/handlers";
 import type { CacheFs } from "next/dist/shared/lib/utils";
+import { cacheHandler, cacheHandlers } from "virtual:vitest-plugin-rsc/next-cache-handlers";
 import { nextConfig, preview } from "virtual:vitest-plugin-rsc/next-manifest";
 import { registry } from "./registry.ts";
 
@@ -29,6 +35,37 @@ let generation = 0;
 registry.cacheGeneration = () => generation;
 // The cache of the server now: of the request it handles, or between requests.
 let current: IncrementalCache | undefined;
+// The class of the app's `cacheHandler`, once loaded.
+let CurCacheHandler: unknown;
+let loading: Promise<void> | undefined;
+
+// The handler a module exports, as Next's server takes it: its default
+// export, or the default of that.
+const handlerOf = (module: { default?: unknown }) => {
+  const handler = (module.default || module) as { default?: unknown };
+  return handler.default || handler;
+};
+
+/**
+ * Loads the cache handlers that `next.config` names, as Next's server does
+ * before its first request: `cacheHandler`, the class of the handler of this
+ * cache, and `cacheHandlers`, the handler of each kind of `"use cache"`.
+ * Without them, Next's own handlers keep the entries in memory.
+ */
+export function loadCacheHandlers(): Promise<void> {
+  loading ??= (async () => {
+    if (cacheHandler) CurCacheHandler = handlerOf(await cacheHandler());
+    // Next's own handlers of `"use cache"`, which an app without handlers of
+    // its own has too: Next's config has `cacheHandlers: {}` by default.
+    initializeCacheHandlers(nextConfig.cacheMaxMemorySize);
+    await registerCustomCacheHandlers(async () => {
+      for (const [kind, load] of Object.entries(cacheHandlers)) {
+        setCacheHandler(kind, handlerOf(await load()) as never);
+      }
+    });
+  })();
+  return loading;
+}
 
 /**
  * Puts the cache of the server back in the global Next reads it from. Next's
@@ -59,6 +96,7 @@ export function shareIncrementalCache(headers = new Headers()): void {
     fetchCacheKeyPrefix: `${nextConfig.experimental.fetchCacheKeyPrefix ?? ""}${generation}`,
     maxMemoryCacheSize: nextConfig.cacheMaxMemorySize,
     previewProps: preview,
+    CurCacheHandler: CurCacheHandler as never,
     // No route is prerendered: nothing is built.
     prerenderManifest: { version: 4, routes: {}, dynamicRoutes: {}, notFoundRoutes: [], preview },
   });

@@ -39,6 +39,12 @@ export const anyKey = <T>(create: (key: string) => T) =>
 // see styles.ts. The stylesheets of a file are the same in every route.
 type CssFile = { path: string; inlined: false } | { path: string; inlined: true; content: string };
 const stylesheets = new Map<string, CssFile[]>();
+// And the fonts of `next/font` that each file uses, the way Next's build lists
+// them in its manifest of fonts: the files to preload, of the fonts with
+// `preload` on. An empty list for a file whose fonts all have it off, for
+// which Next adds a `<link rel="preconnect">`, and nothing for one without
+// fonts.
+const fontFiles = new Map<string, string[]>();
 export function setStylesheets(of: Stylesheets): void {
   for (const [file, entries] of Object.entries(of)) {
     stylesheets.set(
@@ -47,8 +53,30 @@ export function setStylesheets(of: Stylesheets): void {
         content === undefined ? { path, inlined: false } : { path, inlined: true, content },
       ),
     );
+    const fonts = entries.flatMap((entry) => entry.fonts ?? []);
+    if (fonts.length === 0) fontFiles.delete(file);
+    // As `NextFontManifestPlugin` picks them: a font to preload has `.p.`.
+    else
+      fontFiles.set(
+        file,
+        fonts.filter((font) => /\.p\.(?:woff|woff2|eot|ttf|otf)$/.test(font)),
+      );
   }
 }
+// What Next's build writes to `next-font-manifest.json`. Without its flag for
+// an app with a font whose fallback has adjusted metrics, which Next sets for
+// a font of any route and says with a `<meta name="next-size-adjust">`: the
+// fonts here are those of the routes requested so far, so a page would have
+// it or not by the pages before it.
+const nextFontManifest = {
+  pages: {},
+  app: new Proxy({} as Record<string, string[]>, {
+    get: (_, key) => (typeof key === "string" ? fontFiles.get(key) : undefined),
+    has: (_, key) => typeof key === "string" && fontFiles.has(key),
+  }),
+  appUsingSizeAdjust: false,
+  pagesUsingSizeAdjust: false,
+};
 
 // Next's build writes a manifest of every client reference. For Vite RSC a
 // reference is its module id, so this one answers for any id.
@@ -84,10 +112,7 @@ const manifests: [suffix: string, manifest: () => unknown][] = [
   ["preview-props.json", () => preview],
   ["fallback-build-manifest.json", () => ({})],
   ["build-manifest.json", () => buildManifest],
-  [
-    "next-font-manifest.json",
-    () => ({ pages: {}, app: {}, appUsingSizeAdjust: false, pagesUsingSizeAdjust: false }),
-  ],
+  ["next-font-manifest.json", () => nextFontManifest],
   [
     "_client-reference-manifest.js",
     () => ({ __RSC_MANIFEST: anyKey(() => clientReferenceManifest) }),
