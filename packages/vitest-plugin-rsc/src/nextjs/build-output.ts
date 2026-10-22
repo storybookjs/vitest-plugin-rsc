@@ -194,6 +194,38 @@ export function keptAsBuilt(
   if (value.status !== undefined && /\/@\w+/.test(route?.sourceRoute ?? "")) value.status = 200;
 }
 
+// The route that the request the server handles does not find in the
+// manifest: see `withoutRoute()`.
+let hidden: string | undefined;
+/**
+ * Hands Next's handler a manifest without `route` for `respond()`, the
+ * response of a prefetch: Next reads the manifest as it starts a request.
+ */
+export async function withoutRoute<T>(route: Route, respond: () => Promise<T>): Promise<T> {
+  const before = hidden;
+  hidden = route.pathname;
+  try {
+    return await respond();
+  } finally {
+    hidden = before;
+  }
+}
+// The manifest of the request the server handles.
+function currentPrerenderManifest(): PrerenderManifest {
+  const route = hidden;
+  if (route === undefined || !isPrerendered({ kind: "page", page: "", pathname: route })) {
+    return prerenderManifest;
+  }
+  const { [route]: _, ...dynamicRoutes } = prerenderManifest.dynamicRoutes;
+  return {
+    ...prerenderManifest,
+    routes: Object.fromEntries(
+      Object.entries(prerenderManifest.routes).filter(([, entry]) => entry.srcRoute !== route),
+    ),
+    dynamicRoutes,
+  };
+}
+
 /** Whether the build prerenders a route, or a pathname of it. */
 export function isPrerendered(route: Route): boolean {
   return (
@@ -223,7 +255,7 @@ export function demoteRoute(route: Route): void {
 const manifests: [suffix: string, manifest: () => unknown][] = [
   // The one Next's build makes: see `routesManifest` in project.ts.
   ["routes-manifest.json", () => routesManifest],
-  ["prerender-manifest.json", () => prerenderManifest],
+  ["prerender-manifest.json", currentPrerenderManifest],
   ["preview-props.json", () => preview],
   ["fallback-build-manifest.json", () => ({})],
   ["build-manifest.json", () => buildManifest],
