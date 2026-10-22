@@ -312,7 +312,8 @@ function Committed({ onCommit, children }: { onCommit: () => void; children: Rea
 /**
  * Renders the page in the document into the root of the app that `start()`
  * kept, in place of the page before it: what Next's entry does as the page
- * loads, without the entry. The modules of the app stay, and so does its
+ * loads, without the entry. Its Flight payload is `flight`, which the server
+ * sent in place of a document, or else the one in the document. The modules of the app stay, and so does its
  * root, so this is no page load: its Flight payload is decoded, the router
  * gets a state of its own from it, and a tree with a key of its own mounts.
  * Resolves as `start()` does, once it has rendered.
@@ -321,7 +322,11 @@ function Committed({ onCommit, children }: { onCommit: () => void; children: Rea
  * of its router are emptied, but the state of a module of the app, or of a
  * package, is still there.
  */
-export async function renderAgain(signal: AbortSignal, errors: unknown[]): Promise<StartedApp> {
+export async function renderAgain(
+  signal: AbortSignal,
+  errors: unknown[],
+  flight?: Uint8Array,
+): Promise<StartedApp> {
   const kept = app;
   if (!kept) throw new Error("vitest-plugin-rsc: there is no kept app to render the page in.");
   setNodeOnPage(undefined);
@@ -335,7 +340,8 @@ export async function renderAgain(signal: AbortSignal, errors: unknown[]): Promi
   invalidateEntirePrefetchCache(null, null as never);
   invalidateBfCache();
   try {
-    const payload = await createFromReadableStream(documentPayload(), { callServer });
+    const stream = flight ? new Blob([flight as BlobPart]).stream() : documentPayload();
+    const payload = await createFromReadableStream(stream, { callServer });
     signal.throwIfAborted();
     // Next creates the queue of its router once per page load, and checks
     // that it does: the plugin's patch lets it replace it here (plugin.ts).

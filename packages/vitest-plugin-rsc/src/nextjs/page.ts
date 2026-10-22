@@ -271,6 +271,10 @@ async function openPage(
     }
   };
 
+  // A page of `reuse` in a kept app needs no document: see `renderInKeptApp()`.
+  if (opening?.reuse && kept && !("html" in request)) {
+    return renderInKeptApp(page, kept.client, url, request, from, opening.opened);
+  }
   // The test's request, or the document that a navigation has: see `navigate()`.
   const { response, html, after } = "html" in request ? request : await requestDocument(request);
   superseded();
@@ -294,23 +298,6 @@ async function openPage(
   await loadDocument(html, response.url, container, after);
   superseded();
   const reuse = opening?.reuse === true;
-  if (reuse && kept) {
-    // The app of the page before renders this one, from the Flight payload
-    // that the document has.
-    const started = kept.client
-      .renderAgain(signal, page.errors)
-      .then(({ unmount }) => page.defer(unmount));
-    page.starts(started, () => {});
-    setOpenPage(signal);
-    try {
-      await started;
-    } catch (error) {
-      superseded();
-      throw error;
-    }
-    superseded();
-    return response;
-  }
   // What the app holds, which goes with the page, or with a kept app once
   // that is left.
   const appReleases: (() => void)[] = [];
@@ -402,12 +389,80 @@ async function openPage(
   return response;
 }
 
+// The document of a page of a kept app that the server sent its Flight
+// payload for: the app renders all of it, and the document is the page's
+// own, for its URL, its entry of the history and what React adds to it.
+const flightDocument = '<!DOCTYPE html><html id="__next_error__"><head></head><body></body></html>';
+
+// Opens a page of `reuse` in the app that the page before kept: its request
+// asks Next for the Flight payload alone, without HTML (`flightOnly` of
+// `Opened`), and the app renders it in its root (`renderAgain()` in
+// client.tsx). No HTML to parse, no scripts to run, no module graph to make
+// and no Next's entry to run. The server may still send a document, like
+// the one of a route that it prerenders, from which the app renders the
+// page, as it is.
+async function renderInKeptApp(
+  page: Page,
+  client: Client,
+  url: URL,
+  init: RequestInit,
+  from: PageStore,
+  opened: Opened,
+): Promise<Response> {
+  const { signal } = page;
+  let response: Response;
+  let body: Uint8Array;
+  try {
+    response = await sendPageLoad(
+      url,
+      init,
+      { from, navigation: "test", opened: { ...opened, flightOnly: true } },
+      signal,
+    );
+    signal.throwIfAborted();
+    const contentType = response.headers.get("content-type") ?? "";
+    if (!/^text\/html\b/i.test(contentType)) {
+      await response.body?.cancel();
+      throw new Error(
+        `vitest-plugin-rsc: ${response.url} responded with ${contentType || "no content type"}, ` +
+          `which is not a page to open. Use handleRequest() to assert on the response itself.`,
+      );
+    }
+    body = new Uint8Array(await response.arrayBuffer());
+  } catch (error) {
+    // Leaving the page cuts off the answer.
+    signal.throwIfAborted();
+    throw error;
+  }
+  signal.throwIfAborted();
+  // A page that was redirected is the app's, and so are the requests to it.
+  if (new URL(response.url).pathname !== opened.pathname) registry.opened = undefined;
+  // A document starts with markup, after any white space; a Flight payload
+  // with the id of a row.
+  const html = /^\s*</.test(new TextDecoder().decode(body.subarray(0, 64)));
+  await loadDocument(html ? new TextDecoder().decode(body) : flightDocument, response.url);
+  signal.throwIfAborted();
+  const started = client
+    .renderAgain(signal, page.errors, html ? undefined : body)
+    .then(({ unmount }) => page.defer(unmount));
+  page.starts(started, () => {});
+  setOpenPage(signal);
+  try {
+    await started;
+  } catch (error) {
+    signal.throwIfAborted();
+    throw error;
+  }
+  signal.throwIfAborted();
+  return response;
+}
+
 // The request of a page load, with the modules of the server and of the
 // browser layer as the dev server has them now.
 async function sendPageLoad(
   url: URL,
   init: RequestInit,
-  sending: Pick<Parameters<typeof sendRequest>[1], "from" | "navigation" | "network">,
+  sending: Pick<Parameters<typeof sendRequest>[1], "from" | "navigation" | "network" | "opened">,
   signal: AbortSignal,
 ): Promise<Response> {
   await checkFetchedModules();

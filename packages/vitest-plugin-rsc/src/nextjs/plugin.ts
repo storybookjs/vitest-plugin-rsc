@@ -554,6 +554,36 @@ function noSsrPlugin(): Plugin {
   };
 }
 
+// `renderServer({ url, reuse: true })` in a kept app: the request of the
+// page has no use for HTML, not even the empty document of `ssr: false`. So
+// Next's renderer answers it with the Flight payload that it would inline in
+// the document, as it is, and renders no HTML: see `flightOnly` of `Opened`.
+function flightOnlyPlugin(): Plugin {
+  const anchor = /\/\/ This is a regular dynamic render\n/g;
+  return {
+    name: "vitest-plugin-rsc:flight-only",
+    transform: {
+      filter: { id: /\/next\/dist\/esm\/server\/app-render\/app-render\.js$/ },
+      handler(code, id) {
+        if (!code.includes("// This is a regular dynamic render\n")) {
+          this.warn(
+            `vitest-plugin-rsc: Next's HTML render in ${id} is not found: reuse: true loads ` +
+              "the empty document of every page.",
+          );
+          return;
+        }
+        const patched = code.replace(
+          anchor,
+          (comment) =>
+            `${comment}if (globalThis.${registryGlobal}?.openedByRequest?.getStore()?.flightOnly) { ` +
+            `finishHtmlRender(); return reactServerResult.consume(); }\n`,
+        );
+        return { code: patched, map: null };
+      },
+    },
+  };
+}
+
 // `renderServer({ url, reuse: true })`: the app that a page starts renders
 // the pages after it too, each with a router of its own (`renderAgain()` in
 // client.tsx). Next creates the action queue of its router once per page
@@ -955,6 +985,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
               flightConsolePlugin(),
               noSsrPlugin(),
               replaceableRouterPlugin(),
+              flightOnlyPlugin(),
               ...(layer === "browser"
                 ? []
                 : [
@@ -1396,6 +1427,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
     { ...flightConsolePlugin(), apply: "build" },
     { ...noSsrPlugin(), apply: "build" },
     { ...replaceableRouterPlugin(), apply: "build" },
+    { ...flightOnlyPlugin(), apply: "build" },
     nextStaticBuild({
       environments: environmentOf,
       entries: { ssr: "vitest-plugin-rsc/nextjs/ssr", browser: "vitest-plugin-rsc/nextjs/client" },

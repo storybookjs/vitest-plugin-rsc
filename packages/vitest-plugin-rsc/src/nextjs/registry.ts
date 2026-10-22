@@ -75,6 +75,12 @@ export type Opened = {
   rendersRedirect?: boolean;
   /** `false`: Next renders no HTML of the page, see `RenderServerOptions.ssr`. */
   ssr?: boolean;
+  /**
+   * For the request of a page of a kept app alone: Next answers it with the
+   * Flight payload of the page in place of its document (`flightOnlyPlugin()`
+   * in plugin.ts). Read from `openedByRequest`.
+   */
+  flightOnly?: boolean;
 };
 
 export type NextRegistry = {
