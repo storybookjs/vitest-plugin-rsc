@@ -370,7 +370,10 @@ test("has the ssr layer pre-bundle what the Client Components that a test file r
     "components/unused.tsx": '"use client";\nimport "request-context";',
   });
 
-  const { ssr, errors } = await scanOf(app, ["**/*.test.tsx"]);
+  // With the plugin's own setup file, as Vitest names it among its entries:
+  // in this repository no file of `node_modules`.
+  const setupFile = fileURLToPath(new URL("./setup.ts", import.meta.url));
+  const { ssr, errors } = await scanOf(app, ["**/*.test.tsx", setupFile]);
 
   expect(errors.join("\n")).not.toContain("Failed to run dependency scan");
   expect(ssr).toContain("@t3-oss/env-core");
