@@ -5,6 +5,10 @@ import { defineConfig, devices } from "@playwright/test";
 // oxlint-disable-next-line no-process-env
 const env = process.env;
 env.DATABASE_URL ??= "postgres://postgres:postgres@localhost:5432/postgres";
+// Next marks a hydrated page with `window.__NEXT_HYDRATED_AT` in its test
+// mode, as for its own e2e tests: tests/playwright/test.ts waits for it, as
+// `renderServer()` waits for the page to hydrate. `next build` needs it too.
+env.__NEXT_TEST_MODE ??= "1";
 const port = 3200;
 
 export default defineConfig({
@@ -25,6 +29,6 @@ export default defineConfig({
     command: `pnpm ${env.PLAYWRIGHT_SERVER === "dev" ? "dev" : "start"} --port ${port}`,
     port,
     reuseExistingServer: !env.CI,
-    env: { DATABASE_URL: env.DATABASE_URL },
+    env: { DATABASE_URL: env.DATABASE_URL, __NEXT_TEST_MODE: env.__NEXT_TEST_MODE },
   },
 });

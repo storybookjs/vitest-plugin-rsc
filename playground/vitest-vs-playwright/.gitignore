@@ -5,3 +5,5 @@ next-env.d.ts
 # Playwright
 /test-results/
 /playwright-report/
+# What `next dev` writes for coding agents
+AGENTS.md

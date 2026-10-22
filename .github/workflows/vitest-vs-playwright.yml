@@ -1,14 +1,17 @@
 name: Vitest vs Playwright
 
-# The 25 tests of playground/vitest-vs-playwright, in Vitest with
-# `renderServer()` and in Playwright on Postgres in Docker, each with 1
-# worker: Vitest in development against `next dev`, Vitest in production
-# against `next build` and `next start`. See its README.md. Each job writes what its
-# steps took to the summary of the run.
+# The same tests of two apps, each in Vitest with `renderServer()` and in
+# Playwright on Postgres in Docker, with 1 worker: Vitest in development
+# against `next dev`, Vitest in production against `next build` and
+# `next start`. playground/vitest-vs-playwright is a todo app with 25 tests,
+# playground/vitest-vs-playwright-notes a notes app with accounts and 150
+# tests: see their README.md. Each job writes what its steps took to the
+# summary of the run.
 on:
   pull_request:
     paths:
       - playground/vitest-vs-playwright/**
+      - playground/vitest-vs-playwright-notes/**
       - packages/vitest-plugin-rsc/**
       - .github/workflows/vitest-vs-playwright.yml
   workflow_dispatch:
@@ -21,12 +24,18 @@ concurrency:
 defaults:
   run:
     shell: bash
-    working-directory: playground/vitest-vs-playwright
 
 jobs:
   vitest:
-    name: Vitest
+    name: Vitest, ${{ matrix.app }}
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        app: [vitest-vs-playwright, vitest-vs-playwright-notes]
+    defaults:
+      run:
+        working-directory: playground/${{ matrix.app }}
     steps:
       - uses: actions/checkout@v6
       - uses: pnpm/action-setup@v6
@@ -37,42 +46,55 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec playwright install --with-deps --only-shell chromium
       - run: pnpm --filter vitest-plugin-rsc build
-      - name: Run the 25 tests, Next and React in production
+      - name: Run the tests, Next and React in production
         run: |
           start=$(date +%s.%N)
           pnpm exec vitest run --maxWorkers 1 | tee vitest.log
           end=$(date +%s.%N)
-          duration=$(sed 's/\x1b\[[0-9;]*m//g' vitest.log | grep -oP 'Duration\s+\K[0-9.]+')
+          log=$(sed 's/\x1b\[[0-9;]*m//g' vitest.log)
+          tests=$(grep -oP 'Tests\s+\K[0-9]+ passed' <<< "$log")
+          duration=$(grep -oP 'Duration\s+\K[0-9.]+' <<< "$log")
           {
-            echo "### Vitest, production"
+            echo "### Vitest, production, ${{ matrix.app }}"
             echo
             echo "| Step | Seconds |"
             echo "| --- | ---: |"
-            printf "| 25 tests, 1 worker, all included | %.1f |\n" "$(echo "$end - $start" | bc)"
+            printf "| %s tests, 1 worker, all included | %.1f |\n" "$tests" "$(echo "$end - $start" | bc)"
             printf "| Of which Vitest's own Duration | %.1f |\n" "$duration"
           } >> "$GITHUB_STEP_SUMMARY"
-      - name: Run the 25 tests, Next and React in development
+      - name: Run the tests, Next and React in development
         env:
           VITEST_PLUGIN_RSC_BUILD: development
         run: |
           start=$(date +%s.%N)
           pnpm exec vitest run --maxWorkers 1 | tee vitest.log
           end=$(date +%s.%N)
-          duration=$(sed 's/\x1b\[[0-9;]*m//g' vitest.log | grep -oP 'Duration\s+\K[0-9.]+')
+          log=$(sed 's/\x1b\[[0-9;]*m//g' vitest.log)
+          tests=$(grep -oP 'Tests\s+\K[0-9]+ passed' <<< "$log")
+          duration=$(grep -oP 'Duration\s+\K[0-9.]+' <<< "$log")
           {
-            echo "### Vitest, development"
+            echo "### Vitest, development, ${{ matrix.app }}"
             echo
             echo "| Step | Seconds |"
             echo "| --- | ---: |"
-            printf "| 25 tests, 1 worker, all included | %.1f |\n" "$(echo "$end - $start" | bc)"
+            printf "| %s tests, 1 worker, all included | %.1f |\n" "$tests" "$(echo "$end - $start" | bc)"
             printf "| Of which Vitest's own Duration | %.1f |\n" "$duration"
           } >> "$GITHUB_STEP_SUMMARY"
 
   playwright:
-    name: Playwright
+    name: Playwright, ${{ matrix.app }}
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        app: [vitest-vs-playwright, vitest-vs-playwright-notes]
+    defaults:
+      run:
+        working-directory: playground/${{ matrix.app }}
     env:
       DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+      # Next's test mode, for `next build` too: see playwright.config.ts.
+      __NEXT_TEST_MODE: 1
     steps:
       - uses: actions/checkout@v6
       - uses: pnpm/action-setup@v6
@@ -93,22 +115,23 @@ jobs:
           until docker exec postgres pg_isready -U postgres -h localhost; do sleep 0.2; done
           end=$(date +%s.%N)
           echo "DATABASE_SECONDS=$(echo "$end - $start" | bc)" >> "$GITHUB_ENV"
-      - name: Run the 25 tests against next dev
+      - name: Run the tests against next dev
         env:
           PLAYWRIGHT_SERVER: dev
         run: |
           start=$(date +%s.%N)
           pnpm exec playwright test | tee playwright.log
           end=$(date +%s.%N)
-          duration=$(grep -oP 'passed \(\K[0-9.]+(?=s\))' playwright.log)
+          tests=$(grep -oP '[0-9]+(?= passed)' playwright.log)
+          duration=$(grep -oP 'passed \(\K[0-9.]+(?:m|s)' playwright.log)
           {
-            echo "### Playwright, development"
+            echo "### Playwright, development, ${{ matrix.app }}"
             echo
             echo "| Step | Seconds |"
             echo "| --- | ---: |"
             printf "| Postgres in Docker | %.1f |\n" "$DATABASE_SECONDS"
-            printf "| 25 tests, 1 worker, \`next dev\` included | %.1f |\n" "$(echo "$end - $start" | bc)"
-            printf "| Of which Playwright's own time | %.1f |\n" "$duration"
+            printf "| %s tests, 1 worker, \`next dev\` included | %.1f |\n" "$tests" "$(echo "$end - $start" | bc)"
+            echo "| Of which Playwright's own time | $duration |"
           } >> "$GITHUB_STEP_SUMMARY"
       - name: Build the app with next build
         run: |
@@ -116,18 +139,19 @@ jobs:
           pnpm build
           end=$(date +%s.%N)
           echo "BUILD_SECONDS=$(echo "$end - $start" | bc)" >> "$GITHUB_ENV"
-      - name: Run the 25 tests against next start
+      - name: Run the tests against next start
         run: |
           start=$(date +%s.%N)
           pnpm exec playwright test | tee playwright.log
           end=$(date +%s.%N)
-          duration=$(grep -oP 'passed \(\K[0-9.]+(?=s\))' playwright.log)
+          tests=$(grep -oP '[0-9]+(?= passed)' playwright.log)
+          duration=$(grep -oP 'passed \(\K[0-9.]+(?:m|s)' playwright.log)
           {
-            echo "### Playwright, production"
+            echo "### Playwright, production, ${{ matrix.app }}"
             echo
             echo "| Step | Seconds |"
             echo "| --- | ---: |"
             printf "| \`next build\` | %.1f |\n" "$BUILD_SECONDS"
-            printf "| 25 tests, 1 worker, \`next start\` included | %.1f |\n" "$(echo "$end - $start" | bc)"
-            printf "| Of which Playwright's own time | %.1f |\n" "$duration"
+            printf "| %s tests, 1 worker, \`next start\` included | %.1f |\n" "$tests" "$(echo "$end - $start" | bc)"
+            echo "| Of which Playwright's own time | $duration |"
           } >> "$GITHUB_STEP_SUMMARY"
