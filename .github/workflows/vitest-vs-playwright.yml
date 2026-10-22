@@ -4,7 +4,7 @@ name: Vitest vs Playwright
 # Playwright on Postgres in Docker, with 1 worker: Vitest in development
 # against `next dev`, Vitest in production against `next build` and
 # `next start`. playground/vitest-vs-playwright is a todo app with 25 tests,
-# playground/vitest-vs-playwright-notes a notes app with accounts and 150
+# playground/vitest-vs-playwright-notes a notes app with accounts and 500
 # tests: see their README.md. Each job writes what its steps took to the
 # summary of the run.
 on:
