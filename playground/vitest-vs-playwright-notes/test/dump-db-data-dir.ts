@@ -1,10 +1,11 @@
-import { rename, writeFile } from "node:fs/promises";
+import { readFile, rename, writeFile } from "node:fs/promises";
 import { PGlite } from "@electric-sql/pglite";
 
 // Makes the data dir of test/pglite-files.ts, as the notes demo does: a
 // PGlite in memory, whose data dir goes to the file of the first argument.
 // In a process of its own: a PGlite keeps about 500 MB of its process after
-// it closes. Without tables: lib/__mocks__/db.ts makes them, in the page.
+// it closes. With the tables of lib/schema.sql, so that the page runs no DDL
+// as it starts.
 const file = process.argv[2];
 if (!file) throw new Error("The file of the data dir is the first argument.");
 const client = new PGlite("memory://");
@@ -15,6 +16,7 @@ const client = new PGlite("memory://");
 await client.exec(`UPDATE pg_database SET datistemplate = false WHERE datname LIKE 'template%'`);
 await client.exec("DROP DATABASE template0");
 await client.exec("DROP DATABASE template1");
+await client.exec(await readFile(new URL("../lib/schema.sql", import.meta.url), "utf8"));
 const tarball = await client.dumpDataDir("gzip");
 await client.close();
 
