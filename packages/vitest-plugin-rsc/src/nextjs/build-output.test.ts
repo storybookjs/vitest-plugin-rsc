@@ -55,12 +55,10 @@ test("lists what the build prerenders of a route, and takes a route out of it", 
   const blog = { kind: "page" as const, page: "/blog/[slug]/page", pathname: "/blog/[slug]" };
   const before = loadManifest("/.next/prerender-manifest.json");
 
-  recordRoute(blog, { pathnames: ["/blog/a"], fallback: null, revalidate: 60 });
+  recordRoute(blog, { pathnames: ["/blog/a"], fallback: null });
 
   const manifest = loadManifest("/.next/prerender-manifest.json") as typeof prerenderManifest;
   expect(manifest.routes["/blog/a"]).toEqual({
-    initialRevalidateSeconds: 60,
-    initialExpireSeconds: 31536000,
     srcRoute: "/blog/[slug]",
     dataRoute: "/blog/a.rsc",
   });
@@ -84,11 +82,8 @@ test("lists what the build prerenders of a route, and takes a route out of it", 
 test("lists a route handler without the data of a page", () => {
   recordRoute(
     { kind: "route", page: "/api/time/route", pathname: "/api/time" },
-    { pathnames: ["/api/time"], revalidate: false },
+    { pathnames: ["/api/time"] },
   );
 
-  expect(prerenderManifest.routes["/api/time"]).toMatchObject({
-    initialExpireSeconds: undefined,
-    dataRoute: null,
-  });
+  expect(prerenderManifest.routes["/api/time"]).toEqual({ srcRoute: "/api/time", dataRoute: null });
 });

@@ -41,8 +41,8 @@ export type MiddlewareHandler = (
 type AnyFunction = (...args: any[]) => any;
 
 /**
- * What `next build` prerenders of a route, by its config and its
- * `generateStaticParams`, before it renders it: see prerender-verdict.ts.
+ * Which pathnames of a route `next build` prerenders, from its
+ * `generateStaticParams`, before it renders one: see prerender-verdict.ts.
  */
 export type PrerenderVerdict = {
   /** The pathnames the build prerenders. */
@@ -53,8 +53,6 @@ export type PrerenderVerdict = {
    * first request, `false` answers that it is not found.
    */
   fallback?: null | false;
-  /** The `revalidate` of the route's segments, until a render says. */
-  revalidate: number | false;
 };
 
 /** See `NextRegistry.opened`. */

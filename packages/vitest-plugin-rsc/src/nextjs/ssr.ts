@@ -358,6 +358,34 @@ function recordVerdict(route: Route): Promise<void> {
   return recorded;
 }
 
+// What the build finds as it prerenders a route, at the route's first
+// request: the verdict of the render. A route that the manifest lists, and
+// that read the request as it rendered, is one the build finds dynamic as
+// it prerenders it. So does the server: Next's handler throws that, or
+// answers 500 with its error page and reports it, and the server takes the
+// route out of the manifest and asks again. The prerender has a scope of its
+// own: Next enters the stores of a prerender for it, which the request would
+// read from then on.
+async function prerenderFirst(
+  route: Route | undefined,
+  scope: Scope,
+  respond: () => Promise<Response>,
+): Promise<Response> {
+  if (!route || !isPrerendered(route)) return respond();
+  const reported = reportedBailouts();
+  const endPrerender = scope.enterInner();
+  try {
+    const response = await respond();
+    if (response.status !== 500 || reportedBailouts() === reported) return response;
+    await response.body?.cancel();
+  } catch (error) {
+    if (!isPrerenderBailout(error)) throw error;
+  }
+  endPrerender();
+  demoteRoute(route);
+  return respond();
+}
+
 // Next's build lists every Server Action. Here the ones to list are the ones
 // a request calls, if the app has them: see action-ids.ts. Next copies the
 // list, so it cannot answer for any id. It answers 400 for an id that cannot
@@ -379,6 +407,7 @@ async function serverActionsOf(request: ServerRequest): Promise<Set<string>> {
 // done. Not forever once something waits for it: then for one second at
 // most after `waited` resolves. Leaving the page waits for all of it: see
 // `settleRequests()`.
+type Scope = ReturnType<typeof enterScope>;
 function enterScope(waited: () => Promise<void>) {
   const endScope = registry.enterRequestScope();
   const background: Promise<unknown>[] = [];
@@ -562,43 +591,22 @@ async function handle(
       }
     }
 
-    // In production, what Next's build prerenders of a route of the app: its
-    // verdict on the route's config, before the route's first request runs.
-    // The route's handler prerenders it then, keeps it and serves it, as
-    // `next start` serves what the build prerendered.
+    // In production, what Next's build prerenders of a route of the app,
+    // before the route's first request runs. Next's handler prerenders it
+    // then, keeps it and serves it, as `next start` serves what the build
+    // prerendered.
     const prerenders =
       build === "production" && !component && matched && matched.page !== notFoundPage
         ? matched
         : undefined;
     if (prerenders) await recordVerdict(prerenders);
-    // The handler's answer. A route that the verdict marked prerendered,
-    // and that read the request as it rendered, is one the build finds
-    // dynamic as it prerenders it: so does the server, and asks again. Next's
-    // handler throws that, or answers 500 with its error page and reports
-    // it. The prerender has a scope of its own: Next enters the stores of a
-    // prerender for it, which the request would read from then on.
-    const answer = async (respond: () => Promise<Response>) => {
-      if (!prerenders || !isPrerendered(prerenders)) return respond();
-      const reported = reportedBailouts();
-      const endPrerender = scope.enterInner();
-      try {
-        const response = await respond();
-        if (response.status !== 500 || reportedBailouts() === reported) return response;
-        await response.body?.cancel();
-      } catch (error) {
-        if (!isPrerenderBailout(error)) throw error;
-      }
-      endPrerender();
-      demoteRoute(prerenders);
-      return respond();
-    };
 
     // The page of the route, or the not-found page, with the params of none.
     const renderPage = async (
       page: string,
       entry: string,
       meta: RoutedRequestMeta = requestMeta,
-    ): Promise<Handled> => {
+    ) => {
       setServerActions(await serverActionsOf(routed));
       // Next's build also lists the CSS files of every segment, and Next
       // reads that list before it loads the module of a segment, which it
@@ -626,22 +634,17 @@ async function handle(
       // `next start` does: Next reads the status while it renders, for the
       // `noindex` tag, and its action handler answers with one of its own.
       const statusCode = page === notFoundPage ? 404 : undefined;
-      let response: Response;
-      try {
-        response = await answer(() =>
-          handleWith(routed, context, handler, meta, {
-            statusCode,
-            headers: routedHeaders,
-          }),
-        );
-      } catch (error) {
-        // A pathname that a route with `dynamicParams = false` does not
-        // prerender: `next start` answers it with the not-found page.
-        if (page === notFoundPage || !registry.isNoFallbackError(error)) throw error;
-        return renderPage(notFoundPage, notFoundPage, {});
-      }
-      return finishWithBody(request, response, endRequest, cookiesOf(routedHeaders));
+      return prerenderFirst(prerenders, scope, () =>
+        handleWith(routed, context, handler, meta, { statusCode, headers: routedHeaders }),
+      );
     };
+    const renderNotFound = async () =>
+      finishWithBody(
+        request,
+        await renderPage(notFoundPage, notFoundPage, {}),
+        endRequest,
+        cookiesOf(routedHeaders),
+      );
 
     if (!component && matched?.kind === "route") {
       // Next's own request handler finds the params of the route, and
@@ -649,11 +652,11 @@ async function handle(
       const handler = await registry.loadRouteHandler(page);
       let response: Response;
       try {
-        response = await answer(() =>
+        response = await prerenderFirst(prerenders, scope, () =>
           handleWith(routed, context, handler, requestMeta, { headers: routedHeaders }),
         );
       } catch (error) {
-        if (registry.isNoFallbackError(error)) return renderPage(notFoundPage, notFoundPage, {});
+        if (registry.isNoFallbackError(error)) return renderNotFound();
         // Next's handler logged it, and throws it as it prerenders, for the
         // server in front of it: which answers 500, as `next start` does.
         if (!prerenders || request.signal?.aborted) throw error;
@@ -666,7 +669,17 @@ async function handle(
       }
       return finishWithBody(request, response, endRequest, cookiesOf(routedHeaders));
     }
-    return await renderPage(page, entry);
+
+    let response: Response;
+    try {
+      response = await renderPage(page, entry);
+    } catch (error) {
+      // A pathname that a route with `dynamicParams = false` does not
+      // prerender: `next start` answers it with the not-found page.
+      if (page === notFoundPage || !registry.isNoFallbackError(error)) throw error;
+      return renderNotFound();
+    }
+    return finishWithBody(request, response, endRequest, cookiesOf(routedHeaders));
   } catch (error) {
     scope.endScope();
     throw error;

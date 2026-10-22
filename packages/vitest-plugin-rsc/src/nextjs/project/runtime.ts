@@ -169,11 +169,19 @@ export function checkRuntime(context: NextContext) {
   runtimeFile("server/route-modules/app-page/module").contains(
     "this.matchers.get(prerenderManifest)",
   );
-  // The two options of the config of a route that prerender-verdict.ts
-  // reduces as Next does.
-  runtimeFile("build/utils").contains(
-    "const { dynamic, fetchCache, preferredRegion, revalidate, runtime, maxDuration, prefetch, ensureStatic } = segment.config || {};",
-    "if (typeof revalidate === 'number' && (typeof config.revalidate !== 'number' || revalidate < config.revalidate)) {",
+  // The build's verdict on which pathnames of a route it prerenders, which
+  // prerender-verdict.ts makes as the build does: the last segment's
+  // `dynamic` and `runtime`, the paths of `generateStaticParams`, and
+  // without them `dynamic = "error"` or `"force-static"`.
+  runtimeFile("build/utils").contains("config.dynamic = dynamic;", "config.runtime = runtime;");
+  runtimeFile("build/index").contains(
+    "workerResult.prerenderedRoutes.some((route)=>isStaticMetadataFile(route.pathname) || !isEmptyParams(route.params));",
+    "} else if (!hasGenerateStaticParams && (appConfig.dynamic === 'error' || appConfig.dynamic === 'force-static')) {",
+  );
+  // Whether a route is static at all is Next's handler's verdict, at the
+  // render: a `force-dynamic` page throws this as it is prerendered.
+  runtimeFile("server/app-render/create-component-tree").contains(
+    'const err = new DynamicServerError(`Page with \\`dynamic = "force-dynamic"\\` won\'t be rendered statically.`);',
   );
   // cleanup() expires the kept pages by the tag each has for the root layout.
   runtimeFile("server/lib/implicit-tags").contains(

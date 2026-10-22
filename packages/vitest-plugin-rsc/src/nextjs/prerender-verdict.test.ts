@@ -68,11 +68,7 @@ const verdictOf = (pathname: string, modules: Module[]) =>
   prerenderVerdictOf(pageEntry(pathname, modules) as never, pathname, "page");
 
 test("prerenders a page without params at its own pathname", async () => {
-  expect(await verdictOf("/about", [{}, {}])).toEqual({
-    pathnames: ["/about"],
-    fallback: undefined,
-    revalidate: false,
-  });
+  expect(await verdictOf("/about", [{}, {}])).toEqual({ pathnames: ["/about"] });
 });
 
 test("prerenders the paths of `generateStaticParams`, and others at their first request", async () => {
@@ -81,7 +77,6 @@ test("prerenders the paths of `generateStaticParams`, and others at their first 
   expect(await verdictOf("/blog/[slug]", [{}, {}, page])).toEqual({
     pathnames: ["/blog/a", "/blog/b"],
     fallback: null,
-    revalidate: false,
   });
 });
 
@@ -99,19 +94,21 @@ test("prerenders a page with params at its first request with `force-static`", a
   expect(await verdictOf("/blog/[slug]", [{}, {}, { dynamic: "force-static" }])).toEqual({
     pathnames: [],
     fallback: null,
-    revalidate: false,
+  });
+  // The page's `dynamic` over its layout's, as Next reduces the config.
+  expect(
+    await verdictOf("/blog/[slug]", [{}, { dynamic: "force-static" }, { dynamic: "auto" }]),
+  ).toBeUndefined();
+});
+
+test("lists a `force-dynamic` page too: Next's handler finds it dynamic as it prerenders it", async () => {
+  expect(await verdictOf("/about", [{}, { dynamic: "force-dynamic" }])).toEqual({
+    pathnames: ["/about"],
   });
 });
 
-test("leaves a `force-dynamic` page, and one with `revalidate = 0`, to every request", async () => {
-  expect(await verdictOf("/about", [{}, { dynamic: "force-dynamic" }])).toBeUndefined();
-  expect(await verdictOf("/about", [{ revalidate: 0 }, {}])).toBeUndefined();
-});
-
-test("takes the `revalidate` of the page over its layout's", async () => {
-  expect((await verdictOf("/about", [{ revalidate: 60 }, { revalidate: 10 }]))?.revalidate).toBe(
-    10,
-  );
+test("leaves a page of the edge runtime, which runs on Node.js here, to every request", async () => {
+  expect(await verdictOf("/about", [{}, { runtime: "edge" }])).toBeUndefined();
 });
 
 test("prerenders a route handler only where it opts in", async () => {
@@ -122,10 +119,8 @@ test("prerenders a route handler only where it opts in", async () => {
   expect(await verdict("/api/time", { GET })).toBeUndefined();
   expect(await verdict("/api/time", { GET, dynamic: "force-static" })).toEqual({
     pathnames: ["/api/time"],
-    fallback: undefined,
-    revalidate: false,
   });
-  expect((await verdict("/api/time", { GET, revalidate: 30 }))?.revalidate).toBe(30);
+  expect(await verdict("/api/time", { GET, revalidate: 30 })).toEqual({ pathnames: ["/api/time"] });
   // Not one of the edge runtime, which runs on Node.js here.
   expect(await verdict("/api/time", { GET, dynamic: "force-static", runtime: "edge" })).toBe(
     undefined,

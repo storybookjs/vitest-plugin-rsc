@@ -83,6 +83,15 @@ test("renders a page that reads the request at every request, as the build finds
   expect([first.cache, second.cache]).toEqual([null, null]);
 });
 
+test("renders a `force-dynamic` page at every request, as the build finds it dynamic", async () => {
+  const first = await request("/prerendered/dynamic");
+  const second = await request("/prerendered/dynamic");
+
+  expect([first.status, second.status]).toEqual([200, 200]);
+  expect(second.rendered).not.toBe(first.rendered);
+  expect([first.cache, second.cache]).toEqual([null, null]);
+});
+
 test("answers a path that `generateStaticParams` does not list with the not-found page, with `dynamicParams = false`", async () => {
   const listed = await request("/prerendered/listed/listed");
   const unlisted = await request("/prerendered/listed/other");

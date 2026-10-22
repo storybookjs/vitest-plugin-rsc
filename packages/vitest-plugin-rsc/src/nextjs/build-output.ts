@@ -120,11 +120,13 @@ export let prerenderManifest: PrerenderManifest = {
 type Route = { kind: "page" | "route"; page: string; pathname: string };
 
 /**
- * Lists what Next's build prerenders of a route, by its verdict on the
- * route's config: the entries of the prerender manifest that its handler
- * reads. With them the handler prerenders a pathname at its first request,
- * keeps it, and serves it from then on, as `next start` serves what the
- * build prerendered.
+ * Lists what Next's build prerenders of a route, by its verdict: the entries
+ * of the prerender manifest that Next's handler reads. With them the handler
+ * prerenders a pathname at its first request, keeps it, and serves it from
+ * then on, as `next start` serves what the build prerendered. Without the
+ * `revalidate` the build writes: Next's cache reads it for a page the build
+ * prerendered, and here every page is first prerendered by the handler,
+ * which keeps the `revalidate` of the render with it.
  */
 export function recordRoute(route: Route, verdict: PrerenderVerdict | undefined): void {
   if (!verdict) return;
@@ -133,13 +135,8 @@ export function recordRoute(route: Route, verdict: PrerenderVerdict | undefined)
   // `isRouteCacheOwner()` tells them apart by this.
   const dataRouteOf = (pathname: string) =>
     kind === "page" ? `${normalizePagePath(pathname)}${RSC_SUFFIX}` : null;
-  const { revalidate } = verdict;
   for (const pathname of verdict.pathnames) {
     prerenderManifest.routes[pathname] = {
-      initialRevalidateSeconds: revalidate,
-      // As the build gives a path that revalidates: `build/index.js:1983-1999`.
-      initialExpireSeconds:
-        revalidate !== false && revalidate > 0 ? nextConfig.expireTime : undefined,
       srcRoute,
       dataRoute: dataRouteOf(pathname),
     } as PrerenderManifest["routes"][string];
