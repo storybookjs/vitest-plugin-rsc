@@ -1,4 +1,5 @@
 import "../compile-cache.ts";
+import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -669,26 +670,55 @@ const clientBoundaryFiles = new Map<string, string[]>();
 // the page. By the file, which is how a payload names one: an import of the
 // app does not, like `next/legacy/image`, so the dependency scan finds another
 // spelling. This is what Next's client entry plugin does for its own bundles.
-function findClientBoundaries(nextDir: string, resolver: LayerResolver): string[] {
+function findClientBoundaries(nextDir: string, root: string, resolver: LayerResolver): string[] {
   let files = clientBoundaryFiles.get(nextDir);
   if (!files) {
-    const entries = fs.readdirSync(path.join(nextDir, "dist/esm"), {
-      recursive: true,
-      withFileTypes: true,
-    });
-    files = entries.flatMap((entry) => {
-      if (!entry.isFile() || !entry.name.endsWith(".js")) return [];
-      const file = path.join(entry.parentPath, entry.name);
-      const code = fs.readFileSync(file, "utf8");
-      return code.includes("use client") && hasDirective(parseAst(code).body, "use client")
-        ? [file]
-        : [];
-    });
+    files = scanClientBoundaries(nextDir, root);
     clientBoundaryFiles.set(nextDir, files);
   }
   // Vite keeps the pre-bundled dependencies by a hash of this list, and a
   // directory is listed in the order of its disk.
   return files.map((file) => resolver.toSpecifier(file)).sort();
+}
+
+// The scan parses the files that have the words, about 50 of Next's 1300,
+// which is a tenth of a second at every start of Vitest. So its result is
+// kept on disk, in the project's `node_modules/.cache/`, as other tools keep
+// theirs, by the size and the time of change of every file it reads: a
+// version of Next, or a patch of one, has other files. Listing and stating
+// them costs a third of the scan. The version of the format is in the name.
+function scanClientBoundaries(nextDir: string, root: string): string[] {
+  const entries = fs.readdirSync(path.join(nextDir, "dist/esm"), {
+    recursive: true,
+    withFileTypes: true,
+  });
+  const scripts = entries.flatMap((entry) =>
+    entry.isFile() && entry.name.endsWith(".js") ? [path.join(entry.parentPath, entry.name)] : [],
+  );
+  const key = createHash("sha256");
+  for (const file of scripts) {
+    const stats = fs.statSync(file, { throwIfNoEntry: false });
+    key.update(`${file}\0${stats?.size}\0${stats?.mtimeMs}\n`);
+  }
+  const cache = path.join(root, "node_modules/.cache/vitest-plugin-rsc/client-boundaries-1.json");
+  const digest = key.digest("hex");
+  try {
+    const cached = JSON.parse(fs.readFileSync(cache, "utf8")) as { key: string; files: string[] };
+    if (cached.key === digest) return cached.files;
+  } catch {}
+  const files = scripts.filter((file) => {
+    const code = fs.readFileSync(file, "utf8");
+    return code.includes("use client") && hasDirective(parseAst(code).body, "use client");
+  });
+  // By a rename, so that a run that reads it at the same time reads all of
+  // it. A disk that cannot be written to only means the scan again next time.
+  try {
+    fs.mkdirSync(path.dirname(cache), { recursive: true });
+    const written = `${cache}.${process.pid}`;
+    fs.writeFileSync(written, JSON.stringify({ key: digest, files }));
+    fs.renameSync(written, cache);
+  } catch {}
+  return files;
 }
 
 // What the runtime modules of this package, and the modules Vite and Vite RSC
@@ -950,7 +980,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
           ...apiImports("rsc"),
           ...runtimeImports.rsc,
         ]);
-        const clientBoundaries = findClientBoundaries(project.nextDir, resolvers.rsc);
+        const clientBoundaries = findClientBoundaries(project.nextDir, project.root, resolvers.rsc);
         const include: Record<NextLayer, string[]> = {
           rsc: [...rscInclude, nextRouting],
           ssr: [
