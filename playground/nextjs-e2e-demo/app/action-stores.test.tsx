@@ -4,10 +4,10 @@ import { page } from "vitest/browser";
 import { auditLog } from "./lib/audit.ts";
 
 // The stores of AsyncLocalStorage that a Server Action and the render after
-// it read, in an app without "use cache". The async functions of the app,
-// and those of Next's handler of an action and of its render, are compiled
-// to put their stores back after an `await`: see "The Scope Of A Cached
-// Function" in docs/next-routes.md.
+// it read, in an app without "use cache". The async functions of the app are
+// compiled to put their stores back after an `await`, and take them as they
+// are when the function is called: see "The Scope Of A Cached Function" in
+// docs/next-routes.md.
 
 beforeEach(() => {
   auditLog.length = 0;

@@ -216,8 +216,13 @@ export async function layerTables(context: NextContext, build: NextBuild) {
     // it what Next's rule does.
     if (layer === "rsc") {
       const contexts = "server/route-modules/app-page/vendored/contexts";
-      const names = fs
-        .readdirSync(path.join(nextDir, "dist", contexts))
+      let files: string[];
+      try {
+        files = fs.readdirSync(path.join(nextDir, "dist", contexts));
+      } catch {
+        return fail(`next/dist/${contexts} is not there`);
+      }
+      const names = files
         .filter((file) => file.endsWith(".js") && file !== "entrypoints.js")
         .map((file) => file.slice(0, -".js".length));
       if (names.length === 0) fail(`next/dist/${contexts} has no contexts`);

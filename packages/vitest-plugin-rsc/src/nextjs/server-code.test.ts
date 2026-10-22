@@ -450,16 +450,18 @@ test("compiles the async functions of the modules of Next that await in a store,
     transform.call({ warn: vi.fn() }, `export async function cache() { await generate(); }`, file);
 
   for (const build of ["esm/server", "server"]) {
-    for (const nextModule of [
-      "use-cache/use-cache-wrapper.js",
-      "app-render/action-handler.js",
-      "app-render/app-render.js",
-    ]) {
-      const file = `/app/node_modules/next/dist/${build}/${nextModule}`;
-      expect(compile(file)?.code).toContain(`await ${registry}.asyncFunctionHooks.s(`);
-    }
+    const file = `/app/node_modules/next/dist/${build}/use-cache/use-cache-wrapper.js`;
+    expect(compile(file)?.code).toContain(`await ${registry}.asyncFunctionHooks.s(`);
   }
   expect(compile("/app/node_modules/next/dist/esm/server/use-cache/cache-tag.js")).toBeUndefined();
+  // The handler of a Server Action and the render are the ssr layer's, through
+  // `app-page/module`, which the rsc optimizer never sees.
+  expect(
+    compile("/app/node_modules/next/dist/esm/server/app-render/action-handler.js"),
+  ).toBeUndefined();
+  expect(compile("/app/node_modules/next/dist/esm/server/app-render/app-render.js")).toBe(
+    undefined,
+  );
   expect(
     compile("/app/node_modules/next/dist/esm/server/app-render/create-component-tree.js"),
   ).toBeUndefined();

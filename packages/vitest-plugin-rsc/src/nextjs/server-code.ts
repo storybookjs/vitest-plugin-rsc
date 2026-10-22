@@ -231,24 +231,18 @@ const asyncFunctionsName = "vitest-plugin-rsc:next-async-functions";
 
 // The modules of Next's server whose async functions are compiled to keep
 // their stores across an `await` (async-local-storage-transform.ts), as the
-// source files of the app are: the ones that await inside a store, one they
-// entered or left with `exit()`, and read it after the `await`, as on
-// Node.js. One entry per module, with the store it carries. The optimizer
-// compiles each once, and keeps it in its cache.
+// source files of the app are: the ones of the rsc layer that await inside a
+// store they entered, and read it after the `await`, as on Node.js. One entry
+// per module, with the store it carries. The optimizer compiles each once,
+// and keeps it in its cache. Next's handler of a Server Action and its render,
+// `app-render/action-handler.js` and `app-render/app-render.js`, are not here:
+// they are the ssr layer's, through `app-page/module`, which is not compiled.
+// The render after an action runs outside the action's store, as Next's
+// `exit()` leaves it, and the app's own compiled code has its stores back.
 const nextModulesWithStores = [
   // The store of a `"use cache"` function: it enters the scope and awaits
   // before it has React call the function.
   "use-cache/use-cache-wrapper.js",
-  // The store of a Server Action, `actionAsyncStorage`: entered for the
-  // action, and left with `exit()` for the render after it, which it awaits.
-  // The code after that `await`, and what the action started, are the
-  // action's again.
-  "app-render/action-handler.js",
-  // The request stores of a render, `workAsyncStorage` and
-  // `workUnitAsyncStorage`, and the `exit()` of the action's store above: the
-  // render after a Server Action awaits before it starts React's, and has to
-  // start it outside the store of the action.
-  "app-render/app-render.js",
 ];
 const nextModuleWithStores = new RegExp(
   `/next/dist/(?:esm/)?server/(?:${nextModulesWithStores.map((file) => file.replaceAll(".", "\\.")).join("|")})$`,
