@@ -1,9 +1,11 @@
 import type { PrerenderManifest } from "next/dist/build";
 import { RSC_SUFFIX } from "next/dist/lib/constants";
 import { normalizePagePath } from "next/dist/shared/lib/page-path/normalize-page-path";
+import { getRouteRegex } from "next/dist/shared/lib/router/utils/route-regex";
 import {
   nextConfig,
   preview,
+  routes,
   routesManifest,
   routing,
 } from "virtual:vitest-plugin-rsc/next-manifest";
@@ -152,6 +154,50 @@ export function recordRoute(route: Route, verdict: PrerenderVerdict | undefined)
         } as PrerenderManifest["dynamicRoutes"][string],
       },
     };
+  }
+}
+
+// The routes whose page is the page of a parallel route's slot, like
+// `app/@views/duration/page.js`, as `export/routes/app-page.js:126` tells
+// them, by their pathname.
+const parallelRoutes = new Set(
+  routes
+    .filter((route) => route.kind === "page" && !route.component && /\/@\w+/.test(route.page))
+    .map((route) => route.pathname),
+);
+// Whether a pathname that Next's handler prerenders is one of theirs.
+const isParallelRoutePath = (pathname: string) => {
+  const listed = prerenderManifest.routes[pathname]?.srcRoute;
+  if (listed != null) return parallelRoutes.has(listed);
+  return Object.keys(prerenderManifest.dynamicRoutes).some(
+    (route) => parallelRoutes.has(route) && getRouteRegex(route).re.test(pathname),
+  );
+};
+
+/**
+ * A page as the build keeps it, which Next's handler is about to keep for
+ * `pathname`. The build keeps a page of a parallel route's slot without a
+ * status (`export/routes/app-page.js:126-141`), which `next start` serves
+ * with 200: a page whose other slots have no match for its path renders the
+ * not-found page, which a page load shows, and a navigation, which keeps the
+ * other slots as they are, does not. Next's handler would keep the status of
+ * its render, 404, and Next's router takes a navigation that answers 404 for
+ * a page load. So the entry gets 200, in place: the handler answers the
+ * request of its prerender with the status of the entry it keeps, and
+ * otherwise with the one its render set.
+ */
+export function keptAsBuilt(
+  pathname: string,
+  value: { kind: string; status?: number } | null,
+): void {
+  // `CachedRouteKind.APP_PAGE`, a `const enum` of Next's types.
+  if (
+    value?.kind === "APP_PAGE" &&
+    value.status !== undefined &&
+    value.status !== 200 &&
+    isParallelRoutePath(pathname)
+  ) {
+    value.status = 200;
   }
 }
 

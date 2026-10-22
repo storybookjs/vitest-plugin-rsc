@@ -202,3 +202,19 @@ test("prerenders a route at its first page load or navigation, not at a prefetch
   if (production)
     expect([prefetch.cache, navigation.cache, pageLoad.cache]).toEqual([null, "MISS", "HIT"]);
 });
+
+test("keeps a page of a slot as the build does, with 200, where another slot has no page for its path", async () => {
+  // A navigation, which keeps the page of `children` that is there, and then
+  // a page load, which shows the not-found page there.
+  const navigation = await request("/prerendered/slots/duration", { headers: { rsc: "1" } });
+  const again = await request("/prerendered/slots/duration", { headers: { rsc: "1" } });
+  const pageLoad = await request("/prerendered/slots/duration");
+
+  expect(pageLoad.text).toContain("View duration");
+  if (production) {
+    // Next's router takes a navigation that answers 404 for a page load.
+    expect([navigation.status, again.status, pageLoad.status]).toEqual([200, 200, 200]);
+    expect([navigation.cache, again.cache, pageLoad.cache]).toEqual(["MISS", "HIT", "HIT"]);
+    expect(pageLoad.text).toContain("Nothing here");
+  }
+});
