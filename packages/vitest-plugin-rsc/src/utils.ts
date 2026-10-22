@@ -20,7 +20,7 @@ import {
   type InvokeResult,
 } from "./built-layers.ts";
 import { isHostModule } from "./host-module.ts";
-import { runnerTimers, timersKey } from "./timers.ts";
+import { Registrations, registrationsKey } from "./registrations.ts";
 import {
   answerEvent,
   changedEvent,
@@ -132,9 +132,11 @@ function createRunner(
 ): ModuleRunner {
   const layer = builtLayers?.[environment];
   // A runner that is closed, like a page's that was left, settles none of
-  // the `import()`s of its modules, and fires none of their timers.
+  // the `import()`s of its modules.
   const isClosed = () => runner.isClosed();
-  const timers = runnerTimers(isClosed);
+  // What the modules of Next's files register with the browser, which
+  // closing the runner releases: see registrations.ts.
+  const registrations = new Registrations();
   const runner = new ModuleRunner(
     {
       // With `sourcemaps`, the stack of an error has the lines of the source
@@ -152,13 +154,37 @@ function createRunner(
           // A module of a build has the URL of the file it would be, from
           // which it names the files of the build, like its CSS.
           ...(layer && { url: builtUrl(layer, file) }),
-          // The timers its code calls: see timers.ts.
-          [timersKey]: timers,
+          // The registrations of Next's files: see registrations.ts.
+          [registrationsKey]: registrations,
         }),
     },
     droppingImportsOnceClosed(isClosed),
   );
+  // Closing the runner releases them, also when one of them throws, which
+  // the call throws then.
+  const close = runner.close.bind(runner);
+  runner.close = () => {
+    let failed: { error: unknown } | undefined;
+    try {
+      registrations.release();
+    } catch (error) {
+      failed = { error };
+    }
+    const closed = close();
+    if (failed) throw failed.error;
+    return closed;
+  };
+  registrationsOfRunner.set(runner, registrations);
   return runner;
+}
+
+const registrationsOfRunner = new WeakMap<ModuleRunner, Registrations>();
+
+/** The registrations of a runner of this module: see registrations.ts. */
+export function registrationsOf(runner: ModuleRunner): Registrations {
+  const registrations = registrationsOfRunner.get(runner);
+  if (!registrations) throw new Error("vitest-plugin-rsc: not a runner of utils.ts");
+  return registrations;
 }
 
 /**

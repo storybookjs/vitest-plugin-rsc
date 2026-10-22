@@ -49,7 +49,7 @@ import { optimizerCacheKey } from "./optimizer-cache-key.ts";
 import { createCommonJsPlugin } from "./commonjs.ts";
 import { createUseCachePlugin, useCacheId, useCacheModule } from "./use-cache.ts";
 import { createPathsPlugin } from "./paths.ts";
-import { pageTimersPlugin } from "./page-timers.ts";
+import { compileNextFile, isNextFile, nextRegistrationsPlugin } from "./page-registrations.ts";
 import { nextStaticBuild, withPathsFromRoot } from "./static-build.ts";
 import { builtHostFileOf, createStyles, changesInPlace } from "./styles.ts";
 import { assertVitestVersion } from "./vitest-version.ts";
@@ -950,6 +950,9 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
             plugins: [
               // First: the other plugins see Next's production code.
               ...(build === "production" ? [nextProductionPlugin(project.nextDir)] : []),
+              // Next's files register their timers, ports, observers and
+              // listeners through their runner: see page-registrations.ts.
+              ...(layer === "browser" ? [nextRegistrationsPlugin(project.nextDir)] : []),
               // The test runner is the page's own in the browser layer too,
               // like the `vitest` that vitest-browser-react imports: see
               // client-files.ts. Not a copy in what that layer pre-bundles.
@@ -1381,7 +1384,6 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
       clientReferenceOf,
     }),
     serverCode.plugin({ [environmentOf.rsc]: "rsc", [environmentOf.ssr]: "ssr" }),
-    pageTimersPlugin(environmentOf.browser, serverCode.isHostFile),
     ...styles.plugins,
     serverCode.asyncFunctionsPlugin(environmentOf.rsc),
     createUseCachePlugin(
@@ -1453,11 +1455,19 @@ function dependencyBuildPlugin(
           source.includes(key.replace(/^typeof /, "")),
         ),
       );
-      if (!isServerCode && Object.keys(define).length === 0) return kept;
+      // Next's files of the browser layer register through their runner, as
+      // the optimizer compiles them (`nextRegistrationsPlugin()`).
+      const ofNext = layer === "browser" && isNextFile(getProject().nextDir, file);
+      if (!isServerCode && !ofNext && Object.keys(define).length === 0) return kept;
       try {
         const defined = isServerCode
           ? await compileServerCode(source, file, registry, { ...define, ...forStores?.define })
-          : await transformWithOxc(source, file, { lang: "js", define });
+          : ofNext
+            ? ((await compileNextFile(source, file, define)) ??
+              (Object.keys(define).length > 0
+                ? await transformWithOxc(source, file, { lang: "js", define })
+                : undefined))
+            : await transformWithOxc(source, file, { lang: "js", define });
         return defined ?? kept;
       } catch (error) {
         // JSX in a `.js` file, for one. The bundler may still take it.

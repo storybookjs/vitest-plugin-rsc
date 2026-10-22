@@ -399,7 +399,9 @@ export function createServerCode(registry: string, options: ServerCodeOptions = 
      * host as the page's own: Vite does not key its cache on the plugins of
      * the optimizer.
      */
-    browserCacheKey: { __vitest_plugin_rsc_host_packages__: JSON.stringify(packages) },
+    browserCacheKey: {
+      __vitest_plugin_rsc_host_packages__: JSON.stringify(packages),
+    },
     /** For a module this plugin generates, with the constants of its layer. */
     compile: async (code: string, id: string, define: Record<string, string>) =>
       (await compileServerCode(code, id, registry, define))?.code ?? code,

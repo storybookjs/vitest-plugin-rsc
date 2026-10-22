@@ -2,13 +2,17 @@
 // its document until it is left: a page load makes it part by part, and
 // leaving it takes those back, the last part first, one page at a time.
 import { resetAsyncLocalStorage } from "../async-local-storage.ts";
-import { checkFetchedModules, createEnvironmentRunner, environmentModule } from "../utils.ts";
+import {
+  checkFetchedModules,
+  createEnvironmentRunner,
+  environmentModule,
+  registrationsOf,
+} from "../utils.ts";
 import { setOpenPage, sendRequest, unlessAborted } from "./app-requests.ts";
 import { callServerWithoutPage } from "./client-graph.ts";
 import { loadDocument, unloadDocument, type HistoryEntry } from "./document.ts";
 import { download, downloadName } from "./downloads.ts";
 import { noRouter } from "./host-document.ts";
-import { recordListeners, recordMessageChannels } from "./leftovers.ts";
 import type { NodeOnPage } from "./node-on-page.ts";
 import type { PageStore } from "./page-store.ts";
 import { loadsNothing, registry, type Opened } from "./registry.ts";
@@ -34,7 +38,6 @@ export class Page {
   readonly signal = this.#load.signal;
   readonly #releases: (() => void)[] = [];
   #started: Promise<void> | undefined;
-  #stopped = () => {};
   #left: Promise<void> | undefined;
 
   constructor(
@@ -58,12 +61,10 @@ export class Page {
   /**
    * Opens the page: its client starts. Leaving waits for `started` to
    * settle, at most `startTimeout`, before it releases what the page holds.
-   * `stopped` runs once the start is over for the page: once `started` has
-   * settled, or once leaving stops waiting for it.
    */
-  starts(started: Promise<unknown>, stopped: () => void): void {
-    this.#started = started.then(stopped, stopped);
-    this.#stopped = stopped;
+  starts(started: Promise<unknown>): void {
+    const settled = () => {};
+    this.#started = started.then(settled, settled);
   }
 
   /**
@@ -102,7 +103,6 @@ export class Page {
       `vitest-plugin-rsc: the page that was left was still loading its client code ` +
         `${startTimeout / 1000}s later. The next page loads anyway.`,
     );
-    this.#stopped();
     released.catch(reportError);
   }
 
@@ -253,14 +253,24 @@ async function openPage(
     // reports the error that takes the node's place as the page hydrates.
     if (!opening?.opened.node?.layouts) opening?.nodeOnPage?.replaced();
   }
-  await loadDocument(html, response.url, container, after);
-  superseded();
   // A page load runs the app's scripts from scratch, so every page gets a
   // module graph of its own for the browser layer. A page that is left keeps
   // no module graph: what of it stays, like an error whose stack has the
   // frames that loaded a module, cannot reach its modules through the runner.
+  // Closing it also releases what Next's files registered with the browser:
+  // see registrations.ts. Made before the document loads, so that React's
+  // inline scripts get its timers. Closed last, after the root has
+  // unmounted, which may still ask for some.
   const runner = createEnvironmentRunner("react_client");
   page.defer(() => void runner.close());
+  const forgetReact = await loadDocument(
+    html,
+    response.url,
+    container,
+    after,
+    registrationsOf(runner),
+  );
+  superseded();
   // The browser's Flight client reads properties off `__webpack_require__`
   // when it loads, which is before the page can say how it loads a module,
   // and wraps some of them. One that the pages shared would keep every page.
@@ -271,34 +281,24 @@ async function openPage(
   page.defer(() => {
     if (registry.browserRequire === browserRequire) registry.browserRequire = loadsNothing;
   });
-  // React's scheduler, Next's router and Next's dev overlay each leave
-  // something behind when they load: see leftovers.ts. That is from here
-  // until `start()` says that Next's client has loaded.
-  // This assumes that only the plugin's, React's and Next's code runs in that
-  // window, and no module of the app: the modules of the app wait for Next's
-  // client (see `start()` in client.tsx). A listener or channel
-  // of the app's that was added in it would be taken from the app when the
-  // page is left.
-  const leftovers = [recordListeners(window), recordMessageChannels()];
-  for (const leftover of leftovers) page.defer(() => leftover.remove());
-  const loaded = () => leftovers.forEach((leftover) => leftover.stop());
   const started = (async () => {
     const client = await runner.import<typeof import("./client.tsx")>(
       environmentModule("react_client", "vitest-plugin-rsc/nextjs/client"),
     );
     superseded();
-    const { unmount } = await client.start(
-      loaded,
-      container,
-      signal,
-      opening?.nodeOnPage,
-      page.errors,
-    );
-    page.defer(unmount);
+    const { unmount } = await client.start(container, signal, opening?.nodeOnPage, page.errors);
+    // Its nodes forget React DOM first, while they are still the page's.
+    page.defer(() => {
+      try {
+        forgetReact();
+      } finally {
+        unmount();
+      }
+    });
   })();
   // The page is open from here: `currentPage()` has it, for the navigations
   // of its app (document-loads.ts), and leaving waits for its start.
-  page.starts(started, loaded);
+  page.starts(started);
   setOpenPage(signal);
   try {
     await started;

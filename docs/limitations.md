@@ -66,3 +66,4 @@ Looking for every edge case, with the reason behind it? See [Not Yet](internals/
 ## Memory
 
 - Each `renderServer()` loads your client code again, like a page load. Things your app leaves on `window`, like a global listener it never removes, keep that page in memory. If the browser grows too much, try `isolate: true`: every test file then starts in a fresh page, at the cost of loading your app's server again.
+- A timer that your app or one of its libraries starts keeps running after its page is left, where the timers of Next.js and React don't. One that touches its page throws in the next test. See [A timer that outlives its page](nextjs-guide.md#a-timer-that-outlives-its-page).

@@ -1,9 +1,19 @@
 import { cleanup, renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
-import { afterEach, beforeEach, expect, onTestFinished, test, vi, type MockInstance } from "vitest";
+import {
+  afterEach,
+  beforeEach,
+  expect,
+  inject,
+  onTestFinished,
+  test,
+  vi,
+  type MockInstance,
+} from "vitest";
 import { cdp, page } from "vitest/browser";
 import { Counter } from "./components/counter.tsx";
 import { HelpDialog } from "./components/help-dialog.tsx";
 import { Shortcuts } from "./components/shortcuts.tsx";
+import { releaseStylesheet } from "../test/service.ts";
 
 // Every `renderServer()` is a page load, in a document that stays. What a page
 // leaves behind would keep it in memory, with all of its modules: so the
@@ -59,8 +69,9 @@ const router = () =>
 
 test("lets go of every page that navigated to a route with stylesheets", async () => {
   // React waits for a stylesheet that has not loaded before it shows a route,
-  // with a timer of a minute that it does not clear once it has: that timer
-  // would keep the page. So the browser has loaded them already.
+  // with a timer of a minute that it does not clear once it has. The page's
+  // runner clears it, which the test below asserts. Here the browser has
+  // loaded them already, so that what keeps a page is something else.
   await renderServer({ url: "/styles" });
   // Many pages, and first in the file: whether what a page left on the
   // document keeps it can depend on the shape that the document has at that
@@ -239,12 +250,9 @@ test("lets go of the last page after cleanup(), with no page after it", async ()
   const last = modulesOfPage();
 
   await cleanup();
-  // Not yet the plugin's: Next's client sets globals on `window` as it loads
-  // and hydrates, which reach its router and its root. The next page sets its
-  // own in their place; with no page after it, they keep the last one. A
-  // page takes back what it set on the document, not on `window`, where a
-  // test or a host sets its own globals too.
-  for (const key of ["next", "nd", "_N_E_STYLE_LOAD"]) Reflect.deleteProperty(window, key);
+  // Next's client sets globals on `window` as it loads and hydrates, which
+  // reach its router and its root: leaving the page takes them back.
+  expect(["next", "nd", "_N_E_STYLE_LOAD"].filter((key) => key in window)).toEqual([]);
   // The browser keeps the element that the pointer is over, and with it its
   // page, until the pointer is over another one.
   const elsewhere = document.body.appendChild(document.createElement("button"));
@@ -373,4 +381,65 @@ test("leaves an error that the test handles to the test", async () => {
     new Error("Uncaught Error: Handled by the test"),
   );
   consoleError.mockClear();
+});
+
+test("lets go of every page that navigated to a route with an image of next/image", async () => {
+  // In development, next/image observes the largest contentful paint, and
+  // never stops: the page's runner disconnects the observer. Counted, not
+  // spied on: a spy would keep the observers, and with them their pages.
+  let disconnected = 0;
+  const { disconnect } = PerformanceObserver.prototype;
+  PerformanceObserver.prototype.disconnect = function (this: PerformanceObserver) {
+    disconnected++;
+    disconnect.call(this);
+  };
+  onTestFinished(() => {
+    PerformanceObserver.prototype.disconnect = disconnect;
+  });
+  for (let pages = 0; pages < 4; pages++) {
+    await renderServer({ url: "/" });
+    router().push("/images");
+    // The text, not the element: an assertion holds what it asserts on until
+    // the test ends, and through it, its page.
+    await expect.poll(() => document.querySelector("h1")?.textContent).toBe("Images");
+    left.push(modulesOfPage());
+  }
+
+  await renderServer({ url: "/" });
+  await page.getByRole("heading", { name: "Home" }).hover();
+
+  if (inject("build") === "development") expect(disconnected).toBeGreaterThanOrEqual(4);
+  await expectCollected();
+});
+
+test("clears the timers that React DOM starts as a commit waits for a stylesheet", async () => {
+  // React DOM waits for a stylesheet a minute at most, and does not clear
+  // that timer once the commit is done: it would keep React DOM a minute.
+  // A stylesheet that the browser has not loaded yet makes it wait.
+  const key = crypto.randomUUID();
+  onTestFinished(() => releaseStylesheet(key));
+  const setTimeout = vi.spyOn(globalThis, "setTimeout");
+  const clearTimeout = vi.spyOn(globalThis, "clearTimeout");
+  // A spy keeps every callback it saw, and with it the page: not for the
+  // next test file of the worker.
+  onTestFinished(() => {
+    setTimeout.mockRestore();
+    clearTimeout.mockRestore();
+  });
+  const ofAMinute = () =>
+    setTimeout.mock.calls.flatMap(([, delay], index) =>
+      (delay ?? 0) > 50_000 ? [setTimeout.mock.results[index]!.value as number] : [],
+    );
+  await renderServer({ url: "/" });
+  router().push(`/late-css?key=${key}`);
+  await expect.poll(() => ofAMinute().length).toBeGreaterThan(0);
+  await releaseStylesheet(key);
+  await expect.element(page.getByText("Styled by a late stylesheet")).toBeVisible();
+  const ids = ofAMinute();
+  // Leaving the page clears them, not the commit.
+  clearTimeout.mockClear();
+
+  await cleanup();
+
+  for (const id of ids) expect(clearTimeout).toHaveBeenCalledWith(id);
 });

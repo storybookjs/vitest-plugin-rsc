@@ -76,7 +76,7 @@ test("stops its load and tells its node at once, before it releases", async () =
   const release = vi.fn();
   page.defer(release);
   let started!: () => void;
-  page.starts(new Promise<void>((resolve) => (started = resolve)), () => {});
+  page.starts(new Promise<void>((resolve) => (started = resolve)));
   expect(page.open).toBe(true);
 
   const leaving = page.leave("cleanup()");
@@ -100,8 +100,7 @@ test("stops waiting for a page that does not stop starting, and releases it once
   const page = await pageOf();
   const released: string[] = [];
   let started!: () => void;
-  const stopped = vi.fn();
-  page.starts(new Promise<void>((resolve) => (started = resolve)), stopped);
+  page.starts(new Promise<void>((resolve) => (started = resolve)));
   page.defer(() => released.push("runner"));
 
   const leaving = page.leave("cleanup()");
@@ -109,9 +108,7 @@ test("stops waiting for a page that does not stop starting, and releases it once
   await leaving;
 
   expect(warn).toHaveBeenCalledOnce();
-  // What records the start ends as leaving stops waiting, and what the page
-  // holds stays until it has stopped starting.
-  expect(stopped).toHaveBeenCalledOnce();
+  // What the page holds stays until it has stopped starting.
   expect(released).toEqual([]);
   // The client's unmount comes as the start settles: released with the rest.
   page.defer(() => released.push("root"));
