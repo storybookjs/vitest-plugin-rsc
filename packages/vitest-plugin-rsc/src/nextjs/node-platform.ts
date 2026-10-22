@@ -36,6 +36,8 @@ export function createNodePlatform(registry: string, prefix: string) {
   export async function getInstrumentationModule() {}
   export async function instrumentationOnRequestError() {}
   export async function ensureInstrumentationRegistered() {}
+  // Since Next 16.5: what emits the spans of the registration, which has none.
+  export async function ensureInstrumentationRegisteredWithDeferredSpans() {}
   `,
     // What Next's Node.js server patches when it starts: \`console\`, \`Date\`,
     // \`Math.random\`, \`crypto\`, \`setImmediate\`, the handlers of its process.
