@@ -1,4 +1,11 @@
-import { nodePlatformModules } from "./compat/paths.ts";
+import MagicString from "magic-string";
+import { parseAst } from "vite";
+import { walk, type Node } from "./commonjs.ts";
+import {
+  instrumentationModule,
+  nodePlatformModuleOf,
+  nodePlatformModules,
+} from "./compat/paths.ts";
 
 // What Next's Node.js server imports of its own that a browser does not have:
 // the modules of Next that set a Node.js process up or read the files of a
@@ -6,6 +13,11 @@ import { nodePlatformModules } from "./compat/paths.ts";
 // of it: the modules, as code for Vite. The browser's side is node-server.ts,
 // build-output.ts for the files of a build, and globals.ts for the globals.
 // The modules of Node.js themselves are the package's, see node-builtins.ts.
+//
+// A stand-in replaces all of a module, so it has every export of the module
+// that Next has: compat/checks.ts checks that when the run starts. Where all
+// a module of Next lacks in a browser is one capability of Node.js, the
+// module is Next's own, given that capability: see `instrumentationRequire`.
 
 /**
  * The stand-ins, for a `registry` in the browser that some of them call and a
@@ -16,6 +28,8 @@ export function createNodePlatform(registry: string, prefix: string) {
     names
       .map((name) => `export const ${name} = (...args) => ${registry}.${owner}.${name}(...args);`)
       .join("\n");
+  const unsupported = (what: string) =>
+    `throw new Error(${JSON.stringify(`vitest-plugin-rsc: ${what} is not supported.`)});`;
   const modules: Record<string, string> = {
     "react-server-node": forward("flightServer", [
       "createTemporaryReferenceSet",
@@ -31,21 +45,31 @@ export function createNodePlatform(registry: string, prefix: string) {
         "loadManifestFromRelativePath",
         "evalManifestFromRelativePath",
       ]) + `\nexport const clearManifestCache = () => false;`,
-    // \`instrumentation.ts\` is not run yet.
-    instrumentation: `
-  export async function getInstrumentationModule() {}
-  export async function instrumentationOnRequestError() {}
-  export async function ensureInstrumentationRegistered() {}
-  // Since Next 16.5: what emits the spans of the registration, which has none.
-  export async function ensureInstrumentationRegisteredWithDeferredSpans() {}
-  `,
     // What Next's Node.js server patches when it starts: \`console\`, \`Date\`,
     // \`Math.random\`, \`crypto\`, \`setImmediate\`, the handlers of its process.
     // The globals are the test's too. (Cache Components reads these patches.)
-    "node-environment": `export const installProcessErrorHandlers = () => {};`,
+    "node-environment": `
+  export const installProcessErrorHandlers = () => {};
+  export const isUnhandledRejectionListenerRegistered = () => false;
+  export const registerUnhandledRejectionListener = () => {};
+  export const setAbortedLogsStyle = () => {};
+  `,
     // Next's bundle for Node.js brings React for both server layers, and its
     // route module hands them to those patches. Here a layer has its own.
-    "vendored-react": `export const React = undefined;`,
+    "vendored-react": `
+  export const React = undefined;
+  export const ReactDOM = undefined;
+  export const ReactDOMServer = undefined;
+  export const ReactJsxDevRuntime = undefined;
+  export const ReactJsxRuntime = undefined;
+  export const ReactCompilerRuntime = undefined;
+  export const ReactServerDOMTurbopackClient = undefined;
+  export const ReactServerDOMTurbopackServer = undefined;
+  export const ReactServerDOMTurbopackStatic = undefined;
+  export const ReactServerDOMWebpackClient = undefined;
+  export const ReactServerDOMWebpackServer = undefined;
+  export const ReactServerDOMWebpackStatic = undefined;
+  `,
     // Next measures its bloom filter of the routes with this, to warn about
     // its size, and it reads files and streams for that. No warning here.
     "gzip-size": `
@@ -58,9 +82,17 @@ export function createNodePlatform(registry: string, prefix: string) {
     "fast-set-immediate": `
   export const unpatchedSetImmediate = (...args) => ${registry}.setImmediate(...args);
   export function DANGEROUSLY_runPendingImmediatesAfterCurrentTask() {
-    throw new Error("vitest-plugin-rsc: Next's staged rendering, for Cache Components, is not supported.");
+    ${unsupported("Next's staged rendering, for Cache Components,")}
   }
   export function expectNoPendingImmediates() {}
+  export class ImmediateTracker {
+    constructor() {
+      ${unsupported("Next's partial prefetching, for Cache Components,")}
+    }
+  }
+  export function runWithNativeImmediateTracking() {
+    ${unsupported("Next's partial prefetching, for Cache Components,")}
+  }
   `,
     // And the contexts of Next's \`*.shared-runtime\` modules, which the rsc
     // layer's imports of them read off this module (project/layers.ts): the
@@ -69,20 +101,85 @@ export function createNodePlatform(registry: string, prefix: string) {
   export const AppPageRouteModule = new Proxy(class {}, {
     construct: (_, args) => new ${registry}.ssr.AppPageRouteModule(...args),
   });
-  export const vendored = {
-    get contexts() {
-      return ${registry}.ssr.vendored.contexts;
-    },
-  };
+  export default AppPageRouteModule;
+  export const vendored = new Proxy({}, {
+    get: (_, key) => ${registry}.ssr.vendored[key],
+  });
+  ${forward("ssr", ["renderToHTMLOrFlight", "prerenderToHTMLOrFlight"])}
   `,
   };
+  const names = new Map(
+    Object.entries(nodePlatformModules).flatMap(([name, nextModules]) =>
+      nextModules.map((nextModule) => [nextModule, name]),
+    ),
+  );
   return {
     /** The id of the stand-in for a specifier of a server layer, if it has one. */
     moduleOf(source: string): string | undefined {
-      const match = nodePlatformModules.find(([pattern]) => pattern.test(source));
-      return match && prefix + match[1];
+      const name = names.get(nodePlatformModuleOf(source) ?? "");
+      return name && prefix + name;
     },
     /** The code of a stand-in, by its id without the prefix. */
     load: (name: string): string | undefined => modules[name],
+  };
+}
+
+// Next's module that loads the app's `instrumentation.ts` does it with one
+// `require()`, of the file Next's build makes of it, and takes a module that
+// is not found for an app without one. That call is all of the module that
+// needs Node.js: it gets a `require` that finds no file, as Node.js finds
+// none, and the rest of the module is Next's own, whatever it exports. The
+// plugin does not run `instrumentation.ts` yet. A browser has no `require`.
+const requireOfNode = "__vitest_plugin_rsc_require__";
+const notFound =
+  `const ${requireOfNode} = (id) => { throw Object.assign(` +
+  "new Error(`Cannot find module '${id}'`), " +
+  `{ code: "MODULE_NOT_FOUND" }); };\n`;
+
+/** The files of the module of Next that loads `instrumentation.ts`, of either build. */
+export const instrumentationFile = new RegExp(
+  `/next/dist/(?:esm/)?${instrumentationModule.replaceAll(".", "\\.")}\\.js$`,
+);
+
+/**
+ * The code of the module of Next that loads `instrumentation.ts`, with a
+ * `require` that finds no file. Or why it cannot have one: its one use of
+ * `require` has to be that call, or this is a Next that loads the file
+ * otherwise.
+ */
+export function instrumentationRequire(code: string): MagicString | string {
+  const uses: [Node, Node | undefined][] = [];
+  for (const [node, parent] of walk(parseAst(code) as unknown as Node)) {
+    if (node.type === "Identifier" && node.name === "require") uses.push([node, parent]);
+  }
+  const [use] = uses;
+  if (uses.length !== 1 || use![1]?.type !== "CallExpression" || use![1].callee !== use![0]) {
+    return `\`require\` ${uses.length} times, and not one \`require()\` of \`instrumentation.js\``;
+  }
+  const replaced = new MagicString(code);
+  replaced.overwrite(use![0].start, use![0].end, requireOfNode);
+  return replaced.prepend(notFound);
+}
+
+/**
+ * Next's module that loads `instrumentation.ts`, with a `require` that finds
+ * no file: for the dependency optimizer of a server layer, and for a static
+ * build, which has no optimizer.
+ */
+export function instrumentationPlugin() {
+  return {
+    name: "vitest-plugin-rsc:next-instrumentation",
+    transform: {
+      // Rolldown matches the id with `/` for a separator.
+      filter: { id: instrumentationFile },
+      handler(code: string, id: string) {
+        const replaced = instrumentationRequire(code);
+        if (typeof replaced === "string") {
+          // compat/checks.ts says so with Next's version when the run starts.
+          throw new Error(`vitest-plugin-rsc: ${id} has ${replaced}.`);
+        }
+        return { code: replaced.toString(), map: replaced.generateMap({ hires: true }) };
+      },
+    },
   };
 }

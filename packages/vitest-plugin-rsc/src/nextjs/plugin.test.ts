@@ -857,7 +857,7 @@ test("gives the rsc layer the ssr layer's contexts for Next's shared-runtime mod
     path.join(nextDir, contexts.slice("next/".length), "router-context.js"),
   );
   expect(bridge).toBe("\0vitest-plugin-rsc/next-bridge/ssr-app-page-module");
-  expect(rsc.load(bridge as string)).toContain("ssr.vendored.contexts");
+  expect(rsc.load(bridge as string)).toContain("ssr.vendored[key]");
   // The ssr layer loads the route module, whose `contexts/entrypoints`
   // imports the files: it keeps them.
   const ssr = resolverOf("ssr");

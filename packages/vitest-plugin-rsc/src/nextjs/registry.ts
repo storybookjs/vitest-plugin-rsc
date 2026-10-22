@@ -184,12 +184,15 @@ export type NextRegistry = {
    */
   loadBrowserModule?(id: string): Promise<unknown>;
   /**
-   * Of Next's route module for a page, loaded in the ssr layer: its class,
-   * and the contexts of its `*.shared-runtime` modules, for the rsc layer.
+   * Next's route module for a page, loaded in the ssr layer, for the rsc
+   * layer: its class, its renderer, and the contexts of its
+   * `*.shared-runtime` modules.
    */
   ssr: {
     AppPageRouteModule: new (options: unknown) => unknown;
-    vendored: { contexts: object };
+    vendored: Record<string, unknown>;
+    renderToHTMLOrFlight: AnyFunction;
+    prerenderToHTMLOrFlight: AnyFunction;
   };
   /** For Next's Node.js server: what stands in for the files of a build. */
   node: Record<string, AnyFunction>;

@@ -62,12 +62,12 @@ export type CommonJsOptions = {
   resolves?: (source: string) => Promise<boolean>;
 };
 
-type Node = { type: string; start: number; end: number; [key: string]: unknown };
+export type Node = { type: string; start: number; end: number; [key: string]: unknown };
 
 const isNode = (value: unknown): value is Node =>
   typeof value === "object" && value !== null && typeof (value as Node).type === "string";
 
-function* walk(node: Node, parent?: Node): Generator<[Node, Node | undefined]> {
+export function* walk(node: Node, parent?: Node): Generator<[Node, Node | undefined]> {
   yield [node, parent];
   for (const key in node) {
     const value = node[key];

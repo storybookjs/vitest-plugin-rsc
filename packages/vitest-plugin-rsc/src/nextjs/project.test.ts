@@ -683,6 +683,44 @@ test.for([
   },
 );
 
+test.for([
+  "server/node-environment-extensions/fast-set-immediate.external",
+  "server/node-environment-extensions/process-error-handlers",
+  "server/route-modules/app-page/vendored/ssr/entrypoints",
+  "server/route-modules/app-page/module",
+])("needs a stand-in with every export of %s", async (file) => {
+  const source = fs.readFileSync(installed.resolve(runtime(file)), "utf8");
+  const next = nextWith({ [runtime(file)]: `${source}\nexport const addedInNext = 1;\n` });
+
+  await expect(loadNextProject(root, next)).rejects.toThrow(
+    changed(
+      `${runtime(file)} has an export \`addedInNext\` that the plugin's stand-in for it lacks`,
+    ),
+  );
+});
+
+test("says which module of Next that the plugin stands in for is gone", async () => {
+  const file = runtime("server/load-manifest.external");
+  const next = nextWith({ [file]: new Error("Cannot find module") });
+
+  await expect(loadNextProject(root, next)).rejects.toThrow(
+    changed(`${file} is not there, which the plugin stands in for`),
+  );
+});
+
+test.for([
+  ["import()", "await require(", "await import("],
+  ["a second `require`", "await require(", "require.cache, await require("],
+])(
+  "needs Next to load instrumentation.ts with one `require()`, not with %s",
+  async ([, piece, replacement]) => {
+    const file = runtime("server/lib/router-utils/instrumentation-globals.external");
+    const next = nextWith({ [file]: sourceWith(file, piece!, replacement!) });
+
+    await expect(loadNextProject(root, next)).rejects.toThrow(changed(`${file} has \`require\``));
+  },
+);
+
 test("reads the exports of the Flight codec of the rsc layer", async () => {
   const { flightExports } = await loadNextProject(root);
 

@@ -132,32 +132,52 @@ export const withStoresFiles = (modules: string[]) =>
 
 /**
  * The modules of Next's Node.js server that node-platform.ts stands in for,
- * by the name of the stand-in.
+ * by the name of the stand-in: each by its path in `next/dist`, without
+ * `esm/` and `.js`. compat/checks.ts checks that each is a file of the
+ * installed Next, and that its stand-in has every export of it.
  */
-export const nodePlatformModules: [RegExp, string][] = [
-  [/^next\/dist\/(esm\/)?server\/app-render\/react-server\.node(\.js)?$/, "react-server-node"],
-  [/^next\/dist\/(esm\/)?server\/load-manifest\.external(\.js)?$/, "load-manifest"],
-  [
-    /^next\/dist\/(esm\/)?server\/lib\/router-utils\/instrumentation-globals\.external(\.js)?$/,
-    "instrumentation",
+export const nodePlatformModules: Record<string, string[]> = {
+  "react-server-node": ["server/app-render/react-server.node"],
+  "load-manifest": ["server/load-manifest.external"],
+  "node-environment": [
+    "server/node-environment",
+    ...[
+      "error-inspect",
+      "console-file",
+      "console-exit",
+      "console-dim.external",
+      "unhandled-rejection.external",
+      "random",
+      "date",
+      "web-crypto",
+      "node-crypto",
+      "process-error-handlers",
+    ].map((name) => `server/node-environment-extensions/${name}`),
+    // What sets up a Node.js process for Next: the patches above, a hook on
+    // `require`, a `crypto` global.
+    "build/adapter/setup-node-env.external",
   ],
-  [
-    /^next\/dist\/(esm\/)?server\/node-environment(-extensions\/(error-inspect|console-file|console-exit|console-dim\.external|unhandled-rejection\.external|random|date|web-crypto|node-crypto|process-error-handlers))?(\.js)?$/,
-    "node-environment",
+  "fast-set-immediate": ["server/node-environment-extensions/fast-set-immediate.external"],
+  "gzip-size": ["compiled/gzip-size"],
+  "vendored-react": [
+    "server/route-modules/app-page/vendored/rsc/entrypoints",
+    "server/route-modules/app-page/vendored/ssr/entrypoints",
   ],
-  // What sets up a Node.js process for Next: the patches above, a hook on
-  // `require`, a `crypto` global.
-  [/^next\/dist\/(esm\/)?build\/adapter\/setup-node-env\.external(\.js)?$/, "node-environment"],
-  [
-    /^next\/dist\/(esm\/)?server\/node-environment-extensions\/fast-set-immediate\.external(\.js)?$/,
-    "fast-set-immediate",
-  ],
-  [/^next\/dist\/compiled\/gzip-size(\/index(\.js)?)?$/, "gzip-size"],
-  [
-    /^next\/dist\/(esm\/)?server\/route-modules\/app-page\/vendored\/(rsc|ssr)\/entrypoints(\.js)?$/,
-    "vendored-react",
-  ],
-];
+};
+
+/**
+ * The module of `nodePlatformModules` a specifier is of: of either build of
+ * Next, with or without `.js`, or `/index.js` for a directory.
+ */
+export function nodePlatformModuleOf(specifier: string): string | undefined {
+  return /^next\/dist\/(?:esm\/)?(.+?)(?:\/index)?(?:\.js)?$/.exec(specifier)?.[1];
+}
+
+/**
+ * The module of Next's server that loads the app's `instrumentation.ts`, by
+ * its path in `next/dist`: see node-platform.ts.
+ */
+export const instrumentationModule = "server/lib/router-utils/instrumentation-globals.external";
 
 /**
  * What project/layers.ts adds to the alias tables of Next, as Next's build

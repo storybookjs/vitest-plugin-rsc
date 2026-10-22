@@ -53,10 +53,7 @@ export { resetCaches } from "./cache.ts";
 // build-output.ts are what Next's Node.js server has around them, and a
 // browser does not.
 
-registry.ssr = {
-  AppPageRouteModule: appPageModule.AppPageRouteModule as never,
-  vendored: appPageModule.vendored,
-};
+registry.ssr = appPageModule as never;
 registerModuleLoader("ssr");
 
 // The routes of the app by their page name, and the route of a node for each

@@ -33,7 +33,7 @@ import {
   serverReferenceInfo,
 } from "./compat/paths.ts";
 import { browserMapping, isNodeModule, nodeModuleOf } from "./node-builtins.ts";
-import { createNodePlatform } from "./node-platform.ts";
+import { createNodePlatform, instrumentationPlugin } from "./node-platform.ts";
 import { registryGlobal } from "./registry-global.ts";
 import {
   loadNextProject,
@@ -960,6 +960,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
               ...(layer === "browser"
                 ? []
                 : [
+                    instrumentationPlugin(),
                     serverCode.optimizerPlugin(layer),
                     serverCode.asyncFunctionsOptimizerPlugin(layer),
                   ]),
@@ -1393,6 +1394,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
     // which has no optimizer.
     ...layers.map((layer) => dependencyBuildPlugin(getProject, serverCode, layer)),
     { ...flightConsolePlugin(), apply: "build" },
+    { ...instrumentationPlugin(), apply: "build" },
     nextStaticBuild({
       environments: environmentOf,
       entries: { ssr: "vitest-plugin-rsc/nextjs/ssr", browser: "vitest-plugin-rsc/nextjs/client" },
