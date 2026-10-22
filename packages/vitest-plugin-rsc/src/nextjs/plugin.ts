@@ -603,10 +603,17 @@ function replaceableRouterPlugin(): Plugin {
           );
           return;
         }
-        const patched = code.replace(
-          check,
-          `if (globalActionQueue !== null && !globalThis.${registryGlobal}?.replacingRouter) {`,
-        );
+        const patched = code
+          .replace(
+            check,
+            `if (globalActionQueue !== null && !globalThis.${registryGlobal}?.replacingRouter) {`,
+          )
+          // `renderServer({ url, reuse: "navigation" })` waits for the queue
+          // of the open page to be done: see `navigateTo()` in client.tsx.
+          .replace(
+            "export function getCurrentAppRouterState() {",
+            "export function vitestPluginRscActionQueue() { return globalActionQueue; }\n$&",
+          );
         return { code: patched, map: null };
       },
     },

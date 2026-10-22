@@ -6,7 +6,7 @@ import { unlinkStylesheets } from "./client-graph.ts";
 import { resetDisk } from "./disk.ts";
 import "./document-loads.ts";
 import { NodeOnPage } from "./node-on-page.ts";
-import { leavePage, loadPage } from "./page.ts";
+import { leavePage, loadPage, suspendNavigablePage } from "./page.ts";
 import { registry, type Opened } from "./registry.ts";
 import { loadedSsrLayer, rscLayer, ssrLayer } from "./server-layers.ts";
 
@@ -245,8 +245,15 @@ export type RenderServerOptions = RequestOptions & {
    * starts an app of its own, and so does the first page of a test file.
    *
    * In development the page has no dev overlay of Next's.
+   *
+   * With `"navigation"`, the page stays open when the test ends, also into
+   * the next test file, and the next `renderServer()` of `"navigation"` is
+   * a navigation of its router to `url`, and a refresh, which renders the
+   * whole tree again with the cookies and `headers` of the test: one page
+   * load for the whole run. The state of a layout's Client Components and of
+   * Next's router carries over, and `response` has no body.
    */
-  reuse?: boolean;
+  reuse?: boolean | "navigation";
 };
 
 export type RenderServerResult = {
@@ -402,14 +409,14 @@ export async function renderServer(
           "`renderServer(<Page />, { url })`.",
       );
     }
-    if (first.reuse && first.ssr) {
+    if (first.reuse === true && first.ssr) {
       throw new Error(
         "vitest-plugin-rsc: `renderServer({ url, reuse: true })` renders the page in the root " +
           "of the app that is there, which cannot hydrate HTML of the server: it implies " +
           "`ssr: false`.",
       );
     }
-    const ssr = first.reuse ? false : first.ssr;
+    const ssr = first.reuse === true ? false : first.ssr;
     const opened = { pathname, proxy: first.proxy ?? true, ssr };
     return {
       response: await loadPage(url, { headers }, store, {
@@ -573,7 +580,7 @@ export type CleanupOptions = {
  * on its first use, is prepared before the first page.
  */
 export async function cleanup({ url }: CleanupOptions = {}): Promise<void> {
-  await leavePage("cleanup()");
+  if (!(await suspendNavigablePage())) await leavePage("cleanup()");
   for (const container of containers) container.remove();
   containers.clear();
   unlinkStylesheets();

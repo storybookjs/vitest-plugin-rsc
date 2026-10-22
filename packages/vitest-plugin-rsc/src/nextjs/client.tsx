@@ -1,7 +1,7 @@
 import { appBootstrap } from "next/dist/client/app-bootstrap";
 import { callServer } from "next/dist/client/app-call-server";
 import AppRouter from "next/dist/client/components/app-router";
-import { createMutableActionQueue } from "next/dist/client/components/app-router-instance";
+import * as appRouterInstance from "next/dist/client/components/app-router-instance";
 import { createInitialRouterState } from "next/dist/client/components/router-reducer/create-initial-router-state";
 import { invalidateBfCache } from "next/dist/client/components/segment-cache/bfcache";
 import { invalidateEntirePrefetchCache } from "next/dist/client/components/segment-cache/cache";
@@ -346,9 +346,9 @@ export async function renderAgain(
     // Next creates the queue of its router once per page load, and checks
     // that it does: the plugin's patch lets it replace it here (plugin.ts).
     registry.replacingRouter = true;
-    let actionQueue: ReturnType<typeof createMutableActionQueue>;
+    let actionQueue: ReturnType<typeof appRouterInstance.createMutableActionQueue>;
     try {
-      actionQueue = createMutableActionQueue(
+      actionQueue = appRouterInstance.createMutableActionQueue(
         createInitialRouterState({
           navigatedAt: Date.now(),
           initialRSCPayload: payload,
@@ -391,4 +391,68 @@ export async function renderAgain(
       app = undefined;
     },
   };
+}
+
+// What Next's patched router module hands out of its action queue
+// (`replaceableRouterPlugin()` in plugin.ts).
+type ActionQueue = { pending: unknown; state: { tree: unknown } };
+const { publicAppRouterInstance, vitestPluginRscActionQueue } = appRouterInstance as unknown as {
+  publicAppRouterInstance: { push(href: string): void; refresh(): void };
+  vitestPluginRscActionQueue(): ActionQueue | null;
+};
+
+/**
+ * Has the router of the page that is open navigate to `href`, and then
+ * refresh, as a test of `reuse: "navigation"` opens its page: the refresh
+ * renders the whole tree again, the root layout too, with the cookies of the
+ * test. `errors` are where the page reports its errors from now on. Resolves
+ * once React has committed the tree of the refresh: once the router has no
+ * action left, and it has written the tree of its state to the history,
+ * which it does as it commits that state.
+ */
+export async function navigateTo(
+  href: string,
+  signal: AbortSignal,
+  errors: unknown[],
+): Promise<void> {
+  const queue = vitestPluginRscActionQueue();
+  if (!current || current.leaving || !queue) {
+    throw new Error("vitest-plugin-rsc: there is no page whose router can navigate.");
+  }
+  current.errors = errors;
+  const { history } = window;
+  const pushState = Object.getOwnPropertyDescriptor(history, "pushState");
+  const replaceState = Object.getOwnPropertyDescriptor(history, "replaceState");
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const abort = () => reject(signal.reason);
+      signal.addEventListener("abort", abort, { once: true });
+      // What the router writes for a state: `history.state` is a copy of it.
+      const check = (written: unknown) => {
+        const tree = (written as { __PRIVATE_NEXTJS_INTERNALS_TREE?: { tree: unknown } } | null)
+          ?.__PRIVATE_NEXTJS_INTERNALS_TREE?.tree;
+        if (queue.pending !== null || tree !== queue.state.tree) return;
+        signal.removeEventListener("abort", abort);
+        resolve();
+      };
+      for (const method of ["pushState", "replaceState"] as const) {
+        const write = history[method];
+        history[method] = function (this: History, ...args: Parameters<History["pushState"]>) {
+          write.apply(this, args);
+          check(args[0]);
+        };
+      }
+      publicAppRouterInstance.push(href);
+      publicAppRouterInstance.refresh();
+    });
+  } finally {
+    // As they were: Next's router wraps them while it is mounted.
+    for (const [method, descriptor] of [
+      ["pushState", pushState],
+      ["replaceState", replaceState],
+    ] as const) {
+      if (descriptor) Object.defineProperty(history, method, descriptor);
+      else delete (history as Partial<History>)[method];
+    }
+  }
 }

@@ -38,7 +38,9 @@ export class Page {
   #left: Promise<void> | undefined;
 
   constructor(
-    readonly errors: unknown[],
+    // Not for good: the page of `"navigation"` reports to the test that
+    // navigated in it last.
+    public errors: unknown[],
     readonly nodeOnPage?: NodeOnPage,
   ) {}
 
@@ -132,6 +134,41 @@ type Client = typeof import("./client.tsx");
 // one that the app loads itself, or with `leaveKeptApp()`.
 let kept: { client: Client; leave(): void } | undefined;
 
+// The page of `renderServer({ url, reuse: "navigation" })` that stays open
+// from one test to the next, as the latest page, with its load and the
+// client that started it: the next page of `"navigation"` is a navigation of
+// its router (`navigateTo()` in client.tsx), and `cleanup()` does not leave
+// it (`suspendNavigablePage()`).
+let navigable: { page: Page; loaded: Promise<unknown>; client?: Client } | undefined;
+
+// The page of `"navigation"`, once it has loaded, unless it was left, or did
+// not load.
+async function navigablePage(): Promise<{ page: Page; client: Client } | undefined> {
+  const candidate = navigable;
+  if (!candidate || candidate.page !== current || candidate.page.signal.aborted) return;
+  try {
+    await candidate.loaded;
+  } catch {
+    return;
+  }
+  const { page, client } = candidate;
+  return client && page === current && page.open ? { page, client } : undefined;
+}
+
+/**
+ * Ends what the server still does for the page of `"navigation"` that is
+ * open, as leaving it would, and keeps the page open for the next test.
+ * Resolves with whether there is such a page.
+ */
+export async function suspendNavigablePage(): Promise<boolean> {
+  if (!(await navigablePage())) return false;
+  await leaving;
+  await loadedSsrLayer()?.settleRequests();
+  registry.opened = undefined;
+  resetAsyncLocalStorage();
+  return true;
+}
+
 /**
  * Leaves the app that pages of `reuse` render in, if any: its root, its
  * module graph and what its modules left behind as they loaded go. Once its
@@ -177,8 +214,12 @@ type Opening = {
   signal?: AbortSignal;
   /** Where the page, and the pages the app loads from it, report their errors. */
   errors: unknown[];
-  /** Renders the page in the app of the page before, if it is kept: see `kept`. */
-  reuse?: boolean;
+  /**
+   * Renders the page in the app of the page before, if it is kept: see
+   * `kept`. With `"navigation"` the router of the page that is open
+   * navigates to it: see `navigable`.
+   */
+  reuse?: boolean | "navigation";
 };
 
 // The document of a page, which a navigation has before it loads the page:
@@ -192,11 +233,30 @@ export async function loadPage(
   from: PageStore,
   opening?: Opening,
 ): Promise<Response> {
+  // The page of `"navigation"` that is open navigates, with the cookies and
+  // the headers of the test. Only a page of it waits for that page's load.
+  const open = (opening ? opening.reuse === "navigation" : navigable !== undefined)
+    ? await navigablePage()
+    : undefined;
+  if (opening?.reuse === "navigation" && open) {
+    registry.opened = opening.opened;
+    from.headers = opening.headers;
+    if (opening.cookie !== null) from.seed(opening.cookie);
+    open.page.errors = opening.errors;
+    await open.client.navigateTo(url.href, open.page.signal, opening.errors);
+    // No document: the router's requests have the responses.
+    return Object.defineProperty(new registry.Response(null, { status: 200 }), "url", {
+      value: url.href,
+    });
+  }
   // Where the page reports its errors: to the `renderServer()` that opens
   // it, or for a page the app loads itself, to where the page it replaces
   // reported them: the app loads one only from a page (see the listener of
   // `navigate` in document-loads.ts). Before leaving, which forgets that page.
   const errors = opening?.errors ?? currentPage()?.errors ?? [];
+  // A page that the app loads from the page of `"navigation"` is the one the
+  // next test navigates in, as that one was.
+  const navigation = opening ? opening.reuse === "navigation" : open !== undefined;
   const leaving = leavePage(opening ? "another renderServer()" : "a page load of the app");
   // The page from here: the test moves on from it by leaving it, also while
   // it loads.
@@ -205,7 +265,7 @@ export async function loadPage(
     await leaving;
     page.signal.throwIfAborted();
     // A page that is not one of `reuse` starts an app of its own.
-    if (!opening?.reuse) leaveKeptApp();
+    if (opening?.reuse !== true) leaveKeptApp();
 
     // Once the node that was in it is gone.
     if (opening?.container?.hasChildNodes()) {
@@ -235,6 +295,7 @@ export async function loadPage(
       throw error;
     }
   })();
+  if (navigation) navigable = { page, loaded: loading };
   if (!opening?.signal) return loading;
   // Until the load has settled, the abort leaves its page as another
   // `renderServer()` would, also one that is still loading. Not a page that
@@ -272,7 +333,7 @@ async function openPage(
   };
 
   // A page of `reuse` in a kept app needs no document: see `renderInKeptApp()`.
-  if (opening?.reuse && kept && !("html" in request)) {
+  if (opening?.reuse === true && kept && !("html" in request)) {
     return renderInKeptApp(page, kept.client, url, request, from, opening.opened);
   }
   // The test's request, or the document that a navigation has: see `navigate()`.
@@ -345,6 +406,7 @@ async function openPage(
         reuse,
       );
       page.defer(unmount);
+      if (navigable?.page === page) navigable.client = client;
       if (!reuse) return;
       appReleases.push(leaveApp);
       // React DOM marks the document as the container of the root, and as
