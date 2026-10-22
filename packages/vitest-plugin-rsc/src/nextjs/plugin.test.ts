@@ -376,6 +376,12 @@ test("has the ssr layer pre-bundle what the Client Components that a test file r
   expect(ssr).toContain("@t3-oss/env-core");
   expect(ssr).toContain("next-themes");
   expect(ssr).not.toContain("request-context");
+  // Not what the plugin's own setup file imports, which is an entry of the
+  // rsc layer and, in this repository, no file of `node_modules`: the ssr
+  // layer never loads Next's server for the rsc layer.
+  expect(ssr.filter((id) => /static-paths\/app|react-server-dom-webpack\/server/.test(id))).toEqual(
+    [],
+  );
 });
 
 test("has the ssr layer pre-bundle what the cache handlers of next.config import", async () => {

@@ -846,12 +846,19 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
           // scan starts where the rsc layer's does, and reads through the
           // Server Components to them, as the browser layer's does. Not at a
           // file of a package, like the runtime of Vitest, which is the
-          // page's and which the layer does not run. And at the cache
-          // handlers of `next.config`, which it loads itself.
+          // page's and which the layer does not run. Nor at a file of the
+          // plugin, like its setup file, which is a file of `node_modules`
+          // for an installed package and a file of this repository for a
+          // linked one. And at the cache handlers of `next.config`, which it
+          // loads itself.
           const ssr = server.config.environments[environmentOf.ssr]!;
+          const isOwnOrPackageFile = (entry: string) => {
+            const file = normalizePath(entry);
+            return file.includes("/node_modules/") || file.startsWith(ownDir);
+          };
           ssr.optimizeDeps.entries = [
             ...[ssr.optimizeDeps.entries ?? []].flat(),
-            ...rsc.optimizeDeps.entries.filter((entry) => !entry.includes("/node_modules/")),
+            ...rsc.optimizeDeps.entries.filter((entry) => !isOwnOrPackageFile(entry)),
             ...cacheHandlerEntries,
           ];
         },
