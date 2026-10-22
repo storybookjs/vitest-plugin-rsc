@@ -182,7 +182,7 @@ In the browser layer, the same kind of define points these names at a scope that
 - `addEventListener` and `removeEventListener`, which web-vitals calls bare;
 - each also as `globalThis.`, `self.` and `window.`.
 
-The scope passes each call on to the global of that moment, so the test's fake timers still apply, and keeps what it made. Leaving the page clears the timers, closes the ports and disconnects the observers. A call that a left page's code makes after that makes nothing.
+The scope hands out the global as it is when Next's code reads it, as the global itself would be, so the test's fake timers apply as they did before, and keeps what it made. Leaving the page clears the timers, closes the ports and disconnects the observers. A call that a left page's code makes after that makes nothing.
 
 Why this is the clean way:
 
