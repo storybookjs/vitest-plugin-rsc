@@ -46,11 +46,6 @@ const browserMode = () => ({
   instances: [{ browser: "chromium" as const }],
 });
 
-// Next's production code with `VITEST_PLUGIN_RSC_BUILD=production`, which CI
-// runs the suite with too.
-// oxlint-disable-next-line no-process-env
-const build = (process.env.VITEST_PLUGIN_RSC_BUILD || "development") as NextBuild;
-
 export const nextjsNotesProjects = [
   defineProject({
     root,
@@ -66,7 +61,17 @@ export const nextjsNotesProjects = [
     // dependencies imports: found while the tests run, they would make Vite
     // optimize again, and reload the tests.
     optimizeDeps: { include: ["@electric-sql/pglite", "drizzle-orm/pglite"] },
-    plugins: [vitestPluginRSC(), vitestPluginNext({ build })],
+    plugins: [
+      vitestPluginRSC(),
+      // Next's production code with `VITEST_PLUGIN_RSC_BUILD=production`,
+      // which CI runs the suite with too.
+      // oxlint-disable-next-line no-process-env
+      vitestPluginNext({
+        build: (process.env.VITEST_PLUGIN_RSC_BUILD || "development") as NextBuild,
+        // A test runs a story, which `@storybook/react` renders: with React's build.
+        renderers: ["@storybook/react"],
+      }),
+    ],
     test: {
       name: "nextjs-notes-demo-browser",
       include: ["**/*.test.{ts,tsx}"],
@@ -85,7 +90,6 @@ export const nextjsNotesProjects = [
       // `expect.element()` waits until the test's own timeout.
       expect: { poll: { timeout: 10_000 } },
       setupFiles: ["./vitest.setup.ts"],
-      provide: { build },
     },
   }),
   // Every story of the app, as a test of Storybook's Vitest addon, which

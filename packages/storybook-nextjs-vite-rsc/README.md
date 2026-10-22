@@ -47,6 +47,9 @@ framework: {
     // Glob patterns from the root; one for a package starts
     // with `**`, as it matches the package's real path.
     browserModules: ["**/node_modules/msw/**"],
+    // Packages that run React's build, besides `@storybook/react`,
+    // which the framework names.
+    renderers: ["@kit/react"],
   },
 },
 ```
@@ -478,6 +481,17 @@ test("the notes page", async () => {
 });
 ```
 
+Such a project has the plugin itself, so it names `@storybook/react`,
+which renders a client story in React's `act()`, and skips that with
+`build: "production"`, where React has no `act()`:
+
+```ts
+vitestPluginNext({
+  build: "production",
+  renderers: ["@storybook/react"],
+});
+```
+
 `sb.mock()` of `preview.tsx` mocks nothing in such a test, and
 `sb.mock(import("../lib/db"))` evaluates the module it names where the
 test evaluates `preview.tsx`, also in the browser. Name the module by its
@@ -492,9 +506,6 @@ and mock it with `vi.mock()` in a setup file of the test's project.
 - Tags of `preview.server.tsx`: see Two Previews.
 - A change of an MDX file that shows a client story with `of={…}` fails
   that block until the preview loads again.
-- A client story with `build: "production"`. `@storybook/react` renders
-  it in React's `act()`, which React's production build does not have: it
-  fails with "React.act is not a function". A server story renders.
 - Next's router in a client story: `useRouter()` throws there, and
   `usePathname()` returns `null`. A server story has the router.
 - A docs page has the CSS of the client stories it shows inline: not that

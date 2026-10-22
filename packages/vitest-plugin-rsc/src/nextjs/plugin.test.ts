@@ -371,44 +371,89 @@ test("compiles CSS with Next's rules, and says so where the Vitest config has it
 });
 
 // What the `config` hook makes of the `build` option for a command: the
-// NODE_ENV of the layers in a static build, and JSX compiled for production.
+// NODE_ENV of the layers in a static build, JSX compiled for production, and
+// the plugin of the dependency optimizer that makes Next's code production.
 async function buildOf(options: VitestPluginNextOptions, command: "serve" | "build") {
   const plugin = vitestPluginNext(options).find(({ name }) => name === "vitest-plugin-rsc:next")!;
   type BuildConfig = {
     oxc?: { jsx?: { development?: boolean } };
-    environments: Record<string, { define?: Record<string, string> }>;
+    environments: Record<
+      string,
+      {
+        define?: Record<string, string>;
+        optimizeDeps: { rolldownOptions: { plugins: { name: string }[] } };
+      }
+    >;
   };
   const config = await (plugin.config as ConfigHook<BuildConfig>)({ root }, { command });
-  const nodeEnvs = new Set(
-    ["client", "next_ssr", "react_client"].map(
-      (name) => config.environments[name]!.define?.["process.env.NODE_ENV"],
+  const layers = ["client", "next_ssr", "react_client"].map((name) => config.environments[name]!);
+  const nodeEnvs = new Set(layers.map((layer) => layer.define?.["process.env.NODE_ENV"]));
+  const productionPlugins = new Set(
+    layers.map(
+      (layer) =>
+        layer.optimizeDeps.rolldownOptions.plugins.find(({ name }) =>
+          name.startsWith("vitest-plugin-rsc:next-production"),
+        )?.name,
     ),
   );
   // The same in every layer.
   expect(nodeEnvs.size).toBe(1);
-  return { jsxDevelopment: config.oxc?.jsx?.development, nodeEnv: [...nodeEnvs][0] };
+  expect(productionPlugins.size).toBe(1);
+  return {
+    jsxDevelopment: config.oxc?.jsx?.development,
+    nodeEnv: [...nodeEnvs][0],
+    productionPlugin: [...productionPlugins][0],
+  };
 }
 
 // Four `config` hooks, each of which loads the Next project.
 test("runs Next's development code in a test run, and builds its production code", async () => {
-  expect(await buildOf({}, "serve")).toEqual({ jsxDevelopment: undefined, nodeEnv: undefined });
-  expect(await buildOf({}, "build")).toEqual({ jsxDevelopment: false, nodeEnv: '"production"' });
+  expect(await buildOf({}, "serve")).toEqual({
+    jsxDevelopment: undefined,
+    nodeEnv: undefined,
+    productionPlugin: undefined,
+  });
+  expect(await buildOf({}, "build")).toEqual({
+    jsxDevelopment: false,
+    nodeEnv: '"production"',
+    productionPlugin: "vitest-plugin-rsc:next-production",
+  });
 
   // Unless the option says otherwise.
   expect(await buildOf({ build: "production" }, "serve")).toEqual({
     jsxDevelopment: false,
     nodeEnv: undefined,
+    productionPlugin: "vitest-plugin-rsc:next-production",
   });
   expect(await buildOf({ build: "development" }, "build")).toEqual({
     jsxDevelopment: undefined,
     nodeEnv: '"development"',
+    productionPlugin: undefined,
   });
+});
+
+// The name is in Vite's hash of the pre-bundled dependencies, which its
+// options are not: another list pre-bundles again.
+test("names the renderers in the plugin that makes their code production", async () => {
+  const { productionPlugin } = await buildOf(
+    { build: "production", renderers: ["@kit/react"] },
+    "serve",
+  );
+  expect(productionPlugin).toBe("vitest-plugin-rsc:next-production:@kit/react");
 });
 
 test("takes no other build", () => {
   expect(() => vitestPluginNext({ build: "test" as never })).toThrow(
     '`build` is "development" or "production", not "test".',
   );
+});
+
+test("takes a renderer by its package name", () => {
+  expect(() => vitestPluginNext({ renderers: ["host-kit/react"] })).toThrow(
+    '`renderers` names a package, `name` or `@scope/name`, like "@storybook/react", not "host-kit/react".',
+  );
+  // Not a scope, which would be every package of it.
+  expect(() => vitestPluginNext({ renderers: ["@storybook"] })).toThrow('not "@storybook"');
 });
 
 test("gives the server layers the package's module of Node.js, after Next's aliases and the bridges", async () => {

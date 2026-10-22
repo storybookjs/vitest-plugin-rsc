@@ -18,7 +18,7 @@ import {
 import type { TestProject, Vitest } from "vitest/node";
 import { createRunnerEnvironmentPlugins } from "../runner-environment.ts";
 import { flightBridge, type FlightEntry } from "./flight.ts";
-import { nextBuilds, nextProductionPlugin, type NextBuild } from "./build.ts";
+import { nextBuilds, productionPlugin, type NextBuild } from "./build.ts";
 import { clientFiles, clientReferenceOfModule } from "./client-files.ts";
 import { createCompilePlugin, createDependencyCompilePlugin } from "./compile.ts";
 import { browserMapping, isNodeModule, nodeModuleOf } from "./node-builtins.ts";
@@ -634,6 +634,20 @@ export type VitestPluginNextOptions = ServerCodeOptions & {
    * for `vite build`, a static build of the app
    */
   build?: NextBuild;
+  /**
+   * Experimental. Packages that render with React, by package name, `name`
+   * or `@scope/name`. A renderer picks its code by React's build, as React's
+   * entry files do: by `process.env.NODE_ENV`. With `build: "production"`
+   * that is `"production"` in its files, as in the files of Next; every
+   * other package keeps the `NODE_ENV` it has. `@storybook/react` renders a
+   * story in React's `act()` unless its `NODE_ENV` is `"production"`:
+   * React's production build has no `act()`. Its framework names it; a
+   * Vitest project that runs a story from a test names it here. Not Testing
+   * Library, whose `render()` reads no `NODE_ENV`.
+   *
+   * @example ["@storybook/react"]
+   */
+  renderers?: string[];
 };
 
 export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[] {
@@ -652,6 +666,14 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
   // it: development for a test run and a dev server, production for a static
   // build, which is a site to look at, not a test that reads React's warnings.
   let build: NextBuild = options.build ?? "development";
+  const renderers = options.renderers ?? [];
+  for (const name of renderers) {
+    if (!/^(?:@[^/]+\/)?[^/@][^/]*$/.test(name)) {
+      throw new Error(
+        `vitest-plugin-rsc: \`renderers\` names a package, \`name\` or \`@scope/name\`, like "@storybook/react", not ${JSON.stringify(name)}.`,
+      );
+    }
+  }
   // What `envId` has: the project's, until an env file changes. One load
   // after the other, so that the last change has the last word.
   let env: PageEnv;
@@ -822,7 +844,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
           rolldownOptions: {
             plugins: [
               // First: the other plugins see Next's production code.
-              ...(build === "production" ? [nextProductionPlugin(project.nextDir)] : []),
+              ...(build === "production" ? [productionPlugin(project.nextDir, renderers)] : []),
               // The test runner is the page's own in the browser layer too,
               // like the `vitest` that vitest-browser-react imports: see
               // client-files.ts. Not a copy in what that layer pre-bundles.

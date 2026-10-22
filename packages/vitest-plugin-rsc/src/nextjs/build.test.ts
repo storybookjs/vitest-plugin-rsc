@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { rolldown } from "rolldown";
 import { afterEach, beforeEach, expect, test } from "vitest";
-import { nextProductionPlugin } from "./build.ts";
+import { productionPlugin } from "./build.ts";
 
 let dir: string;
 let nextDir: string;
@@ -24,10 +24,10 @@ function write(file: string, code: string): string {
 }
 
 // Bundled as the dependency optimizer does, with the NODE_ENV of Vitest.
-async function bundle(input: string): Promise<string> {
+async function bundle(input: string, renderers: string[] = []): Promise<string> {
   const build = await rolldown({
     input,
-    plugins: [nextProductionPlugin(nextDir)],
+    plugins: [productionPlugin(nextDir, renderers)],
     transform: { define: { "process.env.NODE_ENV": '"test"' } },
     logLevel: "silent",
   });
@@ -82,4 +82,35 @@ export const other = mode;
 
   expect(code).toContain('const app = "test";');
   expect(code).toContain('const mode = "test";');
+});
+
+test("makes NODE_ENV production in the files of a renderer", async () => {
+  const entry = write(
+    "app/page.js",
+    `import { mode, nested } from "@kit/react/index.js";
+import { other } from "@kit/react-docs/index.js";
+export const app = process.env.NODE_ENV;
+export { mode, nested, other };
+`,
+  );
+  write(
+    "node_modules/@kit/react/index.js",
+    `export { nested } from "./node_modules/is-what/index.js";
+export const mode = process.env.NODE_ENV;
+`,
+  );
+  // A package nested under the renderer, as npm installs one.
+  write(
+    "node_modules/@kit/react/node_modules/is-what/index.js",
+    "export const nested = process.env.NODE_ENV;\n",
+  );
+  // Another package whose name starts the same.
+  write("node_modules/@kit/react-docs/index.js", "export const other = process.env.NODE_ENV;\n");
+
+  const code = await bundle(entry, ["@kit/react"]);
+
+  expect(code).toContain('const app = "test";');
+  expect(code).toContain('const nested = "test";');
+  expect(code).toContain('const mode = "production";');
+  expect(code).toContain('const other = "test";');
 });

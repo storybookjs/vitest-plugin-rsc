@@ -107,7 +107,7 @@ export const viteFinal: ViteFinal = async (config, options) => {
   ) {
     throw pluginTwice();
   }
-  const { build, browserModules } =
+  const { build, browserModules, renderers } =
     (await options.presets.apply<FrameworkOptions | undefined>("frameworkOptions")) ?? {};
   const host = await hostOf(options);
   const globals = (await hasVitePlugins(plugins, [externalGlobalsPlugin]))
@@ -119,7 +119,19 @@ export const viteFinal: ViteFinal = async (config, options) => {
       ...config.optimizeDeps,
       include: [...(config.optimizeDeps?.include ?? []), ...globals],
     },
-    plugins: [...plugins, vitestPluginRSC(), vitestPluginNext({ build, browserModules, host })],
+    plugins: [
+      ...plugins,
+      vitestPluginRSC(),
+      vitestPluginNext({
+        build,
+        browserModules,
+        host,
+        // The renderer runs React's build: it renders a client story in
+        // React's `act()` unless its NODE_ENV is "production", where React
+        // has no `act()`.
+        renderers: ["@storybook/react", ...(renderers ?? [])],
+      }),
+    ],
   };
 };
 

@@ -114,20 +114,27 @@ test("the plugin, with Storybook as its host", async () => {
   await viteFinal(
     {},
     {
-      frameworkOptions: { build: "production", browserModules: ["**/node_modules/msw/**"] },
+      frameworkOptions: {
+        build: "production",
+        browserModules: ["**/node_modules/msw/**"],
+        renderers: ["@kit/react"],
+      },
       previewAnnotations,
     },
   );
-  const [{ host, build, browserModules }] = vitestPluginNext.mock.calls[0] as [
+  const [{ host, build, browserModules, renderers }] = vitestPluginNext.mock.calls[0] as [
     {
       host: { files: (string | RegExp)[]; packages: string[] };
       build: string;
       browserModules: string[];
+      renderers: string[];
     },
   ];
-  expect({ build, browserModules }).toEqual({
+  // With the renderer, which runs React's build.
+  expect({ build, browserModules, renderers }).toEqual({
     build: "production",
     browserModules: ["**/node_modules/msw/**"],
+    renderers: ["@storybook/react", "@kit/react"],
   });
   // The stories and `.storybook`, relative to the root.
   expect(host.files.slice(0, 2)).toEqual(["stories/**/*.stories.tsx", ".storybook/**"]);

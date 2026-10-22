@@ -30,7 +30,7 @@ export type FrameworkOptions = {
   builder?: BuilderOptions;
   /** React's `<StrictMode>` around a client story, as `@storybook/react` has it. */
   strictMode?: boolean;
-} & Pick<VitestPluginNextOptions, "build" | "browserModules">;
+} & Pick<VitestPluginNextOptions, "build" | "browserModules" | "renderers">;
 
 /** What `.storybook/main.ts` exports. */
 export type StorybookConfig = Omit<StorybookConfigBase, "framework"> &
