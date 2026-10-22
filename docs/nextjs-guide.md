@@ -767,11 +767,36 @@ Your app's server code reads `process.env` from the project's test env, the way 
 
 Vitest runs test files in parallel, each worker in a browser tab of its own, and each tab has its own server, database, disk, cookies and storage. So workers share nothing, and you don't need a shared test database.
 
-Within one worker, test files run one after another. With `isolate: false` they share the worker's modules, so they share its database too, and the reset before each test is what keeps them apart.
-
 Before each test, the plugin empties the in-memory disk and Next's Data Cache, and opens a new browser context for your app: none of its cookies, and empty `localStorage` and `sessionStorage`. A test file with `"use client"` has the browser's own cookies and storage instead, as with Testing Library. A database recipe's setup file puts the database back to what its migrations made, and fixes the clock with `vi.setSystemTime()`. On Postgres and MySQL, the database's `now()` follows that clock.
 
-What the plugin doesn't reset is the state of your own modules, like a `Map` in memory or a mock's implementation. Reset that in a `beforeEach()`.
+### `isolate: false`
+
+By default, Vitest starts every test file in a new iframe, which loads Next's runtime for three layers again: about 0.6 to 1.4 s per test file in the playgrounds. With `isolate: false`, the test files of a worker run one after another in the same iframe. They share its modules, so the runtime loads once per worker, and they share its database, so the reset before each test is what keeps them apart.
+
+The plugin does a lot of work so that this works. Every `renderServer()` is a page load in the same document, and leaving a page is the plugin's job, not the browser's:
+
+- Every page gets a module graph of its own for the browser layer. React, Next's router and your Client Components are evaluated again for it, and once the page is left, nothing keeps them.
+- Leaving a page takes back what React and Next.js left behind:
+  - React's root, and its listeners;
+  - the properties React DOM keeps on the document;
+  - the message ports of React's scheduler;
+  - the listeners that Next's client adds as it loads;
+  - the page's nodes, attributes, URL and history entry, and the Flight payload.
+- A new browser context and an empty disk before each test, as above.
+
+What React and Next.js still leave behind is listed in [Not Yet](next-routes.md#not-yet), and [page-lifecycle-risk.md](page-lifecycle-risk.md) plans how the plugin takes it back.
+
+### Avoiding isolation bugs
+
+What the plugin doesn't take back is what your own code and its libraries leave behind, as in any test setup. With `isolate: false` it stays for the test files after it. If you want the speed, a few habits keep the files apart:
+
+- **Mock in a setup file.** The test files of a worker share their modules, so a mock is for all of them, or for none. See [Mocks](#mocks).
+- **Reset the state of your own modules in a `beforeEach()`**, like a `Map` in memory or a mock's implementation. The plugin doesn't.
+- **Clean up in your effects.** A listener on `window`, an interval or an observer that an effect never removes keeps its whole page in memory, as in an app that never reloads: 0.5 to 2.8 MB a page in the playgrounds.
+- **Keep the elements of a page in the test that uses them.** One in a variable of the test file, or in the calls of a mock that is never cleared, keeps its page.
+- **Wait for a page that the app loads itself**, like after a link without Next's router, with an `expect.element()` on that page before the test ends.
+- **Run a library's timers before the page is left**, with the recipe below.
+- **Use `isolate: true` for the test files that still need it.** Put them in a Vitest project of their own, and the rest keeps the speed.
 
 ### A timer that outlives its page
 
