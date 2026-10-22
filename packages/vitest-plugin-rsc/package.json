@@ -93,7 +93,7 @@
     "test:run": "vitest run",
     "dev": "tsdown --sourcemap --watch src",
     "build": "tsdown",
-    "prepack": "tsdown",
+    "prepack": "tsdown && node scripts/readme.ts",
     "generate": "node scripts/node-modules.ts"
   },
   "dependencies": {

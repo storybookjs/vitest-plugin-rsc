@@ -2,7 +2,8 @@
 // version, and an optional one: another host installs the plugin
 // next to the Vitest of the project's own tests, which can be another major,
 // and npm refuses a peer that is there in a version out of its range.
-export const minimumVitest = "5.0.3";
+// 5.0.4 waits for a setup file's mocks before it imports a test file.
+export const minimumVitest = "5.0.4";
 
 const partsOf = (version: string) => version.split(/[.+-]/, 3).map((part) => Number(part) || 0);
 

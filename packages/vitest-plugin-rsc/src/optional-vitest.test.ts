@@ -73,14 +73,14 @@ test("has Vitest as an optional peer dependency of any version", () => {
   expect(manifest.peerDependenciesMeta.vitest).toEqual({ optional: true });
 });
 
-test("runs in Vitest 5.0.3 and later, and says so in an older one", () => {
-  for (const version of ["5.0.3", "5.1.0", "5.0.10", "6.0.0-beta.1"]) {
+test("runs in Vitest 5.0.4 and later, and says so in an older one", () => {
+  for (const version of ["5.0.4", "5.1.0", "5.0.10", "6.0.0-beta.1"]) {
     expect(() => assertVitestVersion(version), version).not.toThrow();
   }
   expect(() => assertVitestVersion("4.1.5")).toThrow(
-    "vitest-plugin-rsc: runs in Vitest 5.0.3 or later, and this is Vitest 4.1.5.",
+    "vitest-plugin-rsc: runs in Vitest 5.0.4 or later, and this is Vitest 4.1.5.",
   );
-  expect(() => assertVitestVersion("5.0.2")).toThrow("this is Vitest 5.0.2");
+  expect(() => assertVitestVersion("5.0.3")).toThrow("this is Vitest 5.0.3");
   expect(() => assertVitestVersion("5.0.0-beta.4")).toThrow("this is Vitest 5.0.0-beta.4");
 });
 

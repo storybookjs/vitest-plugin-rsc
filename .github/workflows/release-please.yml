@@ -52,5 +52,17 @@ jobs:
       - run: pnpm build
       - run: pnpm pack --dry-run
         working-directory: packages/vitest-plugin-rsc
-      - run: npm publish --tag latest --access public --provenance
+      # A prerelease, like 0.4.0-alpha.1, goes to the dist-tag of its kind,
+      # `alpha`, so that `npm install vitest-plugin-rsc` keeps the last
+      # release that is none. Every other release goes to `latest`.
+      - id: dist-tag
+        run: |
+          version=$(node -p "require('./package.json').version")
+          case "$version" in
+            *-*) tag="${version#*-}"; tag="${tag%%.*}" ;;
+            *) tag=latest ;;
+          esac
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+        working-directory: packages/vitest-plugin-rsc
+      - run: npm publish --tag "${{ steps.dist-tag.outputs.tag }}" --access public --provenance
         working-directory: packages/vitest-plugin-rsc

@@ -20,8 +20,7 @@
 //   established library, with no cipher or compression of its own, and a
 //   test against Node's own.
 //   Otherwise it throws when called: a stand-in does what Node.js does, or
-//   throws, and never answers wrong. See "Node.js In The Browser" in the
-//   README.
+//   throws, and never answers wrong. See docs/nodejs-in-the-browser.md.
 // - The others: unenv's, made of what a browser has, like Web Crypto,
 //   `Uint8Array` and `URL`. What it has no stand-in for throws once called,
 //   or answers like a machine without it would: `os.hostname()` is "".
