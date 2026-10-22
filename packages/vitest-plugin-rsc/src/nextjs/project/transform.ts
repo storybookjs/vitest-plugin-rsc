@@ -11,7 +11,7 @@ const compiledByVite = /\.(?:m?ts|[jt]sx)$/;
 /** Next's SWC transform of a module of the app, and the `paths` of its tsconfig. */
 export async function createCompiler(
   context: NextContext,
-): Promise<Pick<NextProject, "compile" | "paths">> {
+): Promise<Pick<NextProject, "compile" | "paths" | "dependencyCompileOptions">> {
   const { root, fail, config, appDir, pageExtensions, distDir, next } = context;
   const { WEBPACK_LAYERS, getLoaderSWCOptions, getRSCModuleInformation, loadJsConfig, swc } = next;
   // Next's SWC transform, with the options next-swc-loader gives it for a
@@ -146,5 +146,14 @@ export async function createCompiler(
     fail('the SWC transform no longer marks a `"use client"` module of the rsc layer');
   }
 
-  return { compile, paths };
+  // The options a dependency of a layer is compiled with, which are the same
+  // for every dependency but for its file: here for a file that is none.
+  const dependency = path.join(root, "node_modules", "dependency.js");
+  const dependencyCompileOptions = {
+    rsc: swcOptions(dependency, "rsc"),
+    ssr: swcOptions(dependency, "ssr"),
+    browser: swcOptions(dependency, "browser"),
+  };
+
+  return { compile, paths, dependencyCompileOptions };
 }

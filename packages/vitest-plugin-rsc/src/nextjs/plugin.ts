@@ -34,6 +34,7 @@ import {
 import { moduleFileAt } from "./project/context.ts";
 import { describeEnv, envFilesOf, type PageEnv } from "./project/env.ts";
 import { compileServerCode, createServerCode, type ServerCodeOptions } from "./server-code.ts";
+import { optimizerCacheKey } from "./optimizer-cache-key.ts";
 import { createCommonJsPlugin } from "./commonjs.ts";
 import { createUseCachePlugin, useCacheId, useCacheModule } from "./use-cache.ts";
 import { createPathsPlugin } from "./paths.ts";
@@ -907,6 +908,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
               define: {
                 ...definesOf(project, layer),
                 ...(layer === "browser" ? serverCode.browserCacheKey : serverCode.cacheKey),
+                ...optimizerCacheKey(project, layer),
               },
             },
           },
