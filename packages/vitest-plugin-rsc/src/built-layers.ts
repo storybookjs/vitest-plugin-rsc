@@ -57,7 +57,7 @@ export function builtUrl(layer: BuiltLayer, file: string): string {
  * the layers that `fetch` fetches: the first of `layers` at once, the others
  * when a runner asks. Every runner of a tab asks the same
  * one, which answers with the same object for a module every time: the code
- * is the same for every page, so `pageLoadEvaluator` in utils.ts compiles it
+ * is the same for every page, so `evaluatorIn()` in utils.ts compiles it
  * once.
  */
 export function createBuiltLayers(fetch: typeof globalThis.fetch, layers: BuiltLayer[]) {

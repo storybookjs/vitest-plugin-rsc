@@ -10,6 +10,7 @@ import {
   ssrModuleExportsKey,
 } from "vite/module-runner";
 import * as convertSourceMap from "convert-source-map";
+import { pageScopeKey } from "./runner-scope.ts";
 
 const reactClientCoverageModulePath = "/@vite/react-client-coverage-module";
 const reactClientCoverageQuery = "vitest-plugin-rsc-react-client-coverage";
@@ -20,6 +21,8 @@ const moduleRunnerArgumentNames = [
   ssrDynamicImportKey,
   ssrExportAllKey,
   ssrExportNameKey,
+  // The scope that utils.ts passes after Vite's context.
+  pageScopeKey,
 ];
 
 type ReactClientCoverageModule = {

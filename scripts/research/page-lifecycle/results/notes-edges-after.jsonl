@@ -1,0 +1,4 @@
+{"route":"/","left":{}}
+{"route":"/notes","left":{"setTimeout 10000ms @ dist-BQTKGE8u.js:13097":1}}
+{"route":"/notes at once","left":{"setTimeout 10000ms @ dist-BQTKGE8u.js:13097":1,"setTimeout 100ms @ next_dist_compiled_react-server-dom-webpack_client__edge__js.js:976":1}}
+{"run":"notes-edges-after","durationS":20.35,"unhandledErrors":4}

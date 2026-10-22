@@ -1,10 +1,11 @@
-// What React and Next leave behind when they load and start: listeners on
-// `window` and `document`, and the message channels of their schedulers. They
-// have no way to take them back: a browser drops them with the document. This
-// document stays, and each of them keeps the page that added it, with all of
-// its modules. So they are recorded while the plugin loads and starts Next's
-// client, and only then, to be removed when the page is left. What React DOM
-// keeps in properties of the document goes with the page too: see document.ts.
+// What React adds when it creates a root: listeners on the container and on
+// the document, which it never removes, and a browser drops with the
+// document. This document stays, and each of them keeps the page that added
+// it, with all of its modules. React DOM adds them through a variable, not
+// as a global that the page's scope can stand in for (page-scope.ts), so
+// client.tsx records them while it creates a root, and only then, to be
+// removed when the page is left. What React DOM keeps in properties of the
+// document goes with the page too: see document.ts.
 
 export type Leftovers = {
   /** Stops recording. */
@@ -43,35 +44,6 @@ export function recordListeners(target: EventTarget): Leftovers {
     remove() {
       stop();
       for (const args of added.splice(0)) target.removeEventListener(...args);
-    },
-  };
-}
-
-/** Records the message channels that are opened, until `stop()`. */
-export function recordMessageChannels(): Leftovers {
-  const Native = globalThis.MessageChannel;
-  const opened: MessageChannel[] = [];
-  let recording = true;
-  const Recorded = class MessageChannel extends Native {
-    constructor() {
-      super();
-      if (recording) opened.push(this);
-    }
-  };
-  globalThis.MessageChannel = Recorded;
-  const stop = () => {
-    recording = false;
-    if (globalThis.MessageChannel === Recorded) globalThis.MessageChannel = Native;
-  };
-  return {
-    stop,
-    remove() {
-      stop();
-      // A port with a message handler lives until it is closed.
-      for (const channel of opened.splice(0)) {
-        channel.port1.close();
-        channel.port2.close();
-      }
     },
   };
 }

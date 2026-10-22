@@ -25,6 +25,23 @@ Measured at `4d43e6ea` on an Apple M1 Pro (32 GB), with Vitest 5.0.5, Playwright
 - **The plan: Next's own files get the page's timers, ports and observers.** As Vite pre-bundles the files of `next/dist`, which include the React that Next ships, a define of oxc points `setTimeout`, `MessageChannel`, `PerformanceObserver` and the like in them at the page that runs them. The plugin does that kind of rewrite already, for `build: "production"`. Leaving the page releases them. The app's code and its other packages keep the real globals.
 - **Effort**: about 3 weeks. Risk: the conformance suite (956 of 1147 pass) and the Storybook package, which leaves pages the same way.
 
+## Status
+
+Done:
+
+- **3.1, Next's files get the page's timers, ports and observers.** `nextjs/page-scope.ts` is the scope and `nextjs/page-scope-define.ts` the define, also for a static build. It replaced the recording of `MessageChannel` and of the listeners on `window` in `leftovers.ts`, which now only records React's listeners around `createRoot`.
+- **3.2, the globals.** They go at every leave, but only the ones that point into the page: `__NEXT_HYDRATED_AT` and the other flags stay, which the notes demo's `watchPageLoad()` compares across pages. React's inline scripts run with the page's timers.
+- **React DOM's properties come off the page's nodes before its root unmounts.** That step was not in the plan. Without it, a node that outlives the page kept the whole page through the fiber on a text node. Holders of such a node: an assertion of the test, the element under the pointer, an `<img>` with a `srcset` that Blink keeps.
+- **Experiment K finds nothing of Next's or React's left on any route.** The tests are in `memory.test.tsx`: the observer of `next/image`, and React DOM's timer for a stylesheet.
+
+Not done:
+
+- **The pointer is not moved at `cleanup()`.** The node under the pointer no longer keeps a fiber. Through the `load` and `error` listeners that React DOM puts on an element like `<img>`, it can still keep React DOM of its page, as Blink's hold on an `<img>` with a `srcset` can.
+- **Those listeners can't be removed.** React DOM adds them through a variable, out of the define's reach. Moving the nodes into another document (`adoptNode`) kept more pages, not fewer.
+- **3.3 is in place already.** The server in front of the app closes the response when the page's request aborts (`node-server.ts`).
+- **3.4.** The `memory` tests still allow one page.
+- **The CI project with the default `isolate`** is for a later PR.
+
 ## 1. Why A Left Page Can Be Freed
 
 A page owns its own module runner for the browser layer (`createEnvironmentRunner()` in `src/utils.ts`). Every page evaluates React DOM, Next's router and the app's Client Components again. Only the compiled code is shared between pages. So when a page is left, everything it made is garbage, unless something that lives as long as the tab still points into it:

@@ -1,3 +1,4 @@
+import { hostScope, type Scope } from "../runner-scope.ts";
 import { graphStylesheetAttribute } from "./styles-shared.ts";
 
 // A page load, without loading a page: the test runs in this
@@ -43,6 +44,8 @@ const attributesOf = (element: Element) =>
   Array.from(element.attributes, ({ name, value }) => [name, value] as const);
 
 let unload: (() => void) | undefined;
+// Takes React DOM's properties off the nodes of the page that is there.
+let forget: (() => void) | undefined;
 // The preloads of the page that loads next, until it is there.
 let preloads: HTMLLinkElement[] = [];
 // The URL that leaving the page puts back, while a page is open.
@@ -136,6 +139,67 @@ function stylesheetLoaded(link: HTMLLinkElement): Promise<void> {
   });
 }
 
+// What Next's client and React's inline scripts set on `window` for the
+// page that is open, and that point into it: the next page sets its own.
+// Left there, they keep the last page until the next one, like
+// `_N_E_STYLE_LOAD`, with which Next's client waits for the CSS of a route.
+// Not the numbers and flags, like `__NEXT_HYDRATED_AT`, which keep nothing
+// and which a test may compare across pages. Not `$RC`, which a browser
+// context of the app stands in for (browser-context.ts).
+const globalsOfThePage = [
+  "next",
+  "nd",
+  "_N_E_STYLE_LOAD",
+  "__next_set_public_path__",
+  "__NEXT_HMR_CB",
+  "$RB",
+  "$RM",
+  "$RR",
+  "$RS",
+  "$RT",
+  "$RV",
+  "$RX",
+];
+
+// React's inline scripts, which define `$RC` and the like, and reveal what
+// streamed in with a timer or an animation frame: they get the page's, which
+// leaving the page clears. Their globals are assignments, which a function
+// leaves global. Any other inline script runs as a script does, in the
+// global scope, where its declarations have to be.
+const reactScript = /\$R[A-Z]\b/;
+
+function runInlineScript(code: string, scope: Scope): void {
+  if (!reactScript.test(code)) {
+    (0, eval)(code);
+    return;
+  }
+  // oxlint-disable-next-line typescript/no-implied-eval
+  new Function("setTimeout", "clearTimeout", "requestAnimationFrame", "cancelAnimationFrame", code)(
+    scope.setTimeout,
+    scope.clearTimeout,
+    scope.requestAnimationFrame,
+    scope.cancelAnimationFrame,
+  );
+}
+
+// The properties in which React DOM keeps what it knows of a node, named for
+// its copy: its fiber, its props, its listeners.
+const reactProperty = /^_+react/;
+
+// A node of a page can outlive the page: the browser keeps the element that
+// the pointer is over, and an `<img>` with a `srcset` that watches the
+// viewport, also once it has left the document. Through React DOM's
+// properties of the node, it would keep the whole page. Those go with the
+// page, once its root has unmounted.
+function forgetReact(root: Node): void {
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT);
+  for (let node: Node | null = root; node; node = walker.nextNode()) {
+    for (const key of Object.keys(node)) {
+      if (reactProperty.test(key)) Reflect.deleteProperty(node, key);
+    }
+  }
+}
+
 function setAttributes(element: Element, attributes: Iterable<readonly [string, string]>): void {
   for (const { name } of Array.from(element.attributes)) element.removeAttribute(name);
   for (const [name, value] of attributes) element.setAttribute(name, value);
@@ -189,13 +253,15 @@ export function preloadPage({
  * scripts it renders, and after it the scripts of Next and React.
  *
  * The page takes the entry of the history that the document is at, or with
- * `after` gets one of its own, after that entry.
+ * `after` gets one of its own, after that entry. React's inline scripts get
+ * the timers of `scope`, the page's.
  */
 export async function loadDocument(
   html: string,
   url: string,
   container?: Element,
   after?: HistoryEntry,
+  scope: Scope = hostScope,
 ): Promise<void> {
   leaveDocument();
   // The preloads of its route are this page's.
@@ -236,14 +302,23 @@ export async function loadDocument(
   const left = new Promise<void>((resolve) => (leaveNow = resolve));
   // Puts back the runner's `activation`, once the page has its own.
   let deactivate = () => {};
+  // The nodes of the page: what it put in the container, or in `<head>` and
+  // in its `<body>`. Not the runner's, which stay.
+  const pageNodes = () => [
+    ...(container ? Array.from(container.childNodes) : []),
+    ...[document.head, pageBody].flatMap((parent) =>
+      Array.from(parent.childNodes).filter(
+        (node) => !before.has(node) && !isViteStyle(node) && !isGraphStylesheet(node),
+      ),
+    ),
+  ];
+  forget = () => pageNodes().forEach(forgetReact);
   const leave = () => {
     try {
       leaveNow();
-      container?.replaceChildren();
-      for (const parent of [document.head, pageBody]) {
-        for (const node of Array.from(parent.childNodes)) {
-          if (!before.has(node) && !isViteStyle(node) && !isGraphStylesheet(node)) node.remove();
-        }
+      for (const node of pageNodes()) {
+        forgetReact(node);
+        node.remove();
       }
     } finally {
       // The URL first: a relative URL of what comes back, the href of a
@@ -280,6 +355,7 @@ export async function loadDocument(
     // before the app starts.
     delete (self as { __next_f?: unknown }).__next_f;
     delete (self as { __next_s?: unknown }).__next_s;
+    for (const name of globalsOfThePage) Reflect.deleteProperty(window, name);
   };
   unload = leave;
 
@@ -369,7 +445,7 @@ export async function loadDocument(
     if (!script.type || script.type === "text/javascript" || script.type === "module") {
       // A script that throws is reported, and the page goes on, as in a browser.
       try {
-        (0, eval)(script.textContent ?? "");
+        runInlineScript(script.textContent ?? "", scope);
       } catch (error) {
         reportError(error);
       }
@@ -415,7 +491,19 @@ function leaveDocument(): void {
   // Once, also when it throws: the next page is not to find this one.
   const leave = unload;
   unload = undefined;
+  forget = undefined;
   leave?.();
+}
+
+/**
+ * Takes React DOM's properties off the nodes of the page that is there,
+ * before its root unmounts: React takes the nodes out of the document as it
+ * does, and leaves its fiber on a text node. A node that outlives the page
+ * then keeps no fiber of it: the one that an assertion of the test holds
+ * until it ends, or the one under the pointer.
+ */
+export function forgetReactOfPage(): void {
+  forget?.();
 }
 
 /**

@@ -20,6 +20,7 @@ import {
   type InvokeResult,
 } from "./built-layers.ts";
 import { isHostModule } from "./host-module.ts";
+import { hostScope, pageScopeKey, type Scope } from "./runner-scope.ts";
 import {
   answerEvent,
   changedEvent,
@@ -117,7 +118,7 @@ function getRunner(environment: string): ModuleRunner {
   let runner = runners.get(environment);
   if (!runner) {
     const invoke = (payload: InvokePayload) => invokeEnvironment(environment, payload);
-    runners.set(environment, (runner = createRunner(environment, invoke, pageLoadEvaluator)));
+    runners.set(environment, (runner = createRunner(environment, invoke, evaluatorIn(hostScope))));
   }
   return runner;
 }
@@ -164,7 +165,14 @@ function createRunner(
  */
 export function createEnvironmentRunner(
   environment: string,
-  { sourcemaps = false } = {},
+  {
+    sourcemaps = false,
+    scope = hostScope,
+  }: {
+    sourcemaps?: boolean;
+    /** What its modules get as the browser's globals: see runner-scope.ts. */
+    scope?: Scope;
+  } = {},
 ): ModuleRunner {
   let first: FetchedModules | undefined;
   const invoke = async (payload: InvokePayload) => {
@@ -179,7 +187,7 @@ export function createEnvironmentRunner(
   const runner = createRunner(
     environment,
     invoke,
-    droppingImportsOnceClosed(() => runner),
+    droppingImportsOnceClosed(() => runner, scope),
     { sourcemaps },
   );
   // The modules of a build do not change.
@@ -394,6 +402,8 @@ const contextKeys = [
   ssrExportAllKey,
   ssrExportNameKey,
 ] as const;
+// After Vite's context: the scope of the runner (runner-scope.ts).
+const parameters = [...contextKeys, pageScopeKey];
 const strict = '"use strict";';
 
 // Runs a module as Vite's own evaluator does, and compiles it once: a page
@@ -403,12 +413,16 @@ const strict = '"use strict";';
 // own. The code follows `"use strict";` on its line, as in coverage.ts.
 const compiledModules = new WeakMap<object, (...args: unknown[]) => Promise<unknown>>();
 
-const pageLoadEvaluator: ModuleEvaluator = {
-  // The lines of the function before the code of the module.
-  startOffset: (() => {
-    const source = String(new AsyncFunction("a", "b", `${strict}/*code*/`));
-    return source.slice(0, source.indexOf("/*code*/")).split("\n").length - 1;
-  })(),
+// The lines of the function before the code of the module.
+const startOffset = (() => {
+  const source = String(new AsyncFunction("a", "b", `${strict}/*code*/`));
+  return source.slice(0, source.indexOf("/*code*/")).split("\n").length - 1;
+})();
+
+// The evaluator of a runner whose modules get `scope` as the browser's
+// globals.
+const evaluatorIn = (scope: Scope): ModuleEvaluator => ({
+  startOffset,
   async runInlinedModule(context, code, module) {
     // The answer of the server, which the pages share.
     const fetched = module.meta as { code?: string } | undefined;
@@ -419,10 +433,10 @@ const pageLoadEvaluator: ModuleEvaluator = {
       // without one: see `dependencySourceMapPlugin()` in index.ts.
       // On a line of its own: React and Next have it in a string.
       if (!sourceUrlLineRE.test(code)) code += `\n//# sourceURL=${module.id}`;
-      run = new AsyncFunction(...contextKeys, strict + code);
+      run = new AsyncFunction(...parameters, strict + code);
       if (shared) compiledModules.set(shared, run);
     }
-    await run(...contextKeys.map((key) => context[key]));
+    await run(...contextKeys.map((key) => context[key]), scope);
     Object.seal(context[ssrModuleExportsKey]);
   },
   async runExternalModule(file) {
@@ -434,19 +448,20 @@ const pageLoadEvaluator: ModuleEvaluator = {
     if (!load) throw new Error(`vitest-plugin-rsc: the build has no module of the page ${file}`);
     return ((await load()) as { default?: unknown }).default;
   },
-};
+});
 
 // A runner that is closed, like the one of a page that has been left, settles
 // no more `import()` of its modules, as a browser drops what a page loads once
 // the page has gone: also one that it started before, and one that fails
 // because the runner is closed.
-function droppingImportsOnceClosed(runner: () => ModuleRunner): ModuleEvaluator {
+function droppingImportsOnceClosed(runner: () => ModuleRunner, scope: Scope): ModuleEvaluator {
   const dropped = () => new Promise<never>(() => {});
+  const evaluator = evaluatorIn(scope);
   return {
-    ...pageLoadEvaluator,
+    ...evaluator,
     runInlinedModule(context, code, module) {
       const load = context[ssrDynamicImportKey];
-      return pageLoadEvaluator.runInlinedModule(
+      return evaluator.runInlinedModule(
         {
           ...context,
           [ssrDynamicImportKey]: (...args) =>
