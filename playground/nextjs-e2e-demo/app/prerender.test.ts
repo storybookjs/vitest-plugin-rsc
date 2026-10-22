@@ -132,6 +132,22 @@ test("runs every method of a route handler with one other than GET, which the bu
   expect([first.cache, second.cache]).toEqual([null, null]);
 });
 
+test("serves a kept page of a slot whose render is a 404 with 200, as next start serves it", async () => {
+  const first = await request("/prerendered/slots/other");
+  const second = await request("/prerendered/slots/other");
+
+  // The render's own status, which Next's handler answers the first request
+  // with, as it renders it.
+  expect(first.status).toBe(404);
+  if (production) {
+    expect([first.cache, second.cache]).toEqual(["MISS", "HIT"]);
+    expect(second.status).toBe(200);
+    expect(second.rendered).toBe(first.rendered);
+  } else {
+    expect(second.status).toBe(404);
+  }
+});
+
 test("renders a route handler that reads the request at every request", async () => {
   const first = await request("/prerendered/time", { headers: { cookie: "theme=dark" } });
   const second = await request("/prerendered/time", { headers: { cookie: "theme=light" } });

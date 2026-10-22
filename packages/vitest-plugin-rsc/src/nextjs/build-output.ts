@@ -131,6 +131,7 @@ type Route = { kind: "page" | "route"; page: string; pathname: string };
 export function recordRoute(route: Route, verdict: PrerenderVerdict | undefined): void {
   if (!verdict) return;
   const { pathname: srcRoute, kind } = route;
+  if (kind === "page" && isParallelRoute(route.page)) parallelRoutes.add(srcRoute);
   // A page has the RSC payload of its path, a route handler none:
   // `isRouteCacheOwner()` tells them apart by this.
   const dataRouteOf = (pathname: string) =>
@@ -153,6 +154,31 @@ export function recordRoute(route: Route, verdict: PrerenderVerdict | undefined)
       },
     };
   }
+}
+
+// The routes whose page is the page of a slot, like
+// `/tabs/@views/duration/page`, as `export/routes/app-page.js:126` tells them.
+const isParallelRoute = (page: string) => /\/@\w+/.test(page);
+const parallelRoutes = new Set<string>();
+
+/**
+ * What Next's handler keeps of a pathname that the build prerenders, as the
+ * build writes it: here the handler's render stands in for the build's. The
+ * build keeps no status of a page of a slot, without Partial Prerendering,
+ * which no page here has (`export/routes/app-page.js:126-141`). Its render
+ * answers 404 where another slot has no page and its `default.js` calls
+ * `notFound()`, and `next start` serves it with 200. Next's router renders a
+ * navigation that gets 200, and keeps what the other slot shows; one that
+ * gets 404 it makes a page load. Also for a render after a revalidation,
+ * which `next start` keeps with its 404.
+ */
+export function asTheBuildKeepsIt<T extends { kind: string; status?: number } | null>(
+  pathname: string,
+  value: T,
+): T {
+  const srcRoute = prerenderManifest.routes[pathname]?.srcRoute;
+  if (value?.kind !== "APP_PAGE" || !srcRoute || !parallelRoutes.has(srcRoute)) return value;
+  return { ...value, status: undefined };
 }
 
 /** Whether the build prerenders a route, or a pathname of it. */
