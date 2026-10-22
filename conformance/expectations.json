@@ -10,7 +10,7 @@
     },
     "one-request-at-a-time": {
       "category": "not-yet",
-      "text": "A navigation while a Server Action is in flight. The server handles one request at a time."
+      "text": "A navigation while a Server Action is in flight, or a navigation to a page that renders for seconds, right after the router prefetched its loading state: the prefetch waits behind the navigation, and the router waits for the prefetch before it shows the loading state. The server handles one request at a time."
     },
     "another-origin": {
       "category": "not-yet",
@@ -275,13 +275,8 @@
       "failed": {}
     },
     "next-font": {
-      "passed": 12,
-      "failed": {
-        "next-font.test.ts > app dir - next/font > app dir - next-font > preconnect > should add preconnect when preloading is disabled in page": "streamed-to-prerendered",
-        "next-font.test.ts > app dir - next/font > app dir - next-font > preconnect > should add preconnect when preloading is disabled in layout": "streamed-to-prerendered",
-        "next-font.test.ts > app dir - next/font > app dir - next-font > preconnect > should add preconnect when preloading is disabled in component": "streamed-to-prerendered",
-        "next-font.test.ts > app dir - next/font > app dir - next-font > preconnect > should add preconnect when preloading is disabled in template": "streamed-to-prerendered"
-      }
+      "passed": 16,
+      "failed": {}
     },
     "next-image": {
       "passed": 10,
@@ -531,8 +526,10 @@
       "failed": {}
     },
     "router-autoscroll": {
-      "passed": 20,
-      "failed": {}
+      "passed": 19,
+      "failed": {
+        "router-autoscroll.test.ts > router autoscrolling on navigation > bugs > Should apply scroll when loading.js is used": "one-request-at-a-time"
+      }
     },
     "root-layout": {
       "passed": 8,
