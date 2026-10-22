@@ -12,6 +12,10 @@
       "category": "not-yet",
       "text": "A navigation while a Server Action is in flight, or a navigation to a page that renders for seconds, right after the router prefetched its loading state: the prefetch waits behind the navigation, and the router waits for the prefetch before it shows the loading state. The server handles one request at a time."
     },
+    "verdict-at-first-request": {
+      "category": "not-yet",
+      "text": "The plugin decides at a route's first page load or navigation whether the build would prerender it, by rendering it as the build does. `next build` decides that before the first request. A route that takes seconds to render and turns out dynamic pays that render once, at its first request, and this test's budget does not allow it: a prerender of 5 s, for a `generateMetadata` of 5 s, which the server throws away as the root layout reads the request, then the dynamic render, 5 s more, against 10.5 s."
+    },
     "another-origin": {
       "category": "not-yet",
       "text": "A redirect or a navigation to another origin. The tab cannot leave the test."
@@ -123,7 +127,7 @@
       "failed": {}
     },
     "navigation": {
-      "passed": 42,
+      "passed": 41,
       "failed": {
         "navigation.test.ts > app dir - navigation > query string > useParams identity between renders > should be stable in pages": "pages-router",
         "navigation.test.ts > app dir - navigation > redirect > components > should redirect to external url": "another-origin",
@@ -135,7 +139,8 @@
         "navigation.test.ts > app dir - navigation > navigation between pages and app > should not contain _rsc query while navigating from pages to app": "pages-router",
         "navigation.test.ts > app dir - navigation > navigation between pages and app > should not omit the hash while navigating from app to pages": "pages-router",
         "navigation.test.ts > app dir - navigation > navigation between pages and app > should not continously initiate a mpa navigation to the same URL when router state changes": "page-load-requests",
-        "navigation.test.ts > app dir - navigation > browser back after a push followed by a refresh > should load the previous page": "shared-history"
+        "navigation.test.ts > app dir - navigation > browser back after a push followed by a refresh > should load the previous page": "shared-history",
+        "navigation.test.ts > app dir - navigation > navigating to a page with async metadata > shows a fallback when prefetch was pending": "verdict-at-first-request"
       }
     },
     "shallow-routing": {

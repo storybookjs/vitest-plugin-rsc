@@ -50,6 +50,11 @@ export async function prerenderVerdictOf(
     ) {
       return undefined;
     }
+    // The export prerenders a route handler with a request of `GET`, and
+    // keeps it only for a status below 400 or 404 (:73-81). A route handler
+    // without a `GET` answers that with 405 (`auto-implement-methods.js`):
+    // `next start` runs its `POST` at every request.
+    if (typeof (userland as { GET?: unknown }).GET !== "function") return undefined;
   }
 
   // What `isPageStatic()` does with the route module: `build/utils.js:736-805`.

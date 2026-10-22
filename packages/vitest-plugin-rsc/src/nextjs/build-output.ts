@@ -155,6 +155,77 @@ export function recordRoute(route: Route, verdict: PrerenderVerdict | undefined)
   }
 }
 
+// The pathnames whose page the build kept, by the generation of the
+// server's cache (cache.ts): its first `set()`, which is the prerender that
+// stands in for the build's. A later one is of a revalidation, which Next's
+// handler keeps as `next start` keeps it.
+const built = new Set<string>();
+/** Forgets what the build kept, as the server's cache forgets its entries. */
+export function forgetBuilt(): void {
+  built.clear();
+}
+
+/**
+ * A page as the build keeps it, which Next's handler is about to keep for
+ * `pathname`, at the first prerender of that pathname in this `generation`
+ * of the cache. The build keeps a page of a parallel route's slot without a
+ * status (`export/routes/app-page.js:126-141`), which `next start` serves
+ * with 200: a page whose other slots have no page for its path renders the
+ * not-found page there, which a page load shows, and a navigation, which
+ * keeps the other slots as they are, does not. Next's handler would keep
+ * the status of its render, 404, and Next's router takes a navigation that
+ * answers 404 for a page load. So the entry gets 200, in place: the handler
+ * answers the request of its prerender with the status of the entry it
+ * keeps, and otherwise with the one its render set. `route` is the source
+ * of the entry, the page, as Next's response cache hands it to the cache.
+ */
+export function keptAsBuilt(
+  pathname: string,
+  value: { kind: string; status?: number } | null,
+  { route }: { route?: { sourceRoute?: string } },
+  generation: number,
+): void {
+  // `CachedRouteKind.APP_PAGE`, a `const enum` of Next's types.
+  if (value?.kind !== "APP_PAGE" || !(pathname in prerenderManifest.routes)) return;
+  const key = `${generation}:${pathname}`;
+  if (built.has(key)) return;
+  built.add(key);
+  // As the export tells a page of a slot: by `@` in its page.
+  if (value.status !== undefined && /\/@\w+/.test(route?.sourceRoute ?? "")) value.status = 200;
+}
+
+// The route that the request the server handles does not find in the
+// manifest: see `withoutRoute()`.
+let hidden: string | undefined;
+/**
+ * Hands Next's handler a manifest without `route` for `respond()`, the
+ * response of a prefetch: Next reads the manifest as it starts a request.
+ */
+export async function withoutRoute<T>(route: Route, respond: () => Promise<T>): Promise<T> {
+  const before = hidden;
+  hidden = route.pathname;
+  try {
+    return await respond();
+  } finally {
+    hidden = before;
+  }
+}
+// The manifest of the request the server handles.
+function currentPrerenderManifest(): PrerenderManifest {
+  const route = hidden;
+  if (route === undefined || !isPrerendered({ kind: "page", page: "", pathname: route })) {
+    return prerenderManifest;
+  }
+  const { [route]: _, ...dynamicRoutes } = prerenderManifest.dynamicRoutes;
+  return {
+    ...prerenderManifest,
+    routes: Object.fromEntries(
+      Object.entries(prerenderManifest.routes).filter(([, entry]) => entry.srcRoute !== route),
+    ),
+    dynamicRoutes,
+  };
+}
+
 /** Whether the build prerenders a route, or a pathname of it. */
 export function isPrerendered(route: Route): boolean {
   return (
@@ -184,7 +255,7 @@ export function demoteRoute(route: Route): void {
 const manifests: [suffix: string, manifest: () => unknown][] = [
   // The one Next's build makes: see `routesManifest` in project.ts.
   ["routes-manifest.json", () => routesManifest],
-  ["prerender-manifest.json", () => prerenderManifest],
+  ["prerender-manifest.json", currentPrerenderManifest],
   ["preview-props.json", () => preview],
   ["fallback-build-manifest.json", () => ({})],
   ["build-manifest.json", () => buildManifest],
