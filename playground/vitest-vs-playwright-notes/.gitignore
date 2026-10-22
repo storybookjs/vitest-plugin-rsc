@@ -7,3 +7,5 @@ next-env.d.ts
 /playwright-report/
 # What `next dev` writes for coding agents
 AGENTS.md
+# CPU profiles of vitest.profile.config.ts
+/profiles/

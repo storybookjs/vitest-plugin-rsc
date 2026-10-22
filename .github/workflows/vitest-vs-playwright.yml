@@ -91,6 +91,36 @@ jobs:
             printf "| Of which Vitest's own Duration | %.1f |\n" "$duration"
           } >> "$GITHUB_STEP_SUMMARY"
 
+  # Where the time of fast mode goes: a CPU profile of the page for every
+  # test file, summed up by package in the summary of the run, and the
+  # profiles as an artifact, to open in Chrome's DevTools.
+  profile:
+    name: Vitest, vitest-vs-playwright-notes, vitest-user-event, fast mode, CPU profile
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: playground/vitest-vs-playwright-notes
+    env:
+      VITEST_PLUGIN_RSC_FAST: 1
+    steps:
+      - uses: actions/checkout@v6
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps --only-shell chromium
+      - run: pnpm --filter vitest-plugin-rsc build
+      - name: Run the tests with a CPU profile of the page
+        run: pnpm exec vitest run -c vitest.profile.config.ts --maxWorkers 1 tests/vitest-user-event/
+      - name: Sum up the profiles
+        run: python3 test/profile-summary.py | tee -a "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: cpu-profiles
+          path: playground/vitest-vs-playwright-notes/profiles/
+
   playwright:
     name: Playwright, ${{ matrix.app }}
     runs-on: ubuntu-latest
