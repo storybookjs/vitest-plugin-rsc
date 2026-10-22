@@ -13,13 +13,13 @@ Measured against `next@16.4.0`, with `pnpm conformance --docs`.
 |                                                     |         Tests |
 | --------------------------------------------------- | ------------: |
 | Run                                                 |          1311 |
-| **Pass**                                            | **949** (72%) |
-| Fail: a bug in the plugin                           |             7 |
+| **Pass**                                            | **956** (73%) |
+| Fail: a bug in the plugin                           |             0 |
 | Fail: Not Yet                                       |           191 |
 | Fail: not applicable                                |           164 |
 | Skipped by the test itself, for a run like this one |            16 |
 
-Of the 1147 tests that apply, 949 pass: **83%**.
+Of the 1147 tests that apply, 956 pass: **83%**.
 
 ### Per Fixture
 
@@ -27,7 +27,7 @@ Of the 1147 tests that apply, 949 pass: **83%**.
 | --------------------------------------------------------- | -------: | --: | ------: | --: | ------: |
 | **Pages and rendering**                                   |          |     |         |     |         |
 | `hello-world`                                             |   4 of 4 |     |         |     |         |
-| `rsc-basic`                                               | 33 of 40 |   3 |       3 |   1 |       1 |
+| `rsc-basic`                                               | 36 of 40 |     |       3 |   1 |       1 |
 | `use-server-inserted-html`                                |   3 of 3 |     |         |     |         |
 | **Navigation**                                            |          |     |         |     |         |
 | `navigation`                                              | 42 of 53 |     |       7 |   4 |         |
@@ -183,14 +183,14 @@ Of the 1147 tests that apply, 949 pass: **83%**.
 | **Cookies, headers, draft mode and after()**              |          |     |         |     |         |
 | `draft-mode`                                              | 20 of 21 |     |       1 |     |         |
 | `draft-mode-middleware`                                   |   1 of 2 |     |       1 |     |         |
-| `set-cookies`                                             |   0 of 5 |   2 |       3 |     |         |
+| `set-cookies`                                             |   2 of 5 |     |       3 |     |         |
 | `dynamic-requests`                                        |   2 of 2 |     |         |     |         |
 | `headers-static-bailout`                                  |   1 of 3 |     |       1 |   1 |         |
 | `x-forwarded-headers`                                     |   2 of 4 |     |         |   2 |         |
 | `server-action-headers-redirect`                          |   1 of 1 |     |         |     |         |
 | `custom-cache-control`                                    |   7 of 9 |     |       2 |     |         |
 | `react-max-headers-length`                                |   1 of 4 |     |         |   3 |         |
-| `next-after-app`                                          | 24 of 34 |   2 |         |   8 |         |
+| `next-after-app`                                          | 26 of 34 |     |         |   8 |         |
 | `next-after-app-api-usage`                                | 22 of 28 |     |       6 |     |         |
 | `revalidate-tag-in-after`                                 |   1 of 1 |     |         |     |         |
 | `dynamic-data/fixtures/main`                              |   3 of 5 |     |       2 |     |         |
@@ -204,35 +204,6 @@ Of the 1147 tests that apply, 949 pass: **83%**.
 | `segment-cache/mpa-navigations`                           |   2 of 2 |     |         |     |         |
 | `segment-cache/prefetch-partial-rsc`                      |   1 of 1 |     |         |     |         |
 | `segment-cache/stale-search-params-on-replace-regression` |   1 of 1 |     |         |     |         |
-
-### A Bug In The Plugin: 7 Tests
-
-<details><summary>2 × Two `Set-Cookie` headers of one rule of `headers()` in `next.config` arrive as one. Next's build hands an adapter the headers of a rule as an object, which keeps one value per name, and `@next/routing` sets them from that.</summary>
-
-- `set-cookies`: set-cookies › for /app › for edge runtime › should set two set-cookie headers
-- `set-cookies`: set-cookies › for /app › for node runtime › should set two set-cookie headers
-
-</details>
-
-<details><summary>2 × A Client Component that renders markup with `renderToStaticMarkup()` of `react-dom/server`. The ssr layer has Next's aliases of its edge runtime, where `react-dom/server` has React's renderer for web streams alone. A route on Node.js gets React's whole entry.</summary>
-
-- `rsc-basic`: app dir - rsc basics › should use canary react for app
-- `rsc-basic`: app dir - rsc basics › should be able to call legacy react-dom/server APIs in client components
-
-</details>
-
-<details><summary>2 × An `after()` of the proxy. What the proxy hands to `waitUntil()` runs after the proxy has returned, without its request stores, and Next needs them to run the callbacks.</summary>
-
-- `next-after-app`: after() in nodejs runtime › runs in middleware
-- `next-after-app`: after() in edge runtime › runs in middleware
-
-</details>
-
-<details><summary>1 × A Server Component that imports `next/router`. Next runs it. Here its module calls `createContext()` with React's server build, which has none, and the page fails.</summary>
-
-- `rsc-basic`: app dir - rsc basics › next internal shared context › should not error if just load next/router module in app page
-
-</details>
 
 ### Not Yet: 191 Tests
 
