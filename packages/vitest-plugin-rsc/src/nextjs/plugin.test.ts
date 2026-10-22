@@ -339,6 +339,32 @@ test("has the scan of a layer read a module that Next's compiler stops at in the
   }
 });
 
+test("has the ssr layer pre-bundle what the cache handlers of next.config import", async () => {
+  const app = appWith({
+    // One of Next's own, as Next's own tests name it, and one of the app,
+    // outside `app/`, which imports a package the app has.
+    "next.config.mjs": [
+      'import { createRequire } from "node:module";',
+      "const require = createRequire(import.meta.url);",
+      "export default {",
+      '  cacheHandler: require.resolve("./cache-handler.js"),',
+      "  cacheHandlers: {",
+      '    default: require.resolve("next/dist/server/lib/cache-handlers/default.external"),',
+      "  },",
+      "};",
+    ].join("\n"),
+    "cache-handler.js": 'export { ThemeProvider as default } from "next-themes";',
+    "app/layout.js": "export default ({ children }) => children;",
+    "app/page.js": "export default () => null;",
+  });
+
+  const { ssr, errors } = await scanOf(app);
+
+  expect(errors.join("\n")).not.toContain("Failed to run dependency scan");
+  expect(ssr).toContain("next/dist/esm/server/lib/cache-handlers/default.external.js");
+  expect(ssr).toContain("next-themes");
+});
+
 test("gives Next's module for the asset prefix of its dev server no prefix: there is no dev server", async () => {
   const plugins = vitestPluginNext();
   const plugin = plugins.find(({ name }) => name === "vitest-plugin-rsc:next")!;
