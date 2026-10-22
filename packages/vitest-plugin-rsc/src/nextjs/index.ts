@@ -246,11 +246,11 @@ export type RenderServerOptions = RequestOptions & {
    *
    * In development the page has no dev overlay of Next's.
    *
-   * With `"navigation"`, the page stays open when the test ends, also into
-   * the next test file, and the next `renderServer()` of `"navigation"` is
-   * a navigation of its router to `url`, and a refresh, which renders the
+   * With `"navigation"`, the page stays open when the test ends, until the
+   * test file ends, and the next `renderServer()` of `"navigation"` is a
+   * navigation of its router to `url`, and a refresh, which renders the
    * whole tree again with the cookies and `headers` of the test: one page
-   * load for the whole run. The state of a layout's Client Components and of
+   * load per test file, besides the ones the app makes itself. The state of a layout's Client Components and of
    * Next's router carries over, and `response` has no body.
    */
   reuse?: boolean | "navigation";

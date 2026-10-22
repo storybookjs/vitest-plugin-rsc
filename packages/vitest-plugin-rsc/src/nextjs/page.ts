@@ -3,7 +3,13 @@
 // leaving it takes those back, the last part first, one page at a time.
 import { resetAsyncLocalStorage } from "../async-local-storage.ts";
 import { checkFetchedModules, createEnvironmentRunner, environmentModule } from "../utils.ts";
-import { setOpenPage, setRouterOutlivesPage, sendRequest, unlessAborted } from "./app-requests.ts";
+import {
+  forgetRequestsOfOpenPage,
+  setOpenPage,
+  setRouterOutlivesPage,
+  sendRequest,
+  unlessAborted,
+} from "./app-requests.ts";
 import { callServerWithoutPage } from "./client-graph.ts";
 import { keepProperties, loadDocument, unloadDocument, type HistoryEntry } from "./document.ts";
 import { download, downloadName } from "./downloads.ts";
@@ -162,11 +168,21 @@ async function navigablePage(): Promise<{ page: Page; client: Client } | undefin
  */
 export async function suspendNavigablePage(): Promise<boolean> {
   if (!(await navigablePage())) return false;
+  forgetRequestsOfOpenPage();
   await leaving;
   await loadedSsrLayer()?.settleRequests();
   registry.opened = undefined;
   resetAsyncLocalStorage();
   return true;
+}
+
+/**
+ * Leaves the page of `"navigation"` that stays open, if any: a test file
+ * ends with it. The next file starts with a page load of its own.
+ */
+export async function leaveNavigablePage(by: string): Promise<void> {
+  if (await navigablePage()) await leavePage(by);
+  navigable = undefined;
 }
 
 /**

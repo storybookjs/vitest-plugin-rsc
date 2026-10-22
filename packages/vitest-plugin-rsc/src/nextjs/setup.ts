@@ -3,7 +3,7 @@ import { server } from "vitest/browser";
 import { cleanup, newBrowserContext } from "./index.ts";
 import { forgetClientFiles, linkStylesheetsOf, loadedAsClientFile } from "./client-graph.ts";
 import { keepHostDocument, noRouter } from "./host-document.ts";
-import { leaveKeptApp } from "./page.ts";
+import { leaveKeptApp, leaveNavigablePage } from "./page.ts";
 import { registry } from "./registry.ts";
 import { ssrLayer } from "./server-layers.ts";
 
@@ -43,9 +43,11 @@ beforeAll(async ({}, suite) => {
   // hooks too.
   await linkStylesheetsOf(nodeFiles);
 });
-// The app of the pages of `reuse` (page.ts) is one test file's: the next
-// file starts with its modules evaluated again, as it does its setup files.
-afterAll(() => {
+// The app of the pages of `reuse` (page.ts), and the page of `"navigation"`,
+// are one test file's: the next file starts with its modules evaluated
+// again, as it does its setup files.
+afterAll(async () => {
+  await leaveNavigablePage("the end of the test file");
   leaveKeptApp();
   keptDocument?.();
 });

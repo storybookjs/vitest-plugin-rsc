@@ -97,6 +97,20 @@ export function setOpenPage(signal: AbortSignal | undefined): void {
   page = signal;
 }
 
+// Counts the tests that a page stays open for: see `forgetRequestsOfOpenPage()`.
+let pageTest = 0;
+
+/**
+ * Has the page that is open hear nothing more of the requests it has sent,
+ * as if it had been left, and stays open: a page of
+ * `renderServer({ url, reuse: "navigation" })` as its test ends. Leaving the
+ * test drops what the server still does for them, and the router would take
+ * that for a failure, and fall back to a page load of the document.
+ */
+export function forgetRequestsOfOpenPage(): void {
+  pageTest++;
+}
+
 /** Says whether the router of the pages outlives them, from now on. */
 export function setRouterOutlivesPage(outlives: boolean): void {
   routerOutlivesPage = outlives;
@@ -386,9 +400,13 @@ const never = () => new Promise<never>(() => {});
 // there, would report that as an error while the next page runs: "Failed to
 // fetch RSC payload". Nobody reads the body of a response that comes after
 // that, so it stops.
-async function heardBy(sender: AbortSignal, response: Promise<Response>): Promise<Response> {
+async function heardBy(
+  sender: AbortSignal,
+  response: Promise<Response>,
+  test = pageTest,
+): Promise<Response> {
   const answered = await response.catch(() => undefined);
-  if (!sender.aborted) return response;
+  if (!sender.aborted && test === pageTest) return response;
   void answered?.body?.cancel().catch(() => {});
   return ofLeftPage();
 }
