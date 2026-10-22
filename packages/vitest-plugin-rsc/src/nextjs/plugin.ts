@@ -866,8 +866,12 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
               createDependencyCompilePlugin(getProject, layer),
               ...(layer === "rsc" ? [nextClientBoundaryPlugin(getProject, resolvers.rsc)] : []),
               flightConsolePlugin(),
-              ...(layer === "browser" ? [] : [serverCode.optimizerPlugin(layer)]),
-              ...(layer === "rsc" ? [serverCode.asyncFunctionsOptimizerPlugin()] : []),
+              ...(layer === "browser"
+                ? []
+                : [
+                    serverCode.optimizerPlugin(layer),
+                    serverCode.asyncFunctionsOptimizerPlugin(layer),
+                  ]),
             ],
             // A package can import what only another layer's build of a module
             // has, like `useRouter` of `next/navigation` in the rsc layer (the

@@ -443,32 +443,89 @@ test("stops with a message when nothing says which files are the host's", async 
   await expect(transform("export const x = typeof window;", virtual)).resolves.toBeUndefined();
 });
 
-test("compiles the async functions of the modules of Next that await in a store, and of no other module", () => {
+test("compiles the async functions of the modules of Next that await in a store, each in its layer, and of no other module", () => {
   const serverCode = createServerCode(registry);
-  const { transform } = serverCode.asyncFunctionsOptimizerPlugin();
-  const compile = (file: string) =>
-    transform.call({ warn: vi.fn() }, `export async function cache() { await generate(); }`, file);
+  const compileIn = (layer: "rsc" | "ssr" | "browser") => {
+    const { transform } = serverCode.asyncFunctionsOptimizerPlugin(layer);
+    return (file: string) =>
+      transform.call({ warn: vi.fn() }, `export async function cache() { await generate(); }`, file)
+        ?.code;
+  };
+  const rsc = compileIn("rsc");
+  const ssr = compileIn("ssr");
+  const browser = compileIn("browser");
+  const compiled = `await ${registry}.asyncFunctionHooks.s(`;
 
   for (const build of ["esm/server", "server"]) {
-    const file = `/app/node_modules/next/dist/${build}/use-cache/use-cache-wrapper.js`;
-    expect(compile(file)?.code).toContain(`await ${registry}.asyncFunctionHooks.s(`);
+    const of = (nextModule: string) => `/app/node_modules/next/dist/${build}/${nextModule}`;
+    // The wrapper of a "use cache" function is the rsc layer's.
+    expect(rsc(of("use-cache/use-cache-wrapper.js"))).toContain(compiled);
+    expect(ssr(of("use-cache/use-cache-wrapper.js"))).toBeUndefined();
+    // The handler of a Server Action and the render are the ssr layer's,
+    // through `app-page/module`.
+    for (const nextModule of ["app-render/action-handler.js", "app-render/app-render.js"]) {
+      expect(ssr(of(nextModule))).toContain(compiled);
+      expect(rsc(of(nextModule))).toBeUndefined();
+      expect(browser(of(nextModule))).toBeUndefined();
+    }
   }
-  expect(compile("/app/node_modules/next/dist/esm/server/use-cache/cache-tag.js")).toBeUndefined();
-  // The handler of a Server Action and the render are the ssr layer's, through
-  // `app-page/module`, which the rsc optimizer never sees.
-  expect(
-    compile("/app/node_modules/next/dist/esm/server/app-render/action-handler.js"),
-  ).toBeUndefined();
-  expect(compile("/app/node_modules/next/dist/esm/server/app-render/app-render.js")).toBe(
-    undefined,
+  for (const compile of [rsc, ssr]) {
+    expect(
+      compile("/app/node_modules/next/dist/esm/server/use-cache/cache-tag.js"),
+    ).toBeUndefined();
+    expect(
+      compile("/app/node_modules/next/dist/esm/server/app-render/create-component-tree.js"),
+    ).toBeUndefined();
+    expect(compile("/app/node_modules/next/dist/esm/client/app-render/app-render.js")).toBe(
+      undefined,
+    );
+    expect(compile("/app/node_modules/zod/index.js")).toBeUndefined();
+  }
+});
+
+test("compiles the modules of Next that await in a store in their layer for a static build too, and React's Flight server in the rsc layer alone", () => {
+  const serverCode = createServerCode(registry);
+  const forStores = (layer: "rsc" | "ssr", code: string, file: string) =>
+    serverCode.forStores({ warn: vi.fn() }, code, file, layer).code;
+  const code = `export async function handleAction() { await generateFlight(); }`;
+  const handler = "/app/node_modules/next/dist/esm/server/app-render/action-handler.js";
+  const compiled = `${registry}.asyncFunctionHooks.e(`;
+
+  expect(forStores("ssr", code, handler)).toContain(compiled);
+  expect(forStores("rsc", code, handler)).toBe(code);
+  const wrapper = "/app/node_modules/next/dist/esm/server/use-cache/use-cache-wrapper.js";
+  expect(forStores("rsc", code, wrapper)).toContain(compiled);
+  expect(forStores("ssr", code, wrapper)).toBe(code);
+  const flight =
+    "/app/node_modules/next/dist/compiled/react-server-dom-webpack/cjs/react-server-dom-webpack-server.edge.production.js";
+  const work = `function performWork(request) { retryTask(request); }`;
+  expect(forStores("rsc", work, flight)).toContain(`${registry}.performWork(`);
+  expect(forStores("ssr", work, flight)).toBe(work);
+});
+
+test("compiles Next's own handler of a Server Action as the ssr optimizer pre-bundles it", async () => {
+  const next = path.dirname(createRequire(`${root}/`).resolve("next/package.json"));
+  const file = fs.realpathSync(path.join(next, "dist/esm/server/app-render/action-handler.js"));
+  const serverCode = createServerCode(registry);
+  // The file by the path it has on disk, as the bundler loads it, with what
+  // it imports left out.
+  const build = await rolldown({
+    input: file,
+    external: (_source, importer) => importer !== undefined,
+    plugins: [serverCode.optimizerPlugin("ssr"), serverCode.asyncFunctionsOptimizerPlugin("ssr")],
+    logLevel: "silent",
+  });
+  const { output } = await build.generate({ format: "esm" });
+  const code = output[0].code;
+  const hooks = `${registry}.asyncFunctionHooks`.replaceAll(".", "\\.");
+
+  // The handler takes the stores it is called with.
+  expect(code).toMatch(
+    new RegExp(`async function handleAction\\([^)]*\\) \\{\\s*const \\w+ = ${hooks}\\.e\\(\\)`),
   );
-  expect(
-    compile("/app/node_modules/next/dist/esm/server/app-render/create-component-tree.js"),
-  ).toBeUndefined();
-  expect(compile("/app/node_modules/next/dist/esm/client/app-render/app-render.js")).toBe(
-    undefined,
-  );
-  expect(compile("/app/node_modules/zod/index.js")).toBeUndefined();
+  // And has them back after the `await` of the render after the action, in
+  // the `exit()` of the action's store.
+  expect(code).toMatch(new RegExp(`await ${hooks}\\.s\\([^,]+, \\(?actionAsyncStorage\\.exit\\(`));
 });
 
 test("compiles the async functions of the app's server code in the rsc layer, not of a test file", () => {

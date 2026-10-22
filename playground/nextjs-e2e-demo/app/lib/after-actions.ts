@@ -22,3 +22,11 @@ export async function rememberLater(value: string) {
   await new Promise((resolve) => setTimeout(resolve, 50));
   (await cookies()).set("remembered", value);
 }
+
+// Calls a static route of the app, which works on after its response, and
+// then sets a cookie.
+export async function rememberAfterStaticRoute(value: string) {
+  const origin = (await headers()).get("origin");
+  await (await fetch(`${origin}/api/static-linger`)).text();
+  (await cookies()).set("remembered", value);
+}

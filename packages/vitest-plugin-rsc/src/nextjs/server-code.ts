@@ -231,22 +231,35 @@ const asyncFunctionsName = "vitest-plugin-rsc:next-async-functions";
 
 // The modules of Next's server whose async functions are compiled to keep
 // their stores across an `await` (async-local-storage-transform.ts), as the
-// source files of the app are: the ones of the rsc layer that await inside a
-// store they entered, and read it after the `await`, as on Node.js. One entry
-// per module, with the store it carries. The optimizer compiles each once,
-// and keeps it in its cache. Next's handler of a Server Action and its render,
-// `app-render/action-handler.js` and `app-render/app-render.js`, are not here:
-// they are the ssr layer's, through `app-page/module`, which is not compiled.
-// The render after an action runs outside the action's store, as Next's
-// `exit()` leaves it, and the app's own compiled code has its stores back.
-const nextModulesWithStores = [
+// source files of the app are: the ones that await inside a store, one they
+// entered or left with `exit()`, or the request's own, and read it after the
+// `await`, as on Node.js. One entry per module, with the layer it is a
+// module of and the store it carries. Each server layer's optimizer compiles
+// its own, once, and keeps them in its cache. A static build does the same.
+const nextModulesWithStores: { layer: "rsc" | "ssr"; module: string }[] = [
   // The store of a `"use cache"` function: it enters the scope and awaits
   // before it has React call the function.
-  "use-cache/use-cache-wrapper.js",
+  { layer: "rsc", module: "use-cache/use-cache-wrapper.js" },
+  // The handler of a Server Action, through `app-page/module`: it enters the
+  // action's store, `actionAsyncStorage`, awaits the action, and renders the
+  // page after it in an `exit()` of that store, which it awaits. After each
+  // `await` it has its own request's stores back: not those of a request
+  // that the action made to the app and that is still at work, as one with
+  // `after()` is, and not the store it left.
+  { layer: "ssr", module: "app-render/action-handler.js" },
+  // The render, through `app-page/module`, with the request stores of a
+  // page, `workAsyncStorage` and `workUnitAsyncStorage`: it awaits the
+  // handler of an action, and its own work, before it starts React's.
+  { layer: "ssr", module: "app-render/app-render.js" },
 ];
-const nextModuleWithStores = new RegExp(
-  `/next/dist/(?:esm/)?server/(?:${nextModulesWithStores.map((file) => file.replaceAll(".", "\\.")).join("|")})$`,
-);
+// The modules of a layer in that list, by their file, of either build of
+// Next's server.
+function nextModulesWithStoresOf(layer: NextLayer): RegExp | undefined {
+  const modules = nextModulesWithStores.filter((entry) => entry.layer === layer);
+  if (modules.length === 0) return;
+  const files = modules.map(({ module }) => module.replaceAll(".", "\\.")).join("|");
+  return new RegExp(`/next/dist/(?:esm/)?server/(?:${files})$`);
+}
 // React's Flight server, of the React that Next ships: the build for
 // development and the one for production, of React and of its experimental
 // channel.
@@ -396,6 +409,8 @@ export function createServerCode(registry: string, options: ServerCodeOptions = 
         hostFiles.map(String),
         packages,
       ]),
+      // The list above, so that a change to it pre-bundles its modules again.
+      __vitest_plugin_rsc_modules_with_stores__: JSON.stringify(nextModulesWithStores),
     },
     /**
      * The same for the browser layer, which pre-bundles the packages of the
@@ -424,11 +439,10 @@ export function createServerCode(registry: string, options: ServerCodeOptions = 
      * `asyncFunctionsOptimizerPlugin()`.
      */
     forStores(context: Warns, code: string, id: string, layer: NextLayer) {
-      if (layer !== "rsc") return { code, define: {} };
-      if (nextModuleWithStores.test(normalizePath(id))) {
+      if (nextModulesWithStoresOf(layer)?.test(normalizePath(id))) {
         return { code: compileAsyncFunctions(context, code, id)?.code ?? code, define: {} };
       }
-      return flightServerOf(code, id) ?? { code, define: {} };
+      return (layer === "rsc" ? flightServerOf(code, id) : undefined) ?? { code, define: {} };
     },
     /** For the dependency optimizer: the pre-bundled dependencies of a layer. */
     optimizerPlugin(layer: NextLayer) {
@@ -459,17 +473,18 @@ export function createServerCode(registry: string, options: ServerCodeOptions = 
     /**
      * The async functions that have to read, after an `await`, a store Next
      * entered for them, or left for them with `exit()`: see
-     * async-local-storage-transform.ts. In the `rsc` layer, which runs the
-     * stores: for the dependency optimizer, the modules of Next's server in
-     * `nextModulesWithStores`.
+     * async-local-storage-transform.ts. For the dependency optimizer of a
+     * server layer, the modules of Next's server in `nextModulesWithStores`
+     * that are that layer's. The bundler hands it each file of a dependency
+     * it pre-bundles, by its path, so a module inside the bundle of
+     * `app-page/module` is one.
      */
-    asyncFunctionsOptimizerPlugin() {
+    asyncFunctionsOptimizerPlugin(layer: NextLayer) {
+      const modules = nextModulesWithStoresOf(layer);
       return {
         name: asyncFunctionsName,
         transform(this: Warns, code: string, id: string) {
-          if (nextModuleWithStores.test(normalizePath(id))) {
-            return compileAsyncFunctions(this, code, id);
-          }
+          if (modules?.test(normalizePath(id))) return compileAsyncFunctions(this, code, id);
         },
       };
     },
