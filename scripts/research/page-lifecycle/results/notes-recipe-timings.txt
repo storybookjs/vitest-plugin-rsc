@@ -31,3 +31,16 @@ notes-recipe-control-now2 927ms
 #   __setitimer_js, the timer of Postgres, per page load.
 # - The same with that one timer on the real clock (notes-recipe-jump-nopg/):
 #   1025 ms.
+
+# Why running PGlite's timer costs that (notes-recipe-pgtime.jsonl): the timer
+# itself runs in 0 ms. Postgres then sets it again, 14648246506 ms ahead: the
+# demo fixes Date at TEST_NOW (2026-05-06), and PGlite's other clock,
+# performance.now(), runs on. That is longer than a timer can hold (2^31-1 ms),
+# so the fake timers fire it at once, about 280 times, 1.4 s per page load.
+# With `performance` faked too (notes-recipe-perf.jsonl): 300 ms per page load,
+# and slower page loads. With real timers (notes-pg-idle.jsonl), PGlite sets
+# one such timer in 12 s idle, which does not fire.
+#
+# Without `disableTransitionOnChange` in the notes demo's root layout, and no
+# recipe (notes-recipe-control/, notes-no-option-*.jsonl): 873, 913, 926 ms,
+# and no errors in each of three runs.

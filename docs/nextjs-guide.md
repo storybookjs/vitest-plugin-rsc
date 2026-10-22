@@ -794,49 +794,36 @@ What the plugin doesn't take back is what your own code and its libraries leave 
 - **Reset the state of your own modules in a `beforeEach()`**, like a `Map` in memory or a mock's implementation. The plugin doesn't.
 - **Clean up in your effects.** A listener on `window`, an interval or an observer that an effect never removes keeps its whole page in memory, as in an app that never reloads: 0.5 to 2.8 MB a page in the playgrounds.
 - **Keep the elements of a page in the test that uses them.** One in a variable of the test file, or in the calls of a mock that is never cleared, keeps its page.
-- **Wait for a page that the app loads itself**, like after a link without Next's router, with an `expect.element()` on that page before the test ends. Its timers can still be due: run them, as below.
-- **Run a library's timers before the page is left**, with the recipe below.
+- **Wait for a page that the app loads itself**, like after a link without Next's router, with an `expect.element()` on that page before the test ends.
+- **Leave out a library's options that start timers you don't need**, as below.
 - **Use `isolate: true` for the test files that still need it.** Put them in a Vitest project of their own, and the rest keeps the speed.
 
 ### A timer that outlives its page
 
-Leaving a page takes back most of what React and Next.js left behind, but not the timers of your app or of its libraries. A browser drops those with the page. Here a timer that is due after its test has ended fires during the next test, and if it touches its page, it throws there. Vitest reports the error under whichever test is running. `next-themes` with `disableTransitionOnChange` is one: 1 ms after it mounts, it removes a style that has gone with the page.
+Leaving a page takes back what React and Next.js left behind, but not the timers of your app or of its libraries. A browser drops those with the page. Here a timer that is due after its test has ended fires during the next test, and if it touches its page, it throws there. Vitest reports the error under whichever test is running.
 
-Run such timers before the plugin leaves the page, with Vitest's fake timers, in a setup file:
+`next-themes` with `disableTransitionOnChange` is one. As it mounts, and at every change of theme, it adds a style that turns off transitions, and removes it again 1 ms later. In the notes demo, ten page loads in a row threw 36 errors that way.
 
-```ts
-import { afterEach, beforeEach, vi } from "vitest";
+Ways out, the first one first:
 
-beforeEach(() => {
-  vi.useFakeTimers({
-    toFake: ["setTimeout", "clearTimeout", "Date"],
-    shouldAdvanceTime: true,
-    advanceTimeDelta: 1,
-  });
-});
+- **Don't ask for the timer.** For a library, that is often an option. `disableTransitionOnChange` exists so that a change of theme doesn't animate, which a test doesn't need. Turn off motion for the whole app in the setup file instead, with a stylesheet:
 
-afterEach(async () => {
-  try {
-    if (vi.isFakeTimers()) {
-      await vi.advanceTimersByTimeAsync(200);
+  ```ts
+  const noMotion = document.createElement("style");
+  noMotion.textContent = `
+    *, *::before, *::after {
+      animation: none !important;
+      transition-property: none !important;
     }
-  } finally {
-    vi.useRealTimers();
-  }
-});
-```
+  `;
+  document.head.append(noMotion);
+  ```
 
-- `shouldAdvanceTime` keeps the clock moving with the real one, so the app's timers fire as the time passes. `advanceTimeDelta: 1` moves it every millisecond: with the default of 20 ms, every timer of a page load waits for the next step, which made each page load of the notes demo 70 to 110 ms slower.
-- After the test, the clock jumps 200 ms ahead at once, and runs the timers that are due by then. That takes a millisecond or two, not 200. A longer timer stays pending: raise the number for a library whose timer is longer.
-- It doesn't run every pending timer, with `vi.runOnlyPendingTimersAsync()`: that also runs the long ones, like the 10 s timer that Postgres sets in PGlite after a query, which took more than a second each time in the notes demo.
-- With Vitest's default `sequence.hooks`, `"stack"`, this `afterEach` runs before the plugin's own, which leaves the page. The `finally` puts the real timers back also when a timer throws.
-- A test that opens another page calls `await vi.advanceTimersByTimeAsync(200)` before it.
-- `Date` is in `toFake` because fake timers without it undo a clock that `vi.setSystemTime()` fixed, as a [database recipe](databases.md) does. That clock moves on from there, and jumps 200 ms at the end of each test.
-- A test that calls `vi.useFakeTimers()` itself replaces these options: pass `shouldAdvanceTime: true` there too, or the app's timers stop.
-- Only `setTimeout` is faked. A library's `setInterval` or `requestAnimationFrame` still runs after its page.
-- The fake timers are the tab's, so the server's timers are faked too. How this goes with `after()`, which Not Yet says waits under fake timers, is not tested.
+  A stylesheet that is in the document before a page loads stays there for every page. Your stories keep their motion: Storybook doesn't run this setup file.
 
-In a test file of `playground/nextjs-notes-demo` with these hooks, ten page loads in a row went from 36 errors to none. They took 1.02 to 1.37 s, and 0.86 to 0.94 s without the hooks. The demo's 69 tests pass with them in its setup file.
+- **Wait for it.** Where the timer is needed, a test that ends right after the app loaded a page itself, like the page a link goes to, can wait for the page to hydrate, and then until the timer is due, before it ends.
+
+Vitest's fake timers can run such a timer too, but they fake the timers of the whole tab: of your app, its server code, Next.js and libraries like PGlite. That has costs of its own, and isn't recommended here.
 
 ### No `test.concurrent`
 

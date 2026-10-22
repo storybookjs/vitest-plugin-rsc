@@ -21,7 +21,7 @@ Measured at `4d43e6ea` on an Apple M1 Pro (32 GB), with Vitest 5.0.5, Playwright
   - the element under the pointer;
   - a page that V8 can keep through a shape the tab shares;
   - the server render of a page that was left.
-- **What the app's libraries leave is the user's, with a recipe.** The 1 ms timer of `next-themes` fires after its page is left and throws, every time pages load one after another: 36 errors for 10 page loads. Vitest's fake timers, run before the page is left, take that to none, and the notes suite passes with them. The recipe is in the guide: [A timer that outlives its page](nextjs-guide.md#a-timer-that-outlives-its-page).
+- **What the app's libraries leave is the user's.** The 1 ms timer of `next-themes` fires after its page is left and throws, every time pages load one after another: 36 errors for 10 page loads. It is there for an option, `disableTransitionOnChange`, which a test doesn't need once its setup file turns off motion with a stylesheet. Without the option: no errors. The guide says how: [A timer that outlives its page](nextjs-guide.md#a-timer-that-outlives-its-page).
 - **The plan: Next's own files get the page's timers, ports and observers.** As Vite pre-bundles the files of `next/dist`, which include the React that Next ships, a define of oxc points `setTimeout`, `MessageChannel`, `PerformanceObserver` and the like in them at the page that runs them. The plugin does that kind of rewrite already, for `build: "production"`. Leaving the page releases them. The app's code and its other packages keep the real globals.
 - **Effort**: about 3 weeks. Risk: the conformance suite (956 of 1147 pass) and the Storybook package, which leaves pages the same way.
 
@@ -140,17 +140,13 @@ Evidence for each:
   >
   > The last test to run before this error was "a later test that does nothing wrong".
 
-**The recipe (L).** Run such timers before the plugin leaves the page. Install Vitest's fake timers for `setTimeout`, `clearTimeout` and `Date`, with `shouldAdvanceTime` and `advanceTimeDelta: 1`, before each test. After each test, call `vi.advanceTimersByTimeAsync(200)` before the plugin's own `afterEach` leaves the page. A test that opens another page calls it before that too.
+**What the user can do (L).** Not ask for the timer. `disableTransitionOnChange` exists so that a change of theme doesn't animate. The notes demo's setup file already turns off motion for the whole app with a stylesheet, so its tests don't need the option. Without the option, the same ten page loads throw nothing, in three runs out of three, in 0.87 to 0.93 s, as fast as with it (`results/notes-no-option-*.jsonl`). The notes demo now leaves it out, and its stories, which keep the app's motion, change themes with a transition.
 
-- In a test file with the recipe's hooks, the same cases throw nothing, in three runs out of three. Without them they throw 36 times in each of three runs (`results/notes-recipe-*.jsonl`).
-- The notes suite passes with the recipe in its setup file: 69 of 69 tests, no unhandled errors (`notes-recipe/setup.patch`, `results/notes-suite-recipe.txt`). It passes without it too: its tests wait with `watchPageLoad()`.
-- It costs 10 to 40 ms per page load: ten loads in a row took 1.02 to 1.37 s with it, and 0.86 to 0.94 s without. The jump of 200 ms itself takes 1 to 2 ms (`results/notes-recipe-timings.txt`).
-- A first version cost 70 to 110 ms per page load, for two reasons:
-  - `shouldAdvanceTime` moves the fake clock in steps of 20 ms by default, and every timer of a page load waited for the next step;
-  - `vi.runOnlyPendingTimersAsync()` also ran the 10 s timer that Postgres sets in PGlite after a query, which takes more than a second each time. With Vitest's `setTimerTickMode("nextTimerAsync")`, which jumps to each next timer, ten page loads took 15 s for that reason, and 1.03 s with PGlite's timer left on the real clock.
-- Two variants failed:
-  - Without `Date` faked, fake timers undo the clock that the notes demo fixes with `vi.setSystemTime()`, and one test failed.
-  - `advanceTimersByTimeAsync(20_000)` instead of running the pending timers waited past the hooks' timeout in 15 tests.
+Vitest's fake timers can run such a timer before the page is left as well. They were the first recipe, and are out:
+
+- They fake the timers of the whole tab: of the app, its server code, Next.js, and PGlite, to catch one timer of 1 ms.
+- Running every pending timer cost 1.4 s per page load in the notes demo. It also ran Postgres's 10 s timer in PGlite. The demo fixes `Date` at `TEST_NOW`, and PGlite's other clock, `performance.now()`, runs on. So Postgres set its timer again 169 days ahead, longer than a timer can hold, and the fake timers fired it at once, about 280 times (`results/notes-recipe-timings.txt`).
+- With the clock moving in steps of 1 ms and 200 ms run at the end of each test, they threw nothing and cost 10 to 40 ms per page load. That holds as long as nothing runs the clock past PGlite's timer.
 
 The guide has it, under [A timer that outlives its page](nextjs-guide.md#a-timer-that-outlives-its-page), and Not Yet points there.
 

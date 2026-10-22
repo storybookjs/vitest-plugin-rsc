@@ -79,7 +79,7 @@ async function AuthNav() {
 
 function AppShell({ children }: { children: ReactNode }) {
   return (
-    <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
+    <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
       <ProgressBarProvider>
         <ProgressBar className="pointer-events-none fixed left-0 top-0 z-50 h-0.5 bg-brand opacity-0 shadow-[0_0_12px_var(--brand)] [animation:nav-progress-reveal_120ms_ease_200ms_forwards]" />
         <div className="relative flex min-h-screen flex-col bg-background">

@@ -13,6 +13,11 @@ vi.mock("#lib/db.ts");
 
 const { resetDb } = dbModule as typeof import("#lib/__mocks__/db.ts");
 
+// No motion in the tests, for all of the app at once. So the app needs no
+// option of a library for it, like `disableTransitionOnChange` of
+// next-themes, whose timer would outlive its page: see "A timer that
+// outlives its page" in docs/nextjs-guide.md. The stories keep the app's
+// motion, as its users see it.
 const disableMotionStyle = document.createElement("style");
 disableMotionStyle.textContent = `
   *,
