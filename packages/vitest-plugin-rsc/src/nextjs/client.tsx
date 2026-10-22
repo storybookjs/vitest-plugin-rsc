@@ -1,12 +1,22 @@
 import { appBootstrap } from "next/dist/client/app-bootstrap";
 import { callServer } from "next/dist/client/app-call-server";
+import AppRouter from "next/dist/client/components/app-router";
+import { createMutableActionQueue } from "next/dist/client/components/app-router-instance";
+import { createInitialRouterState } from "next/dist/client/components/router-reducer/create-initial-router-state";
+import { invalidateBfCache } from "next/dist/client/components/segment-cache/bfcache";
+import { invalidateEntirePrefetchCache } from "next/dist/client/components/segment-cache/cache";
+import { HeadManagerContext } from "next/dist/shared/lib/head-manager-context.shared-runtime";
 import { unstable_rethrow } from "next/navigation";
+import { Fragment, StrictMode, useEffect, type ReactNode } from "react";
+import { flushSync } from "react-dom";
 import ReactDOMClient, { type Root, type RootOptions } from "react-dom/client";
+import { createFromReadableStream } from "@vitejs/plugin-rsc/vendor/react-server-dom/client.browser";
 import { registerModuleLoader } from "./client-modules.ts";
 import { recordListeners, type Leftovers } from "./leftovers.ts";
 import type { NodeOnPage } from "./node-on-page.ts";
 // The module that the Flight payload of a node names: see rsc.ts.
 import { setNodeOnPage } from "vitest-plugin-rsc/nextjs/node-rendered";
+import { registry } from "./registry.ts";
 
 // The browser layer. This module is the app's client entry: what Next's
 // `main-app.js` chunk is for a deployment. Like that chunk, it runs once per
@@ -16,6 +26,32 @@ import { setNodeOnPage } from "vitest-plugin-rsc/nextjs/node-rendered";
 declare global {
   var __viteRscCallServer: typeof callServer;
   var __NEXT_HYDRATED_CB: (() => void) | undefined;
+}
+
+// The page that the root of the app renders now, which hears of what React
+// reports on it. A page load has a module graph of its own, and with it a
+// root, so this is the page of that load: but for an app that is kept for
+// the pages after it (`renderAgain()`), whose root renders each of them in
+// turn, and whose options are the ones of its first page.
+type CurrentPage = {
+  signal: AbortSignal;
+  errors: unknown[];
+  nodeOnPage: NodeOnPage | undefined;
+  /**
+   * Set once the page is left: from then on React may report that a root
+   * went before it had hydrated, which a browser drops with the page
+   * unreported.
+   */
+  leaving: boolean;
+};
+let current: CurrentPage | undefined;
+
+// A node hears of all of them: a `notFound()` takes its place too. A page
+// that was left, whose load has aborted, reports no more.
+function report(error: unknown): void {
+  if (!current) return;
+  current.nodeOnPage?.errored(error);
+  if (!current.signal.aborted && !isNextControlFlow(error)) current.errors.push(error);
 }
 
 // The options of the root of the app, which also hear of the errors React
@@ -71,14 +107,11 @@ export async function start(
   signal: AbortSignal,
   nodeOnPage: NodeOnPage | undefined,
   errors: unknown[],
-): Promise<{ unmount(): void }> {
+  keep = false,
+): Promise<StartedApp> {
   setNodeOnPage(nodeOnPage);
-  // A node hears of all of them: a `notFound()` takes its place too. A page
-  // that was left, whose load has aborted, reports no more.
-  const report = (error: unknown) => {
-    nodeOnPage?.errored(error);
-    if (!signal.aborted && !isNextControlFlow(error)) errors.push(error);
-  };
+  const page: CurrentPage = { signal, errors, nodeOnPage, leaving: false };
+  current = page;
   // Not when this module loads: a page that was left while it loaded must not
   // take over from the page that is there now. The modules of the app wait
   // for Next's client: the Flight client asks for them as soon as it loads.
@@ -104,7 +137,10 @@ export async function start(
   // The root of the document is Next's own. For a node it is on the container
   // instead: `to` is where the root goes, and `isApp` says whether it is that
   // root.
-  const keep = <Target,>(target: Target, create: (to: Target, isApp: boolean) => Root): Root => {
+  const keepRoot = <Target,>(
+    target: Target,
+    create: (to: Target, isApp: boolean) => Root,
+  ): Root => {
     // Next creates its root late, after the payload of the page has come: a
     // page that is left by then is gone, and the document is the next one's.
     // It gets a root that renders nothing. Not an error: React would report
@@ -124,25 +160,24 @@ export async function start(
       for (const recorded of added) recorded.stop();
     }
   };
-  // Set once the page is left: from then on React may report that a root went
-  // before it had hydrated, which a browser drops with the page unreported.
-  let leaving = false;
   ReactDOMClient.hydrateRoot = (target, children, options) =>
-    keep(target, (to, isApp) =>
+    keepRoot(target, (to, isApp) =>
       hydrateRoot(to, children, {
         ...(isApp ? reportingErrors(options, report) : options),
         onRecoverableError(error, info) {
-          if (leaving) return;
+          if (current?.leaving) return;
           if (options?.onRecoverableError) options.onRecoverableError(error, info);
           else reportError(error);
         },
       }),
     );
   ReactDOMClient.createRoot = (target, options) =>
-    keep(target, (to, isApp) => createRoot(to, isApp ? reportingErrors(options, report) : options));
+    keepRoot(target, (to, isApp) =>
+      createRoot(to, isApp ? reportingErrors(options, report) : options),
+    );
 
   const leave = () => {
-    leaving = true;
+    page.leaving = true;
     // A page that is left loads no more Client Components, and the loader
     // would keep the ones it loaded.
     forgetLoader();
@@ -214,5 +249,140 @@ export async function start(
         "which the plugin needs to leave the page.",
     );
   }
-  return { unmount: leave };
+  if (!keep) return { unmount: leave, leaveApp: leave };
+  // A kept app outlives its first page: leaving that page empties the root,
+  // and leaving the app is what removes it.
+  app = { root, renders: 0 };
+  return {
+    unmount: () => leavePage(page, forgetLoader),
+    leaveApp() {
+      app = undefined;
+      leave();
+    },
+  };
+}
+
+/** How to leave the page that `start()` or `renderAgain()` opened, and its app. */
+export type StartedApp = {
+  /** Leaves the page. For a kept app, its root stays, with nothing in it. */
+  unmount(): void;
+  /** Leaves the app: its root goes, and the listeners React added for it. */
+  leaveApp(): void;
+};
+
+// The app that `start()` kept for the pages after its first: its root,
+// and how many trees it has rendered, each with a key of its own.
+let app: { root: Root; renders: number } | undefined;
+
+// Leaves a page of a kept app: its tree goes, at once, as with a page load
+// that unmounts the root, and the root stays for the next page.
+function leavePage(page: CurrentPage, forgetLoader: () => void): void {
+  page.leaving = true;
+  forgetLoader();
+  flushSync(() => app?.root.render(null));
+}
+
+// The Flight payload of the document, which Next's scripts in it left in
+// `self.__next_f`, as Next's entry reads it (`nextServerDataCallback()` of
+// app-index.js): a page that `renderAgain()` renders is in the document in
+// full before it starts, so the stream ends there.
+function documentPayload(): ReadableStream<Uint8Array> {
+  const segments = (self as unknown as { __next_f?: [number, string?][] }).__next_f ?? [];
+  const encoder = new TextEncoder();
+  return new ReadableStream({
+    start(controller) {
+      for (const [kind, data = ""] of segments) {
+        if (kind === 1) controller.enqueue(encoder.encode(data));
+        else if (kind === 3)
+          controller.enqueue(Uint8Array.from(atob(data), (c) => c.charCodeAt(0)));
+      }
+      controller.close();
+    },
+  });
+}
+
+// Says when the tree of a page has committed and run its effects, as Next's
+// `Root` does with `__NEXT_HYDRATED_CB`: its effect runs after the ones of
+// the app below it.
+function Committed({ onCommit, children }: { onCommit: () => void; children: ReactNode }) {
+  useEffect(onCommit, [onCommit]);
+  return children;
+}
+
+/**
+ * Renders the page in the document into the root of the app that `start()`
+ * kept, in place of the page before it: what Next's entry does as the page
+ * loads, without the entry. The modules of the app stay, and so does its
+ * root, so this is no page load: its Flight payload is decoded, the router
+ * gets a state of its own from it, and a tree with a key of its own mounts.
+ * Resolves as `start()` does, once it has rendered.
+ *
+ * What the modules of the app keep stays from the page before: Next's caches
+ * of its router are emptied, but the state of a module of the app, or of a
+ * package, is still there.
+ */
+export async function renderAgain(signal: AbortSignal, errors: unknown[]): Promise<StartedApp> {
+  const kept = app;
+  if (!kept) throw new Error("vitest-plugin-rsc: there is no kept app to render the page in.");
+  setNodeOnPage(undefined);
+  const page: CurrentPage = { signal, errors, nodeOnPage: undefined, leaving: false };
+  current = page;
+  // Next's client has loaded long ago, so the Client Components load at once.
+  const forgetLoader = registerModuleLoader("browser");
+  globalThis.__viteRscCallServer = callServer;
+  // What the router of the page before prefetched, and the segments it kept
+  // for back and forward, were rendered with that page's cookies and data.
+  invalidateEntirePrefetchCache(null, null as never);
+  invalidateBfCache();
+  try {
+    const payload = await createFromReadableStream(documentPayload(), { callServer });
+    signal.throwIfAborted();
+    // Next creates the queue of its router once per page load, and checks
+    // that it does: the plugin's patch lets it replace it here (plugin.ts).
+    registry.replacingRouter = true;
+    let actionQueue: ReturnType<typeof createMutableActionQueue>;
+    try {
+      actionQueue = createMutableActionQueue(
+        createInitialRouterState({
+          navigatedAt: Date.now(),
+          initialRSCPayload: payload,
+          initialFlightStreamForCache: null,
+          location: window.location,
+        } as never),
+      );
+    } finally {
+      registry.replacingRouter = false;
+    }
+    const Strict = process.env.__NEXT_STRICT_MODE_APP ? StrictMode : Fragment;
+    await new Promise<void>((resolve, reject) => {
+      const abort = () => reject(signal.reason);
+      signal.addEventListener("abort", abort, { once: true });
+      const committed = () => {
+        signal.removeEventListener("abort", abort);
+        resolve();
+      };
+      kept.root.render(
+        <Strict>
+          <HeadManagerContext.Provider value={{ appDir: true }}>
+            <Committed onCommit={committed}>
+              <AppRouter
+                key={++kept.renders}
+                actionQueue={actionQueue}
+                globalErrorState={(payload as { G: never }).G}
+              />
+            </Committed>
+          </HeadManagerContext.Provider>
+        </Strict>,
+      );
+    });
+  } catch (error) {
+    leavePage(page, forgetLoader);
+    throw error;
+  }
+  return {
+    unmount: () => leavePage(page, forgetLoader),
+    leaveApp() {
+      app = undefined;
+    },
+  };
 }

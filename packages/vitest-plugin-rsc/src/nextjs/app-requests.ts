@@ -85,10 +85,28 @@ function sameOriginRequest(
 // goes once the page is. Without a page, a request of Next's has none to
 // hear it.
 let page: AbortSignal | undefined;
+// Whether the router of a page outlives it: in a kept app (see `renderAgain()`
+// in client.tsx) the modules of Next's router stay, and so does what they
+// count, like the prefetches in flight. A request that never settles would
+// count for good, so one of a page that was left fails, as the request of a
+// page that a browser stops.
+let routerOutlivesPage = false;
 
 /** Says which page of the app is open, by its signal, which aborts as it is left. */
 export function setOpenPage(signal: AbortSignal | undefined): void {
   page = signal;
+}
+
+/** Says whether the router of the pages outlives them, from now on. */
+export function setRouterOutlivesPage(outlives: boolean): void {
+  routerOutlivesPage = outlives;
+}
+
+// What a request of a page that was left gets, from the router that sent it.
+function ofLeftPage(): Promise<never> {
+  return routerOutlivesPage
+    ? Promise.reject(new DOMException("The page was left.", "AbortError"))
+    : never();
 }
 
 // What a browser adds to a request for the app's origin, with the headers and
@@ -372,7 +390,7 @@ async function heardBy(sender: AbortSignal, response: Promise<Response>): Promis
   const answered = await response.catch(() => undefined);
   if (!sender.aborted) return response;
   void answered?.body?.cancel().catch(() => {});
-  return never();
+  return ofLeftPage();
 }
 
 /**
@@ -398,7 +416,7 @@ export function pageFetch(
     if (!store()) return network()(input, init);
     if (!sameOriginRequest(input, init)?.marked) return browserFetch(input, init);
     const sender = page;
-    return sender && !sender.aborted ? heardBy(sender, browserFetch(input, init)) : never();
+    return sender && !sender.aborted ? heardBy(sender, browserFetch(input, init)) : ofLeftPage();
   };
 }
 // The server's `fetch`. A request to the app itself is one the server makes

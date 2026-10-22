@@ -3,9 +3,9 @@
 // leaving it takes those back, the last part first, one page at a time.
 import { resetAsyncLocalStorage } from "../async-local-storage.ts";
 import { checkFetchedModules, createEnvironmentRunner, environmentModule } from "../utils.ts";
-import { setOpenPage, sendRequest, unlessAborted } from "./app-requests.ts";
+import { setOpenPage, setRouterOutlivesPage, sendRequest, unlessAborted } from "./app-requests.ts";
 import { callServerWithoutPage } from "./client-graph.ts";
-import { loadDocument, unloadDocument, type HistoryEntry } from "./document.ts";
+import { keepProperties, loadDocument, unloadDocument, type HistoryEntry } from "./document.ts";
 import { download, downloadName } from "./downloads.ts";
 import { noRouter } from "./host-document.ts";
 import { recordListeners, recordMessageChannels } from "./leftovers.ts";
@@ -123,6 +123,40 @@ export class Page {
 // The page of the latest load, from its first line until it is left.
 let current: Page | undefined;
 
+type Client = typeof import("./client.tsx");
+
+// The app that the first page of `renderServer({ url, reuse: true })` started,
+// which renders the pages of `reuse` after it in its root, without a module
+// graph, a root or Next's entry of their own: see `renderAgain()` in
+// client.tsx. It is left with the first page that is not one of `reuse`, also
+// one that the app loads itself, or with `leaveKeptApp()`.
+let kept: { client: Client; leave(): void } | undefined;
+
+/**
+ * Leaves the app that pages of `reuse` render in, if any: its root, its
+ * module graph and what its modules left behind as they loaded go. Once its
+ * page is left: see `leavePage()`.
+ */
+export function leaveKeptApp(): void {
+  const app = kept;
+  kept = undefined;
+  setRouterOutlivesPage(false);
+  app?.leave();
+}
+
+// Releases in the order of a page's: the last first, also after one that throws.
+function releaseAll(releases: (() => void)[]): void {
+  let failed: { error: unknown } | undefined;
+  for (const release of releases.splice(0).reverse()) {
+    try {
+      release();
+    } catch (error) {
+      failed ??= { error };
+    }
+  }
+  if (failed) throw failed.error;
+}
+
 /** The page that is open: see `Page.open`. */
 export function currentPage(): Page | undefined {
   return current?.open ? current : undefined;
@@ -143,6 +177,8 @@ type Opening = {
   signal?: AbortSignal;
   /** Where the page, and the pages the app loads from it, report their errors. */
   errors: unknown[];
+  /** Renders the page in the app of the page before, if it is kept: see `kept`. */
+  reuse?: boolean;
 };
 
 // The document of a page, which a navigation has before it loads the page:
@@ -168,6 +204,8 @@ export async function loadPage(
   const loading = (async () => {
     await leaving;
     page.signal.throwIfAborted();
+    // A page that is not one of `reuse` starts an app of its own.
+    if (!opening?.reuse) leaveKeptApp();
 
     // Once the node that was in it is gone.
     if (opening?.container?.hasChildNodes()) {
@@ -255,12 +293,35 @@ async function openPage(
   }
   await loadDocument(html, response.url, container, after);
   superseded();
+  const reuse = opening?.reuse === true;
+  if (reuse && kept) {
+    // The app of the page before renders this one, from the Flight payload
+    // that the document has.
+    const started = kept.client
+      .renderAgain(signal, page.errors)
+      .then(({ unmount }) => page.defer(unmount));
+    page.starts(started, () => {});
+    setOpenPage(signal);
+    try {
+      await started;
+    } catch (error) {
+      superseded();
+      throw error;
+    }
+    superseded();
+    return response;
+  }
+  // What the app holds, which goes with the page, or with a kept app once
+  // that is left.
+  const appReleases: (() => void)[] = [];
+  const deferForApp = (release: () => void) =>
+    reuse ? appReleases.push(release) : page.defer(release);
   // A page load runs the app's scripts from scratch, so every page gets a
   // module graph of its own for the browser layer. A page that is left keeps
   // no module graph: what of it stays, like an error whose stack has the
   // frames that loaded a module, cannot reach its modules through the runner.
   const runner = createEnvironmentRunner("react_client");
-  page.defer(() => void runner.close());
+  deferForApp(() => void runner.close());
   // The browser's Flight client reads properties off `__webpack_require__`
   // when it loads, which is before the page can say how it loads a module,
   // and wraps some of them. One that the pages shared would keep every page.
@@ -268,7 +329,7 @@ async function openPage(
   registry.browserRequire = browserRequire;
   // What the page's Flight client wrapped of it keeps the page. Once it is
   // left, it loads nothing more, as its closed runner.
-  page.defer(() => {
+  deferForApp(() => {
     if (registry.browserRequire === browserRequire) registry.browserRequire = loadsNothing;
   });
   // React's scheduler, Next's router and Next's dev overlay each leave
@@ -280,21 +341,51 @@ async function openPage(
   // of the app's that was added in it would be taken from the app when the
   // page is left.
   const leftovers = [recordListeners(window), recordMessageChannels()];
-  for (const leftover of leftovers) page.defer(() => leftover.remove());
+  for (const leftover of leftovers) deferForApp(() => leftover.remove());
   const loaded = () => leftovers.forEach((leftover) => leftover.stop());
   const started = (async () => {
-    const client = await runner.import<typeof import("./client.tsx")>(
-      environmentModule("react_client", "vitest-plugin-rsc/nextjs/client"),
-    );
-    superseded();
-    const { unmount } = await client.start(
-      loaded,
-      container,
-      signal,
-      opening?.nodeOnPage,
-      page.errors,
-    );
-    page.defer(unmount);
+    try {
+      const client = await runner.import<Client>(
+        environmentModule("react_client", "vitest-plugin-rsc/nextjs/client"),
+      );
+      superseded();
+      const { unmount, leaveApp } = await client.start(
+        loaded,
+        container,
+        signal,
+        opening?.nodeOnPage,
+        page.errors,
+        reuse,
+      );
+      page.defer(unmount);
+      if (!reuse) return;
+      appReleases.push(leaveApp);
+      // React DOM marks the document as the container of the root, and as
+      // one it listens on. The root stays, and so do they: see document.ts.
+      const marks = Reflect.ownKeys(document).filter(
+        (key) =>
+          typeof key === "string" &&
+          (key.startsWith("__reactContainer$") || key.startsWith("_reactListening")),
+      );
+      keepProperties(document, marks);
+      leaveKeptApp();
+      kept = {
+        client,
+        leave() {
+          keepProperties(document);
+          try {
+            releaseAll(appReleases);
+          } finally {
+            for (const key of marks) Reflect.deleteProperty(document, key);
+          }
+        },
+      };
+      setRouterOutlivesPage(true);
+    } catch (error) {
+      // An app that did not start is not kept: it goes with its page.
+      releaseAll(appReleases);
+      throw error;
+    }
   })();
   // The page is open from here: `currentPage()` has it, for the navigations
   // of its app (document-loads.ts), and leaving waits for its start.

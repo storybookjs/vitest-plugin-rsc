@@ -186,6 +186,12 @@ export type NextRegistry = {
    */
   loadBrowserModule?(id: string): Promise<unknown>;
   /**
+   * Set while the browser layer gives the router of a kept app the state of
+   * its next page, which Next's patched router reads: see
+   * `replaceableRouterPlugin()` in plugin.ts.
+   */
+  replacingRouter?: boolean;
+  /**
    * Of Next's route module for a page, loaded in the ssr layer: its class,
    * and the contexts of its `*.shared-runtime` modules, for the rsc layer.
    */

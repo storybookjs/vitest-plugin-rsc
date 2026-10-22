@@ -57,3 +57,11 @@ declare module "@vitejs/plugin-rsc/vendor/react-server-dom/server.edge" {
   ): Promise<unknown[]>;
   export function createClientModuleProxy(moduleId: string): unknown;
 }
+
+// In the browser layer, Next's own copy: see `vendoredFlight()` in plugin.ts.
+declare module "@vitejs/plugin-rsc/vendor/react-server-dom/client.browser" {
+  export function createFromReadableStream<T>(
+    stream: ReadableStream<Uint8Array>,
+    options?: { callServer?: unknown },
+  ): Promise<T>;
+}

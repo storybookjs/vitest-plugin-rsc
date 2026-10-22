@@ -3,6 +3,7 @@ import { server } from "vitest/browser";
 import { cleanup, newBrowserContext } from "./index.ts";
 import { forgetClientFiles, linkStylesheetsOf, loadedAsClientFile } from "./client-graph.ts";
 import { keepHostDocument, noRouter } from "./host-document.ts";
+import { leaveKeptApp, leavePage } from "./page.ts";
 import { registry } from "./registry.ts";
 import { ssrLayer } from "./server-layers.ts";
 
@@ -42,7 +43,13 @@ beforeAll(async ({}, suite) => {
   // hooks too.
   await linkStylesheetsOf(nodeFiles);
 });
-afterAll(() => keptDocument?.());
+// The app of the pages of `reuse` (page.ts) is one test file's: the next
+// file starts with its modules evaluated again, as it does its setup files.
+afterAll(async () => {
+  await leavePage("the end of the test file");
+  leaveKeptApp();
+  keptDocument?.();
+});
 
 // The ssr layer, which the entry does not wait for: with a dev server, the
 // first time it loads compiles Next's server, which takes longer than a test

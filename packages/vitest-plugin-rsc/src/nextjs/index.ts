@@ -223,6 +223,30 @@ export type RenderServerOptions = RequestOptions & {
    * of the server, or a mismatch between it and the browser.
    */
   ssr?: boolean;
+  /**
+   * Renders the page in the app of the page before it, when that one was
+   * opened with `reuse` too: a fast mode for a suite that opens a page in
+   * every test. Defaults to `false`. Implies `ssr: false`, which it cannot be
+   * passed with.
+   *
+   * The first page of `reuse` starts the app as any page does, without SSR,
+   * and its app stays when it is left: its module graph, React's root on the
+   * document and Next's client. The next page of `reuse` is not loaded into
+   * it, but rendered: the server sends its document as for `ssr: false`, and
+   * the app decodes the Flight payload in it, gives Next's router a new state
+   * from it and mounts a new tree in its root, as Next's entry does as a page
+   * loads. Leaving the page unmounts its tree, so no state of a component
+   * carries over, nor the router's; the caches of Next's router are emptied.
+   * What carries over is the state of the modules of the app, of a package
+   * and of Next and React themselves, as in a single-page app that is never
+   * reloaded: a module that keeps a value of the page before has it on the
+   * next page. A page that is not one of `reuse`, also one the app loads
+   * itself, like after a `<form>` without JavaScript or `location.assign()`,
+   * starts an app of its own, and so does the first page of a test file.
+   *
+   * In development the page has no dev overlay of Next's.
+   */
+  reuse?: boolean;
 };
 
 export type RenderServerResult = {
@@ -378,7 +402,15 @@ export async function renderServer(
           "`renderServer(<Page />, { url })`.",
       );
     }
-    const opened = { pathname, proxy: first.proxy ?? true, ssr: first.ssr };
+    if (first.reuse && first.ssr) {
+      throw new Error(
+        "vitest-plugin-rsc: `renderServer({ url, reuse: true })` renders the page in the root " +
+          "of the app that is there, which cannot hydrate HTML of the server: it implies " +
+          "`ssr: false`.",
+      );
+    }
+    const ssr = first.reuse ? false : first.ssr;
+    const opened = { pathname, proxy: first.proxy ?? true, ssr };
     return {
       response: await loadPage(url, { headers }, store, {
         opened,
@@ -386,6 +418,7 @@ export async function renderServer(
         cookie,
         signal,
         errors,
+        reuse: first.reuse,
       }),
       errors,
       unmount,

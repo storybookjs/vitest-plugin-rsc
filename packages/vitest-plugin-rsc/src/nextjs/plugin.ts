@@ -554,6 +554,35 @@ function noSsrPlugin(): Plugin {
   };
 }
 
+// `renderServer({ url, reuse: true })`: the app that a page starts renders
+// the pages after it too, each with a router of its own (`renderAgain()` in
+// client.tsx). Next creates the action queue of its router once per page
+// load, and throws when it is created again: in a kept app it may be, while
+// the plugin replaces the router.
+function replaceableRouterPlugin(): Plugin {
+  const check = "if (globalActionQueue !== null) {";
+  return {
+    name: "vitest-plugin-rsc:replaceable-router",
+    transform: {
+      filter: { id: /\/next\/dist\/esm\/client\/components\/app-router-instance\.js$/ },
+      handler(code, id) {
+        if (!code.includes(check)) {
+          this.warn(
+            `vitest-plugin-rsc: Next's check of its action queue in ${id} is not found: ` +
+              "reuse: true cannot render a page in a kept app.",
+          );
+          return;
+        }
+        const patched = code.replace(
+          check,
+          `if (globalActionQueue !== null && !globalThis.${registryGlobal}?.replacingRouter) {`,
+        );
+        return { code: patched, map: null };
+      },
+    },
+  };
+}
+
 // Next's compile-time constants for a layer. A server layer gets what makes
 // a module server code on top of these: see server-code.ts.
 function definesOf(project: NextProject, layer: NextLayer): Record<string, string> {
@@ -688,6 +717,13 @@ const runtimeImports: Record<NextLayer, string[]> = {
     "next/dist/client/app-bootstrap",
     "next/dist/client/app-call-server",
     "next/dist/client/app-index",
+    // client.tsx, for a page of a kept app: `renderAgain()`.
+    "next/dist/client/components/app-router",
+    "next/dist/client/components/app-router-instance",
+    "next/dist/client/components/router-reducer/create-initial-router-state",
+    "next/dist/client/components/segment-cache/bfcache",
+    "next/dist/client/components/segment-cache/cache",
+    "next/dist/shared/lib/head-manager-context.shared-runtime",
     // node-rendered.tsx, around every node
     "next/navigation",
     vendoredFlight("client.browser"),
@@ -918,6 +954,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
               ...(layer === "rsc" ? [nextClientBoundaryPlugin(getProject, resolvers.rsc)] : []),
               flightConsolePlugin(),
               noSsrPlugin(),
+              replaceableRouterPlugin(),
               ...(layer === "browser"
                 ? []
                 : [
@@ -1358,6 +1395,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
     ...layers.map((layer) => dependencyBuildPlugin(getProject, serverCode, layer)),
     { ...flightConsolePlugin(), apply: "build" },
     { ...noSsrPlugin(), apply: "build" },
+    { ...replaceableRouterPlugin(), apply: "build" },
     nextStaticBuild({
       environments: environmentOf,
       entries: { ssr: "vitest-plugin-rsc/nextjs/ssr", browser: "vitest-plugin-rsc/nextjs/client" },
