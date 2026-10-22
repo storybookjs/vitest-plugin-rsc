@@ -877,6 +877,9 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
           ...appPageEntries.flatMap(({ code }) => findImports(code)),
           ...metadataModules.flatMap(({ code }) => findImports(code)),
           ...findImports((await project.loadMiddlewareEntry()) ?? ""),
+          // `next/root-params`, which the scan finds as an import, but not
+          // what the module the plugin makes of it imports.
+          ...findImports(await project.loadRootParams()),
         ];
         const cacheHandlers = cacheHandlerScan(project, resolvers.ssr.toSpecifier);
         // `next/og` renders images with wasm: not something to pre-bundle for

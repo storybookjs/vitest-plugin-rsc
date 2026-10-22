@@ -365,6 +365,21 @@ test("has the ssr layer pre-bundle what the cache handlers of next.config import
   expect(ssr).toContain("next-themes");
 });
 
+test("has the rsc layer pre-bundle what the module of next/root-params imports", async () => {
+  // A root layout under a dynamic segment: `next/root-params` has a `lang()`.
+  const app = appWith({
+    "next.config.mjs": "export default {};",
+    "app/[lang]/layout.js": "export default ({ children }) => children;",
+    "app/[lang]/page.js": "export default () => null;",
+  });
+  const plugin = vitestPluginNext().find(({ name }) => name === "vitest-plugin-rsc:next")!;
+  const { environments } = await (plugin.config as ConfigHook<Config>)({ root: app }, serve);
+
+  expect(environments.client!.optimizeDeps.include).toContain(
+    "next/dist/esm/server/request/root-params.js",
+  );
+});
+
 test("gives Next's module for the asset prefix of its dev server no prefix: there is no dev server", async () => {
   const plugins = vitestPluginNext();
   const plugin = plugins.find(({ name }) => name === "vitest-plugin-rsc:next")!;
