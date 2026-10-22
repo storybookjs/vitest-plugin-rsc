@@ -730,6 +730,21 @@ test("runs Next's development code in a test run, and builds its production code
   });
 });
 
+test("gives Next's module that loads instrumentation.ts a `require` in the server layers, pre-bundled and built", async () => {
+  const name = "vitest-plugin-rsc:next-instrumentation";
+  const { rsc, ssr, browser } = await optimizeDeps;
+  const pluginsOf = (layer: typeof rsc) =>
+    (
+      layer as unknown as { rolldownOptions: { plugins: { name: string }[] } }
+    ).rolldownOptions.plugins.map((plugin) => plugin.name);
+
+  expect(pluginsOf(rsc)).toContain(name);
+  expect(pluginsOf(ssr)).toContain(name);
+  expect(pluginsOf(browser)).not.toContain(name);
+  // And for a static build, which has no optimizer.
+  expect(vitestPluginNext().find((plugin) => plugin.name === name)?.apply).toBe("build");
+});
+
 test("takes no other build", () => {
   expect(() => vitestPluginNext({ build: "test" as never })).toThrow(
     '`build` is "development" or "production", not "test".',

@@ -1,6 +1,6 @@
 import MagicString from "magic-string";
-import { parseAst } from "vite";
-import { walk, type Node } from "./commonjs.ts";
+import { parseAst, type Plugin } from "vite";
+import { missingHelper, walk, type Node } from "./commonjs.ts";
 import {
   instrumentationModule,
   nodePlatformModuleOf,
@@ -28,8 +28,10 @@ export function createNodePlatform(registry: string, prefix: string) {
     names
       .map((name) => `export const ${name} = (...args) => ${registry}.${owner}.${name}(...args);`)
       .join("\n");
-  const unsupported = (what: string) =>
-    `throw new Error(${JSON.stringify(`vitest-plugin-rsc: ${what} is not supported.`)});`;
+  // Next's staged rendering, for Cache Components: see `fast-set-immediate`.
+  const stagedRendering = `throw new Error(${JSON.stringify(
+    "vitest-plugin-rsc: Next's staged rendering, for Cache Components, is not supported.",
+  )});`;
   const modules: Record<string, string> = {
     "react-server-node": forward("flightServer", [
       "createTemporaryReferenceSet",
@@ -71,7 +73,9 @@ export function createNodePlatform(registry: string, prefix: string) {
   export const ReactServerDOMWebpackStatic = undefined;
   `,
     // Next measures its bloom filter of the routes with this, to warn about
-    // its size, and it reads files and streams for that. No warning here.
+    // its size, as its build makes the filter, which the layers never do: a
+    // bundle of its own, with \`fs\`, \`stream\` and \`zlib\`, for a call
+    // that is not made. No warning here.
     "gzip-size": `
   export const sync = () => 0;
   export default { sync };
@@ -82,16 +86,16 @@ export function createNodePlatform(registry: string, prefix: string) {
     "fast-set-immediate": `
   export const unpatchedSetImmediate = (...args) => ${registry}.setImmediate(...args);
   export function DANGEROUSLY_runPendingImmediatesAfterCurrentTask() {
-    ${unsupported("Next's staged rendering, for Cache Components,")}
+    ${stagedRendering}
   }
   export function expectNoPendingImmediates() {}
   export class ImmediateTracker {
     constructor() {
-      ${unsupported("Next's partial prefetching, for Cache Components,")}
+      ${stagedRendering}
     }
   }
   export function runWithNativeImmediateTracking() {
-    ${unsupported("Next's partial prefetching, for Cache Components,")}
+    ${stagedRendering}
   }
   `,
     // And the contexts of Next's \`*.shared-runtime\` modules, which the rsc
@@ -127,38 +131,44 @@ export function createNodePlatform(registry: string, prefix: string) {
 // Next's module that loads the app's `instrumentation.ts` does it with one
 // `require()`, of the file Next's build makes of it, and takes a module that
 // is not found for an app without one. That call is all of the module that
-// needs Node.js: it gets a `require` that finds no file, as Node.js finds
-// none, and the rest of the module is Next's own, whatever it exports. The
-// plugin does not run `instrumentation.ts` yet. A browser has no `require`.
-const requireOfNode = "__vitest_plugin_rsc_require__";
-const notFound =
-  `const ${requireOfNode} = (id) => { throw Object.assign(` +
-  "new Error(`Cannot find module '${id}'`), " +
-  `{ code: "MODULE_NOT_FOUND" }); };\n`;
+// needs Node.js: it calls the function that compiled CommonJS calls for a
+// module that is not there (commonjs.ts), which throws as Node.js does, and
+// the rest of the module is Next's own, whatever it exports. The plugin does
+// not run `instrumentation.ts` yet. A browser has no `require`.
+const missingRequire = "$$cjsMissing";
+
+// The name of the file in Next's call, `${INSTRUMENTATION_HOOK_FILENAME}.js`.
+const hookFilename = "INSTRUMENTATION_HOOK_FILENAME";
 
 /** The files of the module of Next that loads `instrumentation.ts`, of either build. */
-export const instrumentationFile = new RegExp(
+const instrumentationFile = new RegExp(
   `/next/dist/(?:esm/)?${instrumentationModule.replaceAll(".", "\\.")}\\.js$`,
 );
 
 /**
  * The code of the module of Next that loads `instrumentation.ts`, with a
  * `require` that finds no file. Or why it cannot have one: its one use of
- * `require` has to be that call, or this is a Next that loads the file
- * otherwise.
+ * `require` has to be a call that loads the file, or this is a Next that
+ * loads it otherwise.
  */
 export function instrumentationRequire(code: string): MagicString | string {
   const uses: [Node, Node | undefined][] = [];
   for (const [node, parent] of walk(parseAst(code) as unknown as Node)) {
     if (node.type === "Identifier" && node.name === "require") uses.push([node, parent]);
   }
-  const [use] = uses;
-  if (uses.length !== 1 || use![1]?.type !== "CallExpression" || use![1].callee !== use![0]) {
-    return `\`require\` ${uses.length} times, and not one \`require()\` of \`instrumentation.js\``;
+  const [use, call] = uses[0] ?? [];
+  const loadsTheFile =
+    uses.length === 1 &&
+    call?.type === "CallExpression" &&
+    call.callee === use &&
+    [...walk(call)].some(([node]) => node.type === "Identifier" && node.name === hookFilename);
+  if (!loadsTheFile) {
+    const times = uses.length === 1 ? "once" : `${uses.length} times`;
+    return `\`require\` ${times}, and not as the one call that loads \`${hookFilename}\``;
   }
   const replaced = new MagicString(code);
-  replaced.overwrite(use![0].start, use![0].end, requireOfNode);
-  return replaced.prepend(notFound);
+  replaced.overwrite(use!.start, use!.end, missingRequire);
+  return replaced.prepend(missingHelper);
 }
 
 /**
@@ -166,19 +176,19 @@ export function instrumentationRequire(code: string): MagicString | string {
  * no file: for the dependency optimizer of a server layer, and for a static
  * build, which has no optimizer.
  */
-export function instrumentationPlugin() {
+export function instrumentationPlugin(): Plugin {
   return {
     name: "vitest-plugin-rsc:next-instrumentation",
     transform: {
       // Rolldown matches the id with `/` for a separator.
       filter: { id: instrumentationFile },
-      handler(code: string, id: string) {
+      handler(code, id) {
         const replaced = instrumentationRequire(code);
         if (typeof replaced === "string") {
           // compat/checks.ts says so with Next's version when the run starts.
           throw new Error(`vitest-plugin-rsc: ${id} has ${replaced}.`);
         }
-        return { code: replaced.toString(), map: replaced.generateMap({ hires: true }) };
+        return { code: replaced.toString(), map: replaced.generateMap({ hires: "boundary" }) };
       },
     },
   };

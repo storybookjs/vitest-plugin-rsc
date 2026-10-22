@@ -699,7 +699,7 @@ test.for([
   );
 });
 
-test("says which module of Next that the plugin stands in for is gone", async () => {
+test("says which module of Next that a stand-in replaces is gone", async () => {
   const file = runtime("server/load-manifest.external");
   const next = nextWith({ [file]: new Error("Cannot find module") });
 
@@ -711,6 +711,7 @@ test("says which module of Next that the plugin stands in for is gone", async ()
 test.for([
   ["import()", "await require(", "await import("],
   ["a second `require`", "await require(", "require.cache, await require("],
+  ["a `require()` of another file", "`${INSTRUMENTATION_HOOK_FILENAME}.js`", "'other.js'"],
 ])(
   "needs Next to load instrumentation.ts with one `require()`, not with %s",
   async ([, piece, replacement]) => {

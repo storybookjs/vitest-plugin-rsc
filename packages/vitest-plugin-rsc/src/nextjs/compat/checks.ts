@@ -2,7 +2,12 @@ import fs from "node:fs";
 import { createNodePlatform, instrumentationRequire } from "../node-platform.ts";
 import type { NextContext } from "../project/context.ts";
 import { declaredExports, exportNamesOf, hasExport } from "../project/module-exports.ts";
-import { builtinBoundary, instrumentationModule, nodePlatformModules } from "./paths.ts";
+import {
+  aliasPaths,
+  builtinBoundary,
+  instrumentationModule,
+  nodePlatformModules,
+} from "./paths.ts";
 
 /**
  * What the modules of this package in the browser assume about Next's runtime.
@@ -214,12 +219,13 @@ export function checkRuntime(context: NextContext) {
   runtimeFile("server/app-render/stream-ops").contains("process.env.__NEXT_USE_NODE_STREAMS");
 
   checkNodePlatform(context);
-  // The module that loads `instrumentation.ts` is Next's own, with a
-  // `require` that finds no file (node-platform.ts), in place of its one.
+  // The module that loads `instrumentation.ts` is Next's own, and its call of
+  // `require` gets a function that finds no file (node-platform.ts).
   const instrumentation = runtimeFile(instrumentationModule);
   const required = instrumentationRequire(instrumentation.code);
-  if (typeof required === "string")
+  if (typeof required === "string") {
     fail(`next/dist/esm/${instrumentationModule}.js has ${required}`);
+  }
 
   return { builtinBoundaries };
 }
@@ -228,14 +234,23 @@ export function checkRuntime(context: NextContext) {
 // all of it. A module that is not there, at that path, has a stand-in for
 // nothing; and an export that its stand-in lacks is `undefined` for the
 // module that imports it, which the dependency optimizer leaves as it is
-// (`shimMissingExports`). And the same for the module of the ssr layer whose
-// bundle, `module.compiled`, the rsc layer has as a forward (plugin.ts).
+// (`shimMissingExports`). And the same for `app-page/module.compiled`, which
+// the rsc layer has as a forward to the ssr layer's module (plugin.ts): it
+// has to be there, and the forward needs every export of the module it is
+// the bundle of.
 function checkNodePlatform({ projectRequire, fail }: NextContext) {
   const nodePlatform = createNodePlatform("registry", "");
+  const appPageModule = aliasPaths.routeModule("app-page").slice("next/dist/".length);
   const standIns = Object.entries({
     ...nodePlatformModules,
-    "ssr-app-page-module": ["server/route-modules/app-page/module"],
+    "ssr-app-page-module": [appPageModule],
   });
+  const compiled = `next/dist/esm/${appPageModule}.compiled.js`;
+  try {
+    projectRequire.resolve(compiled);
+  } catch (error) {
+    fail(`${compiled} is not there, which the plugin stands in for`, error);
+  }
   for (const [name, modules] of standIns) {
     const { names } = declaredExports(nodePlatform.load(name)!);
     for (const nextModule of modules) {
