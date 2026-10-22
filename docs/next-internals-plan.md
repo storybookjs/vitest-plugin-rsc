@@ -84,7 +84,7 @@ A failure opens an issue. A table of the versions CI has seen pass is written by
 - **Prerender verdict.** Keep the computation, lazy and optional, and test it against Next's real build. Next has no function for it that runs in a browser.
 - **Server Actions.** Keep the `server-reference-info` shim, already a module wrapped by its exports.
 - **Request stores.** Keep the list of three modules compiled by path. CI flags a module of Next that keeps a store and is not on it: a list that cannot grow by itself is safer than a rule that can.
-- **The renderer's streams.** The plugin runs everything as Next's Node.js runtime, and its `node:stream` is readable-stream. Only Next's renderer runs on web streams, with `__NEXT_USE_NODE_STREAMS` off and React's builds for web streams from the table Next names edge. Next now keeps that path "for edge/runtime compatibility" ([#93944](https://github.com/vercel/next.js/pull/93944)). Try the renderer on its Node-stream path in Phase 6.
+- **The renderer's streams.** Keep web streams. The plugin runs everything as Next's Node.js runtime, and its `node:stream` is readable-stream; only Next's renderer runs on web streams, with `__NEXT_USE_NODE_STREAMS` off and React's builds for web streams (`react-dom/server.edge`, the name of the build, not of the runtime). A browser has web streams natively, where Node streams would run on readable-stream. Next has rendered with Node streams on Node.js since 16.3 and keeps the web-stream path "for edge/runtime compatibility" ([#93944](https://github.com/vercel/next.js/pull/93944)). Should it go, the way out is Next's Node-stream path on the plugin's readable-stream, which React's renderer for Node.js already runs on for a Client Component that imports `react-dom/server`. The nightly run would show it weeks ahead.
 
 ## The Phases
 
@@ -149,13 +149,13 @@ Removes: the checks that break on a refactor of Next that changes nothing, and t
 
 - **The `react-dom/client` bridge.** Next's `app-index` alone resolves `react-dom/client` to a module of the plugin, which gives Next the container and keeps the root. The importer is checked before `normalize()`, which caches by specifier alone. It takes the place of the global wrapper at `client.tsx:130`, and of two checks of `app-index`'s code.
 - **Next's own client entry, `client/app-next.js`**, after the bridge. It is about ten lines: `appBootstrap()`, `require-instrumentation-client` and `hydrate()`. On canary it already passes `hydrate()` its new arguments, so it moves with Next by construction, and it brings `instrumentation-client.ts`. Its `app-webpack` sets webpack's chunk URLs on `__webpack_require__`, which needs a stub like the asset prefix's. It does not catch a rejection of `hydrate()`, so it is kept only if a page that fails to start still fails its test.
-- **The renderer on Node streams.** `__NEXT_USE_NODE_STREAMS` on, React's builds for Node.js in the server layers, on the plugin's readable-stream, which React's renderer for Node.js already runs on for a Client Component that imports `react-dom/server`. It puts the renderer on the path Next takes by default, and takes away the switch and its check. Since #93944 the staged rendering of Cache Components has only that path. Kept only if `pnpm perf` shows no real slowdown.
 - **`next-swc-loader` as it is.** Run through `runLoader()`, as the font and image loaders are, with the plugin's changes to the options applied before they reach SWC. Next's CommonJS exports are getters that cannot be replaced, so this needs the module of `getLoaderSWCOptions()` swapped in the require cache, only inside the plugin's call of the loader or in a worker, since another project in the same process may call it too. If that is not clean, the call stays as it is.
 
 ## Decided Against
 
 - **`getBaseWebpackConfig()` as the source of aliases and defines.** One call for all of them, which is what Rule 2 asks for, but its signature changed in 7 of 12 releases, it is webpack's alone, and its output means webpack's rule semantics: `issuerLayer`, `oneOf`, aliases inside rules. It is a comparison in Phase 5 instead.
 - **Letting Next's route module construct the cache**, as Fable suggested. One field, `cacheMaxMemorySize`, sizes both that cache and the handlers of `"use cache"`; the plugin needs 0 for the first and the app's value for the second. The cache between requests has no route module, so the constructor stays anyway. And Next imports a cache handler by a `file:` URL, which a browser cannot load.
+- **Moving Next's renderer to Node streams now.** A browser has web streams natively, and Node streams would run on a polyfill. Only if Next drops its web-stream path.
 - **`isPageStatic()`** for the prerender verdict. It loads a built route from `.next/` in a Node.js process; the plugin's routes are modules in the browser.
 - **Computing the `routing` phases ourselves.** It would copy Next's code from inside `handleBuildComplete()`.
 - **Selecting the modules that keep a store by their content**, as Fable suggested. It would also compile modules nobody has tested that way. CI flags them instead.
@@ -184,7 +184,7 @@ The plan does not make the number of internals much smaller, by design: the numb
 | -------------------------------------------------- | ----: | ----: |
 | Module paths of `next/dist`                        |   103 |   ~96 |
 | Of them, loaded in a run without optional features |   103 |   ~76 |
-| Text checks in every run                           |    20 |   6–8 |
+| Text checks in every run                           |    20 |   7–8 |
 | Text checks only for their feature                 |     0 |     8 |
 | Text checks that match formatting                  |     3 |     0 |
 | Rewrites of the code Next generates by regex       |     8 |     4 |
@@ -200,4 +200,4 @@ The 7 paths that go: `shared/lib/constants` for the public `next/constants`, and
 - The text checks that every run makes go from 20 to at most 8, all whitespace-insensitive; the others run only for their feature.
 - The options of `next-app-loader` and `getEdgeServerEntry()` are no longer copied by hand.
 - Every module path of `next/dist` that the plugin names is in `compat/`.
-- For each prototype that is kept: no change of React DOM's exports; no hand-built options of `getLoaderSWCOptions()`; no switch of Next's streams.
+- For each prototype that is kept: no change of React DOM's exports; no hand-built options of `getLoaderSWCOptions()`.
