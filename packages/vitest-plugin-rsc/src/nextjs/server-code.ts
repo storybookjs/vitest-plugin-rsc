@@ -3,6 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { createFilter, normalizePath, transformWithOxc, type Plugin } from "vite";
 import { transformAsyncFunctions } from "../async-local-storage-transform.ts";
+import { pageScopeDefines } from "./page-scope-define.ts";
 import type { NextLayer } from "./project.ts";
 
 // The server layers run in a browser, which has a `window` and a `fetch`
@@ -417,7 +418,11 @@ export function createServerCode(registry: string, options: ServerCodeOptions = 
      * host as the page's own: Vite does not key its cache on the plugins of
      * the optimizer.
      */
-    browserCacheKey: { __vitest_plugin_rsc_host_packages__: JSON.stringify(packages) },
+    browserCacheKey: {
+      __vitest_plugin_rsc_host_packages__: JSON.stringify(packages),
+      // What Next's files reach through the scope of their page.
+      __vitest_plugin_rsc_page_scope__: JSON.stringify(pageScopeDefines),
+    },
     /** For a module this plugin generates, with the constants of its layer. */
     compile: async (code: string, id: string, define: Record<string, string>) =>
       (await compileServerCode(code, id, registry, define))?.code ?? code,

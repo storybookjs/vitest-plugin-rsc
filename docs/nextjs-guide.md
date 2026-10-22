@@ -779,12 +779,13 @@ The plugin does a lot of work so that this works. Every `renderServer()` is a pa
 - Leaving a page takes back what React and Next.js left behind:
   - React's root, and its listeners;
   - the properties React DOM keeps on the document;
-  - the message ports of React's scheduler;
-  - the listeners that Next's client adds as it loads;
+  - the timers, animation frames, message ports, performance observers and listeners on `window` and `document` of Next's code and of the React it ships;
+  - the globals that Next's client and React's inline scripts set on `window`;
+  - React DOM's properties on the page's nodes, so a node that outlives the page keeps no fiber of it;
   - the page's nodes, attributes, URL and history entry, and the Flight payload.
 - A new browser context and an empty disk before each test, as above.
 
-What React and Next.js still leave behind is listed in [Not Yet](next-routes.md#not-yet), and [page-lifecycle-risk.md](page-lifecycle-risk.md) plans how the plugin takes it back.
+What React and Next.js still leave behind is listed in [Not Yet](next-routes.md#not-yet), and [page-lifecycle-risk.md](page-lifecycle-risk.md) measures it.
 
 ### Avoiding isolation bugs
 

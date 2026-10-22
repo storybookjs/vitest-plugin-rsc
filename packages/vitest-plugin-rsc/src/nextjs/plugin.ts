@@ -19,6 +19,7 @@ import type { TestProject, Vitest } from "vitest/node";
 import { createRunnerEnvironmentPlugins } from "../runner-environment.ts";
 import { flightBridge, type FlightEntry } from "./flight.ts";
 import { nextBuilds, nextProductionPlugin, type NextBuild } from "./build.ts";
+import { isScopedToPage, nextPageScopePlugin, scopeToPage } from "./page-scope-define.ts";
 import { clientFiles, clientReferenceOfModule } from "./client-files.ts";
 import { createCompilePlugin, createDependencyCompilePlugin } from "./compile.ts";
 import { browserMapping, isNodeModule, nodeModuleOf } from "./node-builtins.ts";
@@ -876,6 +877,9 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
             plugins: [
               // First: the other plugins see Next's production code.
               ...(build === "production" ? [nextProductionPlugin(project.nextDir)] : []),
+              // Next's files reach the browser's timers, ports, observers and
+              // listeners through the scope of their page: see page-scope.ts.
+              ...(layer === "browser" ? [nextPageScopePlugin(project.nextDir)] : []),
               // The test runner is the page's own in the browser layer too,
               // like the `vitest` that vitest-browser-react imports: see
               // client-files.ts. Not a copy in what that layer pre-bundles.
@@ -1360,11 +1364,20 @@ function dependencyBuildPlugin(
           source.includes(key.replace(/^typeof /, "")),
         ),
       );
-      if (!isServerCode && Object.keys(define).length === 0) return kept;
+      // Next's files of the browser layer reach the browser's timers, ports,
+      // observers and listeners through the scope of their page, as the
+      // optimizer compiles them (`nextPageScopePlugin()`).
+      const scopedToPage = layer === "browser" && isScopedToPage(getProject().nextDir, file);
+      if (!isServerCode && !scopedToPage && Object.keys(define).length === 0) return kept;
       try {
         const defined = isServerCode
           ? await compileServerCode(source, file, registry, { ...define, ...forStores?.define })
-          : await transformWithOxc(source, file, { lang: "js", define });
+          : scopedToPage
+            ? ((await scopeToPage(source, file, define)) ??
+              (Object.keys(define).length > 0
+                ? await transformWithOxc(source, file, { lang: "js", define })
+                : undefined))
+            : await transformWithOxc(source, file, { lang: "js", define });
         return defined ?? kept;
       } catch (error) {
         // JSX in a `.js` file, for one. The bundler may still take it.
