@@ -56,7 +56,7 @@ A fast, deterministic test file is also what a coding agent needs: edit, run the
 
 ### Does it behave like Next.js?
 
-The plugin doesn't reimplement Next.js. It builds your app with Vite, asks Next's own build code for everything else, and runs Next's runtime unchanged. To check how close that gets, the repository runs a selection of Next's own e2e tests, from `test/e2e/app-dir` in [vercel/next.js](https://github.com/vercel/next.js), against the plugin: of the 474 that apply, **402 pass (85%)**, measured against `next@16.4.0`. Every test that fails is listed with the reason, in [docs/next-conformance.md](docs/next-conformance.md).
+The plugin doesn't reimplement Next.js. It builds your app with Vite, asks Next's own build code for everything else, and runs Next's runtime unchanged. To check how close that gets, the repository runs a selection of Next's own e2e tests, from `test/e2e/app-dir` in [vercel/next.js](https://github.com/vercel/next.js), against the plugin: of the 1147 that apply, **956 pass (83%)**, measured against `next@16.4.0`. Every test that fails is listed with the reason, in [docs/next-conformance.md](docs/next-conformance.md).
 
 The plugin calls Next.js internals, so CI also runs its own suite against `next@16.4.0`, `next@latest` and `next@canary`.
 
@@ -100,14 +100,13 @@ export default defineConfig({
       instances: [{ browser: "chromium" }],
     },
     include: ["**/*.test.{ts,tsx}"],
-    isolate: false,
   },
 });
 ```
 
 `vitestPluginNext()` reads your app from the project root. You don't need a setup file, because the plugin cleans up before and after every test.
 
-`isolate: false` loads your app's server once per worker instead of once per test file. It also means the test files in a worker share their modules, and so their mocks, which is why mocks belong in a setup file (see [Mocks](docs/nextjs-guide.md#mocks)).
+By default Vitest starts every test file in a new page, which loads your app's server again for each file. With `isolate: false` in `test`, a worker loads it once, for all of its test files: in the playgrounds that saves about 0.6 to 1.4 s per file. Either setting works: the plugin cleans up after every page your tests open, as a browser does when it leaves a page. What it can't take back yet is listed in [Not Yet](docs/next-routes.md#not-yet). The test files of a worker then share their modules, and so their mocks, which is why mocks belong in a setup file (see [Mocks](docs/nextjs-guide.md#mocks)). What your own code leaves running, like a listener on `window` without a cleanup, stays for the next test file, as it would in an app that never reloads.
 
 The `.mts` extension makes Vite load the config as ES modules, which a create-next-app project without `"type": "module"` needs. `include` keeps Playwright's `*.spec.ts` files out of the run. Add `.vitest/` to your `.gitignore`: Vitest writes the screenshots of failed tests there.
 

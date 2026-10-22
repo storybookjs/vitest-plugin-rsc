@@ -1,0 +1,13 @@
+{"file":"n1.test.tsx","at":"file-start","usedMB":67.18,"sinceImportMs":45}
+{"file":"n1.test.tsx","at":"pages-done","usedMB":121.18,"firstMs":1238,"msPerPage":95}
+{"file":"n1.test.tsx","at":"file-end","usedMB":120.55,"fileMs":2552}
+{"file":"n4.test.tsx","at":"file-start","usedMB":120.65,"sinceImportMs":6}
+{"file":"n4.test.tsx","at":"pages-done","usedMB":122.22,"firstMs":131,"msPerPage":83}
+{"file":"n4.test.tsx","at":"file-end","usedMB":121.56,"fileMs":1150}
+{"file":"n3.test.tsx","at":"file-start","usedMB":121.68,"sinceImportMs":6}
+{"file":"n3.test.tsx","at":"pages-done","usedMB":122.96,"firstMs":129,"msPerPage":83}
+{"file":"n3.test.tsx","at":"file-end","usedMB":122.26,"fileMs":1162}
+{"file":"n2.test.tsx","at":"file-start","usedMB":122.35,"sinceImportMs":8}
+{"file":"n2.test.tsx","at":"pages-done","usedMB":123.42,"firstMs":128,"msPerPage":83}
+{"file":"n2.test.tsx","at":"file-end","usedMB":122.73,"fileMs":1173}
+{"run":"notes-files-iso0-run2","durationS":9.64,"unhandledErrors":144}

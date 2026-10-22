@@ -1,0 +1,6 @@
+{"route":"/","left":{}}
+{"route":"/ -> /images","left":{"PerformanceObserver {\"type\":\"largest-contentful-paint\",\"buffered\":true} @ image-component-CMh6jHWK.js:304":1}}
+{"route":"/ -> /styles","left":{"setTimeout 59504.60000002384ms @ client-OkuE5l5X.js:12343":1,"setTimeout 304.60000002384186ms @ client-OkuE5l5X.js:12352":1}}
+{"route":"/settings","left":{}}
+{"route":"/help","left":{}}
+{"run":"e2e-edges","durationS":8.28,"unhandledErrors":0}

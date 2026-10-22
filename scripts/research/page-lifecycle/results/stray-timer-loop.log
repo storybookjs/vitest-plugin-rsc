@@ -1,0 +1,343 @@
+
+ RUN  v5.0.5 /Users/kasperpeulen/.t3/worktrees/vitest-plugin-rsc/research-page-lifecycle/playground/nextjs-notes-demo
+
+stdout | ../../scripts/research/page-lifecycle/notes-gc/gc.test.tsx > a forced collection
+PLM {"gcMs":[53,36,33,33,34,32,33,34,33,33],"usedMB":121}
+ ✓ |page-lifecycle-research-notes (chromium)| ../../scripts/research/page-lifecycle/notes-gc/gc.test.tsx > a forced collection 2540ms
+⎯⎯⎯⎯⎯⎯ Unhandled Errors ⎯⎯⎯⎯⎯⎯
+
+Vitest caught 36 unhandled errors during the test run.
+This might cause false positive tests. Resolve unhandled errors to make sure your tests are not affected.
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯ Error ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+NotFoundError: Failed to execute 'removeChild' on 'Node': The node to be removed is not a child of this node.
+ ❯ eval node_modules/.vite/vitest/f273bbc9423f8f2f3dc280cca784a1d0d226f615/deps_react_client/next-themes.js?v=7a006832:148:18
+
+This error originated in "../../scripts/research/page-lifecycle/notes-gc/gc.test.tsx" test file. It doesn't mean the error was thrown inside the file itself, but while it was running.
+The last test to run before this error was "a forced collection". This means either:
+- the error was thrown while Vitest was running this test, or
+- the error was thrown after the test completed, and this was the most recent test at that point.
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯ Error ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+NotFoundError: Failed to execute 'removeChild' on 'Node': The node to be removed is not a child of this node.
+ ❯ eval node_modules/.vite/vitest/f273bbc9423f8f2f3dc280cca784a1d0d226f615/deps_react_client/next-themes.js?v=7a006832:148:18
+
+This error originated in "../../scripts/research/page-lifecycle/notes-gc/gc.test.tsx" test file. It doesn't mean the error was thrown inside the file itself, but while it was running.
+The last test to run before this error was "a forced collection". This means either:
+- the error was thrown while Vitest was running this test, or
+- the error was thrown after the test completed, and this was the most recent test at that point.
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯ Error ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+NotFoundError: Failed to execute 'removeChild' on 'Node': The node to be removed is not a child of this node.
+ ❯ eval node_modules/.vite/vitest/f273bbc9423f8f2f3dc280cca784a1d0d226f615/deps_react_client/next-themes.js?v=7a006832:148:18
+
+This error originated in "../../scripts/research/page-lifecycle/notes-gc/gc.test.tsx" test file. It doesn't mean the error was thrown inside the file itself, but while it was running.
+The last test to run before this error was "a forced collection". This means either:
+- the error was thrown while Vitest was running this test, or
+- the error was thrown after the test completed, and this was the most recent test at that point.
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯ Error ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+NotFoundError: Failed to execute 'removeChild' on 'Node': The node to be removed is not a child of this node.
+ ❯ eval node_modules/.vite/vitest/f273bbc9423f8f2f3dc280cca784a1d0d226f615/deps_react_client/next-themes.js?v=7a006832:148:18
+
+This error originated in "../../scripts/research/page-lifecycle/notes-gc/gc.test.tsx" test file. It doesn't mean the error was thrown inside the file itself, but while it was running.
+The last test to run before this error was "a forced collection". This means either:
+- the error was thrown while Vitest was running this test, or
+- the error was thrown after the test completed, and this was the most recent test at that point.
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯ Error ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+NotFoundError: Failed to execute 'removeChild' on 'Node': The node to be removed is not a child of this node.
+ ❯ eval node_modules/.vite/vitest/f273bbc9423f8f2f3dc280cca784a1d0d226f615/deps_react_client/next-themes.js?v=7a006832:148:18
+
+This error originated in "../../scripts/research/page-lifecycle/notes-gc/gc.test.tsx" test file. It doesn't mean the error was thrown inside the file itself, but while it was running.
+The last test to run before this error was "a forced collection". This means either:
+- the error was thrown while Vitest was running this test, or
+- the error was thrown after the test completed, and this was the most recent test at that point.
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯ Error ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+NotFoundError: Failed to execute 'removeChild' on 'Node': The node to be removed is not a child of this node.
+ ❯ eval node_modules/.vite/vitest/f273bbc9423f8f2f3dc280cca784a1d0d226f615/deps_react_client/next-themes.js?v=7a006832:148:18
+
+This error originated in "../../scripts/research/page-lifecycle/notes-gc/gc.test.tsx" test file. It doesn't mean the error was thrown inside the file itself, but while it was running.
+The last test to run before this error was "a forced collection". This means either:
+- the error was thrown while Vitest was running this test, or
+- the error was thrown after the test completed, and this was the most recent test at that point.
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯ Error ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+NotFoundError: Failed to execute 'removeChild' on 'Node': The node to be removed is not a child of this node.
+ ❯ eval node_modules/.vite/vitest/f273bbc9423f8f2f3dc280cca784a1d0d226f615/deps_react_client/next-themes.js?v=7a006832:148:18
+
+This error originated in "../../scripts/research/page-lifecycle/notes-gc/gc.test.tsx" test file. It doesn't mean the error was thrown inside the file itself, but while it was running.
+The last test to run before this error was "a forced collection". This means either:
+- the error was thrown while Vitest was running this test, or
+- the error was thrown after the test completed, and this was the most recent test at that point.
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯ Error ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+NotFoundError: Failed to execute 'removeChild' on 'Node': The node to be removed is not a child of this node.
+ ❯ eval node_modules/.vite/vitest/f273bbc9423f8f2f3dc280cca784a1d0d226f615/deps_react_client/next-themes.js?v=7a006832:148:18
+
+This error originated in "../../scripts/research/page-lifecycle/notes-gc/gc.test.tsx" test file. It doesn't mean the error was thrown inside the file itself, but while it was running.
+The last test to run before this error was "a forced collection". This means either:
+- the error was thrown while Vitest was running this test, or
+- the error was thrown after the test completed, and this was the most recent test at that point.
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯ Error ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+NotFoundError: Failed to execute 'removeChild' on 'Node': The node to be removed is not a child of this node.
+ ❯ eval node_modules/.vite/vitest/f273bbc9423f8f2f3dc280cca784a1d0d226f615/deps_react_client/next-themes.js?v=7a006832:148:18
+
+This error originated in "../../scripts/research/page-lifecycle/notes-gc/gc.test.tsx" test file. It doesn't mean the error was thrown inside the file itself, but while it was running.
+The last test to run before this error was "a forced collection". This means either:
+- the error was thrown while Vitest was running this test, or
+- the error was thrown after the test completed, and this was the most recent test at that point.
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯ Error ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+NotFoundError: Failed to execute 'removeChild' on 'Node': The node to be removed is not a child of this node.
+ ❯ eval node_modules/.vite/vitest/f273bbc9423f8f2f3dc280cca784a1d0d226f615/deps_react_client/next-themes.js?v=7a006832:148:18
+
+This error originated in "../../scripts/research/page-lifecycle/notes-gc/gc.test.tsx" test file. It doesn't mean the error was thrown inside the file itself, but while it was running.
+The last test to run before this error was "a forced collection". This means either:
+- the error was thrown while Vitest was running this test, or
+- the error was thrown after the test completed, and this was the most recent test at that point.
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯ Error ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+NotFoundError: Failed to execute 'removeChild' on 'Node': The node to be removed is not a child of this node.
+ ❯ eval node_modules/.vite/vitest/f273bbc9423f8f2f3dc280cca784a1d0d226f615/deps_react_client/next-themes.js?v=7a006832:148:18
+
+This error originated in "../../scripts/research/page-lifecycle/notes-gc/gc.test.tsx" test file. It doesn't mean the error was thrown inside the file itself, but while it was running.
+The last test to run before this error was "a forced collection". This means either:
+- the error was thrown while Vitest was running this test, or
+- the error was thrown after the test completed, and this was the most recent test at that point.
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯ Error ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+NotFoundError: Failed to execute 'removeChild' on 'Node': The node to be removed is not a child of this node.
+ ❯ eval node_modules/.vite/vitest/f273bbc9423f8f2f3dc280cca784a1d0d226f615/deps_react_client/next-themes.js?v=7a006832:148:18
+
+This error originated in "../../scripts/research/page-lifecycle/notes-gc/gc.test.tsx" test file. It doesn't mean the error was thrown inside the file itself, but while it was running.
+The last test to run before this error was "a forced collection". This means either:
+- the error was thrown while Vitest was running this test, or
+- the error was thrown after the test completed, and this was the most recent test at that point.
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯ Error ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+NotFoundError: Failed to execute 'removeChild' on 'Node': The node to be removed is not a child of this node.
+ ❯ eval node_modules/.vite/vitest/f273bbc9423f8f2f3dc280cca784a1d0d226f615/deps_react_client/next-themes.js?v=7a006832:148:18
+
+This error originated in "../../scripts/research/page-lifecycle/notes-gc/gc.test.tsx" test file. It doesn't mean the error was thrown inside the file itself, but while it was running.
+The last test to run before this error was "a forced collection". This means either:
+- the error was thrown while Vitest was running this test, or
+- the error was thrown after the test completed, and this was the most recent test at that point.
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯ Error ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+NotFoundError: Failed to execute 'removeChild' on 'Node': The node to be removed is not a child of this node.
+ ❯ eval node_modules/.vite/vitest/f273bbc9423f8f2f3dc280cca784a1d0d226f615/deps_react_client/next-themes.js?v=7a006832:148:18
+
+This error originated in "../../scripts/research/page-lifecycle/notes-gc/gc.test.tsx" test file. It doesn't mean the error was thrown inside the file itself, but while it was running.
+The last test to run before this error was "a forced collection". This means either:
+- the error was thrown while Vitest was running this test, or
+- the error was thrown after the test completed, and this was the most recent test at that point.
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯ Error ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+NotFoundError: Failed to execute 'removeChild' on 'Node': The node to be removed is not a child of this node.
+ ❯ eval node_modules/.vite/vitest/f273bbc9423f8f2f3dc280cca784a1d0d226f615/deps_react_client/next-themes.js?v=7a006832:148:18
+
+This error originated in "../../scripts/research/page-lifecycle/notes-gc/gc.test.tsx" test file. It doesn't mean the error was thrown inside the file itself, but while it was running.
+The last test to run before this error was "a forced collection". This means either:
+- the error was thrown while Vitest was running this test, or
+- the error was thrown after the test completed, and this was the most recent test at that point.
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯ Error ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+NotFoundError: Failed to execute 'removeChild' on 'Node': The node to be removed is not a child of this node.
+ ❯ eval node_modules/.vite/vitest/f273bbc9423f8f2f3dc280cca784a1d0d226f615/deps_react_client/next-themes.js?v=7a006832:148:18
+
+This error originated in "../../scripts/research/page-lifecycle/notes-gc/gc.test.tsx" test file. It doesn't mean the error was thrown inside the file itself, but while it was running.
+The last test to run before this error was "a forced collection". This means either:
+- the error was thrown while Vitest was running this test, or
+- the error was thrown after the test completed, and this was the most recent test at that point.
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯ Error ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+NotFoundError: Failed to execute 'removeChild' on 'Node': The node to be removed is not a child of this node.
+ ❯ eval node_modules/.vite/vitest/f273bbc9423f8f2f3dc280cca784a1d0d226f615/deps_react_client/next-themes.js?v=7a006832:148:18
+
+This error originated in "../../scripts/research/page-lifecycle/notes-gc/gc.test.tsx" test file. It doesn't mean the error was thrown inside the file itself, but while it was running.
+The last test to run before this error was "a forced collection". This means either:
+- the error was thrown while Vitest was running this test, or
+- the error was thrown after the test completed, and this was the most recent test at that point.
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯ Error ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+NotFoundError: Failed to execute 'removeChild' on 'Node': The node to be removed is not a child of this node.
+ ❯ eval node_modules/.vite/vitest/f273bbc9423f8f2f3dc280cca784a1d0d226f615/deps_react_client/next-themes.js?v=7a006832:148:18
+
+This error originated in "../../scripts/research/page-lifecycle/notes-gc/gc.test.tsx" test file. It doesn't mean the error was thrown inside the file itself, but while it was running.
+The last test to run before this error was "a forced collection". This means either:
+- the error was thrown while Vitest was running this test, or
+- the error was thrown after the test completed, and this was the most recent test at that point.
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯ Error ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+NotFoundError: Failed to execute 'removeChild' on 'Node': The node to be removed is not a child of this node.
+ ❯ eval node_modules/.vite/vitest/f273bbc9423f8f2f3dc280cca784a1d0d226f615/deps_react_client/next-themes.js?v=7a006832:148:18
+
+This error originated in "../../scripts/research/page-lifecycle/notes-gc/gc.test.tsx" test file. It doesn't mean the error was thrown inside the file itself, but while it was running.
+The last test to run before this error was "a forced collection". This means either:
+- the error was thrown while Vitest was running this test, or
+- the error was thrown after the test completed, and this was the most recent test at that point.
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯ Error ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+NotFoundError: Failed to execute 'removeChild' on 'Node': The node to be removed is not a child of this node.
+ ❯ eval node_modules/.vite/vitest/f273bbc9423f8f2f3dc280cca784a1d0d226f615/deps_react_client/next-themes.js?v=7a006832:148:18
+
+This error originated in "../../scripts/research/page-lifecycle/notes-gc/gc.test.tsx" test file. It doesn't mean the error was thrown inside the file itself, but while it was running.
+The last test to run before this error was "a forced collection". This means either:
+- the error was thrown while Vitest was running this test, or
+- the error was thrown after the test completed, and this was the most recent test at that point.
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯ Error ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+NotFoundError: Failed to execute 'removeChild' on 'Node': The node to be removed is not a child of this node.
+ ❯ eval node_modules/.vite/vitest/f273bbc9423f8f2f3dc280cca784a1d0d226f615/deps_react_client/next-themes.js?v=7a006832:148:18
+
+This error originated in "../../scripts/research/page-lifecycle/notes-gc/gc.test.tsx" test file. It doesn't mean the error was thrown inside the file itself, but while it was running.
+The last test to run before this error was "a forced collection". This means either:
+- the error was thrown while Vitest was running this test, or
+- the error was thrown after the test completed, and this was the most recent test at that point.
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯ Error ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+NotFoundError: Failed to execute 'removeChild' on 'Node': The node to be removed is not a child of this node.
+ ❯ eval node_modules/.vite/vitest/f273bbc9423f8f2f3dc280cca784a1d0d226f615/deps_react_client/next-themes.js?v=7a006832:148:18
+
+This error originated in "../../scripts/research/page-lifecycle/notes-gc/gc.test.tsx" test file. It doesn't mean the error was thrown inside the file itself, but while it was running.
+The last test to run before this error was "a forced collection". This means either:
+- the error was thrown while Vitest was running this test, or
+- the error was thrown after the test completed, and this was the most recent test at that point.
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯ Error ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+NotFoundError: Failed to execute 'removeChild' on 'Node': The node to be removed is not a child of this node.
+ ❯ eval node_modules/.vite/vitest/f273bbc9423f8f2f3dc280cca784a1d0d226f615/deps_react_client/next-themes.js?v=7a006832:148:18
+
+This error originated in "../../scripts/research/page-lifecycle/notes-gc/gc.test.tsx" test file. It doesn't mean the error was thrown inside the file itself, but while it was running.
+The last test to run before this error was "a forced collection". This means either:
+- the error was thrown while Vitest was running this test, or
+- the error was thrown after the test completed, and this was the most recent test at that point.
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯ Error ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+NotFoundError: Failed to execute 'removeChild' on 'Node': The node to be removed is not a child of this node.
+ ❯ eval node_modules/.vite/vitest/f273bbc9423f8f2f3dc280cca784a1d0d226f615/deps_react_client/next-themes.js?v=7a006832:148:18
+
+This error originated in "../../scripts/research/page-lifecycle/notes-gc/gc.test.tsx" test file. It doesn't mean the error was thrown inside the file itself, but while it was running.
+The last test to run before this error was "a forced collection". This means either:
+- the error was thrown while Vitest was running this test, or
+- the error was thrown after the test completed, and this was the most recent test at that point.
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯ Error ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+NotFoundError: Failed to execute 'removeChild' on 'Node': The node to be removed is not a child of this node.
+ ❯ eval node_modules/.vite/vitest/f273bbc9423f8f2f3dc280cca784a1d0d226f615/deps_react_client/next-themes.js?v=7a006832:148:18
+
+This error originated in "../../scripts/research/page-lifecycle/notes-gc/gc.test.tsx" test file. It doesn't mean the error was thrown inside the file itself, but while it was running.
+The last test to run before this error was "a forced collection". This means either:
+- the error was thrown while Vitest was running this test, or
+- the error was thrown after the test completed, and this was the most recent test at that point.
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯ Error ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+NotFoundError: Failed to execute 'removeChild' on 'Node': The node to be removed is not a child of this node.
+ ❯ eval node_modules/.vite/vitest/f273bbc9423f8f2f3dc280cca784a1d0d226f615/deps_react_client/next-themes.js?v=7a006832:148:18
+
+This error originated in "../../scripts/research/page-lifecycle/notes-gc/gc.test.tsx" test file. It doesn't mean the error was thrown inside the file itself, but while it was running.
+The last test to run before this error was "a forced collection". This means either:
+- the error was thrown while Vitest was running this test, or
+- the error was thrown after the test completed, and this was the most recent test at that point.
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯ Error ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+NotFoundError: Failed to execute 'removeChild' on 'Node': The node to be removed is not a child of this node.
+ ❯ eval node_modules/.vite/vitest/f273bbc9423f8f2f3dc280cca784a1d0d226f615/deps_react_client/next-themes.js?v=7a006832:148:18
+
+This error originated in "../../scripts/research/page-lifecycle/notes-gc/gc.test.tsx" test file. It doesn't mean the error was thrown inside the file itself, but while it was running.
+The last test to run before this error was "a forced collection". This means either:
+- the error was thrown while Vitest was running this test, or
+- the error was thrown after the test completed, and this was the most recent test at that point.
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯ Error ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+NotFoundError: Failed to execute 'removeChild' on 'Node': The node to be removed is not a child of this node.
+ ❯ eval node_modules/.vite/vitest/f273bbc9423f8f2f3dc280cca784a1d0d226f615/deps_react_client/next-themes.js?v=7a006832:148:18
+
+This error originated in "../../scripts/research/page-lifecycle/notes-gc/gc.test.tsx" test file. It doesn't mean the error was thrown inside the file itself, but while it was running.
+The last test to run before this error was "a forced collection". This means either:
+- the error was thrown while Vitest was running this test, or
+- the error was thrown after the test completed, and this was the most recent test at that point.
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯ Error ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+NotFoundError: Failed to execute 'removeChild' on 'Node': The node to be removed is not a child of this node.
+ ❯ eval node_modules/.vite/vitest/f273bbc9423f8f2f3dc280cca784a1d0d226f615/deps_react_client/next-themes.js?v=7a006832:148:18
+
+This error originated in "../../scripts/research/page-lifecycle/notes-gc/gc.test.tsx" test file. It doesn't mean the error was thrown inside the file itself, but while it was running.
+The last test to run before this error was "a forced collection". This means either:
+- the error was thrown while Vitest was running this test, or
+- the error was thrown after the test completed, and this was the most recent test at that point.
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯ Error ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+NotFoundError: Failed to execute 'removeChild' on 'Node': The node to be removed is not a child of this node.
+ ❯ eval node_modules/.vite/vitest/f273bbc9423f8f2f3dc280cca784a1d0d226f615/deps_react_client/next-themes.js?v=7a006832:148:18
+
+This error originated in "../../scripts/research/page-lifecycle/notes-gc/gc.test.tsx" test file. It doesn't mean the error was thrown inside the file itself, but while it was running.
+The last test to run before this error was "a forced collection". This means either:
+- the error was thrown while Vitest was running this test, or
+- the error was thrown after the test completed, and this was the most recent test at that point.
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯ Error ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+NotFoundError: Failed to execute 'removeChild' on 'Node': The node to be removed is not a child of this node.
+ ❯ eval node_modules/.vite/vitest/f273bbc9423f8f2f3dc280cca784a1d0d226f615/deps_react_client/next-themes.js?v=7a006832:148:18
+
+This error originated in "../../scripts/research/page-lifecycle/notes-gc/gc.test.tsx" test file. It doesn't mean the error was thrown inside the file itself, but while it was running.
+The last test to run before this error was "a forced collection". This means either:
+- the error was thrown while Vitest was running this test, or
+- the error was thrown after the test completed, and this was the most recent test at that point.
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯ Error ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+NotFoundError: Failed to execute 'removeChild' on 'Node': The node to be removed is not a child of this node.
+ ❯ eval node_modules/.vite/vitest/f273bbc9423f8f2f3dc280cca784a1d0d226f615/deps_react_client/next-themes.js?v=7a006832:148:18
+
+This error originated in "../../scripts/research/page-lifecycle/notes-gc/gc.test.tsx" test file. It doesn't mean the error was thrown inside the file itself, but while it was running.
+The last test to run before this error was "a forced collection". This means either:
+- the error was thrown while Vitest was running this test, or
+- the error was thrown after the test completed, and this was the most recent test at that point.
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯ Error ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+NotFoundError: Failed to execute 'removeChild' on 'Node': The node to be removed is not a child of this node.
+ ❯ eval node_modules/.vite/vitest/f273bbc9423f8f2f3dc280cca784a1d0d226f615/deps_react_client/next-themes.js?v=7a006832:148:18
+
+This error originated in "../../scripts/research/page-lifecycle/notes-gc/gc.test.tsx" test file. It doesn't mean the error was thrown inside the file itself, but while it was running.
+The last test to run before this error was "a forced collection". This means either:
+- the error was thrown while Vitest was running this test, or
+- the error was thrown after the test completed, and this was the most recent test at that point.
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯ Error ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+NotFoundError: Failed to execute 'removeChild' on 'Node': The node to be removed is not a child of this node.
+ ❯ eval node_modules/.vite/vitest/f273bbc9423f8f2f3dc280cca784a1d0d226f615/deps_react_client/next-themes.js?v=7a006832:148:18
+
+This error originated in "../../scripts/research/page-lifecycle/notes-gc/gc.test.tsx" test file. It doesn't mean the error was thrown inside the file itself, but while it was running.
+The last test to run before this error was "a forced collection". This means either:
+- the error was thrown while Vitest was running this test, or
+- the error was thrown after the test completed, and this was the most recent test at that point.
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯ Error ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+NotFoundError: Failed to execute 'removeChild' on 'Node': The node to be removed is not a child of this node.
+ ❯ eval node_modules/.vite/vitest/f273bbc9423f8f2f3dc280cca784a1d0d226f615/deps_react_client/next-themes.js?v=7a006832:148:18
+
+This error originated in "../../scripts/research/page-lifecycle/notes-gc/gc.test.tsx" test file. It doesn't mean the error was thrown inside the file itself, but while it was running.
+The last test to run before this error was "a forced collection". This means either:
+- the error was thrown while Vitest was running this test, or
+- the error was thrown after the test completed, and this was the most recent test at that point.
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯ Error ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+NotFoundError: Failed to execute 'removeChild' on 'Node': The node to be removed is not a child of this node.
+ ❯ eval node_modules/.vite/vitest/f273bbc9423f8f2f3dc280cca784a1d0d226f615/deps_react_client/next-themes.js?v=7a006832:148:18
+
+This error originated in "../../scripts/research/page-lifecycle/notes-gc/gc.test.tsx" test file. It doesn't mean the error was thrown inside the file itself, but while it was running.
+The last test to run before this error was "a forced collection". This means either:
+- the error was thrown while Vitest was running this test, or
+- the error was thrown after the test completed, and this was the most recent test at that point.
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+
+
+ Test Files  1 passed (1)
+      Tests  1 passed (1)
+     Errors  36 errors
+   Start at  11:52:19
+   Duration  9.60s (worker 42%, tests 29%, setup 26%, import 3%)
+

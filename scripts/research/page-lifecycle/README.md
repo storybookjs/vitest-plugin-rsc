@@ -27,6 +27,8 @@ $R/run.sh notes-within vitest.notes.config.ts notes 0 0 60
 | `notes-realm/`      | H in the notes demo                                               |
 | `e2e-img-snapshot/` | I: navigations to `/images`, which keep pages                     |
 | `notes-gc/`         | J: what a forced garbage collection costs                         |
+| `e2e-edges/`        | K: what still points into a page once it is left, per route       |
+| `notes-edges/`      | K in the notes demo                                               |
 
 `files/` and `notes-files/` have one `template.tsx` each, which `make-files.sh` copies into identical test files before a run.
 
@@ -42,4 +44,4 @@ node --max-old-space-size=8192 $R/diff.ts \
   $R/results/residual-after.heapsnapshot
 ```
 
-What they printed is in `results/*.txt`.
+What they printed is in `results/*.txt`. `run.sh` adds Vitest's duration and its count of unhandled errors to each `.jsonl`. `results/stray-timer.log` (F) and `results/stray-timer-loop.log` (J) are the output of two runs, with the errors that a timer of a left page threw.

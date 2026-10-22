@@ -3,3 +3,4 @@
 *.heapsnapshot
 *.log
 !stray-timer.log
+!stray-timer-loop.log

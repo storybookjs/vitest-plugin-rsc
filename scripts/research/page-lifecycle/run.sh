@@ -18,3 +18,10 @@ RESEARCH_DIR=$dir RESEARCH_ISOLATE=$isolate RESEARCH_LEAK=$leak \
   --configLoader native --silent=false --reporter=verbose "$@" \
   2>&1 | tee "$out/$name.log" | grep -E '^PLM|✓|✗|×|Test Files|Duration' || true
 grep -h '^PLM ' "$out/$name.log" | sed 's/^PLM //' > "$out/$name.jsonl"
+# Vitest's own summary of the run: its duration, and the errors that no test
+# caught, like a timer of a page that was left.
+plain=$(perl -pe 's/\e\[[0-9;]*m//g' "$out/$name.log")
+duration=$(sed -n 's/^ *Duration *\([0-9.]*\)s.*/\1/p' <<<"$plain" | tail -1)
+errors=$(sed -n 's/^ *Errors *\([0-9]*\) error.*/\1/p' <<<"$plain" | tail -1)
+echo "{\"run\":\"$name\",\"durationS\":${duration:-null},\"unhandledErrors\":${errors:-0}}" \
+  >> "$out/$name.jsonl"
