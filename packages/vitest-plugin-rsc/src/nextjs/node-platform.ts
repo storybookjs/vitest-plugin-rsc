@@ -15,10 +15,11 @@ import {
 // The modules of Node.js themselves are the package's, see node-builtins.ts.
 //
 // A stand-in replaces all of a module. An export of the module that Next has
-// and the stand-in has not, one that is new in a Next this plugin was not
-// written for, gets a stub that throws when it is used, naming the export and
-// the version: compat/checks.ts finds them when the run starts. A run that
-// does not use it goes on. Where all a module of Next lacks in a browser is
+// and the stand-in has not, as in a Next this plugin was not written for,
+// gets a stub that throws when it is used, naming the export and the
+// version: compat/checks.ts finds them when the run starts. A run that does
+// not use it goes on. A stub is not `undefined`: code of Next that tests the
+// export before it calls it, `x?.()`, calls it, and throws. Where all a module of Next lacks in a browser is
 // one capability of Node.js, the module is Next's own, given that capability:
 // see `instrumentationRequire`.
 
@@ -26,13 +27,18 @@ import {
 export type NewExport = { name: string; module: string };
 
 // What a stub of a new export throws, for any use of it: a call, a `new`, or
-// a property. Not a symbol, which a log reads off whatever it shows.
+// a property. Not for what is read off any value to tell what it is, a probe
+// and not a use: a symbol, which a log reads off whatever it shows,
+// `__esModule`, which the interop of a module of CommonJS reads off what it
+// requires as it loads, and `then`, which a promise and a module loader read
+// off what they are given.
 const newExportHelper = `const $$newExport = (message) => {
   const fail = () => { throw new Error(message); };
   return new Proxy(function () {}, {
     apply: fail,
     construct: fail,
-    get: (_, key) => (typeof key === "symbol" ? undefined : fail()),
+    get: (_, key) =>
+      typeof key === "symbol" || key === "__esModule" || key === "then" ? undefined : fail(),
   });
 };
 `;
@@ -45,11 +51,12 @@ function newExportStubs(newExports: NewExport[], version: string): string {
     newExports
       .map(({ name, module }, index) => {
         const message =
-          `vitest-plugin-rsc: \`${name}\` of ${module} is new in next@${version}, and the ` +
-          `plugin's stand-in for that module does not have it. Use a version of ` +
+          `vitest-plugin-rsc: next@${version} has \`${name}\` in ${module}, which the ` +
+          `plugin's stand-in for that module does not have. Use a version of ` +
           `vitest-plugin-rsc that supports next@${version}.`;
+        // A build leaves out what nothing imports.
         return (
-          `const $$new${index} = $$newExport(${JSON.stringify(message)});\n` +
+          `const $$new${index} = /* @__PURE__ */ $$newExport(${JSON.stringify(message)});\n` +
           `export { $$new${index} as ${JSON.stringify(name)} };\n`
         );
       })

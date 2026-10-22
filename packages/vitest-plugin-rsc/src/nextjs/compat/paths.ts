@@ -134,7 +134,7 @@ export const withStoresFiles = (modules: string[]) =>
  * The modules of Next's Node.js server that node-platform.ts stands in for,
  * by the name of the stand-in: each by its path in `next/dist`, without
  * `esm/` and `.js`. compat/checks.ts checks that each is a file of the
- * installed Next, and that its stand-in has every export of it.
+ * installed Next; an export its stand-in has not gets a stub.
  */
 export const nodePlatformModules: Record<string, string[]> = {
   "react-server-node": ["server/app-render/react-server.node"],

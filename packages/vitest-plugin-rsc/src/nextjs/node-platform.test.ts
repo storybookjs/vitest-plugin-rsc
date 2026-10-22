@@ -58,22 +58,29 @@ test.for([
   expect(nodePlatform.moduleOf(specifier!)).toBe(id);
 });
 
-test("gives a stand-in a stub of an export that is new in Next, which throws when it is used", async () => {
+test("gives a stand-in a stub of an export it has not, which throws when it is used", async () => {
+  const file = "next/dist/esm/server/node-environment-extensions/fast-set-immediate.external.js";
   const code = nodePlatform.load(
-    "gzip-size",
-    [{ name: "stream", module: "next/dist/compiled/gzip-size" }],
+    "fast-set-immediate",
+    [
+      { name: "runInStages", module: file },
+      { name: "default", module: file },
+    ],
     "16.9.0",
   )!;
-  const { sync, stream } = await import(`data:text/javascript,${encodeURIComponent(code)}`);
-  const message =
-    "vitest-plugin-rsc: `stream` of next/dist/compiled/gzip-size is new in next@16.9.0, and " +
-    "the plugin's stand-in for that module does not have it. Use a version of " +
-    "vitest-plugin-rsc that supports next@16.9.0.";
+  const stand = await import(`data:text/javascript,${encodeURIComponent(code)}`);
+  const message = (name: string) =>
+    `vitest-plugin-rsc: next@16.9.0 has \`${name}\` in ${file}, which the plugin's ` +
+    "stand-in for that module does not have. Use a version of vitest-plugin-rsc that " +
+    "supports next@16.9.0.";
 
-  expect(sync()).toBe(0);
-  expect(() => stream()).toThrow(message);
-  expect(() => new stream()).toThrow(message);
-  expect(() => stream.pipe).toThrow(message);
-  // Not what a log reads off it.
-  expect(stream[Symbol.toStringTag]).toBeUndefined();
+  expect(typeof stand.expectNoPendingImmediates).toBe("function");
+  expect(() => stand.runInStages()).toThrow(message("runInStages"));
+  expect(() => new stand.runInStages()).toThrow(message("runInStages"));
+  expect(() => stand.runInStages.length).toThrow(message("runInStages"));
+  expect(() => stand.default()).toThrow(message("default"));
+  // Not what a log, the interop of CommonJS or a promise reads off it.
+  expect(stand.runInStages[Symbol.toStringTag]).toBeUndefined();
+  expect(stand.runInStages.__esModule).toBeUndefined();
+  await expect(Promise.resolve(stand.runInStages)).resolves.toBe(stand.runInStages);
 });

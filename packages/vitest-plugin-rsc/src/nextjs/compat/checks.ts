@@ -237,7 +237,8 @@ export function checkRuntime(context: NextContext) {
 // Returns the exports of the modules that their stand-ins have not, by the
 // stand-in, which node-platform.ts gives a stub that throws when it is used:
 // without one an export is `undefined` for the module that imports it, which
-// the dependency optimizer leaves as it is (`shimMissingExports`).
+// the dependency optimizer and a static build leave as it is
+// (`shimMissingExports`).
 function checkNodePlatform({ projectRequire, fail }: NextContext) {
   const nodePlatform = createNodePlatform("registry", "");
   const appPageModule = aliasPaths.routeModule("app-page").slice("next/dist/".length);

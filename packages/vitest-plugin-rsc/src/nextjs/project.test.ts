@@ -694,13 +694,31 @@ test.for([
   ["server/node-environment-extensions/process-error-handlers", "node-environment"],
   ["server/route-modules/app-page/vendored/ssr/entrypoints", "vendored-react"],
   ["server/route-modules/app-page/module", "ssr-app-page-module"],
-])("stubs an export of %s that its stand-in has not, and runs", async ([file, standIn]) => {
+])("finds an export of %s for a stub, and does not stop", async ([file, standIn]) => {
   const source = fs.readFileSync(installed.resolve(runtime(file!)), "utf8");
   const next = nextWith({ [runtime(file!)]: `${source}\nexport const addedInNext = 1;\n` });
 
   const { newExports } = await loadNextProject(root, next);
 
   expect(newExports).toEqual({ [standIn!]: [{ name: "addedInNext", module: runtime(file!) }] });
+});
+
+test("finds an export that two modules of one stand-in have for one stub", async () => {
+  const files = ["rsc", "ssr"].map((layer) =>
+    runtime(`server/route-modules/app-page/vendored/${layer}/entrypoints`),
+  );
+  const next = nextWith(
+    Object.fromEntries(
+      files.map((file) => [
+        file,
+        `${fs.readFileSync(installed.resolve(file), "utf8")}\nexport const ReactNew = 1;\n`,
+      ]),
+    ),
+  );
+
+  const { newExports } = await loadNextProject(root, next);
+
+  expect(newExports).toEqual({ "vendored-react": [{ name: "ReactNew", module: files[0] }] });
 });
 
 test("says which module of Next that a stand-in replaces is gone", async () => {

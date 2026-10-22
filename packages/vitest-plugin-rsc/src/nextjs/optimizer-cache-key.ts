@@ -18,7 +18,10 @@ import type { NextLayer, NextProject } from "./project.ts";
 
 const hash = (text: string) => createHash("sha256").update(text).digest("hex").slice(0, 16);
 
-type OptimizerInputs = Pick<NextProject, "aliases" | "appAliases" | "dependencyCompileOptions">;
+type OptimizerInputs = Pick<
+  NextProject,
+  "aliases" | "appAliases" | "dependencyCompileOptions" | "newExports" | "version"
+>;
 
 /**
  * What the project gives the optimizer's plugins of a layer: Next's alias
@@ -26,7 +29,8 @@ type OptimizerInputs = Pick<NextProject, "aliases" | "appAliases" | "dependencyC
  * options of Next's transform for a dependency. The tables in their order,
  * not sorted: the resolver takes the first entry that matches, and a prefix
  * like `next` can match where a later one would. The order is the code's,
- * the same for every run.
+ * the same for every run. And the stubs of the stand-ins, of the version of
+ * Next.
  */
 export function projectKey(project: OptimizerInputs, layer: NextLayer): string {
   return hash(
@@ -34,6 +38,11 @@ export function projectKey(project: OptimizerInputs, layer: NextLayer): string {
       Object.entries(project.aliases[layer]),
       Object.entries(project.appAliases[layer]),
       project.dependencyCompileOptions[layer],
+      // The stubs that the stand-ins of node-platform.ts get, for the exports
+      // of the installed Next that they have not, which a Next changed by
+      // hand has without a change of the lockfile.
+      project.newExports,
+      project.version,
     ]),
   );
 }

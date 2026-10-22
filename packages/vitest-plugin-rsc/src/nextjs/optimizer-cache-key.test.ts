@@ -14,12 +14,15 @@ function projectOf(
   aliases: Record<string, string | false>,
   appAliases: Record<string, string> = {},
   compileOptions: unknown = { jsc: { transform: {} } },
+  newExports: Record<string, { name: string; module: string }[]> = {},
 ) {
   const empty = { rsc: {}, ssr: {}, browser: {} };
   return {
     aliases: { ...empty, rsc: aliases },
     appAliases: { ...empty, rsc: appAliases },
     dependencyCompileOptions: { ...empty, rsc: compileOptions },
+    newExports,
+    version: "16.4.0",
   };
 }
 
@@ -58,6 +61,9 @@ test("keys a layer by its alias tables, in their order, and the options of Next'
   // compiled with.
   const removeConsole = { jsc: { transform: {} }, removeConsole: true };
   expect(projectKey(projectOf(next, app, removeConsole), "rsc")).not.toBe(key);
+  // An export of Next that a stand-in gets a stub for.
+  const newExports = { "gzip-size": [{ name: "stream", module: "next/dist/compiled/gzip-size" }] };
+  expect(projectKey(projectOf(next, app, undefined, newExports), "rsc")).not.toBe(key);
 });
 
 test("keys the plugin's code by the contents of its files, not their times or tests", () => {

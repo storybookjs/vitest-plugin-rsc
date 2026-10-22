@@ -1171,7 +1171,8 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
         const aboutNext =
           `vitest-plugin-rsc: next@${project.version} has exports that the plugin's stand-ins ` +
           `for its modules have not. Each throws when it is used: ` +
-          newExports.map(({ name, module }) => `\`${name}\` of ${module}`).join(", ");
+          newExports.map(({ name, module }) => `\`${name}\` of ${module}`).join(", ") +
+          `. Use a version of vitest-plugin-rsc that supports next@${project.version}.`;
         // Of the installed Next, not of the project: once, for every project
         // of a run that has that Next.
         if (newExports.length > 0 && !saidOfNext.has(aboutNext)) {
