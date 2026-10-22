@@ -3,7 +3,7 @@ import {
   renderServer,
   runInServerAction,
 } from "vitest-plugin-rsc/nextjs/testing-library";
-import { afterEach, beforeEach, expect, test, vi, type MockInstance } from "vitest";
+import { afterEach, beforeEach, expect, inject, test, vi, type MockInstance } from "vitest";
 import { page } from "vitest/browser";
 import { cookies, headers } from "next/headers";
 import Link from "next/link";
@@ -308,7 +308,9 @@ test("keeps a header of the proxy that the route adds to", async () => {
 
   const link = response.headers.get("link");
   expect(link).toContain('<https://example.com/styles>; rel="alternate"; hreflang="en"');
-  expect(link).toMatch(/\/_next\/static\/css\//);
+  // React adds the stylesheets of the page as it renders it at the request.
+  // In production `next build` prerenders the page, which has none.
+  if (inject("build") === "development") expect(link).toMatch(/\/_next\/static\/css\//);
 });
 
 test("takes a header that only Next's own server sets off a request that comes in", async () => {

@@ -2,8 +2,8 @@
 // the modules of Next that set a Node.js process up or read the files of a
 // build, each one module that Next itself keeps apart. This is the build side
 // of it: the modules, as code for Vite. The browser's side is node-server.ts,
-// and globals.ts for the globals. The modules of Node.js themselves are the
-// package's, see node-builtins.ts.
+// build-output.ts for the files of a build, and globals.ts for the globals.
+// The modules of Node.js themselves are the package's, see node-builtins.ts.
 
 /**
  * The stand-ins, for a `registry` in the browser that some of them call and a
@@ -71,18 +71,6 @@ export function createNodePlatform(registry: string, prefix: string) {
     },
   };
   `,
-    // Next's cache keeps its entries in memory. With this it finds no file.
-    "node-fs": `
-  const missing = () => { throw Object.assign(new Error("ENOENT"), { code: "ENOENT" }); };
-  export const nodeFs = {
-    existsSync: () => false,
-    readFile: async () => missing(),
-    readFileSync: missing,
-    stat: async () => missing(),
-    writeFile: async () => {},
-    mkdir: async () => {},
-  };
-  `,
   };
   const patterns: [RegExp, string][] = [
     [/^next\/dist\/(esm\/)?server\/app-render\/react-server\.node(\.js)?$/, "react-server-node"],
@@ -91,7 +79,6 @@ export function createNodePlatform(registry: string, prefix: string) {
       /^next\/dist\/(esm\/)?server\/lib\/router-utils\/instrumentation-globals\.external(\.js)?$/,
       "instrumentation",
     ],
-    [/^next\/dist\/(esm\/)?server\/lib\/node-fs-methods(\.js)?$/, "node-fs"],
     [
       /^next\/dist\/(esm\/)?server\/node-environment(-extensions\/(error-inspect|console-file|console-exit|console-dim\.external|unhandled-rejection\.external|random|date|web-crypto|node-crypto|process-error-handlers))?(\.js)?$/,
       "node-environment",

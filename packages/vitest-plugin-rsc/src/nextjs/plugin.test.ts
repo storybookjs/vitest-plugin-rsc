@@ -13,6 +13,7 @@ import {
 } from "vite";
 import { expect, test, vi } from "vitest";
 import { vitestPluginRSC } from "../index.ts";
+import { createNodePlatform } from "./node-platform.ts";
 import { vitestPluginNext, type VitestPluginNextOptions } from "./plugin.ts";
 
 // The tests load Next projects: longer than Vitest's 5 s on a loaded CI.
@@ -137,17 +138,22 @@ test("pre-bundles every Client Component of Next for the layers that render one"
 // The modules of this package that run in a layer in the browser and import a
 // module of Next: the entry of the layer, and what it imports from here.
 const runtimeFiles = {
-  ssr: ["ssr.ts", "cache.ts", "node-server.ts"],
+  ssr: ["ssr.ts", "cache.ts", "node-server.ts", "build-output.ts"],
   browser: ["client.tsx"],
 } as const;
 
 // The modules of Next that a file imports to run, not only for their types.
-function nextImportsOf(file: string): string[] {
+// In a server layer, not one it has a stand-in for, which is no dependency to
+// pre-bundle: see node-platform.ts.
+const nodePlatform = createNodePlatform("registry", "");
+function nextImportsOf(layer: keyof typeof runtimeFiles, file: string): string[] {
   const code = fs.readFileSync(path.join(here, file), "utf8");
   return [
     ...code.matchAll(/^import (?!type\b)[^;]*?from "(next\/[^"]+)";/gms),
     ...code.matchAll(/\bimport\("(next\/[^"]+)"\)/g),
-  ].map((match) => match[1]!);
+  ]
+    .map((match) => match[1]!)
+    .filter((specifier) => layer === "browser" || nodePlatform.moduleOf(specifier) === undefined);
 }
 
 // The file of Next's ESM build that the plugin pre-bundles for a specifier.
@@ -162,13 +168,14 @@ function preBundledAs(specifier: string): string {
 test("pre-bundles every module of Next that a module of the plugin imports in the browser", async () => {
   const deps = await optimizeDeps;
 
-  for (const [layer, files] of Object.entries(runtimeFiles)) {
-    const imported = files.flatMap(nextImportsOf);
+  for (const [layer, files] of Object.entries(runtimeFiles) as [
+    keyof typeof runtimeFiles,
+    readonly string[],
+  ][]) {
+    const imported = files.flatMap((file) => nextImportsOf(layer, file));
     expect(imported.length).toBeGreaterThan(0);
     // A new import is to be listed in `runtimeImports` of plugin.ts.
-    expect(deps[layer as keyof typeof runtimeFiles].include).toEqual(
-      expect.arrayContaining(imported.map(preBundledAs)),
-    );
+    expect(deps[layer].include).toEqual(expect.arrayContaining(imported.map(preBundledAs)));
   }
 });
 

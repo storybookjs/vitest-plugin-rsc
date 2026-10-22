@@ -13,11 +13,12 @@ export function checkRuntime(context: NextContext) {
   // give it Next's own handler, or nothing is cached and nothing says so.
   const cache = new IncrementalCache({
     fs: {} as never,
-    serverDistDir: "/",
+    serverDistDir: "/.next/server",
     dev: false,
     requestHeaders: {},
     fetchCacheKeyPrefix: "prefix",
     previewProps,
+    // As `prerenderManifest` of build-output.ts.
     prerenderManifest: {
       version: 4,
       routes: {},
@@ -119,7 +120,7 @@ export function checkRuntime(context: NextContext) {
   ]) {
     serverReferenceInfo.export(name);
   }
-  // node-server.ts provides the manifests of a build: through the module
+  // build-output.ts provides the manifests of a build: through the module
   // Next's server reads the files of `.next/` with, and for each request.
   runtimeFile("server/route-modules/route-module").contains(
     "load-manifest.external",
@@ -131,7 +132,7 @@ export function checkRuntime(context: NextContext) {
   runtimeFile("build/templates/app-page-runtime").contains(
     "server/route-modules/app-page/module.compiled",
   );
-  // node-server.ts lists the stylesheets of a route where Next's renderer
+  // build-output.ts lists the stylesheets of a route where Next's renderer
   // looks for those of a segment: in `entryCSSFiles` of the client reference
   // manifest, by the file of the segment without its extension. Next links
   // each by its path under `/_next/`. Without this a page has no CSS, and
@@ -145,6 +146,50 @@ export function checkRuntime(context: NextContext) {
     "entryCssFile.content",
     "/_next/${encodeURIPath(entryCssFile.path)}",
   );
+  // In production the server lists what Next's build prerenders as a route
+  // is first requested (build-output.ts, prerender-verdict.ts), and Next's
+  // handler prerenders it then. A page that reads the request throws this
+  // there, which the server takes for the bail-out of the build's prerender
+  // (node-server.ts). Without it, such a page would answer 500.
+  runtimeFile("build/templates/app-page-runtime").contains(
+    "`Page changed from static to dynamic at runtime ${resolvedPathname}",
+    "throw new NoFallbackError()",
+  );
+  runtimeFile("build/templates/app-route").contains("if (isIsr) throw err;");
+  // The server's logger, which leaves that one out, is what `next start`
+  // hands the route module around it.
+  runtimeFile("server/lib/router-utils/router-server-context").contains(
+    "Symbol.for('@next/router-server-methods')",
+  );
+  runtimeFile("server/route-modules/route-module").contains(
+    "routerServerContext.logErrorWithOriginalStack(err",
+  );
+  // Next's route module of a page keeps what it matched by the object of the
+  // manifest, so a new one comes as a dynamic route comes or goes.
+  runtimeFile("server/route-modules/app-page/module").contains(
+    "this.matchers.get(prerenderManifest)",
+  );
+  // The build's verdict on which pathnames of a route it prerenders, which
+  // prerender-verdict.ts makes as the build does: the last segment's
+  // `dynamic` and `runtime`, the paths of `generateStaticParams`, and
+  // without one `dynamic = "error"` or `"force-static"`.
+  runtimeFile("build/utils").contains("config.dynamic = dynamic;", "config.runtime = runtime;");
+  runtimeFile("build/index").contains(
+    "if (workerResult.prerenderedRoutes) {",
+    "ssgPageRoutes = workerResult.prerenderedRoutes.filter((route)=>route.isPrerenderOutput !== false).map((route)=>route.pathname);",
+    "} else if (!hasGenerateStaticParams && (appConfig.dynamic === 'error' || appConfig.dynamic === 'force-static')) {",
+  );
+  // Whether a route is static at all is Next's handler's verdict, at the
+  // render: a `force-dynamic` page throws this as it is prerendered.
+  runtimeFile("server/app-render/create-component-tree").contains(
+    'const err = new DynamicServerError(`Page with \\`dynamic = "force-dynamic"\\` won\'t be rendered statically.`);',
+  );
+  // cleanup() expires the kept pages of an app's own `cacheHandler` by the
+  // tag each has for the root layout.
+  runtimeFile("server/lib/implicit-tags").contains(
+    "const derivedTags = [\n        `/layout`\n    ];",
+  );
+
   // The plugin turns Next's renderer to web streams with this.
   runtimeFile("server/app-render/stream-ops").contains("process.env.__NEXT_USE_NODE_STREAMS");
 
