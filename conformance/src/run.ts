@@ -21,7 +21,7 @@ import {
 
 // Runs fixtures of Next's own e2e tests against the plugin, and says how the
 // result differs from what `expectations.json` says it is. See
-// docs/next-conformance.md.
+// docs/internals/next-conformance.md.
 
 const here = fileURLToPath(new URL("../", import.meta.url));
 const require = createRequire(import.meta.url);
@@ -50,7 +50,7 @@ if (options.help) {
       "",
       "  fixture            Run the fixtures whose id has one of these in it. Default: all.",
       "  --update           Write what this run found to expectations.json.",
-      "  --docs             Write the results to docs/next-conformance.md. Needs a run of all fixtures.",
+      "  --docs             Write the results to docs/internals/next-conformance.md. Needs a run of all fixtures.",
       "  --plugin <dir>     Run the plugin of another checkout of this repository.",
       "  --mode <mode>      What the tests take the run for: start (default) or dev.",
       "  --concurrency <n>  Fixtures to run at a time. Default: 4.",
@@ -428,7 +428,7 @@ console.log(
 );
 
 if (options.docs) {
-  const documentFile = path.join(here, "../docs/next-conformance.md");
+  const documentFile = path.join(here, "../docs/internals/next-conformance.md");
   fs.writeFileSync(
     documentFile,
     renderDocument(fs.readFileSync(documentFile, "utf8"), comparison, runs, nextVersion),

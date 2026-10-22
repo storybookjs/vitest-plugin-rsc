@@ -9,7 +9,7 @@ import type { NextLayer } from "./project.ts";
 // of its own. A browser cannot lose its globals, but a module can be compiled
 // not to see them: `typeof window` becomes `"undefined"`, which is what Next's
 // build does to server code, and `fetch`, `Request` and `Response` become the
-// server's, which are in `registry` (globals.ts). See docs/next-routes.md.
+// server's, which are in `registry` (globals.ts). See docs/internals/next-routes.md.
 
 /** Globals of a browser that a server does not have. */
 const browserGlobals = ["window", "document", "location", "localStorage", "sessionStorage"];

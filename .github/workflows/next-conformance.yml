@@ -1,7 +1,7 @@
 name: Next.js conformance
 
 # Runs fixtures of Next's own e2e tests against the plugin, see
-# docs/next-conformance.md. Not a part of CI, and no check that a pull request
+# docs/internals/next-conformance.md. Not a part of CI, and no check that a pull request
 # needs: it takes its time, and it fetches from vercel/next.js. It runs when
 # the runner, the plugin or the lockfile changes, by hand, and once a week
 # against the canary of Next.js, to tell early when Next changes what the

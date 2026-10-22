@@ -1,8 +1,8 @@
 # Database recipes
 
-The same todo list on three databases, with three ORMs and with SQL of its own, and on Redis: a page of the App Router that lists the todos, a Server Action that adds one, and one that marks a todo done in a transaction. Each recipe is a test of it in Vitest Browser Mode, on a database in the page.
+The same little todo app, on every database and ORM we support: a page that lists todos, a Server Action that adds one, and one that marks a todo done in a transaction. Each recipe tests it in Vitest Browser Mode, against a database running in the page.
 
-The driver of the app, which it keeps in the tests:
+Your app keeps its own driver. These are the ones the recipes use:
 
 |          | Drizzle          | Prisma                    | Kysely                  | SQL              |
 | -------- | ---------------- | ------------------------- | ----------------------- | ---------------- |
@@ -10,25 +10,24 @@ The driver of the app, which it keeps in the tests:
 | SQLite   | `@libsql/client` | `@prisma/adapter-libsql`  | `@libsql/kysely-libsql` | `@libsql/client` |
 | MySQL    | `mysql2`         | `@prisma/adapter-mariadb` | `mysql2`                | `mysql2/promise` |
 
-What the tests have in place of the database server:
+And in the tests, in place of a database server:
 
 - **Postgres**: [PGlite](https://pglite.dev), Postgres in WebAssembly.
-- **SQLite**: [`@libsql/client-wasm`](https://www.npmjs.com/package/@libsql/client-wasm), SQLite in WebAssembly, with the API of the app's libsql client.
+- **SQLite**: [`@libsql/client-wasm`](https://www.npmjs.com/package/@libsql/client-wasm), SQLite in WebAssembly, with the same API as libsql's client.
 - **MySQL**: [lite4mariadb](https://github.com/shyim/lite4mariadb), MariaDB with InnoDB in WebAssembly.
+- **Redis**: [ioredis-mock](https://github.com/stipsan/ioredis-mock), with the ioredis API and its own Lua. The Redis recipe keeps each todo as a hash and the ids in a list, and adds and toggles todos with Lua scripts.
 
-And one recipe of a store that is not a database of SQL: **Redis**, with `ioredis`, which keeps a todo as a hash and the ids in a list, and adds and toggles one with a Lua script. Its tests have [ioredis-mock](https://github.com/stipsan/ioredis-mock) in place of the server, with the API of ioredis and a Lua of its own.
+This playground only runs tests, not `next dev`.
 
-The recipes do what the notes demo, `playground/nextjs-notes-demo`, does for its database, for the drivers of the app: the notes demo has Drizzle's driver for PGlite in its tests, where its app has `pg`.
+## The idea
 
-Each recipe stands for an app of its own: their `db.ts` files have the same names for the app's database, `DATABASE_URL`, `MYSQL_URL`, `SQLITE_URL`, `REDIS_URL`, and the same todos. The playground runs its tests, not `next dev`.
+**Your app keeps its ORM and its driver. The tests mock exactly one module, `db.ts`**, with a file next to it in `__mocks__/`: the same ORM, connected to the database in the page. (For plain SQL or Redis, `db.ts` is just the pool or client.) Everything else is your app's own: queries, migrations, transactions.
 
-## The Rule
+Every test gets:
 
-The app keeps its ORM and its driver. The tests mock one module of a recipe, `db.ts`, with the file next to it in `__mocks__/`: the same ORM, with a pool or client of the database in the page. A recipe of SQL has no ORM: its `db.ts` is the pool or the client, as it is the client of ioredis for Redis. Everything else is the app's own: its queries, its migrations, its transactions.
-
-- **A database as the migrations left it, for every test.** What an earlier test wrote is gone, and the first row a test adds is #1. Redis has no migrations: its reset is a `FLUSHALL`.
-- **The time of the test.** `vi.setSystemTime()` is the clock of Postgres and MySQL too, for `now()` and `CURRENT_TIMESTAMP`. Prisma, the SQLite recipes and Redis take the time from the app's clock, which is the test's.
-- **The app's migrations.** The SQL files that Drizzle and Prisma make, Kysely's own migrator, or the SQL files of a recipe of SQL.
+- **A fresh database, as your migrations left it.** What an earlier test wrote is gone, and the first row a test adds is #1. (Redis has no migrations, so it just runs `FLUSHALL`.)
+- **A fixed clock.** `vi.setSystemTime()` also sets `now()` and `CURRENT_TIMESTAMP` on Postgres and MySQL. Prisma, SQLite and Redis use the app's clock, which is the test's.
+- **Your real migrations.** The SQL files Drizzle and Prisma generate, Kysely's own migrator, or hand-written SQL files.
 
 ```tsx
 // app/postgres-drizzle/page.test.tsx
@@ -42,66 +41,68 @@ todoRecipeTests({
 });
 ```
 
-The test seeds and reads with the app's own `db`, the module instance its Server Components query. The tests, the same for every recipe, are in `test/todo-recipe.ts`: an empty list, the todos a test seeds, a Server Action at the time of the test, a toggle in a transaction, a transaction that rolls back, and a test that finds nothing of the one before it.
+The test seeds and reads with your app's own `db`, the same module the Server Components query. The shared tests live in `test/todo-recipe.ts`: an empty list, seeded todos, a Server Action at the test's time, a toggle in a transaction, a transaction that rolls back, and a check that nothing leaks from the previous test.
 
-## A Recipe
+## Anatomy of a recipe
 
-The files of one, `postgres-drizzle`:
+Taking `postgres-drizzle` as the example:
 
-- `recipes/postgres-drizzle/db.ts`: the app's `db`, Drizzle on a `pg.Pool`.
-- `recipes/postgres-drizzle/__mocks__/db.ts`: the tests' `db`, Drizzle on a `pg.Pool` of PGlite.
-- `recipes/postgres-drizzle/schema.ts`, `migrations/`: the app's schema, and what `drizzle-kit generate` made of it.
-- `recipes/postgres-drizzle/todos.ts`: the queries.
-- `app/postgres-drizzle/page.tsx`, `page.test.tsx`: the page and its tests.
-- `vitest.setup.ts`: `vi.mock("#recipes/postgres-drizzle/db.ts")`, and the reset before every test.
+| File                                                | What it is                                                                    |
+| --------------------------------------------------- | ----------------------------------------------------------------------------- |
+| `recipes/postgres-drizzle/db.ts`                    | The app's `db`: Drizzle on a `pg.Pool`.                                       |
+| `recipes/postgres-drizzle/__mocks__/db.ts`          | The tests' `db`: Drizzle on a `pg.Pool` backed by PGlite.                     |
+| `recipes/postgres-drizzle/schema.ts`, `migrations/` | The schema, and what `drizzle-kit generate` made of it.                       |
+| `recipes/postgres-drizzle/todos.ts`                 | The queries.                                                                  |
+| `app/postgres-drizzle/page.tsx`, `page.test.tsx`    | The page and its tests.                                                       |
+| `vitest.setup.ts`                                   | `vi.mock("#recipes/postgres-drizzle/db.ts")`, and the reset before each test. |
 
-The test databases are in `test/`:
+The test databases live in `test/`:
 
-- **`test/pglite.ts`**: one PGlite for the page, a schema for each recipe.
-  - It starts as the notes demo's does, from a data dir that Node.js made, `test/pglite-files.ts`, with its files fetched once.
-  - `pool` is a `pg.Pool`, as Prisma's adapter takes only a pool that is one.
-  - pg makes the text of each value, and parses what PGlite sends back as text, with pg's parsers or the ones the ORM gives it.
-  - `reset()` puts back the rows and sequences of a copy it takes after the migrations: of SQL files as it makes the schema, or when the mock calls `snapshot()` after the ORM's own migrator, as the Kysely recipes do.
-  - Its clock is the page's `Date.now()`, which PGlite's WebAssembly reads: `vi.setSystemTime()` sets `now()` too.
-- **`test/libsql.ts`**: a new SQLite database for every test, made from the migrations. `client` is a libsql client that goes to the database of the test.
-- **`test/mariadb.ts`**: one MariaDB for the page, a database for each recipe.
-  - `mysql2Pool` stands in for a pool of mysql2, with its callbacks and its `promise()`: Drizzle, Kysely, SQL.
-  - `mariadbPool` stands in for one of mariadb: Prisma.
-  - `reset()` puts back the rows and AUTO_INCREMENT counters of a copy it takes after the migrations, as `test/pglite.ts` does.
-  - Before a query it sets the server's `timestamp` to the page's `Date.now()`. Its time zone is UTC.
+- **`test/pglite.ts`**: one PGlite per page, with a schema per recipe.
+  - It boots from a data dir made in Node.js (`test/pglite-files.ts`), fetched once.
+  - `pool` is a real `pg.Pool`, since Prisma's adapter only accepts one.
+  - `reset()` restores rows and sequences from a snapshot taken after the migrations.
+  - Its clock is the page's `Date.now()`, so `vi.setSystemTime()` sets `now()` too.
+- **`test/libsql.ts`**: a new SQLite database for every test, built from the migrations.
+- **`test/mariadb.ts`**: one MariaDB per page, with a database per recipe.
+  - `mysql2Pool` stands in for a mysql2 pool (for Drizzle, Kysely and SQL), `mariadbPool` for a mariadb one (for Prisma).
+  - `reset()` restores rows and `AUTO_INCREMENT` counters from a snapshot, like PGlite's.
+  - Before each query it sets the server's `timestamp` to the page's `Date.now()`. Its time zone is UTC.
 
 ## In vitest.config.ts
 
-- **The drivers that need Node.js as they load.** `mysql2` and `mariadb` are `test/drivers/`: the ORM imports them, and gets a pool of the test instead. `pg` loads in a browser, and makes no connection until it is asked a query.
-- **Cross-origin isolation.** lite4mariadb runs MariaDB on threads, which a page has with `Cross-Origin-Opener-Policy` and `Cross-Origin-Embedder-Policy`. `credentialless`, so that the page can still load what another origin has.
-- **A time zone that is not UTC**, `Pacific/Auckland`: a value that a driver writes or reads in the wrong one moves by hours.
-- **`optimizeDeps`.** What the files in `__mocks__/` import is in `include`. lite4mariadb and libsql's WebAssembly are in `exclude`, as they load their files from their own URLs.
-- **ioredis-mock's build for browsers.** As it loads, it calls `require()` for `fs` and `path`, which throws in any page. And it sets `window.Buffer` to a polyfill of its own, in place of the plugin's, which Next's server uses. `test/ioredis-mock.ts` takes both out of `browser.js`, in the dependency optimizer and in Vite. It throws when a version of ioredis-mock has other code there, which is why it is pinned to 8.13.1.
+What you'll want to copy, depending on your database:
 
-## What Is Not Here Yet
+- **Drivers that need Node.js to load.** `mysql2` and `mariadb` are aliased to `test/drivers/`, so the ORM gets the test pool instead. `pg` loads fine in a browser and connects lazily, so it needs nothing.
+- **Cross-origin isolation** for MySQL. lite4mariadb runs MariaDB on threads, which needs `Cross-Origin-Opener-Policy` and `Cross-Origin-Embedder-Policy` (`credentialless`, so the page can still load from other origins).
+- **A non-UTC time zone**, `Pacific/Auckland`. A driver that reads or writes in the wrong zone is then off by hours, so you'll notice.
+- **`optimizeDeps`.** Whatever `__mocks__/` imports goes in `include`. lite4mariadb and libsql's WebAssembly go in `exclude`, since they load their files from their own URLs.
+- **ioredis-mock's browser build** needs patching: it `require()`s `fs` and `path` on load, which throws in a page, and swaps `window.Buffer` for its own polyfill. `test/ioredis-mock.ts` strips both. It's pinned to 8.13.1, and throws if a new version changes that code.
 
-- **`better-sqlite3` and `node:sqlite`.** They are synchronous and native: a test would need a stand-in of their API on SQLite's WebAssembly.
-- **TypeORM.** In the server layers the plugin takes a dependency's `browser` field, and TypeORM's points to its build for browsers, which has no driver for Postgres or MySQL. Next's server build does not read that field.
-- **Storybook.** The databases run in the page, so a static build of Storybook could have them too, with the same mocks, as the notes demo has with `sb.mock()`.
+## Not here yet
 
-## Limits
+- **`better-sqlite3` and `node:sqlite`.** They're synchronous and native, so they'd need a stand-in API on SQLite's WebAssembly.
+- **TypeORM.** The plugin uses a dependency's `browser` field in the server layers, and TypeORM's points at a build with no Postgres or MySQL driver.
+- **Storybook.** The databases run in the page, so a static Storybook could have them too, like the notes demo does with `sb.mock()`.
 
-- **One session per server.** All recipes of a database share the session of its server, and take turns on it. Two transactions at the same time would be one.
-- **lite4mariadb**:
-  - It is 0.1, of one author, and GPL-2.0.
-  - It is MariaDB 13, not MySQL 8: `JSON` is `LONGTEXT`, some functions differ, and Prisma uses no joins of relations on it, where it does on MySQL 8.
-  - An UPDATE counts the rows it changed, where the drivers count the rows it found: an UPDATE to the value a row has is 0 rows here.
-  - The `insertId` of an INSERT that gives the id itself is the id of the last one that did not.
-  - A row with two columns of one name has one of them.
-  - The field that a `typeCast` gets has no `length`.
-  - It starts in a few seconds: one for the page.
+## Known limits
+
+- **One session per server.** All recipes for one database share its server's session and take turns, so two simultaneous transactions would really be one.
+- **lite4mariadb**
+  - Version 0.1, one author, GPL-2.0.
+  - It's MariaDB 13, not MySQL 8: `JSON` is `LONGTEXT`, some functions differ, and Prisma doesn't use relation joins on it.
+  - An `UPDATE` counts rows _changed_, where drivers count rows _found_. Updating a row to its current value reports 0 rows.
+  - The `insertId` of an `INSERT` with an explicit id is the id of the last insert that didn't have one.
+  - A row with two columns of the same name keeps only one.
+  - The field a `typeCast` receives has no `length`.
+  - It takes a few seconds to start, once per page.
 - **`@libsql/client-wasm` is experimental.**
-  - Its transaction takes the client's connection, and the client opens the file again, so each database is a file in the memory of SQLite's WebAssembly, not `:memory:`. The files of earlier tests stay there.
-  - It has no types of the columns.
-- **ioredis-mock**:
-  - Its Lua has a number that a command gives as a float: `"todo:" .. id` is `todo:1.0`. The Redis recipe's script makes the id with `string.format("%d", ...)`, which is the same on Redis.
-  - It has no `eval()` in a MULTI. A script that ioredis defines with `defineCommand()` is there.
-  - Its EXEC does not end a WATCH: the EXEC's own write makes the next EXEC fail, so a toggle with WATCH fails every other time. The recipe toggles a todo with a Lua script.
-  - Its Lua has no `redis.error_reply()`: the toggle's script answers `false` for no todo.
-  - A command that fails in its MULTI rejects the EXEC. Redis answers the error of each command in the answer of EXEC, which `addTodos()` checks.
-- **Prisma's engines.** `pnpm install` does not run their download, which `prisma generate` does not need. `prisma migrate diff`, for a change of a Prisma schema, does.
+  - A transaction takes the client's connection, and the client reopens the file. So each database is a file in SQLite's WebAssembly memory rather than `:memory:`, and earlier tests' files stay around.
+  - It has no column types.
+- **ioredis-mock**
+  - Its Lua formats some numbers as floats: `"todo:" .. id` gives `todo:1.0`. The recipe uses `string.format("%d", ...)`, which works the same on real Redis.
+  - No `eval()` inside `MULTI`. Scripts defined with `defineCommand()` do work.
+  - `EXEC` doesn't end a `WATCH`, so a toggle using `WATCH` fails every other time. The recipe toggles with a Lua script instead.
+  - No `redis.error_reply()` in Lua: the toggle script returns `false` when there's no todo.
+  - A failing command in `MULTI` rejects the whole `EXEC`, where Redis reports each command's error in the `EXEC` reply. `addTodos()` checks for that.
+- **Prisma's engines.** `pnpm install` skips their download, which `prisma generate` doesn't need. `prisma migrate diff`, for changing a Prisma schema, does.

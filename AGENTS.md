@@ -18,7 +18,7 @@ While the package is pre-1.0, breaking changes are acceptable when intentional. 
 
 ## Releases
 
-Official npm releases are created by Release Please after its release PR is merged. They are alphas for now, on the `alpha` dist-tag: see `docs/releasing.md`. Do not add long-lived npm token publishing or publish PR commits to npm `latest`.
+Official npm releases are created by Release Please after its release PR is merged. They are alphas for now, on the `alpha` dist-tag: see `docs/internals/releasing.md`. Do not add long-lived npm token publishing or publish PR commits to npm `latest`.
 
 Preview packages for PR commits are handled by `pkg.pr.new`, which publishes installable preview URLs outside the npm registry.
 
@@ -38,4 +38,4 @@ Keep Vitest project definitions and coverage settings in the root `vitest.config
 
 The Next.js notes demo, `playground/nextjs-notes-demo`, is the in-tree acceptance app: its tests open the routes of the app with `renderServer({ url })` and cover the realistic combinations of routing, cookies, forms, Server Actions and third-party client packages, and its stories run in `storybook dev` and `storybook build`.
 
-`pnpm conformance` runs fixtures of Next's own e2e tests against the plugin, see `docs/next-conformance.md`. It is not a part of `pnpm test`: it fetches the fixtures from `vercel/next.js` and takes minutes. After a change to how the plugin runs Next.js, run it in CI on your branch with `gh workflow run next-conformance.yml --ref <branch>`. A test that starts or stops passing fails it; `pnpm conformance <fixture> --update` records the change in `conformance/expectations.json`, where every failing test has a reason.
+`pnpm conformance` runs fixtures of Next's own e2e tests against the plugin, see `docs/internals/next-conformance.md`. It is not a part of `pnpm test`: it fetches the fixtures from `vercel/next.js` and takes minutes. After a change to how the plugin runs Next.js, run it in CI on your branch with `gh workflow run next-conformance.yml --ref <branch>`. A test that starts or stops passing fails it; `pnpm conformance <fixture> --update` records the change in `conformance/expectations.json`, where every failing test has a reason.
