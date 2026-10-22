@@ -21,8 +21,8 @@ defaults:
     shell: bash
 
 env:
-  # The same workers for both: the 4 cores of a runner.
-  WORKERS: 4
+  # One worker for both: one test after the other, no parallelism.
+  WORKERS: 1
 
 jobs:
   vitest:
@@ -58,7 +58,7 @@ jobs:
             echo "| --- | ---: |"
             printf "| Database (PGlite in the page) | 0 |\n"
             printf "| Build of the app | 0 |\n"
-            printf "| 25 tests, %s workers, \`isolate: false\`, the load of the config included | %.1f |\n" "$WORKERS" "$(echo "$end - $start" | bc)"
+            printf "| 25 tests, %s worker(s), \`isolate: false\`, the load of the config included | %.1f |\n" "$WORKERS" "$(echo "$end - $start" | bc)"
             printf "| Of which Vitest's own Duration | %.1f |\n" "$duration"
           } >> "$GITHUB_STEP_SUMMARY"
 
@@ -115,7 +115,7 @@ jobs:
             echo "| --- | ---: |"
             printf "| Database (Postgres in Docker, \`db:push\`) | %.1f |\n" "$DATABASE_SECONDS"
             printf "| Build of the app (\`next build\`) | %.1f |\n" "$BUILD_SECONDS"
-            printf "| 25 tests, %s workers, \`next start\` included | %.1f |\n" "$WORKERS" "$(echo "$end - $start" | bc)"
+            printf "| 25 tests, %s worker(s), \`next start\` included | %.1f |\n" "$WORKERS" "$(echo "$end - $start" | bc)"
             printf "| Of which Playwright's own time | %.1f |\n" "$duration"
           } >> "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v4
