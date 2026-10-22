@@ -13,7 +13,7 @@ export function checkRuntime(context: NextContext) {
   // give it Next's own handler, or nothing is cached and nothing says so.
   const cache = new IncrementalCache({
     fs: {} as never,
-    serverDistDir: "/",
+    serverDistDir: "/.next/server",
     dev: false,
     requestHeaders: {},
     fetchCacheKeyPrefix: "prefix",
@@ -146,6 +146,40 @@ export function checkRuntime(context: NextContext) {
     "entryCssFile.content",
     "/_next/${encodeURIPath(entryCssFile.path)}",
   );
+  // In production the server lists what Next's build prerenders as a route
+  // is first requested (build-output.ts, prerender-verdict.ts), and Next's
+  // handler prerenders it then. A page that reads the request throws this
+  // there, which the server takes for the bail-out of the build's prerender
+  // (node-server.ts). Without it, such a page would answer 500.
+  runtimeFile("build/templates/app-page-runtime").contains(
+    "`Page changed from static to dynamic at runtime ${resolvedPathname}",
+    "throw new NoFallbackError()",
+  );
+  runtimeFile("build/templates/app-route").contains("if (isIsr) throw err;");
+  // The server's logger, which leaves that one out, is what `next start`
+  // hands the route module around it.
+  runtimeFile("server/lib/router-utils/router-server-context").contains(
+    "Symbol.for('@next/router-server-methods')",
+  );
+  runtimeFile("server/route-modules/route-module").contains(
+    "routerServerContext.logErrorWithOriginalStack(err",
+  );
+  // Next's route module of a page keeps what it matched by the object of the
+  // manifest, so a new one comes as a dynamic route comes or goes.
+  runtimeFile("server/route-modules/app-page/module").contains(
+    "this.matchers.get(prerenderManifest)",
+  );
+  // The two options of the config of a route that prerender-verdict.ts
+  // reduces as Next does.
+  runtimeFile("build/utils").contains(
+    "const { dynamic, fetchCache, preferredRegion, revalidate, runtime, maxDuration, prefetch, ensureStatic } = segment.config || {};",
+    "if (typeof revalidate === 'number' && (typeof config.revalidate !== 'number' || revalidate < config.revalidate)) {",
+  );
+  // cleanup() expires the kept pages by the tag each has for the root layout.
+  runtimeFile("server/lib/implicit-tags").contains(
+    "const derivedTags = [\n        `/layout`\n    ];",
+  );
+
   // The plugin turns Next's renderer to web streams with this.
   runtimeFile("server/app-render/stream-ops").contains("process.env.__NEXT_USE_NODE_STREAMS");
 

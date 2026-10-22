@@ -1,11 +1,13 @@
 import type { PrerenderManifest } from "next/dist/build";
+import { RSC_SUFFIX } from "next/dist/lib/constants";
+import { normalizePagePath } from "next/dist/shared/lib/page-path/normalize-page-path";
 import {
   nextConfig,
   preview,
   routesManifest,
   routing,
 } from "virtual:vitest-plugin-rsc/next-manifest";
-import { actionModulePrefix, registry } from "./registry.ts";
+import { actionModulePrefix, registry, type PrerenderVerdict } from "./registry.ts";
 import type { Stylesheets } from "./styles-shared.ts";
 
 // What `next build` writes to `.next/`, filled per route as the plugin learns
@@ -102,15 +104,83 @@ export function setServerActions(ids: Iterable<string>): void {
   );
 }
 
-// No route is prerendered: nothing is built. The one object that both Next's
-// route module and the server's cache (cache.ts) read.
-export const prerenderManifest: PrerenderManifest = {
+// What Next's build prerenders: in production, the routes that were
+// requested, by its verdict on each (`recordRoute()`). The one object that
+// Next's route module and the server's cache (cache.ts) read: a new one as
+// a dynamic route comes or goes, since Next's route module of a page keeps
+// what it matched by the object.
+export let prerenderManifest: PrerenderManifest = {
   version: 4,
   routes: {},
   dynamicRoutes: {},
   notFoundRoutes: [],
   preview,
 };
+
+type Route = { kind: "page" | "route"; page: string; pathname: string };
+
+/**
+ * Lists what Next's build prerenders of a route, by its verdict on the
+ * route's config: the entries of the prerender manifest that its handler
+ * reads. With them the handler prerenders a pathname at its first request,
+ * keeps it, and serves it from then on, as `next start` serves what the
+ * build prerendered.
+ */
+export function recordRoute(route: Route, verdict: PrerenderVerdict | undefined): void {
+  if (!verdict) return;
+  const { pathname: srcRoute, kind } = route;
+  // A page has the RSC payload of its path, a route handler none:
+  // `isRouteCacheOwner()` tells them apart by this.
+  const dataRouteOf = (pathname: string) =>
+    kind === "page" ? `${normalizePagePath(pathname)}${RSC_SUFFIX}` : null;
+  const { revalidate } = verdict;
+  for (const pathname of verdict.pathnames) {
+    prerenderManifest.routes[pathname] = {
+      initialRevalidateSeconds: revalidate,
+      // As the build gives a path that revalidates: `build/index.js:1983-1999`.
+      initialExpireSeconds:
+        revalidate !== false && revalidate > 0 ? nextConfig.expireTime : undefined,
+      srcRoute,
+      dataRoute: dataRouteOf(pathname),
+    } as PrerenderManifest["routes"][string];
+  }
+  if (verdict.fallback !== undefined) {
+    prerenderManifest = {
+      ...prerenderManifest,
+      dynamicRoutes: {
+        ...prerenderManifest.dynamicRoutes,
+        [srcRoute]: {
+          fallback: verdict.fallback,
+          dataRoute: dataRouteOf(srcRoute),
+        } as PrerenderManifest["dynamicRoutes"][string],
+      },
+    };
+  }
+}
+
+/** Whether the build prerenders a route, or a pathname of it. */
+export function isPrerendered(route: Route): boolean {
+  return (
+    route.pathname in prerenderManifest.dynamicRoutes ||
+    Object.values(prerenderManifest.routes).some((entry) => entry.srcRoute === route.pathname)
+  );
+}
+
+/**
+ * Takes a route out of what the build prerenders: for a render that read the
+ * request, which the build would have found as it prerendered the route.
+ * All of its pathnames: of a route with `generateStaticParams`, the build
+ * keeps those that did not read it, and here the others are not rendered yet.
+ */
+export function demoteRoute(route: Route): void {
+  for (const [pathname, entry] of Object.entries(prerenderManifest.routes)) {
+    if (entry.srcRoute === route.pathname) delete prerenderManifest.routes[pathname];
+  }
+  if (route.pathname in prerenderManifest.dynamicRoutes) {
+    const { [route.pathname]: _, ...dynamicRoutes } = prerenderManifest.dynamicRoutes;
+    prerenderManifest = { ...prerenderManifest, dynamicRoutes };
+  }
+}
 
 // The files of `.next/` that the route module of a page or a route handler
 // reads, by the end of their path. What is not here is a file a build does not always write.
@@ -139,9 +209,23 @@ export function loadManifest(file: string): unknown {
   return manifests.find(([suffix]) => file.endsWith(suffix))?.[1]();
 }
 
+// The route of a node is none of the build's, and Next takes a page for
+// prerendered by its page name, which the route of a node has from the app's
+// route. So its route module reads the files of a directory of its own (ssr.ts),
+// in which the build prerendered nothing.
+export const nodeRouteDistDir = ".next/vitest-plugin-rsc-node";
+const nothingPrerendered: PrerenderManifest = {
+  ...prerenderManifest,
+  routes: {},
+  dynamicRoutes: {},
+};
+
 registry.node = {
   loadManifest,
   evalManifest: loadManifest,
-  loadManifestFromRelativePath: ({ manifest }: { manifest: string }) => loadManifest(manifest),
+  loadManifestFromRelativePath: ({ manifest, distDir }: { manifest: string; distDir: string }) =>
+    distDir === nodeRouteDistDir && manifest === "prerender-manifest.json"
+      ? nothingPrerendered
+      : loadManifest(manifest),
   evalManifestFromRelativePath: ({ manifest }: { manifest: string }) => loadManifest(manifest),
 };

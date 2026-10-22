@@ -1,3 +1,4 @@
+import { isDynamicServerError } from "next/dist/client/components/hooks-server-context";
 import { MockedResponse } from "next/dist/server/lib/mock-request";
 import type { RequestMeta } from "next/dist/server/request-meta";
 import { fromNodeOutgoingHttpHeaders, toNodeOutgoingHttpHeaders } from "next/dist/server/web/utils";
@@ -77,6 +78,15 @@ function createNodeResponse(request: ServerRequest) {
       return true;
     },
   });
+  // Next's handler of a page that it prerenders at the request appends the
+  // `location` it set as it rendered once more, from what it keeps. Node
+  // sends the two lines, which a browser takes for one; Next's stand-in
+  // joins them into one value.
+  const appendHeader = res.appendHeader.bind(res);
+  res.appendHeader = (name: string, value: string | string[]) =>
+    name.toLowerCase() === "location" && res.getHeader(name) === value
+      ? res
+      : appendHeader(name, value);
   // A `Writable` of Node.js 14+ destroys itself as it finishes, and so does
   // the package's stream: not this one, which closes on the timer below.
   (res as unknown as { _writableState: { autoDestroy: boolean } })._writableState.autoDestroy =
@@ -146,6 +156,37 @@ function createNodeResponse(request: ServerRequest) {
   };
   return { res, response };
 }
+
+// What Next's handler throws as it prerenders a route that the build's
+// verdict on its config marked as prerendered, and that read the request: a
+// page, after its render (`build/templates/app-page-runtime.js:682-690`),
+// and a route handler, from `prerender()`. A build finds it as it
+// prerenders, and keeps the route dynamic. `handle()` in ssr.ts does that.
+const staticToDynamic = "Page changed from static to dynamic at runtime ";
+export const isPrerenderBailout = (error: unknown): boolean =>
+  isDynamicServerError(error) ||
+  (error instanceof Error && error.message.startsWith(staticToDynamic));
+
+// What `next start` hands Next's route modules of the server around them
+// (`server/lib/router-server.js:651-663`), by the directory of the project,
+// which is the working directory here: the logger of the errors of a request.
+// Without the bail-outs of a prerender, which the server handles, and counts.
+let bailouts = 0;
+const routerServerContexts = Symbol.for("@next/router-server-methods");
+(globalThis as { [routerServerContexts]?: object })[routerServerContexts] = {
+  "": {
+    logErrorWithOriginalStack(error: unknown) {
+      if (isPrerenderBailout(error)) bailouts++;
+      else console.error(error);
+    },
+  },
+};
+/**
+ * How many bail-outs of a prerender Next's handlers have reported so far:
+ * also those it answers with its error page itself, where its render of a
+ * page recovers from the error (`app-page-runtime.js:1133-1224`).
+ */
+export const reportedBailouts = (): number => bailouts;
 
 /**
  * What the server in front of a route knows of a request that it routed: see

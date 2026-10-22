@@ -12,6 +12,8 @@ declare module "virtual:vitest-plugin-rsc/next-manifest" {
   export const routing: import("./project.ts").NextRouting;
   export const routesManifest: import("next/dist/build").RoutesManifest;
   export const preview: import("./project.ts").NextProject["preview"];
+  /** The `build` option: which code of Next runs, and so whether it keeps what it prerenders. */
+  export const build: import("./build.ts").NextBuild;
 }
 
 declare module "virtual:vitest-plugin-rsc/next-cache-handlers" {

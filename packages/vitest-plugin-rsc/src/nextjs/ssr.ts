@@ -9,12 +9,24 @@ import * as appPageModule from "next/dist/server/route-modules/app-page/module";
 import { normalizeNextQueryParam } from "next/dist/server/web/utils";
 import { getRouteMatcher } from "next/dist/shared/lib/router/utils/route-matcher";
 import { getRouteRegex } from "next/dist/shared/lib/router/utils/route-regex";
-import { routes as allRoutes, routing } from "virtual:vitest-plugin-rsc/next-manifest";
+import { routes as allRoutes, build, routing } from "virtual:vitest-plugin-rsc/next-manifest";
 import { actionIdsOf } from "./action-ids.ts";
-import { setServerActions, setStylesheets } from "./build-output.ts";
+import {
+  demoteRoute,
+  isPrerendered,
+  nodeRouteDistDir,
+  recordRoute,
+  setServerActions,
+  setStylesheets,
+} from "./build-output.ts";
 import { loadCacheHandlers, shareIncrementalCache } from "./cache.ts";
 import { registerModuleLoader } from "./client-modules.ts";
-import { handleRequest as handleWith } from "./node-server.ts";
+import {
+  handleRequest as handleWith,
+  isPrerenderBailout,
+  reportedBailouts,
+  type RoutedRequestMeta,
+} from "./node-server.ts";
 import {
   openedAt,
   registry,
@@ -325,6 +337,27 @@ function nodeRouteFor(opened: Opened | undefined, matched: Route | undefined): R
   return withLayouts;
 }
 
+// Next's build's verdict on each route of the app that was requested, which
+// is the code's, and stays from one test to the next: see build-output.ts.
+const verdicts = new Map<string, Promise<void>>();
+function recordVerdict(route: Route): Promise<void> {
+  let recorded = verdicts.get(route.page);
+  if (!recorded) {
+    // In a scope of its own, as the build makes it in a worker, apart from
+    // any request: Next enters its stores for `generateStaticParams`, which
+    // are not the request's.
+    const endScope = registry.enterRequestScope();
+    recorded = registry
+      .prerenderVerdict(route)
+      .then((verdict) => recordRoute(route, verdict))
+      .finally(endScope);
+    verdicts.set(route.page, recorded);
+    // A route whose modules failed to load is asked for again.
+    recorded.catch(() => verdicts.delete(route.page));
+  }
+  return recorded;
+}
+
 // Next's build lists every Server Action. Here the ones to list are the ones
 // a request calls, if the app has them: see action-ids.ts. Next copies the
 // list, so it cannot answer for any id. It answers 400 for an id that cannot
@@ -367,15 +400,27 @@ function enterScope(waited: () => Promise<void>) {
       await Promise.allSettled(waiting);
     }
   };
+  // Scopes inside this one, for a part of the work whose stores are not to
+  // be the request's afterwards: see `answer` in `handle()`.
+  const inner: (() => void)[] = [];
+  const enterInner = () => {
+    const endInner = registry.enterRequestScope();
+    inner.push(endInner);
+    return endInner;
+  };
+  const endAll = () => {
+    for (const endInner of inner) endInner();
+    endScope();
+  };
   const end = async () => {
     await Promise.race([
       backgroundSettled(),
       waited().then(() => new Promise((resolve) => setTimeout(resolve, backgroundWorkTimeout))),
     ]);
-    endScope();
+    endAll();
   };
   // `endScope` ends it at once, for a request that fails before its response.
-  return { waitUntil, end, endScope };
+  return { waitUntil, end, endScope: endAll, enterInner };
 }
 
 async function handle(
@@ -517,44 +562,111 @@ async function handle(
       }
     }
 
+    // In production, what Next's build prerenders of a route of the app: its
+    // verdict on the route's config, before the route's first request runs.
+    // The route's handler prerenders it then, keeps it and serves it, as
+    // `next start` serves what the build prerendered.
+    const prerenders =
+      build === "production" && !component && matched && matched.page !== notFoundPage
+        ? matched
+        : undefined;
+    if (prerenders) await recordVerdict(prerenders);
+    // The handler's answer. A route that the verdict marked prerendered,
+    // and that read the request as it rendered, is one the build finds
+    // dynamic as it prerenders it: so does the server, and asks again. Next's
+    // handler throws that, or answers 500 with its error page and reports
+    // it. The prerender has a scope of its own: Next enters the stores of a
+    // prerender for it, which the request would read from then on.
+    const answer = async (respond: () => Promise<Response>) => {
+      if (!prerenders || !isPrerendered(prerenders)) return respond();
+      const reported = reportedBailouts();
+      const endPrerender = scope.enterInner();
+      try {
+        const response = await respond();
+        if (response.status !== 500 || reportedBailouts() === reported) return response;
+        await response.body?.cancel();
+      } catch (error) {
+        if (!isPrerenderBailout(error)) throw error;
+      }
+      endPrerender();
+      demoteRoute(prerenders);
+      return respond();
+    };
+
+    // The page of the route, or the not-found page, with the params of none.
+    const renderPage = async (
+      page: string,
+      entry: string,
+      meta: RoutedRequestMeta = requestMeta,
+    ): Promise<Handled> => {
+      setServerActions(await serverActionsOf(routed));
+      // Next's build also lists the CSS files of every segment, and Next
+      // reads that list before it loads the module of a segment, which it
+      // does as it renders. So they are asked for before it renders, as the
+      // entry of the route loads.
+      // Next puts the CSS in the page only for a page load, not for its
+      // router, and decides so itself: this only keeps CSS it would not use
+      // out of the list.
+      const inline = !isRSCRequestHeader(headers.get(RSC_HEADER) ?? undefined);
+      // The route of a node has the stylesheets of the files of the host
+      // that render the node: `hostFiles` of `renderServer()`.
+      const files = component ? (opened?.node?.files ?? []) : [];
+      if (pageLoad && inline) await registry.preloadRoute(entry, files, request.signal);
+      const [stylesheets, { handler, routeModule }] = await Promise.all([
+        registry.loadStylesheets(entry, inline, files),
+        registry.loadAppPage(entry) as Promise<{
+          handler: RequestHandler;
+          routeModule: { distDir: string };
+        }>,
+      ]);
+      setStylesheets(stylesheets);
+      if (component) routeModule.distDir = nodeRouteDistDir;
+      // Whoever routes a request to the not-found page sets its status, also
+      // for a request to `/_not-found` itself. Before the route runs, as
+      // `next start` does: Next reads the status while it renders, for the
+      // `noindex` tag, and its action handler answers with one of its own.
+      const statusCode = page === notFoundPage ? 404 : undefined;
+      let response: Response;
+      try {
+        response = await answer(() =>
+          handleWith(routed, context, handler, meta, {
+            statusCode,
+            headers: routedHeaders,
+          }),
+        );
+      } catch (error) {
+        // A pathname that a route with `dynamicParams = false` does not
+        // prerender: `next start` answers it with the not-found page.
+        if (page === notFoundPage || !registry.isNoFallbackError(error)) throw error;
+        return renderPage(notFoundPage, notFoundPage, {});
+      }
+      return finishWithBody(request, response, endRequest, cookiesOf(routedHeaders));
+    };
+
     if (!component && matched?.kind === "route") {
       // Next's own request handler finds the params of the route, and
       // answers 500 for a route handler that throws.
       const handler = await registry.loadRouteHandler(page);
-      const response = await handleWith(routed, context, handler, requestMeta, {
-        headers: routedHeaders,
-      });
+      let response: Response;
+      try {
+        response = await answer(() =>
+          handleWith(routed, context, handler, requestMeta, { headers: routedHeaders }),
+        );
+      } catch (error) {
+        if (registry.isNoFallbackError(error)) return renderPage(notFoundPage, notFoundPage, {});
+        // Next's handler logged it, and throws it as it prerenders, for the
+        // server in front of it: which answers 500, as `next start` does.
+        if (!prerenders || request.signal?.aborted) throw error;
+        response = new registry.Response(null, { status: 500 });
+      }
+      // A route handler whose prerender fails is one the build does not
+      // keep: `export/routes/app-route.js:73-81`.
+      if (prerenders && !(response.status < 400 || response.status === 404)) {
+        demoteRoute(prerenders);
+      }
       return finishWithBody(request, response, endRequest, cookiesOf(routedHeaders));
     }
-
-    setServerActions(await serverActionsOf(routed));
-    // Next's build also lists the CSS files of every segment, and Next reads
-    // that list before it loads the module of a segment, which it does as it
-    // renders. So they are asked for before it renders, as the entry of the
-    // route loads.
-    // Next puts the CSS in the page only for a page load, not for its router,
-    // and decides so itself: this only keeps CSS it would not use out of the
-    // list.
-    const inline = !isRSCRequestHeader(headers.get(RSC_HEADER) ?? undefined);
-    // The route of a node has the stylesheets of the files of the host that
-    // render the node: `hostFiles` of `renderServer()`.
-    const files = component ? (opened?.node?.files ?? []) : [];
-    if (pageLoad && inline) await registry.preloadRoute(entry, files, request.signal);
-    const [stylesheets, { handler }] = await Promise.all([
-      registry.loadStylesheets(entry, inline, files),
-      registry.loadAppPage(entry) as Promise<{ handler: RequestHandler }>,
-    ]);
-    setStylesheets(stylesheets);
-    // Whoever routes a request to the not-found page sets its status, also
-    // for a request to `/_not-found` itself. Before the route runs, as
-    // `next start` does: Next reads the status while it renders, for the
-    // `noindex` tag, and its action handler answers with one of its own.
-    const statusCode = page === notFoundPage ? 404 : undefined;
-    const response = await handleWith(routed, context, handler, requestMeta, {
-      statusCode,
-      headers: routedHeaders,
-    });
-    return finishWithBody(request, response, endRequest, cookiesOf(routedHeaders));
+    return await renderPage(page, entry);
   } catch (error) {
     scope.endScope();
     throw error;

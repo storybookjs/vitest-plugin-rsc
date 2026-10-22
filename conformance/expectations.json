@@ -6,7 +6,7 @@
     },
     "prerendered-pages": {
       "category": "not-yet",
-      "text": "A page that a build prerenders, like one with `generateStaticParams`. Next keeps it between two requests, and here every request renders its page."
+      "text": "A page that a build prerenders, which here is prerendered at its first request: a test that reads what the build logged as it prerendered, or what `NEXT_PHASE` is during the prerender (`phase-production-build`), or a page kept from an earlier test, which `cleanup()` forgets. Or the static shell of a page with Cache Components, which is prerendered in stages that the plugin does not run."
     },
     "one-request-at-a-time": {
       "category": "not-yet",
@@ -71,8 +71,7 @@
     },
     "og-image-response": {
       "category": "not-yet",
-      "text": "An image that `ImageResponse` of `next/og` renders. Next renders it with WebAssembly and a font of its own, which it reads from its own files with `node:fs`, and the server's disk here has no file of the project.",
-      "match": "Geist-Regular\\.ttf"
+      "text": "An image that `ImageResponse` of `next/og` renders. Next renders it with WebAssembly and a font of its own, which it reads from its own files with `node:fs`, and the server's disk here has no file of the project. A metadata image route is one that `next build` prerenders: its prerender fails, and the route answers 500, with that error, which names `Geist-Regular.ttf`, in the output of the server."
     },
     "streamed-to-prerendered": {
       "category": "not-yet",
@@ -87,10 +86,6 @@
       "category": "not-applicable",
       "text": "Asks for another app than the fixture: files of its own, or another `next.config`. The runner runs one app for a fixture, the fixture as it is or as `fixtures.ts` prepares it.",
       "match": "builds the app out of files the test names|changes the app before it is built"
-    },
-    "dynamic-params": {
-      "category": "not-yet",
-      "text": "A path that `generateStaticParams` does not list, of a route with `dynamicParams = false`. Next answers 404 for it from the paths its build prerendered. Here no build lists them, and the page renders."
     },
     "not-a-page": {
       "category": "not-yet",
@@ -271,13 +266,12 @@
       }
     },
     "metadata": {
-      "passed": 44,
+      "passed": 45,
       "failed": {
         "metadata.test.ts > app dir - metadata > icons > should support root level of favicon.ico": "node-in-test",
         "metadata.test.ts > app dir - metadata > static routes > should build favicon.ico as a custom route": "build-output",
         "metadata.test.ts > app dir - metadata > static optimization > should build static files into static route": "build-output",
-        "metadata.test.ts > app dir - metadata > should not effect metadata images convention like files under pages directory": "pages-router",
-        "metadata.test.ts > app dir - metadata > react cache > should have same title and page value when navigating": "prerendered-pages"
+        "metadata.test.ts > app dir - metadata > should not effect metadata images convention like files under pages directory": "pages-router"
       }
     },
     "metadata-navigation": {
@@ -332,11 +326,8 @@
       "failed": {}
     },
     "trailingslash": {
-      "passed": 6,
-      "failed": {
-        "trailingslash.test.ts > app-dir trailingSlash handling > should revalidate a page with generated static params (withSlash=true)": "prerendered-pages",
-        "trailingslash.test.ts > app-dir trailingSlash handling > should revalidate a page with generated static params (withSlash=false)": "prerendered-pages"
-      }
+      "passed": 8,
+      "failed": {}
     },
     "app-routes-trailing-slash": {
       "passed": 2,
@@ -465,7 +456,7 @@
         "index.test.ts > app dir - metadata dynamic routes > sitemap > should generate static paths of dynamic sitemap in production": "build-output",
         "index.test.ts > app dir - metadata dynamic routes > social image routes > should render og image with opengraph-image dynamic routes": "og-image-response",
         "index.test.ts > app dir - metadata dynamic routes > social image routes > should render og image with twitter-image dynamic routes": "og-image-response",
-        "index.test.ts > app dir - metadata dynamic routes > social image routes > should support params as argument in dynamic routes": "og-image-response",
+        "index.test.ts > app dir - metadata dynamic routes > social image routes > should support params as argument in dynamic routes": "node-in-test",
         "index.test.ts > app dir - metadata dynamic routes > icon image routes > should render icon with dynamic routes": "og-image-response",
         "index.test.ts > app dir - metadata dynamic routes > icon image routes > should render apple icon with dynamic routes": "og-image-response",
         "index.test.ts > app dir - metadata dynamic routes > route segment config > should generate dynamic route if dynamic config is force-dynamic": "build-output",
@@ -548,10 +539,8 @@
       "failed": {}
     },
     "root-layout": {
-      "passed": 7,
-      "failed": {
-        "root-layout.test.ts > app-dir root layout > Should do a mpa navigation when switching root layout > should work with static routes": "dynamic-params"
-      }
+      "passed": 8,
+      "failed": {}
     },
     "root-layout-redirect": {
       "passed": 1,
@@ -606,11 +595,8 @@
       }
     },
     "searchparams-static-bailout": {
-      "passed": 3,
-      "failed": {
-        "searchparams-static-bailout.test.ts > searchparams-static-bailout > server component > should not bailout when not using searchParams": "prerendered-pages",
-        "searchparams-static-bailout.test.ts > searchparams-static-bailout > client component > should not bailout when not using searchParams": "prerendered-pages"
-      }
+      "passed": 5,
+      "failed": {}
     },
     "multi-value-search-params-stale": {
       "passed": 1,
@@ -860,9 +846,8 @@
       "failed": {}
     },
     "headers-static-bailout": {
-      "passed": 1,
+      "passed": 2,
       "failed": {
-        "headers-static-bailout.test.ts > headers-static-bailout > should not bailout when not using headers": "prerendered-pages",
         "headers-static-bailout.test.ts > headers-static-bailout > it provides a helpful link in case static generation bailout is uncaught": "changes-the-app"
       }
     },
@@ -878,9 +863,8 @@
       "failed": {}
     },
     "custom-cache-control": {
-      "passed": 7,
+      "passed": 8,
       "failed": {
-        "custom-cache-control.test.ts > custom-cache-control > should have default cache-control for app-ssg another": "prerendered-pages",
         "custom-cache-control.test.ts > custom-cache-control > should have default cache-control for pages-ssg another": "pages-router"
       }
     },
@@ -895,12 +879,12 @@
     "next-after-app-api-usage": {
       "passed": 18,
       "failed": {
-        "index.test.ts > nextjs APIs in after() > request APIs inside after() > cannot be called in a prerendered page > with `dynamic = \"error\"`": "prerendered-pages",
-        "index.test.ts > nextjs APIs in after() > request APIs inside after() > cannot be called in a prerendered page > with `dynamic = \"force-static\"`": "prerendered-pages",
-        "index.test.ts > nextjs APIs in after() > request APIs inside after() > can be called in a prerendered route handler with `dynamic = \"force-static\"`": "prerendered-pages",
-        "index.test.ts > nextjs APIs in after() > request APIs inside after() > can be called in a prerendered route handler with `dynamic = \"error\" (but throw, because dynamic should error)`": "prerendered-pages",
-        "index.test.ts > nextjs APIs in after() > draftMode status is readable, but cannot be changed > static page": "prerendered-pages",
-        "index.test.ts > nextjs APIs in after() > draftMode status is readable, but cannot be changed > static route handler": "prerendered-pages",
+        "index.test.ts > nextjs APIs in after() > request APIs inside after() > cannot be called in a prerendered page > with `dynamic = \"error\"`": "cli-output",
+        "index.test.ts > nextjs APIs in after() > request APIs inside after() > cannot be called in a prerendered page > with `dynamic = \"force-static\"`": "cli-output",
+        "index.test.ts > nextjs APIs in after() > request APIs inside after() > can be called in a prerendered route handler with `dynamic = \"force-static\"`": "cli-output",
+        "index.test.ts > nextjs APIs in after() > request APIs inside after() > can be called in a prerendered route handler with `dynamic = \"error\" (but throw, because dynamic should error)`": "cli-output",
+        "index.test.ts > nextjs APIs in after() > draftMode status is readable, but cannot be changed > static page": "cli-output",
+        "index.test.ts > nextjs APIs in after() > draftMode status is readable, but cannot be changed > static route handler": "cli-output",
         "index.test.ts > nextjs APIs in after() > async APIs in promises passed to after > in server actions > does not error - headers": "exited-action-store",
         "index.test.ts > nextjs APIs in after() > async APIs in promises passed to after > in server actions > does not error - cookies": "exited-action-store",
         "index.test.ts > nextjs APIs in after() > async APIs in promises passed to after > in server actions > does not error - connection": "exited-action-store",
@@ -971,7 +955,7 @@
       "passed": 3,
       "failed": {
         "dynamic-data.test.ts > dynamic-data > should render empty objects for dynamic APIs when rendering with force-static": "prerendered-pages",
-        "dynamic-data.test.ts > dynamic-data > should track dynamic apis when rendering app routes": "prerendered-pages"
+        "dynamic-data.test.ts > dynamic-data > should track dynamic apis when rendering app routes": "cli-output"
       }
     },
     "dynamic-data__require-static": {
@@ -1101,7 +1085,7 @@
       }
     },
     "use-cache": {
-      "passed": 42,
+      "passed": 43,
       "failed": {
         "use-cache.test.ts > use-cache > should warn that the `experimental.useCache` config option is deprecated": "cli-output",
         "use-cache.test.ts > use-cache > should cache results for cached functions imported from client components": "cached-function-as-action",
@@ -1110,7 +1094,6 @@
         "use-cache.test.ts > use-cache > should prerender fully cacheable pages as static HTML": "build-output",
         "use-cache.test.ts > use-cache > should match the expected revalidate and expire configs on the prerender manifest": "build-output",
         "use-cache.test.ts > use-cache > should match the expected stale config in the page header": "build-output",
-        "use-cache.test.ts > use-cache > should send an SWR cache-control header based on the revalidate and expire values": "prerendered-pages",
         "use-cache.test.ts > use-cache > should propagate unstable_cache tags correctly": "build-output",
         "use-cache.test.ts > use-cache > works with useActionState if previousState parameter is not used in \"use cache\" function": "cached-function-as-action",
         "use-cache.test.ts > use-cache > works with useActionState if previousState parameter is not used in \"use cache\" function (separate export)": "cached-function-as-action",

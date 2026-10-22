@@ -1,9 +1,16 @@
 import { expect, test, vi } from "vitest";
-import { loadManifest, prerenderManifest, setStylesheets } from "./build-output.ts";
+import {
+  demoteRoute,
+  isPrerendered,
+  loadManifest,
+  prerenderManifest,
+  recordRoute,
+  setStylesheets,
+} from "./build-output.ts";
 
 // What the plugin gives the module in the app's server layers.
 vi.mock("virtual:vitest-plugin-rsc/next-manifest", () => ({
-  nextConfig: {},
+  nextConfig: { expireTime: 31536000 },
   preview: {},
   routesManifest: {},
   routing: { buildId: "test" },
@@ -40,4 +47,48 @@ test("lists the fonts of each file as Next's manifest of fonts, from its stylesh
 // The server's cache reads the same manifest: see cache.ts.
 test("answers for the prerender manifest with the object the server's cache gets", () => {
   expect(loadManifest("/.next/prerender-manifest.json")).toBe(prerenderManifest);
+});
+
+// What Next's handler of a page reads of the prerender manifest: see
+// prerender-verdict.ts for the verdict.
+test("lists what the build prerenders of a route, and takes a route out of it", () => {
+  const blog = { kind: "page" as const, page: "/blog/[slug]/page", pathname: "/blog/[slug]" };
+  const before = loadManifest("/.next/prerender-manifest.json");
+
+  recordRoute(blog, { pathnames: ["/blog/a"], fallback: null, revalidate: 60 });
+
+  const manifest = loadManifest("/.next/prerender-manifest.json") as typeof prerenderManifest;
+  expect(manifest.routes["/blog/a"]).toEqual({
+    initialRevalidateSeconds: 60,
+    initialExpireSeconds: 31536000,
+    srcRoute: "/blog/[slug]",
+    dataRoute: "/blog/a.rsc",
+  });
+  expect(manifest.dynamicRoutes["/blog/[slug]"]).toEqual({
+    fallback: null,
+    dataRoute: "/blog/[slug].rsc",
+  });
+  // Another object as a dynamic route comes: Next's route module of a page
+  // keeps what it matched by the object.
+  expect(manifest).not.toBe(before);
+  expect(isPrerendered(blog)).toBe(true);
+
+  demoteRoute(blog);
+
+  const demoted = loadManifest("/.next/prerender-manifest.json") as typeof prerenderManifest;
+  expect(demoted.routes).toEqual({});
+  expect(demoted.dynamicRoutes).toEqual({});
+  expect(isPrerendered(blog)).toBe(false);
+});
+
+test("lists a route handler without the data of a page", () => {
+  recordRoute(
+    { kind: "route", page: "/api/time/route", pathname: "/api/time" },
+    { pathnames: ["/api/time"], revalidate: false },
+  );
+
+  expect(prerenderManifest.routes["/api/time"]).toMatchObject({
+    initialExpireSeconds: undefined,
+    dataRoute: null,
+  });
 });

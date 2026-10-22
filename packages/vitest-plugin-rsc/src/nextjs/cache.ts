@@ -1,3 +1,4 @@
+import { NEXT_CACHE_IMPLICIT_TAG_ID } from "next/dist/lib/constants";
 import { IncrementalCache } from "next/dist/server/lib/incremental-cache";
 import { tagsManifest } from "next/dist/server/lib/incremental-cache/tags-manifest.external";
 import { nodeFs } from "next/dist/server/lib/node-fs-methods";
@@ -87,9 +88,11 @@ export function shareIncrementalCache(headers = new Headers()): void {
     // With these two Next takes its own handler, the one `next start` uses,
     // which keeps the entries in memory. Next looks on disk for the response
     // of a page or a route handler that is not in memory: the file system is
-    // the stand-in of node-platform.ts, which has no file.
+    // the stand-in of node-platform.ts, which has no file. Its paths are under
+    // the directory of a build, which is not the root: Next holds a path to
+    // be inside it.
     fs: nodeFs,
-    serverDistDir: "/",
+    serverDistDir: "/.next/server",
     dev: false,
     minimalMode: false,
     flushToDisk: false,
@@ -107,12 +110,31 @@ export function shareIncrementalCache(headers = new Headers()): void {
 /**
  * Makes the server forget what it has cached and which tags were revalidated.
  * The entries of before stay in Next's memory store, which is bounded by
- * `cacheMaxMemorySize`, under keys that are not asked for again.
+ * `cacheMaxMemorySize`, under keys that are not asked for again. Not the
+ * prerendered pages and route handlers, whose keys are their pathnames:
+ * those are expired as `revalidatePath("/", "layout")` expires them, by the
+ * tag that each of them has, for the layout of the root. So is what an app's
+ * own `cacheHandler` keeps of them. What the build prerenders stays: that
+ * is the app's code (build-output.ts).
  */
-export function resetCaches(): void {
+export async function resetCaches(): Promise<void> {
   tagsManifest.clear();
   generation++;
   shareIncrementalCache();
+  if (!hasPrerenders()) return;
+  // Next expires an entry by a tag that expired after the entry was stored,
+  // to the millisecond: the tag expires in the next one.
+  const stored = realNow();
+  while (realNow() === stored) await new Promise((resolve) => nativeSetTimeout(resolve, 1));
+  await current!.revalidateTag(`${NEXT_CACHE_IMPLICIT_TAG_ID}/layout`);
 }
+
+// A test's own timers may be fake.
+const realNow = Date.now.bind(Date);
+const nativeSetTimeout = globalThis.setTimeout;
+// Whether the build prerenders a route, which the server then keeps.
+const hasPrerenders = () =>
+  Object.keys(prerenderManifest.routes).length > 0 ||
+  Object.keys(prerenderManifest.dynamicRoutes).length > 0;
 
 shareIncrementalCache();

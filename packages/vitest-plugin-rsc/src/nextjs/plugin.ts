@@ -598,6 +598,18 @@ const runtimeImports: Record<NextLayer, string[]> = {
     // server-in-front.ts
     "next/dist/server/lib/server-ipc/utils",
     "next/dist/server/web/utils",
+    // prerender-verdict.ts
+    "next/dist/build/segment-config/app/app-segments",
+    "next/dist/build/segment-config/app/collect-root-param-keys",
+    "next/dist/build/static-paths/app",
+    "next/dist/lib/fallback",
+    "next/dist/lib/is-edge-runtime",
+    "next/dist/lib/metadata/is-metadata-route",
+    "next/dist/server/lib/params-utils",
+    "next/dist/server/route-modules/app-route/helpers/is-static-gen-enabled",
+    "next/dist/shared/lib/router/routes/app",
+    // rsc.ts
+    "next/dist/shared/lib/no-fallback-error.external",
   ],
   ssr: [
     ...react,
@@ -606,6 +618,9 @@ const runtimeImports: Record<NextLayer, string[]> = {
     "next/dist/server/lib/incremental-cache",
     "next/dist/server/lib/incremental-cache/tags-manifest.external",
     "next/dist/server/use-cache/handlers",
+    // cache.ts and build-output.ts
+    "next/dist/lib/constants",
+    "next/dist/shared/lib/page-path/normalize-page-path",
     // ssr.ts, for what the server in front of the app routes to it
     "next/dist/client/components/app-router-headers",
     "next/dist/server/lib/is-rsc-request",
@@ -615,6 +630,7 @@ const runtimeImports: Record<NextLayer, string[]> = {
     "next/dist/server/lib/server-ipc/utils",
     // node-server.ts
     "next/dist/server/lib/mock-request",
+    "next/dist/client/components/hooks-server-context",
     // node-server.ts, ssr.ts and server-in-front.ts
     "next/dist/server/web/utils",
     vendoredFlight("client.edge"),
@@ -1201,7 +1217,8 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
             )};\n` +
             `export const routing = ${JSON.stringify(project.routing)};\n` +
             `export const routesManifest = ${JSON.stringify(project.routesManifest)};\n` +
-            `export const preview = ${JSON.stringify(project.preview)};\n`
+            `export const preview = ${JSON.stringify(project.preview)};\n` +
+            `export const build = ${JSON.stringify(build)};\n`
           );
         }
 
