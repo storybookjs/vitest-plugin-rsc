@@ -811,13 +811,14 @@ beforeEach(() => {
   vi.useFakeTimers({
     toFake: ["setTimeout", "clearTimeout", "Date"],
     shouldAdvanceTime: true,
+    advanceTimeDelta: 1,
   });
 });
 
 afterEach(async () => {
   try {
     if (vi.isFakeTimers()) {
-      await vi.runOnlyPendingTimersAsync();
+      await vi.advanceTimersByTimeAsync(200);
     }
   } finally {
     vi.useRealTimers();
@@ -825,16 +826,17 @@ afterEach(async () => {
 });
 ```
 
-- `shouldAdvanceTime` keeps the clock moving, so the app's timers fire as the time passes, within 20 ms.
-- With Vitest's default `sequence.hooks`, `"stack"`, this `afterEach` runs before the plugin's own, which leaves the page. The `finally` puts the real timers back also when a pending timer throws.
-- A test that opens another page calls `await vi.runOnlyPendingTimersAsync()` before it.
-- `Date` is in `toFake` because fake timers without it undo a clock that `vi.setSystemTime()` fixed, as a [database recipe](databases.md) does. That clock moves on from there, and jumps ahead to the last timer that `runOnlyPendingTimersAsync()` runs.
+- `shouldAdvanceTime` keeps the clock moving with the real one, so the app's timers fire as the time passes. `advanceTimeDelta: 1` moves it every millisecond: with the default of 20 ms, every timer of a page load waits for the next step, which made each page load of the notes demo 70 to 110 ms slower.
+- After the test, the clock jumps 200 ms ahead at once, and runs the timers that are due by then. That takes a millisecond or two, not 200. A longer timer stays pending: raise the number for a library whose timer is longer.
+- It doesn't run every pending timer, with `vi.runOnlyPendingTimersAsync()`: that also runs the long ones, like the 10 s timer that Postgres sets in PGlite after a query, which took more than a second each time in the notes demo.
+- With Vitest's default `sequence.hooks`, `"stack"`, this `afterEach` runs before the plugin's own, which leaves the page. The `finally` puts the real timers back also when a timer throws.
+- A test that opens another page calls `await vi.advanceTimersByTimeAsync(200)` before it.
+- `Date` is in `toFake` because fake timers without it undo a clock that `vi.setSystemTime()` fixed, as a [database recipe](databases.md) does. That clock moves on from there, and jumps 200 ms at the end of each test.
 - A test that calls `vi.useFakeTimers()` itself replaces these options: pass `shouldAdvanceTime: true` there too, or the app's timers stop.
 - Only `setTimeout` is faked. A library's `setInterval` or `requestAnimationFrame` still runs after its page.
-- The fake timers are the tab's, so this also runs the server's pending timers early. How this goes with `after()`, which Not Yet says waits under fake timers, is not tested.
-- Every page load waits for its timers: in the notes demo 70 to 110 ms more per page.
+- The fake timers are the tab's, so the server's timers are faked too. How this goes with `after()`, which Not Yet says waits under fake timers, is not tested.
 
-In a test file of `playground/nextjs-notes-demo` with these hooks, ten page loads in a row went from 36 errors to none, and the demo's 69 tests pass with them in its setup file.
+In a test file of `playground/nextjs-notes-demo` with these hooks, ten page loads in a row went from 36 errors to none. They took 1.02 to 1.37 s, and 0.86 to 0.94 s without the hooks. The demo's 69 tests pass with them in its setup file.
 
 ### No `test.concurrent`
 

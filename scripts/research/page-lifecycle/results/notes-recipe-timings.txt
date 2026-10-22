@@ -7,3 +7,27 @@ notes-recipe-3 1873ms
 notes-recipe-control-1 893ms
 notes-recipe-control-2 967ms
 notes-recipe-control-3 1002ms
+
+# The recipe as the guide has it now (notes-recipe-200/): advanceTimeDelta: 1,
+# and advanceTimersByTimeAsync(200) in place of runOnlyPendingTimersAsync().
+notes-recipe-200-1 1164ms
+notes-recipe-200-2 1370ms
+notes-recipe-200-3 1252ms
+# The control again, the same day.
+notes-recipe-control-now 938ms
+notes-recipe-control-now1 864ms
+notes-recipe-control-now2 927ms
+# Where the time goes, per page load (notes-recipe-200t.jsonl): the load
+# 82 to 193 ms, the jump of 200 ms 1 to 2 ms.
+#
+# The variants that found the cost of the first recipe:
+# - advanceTimeDelta: 1, with runOnlyPendingTimersAsync() (notes-recipe-delta/):
+#   1145, 1081, 1106 ms.
+# - advanceTimeDelta: 1, advanceTimersByTimeAsync(50) (notes-recipe-short/):
+#   1018, 1094, 1102 ms.
+# - setTimerTickMode("nextTimerAsync"), which jumps to each next timer
+#   (notes-recipe-jump/): 14964, 15006, 14879 ms. It logs the timers that are
+#   set (notes-recipe-jump-diag.jsonl): one of 10000 ms from PGlite's
+#   __setitimer_js, the timer of Postgres, per page load.
+# - The same with that one timer on the real clock (notes-recipe-jump-nopg/):
+#   1025 ms.

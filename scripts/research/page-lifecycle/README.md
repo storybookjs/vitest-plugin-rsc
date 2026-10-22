@@ -14,24 +14,30 @@ $R/run.sh files-iso1-leak1 vitest.e2e.config.ts \
 $R/run.sh notes-within vitest.notes.config.ts notes 0 0 60
 ```
 
-| Directory               | Experiment                                                        |
-| ----------------------- | ----------------------------------------------------------------- |
-| `e2e/`                  | A: 100 pages in a file, clean, a node, a leaking app, navigations |
-| `files/`                | B: five files of 30 pages, `isolate` on and off, leaking or not   |
-| `notes/`                | C: the notes demo, clean and leaking                              |
-| `notes-files/`          | D: what `isolate: true` costs per file in the notes demo          |
-| `notes-snapshot/`       | E: a heap snapshot after leaked pages, for `retainers.ts`         |
-| `notes-symptom/`        | F: a timer of a left page that fails a later test                 |
-| `e2e-snapshot/`         | G: two snapshots 200 pages apart, for `diff.ts`                   |
-| `e2e-realm/`            | H: a page that compiles its modules anew, and a bare iframe       |
-| `notes-realm/`          | H in the notes demo                                               |
-| `e2e-img-snapshot/`     | I: navigations to `/images`, which keep pages                     |
-| `notes-gc/`             | J: what a forced garbage collection costs                         |
-| `e2e-edges/`            | K: what still points into a page once it is left, per route       |
-| `notes-edges/`          | K in the notes demo                                               |
-| `notes-recipe/`         | L: the fake-timer recipe, for a library's timer like next-themes' |
-| `notes-recipe-control/` | L without the recipe                                              |
-| `e2e-v8/`               | M: what keeps a page once Next's and React's globals are gone     |
+| Directory                 | Experiment                                                        |
+| ------------------------- | ----------------------------------------------------------------- |
+| `e2e/`                    | A: 100 pages in a file, clean, a node, a leaking app, navigations |
+| `files/`                  | B: five files of 30 pages, `isolate` on and off, leaking or not   |
+| `notes/`                  | C: the notes demo, clean and leaking                              |
+| `notes-files/`            | D: what `isolate: true` costs per file in the notes demo          |
+| `notes-snapshot/`         | E: a heap snapshot after leaked pages, for `retainers.ts`         |
+| `notes-symptom/`          | F: a timer of a left page that fails a later test                 |
+| `e2e-snapshot/`           | G: two snapshots 200 pages apart, for `diff.ts`                   |
+| `e2e-realm/`              | H: a page that compiles its modules anew, and a bare iframe       |
+| `notes-realm/`            | H in the notes demo                                               |
+| `e2e-img-snapshot/`       | I: navigations to `/images`, which keep pages                     |
+| `notes-gc/`               | J: what a forced garbage collection costs                         |
+| `e2e-edges/`              | K: what still points into a page once it is left, per route       |
+| `notes-edges/`            | K in the notes demo                                               |
+| `notes-recipe/`           | L: the fake-timer recipe, for a library's timer like next-themes' |
+| `notes-recipe-control/`   | L without the recipe                                              |
+| `notes-recipe-200/`       | L, the recipe as the guide has it                                 |
+| `notes-recipe-200t/`      | L, the same, timing the load and the jump of each page            |
+| `notes-recipe-delta/`     | L, steps of 1 ms, every pending timer run                         |
+| `notes-recipe-short/`     | L, steps of 1 ms, 50 ms ahead                                     |
+| `notes-recipe-jump/`      | L, jumping to each next timer, logging the timers that are set    |
+| `notes-recipe-jump-nopg/` | L, the same, with PGlite's timer on the real clock                |
+| `e2e-v8/`                 | M: what keeps a page once Next's and React's globals are gone     |
 
 `files/` and `notes-files/` have one `template.tsx` each, which `make-files.sh` copies into identical test files before a run.
 

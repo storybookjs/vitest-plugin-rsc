@@ -10,3 +10,10 @@
 # (the clock of vi.setSystemTime was undone); with Date and
 # advanceTimersByTimeAsync(20_000) in place of runOnlyPendingTimersAsync(),
 # 15 tests failed on hook timeouts.
+#
+# Again with the recipe as the guide has it now (advanceTimeDelta: 1, and
+# advanceTimersByTimeAsync(200)), `pnpm test --project nextjs-notes-demo-browser`:
+#  Test Files  13 passed (13)
+#       Tests  69 passed (69)
+#    Duration  14.33s
+# No 'Errors' line: no unhandled errors.

@@ -2,7 +2,7 @@ diff --git a/playground/nextjs-notes-demo/vitest.setup.ts b/playground/nextjs-no
 index 5b71fdf7..c5363513 100644
 --- a/playground/nextjs-notes-demo/vitest.setup.ts
 +++ b/playground/nextjs-notes-demo/vitest.setup.ts
-@@ -90,3 +90,21 @@ afterEach(async () => {
+@@ -90,3 +90,22 @@ afterEach(async () => {
  afterAll(() => {
    worker.stop();
  });
@@ -12,13 +12,14 @@ index 5b71fdf7..c5363513 100644
 +  vi.useFakeTimers({
 +    toFake: ["setTimeout", "clearTimeout", "Date"],
 +    shouldAdvanceTime: true,
++    advanceTimeDelta: 1,
 +  });
 +});
 +
 +afterEach(async () => {
 +  try {
 +    if (vi.isFakeTimers()) {
-+      await vi.runOnlyPendingTimersAsync();
++      await vi.advanceTimersByTimeAsync(200);
 +    }
 +  } finally {
 +    vi.useRealTimers();

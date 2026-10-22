@@ -140,11 +140,14 @@ Evidence for each:
   >
   > The last test to run before this error was "a later test that does nothing wrong".
 
-**The recipe (L).** Run such timers before the plugin leaves the page. Install Vitest's fake timers for `setTimeout`, `clearTimeout` and `Date`, with `shouldAdvanceTime`, before each test. After each test, call `vi.runOnlyPendingTimersAsync()` before the plugin's own `afterEach` leaves the page. A test that opens another page calls it before that too.
+**The recipe (L).** Run such timers before the plugin leaves the page. Install Vitest's fake timers for `setTimeout`, `clearTimeout` and `Date`, with `shouldAdvanceTime` and `advanceTimeDelta: 1`, before each test. After each test, call `vi.advanceTimersByTimeAsync(200)` before the plugin's own `afterEach` leaves the page. A test that opens another page calls it before that too.
 
 - In a test file with the recipe's hooks, the same cases throw nothing, in three runs out of three. Without them they throw 36 times in each of three runs (`results/notes-recipe-*.jsonl`).
 - The notes suite passes with the recipe in its setup file: 69 of 69 tests, no unhandled errors (`notes-recipe/setup.patch`, `results/notes-suite-recipe.txt`). It passes without it too: its tests wait with `watchPageLoad()`.
-- It costs about 70 to 110 ms per page load: ten loads in a row took 1.68 to 1.97 s with it, and 0.89 to 1.0 s without (`results/notes-recipe-timings.txt`).
+- It costs 10 to 40 ms per page load: ten loads in a row took 1.02 to 1.37 s with it, and 0.86 to 0.94 s without. The jump of 200 ms itself takes 1 to 2 ms (`results/notes-recipe-timings.txt`).
+- A first version cost 70 to 110 ms per page load, for two reasons:
+  - `shouldAdvanceTime` moves the fake clock in steps of 20 ms by default, and every timer of a page load waited for the next step;
+  - `vi.runOnlyPendingTimersAsync()` also ran the 10 s timer that Postgres sets in PGlite after a query, which takes more than a second each time. With Vitest's `setTimerTickMode("nextTimerAsync")`, which jumps to each next timer, ten page loads took 15 s for that reason, and 1.03 s with PGlite's timer left on the real clock.
 - Two variants failed:
   - Without `Date` faked, fake timers undo the clock that the notes demo fixes with `vi.setSystemTime()`, and one test failed.
   - `advanceTimersByTimeAsync(20_000)` instead of running the pending timers waited past the hooks' timeout in 15 tests.
