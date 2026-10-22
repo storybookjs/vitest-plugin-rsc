@@ -5,13 +5,14 @@ import * as FlightServer from "@vitejs/plugin-rsc/vendor/react-server-dom/server
 import appPages from "virtual:vitest-plugin-rsc/next-app-pages";
 import loadMiddleware from "virtual:vitest-plugin-rsc/next-middleware";
 import routeHandlers from "virtual:vitest-plugin-rsc/next-route-handlers";
-import { nextConfig } from "virtual:vitest-plugin-rsc/next-manifest";
+import { fast, nextConfig } from "virtual:vitest-plugin-rsc/next-manifest";
 import serverReferences from "virtual:vitest-plugin-rsc/server-references";
 import { NoFallbackError } from "next/dist/shared/lib/no-fallback-error.external";
 import { createElement, type ReactNode } from "react";
 import type { FlightAdapters } from "./flight.ts";
 import { buildDirectory, builtFiles } from "./built-files.ts";
 import { preloadPage } from "./document.ts";
+import { oncePerTestFile } from "./fast-mode.ts";
 import { prerenderVerdictOf } from "./prerender-verdict.ts";
 import { actionModulePrefix, registry } from "./registry.ts";
 import { askDevServer } from "../utils.ts";
@@ -51,6 +52,9 @@ ReactServer.setRequireModule({
 // Vite RSC resolves a reference by its module id at runtime, with manifests of
 // its own, so these take Next's manifest arguments and leave them out. See
 // flight.ts for the exports of Next's codec that are not here.
+// What the page reads of the option before it renders: see fast-mode.ts.
+registry.fast = fast;
+
 registry.flightServer = {
   renderToReadableStream: (model: unknown, _clientModules: unknown, options?: object) =>
     ReactServer.renderToReadableStream(model, options),
@@ -182,12 +186,16 @@ if (directory) {
     });
   };
 } else {
+  // Every request of a page asks: in fast mode once per test file.
+  const stylesheets = new Map<string, Promise<Stylesheets>>();
   registry.loadStylesheets = (entry, inline, files) =>
-    askDevServer<Stylesheets>(stylesheetsEvent, {
-      entry,
-      inline,
-      files,
-    } satisfies StylesheetsQuestion);
+    oncePerTestFile(stylesheets, JSON.stringify([entry, inline, files]), () =>
+      askDevServer<Stylesheets>(stylesheetsEvent, {
+        entry,
+        inline,
+        files,
+      } satisfies StylesheetsQuestion),
+    );
   // The dev server has a module where the page asks for it, and Next's
   // development code links a stylesheet with the time of the request in its
   // URL, which a preload cannot know.

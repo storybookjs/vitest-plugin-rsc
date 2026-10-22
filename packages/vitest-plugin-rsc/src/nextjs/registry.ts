@@ -84,6 +84,8 @@ export type Opened = {
 };
 
 export type NextRegistry = {
+  /** The `fast` option of `vitestPluginNext()`: see fast-mode.ts. */
+  fast?: boolean;
   /** A `Request` and `Response` that keep the headers a browser drops. */
   Request: typeof Request;
   Response: typeof Response;

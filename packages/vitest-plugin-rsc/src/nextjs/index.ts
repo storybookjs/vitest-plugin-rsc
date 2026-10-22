@@ -5,6 +5,7 @@ import { closeContext, openContext } from "./browser-context.ts";
 import { unlinkStylesheets } from "./client-graph.ts";
 import { resetDisk } from "./disk.ts";
 import "./document-loads.ts";
+import { fastMode } from "./fast-mode.ts";
 import { NodeOnPage } from "./node-on-page.ts";
 import { leavePage, loadPage, suspendNavigablePage } from "./page.ts";
 import { registry, type Opened } from "./registry.ts";
@@ -248,6 +249,9 @@ export type RenderServerOptions = RequestOptions & {
    *
    * In development the page has no dev overlay of Next's.
    *
+   * Defaults to `true` in fast mode, unless `ssr` is passed: see `fast` of
+   * `vitestPluginNext()`.
+   *
    * With `"navigation"`, the page stays open when the test ends, until the
    * test file ends, and the next `renderServer()` of `"navigation"` is a
    * navigation of its router to `url`, and a refresh, which renders the
@@ -418,7 +422,9 @@ export async function renderServer(
           "`ssr: false`.",
       );
     }
-    const ssr = first.reuse === true ? false : first.ssr;
+    // Fast mode reuses the app, unless the test asks for the HTML of the server.
+    const reuse = first.reuse ?? (fastMode() && first.ssr === undefined);
+    const ssr = reuse === true ? false : first.ssr;
     const opened = { pathname, proxy: first.proxy ?? true, ssr };
     return {
       response: await loadPage(url, { headers }, store, {
@@ -427,7 +433,7 @@ export async function renderServer(
         cookie,
         signal,
         errors,
-        reuse: first.reuse,
+        reuse,
       }),
       errors,
       unmount,

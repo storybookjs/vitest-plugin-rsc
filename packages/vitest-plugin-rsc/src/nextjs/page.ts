@@ -13,6 +13,7 @@ import {
 import { callServerWithoutPage } from "./client-graph.ts";
 import { keepProperties, loadDocument, unloadDocument, type HistoryEntry } from "./document.ts";
 import { download, downloadName } from "./downloads.ts";
+import { oncePerTestFile } from "./fast-mode.ts";
 import { noRouter } from "./host-document.ts";
 import { recordListeners, recordMessageChannels } from "./leftovers.ts";
 import type { NodeOnPage } from "./node-on-page.ts";
@@ -556,6 +557,10 @@ async function startInKeptApp(page: Page, client: Client, flight?: Uint8Array): 
   }
 }
 
+// Whether the dev server still has the modules that were fetched: before
+// every page load, in fast mode once per test file.
+const moduleChecks = new Map<string, Promise<void>>();
+
 // The request of a page load, with the modules of the server and of the
 // browser layer as the dev server has them now.
 async function sendPageLoad(
@@ -564,7 +569,7 @@ async function sendPageLoad(
   sending: Pick<Parameters<typeof sendRequest>[1], "from" | "navigation" | "network" | "opened">,
   signal: AbortSignal,
 ): Promise<Response> {
-  await checkFetchedModules();
+  await oncePerTestFile(moduleChecks, "", checkFetchedModules);
   signal.throwIfAborted();
   // Not the browser's Request, which drops headers of the test's, like
   // `referer` and `origin`.

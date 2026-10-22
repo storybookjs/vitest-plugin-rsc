@@ -1,7 +1,8 @@
 import { afterAll, afterEach, beforeAll, beforeEach } from "vitest";
-import { server } from "vitest/browser";
+import { page, server } from "vitest/browser";
 import { cleanup, newBrowserContext } from "./index.ts";
 import { forgetClientFiles, linkStylesheetsOf, loadedAsClientFile } from "./client-graph.ts";
+import { findOnEveryChange, forgetTestFileAnswers } from "./fast-mode.ts";
 import { keepHostDocument, noRouter } from "./host-document.ts";
 import { leaveKeptApp, leaveNavigablePage } from "./page.ts";
 import { registry } from "./registry.ts";
@@ -50,6 +51,8 @@ afterAll(async () => {
   await leaveNavigablePage("the end of the test file");
   leaveKeptApp();
   keptDocument?.();
+  // The next file asks the dev server again: see fast-mode.ts.
+  forgetTestFileAnswers();
 });
 
 // The ssr layer, which the entry does not wait for: with a dev server, the
@@ -68,3 +71,6 @@ beforeEach(async () => {
   await (clientFile ? cleanup() : newBrowserContext());
   await linkStylesheetsOf(nodeFiles);
 });
+
+// Fast mode looks for an element on every change of the DOM: see fast-mode.ts.
+findOnEveryChange(page.getByText(""));

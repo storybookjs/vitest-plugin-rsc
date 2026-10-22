@@ -622,6 +622,40 @@ function replaceableRouterPlugin(): Plugin {
   };
 }
 
+// Fast mode: Next's `<Link>` and `<Form>` prefetch nothing. In production
+// every link that comes into view, and every link the pointer of a click
+// passes, is requested, and the server takes one request at a time: the
+// click of a test waited for them. Read as a link mounts, from the registry.
+function noPrefetchPlugin(): Plugin {
+  const pieces = [
+    [
+      "export function mountLinkInstance(element, href, router, fetchStrategy, prefetchEnabled, setOptimisticLinkStatus, ownerStack) {",
+      `\n    if (${registry}?.fast) prefetchEnabled = false;`,
+    ],
+    [
+      "export function mountFormInstance(element, href, router, fetchStrategy) {",
+      `\n    if (${registry}?.fast) return;`,
+    ],
+  ] as const;
+  return {
+    name: "vitest-plugin-rsc:no-prefetch",
+    transform: {
+      filter: { id: /\/next\/dist\/esm\/client\/components\/links\.js$/ },
+      handler(code, id) {
+        let patched = code;
+        for (const [at, insert] of pieces) {
+          if (!patched.includes(at)) {
+            this.warn(`vitest-plugin-rsc: ${id} has no \`${at}\`: fast mode prefetches.`);
+            continue;
+          }
+          patched = patched.replace(at, at + insert);
+        }
+        return { code: patched, map: null };
+      },
+    },
+  };
+}
+
 // Next's compile-time constants for a layer. A server layer gets what makes
 // a module server code on top of these: see server-code.ts.
 function definesOf(project: NextProject, layer: NextLayer): Record<string, string> {
@@ -813,9 +847,33 @@ export type VitestPluginNextOptions = ServerCodeOptions & {
    * for `vite build`, a static build of the app
    */
   build?: NextBuild;
+  /**
+   * Experimental. A fast mode, for a quick feedback loop like an agent's,
+   * which gives up some of what a test sees of a browser:
+   *
+   * - `renderServer({ url })` renders the page with `reuse: true`, in the app
+   *   of the page before it, from its Flight payload alone: no HTML of the
+   *   server, so no mismatch of hydration, and the state of the modules of
+   *   the app carries over from one test to the next in a test file.
+   * - Next's `<Link>` and `<Form>` prefetch nothing: a prefetch waits for
+   *   no test, and the requests of the test wait for it.
+   * - `expect.element()` looks for an element on every change of the DOM,
+   *   not after a growing wait, and `expect.poll()` every 5 ms, unless the
+   *   config sets `expect.poll.interval`.
+   * - What the dev server answers about the stylesheets and the modules of
+   *   a test file is asked once per test file, not for every page.
+   *
+   * A suite that passes in fast mode is to pass without it, as in CI.
+   *
+   * @default `true` when the environment variable `VITEST_PLUGIN_RSC_FAST`
+   * is `1`, else `false`
+   */
+  fast?: boolean;
 };
 
 export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[] {
+  // oxlint-disable-next-line no-process-env -- The switch of an agent's run, as `CI` is.
+  const fast = options.fast ?? process.env.VITEST_PLUGIN_RSC_FAST === "1";
   let project: NextProject;
   // What the CSS of the app gets otherwise than from Next: see `loadCssOptions()`.
   let cssDifferences: string[] = [];
@@ -1022,6 +1080,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
               ...(layer === "rsc" ? [nextClientBoundaryPlugin(getProject, resolvers.rsc)] : []),
               flightConsolePlugin(),
               noSsrPlugin(),
+              noPrefetchPlugin(),
               replaceableRouterPlugin(),
               flightOnlyPlugin(),
               ...(layer === "browser"
@@ -1095,6 +1154,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
             test?: {
               setupFiles?: string | string[];
               browser?: { testerHtmlPath?: string; dependencySourcemaps?: boolean };
+              expect?: { poll?: { interval?: number } };
             };
           }
         ).test ??= {});
@@ -1108,6 +1168,8 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
         // the stack of an error it reports with the maps on disk, and only
         // a headless run leaves them out.
         test.browser.dependencySourcemaps ??= false;
+        // An assertion of fast mode looks again sooner: see `fast` above.
+        if (fast) ((test.expect ??= {}).poll ??= {}).interval ??= 5;
 
         // JSX compiled for production, as `next build` compiles it: JSX
         // compiled for development calls `jsxDEV()`, which React's production
@@ -1387,7 +1449,8 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
             `export const routing = ${JSON.stringify(project.routing)};\n` +
             `export const routesManifest = ${JSON.stringify(project.routesManifest)};\n` +
             `export const preview = ${JSON.stringify(project.preview)};\n` +
-            `export const build = ${JSON.stringify(build)};\n`
+            `export const build = ${JSON.stringify(build)};\n` +
+            `export const fast = ${JSON.stringify(fast)};\n`
           );
         }
 
@@ -1474,6 +1537,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
     ...layers.map((layer) => dependencyBuildPlugin(getProject, serverCode, layer)),
     { ...flightConsolePlugin(), apply: "build" },
     { ...noSsrPlugin(), apply: "build" },
+    { ...noPrefetchPlugin(), apply: "build" },
     { ...replaceableRouterPlugin(), apply: "build" },
     { ...flightOnlyPlugin(), apply: "build" },
     nextStaticBuild({

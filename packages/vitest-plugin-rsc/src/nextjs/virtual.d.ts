@@ -14,6 +14,8 @@ declare module "virtual:vitest-plugin-rsc/next-manifest" {
   export const preview: import("./project.ts").NextProject["preview"];
   /** The `build` option: which code of Next runs, and so whether it keeps what it prerenders. */
   export const build: import("./build.ts").NextBuild;
+  /** The `fast` option: see fast-mode.ts. */
+  export const fast: boolean;
 }
 
 declare module "virtual:vitest-plugin-rsc/next-cache-handlers" {
