@@ -138,7 +138,7 @@ jobs:
       - name: Test the Next.js playgrounds
         env:
           VITEST_PLUGIN_RSC_BUILD: production
-        run: pnpm test:dist --project nextjs-e2e-demo --project nextjs-notes-demo-browser --project nextjs-db-recipes
+        run: pnpm test:dist --project nextjs-e2e-demo --project nextjs-notes-demo-browser --project nextjs-notes-demo-stories --project nextjs-db-recipes
 
   next:
     name: Next.js ${{ matrix.next }}, ${{ matrix.build }}
@@ -183,4 +183,5 @@ jobs:
             --project nextjs-e2e-demo \
             --project nextjs-cache-components-demo \
             --project nextjs-notes-demo-browser \
+            --project nextjs-notes-demo-stories \
             --project nextjs-db-recipes

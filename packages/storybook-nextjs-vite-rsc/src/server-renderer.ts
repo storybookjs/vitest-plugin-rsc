@@ -69,7 +69,7 @@ export const renderToCanvas: RenderToCanvas<NextjsServerRenderer> = async (
           headers,
           proxy,
           signal,
-          hostFiles: hostFilesOf(context.parameters.fileName as string),
+          hostFiles: hostFilesOf(context.parameters),
           ...(layouts ? { layouts } : { container: canvasElement }),
         })
       : await renderServer({ url, headers, proxy, signal });

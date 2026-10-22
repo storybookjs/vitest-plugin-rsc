@@ -7,6 +7,8 @@ import { fileURLToPath } from "node:url";
 // preset of a framework by its build, also when the suite runs the source of
 // the packages. So it builds @storybook/nextjs-vite-rsc once, before any
 // test, as a build during a test would reload the preview of another one.
+// A config with Storybook's Vitest addon calls it as it loads, before the
+// addon reads the presets.
 
 const framework = fileURLToPath(
   new URL("../../packages/storybook-nextjs-vite-rsc/", import.meta.url),

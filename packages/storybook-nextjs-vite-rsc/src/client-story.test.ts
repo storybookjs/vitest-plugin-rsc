@@ -24,11 +24,21 @@ test("a client story links the stylesheets of its file for as long as its signal
   vi.stubEnv("STORYBOOK_NEXTJS_RSC_WORKING_DIR", "web");
   const shown = new AbortController();
 
-  expect(await beforeEach(story("./stories/button.stories.tsx", shown.signal))).toBeUndefined();
+  expect(await beforeEach(story("./stories/button.stories.tsx", shown.signal))).toBeTypeOf(
+    "function",
+  );
   expect(uses).toEqual([{ files: ["web/stories/button.stories.tsx"], signal: shown.signal }]);
   // New args, in the same render: the same use.
-  await beforeEach(story("./stories/button.stories.tsx", shown.signal));
+  expect(await beforeEach(story("./stories/button.stories.tsx", shown.signal))).toBeUndefined();
   expect(uses).toHaveLength(1);
+});
+
+test("a portable story has no file name, and no stylesheets to link", async () => {
+  vi.stubEnv("STORYBOOK_NEXTJS_RSC_WORKING_DIR", "web");
+  const before = uses.length;
+
+  await beforeEach({ parameters: {}, abortSignal: new AbortController().signal } as Context);
+  expect(uses).toHaveLength(before);
 });
 
 test("a client story that Storybook leaves before its stylesheets load ends at once", async () => {
@@ -54,5 +64,15 @@ test("a client story keeps the preview until Storybook leaves it, once for a ren
   expect(kept.reports).toHaveLength(before + 1);
   const stops = kept.stops;
   shown.abort();
+  expect(kept.stops).toBe(stops + 1);
+});
+
+test("a portable story keeps the preview until its cleanup runs: its signal never aborts", async () => {
+  vi.stubEnv("STORYBOOK_NEXTJS_RSC_WORKING_DIR", ".");
+  const stops = kept.stops;
+
+  const release = await beforeEach(story("./link.stories.tsx"));
+  expect(kept.stops).toBe(stops);
+  release!();
   expect(kept.stops).toBe(stops + 1);
 });

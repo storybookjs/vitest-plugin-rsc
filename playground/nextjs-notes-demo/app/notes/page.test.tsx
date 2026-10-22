@@ -6,6 +6,7 @@ import { notes, user } from "#db/schema.ts";
 import { seedNotes } from "#.storybook/sample-notes.ts";
 import { otherUser, signedInAs, testUser } from "#test/auth.ts";
 import { renderServer } from "vitest-plugin-rsc/nextjs/testing-library";
+import { ToggleFavorite, WithNotes } from "./page.stories.tsx";
 
 async function renderNotesPage() {
   await signedInAs();
@@ -115,4 +116,19 @@ test("only renders notes owned by the current user", async () => {
 
   await expect.element(page.getByText("Mine")).toBeInTheDocument();
   await expect.element(page.getByText("Not mine")).not.toBeInTheDocument();
+});
+
+// A story is a test too: imported with CSF Next, its `run()` renders the page
+// as Storybook does, with the preview of its file, here the server preview,
+// and plays it. A test can then ask more of the page.
+
+test("runs the story of the page with notes", async () => {
+  await WithNotes.run();
+  await expect.element(page.getByRole("link", { name: "New note" })).toBeInTheDocument();
+});
+
+test("runs the story that favorites a note, whose Server Action writes to the database", async () => {
+  await ToggleFavorite.run();
+  const [note] = await db.select().from(notes);
+  expect(note?.isFavorite).toBe(true);
 });

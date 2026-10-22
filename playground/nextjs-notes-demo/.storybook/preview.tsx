@@ -17,8 +17,11 @@ import "./preview.css";
 // The module that vitest.setup.ts mocks, mocked the same way: the database,
 // with lib/__mocks__/db.ts, in every layer. Storybook reads the mocks of
 // this file only. By a relative path: `sb.mock()` resolves it from
-// Storybook's package, which does not know the `imports` of this one.
-sb.mock(import("../lib/db.ts"));
+// Storybook's package, which does not know the `imports` of this one. A
+// path, not `import()`: a test that runs a client story outside Storybook
+// evaluates this file, where `import()` would load the real database in the
+// browser (components/ui/button.test.tsx).
+sb.mock("../lib/db.ts");
 
 export default definePreview({
   addons: [docs()],
