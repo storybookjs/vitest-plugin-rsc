@@ -57,6 +57,8 @@ test("signs in, searches and opens a note", async () => {
   await page.getByRole("main").getByRole("button", { name: "Sign in" }).click();
   await page.getByLabelText("Search").fill("oat");
   await page.getByRole("button", { name: "Search" }).click();
+  // The results, before a click: the list before the search has the link too.
+  await expectTitles(["Groceries"]);
   await page.getByRole("link", { name: "Groceries" }).click();
 
   await expect.element(page.getByText("Oat milk")).toBeInTheDocument();

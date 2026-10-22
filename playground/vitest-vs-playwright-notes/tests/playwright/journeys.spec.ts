@@ -42,7 +42,7 @@ test("signs up and writes a first note", async ({ page, expectTitles }) => {
   await expectTitles(["First note"]);
 });
 
-test("signs in, searches and opens a note", async ({ page }) => {
+test("signs in, searches and opens a note", async ({ page, expectTitles }) => {
   const user = await createUser(ada);
   await seedNotes(user.id, [{ title: "Groceries", content: "Oat milk" }, { title: "Ideas" }]);
   await page.goto("/sign-in");
@@ -52,6 +52,8 @@ test("signs in, searches and opens a note", async ({ page }) => {
   await page.getByRole("main").getByRole("button", { name: "Sign in" }).click();
   await page.getByLabel("Search").fill("oat");
   await page.getByRole("button", { name: "Search" }).click();
+  // The results, before a click: the list before the search has the link too.
+  await expectTitles(["Groceries"]);
   await page.getByRole("link", { name: "Groceries" }).click();
 
   await expect(page.getByText("Oat milk")).toBeVisible();

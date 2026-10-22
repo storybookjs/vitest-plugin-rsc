@@ -30,6 +30,9 @@ for (let i = 0; i < 50; i++) {
       await page.getByLabel("Search").fill(query);
       await page.getByRole("button", { name: "Search" }).click();
       const found = matches(query);
+      // The page of this search: the results of two can be the same.
+      const count = found.length === 1 ? "1 result" : `${found.length} results`;
+      await expect(page.getByText(`${count} for “${query}”`)).toBeVisible();
       if (found.length) await expectTitles(found);
       else await expect(page.getByText(`No notes match “${query}”.`)).toBeVisible();
     }

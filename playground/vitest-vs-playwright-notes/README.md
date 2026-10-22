@@ -3,6 +3,7 @@
 A notes app in the style of the notes demo, Next.js on Postgres with Drizzle: accounts with a password and a session cookie, pages that need a signed-in user, notes with search, favorites and forms with `useActionState`, and a profile. The same 500 tests in 22 files twice: 150 short tests of one page or one form, and 350 longer flows of 8 to 25 interactions each (`flow-*`), each flow in 50 variants of its data.
 
 - `tests/vitest/*.test.tsx`: Vitest browser mode with `renderServer({ url })`. The database is PGlite in the page (`lib/__mocks__/db.ts`). `isolate: false`, Next and React in production by default.
+- `tests/vitest-user-event/*.test.tsx`: the tests of `tests/vitest/`, with their clicks and fills in the page, by Testing Library's `user-event` (`test/user-event.ts`), where `locator.click()` and `locator.fill()` send each to Node.js, which has Playwright do it. Made from `tests/vitest/` by turning `await locator.click()` into `await click(locator)` and `await locator.fill(text)` into `await fill(locator, text)`. `fill()` clears the field and pastes the text, one input event, as Playwright's `fill()` does.
 - `tests/playwright/*.spec.ts`: Playwright against `next start` after `next build`, or against `next dev` with `PLAYWRIGHT_SERVER=dev`, on Postgres in Docker, in RAM.
 
 Each Playwright test is the Vitest test of the same name in the file of the same name, step for step: `page.goto(url)` for `renderServer({ url })`, `toBeVisible()` for `toBeInTheDocument()`. Both seed and read the database with `test/db.ts`, on the app's own `db`, and empty it before each test. Both sign a user in the same way, with a session in the database and its cookie: `document.cookie` in Vitest, `context.addCookies()` in Playwright. Both wait for the page to hydrate before they use it: `renderServer()` does, and so does `page.goto()` of `tests/playwright/test.ts`, with Next's test mode (`__NEXT_TEST_MODE`). Both run with 1 worker: the Playwright tests share one database.
@@ -12,8 +13,9 @@ The workflow `.github/workflows/vitest-vs-playwright.yml` runs both and writes w
 ```bash
 # Vitest
 pnpm --dir ../.. --filter vitest-plugin-rsc build
-pnpm exec vitest run --maxWorkers 1
-VITEST_PLUGIN_RSC_BUILD=development pnpm exec vitest run --maxWorkers 1
+pnpm exec vitest run --maxWorkers 1 tests/vitest/
+pnpm exec vitest run --maxWorkers 1 tests/vitest-user-event/
+VITEST_PLUGIN_RSC_BUILD=development pnpm exec vitest run --maxWorkers 1 tests/vitest/
 
 # Playwright
 docker run -d --name postgres -p 5432:5432 -e POSTGRES_PASSWORD=postgres \

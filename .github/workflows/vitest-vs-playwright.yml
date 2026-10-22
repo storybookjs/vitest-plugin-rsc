@@ -27,12 +27,18 @@ defaults:
 
 jobs:
   vitest:
-    name: Vitest, ${{ matrix.app }}
+    name: Vitest, ${{ matrix.app }}, ${{ matrix.tests }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        app: [vitest-vs-playwright, vitest-vs-playwright-notes]
+        # tests/vitest/ clicks and fills with Vitest's commands, which
+        # Playwright carries out; tests/vitest-user-event/ with Testing
+        # Library's user-event, in the page.
+        include:
+          - { app: vitest-vs-playwright, tests: vitest }
+          - { app: vitest-vs-playwright-notes, tests: vitest }
+          - { app: vitest-vs-playwright-notes, tests: vitest-user-event }
     defaults:
       run:
         working-directory: playground/${{ matrix.app }}
@@ -49,13 +55,13 @@ jobs:
       - name: Run the tests, Next and React in production
         run: |
           start=$(date +%s.%N)
-          pnpm exec vitest run --maxWorkers 1 | tee vitest.log
+          pnpm exec vitest run --maxWorkers 1 "tests/${{ matrix.tests }}/" | tee vitest.log
           end=$(date +%s.%N)
           log=$(sed 's/\x1b\[[0-9;]*m//g' vitest.log)
           tests=$(grep -oP 'Tests\s+\K[0-9]+ passed' <<< "$log")
           duration=$(grep -oP 'Duration\s+\K[0-9.]+' <<< "$log")
           {
-            echo "### Vitest, production, ${{ matrix.app }}"
+            echo "### Vitest, production, ${{ matrix.app }}, ${{ matrix.tests }}"
             echo
             echo "| Step | Seconds |"
             echo "| --- | ---: |"
@@ -67,13 +73,13 @@ jobs:
           VITEST_PLUGIN_RSC_BUILD: development
         run: |
           start=$(date +%s.%N)
-          pnpm exec vitest run --maxWorkers 1 | tee vitest.log
+          pnpm exec vitest run --maxWorkers 1 "tests/${{ matrix.tests }}/" | tee vitest.log
           end=$(date +%s.%N)
           log=$(sed 's/\x1b\[[0-9;]*m//g' vitest.log)
           tests=$(grep -oP 'Tests\s+\K[0-9]+ passed' <<< "$log")
           duration=$(grep -oP 'Duration\s+\K[0-9.]+' <<< "$log")
           {
-            echo "### Vitest, development, ${{ matrix.app }}"
+            echo "### Vitest, development, ${{ matrix.app }}, ${{ matrix.tests }}"
             echo
             echo "| Step | Seconds |"
             echo "| --- | ---: |"

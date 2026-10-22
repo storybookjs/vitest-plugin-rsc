@@ -22,6 +22,9 @@ export default async function NotesPage({
         <input id="q" name="q" type="search" defaultValue={query} />
         <button type="submit">Search</button>
       </form>
+      {query && (
+        <p>{`${notes.length === 1 ? "1 result" : `${notes.length} results`} for “${query}”`}</p>
+      )}
       <Link href="/notes/new">New note</Link>
       {notes.length === 0 ? (
         <p>{query ? `No notes match “${query}”.` : "No notes yet"}</p>
