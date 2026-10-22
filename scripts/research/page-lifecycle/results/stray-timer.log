@@ -1,0 +1,54 @@
+
+ RUN  v5.0.5 /Users/kasperpeulen/.t3/worktrees/vitest-plugin-rsc/research-page-lifecycle/playground/nextjs-notes-demo
+
+ ✓ |page-lifecycle-research-notes (chromium)| ../../scripts/research/page-lifecycle/notes-symptom/timer.test.tsx > a link to a route of the app loads its page 2792ms
+ ✓ |page-lifecycle-research-notes (chromium)| ../../scripts/research/page-lifecycle/notes-symptom/timer.test.tsx > a later test that does nothing wrong 164ms
+⎯⎯⎯⎯⎯⎯ Unhandled Errors ⎯⎯⎯⎯⎯⎯
+
+Vitest caught 4 unhandled errors during the test run.
+This might cause false positive tests. Resolve unhandled errors to make sure your tests are not affected.
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯ Error ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+NotFoundError: Failed to execute 'removeChild' on 'Node': The node to be removed is not a child of this node.
+ ❯ eval node_modules/.vite/vitest/f273bbc9423f8f2f3dc280cca784a1d0d226f615/deps_react_client/next-themes.js?v=8e5b8c2c:148:18
+
+This error originated in "../../scripts/research/page-lifecycle/notes-symptom/timer.test.tsx" test file. It doesn't mean the error was thrown inside the file itself, but while it was running.
+The last test to run before this error was "a later test that does nothing wrong". This means either:
+- the error was thrown while Vitest was running this test, or
+- the error was thrown after the test completed, and this was the most recent test at that point.
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯ Error ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+NotFoundError: Failed to execute 'removeChild' on 'Node': The node to be removed is not a child of this node.
+ ❯ eval node_modules/.vite/vitest/f273bbc9423f8f2f3dc280cca784a1d0d226f615/deps_react_client/next-themes.js?v=8e5b8c2c:148:18
+
+This error originated in "../../scripts/research/page-lifecycle/notes-symptom/timer.test.tsx" test file. It doesn't mean the error was thrown inside the file itself, but while it was running.
+The last test to run before this error was "a later test that does nothing wrong". This means either:
+- the error was thrown while Vitest was running this test, or
+- the error was thrown after the test completed, and this was the most recent test at that point.
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯ Error ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+NotFoundError: Failed to execute 'removeChild' on 'Node': The node to be removed is not a child of this node.
+ ❯ eval node_modules/.vite/vitest/f273bbc9423f8f2f3dc280cca784a1d0d226f615/deps_react_client/next-themes.js?v=8e5b8c2c:148:18
+
+This error originated in "../../scripts/research/page-lifecycle/notes-symptom/timer.test.tsx" test file. It doesn't mean the error was thrown inside the file itself, but while it was running.
+The last test to run before this error was "a later test that does nothing wrong". This means either:
+- the error was thrown while Vitest was running this test, or
+- the error was thrown after the test completed, and this was the most recent test at that point.
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯ Error ⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+NotFoundError: Failed to execute 'removeChild' on 'Node': The node to be removed is not a child of this node.
+ ❯ eval node_modules/.vite/vitest/f273bbc9423f8f2f3dc280cca784a1d0d226f615/deps_react_client/next-themes.js?v=8e5b8c2c:148:18
+
+This error originated in "../../scripts/research/page-lifecycle/notes-symptom/timer.test.tsx" test file. It doesn't mean the error was thrown inside the file itself, but while it was running.
+The last test to run before this error was "a later test that does nothing wrong". This means either:
+- the error was thrown while Vitest was running this test, or
+- the error was thrown after the test completed, and this was the most recent test at that point.
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+
+
+ Test Files  1 passed (1)
+      Tests  2 passed (2)
+     Errors  4 errors
+   Start at  11:40:44
+   Duration  5.84s (tests 57%, setup 42%, worker 1%)
+

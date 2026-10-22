@@ -1,0 +1,15 @@
+{"file":"b1.test.tsx","at":"file-start","usedMB":38.57,"documents":2,"nodes":68,"listeners":27}
+{"file":"b1.test.tsx","at":"pages-done","usedMB":58.92,"documents":2,"nodes":126,"listeners":368,"firstMs":438,"msPerPage":26}
+{"file":"b1.test.tsx","at":"file-end","usedMB":58.67,"documents":2,"nodes":77,"listeners":67,"fileMs":1325}
+{"file":"b2.test.tsx","at":"file-start","usedMB":58.76,"documents":2,"nodes":77,"listeners":67}
+{"file":"b2.test.tsx","at":"pages-done","usedMB":59.55,"documents":2,"nodes":126,"listeners":368,"firstMs":31,"msPerPage":21}
+{"file":"b2.test.tsx","at":"file-end","usedMB":59.26,"documents":2,"nodes":77,"listeners":67,"fileMs":745}
+{"file":"b3.test.tsx","at":"file-start","usedMB":59.34,"documents":2,"nodes":77,"listeners":67}
+{"file":"b3.test.tsx","at":"pages-done","usedMB":60,"documents":2,"nodes":126,"listeners":368,"firstMs":31,"msPerPage":23}
+{"file":"b3.test.tsx","at":"file-end","usedMB":59.73,"documents":2,"nodes":77,"listeners":67,"fileMs":787}
+{"file":"b4.test.tsx","at":"file-start","usedMB":59.8,"documents":2,"nodes":77,"listeners":67}
+{"file":"b4.test.tsx","at":"pages-done","usedMB":60.37,"documents":2,"nodes":126,"listeners":368,"firstMs":33,"msPerPage":22}
+{"file":"b4.test.tsx","at":"file-end","usedMB":60.06,"documents":2,"nodes":77,"listeners":67,"fileMs":773}
+{"file":"b5.test.tsx","at":"file-start","usedMB":60.13,"documents":2,"nodes":77,"listeners":67}
+{"file":"b5.test.tsx","at":"pages-done","usedMB":60.82,"documents":2,"nodes":126,"listeners":368,"firstMs":32,"msPerPage":22}
+{"file":"b5.test.tsx","at":"file-end","usedMB":60.52,"documents":2,"nodes":77,"listeners":67,"fileMs":766}

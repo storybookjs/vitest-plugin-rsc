@@ -1,0 +1,3 @@
+# Copies of the templates: make-files.sh writes them before a run.
+files/b*.test.tsx
+notes-files/n*.test.tsx

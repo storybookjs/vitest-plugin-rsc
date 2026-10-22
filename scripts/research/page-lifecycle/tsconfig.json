@@ -1,0 +1,13 @@
+{
+  // The measurements run in the projects of the e2e and notes demos, so
+  // they take their types from there. Not a part of `pnpm tsgo`.
+  "extends": "../../../playground/nextjs-e2e-demo/tsconfig.json",
+  "compilerOptions": {
+    "paths": {
+      "react": ["../../../playground/nextjs-e2e-demo/node_modules/@types/react"],
+      "react/*": ["../../../playground/nextjs-e2e-demo/node_modules/@types/react/*"]
+    },
+    "types": ["vitest", "@vitest/browser-playwright", "node"]
+  },
+  "include": ["**/*.ts", "**/*.tsx"]
+}

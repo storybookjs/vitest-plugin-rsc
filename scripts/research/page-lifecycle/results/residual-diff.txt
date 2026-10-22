@@ -1,0 +1,31 @@
+grew by 2473 KB
+   1201.4 KB     832  code system / InstructionStream
+    378.7 KB    1909  code system / TrustedByteArray
+    193.6 KB     745  code system / ProtectedFixedArray
+     94.8 KB    1239  string 
+     74.5 KB       9  array 
+     58.5 KB     832  code system / Code
+     55.6 KB     528  native system / WeakArrayList
+     27.0 KB    1383  object Promise
+     24.2 KB    1206  native system / PropertyArray
+     21.4 KB       6  object shape system / WeakArrayList
+     19.8 KB     745  code system / TrustedWeakFixedArray
+     18.8 KB     802  closure native_bind
+     11.4 KB       2  object system / Context / scope @209753
+     10.5 KB     745  native system / ProtectedFixedArray
+     10.3 KB      63  native DOMTimer
+      9.8 KB      56  code system / BytecodeArray
+      9.7 KB      28  object shape system / DescriptorArray
+      7.6 KB      75  code system / FeedbackVector
+      6.5 KB     832  code system / CodeWrapper
+      6.3 KB     205  code system / WeakArrayList
+      6.0 KB     255  object system / Context / scope @180385
+      5.9 KB     217  object system / Context / scope @133321
+      5.9 KB     252  object system / Context / scope @312763
+      5.8 KB     745  native system / SharedFunctionInfoWrapper
+      5.4 KB     210  code system / WeakFixedArray
+      5.0 KB     184  closure 
+      5.0 KB     255  object system / Context / scope @313193
+      4.5 KB     192  object system / Context / scope @233583
+      4.5 KB     230  object system / Context / scope @140429
+      4.1 KB       3  native blink::HeapHashTableBacking<blink::HashTable<cppgc::internal

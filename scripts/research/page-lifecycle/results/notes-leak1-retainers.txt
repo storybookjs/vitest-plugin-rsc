@@ -1,0 +1,27 @@
+1396911 nodes, 349.3 MB
+2 closures named callServer
+
+closure callServer @603045
+  synthetic  @1  --element:[1]-->
+  synthetic (GC roots) @3  --element:[10]-->
+  synthetic (Global handles) @23  --internal:1 / blink::ScriptStateProtectingContext::context_-->
+  native system / NativeContext / http://localhost:63315 @7391  --internal:global_object-->
+  object Window [JSGlobalObject] / http://localhost:63315 @2345483  --property:_N_E_STYLE_LOAD-->
+  closure  @1879519  --internal:context-->
+  object system / Context / scope @1174771 @1810345  --context:__vite_ssr_import_15__-->
+  object Module @636475  --property:get r-->
+  closure get @1354507  --internal:context-->
+  object system / Context / scope @594649 @594651  --context:callServer-->
+
+closure callServer @2020951
+  synthetic  @1  --element:[1]-->
+  synthetic (GC roots) @3  --element:[10]-->
+  synthetic (Global handles) @23  --internal:1 / blink::ScriptStateProtectingContext::context_-->
+  native system / NativeContext / http://localhost:63315 @7391  --internal:global_object-->
+  object Window [JSGlobalObject] / http://localhost:63315 @2345483  --property:__next_require__-->
+  closure  @1639663  --internal:context-->
+  object system / Context / scope @740453 @1639665  --internal:previous-->
+  object system / Context / scope @739067 @938327  --context:__vite_ssr_import_14__-->
+  object Module @215235  --property:get K-->
+  closure get @1030229  --internal:context-->
+  object system / Context / scope @764803 @1028737  --context:callServer-->

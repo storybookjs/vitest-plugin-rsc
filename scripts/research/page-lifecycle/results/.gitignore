@@ -1,0 +1,5 @@
+# Heap snapshots are 70 to 350 MB: retainers.ts and diff.ts read them where
+# the run writes them, and what they print is kept in the .txt files.
+*.heapsnapshot
+*.log
+!stray-timer.log

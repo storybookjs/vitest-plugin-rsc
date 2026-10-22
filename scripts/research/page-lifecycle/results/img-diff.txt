@@ -1,0 +1,31 @@
+grew by 14055 KB
+   2701.4 KB    5151  array (object properties)
+    970.0 KB   34731  closure 
+    962.4 KB    5891  array 
+    796.9 KB     464  code system / InstructionStream
+    663.1 KB   26541  object Object
+    618.7 KB   26396  closure native_bind
+    559.9 KB   10387  array (object elements)
+    403.6 KB   34442  native system / AccessorPair
+    401.2 KB   20541  native system / StackFrameInfo
+    307.4 KB   19674  object Array
+    302.6 KB   25796  array (bound arguments)
+    289.7 KB      51  object system / Context / scope @103933
+    265.0 KB    6779  object shape system / Map
+    261.5 KB    6779  string 
+    227.0 KB    1073  code system / TrustedByteArray
+    149.2 KB    5430  closure get
+    130.7 KB    1522  object shape system / DescriptorArray
+    122.3 KB     413  code system / ProtectedFixedArray
+    120.5 KB    5143  native system / PropertyArray
+    118.1 KB    3024  object ReactPromise
+     52.0 KB    4434  number heap number
+     49.1 KB    1795  object system / Context / scope @164933
+     48.8 KB    1250  native internal
+     47.3 KB    2424  concatenated string 
+     46.1 KB      15  object system / Context / scope @116285
+     43.3 KB    1109  object shape system / PrototypeInfo
+     36.5 KB      50  object system / Context / scope @104307
+     35.5 KB    1551  object Error
+     32.6 KB     464  code system / Code
+     30.2 KB      15  object system / Context / scope @240297

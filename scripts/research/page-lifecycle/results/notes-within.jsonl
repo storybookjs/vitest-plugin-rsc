@@ -1,0 +1,9 @@
+{"scenario":"C1-notes","opened":0,"usedMB":69.13,"documents":2,"nodes":81,"listeners":68}
+{"scenario":"C1-notes","opened":10,"usedMB":121.73,"documents":2,"nodes":746,"listeners":387,"alive":1}
+{"scenario":"C1-notes","opened":20,"usedMB":122.22,"documents":2,"nodes":746,"listeners":387,"alive":1}
+{"scenario":"C1-notes","opened":30,"usedMB":122.55,"documents":2,"nodes":746,"listeners":387,"alive":1}
+{"scenario":"C1-notes","opened":40,"usedMB":122.93,"documents":2,"nodes":746,"listeners":387,"alive":1}
+{"scenario":"C1-notes","opened":50,"usedMB":123.3,"documents":2,"nodes":746,"listeners":387,"alive":1}
+{"scenario":"C1-notes","opened":60,"usedMB":123.55,"documents":2,"nodes":746,"listeners":387,"alive":1}
+{"scenario":"C1-notes","msPerPage":211}
+{"scenario":"C1-notes:after-cleanup","opened":60,"usedMB":122.73,"documents":2,"nodes":85,"listeners":69,"alive":1}

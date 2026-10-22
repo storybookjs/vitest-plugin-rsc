@@ -1,0 +1,27 @@
+845579 nodes, 96.9 MB
+16 closures named callServer
+14 of them through a PerformanceObserver; one of them:
+closure callServer @270239
+  synthetic  @1  --element:[1]-->
+  synthetic (GC roots) @3  --element:[29]-->
+  synthetic C++ Persistent roots @1673419  --internal:blink::ThreadState::ThreadState(v8::Platform *, std::optional<cppgc::StackStartMarker>)@../../third_party/blink/renderer/platform/heap/thread_state.cc:185-->
+  native Pending activities @132  --element:[1]-->
+  native blink::HeapVectorBacking<std::pair<cppgc::internal::BasicMember<const  @9222  --element:[57]-->
+  native PerformanceObserver @596171  --element:[3]-->
+  native V8PerformanceObserverCallback @5402  --element:[1]-->
+  closure  @616015  --internal:context-->
+  object system / Context / scope @280519 @613531  --internal:previous-->
+  object system / Context / scope @241877 @596143  --context:import_react-->
+  object Object @596153  --property:default-->
+  object Object @250255  --property:__CLIENT_INTERNALS_DO_NOT_USE_OR_WARN_USERS_THEY_CANNOT_UPGRADE-->
+  object Object @255707  --property:S-->
+  closure  @265119  --internal:context-->
+  object system / Context / scope @103933 @255767  --context:rootWithPassiveNestedUpdates-->
+  object FiberRootNode @257593  --property:onUncaughtError-->
+  closure onUncaughtError @588827  --internal:context-->
+  object system / Context / scope @520807 @588823  --context:onCaughtError-->
+  closure onCaughtError @312141  --internal:context-->
+  object system / Context / scope @134019 @312041  --context:__vite_ssr_import_16__-->
+  object Module @270943  --property:get r-->
+  closure get @268751  --internal:context-->
+  object system / Context / scope @130883 @268753  --context:callServer-->

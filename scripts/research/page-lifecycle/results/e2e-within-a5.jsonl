@@ -1,0 +1,7 @@
+{"scenario":"A5-img","opened":0,"usedMB":40.5,"documents":2,"nodes":77,"listeners":67}
+{"scenario":"A5-img","opened":10,"usedMB":62.23,"documents":4,"nodes":152,"listeners":388,"alive":2}
+{"scenario":"A5-img","opened":20,"usedMB":64.28,"documents":4,"nodes":162,"listeners":398,"alive":2}
+{"scenario":"A5-img","opened":30,"usedMB":66.02,"documents":4,"nodes":172,"listeners":408,"alive":2}
+{"scenario":"A5-img:after-cleanup","opened":30,"usedMB":65.71,"documents":3,"nodes":121,"listeners":97,"alive":2}
+{"scenario":"A5-img","msPerPage":148}
+{"scenario":"A5-img:after-62s","opened":30,"usedMB":65.7,"documents":3,"nodes":121,"listeners":97,"alive":2}

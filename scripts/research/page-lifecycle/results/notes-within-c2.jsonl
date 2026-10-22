@@ -1,0 +1,10 @@
+{"scenario":"C2-notes-leak","opened":0,"usedMB":69.13,"documents":2,"nodes":81,"listeners":68}
+{"scenario":"C2-notes-leak","opened":10,"usedMB":146.91,"documents":2,"nodes":764,"listeners":406,"alive":10}
+{"scenario":"C2-notes-leak","opened":20,"usedMB":175.39,"documents":2,"nodes":784,"listeners":426,"alive":20}
+{"scenario":"C2-notes-leak","opened":30,"usedMB":203.79,"documents":2,"nodes":804,"listeners":446,"alive":30}
+{"scenario":"C2-notes-leak","opened":40,"usedMB":232.07,"documents":2,"nodes":824,"listeners":466,"alive":40}
+{"scenario":"C2-notes-leak","opened":50,"usedMB":260.42,"documents":2,"nodes":844,"listeners":486,"alive":50}
+{"scenario":"C2-notes-leak","opened":60,"usedMB":288.74,"documents":2,"nodes":864,"listeners":506,"alive":60}
+{"scenario":"C2-notes-leak","msPerPage":208}
+{"scenario":"C2-notes-leak:after-cleanup","opened":60,"usedMB":287.9,"documents":2,"nodes":203,"listeners":188,"alive":60}
+{"scenario":"C2-notes-leak:after-removing-listeners","opened":60,"usedMB":122.79,"documents":2,"nodes":85,"listeners":69,"alive":1}

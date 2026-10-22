@@ -1,0 +1,20 @@
+--- a/packages/vitest-plugin-rsc/src/utils.ts
++++ b/packages/vitest-plugin-rsc/src/utils.ts
+@@ -413,7 +413,10 @@
+     // The answer of the server, which the pages share.
+     const fetched = module.meta as { code?: string } | undefined;
+     const shared = fetched?.code === code ? fetched : undefined;
+-    let run = shared && compiledModules.get(shared);
++    // Research: compile every module of every page anew, as a fresh realm
++    // would, past V8's cache of `eval` code. See page-lifecycle-risk.md.
++    const fresh = (globalThis as { __plmFresh?: number }).__plmFresh;
++    let run = fresh ? undefined : shared && compiledModules.get(shared);
+     if (!run) {
+       // The server names a module in its source map, and a dependency comes
+       // without one: see `dependencySourceMapPlugin()` in index.ts.
+       // On a line of its own: React and Next have it in a string.
+       if (!sourceUrlLineRE.test(code)) code += `\n//# sourceURL=${module.id}`;
+-      run = new AsyncFunction(...contextKeys, strict + code);
++      run = new AsyncFunction(...contextKeys, strict + code + (fresh ? `\n//${fresh}` : ""));
+       if (shared) compiledModules.set(shared, run);
+     }

@@ -16,5 +16,7 @@
     "erasableSyntaxOnly": true,
     "types": ["node"]
   },
-  "include": ["**/*.ts"]
+  "include": ["**/*.ts"],
+  // Measurements with a tsconfig of their own: see research/*/tsconfig.json.
+  "exclude": ["research/**"]
 }
