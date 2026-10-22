@@ -559,6 +559,13 @@ test.for(["global-error", "not-found", "forbidden", "unauthorized"])(
 // A file of Next's runtime, which runs in the browser.
 const runtime = (file: string) => `next/dist/esm/${file}.js`;
 
+test("says which module of Next's server with stores is gone", async () => {
+  const file = "next/dist/esm/server/app-render/action-handler.js";
+  const next = nextWith({ [file]: new Error("Cannot find module") });
+
+  await expect(loadNextProject(root, next)).rejects.toThrow(changed(`${file} is not there`));
+});
+
 test("says which file of Next's runtime is gone", async () => {
   const next = nextWith({ [runtime("client/app-index")]: new Error("Cannot find module") });
 

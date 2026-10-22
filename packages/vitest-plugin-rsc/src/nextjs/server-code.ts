@@ -236,7 +236,7 @@ const asyncFunctionsName = "vitest-plugin-rsc:next-async-functions";
 // `await`, as on Node.js. One entry per module, with the layer it is a
 // module of and the store it carries. Each server layer's optimizer compiles
 // its own, once, and keeps them in its cache. A static build does the same.
-const nextModulesWithStores: { layer: "rsc" | "ssr"; module: string }[] = [
+export const nextModulesWithStores: { layer: "rsc" | "ssr"; module: string }[] = [
   // The store of a `"use cache"` function: it enters the scope and awaits
   // before it has React call the function.
   { layer: "rsc", module: "use-cache/use-cache-wrapper.js" },

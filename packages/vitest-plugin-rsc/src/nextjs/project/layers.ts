@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import { nextModulesWithStores } from "../server-code.ts";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { init as initCjsLexer, parse as parseCjs } from "cjs-module-lexer";
@@ -214,6 +215,17 @@ export async function layerTables(context: NextContext, build: NextBuild) {
     // imports the files: an alias there would be a cycle. The rsc layer's
     // `module.compiled` is the ssr layer's (plugin.ts), so the alias gives
     // it what Next's rule does.
+    // The modules of Next's server whose async functions are compiled to keep
+    // their stores (server-code.ts) are matched by their path: a Next that
+    // moved one would quietly leave it uncompiled.
+    for (const { module } of nextModulesWithStores) {
+      const id = `next/dist/esm/server/${module}`;
+      try {
+        projectRequire.resolve(id);
+      } catch (error) {
+        return fail(`${id} is not there`, error);
+      }
+    }
     if (layer === "rsc") {
       const contexts = "server/route-modules/app-page/vendored/contexts";
       let files: string[];
