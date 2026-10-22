@@ -1,0 +1,10 @@
+# The notes suite with the recipe of experiment L in its setup file:
+# vi.useFakeTimers({ toFake: [setTimeout, clearTimeout, Date], shouldAdvanceTime: true })
+# before each test, vi.runOnlyPendingTimersAsync() and vi.useRealTimers() after.
+ Test Files  13 passed (13)
+      Tests  69 passed (69)
+   Duration  21.76s (tests 62%, setup 33%, import 4%, worker 1%)
+# No 'Errors' line: no unhandled errors.
+#
+# Earlier variants: without Date, 1 test failed (the clock of vi.setSystemTime was lost);
+# with Date and advanceTimersByTimeAsync(20_000), 15 tests failed on hook timeouts.

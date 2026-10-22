@@ -17,7 +17,7 @@ RESEARCH_DIR=$dir RESEARCH_ISOLATE=$isolate RESEARCH_LEAK=$leak \
   npx vitest run --config "scripts/research/page-lifecycle/$config" \
   --configLoader native --silent=false --reporter=verbose "$@" \
   2>&1 | tee "$out/$name.log" | grep -E '^PLM|✓|✗|×|Test Files|Duration' || true
-grep -h '^PLM ' "$out/$name.log" | sed 's/^PLM //' > "$out/$name.jsonl"
+{ grep -h '^PLM ' "$out/$name.log" || true; } | sed 's/^PLM //' > "$out/$name.jsonl"
 # Vitest's own summary of the run: its duration, and the errors that no test
 # caught, like a timer of a page that was left.
 plain=$(perl -pe 's/\e\[[0-9;]*m//g' "$out/$name.log")

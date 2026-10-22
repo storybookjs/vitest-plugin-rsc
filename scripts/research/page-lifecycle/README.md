@@ -14,21 +14,23 @@ $R/run.sh files-iso1-leak1 vitest.e2e.config.ts \
 $R/run.sh notes-within vitest.notes.config.ts notes 0 0 60
 ```
 
-| Directory           | Experiment                                                        |
-| ------------------- | ----------------------------------------------------------------- |
-| `e2e/`              | A: 100 pages in a file, clean, a node, a leaking app, navigations |
-| `files/`            | B: five files of 30 pages, `isolate` on and off, leaking or not   |
-| `notes/`            | C: the notes demo, clean and leaking                              |
-| `notes-files/`      | D: what `isolate: true` costs per file in the notes demo          |
-| `notes-snapshot/`   | E: a heap snapshot after leaked pages, for `retainers.ts`         |
-| `notes-symptom/`    | F: a timer of a left page that fails a later test                 |
-| `e2e-snapshot/`     | G: two snapshots 200 pages apart, for `diff.ts`                   |
-| `e2e-realm/`        | H: a page that compiles its modules anew, and a bare iframe       |
-| `notes-realm/`      | H in the notes demo                                               |
-| `e2e-img-snapshot/` | I: navigations to `/images`, which keep pages                     |
-| `notes-gc/`         | J: what a forced garbage collection costs                         |
-| `e2e-edges/`        | K: what still points into a page once it is left, per route       |
-| `notes-edges/`      | K in the notes demo                                               |
+| Directory               | Experiment                                                        |
+| ----------------------- | ----------------------------------------------------------------- |
+| `e2e/`                  | A: 100 pages in a file, clean, a node, a leaking app, navigations |
+| `files/`                | B: five files of 30 pages, `isolate` on and off, leaking or not   |
+| `notes/`                | C: the notes demo, clean and leaking                              |
+| `notes-files/`          | D: what `isolate: true` costs per file in the notes demo          |
+| `notes-snapshot/`       | E: a heap snapshot after leaked pages, for `retainers.ts`         |
+| `notes-symptom/`        | F: a timer of a left page that fails a later test                 |
+| `e2e-snapshot/`         | G: two snapshots 200 pages apart, for `diff.ts`                   |
+| `e2e-realm/`            | H: a page that compiles its modules anew, and a bare iframe       |
+| `notes-realm/`          | H in the notes demo                                               |
+| `e2e-img-snapshot/`     | I: navigations to `/images`, which keep pages                     |
+| `notes-gc/`             | J: what a forced garbage collection costs                         |
+| `e2e-edges/`            | K: what still points into a page once it is left, per route       |
+| `notes-edges/`          | K in the notes demo                                               |
+| `notes-recipe/`         | L: the fake-timer recipe, for a library's timer like next-themes' |
+| `notes-recipe-control/` | L without the recipe                                              |
 
 `files/` and `notes-files/` have one `template.tsx` each, which `make-files.sh` copies into identical test files before a run.
 
@@ -44,4 +46,4 @@ node --max-old-space-size=8192 $R/diff.ts \
   $R/results/residual-after.heapsnapshot
 ```
 
-What they printed is in `results/*.txt`. `run.sh` adds Vitest's duration and its count of unhandled errors to each `.jsonl`. `results/stray-timer.log` (F) and `results/stray-timer-loop.log` (J) are the output of two runs, with the errors that a timer of a left page threw.
+What they printed is in `results/*.txt`. `run.sh` adds Vitest's duration and its count of unhandled errors to each `.jsonl`. `results/stray-timer.log` (F) and `results/stray-timer-loop.log` (J) are the output of two runs, with the errors that a timer of a left page threw. `results/notes-suite-recipe.txt` is the notes suite with the recipe of L in its setup file, which was put back after.

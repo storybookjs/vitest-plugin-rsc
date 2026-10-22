@@ -773,13 +773,41 @@ Before each test, the plugin empties the in-memory disk and Next's Data Cache, a
 
 What the plugin doesn't reset is the state of your own modules, like a `Map` in memory or a mock's implementation. Reset that in a `beforeEach()`.
 
+### A timer that outlives its page
+
+Leaving a page takes back what React and Next.js left behind, but not the timers of your app or of its libraries. A browser drops those with the page. Here a timer that is due after its test has ended fires during the next test, and if it touches its page, it throws there. Vitest reports the error under whichever test is running. `next-themes` with `disableTransitionOnChange` is one: 1 ms after it mounts, it removes a style that has gone with the page.
+
+Run such timers before the plugin leaves the page, with Vitest's fake timers, in a setup file:
+
+```ts
+beforeEach(() => {
+  vi.useFakeTimers({
+    toFake: ["setTimeout", "clearTimeout", "Date"],
+    shouldAdvanceTime: true,
+  });
+});
+
+afterEach(async () => {
+  await vi.runOnlyPendingTimersAsync();
+  vi.useRealTimers();
+});
+```
+
+- `shouldAdvanceTime` keeps the clock moving, so the app's timers fire on time, as they would without fake timers.
+- This `afterEach` runs before the plugin's own, which leaves the page.
+- A test that opens another page calls `await vi.runOnlyPendingTimersAsync()` before it.
+- `Date` is in `toFake` because fake timers without it undo a clock that `vi.setSystemTime()` fixed, as a [database recipe](databases.md) does.
+- The fake timers are the tab's, so this also runs the server's pending timers early.
+
+In `playground/nextjs-notes-demo` this takes the errors of ten page loads in a row from 36 to none, and its suite passes with it.
+
 ### No `test.concurrent`
 
 The tests in a file run one after another. [`test.concurrent`](https://vitest.dev/api/#test-concurrent) doesn't work for tests that read `AsyncLocalStorage`, and that includes anything that touches Next.js App Router internals: `headers()`, `cookies()`, `next/cache` and Server Actions. The plugin's `AsyncLocalStorage` runs one request at a time, so concurrent tests would leak context into each other. Sequential tests within a file are fine, and test files still run in parallel.
 
 ### Slow first test
 
-A worker loads Next's runtime for all three layers before its first test, so that test is slower. With as many workers as cores, it can time out: `playground/nextjs-notes-demo` sets `maxWorkers: 4` for that.
+Next's runtime loads for all three layers before the first test of a file, or with `isolate: false` before the first test of a worker, so that test is slower. With as many workers as cores, it can time out: `playground/nextjs-notes-demo` sets `maxWorkers: 4` for that.
 
 ## Development or production
 
