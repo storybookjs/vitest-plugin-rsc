@@ -41,6 +41,9 @@ test("keys a layer by its alias tables, in their order, and the options of Next'
   expect(projectKey(projectOf(changed, app), "rsc")).not.toBe(key);
   expect(projectKey(projectOf({ ...next, react$: false }, app), "rsc")).not.toBe(key);
   expect(projectKey(projectOf({ ...next, "styled-jsx$": "styled-jsx" }, app), "rsc")).not.toBe(key);
+  // An entry of the app's table alone.
+  const appOnly = { ...app, "react-dom/static$": "next/dist/compiled/react-dom/static.node.js" };
+  expect(projectKey(projectOf(next, appOnly), "rsc")).not.toBe(key);
   // An entry of Next's table that moves to the app's.
   const { "next/link$": link, ...rest } = next;
   expect(projectKey(projectOf(rest, { ...app, "next/link$": link }), "rsc")).not.toBe(key);

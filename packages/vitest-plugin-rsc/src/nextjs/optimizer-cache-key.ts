@@ -14,7 +14,7 @@ import type { NextLayer, NextProject } from "./project.ts";
 // test stale code until `--force`. Vite has no hook to add to that hash. So
 // the two go into a part of the options it does hash, the `define` of the
 // optimizer's bundler, under names no code reads: they change no byte of a
-// pre-bundle, and Vite keeps them in its own metadata of the cache.
+// pre-bundle, and Vite keeps their hash in its own metadata of the cache.
 
 const hash = (text: string) => createHash("sha256").update(text).digest("hex").slice(0, 16);
 
@@ -45,12 +45,10 @@ const isCode = (file: string) =>
   !/\.d\.[cm]?ts$/.test(file);
 
 /**
- * The plugin's code: the contents of every file of it, in `src` where the
- * source runs (this repository, with the `vitest-plugin-rsc-source`
- * condition), in `dist` where the package is built. One rule for both: the
- * contents, not the version, which a build of this repository keeps, and not
- * the times of the files, which every build changes. All of the code, not
- * just the modules that compile a dependency: a bundle of `dist` mixes
+ * The code of a directory of the plugin: the contents of every file of it.
+ * The contents, not the version, which a build of this repository keeps, and
+ * not the times of the files, which every build changes. All of the code,
+ * not just the modules that compile a dependency: a bundle of `dist` mixes
  * modules, and what those import is just as much the compile.
  */
 export function codeKey(dir: string): string {
@@ -68,19 +66,25 @@ export function codeKey(dir: string): string {
   return content.digest("hex").slice(0, 16);
 }
 
-// The directory of the package that this code is in, `src` or `dist`: the
-// top one of the package, whatever chunk of `dist` this module is bundled in.
-// None where the code is not in its package, bundled into another file: the
-// lockfile, which Vite hashes, has its version.
-function ownCodeDir(): string | undefined {
+// The directories of the plugin's code: `src`, which runs in this repository
+// (the `vitest-plugin-rsc-source` condition), and `dist`, which runs where the
+// package is installed, and which the source runs the modules of Node.js of
+// (node-builtins.ts). Both where both are there, so that a build, which
+// writes the same files again for the same source, keeps the key. None where
+// the code is not in its package, bundled into another file: then the
+// lockfile, which Vite hashes too, has its version.
+function ownCodeDirs(): string[] {
   const file = fileURLToPath(import.meta.url);
   for (let dir = path.dirname(file); dir !== path.dirname(dir); dir = path.dirname(dir)) {
     const manifest = path.join(dir, "package.json");
     if (!fs.existsSync(manifest)) continue;
     const { name } = JSON.parse(fs.readFileSync(manifest, "utf8")) as { name?: string };
-    if (name !== "vitest-plugin-rsc") return;
-    return path.join(dir, path.relative(dir, file).split(path.sep)[0]!);
+    if (name !== "vitest-plugin-rsc") return [];
+    return ["src", "dist"]
+      .map((code) => path.join(dir, code))
+      .filter((code) => fs.statSync(code, { throwIfNoEntry: false })?.isDirectory());
   }
+  return [];
 }
 
 let ownCodeKey: string | undefined;
@@ -91,8 +95,18 @@ export function optimizerCacheKey(
   layer: NextLayer,
 ): Record<string, string> {
   if (ownCodeKey === undefined) {
-    const dir = ownCodeDir();
-    ownCodeKey = dir ? codeKey(dir) : "";
+    // The key only renews a cache: a file that cannot be read, like one that
+    // a build is writing, leaves it to the version in the lockfile, as
+    // without it.
+    try {
+      ownCodeKey = hash(
+        ownCodeDirs()
+          .map((dir) => `${path.basename(dir)}:${codeKey(dir)}`)
+          .join(","),
+      );
+    } catch {
+      ownCodeKey = "";
+    }
   }
   return {
     __vitest_plugin_rsc_project__: JSON.stringify(projectKey(project, layer)),
