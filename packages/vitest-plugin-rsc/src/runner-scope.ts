@@ -35,22 +35,33 @@ export type Scope = {
 };
 
 /**
- * A global of the browser's as it is when it is called, not when the scope
- * was made: a test may fake the timers. Undefined where the browser has
- * none, as `typeof` would find it.
+ * A global of the browser's as it is when the code of the page reads it, as
+ * it would read the global itself: React DOM and its scheduler keep the
+ * `setTimeout` that is there as they load, and a test may fake the timers
+ * before or after. Undefined where the browser has none, as `typeof` would
+ * find it.
  */
 export function global<Type>(name: string): Type | undefined {
   return (globalThis as Record<string, unknown>)[name] as Type | undefined;
 }
 
-// Calls the global of that name, with the arguments it gets.
-const call =
-  <Type extends (...args: never[]) => unknown>(name: string) =>
-  (...args: Parameters<Type>) =>
-    (global(name) as (...args: Parameters<Type>) => ReturnType<Type>)(...args);
+// The function of the browser's, called on `globalThis`, as a call of the
+// global is: a timer called on the scope would be an illegal invocation.
+// The same one each time, as the global is.
+const onGlobal = new WeakMap<object, unknown>();
+const calledOnGlobal = <Type>(of: (...args: never[]) => unknown): Type => {
+  let called = onGlobal.get(of);
+  if (!called) {
+    called = (...args: never[]) => of.apply(globalThis, args);
+    onGlobal.set(of, called);
+  }
+  return called as Type;
+};
 
-const ifThere = <Type extends (...args: never[]) => unknown>(name: string) =>
-  global(name) ? (call<Type>(name) as unknown as Type) : undefined;
+const ifThere = <Type>(name: string): Type | undefined => {
+  const of = global<(...args: never[]) => unknown>(name);
+  return of === undefined ? undefined : calledOnGlobal<Type>(of);
+};
 
 /** The browser's own, for a runner outside a page. */
 export const hostScope: Scope = {

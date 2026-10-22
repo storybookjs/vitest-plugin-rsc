@@ -39,16 +39,36 @@ test("makes no timer once the page is left, as a page that is gone runs none", (
   expect(later).not.toHaveBeenCalled();
 });
 
-test("uses the timers of the moment it is called, which a test may have faked", () => {
+test("uses the timers of the moment its page reads them, as the browser's own would", () => {
   const scope = new PageScope();
   onTestFinished(() => scope.close());
+  const kept = scope.setTimeout!;
   vi.useFakeTimers();
   const fired = vi.fn();
-  scope.setTimeout!(fired, 1000);
+  const faked = vi.fn();
+  // Read once its page loaded, like React DOM's: the real timer.
+  kept(fired, 0);
+  // Read as it is called: the fake one.
+  scope.setTimeout!(faked, 1000);
 
   vi.advanceTimersByTime(1000);
 
-  expect(fired).toHaveBeenCalledOnce();
+  expect(faked).toHaveBeenCalledOnce();
+  expect(fired).not.toHaveBeenCalled();
+  expect(scope.setTimeout).toBe(scope.setTimeout);
+});
+
+test("runs a frame that a stub of a test runs right away", () => {
+  vi.stubGlobal("requestAnimationFrame", (callback: () => void) => (callback(), 7));
+  vi.stubGlobal("cancelAnimationFrame", vi.fn());
+  const scope = new PageScope();
+  const frame = vi.fn();
+
+  expect(scope.requestAnimationFrame!(frame)).toBe(7);
+  scope.close();
+
+  expect(frame).toHaveBeenCalledOnce();
+  expect(cancelAnimationFrame).not.toHaveBeenCalled();
 });
 
 test("clears a timer of its own, and one it did not make, as the browser does", () => {
@@ -183,5 +203,6 @@ test("passes on to the browser's own outside a page", () => {
   vi.advanceTimersByTime(10);
 
   expect(fired).toHaveBeenCalledOnce();
+  expect(hostScope.setTimeout).toBe(hostScope.setTimeout);
   expect(hostScope.MessageChannel).toBe(MessageChannel);
 });

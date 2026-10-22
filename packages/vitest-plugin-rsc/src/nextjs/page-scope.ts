@@ -35,10 +35,6 @@ type Listener = {
 const captureOf = (options: boolean | EventListenerOptions | undefined) =>
   typeof options === "boolean" ? options : !!options?.capture;
 
-// Undefined where the browser has none, as `typeof` would find it.
-const ifThere = <Type>(name: string, scoped: Type): Type | undefined =>
-  global(name) === undefined ? undefined : scoped;
-
 // Pending ones, by their id, with what cancels each: the function of the
 // timers that made it, which may be fake.
 type Pending = Map<number, (id: number) => void>;
@@ -50,8 +46,6 @@ type Pending = Map<number, (id: number) => void>;
  */
 export class PageScope implements Scope {
   #closed = false;
-  // Timeouts and intervals: as in a browser, either clear function clears
-  // either.
   readonly #timers: Pending = new Map();
   readonly #frames: Pending = new Map();
   readonly #idleCallbacks: Pending = new Map();
@@ -67,92 +61,96 @@ export class PageScope implements Scope {
     return this.#closed;
   }
 
-  // Asks the global `request` for a callback, and keeps it in `pending`
-  // until it runs, with the global `cancel` of that moment. `once`: a
+  // The functions of this scope, for the functions of the browser that they
+  // call: the same one each time, as the global is.
+  readonly #functions = new Map<string, { of: unknown; scoped: unknown }>();
+
+  #cached<Type>(name: string, of: unknown, make: () => Type): Type {
+    const kept = this.#functions.get(name);
+    if (kept && kept.of === of) return kept.scoped as Type;
+    const scoped = make();
+    this.#functions.set(name, { of, scoped });
+    return scoped;
+  }
+
+  // The global `request` and `cancel` of the moment the page's code reads
+  // it, as the browser's own would be (see `global()`): what it asks for is
+  // kept in `pending` until it runs, with what cancels it. `once`: a
   // timeout, a frame or an idle callback, which is done once it has run.
-  #request(
+  #requester<Type>(
     pending: Pending,
     request: string,
     cancel: string,
-    callback: unknown,
-    rest: unknown[],
     once: boolean,
-  ): number {
-    if (this.#closed) return 0;
+  ): Type | undefined {
+    const requestOf = global<(callback: unknown, ...rest: unknown[]) => number>(request);
+    if (requestOf === undefined) return undefined;
     const cancelOf = global<(id: number) => void>(cancel)!;
-    const requestOf = global<(callback: unknown, ...rest: unknown[]) => number>(request)!;
-    const id = requestOf(
-      once && typeof callback === "function"
-        ? (...args: unknown[]) => {
-            pending.delete(id);
-            (callback as (...args: unknown[]) => void)(...args);
-          }
-        : callback,
-      ...rest,
-    );
-    pending.set(id, cancelOf);
-    return id;
+    return this.#cached(request, requestOf, () => {
+      const requested = (callback: unknown, ...rest: unknown[]): number => {
+        if (this.#closed) return 0;
+        let id: number | undefined;
+        // A stub of a test may run it right away, before it has an id.
+        let ran = false;
+        id = requestOf.call(
+          globalThis,
+          once && typeof callback === "function"
+            ? (...args: unknown[]) => {
+                ran = true;
+                if (id !== undefined) pending.delete(id);
+                (callback as (...args: unknown[]) => void)(...args);
+              }
+            : callback,
+          ...rest,
+        );
+        if (!ran) pending.set(id, cancelOf);
+        return id;
+      };
+      return requested as Type;
+    });
   }
 
   // One that this scope did not make is the browser's to cancel.
-  #cancel(pending: Pending, cancel: string, id: number | undefined): void {
-    if (id === undefined) return;
-    const cancelOf = pending.get(id) ?? global<(id: number) => void>(cancel)!;
-    pending.delete(id);
-    cancelOf(id);
+  #canceller<Type>(pending: Pending, cancel: string): Type | undefined {
+    const cancelOf = global<(id: number) => void>(cancel);
+    if (cancelOf === undefined) return undefined;
+    return this.#cached(cancel, cancelOf, () => {
+      const cancelled = (id: number | undefined): void => {
+        if (id === undefined) return;
+        const own = pending.get(id);
+        pending.delete(id);
+        if (own) own(id);
+        else cancelOf.call(globalThis, id);
+      };
+      return cancelled as Type;
+    });
   }
-
-  readonly #setTimeout: SetTimer = (handler, timeout, ...args) =>
-    this.#request(this.#timers, "setTimeout", "clearTimeout", handler, [timeout, ...args], true);
-  readonly #setInterval: SetTimer = (handler, timeout, ...args) =>
-    this.#request(this.#timers, "setInterval", "clearInterval", handler, [timeout, ...args], false);
-  readonly #clearTimer: ClearTimer = (id) => this.#cancel(this.#timers, "clearTimeout", id);
-  readonly #requestAnimationFrame: RequestFrame = (callback) =>
-    this.#request(
-      this.#frames,
-      "requestAnimationFrame",
-      "cancelAnimationFrame",
-      callback,
-      [],
-      true,
-    );
-  readonly #cancelAnimationFrame: Cancel = (id) =>
-    this.#cancel(this.#frames, "cancelAnimationFrame", id);
-  readonly #requestIdleCallback: RequestIdle = (callback, options) =>
-    this.#request(
-      this.#idleCallbacks,
-      "requestIdleCallback",
-      "cancelIdleCallback",
-      callback,
-      [options],
-      true,
-    );
-  readonly #cancelIdleCallback: Cancel = (id) =>
-    this.#cancel(this.#idleCallbacks, "cancelIdleCallback", id);
 
   get setTimeout(): SetTimer | undefined {
-    return ifThere("setTimeout", this.#setTimeout);
+    return this.#requester(this.#timers, "setTimeout", "clearTimeout", true);
   }
+  // Timeouts and intervals: as in a browser, either clear function clears
+  // either.
   get clearTimeout(): ClearTimer | undefined {
-    return ifThere("clearTimeout", this.#clearTimer);
+    return this.#canceller(this.#timers, "clearTimeout");
   }
   get setInterval(): SetTimer | undefined {
-    return ifThere("setInterval", this.#setInterval);
+    return this.#requester(this.#timers, "setInterval", "clearInterval", false);
   }
   get clearInterval(): ClearTimer | undefined {
-    return ifThere("clearInterval", this.#clearTimer);
+    return this.#canceller(this.#timers, "clearInterval");
   }
   get requestAnimationFrame(): RequestFrame | undefined {
-    return ifThere("requestAnimationFrame", this.#requestAnimationFrame);
+    return this.#requester(this.#frames, "requestAnimationFrame", "cancelAnimationFrame", true);
   }
   get cancelAnimationFrame(): Cancel | undefined {
-    return ifThere("cancelAnimationFrame", this.#cancelAnimationFrame);
+    return this.#canceller(this.#frames, "cancelAnimationFrame");
   }
   get requestIdleCallback(): RequestIdle | undefined {
-    return ifThere("requestIdleCallback", this.#requestIdleCallback);
+    return this.#requester(this.#idleCallbacks, "requestIdleCallback", "cancelIdleCallback", true);
   }
   get cancelIdleCallback(): Cancel | undefined {
-    return ifThere("cancelIdleCallback", this.#cancelIdleCallback);
+    return this.#canceller(this.#idleCallbacks, "cancelIdleCallback");
   }
 
   // A class of the page's own that extends the browser's of now, as a

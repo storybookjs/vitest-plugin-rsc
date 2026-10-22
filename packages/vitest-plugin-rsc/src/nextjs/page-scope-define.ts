@@ -43,11 +43,19 @@ export const pageScopeDefines: Record<string, string> = Object.fromEntries([
 const mentionsGlobal = new RegExp(`\\b(?:${[...globals, ...Object.keys(listeners)].join("|")})\\b`);
 
 // The files of `next/dist`, which include the React, React DOM, scheduler
-// and Flight client that Next ships.
-const nextFiles = (nextDir: string) =>
-  new RegExp(
-    `^${`${normalizePath(nextDir)}/dist/`.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}.*\\.[cm]?js$`,
-  );
+// and Flight client that Next ships. One for each `nextDir`, as a static
+// build asks for every file it has.
+const nextFilesOf = new Map<string, RegExp>();
+const nextFiles = (nextDir: string) => {
+  let files = nextFilesOf.get(nextDir);
+  if (!files) {
+    files = new RegExp(
+      `^${`${normalizePath(nextDir)}/dist/`.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}.*\\.[cm]?js$`,
+    );
+    nextFilesOf.set(nextDir, files);
+  }
+  return files;
+};
 
 /** Whether `file` is one of Next's that reaches the scope of its page. */
 export function isScopedToPage(nextDir: string, file: string): boolean {

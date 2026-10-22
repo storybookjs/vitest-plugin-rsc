@@ -69,8 +69,9 @@ const router = () =>
 
 test("lets go of every page that navigated to a route with stylesheets", async () => {
   // React waits for a stylesheet that has not loaded before it shows a route,
-  // with a timer of a minute that it does not clear once it has: that timer
-  // would keep the page. So the browser has loaded them already.
+  // with a timer of a minute that it does not clear once it has. The page's
+  // scope clears it, which the test below asserts. Here the browser has
+  // loaded them already, so that what keeps a page is something else.
   await renderServer({ url: "/styles" });
   // Many pages, and first in the file: whether what a page left on the
   // document keeps it can depend on the shape that the document has at that
@@ -407,7 +408,7 @@ test("lets go of every page that navigated to a route with an image of next/imag
   await renderServer({ url: "/" });
   await page.getByRole("heading", { name: "Home" }).hover();
 
-  if (inject("build") === "development") expect(disconnected).toBeGreaterThan(0);
+  if (inject("build") === "development") expect(disconnected).toBeGreaterThanOrEqual(4);
   await expectCollected();
 });
 

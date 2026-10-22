@@ -32,13 +32,13 @@ Done:
 - **3.1, Next's files get the page's timers, ports and observers.** `nextjs/page-scope.ts` is the scope and `nextjs/page-scope-define.ts` the define, also for a static build. It replaced the recording of `MessageChannel` and of the listeners on `window` in `leftovers.ts`, which now only records React's listeners around `createRoot`.
 - **3.2, the globals.** They go at every leave, but only the ones that point into the page: `__NEXT_HYDRATED_AT` and the other flags stay, which the notes demo's `watchPageLoad()` compares across pages. React's inline scripts run with the page's timers.
 - **React DOM's properties come off the page's nodes before its root unmounts.** That step was not in the plan. Without it, a node that outlives the page kept the whole page through the fiber on a text node. Holders of such a node: an assertion of the test, the element under the pointer, an `<img>` with a `srcset` that Blink keeps.
-- **Experiment K finds nothing of Next's or React's left on any route.** The tests are in `memory.test.tsx`: the observer of `next/image`, and React DOM's timer for a stylesheet.
+- **3.3 was in place already.** The server in front of the app closes the response when the page's request aborts (`node-server.ts`).
+- **In the browser layer, experiment K finds nothing of Next's or React's left on any route.** On the e2e demo's routes nothing is left at all. On the notes demo's, what is left is server-side: PGlite's timer, and the 100 ms timer of the Flight client that Next ships, in the ssr layer. The tests are in `memory.test.tsx`: the observer of `next/image`, and React DOM's timer for a stylesheet.
 
 Not done:
 
 - **The pointer is not moved at `cleanup()`.** The node under the pointer no longer keeps a fiber. Through the `load` and `error` listeners that React DOM puts on an element like `<img>`, it can still keep React DOM of its page, as Blink's hold on an `<img>` with a `srcset` can.
 - **Those listeners can't be removed.** React DOM adds them through a variable, out of the define's reach. Moving the nodes into another document (`adoptNode`) kept more pages, not fewer.
-- **3.3 is in place already.** The server in front of the app closes the response when the page's request aborts (`node-server.ts`).
 - **3.4.** The `memory` tests still allow one page.
 - **The CI project with the default `isolate`** is for a later PR.
 

@@ -5,7 +5,7 @@ import { resetAsyncLocalStorage } from "../async-local-storage.ts";
 import { checkFetchedModules, createEnvironmentRunner, environmentModule } from "../utils.ts";
 import { setOpenPage, sendRequest, unlessAborted } from "./app-requests.ts";
 import { callServerWithoutPage } from "./client-graph.ts";
-import { forgetReactOfPage, loadDocument, unloadDocument, type HistoryEntry } from "./document.ts";
+import { loadDocument, unloadDocument, type HistoryEntry } from "./document.ts";
 import { download, downloadName } from "./downloads.ts";
 import { noRouter } from "./host-document.ts";
 import type { NodeOnPage } from "./node-on-page.ts";
@@ -255,7 +255,7 @@ async function openPage(
     // reports the error that takes the node's place as the page hydrates.
     if (!opening?.opened.node?.layouts) opening?.nodeOnPage?.replaced();
   }
-  await loadDocument(html, response.url, container, after, scope);
+  const forgetReact = await loadDocument(html, response.url, container, after, scope);
   superseded();
   // A page load runs the app's scripts from scratch, so every page gets a
   // module graph of its own for the browser layer. A page that is left keeps
@@ -281,8 +281,11 @@ async function openPage(
     const { unmount } = await client.start(container, signal, opening?.nodeOnPage, page.errors);
     // Its nodes forget React DOM first, while they are still the page's.
     page.defer(() => {
-      forgetReactOfPage();
-      unmount();
+      try {
+        forgetReact();
+      } finally {
+        unmount();
+      }
     });
   })();
   // The page is open from here: `currentPage()` has it, for the navigations

@@ -1,4 +1,4 @@
-import { hostScope, type Scope } from "../runner-scope.ts";
+import type { Scope } from "../runner-scope.ts";
 import { graphStylesheetAttribute } from "./styles-shared.ts";
 
 // A page load, without loading a page: the test runs in this
@@ -44,8 +44,6 @@ const attributesOf = (element: Element) =>
   Array.from(element.attributes, ({ name, value }) => [name, value] as const);
 
 let unload: (() => void) | undefined;
-// Takes React DOM's properties off the nodes of the page that is there.
-let forget: (() => void) | undefined;
 // The preloads of the page that loads next, until it is there.
 let preloads: HTMLLinkElement[] = [];
 // The URL that leaving the page puts back, while a page is open.
@@ -192,7 +190,11 @@ const reactProperty = /^_+react/;
 // properties of the node, it would keep the whole page. Those go with the
 // page, once its root has unmounted.
 function forgetReact(root: Node): void {
-  const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT);
+  // Comments too: React keeps a fiber on the markers of a Suspense boundary.
+  const walker = document.createTreeWalker(
+    root,
+    NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT | NodeFilter.SHOW_COMMENT,
+  );
   for (let node: Node | null = root; node; node = walker.nextNode()) {
     for (const key of Object.keys(node)) {
       if (reactProperty.test(key)) Reflect.deleteProperty(node, key);
@@ -255,14 +257,21 @@ export function preloadPage({
  * The page takes the entry of the history that the document is at, or with
  * `after` gets one of its own, after that entry. React's inline scripts get
  * the timers of `scope`, the page's.
+ *
+ * Returns what takes React DOM's properties off the nodes of this page,
+ * before its root unmounts: React takes the nodes out of the document as it
+ * does, and leaves its fiber on a text node. A node that outlives the page
+ * then keeps no fiber of it: the one that an assertion of the test holds
+ * until it ends, or the one under the pointer. Once the page is left, it
+ * does nothing: leaving took them off already.
  */
 export async function loadDocument(
   html: string,
   url: string,
-  container?: Element,
-  after?: HistoryEntry,
-  scope: Scope = hostScope,
-): Promise<void> {
+  container: Element | undefined,
+  after: HistoryEntry | undefined,
+  scope: Scope,
+): Promise<() => void> {
   leaveDocument();
   // The preloads of its route are this page's.
   const ownPreloads = new Set(preloads);
@@ -312,7 +321,6 @@ export async function loadDocument(
       ),
     ),
   ];
-  forget = () => pageNodes().forEach(forgetReact);
   const leave = () => {
     try {
       leaveNow();
@@ -358,6 +366,9 @@ export async function loadDocument(
     for (const name of globalsOfThePage) Reflect.deleteProperty(window, name);
   };
   unload = leave;
+  const forget = () => {
+    if (unload === leave) pageNodes().forEach(forgetReact);
+  };
 
   // A parsed document has no scripting, so its scripts do not run, also not
   // once they are moved.
@@ -407,7 +418,7 @@ export async function loadDocument(
 
   document.head.append(...page.head.childNodes);
   await loaded(stylesheetsOfHead);
-  if (unload !== leave) return;
+  if (unload !== leave) return forget;
 
   // The page shows, in place of what was there, in one go. What the host
   // put in its body while the page waited is the host's too.
@@ -435,7 +446,7 @@ export async function loadDocument(
     pageBody.append(...page.body.childNodes);
   }
   await loaded(stylesheetsOfBody);
-  if (unload !== leave) return;
+  if (unload !== leave) return forget;
 
   // The inline scripts: React's, which move content that was waiting for
   // data into place, and Next's, which carry the Flight payload. The scripts
@@ -451,6 +462,7 @@ export async function loadDocument(
       }
     }
   }
+  return forget;
 }
 
 // React's scripts in the document do not put streamed content in place right
@@ -491,19 +503,7 @@ function leaveDocument(): void {
   // Once, also when it throws: the next page is not to find this one.
   const leave = unload;
   unload = undefined;
-  forget = undefined;
   leave?.();
-}
-
-/**
- * Takes React DOM's properties off the nodes of the page that is there,
- * before its root unmounts: React takes the nodes out of the document as it
- * does, and leaves its fiber on a text node. A node that outlives the page
- * then keeps no fiber of it: the one that an assertion of the test holds
- * until it ends, or the one under the pointer.
- */
-export function forgetReactOfPage(): void {
-  forget?.();
 }
 
 /**

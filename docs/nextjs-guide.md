@@ -781,7 +781,7 @@ The plugin does a lot of work so that this works. Every `renderServer()` is a pa
   - the properties React DOM keeps on the document;
   - the timers, animation frames, message ports, performance observers and listeners on `window` and `document` of Next's code and of the React it ships;
   - the globals that Next's client and React's inline scripts set on `window`;
-  - React DOM's properties on the page's nodes, so a node that outlives the page doesn't keep it;
+  - React DOM's properties on the page's nodes, so a node that outlives the page keeps no fiber of it;
   - the page's nodes, attributes, URL and history entry, and the Flight payload.
 - A new browser context and an empty disk before each test, as above.
 
