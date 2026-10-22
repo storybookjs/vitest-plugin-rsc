@@ -683,20 +683,24 @@ test.for([
   },
 );
 
-test.for([
-  "server/node-environment-extensions/fast-set-immediate.external",
-  "server/node-environment-extensions/process-error-handlers",
-  "server/route-modules/app-page/vendored/ssr/entrypoints",
-  "server/route-modules/app-page/module",
-])("needs a stand-in with every export of %s", async (file) => {
-  const source = fs.readFileSync(installed.resolve(runtime(file)), "utf8");
-  const next = nextWith({ [runtime(file)]: `${source}\nexport const addedInNext = 1;\n` });
+test("has a stand-in with every export of the modules of Next it replaces", async () => {
+  const { newExports } = await loadNextProject(root);
 
-  await expect(loadNextProject(root, next)).rejects.toThrow(
-    changed(
-      `${runtime(file)} has an export \`addedInNext\` that the plugin's stand-in for it lacks`,
-    ),
-  );
+  expect(newExports).toEqual({});
+});
+
+test.for([
+  ["server/node-environment-extensions/fast-set-immediate.external", "fast-set-immediate"],
+  ["server/node-environment-extensions/process-error-handlers", "node-environment"],
+  ["server/route-modules/app-page/vendored/ssr/entrypoints", "vendored-react"],
+  ["server/route-modules/app-page/module", "ssr-app-page-module"],
+])("stubs an export of %s that its stand-in has not, and runs", async ([file, standIn]) => {
+  const source = fs.readFileSync(installed.resolve(runtime(file!)), "utf8");
+  const next = nextWith({ [runtime(file!)]: `${source}\nexport const addedInNext = 1;\n` });
+
+  const { newExports } = await loadNextProject(root, next);
+
+  expect(newExports).toEqual({ [standIn!]: [{ name: "addedInNext", module: runtime(file!) }] });
 });
 
 test("says which module of Next that a stand-in replaces is gone", async () => {

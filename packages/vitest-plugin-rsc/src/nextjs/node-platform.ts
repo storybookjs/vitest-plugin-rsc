@@ -14,10 +14,48 @@ import {
 // build-output.ts for the files of a build, and globals.ts for the globals.
 // The modules of Node.js themselves are the package's, see node-builtins.ts.
 //
-// A stand-in replaces all of a module, so it has every export of the module
-// that Next has: compat/checks.ts checks that when the run starts. Where all
-// a module of Next lacks in a browser is one capability of Node.js, the
-// module is Next's own, given that capability: see `instrumentationRequire`.
+// A stand-in replaces all of a module. An export of the module that Next has
+// and the stand-in has not, one that is new in a Next this plugin was not
+// written for, gets a stub that throws when it is used, naming the export and
+// the version: compat/checks.ts finds them when the run starts. A run that
+// does not use it goes on. Where all a module of Next lacks in a browser is
+// one capability of Node.js, the module is Next's own, given that capability:
+// see `instrumentationRequire`.
+
+/** An export of a module of Next that its stand-in does not have. */
+export type NewExport = { name: string; module: string };
+
+// What a stub of a new export throws, for any use of it: a call, a `new`, or
+// a property. Not a symbol, which a log reads off whatever it shows.
+const newExportHelper = `const $$newExport = (message) => {
+  const fail = () => { throw new Error(message); };
+  return new Proxy(function () {}, {
+    apply: fail,
+    construct: fail,
+    get: (_, key) => (typeof key === "symbol" ? undefined : fail()),
+  });
+};
+`;
+
+// The stubs of the new exports of a stand-in.
+function newExportStubs(newExports: NewExport[], version: string): string {
+  if (newExports.length === 0) return "";
+  return (
+    newExportHelper +
+    newExports
+      .map(({ name, module }, index) => {
+        const message =
+          `vitest-plugin-rsc: \`${name}\` of ${module} is new in next@${version}, and the ` +
+          `plugin's stand-in for that module does not have it. Use a version of ` +
+          `vitest-plugin-rsc that supports next@${version}.`;
+        return (
+          `const $$new${index} = $$newExport(${JSON.stringify(message)});\n` +
+          `export { $$new${index} as ${JSON.stringify(name)} };\n`
+        );
+      })
+      .join("")
+  );
+}
 
 /**
  * The stand-ins, for a `registry` in the browser that some of them call and a
@@ -123,8 +161,14 @@ export function createNodePlatform(registry: string, prefix: string) {
       const name = names.get(nodePlatformModuleOf(source) ?? "");
       return name && prefix + name;
     },
-    /** The code of a stand-in, by its id without the prefix. */
-    load: (name: string): string | undefined => modules[name],
+    /**
+     * The code of a stand-in, by its id without the prefix, with a stub for
+     * each export of Next's module that it has not, of the installed `version`.
+     */
+    load(name: string, newExports: NewExport[] = [], version = ""): string | undefined {
+      const code = modules[name];
+      return code === undefined ? undefined : code + newExportStubs(newExports, version);
+    },
   };
 }
 

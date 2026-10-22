@@ -15,6 +15,7 @@ import { createMetadataLoaders } from "./project/metadata.ts";
 import { discoverAppRoutes } from "./project/routes.ts";
 import { buildRouting, findMiddleware } from "./project/routing.ts";
 import { checkRuntime } from "./compat/checks.ts";
+import type { NewExport } from "./node-platform.ts";
 import { createCompiler } from "./project/transform.ts";
 import { createWebpackRules, type WebpackRule } from "./project/webpack.ts";
 
@@ -103,6 +104,11 @@ export type NextProject = {
    * ones under a folder with a name that a URL percent-encodes.
    */
   unmatchedRoutes: string[];
+  /**
+   * The exports of Next's modules that their stand-ins in node-platform.ts
+   * have not, by the stand-in: new in the installed Next.
+   */
+  newExports: Record<string, NewExport[]>;
   /** The `proxy.ts` of the app, or its `middleware.ts`: its file, if it has one. */
   middlewareFile: string | undefined;
   /** What the server does with a request before a route gets it. */
@@ -312,7 +318,7 @@ export async function loadNextProject(
     adapterPath,
   );
   // What the modules of this package in the browser assume of Next's runtime.
-  const { builtinBoundaries } = checkRuntime(context);
+  const { builtinBoundaries, newExports } = checkRuntime(context);
   // What Next's build gives each layer, and its compiler and loaders for the
   // files of the app.
   const layers = await layerTables(context, build);
@@ -327,6 +333,7 @@ export async function loadNextProject(
     routes: app.routes,
     edgeRouteFiles: app.edgeRouteFiles,
     unmatchedRoutes,
+    newExports,
     middlewareFile: middleware.middlewareFile,
     routing,
     routesManifest,

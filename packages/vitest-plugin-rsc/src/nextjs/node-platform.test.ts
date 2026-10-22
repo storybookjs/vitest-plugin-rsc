@@ -57,3 +57,23 @@ test.for([
 ])("stands in for %s with %s", ([specifier, id]) => {
   expect(nodePlatform.moduleOf(specifier!)).toBe(id);
 });
+
+test("gives a stand-in a stub of an export that is new in Next, which throws when it is used", async () => {
+  const code = nodePlatform.load(
+    "gzip-size",
+    [{ name: "stream", module: "next/dist/compiled/gzip-size" }],
+    "16.9.0",
+  )!;
+  const { sync, stream } = await import(`data:text/javascript,${encodeURIComponent(code)}`);
+  const message =
+    "vitest-plugin-rsc: `stream` of next/dist/compiled/gzip-size is new in next@16.9.0, and " +
+    "the plugin's stand-in for that module does not have it. Use a version of " +
+    "vitest-plugin-rsc that supports next@16.9.0.";
+
+  expect(sync()).toBe(0);
+  expect(() => stream()).toThrow(message);
+  expect(() => new stream()).toThrow(message);
+  expect(() => stream.pipe).toThrow(message);
+  // Not what a log reads off it.
+  expect(stream[Symbol.toStringTag]).toBeUndefined();
+});

@@ -1,5 +1,5 @@
 import fs from "node:fs";
-import { createNodePlatform, instrumentationRequire } from "../node-platform.ts";
+import { createNodePlatform, instrumentationRequire, type NewExport } from "../node-platform.ts";
 import type { NextContext } from "../project/context.ts";
 import { declaredExports, exportNamesOf, hasExport } from "../project/module-exports.ts";
 import {
@@ -218,7 +218,7 @@ export function checkRuntime(context: NextContext) {
   // The plugin turns Next's renderer to web streams with this.
   runtimeFile("server/app-render/stream-ops").contains("process.env.__NEXT_USE_NODE_STREAMS");
 
-  checkNodePlatform(context);
+  const newExports = checkNodePlatform(context);
   // The module that loads `instrumentation.ts` is Next's own, and its call of
   // `require` gets a function that finds no file (node-platform.ts).
   const instrumentation = runtimeFile(instrumentationModule);
@@ -227,22 +227,23 @@ export function checkRuntime(context: NextContext) {
     fail(`next/dist/esm/${instrumentationModule}.js has ${required}`);
   }
 
-  return { builtinBoundaries };
+  return { builtinBoundaries, newExports };
 }
 
 // The stand-ins of node-platform.ts replace a module of Next by its path, and
 // all of it. A module that is not there, at that path, has a stand-in for
-// nothing; and an export that its stand-in lacks is `undefined` for the
-// module that imports it, which the dependency optimizer leaves as it is
-// (`shimMissingExports`). And the same for `app-page/module.compiled`, which
-// the rsc layer has as a forward to the ssr layer's module (plugin.ts): it
-// has to be there, and the forward needs every export of the module it is
-// the bundle of.
+// nothing, and the run stops. And the same for `app-page/module.compiled`,
+// which the rsc layer has as a forward to the ssr layer's module (plugin.ts).
+// Returns the exports of the modules that their stand-ins have not, by the
+// stand-in, which node-platform.ts gives a stub that throws when it is used:
+// without one an export is `undefined` for the module that imports it, which
+// the dependency optimizer leaves as it is (`shimMissingExports`).
 function checkNodePlatform({ projectRequire, fail }: NextContext) {
   const nodePlatform = createNodePlatform("registry", "");
   const appPageModule = aliasPaths.routeModule("app-page").slice("next/dist/".length);
   const standIns = Object.entries({
     ...nodePlatformModules,
+    // The forward needs the exports of the module it is the bundle of.
     "ssr-app-page-module": [appPageModule],
   });
   const compiled = `next/dist/esm/${appPageModule}.compiled.js`;
@@ -251,6 +252,7 @@ function checkNodePlatform({ projectRequire, fail }: NextContext) {
   } catch (error) {
     fail(`${compiled} is not there, which the plugin stands in for`, error);
   }
+  const newExports: Record<string, NewExport[]> = {};
   for (const [name, modules] of standIns) {
     const { names } = declaredExports(nodePlatform.load(name)!);
     for (const nextModule of modules) {
@@ -266,10 +268,12 @@ function checkNodePlatform({ projectRequire, fail }: NextContext) {
         return fail(`${id} is not there, which the plugin stands in for`, error);
       }
       for (const exported of exportNamesOf(file)) {
-        if (!names.has(exported)) {
-          fail(`${id} has an export \`${exported}\` that the plugin's stand-in for it lacks`);
-        }
+        // Two modules of one stand-in can have the same name: one stub.
+        if (names.has(exported)) continue;
+        names.add(exported);
+        (newExports[name] ??= []).push({ name: exported, module: id });
       }
     }
   }
+  return newExports;
 }
