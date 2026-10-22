@@ -67,7 +67,7 @@ importers:
         version: 16.4.0
       next:
         specifier: 16.4.0
-        version: 16.4.0(@babel/core@7.29.0)(@opentelemetry/api@1.9.1)(@types/node@24.12.4)(babel-plugin-react-compiler@1.0.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(sass@1.106.0)
+        version: 16.4.0(@babel/core@7.29.0)(@opentelemetry/api@1.9.1)(@playwright/test@1.64.1)(@types/node@24.12.4)(babel-plugin-react-compiler@1.0.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(sass@1.106.0)
       react:
         specifier: 19.2.6
         version: 19.2.6
@@ -186,7 +186,7 @@ importers:
         version: 19.2.14
       next:
         specifier: 16.4.0
-        version: 16.4.0(@babel/core@7.29.0)(@opentelemetry/api@1.9.1)(@types/node@24.12.4)(babel-plugin-react-compiler@1.0.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(sass@1.106.0)
+        version: 16.4.0(@babel/core@7.29.0)(@opentelemetry/api@1.9.1)(@playwright/test@1.64.1)(@types/node@24.12.4)(babel-plugin-react-compiler@1.0.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(sass@1.106.0)
       react:
         specifier: ^19.2.6
         version: 19.2.6
@@ -259,7 +259,7 @@ importers:
         version: 4.80.0
       next:
         specifier: 16.4.0
-        version: 16.4.0(@babel/core@7.29.0)(@opentelemetry/api@1.9.1)(@types/node@24.12.4)(babel-plugin-react-compiler@1.0.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(sass@1.106.0)
+        version: 16.4.0(@babel/core@7.29.0)(@opentelemetry/api@1.9.1)(@playwright/test@1.64.1)(@types/node@24.12.4)(babel-plugin-react-compiler@1.0.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(sass@1.106.0)
       node-inspect-extracted:
         specifier: 3.3.4
         version: 3.3.4
@@ -301,7 +301,7 @@ importers:
         version: 16.4.0
       next:
         specifier: 16.4.0
-        version: 16.4.0(@babel/core@7.29.0)(@opentelemetry/api@1.9.1)(@types/node@24.12.4)(babel-plugin-react-compiler@1.0.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(sass@1.106.0)
+        version: 16.4.0(@babel/core@7.29.0)(@opentelemetry/api@1.9.1)(@playwright/test@1.64.1)(@types/node@24.12.4)(babel-plugin-react-compiler@1.0.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(sass@1.106.0)
       react:
         specifier: 19.2.6
         version: 19.2.6
@@ -377,7 +377,7 @@ importers:
         version: 3.24.6(@types/node@24.12.4)
       next:
         specifier: 16.4.0
-        version: 16.4.0(@babel/core@7.29.0)(@opentelemetry/api@1.9.1)(@types/node@24.12.4)(babel-plugin-react-compiler@1.0.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(sass@1.106.0)
+        version: 16.4.0(@babel/core@7.29.0)(@opentelemetry/api@1.9.1)(@playwright/test@1.64.1)(@types/node@24.12.4)(babel-plugin-react-compiler@1.0.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(sass@1.106.0)
       pg:
         specifier: ^8.20.0
         version: 8.20.0
@@ -453,7 +453,7 @@ importers:
         version: 0.13.11(typescript@6.0.3)(valibot@1.4.2(typescript@6.0.3))(zod@4.4.3)
       next:
         specifier: 16.4.0
-        version: 16.4.0(@babel/core@7.29.0)(@opentelemetry/api@1.9.1)(@types/node@24.12.4)(babel-plugin-react-compiler@1.0.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(sass@1.106.0)
+        version: 16.4.0(@babel/core@7.29.0)(@opentelemetry/api@1.9.1)(@playwright/test@1.64.1)(@types/node@24.12.4)(babel-plugin-react-compiler@1.0.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(sass@1.106.0)
       next-themes:
         specifier: ^0.4.6
         version: 0.4.6(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
@@ -493,7 +493,7 @@ importers:
         version: 5.0.5(msw@2.14.6(@types/node@24.12.4)(typescript@6.0.3))(playwright@1.64.1)(vite@8.3.1(@types/node@24.12.4)(esbuild@0.27.7)(jiti@2.7.0)(sass@1.106.0)(terser@5.51.2)(tsx@4.21.0)(yaml@2.9.0))(vitest@5.0.5)
       geist:
         specifier: ^1.7.2
-        version: 1.7.2(next@16.4.0(@opentelemetry/api@1.9.1)(@types/node@24.12.4)(babel-plugin-react-compiler@1.0.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(sass@1.106.0))
+        version: 1.7.2(next@16.4.0(@opentelemetry/api@1.9.1)(@playwright/test@1.64.1)(@types/node@24.12.4)(babel-plugin-react-compiler@1.0.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(sass@1.106.0))
       playwright:
         specifier: ^1.64.0
         version: 1.64.1
@@ -520,7 +520,7 @@ importers:
         version: 16.4.0
       next:
         specifier: 16.4.0
-        version: 16.4.0(@babel/core@7.29.0)(@opentelemetry/api@1.9.1)(@types/node@24.12.4)(babel-plugin-react-compiler@1.0.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(sass@1.106.0)
+        version: 16.4.0(@babel/core@7.29.0)(@opentelemetry/api@1.9.1)(@playwright/test@1.64.1)(@types/node@24.12.4)(babel-plugin-react-compiler@1.0.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(sass@1.106.0)
       react:
         specifier: 19.2.6
         version: 19.2.6
@@ -581,7 +581,7 @@ importers:
         version: 1.6.10(@better-auth/core@1.6.10(@better-auth/utils@0.4.0)(@better-fetch/fetch@1.1.21)(@opentelemetry/api@1.9.1)(better-call@1.3.5(zod@4.4.3))(jose@6.2.3)(kysely@0.28.17)(nanostores@1.3.0))(@better-auth/utils@0.4.0)(drizzle-orm@0.45.2(@electric-sql/pglite@0.5.10)(@libsql/client-wasm@0.18.0)(@libsql/client@0.18.0)(@opentelemetry/api@1.9.1)(@prisma/client@7.10.1(prisma@7.10.1(@types/node@24.12.4)(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(magicast@0.5.5)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(typescript@6.0.3))(typescript@6.0.3))(@types/pg@8.20.0)(kysely@0.28.17)(mysql2@3.24.6(@types/node@24.12.4))(pg@8.20.0)(postgres@3.4.7)(prisma@7.10.1(@types/node@24.12.4)(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(magicast@0.5.5)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(typescript@6.0.3)))
       '@better-auth/passkey':
         specifier: ^1.6.10
-        version: 1.6.10(@better-auth/core@1.6.10(@better-auth/utils@0.4.0)(@better-fetch/fetch@1.1.21)(@opentelemetry/api@1.9.1)(better-call@1.3.5(zod@4.4.3))(jose@6.2.3)(kysely@0.28.17)(nanostores@1.3.0))(@better-auth/utils@0.4.0)(@better-fetch/fetch@1.1.21)(better-auth@1.6.10(3e57f7df0b04c5a1770c42e9846a1653))(better-call@1.3.5(zod@4.4.3))(nanostores@1.3.0)
+        version: 1.6.10(@better-auth/core@1.6.10(@better-auth/utils@0.4.0)(@better-fetch/fetch@1.1.21)(@opentelemetry/api@1.9.1)(better-call@1.3.5(zod@4.4.3))(jose@6.2.3)(kysely@0.28.17)(nanostores@1.3.0))(@better-auth/utils@0.4.0)(@better-fetch/fetch@1.1.21)(better-auth@1.6.10(935f3c7521d5ffca655de5c7af71aac9))(better-call@1.3.5(zod@4.4.3))(nanostores@1.3.0)
       '@next/env':
         specifier: 16.4.0
         version: 16.4.0
@@ -596,7 +596,7 @@ importers:
         version: 0.13.11(typescript@6.0.3)(valibot@1.4.2(typescript@6.0.3))(zod@4.4.3)
       better-auth:
         specifier: ^1.6.10
-        version: 1.6.10(3e57f7df0b04c5a1770c42e9846a1653)
+        version: 1.6.10(935f3c7521d5ffca655de5c7af71aac9)
       class-variance-authority:
         specifier: ^0.7.1
         version: 0.7.1
@@ -611,7 +611,7 @@ importers:
         version: 1.14.0(react@19.2.6)
       next:
         specifier: 16.4.0
-        version: 16.4.0(@babel/core@7.29.0)(@opentelemetry/api@1.9.1)(@types/node@24.12.4)(babel-plugin-react-compiler@1.0.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(sass@1.106.0)
+        version: 16.4.0(@babel/core@7.29.0)(@opentelemetry/api@1.9.1)(@playwright/test@1.64.1)(@types/node@24.12.4)(babel-plugin-react-compiler@1.0.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(sass@1.106.0)
       next-themes:
         specifier: ^0.4.6
         version: 0.4.6(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
@@ -626,7 +626,7 @@ importers:
         version: 19.2.6(react@19.2.6)
       react-transition-progress:
         specifier: ^0.0.4
-        version: 0.0.4(framer-motion@12.38.0(@emotion/is-prop-valid@1.4.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(next@16.4.0(@babel/core@7.29.0)(@opentelemetry/api@1.9.1)(@types/node@24.12.4)(babel-plugin-react-compiler@1.0.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(sass@1.106.0))(react@19.2.6)
+        version: 0.0.4(framer-motion@12.38.0(@emotion/is-prop-valid@1.4.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(next@16.4.0(@babel/core@7.29.0)(@opentelemetry/api@1.9.1)(@playwright/test@1.64.1)(@types/node@24.12.4)(babel-plugin-react-compiler@1.0.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(sass@1.106.0))(react@19.2.6)
       resend:
         specifier: ^6.12.3
         version: 6.12.3
@@ -658,6 +658,9 @@ importers:
       '@opentelemetry/api':
         specifier: ^1.9.1
         version: 1.9.1
+      '@playwright/test':
+        specifier: 1.64.1
+        version: 1.64.1
       '@storybook/addon-docs':
         specifier: https://pkg.pr.new/storybookjs/storybook/@storybook/addon-docs@d5523e646c9ffd61eddd2eec1efcbd12e428dce6
         version: https://pkg.pr.new/storybookjs/storybook/@storybook/addon-docs@d5523e646c9ffd61eddd2eec1efcbd12e428dce6(@types/react@19.2.14)(storybook@https://pkg.pr.new/storybookjs/storybook/storybook@d5523e646c9ffd61eddd2eec1efcbd12e428dce6(@types/react@19.2.14)(react@19.2.6))
@@ -2882,6 +2885,11 @@ packages:
   '@picocss/pico@1.5.7':
     resolution: {integrity: sha512-RygdXNlSXieAs9jMw/AeqA1ki1kldgEYbRn8BnYZIPfRTM5NWZ4uVzMK6uMPhYlRjoT5wD/OplZvIefnCqyDCQ==}
 
+  '@playwright/test@1.64.1':
+    resolution: {integrity: sha512-IaYGml/nSOiZWROfPtuIL7neuu9qDOZ3TNvNljUIrhDMxiGTgPjzj/g9p9RxpS2tSepPDRY+UwAaEeiKtUvIAg==}
+    engines: {node: '>=20'}
+    hasBin: true
+
   '@polka/url@1.0.0-next.29':
     resolution: {integrity: sha512-wwQAWhWSuHaag8c4q/KN/vCoeOJYshAIvMQwD4GpSb3OiZklFfvAgmj0VCBBImRpuF/aFgIRzllXlVX93Jevww==}
 
@@ -3160,13 +3168,13 @@ packages:
     resolution: {integrity: sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w==}
 
   '@storybook/addon-a11y@https://pkg.pr.new/storybookjs/storybook/@storybook/addon-a11y@d5523e646c9ffd61eddd2eec1efcbd12e428dce6':
-    resolution: {tarball: https://pkg.pr.new/storybookjs/storybook/@storybook/addon-a11y@d5523e646c9ffd61eddd2eec1efcbd12e428dce6}
+    resolution: {integrity: sha512-md1tbP4W9DpkhVOi3aibbKXNaB6I5qgdyqinIoo4/gK4VhRN5C4ACdo5ZJOMdJGGqiiMe4u3OddK0gL3XM2RwA==, tarball: https://pkg.pr.new/storybookjs/storybook/@storybook/addon-a11y@d5523e646c9ffd61eddd2eec1efcbd12e428dce6}
     version: 11.0.0-alpha.6
     peerDependencies:
       storybook: ^11.0.0-alpha.6
 
   '@storybook/addon-docs@https://pkg.pr.new/storybookjs/storybook/@storybook/addon-docs@d5523e646c9ffd61eddd2eec1efcbd12e428dce6':
-    resolution: {tarball: https://pkg.pr.new/storybookjs/storybook/@storybook/addon-docs@d5523e646c9ffd61eddd2eec1efcbd12e428dce6}
+    resolution: {integrity: sha512-ricZrJqxwsWsz1fKE5bewWILNi7e12eHeZc0Hvf5hvtxeIS8DQt6OzkvSRXuJx15XpDhJC0OOdjWEx4+4JL4zw==, tarball: https://pkg.pr.new/storybookjs/storybook/@storybook/addon-docs@d5523e646c9ffd61eddd2eec1efcbd12e428dce6}
     version: 11.0.0-alpha.6
     peerDependencies:
       '@types/react': ^18.0.0 || ^19.0.0
@@ -3176,7 +3184,7 @@ packages:
         optional: true
 
   '@storybook/addon-vitest@https://pkg.pr.new/storybookjs/storybook/@storybook/addon-vitest@d5523e646c9ffd61eddd2eec1efcbd12e428dce6':
-    resolution: {tarball: https://pkg.pr.new/storybookjs/storybook/@storybook/addon-vitest@d5523e646c9ffd61eddd2eec1efcbd12e428dce6}
+    resolution: {integrity: sha512-7Q8OzfaVM7njwxGgKyzpPYOUcGQyOHVdtCfD6d9xZ/kJ3WD4iq79oXnIJriFJd998UgWY5gU6QuZ/UVxEbEusg==, tarball: https://pkg.pr.new/storybookjs/storybook/@storybook/addon-vitest@d5523e646c9ffd61eddd2eec1efcbd12e428dce6}
     version: 11.0.0-alpha.6
     peerDependencies:
       '@vitest/browser': ^4.0.0 || ^5.0.0
@@ -3192,7 +3200,7 @@ packages:
         optional: true
 
   '@storybook/builder-vite@https://pkg.pr.new/storybookjs/storybook/@storybook/builder-vite@d5523e646c9ffd61eddd2eec1efcbd12e428dce6':
-    resolution: {tarball: https://pkg.pr.new/storybookjs/storybook/@storybook/builder-vite@d5523e646c9ffd61eddd2eec1efcbd12e428dce6}
+    resolution: {integrity: sha512-r83DQh4HNAcQxr2ld9lK2KQhgEjKfbomS1DfCJD9XjWUqGDh81aHNjiU2miOmuHU+sVaSUZu2MXtZtF84Xs6nQ==, tarball: https://pkg.pr.new/storybookjs/storybook/@storybook/builder-vite@d5523e646c9ffd61eddd2eec1efcbd12e428dce6}
     version: 11.0.0-alpha.6
     peerDependencies:
       storybook: ^11.0.0-alpha.6
@@ -3207,7 +3215,7 @@ packages:
       react: ^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0
 
   '@storybook/react@https://pkg.pr.new/storybookjs/storybook/@storybook/react@d5523e646c9ffd61eddd2eec1efcbd12e428dce6':
-    resolution: {tarball: https://pkg.pr.new/storybookjs/storybook/@storybook/react@d5523e646c9ffd61eddd2eec1efcbd12e428dce6}
+    resolution: {integrity: sha512-yJxy+XE7VGtkgETFBaOBTx9VbcmhoZO1Nv1sUGcqYAPoEcKr6W9TIZB52DdQTwZAeq1EqnY0fXJHndCeBYixVQ==, tarball: https://pkg.pr.new/storybookjs/storybook/@storybook/react@d5523e646c9ffd61eddd2eec1efcbd12e428dce6}
     version: 11.0.0-alpha.6
     peerDependencies:
       '@types/react': ^18.0.0 || ^19.0.0
@@ -6762,7 +6770,7 @@ packages:
     engines: {node: '>=18'}
 
   storybook@https://pkg.pr.new/storybookjs/storybook/storybook@d5523e646c9ffd61eddd2eec1efcbd12e428dce6:
-    resolution: {tarball: https://pkg.pr.new/storybookjs/storybook/storybook@d5523e646c9ffd61eddd2eec1efcbd12e428dce6}
+    resolution: {integrity: sha512-TOJ+Ty2MeMpn28wYiLRZhePmBusn7njim9dKnzmRWMnoR/4a9hJFeTvFp2mh3iaEnkyDYGE/kgAqlvClHlGUoQ==, tarball: https://pkg.pr.new/storybookjs/storybook/storybook@d5523e646c9ffd61eddd2eec1efcbd12e428dce6}
     version: 11.0.0-alpha.6
     hasBin: true
     peerDependencies:
@@ -7717,14 +7725,14 @@ snapshots:
       '@better-auth/core': 1.6.10(@better-auth/utils@0.4.0)(@better-fetch/fetch@1.1.21)(@opentelemetry/api@1.9.1)(better-call@1.3.5(zod@4.4.3))(jose@6.2.3)(kysely@0.28.17)(nanostores@1.3.0)
       '@better-auth/utils': 0.4.0
 
-  '@better-auth/passkey@1.6.10(@better-auth/core@1.6.10(@better-auth/utils@0.4.0)(@better-fetch/fetch@1.1.21)(@opentelemetry/api@1.9.1)(better-call@1.3.5(zod@4.4.3))(jose@6.2.3)(kysely@0.28.17)(nanostores@1.3.0))(@better-auth/utils@0.4.0)(@better-fetch/fetch@1.1.21)(better-auth@1.6.10(3e57f7df0b04c5a1770c42e9846a1653))(better-call@1.3.5(zod@4.4.3))(nanostores@1.3.0)':
+  '@better-auth/passkey@1.6.10(@better-auth/core@1.6.10(@better-auth/utils@0.4.0)(@better-fetch/fetch@1.1.21)(@opentelemetry/api@1.9.1)(better-call@1.3.5(zod@4.4.3))(jose@6.2.3)(kysely@0.28.17)(nanostores@1.3.0))(@better-auth/utils@0.4.0)(@better-fetch/fetch@1.1.21)(better-auth@1.6.10(935f3c7521d5ffca655de5c7af71aac9))(better-call@1.3.5(zod@4.4.3))(nanostores@1.3.0)':
     dependencies:
       '@better-auth/core': 1.6.10(@better-auth/utils@0.4.0)(@better-fetch/fetch@1.1.21)(@opentelemetry/api@1.9.1)(better-call@1.3.5(zod@4.4.3))(jose@6.2.3)(kysely@0.28.17)(nanostores@1.3.0)
       '@better-auth/utils': 0.4.0
       '@better-fetch/fetch': 1.1.21
       '@simplewebauthn/browser': 13.3.0
       '@simplewebauthn/server': 13.3.0
-      better-auth: 1.6.10(3e57f7df0b04c5a1770c42e9846a1653)
+      better-auth: 1.6.10(935f3c7521d5ffca655de5c7af71aac9)
       better-call: 1.3.5(zod@4.4.3)
       nanostores: 1.3.0
       zod: 4.4.3
@@ -9099,6 +9107,10 @@ snapshots:
 
   '@picocss/pico@1.5.7': {}
 
+  '@playwright/test@1.64.1':
+    dependencies:
+      playwright: 1.64.1
+
   '@polka/url@1.0.0-next.29': {}
 
   '@prisma/adapter-libsql@7.10.1':
@@ -10202,7 +10214,7 @@ snapshots:
 
   baseline-browser-mapping@2.10.29: {}
 
-  better-auth@1.6.10(3e57f7df0b04c5a1770c42e9846a1653):
+  better-auth@1.6.10(935f3c7521d5ffca655de5c7af71aac9):
     dependencies:
       '@better-auth/core': 1.6.10(@better-auth/utils@0.4.0)(@better-fetch/fetch@1.1.21)(@opentelemetry/api@1.9.1)(better-call@1.3.5(zod@4.4.3))(jose@6.2.3)(kysely@0.28.17)(nanostores@1.3.0)
       '@better-auth/drizzle-adapter': 1.6.10(@better-auth/core@1.6.10(@better-auth/utils@0.4.0)(@better-fetch/fetch@1.1.21)(@opentelemetry/api@1.9.1)(better-call@1.3.5(zod@4.4.3))(jose@6.2.3)(kysely@0.28.17)(nanostores@1.3.0))(@better-auth/utils@0.4.0)(drizzle-orm@0.45.2(@electric-sql/pglite@0.5.10)(@libsql/client-wasm@0.18.0)(@libsql/client@0.18.0)(@opentelemetry/api@1.9.1)(@prisma/client@7.10.1(prisma@7.10.1(@types/node@24.12.4)(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(magicast@0.5.5)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(typescript@6.0.3))(typescript@6.0.3))(@types/pg@8.20.0)(kysely@0.28.17)(mysql2@3.24.6(@types/node@24.12.4))(pg@8.20.0)(postgres@3.4.7)(prisma@7.10.1(@types/node@24.12.4)(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(magicast@0.5.5)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(typescript@6.0.3)))
@@ -10226,7 +10238,7 @@ snapshots:
       drizzle-kit: 0.31.10
       drizzle-orm: 0.45.2(@electric-sql/pglite@0.5.10)(@libsql/client-wasm@0.18.0)(@libsql/client@0.18.0)(@opentelemetry/api@1.9.1)(@prisma/client@7.10.1(prisma@7.10.1(@types/node@24.12.4)(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(magicast@0.5.5)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(typescript@6.0.3))(typescript@6.0.3))(@types/pg@8.20.0)(kysely@0.28.17)(mysql2@3.24.6(@types/node@24.12.4))(pg@8.20.0)(postgres@3.4.7)(prisma@7.10.1(@types/node@24.12.4)(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(magicast@0.5.5)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(typescript@6.0.3))
       mysql2: 3.24.6(@types/node@24.12.4)
-      next: 16.4.0(@babel/core@7.29.0)(@opentelemetry/api@1.9.1)(@types/node@24.12.4)(babel-plugin-react-compiler@1.0.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(sass@1.106.0)
+      next: 16.4.0(@babel/core@7.29.0)(@opentelemetry/api@1.9.1)(@playwright/test@1.64.1)(@types/node@24.12.4)(babel-plugin-react-compiler@1.0.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(sass@1.106.0)
       pg: 8.20.0
       prisma: 7.10.1(@types/node@24.12.4)(@types/react-dom@19.2.3(@types/react@19.2.14))(@types/react@19.2.14)(magicast@0.5.5)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(typescript@6.0.3)
       react: 19.2.6
@@ -11109,9 +11121,9 @@ snapshots:
 
   fuzzysort@3.1.0: {}
 
-  geist@1.7.2(next@16.4.0(@opentelemetry/api@1.9.1)(@types/node@24.12.4)(babel-plugin-react-compiler@1.0.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(sass@1.106.0)):
+  geist@1.7.2(next@16.4.0(@opentelemetry/api@1.9.1)(@playwright/test@1.64.1)(@types/node@24.12.4)(babel-plugin-react-compiler@1.0.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(sass@1.106.0)):
     dependencies:
-      next: 16.4.0(@babel/core@7.29.0)(@opentelemetry/api@1.9.1)(@types/node@24.12.4)(babel-plugin-react-compiler@1.0.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(sass@1.106.0)
+      next: 16.4.0(@babel/core@7.29.0)(@opentelemetry/api@1.9.1)(@playwright/test@1.64.1)(@types/node@24.12.4)(babel-plugin-react-compiler@1.0.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(sass@1.106.0)
 
   generate-function@2.3.1:
     dependencies:
@@ -12162,7 +12174,7 @@ snapshots:
       react: 19.2.6
       react-dom: 19.2.6(react@19.2.6)
 
-  next@16.4.0(@babel/core@7.29.0)(@opentelemetry/api@1.9.1)(@types/node@24.12.4)(babel-plugin-react-compiler@1.0.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(sass@1.106.0):
+  next@16.4.0(@babel/core@7.29.0)(@opentelemetry/api@1.9.1)(@playwright/test@1.64.1)(@types/node@24.12.4)(babel-plugin-react-compiler@1.0.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(sass@1.106.0):
     dependencies:
       '@next/env': 16.4.0
       '@swc/helpers': 0.5.23
@@ -12182,6 +12194,7 @@ snapshots:
       '@next/swc-win32-arm64-msvc': 16.4.0
       '@next/swc-win32-x64-msvc': 16.4.0
       '@opentelemetry/api': 1.9.1
+      '@playwright/test': 1.64.1
       babel-plugin-react-compiler: 1.0.0
       sass: 1.106.0
       sharp: 0.35.5(@types/node@24.12.4)
@@ -12730,12 +12743,12 @@ snapshots:
 
   react-is@18.3.1: {}
 
-  react-transition-progress@0.0.4(framer-motion@12.38.0(@emotion/is-prop-valid@1.4.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(next@16.4.0(@babel/core@7.29.0)(@opentelemetry/api@1.9.1)(@types/node@24.12.4)(babel-plugin-react-compiler@1.0.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(sass@1.106.0))(react@19.2.6):
+  react-transition-progress@0.0.4(framer-motion@12.38.0(@emotion/is-prop-valid@1.4.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6))(next@16.4.0(@babel/core@7.29.0)(@opentelemetry/api@1.9.1)(@playwright/test@1.64.1)(@types/node@24.12.4)(babel-plugin-react-compiler@1.0.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(sass@1.106.0))(react@19.2.6):
     dependencies:
       framer-motion: 12.38.0(@emotion/is-prop-valid@1.4.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)
       react: 19.2.6
     optionalDependencies:
-      next: 16.4.0(@babel/core@7.29.0)(@opentelemetry/api@1.9.1)(@types/node@24.12.4)(babel-plugin-react-compiler@1.0.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(sass@1.106.0)
+      next: 16.4.0(@babel/core@7.29.0)(@opentelemetry/api@1.9.1)(@playwright/test@1.64.1)(@types/node@24.12.4)(babel-plugin-react-compiler@1.0.0)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(sass@1.106.0)
 
   react@19.2.6: {}
 
