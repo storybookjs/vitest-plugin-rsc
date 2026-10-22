@@ -1,3 +1,4 @@
+import "./compile-cache.ts";
 import { type DevEnvironment, type Plugin, type ViteDevServer } from "vite";
 import { vitePluginRscMinimal } from "@vitejs/plugin-rsc/plugin";
 import { createReactClientCoveragePlugin } from "./coverage.ts";
