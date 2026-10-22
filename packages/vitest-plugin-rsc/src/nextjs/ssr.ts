@@ -1,6 +1,7 @@
 import {
   NEXT_REWRITTEN_PATH_HEADER,
   NEXT_REWRITTEN_QUERY_HEADER,
+  NEXT_ROUTER_PREFETCH_HEADER,
   NEXT_RSC_UNION_QUERY,
   RSC_HEADER,
 } from "next/dist/client/components/app-router-headers";
@@ -602,7 +603,13 @@ async function handle(
       build === "production" && !component && matched && matched.page !== notFoundPage
         ? matched
         : undefined;
-    if (prerenders) await recordVerdict(prerenders);
+    // At the route's first page load or navigation, not at a prefetch: Next's
+    // router prefetches every link in view, and the prerender renders the
+    // whole page, also a page that turns out to read the request, where the
+    // prefetch renders up to its `loading.js`. A prefetch of a route without
+    // a verdict yet renders it as a dynamic route; one with a verdict is
+    // Next's handler's, as with `next start`.
+    if (prerenders && !headers.has(NEXT_ROUTER_PREFETCH_HEADER)) await recordVerdict(prerenders);
     // What Next's server answers a request of a route it prerendered with
     // another method than `GET` or `HEAD`, unless it may be a Server Action:
     // `base-server.js`, before it serves the kept page. The route module

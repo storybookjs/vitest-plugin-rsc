@@ -189,3 +189,16 @@ test("renders a kept page again after revalidatePath() of a route handler", asyn
     expect([first.cache, third.cache]).toEqual(["MISS", "HIT"]);
   }
 });
+
+test("prerenders a route at its first page load or navigation, not at a prefetch", async () => {
+  // What Next's router sends for a link in view.
+  const prefetch = await request("/prerendered/prefetched", {
+    headers: { rsc: "1", "next-router-prefetch": "1" },
+  });
+  const navigation = await request("/prerendered/prefetched", { headers: { rsc: "1" } });
+  const pageLoad = await request("/prerendered/prefetched");
+
+  expect([prefetch.status, navigation.status, pageLoad.status]).toEqual([200, 200, 200]);
+  if (production)
+    expect([prefetch.cache, navigation.cache, pageLoad.cache]).toEqual([null, "MISS", "HIT"]);
+});
