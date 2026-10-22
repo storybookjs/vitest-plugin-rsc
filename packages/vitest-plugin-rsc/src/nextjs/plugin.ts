@@ -523,6 +523,37 @@ function flightConsolePlugin(): Plugin {
   };
 }
 
+// `renderServer({ url, ssr: false })`: Next's renderer renders no HTML of
+// the page, only an empty document, as it does for an error page, with the
+// Flight payload in its scripts. Next's client sees the document of an error
+// page and renders the app with `createRoot()` instead of hydrating it.
+function noSsrPlugin(): Plugin {
+  const render =
+    "workUnitAsyncStorage.run(requestStore, renderToWebFizzStream, appElement, fizzOptions)";
+  return {
+    name: "vitest-plugin-rsc:no-ssr",
+    transform: {
+      filter: { id: /\/next\/dist\/esm\/server\/app-render\/app-render\.js$/ },
+      handler(code, id) {
+        if (!code.includes(render)) {
+          this.warn(
+            `vitest-plugin-rsc: Next's HTML render in ${id} is not found: ssr: false renders it anyway.`,
+          );
+          return;
+        }
+        const patched = code.replace(
+          render,
+          `workUnitAsyncStorage.run(requestStore, renderToWebFizzStream, ` +
+            `globalThis.${registryGlobal}?.opened?.ssr === false ` +
+            `? _jsx("html", { id: "__next_error__", children: _jsx("body", {}) }) ` +
+            `: appElement, fizzOptions)`,
+        );
+        return { code: patched, map: null };
+      },
+    },
+  };
+}
+
 // Next's compile-time constants for a layer. A server layer gets what makes
 // a module server code on top of these: see server-code.ts.
 function definesOf(project: NextProject, layer: NextLayer): Record<string, string> {
@@ -886,6 +917,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
               createDependencyCompilePlugin(getProject, layer),
               ...(layer === "rsc" ? [nextClientBoundaryPlugin(getProject, resolvers.rsc)] : []),
               flightConsolePlugin(),
+              noSsrPlugin(),
               ...(layer === "browser"
                 ? []
                 : [
@@ -1325,6 +1357,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
     // which has no optimizer.
     ...layers.map((layer) => dependencyBuildPlugin(getProject, serverCode, layer)),
     { ...flightConsolePlugin(), apply: "build" },
+    { ...noSsrPlugin(), apply: "build" },
     nextStaticBuild({
       environments: environmentOf,
       entries: { ssr: "vitest-plugin-rsc/nextjs/ssr", browser: "vitest-plugin-rsc/nextjs/client" },

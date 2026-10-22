@@ -215,6 +215,14 @@ export type RenderServerOptions = RequestOptions & {
    * pass it as a node, `renderServer(<Page />, { url })`.
    */
   layouts?: boolean;
+  /**
+   * Whether the server renders the HTML of the page, which the browser then
+   * hydrates. Defaults to `true`. With `false` the document is empty, and the
+   * browser renders the app from the Flight payload with `createRoot()`, as
+   * Next does for an error page: faster, but a test no longer sees the HTML
+   * of the server, or a mismatch between it and the browser.
+   */
+  ssr?: boolean;
 };
 
 export type RenderServerResult = {
@@ -370,7 +378,7 @@ export async function renderServer(
           "`renderServer(<Page />, { url })`.",
       );
     }
-    const opened = { pathname, proxy: first.proxy ?? true };
+    const opened = { pathname, proxy: first.proxy ?? true, ssr: first.ssr };
     return {
       response: await loadPage(url, { headers }, store, {
         opened,

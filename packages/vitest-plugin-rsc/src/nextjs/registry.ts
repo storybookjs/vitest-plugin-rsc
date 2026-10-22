@@ -73,6 +73,8 @@ export type Opened = {
    * `runInServerAction()`, which shows no page. Read from `openedByRequest`.
    */
   rendersRedirect?: boolean;
+  /** `false`: Next renders no HTML of the page, see `RenderServerOptions.ssr`. */
+  ssr?: boolean;
 };
 
 export type NextRegistry = {
