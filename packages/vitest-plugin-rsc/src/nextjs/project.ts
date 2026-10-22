@@ -171,6 +171,12 @@ export type NextProject = {
    */
   compile(code: string, file: string, layer: NextLayer): Promise<Compiled | undefined>;
   /**
+   * The options of that transform for a dependency of a layer, like a package
+   * that calls `next/font`: from `next.config` and the app's tsconfig. For the
+   * key of the optimizer's cache, which compiles such a package.
+   */
+  dependencyCompileOptions: Record<NextLayer, unknown>;
+  /**
    * The rule of the `webpack` function in `next.config` for a file, like the
    * one of `@next/mdx` for an `.mdx` file: see project/webpack.ts.
    */

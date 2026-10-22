@@ -2,29 +2,39 @@ import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import type { NextLayer } from "./project.ts";
+import type { NextLayer, NextProject } from "./project.ts";
 
 // Vite keeps the pre-bundles of a layer while the hash of its config is the
 // same (`getConfigHash()` of Vite's optimizer). It hashes the lockfile and
-// the options of the optimizer, but of its plugins only their names: not what
-// they resolve to, not how they compile. The plugin's do both, by the alias
-// tables of the layer and by its own code, so that a change of either would
-// keep the old pre-bundles, and a run would test stale code until `--force`.
-// Vite has no hook to add to that hash. So the two go into a part of the
-// options it does hash, the `define` of the optimizer's bundler, under names
-// no code reads.
+// the options of the optimizer, but of its plugins only their names
+// (vitejs/vite#6855): not what they resolve to, not how they compile. The
+// plugin's do both, by what the project gives them, the alias tables of the
+// layer and the options of Next's transform, and by the plugin's own code, so
+// that a change of either would keep the old pre-bundles, and a run would
+// test stale code until `--force`. Vite has no hook to add to that hash. So
+// the two go into a part of the options it does hash, the `define` of the
+// optimizer's bundler, under names no code reads: they change no byte of a
+// pre-bundle, and Vite keeps them in its own metadata of the cache.
 
 const hash = (text: string) => createHash("sha256").update(text).digest("hex").slice(0, 16);
 
+type OptimizerInputs = Pick<NextProject, "aliases" | "appAliases" | "dependencyCompileOptions">;
+
 /**
- * The alias tables of a layer, sorted by key: Next's and the app's, which the
- * plugin's resolver picks from by the importer.
+ * What the project gives the optimizer's plugins of a layer: Next's alias
+ * table and the app's, which the resolver picks from by the importer, and the
+ * options of Next's transform for a dependency. The tables in their order,
+ * not sorted: the resolver takes the first entry that matches, and a prefix
+ * like `next` can match where a later one would. The order is the code's,
+ * the same for every run.
  */
-export function aliasesKey(...tables: Record<string, string | false>[]): string {
+export function projectKey(project: OptimizerInputs, layer: NextLayer): string {
   return hash(
-    JSON.stringify(
-      tables.map((table) => Object.entries(table).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))),
-    ),
+    JSON.stringify([
+      Object.entries(project.aliases[layer]),
+      Object.entries(project.appAliases[layer]),
+      project.dependencyCompileOptions[layer],
+    ]),
   );
 }
 
@@ -60,7 +70,8 @@ export function codeKey(dir: string): string {
 
 // The directory of the package that this code is in, `src` or `dist`: the
 // top one of the package, whatever chunk of `dist` this module is bundled in.
-// None where the code is not in its package, bundled into another file.
+// None where the code is not in its package, bundled into another file: the
+// lockfile, which Vite hashes, has its version.
 function ownCodeDir(): string | undefined {
   const file = fileURLToPath(import.meta.url);
   for (let dir = path.dirname(file); dir !== path.dirname(dir); dir = path.dirname(dir)) {
@@ -76,8 +87,7 @@ let ownCodeKey: string | undefined;
 
 /** For the `define` of the optimizer of a layer, which Vite keys its cache on. */
 export function optimizerCacheKey(
-  aliases: Record<NextLayer, Record<string, string | false>>,
-  appAliases: Record<NextLayer, Record<string, string>>,
+  project: OptimizerInputs,
   layer: NextLayer,
 ): Record<string, string> {
   if (ownCodeKey === undefined) {
@@ -85,7 +95,7 @@ export function optimizerCacheKey(
     ownCodeKey = dir ? codeKey(dir) : "";
   }
   return {
-    __vitest_plugin_rsc_aliases__: JSON.stringify(aliasesKey(aliases[layer], appAliases[layer])),
+    __vitest_plugin_rsc_project__: JSON.stringify(projectKey(project, layer)),
     __vitest_plugin_rsc_code__: JSON.stringify(ownCodeKey),
   };
 }

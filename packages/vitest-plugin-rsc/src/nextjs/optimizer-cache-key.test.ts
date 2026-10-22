@@ -3,30 +3,58 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, test, vi } from "vitest";
-import { aliasesKey, codeKey } from "./optimizer-cache-key.ts";
+import { codeKey, projectKey } from "./optimizer-cache-key.ts";
 import { vitestPluginNext } from "./plugin.ts";
 
 // The test loads a Next project: longer than Vitest's 5 s on a loaded CI.
 vi.setConfig({ testTimeout: 60_000 });
 
-test("keys the alias tables of a layer by their entries, in any order", () => {
+// What the project gives the optimizer's plugins of the rsc layer.
+function projectOf(
+  aliases: Record<string, string | false>,
+  appAliases: Record<string, string> = {},
+  compileOptions: unknown = { jsc: { transform: {} } },
+) {
+  const empty = { rsc: {}, ssr: {}, browser: {} };
+  return {
+    aliases: { ...empty, rsc: aliases },
+    appAliases: { ...empty, rsc: appAliases },
+    dependencyCompileOptions: { ...empty, rsc: compileOptions },
+  };
+}
+
+test("keys a layer by its alias tables, in their order, and the options of Next's transform", () => {
   const next = { react$: "next/dist/compiled/react", "next/link$": "next/dist/client/link" };
   const app = { "react-dom/server$": "next/dist/compiled/react-dom/server.node.js" };
-  const key = aliasesKey(next, app);
-  expect(aliasesKey(next, app)).toBe(key);
-  // The same entries, added in another order.
+  const key = projectKey(projectOf(next, app), "rsc");
+  expect(projectKey(projectOf({ ...next }, { ...app }), "rsc")).toBe(key);
+  // Another layer's tables are not this one's.
   expect(
-    aliasesKey({ "next/link$": "next/dist/client/link", react$: "next/dist/compiled/react" }, app),
+    projectKey(
+      { ...projectOf(next, app), aliases: { rsc: next, ssr: {}, browser: { a$: "b" } } },
+      "rsc",
+    ),
   ).toBe(key);
+
   // A target that changes, one that is no more, and an entry more.
-  expect(aliasesKey({ ...next, react$: "next/dist/compiled/react-experimental" }, app)).not.toBe(
-    key,
-  );
-  expect(aliasesKey({ ...next, react$: false }, app)).not.toBe(key);
-  expect(aliasesKey({ ...next, "styled-jsx$": "styled-jsx" }, app)).not.toBe(key);
+  const changed = { ...next, react$: "next/dist/compiled/react-experimental" };
+  expect(projectKey(projectOf(changed, app), "rsc")).not.toBe(key);
+  expect(projectKey(projectOf({ ...next, react$: false }, app), "rsc")).not.toBe(key);
+  expect(projectKey(projectOf({ ...next, "styled-jsx$": "styled-jsx" }, app), "rsc")).not.toBe(key);
   // An entry of Next's table that moves to the app's.
   const { "next/link$": link, ...rest } = next;
-  expect(aliasesKey(rest, { ...app, "next/link$": link })).not.toBe(key);
+  expect(projectKey(projectOf(rest, { ...app, "next/link$": link }), "rsc")).not.toBe(key);
+  // The same entries in another order: the first that matches wins, so a
+  // prefix before an exact entry resolves otherwise.
+  const prefixFirst = { next: "next/dist/esm", "next/link$": "next/dist/client/link" };
+  const exactFirst = { "next/link$": "next/dist/client/link", next: "next/dist/esm" };
+  expect(projectKey(projectOf(prefixFirst), "rsc")).not.toBe(
+    projectKey(projectOf(exactFirst), "rsc"),
+  );
+  // `compiler` of `next.config`, which a package that calls `next/font` is
+  // compiled with.
+  const removeConsole = { jsc: { transform: {} }, removeConsole: true };
+  expect(projectKey(projectOf(next, app, removeConsole), "rsc")).not.toBe(key);
 });
 
 test("keys the plugin's code by the contents of its files, not their times or tests", () => {
@@ -67,22 +95,31 @@ type Config = {
   >;
 };
 
-test("puts both keys in the options of every layer's optimizer, which Vite hashes", async () => {
-  const root = fileURLToPath(new URL("../../../../playground/nextjs-e2e-demo", import.meta.url));
+// The keys of each layer, from a new plugin, which loads the project.
+async function keysOfLayers(root: string) {
   const plugin = vitestPluginNext().find(({ name }) => name === "vitest-plugin-rsc:next")!;
   const { environments } = await (plugin.config as ConfigHook<Config>)(
     { root },
     { command: "serve" },
   );
-  const defines = ["client", "next_ssr", "react_client"].map(
-    (name) => environments[name]!.optimizeDeps.rolldownOptions.transform.define,
-  );
-  const codes = defines.map((define) => define.__vitest_plugin_rsc_code__);
+  return ["client", "next_ssr", "react_client"].map((name) => {
+    const define = environments[name]!.optimizeDeps.rolldownOptions.transform.define;
+    return {
+      code: define.__vitest_plugin_rsc_code__,
+      project: define.__vitest_plugin_rsc_project__,
+    };
+  });
+}
+
+test("puts both keys in the options of every layer's optimizer, the same for every load", async () => {
+  const root = fileURLToPath(new URL("../../../../playground/nextjs-e2e-demo", import.meta.url));
+  const keys = await keysOfLayers(root);
   // The code of the package, which here runs from `src`.
-  expect(codes[0]).toMatch(/^"[0-9a-f]{16}"$/);
-  expect(new Set(codes).size).toBe(1);
+  expect(keys[0]!.code).toMatch(/^"[0-9a-f]{16}"$/);
+  expect(new Set(keys.map(({ code }) => code)).size).toBe(1);
   // Each layer has tables of its own.
-  const aliases = defines.map((define) => define.__vitest_plugin_rsc_aliases__);
-  for (const key of aliases) expect(key).toMatch(/^"[0-9a-f]{16}"$/);
-  expect(new Set(aliases).size).toBe(3);
+  for (const { project } of keys) expect(project).toMatch(/^"[0-9a-f]{16}"$/);
+  expect(new Set(keys.map(({ project }) => project)).size).toBe(3);
+  // A second load of the project, as the next run has: the pre-bundles stay.
+  expect(await keysOfLayers(root)).toEqual(keys);
 });

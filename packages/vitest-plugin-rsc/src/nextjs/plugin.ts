@@ -907,7 +907,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
               define: {
                 ...definesOf(project, layer),
                 ...(layer === "browser" ? serverCode.browserCacheKey : serverCode.cacheKey),
-                ...optimizerCacheKey(project.aliases, project.appAliases, layer),
+                ...optimizerCacheKey(project, layer),
               },
             },
           },
