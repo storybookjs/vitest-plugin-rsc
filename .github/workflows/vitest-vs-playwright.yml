@@ -27,21 +27,25 @@ defaults:
 
 jobs:
   vitest:
-    name: Vitest, ${{ matrix.app }}, ${{ matrix.tests }}
+    name: Vitest, ${{ matrix.app }}, ${{ matrix.tests }}${{ matrix.fast && ', fast mode' || '' }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         # tests/vitest/ clicks and fills with Vitest's commands, which
         # Playwright carries out; tests/vitest-user-event/ with Testing
-        # Library's user-event, in the page.
+        # Library's user-event, in the page. `fast` runs them in the plugin's
+        # fast mode (`VITEST_PLUGIN_RSC_FAST=1`): see its README.md.
         include:
           - { app: vitest-vs-playwright, tests: vitest }
           - { app: vitest-vs-playwright-notes, tests: vitest }
           - { app: vitest-vs-playwright-notes, tests: vitest-user-event }
+          - { app: vitest-vs-playwright-notes, tests: vitest-user-event, fast: true }
     defaults:
       run:
         working-directory: playground/${{ matrix.app }}
+    env:
+      VITEST_PLUGIN_RSC_FAST: ${{ matrix.fast && '1' || '' }}
     steps:
       - uses: actions/checkout@v6
       - uses: pnpm/action-setup@v6
@@ -61,7 +65,7 @@ jobs:
           tests=$(grep -oP 'Tests\s+\K[0-9]+ passed' <<< "$log")
           duration=$(grep -oP 'Duration\s+\K[0-9.]+' <<< "$log")
           {
-            echo "### Vitest, production, ${{ matrix.app }}, ${{ matrix.tests }}"
+            echo "### Vitest, production, ${{ matrix.app }}, ${{ matrix.tests }}${{ matrix.fast && ', fast mode' || '' }}"
             echo
             echo "| Step | Seconds |"
             echo "| --- | ---: |"
@@ -79,7 +83,7 @@ jobs:
           tests=$(grep -oP 'Tests\s+\K[0-9]+ passed' <<< "$log")
           duration=$(grep -oP 'Duration\s+\K[0-9.]+' <<< "$log")
           {
-            echo "### Vitest, development, ${{ matrix.app }}, ${{ matrix.tests }}"
+            echo "### Vitest, development, ${{ matrix.app }}, ${{ matrix.tests }}${{ matrix.fast && ', fast mode' || '' }}"
             echo
             echo "| Step | Seconds |"
             echo "| --- | ---: |"

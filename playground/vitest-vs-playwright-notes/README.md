@@ -4,6 +4,7 @@ A notes app in the style of the notes demo, Next.js on Postgres with Drizzle: ac
 
 - `tests/vitest/*.test.tsx`: Vitest browser mode with `renderServer({ url })`. The database is PGlite in the page (`lib/__mocks__/db.ts`). `isolate: false`, Next and React in production by default.
 - `tests/vitest-user-event/*.test.tsx`: the tests of `tests/vitest/`, with their clicks and fills in the page, by Testing Library's `user-event` (`test/user-event.ts`), where `locator.click()` and `locator.fill()` send each to Node.js, which has Playwright do it. Made from `tests/vitest/` by turning `await locator.click()` into `await click(locator)` and `await locator.fill(text)` into `await fill(locator, text)`. `fill()` clears the field and pastes the text, one input event, as Playwright's `fill()` does.
+- In the plugin's fast mode, `VITEST_PLUGIN_RSC_FAST=1` (`fast` of `vitestPluginNext()`), the same Vitest tests render each page in the app of the test file from its Flight payload, without HTML of the server, prefetch no link, and see a change of the page as it happens: a quick feedback loop, like an agent's. CI runs `tests/vitest-user-event/` in fast mode too.
 - `tests/playwright/*.spec.ts`: Playwright against `next start` after `next build`, or against `next dev` with `PLAYWRIGHT_SERVER=dev`, on Postgres in Docker, in RAM.
 
 Each Playwright test is the Vitest test of the same name in the file of the same name, step for step: `page.goto(url)` for `renderServer({ url })`, `toBeVisible()` for `toBeInTheDocument()`. Both seed and read the database with `test/db.ts`, on the app's own `db`, and empty it before each test. Both sign a user in the same way, with a session in the database and its cookie: `document.cookie` in Vitest, `context.addCookies()` in Playwright. Both wait for the page to hydrate before they use it: `renderServer()` does, and so does `page.goto()` of `tests/playwright/test.ts`, with Next's test mode (`__NEXT_TEST_MODE`). Both run with 1 worker: the Playwright tests share one database.
@@ -15,6 +16,7 @@ The workflow `.github/workflows/vitest-vs-playwright.yml` runs both and writes w
 pnpm --dir ../.. --filter vitest-plugin-rsc build
 pnpm exec vitest run --maxWorkers 1 tests/vitest/
 pnpm exec vitest run --maxWorkers 1 tests/vitest-user-event/
+VITEST_PLUGIN_RSC_FAST=1 pnpm exec vitest run --maxWorkers 1 tests/vitest-user-event/
 VITEST_PLUGIN_RSC_BUILD=development pnpm exec vitest run --maxWorkers 1 tests/vitest/
 
 # Playwright
