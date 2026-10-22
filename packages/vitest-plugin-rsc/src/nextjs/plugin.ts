@@ -33,7 +33,7 @@ import {
   serverReferenceInfo,
 } from "./compat/paths.ts";
 import { browserMapping, isNodeModule, nodeModuleOf } from "./node-builtins.ts";
-import { createNodePlatform } from "./node-platform.ts";
+import { createNodePlatform, instrumentationPlugin } from "./node-platform.ts";
 import { registryGlobal } from "./registry-global.ts";
 import {
   loadNextProject,
@@ -201,6 +201,8 @@ export function extractInfoFromServerReferenceId(id) {
 const devAssetPrefixShim = `export const assetPrefix = "";\n`;
 
 const nodePlatform = createNodePlatform(registry, bridgePrefix);
+// What a run has said of the installed Next, which its projects share.
+const saidOfNext = new Set<string>();
 
 type Alias = { key: string; exact: boolean; target: string | false };
 
@@ -471,9 +473,9 @@ function createLayerResolver(getProject: () => NextProject, layer: NextLayer) {
         const name = id.slice(bridgePrefix.length);
         if (name === "server-reference-info") return serverReferenceInfoShim;
         if (name === "dev-asset-prefix") return devAssetPrefixShim;
-        const nodeModule = nodePlatform.load(name);
+        const { flightExports, version, newExports } = getProject();
+        const nodeModule = nodePlatform.load(name, newExports[name], version);
         if (nodeModule) return nodeModule;
-        const { flightExports, version } = getProject();
         const entry = name.slice("flight-".length) as FlightEntry;
         return flightBridge(entry, flightExports[entry], version, registry);
       },
@@ -960,6 +962,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
               ...(layer === "browser"
                 ? []
                 : [
+                    instrumentationPlugin(),
                     serverCode.optimizerPlugin(layer),
                     serverCode.asyncFunctionsOptimizerPlugin(layer),
                   ]),
@@ -1163,6 +1166,18 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
               `it with \`export const runtime = "edge"\` and run on Node.js here, like the ` +
               `others: ${project.edgeRouteFiles.join(", ")}`,
           );
+        }
+        const newExports = Object.values(project.newExports).flat();
+        const aboutNext =
+          `vitest-plugin-rsc: next@${project.version} has exports that the plugin's stand-ins ` +
+          `for its modules have not. Each throws when it is used: ` +
+          newExports.map(({ name, module }) => `\`${name}\` of ${module}`).join(", ") +
+          `. Use a version of vitest-plugin-rsc that supports next@${project.version}.`;
+        // Of the installed Next, not of the project: once, for every project
+        // of a run that has that Next.
+        if (newExports.length > 0 && !saidOfNext.has(aboutNext)) {
+          saidOfNext.add(aboutNext);
+          config.logger.warn(aboutNext);
         }
         if (project.unmatchedRoutes.length > 0) {
           config.logger.warnOnce(
@@ -1393,6 +1408,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
     // which has no optimizer.
     ...layers.map((layer) => dependencyBuildPlugin(getProject, serverCode, layer)),
     { ...flightConsolePlugin(), apply: "build" },
+    { ...instrumentationPlugin(), apply: "build" },
     nextStaticBuild({
       environments: environmentOf,
       entries: { ssr: "vitest-plugin-rsc/nextjs/ssr", browser: "vitest-plugin-rsc/nextjs/client" },

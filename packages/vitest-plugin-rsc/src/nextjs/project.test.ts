@@ -683,6 +683,67 @@ test.for([
   },
 );
 
+test("has a stand-in with every export of the modules of Next it replaces", async () => {
+  const { newExports } = await loadNextProject(root);
+
+  expect(newExports).toEqual({});
+});
+
+test.for([
+  ["server/node-environment-extensions/fast-set-immediate.external", "fast-set-immediate"],
+  ["server/node-environment-extensions/process-error-handlers", "node-environment"],
+  ["server/route-modules/app-page/vendored/ssr/entrypoints", "vendored-react"],
+  ["server/route-modules/app-page/module", "ssr-app-page-module"],
+])("finds an export of %s for a stub, and does not stop", async ([file, standIn]) => {
+  const source = fs.readFileSync(installed.resolve(runtime(file!)), "utf8");
+  const next = nextWith({ [runtime(file!)]: `${source}\nexport const addedInNext = 1;\n` });
+
+  const { newExports } = await loadNextProject(root, next);
+
+  expect(newExports).toEqual({ [standIn!]: [{ name: "addedInNext", module: runtime(file!) }] });
+});
+
+test("finds an export that two modules of one stand-in have for one stub", async () => {
+  const files = ["rsc", "ssr"].map((layer) =>
+    runtime(`server/route-modules/app-page/vendored/${layer}/entrypoints`),
+  );
+  const next = nextWith(
+    Object.fromEntries(
+      files.map((file) => [
+        file,
+        `${fs.readFileSync(installed.resolve(file), "utf8")}\nexport const ReactNew = 1;\n`,
+      ]),
+    ),
+  );
+
+  const { newExports } = await loadNextProject(root, next);
+
+  expect(newExports).toEqual({ "vendored-react": [{ name: "ReactNew", module: files[0] }] });
+});
+
+test("says which module of Next that a stand-in replaces is gone", async () => {
+  const file = runtime("server/load-manifest.external");
+  const next = nextWith({ [file]: new Error("Cannot find module") });
+
+  await expect(loadNextProject(root, next)).rejects.toThrow(
+    changed(`${file} is not there, which the plugin stands in for`),
+  );
+});
+
+test.for([
+  ["import()", "await require(", "await import("],
+  ["a second `require`", "await require(", "require.cache, await require("],
+  ["a `require()` of another file", "`${INSTRUMENTATION_HOOK_FILENAME}.js`", "'other.js'"],
+])(
+  "needs Next to load instrumentation.ts with one `require()`, not with %s",
+  async ([, piece, replacement]) => {
+    const file = runtime("server/lib/router-utils/instrumentation-globals.external");
+    const next = nextWith({ [file]: sourceWith(file, piece!, replacement!) });
+
+    await expect(loadNextProject(root, next)).rejects.toThrow(changed(`${file} has \`require\``));
+  },
+);
+
 test("reads the exports of the Flight codec of the rsc layer", async () => {
   const { flightExports } = await loadNextProject(root);
 

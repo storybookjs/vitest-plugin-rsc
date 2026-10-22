@@ -10,36 +10,62 @@ function nameOf(node: object): string {
   return "name" in node ? String(node.name) : "value" in node ? String(node.value) : "";
 }
 
+// The names a pattern binds, like `{ a, b: [c] }`.
+function bound(pattern: object | null, names: Set<string>): void {
+  if (!pattern || !("type" in pattern)) return;
+  if (pattern.type === "Identifier") names.add(nameOf(pattern));
+  for (const key of ["properties", "elements", "value", "argument", "left"] as const) {
+    const child = (pattern as Record<string, unknown>)[key];
+    for (const part of [child].flat()) if (typeof part === "object") bound(part, names);
+  }
+}
+
 /**
- * Whether an ES module of Next exports a name: declared there, exported apart
- * from its declaration, or from another module with `export ... from` or
- * `export *`.
+ * The names an ES module exports in its own code, `default` among them, and
+ * the modules of its `export *`. Of JavaScript, like Next's compiled files and
+ * the modules the plugin generates.
  */
-export function hasExport(file: string, name: string, seen = new Set<string>()): boolean {
-  if (seen.has(file)) return false;
-  seen.add(file);
+export function declaredExports(code: string): { names: Set<string>; stars: string[] } {
+  const names = new Set<string>();
   const stars: string[] = [];
-  for (const node of parseAst(fs.readFileSync(file, "utf8")).body) {
-    if (node.type === "ExportAllDeclaration") {
-      if (!node.exported) stars.push(node.source.value);
-      else if (nameOf(node.exported) === name) return true;
+  for (const node of parseAst(code).body) {
+    if (node.type === "ExportDefaultDeclaration") names.add("default");
+    else if (node.type === "ExportAllDeclaration") {
+      if (node.exported) names.add(nameOf(node.exported));
+      else stars.push(node.source.value);
     } else if (node.type === "ExportNamedDeclaration") {
-      if (node.specifiers.some((specifier) => nameOf(specifier.exported) === name)) return true;
+      for (const specifier of node.specifiers) names.add(nameOf(specifier.exported));
       const { declaration } = node;
-      const declared =
-        declaration?.type === "VariableDeclaration"
-          ? declaration.declarations.map(({ id }) => id)
-          : declaration && "id" in declaration
-            ? [declaration.id]
-            : [];
-      if (declared.some((id) => id?.type === "Identifier" && id.name === name)) return true;
+      if (declaration?.type === "VariableDeclaration") {
+        for (const { id } of declaration.declarations) bound(id, names);
+      } else if (declaration && "id" in declaration && declaration.id) {
+        names.add(nameOf(declaration.id));
+      }
     }
   }
-  return stars.some((star) => {
-    const from = star.startsWith(".") && moduleFileAt(path.resolve(path.dirname(file), star));
-    return Boolean(from) && hasExport(from as string, name, seen);
-  });
+  return { names, stars };
 }
+
+/**
+ * What an ES module of Next exports: declared there, exported apart from its
+ * declaration, or from another module of Next with `export ... from` or
+ * `export *`. A module of CommonJS has none here.
+ */
+export function exportNamesOf(file: string, seen = new Set<string>()): Set<string> {
+  if (seen.has(file)) return new Set();
+  seen.add(file);
+  const { names, stars } = declaredExports(fs.readFileSync(file, "utf8"));
+  for (const star of stars) {
+    const from = star.startsWith(".") && moduleFileAt(path.resolve(path.dirname(file), star));
+    if (!from) continue;
+    // `export *` passes on every name but `default`.
+    for (const name of exportNamesOf(from, seen)) if (name !== "default") names.add(name);
+  }
+  return names;
+}
+
+/** Whether an ES module of Next exports a name: see `exportNamesOf()`. */
+export const hasExport = (file: string, name: string): boolean => exportNamesOf(file).has(name);
 
 /**
  * What a module of the app exports, read off its code: the names, `default`
@@ -50,33 +76,7 @@ export async function exportsOf(
   file: string,
 ): Promise<{ names: Set<string>; stars: string[] }> {
   const compiled = await transformWithOxc(code, file, { sourcemap: false });
-  const names = new Set<string>();
-  const stars: string[] = [];
-  // The names a pattern binds, like `{ a, b: [c] }`.
-  const bound = (pattern: object | null): void => {
-    if (!pattern || !("type" in pattern)) return;
-    if (pattern.type === "Identifier") names.add(nameOf(pattern));
-    for (const key of ["properties", "elements", "value", "argument", "left"] as const) {
-      const child = (pattern as Record<string, unknown>)[key];
-      for (const part of [child].flat()) if (typeof part === "object") bound(part);
-    }
-  };
-  for (const node of parseAst(compiled.code).body) {
-    if (node.type === "ExportDefaultDeclaration") names.add("default");
-    else if (node.type === "ExportAllDeclaration") {
-      if (node.exported) names.add(nameOf(node.exported));
-      else stars.push(node.source.value);
-    } else if (node.type === "ExportNamedDeclaration") {
-      for (const specifier of node.specifiers) names.add(nameOf(specifier.exported));
-      const { declaration } = node;
-      if (declaration?.type === "VariableDeclaration") {
-        for (const { id } of declaration.declarations) bound(id);
-      } else if (declaration && "id" in declaration && declaration.id) {
-        names.add(nameOf(declaration.id));
-      }
-    }
-  }
-  return { names, stars };
+  return declaredExports(compiled.code);
 }
 
 // The exports of a module of the app, without what they are: `undefined`.

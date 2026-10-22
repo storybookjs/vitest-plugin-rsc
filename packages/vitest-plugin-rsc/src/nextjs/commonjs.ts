@@ -41,7 +41,7 @@ const requireHelper =
   ` : Object.prototype.toString.call(ns) === "[object Module]" || ns.__esModule ? ns : ns.default;\n`;
 // What a `require()` of a module that is not there throws, as Node.js does:
 // with the `code` that a `catch` of an optional dependency looks for.
-const missingHelper =
+export const missingHelper =
   "const $$cjsMissing = (source) => { throw Object.assign(new Error(`Cannot find module '${source}'`), { code: \"MODULE_NOT_FOUND\" }); };\n";
 
 // A JSON file or a stylesheet: what `require()` returns is what Vite has as
@@ -62,12 +62,12 @@ export type CommonJsOptions = {
   resolves?: (source: string) => Promise<boolean>;
 };
 
-type Node = { type: string; start: number; end: number; [key: string]: unknown };
+export type Node = { type: string; start: number; end: number; [key: string]: unknown };
 
 const isNode = (value: unknown): value is Node =>
   typeof value === "object" && value !== null && typeof (value as Node).type === "string";
 
-function* walk(node: Node, parent?: Node): Generator<[Node, Node | undefined]> {
+export function* walk(node: Node, parent?: Node): Generator<[Node, Node | undefined]> {
   yield [node, parent];
   for (const key in node) {
     const value = node[key];
