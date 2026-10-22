@@ -17,7 +17,7 @@ export function envFilesOf(build: boolean): string[] {
   return build ? testEnvFiles.filter((file) => !file.endsWith(".local")) : testEnvFiles;
 }
 
-// Next's own: the page's NODE_ENV stays as it is (docs/next-routes.md,
+// Next's own: the page's NODE_ENV stays as it is (docs/internals/next-routes.md,
 // "Development Or Production"), and Next does not take the others in `env`
 // of `next.config` either.
 const isNextsOwn = (name: string) =>

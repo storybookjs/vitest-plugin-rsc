@@ -196,7 +196,7 @@ test("fetches again after a route handler has expired the tag of a fetch", async
 // A cached function has a scope of its own, in which Next does not let it
 // read the request, and does not keep what a cached function inside it
 // computes. The function is compiled to have that scope before and after its
-// first `await`: see "The Scope Of A Cached Function" in docs/next-routes.md.
+// first `await`: see "The Scope Of A Cached Function" in docs/internals/next-routes.md.
 const cacheScope = async (when: string) => {
   const response = await handleRequest(`/api/cache-scope?when=${when}`);
   return (await response.json()) as { request: string; innerRuns: number };

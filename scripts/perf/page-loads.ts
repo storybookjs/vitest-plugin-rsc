@@ -11,7 +11,7 @@ import { list } from "./utils.ts";
 // Network domain sees of the requests, and what they say of the load: its
 // bytes, its round trips, its layers. `pnpm perf:static` loads the host of
 // the e2e demo, `pnpm perf:storybook` the Storybook of the notes demo. See
-// docs/performance.md.
+// docs/internals/performance.md.
 
 /**
  * The network a page loads over. `local` is localhost as it is: a request
