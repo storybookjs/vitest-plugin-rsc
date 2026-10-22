@@ -4,6 +4,17 @@ How `vitest-plugin-rsc/nextjs` should couple to Next.js from here on, so that a 
 
 The yardstick stays the conformance suite ([next-conformance.md](next-conformance.md)): no test that `conformance/expectations.json` expects to pass may stop passing, at any step below.
 
+## The Decision
+
+The coupling cannot be taken away from the plugin's side: running Next's own runtime and build code is what makes the plugin true to Next. What the plugin can do is see a break early and keep its fix small. So four things are done now:
+
+1. **A nightly run against canary**, with a type check of the plugin as its last step (Phase 0).
+2. **`compat/`**: every module path of `next/dist` that the plugin names in one place (from Phase 2).
+3. **The production prerender code loaded only with `build: "production"`**, and out of the pre-bundle of a run without it (from Phase 1).
+4. **The three checks that match formatting made insensitive to whitespace** (from Phase 1).
+
+The rest of this page waits until a real release of Next shows it is needed. The plugin has not lived through a minor of Next yet, so where it breaks in practice is not known. The next minor will show it, and the choice is then made from real breaks. One to watch: the options of `next-app-loader` that the plugin copies by hand, which already differ from Next's in three places. Should that cause a bug, Phase 4 is the fix.
+
 ## The Rules
 
 1. **Reuse Next's code wherever it runs where we need it.** The plugin keeps calling Next's own build code and running Next's own runtime.
