@@ -1,11 +1,9 @@
 import type { PrerenderManifest } from "next/dist/build";
 import { RSC_SUFFIX } from "next/dist/lib/constants";
 import { normalizePagePath } from "next/dist/shared/lib/page-path/normalize-page-path";
-import { getRouteRegex } from "next/dist/shared/lib/router/utils/route-regex";
 import {
   nextConfig,
   preview,
-  routes,
   routesManifest,
   routing,
 } from "virtual:vitest-plugin-rsc/next-manifest";
@@ -157,48 +155,43 @@ export function recordRoute(route: Route, verdict: PrerenderVerdict | undefined)
   }
 }
 
-// The routes whose page is the page of a parallel route's slot, like
-// `app/@views/duration/page.js`, as `export/routes/app-page.js:126` tells
-// them, by their pathname.
-const parallelRoutes = new Set(
-  routes
-    .filter((route) => route.kind === "page" && !route.component && /\/@\w+/.test(route.page))
-    .map((route) => route.pathname),
-);
-// Whether a pathname that Next's handler prerenders is one of theirs.
-const isParallelRoutePath = (pathname: string) => {
-  const listed = prerenderManifest.routes[pathname]?.srcRoute;
-  if (listed != null) return parallelRoutes.has(listed);
-  return Object.keys(prerenderManifest.dynamicRoutes).some(
-    (route) => parallelRoutes.has(route) && getRouteRegex(route).re.test(pathname),
-  );
-};
+// The pathnames whose page the build kept, by the generation of the
+// server's cache (cache.ts): its first `set()`, which is the prerender that
+// stands in for the build's. A later one is of a revalidation, which Next's
+// handler keeps as `next start` keeps it.
+const built = new Set<string>();
+/** Forgets what the build kept, as the server's cache forgets its entries. */
+export function forgetBuilt(): void {
+  built.clear();
+}
 
 /**
  * A page as the build keeps it, which Next's handler is about to keep for
- * `pathname`. The build keeps a page of a parallel route's slot without a
+ * `pathname`, at the first prerender of that pathname in this `generation`
+ * of the cache. The build keeps a page of a parallel route's slot without a
  * status (`export/routes/app-page.js:126-141`), which `next start` serves
- * with 200: a page whose other slots have no match for its path renders the
- * not-found page, which a page load shows, and a navigation, which keeps the
- * other slots as they are, does not. Next's handler would keep the status of
- * its render, 404, and Next's router takes a navigation that answers 404 for
- * a page load. So the entry gets 200, in place: the handler answers the
- * request of its prerender with the status of the entry it keeps, and
- * otherwise with the one its render set.
+ * with 200: a page whose other slots have no page for its path renders the
+ * not-found page there, which a page load shows, and a navigation, which
+ * keeps the other slots as they are, does not. Next's handler would keep
+ * the status of its render, 404, and Next's router takes a navigation that
+ * answers 404 for a page load. So the entry gets 200, in place: the handler
+ * answers the request of its prerender with the status of the entry it
+ * keeps, and otherwise with the one its render set. `route` is the source
+ * of the entry, the page, as Next's response cache hands it to the cache.
  */
 export function keptAsBuilt(
   pathname: string,
   value: { kind: string; status?: number } | null,
+  { route }: { route?: { sourceRoute?: string } },
+  generation: number,
 ): void {
   // `CachedRouteKind.APP_PAGE`, a `const enum` of Next's types.
-  if (
-    value?.kind === "APP_PAGE" &&
-    value.status !== undefined &&
-    value.status !== 200 &&
-    isParallelRoutePath(pathname)
-  ) {
-    value.status = 200;
-  }
+  if (value?.kind !== "APP_PAGE" || !(pathname in prerenderManifest.routes)) return;
+  const key = `${generation}:${pathname}`;
+  if (built.has(key)) return;
+  built.add(key);
+  // As the export tells a page of a slot: by `@` in its page.
+  if (value.status !== undefined && /\/@\w+/.test(route?.sourceRoute ?? "")) value.status = 200;
 }
 
 /** Whether the build prerenders a route, or a pathname of it. */

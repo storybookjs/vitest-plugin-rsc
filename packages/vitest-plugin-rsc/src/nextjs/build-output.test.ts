@@ -1,7 +1,9 @@
 import { expect, test, vi } from "vitest";
 import {
   demoteRoute,
+  forgetBuilt,
   isPrerendered,
+  keptAsBuilt,
   loadManifest,
   nodeRouteDistDir,
   prerenderManifest,
@@ -103,4 +105,36 @@ test("lists a route handler without the data of a page", () => {
   );
 
   expect(prerenderManifest.routes["/api/time"]).toEqual({ srcRoute: "/api/time", dataRoute: null });
+});
+
+// What Next's response cache hands the cache for a page, by its source.
+const pageOf = (sourceRoute: string) => ({ route: { kind: "APP_PAGE", sourceRoute } });
+
+test("keeps the first prerender of a page of a slot with 200, as the build, and a later one as it renders", () => {
+  recordRoute(
+    { kind: "page", page: "/tabs/@views/duration/page", pathname: "/tabs/duration" },
+    { pathnames: ["/tabs/duration"] },
+  );
+  recordRoute(
+    { kind: "page", page: "/missing/page", pathname: "/missing" },
+    { pathnames: ["/missing"] },
+  );
+  const notFound = () => ({ kind: "APP_PAGE", status: 404 });
+  const kept = (pathname: string, sourceRoute: string, generation: number) => {
+    const value = notFound();
+    keptAsBuilt(pathname, value, pageOf(sourceRoute), generation);
+    return value.status;
+  };
+
+  expect(kept("/tabs/duration", "/tabs/@views/duration/page", 0)).toBe(200);
+  // A revalidation, in the same generation: as Next's handler renders it.
+  expect(kept("/tabs/duration", "/tabs/@views/duration/page", 0)).toBe(404);
+  // The next generation of the cache, after `cleanup()`.
+  expect(kept("/tabs/duration", "/tabs/@views/duration/page", 1)).toBe(200);
+  forgetBuilt();
+  expect(kept("/tabs/duration", "/tabs/@views/duration/page", 1)).toBe(200);
+  // A page that is no page of a slot keeps its 404, as the build keeps it.
+  expect(kept("/missing", "/missing/page", 0)).toBe(404);
+  // A pathname the manifest does not list is no prerender of the build's.
+  expect(kept("/tabs/other", "/tabs/@views/[slug]/page", 0)).toBe(404);
 });

@@ -9,7 +9,7 @@ import {
 } from "next/dist/server/use-cache/handlers";
 import { cacheHandler, cacheHandlers } from "virtual:vitest-plugin-rsc/next-cache-handlers";
 import { nextConfig, preview } from "virtual:vitest-plugin-rsc/next-manifest";
-import { keptAsBuilt, prerenderManifest } from "./build-output.ts";
+import { forgetBuilt, keptAsBuilt, prerenderManifest } from "./build-output.ts";
 import { registry } from "./registry.ts";
 
 // Next's Data Cache: what `unstable_cache` and a cached `fetch` keep between
@@ -113,7 +113,7 @@ export function shareIncrementalCache(headers = new Headers()): void {
   // What Next's handler keeps of a page it prerenders, as the build keeps it.
   const set = cache.set.bind(cache);
   cache.set = ((...args: Parameters<typeof set>) => {
-    keptAsBuilt(args[0], args[1]);
+    keptAsBuilt(args[0], args[1], args[2] as { route?: { sourceRoute?: string } }, generation);
     return set(...args);
   }) as typeof set;
   globalThis.__incrementalCache = current = cache;
@@ -131,6 +131,7 @@ export function shareIncrementalCache(headers = new Headers()): void {
  */
 export async function resetCaches(): Promise<void> {
   tagsManifest.clear();
+  forgetBuilt();
   generation++;
   shareIncrementalCache();
   if (!CurCacheHandler || !hasPrerenders()) return;
