@@ -252,7 +252,8 @@ function appWith(files: Record<string, string>): string {
 // What Vite's dependency scan of each layer finds, on a dev server with a
 // cache of its own, and what it logs as an error: a scan that fails is
 // dropped as a whole, and the layer finds its dependencies as a test runs.
-async function scanOf(app: string) {
+// `entries` are the host's, as Vitest names its test files.
+async function scanOf(app: string, entries?: string[]) {
   const errors: string[] = [];
   const logger = createLogger("silent");
   logger.error = (message) => void errors.push(message);
@@ -265,6 +266,7 @@ async function scanOf(app: string) {
     customLogger: logger,
     cacheDir,
     server: { middlewareMode: true, ws: false },
+    optimizeDeps: { entries },
     plugins: [vitestPluginRSC(), vitestPluginNext({ host: { files: ["**/*.test.tsx"] } })],
   });
   onTestFinished(async () => {
@@ -337,6 +339,42 @@ test("has the scan of a layer read a module that Next's compiler stops at in the
     expect(found).toContain("request-context");
     expect(found).toContain("next-themes");
   }
+});
+
+test("has the ssr layer pre-bundle what the Client Components that a test file renders import", async () => {
+  const app = appWith({
+    "next.config.mjs": "export default {};",
+    "app/layout.js": "export default ({ children }) => children;",
+    "app/page.js": "export default () => null;",
+    // Which only a test file renders, in the rsc layer: the ssr layer loads
+    // them by their id. One of the app, outside `app/`, in a folder whose
+    // name is a pattern of a glob, as a route group's is, and one of a
+    // package, `next-themes`, through a Server Component.
+    "components/(shared)/widget.tsx": [
+      '"use client";',
+      'import { createEnv } from "@t3-oss/env-core";',
+      "export const Widget = () => <p>{String(createEnv)}</p>;",
+    ].join("\n"),
+    "components/(shared)/themed.tsx": [
+      'import { cookies } from "next/headers";',
+      'import { ThemeProvider } from "next-themes";',
+      "export const Themed = async () => <ThemeProvider>{(await cookies()).size}</ThemeProvider>;",
+    ].join("\n"),
+    "components/(shared)/widget.test.tsx": [
+      'import { Widget } from "./widget";',
+      'import { Themed } from "./themed";',
+      "export { Themed, Widget };",
+    ].join("\n"),
+    // A Client Component that nothing imports.
+    "components/unused.tsx": '"use client";\nimport "request-context";',
+  });
+
+  const { ssr, errors } = await scanOf(app, ["**/*.test.tsx"]);
+
+  expect(errors.join("\n")).not.toContain("Failed to run dependency scan");
+  expect(ssr).toContain("@t3-oss/env-core");
+  expect(ssr).toContain("next-themes");
+  expect(ssr).not.toContain("request-context");
 });
 
 test("has the ssr layer pre-bundle what the cache handlers of next.config import", async () => {

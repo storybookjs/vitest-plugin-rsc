@@ -15,6 +15,7 @@ import {
   type ResolvedConfig,
   type ViteDevServer,
 } from "vite";
+import { escapePath } from "tinyglobby";
 import type { TestProject, Vitest } from "vitest/node";
 import { createRunnerEnvironmentPlugins } from "../runner-environment.ts";
 import { flightBridge, type FlightEntry } from "./flight.ts";
@@ -59,9 +60,12 @@ const layers = Object.keys(environmentOf) as NextLayer[];
 
 const registry = `globalThis.${registryGlobal}`;
 
+// An entry of a scan is a glob: a file by its path, escaped, as a path can
+// have a `(group)` or a `[id]` in it, which a glob reads as a pattern. As
+// Vite makes a path a glob, for `import.meta.glob` (`globSafePath()`).
+const fileEntry = (file: string) => escapePath(normalizePath(file));
 // What a dependency scan of the app starts from: every module of `app/`.
-const appEntriesOf = (project: NextProject) =>
-  normalizePath(path.join(project.appDir, "**/*.{js,jsx,ts,tsx}"));
+const appEntriesOf = (project: NextProject) => `${fileEntry(project.appDir)}/**/*.{js,jsx,ts,tsx}`;
 // Shared by the layers: the routes and the `next.config`.
 const manifestId = "virtual:vitest-plugin-rsc/next-manifest";
 // The modules of the routes, all in the rsc layer: one for each route, by its
@@ -603,7 +607,7 @@ function cacheHandlerScan(
   };
   return {
     include: files.filter(isOfNext).map(toSpecifier),
-    entries: files.filter((file) => !isOfNext(file)),
+    entries: files.filter((file) => !isOfNext(file)).map(fileEntry),
   };
 }
 
@@ -827,11 +831,21 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
           const inputFiles = typeof input === "string" ? [input] : Object.values(input ?? {});
           const hostEntries =
             rsc.optimizeDeps.entries ??
-            (inputFiles.length > 0 ? inputFiles.map(normalizePath) : "**/*.html");
+            (inputFiles.length > 0 ? inputFiles.map(fileEntry) : "**/*.html");
           rsc.optimizeDeps.entries = [
             ...[hostEntries].flat(),
             appEntriesOf(project),
-            ...(project.middlewareFile ? [normalizePath(project.middlewareFile)] : []),
+            ...(project.middlewareFile ? [fileEntry(project.middlewareFile)] : []),
+          ];
+          // The ssr layer loads the Client Components that a payload of the
+          // rsc layer names, by their id: a module of the app, of `app/` or
+          // not, or of a package, which a test file can import too. So its
+          // scan starts where the rsc layer's does, and reads through the
+          // Server Components to them, as the browser layer's does. And at
+          // the cache handlers of `next.config`, which it loads itself.
+          server.config.environments[environmentOf.ssr]!.optimizeDeps.entries = [
+            ...rsc.optimizeDeps.entries,
+            ...cacheHandlerScan(project, resolvers.ssr.toSpecifier).entries,
           ];
         },
       },
@@ -948,7 +962,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
               // client-files.ts. Not a copy in what that layer pre-bundles.
               ...(layer === "browser" ? [hostPackagesPlugin] : []),
               resolvers[layer].plugin(),
-              createDependencyCompilePlugin(getProject, layer),
+              createDependencyCompilePlugin(getProject, layer, serverCode.isAppCode),
               createScanCompilePlugin(getProject, layer, serverCode.isAppCode),
               ...(layer === "rsc" ? [nextClientBoundaryPlugin(getProject, resolvers.rsc)] : []),
               flightConsolePlugin(),
@@ -1086,9 +1100,7 @@ export function vitestPluginNext(options: VitestPluginNextOptions = {}): Plugin[
               dev: { moduleRunnerTransform: true },
               optimizeDeps: {
                 ...optimizeDeps("ssr"),
-                // The Client Components it renders are the app's. And the
-                // cache handlers of `next.config`, which it loads.
-                entries: [appEntriesOf(project), ...cacheHandlers.entries],
+                // Its entries: see `vitest-plugin-rsc:next-scan`.
                 exclude: ["vitest-plugin-rsc", "@vitejs/plugin-rsc"],
               },
             },
@@ -1402,7 +1414,7 @@ function dependencyBuildPlugin(
   serverCode: ReturnType<typeof createServerCode>,
   layer: NextLayer,
 ): Plugin {
-  const compile = createDependencyCompilePlugin(getProject, layer);
+  const compile = createDependencyCompilePlugin(getProject, layer, serverCode.isAppCode);
   return {
     name: `vitest-plugin-rsc:next-build-dependency:${layer}`,
     apply: "build",
